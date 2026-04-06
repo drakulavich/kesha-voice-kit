@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 
-import { existsSync } from "fs";
-import { transcribe } from "./transcribe";
+import { transcribe } from "./lib";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -17,11 +16,6 @@ async function main(): Promise<void> {
 
   if (!file) {
     console.error("Usage: parakeet [--no-cache] <audio_file>");
-    process.exit(1);
-  }
-
-  if (!existsSync(file)) {
-    console.error(`Error: file not found: ${file}`);
     process.exit(1);
   }
 
