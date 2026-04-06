@@ -24,7 +24,7 @@ export function isModelCached(dir?: string): boolean {
 export async function ensureModel(noCache = false, modelDir?: string): Promise<string> {
   const dir = modelDir ?? getModelDir();
 
-  if (!noCache && isModelCached()) {
+  if (!noCache && isModelCached(dir)) {
     return dir;
   }
 

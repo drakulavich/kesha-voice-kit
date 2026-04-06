@@ -1,11 +1,7 @@
 import { existsSync } from "fs";
-import { transcribe as internalTranscribe } from "./transcribe";
+import { transcribe as internalTranscribe, type TranscribeOptions } from "./transcribe";
 
-export interface TranscribeOptions {
-  beamWidth?: number;
-  noCache?: boolean;
-  modelDir?: string;
-}
+export type { TranscribeOptions };
 
 export async function transcribe(
   audioPath: string,
@@ -15,9 +11,5 @@ export async function transcribe(
     throw new Error(`File not found: ${audioPath}`);
   }
 
-  return internalTranscribe(audioPath, {
-    noCache: options.noCache ?? false,
-    beamWidth: options.beamWidth,
-    modelDir: options.modelDir,
-  });
+  return internalTranscribe(audioPath, options);
 }
