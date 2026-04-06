@@ -1,0 +1,2 @@
+fixtures/*.oga filter=lfs diff=lfs merge=lfs -text
+fixtures/*.wav filter=lfs diff=lfs merge=lfs -text

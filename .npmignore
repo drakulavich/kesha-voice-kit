@@ -1,0 +1,6 @@
+tests/
+fixtures/
+docs/
+src/__tests__/
+.gitattributes
+*.test.ts

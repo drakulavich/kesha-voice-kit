@@ -1,0 +1,4 @@
+node_modules/
+dist/
+*.f32le
+fixtures/corrupt.bin

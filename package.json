@@ -1,0 +1,52 @@
+{
+  "name": "@drakulavich/parakeet-cli",
+  "version": "0.1.3",
+  "description": "Fast multilingual speech-to-text CLI powered by NVIDIA Parakeet ONNX models",
+  "type": "module",
+  "bin": {
+    "parakeet": "bin/parakeet.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "package.json",
+    "tsconfig.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "test:unit": "bun test src/__tests__/",
+    "test:integration": "bun test tests/integration/"
+  },
+  "keywords": [
+    "asr",
+    "speech-to-text",
+    "transcription",
+    "parakeet",
+    "nvidia",
+    "onnx",
+    "multilingual",
+    "bun",
+    "cli"
+  ],
+  "author": "drakulavich",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drakulavich/parakeet-cli.git"
+  },
+  "homepage": "https://github.com/drakulavich/parakeet-cli#readme",
+  "bugs": {
+    "url": "https://github.com/drakulavich/parakeet-cli/issues"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "dependencies": {
+    "onnxruntime-node": "^1.24.0"
+  }
+}
