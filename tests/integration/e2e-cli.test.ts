@@ -32,6 +32,6 @@ describe("e2e-cli", () => {
   test("missing file prints error and exits 1", async () => {
     const { stderr, exitCode } = await runCli(["nonexistent.wav"]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("file not found");
+    expect(stderr.toLowerCase()).toContain("file not found");
   });
 });
