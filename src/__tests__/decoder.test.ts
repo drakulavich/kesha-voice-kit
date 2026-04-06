@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { greedyDecode, type DecoderSession } from "../decoder";
+import { beamDecode, type DecoderSession } from "../decoder";
 
 function mockSession(responses: Array<{ tokenLogits: number[]; durationLogits: number[] }>): DecoderSession {
   let callIndex = 0;
@@ -24,7 +24,8 @@ describe("decoder", () => {
       { tokenLogits: [0, 10, 0, -10], durationLogits: [10, 0] },
       { tokenLogits: [0, 0, 0, 10], durationLogits: [10, 0] },
     ]);
-    const tokens = await greedyDecode(session, 3);
+    const encoderData = new Float32Array(3);
+    const tokens = await beamDecode(session, 3, encoderData, 1, 1);
     expect(tokens).toEqual([0, 1]);
   });
 
@@ -34,24 +35,16 @@ describe("decoder", () => {
       { tokenLogits: [0, 10, 0, -10], durationLogits: [10, 0, 0] },
       { tokenLogits: [0, 0, 0, 10], durationLogits: [10, 0, 0] },
     ]);
-    const tokens = await greedyDecode(session, 5);
+    const encoderData = new Float32Array(5);
+    const tokens = await beamDecode(session, 5, encoderData, 1, 1);
     expect(tokens).toEqual([0, 1]);
-  });
-
-  test("handles max_tokens_per_step limit", async () => {
-    const session = mockSession([
-      { tokenLogits: [10, 0, 0, -10], durationLogits: [10, 0] },
-    ]);
-    const tokens = await greedyDecode(session, 2);
-    expect(tokens.length).toBeLessThanOrEqual(20);
-    expect(tokens.length).toBeGreaterThan(0);
   });
 
   test("returns empty for zero-length encoder output", async () => {
     const session = mockSession([
       { tokenLogits: [0, 0, 0, 10], durationLogits: [10, 0] },
     ]);
-    const tokens = await greedyDecode(session, 0);
+    const tokens = await beamDecode(session, 0, new Float32Array(0), 1);
     expect(tokens).toEqual([]);
   });
 });

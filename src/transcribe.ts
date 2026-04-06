@@ -5,7 +5,7 @@ import { initEncoder, encode } from "./encoder";
 import {
   initDecoder,
   createOnnxDecoderSession,
-  greedyDecode,
+  beamDecode,
 } from "./decoder";
 import { Tokenizer } from "./tokenizer";
 import { join } from "path";
@@ -63,6 +63,6 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
     DECODER_HIDDEN,
   );
 
-  const tokens = await greedyDecode(session, encodedLength, transposed, D);
+  const tokens = await beamDecode(session, encodedLength, transposed, D);
   return tokenizer.detokenize(tokens);
 }

@@ -1,6 +1,6 @@
 {
   "name": "@drakulavich/parakeet-cli",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Fast multilingual speech-to-text CLI powered by NVIDIA Parakeet ONNX models",
   "type": "module",
   "bin": {

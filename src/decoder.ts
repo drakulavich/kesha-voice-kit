@@ -20,69 +20,87 @@ export interface DecoderSession {
   stateDims: { layers: number; hidden: number };
 }
 
-export async function greedyDecode(
+const DEFAULT_BEAM_WIDTH = 4;
+
+interface Beam {
+  tokens: number[];
+  score: number;
+  lastToken: number;
+  state1: F32;
+  state2: F32;
+  t: number;
+}
+
+export async function beamDecode(
   session: DecoderSession,
   encoderLength: number,
-  encoderData?: Float32Array,
-  encoderDim?: number
+  encoderData: Float32Array,
+  encoderDim: number,
+  beamWidth: number = DEFAULT_BEAM_WIDTH,
 ): Promise<number[]> {
   if (encoderLength === 0) return [];
 
-  const tokens: number[] = [];
   const stateSize = session.stateDims.layers * session.stateDims.hidden;
-  let state1: F32 = new Float32Array(stateSize);
-  let state2: F32 = new Float32Array(stateSize);
-  let lastToken = session.blankId;
 
-  let t = 0;
-  while (t < encoderLength) {
-    let tokensThisStep = 0;
+  let beams: Beam[] = [{
+    tokens: [],
+    score: 0,
+    lastToken: session.blankId,
+    state1: new Float32Array(stateSize),
+    state2: new Float32Array(stateSize),
+    t: 0,
+  }];
 
-    while (tokensThisStep < MAX_TOKENS_PER_STEP) {
-      let frame: Float32Array;
-      if (encoderData && encoderDim) {
-        // Must copy — ort.Tensor doesn't work with subarray views under Bun
-        frame = encoderData.slice(t * encoderDim, (t + 1) * encoderDim);
-      } else {
-        frame = new Float32Array(1);
-      }
+  const maxSteps = encoderLength * MAX_TOKENS_PER_STEP;
 
-      const result = await session.decode(frame, [lastToken], 1, state1, state2);
+  for (let step = 0; step < maxSteps; step++) {
+    const active = beams.filter(b => b.t < encoderLength);
+    if (active.length === 0) break;
+
+    const candidates: Beam[] = [];
+
+    for (const beam of active) {
+      // Must copy — ort.Tensor doesn't work with subarray views under Bun
+      const frame = encoderData.slice(beam.t * encoderDim, (beam.t + 1) * encoderDim);
+      const result = await session.decode(frame, [beam.lastToken], 1, beam.state1, beam.state2);
       const output = result.output;
 
       const tokenLogits = output.slice(0, session.vocabSize);
       const durationLogits = output.slice(session.vocabSize);
-
-      const tokenId = argmax(tokenLogits);
       const duration = argmax(durationLogits);
 
-      state1 = result.state1;
-      state2 = result.state2;
+      // Blank option: advance one frame, keep same tokens
+      candidates.push({
+        tokens: beam.tokens,
+        score: beam.score + tokenLogits[session.blankId],
+        lastToken: beam.lastToken,
+        state1: result.state1,
+        state2: result.state2,
+        t: beam.t + 1,
+      });
 
-      if (tokenId === session.blankId) {
-        t += 1;
-        break;
-      }
-
-      tokens.push(tokenId);
-      lastToken = tokenId;
-      tokensThisStep++;
-
-      if (duration > 0) {
-        t += duration;
-        break;
+      // Top non-blank token options
+      const topK = topKIndices(tokenLogits, beamWidth, session.blankId);
+      for (const tokenId of topK) {
+        candidates.push({
+          tokens: [...beam.tokens, tokenId],
+          score: beam.score + tokenLogits[tokenId],
+          lastToken: tokenId,
+          state1: result.state1,
+          state2: result.state2,
+          t: duration > 0 ? beam.t + duration : beam.t,
+        });
       }
     }
 
-    if (tokensThisStep >= MAX_TOKENS_PER_STEP) {
-      t += 1;
-    }
+    candidates.sort((a, b) => b.score - a.score);
+    beams = candidates.slice(0, beamWidth);
   }
 
-  return tokens;
+  return beams[0].tokens;
 }
 
-function argmax(arr: Float32Array): number {
+function argmax(arr: F32): number {
   let maxIdx = 0;
   let maxVal = arr[0];
   for (let i = 1; i < arr.length; i++) {
@@ -92,6 +110,15 @@ function argmax(arr: Float32Array): number {
     }
   }
   return maxIdx;
+}
+
+function topKIndices(arr: F32, k: number, excludeId: number): number[] {
+  const indexed: [number, number][] = [];
+  for (let i = 0; i < arr.length; i++) {
+    if (i !== excludeId) indexed.push([arr[i], i]);
+  }
+  indexed.sort((a, b) => b[0] - a[0]);
+  return indexed.slice(0, k).map(([, i]) => i);
 }
 
 let onnxSession: ort.InferenceSession | null = null;
