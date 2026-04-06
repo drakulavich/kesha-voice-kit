@@ -16,13 +16,13 @@ export function getModelDir(): string {
   return join(homedir(), ".cache", "parakeet", "v3");
 }
 
-export function isModelCached(): boolean {
-  const dir = getModelDir();
-  return MODEL_FILES.every((f) => existsSync(join(dir, f)));
+export function isModelCached(dir?: string): boolean {
+  const d = dir ?? getModelDir();
+  return MODEL_FILES.every((f) => existsSync(join(d, f)));
 }
 
-export async function ensureModel(noCache = false): Promise<string> {
-  const dir = getModelDir();
+export async function ensureModel(noCache = false, modelDir?: string): Promise<string> {
+  const dir = modelDir ?? getModelDir();
 
   if (!noCache && isModelCached()) {
     return dir;

@@ -26,6 +26,8 @@ const DECODER_HIDDEN = 640;
 
 export interface TranscribeOptions {
   noCache?: boolean;
+  beamWidth?: number;
+  modelDir?: string;
 }
 
 // Minimum 0.1s of audio at 16kHz to produce meaningful output
@@ -39,7 +41,8 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
   }
 
   const noCache = opts.noCache ?? false;
-  const modelDir = await ensureModel(noCache);
+  const beamWidth = opts.beamWidth ?? 4;
+  const modelDir = await ensureModel(noCache, opts.modelDir);
   const tokenizer = await Tokenizer.fromFile(join(modelDir, "vocab.txt"));
 
   await initPreprocessor(modelDir);
@@ -63,6 +66,6 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
     DECODER_HIDDEN,
   );
 
-  const tokens = await beamDecode(session, encodedLength, transposed, D);
+  const tokens = await beamDecode(session, encodedLength, transposed, D, beamWidth);
   return tokenizer.detokenize(tokens);
 }
