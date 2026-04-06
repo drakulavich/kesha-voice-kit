@@ -1,8 +1,10 @@
 import { describe, test, expect } from "bun:test";
 import { convertToFloat32PCM } from "../audio";
-import { existsSync } from "fs";
+import { spawnSync } from "child_process";
 
-describe("audio", () => {
+const hasFfmpeg = spawnSync("which", ["ffmpeg"]).status === 0;
+
+describe.skipIf(!hasFfmpeg)("audio", () => {
   test("converts WAV to 16kHz mono Float32Array", async () => {
     const buffer = await convertToFloat32PCM("fixtures/silence.wav");
     expect(buffer).toBeInstanceOf(Float32Array);
