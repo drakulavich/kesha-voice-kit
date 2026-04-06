@@ -5,14 +5,16 @@ import { ensureOrtBackend } from "./ort-backend-fix";
 // TDT allows multiple tokens per encoder frame; cap to prevent runaway decoding
 const MAX_TOKENS_PER_STEP = 10;
 
+type F32 = Float32Array<ArrayBufferLike>;
+
 export interface DecoderSession {
   decode(
-    encoderFrame: Float32Array,
+    encoderFrame: F32,
     targets: number[],
     targetLength: number,
-    state1: Float32Array,
-    state2: Float32Array
-  ): Promise<{ output: Float32Array; state1: Float32Array; state2: Float32Array }>;
+    state1: F32,
+    state2: F32
+  ): Promise<{ output: F32; state1: F32; state2: F32 }>;
   vocabSize: number;
   blankId: number;
   stateDims: { layers: number; hidden: number };
@@ -28,8 +30,8 @@ export async function greedyDecode(
 
   const tokens: number[] = [];
   const stateSize = session.stateDims.layers * session.stateDims.hidden;
-  let state1 = new Float32Array(stateSize);
-  let state2 = new Float32Array(stateSize);
+  let state1: F32 = new Float32Array(stateSize);
+  let state2: F32 = new Float32Array(stateSize);
   let lastToken = session.blankId;
 
   let t = 0;
