@@ -14,7 +14,7 @@ lint:
 smoke-test:
 	bun link
 	parakeet install
-	bash scripts/smoke-test.sh
+	bun scripts/smoke-test.ts
 
 release: lint test smoke-test
 	@echo "All checks passed. Ready to publish."

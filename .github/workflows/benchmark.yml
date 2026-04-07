@@ -63,7 +63,7 @@ jobs:
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"
           BENCHMARK_SUMMARY: benchmark-summary.json
-        run: bash scripts/benchmark.sh > benchmark-results.md
+        run: bun scripts/benchmark.ts > benchmark-results.md
 
       - name: 📊 Print results
         run: cat benchmark-results.md

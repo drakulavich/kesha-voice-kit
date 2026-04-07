@@ -1,10 +1,8 @@
 name: 📊 Test Reports
 
 on:
-  workflow_run:
-    workflows: ["🧪 CI"]
+  push:
     branches: [main]
-    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -16,62 +14,55 @@ concurrency:
 
 jobs:
   test-report:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v6
         with:
-          ref: main
+          lfs: true
 
       - name: 🍞 Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
+      - name: 💾 Cache dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: 💾 Cache CoreML backend
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/parakeet/coreml
+            ~/Library/Caches/FluidAudio
+          key: ${{ runner.os }}-parakeet-coreml-v3
+          restore-keys: ${{ runner.os }}-parakeet-coreml-
+
       - name: 📦 Install dependencies
         run: bun install
 
-      - name: 📥 Download CI test artifacts
-        uses: actions/download-artifact@v4
-        if: github.event_name == 'workflow_run'
+      - name: 🦜 Install parakeet backend
+        run: bun run src/cli.ts install
+
+      - name: 🎬 Install ffmpeg
+        run: which ffmpeg || brew install ffmpeg
+
+      - name: 🧪 Run tests
+        run: mkdir -p allure-results && bun test --reporter=junit --reporter-outfile=allure-results/results.xml
         continue-on-error: true
-        with:
-          run-id: ${{ github.event.workflow_run.id }}
-          pattern: test-results-*
-          path: allure-results
-          github-token: ${{ github.token }}
-          merge-multiple: true
-
-      - name: 🧪 Run tests (manual trigger)
-        if: github.event_name == 'workflow_dispatch'
-        run: mkdir -p allure-results && bun test --reporter=junit --reporter-outfile=allure-results/all.xml
-
-      - name: 🔍 Check for results
-        id: check
-        run: |
-          if [ -d allure-results ] && find allure-results -name '*.xml' | grep -q .; then
-            echo "has_results=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_results=false" >> $GITHUB_OUTPUT
-            echo "⚠️ No test results found — skipping report"
-          fi
-
-      - name: 📋 List results
-        if: steps.check.outputs.has_results == 'true'
-        run: find allure-results -type f
 
       - name: 📊 Generate Allure report
-        if: steps.check.outputs.has_results == 'true'
         run: bunx allure generate allure-results --output allure-report --report-name "Parakeet CLI Tests"
 
       - name: 📜 Load history and prepare deploy
-        if: steps.check.outputs.has_results == 'true'
         run: bun .github/scripts/load-allure-history.ts
 
       - name: 🚀 Publish report
-        if: steps.check.outputs.has_results == 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ github.token }}
