@@ -1,10 +1,10 @@
 import { describe, test, expect } from "bun:test";
 import { transcribe } from "../../src/transcribe";
-import { isModelCached } from "../../src/models";
+import { isModelInstalled } from "../../src/models";
 import { existsSync } from "fs";
 import { spawnSync } from "child_process";
 
-const modelsReady = isModelCached();
+const modelsReady = isModelInstalled();
 const fixtureExists = existsSync("fixtures/hello-english.wav");
 
 // Language routing produces a non-empty transcription only when the fixture

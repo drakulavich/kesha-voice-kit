@@ -18,22 +18,23 @@ jobs:
       run:
         working-directory: swift/
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
 
-      - name: Cache Swift packages
+      - name: 💾 Cache Swift packages
         uses: actions/cache@v4
         with:
           path: swift/.build
           key: ${{ runner.os }}-swift-${{ hashFiles('swift/Package.resolved') }}
           restore-keys: ${{ runner.os }}-swift-
 
-      - name: Build Swift binary
+      - name: 🔨 Build release binary
         run: swift build -c release
 
-      - name: Prepare artifact
+      - name: 📦 Prepare artifact
         run: cp .build/release/ParakeetCoreML ../parakeet-coreml-darwin-arm64
 
-      - name: Upload to release
+      - name: 🚀 Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.event.release.tag_name }}" ../parakeet-coreml-darwin-arm64 --clobber

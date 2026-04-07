@@ -1,0 +1,63 @@
+name: Test Reports
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: 📥 Download CI test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: test-results-*
+          path: allure-results
+          github-token: ${{ github.token }}
+          merge-multiple: true
+
+      - name: 📜 Load report history
+        uses: actions/checkout@v4
+        if: always()
+        continue-on-error: true
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: 📊 Build Allure report
+        id: allure
+        uses: GuitaristForEver/allure-v3-report-action@v0
+        if: always()
+        with:
+          allure_results: allure-results
+          allure_report: allure-report
+          allure_history: allure-history
+          gh_pages: gh-pages
+          subfolder: reports/allure
+          keep_reports: 10
+          report_name: "Parakeet CLI Tests"
+
+      - name: 🚀 Publish report
+        uses: peaceiris/actions-gh-pages@v4
+        if: steps.allure.outcome == 'success'
+        with:
+          github_token: ${{ github.token }}
+          publish_branch: gh-pages
+          publish_dir: allure-history

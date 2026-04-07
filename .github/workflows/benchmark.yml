@@ -3,6 +3,7 @@ name: Benchmark
 on:
   workflow_run:
     workflows: ["Build CoreML Swift Binary"]
+    branches: [main]
     types: [completed]
   workflow_dispatch:
 
@@ -19,41 +20,44 @@ jobs:
     timeout-minutes: 30
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
         with:
           lfs: true
           ref: main
 
-      - uses: oven-sh/setup-bun@v2
+      - name: 🍞 Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Cache bun dependencies
+      - name: 💾 Cache dependencies
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
 
-      - name: Cache pip packages
+      - name: 💾 Cache pip packages
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-faster-whisper
           restore-keys: ${{ runner.os }}-pip-
 
-      - name: Cache HuggingFace models
+      - name: 💾 Cache HuggingFace models
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: ${{ runner.os }}-hf-whisper-medium-int8
           restore-keys: ${{ runner.os }}-hf-
 
-      - name: Cache parakeet CoreML model
+      - name: 💾 Cache CoreML model
         uses: actions/cache@v4
         with:
           path: |
@@ -62,41 +66,15 @@ jobs:
           key: ${{ runner.os }}-parakeet-coreml-v3
           restore-keys: ${{ runner.os }}-parakeet-coreml-
 
-      - run: bun install
+      - name: 📦 Install dependencies
+        run: bun install
 
-      - name: Run benchmark
+      - name: 🏎️ Run benchmark
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"
+        run: bash .github/scripts/update-benchmark.sh
+
+      - name: 📝 Commit results
         run: |
-          bash scripts/benchmark.sh > /tmp/bench_results.txt
+          bash .github/scripts/commit-and-push.sh BENCHMARK.md "benchmark: update CI results"
 
-          echo "============================================"
-          echo "  BENCHMARK RESULTS"
-          echo "============================================"
-          cat /tmp/bench_results.txt
-          echo "============================================"
-
-          python3 -c "
-          import re
-          content = open('BENCHMARK.md').read()
-          replacement = open('/tmp/bench_results.txt').read()
-          pattern = r'(<!-- CI-BENCHMARK-START -->).*?(<!-- CI-BENCHMARK-END -->)'
-          updated = re.sub(pattern, r'\1\n' + replacement + r'\n\2', content, flags=re.DOTALL)
-          if updated == content:
-              print('WARNING: CI-BENCHMARK markers not found in BENCHMARK.md')
-              raise SystemExit(1)
-          open('BENCHMARK.md', 'w').write(updated)
-          "
-
-      - name: Commit results
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add BENCHMARK.md
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "benchmark: update CI results for $(bun run src/cli.ts --version)"
-            git pull --rebase origin main
-            git push || (git pull --rebase origin main && git push)
-          fi

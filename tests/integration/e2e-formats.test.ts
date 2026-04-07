@@ -1,9 +1,9 @@
 import { describe, test, expect } from "bun:test";
 import { transcribe } from "../../src/transcribe";
-import { isModelCached } from "../../src/models";
+import { isModelInstalled } from "../../src/models";
 import { existsSync } from "fs";
 
-const modelsReady = isModelCached();
+const modelsReady = isModelInstalled();
 
 describe.skipIf(!modelsReady)("e2e-formats", () => {
   test.skipIf(!existsSync("fixtures/silence.wav"))("handles WAV input", async () => {

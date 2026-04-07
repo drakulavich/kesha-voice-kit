@@ -1,9 +1,10 @@
-# parakeet-cli
+# 🦜 parakeet-cli
 
 [![npm version](https://img.shields.io/npm/v/@drakulavich/parakeet-cli)](https://www.npmjs.com/package/@drakulavich/parakeet-cli)
 [![CI](https://github.com/drakulavich/parakeet-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/drakulavich/parakeet-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
+[![Test Report](https://img.shields.io/badge/Test_Report-Allure-orange)](https://drakulavich.github.io/parakeet-cli/reports/allure)
 
 Fast multilingual speech-to-text CLI powered by NVIDIA Parakeet models. Zero Python. CoreML on Apple Silicon, ONNX on CPU.
 

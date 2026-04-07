@@ -6,58 +6,83 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  check:
+  unit-tests:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - name: 🍞 Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Cache bun dependencies
+      - name: 💾 Cache dependencies
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
 
-      - run: bun install
+      - name: 📦 Install dependencies
+        run: bun install
 
-      - name: Type check
+      - name: 🔍 Type check
         run: bunx tsc --noEmit
 
-      - name: Unit tests
-        run: bun run test:unit
+      - name: 🧪 Unit tests
+        run: mkdir -p test-results && bun run test:unit --reporter=junit --reporter-outfile=test-results/junit.xml
 
-  integration:
+      - name: 📊 Test summary
+        if: always()
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/scripts/junit-to-markdown.py "Unit Tests (${{ matrix.os }})" test-results/junit.xml >> $GITHUB_STEP_SUMMARY
+
+      - name: 📤 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: test-results/junit.xml
+          retention-days: 7
+
+  integration-tests:
     runs-on: macos-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
         with:
           lfs: true
 
-      - uses: oven-sh/setup-bun@v2
+      - name: 🍞 Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Cache bun dependencies
+      - name: 💾 Cache dependencies
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
 
-      - name: Cache parakeet CoreML backend
+      - name: 💾 Cache CoreML backend
         uses: actions/cache@v4
         with:
           path: |
@@ -66,14 +91,49 @@ jobs:
           key: ${{ runner.os }}-parakeet-coreml-v3
           restore-keys: ${{ runner.os }}-parakeet-coreml-
 
-      - run: bun install
+      - name: 📦 Install dependencies
+        run: bun install
 
-      - name: Install parakeet backend
+      - name: 🦜 Install parakeet backend
         run: bun run src/cli.ts install
 
-      - name: Install ffmpeg
+      - name: 🎬 Install ffmpeg
         run: which ffmpeg || brew install ffmpeg
 
-      - name: Integration tests
-        run: bun run test:integration
+      - name: 🧪 Integration tests
+        run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/junit.xml
         timeout-minutes: 10
+
+      - name: 📊 Test summary
+        if: always()
+        run: python3 .github/scripts/junit-to-markdown.py "Integration Tests (macos)" test-results/junit.xml >> $GITHUB_STEP_SUMMARY
+
+      - name: 📤 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-integration
+          path: test-results/junit.xml
+          retention-days: 7
+
+  pr-comment:
+    if: always() && github.event_name == 'pull_request'
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 📥 Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results
+          pattern: test-results-*
+
+      - name: 📝 Generate PR comment
+        run: bash .github/scripts/generate-pr-comment.sh all-results /tmp/pr-comment.md
+
+      - name: 💬 Post PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: /tmp/pr-comment.md

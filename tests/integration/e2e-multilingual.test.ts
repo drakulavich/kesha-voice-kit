@@ -1,11 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { transcribe } from "../../src/transcribe";
-import { isModelCached } from "../../src/models";
+import { isModelInstalled } from "../../src/models";
 import { existsSync } from "fs";
 import { spawnSync } from "child_process";
 
 const fixtureExists = existsSync("fixtures/hello-spanish.wav");
-const modelsReady = isModelCached();
+const modelsReady = isModelInstalled();
 
 // Detect whether the fixture was generated with real speech (espeak-ng) or is
 // a synthetic sine-tone fallback.  Only espeak-ng produces intelligible audio

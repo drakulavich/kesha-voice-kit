@@ -1,6 +1,7 @@
 import { join, dirname } from "path";
 import { homedir } from "os";
 import { existsSync, mkdirSync, chmodSync } from "fs";
+import { isCoreMLInstalled } from "./coreml";
 
 export const HF_REPO = "istupakov/parakeet-tdt-0.6b-v3-onnx";
 
@@ -19,6 +20,10 @@ export function getModelDir(): string {
 export function isModelCached(dir?: string): boolean {
   const d = dir ?? getModelDir();
   return MODEL_FILES.every((f) => existsSync(join(d, f)));
+}
+
+export function isModelInstalled(modelDir?: string): boolean {
+  return isCoreMLInstalled() || isModelCached(modelDir);
 }
 
 export function installHintError(headline: string): Error {

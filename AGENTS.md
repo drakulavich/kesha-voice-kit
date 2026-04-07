@@ -29,9 +29,12 @@ bun run src/cli.ts --version                   # Show version
 - **NEVER** auto-download models — use `parakeet install`, show error if missing
 - **NEVER** use Node.js APIs — this is Bun-only (`Bun.spawn`, `Bun.write`, `Bun.file`)
 - **NEVER** use `.subarray()` for ONNX tensors — use `.slice()` (Bun limitation)
+- **NEVER** push directly to `main` — it is a protected branch
+- All changes must go through pull requests: create a feature branch, push, open a PR
 - **NEVER** run `git push` unless explicitly requested by user
 - Add unit tests when writing new code
 - ffmpeg must be in PATH for ONNX backend audio conversion
+- **NEVER** write more than 3 lines of bash in GitHub Actions workflow steps — extract to `.github/scripts/`
 
 ## Code Style
 

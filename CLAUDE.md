@@ -27,6 +27,13 @@ Two interfaces: a CLI (`parakeet <audio>`) and a programmatic API (`@drakulavich
 - ffmpeg must be in PATH for audio format conversion
 - All audio is converted to 16kHz mono Float32 PCM internally
 
+### BRANCH PROTECTION
+
+- `main` branch is protected — never push directly to main
+- All changes must go through pull requests
+- Create a feature branch, push it, and open a PR
+- CI must pass before merging
+
 ## Build Commands
 
 ```bash
@@ -135,6 +142,14 @@ await downloadCoreML(noCache?);            // CoreML binary
 - **ONNX tensors**: Always use `.slice()` not `.subarray()` — Bun doesn't support subarray views as ONNX tensor data
 
 ## CI/CD
+
+### WORKFLOW RULE: No inline scripts > 3 lines
+
+- GitHub Actions workflow steps must not contain more than 3 lines of bash
+- Extract longer logic into scripts under `.github/scripts/`
+- Keep workflows declarative — scripts handle the logic
+
+### Workflows
 
 GitHub Actions:
 - `.github/workflows/ci.yml` — runs on push/PR to main, matrix: ubuntu, windows, macos. Type check + unit tests.

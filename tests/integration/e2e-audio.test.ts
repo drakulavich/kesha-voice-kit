@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { convertToFloat32PCM } from "../audio";
+import { convertToFloat32PCM } from "../../src/audio";
 import { spawnSync } from "child_process";
 
 const hasFfmpeg = spawnSync("which", ["ffmpeg"]).status === 0;
