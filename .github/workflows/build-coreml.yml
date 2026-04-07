@@ -1,0 +1,28 @@
+name: Build CoreML Swift Binary
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: swift/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Swift binary
+        run: swift build -c release
+
+      - name: Copy binary
+        run: cp .build/release/ParakeetCoreML ../parakeet-coreml-darwin-arm64
+
+      - name: Make binary executable
+        run: chmod +x ../parakeet-coreml-darwin-arm64
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" ../parakeet-coreml-darwin-arm64
