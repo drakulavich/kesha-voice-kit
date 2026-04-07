@@ -43,7 +43,7 @@ jobs:
 
       - name: 📊 Build Allure report
         id: allure
-        uses: GuitaristForEver/allure-v3-report-action@v0
+        uses: GuitaristForEver/allure-v3-report-action@v1
         if: always()
         with:
           allure_results: allure-results
