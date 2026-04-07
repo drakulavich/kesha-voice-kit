@@ -1,4 +1,5 @@
-import { requireModel } from "./models";
+import { requireModel, isModelCached } from "./models";
+import { isCoreMLInstalled, transcribeCoreML } from "./coreml";
 import { convertToFloat32PCM } from "./audio";
 import { initPreprocessor, preprocess } from "./preprocess";
 import { initEncoder, encode } from "./encoder";
@@ -33,6 +34,31 @@ export interface TranscribeOptions {
 const MIN_AUDIO_SAMPLES = 1600;
 
 export async function transcribe(audioPath: string, opts: TranscribeOptions = {}): Promise<string> {
+  // CoreML backend: preferred on macOS arm64 when installed
+  if (isCoreMLInstalled()) {
+    return transcribeCoreML(audioPath);
+  }
+
+  // ONNX backend: fallback
+  if (isModelCached(opts.modelDir)) {
+    return transcribeOnnx(audioPath, opts);
+  }
+
+  // Neither backend available
+  const lines = [
+    "Error: No backend available",
+    "",
+    "╔══════════════════════════════════════════════════════════╗",
+    "║ No transcription backend is installed.                   ║",
+    "║ Please run the following command to get started:         ║",
+    "║                                                          ║",
+    "║     bunx @drakulavich/parakeet-cli install               ║",
+    "╚══════════════════════════════════════════════════════════╝",
+  ];
+  throw new Error(lines.join("\n"));
+}
+
+async function transcribeOnnx(audioPath: string, opts: TranscribeOptions): Promise<string> {
   const audio = await convertToFloat32PCM(audioPath);
 
   if (audio.length < MIN_AUDIO_SAMPLES) {
