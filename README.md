@@ -24,12 +24,6 @@ Using Bun (recommended):
 bun install -g @drakulavich/parakeet-cli
 ```
 
-Using npm (requires Bun runtime installed):
-
-```bash
-npm install -g @drakulavich/parakeet-cli
-```
-
 Or clone and link locally:
 
 ```bash
@@ -38,8 +32,6 @@ cd parakeet-cli
 bun install
 bun link
 ```
-
-> **Note:** Bun is required as the runtime — the CLI uses Bun-native APIs and TypeScript execution. You can use either `bun` or `npm` as the package manager to install it, but Bun must be available in PATH to run the `parakeet` command.
 
 ## Usage
 
@@ -80,7 +72,17 @@ See [BENCHMARK.md](BENCHMARK.md) for full results with transcripts. Updated auto
 
 ## Supported Languages
 
-Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Ukrainian.
+| Flag | Language | Flag | Language | Flag | Language |
+|------|----------|------|----------|------|----------|
+| :bulgaria: | Bulgarian | :greece: | Greek | :portugal: | Portuguese |
+| :croatia: | Croatian | :hungary: | Hungarian | :romania: | Romanian |
+| :czech_republic: | Czech | :it: | Italian | :ru: | Russian |
+| :denmark: | Danish | :latvia: | Latvian | :slovakia: | Slovak |
+| :netherlands: | Dutch | :lithuania: | Lithuanian | :slovenia: | Slovenian |
+| :gb: | English | :malta: | Maltese | :es: | Spanish |
+| :estonia: | Estonian | :poland: | Polish | :sweden: | Swedish |
+| :finland: | Finnish | | | :ukraine: | Ukrainian |
+| :fr: | French | | | | |
 
 ## How It Works
 
