@@ -8,31 +8,40 @@
 
 Fast local speech-to-text. 25 languages. ~18x faster than Whisper on Apple Silicon.
 
-```bash
-bun install -g @drakulavich/parakeet-cli
-parakeet install
-parakeet audio.ogg  # → transcript to stdout
-```
-
-## Highlights
-
 - **CoreML on Apple Silicon** — ~155x real-time via [FluidAudio](https://github.com/FluidInference/FluidAudio)
-- **ONNX on CPU** — cross-platform fallback, 3x faster than Whisper ([benchmark](BENCHMARK.md))
-- **25 languages** — auto-detected, no prompting
+- **ONNX on CPU** — cross-platform fallback, 3x faster than Whisper
 - **Any audio format** — ffmpeg handles OGG, MP3, WAV, FLAC, M4A
 - **Zero Python** — Bun + TypeScript, native Swift binary for CoreML
+
+## Quick Start
+
+```bash
+bun install -g @drakulavich/parakeet-cli
+parakeet install          # CoreML on macOS arm64, ONNX elsewhere
+parakeet audio.ogg        # → transcript to stdout
+```
 
 ## Usage
 
 ```bash
-parakeet install                 # auto-detects: CoreML on macOS arm64, ONNX elsewhere
-parakeet install --coreml        # force CoreML
+parakeet install                 # auto-detect backend
+parakeet install --coreml        # force CoreML (macOS arm64)
 parakeet install --onnx          # force ONNX (~3GB)
 parakeet audio.ogg               # transcribe (language auto-detected)
 parakeet --version
 ```
 
 Stdout: transcript. Stderr: errors. Pipe-friendly.
+
+## Requirements
+
+- [Bun](https://bun.sh) >= 1.3
+- [ffmpeg](https://ffmpeg.org) in PATH (ONNX backend only)
+- ~3GB disk (ONNX models)
+
+## Supported Languages
+
+:bulgaria: Bulgarian, :croatia: Croatian, :czech_republic: Czech, :denmark: Danish, :netherlands: Dutch, :gb: English, :estonia: Estonian, :finland: Finnish, :fr: French, :de: German, :greece: Greek, :hungary: Hungarian, :it: Italian, :latvia: Latvian, :lithuania: Lithuanian, :malta: Maltese, :poland: Polish, :portugal: Portuguese, :romania: Romanian, :ru: Russian, :slovakia: Slovak, :slovenia: Slovenian, :es: Spanish, :sweden: Swedish, :ukraine: Ukrainian
 
 ## Benchmark
 
@@ -45,16 +54,6 @@ MacBook Pro M3 Pro — 10 Russian voice messages:
 
 Full results with transcripts: [BENCHMARK.md](BENCHMARK.md)
 
-## Supported Languages
-
-| | | | | |
-|---|---|---|---|---|
-| :bulgaria: Bulgarian | :croatia: Croatian | :czech_republic: Czech | :denmark: Danish | :netherlands: Dutch |
-| :gb: English | :estonia: Estonian | :finland: Finnish | :fr: French | :de: German |
-| :greece: Greek | :hungary: Hungarian | :it: Italian | :latvia: Latvian | :lithuania: Lithuanian |
-| :malta: Maltese | :poland: Polish | :portugal: Portuguese | :romania: Romanian | :ru: Russian |
-| :slovakia: Slovak | :slovenia: Slovenian | :es: Spanish | :sweden: Swedish | :ukraine: Ukrainian |
-
 ## How It Works
 
 ```
@@ -63,14 +62,8 @@ parakeet audio.ogg
   └── ONNX installed?   → ffmpeg → mel → encoder → decoder → stdout
 ```
 
-- **CoreML**: Pre-built Swift binary wraps [FluidAudio](https://github.com/FluidInference/FluidAudio) + [CoreML model](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)
+- **CoreML**: Swift binary wraps [FluidAudio](https://github.com/FluidInference/FluidAudio) + [CoreML model](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)
 - **ONNX**: [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) via [onnxruntime-node](https://www.npmjs.com/package/onnxruntime-node)
-
-## Requirements
-
-- [Bun](https://bun.sh) >= 1.3
-- [ffmpeg](https://ffmpeg.org) in PATH (ONNX backend only)
-- ~3GB disk (ONNX models)
 
 ## OpenClaw Integration
 
