@@ -1,8 +1,9 @@
 name: Benchmark
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Build CoreML Swift Binary"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -11,6 +12,7 @@ permissions:
 jobs:
   benchmark:
     runs-on: macos-15
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,7 +46,6 @@ jobs:
       - name: Run benchmark
         run: |
           CI_RESULTS=$(bash scripts/benchmark.sh)
-          # Replace content between CI-BENCHMARK markers
           python3 -c "
           import re, sys
           content = open('BENCHMARK.md').read()
@@ -59,5 +60,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add BENCHMARK.md
-          git diff --cached --quiet || git commit -m "benchmark: update CI results for ${{ github.event.release.tag_name || 'manual run' }}"
+          git diff --cached --quiet || git commit -m "benchmark: update CI results for $(bun run src/cli.ts --version)"
           git push
