@@ -5,3 +5,4 @@ fixtures/corrupt.bin
 swift/.build/
 allure-results/
 allure-report/
+.worktrees/

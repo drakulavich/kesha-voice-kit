@@ -36,6 +36,24 @@ bun run src/cli.ts --version                   # Show version
 - ffmpeg must be in PATH for ONNX backend audio conversion
 - **NEVER** write more than 3 lines of bash in GitHub Actions workflow steps — extract to `.github/scripts/`
 
+## Git Worktrees for Big Changes
+
+For multi-file features or refactors, use git worktrees to work in isolation:
+
+```bash
+git worktree add ../parakeet-cli-feature feature/my-feature
+cd ../parakeet-cli-feature
+# work, commit, push, open PR
+# when done:
+cd ../parakeet-cli
+git worktree remove ../parakeet-cli-feature
+```
+
+Use worktrees when:
+- The change touches 5+ files
+- You need to keep main clean while iterating
+- Running long tasks (benchmarks, builds) without blocking the main checkout
+
 ## Code Style
 
 - TypeScript strict mode, ESNext target

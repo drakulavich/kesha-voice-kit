@@ -34,6 +34,12 @@ Two interfaces: a CLI (`parakeet <audio>`) and a programmatic API (`@drakulavich
 - Create a feature branch, push it, and open a PR
 - CI must pass before merging
 
+### GIT WORKTREES FOR BIG CHANGES
+
+- Use `git worktree add` for multi-file features or refactors
+- Keeps main checkout clean while iterating on a feature branch
+- Use when the change touches 5+ files or runs long tasks
+
 ## Build Commands
 
 ```bash
