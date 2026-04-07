@@ -1,4 +1,4 @@
-import { ensureModel } from "./models";
+import { requireModel } from "./models";
 import { convertToFloat32PCM } from "./audio";
 import { initPreprocessor, preprocess } from "./preprocess";
 import { initEncoder, encode } from "./encoder";
@@ -25,7 +25,6 @@ const DECODER_LAYERS = 2;
 const DECODER_HIDDEN = 640;
 
 export interface TranscribeOptions {
-  noCache?: boolean;
   beamWidth?: number;
   modelDir?: string;
 }
@@ -40,9 +39,8 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
     return "";
   }
 
-  const noCache = opts.noCache ?? false;
   const beamWidth = opts.beamWidth ?? 4;
-  const modelDir = await ensureModel(noCache, opts.modelDir);
+  const modelDir = requireModel(opts.modelDir);
   const tokenizer = await Tokenizer.fromFile(join(modelDir, "vocab.txt"));
 
   await initPreprocessor(modelDir);

@@ -21,10 +21,31 @@ export function isModelCached(dir?: string): boolean {
   return MODEL_FILES.every((f) => existsSync(join(d, f)));
 }
 
-export async function ensureModel(noCache = false, modelDir?: string): Promise<string> {
+export function requireModel(modelDir?: string): string {
+  const dir = modelDir ?? getModelDir();
+
+  if (!isModelCached(dir)) {
+    const lines = [
+      `Error: Model not found at ${dir}`,
+      "",
+      "╔══════════════════════════════════════════════════════════╗",
+      "║ Looks like Parakeet model is not downloaded yet.         ║",
+      "║ Please run the following command to download the model:  ║",
+      "║                                                          ║",
+      "║     npx @drakulavich/parakeet-cli install                ║",
+      "╚══════════════════════════════════════════════════════════╝",
+    ];
+    throw new Error(lines.join("\n"));
+  }
+
+  return dir;
+}
+
+export async function downloadModel(noCache = false, modelDir?: string): Promise<string> {
   const dir = modelDir ?? getModelDir();
 
   if (!noCache && isModelCached(dir)) {
+    console.error("Model already downloaded.");
     return dir;
   }
 
@@ -47,5 +68,6 @@ export async function ensureModel(noCache = false, modelDir?: string): Promise<s
     await Bun.write(dest, res);
   }
 
+  console.error("Model downloaded successfully.");
   return dir;
 }
