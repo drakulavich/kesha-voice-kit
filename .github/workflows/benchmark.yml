@@ -76,4 +76,6 @@ jobs:
         run: bun .github/scripts/update-benchmark-md.ts benchmark-results.md BENCHMARK.md
 
       - name: 📝 Commit results
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bun .github/scripts/commit-and-push.ts BENCHMARK.md
