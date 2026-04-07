@@ -47,12 +47,13 @@ Full results with transcripts: [BENCHMARK.md](BENCHMARK.md)
 
 ## Supported Languages
 
-| | | | | | |
-|---|---|---|---|---|---|
-| :bulgaria: Bulgarian | :greece: Greek | :portugal: Portuguese | :denmark: Danish | :latvia: Latvian | :slovakia: Slovak |
-| :croatia: Croatian | :hungary: Hungarian | :romania: Romanian | :netherlands: Dutch | :lithuania: Lithuanian | :slovenia: Slovenian |
-| :czech_republic: Czech | :it: Italian | :ru: Russian | :gb: English | :malta: Maltese | :es: Spanish |
-| :estonia: Estonian | :poland: Polish | :sweden: Swedish | :finland: Finnish | :ukraine: Ukrainian | :fr: French |
+| | | | | |
+|---|---|---|---|---|
+| :bulgaria: Bulgarian | :croatia: Croatian | :czech_republic: Czech | :denmark: Danish | :netherlands: Dutch |
+| :gb: English | :estonia: Estonian | :finland: Finnish | :fr: French | :de: German |
+| :greece: Greek | :hungary: Hungarian | :it: Italian | :latvia: Latvian | :lithuania: Lithuanian |
+| :malta: Maltese | :poland: Polish | :portugal: Portuguese | :romania: Romanian | :ru: Russian |
+| :slovakia: Slovak | :slovenia: Slovenian | :es: Spanish | :sweden: Swedish | :ukraine: Ukrainian |
 
 ## How It Works
 
