@@ -44,21 +44,21 @@ jobs:
         run: bunx tsc --noEmit
 
       - name: 🧪 Unit tests
-        run: mkdir -p test-results && bun run test:unit --reporter=junit --reporter-outfile=test-results/junit.xml
+        run: mkdir -p test-results && bun run test:unit --reporter=junit --reporter-outfile=test-results/unit-${{ matrix.os }}.xml
 
       - name: 📊 Test summary
         if: always()
         shell: bash
         env:
           PYTHONIOENCODING: utf-8
-        run: python3 .github/scripts/junit-to-markdown.py "Unit Tests (${{ matrix.os }})" test-results/junit.xml >> $GITHUB_STEP_SUMMARY
+        run: python3 .github/scripts/junit-to-markdown.py "Unit Tests (${{ matrix.os }})" test-results/unit-${{ matrix.os }}.xml >> $GITHUB_STEP_SUMMARY
 
       - name: 📤 Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.os }}
-          path: test-results/junit.xml
+          path: test-results/unit-${{ matrix.os }}.xml
           retention-days: 7
 
   integration-tests:
@@ -101,19 +101,19 @@ jobs:
         run: which ffmpeg || brew install ffmpeg
 
       - name: 🧪 Integration tests
-        run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/junit.xml
+        run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration.xml
         timeout-minutes: 10
 
       - name: 📊 Test summary
         if: always()
-        run: python3 .github/scripts/junit-to-markdown.py "Integration Tests (macos)" test-results/junit.xml >> $GITHUB_STEP_SUMMARY
+        run: python3 .github/scripts/junit-to-markdown.py "Integration Tests (macos)" test-results/integration.xml >> $GITHUB_STEP_SUMMARY
 
       - name: 📤 Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-integration
-          path: test-results/junit.xml
+          path: test-results/integration.xml
           retention-days: 7
 
   pr-comment:

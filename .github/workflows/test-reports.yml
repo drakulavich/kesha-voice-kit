@@ -54,7 +54,7 @@ jobs:
 
       - name: 🧹 Clean nested .git
         if: steps.allure.outcome == 'success'
-        run: rm -rf allure-history/.git
+        run: sudo rm -rf allure-history/.git
 
       - name: 🚀 Publish report
         uses: peaceiris/actions-gh-pages@v4
