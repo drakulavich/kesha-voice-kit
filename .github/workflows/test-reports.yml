@@ -1,8 +1,8 @@
-name: Test Reports
+name: 📊 Test Reports
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["🧪 CI"]
     branches: [main]
     types: [completed]
 
@@ -33,7 +33,9 @@ jobs:
         run: bun install
 
       - name: 📥 Download CI test artifacts
+        id: download
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           run-id: ${{ github.event.workflow_run.id }}
           pattern: test-results-*
@@ -41,16 +43,24 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
 
+      - name: 🚫 Skip if no test results
+        if: steps.download.outcome == 'failure' || !hashFiles('allure-results/**')
+        run: echo "No test artifacts found — skipping report generation" && exit 0
+
       - name: 📋 List downloaded results
+        if: steps.download.outcome == 'success'
         run: find allure-results -type f
 
       - name: 📊 Generate Allure report
+        if: steps.download.outcome == 'success'
         run: bunx allure generate allure-results --output allure-report --report-name "Parakeet CLI Tests"
 
       - name: 📜 Load history and prepare deploy
+        if: steps.download.outcome == 'success'
         run: bun .github/scripts/load-allure-history.ts
 
       - name: 🚀 Publish report
+        if: steps.download.outcome == 'success'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ github.token }}

@@ -1,4 +1,4 @@
-name: Benchmark
+name: 🏎️ Benchmark
 
 on:
   release:
@@ -27,12 +27,24 @@ jobs:
         with:
           bun-version: latest
 
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: 💾 Cache dependencies
         uses: actions/cache@v5
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
+
+      - name: 💾 Cache pip packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-faster-whisper
+          restore-keys: ${{ runner.os }}-pip-
 
       - name: 💾 Cache HuggingFace models
         uses: actions/cache@v5

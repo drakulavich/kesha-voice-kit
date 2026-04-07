@@ -1,4 +1,4 @@
-name: Build CoreML Swift Binary
+name: 🔨 Build CoreML
 
 on:
   release:

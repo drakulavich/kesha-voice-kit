@@ -12,6 +12,14 @@ if (!file) {
 }
 const message = process.argv[3] ?? `ci: update ${file}`;
 
+// Warn and skip if not on main
+const branch = Bun.spawnSync(["git", "rev-parse", "--abbrev-ref", "HEAD"], { stdout: "pipe" });
+const currentBranch = branch.stdout.toString().trim();
+if (currentBranch !== "main" && currentBranch !== "HEAD") {
+  console.warn(`⚠️  Skipping commit — running on feature branch '${currentBranch}', not main`);
+  process.exit(0);
+}
+
 function run(cmd: string[]): boolean {
   const result = Bun.spawnSync(cmd, { stdout: "inherit", stderr: "inherit" });
   return result.exitCode === 0;
