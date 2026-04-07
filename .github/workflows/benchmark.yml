@@ -16,6 +16,7 @@ concurrency:
 jobs:
   benchmark:
     runs-on: macos-15
+    timeout-minutes: 30
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
@@ -67,22 +68,25 @@ jobs:
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"
         run: |
-          CI_RESULTS=$(bash scripts/benchmark.sh)
+          bash scripts/benchmark.sh > /tmp/bench_results.txt
 
           echo "============================================"
           echo "  BENCHMARK RESULTS"
           echo "============================================"
-          echo "$CI_RESULTS"
+          cat /tmp/bench_results.txt
           echo "============================================"
 
           python3 -c "
-          import re, sys
+          import re
           content = open('BENCHMARK.md').read()
-          replacement = sys.argv[1]
+          replacement = open('/tmp/bench_results.txt').read()
           pattern = r'(<!-- CI-BENCHMARK-START -->).*?(<!-- CI-BENCHMARK-END -->)'
           updated = re.sub(pattern, r'\1\n' + replacement + r'\n\2', content, flags=re.DOTALL)
+          if updated == content:
+              print('WARNING: CI-BENCHMARK markers not found in BENCHMARK.md')
+              raise SystemExit(1)
           open('BENCHMARK.md', 'w').write(updated)
-          " "$CI_RESULTS"
+          "
 
       - name: Commit results
         run: |
@@ -94,5 +98,5 @@ jobs:
           else
             git commit -m "benchmark: update CI results for $(bun run src/cli.ts --version)"
             git pull --rebase origin main
-            git push
+            git push || (git pull --rebase origin main && git push)
           fi

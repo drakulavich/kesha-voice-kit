@@ -13,6 +13,7 @@ concurrency:
 jobs:
   check:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -71,7 +72,7 @@ jobs:
         run: bun run src/cli.ts install
 
       - name: Install ffmpeg
-        run: brew install ffmpeg
+        run: which ffmpeg || brew install ffmpeg
 
       - name: Integration tests
         run: bun run test:integration
