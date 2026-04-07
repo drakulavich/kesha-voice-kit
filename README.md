@@ -1,5 +1,10 @@
 # parakeet-cli
 
+[![npm version](https://img.shields.io/npm/v/@drakulavich/parakeet-cli)](https://www.npmjs.com/package/@drakulavich/parakeet-cli)
+[![CI](https://github.com/drakulavich/parakeet-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/drakulavich/parakeet-cli/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
+
 Fast multilingual speech-to-text CLI powered by NVIDIA Parakeet ONNX models. Zero Python. Runs on CPU.
 
 ## Features
@@ -7,7 +12,7 @@ Fast multilingual speech-to-text CLI powered by NVIDIA Parakeet ONNX models. Zer
 - **25 languages** — automatic language detection, no prompting needed
 - **3x faster than Whisper** on CPU (see [benchmark](#benchmark))
 - **Zero Python** — pure TypeScript/Bun with onnxruntime-node
-- **Auto-downloads models** — ~3GB cached in `~/.cache/parakeet/` on first run
+- **Explicit model install** — `parakeet install` downloads ~3GB to `~/.cache/parakeet/`
 - **Any audio format** — ffmpeg handles OGG, MP3, WAV, FLAC, M4A, etc.
 
 ## Install
@@ -38,11 +43,14 @@ bun link
 ## Usage
 
 ```bash
+# Download models (required before first use)
+parakeet install
+
 # Transcribe any audio file (language auto-detected)
 parakeet audio.ogg
 
 # Force re-download models
-parakeet --no-cache audio.wav
+parakeet install --no-cache
 
 # Show version
 parakeet --version
@@ -92,7 +100,7 @@ parakeet audio.ogg
   stdout: transcript
 ```
 
-Uses [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) exported to ONNX by [istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx). Models auto-download from HuggingFace on first run (~3GB).
+Uses [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) exported to ONNX by [istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx). Run `parakeet install` to download models from HuggingFace (~3GB).
 
 ## Requirements
 
