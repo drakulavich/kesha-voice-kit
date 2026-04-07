@@ -67,26 +67,16 @@ Output goes to stdout, errors to stderr. Designed for piping and scripting.
 
 ## Benchmark
 
-Tested on 10 real Telegram voice messages (Russian, 3-10s each).
-MacBook Pro M3 Pro, 36GB RAM.
+10 Telegram voice messages (Russian, 3-10s each) on MacBook Pro M3 Pro:
 
-| # | faster-whisper | Parakeet (CoreML) | faster-whisper Transcript | Parakeet Transcript |
-|---|---------|----------|--------------------|---------------------|
-| 1 | 4.1s | 0.2s | Проверь все свои конфиги и перенеси секреты в .env файл | Проверь все свои конфигии и перенеси секреты в дотэн файл. |
-| 2 | 3.4s | 0.2s | Вынеси еще секрет от Клода, который я тебе добавил. | Вынеси еще секрет от Клода, который я тебе добавил. |
-| 3 | 3.2s | 0.2s | Установи пока КЛОТ-КОТ | установи, пока Клот кот. |
-| 4 | 3.3s | 0.2s | Какие еще Telegram-юзеры имеют доступ к тебе? | Какие еще Телеграм юзеры имеют доступ к тебе? |
-| 5 | 3.2s | 0.1s | Закомите изменения в ГИТ | Законить изменения в Гет. |
-| 6 | 3.4s | 0.2s | Узнай второго юзера в телеграме. | Узнай второго юзера в Телеграме. |
-| 7 | 3.6s | 0.2s | Ты добавил себе в память информацию из Vantage Handbook Репозитория. | Ты добавил себе в память информацию из Вентеж Хэндбук репозитория? |
-| 8 | 3.6s | 0.2s | Покажи его юзернейм в телеграме, хочу написать ему. | Покажи его юзернейм в Телеграме, хочу написать ему. |
-| 9 | 4.1s | 0.2s | Не нужно ссылать сообщения с транскрипцией. Сразу выполняй инструкцию, которую я отправил Бойсу. | Не нужно слать сообщения с транскрипцией, сразу выполняй инструкцию, которую я отправил войсе. |
-| 10 | 3.4s | 0.2s | То, что находится в папке Workspace, ты тоже коммитишь? | То, что находится в папке Воркспэйс, Ты тоже комитешь. |
-| **Total** | **35.3s** | **1.9s** | | |
+| | faster-whisper (CPU) | Parakeet (CoreML) |
+|---|---|---|
+| **Total time** | 35.3s | 1.9s |
+| **Speedup** | | **~18x faster** |
 
-**Parakeet is ~18x faster** with CoreML on Apple Silicon. faster-whisper handles mixed-language words better (`.env`, `Workspace`, `Telegram`). Parakeet transliterates them phonetically. Both produce transcripts usable by LLMs.
+Models: faster-whisper medium (int8) vs Parakeet TDT 0.6B v3 (CoreML, Apple Neural Engine).
 
-Models: faster-whisper medium (int8, CPU) vs Parakeet TDT 0.6B v3 (CoreML, Apple Neural Engine).
+See [BENCHMARK.md](BENCHMARK.md) for full results with transcripts. Updated automatically on each release.
 
 ## Supported Languages
 
