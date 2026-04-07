@@ -35,7 +35,6 @@ jobs:
 
       - name: 📜 Load report history
         uses: actions/checkout@v6
-        if: always()
         continue-on-error: true
         with:
           ref: gh-pages
@@ -44,7 +43,6 @@ jobs:
       - name: 📊 Build Allure report
         id: allure
         uses: GuitaristForEver/allure-v3-report-action@v1
-        if: always()
         with:
           allure_results: allure-results
           allure_report: allure-report
@@ -54,6 +52,10 @@ jobs:
           keep_reports: 10
           report_name: "Parakeet CLI Tests"
 
+      - name: 🧹 Clean nested .git
+        if: steps.allure.outcome == 'success'
+        run: rm -rf allure-history/.git
+
       - name: 🚀 Publish report
         uses: peaceiris/actions-gh-pages@v4
         if: steps.allure.outcome == 'success'
@@ -61,3 +63,4 @@ jobs:
           github_token: ${{ github.token }}
           publish_branch: gh-pages
           publish_dir: allure-history
+          keep_files: true
