@@ -3,6 +3,4 @@ dist/
 *.f32le
 fixtures/corrupt.bin
 swift/.build/
-allure-results/
-allure-report/
 .worktrees/

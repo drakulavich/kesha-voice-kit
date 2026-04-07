@@ -1,23 +1,26 @@
-.PHONY: test unit integration lint smoke-test release publish
+.PHONY: test unit integration lint smoke-test release publish help
 
-test: unit integration
+help: ## Show available targets
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
-unit:
+test: unit integration ## Run all tests
+
+unit: ## Run unit tests
 	bun run test:unit
 
-integration:
+integration: ## Run integration tests
 	bun run test:integration
 
-lint:
+lint: ## Type-check with tsc
 	bunx tsc --noEmit
 
-smoke-test:
+smoke-test: ## Run smoke tests against fixtures
 	bun link
 	parakeet install
 	bun scripts/smoke-test.ts
 
-release: lint test smoke-test
+release: lint test smoke-test ## Verify everything before publish
 	@echo "All checks passed. Ready to publish."
 
-publish: release
+publish: release ## Publish to npm
 	npm publish --access public
