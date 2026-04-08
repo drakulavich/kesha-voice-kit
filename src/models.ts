@@ -102,8 +102,15 @@ export async function downloadModel(noCache = false, modelDir?: string): Promise
   return dir;
 }
 
+const COREML_BINARY_NAME = "parakeet-coreml-darwin-arm64";
+const GITHUB_REPO = "drakulavich/parakeet-cli";
+
 export function getCoreMLDownloadURL(version: string): string {
-  return `https://github.com/drakulavich/parakeet-cli/releases/download/v${version}/parakeet-coreml-darwin-arm64`;
+  return `https://github.com/${GITHUB_REPO}/releases/download/v${version}/${COREML_BINARY_NAME}`;
+}
+
+export function getCoreMLLatestDownloadURL(): string {
+  return `https://github.com/${GITHUB_REPO}/releases/latest/download/${COREML_BINARY_NAME}`;
 }
 
 export async function downloadCoreML(noCache = false): Promise<string> {
@@ -111,19 +118,32 @@ export async function downloadCoreML(noCache = false): Promise<string> {
   const binPath = getCoreMLBinPath();
 
   if (!noCache && existsSync(binPath)) {
-    console.log("CoreML backend already installed.");
-    return binPath;
+    // Binary exists — ensure models are also downloaded
+    const checkProc = Bun.spawnSync([binPath, "--download-only"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (checkProc.exitCode === 0) {
+      console.log("CoreML backend already installed.");
+      return binPath;
+    }
+    // Models missing — continue to re-download
   }
 
-  const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
-  const url = getCoreMLDownloadURL(pkg.version);
-
+  // Try latest release first, fall back to version-specific
+  const latestUrl = getCoreMLLatestDownloadURL();
   console.error("Downloading parakeet-coreml binary...");
 
-  const res = await fetch(url, { redirect: "follow" });
+  let res = await fetch(latestUrl, { redirect: "follow" });
 
   if (!res.ok) {
-    throw new Error(`Failed to download CoreML binary: ${url} (${res.status})`);
+    const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
+    const versionUrl = getCoreMLDownloadURL(pkg.version);
+    res = await fetch(versionUrl, { redirect: "follow" });
+  }
+
+  if (!res.ok) {
+    throw new Error(`Failed to download CoreML binary (HTTP ${res.status}). No release found with ${COREML_BINARY_NAME}.`);
   }
 
   mkdirSync(dirname(binPath), { recursive: true });
@@ -131,6 +151,17 @@ export async function downloadCoreML(noCache = false): Promise<string> {
   await Bun.write(binPath, res);
 
   chmodSync(binPath, 0o755);
+
+  // Download CoreML model files (first transcription would be slow without this)
+  console.error("Downloading CoreML models...");
+  const downloadProc = Bun.spawnSync([binPath, "--download-only"], {
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  if (downloadProc.exitCode !== 0) {
+    throw new Error("Failed to download CoreML models");
+  }
 
   console.log("CoreML backend installed successfully.");
   return binPath;

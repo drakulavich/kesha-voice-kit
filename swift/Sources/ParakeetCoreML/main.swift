@@ -5,12 +5,27 @@ func writeToStderr(_ message: String) {
     FileHandle.standardError.write(Data(message.utf8))
 }
 
-guard CommandLine.arguments.count >= 2 else {
-    writeToStderr("Usage: ParakeetCoreML <audio-file-path>\n")
+let args = CommandLine.arguments
+
+// Download models only (no transcription)
+if args.contains("--download-only") {
+    do {
+        writeToStderr("Downloading CoreML models...\n")
+        let _ = try await AsrModels.downloadAndLoad(version: .v3)
+        print("CoreML models downloaded and compiled.")
+    } catch {
+        writeToStderr("Error downloading models: \(error.localizedDescription)\n")
+        exit(1)
+    }
+    exit(0)
+}
+
+guard args.count >= 2 else {
+    writeToStderr("Usage: parakeet-coreml [--download-only] <audio-file-path>\n")
     exit(1)
 }
 
-let path = CommandLine.arguments[1]
+let path = args[1]
 
 guard FileManager.default.fileExists(atPath: path) else {
     writeToStderr("Error: file not found: \(path)\n")
