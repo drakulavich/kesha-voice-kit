@@ -1,0 +1,27 @@
+name: Setup Bun Workspace
+description: Setup Bun, restore the Bun cache, and install dependencies
+
+inputs:
+  bun-version:
+    description: Bun version to install
+    required: false
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: 🍞 Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - name: 💾 Cache dependencies
+      uses: actions/cache@v5
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+        restore-keys: ${{ runner.os }}-bun-
+
+    - name: 📦 Install dependencies
+      run: bun install
+      shell: bash
