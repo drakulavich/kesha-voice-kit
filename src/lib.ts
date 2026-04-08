@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { transcribe as internalTranscribe, type TranscribeOptions } from "./transcribe";
-import { downloadModel, downloadCoreML } from "./models";
+import { downloadModel } from "./onnx-install";
+import { downloadCoreML } from "./coreml-install";
 
 export type { TranscribeOptions };
 export { downloadModel, downloadCoreML };

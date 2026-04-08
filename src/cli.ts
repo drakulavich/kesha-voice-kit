@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
 import { transcribe } from "./lib";
-import { downloadModel, downloadCoreML } from "./models";
+import { downloadModel } from "./onnx-install";
+import { downloadCoreML } from "./coreml-install";
 import { isMacArm64 } from "./coreml";
 
 async function main(): Promise<void> {

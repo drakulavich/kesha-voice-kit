@@ -1,4 +1,4 @@
-import { requireModel, isModelCached, installHintError } from "./models";
+import { requireModel, isModelCached, installHintError } from "./onnx-install";
 import { isCoreMLInstalled, transcribeCoreML } from "./coreml";
 import { convertToFloat32PCM } from "./audio";
 import { initPreprocessor, preprocess } from "./preprocess";

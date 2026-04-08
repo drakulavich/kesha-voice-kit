@@ -5,13 +5,46 @@ func writeToStderr(_ message: String) {
     FileHandle.standardError.write(Data(message.utf8))
 }
 
+func coreMLMarkerPath() -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    return home
+        .appendingPathComponent(".cache", isDirectory: true)
+        .appendingPathComponent("parakeet", isDirectory: true)
+        .appendingPathComponent("coreml", isDirectory: true)
+        .appendingPathComponent("models-v3-installed", isDirectory: false)
+        .path
+}
+
+func markCoreMLInstalled() throws {
+    let markerPath = coreMLMarkerPath()
+    let markerURL = URL(fileURLWithPath: markerPath)
+    try FileManager.default.createDirectory(
+        at: markerURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true,
+        attributes: nil
+    )
+    let contents = "installed=\(ISO8601DateFormatter().string(from: Date()))\n"
+    try contents.write(to: markerURL, atomically: true, encoding: .utf8)
+}
+
 let args = CommandLine.arguments
+
+if args.contains("--check-install") {
+    if FileManager.default.fileExists(atPath: coreMLMarkerPath()) {
+        print("ready")
+        exit(0)
+    }
+
+    writeToStderr("CoreML models are not installed.\n")
+    exit(1)
+}
 
 // Download models only (no transcription)
 if args.contains("--download-only") {
     do {
         writeToStderr("Downloading CoreML models...\n")
         let _ = try await AsrModels.downloadAndLoad(version: .v3)
+        try markCoreMLInstalled()
         print("CoreML models downloaded and compiled.")
     } catch {
         writeToStderr("Error downloading models: \(error.localizedDescription)\n")
@@ -35,6 +68,7 @@ guard FileManager.default.fileExists(atPath: path) else {
 do {
     // Download and load Parakeet TDT v3 CoreML models
     let models = try await AsrModels.downloadAndLoad(version: .v3)
+    try markCoreMLInstalled()
 
     // Initialize ASR manager
     let asrManager = AsrManager(config: .default)
