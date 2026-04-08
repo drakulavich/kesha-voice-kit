@@ -40,12 +40,22 @@ Stdout: transcript. Stderr: errors. Pipe-friendly.
 
 ## Benchmark
 
-MacBook Pro M3 Pro — 10 Russian voice messages:
+> **~18x faster than Whisper** on Apple Silicon (CoreML)
 
-| | faster-whisper (CPU) | Parakeet (CoreML) |
-|---|---|---|
-| **Total** | 35.3s | 1.9s |
-| **Speed** | | **~18x faster** |
+<details>
+<summary>MacBook Pro M3 Pro — 10 Russian voice messages</summary>
+
+```
+faster-whisper (CPU):  35.3s  ██████████████████████████████████████ 
+Parakeet (CoreML):      1.9s  ██
+```
+
+| | faster-whisper | Parakeet | Speedup |
+|---|---|---|---|
+| Apple Silicon (CoreML) | 35.3s | **1.9s** | **~18x** |
+| Linux CI (ONNX) | 79.2s | **45.4s** | **~1.7x** |
+
+</details>
 
 Full results with transcripts: [BENCHMARK.md](BENCHMARK.md)
 
