@@ -51,20 +51,8 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@v6
 
-      - name: 🍞 Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: 💾 Cache dependencies
-        uses: actions/cache@v5
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-
-      - name: 📦 Install dependencies
-        run: bun install
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
 
       - name: 🔍 Type check
         run: bunx tsc --noEmit
@@ -96,35 +84,19 @@ jobs:
         with:
           lfs: true
 
-      - name: 🍞 Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
 
-      - name: 💾 Cache dependencies
-        uses: actions/cache@v5
+      - name: 🦜 Setup integration backend
+        uses: ./.github/actions/install-parakeet-backend
         with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-
-      - name: 💾 Cache CoreML backend
-        uses: actions/cache@v5
-        with:
-          path: |
+          cache-path: |
             ~/.cache/parakeet/coreml
             ~/Library/Caches/FluidAudio
-          key: ${{ runner.os }}-parakeet-coreml-v3
-          restore-keys: ${{ runner.os }}-parakeet-coreml-
-
-      - name: 📦 Install dependencies
-        run: bun install
-
-      - name: 🦜 Install parakeet backend
-        run: bun link && parakeet install
-
-      - name: 🎬 Install ffmpeg
-        run: which ffmpeg || brew install ffmpeg
+          cache-key: ${{ runner.os }}-parakeet-coreml-v3
+          cache-restore-keys: ${{ runner.os }}-parakeet-coreml-
+          ffmpeg-provider: brew
+          install-args: --coreml
 
       - name: 🧪 Integration tests
         run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration.xml
@@ -150,13 +122,8 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@v6
 
-      - name: 🍞 Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: 📦 Install dependencies
-        run: bun install
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
 
       - name: 📥 Download all test results
         uses: actions/download-artifact@v4
