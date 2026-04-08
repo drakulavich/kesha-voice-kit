@@ -1,10 +1,10 @@
 import { describe, test, expect } from "bun:test";
 import {
-  classifyCoreMLInstallCheck,
+  classifyCoreMLInstallProbe,
   getCoreMLDownloadURL,
   getCoreMLInstallState,
   getCoreMLSupportDir,
-  isLegacyCoreMLFlagError,
+  parseCoreMLBinaryCapabilities,
   planCoreMLInstall,
 } from "../coreml-install";
 import { join } from "path";
@@ -100,24 +100,78 @@ describe("coreml-install", () => {
     });
   });
 
-  test("isLegacyCoreMLFlagError detects unsupported command flags", () => {
+  test("parseCoreMLBinaryCapabilities accepts the current protocol payload", () => {
     expect(
-      isLegacyCoreMLFlagError("Error: file not found: --check-install", "--check-install"),
-    ).toBe(true);
-    expect(
-      isLegacyCoreMLFlagError("CoreML models are not installed.", "--check-install"),
-    ).toBe(false);
+      parseCoreMLBinaryCapabilities(
+        JSON.stringify({
+          protocolVersion: 1,
+          installState: "ready",
+          supportedCommands: {
+            checkInstall: true,
+            downloadOnly: true,
+          },
+        }),
+      ),
+    ).toEqual({
+      protocolVersion: 1,
+      installState: "ready",
+      supportedCommands: {
+        checkInstall: true,
+        downloadOnly: true,
+      },
+    });
   });
 
-  test("classifyCoreMLInstallCheck marks legacy binaries as stale", () => {
+  test("parseCoreMLBinaryCapabilities rejects malformed payloads", () => {
     expect(
-      classifyCoreMLInstallCheck(1, "Error: file not found: --check-install"),
+      parseCoreMLBinaryCapabilities("{invalid"),
+    ).toBeNull();
+    expect(
+      parseCoreMLBinaryCapabilities(
+        JSON.stringify({
+          protocolVersion: 2,
+          installState: "ready",
+          supportedCommands: {
+            checkInstall: true,
+            downloadOnly: true,
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("classifyCoreMLInstallProbe classifies capabilities responses", () => {
+    expect(
+      classifyCoreMLInstallProbe(1, ""),
     ).toBe("stale-binary");
     expect(
-      classifyCoreMLInstallCheck(1, "CoreML models are not installed."),
+      classifyCoreMLInstallProbe(
+        0,
+        JSON.stringify({
+          protocolVersion: 1,
+          installState: "models-missing",
+          supportedCommands: {
+            checkInstall: true,
+            downloadOnly: true,
+          },
+        }),
+      ),
     ).toBe("binary-only");
     expect(
-      classifyCoreMLInstallCheck(0, ""),
+      classifyCoreMLInstallProbe(
+        0,
+        JSON.stringify({
+          protocolVersion: 1,
+          installState: "ready",
+          supportedCommands: {
+            checkInstall: true,
+            downloadOnly: true,
+          },
+        }),
+      ),
     ).toBe("ready");
+    expect(
+      classifyCoreMLInstallProbe(0, "{\"protocolVersion\":999}"),
+    ).toBe("stale-binary");
   });
 });

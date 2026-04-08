@@ -7,6 +7,16 @@ const COREML_BINARY_NAME = "parakeet-coreml-darwin-arm64";
 const GITHUB_REPO = "drakulavich/parakeet-cli";
 
 export type CoreMLInstallState = "missing" | "binary-only" | "ready" | "stale-binary";
+export type CoreMLBinaryInstallState = "ready" | "models-missing";
+
+export interface CoreMLBinaryCapabilities {
+  protocolVersion: number;
+  installState: CoreMLBinaryInstallState;
+  supportedCommands: {
+    checkInstall: boolean;
+    downloadOnly: boolean;
+  };
+}
 
 export function getCoreMLSupportDir(): string {
   return join(homedir(), ".cache", "parakeet", "coreml");
@@ -60,20 +70,43 @@ export function planCoreMLInstall(
   }
 }
 
-export function isLegacyCoreMLFlagError(detail: string, flag: string): boolean {
-  return detail.includes(`file not found: ${flag}`);
+export function parseCoreMLBinaryCapabilities(stdout: string): CoreMLBinaryCapabilities | null {
+  try {
+    const parsed = JSON.parse(stdout) as Partial<CoreMLBinaryCapabilities>;
+    if (parsed.protocolVersion !== 1) {
+      return null;
+    }
+    if (parsed.installState !== "ready" && parsed.installState !== "models-missing") {
+      return null;
+    }
+    if (!parsed.supportedCommands) {
+      return null;
+    }
+    if (parsed.supportedCommands.checkInstall !== true || parsed.supportedCommands.downloadOnly !== true) {
+      return null;
+    }
+
+    return {
+      protocolVersion: parsed.protocolVersion,
+      installState: parsed.installState,
+      supportedCommands: parsed.supportedCommands,
+    };
+  } catch {
+    return null;
+  }
 }
 
-export function classifyCoreMLInstallCheck(exitCode: number, stderr: string): CoreMLInstallState {
-  if (exitCode === 0) {
-    return "ready";
-  }
-
-  if (isLegacyCoreMLFlagError(stderr, "--check-install")) {
+export function classifyCoreMLInstallProbe(exitCode: number, stdout: string): CoreMLInstallState {
+  if (exitCode !== 0) {
     return "stale-binary";
   }
 
-  return "binary-only";
+  const capabilities = parseCoreMLBinaryCapabilities(stdout);
+  if (!capabilities) {
+    return "stale-binary";
+  }
+
+  return capabilities.installState === "ready" ? "ready" : "binary-only";
 }
 
 async function fetchCoreMLBinary(): Promise<Response> {
@@ -96,12 +129,12 @@ async function fetchCoreMLBinary(): Promise<Response> {
 }
 
 function getCoreMLInstallStatus(binPath: string): CoreMLInstallState {
-  const checkProc = Bun.spawnSync([binPath, "--check-install"], {
+  const checkProc = Bun.spawnSync([binPath, "--capabilities-json"], {
     stdout: "pipe",
     stderr: "pipe",
   });
 
-  return classifyCoreMLInstallCheck(checkProc.exitCode, checkProc.stderr.toString());
+  return classifyCoreMLInstallProbe(checkProc.exitCode, checkProc.stdout.toString());
 }
 
 async function ensureCoreMLModels(binPath: string): Promise<void> {
