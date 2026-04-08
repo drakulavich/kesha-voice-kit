@@ -53,7 +53,7 @@ export async function downloadModel(noCache = false, modelDir?: string): Promise
   const dir = modelDir ?? getModelDir();
 
   if (!noCache && isModelCached(dir)) {
-    console.error("Model already downloaded.");
+    console.log("Model already downloaded.");
     return dir;
   }
 
@@ -98,7 +98,7 @@ export async function downloadModel(noCache = false, modelDir?: string): Promise
     }
   }
 
-  console.error("Model downloaded successfully.");
+  console.log("Model downloaded successfully.");
   return dir;
 }
 
@@ -111,7 +111,7 @@ export async function downloadCoreML(noCache = false): Promise<string> {
   const binPath = getCoreMLBinPath();
 
   if (!noCache && existsSync(binPath)) {
-    console.error("CoreML backend already installed.");
+    console.log("CoreML backend already installed.");
     return binPath;
   }
 
@@ -132,6 +132,6 @@ export async function downloadCoreML(noCache = false): Promise<string> {
 
   chmodSync(binPath, 0o755);
 
-  console.error("CoreML backend installed successfully.");
+  console.log("CoreML backend installed successfully.");
   return binPath;
 }
