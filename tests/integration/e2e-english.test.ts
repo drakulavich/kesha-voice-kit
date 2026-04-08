@@ -11,9 +11,11 @@ const hasSpeech = spawnSync("which", ["espeak-ng"]).status === 0;
 describe.skipIf(!fixtureExists || !modelsReady)("e2e-english", () => {
   test("transcribes English audio", async () => {
     const text = await transcribe("fixtures/hello-english.wav");
-    expect(typeof text).toBe("string");
+
     if (hasSpeech) {
-      expect(text.length).toBeGreaterThan(0);
+      expect(text.trim().length).toBeGreaterThan(0);
+    } else {
+      expect(text).toBe("");
     }
   }, 120_000);
 });
