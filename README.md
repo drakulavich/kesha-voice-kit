@@ -92,6 +92,10 @@ Drop-in replacement for OpenClaw voice processing — no API keys, runs locally.
 }
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 MIT
