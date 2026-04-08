@@ -38,10 +38,6 @@ Stdout: transcript. Stderr: errors. Pipe-friendly.
 - [ffmpeg](https://ffmpeg.org) in PATH (ONNX backend only)
 - ~3GB disk (ONNX models)
 
-## Supported Languages
-
-:bulgaria: Bulgarian, :croatia: Croatian, :czech_republic: Czech, :denmark: Danish, :netherlands: Dutch, :gb: English, :estonia: Estonian, :finland: Finnish, :fr: French, :de: German, :greece: Greek, :hungary: Hungarian, :it: Italian, :latvia: Latvian, :lithuania: Lithuanian, :malta: Maltese, :poland: Polish, :portugal: Portuguese, :romania: Romanian, :ru: Russian, :slovakia: Slovak, :slovenia: Slovenian, :es: Spanish, :sweden: Swedish, :ukraine: Ukrainian
-
 ## Benchmark
 
 MacBook Pro M3 Pro — 10 Russian voice messages:
@@ -52,6 +48,10 @@ MacBook Pro M3 Pro — 10 Russian voice messages:
 | **Speed** | | **~18x faster** |
 
 Full results with transcripts: [BENCHMARK.md](BENCHMARK.md)
+
+## Supported Languages
+
+:bulgaria: Bulgarian, :croatia: Croatian, :czech_republic: Czech, :denmark: Danish, :netherlands: Dutch, :gb: English, :estonia: Estonian, :finland: Finnish, :fr: French, :de: German, :greece: Greek, :hungary: Hungarian, :it: Italian, :latvia: Latvian, :lithuania: Lithuanian, :malta: Maltese, :poland: Polish, :portugal: Portuguese, :romania: Romanian, :ru: Russian, :slovakia: Slovak, :slovenia: Slovenian, :es: Spanish, :sweden: Swedish, :ukraine: Ukrainian
 
 ## How It Works
 
