@@ -6,7 +6,28 @@ Models: faster-whisper medium (int8, CPU) vs Parakeet TDT 0.6B v3.
 ## GitHub CI (ubuntu-latest)
 
 <!-- CI-BENCHMARK-START -->
-_Awaiting first Ubuntu benchmark run. Will be populated on next release._
+
+**Date:** 2026-04-08
+**Version:** v0.6.0
+**Runner:** Linux x64 (Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz, 15Gi RAM)
+**Backend:** ONNX
+
+| # | faster-whisper | Parakeet (ONNX) | faster-whisper Transcript | Parakeet Transcript |
+|---|---------|----------|--------------------|---------------------|
+| 1 | 8.7s | 0s | Проверь все свои конфиги и перенеси секреты в .env файл |  |
+| 2 | 7.8s | 0s | Вынеси еще секрет от Клода, который я тебе добавил. |  |
+| 3 | 7s | 0s | Установи пока КЛОТ-КОТ |  |
+| 4 | 7.4s | 0s | Какие еще Telegram-юзеры имеют доступ к тебе? |  |
+| 5 | 6.6s | 0s | Закомите изменения в ГИТ |  |
+| 6 | 7.6s | 0s | Узнай второго юзера в телеграме. |  |
+| 7 | 8.4s | 0s | Ты добавил себе в память информацию из Vantage Handbook Репозитория. |  |
+| 8 | 8.2s | 0s | Покажи его юзернейм в телеграмме, хочу написать ему. |  |
+| 9 | 9.8s | 0s | Не нужно посылать сообщение с транскрипцией. Сразу выполняй инструкцию, которую я отправил Войсу. |  |
+| 10 | 7.7s | 0s | То, что находится в папке Workspace, ты тоже коммитишь? |  |
+| **Total** | **79.2s** | **0s** | | |
+
+**Parakeet is ~0x faster.**
+
 <!-- CI-BENCHMARK-END -->
 
 ## MacBook Pro M3 Pro, 36 GB RAM
