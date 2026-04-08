@@ -52,3 +52,25 @@ Models: faster-whisper medium (int8, CPU) vs Parakeet TDT 0.6B v3.
 **Parakeet is ~18x faster** with CoreML on Apple Silicon.
 
 faster-whisper handles mixed-language words better (`.env`, `Workspace`, `Telegram`). Parakeet transliterates them phonetically. Both produce transcripts usable by LLMs.
+
+## Apple M3 Pro, 36 GB RAM (CoreML vs CoreML)
+
+**Date:** 2026-04-08
+**Models:** WhisperKit (openai_whisper-large-v3, auto-selected) vs Parakeet TDT 0.6B v3
+**Backend:** Both CoreML (Apple Neural Engine)
+
+| # | WhisperKit | Parakeet | WhisperKit Transcript | Parakeet Transcript |
+|---|---------|----------|--------------------|---------------------|
+| 1 | 8.1s | 0.3s | Не нужно ссылать сообщение с транскрипцией, сразу выполняй инструкцию, которую я отправил в ОСН. | Не нужно слать сообщения с транскрипцией, сразу выполняй инструкцию, которую я отправил в войсе. |
+| 2 | 8.1s | 0.3s | Проверь все свои конфиги и перенеси секреты в.env файл. | Проверь все свои конфиги и перенеси секреты в дот энф файл. |
+| 3 | 8.1s | 0.3s | Ты добавил себе в память информацию из Vantage Handbook репозитория? | Ты добавил себе в память информацию из Вентеж хендбук репозитория. |
+| 4 | 8.1s | 0.3s | Покажи его юзернейм в Телеграме, хочу написать ему. | Покажи его юзернейм в телеграме. Хочу написать ему. |
+| 5 | 8.3s | 0.3s | Вынеси еще секрет от Клода, который я тебе добавил. | Вынеси еще секрет от Клода, который я тебе добавил. |
+| 6 | 8.1s | 0.3s | Какие еще Telegram-юзеры имеют доступ к тебе? | Какие еще телеграм юзеры имеют доступ к тебе? |
+| 7 | 8.1s | 0.3s | То, что находится в папке Workspace, ты тоже коммитишь? | То, что находится в папке воркспейс, ты тоже комитишь? |
+| 8 | 8.4s | 0.3s | Узнает второго юзера в Телеграме. | Узнай второго юзера в телеграме. |
+| 9 | 8.0s | 0.3s | Установи пока Клод код. | Установи пока клот кот. |
+| 10 | 8.0s | 0.3s | Закоймите изменения в Дед. | Закомить изменения в Гетт. |
+| **Total** | **81.3s** | **3.0s** | | |
+
+**Parakeet is ~27x faster** than WhisperKit (both CoreML on Apple Neural Engine).

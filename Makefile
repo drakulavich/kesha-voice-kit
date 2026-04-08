@@ -19,6 +19,9 @@ smoke-test: ## Run smoke tests against fixtures
 	parakeet install
 	bun scripts/smoke-test.ts
 
+benchmark-coreml: ## Run CoreML vs CoreML benchmark (macOS only)
+	bun scripts/benchmark-coreml.ts
+
 release: lint test smoke-test ## Verify everything before publish
 	@echo "All checks passed. Ready to publish."
 
