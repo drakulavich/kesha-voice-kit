@@ -80,10 +80,11 @@ swift/                # CoreML Swift binary (built by CI)
 
 ## Releases
 
-1. Bump version in `package.json`
-2. `make release` — verify everything passes
-3. Create GitHub release
-4. `npm publish --access public`
+1. Bump version in `package.json` via PR, merge
+2. `make release` — verify locally
+3. Tag and push: `git tag v0.7.0 && git push --tags`
+4. CI builds CoreML binary + creates GitHub release automatically
+5. `npm publish --access public`
 
 ## License
 
