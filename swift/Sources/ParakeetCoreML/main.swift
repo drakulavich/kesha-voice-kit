@@ -5,6 +5,17 @@ func writeToStderr(_ message: String) {
     FileHandle.standardError.write(Data(message.utf8))
 }
 
+struct BinaryCapabilities: Encodable {
+    struct SupportedCommands: Encodable {
+        let checkInstall: Bool
+        let downloadOnly: Bool
+    }
+
+    let protocolVersion: Int
+    let installState: String
+    let supportedCommands: SupportedCommands
+}
+
 func coreMLMarkerPath() -> String {
     let home = FileManager.default.homeDirectoryForCurrentUser
     return home
@@ -27,10 +38,40 @@ func markCoreMLInstalled() throws {
     try contents.write(to: markerURL, atomically: true, encoding: .utf8)
 }
 
+func currentInstallState() -> String {
+    FileManager.default.fileExists(atPath: coreMLMarkerPath()) ? "ready" : "models-missing"
+}
+
+func printCapabilitiesJSON() throws {
+    let capabilities = BinaryCapabilities(
+        protocolVersion: 1,
+        installState: currentInstallState(),
+        supportedCommands: .init(
+            checkInstall: true,
+            downloadOnly: true
+        )
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let data = try encoder.encode(capabilities)
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+}
+
 let args = CommandLine.arguments
 
+if args.contains("--capabilities-json") {
+    do {
+        try printCapabilitiesJSON()
+        exit(0)
+    } catch {
+        writeToStderr("Error: failed to encode capabilities: \(error.localizedDescription)\n")
+        exit(1)
+    }
+}
+
 if args.contains("--check-install") {
-    if FileManager.default.fileExists(atPath: coreMLMarkerPath()) {
+    if currentInstallState() == "ready" {
         print("ready")
         exit(0)
     }
@@ -54,7 +95,7 @@ if args.contains("--download-only") {
 }
 
 guard args.count >= 2 else {
-    writeToStderr("Usage: parakeet-coreml [--download-only] <audio-file-path>\n")
+    writeToStderr("Usage: parakeet-coreml [--capabilities-json] [--check-install] [--download-only] <audio-file-path>\n")
     exit(1)
 }
 
