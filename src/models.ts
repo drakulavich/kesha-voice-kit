@@ -67,13 +67,35 @@ export async function downloadModel(noCache = false, modelDir?: string): Promise
 
     console.error(`Downloading ${file}...`);
 
-    const res = await fetch(url, { redirect: "follow" });
-
-    if (!res.ok) {
-      throw new Error(`failed to download model: ${url} (${res.status})`);
+    let res: Response;
+    try {
+      res = await fetch(url, { redirect: "follow" });
+    } catch (e) {
+      throw new Error(`failed to fetch ${file}: ${e instanceof Error ? e.message : e}`);
     }
 
-    await Bun.write(dest, res);
+    if (!res.ok) {
+      throw new Error(`failed to download ${file}: HTTP ${res.status}`);
+    }
+
+    if (!res.body) {
+      throw new Error(`empty response body for ${file}`);
+    }
+
+    const writer = Bun.file(dest).writer();
+    let bytes = 0;
+    try {
+      for await (const chunk of res.body) {
+        writer.write(chunk);
+        bytes += chunk.length;
+      }
+    } finally {
+      writer.end();
+    }
+
+    if (bytes === 0) {
+      throw new Error(`downloaded 0 bytes for ${file}`);
+    }
   }
 
   console.error("Model downloaded successfully.");

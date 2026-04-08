@@ -10,7 +10,7 @@ import { resolve } from "path";
 
 const repoDir = resolve(import.meta.dir, "..");
 const fixturesDir = resolve(repoDir, "fixtures/benchmark");
-const cli = resolve(repoDir, "src/cli.ts");
+const CLI = "parakeet";
 
 // --- System detection ---
 
@@ -52,8 +52,14 @@ const sys = getSystemInfo();
 
 // --- Install backend ---
 
-const version = Bun.spawnSync(["bun", "run", cli, "--version"], { stdout: "pipe" }).stdout.toString().trim() || "unknown";
-Bun.spawnSync(["bun", "run", cli, "install"], { stdout: "inherit", stderr: "inherit" });
+const version = Bun.spawnSync([CLI, "--version"], { stdout: "pipe" }).stdout.toString().trim() || "unknown";
+
+// Verify backend is installed
+const { isModelInstalled } = await import("../src/models");
+if (!isModelInstalled()) {
+  console.error("ERROR: No backend installed. Run: parakeet install");
+  process.exit(1);
+}
 
 // --- Run faster-whisper via Python ---
 
@@ -75,11 +81,15 @@ from faster_whisper import WhisperModel
 model = WhisperModel("medium", device="cpu", compute_type="int8")
 
 results = []
-for f in sys.argv[1:]:
+total = len(sys.argv[1:])
+for i, f in enumerate(sys.argv[1:], 1):
+    name = os.path.basename(f)[:30]
+    print(f"  [{i}/{total}] {name}...", end="", flush=True, file=sys.stderr)
     start = time.time()
     segments, info = model.transcribe(f, language="ru")
     text = " ".join(s.text.strip() for s in segments)
     elapsed = time.time() - start
+    print(f" {elapsed:.1f}s", file=sys.stderr)
     results.append({"time": round(elapsed, 1), "text": text})
 
 import shutil
@@ -101,11 +111,30 @@ const whisperResults: Array<{ time: number; text: string }> = JSON.parse(whisper
 
 console.error(`Running parakeet benchmark (${files.length} files)...`);
 
+// Verify parakeet works before benchmarking
+console.error("Verifying parakeet transcription...");
+const testProc = Bun.spawnSync([CLI, files[0]], { stdout: "pipe", stderr: "pipe" });
+if (testProc.exitCode !== 0) {
+  console.error("Parakeet verification failed:");
+  console.error(testProc.stderr.toString());
+  process.exit(1);
+}
+console.error(`Verification OK: "${testProc.stdout.toString().trim().slice(0, 50)}..."`);
+
 const parakeetResults: Array<{ time: number; text: string }> = [];
-for (const file of files) {
+for (let i = 0; i < files.length; i++) {
+  const file = files[i];
+  const name = file.split("/").pop()!.slice(0, 30);
+  process.stderr.write(`  [${i + 1}/${files.length}] ${name}...`);
   const start = performance.now();
-  const proc = Bun.spawnSync(["bun", "run", cli, file], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawnSync([CLI, file], { stdout: "pipe", stderr: "pipe" });
   const elapsed = (performance.now() - start) / 1000;
+  if (proc.exitCode !== 0) {
+    console.error(` FAILED`);
+    console.error(proc.stderr.toString());
+  } else {
+    console.error(` ${elapsed.toFixed(1)}s`);
+  }
   parakeetResults.push({ time: Math.round(elapsed * 10) / 10, text: proc.stdout.toString().trim() });
 }
 

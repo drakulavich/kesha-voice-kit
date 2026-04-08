@@ -34,6 +34,17 @@ Two interfaces: a CLI (`parakeet <audio>`) and a programmatic API (`@drakulavich
 - Do NOT publish to npm without explicit user confirmation that tests pass
 - Create a GitHub release first, wait for CI to pass, then publish to npm
 
+### VERIFY BEFORE PUSHING
+
+- Run `bun test && bunx tsc --noEmit` locally before every push
+- Do NOT push broken code — fix locally first
+
+### ERROR HANDLING
+
+- Always write proper error handling with human-readable messages
+- Include context: what failed, why, and what to do about it
+- Never swallow errors silently or let functions return success when they failed
+
 ### BRANCH PROTECTION
 
 - `main` branch is protected — never push directly to main

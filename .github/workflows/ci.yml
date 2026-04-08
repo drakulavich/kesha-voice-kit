@@ -121,7 +121,7 @@ jobs:
         run: bun install
 
       - name: 🦜 Install parakeet backend
-        run: bun run src/cli.ts install
+        run: bun link && parakeet install
 
       - name: 🎬 Install ffmpeg
         run: which ffmpeg || brew install ffmpeg
