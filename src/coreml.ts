@@ -1,6 +1,8 @@
 import { join } from "path";
 import { homedir } from "os";
 import { existsSync } from "fs";
+import { unlinkSync } from "fs";
+import { convertToWav16kMono } from "./audio";
 
 export function isMacArm64(): boolean {
   return process.platform === "darwin" && process.arch === "arm64";
@@ -15,6 +17,33 @@ export function isCoreMLInstalled(): boolean {
 }
 
 export async function transcribeCoreML(audioPath: string): Promise<string> {
+  try {
+    return await runCoreML(audioPath);
+  } catch (error) {
+    if (!shouldRetryCoreMLWithWav(audioPath, error)) {
+      throw error;
+    }
+
+    const wavPath = await convertToWav16kMono(audioPath);
+    try {
+      return await runCoreML(wavPath);
+    } finally {
+      try { unlinkSync(wavPath); } catch {}
+    }
+  }
+}
+
+export function shouldRetryCoreMLWithWav(audioPath: string, error: unknown): boolean {
+  if (audioPath.toLowerCase().endsWith(".wav")) {
+    return false;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("com.apple.coreaudio.avfaudio error")
+    || message.includes("The operation couldn’t be completed. (com.apple.coreaudio.avfaudio error");
+}
+
+async function runCoreML(audioPath: string): Promise<string> {
   const binPath = getCoreMLBinPath();
   const proc = Bun.spawn([binPath, audioPath], {
     stdout: "pipe",
