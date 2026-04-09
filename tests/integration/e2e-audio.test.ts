@@ -22,7 +22,7 @@ describe.skipIf(!hasFfmpeg)("audio", () => {
   test("throws on corrupt file", async () => {
     await Bun.write("fixtures/corrupt.bin", "not audio data");
     expect(convertToFloat32PCM("fixtures/corrupt.bin")).rejects.toThrow(
-      "failed to convert audio"
+      "Audio conversion failed"
     );
   });
 });
