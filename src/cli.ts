@@ -55,9 +55,7 @@ export const installCommand = defineCommand({
     },
   },
   async run({ args }) {
-    // Use bracket notation for hyphenated arg name
-    const noCache = args["no-cache"] ?? false;
-    await performInstall({ coreml: args.coreml, onnx: args.onnx, noCache });
+    await performInstall({ coreml: args.coreml, onnx: args.onnx, noCache: args["no-cache"] });
   },
 });
 
