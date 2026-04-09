@@ -2,6 +2,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { existsSync, mkdirSync } from "fs";
 import { log } from "./log";
+import { streamResponseToFile } from "./progress";
 
 export const HF_REPO = "istupakov/parakeet-tdt-0.6b-v3-onnx";
 
@@ -61,36 +62,27 @@ export async function downloadModel(noCache = false, modelDir?: string): Promise
 
     if (!noCache && existsSync(dest)) continue;
 
-    log.progress(`Downloading ${file}...`);
-
     let res: Response;
     try {
       res = await fetch(url, { redirect: "follow" });
     } catch (e) {
-      throw new Error(`failed to fetch ${file}: ${e instanceof Error ? e.message : e}`);
+      throw new Error(
+        `Failed to fetch ${file}: ${e instanceof Error ? e.message : e}\n  Fix: Check your network connection and try again`,
+      );
     }
 
     if (!res.ok) {
-      throw new Error(`failed to download ${file}: HTTP ${res.status}`);
+      throw new Error(
+        `Failed to download ${file}: HTTP ${res.status}\n  Fix: Check your network connection or try again with --no-cache`,
+      );
     }
 
-    if (!res.body) {
-      throw new Error(`empty response body for ${file}`);
-    }
-
-    const writer = Bun.file(dest).writer();
-    let bytes = 0;
-    try {
-      for await (const chunk of res.body) {
-        writer.write(chunk);
-        bytes += chunk.length;
-      }
-    } finally {
-      writer.end();
-    }
+    const bytes = await streamResponseToFile(res, dest, file);
 
     if (bytes === 0) {
-      throw new Error(`downloaded 0 bytes for ${file}`);
+      throw new Error(
+        `Downloaded 0 bytes for ${file}\n  Fix: Try again — the server may be temporarily unavailable`,
+      );
     }
   }
 

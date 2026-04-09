@@ -1,2 +1,4 @@
 #!/usr/bin/env bun
-await import("../src/cli.ts");
+import { runMain } from "citty";
+import { mainCommand } from "../src/cli.ts";
+runMain(mainCommand);

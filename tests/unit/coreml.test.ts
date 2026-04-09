@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   shouldRetryCoreMLWithWav,
-} from "../coreml";
+} from "../../src/coreml";
 
 describe("coreml", () => {
   test("retries non-wav files on CoreAudio decode errors", () => {

@@ -34,4 +34,19 @@ describe("e2e-cli", () => {
     expect(exitCode).toBe(1);
     expect(stderr.toLowerCase()).toContain("file not found");
   });
+
+  test("multiple missing files prints all errors and exits 1", async () => {
+    const { stderr, exitCode } = await runCli(["a.wav", "b.wav"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("a.wav");
+    expect(stderr).toContain("b.wav");
+  });
+
+  test("multiple missing files with --json outputs empty JSON array", async () => {
+    const { stdout, stderr, exitCode } = await runCli(["--json", "a.wav", "b.wav"]);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout)).toEqual([]);
+    expect(stderr).toContain("a.wav");
+    expect(stderr).toContain("b.wav");
+  });
 });

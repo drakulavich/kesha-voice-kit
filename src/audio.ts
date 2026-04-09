@@ -55,7 +55,10 @@ async function convertAudioWithFfmpeg(
   ]);
 
   if (exitCode !== 0) {
-    throw new Error(`failed to convert audio: ${stderr.trim().split("\n").pop()}`);
+    const lastLine = stderr.trim().split("\n").pop() ?? "unknown error";
+    throw new Error(
+      `Audio conversion failed: ${lastLine}\n  File: ${inputPath}\n  Fix: Ensure the file is a valid audio format. Run "ffmpeg -i ${inputPath}" to diagnose.`,
+    );
   }
 
   return tmpPath;

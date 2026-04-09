@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
-import { mainCommand, installCommand, formatTextOutput, formatJsonOutput, detectLanguage, checkLanguageMismatch } from "../cli";
+import { mainCommand, installCommand, formatTextOutput, formatJsonOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -116,5 +116,12 @@ describe("language detection", () => {
   test("checkLanguageMismatch returns null when detected is empty", () => {
     const warning = checkLanguageMismatch("en", "");
     expect(warning).toBeNull();
+  });
+});
+
+describe("CLI help with status", () => {
+  test("main description mentions install command", async () => {
+    const usage = await renderUsage(mainCommand);
+    expect(usage).toContain("install");
   });
 });

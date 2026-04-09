@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "test": "bun test",
-    "test:unit": "bun test src/__tests__/",
+    "test:unit": "bun test tests/unit/",
     "test:integration": "bun test tests/integration/"
   },
   "keywords": [

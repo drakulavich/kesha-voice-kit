@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { Tokenizer } from "../tokenizer";
+import { Tokenizer } from "../../src/tokenizer";
 
 describe("tokenizer", () => {
   test("loads vocab from file", async () => {

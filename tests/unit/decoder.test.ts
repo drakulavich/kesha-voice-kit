@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { beamDecode, type DecoderSession } from "../decoder";
+import { beamDecode, type DecoderSession } from "../../src/decoder";
 
 function mockSession(responses: Array<{ tokenLogits: number[]; durationLogits: number[] }>): DecoderSession {
   let callIndex = 0;

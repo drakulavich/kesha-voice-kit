@@ -1,0 +1,101 @@
+import { describe, test, expect } from "bun:test";
+import { formatProgressBar, formatBytes } from "../../src/progress";
+
+describe("formatBytes", () => {
+  test("formats bytes to MB", () => {
+    expect(formatBytes(104857600)).toBe("100.0MB");
+  });
+
+  test("formats small values", () => {
+    expect(formatBytes(1048576)).toBe("1.0MB");
+  });
+
+  test("formats zero", () => {
+    expect(formatBytes(0)).toBe("0.0MB");
+  });
+});
+
+describe("formatProgressBar", () => {
+  test("renders 0%", () => {
+    const bar = formatProgressBar("encoder.onnx", 0, 100);
+    expect(bar).toContain("encoder.onnx");
+    expect(bar).toContain("0%");
+    expect(bar).toContain("░");
+  });
+
+  test("renders 50%", () => {
+    const bar = formatProgressBar("encoder.onnx", 50, 100);
+    expect(bar).toContain("50%");
+    expect(bar).toContain("█");
+  });
+
+  test("renders 100%", () => {
+    const bar = formatProgressBar("encoder.onnx", 100, 100);
+    expect(bar).toContain("100%");
+  });
+
+  test("includes byte counts in MB", () => {
+    const bar = formatProgressBar("file.onnx", 104857600, 209715200);
+    expect(bar).toContain("100.0MB");
+    expect(bar).toContain("200.0MB");
+  });
+
+  test("handles zero total without NaN", () => {
+    const bar = formatProgressBar("file.onnx", 0, 0);
+    expect(bar).toContain("0%");
+    expect(bar).not.toContain("NaN");
+  });
+});
+
+import { createProgressBar } from "../../src/progress";
+
+describe("createProgressBar", () => {
+  test("non-TTY mode calls log functions", () => {
+    const bar = createProgressBar("test.onnx", 0);
+    bar.update(100);
+    bar.finish();
+  });
+
+  test("TTY mode writes progress to stderr", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const writes: string[] = [];
+    const originalWrite = process.stderr.write;
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const bar = createProgressBar("model.onnx", 200);
+      bar.update(100);
+      bar.update(50);
+      bar.finish();
+
+      expect(writes.length).toBe(3); // 2 updates + 1 finish
+      expect(writes[0]).toContain("\r");
+      expect(writes[0]).toContain("model.onnx");
+      expect(writes[0]).toContain("50%"); // 100/200
+      expect(writes[1]).toContain("75%"); // 150/200
+      expect(writes[2]).toContain("100%"); // finish
+      expect(writes[2]).toContain("\n"); // finish adds newline
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+  });
+
+  test("non-TTY mode with known size includes size info", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: false, configurable: true });
+      // Should not throw — exercises the sizeInfo branch
+      const bar = createProgressBar("model.onnx", 104857600);
+      bar.update(100);
+      bar.finish();
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+    }
+  });
+});

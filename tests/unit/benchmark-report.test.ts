@@ -3,7 +3,7 @@ import {
   createBenchmarkSummary,
   renderBenchmarkReport,
   type BenchmarkSystemInfo,
-} from "../benchmark-report";
+} from "../../src/benchmark-report";
 
 const system: BenchmarkSystemInfo = {
   os: "Darwin",

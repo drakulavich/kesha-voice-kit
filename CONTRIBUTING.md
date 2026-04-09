@@ -35,8 +35,8 @@ src/                  # TypeScript source
   encoder.ts          # FastConformer encoder
   decoder.ts          # RNN-T decoder + beam search
   tokenizer.ts        # Vocab + detokenization
+tests/unit/           # Unit tests
 tests/integration/    # E2E tests (require backend + ffmpeg)
-src/__tests__/        # Unit tests
 scripts/              # Benchmark + smoke test (TypeScript)
 .github/scripts/      # CI helper scripts (TypeScript)
 swift/                # CoreML Swift binary (built by CI)
@@ -66,7 +66,7 @@ swift/                # CoreML Swift binary (built by CI)
 
 ## Tests
 
-- Unit tests in `src/__tests__/` — no external deps, run on all platforms
+- Unit tests in `tests/unit/` — no external deps, run on all platforms
 - Integration tests in `tests/integration/` — require backend + ffmpeg, run on macOS CI
 - Add tests for new code
 

@@ -11,7 +11,7 @@ import {
   planCoreMLInstall,
   type CoreMLBinaryCommandResult,
   type CoreMLBinaryRunner,
-} from "../coreml-install";
+} from "../../src/coreml-install";
 import { join } from "path";
 import { homedir } from "os";
 

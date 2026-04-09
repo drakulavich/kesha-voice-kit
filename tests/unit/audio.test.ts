@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { getFfmpegInstallHint, assertFfmpegExists, resetFfmpegCheck } from "../audio";
+import { getFfmpegInstallHint, assertFfmpegExists, resetFfmpegCheck } from "../../src/audio";
 
 describe("getFfmpegInstallHint", () => {
   test("returns a non-empty string", () => {

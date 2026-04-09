@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { transcribe } from "../lib";
+import { transcribe } from "../../src/lib";
 
 describe("lib API", () => {
   it("rejects missing file", async () => {
