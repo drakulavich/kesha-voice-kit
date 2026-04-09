@@ -59,6 +59,25 @@ Parakeet (CoreML):      1.9s  ██
 
 Full results with transcripts: [BENCHMARK.md](BENCHMARK.md)
 
+## Supported Audio Formats
+
+Any format that ffmpeg can decode works with parakeet:
+
+| Format | Extension |
+|---|---|
+| WAV | `.wav` |
+| MP3 | `.mp3` |
+| OGG Vorbis | `.ogg` |
+| FLAC | `.flac` |
+| AAC / M4A | `.aac`, `.m4a` |
+| Opus | `.opus` |
+| WMA | `.wma` |
+| WebM | `.webm` |
+| MP4 (audio track) | `.mp4` |
+| AIFF | `.aiff` |
+
+CoreML backend tries native decoding first, falls back to ffmpeg for unsupported formats. ONNX backend always converts via ffmpeg.
+
 ## Supported Languages
 
 :bulgaria: Bulgarian, :croatia: Croatian, :czech_republic: Czech, :denmark: Danish, :netherlands: Dutch, :gb: English, :estonia: Estonian, :finland: Finnish, :fr: French, :de: German, :greece: Greek, :hungary: Hungarian, :it: Italian, :latvia: Latvian, :lithuania: Lithuanian, :malta: Maltese, :poland: Polish, :portugal: Portuguese, :romania: Romanian, :ru: Russian, :slovakia: Slovak, :slovenia: Slovenian, :es: Spanish, :sweden: Swedish, :ukraine: Ukrainian

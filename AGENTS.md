@@ -40,7 +40,7 @@ make publish                   # release + npm publish
 - Add unit tests when writing new code
 - ffmpeg must be in PATH for ONNX backend audio conversion
 - **NEVER** write more than 3 lines of bash in GitHub Actions workflow steps — extract to `.github/scripts/`
-- **BEFORE npm publish**: ask the user to run `make smoke-test`. Do NOT publish without explicit user confirmation that tests pass.
+- **BEFORE npm publish**: run `make smoke-test` locally and verify all tests pass. Do NOT publish if smoke tests fail.
 - **BEFORE pushing**: run `bun test && bunx tsc --noEmit` locally and verify all tests pass. Do NOT push broken code.
 - **ALWAYS write proper error handling**: errors must be human-readable with context (what failed, why, what to do). Never swallow errors silently. Never let a function return success when it failed.
 

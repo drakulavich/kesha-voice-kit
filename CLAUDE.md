@@ -29,9 +29,8 @@ Two interfaces: a CLI (`parakeet <audio>`) and a programmatic API (`@drakulavich
 
 ### RELEASE PROCESS
 
-- Before `npm publish`, always ask the user to run e2e tests locally first
-- Suggest: `make smoke-test`
-- Do NOT publish to npm without explicit user confirmation that tests pass
+- Before `npm publish`, run `make smoke-test` locally and verify all tests pass
+- Do NOT publish to npm if smoke tests fail
 - Tag and push (`git tag vX.Y.Z && git push --tags`) — CI creates the GitHub release with CoreML binary
 - Wait for CI to pass, then `npm publish --access public`
 
