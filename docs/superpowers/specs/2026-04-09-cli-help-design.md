@@ -76,8 +76,10 @@ Transcript text here.
 
 **Single file, JSON (`parakeet --json audio.ogg`):**
 ```json
-{"file":"audio.ogg","text":"Transcript text here."}
+[{"file":"audio.ogg","text":"Transcript text here."}]
 ```
+
+JSON output is always an array, even for a single file — consistent for programmatic consumers.
 
 **Multiple files, text:**
 ```
