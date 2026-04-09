@@ -7,6 +7,7 @@ import { downloadModel } from "./onnx-install";
 import { downloadCoreML } from "./coreml-install";
 import { isMacArm64 } from "./coreml";
 import { log } from "./log";
+import { showStatus } from "./status";
 
 export function detectLanguage(text: string): string {
   if (!text) return "";
@@ -102,10 +103,15 @@ export const mainCommand = defineCommand({
       return;
     }
 
+    if (positional[0] === "status") {
+      await showStatus();
+      return;
+    }
+
     const files = positional;
 
     if (files.length === 0) {
-      log.info("Usage: parakeet <audio_file> [audio_file ...]\n       parakeet install [--coreml | --onnx] [--no-cache]");
+      log.info("Usage: parakeet <audio_file> [audio_file ...]\n       parakeet install [--coreml | --onnx] [--no-cache]\n       parakeet status");
       process.exit(1);
     }
 

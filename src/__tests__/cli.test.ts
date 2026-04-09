@@ -118,3 +118,10 @@ describe("language detection", () => {
     expect(warning).toBeNull();
   });
 });
+
+describe("CLI help with status", () => {
+  test("usage text includes status command", () => {
+    const usage = "Usage: parakeet <audio_file> [audio_file ...]\n       parakeet install [--coreml | --onnx] [--no-cache]\n       parakeet status";
+    expect(usage).toContain("status");
+  });
+});
