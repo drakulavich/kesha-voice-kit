@@ -1,5 +1,6 @@
 import { requireModel, isModelCached, installHintError } from "./onnx-install";
-import { isCoreMLInstalled, transcribeCoreML } from "./coreml";
+import { isCoreMLInstalled, transcribeCoreML, isMacArm64 } from "./coreml";
+import { log } from "./log";
 import { convertToFloat32PCM } from "./audio";
 import { initPreprocessor, preprocess } from "./preprocess";
 import { initEncoder, encode } from "./encoder";
@@ -28,6 +29,7 @@ const DECODER_HIDDEN = 640;
 export interface TranscribeOptions {
   beamWidth?: number;
   modelDir?: string;
+  silent?: boolean;
 }
 
 // Minimum 0.1s of audio at 16kHz to produce meaningful output
@@ -36,6 +38,10 @@ const MIN_AUDIO_SAMPLES = 1600;
 export async function transcribe(audioPath: string, opts: TranscribeOptions = {}): Promise<string> {
   if (isCoreMLInstalled()) {
     return transcribeCoreML(audioPath);
+  }
+
+  if (!opts.silent && isMacArm64()) {
+    log.warn("CoreML backend unavailable, falling back to ONNX");
   }
 
   if (isModelCached(opts.modelDir)) {
@@ -49,6 +55,9 @@ async function transcribeOnnx(audioPath: string, opts: TranscribeOptions): Promi
   const audio = await convertToFloat32PCM(audioPath);
 
   if (audio.length < MIN_AUDIO_SAMPLES) {
+    if (!opts.silent) {
+      log.warn(`Audio too short (< 0.1s), skipping: ${audioPath}`);
+    }
     return "";
   }
 
