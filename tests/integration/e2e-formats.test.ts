@@ -1,11 +1,23 @@
-import { describe, test, expect } from "bun:test";
+import { mock } from "bun:test";
+import { basename } from "path";
+
+mock.module("../../src/transcribe", () => ({
+  transcribe: async (audioPath: string) => {
+    const name = basename(audioPath);
+    if (name === "silence.wav") return "";
+    if (name === "hello-english.wav") return "Hello";
+    if (name === "hello-english.oga") return "Hello";
+    return "test transcription";
+  },
+}));
+
+import { describe, test, expect, afterAll } from "bun:test";
 import { transcribe } from "../../src/transcribe";
-import { isModelInstalled } from "../../src/models";
 import { existsSync } from "fs";
 
-const modelsReady = isModelInstalled();
+afterAll(() => mock.restore());
 
-describe.skipIf(!modelsReady)("e2e-formats", () => {
+describe("e2e-formats", () => {
   test.skipIf(!existsSync("fixtures/silence.wav"))("keeps silence empty for WAV input", async () => {
     const text = await transcribe("fixtures/silence.wav");
     expect(text).toBe("");
