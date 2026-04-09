@@ -65,9 +65,42 @@ Transcript of second file.
 
 If any file fails, log the error to stderr and continue. Exit code 1 if any file failed, 0 if all succeeded.
 
+### Output Format
+
+`--json` flag switches output from plain text to JSON.
+
+**Single file, text (default):**
+```
+Transcript text here.
+```
+
+**Single file, JSON (`parakeet --json audio.ogg`):**
+```json
+{"file":"audio.ogg","text":"Transcript text here."}
+```
+
+**Multiple files, text:**
+```
+=== file1.ogg ===
+Transcript of first file.
+
+=== file2.mp3 ===
+Transcript of second file.
+```
+
+**Multiple files, JSON (`parakeet --json file1.ogg file2.ogg`):**
+```json
+[{"file":"file1.ogg","text":"Transcript of first file."},{"file":"file2.ogg","text":"Transcript of second file."}]
+```
+
+**Error in JSON mode** — failed files include an `error` field instead of `text`:
+```json
+[{"file":"file1.ogg","text":"Transcript here."},{"file":"bad.ogg","error":"File not found: bad.ogg"}]
+```
+
 ### Architecture
 
-- **Main command** — `defineCommand` with `meta` (name, version, description), positional `files` arg (variadic), and `run` handler for transcription
+- **Main command** — `defineCommand` with `meta` (name, version, description), positional `files` arg (variadic), `--json` boolean flag, and `run` handler for transcription
 - **`install` subcommand** — `defineCommand` with `--coreml`, `--onnx`, `--no-cache` boolean args
 - **`runMain()`** — provides `--help`, `--version`, and subcommand help automatically
 
@@ -83,7 +116,9 @@ Test citty command definitions by importing them:
 - `--help` produces expected output (contains "Usage:", command names)
 - `--version` prints version string
 - `install` subcommand accepts `--coreml`, `--onnx`, `--no-cache`
+- `--json` flag is accepted
 - Multiple positional args are parsed correctly
+- JSON output format for single and multiple files
 - No args shows help
 
 ### README License Update
