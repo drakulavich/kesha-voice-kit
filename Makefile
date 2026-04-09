@@ -15,7 +15,7 @@ lint: ## Type-check with tsc
 	bunx tsc --noEmit
 
 smoke-test: ## Run smoke tests against fixtures
-	bun link
+	bun link @drakulavich/parakeet-cli
 	parakeet install
 	bun scripts/smoke-test.ts
 
