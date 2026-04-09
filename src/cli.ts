@@ -84,6 +84,10 @@ export const mainCommand = defineCommand({
       description: "Output results as JSON",
       default: false,
     },
+    lang: {
+      type: "string",
+      description: "Expected language code (ISO 639-1), warn if mismatch",
+    },
   },
   async run({ args }) {
     const positional = args._ as string[];
@@ -111,7 +115,12 @@ export const mainCommand = defineCommand({
     for (const file of files) {
       try {
         const text = await transcribe(file);
-        results.push({ file, text });
+        const lang = detectLanguage(text);
+
+        const mismatchWarning = checkLanguageMismatch(args.lang, lang);
+        if (mismatchWarning) log.warn(mismatchWarning);
+
+        results.push({ file, text, lang });
       } catch (err: unknown) {
         hasError = true;
         const message = err instanceof Error ? err.message : String(err);
@@ -129,7 +138,7 @@ export const mainCommand = defineCommand({
   },
 });
 
-export type TranscribeResult = { file: string; text: string };
+export type TranscribeResult = { file: string; text: string; lang: string };
 
 export function formatTextOutput(results: TranscribeResult[]): string {
   if (results.length === 1) {
