@@ -136,7 +136,8 @@ export async function showStatus(deps?: Partial<StatusDeps>): Promise<void> {
 
     const modelsDisplay = getCoreMLModelsDisplay(coremlState);
     const modelDir = d.getCoreMLSupportDir();
-    log.info(formatStatusLine("Models", modelsDisplay.installed ? modelDir : coremlState === "stale-binary" || coremlState === "probe-failed" ? modelDir : null, modelsDisplay.installed, modelsDisplay.missingLabel));
+    const modelsPath = (coremlState === "ready" || coremlState === "stale-binary" || coremlState === "probe-failed") ? modelDir : null;
+    log.info(formatStatusLine("Models", modelsPath, modelsDisplay.installed, modelsDisplay.missingLabel));
     log.info("");
 
     if (coremlProbeError) {
