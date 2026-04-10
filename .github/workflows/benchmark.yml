@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -61,13 +60,14 @@ jobs:
       - name: 📊 Print results
         run: cat benchmark-results.md
 
-      - name: 🔍 Check regression
-        run: bun .github/scripts/check-regression.ts benchmark-summary.json BENCHMARK.md
+      - name: 📝 Add benchmark summary
+        run: cat benchmark-results.md >> $GITHUB_STEP_SUMMARY
 
-      - name: 📝 Update BENCHMARK.md
-        run: bun .github/scripts/update-benchmark-md.ts benchmark-results.md BENCHMARK.md
-
-      - name: 📝 Commit results
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bun .github/scripts/commit-and-push.ts BENCHMARK.md
+      - name: 📤 Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmark-results.md
+            benchmark-summary.json
+          retention-days: 7

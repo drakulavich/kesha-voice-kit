@@ -1,7 +1,10 @@
-.PHONY: test unit integration lint smoke-test release publish help
+.PHONY: install test unit integration lint smoke-test release publish help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
+
+install: ## Install dependencies
+	bun install
 
 test: unit integration ## Run all tests
 

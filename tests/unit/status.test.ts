@@ -25,33 +25,43 @@ describe("formatStatusLine", () => {
 
 describe("collectSuggestions", () => {
   test("suggests install for missing ONNX", () => {
-    const suggestions = collectSuggestions({ onnx: false, coreml: "missing", ffmpeg: true });
+    const suggestions = collectSuggestions({ onnx: false, coreml: "n/a", ffmpeg: true, platform: "other" });
     expect(suggestions.some((s) => s.includes("parakeet install"))).toBe(true);
   });
 
   test("suggests ffmpeg install when missing", () => {
-    const suggestions = collectSuggestions({ onnx: true, coreml: "ready", ffmpeg: false });
+    const suggestions = collectSuggestions({ onnx: true, coreml: "n/a", ffmpeg: false, platform: "other" });
     expect(suggestions.some((s) => s.includes("ffmpeg"))).toBe(true);
   });
 
   test("returns empty when everything is installed", () => {
-    const suggestions = collectSuggestions({ onnx: true, coreml: "ready", ffmpeg: true });
+    const suggestions = collectSuggestions({ onnx: true, coreml: "n/a", ffmpeg: true, platform: "other" });
     expect(suggestions).toHaveLength(0);
   });
 
   test("suggests CoreML install on macOS when missing", () => {
-    const suggestions = collectSuggestions({ onnx: true, coreml: "missing", ffmpeg: true });
+    const suggestions = collectSuggestions({ onnx: true, coreml: "missing", ffmpeg: true, platform: "mac-arm64" });
     expect(suggestions.some((s) => s.includes("--coreml"))).toBe(true);
   });
 
   test("suggests model download for binary-only CoreML", () => {
-    const suggestions = collectSuggestions({ onnx: true, coreml: "binary-only", ffmpeg: true });
+    const suggestions = collectSuggestions({ onnx: true, coreml: "binary-only", ffmpeg: true, platform: "mac-arm64" });
     expect(suggestions.some((s) => s.includes("download CoreML models"))).toBe(true);
   });
 
   test("no suggestions for n/a CoreML (non-macOS)", () => {
-    const suggestions = collectSuggestions({ onnx: true, coreml: "n/a", ffmpeg: true });
+    const suggestions = collectSuggestions({ onnx: true, coreml: "n/a", ffmpeg: true, platform: "other" });
     expect(suggestions).toHaveLength(0);
+  });
+
+  test("does not suggest ONNX or ffmpeg when CoreML is ready on macOS", () => {
+    const suggestions = collectSuggestions({ onnx: false, coreml: "ready", ffmpeg: false, platform: "mac-arm64" });
+    expect(suggestions).toHaveLength(0);
+  });
+
+  test("suggests refresh when CoreML probe fails", () => {
+    const suggestions = collectSuggestions({ onnx: false, coreml: "probe-failed", ffmpeg: false, platform: "mac-arm64" });
+    expect(suggestions.some((s) => s.includes("--no-cache"))).toBe(true);
   });
 });
 
@@ -131,8 +141,11 @@ describe("showStatus", () => {
 
   test("handles CoreML state probe failure gracefully", async () => {
     const lines: string[] = [];
+    const warnings: string[] = [];
     const origLog = console.log;
+    const origError = console.error;
     console.log = (msg: string) => lines.push(msg);
+    console.error = (msg: string) => warnings.push(msg);
     try {
       await showStatus({
         ...baseDeps,
@@ -141,10 +154,12 @@ describe("showStatus", () => {
       });
     } finally {
       console.log = origLog;
+      console.error = origError;
     }
 
     const output = lines.join("\n");
     expect(output).toContain("CoreML");
-    expect(output).toContain("✗"); // missing state
+    expect(output).toContain("probe failed");
+    expect(warnings.some((warning) => warning.includes("CoreML status probe failed"))).toBe(true);
   });
 });

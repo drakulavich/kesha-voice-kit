@@ -3,13 +3,15 @@ import {
   classifyCoreMLInstallProbe,
   createCoreMLBinaryRunner,
   ensureCoreMLModels,
+  getCoreMLBinaryDownloadCandidates,
   getCoreMLDownloadURL,
   getCoreMLInstallState,
   getCoreMLInstallStatus,
+  getCoreMLLatestDownloadURL,
   getCoreMLSupportDir,
+  isUnreleasedVersion,
   parseCoreMLBinaryCapabilities,
   planCoreMLInstall,
-  type CoreMLBinaryCommandResult,
   type CoreMLBinaryRunner,
 } from "../../src/coreml-install";
 import { join } from "path";
@@ -27,6 +29,25 @@ describe("coreml-install", () => {
     expect(url).toBe(
       "https://github.com/drakulavich/parakeet-cli/releases/download/v0.5.0/parakeet-coreml-darwin-arm64",
     );
+  });
+
+  test("isUnreleasedVersion only enables latest fallback for dev versions", () => {
+    expect(isUnreleasedVersion("0.8.0")).toBe(false);
+    expect(isUnreleasedVersion("0.8.1-dev.1")).toBe(true);
+    expect(isUnreleasedVersion("0.0.0")).toBe(true);
+  });
+
+  test("getCoreMLBinaryDownloadCandidates prefers package version for stable releases", () => {
+    expect(getCoreMLBinaryDownloadCandidates("0.8.0")).toEqual([
+      getCoreMLDownloadURL("0.8.0"),
+    ]);
+  });
+
+  test("getCoreMLBinaryDownloadCandidates falls back to latest for unreleased versions", () => {
+    expect(getCoreMLBinaryDownloadCandidates("0.8.1-dev.1")).toEqual([
+      getCoreMLLatestDownloadURL(),
+      getCoreMLDownloadURL("0.8.1-dev.1"),
+    ]);
   });
 
   test("getCoreMLInstallState returns missing when binary is absent", () => {

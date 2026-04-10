@@ -4,6 +4,9 @@ import { getCoreMLInstallState, getCoreMLInstallStatus, getCoreMLSupportDir, typ
 import { log } from "./log";
 import pc from "picocolors";
 
+export type StatusCoreMLState = CoreMLInstallState | "n/a" | "probe-failed";
+export type StatusPlatform = "mac-arm64" | "other";
+
 export function formatStatusLine(
   label: string,
   path: string | null,
@@ -18,17 +21,25 @@ export function formatStatusLine(
 
 export interface StatusInfo {
   onnx: boolean;
-  coreml: CoreMLInstallState | "n/a";
+  coreml: StatusCoreMLState;
   ffmpeg: boolean;
+  platform: StatusPlatform;
 }
 
 export function collectSuggestions(info: StatusInfo): string[] {
   const suggestions: string[] = [];
 
-  if (info.coreml === "missing" || info.coreml === "stale-binary") {
-    suggestions.push(`Run "parakeet install --coreml" to install the CoreML backend.`);
-  } else if (info.coreml === "binary-only") {
-    suggestions.push(`Run "parakeet install --coreml" to download CoreML models.`);
+  if (info.platform === "mac-arm64") {
+    if (info.coreml === "missing") {
+      suggestions.push(`Run "parakeet install --coreml" to install the CoreML backend.`);
+    } else if (info.coreml === "binary-only") {
+      suggestions.push(`Run "parakeet install --coreml" to download CoreML models.`);
+    } else if (info.coreml === "stale-binary") {
+      suggestions.push(`Run "parakeet install --coreml --no-cache" to refresh the incompatible CoreML binary.`);
+    } else if (info.coreml === "probe-failed") {
+      suggestions.push(`Run "parakeet install --coreml --no-cache" to refresh the CoreML backend and restore status checks.`);
+    }
+    return suggestions;
   }
 
   if (!info.onnx) {
@@ -71,29 +82,67 @@ function defaultDeps(): StatusDeps {
   };
 }
 
+function getCoreMLBinaryDisplay(state: StatusCoreMLState): { installed: boolean; missingLabel: string } {
+  switch (state) {
+    case "ready":
+    case "binary-only":
+      return { installed: true, missingLabel: "not installed" };
+    case "stale-binary":
+      return { installed: false, missingLabel: "stale binary" };
+    case "probe-failed":
+      return { installed: false, missingLabel: "probe failed" };
+    case "missing":
+    case "n/a":
+      return { installed: false, missingLabel: "not installed" };
+  }
+}
+
+function getCoreMLModelsDisplay(state: StatusCoreMLState): { installed: boolean; missingLabel: string } {
+  switch (state) {
+    case "ready":
+      return { installed: true, missingLabel: "not installed" };
+    case "stale-binary":
+      return { installed: false, missingLabel: "reinstall required" };
+    case "probe-failed":
+      return { installed: false, missingLabel: "status unknown" };
+    case "binary-only":
+    case "missing":
+    case "n/a":
+      return { installed: false, missingLabel: "not installed" };
+  }
+}
+
 export async function showStatus(deps?: Partial<StatusDeps>): Promise<void> {
   const d = { ...defaultDeps(), ...deps };
 
   const isMac = d.isMacArm64();
+  const platform: StatusPlatform = isMac ? "mac-arm64" : "other";
 
   // CoreML status
-  let coremlState: CoreMLInstallState | "n/a" = "n/a";
+  let coremlState: StatusCoreMLState = "n/a";
+  let coremlProbeError: string | null = null;
   if (isMac) {
     const binPath = d.getCoreMLBinPath();
     try {
       coremlState = d.getCoreMLState(binPath);
-    } catch {
-      coremlState = "missing";
+    } catch (error: unknown) {
+      coremlState = "probe-failed";
+      coremlProbeError = error instanceof Error ? error.message : String(error);
     }
 
     log.info("CoreML (macOS Apple Silicon):");
-    const binInstalled = coremlState !== "missing";
-    log.info(formatStatusLine("Binary", binInstalled ? binPath : null, binInstalled));
+    const binaryDisplay = getCoreMLBinaryDisplay(coremlState);
+    log.info(formatStatusLine("Binary", coremlState === "missing" ? null : binPath, binaryDisplay.installed, binaryDisplay.missingLabel));
 
-    const modelsInstalled = coremlState === "ready";
+    const modelsDisplay = getCoreMLModelsDisplay(coremlState);
     const modelDir = d.getCoreMLSupportDir();
-    log.info(formatStatusLine("Models", modelsInstalled ? modelDir : null, modelsInstalled));
+    const modelsPath = (coremlState === "ready" || coremlState === "stale-binary" || coremlState === "probe-failed") ? modelDir : null;
+    log.info(formatStatusLine("Models", modelsPath, modelsDisplay.installed, modelsDisplay.missingLabel));
     log.info("");
+
+    if (coremlProbeError) {
+      log.warn(`CoreML status probe failed: ${coremlProbeError}`);
+    }
   }
 
   // ONNX status
@@ -117,6 +166,7 @@ export async function showStatus(deps?: Partial<StatusDeps>): Promise<void> {
     onnx: onnxInstalled,
     coreml: coremlState,
     ffmpeg: !!ffmpegPath,
+    platform,
   });
 
   for (const suggestion of suggestions) {

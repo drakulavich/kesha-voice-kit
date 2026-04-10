@@ -23,6 +23,21 @@ describe("e2e-cli", () => {
     expect(stdout).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
+  test("install --help shows install flags", async () => {
+    const { stdout, exitCode } = await runCli(["install", "--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("--coreml");
+    expect(stdout).toContain("--onnx");
+    expect(stdout).toContain("--no-cache");
+  });
+
+  test("status prints runtime status and exits 0", async () => {
+    const { stdout, exitCode } = await runCli(["status"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("ONNX:");
+    expect(stdout).toContain("Runtime");
+  });
+
   test("no args prints usage and exits 1", async () => {
     const { stdout, exitCode } = await runCli([]);
     expect(exitCode).toBe(1);
@@ -48,5 +63,11 @@ describe("e2e-cli", () => {
     expect(JSON.parse(stdout)).toEqual([]);
     expect(stderr).toContain("a.wav");
     expect(stderr).toContain("b.wav");
+  });
+
+  test("install rejects conflicting backend flags", async () => {
+    const { stderr, exitCode } = await runCli(["install", "--coreml", "--onnx"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('Choose only one backend');
   });
 });

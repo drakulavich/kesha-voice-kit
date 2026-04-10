@@ -85,6 +85,18 @@ export function getCoreMLLatestDownloadURL(): string {
   return `https://github.com/${GITHUB_REPO}/releases/latest/download/${COREML_BINARY_NAME}`;
 }
 
+export function isUnreleasedVersion(version: string): boolean {
+  return version === "0.0.0" || version.includes("-");
+}
+
+export function getCoreMLBinaryDownloadCandidates(version: string): string[] {
+  const versionUrl = getCoreMLDownloadURL(version);
+  if (isUnreleasedVersion(version)) {
+    return [getCoreMLLatestDownloadURL(), versionUrl];
+  }
+  return [versionUrl];
+}
+
 export function getCoreMLInstallState(opts?: {
   binPath?: string;
   exists?: (path: string) => boolean;
@@ -165,24 +177,21 @@ export function classifyCoreMLInstallProbe(exitCode: number, stdout: string): Co
 }
 
 async function fetchCoreMLBinary(): Promise<Response> {
-  const latestUrl = getCoreMLLatestDownloadURL();
-  let res = await fetch(latestUrl, { redirect: "follow" });
-
-  if (res.ok) {
-    return res;
-  }
-
   const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
-  const versionUrl = getCoreMLDownloadURL(pkg.version);
-  res = await fetch(versionUrl, { redirect: "follow" });
+  const version = typeof pkg.version === "string" ? pkg.version : "unknown";
 
-  if (!res.ok) {
-    throw new Error(
-      `Failed to download CoreML binary (HTTP ${res.status})\n  No release found matching ${COREML_BINARY_NAME}\n  Fix: Check https://github.com/drakulavich/parakeet-cli/releases for available versions\n       Or install the ONNX backend instead: parakeet install --onnx`,
-    );
+  let lastStatus: number | null = null;
+  for (const url of getCoreMLBinaryDownloadCandidates(version)) {
+    const res = await fetch(url, { redirect: "follow" });
+    if (res.ok) {
+      return res;
+    }
+    lastStatus = res.status;
   }
 
-  return res;
+  throw new Error(
+    `Failed to download CoreML binary${lastStatus ? ` (HTTP ${lastStatus})` : ""}\n  Requested package version: ${version}\n  Fix: Check https://github.com/drakulavich/parakeet-cli/releases for available versions\n       Or install the ONNX backend instead: parakeet install --onnx`,
+  );
 }
 
 export function getCoreMLInstallStatus(

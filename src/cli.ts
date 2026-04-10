@@ -19,20 +19,52 @@ export function checkLanguageMismatch(expected: string | undefined, detected: st
   return `warning: expected language "${expected}" but detected "${detected}"`;
 }
 
+export interface InstallOptions {
+  coreml: boolean;
+  onnx: boolean;
+  noCache: boolean;
+}
+
+interface InstallCommandArgs {
+  coreml: boolean;
+  onnx: boolean;
+  "no-cache": boolean;
+}
+
+interface MainCommandArgs {
+  _: string[];
+  json: boolean;
+  lang?: string;
+}
+
 const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
 
-async function performInstall(options: { coreml: boolean; onnx: boolean; noCache: boolean }) {
-  const { coreml, onnx, noCache } = options;
+export function resolveInstallBackend(options: InstallOptions, macArm64 = isMacArm64()): "coreml" | "onnx" {
+  const { coreml, onnx } = options;
+
+  if (coreml && onnx) {
+    throw new Error('Choose only one backend: "--coreml" or "--onnx".');
+  }
+
+  if (coreml) {
+    if (!macArm64) {
+      throw new Error("CoreML backend is only available on macOS Apple Silicon.");
+    }
+    return "coreml";
+  }
+
+  if (onnx) {
+    return "onnx";
+  }
+
+  return macArm64 ? "coreml" : "onnx";
+}
+
+async function performInstall(options: InstallOptions) {
+  const { noCache } = options;
   try {
-    if (coreml) {
-      if (!isMacArm64()) {
-        log.error("CoreML backend is only available on macOS Apple Silicon.");
-        process.exit(1);
-      }
-      await downloadCoreML(noCache);
-    } else if (onnx) {
-      await downloadModel(noCache);
-    } else if (isMacArm64()) {
+    const backend = resolveInstallBackend(options);
+    if (backend === "coreml") {
       await downloadCoreML(noCache);
     } else {
       await downloadModel(noCache);
@@ -66,8 +98,18 @@ export const installCommand = defineCommand({
       default: false,
     },
   },
-  async run({ args }) {
+  async run({ args }: { args: InstallCommandArgs }) {
     await performInstall({ coreml: args.coreml, onnx: args.onnx, noCache: args["no-cache"] });
+  },
+});
+
+export const statusCommand = defineCommand({
+  meta: {
+    name: "status",
+    description: "Show backend installation status",
+  },
+  async run() {
+    await showStatus();
   },
 });
 
@@ -77,7 +119,8 @@ export const mainCommand = defineCommand({
     version: pkg.version,
     description:
       "Fast local speech-to-text. 25 languages. CoreML on Apple Silicon, ONNX on CPU.\n" +
-      "  Run 'parakeet install [--coreml | --onnx] [--no-cache]' to download models.",
+      "  Run 'parakeet install [--coreml | --onnx] [--no-cache]' to download models.\n" +
+      "  Run 'parakeet status' to inspect installed backends.",
   },
   args: {
     json: {
@@ -90,25 +133,8 @@ export const mainCommand = defineCommand({
       description: "Expected language code (ISO 639-1), warn if mismatch",
     },
   },
-  async run({ args }) {
-    const positional = args._ as string[];
-
-    // Manual subcommand routing: "parakeet install [flags]"
-    if (positional[0] === "install") {
-      const argv = process.argv;
-      const coreml = argv.includes("--coreml");
-      const onnx = argv.includes("--onnx");
-      const noCache = argv.includes("--no-cache");
-      await performInstall({ coreml, onnx, noCache });
-      return;
-    }
-
-    if (positional[0] === "status") {
-      await showStatus();
-      return;
-    }
-
-    const files = positional;
+  async run({ args }: { args: MainCommandArgs }) {
+    const files = args._;
 
     if (files.length === 0) {
       log.info("Usage: parakeet <audio_file> [audio_file ...]\n       parakeet install [--coreml | --onnx] [--no-cache]\n       parakeet status");
@@ -144,6 +170,22 @@ export const mainCommand = defineCommand({
   },
 });
 
+export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
+  const [firstArg, ...restArgs] = rawArgs;
+
+  if (firstArg === "install") {
+    await runMain(installCommand, { rawArgs: restArgs });
+    return;
+  }
+
+  if (firstArg === "status") {
+    await runMain(statusCommand, { rawArgs: restArgs });
+    return;
+  }
+
+  await runMain(mainCommand, { rawArgs });
+}
+
 export type TranscribeResult = { file: string; text: string; lang: string };
 
 export function formatTextOutput(results: TranscribeResult[]): string {
@@ -160,5 +202,5 @@ export function formatJsonOutput(results: TranscribeResult[]): string {
 }
 
 if (import.meta.main) {
-  runMain(mainCommand);
+  await runCli();
 }

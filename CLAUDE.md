@@ -170,7 +170,7 @@ await downloadCoreML(noCache?);            // CoreML binary + models
 
 - `.github/workflows/ci.yml` — runs on PRs to main. Unit tests (ubuntu/windows/macos) + integration tests (macos). Type check on ubuntu only.
 - `.github/workflows/build-coreml.yml` — triggers on tag push (`v*`). Builds Swift binary, creates GitHub release with binary attached.
-- `.github/workflows/benchmark.yml` — triggers on release publish. Runs faster-whisper vs parakeet on ubuntu, commits results to BENCHMARK.md via PR.
+- `.github/workflows/benchmark.yml` — manual benchmark workflow. Runs faster-whisper vs parakeet on ubuntu and publishes results in the workflow summary and artifacts.
 
 ### Composite Actions
 
