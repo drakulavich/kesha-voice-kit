@@ -1,6 +1,6 @@
 {
   "name": "@drakulavich/parakeet-cli",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Fast local speech-to-text CLI. CoreML on Apple Silicon, ONNX on CPU. 25 languages.",
   "type": "module",
   "bin": {
