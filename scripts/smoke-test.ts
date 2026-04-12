@@ -36,6 +36,64 @@ for (const file of files) {
   }
 }
 
-console.log(`\n${passed}/${files.length} passed, ${failed} failed`);
+// E2E: --verbose flag should include "Text language:" line
+const verboseFile = resolve(fixturesDir, files[0]);
+const verboseProc = Bun.spawnSync(["parakeet", "--verbose", verboseFile], { stdout: "pipe", stderr: "pipe" });
+const verboseOut = verboseProc.stdout.toString();
+
+if (verboseOut.includes("Text language:") && verboseOut.includes("---")) {
+  console.log(`  PASS  --verbose output contains language info`);
+  passed++;
+} else {
+  console.log(`  FAIL  --verbose output missing language info`);
+  failed++;
+}
+
+// E2E: --json flag should produce valid JSON with lang field
+const jsonProc = Bun.spawnSync(["parakeet", "--json", verboseFile], { stdout: "pipe", stderr: "pipe" });
+const jsonOut = jsonProc.stdout.toString().trim();
+
+try {
+  const parsed = JSON.parse(jsonOut);
+  if (Array.isArray(parsed) && parsed[0]?.lang && parsed[0]?.text && parsed[0]?.textLanguage) {
+    console.log(`  PASS  --json output has lang, text, and textLanguage fields`);
+    passed++;
+  } else {
+    console.log(`  FAIL  --json output missing expected fields`);
+    failed++;
+  }
+} catch {
+  console.log(`  FAIL  --json output is not valid JSON`);
+  failed++;
+}
+
+// E2E: --lang mismatch warning should appear on stderr when language doesn't match
+// Russian audio file with --lang en should trigger a warning
+const mismatchProc = Bun.spawnSync(["parakeet", "--lang", "en", verboseFile], { stdout: "pipe", stderr: "pipe" });
+const mismatchStderr = mismatchProc.stderr.toString();
+const mismatchStdout = mismatchProc.stdout.toString().trim();
+
+if (mismatchStderr.includes("expected language") && mismatchStdout) {
+  console.log(`  PASS  --lang mismatch warning appears on stderr`);
+  passed++;
+} else {
+  console.log(`  FAIL  --lang mismatch warning missing (stderr: ${mismatchStderr.slice(0, 80)})`);
+  failed++;
+}
+
+// E2E: parakeet install --onnx downloads lang-id models from HuggingFace
+const installProc = Bun.spawnSync(["parakeet", "install", "--onnx"], { stdout: "pipe", stderr: "pipe" });
+const installOut = installProc.stdout.toString() + installProc.stderr.toString();
+
+if (installOut.includes("Lang-ID") || installOut.includes("lang-id")) {
+  console.log(`  PASS  parakeet install --onnx mentions lang-id models`);
+  passed++;
+} else {
+  console.log(`  FAIL  parakeet install --onnx doesn't mention lang-id (output: ${installOut.slice(0, 120)})`);
+  failed++;
+}
+
+const total = files.length + 4;
+console.log(`\n${passed}/${total} passed, ${failed} failed`);
 
 if (failed > 0) process.exit(1);
