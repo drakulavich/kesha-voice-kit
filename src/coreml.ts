@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { existsSync } from "fs";
 import { unlinkSync } from "fs";
 import { convertToWav16kMono } from "./audio";
+import type { LangDetectResult } from "./lang-id";
 
 export function isMacArm64(): boolean {
   return process.platform === "darwin" && process.arch === "arm64";
@@ -40,6 +41,50 @@ export function shouldRetryCoreMLWithWav(audioPath: string, error: unknown): boo
 
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("com.apple.coreaudio.avfaudio error");
+}
+
+export function parseCoreMLLangResult(stdout: string): LangDetectResult | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    if (typeof parsed.code !== "string" || typeof parsed.confidence !== "number") {
+      return null;
+    }
+    return { code: parsed.code, confidence: parsed.confidence };
+  } catch {
+    return null;
+  }
+}
+
+export async function detectAudioLanguageCoreML(audioPath: string): Promise<LangDetectResult | null> {
+  if (!isCoreMLInstalled()) return null;
+  const binPath = getCoreMLBinPath();
+  const proc = Bun.spawn([binPath, "detect-lang", audioPath], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, , exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (exitCode !== 0) return null;
+  return parseCoreMLLangResult(stdout.trim());
+}
+
+export async function detectTextLanguageCoreML(text: string): Promise<LangDetectResult | null> {
+  if (!isCoreMLInstalled()) return null;
+  const binPath = getCoreMLBinPath();
+  const proc = Bun.spawn([binPath, "detect-text-lang", text], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, , exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (exitCode !== 0) return null;
+  return parseCoreMLLangResult(stdout.trim());
 }
 
 async function runCoreML(audioPath: string): Promise<string> {
