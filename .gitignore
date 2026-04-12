@@ -4,3 +4,5 @@ dist/
 fixtures/corrupt.bin
 swift/.build/
 .worktrees/
+tmp-lang-id-output/
+.venv/

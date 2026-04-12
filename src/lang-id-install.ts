@@ -6,7 +6,7 @@ import { streamResponseToFile } from "./progress";
 
 export const LANG_ID_HF_REPO = "drakulavich/SpeechBrain-coreml";
 
-export const LANG_ID_ONNX_FILES = ["lang-id-ecapa.onnx", "labels.json"];
+export const LANG_ID_ONNX_FILES = ["lang-id-ecapa.onnx", "lang-id-ecapa.onnx.data", "labels.json"];
 
 export const LANG_ID_COREML_FILES = ["lang-id-ecapa.mlpackage", "labels.json"];
 
