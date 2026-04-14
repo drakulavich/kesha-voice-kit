@@ -1,6 +1,6 @@
 {
   "name": "@drakulavich/parakeet-cli",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Fast local speech-to-text CLI. 25 languages. Powered by parakeet-engine.",
   "type": "module",
   "bin": {
