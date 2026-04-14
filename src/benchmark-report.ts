@@ -67,7 +67,7 @@ export function renderBenchmarkReport(args: {
     `**Runner:** ${system.os} ${system.arch} (${system.chip}, ${system.ram} RAM)`,
     `**Backend:** ${system.backend}`,
     "",
-    `| # | faster-whisper | Parakeet (${system.backend}) | faster-whisper Transcript | Parakeet Transcript |`,
+    `| # | faster-whisper | Kesha (${system.backend}) | faster-whisper Transcript | Kesha Transcript |`,
     "|---|---------|----------|--------------------|---------------------|",
   ];
 
@@ -83,7 +83,7 @@ export function renderBenchmarkReport(args: {
     `| **Total** | **${summary.whisper_total}s** | **${summary.parakeet_total}s** | | |`,
   );
   lines.push("");
-  lines.push(`**Parakeet is ~${summary.speedup}x faster.**`);
+  lines.push(`**Kesha is ~${summary.speedup}x faster.**`);
 
   return {
     markdown: lines.join("\n"),

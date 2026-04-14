@@ -19,15 +19,15 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
             features: onnx
-            binary: parakeet-engine-darwin-arm64
+            binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             features: onnx
-            binary: parakeet-engine-linux-x64
+            binary: kesha-engine-linux-x64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: onnx
-            binary: parakeet-engine-windows-x64.exe
+            binary: kesha-engine-windows-x64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
       - name: Prepare artifact
         shell: bash
         run: |
-          src="rust/target/${{ matrix.target }}/release/parakeet-engine"
+          src="rust/target/${{ matrix.target }}/release/kesha-engine"
           if [ "${{ matrix.os }}" = "windows-latest" ]; then src="${src}.exe"; fi
           cp "$src" "${{ matrix.binary }}"
       - name: Upload artifact
@@ -63,7 +63,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            parakeet-engine-darwin-arm64
-            parakeet-engine-linux-x64
-            parakeet-engine-windows-x64.exe
+            kesha-engine-darwin-arm64
+            kesha-engine-linux-x64
+            kesha-engine-windows-x64.exe
           draft: true

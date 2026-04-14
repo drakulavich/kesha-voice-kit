@@ -71,12 +71,12 @@ export const statusCommand = defineCommand({
 
 export const mainCommand = defineCommand({
   meta: {
-    name: "parakeet",
+    name: "kesha",
     version: pkg.version,
     description:
-      "Fast local speech-to-text. 25 languages. Powered by parakeet-engine.\n" +
-      "  Run 'parakeet install [--no-cache]' to download engine and models.\n" +
-      "  Run 'parakeet status' to inspect installed backend.",
+      "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
+      "  Run 'kesha install [--no-cache]' to download engine and models.\n" +
+      "  Run 'kesha status' to inspect installed backend.",
   },
   args: {
     json: {
@@ -98,7 +98,7 @@ export const mainCommand = defineCommand({
     const files = args._;
 
     if (files.length === 0) {
-      log.info("Usage: parakeet <audio_file> [audio_file ...]\n       parakeet install [--no-cache]\n       parakeet status");
+      log.info("Usage: kesha <audio_file> [audio_file ...]\n       kesha install [--no-cache]\n       kesha status");
       process.exit(1);
     }
 

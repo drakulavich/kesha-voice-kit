@@ -11,7 +11,7 @@ import { resolve } from "path";
 
 const repoDir = resolve(import.meta.dir, "..");
 const fixturesDir = resolve(repoDir, "fixtures/benchmark");
-const CLI = "parakeet";
+const CLI = "kesha";
 const WHISPER_CLI = "whisperkit-cli";
 // Let WhisperKit auto-select the recommended model for this device
 

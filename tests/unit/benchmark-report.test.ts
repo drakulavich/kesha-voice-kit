@@ -62,6 +62,6 @@ describe("benchmark-report", () => {
     expect(report.markdown).toContain("**Date:** 2026-04-08");
     expect(report.markdown).toContain("**Runner:** Darwin arm64 (Apple M3 Pro, 18 GB RAM)");
     expect(report.markdown).toContain("| **Total** | **3.2s** | **1.6s** | | |");
-    expect(report.markdown).toContain("**Parakeet is ~2x faster.**");
+    expect(report.markdown).toContain("**Kesha is ~2x faster.**");
   });
 });

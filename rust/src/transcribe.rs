@@ -9,7 +9,7 @@ pub fn transcribe(audio_path: &str) -> Result<String> {
     if !models::is_asr_cached(&model_dir) {
         anyhow::bail!(
             "Error: No transcription models installed\n\n\
-             Please run: parakeet install"
+             Please run: kesha install"
         );
     }
     let mut be = backend::create_backend(&model_dir)?;

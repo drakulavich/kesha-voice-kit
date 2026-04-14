@@ -10,7 +10,7 @@ mod text_lang;
 mod transcribe;
 
 #[derive(Parser)]
-#[command(name = "parakeet-engine", version)]
+#[command(name = "kesha-engine", version)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
             eprintln!("Install complete.");
         }
         None => {
-            eprintln!("Usage: parakeet-engine <command>");
+            eprintln!("Usage: kesha-engine <command>");
             eprintln!("Run --help for usage information");
             std::process::exit(1);
         }

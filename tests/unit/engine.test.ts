@@ -2,10 +2,10 @@ import { describe, test, expect } from "bun:test";
 import { parseLangResult, getEngineBinPath } from "../../src/engine";
 
 describe("engine", () => {
-  test("getEngineBinPath returns path under .cache/parakeet", () => {
+  test("getEngineBinPath returns path under .cache/kesha", () => {
     const path = getEngineBinPath();
-    expect(path).toContain(".cache/parakeet");
-    expect(path).toContain("parakeet-engine");
+    expect(path).toContain(".cache/kesha");
+    expect(path).toContain("kesha-engine");
   });
 
   test("parseLangResult parses valid JSON", () => {

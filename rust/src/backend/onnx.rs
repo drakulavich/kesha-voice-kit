@@ -27,20 +27,20 @@ impl OnnxBackend {
         let preprocessor = Session::builder()
             .context("Failed to create preprocessor session builder")?
             .commit_from_file(model_path.join("nemo128.onnx"))
-            .context("Failed to load nemo128.onnx — run `parakeet-engine install` first")?;
+            .context("Failed to load nemo128.onnx — run `kesha-engine install` first")?;
 
         let encoder = Session::builder()
             .context("Failed to create encoder session builder")?
             .commit_from_file(model_path.join("encoder-model.onnx"))
-            .context("Failed to load encoder-model.onnx — run `parakeet-engine install` first")?;
+            .context("Failed to load encoder-model.onnx — run `kesha-engine install` first")?;
 
         let decoder = Session::builder()
             .context("Failed to create decoder session builder")?
             .commit_from_file(model_path.join("decoder_joint-model.onnx"))
-            .context("Failed to load decoder_joint-model.onnx — run `parakeet-engine install` first")?;
+            .context("Failed to load decoder_joint-model.onnx — run `kesha-engine install` first")?;
 
         let vocab = load_vocab(model_path.join("vocab.txt"))
-            .context("Failed to load vocab.txt — run `parakeet-engine install` first")?;
+            .context("Failed to load vocab.txt — run `kesha-engine install` first")?;
 
         let blank_id = vocab.len() - 1;
 

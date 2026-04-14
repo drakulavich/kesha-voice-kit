@@ -4,15 +4,15 @@ import { getEngineBinPath } from "./engine";
 import { log } from "./log";
 import { streamResponseToFile } from "./progress";
 
-const GITHUB_REPO = "drakulavich/kesha-cli";
+const GITHUB_REPO = "drakulavich/kesha-voice-kit";
 
 function getEngineBinaryName(): string {
   const platform = process.platform;
   const arch = process.arch;
 
-  if (platform === "darwin" && arch === "arm64") return "parakeet-engine-darwin-arm64";
-  if (platform === "linux" && arch === "x64") return "parakeet-engine-linux-x64";
-  if (platform === "win32" && arch === "x64") return "parakeet-engine-windows-x64.exe";
+  if (platform === "darwin" && arch === "arm64") return "kesha-engine-darwin-arm64";
+  if (platform === "linux" && arch === "x64") return "kesha-engine-linux-x64";
+  if (platform === "win32" && arch === "x64") return "kesha-engine-windows-x64.exe";
 
   throw new Error(`Unsupported platform: ${platform} ${arch}`);
 }
@@ -45,7 +45,7 @@ export async function downloadEngine(noCache = false): Promise<string> {
       );
     }
 
-    await streamResponseToFile(res, binPath, "parakeet-engine binary");
+    await streamResponseToFile(res, binPath, "kesha-engine binary");
     chmodSync(binPath, 0o755);
     log.success("Engine binary downloaded.");
   }

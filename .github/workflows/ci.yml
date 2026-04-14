@@ -37,7 +37,7 @@ jobs:
               - 'src/**'
               - 'tests/integration/**'
               - 'fixtures/**'
-              - 'swift/**'
+              - 'rust/**'
 
   unit-tests:
     needs: changes
@@ -88,16 +88,13 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      - name: 🦜 Setup integration backend
+      - name: 🔊 Setup integration backend
         uses: ./.github/actions/install-parakeet-backend
         with:
           cache-path: |
-            ~/.cache/parakeet/coreml
-            ~/Library/Caches/FluidAudio
-          cache-key: ${{ runner.os }}-parakeet-coreml-v3
-          cache-restore-keys: ${{ runner.os }}-parakeet-coreml-
-          ffmpeg-provider: brew
-          install-args: --coreml
+            ~/.cache/kesha
+          cache-key: ${{ runner.os }}-kesha-engine-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-engine-
 
       - name: 🧪 Integration tests
         run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration.xml

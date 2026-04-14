@@ -15,7 +15,7 @@ import {
 
 const repoDir = resolve(import.meta.dir, "..");
 const fixturesDir = resolve(repoDir, "fixtures/benchmark");
-const CLI = "parakeet";
+const CLI = "kesha";
 const whisperPython = `
 import sys, time, json, tempfile, subprocess, os
 
@@ -95,7 +95,7 @@ function getCliVersion(): string {
 async function ensureBackendInstalled(): Promise<void> {
   const { isModelInstalled } = await import("../src/models");
   if (!isModelInstalled()) {
-    throw new Error("No backend installed. Run: parakeet install");
+    throw new Error("No backend installed. Run: kesha install");
   }
 }
 

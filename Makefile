@@ -18,8 +18,8 @@ lint: ## Type-check with tsc
 	bunx tsc --noEmit
 
 smoke-test: ## Run smoke tests against fixtures
-	bun link @drakulavich/parakeet-cli
-	parakeet install
+	bun link @drakulavich/kesha-voice-kit
+	kesha install
 	bun scripts/smoke-test.ts
 
 benchmark-coreml: ## Run CoreML vs CoreML benchmark (macOS only)

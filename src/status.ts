@@ -38,6 +38,6 @@ export async function showStatus(): Promise<void> {
   log.info("");
 
   if (!installed) {
-    log.warn('Run "parakeet install" to download the engine and models.');
+    log.warn('Run "kesha install" to download the engine and models.');
   }
 }
