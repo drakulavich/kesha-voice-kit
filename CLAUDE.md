@@ -37,6 +37,7 @@ Two interfaces: a CLI (`parakeet <audio>`) and a programmatic API (`@drakulavich
 ### VERIFY BEFORE PUSHING
 
 - Run `bun test && bunx tsc --noEmit` locally before every push
+- When changing Rust code (`rust/`), run `cd rust && cargo fmt` before every commit
 - Do NOT push broken code — fix locally first
 
 ### ERROR HANDLING
