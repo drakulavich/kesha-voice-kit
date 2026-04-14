@@ -7,6 +7,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     strategy:
@@ -56,12 +59,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           merge-multiple: true
-      - name: Create release and upload binaries
+      - name: Create draft release with binaries
         uses: softprops/action-gh-release@v2
         with:
           files: |
             parakeet-engine-darwin-arm64
             parakeet-engine-linux-x64
             parakeet-engine-windows-x64.exe
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          draft: true
