@@ -7,8 +7,10 @@ export interface LangDetectResult {
   confidence: number;
 }
 
+const ENGINE_BIN_PATH = join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
+
 export function getEngineBinPath(): string {
-  return join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
+  return ENGINE_BIN_PATH;
 }
 
 export function isEngineInstalled(): boolean {

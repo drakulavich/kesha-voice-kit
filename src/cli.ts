@@ -8,6 +8,7 @@ import { detectAudioLanguageEngine, detectTextLanguageEngine } from "./engine";
 import type { LangDetectResult } from "./engine";
 import { log } from "./log";
 import { showStatus } from "./status";
+import { suggestCommand } from "./suggest-command";
 
 export function detectLanguage(text: string): string {
   if (!text) return "";
@@ -109,12 +110,15 @@ export const mainCommand = defineCommand({
 
     for (const file of files) {
       try {
+        // Run audio lang-id and transcription concurrently
+        const [audioResult, text] = await Promise.all([
+          wantsLangId ? detectAudioLanguageEngine(file) : Promise.resolve(null),
+          transcribe(file),
+        ]);
+
         let audioLanguage: LangDetectResult | undefined;
-        if (wantsLangId) {
-          const audioResult = await detectAudioLanguageEngine(file);
-          if (audioResult && audioResult.code) {
-            audioLanguage = audioResult;
-          }
+        if (audioResult && audioResult.code) {
+          audioLanguage = audioResult;
         }
 
         if (audioLanguage && args.lang && audioLanguage.confidence > 0.8) {
@@ -122,9 +126,7 @@ export const mainCommand = defineCommand({
           if (mismatch) log.warn(`${file}: ${mismatch} (from audio)`);
         }
 
-        const text = await transcribe(file);
-
-        const tinyldLang = detectLanguage(text);
+        const tinyldLang = wantsLangId ? detectLanguage(text) : "";
         let textLanguage: LangDetectResult | undefined;
 
         if (wantsLangId) {
@@ -182,7 +184,6 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
 
   // Check for unknown subcommands (non-flag, non-file-path args)
   if (firstArg && !firstArg.startsWith("-") && !firstArg.includes(".") && !firstArg.includes("/")) {
-    const { suggestCommand } = await import("./suggest-command");
     const suggestion = suggestCommand(firstArg, SUBCOMMANDS);
     if (suggestion && suggestion !== firstArg) {
       log.error(`unknown command '${firstArg}'`);

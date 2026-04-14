@@ -56,12 +56,13 @@ export async function downloadEngine(noCache = false): Promise<string> {
     stderr: "pipe",
   });
 
-  if (proc.stderr.toString()) {
-    process.stderr.write(proc.stderr.toString());
+  const stderr = proc.stderr.toString();
+  if (stderr) {
+    process.stderr.write(stderr);
   }
 
   if (proc.exitCode !== 0) {
-    const detail = proc.stderr.toString().trim();
+    const detail = stderr.trim();
     throw new Error(detail ? `Failed to install models: ${detail}` : "Failed to install models");
   }
 
