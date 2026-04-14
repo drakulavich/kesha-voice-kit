@@ -116,12 +116,12 @@ function scanFixtures(dir: string): string[] {
 // --- Engine runners ---
 
 function runOpenAIWhisper(python: string, files: string[]): EngineResult[] {
-  console.error(`Running openai-whisper (base) on ${files.length} files...`);
+  console.error(`Running openai-whisper (large-v3-turbo) on ${files.length} files...`);
 
   const script = `
 import sys, time, json, whisper
 
-model = whisper.load_model("base")
+model = whisper.load_model("large-v3-turbo")
 results = []
 total = len(sys.argv[1:])
 for i, f in enumerate(sys.argv[1:], 1):
@@ -144,13 +144,13 @@ print(json.dumps(results, ensure_ascii=False))
 }
 
 function runFasterWhisper(python: string, files: string[]): EngineResult[] {
-  console.error(`Running faster-whisper (base, int8) on ${files.length} files...`);
+  console.error(`Running faster-whisper (large-v3-turbo, int8) on ${files.length} files...`);
 
   const script = `
 import sys, time, json
 from faster_whisper import WhisperModel
 
-model = WhisperModel("base", device="cpu", compute_type="int8")
+model = WhisperModel("large-v3-turbo", device="cpu", compute_type="int8")
 results = []
 total = len(sys.argv[1:])
 for i, f in enumerate(sys.argv[1:], 1):
@@ -309,7 +309,7 @@ async function main(): Promise<void> {
     date: new Date().toISOString().split("T")[0],
     platform,
     keshaBackend,
-    whisperModel: "base",
+    whisperModel: "large-v3-turbo",
     groups,
   };
 
