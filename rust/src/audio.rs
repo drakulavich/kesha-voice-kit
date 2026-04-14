@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
-    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
-    WindowFunction, calculate_cutoff,
+    calculate_cutoff, Async, FixedAsync, Resampler, SincInterpolationParameters,
+    SincInterpolationType, WindowFunction,
 };
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{CodecRegistry, CODEC_TYPE_NULL, DecoderOptions};
+use symphonia::core::codecs::{CodecRegistry, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
@@ -27,13 +27,15 @@ fn get_codec_registry() -> CodecRegistry {
 /// Decode audio file to raw f32 mono samples at the native sample rate.
 /// Returns (samples, sample_rate, channels).
 fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
-    let src = std::fs::File::open(path)
-        .with_context(|| format!("file not found: {path}"))?;
+    let src = std::fs::File::open(path).with_context(|| format!("file not found: {path}"))?;
 
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
         hint.with_extension(ext);
     }
 
@@ -62,11 +64,7 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
         .sample_rate
         .with_context(|| format!("unknown sample rate in: {path}"))?;
 
-    let channels = track
-        .codec_params
-        .channels
-        .map(|c| c.count())
-        .unwrap_or(1);
+    let channels = track.codec_params.channels.map(|c| c.count()).unwrap_or(1);
 
     let track_id = track.id;
     let dec_opts = DecoderOptions::default();
@@ -146,23 +144,16 @@ fn resample(samples: Vec<f32>, src_rate: u32) -> Result<Vec<f32>> {
     let chunk_size = 1024usize;
     let channels = 1usize;
 
-    let mut resampler = Async::<f32>::new_sinc(
-        ratio,
-        1.1,
-        &params,
-        chunk_size,
-        channels,
-        FixedAsync::Input,
-    )
-    .context("failed to create resampler")?;
+    let mut resampler =
+        Async::<f32>::new_sinc(ratio, 1.1, &params, chunk_size, channels, FixedAsync::Input)
+            .context("failed to create resampler")?;
 
     // Wrap mono samples in a vec-of-vecs (one channel)
     let input_data = vec![samples];
     let total_frames = input_data[0].len();
 
-    let mut output_mono: Vec<f32> = Vec::with_capacity(
-        (total_frames as f64 * ratio * 1.1) as usize,
-    );
+    let mut output_mono: Vec<f32> =
+        Vec::with_capacity((total_frames as f64 * ratio * 1.1) as usize);
 
     let mut frame_offset = 0usize;
 
@@ -177,15 +168,13 @@ fn resample(samples: Vec<f32>, src_rate: u32) -> Result<Vec<f32>> {
             .map(|ch| ch[frame_offset..frame_offset + frames_needed].to_vec())
             .collect();
 
-        let input_adapter =
-            SequentialSliceOfVecs::new(&chunk, channels, frames_needed)
-                .context("failed to create input adapter")?;
+        let input_adapter = SequentialSliceOfVecs::new(&chunk, channels, frames_needed)
+            .context("failed to create input adapter")?;
 
         let out_max = resampler.output_frames_max();
         let mut out_data: Vec<Vec<f32>> = vec![vec![0.0f32; out_max]; channels];
-        let mut output_adapter =
-            SequentialSliceOfVecs::new_mut(&mut out_data, channels, out_max)
-                .context("failed to create output adapter")?;
+        let mut output_adapter = SequentialSliceOfVecs::new_mut(&mut out_data, channels, out_max)
+            .context("failed to create output adapter")?;
 
         let (_frames_in, frames_out) = resampler
             .process_into_buffer(&input_adapter, &mut output_adapter, None)
@@ -203,15 +192,13 @@ fn resample(samples: Vec<f32>, src_rate: u32) -> Result<Vec<f32>> {
         last_chunk.resize(frames_needed, 0.0);
 
         let chunk: Vec<Vec<f32>> = vec![last_chunk];
-        let input_adapter =
-            SequentialSliceOfVecs::new(&chunk, channels, frames_needed)
-                .context("failed to create input adapter")?;
+        let input_adapter = SequentialSliceOfVecs::new(&chunk, channels, frames_needed)
+            .context("failed to create input adapter")?;
 
         let out_max = resampler.output_frames_max();
         let mut out_data: Vec<Vec<f32>> = vec![vec![0.0f32; out_max]; channels];
-        let mut output_adapter =
-            SequentialSliceOfVecs::new_mut(&mut out_data, channels, out_max)
-                .context("failed to create output adapter")?;
+        let mut output_adapter = SequentialSliceOfVecs::new_mut(&mut out_data, channels, out_max)
+            .context("failed to create output adapter")?;
 
         let (_frames_in, frames_out) = resampler
             .process_into_buffer(&input_adapter, &mut output_adapter, None)

@@ -23,7 +23,11 @@ pub fn get_capabilities() -> Capabilities {
 
 fn backend_name() -> &'static str {
     #[cfg(feature = "coreml")]
-    { "coreml" }
+    {
+        "coreml"
+    }
     #[cfg(not(feature = "coreml"))]
-    { "onnx" }
+    {
+        "onnx"
+    }
 }

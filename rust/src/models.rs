@@ -47,7 +47,9 @@ pub fn is_asr_cached(dir: &str) -> bool {
 }
 
 pub fn is_lang_id_cached(dir: &str) -> bool {
-    LANG_ID_FILES.iter().all(|f| Path::new(dir).join(f).exists())
+    LANG_ID_FILES
+        .iter()
+        .all(|f| Path::new(dir).join(f).exists())
 }
 
 pub fn install(no_cache: bool) -> Result<()> {
@@ -76,10 +78,7 @@ pub fn install(no_cache: bool) -> Result<()> {
 fn download_hf_files(repo: &str, files: &[&str], dest_dir: &str) -> Result<()> {
     fs::create_dir_all(dest_dir)?;
     for file in files {
-        let url = format!(
-            "https://huggingface.co/{}/resolve/main/{}",
-            repo, file
-        );
+        let url = format!("https://huggingface.co/{}/resolve/main/{}", repo, file);
         let dest = Path::new(dest_dir).join(file);
         eprintln!("Downloading {}...", file);
 

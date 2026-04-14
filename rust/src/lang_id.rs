@@ -1,8 +1,8 @@
+use crate::audio;
+use crate::models;
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::path::Path;
-use crate::audio;
-use crate::models;
 
 #[derive(Serialize)]
 pub struct LangDetectResult {
@@ -39,14 +39,14 @@ pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
     // Input: "waveform" [1, samples] float32
     // Output: "language_probs" [1, 107] float32
     let input_len = samples.len();
-    let waveform = ort::value::Value::from_array(
-        ndarray::Array2::from_shape_vec((1, input_len), samples)?
-    )?;
+    let waveform =
+        ort::value::Value::from_array(ndarray::Array2::from_shape_vec((1, input_len), samples)?)?;
 
     let outputs = session.run(ort::inputs!["waveform" => waveform])?;
 
     // Extract probs - same pattern as onnx.rs: try_extract_tensor returns (&Shape, &[T])
-    let (_, probs_data) = outputs[0].try_extract_tensor::<f32>()
+    let (_, probs_data) = outputs[0]
+        .try_extract_tensor::<f32>()
         .context("failed to extract language_probs tensor")?;
 
     // Find argmax

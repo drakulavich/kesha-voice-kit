@@ -18,13 +18,15 @@
     "tsconfig.json",
     "openclaw.plugin.json",
     "SKILL.md",
+    "scripts/postinstall.js",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
     "test": "bun test",
     "test:unit": "bun test tests/unit/",
-    "test:integration": "bun test tests/integration/"
+    "test:integration": "bun test tests/integration/",
+    "postinstall": "node scripts/postinstall.js"
   },
   "keywords": [
     "asr",
