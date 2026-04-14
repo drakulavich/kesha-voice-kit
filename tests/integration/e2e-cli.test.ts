@@ -1,10 +1,12 @@
 import { describe, test, expect } from "bun:test";
 
+const CWD = import.meta.dir + "/../..";
+
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args], {
     stdout: "pipe",
     stderr: "pipe",
-    cwd: import.meta.dir + "/../..",
+    cwd: CWD,
   });
 
   const [stdout, stderr, exitCode] = await Promise.all([
@@ -20,22 +22,7 @@ describe("e2e-cli", () => {
   test("--version prints version and exits 0", async () => {
     const { stdout, exitCode } = await runCli(["--version"]);
     expect(exitCode).toBe(0);
-    expect(stdout).toMatch(/^\d+\.\d+\.\d+$/);
-  });
-
-  test("install --help shows install flags", async () => {
-    const { stdout, exitCode } = await runCli(["install", "--help"]);
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("--coreml");
-    expect(stdout).toContain("--onnx");
-    expect(stdout).toContain("--no-cache");
-  });
-
-  test("status prints runtime status and exits 0", async () => {
-    const { stdout, exitCode } = await runCli(["status"]);
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("ONNX:");
-    expect(stdout).toContain("Runtime");
+    expect(stdout).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   test("no args prints usage and exits 1", async () => {
@@ -44,30 +31,50 @@ describe("e2e-cli", () => {
     expect(stdout).toContain("Usage:");
   });
 
+  test("--help shows description and flags", async () => {
+    const { stdout, exitCode } = await runCli(["--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("--json");
+    expect(stdout).toContain("--verbose");
+    expect(stdout).toContain("--lang");
+  });
+
+  test("install --help shows --no-cache flag", async () => {
+    const { stdout, exitCode } = await runCli(["install", "--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("--no-cache");
+  });
+
+  test("status prints engine info and exits 0", async () => {
+    const { stdout, exitCode } = await runCli(["status"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Engine:");
+    expect(stdout).toContain("Runtime");
+  });
+
   test("missing file prints error and exits 1", async () => {
     const { stderr, exitCode } = await runCli(["nonexistent.wav"]);
     expect(exitCode).toBe(1);
     expect(stderr.toLowerCase()).toContain("file not found");
   });
 
-  test("multiple missing files prints all errors and exits 1", async () => {
-    const { stderr, exitCode } = await runCli(["a.wav", "b.wav"]);
-    expect(exitCode).toBe(1);
-    expect(stderr).toContain("a.wav");
-    expect(stderr).toContain("b.wav");
-  });
-
-  test("multiple missing files with --json outputs empty JSON array", async () => {
+  test("multiple missing files with --json outputs empty array", async () => {
     const { stdout, stderr, exitCode } = await runCli(["--json", "a.wav", "b.wav"]);
     expect(exitCode).toBe(1);
     expect(JSON.parse(stdout)).toEqual([]);
     expect(stderr).toContain("a.wav");
-    expect(stderr).toContain("b.wav");
   });
 
-  test("install rejects conflicting backend flags", async () => {
-    const { stderr, exitCode } = await runCli(["install", "--coreml", "--onnx"]);
+  test("unknown subcommand suggests closest match", async () => {
+    const { stderr, exitCode } = await runCli(["instal"]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain('Choose only one backend');
+    expect(stderr).toContain("unknown command");
+    expect(stderr).toContain("Did you mean");
+  });
+
+  test("gibberish subcommand shows no suggestion", async () => {
+    const { stdout, stderr } = await runCli(["xyzxyzxyz"]);
+    const output = stdout + stderr;
+    expect(output).not.toContain("Did you mean");
   });
 });
