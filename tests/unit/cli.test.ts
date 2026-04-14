@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
-import { mainCommand, installCommand, statusCommand, formatTextOutput, formatJsonOutput, formatVerboseOutput, detectLanguage, checkLanguageMismatch, resolveInstallBackend } from "../../src/cli";
+import { mainCommand, installCommand, statusCommand, formatTextOutput, formatJsonOutput, formatVerboseOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -9,10 +9,8 @@ describe("CLI help", () => {
     expect(usage).toContain("install");
   });
 
-  test("install help contains backend options", async () => {
+  test("install help contains --no-cache option", async () => {
     const usage = await renderUsage(installCommand);
-    expect(usage).toContain("--coreml");
-    expect(usage).toContain("--onnx");
     expect(usage).toContain("--no-cache");
   });
 
@@ -130,21 +128,6 @@ describe("language detection", () => {
   });
 });
 
-describe("install backend selection", () => {
-  test("rejects conflicting backend flags", () => {
-    expect(() =>
-      resolveInstallBackend({ coreml: true, onnx: true, noCache: false }, true),
-    ).toThrow('Choose only one backend');
-  });
-
-  test("defaults to CoreML on macOS Apple Silicon", () => {
-    expect(resolveInstallBackend({ coreml: false, onnx: false, noCache: false }, true)).toBe("coreml");
-  });
-
-  test("defaults to ONNX on non-macOS", () => {
-    expect(resolveInstallBackend({ coreml: false, onnx: false, noCache: false }, false)).toBe("onnx");
-  });
-});
 
 describe("CLI help with status", () => {
   test("main description mentions install command", async () => {

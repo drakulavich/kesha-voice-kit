@@ -1,0 +1,44 @@
+name: "🔨 Build Engine"
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            features: onnx
+            binary: parakeet-engine-darwin-arm64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            features: onnx
+            binary: parakeet-engine-linux-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            features: onnx
+            binary: parakeet-engine-windows-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build release binary
+        run: cd rust && cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }} --no-default-features
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          src="rust/target/${{ matrix.target }}/release/parakeet-engine"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then src="${src}.exe"; fi
+          cp "$src" "${{ matrix.binary }}"
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.binary }}

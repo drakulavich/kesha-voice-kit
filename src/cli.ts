@@ -3,13 +3,9 @@
 import { defineCommand, runMain } from "citty";
 import { detect } from "tinyld";
 import { transcribe } from "./lib";
-import { downloadModel } from "./onnx-install";
-import { downloadCoreML } from "./coreml-install";
-import { downloadLangIdOnnx, downloadLangIdCoreML } from "./lang-id-install";
-import { isMacArm64 } from "./coreml";
-import { detectAudioLanguageCoreML, detectTextLanguageCoreML } from "./coreml";
-import { detectAudioLanguageOnnx } from "./lang-id";
-import type { LangDetectResult } from "./lang-id";
+import { downloadEngine } from "./engine-install";
+import { detectAudioLanguageEngine, detectTextLanguageEngine } from "./engine";
+import type { LangDetectResult } from "./engine";
 import { log } from "./log";
 import { showStatus } from "./status";
 
@@ -23,15 +19,7 @@ export function checkLanguageMismatch(expected: string | undefined, detected: st
   return `warning: expected language "${expected}" but detected "${detected}"`;
 }
 
-export interface InstallOptions {
-  coreml: boolean;
-  onnx: boolean;
-  noCache: boolean;
-}
-
 interface InstallCommandArgs {
-  coreml: boolean;
-  onnx: boolean;
   "no-cache": boolean;
 }
 
@@ -44,36 +32,9 @@ interface MainCommandArgs {
 
 const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
 
-export function resolveInstallBackend(options: InstallOptions, macArm64 = isMacArm64()): "coreml" | "onnx" {
-  const { coreml, onnx } = options;
-
-  if (coreml && onnx) {
-    throw new Error('Choose only one backend: "--coreml" or "--onnx".');
-  }
-
-  if (coreml) {
-    if (!macArm64) {
-      throw new Error("CoreML backend is only available on macOS Apple Silicon.");
-    }
-    return "coreml";
-  }
-
-  if (onnx) {
-    return "onnx";
-  }
-
-  return macArm64 ? "coreml" : "onnx";
-}
-
-async function performInstall(options: InstallOptions) {
-  const { noCache } = options;
+async function performInstall(noCache: boolean) {
   try {
-    const backend = resolveInstallBackend(options);
-    if (backend === "coreml") {
-      await Promise.all([downloadCoreML(noCache), downloadLangIdCoreML(noCache)]);
-    } else {
-      await Promise.all([downloadModel(noCache), downloadLangIdOnnx(noCache)]);
-    }
+    await downloadEngine(noCache);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(message);
@@ -84,19 +45,9 @@ async function performInstall(options: InstallOptions) {
 export const installCommand = defineCommand({
   meta: {
     name: "install",
-    description: "Download speech-to-text models",
+    description: "Download inference engine and models",
   },
   args: {
-    coreml: {
-      type: "boolean",
-      description: "Force CoreML backend (macOS arm64)",
-      default: false,
-    },
-    onnx: {
-      type: "boolean",
-      description: "Force ONNX backend",
-      default: false,
-    },
     "no-cache": {
       type: "boolean",
       description: "Re-download even if cached",
@@ -104,7 +55,7 @@ export const installCommand = defineCommand({
     },
   },
   async run({ args }: { args: InstallCommandArgs }) {
-    await performInstall({ coreml: args.coreml, onnx: args.onnx, noCache: args["no-cache"] });
+    await performInstall(args["no-cache"]);
   },
 });
 
@@ -123,9 +74,9 @@ export const mainCommand = defineCommand({
     name: "parakeet",
     version: pkg.version,
     description:
-      "Fast local speech-to-text. 25 languages. CoreML on Apple Silicon, ONNX on CPU.\n" +
-      "  Run 'parakeet install [--coreml | --onnx] [--no-cache]' to download models.\n" +
-      "  Run 'parakeet status' to inspect installed backends.",
+      "Fast local speech-to-text. 25 languages. Powered by parakeet-engine.\n" +
+      "  Run 'parakeet install [--no-cache]' to download engine and models.\n" +
+      "  Run 'parakeet status' to inspect installed backend.",
   },
   args: {
     json: {
@@ -147,7 +98,7 @@ export const mainCommand = defineCommand({
     const files = args._;
 
     if (files.length === 0) {
-      log.info("Usage: parakeet <audio_file> [audio_file ...]\n       parakeet install [--coreml | --onnx] [--no-cache]\n       parakeet status");
+      log.info("Usage: parakeet <audio_file> [audio_file ...]\n       parakeet install [--no-cache]\n       parakeet status");
       process.exit(1);
     }
 
@@ -155,15 +106,12 @@ export const mainCommand = defineCommand({
     const results: TranscribeResult[] = [];
 
     const wantsLangId = !!(args.lang || args.verbose || args.json);
-    const macArm64 = isMacArm64();
 
     for (const file of files) {
       try {
         let audioLanguage: LangDetectResult | undefined;
         if (wantsLangId) {
-          const audioResult = macArm64
-            ? await detectAudioLanguageCoreML(file)
-            : await detectAudioLanguageOnnx(file);
+          const audioResult = await detectAudioLanguageEngine(file);
           if (audioResult && audioResult.code) {
             audioLanguage = audioResult;
           }
@@ -180,9 +128,9 @@ export const mainCommand = defineCommand({
         let textLanguage: LangDetectResult | undefined;
 
         if (wantsLangId) {
-          const coremlTextResult = await detectTextLanguageCoreML(text);
-          if (coremlTextResult && coremlTextResult.code) {
-            textLanguage = coremlTextResult;
+          const engineTextResult = await detectTextLanguageEngine(text);
+          if (engineTextResult && engineTextResult.code) {
+            textLanguage = engineTextResult;
           }
         }
 
