@@ -1,10 +1,11 @@
 {
-  "name": "@drakulavich/parakeet-cli",
+  "name": "@drakulavich/kesha-voice-kit",
   "version": "1.0.0-beta.5",
-  "description": "Fast local speech-to-text CLI. 25 languages. Powered by parakeet-engine.",
+  "description": "Open-source voice toolkit for Apple Silicon. Speech-to-text, language detection. 25 languages.",
   "type": "module",
   "bin": {
-    "parakeet": "bin/parakeet.js"
+    "kesha": "bin/kesha.js",
+    "parakeet": "bin/kesha.js"
   },
   "exports": {
     ".": "./src/cli.ts",
@@ -27,10 +28,11 @@
     "asr",
     "speech-to-text",
     "transcription",
-    "parakeet",
-    "nvidia",
-    "onnx",
+    "voice",
+    "kesha",
     "multilingual",
+    "apple-silicon",
+    "coreml",
     "bun",
     "cli"
   ],
@@ -38,11 +40,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/drakulavich/parakeet-cli.git"
+    "url": "git+https://github.com/drakulavich/kesha-voice-kit.git"
   },
-  "homepage": "https://github.com/drakulavich/parakeet-cli#readme",
+  "homepage": "https://github.com/drakulavich/kesha-voice-kit#readme",
   "bugs": {
-    "url": "https://github.com/drakulavich/parakeet-cli/issues"
+    "url": "https://github.com/drakulavich/kesha-voice-kit/issues"
   },
   "engines": {
     "bun": ">=1.3.0"

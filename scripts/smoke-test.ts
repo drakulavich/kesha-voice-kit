@@ -24,7 +24,7 @@ let failed = 0;
 
 for (const file of files) {
   const path = resolve(fixturesDir, file);
-  const proc = Bun.spawnSync(["parakeet", path], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawnSync(["kesha", path], { stdout: "pipe", stderr: "pipe" });
   const result = proc.stdout.toString().trim();
 
   if (!result) {
@@ -38,7 +38,7 @@ for (const file of files) {
 
 // E2E: --verbose flag should include "Text language:" line
 const verboseFile = resolve(fixturesDir, files[0]);
-const verboseProc = Bun.spawnSync(["parakeet", "--verbose", verboseFile], { stdout: "pipe", stderr: "pipe" });
+const verboseProc = Bun.spawnSync(["kesha", "--verbose", verboseFile], { stdout: "pipe", stderr: "pipe" });
 const verboseOut = verboseProc.stdout.toString();
 
 if (verboseOut.includes("Text language:") && verboseOut.includes("---")) {
@@ -50,7 +50,7 @@ if (verboseOut.includes("Text language:") && verboseOut.includes("---")) {
 }
 
 // E2E: --json flag should produce valid JSON with lang field
-const jsonProc = Bun.spawnSync(["parakeet", "--json", verboseFile], { stdout: "pipe", stderr: "pipe" });
+const jsonProc = Bun.spawnSync(["kesha", "--json", verboseFile], { stdout: "pipe", stderr: "pipe" });
 const jsonOut = jsonProc.stdout.toString().trim();
 
 try {
@@ -69,7 +69,7 @@ try {
 
 // E2E: --lang mismatch warning should appear on stderr when language doesn't match
 // Russian audio file with --lang en should trigger a warning
-const mismatchProc = Bun.spawnSync(["parakeet", "--lang", "en", verboseFile], { stdout: "pipe", stderr: "pipe" });
+const mismatchProc = Bun.spawnSync(["kesha", "--lang", "en", verboseFile], { stdout: "pipe", stderr: "pipe" });
 const mismatchStderr = mismatchProc.stderr.toString();
 const mismatchStdout = mismatchProc.stdout.toString().trim();
 
@@ -81,15 +81,15 @@ if (mismatchStderr.includes("expected language") && mismatchStdout) {
   failed++;
 }
 
-// E2E: parakeet install downloads engine and models
-const installProc = Bun.spawnSync(["parakeet", "install"], { stdout: "pipe", stderr: "pipe" });
+// E2E: kesha install downloads engine and models
+const installProc = Bun.spawnSync(["kesha", "install"], { stdout: "pipe", stderr: "pipe" });
 const installOut = installProc.stdout.toString() + installProc.stderr.toString();
 
 if (installOut.includes("installed") || installOut.includes("already") || installOut.includes("models")) {
-  console.log(`  PASS  parakeet install completes successfully`);
+  console.log(`  PASS  kesha install completes successfully`);
   passed++;
 } else {
-  console.log(`  FAIL  parakeet install unexpected output (output: ${installOut.slice(0, 120)})`);
+  console.log(`  FAIL  kesha install unexpected output (output: ${installOut.slice(0, 120)})`);
   failed++;
 }
 

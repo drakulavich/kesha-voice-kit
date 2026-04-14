@@ -11,7 +11,7 @@ export async function transcribe(audioPath: string, _opts: TranscribeOptions = {
       "╔══════════════════════════════════════════════════════════╗\n" +
       "║ Please run the following command to get started:         ║\n" +
       "║                                                          ║\n" +
-      "║     bunx @drakulavich/parakeet-cli install               ║\n" +
+      "║     bunx @drakulavich/kesha-voice-kit install               ║\n" +
       "╚══════════════════════════════════════════════════════════╝",
     );
   }

@@ -23,7 +23,7 @@ fn cache_dir() -> PathBuf {
     dirs::home_dir()
         .expect("cannot determine home directory")
         .join(".cache")
-        .join("parakeet")
+        .join("kesha")
 }
 
 pub fn asr_model_dir() -> String {

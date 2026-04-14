@@ -15,7 +15,7 @@ const MAX_SECONDS: f32 = 10.0;
 pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
     let model_dir = models::lang_id_model_dir();
     if !models::is_lang_id_cached(&model_dir) {
-        anyhow::bail!("Lang-ID model not installed. Run: parakeet install");
+        anyhow::bail!("Lang-ID model not installed. Run: kesha install");
     }
 
     let dir = Path::new(&model_dir);

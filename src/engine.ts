@@ -8,7 +8,7 @@ export interface LangDetectResult {
 }
 
 export function getEngineBinPath(): string {
-  return join(homedir(), ".cache", "parakeet", "engine", "bin", "parakeet-engine");
+  return join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
 }
 
 export function isEngineInstalled(): boolean {
@@ -34,7 +34,7 @@ async function runEngine(args: string[]): Promise<{ stdout: string; stderr: stri
 export async function transcribeEngine(audioPath: string): Promise<string> {
   const { stdout, stderr, exitCode } = await runEngine(["transcribe", audioPath]);
   if (exitCode !== 0) {
-    throw new Error(stderr || `parakeet-engine exited with code ${exitCode}`);
+    throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
   }
   return stdout;
 }

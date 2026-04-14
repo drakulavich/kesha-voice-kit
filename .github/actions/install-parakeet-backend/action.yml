@@ -1,5 +1,5 @@
-name: Install Parakeet Backend
-description: Restore backend cache, install ffmpeg when needed, and install the Parakeet backend
+name: Install Kesha Backend
+description: Restore backend cache, install ffmpeg when needed, and install the Kesha backend
 
 inputs:
   cache-path:
@@ -44,6 +44,6 @@ runs:
           *) echo "Unsupported ffmpeg provider: ${{ inputs.ffmpeg-provider }}" >&2; exit 1 ;;
         esac
 
-    - name: 🦜 Install parakeet backend
-      run: bun link && parakeet install ${{ inputs.install-args }}
+    - name: 🔊 Install kesha backend
+      run: bun link && kesha install ${{ inputs.install-args }}
       shell: bash

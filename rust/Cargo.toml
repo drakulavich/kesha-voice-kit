@@ -1,8 +1,8 @@
 [package]
-name = "parakeet-engine"
+name = "kesha-engine"
 version = "1.0.0"
 edition = "2021"
-description = "Inference engine for parakeet-cli: ASR + language detection"
+description = "Inference engine for Kesha Voice Kit: ASR + language detection"
 
 [features]
 default = ["onnx"]
