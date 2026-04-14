@@ -4,6 +4,8 @@ use anyhow::Result;
 mod audio;
 mod backend;
 mod capabilities;
+mod models;
+mod transcribe;
 
 #[derive(Parser)]
 #[command(name = "parakeet-engine", version)]
@@ -52,7 +54,8 @@ fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Transcribe { audio_path }) => {
-            eprintln!("TODO: transcribe {}", audio_path);
+            let text = transcribe::transcribe(&audio_path)?;
+            println!("{}", text);
         }
         Some(Commands::DetectLang { audio_path }) => {
             eprintln!("TODO: detect-lang {}", audio_path);
@@ -61,7 +64,8 @@ fn main() -> Result<()> {
             eprintln!("TODO: detect-text-lang {}", text);
         }
         Some(Commands::Install { no_cache }) => {
-            eprintln!("TODO: install (no_cache={})", no_cache);
+            models::install(no_cache)?;
+            eprintln!("Install complete.");
         }
         None => {
             eprintln!("Usage: parakeet-engine <command>");
