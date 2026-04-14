@@ -1,9 +1,6 @@
-import { isCoreMLInstalled } from "./coreml";
-import { isModelCached } from "./onnx-install";
+import { isEngineInstalled } from "./engine";
+export { downloadEngine } from "./engine-install";
 
-export * from "./onnx-install";
-export * from "./coreml-install";
-
-export function isModelInstalled(modelDir?: string): boolean {
-  return isCoreMLInstalled() || isModelCached(modelDir);
+export function isModelInstalled(): boolean {
+  return isEngineInstalled();
 }

@@ -1,7 +1,7 @@
 {
   "name": "@drakulavich/parakeet-cli",
-  "version": "0.9.0",
-  "description": "Fast local speech-to-text CLI. CoreML on Apple Silicon, ONNX on CPU. 25 languages.",
+  "version": "1.0.0",
+  "description": "Fast local speech-to-text CLI. 25 languages. Powered by parakeet-engine.",
   "type": "module",
   "bin": {
     "parakeet": "bin/parakeet.js"
@@ -54,7 +54,6 @@
   },
   "dependencies": {
     "citty": "^0.2.2",
-    "onnxruntime-node": "^1.24.0",
     "picocolors": "^1.1.1",
     "tinyld": "^1.3.4"
   }
