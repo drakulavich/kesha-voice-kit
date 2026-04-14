@@ -16,6 +16,8 @@
     "src/",
     "package.json",
     "tsconfig.json",
+    "openclaw.plugin.json",
+    "SKILL.md",
     "LICENSE",
     "README.md"
   ],
