@@ -1,0 +1,26 @@
+name: "🧪 Rust Tests"
+
+on:
+  pull_request:
+    paths: ["rust/**"]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Run tests
+        run: cd rust && cargo test
+      - name: Check formatting
+        if: matrix.os == 'ubuntu-latest'
+        run: cd rust && cargo fmt -- --check
+      - name: Clippy
+        if: matrix.os == 'ubuntu-latest'
+        run: cd rust && cargo clippy -- -D warnings
