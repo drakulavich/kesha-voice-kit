@@ -42,7 +42,26 @@ jobs:
           src="rust/target/${{ matrix.target }}/release/parakeet-engine"
           if [ "${{ matrix.os }}" = "windows-latest" ]; then src="${src}.exe"; fi
           cp "$src" "${{ matrix.binary }}"
-      - name: Upload to release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: ${{ matrix.binary }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Create release and upload binaries
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.binary }}
+          files: |
+            parakeet-engine-darwin-arm64
+            parakeet-engine-linux-x64
+            parakeet-engine-windows-x64.exe
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
