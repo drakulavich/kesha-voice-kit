@@ -65,7 +65,7 @@ Kesha CoreML (ANE):                3.2s  ███
 
 ## Notes
 
-- **openai-whisper** is the default transcription engine in [OpenClaw](https://github.com/nicekid1/OpenClaw). Kesha Voice Kit is a drop-in replacement that's 19x faster on Apple Silicon.
+- **openai-whisper** is the default transcription engine in [OpenClaw](https://github.com/openclaw/openclaw). Kesha Voice Kit is a drop-in replacement that's 19x faster on Apple Silicon.
 - **faster-whisper** with `large-v3-turbo` + `int8` is actually slower than openai-whisper on this hardware — likely due to CTranslate2 overhead with the turbo model architecture.
 - **Kesha ONNX** uses the Rust engine (`kesha-engine`) with ONNX Runtime on CPU. First file is slower due to model warmup.
 - **Kesha CoreML** uses FluidAudio on Apple Neural Engine. Sub-second transcription for most voice messages.

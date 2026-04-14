@@ -11,7 +11,7 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun" alt="Bun"></a>
 </p>
 
-<p align="center"><b>Open-source voice toolkit for Apple Silicon.</b><br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/nicekid1/OpenClaw">OpenClaw</a> skill for LLM agents.</p>
+<p align="center"><b>Open-source voice toolkit for Apple Silicon.</b><br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill for LLM agents.</p>
 
 - **Speech-to-text** — 25 languages, ~19x faster than Whisper on Apple Silicon
 - **Language detection** — 107 languages from audio, text language via NLLanguageRecognizer
@@ -28,7 +28,7 @@ kesha audio.ogg     # transcript to stdout
 
 ## OpenClaw Integration
 
-Kesha Voice Kit is built as a skill for [OpenClaw](https://github.com/nicekid1/OpenClaw) — give your LLM agent ears. No API keys, everything runs locally on your machine.
+Kesha Voice Kit is built as a skill for [OpenClaw](https://github.com/openclaw/openclaw) — give your LLM agent ears. No API keys, everything runs locally on your machine.
 
 Add to your OpenClaw config:
 
