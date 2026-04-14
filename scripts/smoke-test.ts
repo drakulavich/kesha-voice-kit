@@ -105,7 +105,31 @@ for (const cmd of ["kesha", "parakeet"] as const) {
   }
 }
 
-const total = files.length + 6;
+// E2E: unknown command with typo shows suggestion
+const typoProc = Bun.spawnSync(["kesha", "instal"], { stdout: "pipe", stderr: "pipe" });
+const typoStderr = typoProc.stderr.toString();
+
+if (typoProc.exitCode === 1 && typoStderr.includes("unknown command") && typoStderr.includes("Did you mean")) {
+  console.log(`  PASS  typo "instal" suggests "install"`);
+  passed++;
+} else {
+  console.log(`  FAIL  typo suggestion not shown (stderr: ${typoStderr.slice(0, 80)})`);
+  failed++;
+}
+
+// E2E: unknown command without match shows no suggestion
+const noMatchProc = Bun.spawnSync(["kesha", "xyzxyzxyz"], { stdout: "pipe", stderr: "pipe" });
+const noMatchOut = noMatchProc.stdout.toString() + noMatchProc.stderr.toString();
+
+if (!noMatchOut.includes("Did you mean")) {
+  console.log(`  PASS  gibberish "xyzxyzxyz" shows no suggestion`);
+  passed++;
+} else {
+  console.log(`  FAIL  gibberish unexpectedly matched a command`);
+  failed++;
+}
+
+const total = files.length + 8;
 console.log(`\n${passed}/${total} passed, ${failed} failed`);
 
 if (failed > 0) process.exit(1);

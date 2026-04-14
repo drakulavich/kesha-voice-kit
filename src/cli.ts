@@ -165,6 +165,8 @@ export const mainCommand = defineCommand({
   },
 });
 
+const SUBCOMMANDS = ["install", "status"];
+
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
   const [firstArg, ...restArgs] = rawArgs;
 
@@ -176,6 +178,17 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
   if (firstArg === "status") {
     await runMain(statusCommand, { rawArgs: restArgs });
     return;
+  }
+
+  // Check for unknown subcommands (non-flag, non-file-path args)
+  if (firstArg && !firstArg.startsWith("-") && !firstArg.includes(".") && !firstArg.includes("/")) {
+    const { suggestCommand } = await import("./suggest-command");
+    const suggestion = suggestCommand(firstArg, SUBCOMMANDS);
+    if (suggestion && suggestion !== firstArg) {
+      log.error(`unknown command '${firstArg}'`);
+      log.warn(`(Did you mean ${suggestion}?)`);
+      process.exit(1);
+    }
   }
 
   await runMain(mainCommand, { rawArgs });
