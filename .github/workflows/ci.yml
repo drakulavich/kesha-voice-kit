@@ -136,6 +136,6 @@ jobs:
         run: bun .github/scripts/generate-pr-comment.ts all-results /tmp/pr-comment.md
 
       - name: 💬 Post PR comment
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           path: /tmp/pr-comment.md
