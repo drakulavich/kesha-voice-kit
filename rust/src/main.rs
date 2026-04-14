@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use anyhow::Result;
 
 mod audio;
+mod backend;
 mod capabilities;
 
 #[derive(Parser)]
