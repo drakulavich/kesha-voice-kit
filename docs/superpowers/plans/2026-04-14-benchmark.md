@@ -1,3 +1,124 @@
+# Three-Way Benchmark Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Replace the current benchmark script with a three-way comparison: openai-whisper (OpenClaw default) vs faster-whisper vs Kesha.
+
+**Architecture:** Single `scripts/benchmark.ts` that manages a Python venv for both Whisper variants, runs all three engines on Russian + English fixtures, outputs markdown to stdout and JSON to file.
+
+**Tech Stack:** TypeScript (Bun), Python (openai-whisper, faster-whisper), Kesha CLI
+
+**Spec:** `docs/superpowers/specs/2026-04-14-benchmark-design.md`
+
+---
+
+## File Structure
+
+| File | Action | Responsibility |
+|---|---|---|
+| `scripts/benchmark.ts` | Rewrite | Three-way benchmark runner |
+| `Makefile` | Modify | Replace `benchmark-coreml` with `benchmark` |
+| `src/benchmark-report.ts` | Delete | Replaced by inline report in benchmark script |
+| `scripts/benchmark-coreml.ts` | Delete | Obsolete WhisperKit comparison |
+| `tests/unit/benchmark-report.test.ts` | Delete | Tests for deleted module |
+| `.github/workflows/benchmark.yml` | Delete | Benchmark is local-only |
+| `fixtures/benchmark-en/` | Create | English audio fixtures |
+
+---
+
+### Task 1: Delete obsolete files
+
+**Files:**
+- Delete: `scripts/benchmark-coreml.ts`
+- Delete: `src/benchmark-report.ts`
+- Delete: `tests/unit/benchmark-report.test.ts`
+- Delete: `.github/workflows/benchmark.yml`
+
+- [ ] **Step 1: Delete files**
+
+```bash
+git rm scripts/benchmark-coreml.ts src/benchmark-report.ts tests/unit/benchmark-report.test.ts .github/workflows/benchmark.yml
+```
+
+- [ ] **Step 2: Verify tests still pass**
+
+```bash
+bun test tests/unit/
+```
+
+Expected: All pass (removed test file should reduce count, no failures).
+
+- [ ] **Step 3: Verify type check**
+
+```bash
+bunx tsc --noEmit
+```
+
+Expected: Clean. If `benchmark-report.ts` is imported elsewhere, fix the import.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "chore: remove obsolete benchmark-coreml, benchmark-report, and CI workflow"
+```
+
+---
+
+### Task 2: Add English audio fixtures
+
+**Files:**
+- Create: `fixtures/benchmark-en/` directory with 5-10 short English audio clips
+
+- [ ] **Step 1: Download English clips from Common Voice or LibriSpeech**
+
+Option A — Common Voice (Mozilla, CC-0 license):
+```bash
+mkdir -p fixtures/benchmark-en
+# Download a few clips from Common Voice dataset
+# Or record short English phrases yourself
+```
+
+Option B — Use macOS `say` command to generate test audio:
+```bash
+mkdir -p fixtures/benchmark-en
+say -o /tmp/en1.aiff "Please check your email and get back to me as soon as possible"
+ffmpeg -i /tmp/en1.aiff fixtures/benchmark-en/01-check-email.ogg
+say -o /tmp/en2.aiff "The meeting has been rescheduled to next Tuesday at three pm"
+ffmpeg -i /tmp/en2.aiff fixtures/benchmark-en/02-meeting-rescheduled.ogg
+say -o /tmp/en3.aiff "I need you to review the pull request before we can merge it"
+ffmpeg -i /tmp/en3.aiff fixtures/benchmark-en/03-review-pr.ogg
+say -o /tmp/en4.aiff "Can you deploy the latest changes to the staging environment"
+ffmpeg -i /tmp/en4.aiff fixtures/benchmark-en/04-deploy-staging.ogg
+say -o /tmp/en5.aiff "The database migration failed we need to rollback immediately"
+ffmpeg -i /tmp/en5.aiff fixtures/benchmark-en/05-db-rollback.ogg
+```
+
+Note: TTS-generated audio is not ideal for benchmarking real-world performance. Real voice recordings from Common Voice or LibriSpeech are preferred. The `say` approach works as a placeholder until real clips are sourced.
+
+- [ ] **Step 2: Verify files exist and are playable**
+
+```bash
+ls -lh fixtures/benchmark-en/*.ogg
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add fixtures/benchmark-en/
+git commit -m "feat: add English benchmark fixtures"
+```
+
+---
+
+### Task 3: Rewrite benchmark script
+
+**Files:**
+- Rewrite: `scripts/benchmark.ts`
+
+- [ ] **Step 1: Write the new benchmark script**
+
+```typescript
 #!/usr/bin/env bun
 /**
  * Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit
@@ -26,13 +147,12 @@ interface FileResult {
   openaiWhisper: EngineResult;
   fasterWhisper: EngineResult;
   kesha: EngineResult;
-  keshaCoreml?: EngineResult;
 }
 
 interface GroupResult {
   name: string;
   results: FileResult[];
-  totals: { openaiWhisper: number; fasterWhisper: number; kesha: number; keshaCoreml?: number };
+  totals: { openaiWhisper: number; fasterWhisper: number; kesha: number };
 }
 
 interface BenchmarkReport {
@@ -117,12 +237,12 @@ function scanFixtures(dir: string): string[] {
 // --- Engine runners ---
 
 function runOpenAIWhisper(python: string, files: string[]): EngineResult[] {
-  console.error(`Running openai-whisper (large-v3-turbo) on ${files.length} files...`);
+  console.error(`Running openai-whisper (base) on ${files.length} files...`);
 
   const script = `
 import sys, time, json, whisper
 
-model = whisper.load_model("large-v3-turbo")
+model = whisper.load_model("base")
 results = []
 total = len(sys.argv[1:])
 for i, f in enumerate(sys.argv[1:], 1):
@@ -145,13 +265,13 @@ print(json.dumps(results, ensure_ascii=False))
 }
 
 function runFasterWhisper(python: string, files: string[]): EngineResult[] {
-  console.error(`Running faster-whisper (large-v3-turbo, int8) on ${files.length} files...`);
+  console.error(`Running faster-whisper (base, int8) on ${files.length} files...`);
 
   const script = `
 import sys, time, json
 from faster_whisper import WhisperModel
 
-model = WhisperModel("large-v3-turbo", device="cpu", compute_type="int8")
+model = WhisperModel("base", device="cpu", compute_type="int8")
 results = []
 total = len(sys.argv[1:])
 for i, f in enumerate(sys.argv[1:], 1):
@@ -202,40 +322,6 @@ function runKesha(files: string[]): EngineResult[] {
   return results;
 }
 
-const COREML_BIN = "/tmp/coreml-bench/parakeet-coreml";
-
-function isCoremlAvailable(): boolean {
-  return process.platform === "darwin" && process.arch === "arm64" && existsSync(COREML_BIN);
-}
-
-function runKeshaCoreml(files: string[]): EngineResult[] {
-  console.error(`Running Kesha CoreML on ${files.length} files...`);
-  const results: EngineResult[] = [];
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const name = basename(file).slice(0, 30);
-    process.stderr.write(`  [${i + 1}/${files.length}] ${name}...`);
-
-    const start = performance.now();
-    const proc = Bun.spawnSync([COREML_BIN, file], { stdout: "pipe", stderr: "pipe" });
-    const elapsed = (performance.now() - start) / 1000;
-
-    if (proc.exitCode !== 0) {
-      console.error(" FAILED");
-    } else {
-      console.error(` ${elapsed.toFixed(1)}s`);
-    }
-
-    results.push({
-      time: Math.round(elapsed * 10) / 10,
-      text: proc.stdout.toString().trim(),
-    });
-  }
-
-  return results;
-}
-
 // --- Report rendering ---
 
 function round1(n: number): number {
@@ -246,36 +332,30 @@ function sumTimes(results: EngineResult[]): number {
   return round1(results.reduce((sum, r) => sum + r.time, 0));
 }
 
-function renderGroup(group: GroupResult, hasCoreml: boolean): string[] {
-  const coremlHeader = hasCoreml ? " Kesha CoreML |" : "";
-  const coremlSep = hasCoreml ? "---|" : "";
+function renderGroup(group: GroupResult): string[] {
   const lines: string[] = [
     `### ${group.name} (${group.results.length} files)`,
     "",
-    `| # | File | openai-whisper | faster-whisper | Kesha ONNX |${coremlHeader} Transcript (Kesha) |`,
-    `|---|---|---|---|---|${coremlSep}---|`,
+    "| # | File | openai-whisper | faster-whisper | Kesha | Transcript (Kesha) |",
+    "|---|---|---|---|---|---|",
   ];
 
   for (let i = 0; i < group.results.length; i++) {
     const r = group.results[i];
     const transcript = r.kesha.text.slice(0, 60) + (r.kesha.text.length > 60 ? "..." : "");
-    const coremlCol = hasCoreml && r.keshaCoreml ? ` ${r.keshaCoreml.time}s |` : "";
     lines.push(
-      `| ${i + 1} | ${r.file} | ${r.openaiWhisper.time}s | ${r.fasterWhisper.time}s | ${r.kesha.time}s |${coremlCol} ${transcript} |`,
+      `| ${i + 1} | ${r.file} | ${r.openaiWhisper.time}s | ${r.fasterWhisper.time}s | ${r.kesha.time}s | ${transcript} |`,
     );
   }
 
   const t = group.totals;
-  const coremlTotal = hasCoreml && t.keshaCoreml != null ? ` **${t.keshaCoreml}s** |` : "";
-  lines.push(`| **Total** | | **${t.openaiWhisper}s** | **${t.fasterWhisper}s** | **${t.kesha}s** |${coremlTotal} |`);
+  lines.push(`| **Total** | | **${t.openaiWhisper}s** | **${t.fasterWhisper}s** | **${t.kesha}s** | |`);
   lines.push("");
 
-  const bestTime = hasCoreml && t.keshaCoreml != null ? t.keshaCoreml : t.kesha;
-  const bestLabel = hasCoreml && t.keshaCoreml != null ? "Kesha CoreML" : "Kesha ONNX";
-  const speedVsWhisper = bestTime > 0 ? round1(t.openaiWhisper / bestTime) : 0;
-  const speedVsFaster = bestTime > 0 ? round1(t.fasterWhisper / bestTime) : 0;
+  const speedVsWhisper = t.kesha > 0 ? round1(t.openaiWhisper / t.kesha) : 0;
+  const speedVsFaster = t.kesha > 0 ? round1(t.fasterWhisper / t.kesha) : 0;
   lines.push(
-    `**Speedup:** ${bestLabel} is ~${speedVsWhisper}x faster than openai-whisper, ~${speedVsFaster}x faster than faster-whisper`,
+    `**Speedup:** Kesha is ~${speedVsWhisper}x faster than openai-whisper, ~${speedVsFaster}x faster than faster-whisper`,
   );
 
   return lines;
@@ -294,9 +374,8 @@ function renderMarkdown(report: BenchmarkReport): string {
     "",
   ];
 
-  const hasCoreml = report.groups.some((g) => g.totals.keshaCoreml != null);
   for (const group of report.groups) {
-    lines.push(...renderGroup(group, hasCoreml));
+    lines.push(...renderGroup(group));
     lines.push("");
   }
 
@@ -328,14 +407,12 @@ async function main(): Promise<void> {
     const owResults = runOpenAIWhisper(python, files);
     const fwResults = runFasterWhisper(python, files);
     const kResults = runKesha(files);
-    const coremlResults = isCoremlAvailable() ? runKeshaCoreml(files) : null;
 
     const results: FileResult[] = files.map((f, i) => ({
       file: basename(f),
       openaiWhisper: owResults[i],
       fasterWhisper: fwResults[i],
       kesha: kResults[i],
-      ...(coremlResults ? { keshaCoreml: coremlResults[i] } : {}),
     }));
 
     groups.push({
@@ -345,7 +422,6 @@ async function main(): Promise<void> {
         openaiWhisper: sumTimes(owResults),
         fasterWhisper: sumTimes(fwResults),
         kesha: sumTimes(kResults),
-        ...(coremlResults ? { keshaCoreml: sumTimes(coremlResults) } : {}),
       },
     });
   }
@@ -354,7 +430,7 @@ async function main(): Promise<void> {
     date: new Date().toISOString().split("T")[0],
     platform,
     keshaBackend,
-    whisperModel: "large-v3-turbo",
+    whisperModel: "base",
     groups,
   };
 
@@ -367,3 +443,81 @@ main().catch((err) => {
   console.error(`ERROR: ${err instanceof Error ? err.message : err}`);
   process.exit(1);
 });
+```
+
+- [ ] **Step 2: Verify it compiles**
+
+```bash
+bunx tsc --noEmit
+```
+
+Expected: Clean.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/benchmark.ts
+git commit -m "feat: rewrite benchmark — three-way openai-whisper vs faster-whisper vs Kesha"
+```
+
+---
+
+### Task 4: Update Makefile
+
+**Files:**
+- Modify: `Makefile`
+
+- [ ] **Step 1: Replace `benchmark-coreml` with `benchmark`**
+
+Remove:
+```makefile
+benchmark-coreml: ## Run CoreML vs CoreML benchmark (macOS only)
+	bun scripts/benchmark-coreml.ts
+```
+
+Add:
+```makefile
+benchmark: ## Run benchmark (openai-whisper vs faster-whisper vs Kesha)
+	bun scripts/benchmark.ts
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add Makefile
+git commit -m "chore: replace benchmark-coreml with benchmark in Makefile"
+```
+
+---
+
+### Task 5: Run benchmark and verify
+
+- [ ] **Step 1: Ensure Kesha engine is installed**
+
+```bash
+kesha status
+```
+
+Expected: Engine binary installed, backend shown.
+
+- [ ] **Step 2: Run benchmark on Russian fixtures**
+
+```bash
+make benchmark
+```
+
+Expected: Three engines run sequentially, markdown table printed to stdout, `benchmark-results.json` created.
+
+- [ ] **Step 3: Verify JSON output**
+
+```bash
+cat benchmark-results.json | python3 -m json.tool | head -20
+```
+
+Expected: Valid JSON with date, platform, groups, totals.
+
+- [ ] **Step 4: Commit any fixes**
+
+```bash
+git add -A && git commit -m "fix: address benchmark integration findings"
+```

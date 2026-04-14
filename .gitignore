@@ -7,3 +7,4 @@ rust/target/
 .worktrees/
 tmp-lang-id-output/
 .venv/
+benchmark-results.json

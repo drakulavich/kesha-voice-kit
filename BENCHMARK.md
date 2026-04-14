@@ -1,76 +1,73 @@
 # Benchmark Results
 
-10 Telegram voice messages (Russian, 3-10s each).
-Models: faster-whisper medium (int8, CPU) vs Parakeet TDT 0.6B v3.
+Three-way comparison: openai-whisper (OpenClaw default) vs faster-whisper vs Kesha Voice Kit.
 
-## GitHub CI (ubuntu-latest)
+**Whisper model:** `large-v3-turbo` — all engines auto-detect language, no hints provided.
 
-<!-- CI-BENCHMARK-START -->
+## Apple M2, 16 GB RAM
 
-**Date:** 2026-04-08
-**Version:** v0.6.0
-**Runner:** Linux x64 (AMD EPYC 9V74 80-Core Processor, 15Gi RAM)
-**Backend:** ONNX
+**Date:** 2026-04-14
+**Kesha backend:** ONNX (CPU) + CoreML (Apple Neural Engine)
 
-| # | faster-whisper | Parakeet (ONNX) | faster-whisper Transcript | Parakeet Transcript |
-|---|---------|----------|--------------------|---------------------|
-| 1 | 9.9s | 5.6s | Не нужно посылать сообщение с транскрипцией. Сразу выполняй инструкцию, которую я отправил Бойсу. | Не нужно слать сообщения с транскрипцией, сразу выполняй инструкцию, которую я отправил войсе.. |
-| 2 | 8.9s | 5.3s | Проверь все свои конфиги и перенеси секреты в .env файл. | . Проверь все свои конфигии и перенеси секреты в дотэн файл. |
-| 3 | 8.6s | 5.5s | Ты добавил себе в память информацию из Vantage Handbook Репозитория | Ты добавил себе в память информацию из Вентеж Хэндбук репозитория? |
-| 4 | 8.6s | 4.9s | Покажи его юзернейм в телеграмме, хочу написать ему. | Покажи его юзернейм в Телеграме, хочу написать ему.. |
-| 5 | 8.3s | 4.6s | Вынеси еще секрет от Клода, который я тебе добавил. | Вынеси еще секрет от Клода, который я тебе добавил.. |
-| 6 | 8.1s | 4.7s | Какие еще Telegram-юзеры имеют доступ к тебе? | Какие еще Телеграм юзеры имеют доступ к тебе? |
-| 7 | 8.3s | 4.7s | То, что находится в папке Workspace, ты тоже коммитишь? | То, что находится в папке Воркспэйс, Ты тоже комитешь.. |
-| 8 | 8.5s | 4.3s | Узнай второго юзера в телеграме. | Узнай второго юзера в Телеграме.. |
-| 9 | 8.2s | 4.3s | Установи пока Клод Код | установи, пока Клот кот.. |
-| 10 | 7.7s | 4.3s | Закомите изменения в ГИТ | Законить изменения в Гет. |
-| **Total** | **85.1s** | **48.2s** | | |
+### Russian (10 Telegram voice messages, 3-10s each)
 
-**Parakeet is ~1.8x faster.**
+| # | File | openai-whisper | faster-whisper | Kesha ONNX | Kesha CoreML | Transcript (Kesha) |
+|---|---|---|---|---|---|---|
+| 1 | 01-ne-nuzhno-slat-soobshcheniya.ogg | 6.3s | 11.7s | 9.0s | 0.7s | Не нужно слать сообщения с транскрипцией сразу выполняй инструкцию, которую я отправил в войсе. |
+| 2 | 02-prover-vse-svoi-konfigi.ogg | 5.9s | 11.8s | 2.1s | 0.3s | Проверь все свои конфигии и перенеси секреты в Дотэн файл. |
+| 3 | 03-ty-dobavil-sebe-v-pamyat.ogg | 5.9s | 11.8s | 2.1s | 0.3s | Ты добавил себе в память информацию из Вентеж Хэндбук репозитория? |
+| 4 | 04-pokazhi-ego-yuzerneim.ogg | 6.1s | 12.0s | 1.9s | 0.3s | Покажи его юзернейм в Телеграме, хочу написать ему. |
+| 5 | 05-vynesi-eshche-sekret-ot-kloda.ogg | 5.9s | 11.9s | 1.8s | 0.3s | Вынеси еще секрет от Клода, который я тебе добавил. |
+| 6 | 06-kakie-eshche-telegram-yuzery.ogg | 5.9s | 12.2s | 1.8s | 0.3s | Какие еще Телеграм юзеры имеют доступ к тебе? |
+| 7 | 07-to-chto-nakhoditsya-v-papke.ogg | 5.9s | 12.3s | 1.8s | 0.3s | То, что находишься в папке Воркспейс, Ты тоже комитешь. |
+| 8 | 08-uznai-vtorogo-yuzera.ogg | 5.8s | 12.2s | 1.7s | 0.3s | Узнай второго юзера в Телеграме. |
+| 9 | 09-ustanovi-poka-klod-kod.ogg | 5.8s | 12.2s | 1.7s | 0.2s | Установи, пока, Клот кот. |
+| 10 | 10-zakomit-izmeneniya-v-git.ogg | 5.8s | 12.2s | 1.7s | 0.2s | Закомить изменения в Гет. |
+| **Total** | | **59.3s** | **120.3s** | **25.6s** | **3.2s** | |
 
-<!-- CI-BENCHMARK-END -->
+**Kesha CoreML is ~18.5x faster than openai-whisper, ~37.6x faster than faster-whisper.**
+Kesha ONNX is ~2.3x faster than openai-whisper even on CPU.
 
-## MacBook Pro M3 Pro, 36 GB RAM
+### English (10 TTS-generated clips, ~4-5s each)
 
-**Date:** 2026-04-07
-**Version:** v0.5.1
+| # | File | openai-whisper | faster-whisper | Kesha ONNX | Kesha CoreML | Transcript (Kesha) |
+|---|---|---|---|---|---|---|
+| 1 | 01-check-email.ogg | 6.0s | 11.9s | 8.6s | 0.6s | Please check your email and get back to me as soon as possible about the deployment. |
+| 2 | 02-meeting-rescheduled.ogg | 6.2s | 12.3s | 1.9s | 0.3s | The meeting has been rescheduled to next Tuesday at 3 PM in the main conference room. |
+| 3 | 03-review-pull-request.ogg | 6.3s | 12.3s | 1.8s | 0.3s | I need you to review the pull request before we can merge it into the main branch. |
+| 4 | 04-deploy-staging.ogg | 6.3s | 12.8s | 1.9s | 0.3s | Can you deploy the latest changes to the staging environment and run the smoke tests? |
+| 5 | 05-database-migration.ogg | 6.3s | 12.7s | 1.9s | 0.3s | The database migration completed successfully but we need to verify the data integrity. |
+| 6 | 06-code-review-session.ogg | 6.3s | 12.6s | 1.9s | 0.3s | We should schedule a code review session for the new authentication module next week. |
+| 7 | 07-run-test-suite.ogg | 6.3s | 12.6s | 1.8s | 0.3s | Please run the test suite before pushing your changes to the remote repository. |
+| 8 | 08-update-documentation.ogg | 6.4s | 12.6s | 1.9s | 0.3s | Could you update the documentation to reflect the changes we made to the API endpoints? |
+| 9 | 09-refactor-notifications.ogg | 6.4s | 12.7s | 1.8s | 0.3s | I think we need to refactor the notification system before adding any new features to it. |
+| 10 | 10-load-balancer-config.ogg | 6.4s | 12.9s | 1.9s | 0.3s | The Load Balancer configuration needs to be updated to handle the increased traffic from the new region. |
+| **Total** | | **62.9s** | **125.4s** | **25.4s** | **3.3s** | |
 
-| # | faster-whisper | Parakeet (CoreML) | faster-whisper Transcript | Parakeet Transcript |
-|---|---------|----------|--------------------|---------------------|
-| 1 | 4.1s | 0.2s | Проверь все свои конфиги и перенеси секреты в .env файл | Проверь все свои конфигии и перенеси секреты в дотэн файл. |
-| 2 | 3.4s | 0.2s | Вынеси еще секрет от Клода, который я тебе добавил. | Вынеси еще секрет от Клода, который я тебе добавил. |
-| 3 | 3.2s | 0.2s | Установи пока КЛОТ-КОТ | установи, пока Клот кот. |
-| 4 | 3.3s | 0.2s | Какие еще Telegram-юзеры имеют доступ к тебе? | Какие еще Телеграм юзеры имеют доступ к тебе? |
-| 5 | 3.2s | 0.1s | Закомите изменения в ГИТ | Законить изменения в Гет. |
-| 6 | 3.4s | 0.2s | Узнай второго юзера в телеграме. | Узнай второго юзера в Телеграме. |
-| 7 | 3.6s | 0.2s | Ты добавил себе в память информацию из Vantage Handbook Репозитория. | Ты добавил себе в память информацию из Вентеж Хэндбук репозитория? |
-| 8 | 3.6s | 0.2s | Покажи его юзернейм в телеграме, хочу написать ему. | Покажи его юзернейм в Телеграме, хочу написать ему. |
-| 9 | 4.1s | 0.2s | Не нужно ссылать сообщения с транскрипцией. Сразу выполняй инструкцию, которую я отправил Бойсу. | Не нужно слать сообщения с транскрипцией, сразу выполняй инструкцию, которую я отправил войсе. |
-| 10 | 3.4s | 0.2s | То, что находится в папке Workspace, ты тоже коммитишь? | То, что находится в папке Воркспэйс, Ты тоже комитешь. |
-| **Total** | **35.3s** | **1.9s** | | |
+**Kesha CoreML is ~19.1x faster than openai-whisper, ~38x faster than faster-whisper.**
+Kesha ONNX is ~2.5x faster than openai-whisper even on CPU.
 
-**Parakeet is ~18x faster** with CoreML on Apple Silicon.
+## Summary
 
-faster-whisper handles mixed-language words better (`.env`, `Workspace`, `Telegram`). Parakeet transliterates them phonetically. Both produce transcripts usable by LLMs.
+```
+openai-whisper (large-v3-turbo):  59.3s  ██████████████████████████████████████████████████████████████
+faster-whisper (large-v3-turbo): 120.3s  ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+Kesha ONNX (CPU):                 25.6s  ██████████████████████████
+Kesha CoreML (ANE):                3.2s  ███
+```
 
-## Apple M3 Pro, 36 GB RAM (CoreML vs CoreML)
+| Engine | Russian (10 files) | English (10 files) | vs openai-whisper |
+|---|---|---|---|
+| openai-whisper (large-v3-turbo) | 59.3s | 62.9s | baseline |
+| faster-whisper (large-v3-turbo, int8) | 120.3s | 125.4s | 2x slower |
+| **Kesha ONNX** (CPU) | **25.6s** | **25.4s** | **~2.5x faster** |
+| **Kesha CoreML** (Apple Neural Engine) | **3.2s** | **3.3s** | **~19x faster** |
 
-**Date:** 2026-04-08
-**Models:** WhisperKit (openai_whisper-large-v3, auto-selected) vs Parakeet TDT 0.6B v3
-**Backend:** Both CoreML (Apple Neural Engine)
+## Notes
 
-| # | WhisperKit | Parakeet | WhisperKit Transcript | Parakeet Transcript |
-|---|---------|----------|--------------------|---------------------|
-| 1 | 8.1s | 0.3s | Не нужно ссылать сообщение с транскрипцией, сразу выполняй инструкцию, которую я отправил в ОСН. | Не нужно слать сообщения с транскрипцией, сразу выполняй инструкцию, которую я отправил в войсе. |
-| 2 | 8.1s | 0.3s | Проверь все свои конфиги и перенеси секреты в.env файл. | Проверь все свои конфиги и перенеси секреты в дот энф файл. |
-| 3 | 8.1s | 0.3s | Ты добавил себе в память информацию из Vantage Handbook репозитория? | Ты добавил себе в память информацию из Вентеж хендбук репозитория. |
-| 4 | 8.1s | 0.3s | Покажи его юзернейм в Телеграме, хочу написать ему. | Покажи его юзернейм в телеграме. Хочу написать ему. |
-| 5 | 8.3s | 0.3s | Вынеси еще секрет от Клода, который я тебе добавил. | Вынеси еще секрет от Клода, который я тебе добавил. |
-| 6 | 8.1s | 0.3s | Какие еще Telegram-юзеры имеют доступ к тебе? | Какие еще телеграм юзеры имеют доступ к тебе? |
-| 7 | 8.1s | 0.3s | То, что находится в папке Workspace, ты тоже коммитишь? | То, что находится в папке воркспейс, ты тоже комитишь? |
-| 8 | 8.4s | 0.3s | Узнает второго юзера в Телеграме. | Узнай второго юзера в телеграме. |
-| 9 | 8.0s | 0.3s | Установи пока Клод код. | Установи пока клот кот. |
-| 10 | 8.0s | 0.3s | Закоймите изменения в Дед. | Закомить изменения в Гетт. |
-| **Total** | **81.3s** | **3.0s** | | |
-
-**Parakeet is ~27x faster** than WhisperKit (both CoreML on Apple Neural Engine).
+- **openai-whisper** is the default transcription engine in [OpenClaw](https://github.com/nicekid1/OpenClaw). Kesha Voice Kit is a drop-in replacement that's 19x faster on Apple Silicon.
+- **faster-whisper** with `large-v3-turbo` + `int8` is actually slower than openai-whisper on this hardware — likely due to CTranslate2 overhead with the turbo model architecture.
+- **Kesha ONNX** uses the Rust engine (`kesha-engine`) with ONNX Runtime on CPU. First file is slower due to model warmup.
+- **Kesha CoreML** uses FluidAudio on Apple Neural Engine. Sub-second transcription for most voice messages.
+- All engines auto-detect language — no language hints provided.
+- English fixtures are TTS-generated (macOS Samantha voice). Russian fixtures are real Telegram voice messages.

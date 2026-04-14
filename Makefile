@@ -22,8 +22,8 @@ smoke-test: ## Run smoke tests against fixtures
 	kesha install
 	bun scripts/smoke-test.ts
 
-benchmark-coreml: ## Run CoreML vs CoreML benchmark (macOS only)
-	bun scripts/benchmark-coreml.ts
+benchmark: ## Run benchmark (openai-whisper vs faster-whisper vs Kesha)
+	bun scripts/benchmark.ts
 
 release: lint test smoke-test ## Verify everything before publish
 	@echo "All checks passed. Ready to publish."

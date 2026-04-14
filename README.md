@@ -99,20 +99,28 @@ All models run through `kesha-engine` — a Rust binary using [FluidAudio](https
 
 ## Performance
 
-> **~18x faster than Whisper** on Apple Silicon
+> **~19x faster than Whisper** on Apple Silicon, **~2.5x faster** on CPU
+
+Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
+
+```
+openai-whisper (large-v3-turbo):  59.3s  ██████████████████████████████████████████████████████████████
+faster-whisper (large-v3-turbo): 120.3s  ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+Kesha ONNX (CPU):                 25.6s  ██████████████████████████
+Kesha CoreML (ANE):                3.2s  ███
+```
+
+| Engine | Time (10 files) | vs openai-whisper |
+|---|---|---|
+| openai-whisper (OpenClaw default) | 59.3s | baseline |
+| faster-whisper | 120.3s | 2x slower |
+| **Kesha ONNX** (CPU) | **25.6s** | **~2.5x faster** |
+| **Kesha CoreML** (Apple Neural Engine) | **3.2s** | **~19x faster** |
 
 <details>
-<summary>MacBook Pro M3 Pro — 10 Russian voice messages</summary>
+<summary>Full results with per-file breakdown</summary>
 
-```
-faster-whisper (CPU):  35.3s  ██████████████████████████████████████
-Kesha (CoreML):         1.9s  ██
-```
-
-| | faster-whisper | Kesha | Speedup |
-|---|---|---|---|
-| Apple Silicon (CoreML) | 35.3s | **1.9s** | **~18x** |
-| Linux CI (ONNX) | 79.2s | **45.4s** | **~1.7x** |
+See [BENCHMARK.md](BENCHMARK.md) — includes Russian (real voice messages) and English transcription results with all four engines.
 
 </details>
 
