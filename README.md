@@ -7,7 +7,7 @@
 
 **Open-source voice toolkit for Apple Silicon.** A collection of small, fast, open-source audio models — packaged as CLI tools and an [OpenClaw](https://github.com/nicekid1/OpenClaw) skill for LLM agents.
 
-- **Speech-to-text** — 25 languages, ~18x faster than Whisper on Apple Silicon
+- **Speech-to-text** — 25 languages, ~19x faster than Whisper on Apple Silicon
 - **Language detection** — 107 languages from audio, text language via NLLanguageRecognizer
 - **Rust engine** — single 20MB binary, no ffmpeg, no Python, no native Node addons
 - **OpenClaw-ready** — plug into your LLM agent as a voice processing skill
@@ -24,32 +24,7 @@ kesha audio.ogg     # transcript to stdout
 
 Kesha Voice Kit is built as a skill for [OpenClaw](https://github.com/nicekid1/OpenClaw) — give your LLM agent ears. No API keys, everything runs locally on your machine.
 
-### Voice message processing
-
-```json
-{
-  "tools": {
-    "media": {
-      "audio": {
-        "enabled": true,
-        "models": [
-          {
-            "type": "cli",
-            "command": "kesha",
-            "args": ["{{MediaPath}}"],
-            "timeoutSeconds": 120
-          }
-        ],
-        "echoTranscript": false
-      }
-    }
-  }
-}
-```
-
-Your agent receives a voice message in Telegram/WhatsApp/Slack. OpenClaw pipes it through Kesha, feeds the transcript to the LLM. The user speaks, the agent understands.
-
-### Language-aware processing
+Add to your OpenClaw config:
 
 ```json
 {
@@ -59,7 +34,7 @@ Your agent receives a voice message in Telegram/WhatsApp/Slack. OpenClaw pipes i
 }
 ```
 
-JSON output includes detected language — your agent knows what language the user spoke and can respond accordingly:
+Your agent receives a voice message in Telegram/WhatsApp/Slack. Kesha transcribes it locally, detects the language, and returns structured JSON:
 
 ```json
 [{
@@ -69,6 +44,8 @@ JSON output includes detected language — your agent knows what language the us
   "textLanguage": { "code": "ru", "confidence": 0.99 }
 }]
 ```
+
+The agent knows what was said and in what language — and can respond accordingly.
 
 ## CLI Tools
 
@@ -91,7 +68,7 @@ Kesha Voice Kit bundles open-source models optimized for on-device inference:
 
 | Model | Task | Size | Source |
 |---|---|---|---|
-| NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~86MB | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
+| NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~2.5GB | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
 | SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
 | Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
 
@@ -103,19 +80,7 @@ All models run through `kesha-engine` — a Rust binary using [FluidAudio](https
 
 Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
-```
-openai-whisper (large-v3-turbo):  59.3s  ██████████████████████████████████████████████████████████████
-faster-whisper (large-v3-turbo): 120.3s  ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
-Kesha ONNX (CPU):                 25.6s  ██████████████████████████
-Kesha CoreML (ANE):                3.2s  ███
-```
-
-| Engine | Time (10 files) | vs openai-whisper |
-|---|---|---|
-| openai-whisper (OpenClaw default) | 59.3s | baseline |
-| faster-whisper | 120.3s | 2x slower |
-| **Kesha ONNX** (CPU) | **25.6s** | **~2.5x faster** |
-| **Kesha CoreML** (Apple Neural Engine) | **3.2s** | **~19x faster** |
+![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](assets/benchmark.svg)
 
 <details>
 <summary>Full results with per-file breakdown</summary>
@@ -165,7 +130,6 @@ const text = await transcribe("audio.ogg"); // transcribe
 
 - [Bun](https://bun.sh) >= 1.3
 - macOS arm64, Linux x64, or Windows x64
-- ~200MB disk (engine + models)
 
 ## Contributing
 
