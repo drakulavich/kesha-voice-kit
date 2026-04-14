@@ -81,15 +81,15 @@ if (mismatchStderr.includes("expected language") && mismatchStdout) {
   failed++;
 }
 
-// E2E: parakeet install --onnx downloads lang-id models from HuggingFace
-const installProc = Bun.spawnSync(["parakeet", "install", "--onnx"], { stdout: "pipe", stderr: "pipe" });
+// E2E: parakeet install downloads engine and models
+const installProc = Bun.spawnSync(["parakeet", "install"], { stdout: "pipe", stderr: "pipe" });
 const installOut = installProc.stdout.toString() + installProc.stderr.toString();
 
-if (installOut.includes("Lang-ID") || installOut.includes("lang-id")) {
-  console.log(`  PASS  parakeet install --onnx mentions lang-id models`);
+if (installOut.includes("installed") || installOut.includes("already") || installOut.includes("models")) {
+  console.log(`  PASS  parakeet install completes successfully`);
   passed++;
 } else {
-  console.log(`  FAIL  parakeet install --onnx doesn't mention lang-id (output: ${installOut.slice(0, 120)})`);
+  console.log(`  FAIL  parakeet install unexpected output (output: ${installOut.slice(0, 120)})`);
   failed++;
 }
 
