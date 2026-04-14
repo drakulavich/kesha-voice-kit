@@ -21,6 +21,8 @@ export function checkLanguageMismatch(expected: string | undefined, detected: st
 }
 
 interface InstallCommandArgs {
+  coreml: boolean;
+  onnx: boolean;
   "no-cache": boolean;
 }
 
@@ -33,9 +35,19 @@ interface MainCommandArgs {
 
 const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
 
-async function performInstall(noCache: boolean) {
+function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
+  if (coreml && onnx) {
+    log.error('Choose only one backend: "--coreml" or "--onnx".');
+    process.exit(1);
+  }
+  if (coreml) return "coreml";
+  if (onnx) return "onnx";
+  return undefined;
+}
+
+async function performInstall(noCache: boolean, backend?: string) {
   try {
-    await downloadEngine(noCache);
+    await downloadEngine(noCache, backend);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(message);
@@ -49,6 +61,16 @@ export const installCommand = defineCommand({
     description: "Download inference engine and models",
   },
   args: {
+    coreml: {
+      type: "boolean",
+      description: "Force CoreML backend (macOS arm64)",
+      default: false,
+    },
+    onnx: {
+      type: "boolean",
+      description: "Force ONNX backend",
+      default: false,
+    },
     "no-cache": {
       type: "boolean",
       description: "Re-download even if cached",
@@ -56,7 +78,8 @@ export const installCommand = defineCommand({
     },
   },
   async run({ args }: { args: InstallCommandArgs }) {
-    await performInstall(args["no-cache"]);
+    const backend = resolveBackendFlag(args.coreml, args.onnx);
+    await performInstall(args["no-cache"], backend);
   },
 });
 

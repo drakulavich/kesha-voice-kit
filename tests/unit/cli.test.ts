@@ -9,8 +9,10 @@ describe("CLI help", () => {
     expect(usage).toContain("install");
   });
 
-  test("install help contains --no-cache option", async () => {
+  test("install help contains backend and cache options", async () => {
     const usage = await renderUsage(installCommand);
+    expect(usage).toContain("--coreml");
+    expect(usage).toContain("--onnx");
     expect(usage).toContain("--no-cache");
   });
 

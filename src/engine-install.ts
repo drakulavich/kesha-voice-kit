@@ -17,7 +17,7 @@ function getEngineBinaryName(): string {
   throw new Error(`Unsupported platform: ${platform} ${arch}`);
 }
 
-export async function downloadEngine(noCache = false): Promise<string> {
+export async function downloadEngine(noCache = false, backend?: string): Promise<string> {
   const binPath = getEngineBinPath();
 
   if (!noCache && existsSync(binPath)) {
@@ -51,7 +51,8 @@ export async function downloadEngine(noCache = false): Promise<string> {
   }
 
   log.progress("Installing models...");
-  const proc = Bun.spawnSync([binPath, "install", ...(noCache ? ["--no-cache"] : [])], {
+  const installArgs = ["install", ...(noCache ? ["--no-cache"] : []), ...(backend ? [`--backend=${backend}`] : [])];
+  const proc = Bun.spawnSync([binPath, ...installArgs], {
     stdout: "pipe",
     stderr: "pipe",
   });
