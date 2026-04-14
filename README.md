@@ -1,11 +1,17 @@
-# Kesha Voice Kit
+<p align="center">
+  <img src="assets/logo.png" alt="Kesha Voice Kit" width="200">
+</p>
 
-[![CI](https://github.com/drakulavich/kesha-voice-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/drakulavich/kesha-voice-kit/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/@drakulavich/kesha-voice-kit)](https://www.npmjs.com/package/@drakulavich/kesha-voice-kit)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
+<h1 align="center">Kesha Voice Kit</h1>
 
-**Open-source voice toolkit for Apple Silicon.** A collection of small, fast, open-source audio models — packaged as CLI tools and an [OpenClaw](https://github.com/nicekid1/OpenClaw) skill for LLM agents.
+<p align="center">
+  <a href="https://github.com/drakulavich/kesha-voice-kit/actions/workflows/ci.yml"><img src="https://github.com/drakulavich/kesha-voice-kit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/@drakulavich/kesha-voice-kit"><img src="https://img.shields.io/npm/v/@drakulavich/kesha-voice-kit" alt="npm version"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun" alt="Bun"></a>
+</p>
+
+<p align="center"><b>Open-source voice toolkit for Apple Silicon.</b><br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/nicekid1/OpenClaw">OpenClaw</a> skill for LLM agents.</p>
 
 - **Speech-to-text** — 25 languages, ~19x faster than Whisper on Apple Silicon
 - **Language detection** — 107 languages from audio, text language via NLLanguageRecognizer
