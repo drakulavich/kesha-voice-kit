@@ -1,6 +1,5 @@
 use anyhow::Result;
 
-use crate::audio;
 use crate::backend;
 use crate::models;
 
@@ -13,6 +12,5 @@ pub fn transcribe(audio_path: &str) -> Result<String> {
         );
     }
     let mut be = backend::create_backend(&model_dir)?;
-    let samples = audio::load_audio(audio_path)?;
-    be.transcribe(&samples)
+    be.transcribe(audio_path)
 }
