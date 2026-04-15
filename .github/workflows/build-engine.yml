@@ -18,7 +18,7 @@ jobs:
         include:
           - os: macos-14
             target: aarch64-apple-darwin
-            features: onnx
+            features: coreml
             binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
