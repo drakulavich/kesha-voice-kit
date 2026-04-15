@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Warn if Bun is not on PATH. Uses fs-only probing instead of
-// child_process.execSync("bun --version") so that OpenClaw's
-// dangerous-code scanner does not flag the plugin install.
+// Warn if Bun is not on PATH. Probes PATH via fs only — no subprocess
+// APIs — so OpenClaw's dangerous-code scanner does not flag the plugin
+// install.
 const fs = require("fs");
 const path = require("path");
 
