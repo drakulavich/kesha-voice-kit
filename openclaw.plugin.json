@@ -1,23 +1,11 @@
 {
   "id": "kesha-voice-kit",
-  "name": "kesha-voice-kit",
-  "displayName": "Kesha Voice Kit",
-  "description": "Local speech-to-text for voice messages. 25 languages, ~19x faster than Whisper on Apple Silicon. Drop-in replacement for openai-whisper.",
-  "configSchema": {},
-  "configPatch": {
-    "tools": {
-      "media": {
-        "audio": {
-          "enabled": true,
-          "models": [
-            {
-              "type": "cli",
-              "command": "kesha",
-              "args": ["--json", "{{MediaPath}}"]
-            }
-          ]
-        }
-      }
-    }
+  "name": "Kesha Voice Kit",
+  "description": "Local speech-to-text for voice messages. 25 languages, ~19x faster than Whisper on Apple Silicon.",
+  "providers": ["kesha-voice-kit"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
   }
 }

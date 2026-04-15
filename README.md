@@ -30,26 +30,31 @@ kesha audio.ogg     # transcript to stdout
 
 Kesha Voice Kit ships as a plugin for [OpenClaw](https://github.com/openclaw/openclaw) — give your LLM agent ears. No API keys, everything runs locally on your machine.
 
-**Install the plugin** (requires the `kesha` CLI — see [Quick Start](#quick-start)):
+**Install the `kesha` CLI first** (the plugin shells out to it):
+
+```bash
+bun add -g @drakulavich/kesha-voice-kit
+kesha install
+```
+
+**Then register the OpenClaw plugin:**
 
 ```bash
 openclaw plugins install @drakulavich/kesha-voice-kit
 ```
 
-OpenClaw fetches the package from npm, auto-detects [`openclaw.plugin.json`](./openclaw.plugin.json), and wires `kesha --json {{MediaPath}}` as the audio transcription backend under `tools.media.audio`. Manage it afterwards with `openclaw plugins list`, `openclaw plugins disable kesha-voice-kit`, or `openclaw plugins uninstall kesha-voice-kit`.
+OpenClaw will auto-detect [`openclaw.plugin.json`](./openclaw.plugin.json) and load [`openclaw-plugin.cjs`](./openclaw-plugin.cjs), which registers `kesha-voice-kit` as a media-understanding provider with `autoPriority.audio = 50`. Once you enable audio transcription (`tools.media.audio.enabled: true`) in your OpenClaw config, Kesha becomes the default provider — higher priority than cloud providers like Groq (20).
 
-Your agent receives a voice message in Telegram/WhatsApp/Slack. Kesha transcribes it locally, detects the language, and returns structured JSON:
+Manage the plugin afterwards with `openclaw plugins list`, `openclaw plugins disable kesha-voice-kit`, or `openclaw plugins uninstall kesha-voice-kit`.
+
+Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribes it locally, and the transcript flows back into the agent loop:
 
 ```json
-[{
-  "file": "voice.ogg",
+{
   "text": "Привет, как дела?",
-  "lang": "ru",
-  "textLanguage": { "code": "ru", "confidence": 0.99 }
-}]
+  "model": "parakeet-tdt-0.6b-v3"
+}
 ```
-
-The agent knows what was said and in what language — and can respond accordingly.
 
 ## CLI Tools
 
