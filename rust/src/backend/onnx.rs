@@ -5,6 +5,8 @@ use ndarray::{Array1, Array2};
 use ort::session::Session;
 use ort::value::Value;
 
+use crate::audio;
+
 use super::TranscribeBackend;
 
 const DECODER_LAYERS: usize = 2;
@@ -350,7 +352,9 @@ impl OnnxBackend {
 }
 
 impl TranscribeBackend for OnnxBackend {
-    fn transcribe(&mut self, audio_samples: &[f32]) -> Result<String> {
+    fn transcribe(&mut self, audio_path: &str) -> Result<String> {
+        let audio_samples = audio::load_audio(audio_path)?;
+
         if audio_samples.len() < 1600 {
             anyhow::bail!(
                 "Audio too short: {} samples ({:.2}s) — minimum is 0.1s (1600 samples at 16kHz)",
@@ -359,7 +363,7 @@ impl TranscribeBackend for OnnxBackend {
             );
         }
 
-        let (features_data, features_lens) = self.preprocess(audio_samples)?;
+        let (features_data, features_lens) = self.preprocess(&audio_samples)?;
         let (logits_data, logits_shape, encoded_lengths) =
             self.encode(&features_data, &features_lens)?;
 

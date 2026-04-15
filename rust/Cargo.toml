@@ -6,8 +6,9 @@ description = "Inference engine for Kesha Voice Kit: ASR + language detection"
 
 [features]
 default = ["onnx"]
+# ASR backend selection. Language detection always uses ONNX regardless.
 coreml = ["dep:fluidaudio-rs"]
-onnx = ["dep:ort", "dep:ndarray"]
+onnx = []
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -24,11 +25,12 @@ rubato = "2"
 ureq = "3"
 dirs = "6"
 
-# ONNX backend (Linux/Windows)
-ort = { version = "2.0.0-rc.12", optional = true }
-ndarray = { version = "0.17", optional = true }
+# ONNX Runtime: always needed for audio language detection (speechbrain);
+# also drives ASR transcription when the `onnx` feature is enabled.
+ort = { version = "2.0.0-rc.12" }
+ndarray = { version = "0.17" }
 
-# CoreML backend (macOS)
+# CoreML backend (macOS): FluidAudio/Apple Neural Engine for ASR.
 fluidaudio-rs = { version = "0.1", optional = true }
 audioadapter-buffers = "3.0.0"
 

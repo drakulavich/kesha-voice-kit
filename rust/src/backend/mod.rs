@@ -2,11 +2,11 @@ use anyhow::Result;
 
 #[cfg(feature = "coreml")]
 pub mod fluidaudio;
-#[cfg(feature = "onnx")]
+#[cfg(all(feature = "onnx", not(feature = "coreml")))]
 pub mod onnx;
 
 pub trait TranscribeBackend {
-    fn transcribe(&mut self, audio_samples: &[f32]) -> Result<String>;
+    fn transcribe(&mut self, audio_path: &str) -> Result<String>;
 }
 
 pub fn create_backend(model_dir: &str) -> Result<Box<dyn TranscribeBackend>> {
