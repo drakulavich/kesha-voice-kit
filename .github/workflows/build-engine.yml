@@ -47,7 +47,7 @@ jobs:
         if: matrix.os == 'macos-14'
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "16.0"
+          xcode-version: "16.2"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
