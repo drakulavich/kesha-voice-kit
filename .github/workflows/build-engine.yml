@@ -3,6 +3,12 @@ name: "🔨 Build Engine"
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (tag, branch, or SHA)"
+        required: false
+        default: "main"
 
 permissions:
   contents: write
@@ -74,6 +80,7 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
