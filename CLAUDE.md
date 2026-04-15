@@ -38,7 +38,14 @@ This split exists because CLI-only patches would otherwise require a full engine
 
 1. Open a PR that bumps only `package.json#version`. Leave `keshaEngine.version` and `rust/Cargo.toml` alone.
 2. PR CI runs against the existing published engine binary — integration tests pass because the `v${keshaEngine.version}` release already exists.
-3. Merge, then `npm publish --access public`. No git tag, no build-engine run, no GitHub release.
+3. Merge, then `npm publish --access public`.
+4. **Cut a marker release** so the npm version is visible on the GitHub releases page:
+   ```bash
+   gh release create vX.Y.Z-cli \
+     --title "v<X.Y.Z> (CLI-only patch)" \
+     --notes "CLI-only release. Engine binary: v<keshaEngine.version> (unchanged). See <npm link> for the tarball."
+   ```
+   The `-cli` suffix is excluded from `build-engine.yml`'s tag filter, so pushing the tag **does not** trigger a Rust rebuild or create a second (conflicting) GitHub release. Marker tags are never re-used — bump the npm version first if you need a new marker.
 
 **Engine release** (any change under `rust/`, or bumping `keshaEngine.version`):
 

@@ -61,9 +61,15 @@ until the matching GitHub release existed.
 #    rust/Cargo.toml at the current engine version.
 # 2. Verify locally
 make smoke-test
-# 3. Open PR, merge. No git tag. No build-engine run.
+# 3. Open PR, merge. No Rust rebuild needed.
 # 4. Publish
 npm publish --access public
+# 5. Cut a CLI-only marker release on GitHub. The -cli suffix is
+#    excluded from build-engine.yml's tag filter, so pushing the tag
+#    does NOT trigger a Rust rebuild or a conflicting release job.
+gh release create vX.Y.Z-cli \
+  --title "vX.Y.Z (CLI-only patch)" \
+  --notes "CLI-only release. Engine binary: v<keshaEngine.version> (unchanged)."
 ```
 
 ### Engine release (anything under rust/, or a coreml/onnx change)

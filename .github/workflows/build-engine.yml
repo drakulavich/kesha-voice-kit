@@ -2,7 +2,14 @@ name: "🔨 Build Engine"
 
 on:
   push:
-    tags: ["v*"]
+    # Match real engine-release tags ("v1.0.2") but skip CLI-only marker
+    # tags ("v1.0.8-cli"). CLI-only patches do not rebuild the Rust
+    # engine — a separate marker release is created manually via
+    # `gh release create v<X.Y.Z>-cli --notes-file ...` without
+    # triggering this workflow. See CLAUDE.md → RELEASE PROCESS.
+    tags:
+      - "v*"
+      - "!v*-cli"
   workflow_dispatch:
     inputs:
       ref:
