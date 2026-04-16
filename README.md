@@ -13,7 +13,7 @@
 
 <p align="center"><b>Open-source voice toolkit.</b> Optimized for Apple Silicon (CoreML), works on any platform (ONNX fallback).<br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill for LLM agents.</p>
 
-- **Speech-to-text** — 25 languages, ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
+- **Speech-to-text** — 25 languages, ~15x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Language detection** — 107 languages from audio, text language via NLLanguageRecognizer
 - **Rust engine** — single 20MB binary, no ffmpeg, no Python, no native Node addons
 - **OpenClaw-ready** — plug into your LLM agent as a voice processing skill
@@ -92,7 +92,7 @@ All models run through `kesha-engine` — a Rust binary using [FluidAudio](https
 
 ## Performance
 
-> **~19x faster than Whisper** on Apple Silicon, **~2.5x faster** on CPU
+> **~15x faster than Whisper** on Apple Silicon (M3 Pro), **~2.5x faster** on CPU
 
 Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
