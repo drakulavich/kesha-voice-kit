@@ -46,7 +46,7 @@ openclaw config set tools.media.audio.models \
 Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribes it locally, and the agent sees enriched context:
 
 ```
-Привет, как дела?
+Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
 [lang: ru, confidence: 1.00]
 ```
 
@@ -68,12 +68,12 @@ kesha status                               # show installed backend info
 Multiple files — headers per file, like `head`:
 
 ```bash
-$ kesha meeting.ogg memo.ogg
-=== meeting.ogg ===
-Не нужно слать сообщения с транскрипцией, сразу выполняй инструкцию.
+$ kesha freedom.ogg tahiti.ogg
+=== freedom.ogg ===
+Свободу попугаям! Свободу!
 
-=== memo.ogg ===
-Please check your email and get back to me about the deployment.
+=== tahiti.ogg ===
+Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
 ```
 
 Stdout: transcript. Stderr: errors. Pipe-friendly. Also available as `parakeet` command (backward-compatible alias).
