@@ -30,6 +30,7 @@ interface MainCommandArgs {
   _: string[];
   json: boolean;
   verbose: boolean;
+  format?: string;
   lang?: string;
 }
 
@@ -113,6 +114,10 @@ export const mainCommand = defineCommand({
       description: "Show language detection details",
       default: false,
     },
+    format: {
+      type: "string",
+      description: "Output format: transcript (enriched text with lang/confidence)",
+    },
     lang: {
       type: "string",
       description: "Expected language code (ISO 639-1), warn if mismatch",
@@ -129,7 +134,7 @@ export const mainCommand = defineCommand({
     let hasError = false;
     const results: TranscribeResult[] = [];
 
-    const wantsLangId = !!(args.lang || args.verbose || args.json);
+    const wantsLangId = !!(args.lang || args.verbose || args.json || args.format === "transcript" || args.format === "json");
 
     for (const file of files) {
       try {
@@ -178,8 +183,10 @@ export const mainCommand = defineCommand({
       }
     }
 
-    if (args.json) {
+    if (args.json || args.format === "json") {
       process.stdout.write(formatJsonOutput(results));
+    } else if (args.format === "transcript") {
+      process.stdout.write(formatTranscriptOutput(results));
     } else if (args.verbose) {
       process.stdout.write(formatVerboseOutput(results));
     } else {
@@ -253,6 +260,23 @@ export function formatVerboseOutput(results: TranscribeResult[]): string {
       }
       lines.push("---");
       lines.push(r.text);
+      return lines.join("\n");
+    })
+    .join("\n") + "\n";
+}
+
+export function formatTranscriptOutput(results: TranscribeResult[]): string {
+  return results
+    .map((r, i) => {
+      const lines: string[] = [];
+      if (results.length > 1) {
+        if (i > 0) lines.push("");
+        lines.push(`=== ${r.file} ===`);
+      }
+      lines.push(r.text);
+      const lang = r.textLanguage?.code || r.audioLanguage?.code || r.lang;
+      const confidence = r.textLanguage?.confidence ?? r.audioLanguage?.confidence;
+      if (lang) lines.push(`[lang: ${lang}${confidence != null ? `, confidence: ${confidence.toFixed(2)}` : ""}]`);
       return lines.join("\n");
     })
     .join("\n") + "\n";
