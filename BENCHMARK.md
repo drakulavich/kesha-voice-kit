@@ -4,6 +4,49 @@ Three-way comparison: openai-whisper (OpenClaw default) vs faster-whisper vs Kes
 
 **Whisper model:** `large-v3-turbo` — all engines auto-detect language, no hints provided.
 
+## Apple M3 Pro, 36 GB RAM
+
+**Date:** 2026-04-16
+**Kesha backend:** CoreML (Apple Neural Engine)
+
+### Russian (10 Telegram voice messages, 3-10s each)
+
+| # | File | openai-whisper | faster-whisper | Kesha CoreML | Transcript (Kesha) |
+|---|---|---|---|---|---|
+| 1 | 01-ne-nuzhno-slat-soobshcheniya.ogg | 7.5s | 11.0s | 0.9s | Не нужно слать сообщения с транскрипцией, сразу выполняй инструкцию, которую я отправил в войсе. |
+| 2 | 02-prover-vse-svoi-konfigi.ogg | 4.8s | 10.5s | 0.3s | Проверь все свои конфиги и перенеси секреты в дот энф файл. |
+| 3 | 03-ty-dobavil-sebe-v-pamyat.ogg | 5.6s | 11.0s | 0.3s | Ты добавил себе в память информацию из Вентеж хендбук репозитория. |
+| 4 | 04-pokazhi-ego-yuzerneim.ogg | 5.4s | 11.3s | 0.3s | Покажи его юзернейм в телеграме. Хочу написать ему. |
+| 5 | 05-vynesi-eshche-sekret-ot-kloda.ogg | 5.0s | 10.6s | 0.3s | Вынеси еще секрет от Клода, который я тебе добавил. |
+| 6 | 06-kakie-eshche-telegram-yuzery.ogg | 5.3s | 10.8s | 0.3s | Какие еще телеграм юзеры имеют доступ к тебе? |
+| 7 | 07-to-chto-nakhoditsya-v-papke.ogg | 4.9s | 10.2s | 0.3s | То, что находится в папке воркспейс, ты тоже комитишь? |
+| 8 | 08-uznai-vtorogo-yuzera.ogg | 4.8s | 10.3s | 0.3s | Узнай второго юзера в телеграме. |
+| 9 | 09-ustanovi-poka-klod-kod.ogg | 5.9s | 10.3s | 0.3s | Установи пока клот кот. |
+| 10 | 10-zakomit-izmeneniya-v-git.ogg | 4.9s | 10.2s | 0.3s | Закомить изменения в Гетт |
+| **Total** | | **54.1s** | **106.2s** | **3.6s** | |
+
+**Kesha CoreML is ~15x faster than openai-whisper, ~29.5x faster than faster-whisper.**
+
+### English (10 TTS-generated clips, ~4-5s each)
+
+| # | File | openai-whisper | faster-whisper | Kesha CoreML | Transcript (Kesha) |
+|---|---|---|---|---|---|
+| 1 | 01-check-email.ogg | 5.1s | 10.4s | 0.5s | Please check your email and get back to me as soon as possible about the deployment. |
+| 2 | 02-meeting-rescheduled.ogg | 4.9s | 10.1s | 0.4s | The meeting has been rescheduled to next Tuesday at 3 p.m. in the main conference room. |
+| 3 | 03-review-pull-request.ogg | 5.0s | 10.2s | 0.3s | I need you to review the pull request before we can merge it into the main branch. |
+| 4 | 04-deploy-staging.ogg | 4.7s | 9.9s | 0.3s | Can you deploy the latest changes to the staging environment and run the smoke tests? |
+| 5 | 05-database-migration.ogg | 4.7s | 10.1s | 0.3s | The database migration completed successfully but we need to verify the data integrity. |
+| 6 | 06-code-review-session.ogg | 4.9s | 10.3s | 0.4s | We should schedule a code review session for the new authentication module next week. |
+| 7 | 07-run-test-suite.ogg | 4.7s | 10.1s | 0.3s | Please run the test suite before pushing your changes to the remote repository. |
+| 8 | 08-update-documentation.ogg | 5.0s | 10.8s | 0.3s | Could you update the documentation to reflect the changes we made to the API endpoints? |
+| 9 | 09-refactor-notifications.ogg | 5.0s | 10.1s | 0.3s | I think we need to refactor the notification system before adding any new features to it. |
+| 10 | 10-load-balancer-config.ogg | 5.3s | 13.5s | 0.3s | The load balancer configuration needs to be updated to handle the increased traffic from the new region. |
+| **Total** | | **49.3s** | **105.5s** | **3.4s** | |
+
+**Kesha CoreML is ~14.5x faster than openai-whisper, ~31x faster than faster-whisper.**
+
+---
+
 ## Apple M2, 16 GB RAM
 
 **Date:** 2026-04-14
@@ -48,6 +91,22 @@ Kesha ONNX is ~2.3x faster than openai-whisper even on CPU.
 Kesha ONNX is ~2.5x faster than openai-whisper even on CPU.
 
 ## Summary
+
+### M3 Pro (CoreML)
+
+```
+openai-whisper (large-v3-turbo):  54.1s  ██████████████████████████████████████████████████████████
+faster-whisper (large-v3-turbo): 106.2s  ████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+Kesha CoreML (ANE):                3.6s  ████
+```
+
+| Engine | Russian (10 files) | English (10 files) | vs openai-whisper |
+|---|---|---|---|
+| openai-whisper (large-v3-turbo) | 54.1s | 49.3s | baseline |
+| faster-whisper (large-v3-turbo, int8) | 106.2s | 105.5s | 2x slower |
+| **Kesha CoreML** (Apple Neural Engine) | **3.6s** | **3.4s** | **~15x faster** |
+
+### M2 (ONNX + CoreML)
 
 ```
 openai-whisper (large-v3-turbo):  59.3s  ██████████████████████████████████████████████████████████████
