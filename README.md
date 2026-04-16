@@ -53,7 +53,6 @@ Manage the plugin with `openclaw plugins list`, `openclaw plugins disable kesha-
 ```bash
 kesha install                              # download engine and models
 kesha audio.ogg                            # transcribe (plain text)
-kesha a.ogg b.ogg c.ogg                   # multiple files, one per line
 kesha --format transcript audio.ogg        # text + language/confidence
 kesha --format json audio.ogg              # full JSON with lang fields
 kesha --json audio.ogg                     # alias for --format json
