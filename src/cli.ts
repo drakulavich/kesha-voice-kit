@@ -46,9 +46,26 @@ function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined 
   return undefined;
 }
 
+async function askForStar() {
+  const gh = Bun.which("gh");
+  if (!gh) {
+    log.info("\nIf you enjoy Kesha Voice Kit, consider starring the repo:");
+    log.info("  https://github.com/drakulavich/kesha-voice-kit");
+    return;
+  }
+  const authCheck = Bun.spawnSync([gh, "auth", "status"], { stdout: "ignore", stderr: "ignore" });
+  if (authCheck.exitCode !== 0) return;
+  const starred = Bun.spawnSync([gh, "api", "user/starred/drakulavich/kesha-voice-kit"], { stdout: "ignore", stderr: "ignore" });
+  if (starred.exitCode === 0) return; // already starred
+  log.info("\n⭐ If you enjoy Kesha Voice Kit, star it on GitHub:");
+  log.info("  https://github.com/drakulavich/kesha-voice-kit");
+  log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
+}
+
 async function performInstall(noCache: boolean, backend?: string) {
   try {
     await downloadEngine(noCache, backend);
+    await askForStar();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(message);
