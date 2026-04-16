@@ -37,34 +37,36 @@ bun add -g @drakulavich/kesha-voice-kit
 kesha install
 ```
 
-**Then register the OpenClaw plugin:**
+**Then configure OpenClaw to use Kesha for audio transcription:**
 
 ```bash
 openclaw plugins install @drakulavich/kesha-voice-kit
+openclaw config set tools.media.audio.models \
+  '[{"type":"cli","command":"kesha","args":["--format","transcript","{{MediaPath}}"],"timeoutSeconds":15}]'
+openclaw config set tools.media.audio.enabled true
+openclaw gateway restart
 ```
 
-OpenClaw will auto-detect [`openclaw.plugin.json`](./openclaw.plugin.json) and load [`openclaw-plugin.cjs`](./openclaw-plugin.cjs), which registers `kesha-voice-kit` as a media-understanding provider with `autoPriority.audio = 50`. Once you enable audio transcription (`tools.media.audio.enabled: true`) in your OpenClaw config, Kesha becomes the default provider — higher priority than cloud providers like Groq (20).
+Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribes it locally, and the agent sees enriched context:
 
-Manage the plugin afterwards with `openclaw plugins list`, `openclaw plugins disable kesha-voice-kit`, or `openclaw plugins uninstall kesha-voice-kit`.
-
-Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribes it locally, and the transcript flows back into the agent loop:
-
-```json
-{
-  "text": "Привет, как дела?",
-  "model": "parakeet-tdt-0.6b-v3"
-}
 ```
+Привет, как дела?
+[lang: ru, confidence: 1.00]
+```
+
+Manage the plugin with `openclaw plugins list`, `openclaw plugins disable kesha-voice-kit`, or `openclaw plugins uninstall kesha-voice-kit`.
 
 ## CLI Tools
 
 ```bash
-kesha install                    # download engine and models
-kesha audio.ogg                  # transcribe
-kesha --json audio.ogg           # JSON output with language info
-kesha --verbose audio.ogg        # show language detection details
-kesha --lang en audio.ogg        # warn if detected language differs
-kesha status                     # show installed backend info
+kesha install                              # download engine and models
+kesha audio.ogg                            # transcribe (plain text)
+kesha --format transcript audio.ogg        # text + language/confidence
+kesha --format json audio.ogg              # full JSON with lang fields
+kesha --json audio.ogg                     # alias for --format json
+kesha --verbose audio.ogg                  # show language detection details
+kesha --lang en audio.ogg                  # warn if detected language differs
+kesha status                               # show installed backend info
 ```
 
 Stdout: transcript. Stderr: errors. Pipe-friendly.
