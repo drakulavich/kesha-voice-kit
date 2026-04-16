@@ -54,6 +54,7 @@ kesha say "text" │  kesha CLI (TypeScript) │
 - **TypeScript (`src/say.ts`)** — argument parsing, language auto-detect via `NLLanguageRecognizer`, voice routing policy, stdout/stderr hygiene, subprocess plumbing
 - **Rust (`rust/crates/tts/`)** — model loading, tokenization/phonemization, inference, WAV muxing
 - **Backend selection** — CoreML on Apple Silicon when available for Kokoro; `ort` everywhere for Silero and as cross-platform fallback
+- **G2P (grapheme-to-phoneme)** — Kokoro expects IPA phoneme tokens, not raw text. v1 uses **statically-linked `espeak-ng`** (~15MB added to the Rust binary, no user-visible system dependency). Follow-up [issue #123](https://github.com/drakulavich/kesha-voice-kit/issues/123) tracks replacing it with a native ONNX G2P for parity with FluidAudio's CoreML G2P on Apple Silicon.
 
 ## CLI Surface
 
