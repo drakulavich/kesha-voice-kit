@@ -8,6 +8,8 @@ mod lang_id;
 mod models;
 mod text_lang;
 mod transcribe;
+#[cfg(feature = "tts")]
+mod tts;
 
 #[derive(Parser)]
 #[command(name = "kesha-engine", version)]
@@ -43,6 +45,28 @@ enum Commands {
         #[arg(long)]
         no_cache: bool,
     },
+    /// Synthesize speech from text (TTS)
+    #[cfg(feature = "tts")]
+    Say {
+        /// Text to synthesize (omit to read from stdin)
+        #[arg(trailing_var_arg = true)]
+        text: Vec<String>,
+        /// Voice id, e.g. `en-af_heart`
+        #[arg(long)]
+        voice: Option<String>,
+        /// Output file (default: stdout)
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Output format
+        #[arg(long, default_value = "wav")]
+        format: String,
+        /// Speaking rate (0.5–2.0)
+        #[arg(long, default_value_t = 1.0)]
+        rate: f32,
+        /// List installed voices and exit
+        #[arg(long)]
+        list_voices: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -70,6 +94,10 @@ fn main() -> Result<()> {
         Some(Commands::Install { no_cache }) => {
             models::install(no_cache)?;
             eprintln!("Install complete.");
+        }
+        #[cfg(feature = "tts")]
+        Some(Commands::Say { .. }) => {
+            todo!("Task 10 wires the say subcommand");
         }
         None => {
             eprintln!("Usage: kesha-engine <command>");
