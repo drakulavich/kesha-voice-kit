@@ -18,6 +18,41 @@
 - macOS build env: `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`, `RUSTFLAGS="-L /opt/homebrew/lib"`.
 - macOS runtime: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` for dev, or `install_name_tool -change` fix-up in release binaries.
 
+**Kokoro inference decision (from Task 0.2 spike, 2026-04-16):**
+- Model SHA256: `8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb` (model.onnx, 326 MB — larger than the ~300MB plan estimate)
+- Voice SHA256 (af_heart): `d583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b` (522240 bytes)
+- **Voice file is 510 rows × 256 cols, NOT 511.** Task 7's `EXPECTED` must be `510 * 256 * 4 = 522240`. Row index = `min(token_count - 1, 509)` (not 510).
+- **Style tensor shape is `(1, 256)` rank-2, NOT `(1, 1, 256)` rank-3.** Task 0.2 plan step 3 (and Task 8) was wrong. Corrected form below.
+- **Output tensor name is `"waveform"`, NOT `"audio"`.** Task 8 + Task 9's output access must use `outputs["waveform"]` or `outputs[0]`.
+- Model inputs confirmed by probing `session.inputs()` at runtime:
+  - `input_ids`: int64, shape `(1, N)` — token IDs, N up to 512 (padding to fixed 512 is a Task 5 concern, but inference accepts variable N)
+  - `style`: float32, shape `(1, 256)` — single voice embedding row
+  - `speed`: float32, shape `(1,)` — speaking rate
+- Model output: `waveform`, float32 shape `(1, T)` @ 24kHz. For 8 placeholder tokens → T=32400 samples (1.35s).
+- `ort 2.0.0-rc.12` API surface that worked (use verbatim in Task 8):
+  ```rust
+  use ort::session::Session;
+  use ort::value::Value;
+  use ndarray::{Array1, Array2};
+
+  let mut session = Session::builder()?.commit_from_file(path)?;
+  // Name/field accessors are methods, not fields:
+  for input in session.inputs().iter() { println!("{:?}", input.name()); }
+  // Value construction — note `.into_dyn()` is NOT required:
+  let input_ids_val = Value::from_array(Array2::<i64>::from_shape_vec((1, n), tokens)?)?;
+  let style_val     = Value::from_array(Array2::<f32>::from_shape_vec((1, 256), style)?)?;
+  let speed_val     = Value::from_array(Array1::<f32>::from_vec(vec![1.0_f32]))?;
+  let outputs = session.run(ort::inputs![
+      "input_ids" => input_ids_val,
+      "style"     => style_val,
+      "speed"     => speed_val,
+  ])?;
+  let (shape, data) = outputs["waveform"].try_extract_tensor::<f32>()?;
+  let samples: Vec<f32> = data.to_vec();
+  ```
+  Key gotchas: `Session::run()` needs `&mut self`; `inputs/outputs` on a Session are **methods** not fields; `input.name()` / `output.name()` are methods. No `.into_dyn()` needed when shape is rank-appropriate.
+- Config vocab download: The URL pinned in the plan (`https://huggingface.co/hexgrad/Kokoro-82M/resolve/785407d1.../config.json`) returned `"Entry not found"` — the pinned commit doesn't have config.json at that path. Task 5 must either use a different URL (e.g., main branch of hexgrad/Kokoro-82M, or extract vocab from the ONNX-community v1.0-ONNX repo) or embed the vocab as a static JSON fixture copied manually from a known-good source.
+
 **Testing discipline:** Every task follows Red/Green/Refactor. Every new module ships with both (a) unit tests that pin behavior and (b) an integration test path reached through the real CLI. No implementation-detail mocks. Tests resemble real usage (`echo ... | kesha say | file -` over `mock(KokoroSession)`).
 
 ---
