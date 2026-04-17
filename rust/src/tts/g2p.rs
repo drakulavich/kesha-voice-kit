@@ -1,15 +1,18 @@
-//! Grapheme-to-phoneme via statically-linked espeak-ng.
+//! Grapheme-to-phoneme via `espeakng-sys`, linked dynamically against system libespeak-ng.
 //!
-//! Pinned by Task 0.1 spike on 2026-04-16: `espeakng-sys 0.3.0` with `clang-runtime`,
-//! dynamic link against system `libespeak-ng`. phonememode `0x02` selects IPA (bits 0-3).
-//! `espeak_TextToPhonemes` returns one sentence at a time — we loop advancing the pointer.
+//! `espeak_TextToPhonemes` returns one sentence at a time — we loop advancing the pointer
+//! until it returns null. `espeak` keeps process-global state, so init + each call are
+//! serialized behind a `Mutex`.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
 
-/// Global init guard. espeak is not thread-safe and keeps global state.
+/// phonememode bits 0-3 select the phoneme character set; `0x02` = IPA (Unicode).
+/// Bits 4-7 (output destination) are left at 0 so the result is returned from the call.
+const PHONEME_MODE_IPA: i32 = 0x02;
+
 static ESPEAK_INIT: OnceLock<Mutex<bool>> = OnceLock::new();
 
 /// Convert text to IPA phonemes for the given espeak language code (e.g. `en-us`).
@@ -54,15 +57,12 @@ pub fn text_to_ipa(text: &str, lang: &str) -> anyhow::Result<String> {
         let mut text_ptr: *const c_void = c_text.as_ptr() as *const c_void;
         let text_ptr_ptr: *mut *const c_void = &mut text_ptr;
 
-        // phonememode: bits 0-3 = 0x02 (IPA Unicode), bits 4-7 = 0 (return via function).
-        let phonememode: i32 = 0x02;
-
         let mut out = String::new();
         loop {
             let ipa_c = espeakng_sys::espeak_TextToPhonemes(
                 text_ptr_ptr,
                 espeakng_sys::espeakCHARS_UTF8 as i32,
-                phonememode,
+                PHONEME_MODE_IPA,
             );
             if ipa_c.is_null() {
                 break;

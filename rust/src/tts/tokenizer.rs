@@ -1,8 +1,5 @@
-//! Kokoro phoneme → token ID vocabulary.
-//!
-//! The vocab is embedded at compile time from a fixture copied from
-//! hexgrad/Kokoro-82M/config.json (main branch) on 2026-04-16. Map is
-//! stable across Kokoro v1.0 checkpoints.
+//! Kokoro phoneme → token ID vocabulary. The vocab is embedded at compile time
+//! from `hexgrad/Kokoro-82M/config.json` and is stable across Kokoro v1.0 checkpoints.
 
 use std::collections::HashMap;
 
@@ -58,7 +55,6 @@ mod tests {
     #[test]
     fn vocab_loads_with_enough_entries() {
         let t = Tokenizer::load().unwrap();
-        // Fixture captured 114 entries on 2026-04-16. Allow some drift across upstream updates.
         assert!(t.map.len() > 50, "vocab too small: {} entries", t.map.len());
     }
 
@@ -80,9 +76,7 @@ mod tests {
     #[test]
     fn encodes_real_ipa_string() {
         let t = Tokenizer::load().unwrap();
-        // həlˈoʊ (from spike output for "Hello")
         let ids = t.encode("həlˈoʊ");
-        // Every char in this string is in the Kokoro vocab.
         assert_eq!(ids.len(), "həlˈoʊ".chars().count(), "ids={ids:?}");
     }
 

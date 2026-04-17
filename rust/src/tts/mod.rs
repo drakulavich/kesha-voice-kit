@@ -1,4 +1,4 @@
-//! Text-to-speech via Kokoro ONNX. See design doc 2026-04-16.
+//! Text-to-speech via Kokoro ONNX.
 
 use std::path::Path;
 
@@ -14,8 +14,8 @@ pub const MAX_TEXT_CHARS: usize = 5000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TtsError {
-    #[error("voice '{0}' not installed. run: kesha install --tts --voice {1}")]
-    VoiceNotInstalled(String, String),
+    #[error("voice '{voice_id}' not installed. run: kesha install --tts")]
+    VoiceNotInstalled { voice_id: String },
     #[error("text is empty")]
     EmptyText,
     #[error("text exceeds {max} chars ({actual})")]

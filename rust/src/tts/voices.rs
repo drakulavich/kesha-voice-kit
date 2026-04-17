@@ -1,11 +1,10 @@
 //! Kokoro voice embedding files.
 //!
-//! Layout (from Task 0.2 spike): 510 rows × 256 cols, float32 little-endian,
-//! contiguous. Row index selected by token count: `min(token_count - 1, 509)`.
+//! Layout: 510 rows × 256 cols, f32 little-endian, contiguous. Row index selected by
+//! active token count: `min(token_count - 1, 509)`.
 
 use std::path::Path;
 
-/// Number of rows in a Kokoro voice embedding file. Verified by spike.
 pub const VOICE_ROWS: usize = 510;
 /// Dimensions per row (voice embedding width).
 pub const VOICE_COLS: usize = 256;
@@ -50,15 +49,14 @@ pub struct ResolvedVoice {
 
 /// Parse a voice id like `en-af_heart` into espeak language + filesystem paths.
 /// Returns an error if the voice is not installed at `<cache>/models/kokoro-82m/voices/<name>.bin`.
-///
-/// M1 only supports English (Kokoro EN voices). Non-`en-*` ids are rejected.
+/// Only English voices are supported currently; Silero (ru, uk) lands in a later milestone.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
     let (lang, name) = voice_id.split_once('-').ok_or_else(|| {
         anyhow::anyhow!("voice id must be in 'lang-name' form (got '{voice_id}')")
     })?;
     let espeak_lang: &'static str = match lang {
         "en" => "en-us",
-        other => anyhow::bail!("language '{other}' not supported in M1 (use 'en-*')"),
+        other => anyhow::bail!("language '{other}' not supported (use 'en-*')"),
     };
     let voice_path = cache_dir
         .join("models/kokoro-82m/voices")
@@ -181,9 +179,6 @@ mod tests {
     fn resolve_unsupported_language() {
         let tmp = tempfile::tempdir().unwrap();
         let err = resolve_voice(tmp.path(), "ru-something").unwrap_err();
-        assert!(
-            err.to_string().contains("not supported in M1"),
-            "msg: {err}"
-        );
+        assert!(err.to_string().contains("not supported"), "msg: {err}");
     }
 }

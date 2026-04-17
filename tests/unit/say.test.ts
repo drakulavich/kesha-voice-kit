@@ -46,10 +46,6 @@ describe("buildSayArgs", () => {
     );
   });
 
-  it("omits --format when wav (default)", () => {
-    expect(buildSayArgs({ text: "Hi", format: "wav" })).not.toContain("--format");
-  });
-
   it("places text positional after flags (not parsed as option arg)", () => {
     const args = buildSayArgs({ text: "Hello", voice: "en-af_heart", lang: "en-us" });
     const textIdx = args.indexOf("Hello");

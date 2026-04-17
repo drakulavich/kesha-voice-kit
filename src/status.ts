@@ -1,3 +1,6 @@
+import { readdirSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 import { isEngineInstalled, getEngineBinPath, getEngineCapabilities } from "./engine";
 import { log } from "./log";
 import pc from "picocolors";
@@ -53,18 +56,16 @@ export async function showStatus(): Promise<void> {
   }
 }
 
-/** List installed Kokoro voice ids by scanning the cache dir. Private to status for now. */
+function kesheCacheDir(): string {
+  return process.env.KESHA_CACHE_DIR ?? join(homedir(), ".cache", "kesha");
+}
+
 function listInstalledVoices(): string[] {
-  const cacheDir =
-    process.env.KESHA_CACHE_DIR ??
-    `${process.env.HOME ?? ""}/.cache/kesha`;
-  const voicesDir = `${cacheDir}/models/kokoro-82m/voices`;
+  const voicesDir = join(kesheCacheDir(), "models", "kokoro-82m", "voices");
   try {
-    const { readdirSync } = require("fs") as typeof import("fs");
-    const entries = readdirSync(voicesDir);
-    return entries
-      .filter((f: string) => f.endsWith(".bin"))
-      .map((f: string) => `en-${f.replace(/\.bin$/, "")}`);
+    return readdirSync(voicesDir)
+      .filter((f) => f.endsWith(".bin"))
+      .map((f) => `en-${f.replace(/\.bin$/, "")}`);
   } catch {
     return [];
   }

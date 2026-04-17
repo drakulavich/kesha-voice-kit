@@ -5,27 +5,20 @@ export interface SayOptions {
   text?: string;
   /** Voice id, e.g. `en-af_heart`. Defaults to engine default. */
   voice?: string;
-  /** espeak language code for G2P (default `en-us`). */
+  /** Override the voice's default espeak language code. */
   lang?: string;
   /** Write audio to this path instead of returning bytes. */
   out?: string;
-  /** Output format. Only `wav` supported in M1. */
-  format?: "wav";
   /** Speaking rate 0.5–2.0. */
   rate?: number;
 }
 
-/**
- * Build the argv that will be passed to `kesha-engine say`.
- * Pure function — no process spawn — so flag-construction logic is unit-testable
- * without touching the filesystem or subprocess.
- */
+/** Build the argv passed to `kesha-engine say` (pure, unit-testable). */
 export function buildSayArgs(o: SayOptions): string[] {
   const args: string[] = ["say"];
   if (o.voice) args.push("--voice", o.voice);
   if (o.lang) args.push("--lang", o.lang);
   if (o.out) args.push("--out", o.out);
-  if (o.format && o.format !== "wav") args.push("--format", o.format);
   if (o.rate !== undefined && o.rate !== 1.0) args.push("--rate", String(o.rate));
   if (o.text !== undefined && o.text.length > 0) args.push(o.text);
   return args;

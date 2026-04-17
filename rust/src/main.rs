@@ -57,15 +57,12 @@ enum Commands {
         /// Voice id, e.g. `en-af_heart`
         #[arg(long)]
         voice: Option<String>,
-        /// espeak language code for G2P, e.g. `en-us`
-        #[arg(long, default_value = "en-us")]
-        lang: String,
+        /// Override the voice's default espeak language code, e.g. `en-gb`
+        #[arg(long)]
+        lang: Option<String>,
         /// Output file (default: stdout)
         #[arg(long)]
         out: Option<std::path::PathBuf>,
-        /// Output format
-        #[arg(long, default_value = "wav")]
-        format: String,
         /// Speaking rate (0.5–2.0)
         #[arg(long, default_value_t = 1.0)]
         rate: f32,
@@ -81,9 +78,18 @@ enum Commands {
     },
 }
 
-/// Confirm espeak-ng is callable before downloading TTS models. Early failure
-/// beats a confusing runtime load error later. On macOS this requires
-/// `brew install espeak-ng`; Linux `apt install espeak-ng`; Windows `choco install espeak-ng`.
+#[cfg(feature = "tts")]
+struct SayArgs {
+    text: Option<String>,
+    voice: Option<String>,
+    lang: Option<String>,
+    out: Option<std::path::PathBuf>,
+    rate: f32,
+    list_voices: bool,
+    model: Option<std::path::PathBuf>,
+    voice_file: Option<std::path::PathBuf>,
+}
+
 #[cfg(feature = "tts")]
 fn ensure_espeak_available() -> anyhow::Result<()> {
     use std::process::Command;
@@ -107,7 +113,7 @@ fn ensure_espeak_available() -> anyhow::Result<()> {
 #[cfg(feature = "tts")]
 fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
     match e {
-        tts::TtsError::VoiceNotInstalled(..) => 1,
+        tts::TtsError::VoiceNotInstalled { .. } => 1,
         tts::TtsError::EmptyText => 2,
         tts::TtsError::TextTooLong { .. } => 5,
         tts::TtsError::SynthesisFailed(_) => 4,
@@ -115,21 +121,10 @@ fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
 }
 
 #[cfg(feature = "tts")]
-#[allow(clippy::too_many_arguments)]
-fn run_say(
-    text: Option<String>,
-    voice_id: Option<String>,
-    lang_override: String,
-    lang_was_default: bool,
-    out: Option<std::path::PathBuf>,
-    rate: f32,
-    list_voices: bool,
-    model_override: Option<std::path::PathBuf>,
-    voice_file_override: Option<std::path::PathBuf>,
-) -> i32 {
+fn run_say(a: SayArgs) -> i32 {
     use std::io::{Read, Write};
 
-    if list_voices {
+    if a.list_voices {
         let voices_dir = models::cache_dir().join("models/kokoro-82m/voices");
         let names: Vec<String> = std::fs::read_dir(&voices_dir)
             .into_iter()
@@ -154,7 +149,7 @@ fn run_say(
         return 0;
     }
 
-    let text_joined = match text {
+    let text_joined = match a.text {
         Some(s) => s,
         None => {
             let mut buf = String::new();
@@ -166,22 +161,17 @@ fn run_say(
         }
     };
 
-    // Resolve model + voice file: prefer explicit overrides (testing), else cache.
-    let (model_path, voice_path, espeak_lang) = match (model_override, voice_file_override) {
-        (Some(m), Some(v)) => (m, v, lang_override.clone()),
+    let (model_path, voice_path, espeak_lang) = match (a.model, a.voice_file) {
+        (Some(m), Some(v)) => (m, v, a.lang.clone().unwrap_or_else(|| "en-us".to_string())),
         (Some(_), None) | (None, Some(_)) => {
             eprintln!("error: pass both --model and --voice-file or neither");
             return 2;
         }
         (None, None) => {
-            let id = voice_id.as_deref().unwrap_or(tts::voices::DEFAULT_VOICE_ID);
+            let id = a.voice.as_deref().unwrap_or(tts::voices::DEFAULT_VOICE_ID);
             match tts::voices::resolve_voice(&models::cache_dir(), id) {
                 Ok(r) => {
-                    let lang = if lang_was_default {
-                        r.espeak_lang.to_string()
-                    } else {
-                        lang_override.clone()
-                    };
+                    let lang = a.lang.clone().unwrap_or_else(|| r.espeak_lang.to_string());
                     (r.model_path, r.voice_path, lang)
                 }
                 Err(e) => {
@@ -195,7 +185,7 @@ fn run_say(
     let wav = match tts::say(tts::SayOptions {
         text: &text_joined,
         lang: &espeak_lang,
-        speed: rate,
+        speed: a.rate,
         model_path: &model_path,
         voice_path: &voice_path,
     }) {
@@ -206,7 +196,7 @@ fn run_say(
         }
     };
 
-    let write_result = match out {
+    let write_result = match a.out {
         Some(p) => std::fs::write(&p, &wav).map_err(|e| e.to_string()),
         None => std::io::stdout().write_all(&wav).map_err(|e| e.to_string()),
     };
@@ -259,24 +249,21 @@ fn main() -> Result<()> {
             voice,
             lang,
             out,
-            format: _format,
             rate,
             list_voices,
             model,
             voice_file,
         }) => {
-            let lang_was_default = lang == "en-us";
-            std::process::exit(run_say(
+            std::process::exit(run_say(SayArgs {
                 text,
                 voice,
                 lang,
-                lang_was_default,
                 out,
                 rate,
                 list_voices,
                 model,
                 voice_file,
-            ));
+            }));
         }
         None => {
             eprintln!("Usage: kesha-engine <command>");

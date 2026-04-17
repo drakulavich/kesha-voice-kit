@@ -29,7 +29,6 @@ pub struct ModelFile {
     pub size_bytes: u64,
 }
 
-/// Kokoro model files. SHA256 values captured by Task 0.2 spike on 2026-04-16.
 #[cfg(feature = "tts")]
 pub fn kokoro_manifest() -> Vec<ModelFile> {
     vec![
@@ -209,22 +208,23 @@ pub fn download_tts_kokoro(no_cache: bool) -> Result<()> {
     Ok(())
 }
 
-/// Compute SHA256 via the `shasum` command; returns true on match.
-/// Simple shell-out keeps us out of a crypto crate for one verification call.
 #[cfg(feature = "tts")]
 fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
-    use std::process::Command;
-    let out = Command::new("shasum")
-        .args(["-a", "256"])
-        .arg(path)
-        .output()
-        .context("shasum command failed (install via `brew install coreutils` or similar)")?;
-    if !out.status.success() {
-        anyhow::bail!("shasum exited non-zero for {}", path.display());
-    }
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let actual = stdout.split_whitespace().next().unwrap_or("");
+    use sha2::{Digest, Sha256};
+    let mut file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    io::copy(&mut file, &mut hasher)?;
+    let actual = hex_encode(&hasher.finalize());
     Ok(actual.eq_ignore_ascii_case(expected))
+}
+
+#[cfg(feature = "tts")]
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
 }
 
 fn cleanup_legacy() {

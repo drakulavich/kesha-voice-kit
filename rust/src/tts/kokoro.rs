@@ -1,9 +1,7 @@
-//! Kokoro ONNX inference session.
+//! Kokoro-82M ONNX inference session.
 //!
-//! Interface pinned in Task 0.2 spike (2026-04-16):
-//! - Inputs: `input_ids` (int64 [1,N]), `style` (f32 [1,256]), `speed` (f32 [1])
-//! - Output: `waveform` (f32 [1,T]) at 24kHz
-//! - Session::run() needs &mut self; inputs/outputs accessors are methods.
+//! Inputs:  `input_ids` (int64 [1,N]), `style` (f32 [1,256]), `speed` (f32 [1])
+//! Output:  `waveform` (f32 [1,T]) at 24 kHz
 
 use std::path::Path;
 
@@ -67,7 +65,7 @@ mod tests {
             return;
         };
         let mut k = Kokoro::load(Path::new(&path)).unwrap();
-        // 8 placeholder tokens (matches spike) — shape/tensor wiring check, not quality check.
+        // Arbitrary placeholder tokens — the test verifies tensor wiring, not audio quality.
         let ids: Vec<i64> = vec![0, 50, 83, 54, 156, 57, 135, 0];
         let style = vec![0.01_f32; 256];
         let audio = k.infer(&ids, &style, 1.0).unwrap();
