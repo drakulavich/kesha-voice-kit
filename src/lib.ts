@@ -4,6 +4,12 @@ import { downloadEngine } from "./engine-install";
 
 export type { TranscribeOptions };
 export { downloadEngine as downloadModel };
+export { say, type SayOptions, SayError } from "./say";
+
+/** Install Kokoro TTS models. Shorthand for `downloadModel({ tts: true })`. */
+export async function downloadTts(noCache = false): Promise<void> {
+  await downloadEngine(noCache, undefined, { tts: true });
+}
 
 /** @deprecated Use `downloadModel` instead. */
 export const downloadCoreML = downloadEngine;

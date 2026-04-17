@@ -25,6 +25,7 @@ interface InstallCommandArgs {
   coreml: boolean;
   onnx: boolean;
   "no-cache": boolean;
+  tts: boolean;
 }
 
 interface MainCommandArgs {
@@ -46,9 +47,9 @@ function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined 
   return undefined;
 }
 
-async function performInstall(noCache: boolean, backend?: string) {
+async function performInstall(noCache: boolean, backend?: string, tts = false) {
   try {
-    await downloadEngine(noCache, backend);
+    await downloadEngine(noCache, backend, { tts });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(message);
@@ -77,10 +78,15 @@ export const installCommand = defineCommand({
       description: "Re-download even if cached",
       default: false,
     },
+    tts: {
+      type: "boolean",
+      description: "Also install Kokoro TTS models (~326MB, requires espeak-ng on PATH)",
+      default: false,
+    },
   },
   async run({ args }: { args: InstallCommandArgs }) {
     const backend = resolveBackendFlag(args.coreml, args.onnx);
-    await performInstall(args["no-cache"], backend);
+    await performInstall(args["no-cache"], backend, args.tts);
   },
 });
 

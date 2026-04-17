@@ -37,7 +37,35 @@ export async function showStatus(): Promise<void> {
   log.info(formatStatusLine("Platform", `${process.platform} ${process.arch}`, true));
   log.info("");
 
+  if (installed) {
+    const voices = listInstalledVoices();
+    if (voices.length > 0) {
+      log.info("TTS voices:");
+      for (const v of voices) {
+        log.info(`  ${v}`);
+      }
+      log.info("");
+    }
+  }
+
   if (!installed) {
     log.warn('Run "kesha install" to download the engine and models.');
+  }
+}
+
+/** List installed Kokoro voice ids by scanning the cache dir. Private to status for now. */
+function listInstalledVoices(): string[] {
+  const cacheDir =
+    process.env.KESHA_CACHE_DIR ??
+    `${process.env.HOME ?? ""}/.cache/kesha`;
+  const voicesDir = `${cacheDir}/models/kokoro-82m/voices`;
+  try {
+    const { readdirSync } = require("fs") as typeof import("fs");
+    const entries = readdirSync(voicesDir);
+    return entries
+      .filter((f: string) => f.endsWith(".bin"))
+      .map((f: string) => `en-${f.replace(/\.bin$/, "")}`);
+  } catch {
+    return [];
   }
 }
