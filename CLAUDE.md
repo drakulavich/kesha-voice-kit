@@ -55,9 +55,19 @@ GitHub's immutable-releases permanently reserves tag names after publish. **Brok
 ### VERIFY BEFORE PUSHING
 
 - `bun test && bunx tsc --noEmit` before every push
-- Rust changes: `cd rust && cargo fmt && cargo clippy -- -D warnings`
+- Rust changes: `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings`
+  (`--all-targets` is required — otherwise test-only dead code escapes to CI)
 - Backend module changes: also `cargo check --features coreml --no-default-features`
 - Do NOT push broken code
+
+**Why `--all-targets` matters:** CI's ubuntu job runs clippy; the macOS jobs run only `cargo test`. Without `--all-targets`, local clippy misses dead code in `#[cfg(test)]` blocks and tests — which then breaks CI after push. (Lesson: #125 M1 landed a dead enum variant + struct field that passed on macOS but failed ubuntu.)
+
+### NO SPECULATIVE FIELDS OR ENUM VARIANTS
+
+Don't add struct fields, enum variants, or constants "for later." Clippy's `dead_code` lint is a hard error under `-D warnings`, so any unused public item will fail CI.
+
+- **Fix, don't suppress:** delete the unused item. Add `#[allow(dead_code)]` only with a justification in the comment.
+- If something needs to exist but isn't wired up yet, wire it up OR leave a `todo!()` call that exercises the variant.
 
 ### ERROR HANDLING
 
@@ -187,7 +197,7 @@ const text = await transcribe("audio.ogg");
 - **TypeScript**: Strict mode, ESNext target, Bun runs `.ts` directly
 - **Imports**: Relative paths (`./engine`, not `src/engine`)
 - **Output**: `console.error()` for progress/errors, `console.log()` for success (stdout stays pipe-friendly)
-- **Rust**: `cargo fmt` + `cargo clippy -- -D warnings`
+- **Rust**: `cargo fmt` + `cargo clippy --all-targets -- -D warnings`
 
 ## CI/CD
 

@@ -32,7 +32,8 @@ make release         # lint + test + smoke-test
 - **NEVER** forward CLI flags blindly to `kesha-engine` — validate against `--capabilities-json`
 - **BEFORE npm publish**: `make smoke-test`
 - **BEFORE pushing TS**: `bun test && bunx tsc --noEmit`
-- **BEFORE pushing Rust**: `cargo fmt && cargo clippy -- -D warnings && cargo test` — backend changes also need `cargo check --features coreml --no-default-features`
+- **BEFORE pushing Rust**: `cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test` — `--all-targets` is required (catches dead code in tests too). Backend changes also need `cargo check --features coreml --no-default-features`
+- **NEVER** add struct fields / enum variants "for later." Clippy `dead_code` is a hard error — delete the unused item or wire it up
 - **Error handling**: human-readable messages (what, why, fix). Never swallow errors.
 
 ## Release Process
@@ -84,5 +85,5 @@ Recommended config:
 - TypeScript: strict mode, ESNext, no build step
 - Relative imports (`./engine`, not `src/engine`)
 - `console.error()` for progress; `console.log()` for success (stdout = pipe-friendly)
-- Rust: `cargo fmt` + `cargo clippy -- -D warnings`
+- Rust: `cargo fmt` + `cargo clippy --all-targets -- -D warnings`
 - Tests: `import { describe, test, expect } from "bun:test"`
