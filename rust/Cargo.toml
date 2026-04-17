@@ -5,9 +5,10 @@ edition = "2021"
 description = "Inference engine for Kesha Voice Kit: ASR + language detection"
 
 [features]
-default = ["onnx"]
+default = ["onnx", "tts"]
 coreml = ["dep:fluidaudio-rs"]
 onnx = ["dep:ort", "dep:ndarray"]
+tts = ["dep:hound", "dep:espeakng-sys", "dep:thiserror", "onnx"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -31,6 +32,14 @@ ndarray = { version = "0.17", optional = true }
 # CoreML backend (macOS)
 fluidaudio-rs = { version = "0.1", optional = true }
 audioadapter-buffers = "3.0.0"
+
+# TTS (Kokoro + espeak-ng). See plan Task 0.1 for linking notes.
+hound = { version = "3.5", optional = true }
+espeakng-sys = { version = "0.3", features = ["clang-runtime"], optional = true }
+thiserror = { version = "1", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 lto = true
