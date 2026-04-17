@@ -4,6 +4,14 @@ version = "1.0.0"
 edition = "2021"
 description = "Inference engine for Kesha Voice Kit: ASR + language detection"
 
+[lib]
+name = "kesha_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kesha-engine"
+path = "src/main.rs"
+
 [features]
 default = ["onnx", "tts"]
 coreml = ["dep:fluidaudio-rs"]
