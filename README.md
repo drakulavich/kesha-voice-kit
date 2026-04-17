@@ -68,6 +68,22 @@ Stdout: transcript. Stderr: errors. Pipe-friendly.
 
 **Also available as `parakeet` command** (backward-compatible alias).
 
+## Text-to-Speech (preview, M1)
+
+Kesha can also *speak back* via Kokoro-82M. English only in M1 — Russian and auto-routing land in M3.
+
+```bash
+brew install espeak-ng              # one-time system dep (macOS — apt/choco elsewhere)
+kesha install --tts                 # ~326MB download (opt-in — default install unchanged)
+kesha say "Hello, world" > reply.wav
+echo "long text" | kesha say > reply.wav
+kesha say --out reply.wav "text"
+kesha say --voice en-af_heart "text"
+kesha say --list-voices
+```
+
+Output: WAV 24kHz mono float32. OGG/Opus, MP3, and SSML are tracked in follow-up issues ([#122](https://github.com/drakulavich/kesha-voice-kit/issues/122)). Static-linking of `espeak-ng` to remove the system dep is [#124](https://github.com/drakulavich/kesha-voice-kit/issues/124).
+
 ## What's Inside
 
 Kesha Voice Kit bundles open-source models optimized for on-device inference:

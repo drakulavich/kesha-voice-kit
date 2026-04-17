@@ -190,3 +190,19 @@ A minimal Swift package wrapping FluidAudio. Built by CI on tag push, not by end
 - **System**: ffmpeg in PATH (ONNX backend only; CoreML handles conversion internally)
 - **CoreML backend**: macOS 14+, Apple Silicon (arm64)
 - **ONNX backend**: macOS, Linux, Windows (anywhere Bun + onnxruntime-node runs)
+- **TTS**: `espeak-ng` on PATH (`brew install espeak-ng` / `apt install espeak-ng` / `choco install espeak-ng`). Vendoring tracked in [#124](https://github.com/drakulavich/kesha-voice-kit/issues/124).
+
+## TTS (M1+)
+
+Text-to-speech via Kokoro-82M (English, M1). Opt-in via `kesha install --tts`.
+
+- TTS models are **never auto-downloaded** — same rule as ASR. `kesha say` fails loudly with `kesha install --tts` hint when models are missing.
+- `kesha say` writes WAV (24kHz mono f32) to stdout unless `--out` is given. Stderr = progress/errors only.
+- G2P uses statically-linked `espeakng-sys` crate (dynamic-linked in M1 against system libespeak-ng). Phoneme mode `0x02` = IPA; not `0x02 << 4`.
+- Kokoro ONNX interface: input_ids (int64 [1,N]), **style (f32 [1,256]) — rank-2, not rank-3**, speed (f32 [1]). Output tensor name is `"waveform"` (not `"audio"`). Voice file is **510 rows × 256 cols** (not 511).
+- Use `KESHA_ENGINE_BIN` env var to override the default engine-binary path for development (e.g., point at `rust/target/release/kesha-engine` when iterating).
+- Use `KESHA_CACHE_DIR` env var for an isolated test cache.
+- macOS runtime needs `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` for dev builds; release binaries fix up via `install_name_tool`.
+- macOS build needs `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib` and `RUSTFLAGS="-L /opt/homebrew/lib"`.
+
+Russian (Silero) + auto-routing via `NLLanguageRecognizer` are M3. See `docs/superpowers/specs/2026-04-16-bidirectional-voice-design.md`.

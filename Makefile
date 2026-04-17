@@ -22,6 +22,11 @@ smoke-test: ## Run smoke tests against fixtures
 	kesha install
 	bun scripts/smoke-test.ts
 
+smoke-test-tts: ## Run smoke tests with TTS (requires espeak-ng)
+	bun link @drakulavich/kesha-voice-kit
+	kesha install --tts
+	bun scripts/smoke-test.ts --tts
+
 benchmark: ## Run benchmark (openai-whisper vs faster-whisper vs Kesha)
 	bun scripts/benchmark.ts
 

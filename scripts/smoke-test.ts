@@ -65,6 +65,26 @@ try {
 const typoProc = Bun.spawnSync(["kesha", "instal"], { stdout: "pipe", stderr: "pipe" });
 check("typo suggestion works", typoProc.exitCode === 1 && typoProc.stderr.toString().includes("Did you mean"));
 
+// 6. TTS smoke (opt-in via --tts flag; requires `kesha install --tts` + espeak-ng)
+if (process.argv.includes("--tts")) {
+  const tmpWav = "/tmp/kesha-smoke.wav";
+  const sayProc = Bun.spawnSync(["kesha", "say", "Hello", "--out", tmpWav], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const wavExists = Bun.file(tmpWav).size > 10_000;
+  const header = wavExists
+    ? new TextDecoder().decode(
+        new Uint8Array((await Bun.file(tmpWav).arrayBuffer()).slice(0, 4)),
+      )
+    : "";
+  check(
+    "kesha say produces WAV",
+    sayProc.exitCode === 0 && wavExists && header === "RIFF",
+    `exit=${sayProc.exitCode} header=${header}`,
+  );
+}
+
 const total = passed + failed;
 console.log(`\n${passed}/${total} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
