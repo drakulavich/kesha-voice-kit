@@ -44,6 +44,23 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
     ]
 }
 
+/// Piper Russian voice (denis, medium quality). See [rhasspy/piper-voices].
+#[cfg(feature = "tts")]
+pub fn piper_ru_manifest() -> Vec<ModelFile> {
+    vec![
+        ModelFile {
+            rel_path: "models/piper-ru/ru_RU-denis-medium.onnx",
+            url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/denis/medium/ru_RU-denis-medium.onnx",
+            sha256: "15fab56e11a097858ee115545d0f697fc2a316c41a291a5362349fb870411b0a",
+        },
+        ModelFile {
+            rel_path: "models/piper-ru/ru_RU-denis-medium.onnx.json",
+            url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/denis/medium/ru_RU-denis-medium.onnx.json",
+            sha256: "831c860dac0b5073eaa81610a0a638ec23d90a6cf8e5f871b4485c2cec3767c8",
+        },
+    ]
+}
+
 pub fn cache_dir() -> PathBuf {
     if let Ok(p) = std::env::var("KESHA_CACHE_DIR") {
         return PathBuf::from(p);
@@ -119,6 +136,21 @@ mod tts_tests {
     }
 
     #[test]
+    fn piper_ru_manifest_has_expected_files() {
+        let m = piper_ru_manifest();
+        assert!(m
+            .iter()
+            .any(|f| f.rel_path.ends_with("ru_RU-denis-medium.onnx")));
+        assert!(m
+            .iter()
+            .any(|f| f.rel_path.ends_with("ru_RU-denis-medium.onnx.json")));
+        for f in &m {
+            assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
+            assert!(f.url.starts_with("https://"), "{f:?} url not https");
+        }
+    }
+
+    #[test]
     fn cache_dir_honors_env_var() {
         let guard = EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-test-xyz");
         assert_eq!(cache_dir(), PathBuf::from("/tmp/kesha-test-xyz"));
@@ -174,33 +206,42 @@ fn download_hf_files(repo: &str, files: &[&str], dest_dir: &str) -> Result<()> {
     Ok(())
 }
 
-/// Kokoro TTS install. Downloads model.onnx + af_heart voice, verifies SHA256.
+/// Download every TTS model file: Kokoro English + Piper Russian.
+/// Each file is streamed to disk, then SHA256-verified.
 #[cfg(feature = "tts")]
-pub fn download_tts_kokoro(no_cache: bool) -> Result<()> {
+pub fn download_tts(no_cache: bool) -> Result<()> {
     let cache = cache_dir();
-    for f in kokoro_manifest() {
-        let target = cache.join(f.rel_path);
-        if !no_cache && target.exists() && verify_sha256(&target, f.sha256)? {
-            eprintln!("OK  {} (cached)", f.rel_path);
-            continue;
-        }
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        eprintln!("GET {}", f.rel_path);
-        let response = ureq::get(f.url)
-            .call()
-            .with_context(|| format!("download {}", f.rel_path))?;
-        let mut reader = response.into_body().into_reader();
-        let mut out =
-            fs::File::create(&target).with_context(|| format!("create {}", target.display()))?;
-        io::copy(&mut reader, &mut out)?;
-        drop(out);
-        if !verify_sha256(&target, f.sha256)? {
-            anyhow::bail!("sha256 mismatch for {}", f.rel_path);
-        }
-        eprintln!("OK  {}", f.rel_path);
+    let mut manifest = kokoro_manifest();
+    manifest.extend(piper_ru_manifest());
+    for f in manifest {
+        download_verified(&cache, &f, no_cache)?;
     }
+    Ok(())
+}
+
+#[cfg(feature = "tts")]
+fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> {
+    let target = cache.join(f.rel_path);
+    if !no_cache && target.exists() && verify_sha256(&target, f.sha256)? {
+        eprintln!("OK  {} (cached)", f.rel_path);
+        return Ok(());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    eprintln!("GET {}", f.rel_path);
+    let response = ureq::get(f.url)
+        .call()
+        .with_context(|| format!("download {}", f.rel_path))?;
+    let mut reader = response.into_body().into_reader();
+    let mut out =
+        fs::File::create(&target).with_context(|| format!("create {}", target.display()))?;
+    io::copy(&mut reader, &mut out)?;
+    drop(out);
+    if !verify_sha256(&target, f.sha256)? {
+        anyhow::bail!("sha256 mismatch for {}", f.rel_path);
+    }
+    eprintln!("OK  {}", f.rel_path);
     Ok(())
 }
 

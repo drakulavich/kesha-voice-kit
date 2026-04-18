@@ -264,7 +264,7 @@ fn main() -> Result<()> {
             #[cfg(feature = "tts")]
             if tts {
                 ensure_espeak_available()?;
-                models::download_tts_kokoro(no_cache)?;
+                models::download_tts(no_cache)?;
                 eprintln!("TTS models installed.");
             }
             eprintln!("Install complete.");
