@@ -122,15 +122,6 @@ export const sayCommand = defineCommand({
     "list-voices": { type: "boolean", description: "List installed voices and exit" },
   },
   async run({ args }) {
-    const text = typeof args.text === "string" ? args.text : undefined;
-    const opts = {
-      text,
-      voice: typeof args.voice === "string" ? args.voice : undefined,
-      lang: typeof args.lang === "string" ? args.lang : undefined,
-      out: typeof args.out === "string" ? args.out : undefined,
-      rate: args.rate ? Number(args.rate) : undefined,
-    };
-
     if (args["list-voices"]) {
       // The engine prints the list directly — just relay its stdout + exit code.
       const { getEngineBinPath } = await import("./engine");
@@ -141,9 +132,21 @@ export const sayCommand = defineCommand({
       process.exit(await proc.exited);
     }
 
+    const inlineText = typeof args.text === "string" ? args.text : undefined;
+    const text = await resolveText(inlineText);
+    const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
+    const voice = explicitVoice ?? (await autoRouteVoice(text));
+
+    const opts = {
+      text,
+      voice,
+      lang: typeof args.lang === "string" ? args.lang : undefined,
+      out: typeof args.out === "string" ? args.out : undefined,
+      rate: args.rate ? Number(args.rate) : undefined,
+    };
+
     try {
-      // If no text and no stdin, engine reads empty and exits 2. Pipe stdin through.
-      const wav = await sayCliPassthrough(opts, text);
+      const wav = await say(opts);
       if (!opts.out) {
         process.stdout.write(wav);
       }
@@ -159,23 +162,9 @@ export const sayCommand = defineCommand({
   },
 });
 
-/**
- * When the CLI user omits the positional text, they may be piping into stdin
- * (e.g. `echo hi | kesha say > out.wav`). `say()` in src/say.ts already handles
- * the stdin case, but we must not close stdin prematurely — forward the terminal's
- * stdin to the engine. Currently `say()` only writes a provided string; for stdin
- * piping we'd duplicate that here. For M1, require the text arg or stdin via pipe
- * that the user set up on the engine directly; keep `say()` the primary path.
- */
-async function sayCliPassthrough(
-  opts: Parameters<typeof say>[0],
-  inlineText: string | undefined,
-): Promise<Uint8Array> {
-  // If inline text given, use the normal say() helper.
-  if (inlineText !== undefined && inlineText.length > 0) {
-    return say(opts);
-  }
-  // Otherwise, read stdin in the CLI process, hand to engine via stdin.
+/** Resolve the text to synthesize: inline positional, else read from stdin. */
+async function resolveText(inline: string | undefined): Promise<string> {
+  if (inline !== undefined && inline.length > 0) return inline;
   const chunks: Uint8Array[] = [];
   for await (const chunk of Bun.stdin.stream()) {
     chunks.push(chunk);
@@ -187,8 +176,30 @@ async function sayCliPassthrough(
     merged.set(c, offset);
     offset += c.byteLength;
   }
-  const stdinText = new TextDecoder().decode(merged).trim();
-  return say({ ...opts, text: stdinText });
+  return new TextDecoder().decode(merged).trim();
+}
+
+/** Map a detected language code to a default voice id. Unknown / low-confidence → undefined. */
+export function pickVoiceForLang(
+  code: string | undefined,
+  confidence: number,
+): string | undefined {
+  if (!code || confidence < 0.5) return undefined;
+  switch (code) {
+    case "en":
+      return "en-af_heart";
+    case "ru":
+      return "ru-denis";
+    default:
+      return undefined;
+  }
+}
+
+/** Run NLLanguageRecognizer (via engine) on the text and pick a default voice. */
+async function autoRouteVoice(text: string): Promise<string | undefined> {
+  if (!text) return undefined;
+  const detected = await detectTextLanguageEngine(text);
+  return pickVoiceForLang(detected?.code, detected?.confidence ?? 0);
 }
 
 export const statusCommand = defineCommand({
