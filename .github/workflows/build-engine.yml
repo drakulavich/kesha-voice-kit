@@ -66,9 +66,9 @@ jobs:
       - name: Install espeak-ng (macOS)
         if: matrix.os == 'macos-14'
         run: brew install espeak-ng
-      - name: Install espeak-ng (Linux)
+      - name: Install espeak-ng + libclang (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y espeak-ng libespeak-ng-dev
+        run: sudo apt-get update && sudo apt-get install -y espeak-ng libespeak-ng-dev libclang-dev
       - name: Build release binary
         env:
           # macOS needs bindgen + linker flags for the espeak-ng crate.
