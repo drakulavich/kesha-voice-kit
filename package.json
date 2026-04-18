@@ -1,6 +1,6 @@
 {
   "name": "@drakulavich/kesha-voice-kit",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Open-source voice toolkit for Apple Silicon. Speech-to-text, language detection. 25 languages.",
   "type": "module",
   "bin": {
@@ -29,7 +29,7 @@
     ]
   },
   "keshaEngine": {
-    "version": "1.1.0"
+    "version": "1.1.1"
   },
   "scripts": {
     "test": "bun test",

@@ -31,12 +31,14 @@ jobs:
         include:
           - os: macos-14
             target: aarch64-apple-darwin
-            features: coreml
+            features: coreml,tts
             binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            features: onnx
+            features: onnx,tts
             binary: kesha-engine-linux-x64
+          # Windows ships without TTS pending `choco install espeak-ng` path
+          # verification (see rust-test.yml matrix note).
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             features: onnx
@@ -61,7 +63,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+      - name: Install espeak-ng (macOS)
+        if: matrix.os == 'macos-14'
+        run: brew install espeak-ng
+      - name: Install espeak-ng (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y espeak-ng libespeak-ng-dev
       - name: Build release binary
+        env:
+          # macOS needs bindgen + linker flags for the espeak-ng crate.
+          LIBCLANG_PATH: ${{ matrix.os == 'macos-14' && '/Library/Developer/CommandLineTools/usr/lib' || '' }}
+          RUSTFLAGS: ${{ matrix.os == 'macos-14' && '-L /opt/homebrew/lib' || '' }}
         run: cd rust && cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }} --no-default-features
       - name: Prepare artifact
         shell: bash
