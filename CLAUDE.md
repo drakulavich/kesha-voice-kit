@@ -108,6 +108,27 @@ The `coreml` feature links the macOS Swift runtime via `fluidaudio-rs`. All thre
 
 The build-engine workflow smoke-tests every binary with `--capabilities-json` before upload. **Never remove that step.**
 
+### BUILD-ENGINE FEATURE MATRIX MIRRORS CARGO DEFAULTS
+
+`build-engine.yml` passes `--features ${{ matrix.features }} --no-default-features` per platform. When you add a new cargo feature to the default set (e.g. `tts` in M3), **you must also add it to each matrix row** in build-engine.yml — otherwise the released binaries silently ship without that feature even though the source tree at that tag supports it.
+
+Past incident: v1.1.0 shipped engine binaries with only `coreml` or `onnx`, omitting `tts`. `kesha say` was missing from released binaries; users were broken. Fixed in v1.1.3 by adding `coreml,tts` / `onnx,tts` to the matrix.
+
+Check before cutting a release: `diff <(grep 'features = ' .github/workflows/build-engine.yml) <(grep default rust/Cargo.toml)` — make sure every default feature appears in every matrix row.
+
+### BINDGEN ON LINUX NEEDS LIBCLANG_PATH
+
+Any Rust crate using `bindgen` (directly or transitively — e.g. `espeakng-sys` with `clang-runtime` feature) needs `LIBCLANG_PATH` on Linux build runners even with `apt install libclang-dev`. The `clang-runtime` feature makes bindgen `dlopen` libclang at build-script runtime; the apt package installs into a versioned subdir that isn't on the default dlopen path.
+
+Portable recipe for the Linux job:
+```yaml
+- run: |
+    sudo apt-get install -y libclang-dev llvm-dev
+    echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
+```
+
+macOS equivalent is `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`. Windows: pending, part of the broader Windows-TTS deferral.
+
 ### OPENCLAW PLUGIN
 
 The plugin lives in `openclaw.plugin.json` + `openclaw-plugin.cjs` (+ `package.json#openclaw.extensions`).
