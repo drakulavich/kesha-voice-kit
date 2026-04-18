@@ -68,12 +68,16 @@ jobs:
         run: brew install espeak-ng
       - name: Install espeak-ng + libclang (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y espeak-ng libespeak-ng-dev libclang-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y espeak-ng libespeak-ng-dev libclang-dev llvm-dev
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
+      - name: Set build env (macOS)
+        if: matrix.os == 'macos-14'
+        run: |
+          echo "LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib" >> $GITHUB_ENV
+          echo "RUSTFLAGS=-L /opt/homebrew/lib" >> $GITHUB_ENV
       - name: Build release binary
-        env:
-          # macOS needs bindgen + linker flags for the espeak-ng crate.
-          LIBCLANG_PATH: ${{ matrix.os == 'macos-14' && '/Library/Developer/CommandLineTools/usr/lib' || '' }}
-          RUSTFLAGS: ${{ matrix.os == 'macos-14' && '-L /opt/homebrew/lib' || '' }}
         run: cd rust && cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }} --no-default-features
       - name: Prepare artifact
         shell: bash
