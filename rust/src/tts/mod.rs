@@ -5,6 +5,7 @@ use std::path::Path;
 pub mod g2p;
 pub mod kokoro;
 pub mod piper;
+pub mod ssml;
 pub mod tokenizer;
 pub mod voices;
 pub mod wav;

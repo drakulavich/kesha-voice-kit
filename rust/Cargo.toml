@@ -17,7 +17,7 @@ default = ["onnx", "tts"]
 # ASR backend selection. Language detection always uses ONNX regardless.
 coreml = ["dep:fluidaudio-rs"]
 onnx = []
-tts = ["dep:hound", "dep:espeakng-sys", "dep:thiserror", "dep:sha2"]
+tts = ["dep:hound", "dep:espeakng-sys", "dep:thiserror", "dep:sha2", "dep:ssml-parser"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -43,11 +43,12 @@ ndarray = { version = "0.17" }
 fluidaudio-rs = { version = "0.1", optional = true }
 audioadapter-buffers = "3.0.0"
 
-# TTS (Kokoro + espeak-ng)
+# TTS (Kokoro + espeak-ng + SSML parser)
 hound = { version = "3.5", optional = true }
 espeakng-sys = { version = "0.3", features = ["clang-runtime"], optional = true }
 thiserror = { version = "1", optional = true }
 sha2 = { version = "0.10", optional = true }
+ssml-parser = { version = "0.1", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
