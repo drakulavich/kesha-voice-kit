@@ -169,4 +169,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Made with 💛🩵 Published under MIT License.
+Made with 💛🩵 and 🥤 energy under MIT License
