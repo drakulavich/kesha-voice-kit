@@ -79,6 +79,22 @@ Don't add struct fields, enum variants, or constants "for later." Clippy's `dead
 - `main` is protected — all changes go through PRs
 - CI must pass before merging
 
+### VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE
+
+Any plan that names a specific upstream artifact ("Silero via ONNX", "statically-linked espeak-ng", "FluidAudio CoreML Kokoro") MUST be validated with a throwaway spike BEFORE the implementation phase commits to it.
+
+- The spike downloads / builds the thing and runs it end-to-end — not just "checks if the repo exists."
+- Past pivots this rule would have prevented earlier: espeak-ng turned out to be dynamic-link-only in `espeakng-sys` (→ pivoted to system-dep + issue #124); Silero TTS ships PyTorch-only and has no public ONNX export (→ pivoted to Piper in M3).
+- Spike artifacts go in `/tmp/<name>-spike/` and are deleted after the finding is recorded in the plan doc.
+
+### GREPTILE PR REVIEW IS A GATE
+
+PRs receive automated review from Greptile (as a PR comment on each push). Treat P1/P2 findings as merge blockers — address them before marking the PR ready-for-review.
+
+- Pattern: push → Greptile reviews → fix → push → merge.
+- Past incidents caught this way: `--backend=` forwarded to an engine that didn't accept it (#125 P1); `--rate` silently discarded for Piper voices (#126 P1); hard-coded 22050 Hz assertion that would break on other Piper voices (#126 P2).
+- Exception: findings that are clearly false positives can be dismissed with a PR comment explaining why — but that's rare in practice.
+
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
 Validate flags against `kesha-engine --capabilities-json` instead of forwarding to the engine subprocess. `kesha-engine install` only accepts `--no-cache`.
