@@ -52,6 +52,14 @@ Two interfaces: the CLI and a programmatic API exported from `@drakulavich/kesha
    )"
    ```
    Use the v1.1.3 release as a template: features → platform support → breaking changes → shipped PRs → follow-up issues → upgrade instructions.
+
+   **If you forgot and already published:** `gh release edit --notes` silently drops content on published releases (a `gh` CLI quirk — not a GitHub restriction). The `immutable: true` flag protects tag/assets, not the body. Escape hatch is a direct API PATCH:
+   ```bash
+   RELEASE_ID=$(gh api repos/OWNER/REPO/releases/tags/vX.Y.Z --jq '.id')
+   jq -Rs '{body: .}' < notes.md > body.json
+   gh api -X PATCH "repos/OWNER/REPO/releases/$RELEASE_ID" --input body.json
+   ```
+   v1.1.3 shipped with empty notes and was recovered this way.
 5. Publish the draft: `gh release edit vX.Y.Z --draft=false`.
 6. `make smoke-test` locally. Do NOT publish if smoke tests fail.
 7. `npm publish --access public`.
