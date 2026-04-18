@@ -161,8 +161,14 @@ fn run_say(a: SayArgs) -> i32 {
         }
     };
 
-    let (model_path, voice_path, espeak_lang) = match (a.model, a.voice_file) {
-        (Some(m), Some(v)) => (m, v, a.lang.clone().unwrap_or_else(|| "en-us".to_string())),
+    // `--model` + `--voice-file` are Kokoro-specific testing overrides.
+    // Pinned model/voice paths bypass the cache lookup.
+    let resolved = match (a.model, a.voice_file) {
+        (Some(model_path), Some(voice_path)) => tts::voices::ResolvedVoice::Kokoro {
+            model_path,
+            voice_path,
+            espeak_lang: "en-us",
+        },
         (Some(_), None) | (None, Some(_)) => {
             eprintln!("error: pass both --model and --voice-file or neither");
             return 2;
@@ -170,10 +176,7 @@ fn run_say(a: SayArgs) -> i32 {
         (None, None) => {
             let id = a.voice.as_deref().unwrap_or(tts::voices::DEFAULT_VOICE_ID);
             match tts::voices::resolve_voice(&models::cache_dir(), id) {
-                Ok(r) => {
-                    let lang = a.lang.clone().unwrap_or_else(|| r.espeak_lang.to_string());
-                    (r.model_path, r.voice_path, lang)
-                }
+                Ok(r) => r,
                 Err(e) => {
                     eprintln!("error: {e}");
                     return 1;
@@ -182,12 +185,34 @@ fn run_say(a: SayArgs) -> i32 {
         }
     };
 
+    let espeak_lang = a
+        .lang
+        .clone()
+        .unwrap_or_else(|| resolved.espeak_lang().to_string());
+    let engine = match &resolved {
+        tts::voices::ResolvedVoice::Kokoro {
+            model_path,
+            voice_path,
+            ..
+        } => tts::EngineChoice::Kokoro {
+            model_path,
+            voice_path,
+            speed: a.rate,
+        },
+        tts::voices::ResolvedVoice::Piper {
+            model_path,
+            config_path,
+            ..
+        } => tts::EngineChoice::Piper {
+            model_path,
+            config_path,
+        },
+    };
+
     let wav = match tts::say(tts::SayOptions {
         text: &text_joined,
         lang: &espeak_lang,
-        speed: a.rate,
-        model_path: &model_path,
-        voice_path: &voice_path,
+        engine,
     }) {
         Ok(w) => w,
         Err(e) => {

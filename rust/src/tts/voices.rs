@@ -39,29 +39,47 @@ pub fn select_style(voice: &[f32], token_count: usize) -> &[f32] {
 /// Default voice id used when neither `--voice` nor auto-routing resolves one.
 pub const DEFAULT_VOICE_ID: &str = "en-af_heart";
 
-/// Resolved paths + language for a given voice id, looked up against the cache.
+/// Resolved engine + paths for a given voice id.
 #[derive(Debug)]
-pub struct ResolvedVoice {
-    pub voice_path: std::path::PathBuf,
-    pub model_path: std::path::PathBuf,
-    pub espeak_lang: &'static str,
+pub enum ResolvedVoice {
+    Kokoro {
+        model_path: std::path::PathBuf,
+        voice_path: std::path::PathBuf,
+        espeak_lang: &'static str,
+    },
+    Piper {
+        model_path: std::path::PathBuf,
+        config_path: std::path::PathBuf,
+        espeak_lang: &'static str,
+    },
 }
 
-/// Parse a voice id like `en-af_heart` into espeak language + filesystem paths.
-/// Returns an error if the voice is not installed at `<cache>/models/kokoro-82m/voices/<name>.bin`.
-/// Only English voices are supported currently; Silero (ru, uk) lands in a later milestone.
+impl ResolvedVoice {
+    pub fn espeak_lang(&self) -> &'static str {
+        match self {
+            Self::Kokoro { espeak_lang, .. } | Self::Piper { espeak_lang, .. } => espeak_lang,
+        }
+    }
+}
+
+/// Parse a voice id like `en-af_heart` or `ru-denis` into engine + paths.
+/// Voice id is `<lang>-<name>`; lang picks the engine and espeak language code.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
     let (lang, name) = voice_id.split_once('-').ok_or_else(|| {
         anyhow::anyhow!("voice id must be in 'lang-name' form (got '{voice_id}')")
     })?;
-    let espeak_lang: &'static str = match lang {
-        "en" => "en-us",
-        other => anyhow::bail!("language '{other}' not supported (use 'en-*')"),
-    };
+    match lang {
+        "en" => resolve_kokoro(cache_dir, voice_id, name),
+        "ru" => resolve_piper_ru(cache_dir, voice_id, name),
+        other => anyhow::bail!("language '{other}' not supported (use 'en-*' or 'ru-*')"),
+    }
+}
+
+fn resolve_kokoro(cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Result<ResolvedVoice> {
+    let model_path = cache_dir.join("models/kokoro-82m/model.onnx");
     let voice_path = cache_dir
         .join("models/kokoro-82m/voices")
         .join(format!("{name}.bin"));
-    let model_path = cache_dir.join("models/kokoro-82m/model.onnx");
     if !voice_path.exists() {
         anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
     }
@@ -71,10 +89,27 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
             model_path.display()
         );
     }
-    Ok(ResolvedVoice {
-        voice_path,
+    Ok(ResolvedVoice::Kokoro {
         model_path,
-        espeak_lang,
+        voice_path,
+        espeak_lang: "en-us",
+    })
+}
+
+fn resolve_piper_ru(cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Result<ResolvedVoice> {
+    // Piper filenames follow the upstream convention `ru_RU-<name>-medium.*`.
+    let base = cache_dir
+        .join("models/piper-ru")
+        .join(format!("ru_RU-{name}-medium"));
+    let model_path = base.with_extension("onnx");
+    let config_path = base.with_extension("onnx.json");
+    if !model_path.exists() || !config_path.exists() {
+        anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
+    }
+    Ok(ResolvedVoice::Piper {
+        model_path,
+        config_path,
+        espeak_lang: "ru",
     })
 }
 
@@ -140,13 +175,48 @@ mod tests {
     }
 
     #[test]
-    fn resolve_installed_voice() {
+    fn resolve_installed_kokoro_voice() {
         let tmp = tempfile::tempdir().unwrap();
         populate_cache(tmp.path());
         let r = resolve_voice(tmp.path(), "en-af_heart").unwrap();
-        assert!(r.voice_path.ends_with("af_heart.bin"));
-        assert!(r.model_path.ends_with("model.onnx"));
-        assert_eq!(r.espeak_lang, "en-us");
+        match r {
+            ResolvedVoice::Kokoro {
+                voice_path,
+                model_path,
+                espeak_lang,
+            } => {
+                assert!(voice_path.ends_with("af_heart.bin"));
+                assert!(model_path.ends_with("model.onnx"));
+                assert_eq!(espeak_lang, "en-us");
+            }
+            other => panic!("expected Kokoro, got {other:?}"),
+        }
+    }
+
+    fn populate_piper_ru(cache: &Path) {
+        let dir = cache.join("models/piper-ru");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("ru_RU-denis-medium.onnx"), b"dummy").unwrap();
+        std::fs::write(dir.join("ru_RU-denis-medium.onnx.json"), b"{}").unwrap();
+    }
+
+    #[test]
+    fn resolve_installed_piper_voice() {
+        let tmp = tempfile::tempdir().unwrap();
+        populate_piper_ru(tmp.path());
+        let r = resolve_voice(tmp.path(), "ru-denis").unwrap();
+        match r {
+            ResolvedVoice::Piper {
+                model_path,
+                config_path,
+                espeak_lang,
+            } => {
+                assert!(model_path.ends_with("ru_RU-denis-medium.onnx"));
+                assert!(config_path.ends_with("ru_RU-denis-medium.onnx.json"));
+                assert_eq!(espeak_lang, "ru");
+            }
+            other => panic!("expected Piper, got {other:?}"),
+        }
     }
 
     #[test]
@@ -178,7 +248,7 @@ mod tests {
     #[test]
     fn resolve_unsupported_language() {
         let tmp = tempfile::tempdir().unwrap();
-        let err = resolve_voice(tmp.path(), "ru-something").unwrap_err();
+        let err = resolve_voice(tmp.path(), "fr-something").unwrap_err();
         assert!(err.to_string().contains("not supported"), "msg: {err}");
     }
 }
