@@ -78,21 +78,26 @@ $ kesha freedom.ogg tahiti.ogg
 
 Stdout: transcript. Stderr: errors. Pipe-friendly. Also available as `parakeet` command (backward-compatible alias).
 
-## Text-to-Speech (preview, M1)
+## Text-to-Speech
 
-Kesha can also *speak back* via Kokoro-82M. English only in M1 — Russian and auto-routing land in M3.
+Kesha speaks back via Kokoro-82M (English) and Piper (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Piper. Pass `--voice` to override.
 
 ```bash
 brew install espeak-ng              # one-time system dep (macOS — apt/choco elsewhere)
-kesha install --tts                 # ~326MB download (opt-in — default install unchanged)
-kesha say "Hello, world" > reply.wav
+kesha install --tts                 # ~390MB (Kokoro + Piper RU, opt-in)
+kesha say "Hello, world" > hello.wav
+kesha say "Привет, мир" > privet.wav    # auto-routes to ru-denis
 echo "long text" | kesha say > reply.wav
 kesha say --out reply.wav "text"
-kesha say --voice en-af_heart "text"
+kesha say --voice en-af_heart "text"    # explicit voice overrides auto-routing
 kesha say --list-voices
 ```
 
-Output: WAV 24kHz mono float32. OGG/Opus, MP3, and SSML are tracked in follow-up issues ([#122](https://github.com/drakulavich/kesha-voice-kit/issues/122)). Static-linking of `espeak-ng` to remove the system dep is [#124](https://github.com/drakulavich/kesha-voice-kit/issues/124).
+Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Piper). OGG/Opus, MP3, and SSML are tracked in follow-up issues ([#122](https://github.com/drakulavich/kesha-voice-kit/issues/122)). Static-linking of `espeak-ng` to remove the system dep is [#124](https://github.com/drakulavich/kesha-voice-kit/issues/124).
+
+**Supported voices:**
+- English: `en-af_heart` (default), plus any Kokoro voice you download into `~/.cache/kesha/models/kokoro-82m/voices/`
+- Russian: `ru-denis` (default). More speakers (dmitri, irina, ruslan) are ready to drop in once needed.
 
 ## What's Inside
 

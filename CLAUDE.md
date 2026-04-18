@@ -216,15 +216,22 @@ const text = await transcribe("audio.ogg");
 
 ## TTS
 
-Text-to-speech via Kokoro-82M (English only). Opt-in via `kesha install --tts`.
+Text-to-speech via two engines selected by voice id prefix:
 
-- TTS models are **never auto-downloaded** — same rule as ASR. `kesha say` fails loudly with a `kesha install --tts` hint when models are missing.
-- `kesha say` writes WAV (24 kHz mono f32) to stdout unless `--out` is given. Stderr is progress/errors only.
-- G2P uses the `espeakng-sys` crate, dynamically linked against the system `libespeak-ng`.
-- Kokoro ONNX interface: `input_ids` (int64 `[1,N]`), `style` (f32 `[1,256]` — rank-2), `speed` (f32 `[1]`). Output tensor name is `"waveform"`. Voice file is 510 rows × 256 cols.
-- `KESHA_ENGINE_BIN` — override the default engine-binary path (useful when iterating on `rust/target/release/kesha-engine`).
+- `en-*` → **Kokoro-82M**. Separate model + per-voice style embedding. Output 24 kHz.
+- `ru-*` → **Piper VITS** (`rhasspy/piper-voices`). Per-voice `.onnx` + `.onnx.json`. Output depends on voice (22.05 kHz for medium tier).
+
+Opt-in via `kesha install --tts` (downloads both engines, ~390 MB).
+
+- TTS models are **never auto-downloaded** — `kesha say` fails loudly with a `kesha install --tts` hint when models are missing.
+- `kesha say` writes WAV mono f32 to stdout unless `--out` is given. Stderr is progress/errors only.
+- G2P uses `espeakng-sys` (dynamic link against system `libespeak-ng`) for both engines.
+- **Auto-routing:** when `--voice` is omitted, the TS CLI calls `NLLanguageRecognizer` on the input text and picks `en-af_heart` or `ru-denis`. Confidence < 0.5 or unmapped language falls through to the engine default. `pickVoiceForLang` in `src/cli.ts` is the routing table — add a language by adding a match arm.
+- Kokoro ONNX: `input_ids` (int64 `[1,N]`), `style` (f32 `[1,256]` — rank-2), `speed` (f32 `[1]`). Output name `"waveform"`. Voice file 510 rows × 256 cols.
+- Piper ONNX: `input` (int64 `[1,N]` — BOS + pad-interleaved phoneme IDs + EOS), `input_lengths` (int64 `[1]`), `scales` (f32 `[3]` = `[noise_scale, length_scale, noise_w]`). Output name `"output"`, rank-4 `[1,1,1,T]`. `--rate` is mapped to Piper via `length_scale = voice_default / speed`.
+- `KESHA_ENGINE_BIN` — override the engine-binary path (useful when iterating on `rust/target/release/kesha-engine`).
 - `KESHA_CACHE_DIR` — isolated test cache.
 - macOS dev runtime: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`. Release binaries fix up via `install_name_tool`.
 - macOS build env: `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`, `RUSTFLAGS="-L /opt/homebrew/lib"`.
 
-Russian (Silero) and auto-routing via `NLLanguageRecognizer` are future milestones. See `docs/superpowers/specs/2026-04-16-bidirectional-voice-design.md`.
+Original spec assumed Silero TTS; pivoted to Piper during M3 spike (Silero ships PyTorch-only, no public ONNX). See `docs/superpowers/specs/2026-04-16-bidirectional-voice-design.md`.

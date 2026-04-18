@@ -67,22 +67,28 @@ check("typo suggestion works", typoProc.exitCode === 1 && typoProc.stderr.toStri
 
 // 6. TTS smoke (opt-in via --tts flag; requires `kesha install --tts` + espeak-ng)
 if (process.argv.includes("--tts")) {
-  const tmpWav = "/tmp/kesha-smoke.wav";
-  const sayProc = Bun.spawnSync(["kesha", "say", "Hello", "--out", tmpWav], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const wavExists = Bun.file(tmpWav).size > 10_000;
-  const header = wavExists
-    ? new TextDecoder().decode(
-        new Uint8Array((await Bun.file(tmpWav).arrayBuffer()).slice(0, 4)),
-      )
-    : "";
-  check(
-    "kesha say produces WAV",
-    sayProc.exitCode === 0 && wavExists && header === "RIFF",
-    `exit=${sayProc.exitCode} header=${header}`,
-  );
+  for (const [label, text] of [
+    ["en (Kokoro)", "Hello, world"],
+    ["ru (Piper, auto-routed)", "Привет, мир"],
+  ] as const) {
+    const tmpWav = `/tmp/kesha-smoke-${label.split(" ")[0]}.wav`;
+    const sayProc = Bun.spawnSync(["kesha", "say", text, "--out", tmpWav], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const wavSize = Bun.file(tmpWav).size;
+    const header =
+      wavSize > 0
+        ? new TextDecoder().decode(
+            new Uint8Array((await Bun.file(tmpWav).arrayBuffer()).slice(0, 4)),
+          )
+        : "";
+    check(
+      `kesha say ${label} produces WAV`,
+      sayProc.exitCode === 0 && wavSize > 10_000 && header === "RIFF",
+      `exit=${sayProc.exitCode} header=${header} size=${wavSize}`,
+    );
+  }
 }
 
 const total = passed + failed;
