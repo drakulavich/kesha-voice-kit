@@ -10,6 +10,9 @@ pub mod tokenizer;
 pub mod voices;
 pub mod wav;
 
+#[cfg(all(feature = "system_tts", target_os = "macos"))]
+pub mod avspeech;
+
 /// Soft limit on input text length. Rejects absurdly long inputs that would
 /// spend minutes on synthesis with poor quality.
 pub const MAX_TEXT_CHARS: usize = 5000;
