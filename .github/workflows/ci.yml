@@ -88,6 +88,9 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
+      - name: Install espeak-ng
+        run: brew install espeak-ng
+
       - name: 🔊 Setup integration backend
         uses: ./.github/actions/install-parakeet-backend
         with:
