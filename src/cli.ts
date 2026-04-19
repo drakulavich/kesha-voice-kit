@@ -124,6 +124,11 @@ export const sayCommand = defineCommand({
       type: "boolean",
       description: "Parse input as SSML (supports <speak>, <break>; strips unknown tags)",
     },
+    verbose: {
+      type: "boolean",
+      description: "Log TTS synthesis time to stderr",
+      default: false,
+    },
   },
   async run({ args }) {
     if (args["list-voices"]) {
@@ -151,7 +156,13 @@ export const sayCommand = defineCommand({
     };
 
     try {
+      const startedAt = performance.now();
       const wav = await say(opts);
+      const ttsTimeMs = Math.round(performance.now() - startedAt);
+      if (args.verbose) {
+        // stderr — stdout may carry raw WAV bytes when --out is omitted.
+        console.error(`TTS time: ${ttsTimeMs}ms`);
+      }
       if (!opts.out) {
         process.stdout.write(wav);
       }

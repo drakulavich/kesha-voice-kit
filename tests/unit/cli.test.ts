@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
-import { mainCommand, installCommand, statusCommand, formatTextOutput, formatJsonOutput, formatVerboseOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
+import { mainCommand, installCommand, statusCommand, sayCommand, formatTextOutput, formatJsonOutput, formatVerboseOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -162,6 +162,18 @@ describe("verbose output formatting", () => {
     expect(output).not.toContain("Audio language:");
     expect(output).toContain("Text language: en");
     expect(output).toContain("Hello");
+  });
+});
+
+describe("say --verbose (TTS time, parallel to #139)", () => {
+  test("say help advertises --verbose", async () => {
+    const usage = await renderUsage(sayCommand);
+    expect(usage).toContain("--verbose");
+  });
+
+  test("say help explains --verbose prints TTS time", async () => {
+    const usage = await renderUsage(sayCommand);
+    expect(usage).toMatch(/TTS|synthesis time/i);
   });
 });
 
