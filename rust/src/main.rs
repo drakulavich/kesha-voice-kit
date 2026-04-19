@@ -244,6 +244,10 @@ fn run_say(a: SayArgs) -> i32 {
             config_path,
             speed: a.rate,
         },
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        tts::voices::ResolvedVoice::AVSpeech { voice_id } => {
+            tts::EngineChoice::AVSpeech { voice_id }
+        }
     };
 
     let wav = match tts::say(tts::SayOptions {

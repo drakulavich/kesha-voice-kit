@@ -35,6 +35,10 @@ pub enum EngineChoice<'a> {
         voice_path: &'a Path,
         speed: f32,
     },
+    /// macOS AVSpeechSynthesizer via the Swift sidecar (#141).
+    /// `voice_id` is forwarded verbatim (an Apple identifier or a language code).
+    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    AVSpeech { voice_id: &'a str },
     /// Piper VITS: model + per-voice .onnx.json config.
     Piper {
         model_path: &'a Path,
@@ -72,6 +76,18 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         });
     }
 
+    // AVSpeech does its own G2P + synthesis inside Swift; skip espeak G2P entirely.
+    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    if let EngineChoice::AVSpeech { voice_id } = &opts.engine {
+        if opts.ssml {
+            return Err(TtsError::SynthesisFailed(
+                "SSML is not yet supported with macos-* voices (#141 follow-up)".into(),
+            ));
+        }
+        return avspeech::synthesize(opts.text, voice_id, None)
+            .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")));
+    }
+
     if opts.ssml {
         return say_ssml(&opts);
     }
@@ -95,6 +111,10 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             config_path,
             speed,
         } => say_with_piper(&ipa, model_path, config_path, speed),
+        // The AVSpeech arm is handled by the early-return above. Keep a guard
+        // arm so the match stays exhaustive when the feature is enabled.
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        EngineChoice::AVSpeech { .. } => unreachable!("handled by early return above"),
     }
 }
 
@@ -120,6 +140,11 @@ fn say_ssml(opts: &SayOptions) -> Result<Vec<u8>, TtsError> {
             config_path,
             speed,
         } => synth_segments_piper(&segments, opts.lang, model_path, config_path, *speed),
+        // AVSpeech + SSML is rejected up-front in `say()`; this arm keeps the match exhaustive.
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        EngineChoice::AVSpeech { .. } => {
+            unreachable!("AVSpeech + SSML rejected in say() early return")
+        }
     }
 }
 

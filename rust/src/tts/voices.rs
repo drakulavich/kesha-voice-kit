@@ -52,18 +52,28 @@ pub enum ResolvedVoice {
         config_path: std::path::PathBuf,
         espeak_lang: &'static str,
     },
+    /// macOS system TTS via AVSpeechSynthesizer (#141). The voice id is
+    /// whatever the user passed after the `macos-` prefix — forwarded to the
+    /// Swift helper, which tries `AVSpeechSynthesisVoice(identifier:)` first
+    /// and falls back to `AVSpeechSynthesisVoice(language:)`.
+    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    AVSpeech { voice_id: String },
 }
 
 impl ResolvedVoice {
     pub fn espeak_lang(&self) -> &'static str {
         match self {
             Self::Kokoro { espeak_lang, .. } | Self::Piper { espeak_lang, .. } => espeak_lang,
+            // AVSpeech does its own G2P; the espeak language tag is unused.
+            #[cfg(all(feature = "system_tts", target_os = "macos"))]
+            Self::AVSpeech { .. } => "",
         }
     }
 }
 
 /// Parse a voice id like `en-af_heart` or `ru-denis` into engine + paths.
 /// Voice id is `<lang>-<name>`; lang picks the engine and espeak language code.
+/// The special `macos-*` prefix routes to AVSpeechSynthesizer on supported builds.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
     let (lang, name) = voice_id.split_once('-').ok_or_else(|| {
         anyhow::anyhow!("voice id must be in 'lang-name' form (got '{voice_id}')")
@@ -71,7 +81,24 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
     match lang {
         "en" => resolve_kokoro(cache_dir, voice_id, name),
         "ru" => resolve_piper_ru(cache_dir, voice_id, name),
-        other => anyhow::bail!("language '{other}' not supported (use 'en-*' or 'ru-*')"),
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        "macos" => {
+            if name.is_empty() {
+                anyhow::bail!(
+                    "'macos-' voice id requires a suffix (identifier or language code, e.g. macos-en-US)"
+                );
+            }
+            Ok(ResolvedVoice::AVSpeech {
+                voice_id: name.to_string(),
+            })
+        }
+        #[cfg(not(all(feature = "system_tts", target_os = "macos")))]
+        "macos" => anyhow::bail!(
+            "'macos-*' voices require a macOS build with --features system_tts (got '{voice_id}')"
+        ),
+        other => {
+            anyhow::bail!("language '{other}' not supported (use 'en-*', 'ru-*', or 'macos-*')")
+        }
     }
 }
 
@@ -198,6 +225,51 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("ru_RU-denis-medium.onnx"), b"dummy").unwrap();
         std::fs::write(dir.join("ru_RU-denis-medium.onnx.json"), b"{}").unwrap();
+    }
+
+    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[test]
+    fn resolve_macos_voice_returns_avspeech() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = resolve_voice(tmp.path(), "macos-com.apple.voice.compact.en-US.Samantha").unwrap();
+        match r {
+            ResolvedVoice::AVSpeech { voice_id } => {
+                // Prefix stripped; the rest (including embedded dashes) passes through.
+                assert_eq!(voice_id, "com.apple.voice.compact.en-US.Samantha");
+            }
+            other => panic!("expected AVSpeech, got {other:?}"),
+        }
+    }
+
+    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[test]
+    fn resolve_macos_empty_suffix_errors() {
+        // `macos-` alone would forward an empty string to the Swift helper,
+        // which then fails with an unhelpful "voice not found". Reject early.
+        let tmp = tempfile::tempdir().unwrap();
+        let err = resolve_voice(tmp.path(), "macos-").unwrap_err().to_string();
+        assert!(err.contains("requires a suffix"), "msg: {err}");
+    }
+
+    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[test]
+    fn resolve_macos_short_voice_id_works() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = resolve_voice(tmp.path(), "macos-en-US").unwrap();
+        match r {
+            ResolvedVoice::AVSpeech { voice_id } => assert_eq!(voice_id, "en-US"),
+            other => panic!("expected AVSpeech, got {other:?}"),
+        }
+    }
+
+    #[cfg(not(all(feature = "system_tts", target_os = "macos")))]
+    #[test]
+    fn resolve_macos_voice_errors_without_feature() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = resolve_voice(tmp.path(), "macos-en-US")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("system_tts"), "msg: {err}");
     }
 
     #[test]
