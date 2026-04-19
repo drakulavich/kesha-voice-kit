@@ -82,9 +82,16 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
         "en" => resolve_kokoro(cache_dir, voice_id, name),
         "ru" => resolve_piper_ru(cache_dir, voice_id, name),
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
-        "macos" => Ok(ResolvedVoice::AVSpeech {
-            voice_id: name.to_string(),
-        }),
+        "macos" => {
+            if name.is_empty() {
+                anyhow::bail!(
+                    "'macos-' voice id requires a suffix (identifier or language code, e.g. macos-en-US)"
+                );
+            }
+            Ok(ResolvedVoice::AVSpeech {
+                voice_id: name.to_string(),
+            })
+        }
         #[cfg(not(all(feature = "system_tts", target_os = "macos")))]
         "macos" => anyhow::bail!(
             "'macos-*' voices require a macOS build with --features system_tts (got '{voice_id}')"
@@ -236,6 +243,16 @@ mod tests {
 
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
     #[test]
+    fn resolve_macos_empty_suffix_errors() {
+        // `macos-` alone would forward an empty string to the Swift helper,
+        // which then fails with an unhelpful "voice not found". Reject early.
+        let tmp = tempfile::tempdir().unwrap();
+        let err = resolve_voice(tmp.path(), "macos-").unwrap_err().to_string();
+        assert!(err.contains("requires a suffix"), "msg: {err}");
+    }
+
+    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[test]
     fn resolve_macos_short_voice_id_works() {
         let tmp = tempfile::tempdir().unwrap();
         let r = resolve_voice(tmp.path(), "macos-en-US").unwrap();
@@ -249,7 +266,9 @@ mod tests {
     #[test]
     fn resolve_macos_voice_errors_without_feature() {
         let tmp = tempfile::tempdir().unwrap();
-        let err = resolve_voice(tmp.path(), "macos-en-US").unwrap_err().to_string();
+        let err = resolve_voice(tmp.path(), "macos-en-US")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("system_tts"), "msg: {err}");
     }
 

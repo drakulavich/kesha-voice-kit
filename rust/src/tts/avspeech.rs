@@ -6,8 +6,8 @@
 //! (mono IEEE-float @ 22050 Hz) from stdout. Stderr is surfaced in the error
 //! message when synthesis fails.
 //!
-//! This module is infrastructure only for this PR — callers (voice routing,
-//! `say()` dispatch) land in a follow-up. See issue #141.
+//! Wired into `tts::say()` dispatch via `EngineChoice::AVSpeech` and selected
+//! by the `macos-*` voice-id prefix in `tts::voices::resolve_voice`.
 
 #![cfg(all(feature = "system_tts", target_os = "macos"))]
 
