@@ -32,6 +32,7 @@ interface MainCommandArgs {
   _: string[];
   json: boolean;
   verbose: boolean;
+  debug: boolean;
   format?: string;
   lang?: string;
 }
@@ -129,8 +130,14 @@ export const sayCommand = defineCommand({
       description: "Log TTS synthesis time to stderr",
       default: false,
     },
+    debug: {
+      type: "boolean",
+      description: "Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)",
+      default: false,
+    },
   },
   async run({ args }) {
+    if (args.debug) log.debugEnabled = true;
     if (args["list-voices"]) {
       // The engine prints the list directly — just relay its stdout + exit code.
       const { getEngineBinPath } = await import("./engine");
@@ -256,8 +263,14 @@ export const mainCommand = defineCommand({
       type: "string",
       description: "Expected language code (ISO 639-1), warn if mismatch",
     },
+    debug: {
+      type: "boolean",
+      description: "Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)",
+      default: false,
+    },
   },
   async run({ args }: { args: MainCommandArgs }) {
+    if (args.debug) log.debugEnabled = true;
     const files = args._;
 
     if (files.length === 0) {

@@ -1,6 +1,7 @@
 import { join } from "path";
 import { homedir } from "os";
 import { existsSync } from "fs";
+import { log } from "./log";
 
 export interface LangDetectResult {
   code: string;
@@ -24,6 +25,8 @@ export function isEngineInstalled(): boolean {
 
 async function runEngine(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const binPath = getEngineBinPath();
+  const startedAt = performance.now();
+  log.debug(`spawn ${binPath} ${args.join(" ")}`);
   const proc = Bun.spawn([binPath, ...args], {
     stdout: "pipe",
     stderr: "pipe",
@@ -35,6 +38,7 @@ async function runEngine(args: string[]): Promise<{ stdout: string; stderr: stri
     proc.exited,
   ]);
 
+  log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
 

@@ -1,4 +1,5 @@
 import { getEngineBinPath, isEngineInstalled } from "./engine";
+import { log } from "./log";
 
 export interface SayOptions {
   /**
@@ -55,6 +56,8 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     );
   }
   const args = buildSayArgs({ ...opts, text: undefined });
+  const startedAt = performance.now();
+  log.debug(`spawn ${getEngineBinPath()} ${args.join(" ")} (text: ${opts.text?.length ?? 0} chars)`);
   const proc = Bun.spawn([getEngineBinPath(), ...args], {
     stdin: "pipe",
     stdout: "pipe",
@@ -74,6 +77,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     proc.exited,
   ]);
 
+  log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms bytes=${stdoutBuf.byteLength}`);
   if (exitCode !== 0) {
     throw new SayError(
       stderrText.trim() || `kesha-engine say exited ${exitCode}`,

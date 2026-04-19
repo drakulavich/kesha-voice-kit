@@ -31,6 +31,12 @@ describe("CLI help", () => {
     expect(usage).toContain("--verbose");
   });
 
+  test("main help contains --debug flag (#148)", async () => {
+    const usage = await renderUsage(mainCommand);
+    expect(usage).toContain("--debug");
+    expect(usage).toMatch(/KESHA_DEBUG|trace/i);
+  });
+
   test("status help has command description", async () => {
     const usage = await renderUsage(statusCommand);
     expect(usage).toContain("status");
