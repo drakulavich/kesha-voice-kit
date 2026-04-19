@@ -165,32 +165,32 @@ describe("verbose output formatting", () => {
   });
 });
 
-describe("processingTimeMs field (#139)", () => {
-  test("JSON output preserves processingTimeMs when set", () => {
-    const results = [{ file: "a.ogg", text: "Hello", lang: "en", processingTimeMs: 427 }];
+describe("sttTimeMs field (#139)", () => {
+  test("JSON output preserves sttTimeMs when set", () => {
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en", sttTimeMs: 427 }];
     const parsed = JSON.parse(formatJsonOutput(results));
-    expect(parsed[0].processingTimeMs).toBe(427);
+    expect(parsed[0].sttTimeMs).toBe(427);
   });
 
-  test("JSON output omits processingTimeMs when undefined", () => {
+  test("JSON output omits sttTimeMs when undefined", () => {
     const parsed = JSON.parse(formatJsonOutput([{ file: "a.ogg", text: "Hello", lang: "en" }]));
-    expect(parsed[0].processingTimeMs).toBeUndefined();
+    expect(parsed[0].sttTimeMs).toBeUndefined();
   });
 
   test("verbose output prints processing time line when set", () => {
-    const results = [{ file: "a.ogg", text: "Hello", lang: "en", processingTimeMs: 427 }];
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en", sttTimeMs: 427 }];
     const output = formatVerboseOutput(results);
-    expect(output).toContain("Processing time: 427ms");
+    expect(output).toContain("STT time: 427ms");
   });
 
   test("verbose output omits processing time line when undefined", () => {
     const results = [{ file: "a.ogg", text: "Hello", lang: "en" }];
     const output = formatVerboseOutput(results);
-    expect(output).not.toContain("Processing time:");
+    expect(output).not.toContain("STT time:");
   });
 
-  test("plain-text output is unchanged by processingTimeMs", () => {
-    const results = [{ file: "a.ogg", text: "Hello", lang: "en", processingTimeMs: 427 }];
+  test("plain-text output is unchanged by sttTimeMs", () => {
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en", sttTimeMs: 427 }];
     expect(formatTextOutput(results)).toBe("Hello\n");
   });
 });
