@@ -165,6 +165,36 @@ describe("verbose output formatting", () => {
   });
 });
 
+describe("processingTimeMs field (#139)", () => {
+  test("JSON output preserves processingTimeMs when set", () => {
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en", processingTimeMs: 427 }];
+    const parsed = JSON.parse(formatJsonOutput(results));
+    expect(parsed[0].processingTimeMs).toBe(427);
+  });
+
+  test("JSON output omits processingTimeMs when undefined", () => {
+    const parsed = JSON.parse(formatJsonOutput([{ file: "a.ogg", text: "Hello", lang: "en" }]));
+    expect(parsed[0].processingTimeMs).toBeUndefined();
+  });
+
+  test("verbose output prints processing time line when set", () => {
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en", processingTimeMs: 427 }];
+    const output = formatVerboseOutput(results);
+    expect(output).toContain("Processing time: 427ms");
+  });
+
+  test("verbose output omits processing time line when undefined", () => {
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en" }];
+    const output = formatVerboseOutput(results);
+    expect(output).not.toContain("Processing time:");
+  });
+
+  test("plain-text output is unchanged by processingTimeMs", () => {
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en", processingTimeMs: 427 }];
+    expect(formatTextOutput(results)).toBe("Hello\n");
+  });
+});
+
 describe("JSON output with lang-id fields", () => {
   test("JSON includes audioLanguage and textLanguage when present", () => {
     const results = [{

@@ -260,6 +260,7 @@ export const mainCommand = defineCommand({
     const wantsLangId = !!(args.lang || args.verbose || args.json || args.format === "transcript" || args.format === "json");
 
     for (const file of files) {
+      const startedAt = performance.now();
       try {
         // Run audio lang-id and transcription concurrently
         const [audioResult, text] = await Promise.all([
@@ -298,6 +299,7 @@ export const mainCommand = defineCommand({
           lang,
           audioLanguage,
           textLanguage: textLanguage ?? (tinyldLang ? { code: tinyldLang, confidence: 0 } : undefined),
+          processingTimeMs: Math.round(performance.now() - startedAt),
         });
       } catch (err: unknown) {
         hasError = true;
@@ -359,6 +361,8 @@ export type TranscribeResult = {
   lang: string;
   audioLanguage?: LangDetectResult;
   textLanguage?: LangDetectResult;
+  /** Wall-clock time around the engine subprocess calls for this file, ms. See #139. */
+  processingTimeMs?: number;
 };
 
 export function formatTextOutput(results: TranscribeResult[]): string {
@@ -385,6 +389,9 @@ export function formatVerboseOutput(results: TranscribeResult[]): string {
       if (textLang) {
         const confStr = textLang.confidence > 0 ? ` (confidence: ${textLang.confidence.toFixed(2)})` : "";
         lines.push(`Text language: ${textLang.code}${confStr}`);
+      }
+      if (r.processingTimeMs !== undefined) {
+        lines.push(`Processing time: ${r.processingTimeMs}ms`);
       }
       lines.push("---");
       lines.push(r.text);
