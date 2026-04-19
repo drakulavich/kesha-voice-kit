@@ -10,10 +10,6 @@
 //! `say()` dispatch) land in a follow-up. See issue #141.
 
 #![cfg(all(feature = "system_tts", target_os = "macos"))]
-// Infrastructure-only in this PR (#141). The follow-up wires helper_path()
-// and synthesize() into tts::voices::resolve_voice + the say() dispatch;
-// without those call sites, clippy would otherwise block CI on dead_code.
-#![allow(dead_code)]
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
