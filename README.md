@@ -98,6 +98,21 @@ Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Piper). OGG/Op
 **Supported voices:**
 - English: `en-af_heart` (default), plus any Kokoro voice you download into `~/.cache/kesha/models/kokoro-82m/voices/`
 - Russian: `ru-denis` (default). More speakers (dmitri, irina, ruslan) are ready to drop in once needed.
+- macOS system voices (preview — dev builds only, see below): `macos-<identifier-or-language>` routes to `AVSpeechSynthesizer`. Zero install, any of the 180+ voices already on your Mac.
+
+### macOS system voices (preview)
+
+`kesha say --voice macos-*` routes through `AVSpeechSynthesizer` on macOS, so you get voice synthesis for free — no 390 MB TTS bundle, no `espeak-ng` dep. Currently gated behind the `system_tts` cargo feature; release-binary integration is tracked as part of [#141](https://github.com/drakulavich/kesha-voice-kit/issues/141).
+
+```bash
+# From a dev build: `cargo build --release --features system_tts` in rust/.
+kesha say --voice macos-com.apple.voice.compact.en-US.Samantha "Hello from system TTS" > out.wav
+kesha say --voice macos-ru-RU "Привет, мир" > hello-ru.wav   # language-code fallback
+```
+
+Voice id format: `macos-<id>` where `<id>` is either a full Apple identifier (`com.apple.voice.compact.en-US.Samantha`) or a language code (`en-US`, `ru-RU`) — the Swift helper tries the identifier first and falls back to the language. Output is mono float32 @ 22050 Hz, structurally identical to Piper.
+
+Quality tradeoff is honest: macOS system voices are notification-grade. Use them when you want zero-install TTS on macOS; keep Kokoro/Piper for anything that needs to sound good.
 
 ### SSML (preview)
 

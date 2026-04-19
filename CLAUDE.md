@@ -269,12 +269,13 @@ const text = await transcribe("audio.ogg");
 
 ## TTS
 
-Text-to-speech via two engines selected by voice id prefix:
+Text-to-speech via three engines selected by voice id prefix:
 
 - `en-*` → **Kokoro-82M**. Separate model + per-voice style embedding. Output 24 kHz.
 - `ru-*` → **Piper VITS** (`rhasspy/piper-voices`). Per-voice `.onnx` + `.onnx.json`. Output depends on voice (22.05 kHz for medium tier).
+- `macos-*` → **AVSpeechSynthesizer** via a Swift sidecar (#141, opt-in `--features system_tts` for now). Zero model download, notification-grade quality. Release integration is Part 3.
 
-Opt-in via `kesha install --tts` (downloads both engines, ~390 MB).
+Opt-in via `kesha install --tts` (downloads Kokoro + Piper, ~390 MB). `macos-*` voices need no install — they use voices already on macOS.
 
 - TTS models are **never auto-downloaded** — `kesha say` fails loudly with a `kesha install --tts` hint when models are missing.
 - `kesha say` writes WAV mono f32 to stdout unless `--out` is given. Stderr is progress/errors only.
@@ -283,6 +284,7 @@ Opt-in via `kesha install --tts` (downloads both engines, ~390 MB).
 - **SSML** (opt-in via `--ssml`): uses the `ssml-parser` crate; supports `<speak>` root and `<break time="...">` for silence. Unknown tags (`<emphasis>`, `<prosody>`, `<phoneme>`, `<say-as>`) warn to stderr once per name and are stripped, but contained text is still synthesized. Hardening: required `<speak>` root, `<!DOCTYPE>` rejected anywhere in input. `tts::ssml::parse` returns `Vec<Segment>`; `tts::say()` loads the engine once and concatenates f32 samples for text vs silence for breaks before a single `wav::encode_wav`. See issue #122 for the full scope matrix and future tag support.
 - Kokoro ONNX: `input_ids` (int64 `[1,N]`), `style` (f32 `[1,256]` — rank-2), `speed` (f32 `[1]`). Output name `"waveform"`. Voice file 510 rows × 256 cols.
 - Piper ONNX: `input` (int64 `[1,N]` — BOS + pad-interleaved phoneme IDs + EOS), `input_lengths` (int64 `[1]`), `scales` (f32 `[3]` = `[noise_scale, length_scale, noise_w]`). Output name `"output"`, rank-4 `[1,1,1,T]`. `--rate` is mapped to Piper via `length_scale = voice_default / speed`.
+- **AVSpeech** (#141, opt-in `system_tts`): `kesha-engine` spawns `$OUT_DIR/say-avspeech` (Swift, compiled by `build.rs`). UTF-8 text on stdin, voice id as argv[1]. Swift writes a complete mono f32 IEEE_FLOAT WAV @ 22050 Hz to stdout. Gotcha: AVSpeechSynthesizer callbacks dispatch on the main queue, so the helper MUST pump `CFRunLoopRun()` — `DispatchSemaphore` hangs. `--rate` not wired yet (AVSpeechUtterance has its own `.rate`, mapping TBD). SSML + AVSpeech explicitly rejected in v1.
 - `KESHA_ENGINE_BIN` — override the engine-binary path (useful when iterating on `rust/target/release/kesha-engine`).
 - `KESHA_CACHE_DIR` — isolated test cache.
 - macOS dev runtime: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`. Release binaries fix up via `install_name_tool`.
