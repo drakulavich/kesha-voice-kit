@@ -18,6 +18,10 @@ default = ["onnx", "tts"]
 coreml = ["dep:fluidaudio-rs"]
 onnx = []
 tts = ["dep:hound", "dep:espeakng-sys", "dep:thiserror", "dep:sha2", "dep:ssml-parser"]
+# macOS-only AVSpeechSynthesizer backend for `macos-*` voices (#141).
+# Opt-in — builds a Swift sidecar via swiftc in build.rs. Silently no-op on
+# non-macOS targets even when enabled.
+system_tts = ["tts"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
