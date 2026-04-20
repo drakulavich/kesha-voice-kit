@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest]  # Windows follows after M2 (choco install espeak-ng path verification)
+        os: [macos-14, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
@@ -33,6 +33,29 @@ jobs:
       - name: Install espeak-ng (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y espeak-ng libespeak-ng-dev
+
+      - name: Install espeak-ng + LLVM (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Chocolatey packages both espeak-ng (runtime + dev files) and llvm
+          # (libclang for bindgen). LLVM is normally on windows-latest runners
+          # already, but we install anyway so LIBCLANG_PATH is predictable.
+          choco install -y --no-progress espeak-ng llvm
+          # Espeak-ng install path — choco drops it in Program Files.
+          $espeak = "C:\Program Files\eSpeak NG"
+          if (-not (Test-Path "$espeak\libespeak-ng.dll")) {
+            Write-Error "espeak-ng DLL not found at $espeak"
+            exit 1
+          }
+          Write-Host "espeak-ng contents:"
+          Get-ChildItem $espeak | Select-Object Name, Length | Format-Table
+          # Tell the MSVC linker where to find libespeak-ng.lib.
+          Add-Content -Path $env:GITHUB_ENV -Value "LIB=$espeak;$env:LIB"
+          # Tell the runtime loader where to find libespeak-ng.dll.
+          Add-Content -Path $env:GITHUB_PATH -Value $espeak
+          # bindgen (via espeakng-sys `clang-runtime`) needs LIBCLANG_PATH.
+          Add-Content -Path $env:GITHUB_ENV -Value "LIBCLANG_PATH=C:\Program Files\LLVM\bin"
 
       - name: Cache Kokoro spike models
         uses: actions/cache@v4

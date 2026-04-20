@@ -18,6 +18,11 @@ case "$RUNNER_OS" in
     # apt-installed libespeak-ng is discovered via pkg-config / default lib paths
     :
     ;;
+  Windows)
+    # LIB / PATH / LIBCLANG_PATH are set in the workflow step before this
+    # script runs — choco install espeak-ng lands at C:\Program Files\eSpeak NG.
+    :
+    ;;
   *)
     echo "unsupported runner: $RUNNER_OS" >&2
     exit 1
