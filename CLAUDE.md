@@ -95,6 +95,22 @@ Don't add struct fields, enum variants, or constants "for later." Clippy's `dead
 - `main` is protected — all changes go through PRs
 - CI must pass before merging
 
+### FLAG ACTIVE WORK WITH A `WIP` LABEL
+
+When starting work on a GitHub issue, tag it with the `WIP` label as the first step so drakulavich sees at a glance what's actively in flight. Remove the label when the corresponding PR merges (or the issue closes another way).
+
+```bash
+gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP      # picking up
+gh issue edit <N> -R drakulavich/kesha-voice-kit --remove-label WIP   # work lands / abandoned
+```
+
+Create the label once per repo if missing:
+
+```bash
+gh label create WIP -R drakulavich/kesha-voice-kit --color FBCA04 \
+  --description "An agent or contributor is actively working on this"
+```
+
 ### VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE
 
 Any plan that names a specific upstream artifact ("Silero via ONNX", "statically-linked espeak-ng", "FluidAudio CoreML Kokoro") MUST be validated with a throwaway spike BEFORE the implementation phase commits to it.

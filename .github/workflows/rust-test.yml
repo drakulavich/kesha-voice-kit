@@ -47,6 +47,22 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
 
+      - name: Pin MSVC linker (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # Windows runners ship Git for Windows with a `link` binary (GNU
+        # coreutils) on PATH via /c/Program Files/Git/usr/bin. When `shell:
+        # bash` is used, it shadows MSVC's link.exe and rustc invokes the
+        # wrong tool. Pin the MSVC linker explicitly via cargo's env knob so
+        # PATH ordering doesn't matter.
+        run: |
+          $linkPath = (Get-Command link.exe |
+            Where-Object { $_.Source -notlike "*Git*usr*" } |
+            Select-Object -First 1).Source
+          if (-not $linkPath) { Write-Error "MSVC link.exe not found"; exit 1 }
+          Write-Host "MSVC linker: $linkPath"
+          Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linkPath"
+
       - name: Generate libespeak-ng import lib from DLL (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
