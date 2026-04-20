@@ -19,20 +19,14 @@ updates:
         update-types:
           - patch
 
-  # Rust engine deps (kesha-engine). Added in the dependabot refresh — the
-  # crate has 70+ transitive deps and no previous tracking.
-  - package-ecosystem: cargo
-    directory: "/rust"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - rust
-    groups:
-      cargo-patch:
-        update-types:
-          - patch
+  # Rust (cargo) deliberately NOT tracked by Dependabot (#165).
+  # Every cargo update attempt fails with curl error [8] "Weird server line"
+  # against the crates.io sparse index (https://index.crates.io) — the
+  # Dependabot runner image ships a libcurl that mishandles the sparse
+  # HTTP framing, and no cargo PR has ever merged successfully since we
+  # added the ecosystem in PR #160.
+  # Workaround: run `cd rust && cargo update` manually and open a PR.
+  # Revisit once Dependabot ships a fix upstream.
 
   # Workflow action versions across .github/workflows/*.
   - package-ecosystem: github-actions
