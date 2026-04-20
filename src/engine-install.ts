@@ -1,4 +1,4 @@
-import { dirname } from "path";
+import { dirname, join } from "path";
 import { existsSync, mkdirSync, chmodSync, readFileSync, writeFileSync } from "fs";
 import { getEngineBinPath, getEngineCapabilities } from "./engine";
 import { log } from "./log";
@@ -41,6 +41,46 @@ function getEngineBinaryName(): string {
   throw new Error(`Unsupported platform: ${platform} ${arch}`);
 }
 
+/**
+ * Fetch the AVSpeechSynthesizer sidecar (#141) and place it next to the
+ * engine binary on darwin-arm64. The Rust side (`avspeech::helper_path`)
+ * looks for a `say-avspeech` file adjacent to the running executable, so
+ * the filename on disk is always `say-avspeech` regardless of the release
+ * asset name.
+ *
+ * Best-effort: 404s (older engine versions predate the sidecar) and
+ * network errors log a warning and return — macos-* voices simply won't
+ * be available, which is a graceful degradation. The user keeps Kokoro +
+ * Piper.
+ */
+async function downloadAVSpeechSidecar(binPath: string, engineVersion: string): Promise<void> {
+  if (process.platform !== "darwin" || process.arch !== "arm64") return;
+
+  const sidecarPath = join(dirname(binPath), "say-avspeech");
+  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/say-avspeech-darwin-arm64`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { redirect: "follow" });
+  } catch (e) {
+    log.warn(
+      `Could not fetch AVSpeech sidecar (${e instanceof Error ? e.message : e}); macos-* voices unavailable.`,
+    );
+    return;
+  }
+
+  if (!res.ok) {
+    log.warn(
+      `AVSpeech sidecar not in release v${engineVersion} (HTTP ${res.status}); macos-* voices unavailable.`,
+    );
+    return;
+  }
+
+  await streamResponseToFile(res, sidecarPath, "say-avspeech sidecar");
+  chmodSync(sidecarPath, 0o755);
+  log.success("AVSpeech sidecar installed (macOS voices available).");
+}
+
 export interface InstallOptions {
   /** Also install Kokoro TTS models. Requires espeak-ng on PATH. */
   tts?: boolean;
@@ -69,6 +109,13 @@ export async function downloadEngine(
 
   if (cacheValid) {
     log.success(`Engine binary already installed (v${engineVersion}).`);
+    // Cover the upgrade path from pre-#141 engines that never had a
+    // sidecar: if the cached engine is current but the sibling sidecar
+    // is missing, fetch it now so macos-* voices start working.
+    const sidecarPath = join(dirname(binPath), "say-avspeech");
+    if (!existsSync(sidecarPath)) {
+      await downloadAVSpeechSidecar(binPath, engineVersion);
+    }
   } else {
     // Log why we're downloading — helps diagnose surprising re-downloads.
     if (existsSync(binPath) && installedVersion && installedVersion !== engineVersion) {
@@ -100,6 +147,7 @@ export async function downloadEngine(
     chmodSync(binPath, 0o755);
     writeInstalledEngineVersion(binPath, engineVersion);
     log.success(`Engine binary downloaded (v${engineVersion}).`);
+    await downloadAVSpeechSidecar(binPath, engineVersion);
   }
 
   if (backend) {

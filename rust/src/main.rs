@@ -175,6 +175,11 @@ fn run_say(a: SayArgs) -> i32 {
             .into_iter()
             .chain(list_piper_ru_voices(&cache))
             .collect();
+        // macos-* voices live in the OS, not the cache — enumerate them via
+        // the AVSpeech helper (#141). Best-effort: if the helper is absent or
+        // errors out, we still show Kokoro/Piper voices.
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        voice_ids.extend(tts::avspeech::list_voices(None));
         voice_ids.sort();
         if voice_ids.is_empty() {
             println!("No voices installed. Run: kesha install --tts");

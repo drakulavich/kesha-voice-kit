@@ -4,7 +4,9 @@
 // Emits mono float32 WAV (IEEE_FLOAT) at the voice's native sample rate
 // (22050 Hz on every macOS voice we've tested). Stderr carries progress + errors.
 //
-// Usage: say-avspeech <voiceId> [text]  (stdin if text is omitted)
+// Usage:
+//   say-avspeech <voiceId> [text]   # synthesize (stdin if text is omitted)
+//   say-avspeech --list-voices      # print installed voices, one per line
 //
 // Key gotcha: AVSpeechSynthesizer.write(_:toBufferCallback:) delivers buffers
 // on the main dispatch queue, so the CLI MUST pump the run loop. Semaphores
@@ -15,9 +17,20 @@ import Foundation
 
 let args = CommandLine.arguments
 guard args.count >= 2 else {
-  FileHandle.standardError.write("usage: say-avspeech <voiceID> [text — else stdin]\n".data(using: .utf8)!)
+  FileHandle.standardError.write("usage: say-avspeech <voiceID> [text — else stdin] | --list-voices\n".data(using: .utf8)!)
   exit(2)
 }
+
+// --list-voices mode: print `identifier|language|name`, one per line.
+// Rust side strips the first field, prefixes with `macos-`, and merges into
+// the global voice list.
+if args[1] == "--list-voices" {
+  for voice in AVSpeechSynthesisVoice.speechVoices() {
+    print("\(voice.identifier)|\(voice.language)|\(voice.name)")
+  }
+  exit(0)
+}
+
 let voiceId = args[1]
 let text: String
 if args.count >= 3 {
@@ -57,14 +70,20 @@ synth.write(utt) { buffer in
   samples.append(contentsOf: UnsafeBufferPointer(start: floatPtr, count: count))
 }
 
-// 15s wall-clock watchdog on a background queue. Setting `timedOut = true`
-// before stopping the run loop lets the post-loop check exit non-zero even
-// if some buffers arrived first — partial WAV on stdout is worse than none,
-// because the Rust caller would treat it as success.
+// 15s wall-clock watchdog. The actual timeout body hops back to the main
+// queue so every read/write of `timedOut` happens on one thread — keeps
+// us out of Swift's data-race territory (CFRunLoopStop's happens-before
+// semantics are enough in practice, but TSan and future compiler
+// invariants don't rely on them). Setting the flag before stopping the
+// run loop lets the post-loop check exit non-zero even if some buffers
+// arrived first — a partial WAV on stdout is worse than none, because
+// the Rust caller would treat it as success.
 DispatchQueue.global().asyncAfter(deadline: .now() + 15) {
-  FileHandle.standardError.write("timeout waiting for synthesis\n".data(using: .utf8)!)
-  timedOut = true
-  CFRunLoopStop(CFRunLoopGetMain())
+  DispatchQueue.main.async {
+    FileHandle.standardError.write("timeout waiting for synthesis\n".data(using: .utf8)!)
+    timedOut = true
+    CFRunLoopStop(CFRunLoopGetMain())
+  }
 }
 CFRunLoopRun()
 
@@ -90,7 +109,13 @@ func appendLE16(_ v: UInt16, to data: inout Data) {
 
 let bitsPerSample: UInt16 = 32
 let bytesPerSample: UInt16 = bitsPerSample / 8
-let dataSize = UInt32(samples.count) * UInt32(bytesPerSample) * UInt32(channels)
+// We only collect channel 0 of whatever PCM buffer arrives (see the
+// `write(_:toBufferCallback:)` closure above), so the WAV header declares
+// mono regardless of the source buffer's channel count. This keeps the
+// declared dataSize in sync with the bytes actually written if a future
+// voice ever returns stereo.
+let outChannels: UInt16 = 1
+let dataSize = UInt32(samples.count) * UInt32(bytesPerSample) * UInt32(outChannels)
 var wav = Data()
 wav.append("RIFF".data(using: .ascii)!)
 appendLE32(36 + dataSize, to: &wav)
@@ -98,10 +123,10 @@ wav.append("WAVE".data(using: .ascii)!)
 wav.append("fmt ".data(using: .ascii)!)
 appendLE32(16, to: &wav)
 appendLE16(3, to: &wav)  // IEEE_FLOAT
-appendLE16(UInt16(channels), to: &wav)
+appendLE16(outChannels, to: &wav)
 appendLE32(UInt32(sampleRate), to: &wav)
-appendLE32(UInt32(sampleRate) * UInt32(channels) * UInt32(bytesPerSample), to: &wav)
-appendLE16(UInt16(channels) * bytesPerSample, to: &wav)
+appendLE32(UInt32(sampleRate) * UInt32(outChannels) * UInt32(bytesPerSample), to: &wav)
+appendLE16(outChannels * bytesPerSample, to: &wav)
 appendLE16(bitsPerSample, to: &wav)
 wav.append("data".data(using: .ascii)!)
 appendLE32(dataSize, to: &wav)

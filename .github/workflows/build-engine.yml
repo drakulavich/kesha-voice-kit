@@ -29,9 +29,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # system_tts (#141) adds the AVSpeechSynthesizer backend via a
+          # Swift sidecar. kesha install places the sidecar next to the
+          # engine binary; runtime lookup is sibling-first (see
+          # rust/src/tts/avspeech.rs::helper_path).
           - os: macos-14
             target: aarch64-apple-darwin
-            features: coreml,tts
+            features: coreml,tts,system_tts
             binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -163,6 +167,26 @@ jobs:
           src="rust/target/${{ matrix.target }}/release/kesha-engine"
           if [ "${{ matrix.os }}" = "windows-latest" ]; then src="${src}.exe"; fi
           cp "$src" "${{ matrix.binary }}"
+
+      # system_tts (#141): the Swift AVSpeechSynthesizer sidecar lives in
+      # the build-script's OUT_DIR (rust/target/<target>/release/build/
+      # kesha-engine-<hash>/out/say-avspeech). cargo doesn't expose a
+      # stable path for it, so glob it out. Stage it next to the matrix
+      # binary so the smoke-test step's sibling-lookup finds it, then
+      # copy to the release artifact name.
+      - name: Stage AVSpeech sidecar (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name say-avspeech -type f | head -1)
+          if [ -z "$sidecar" ]; then
+            echo "say-avspeech sidecar not found — system_tts feature may not have compiled" >&2
+            exit 1
+          fi
+          echo "Sidecar at: $sidecar"
+          cp "$sidecar" ./say-avspeech              # sibling-next-to-engine for smoke test
+          cp "$sidecar" say-avspeech-darwin-arm64    # release artifact name
+
       - name: Smoke-test binary
         shell: bash
         # Assert `tts` is in the capabilities — otherwise a future feature-flag
@@ -170,6 +194,11 @@ jobs:
         # release binary missing `kesha say`. Past incident this guards
         # against: v1.1.0 → v1.1.3, see CLAUDE.md "BUILD-ENGINE FEATURE
         # MATRIX MIRRORS CARGO DEFAULTS".
+        #
+        # macOS additionally checks that `say --list-voices` surfaces at
+        # least one `macos-*` entry — that exercises the Swift sidecar's
+        # --list-voices mode end-to-end, so a broken sidecar fails the
+        # build instead of shipping in a release.
         run: |
           chmod +x "${{ matrix.binary }}"
           caps=$("./${{ matrix.binary }}" --capabilities-json)
@@ -178,15 +207,32 @@ jobs:
             echo "expected tts in capabilities, got: $caps" >&2
             exit 1
           }
+          if [ "${{ matrix.os }}" = "macos-14" ]; then
+            voices=$("./${{ matrix.binary }}" say --list-voices)
+            echo "$voices" | grep -q '^macos-' || {
+              echo "expected at least one macos-* voice, got:" >&2
+              echo "$voices" >&2
+              exit 1
+            }
+          fi
+
       - name: Inspect macOS dynamic deps
         if: matrix.os == 'macos-14'
         shell: bash
         run: otool -L "${{ matrix.binary }}" && otool -l "${{ matrix.binary }}" | grep -A2 LC_RPATH || true
-      - name: Upload artifact
+
+      - name: Upload engine artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.binary }}
           path: ${{ matrix.binary }}
+
+      - name: Upload AVSpeech sidecar (macOS)
+        if: matrix.os == 'macos-14'
+        uses: actions/upload-artifact@v7
+        with:
+          name: say-avspeech-darwin-arm64
+          path: say-avspeech-darwin-arm64
 
   release:
     needs: build
@@ -204,4 +250,5 @@ jobs:
             kesha-engine-darwin-arm64
             kesha-engine-linux-x64
             kesha-engine-windows-x64.exe
+            say-avspeech-darwin-arm64
           draft: true

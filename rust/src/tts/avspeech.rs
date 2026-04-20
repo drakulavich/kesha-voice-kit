@@ -15,8 +15,25 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// Path to the sidecar `say-avspeech` binary, baked in at build time by `build.rs`.
+/// Path to the sidecar `say-avspeech` binary.
+///
+/// Resolution order:
+/// 1. A sibling `say-avspeech` file next to the currently-running executable.
+///    This is the release-distribution path — `kesha install` downloads both
+///    `kesha-engine-darwin-arm64` and `say-avspeech-darwin-arm64` into the
+///    same cache directory.
+/// 2. The build-time `$OUT_DIR/say-avspeech` baked in by `build.rs`. Used by
+///    `cargo run` / `cargo test`, where the sidecar lives in the target dir
+///    but not next to the engine executable.
 pub fn helper_path() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let sibling = parent.join("say-avspeech");
+            if sibling.exists() {
+                return sibling;
+            }
+        }
+    }
     PathBuf::from(env!("KESHA_AVSPEECH_HELPER"))
 }
 
@@ -60,6 +77,39 @@ pub fn synthesize(text: &str, voice_id: &str, helper: Option<&Path>) -> anyhow::
         );
     }
     Ok(output.stdout)
+}
+
+/// Enumerate the installed macOS voices via the sidecar's `--list-voices` mode.
+///
+/// Returns prefixed voice IDs (`macos-<identifier>`) ready to merge into the
+/// `say --list-voices` output. Returns an empty Vec on any failure — callers
+/// treat macos-* as a best-effort extension: if the helper is missing or the
+/// enumeration fails, they should still show Kokoro/Piper voices.
+pub fn list_voices(helper: Option<&Path>) -> Vec<String> {
+    let bin = helper.map(PathBuf::from).unwrap_or_else(helper_path);
+
+    let Ok(output) = Command::new(&bin)
+        .arg("--list-voices")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        // Lines are `identifier|language|name` (see swift/say-avspeech.swift).
+        // We only surface the identifier; callers can look up language/name
+        // via AVSpeechSynthesisVoice if they want richer metadata.
+        .filter_map(|line| line.split('|').next())
+        .filter(|id| !id.is_empty())
+        .map(|id| format!("macos-{id}"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -115,5 +165,43 @@ mod tests {
         let helper = fake_helper(&tmp, "cat");
         let bytes = synthesize("Hello, kesha!", "en-US", Some(&helper)).unwrap();
         assert_eq!(String::from_utf8(bytes).unwrap(), "Hello, kesha!");
+    }
+
+    #[test]
+    fn list_voices_parses_helper_output() {
+        let tmp = TempDir::new().unwrap();
+        let helper = fake_helper(
+            &tmp,
+            r#"printf 'com.apple.voice.compact.en-US.Samantha|en-US|Samantha\ncom.apple.voice.compact.ru-RU.Milena|ru-RU|Milena\n'"#,
+        );
+        let voices = list_voices(Some(&helper));
+        assert_eq!(
+            voices,
+            vec![
+                "macos-com.apple.voice.compact.en-US.Samantha".to_string(),
+                "macos-com.apple.voice.compact.ru-RU.Milena".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn list_voices_empty_on_helper_failure() {
+        let tmp = TempDir::new().unwrap();
+        let helper = fake_helper(&tmp, "exit 1");
+        assert!(list_voices(Some(&helper)).is_empty());
+    }
+
+    #[test]
+    fn list_voices_skips_empty_lines() {
+        let tmp = TempDir::new().unwrap();
+        let helper = fake_helper(
+            &tmp,
+            r#"printf '\ncom.apple.voice.compact.en-US.Samantha|en-US|Samantha\n\n'"#,
+        );
+        let voices = list_voices(Some(&helper));
+        assert_eq!(
+            voices,
+            vec!["macos-com.apple.voice.compact.en-US.Samantha".to_string()]
+        );
     }
 }
