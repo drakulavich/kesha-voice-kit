@@ -71,7 +71,7 @@ Output: WAV mono float32. `--out <path>` writes to a file instead of stdout.
 ## Install
 
 ```bash
-bun add --global @drakulavich/kesha-voice-kit    # or: npm i -g
+bun add --global @drakulavich/kesha-voice-kit    # or: npm i -g @drakulavich/kesha-voice-kit
 kesha install                                    # downloads engine (~350 MB)
 kesha install --tts                              # adds Kokoro + Piper RU (~390 MB more, for TTS)
 ```
