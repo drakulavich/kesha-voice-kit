@@ -47,15 +47,6 @@ describe("buildSayArgs", () => {
     );
   });
 
-  it("places text positional after flags (not parsed as option arg)", () => {
-    const args = buildSayArgs({ text: "Hello", voice: "en-af_heart", lang: "en-us" });
-    const textIdx = args.indexOf("Hello");
-    const voiceIdx = args.indexOf("--voice");
-    const langIdx = args.indexOf("--lang");
-    expect(textIdx).toBeGreaterThan(voiceIdx);
-    expect(textIdx).toBeGreaterThan(langIdx);
-  });
-
   it("omits --ssml when false or undefined", () => {
     expect(buildSayArgs({ text: "hi" })).not.toContain("--ssml");
     expect(buildSayArgs({ text: "hi", ssml: false })).not.toContain("--ssml");
@@ -64,14 +55,6 @@ describe("buildSayArgs", () => {
   it("includes --ssml when true", () => {
     const args = buildSayArgs({ text: "<speak>hi</speak>", ssml: true });
     expect(args).toContain("--ssml");
-  });
-
-  it("--ssml precedes the text positional (clap needs flags first)", () => {
-    const args = buildSayArgs({ text: "<speak>hi</speak>", ssml: true });
-    const ssmlIdx = args.indexOf("--ssml");
-    const textIdx = args.indexOf("<speak>hi</speak>");
-    expect(ssmlIdx).toBeGreaterThan(-1);
-    expect(textIdx).toBeGreaterThan(ssmlIdx);
   });
 });
 

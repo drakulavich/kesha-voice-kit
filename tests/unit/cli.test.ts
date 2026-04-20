@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
-import { mainCommand, installCommand, statusCommand, sayCommand, formatTextOutput, formatJsonOutput, formatVerboseOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
+import { mainCommand, installCommand, statusCommand, sayCommand, formatTextOutput, formatJsonOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -48,14 +48,6 @@ describe("output formatting", () => {
   test("single file text: no header", () => {
     const output = formatTextOutput([{ file: "a.ogg", text: "Hello", lang: "en" }]);
     expect(output).toBe("Hello\n");
-  });
-
-  test("multiple files text: headers per file", () => {
-    const output = formatTextOutput([
-      { file: "a.ogg", text: "Hello", lang: "en" },
-      { file: "b.mp3", text: "World", lang: "en" },
-    ]);
-    expect(output).toBe("=== a.ogg ===\nHello\n\n=== b.mp3 ===\nWorld\n");
   });
 
   test("JSON output: always array, pretty-printed", () => {
@@ -149,28 +141,6 @@ describe("CLI help with status", () => {
   });
 });
 
-describe("verbose output formatting", () => {
-  test("verbose output includes language info when audioLanguage present", () => {
-    const results = [{
-      file: "a.ogg", text: "Hello", lang: "en",
-      audioLanguage: { code: "en", confidence: 0.94 },
-      textLanguage: { code: "en", confidence: 0.98 },
-    }];
-    const output = formatVerboseOutput(results);
-    expect(output).toContain("Audio language: en");
-    expect(output).toContain("Text language: en");
-    expect(output).toContain("Hello");
-  });
-
-  test("verbose output omits audio language when not detected", () => {
-    const results = [{ file: "a.ogg", text: "Hello", lang: "en" }];
-    const output = formatVerboseOutput(results);
-    expect(output).not.toContain("Audio language:");
-    expect(output).toContain("Text language: en");
-    expect(output).toContain("Hello");
-  });
-});
-
 describe("say --verbose (TTS time, parallel to #139)", () => {
   test("say help advertises --verbose", async () => {
     const usage = await renderUsage(sayCommand);
@@ -193,18 +163,6 @@ describe("sttTimeMs field (#139)", () => {
   test("JSON output omits sttTimeMs when undefined", () => {
     const parsed = JSON.parse(formatJsonOutput([{ file: "a.ogg", text: "Hello", lang: "en" }]));
     expect(parsed[0].sttTimeMs).toBeUndefined();
-  });
-
-  test("verbose output prints processing time line when set", () => {
-    const results = [{ file: "a.ogg", text: "Hello", lang: "en", sttTimeMs: 427 }];
-    const output = formatVerboseOutput(results);
-    expect(output).toContain("STT time: 427ms");
-  });
-
-  test("verbose output omits processing time line when undefined", () => {
-    const results = [{ file: "a.ogg", text: "Hello", lang: "en" }];
-    const output = formatVerboseOutput(results);
-    expect(output).not.toContain("STT time:");
   });
 
   test("plain-text output is unchanged by sttTimeMs", () => {

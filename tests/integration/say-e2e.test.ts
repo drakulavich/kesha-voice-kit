@@ -24,13 +24,14 @@ beforeAll(() => {
   symlinkSync(SPIKE_VOICE, `${MODEL_DIR}/voices/af_heart.bin`);
 });
 
-function spawnCli(args: string[]) {
+function spawnCli(args: string[], extraEnv: Record<string, string> = {}) {
   return spawn(["bun", CLI_PATH, ...args], {
     env: {
       ...process.env,
       KESHA_CACHE_DIR: CACHE_DIR,
       KESHA_ENGINE_BIN: BUILT_ENGINE,
       DYLD_FALLBACK_LIBRARY_PATH: "/opt/homebrew/lib",
+      ...extraEnv,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -61,6 +62,34 @@ describe("kesha say e2e", () => {
       expect(await proc.exited).toBe(0);
       const bytes = await Bun.file(outPath).arrayBuffer();
       expect(new TextDecoder().decode(new Uint8Array(bytes, 0, 4))).toBe("RIFF");
+    },
+    60_000,
+  );
+
+  // Replaces tests/unit/log.test.ts (spy-based on our own console.error,
+  // violated Fowler's "mock only at trust boundaries" rule — see #161). The
+  // real contract is "KESHA_DEBUG=1 → [debug] traces on stderr; otherwise
+  // silent"; verify it by spawning the CLI and grepping stderr.
+  it.skipIf(!SPIKE_AVAILABLE)(
+    "KESHA_DEBUG=1 emits [debug] traces on stderr",
+    async () => {
+      const outPath = `/tmp/kesha-debug-${Date.now()}.wav`;
+      const proc = spawnCli(["say", "Hi", "--out", outPath], { KESHA_DEBUG: "1" });
+      expect(await proc.exited).toBe(0);
+      const stderr = await new Response(proc.stderr).text();
+      expect(stderr).toContain("[debug]");
+    },
+    60_000,
+  );
+
+  it.skipIf(!SPIKE_AVAILABLE)(
+    "empty KESHA_DEBUG → stderr is free of [debug] markers",
+    async () => {
+      const outPath = `/tmp/kesha-nodebug-${Date.now()}.wav`;
+      const proc = spawnCli(["say", "Hi", "--out", outPath], { KESHA_DEBUG: "" });
+      expect(await proc.exited).toBe(0);
+      const stderr = await new Response(proc.stderr).text();
+      expect(stderr).not.toContain("[debug]");
     },
     60_000,
   );

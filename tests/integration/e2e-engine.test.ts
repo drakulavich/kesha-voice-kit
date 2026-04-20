@@ -127,6 +127,26 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("===");
   }, 120_000);
+
+  test("--format transcript appends a lang+confidence footer", async () => {
+    const { stdout, exitCode } = await runCli([
+      "--format",
+      "transcript",
+      FIXTURE_RU,
+    ]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toMatch(/\[lang: [a-z]{2}, confidence: \d+\.\d+\]/);
+  }, 60_000);
+
+  test("partial failure: one valid + one missing → exit 1 with a single result", async () => {
+    const { stdout, exitCode } = await runCli(["--json", FIXTURE_RU, "nonexistent.wav"]);
+    expect(exitCode).toBe(1);
+    const parsed = JSON.parse(stdout);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].file).toBe(FIXTURE_RU);
+    expect(parsed[0].text.length).toBeGreaterThan(0);
+  }, 60_000);
 });
 
 describe.skipIf(!engineInstalled)("e2e-lang-detection", () => {

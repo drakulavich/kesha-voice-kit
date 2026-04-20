@@ -56,7 +56,12 @@ describe("createProgressBar", () => {
     bar.finish();
   });
 
-  test("TTY mode writes progress to stderr", () => {
+  test("TTY mode ends with 100% and a newline", () => {
+    // Contract: user sees progress culminating in 100% + newline.
+    // Intentionally does not assert write count or per-write content —
+    // coalescing writes or changing the intermediate-step cadence is a
+    // legitimate refactor and shouldn't fail this test (#161, Rossi
+    // liability P3).
     const originalIsTTY = process.stderr.isTTY;
     const writes: string[] = [];
     const originalWrite = process.stderr.write;
@@ -73,13 +78,10 @@ describe("createProgressBar", () => {
       bar.update(50);
       bar.finish();
 
-      expect(writes.length).toBe(3); // 2 updates + 1 finish
-      expect(writes[0]).toContain("\r");
-      expect(writes[0]).toContain("model.onnx");
-      expect(writes[0]).toContain("50%"); // 100/200
-      expect(writes[1]).toContain("75%"); // 150/200
-      expect(writes[2]).toContain("100%"); // finish
-      expect(writes[2]).toContain("\n"); // finish adds newline
+      const combined = writes.join("");
+      expect(combined).toContain("model.onnx");
+      expect(combined).toContain("100%");
+      expect(combined.endsWith("\n")).toBe(true);
     } finally {
       Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
       process.stderr.write = originalWrite;
