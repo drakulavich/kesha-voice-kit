@@ -159,7 +159,7 @@ Portable recipe for the Linux job:
     echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
 ```
 
-macOS equivalent is `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`. Windows: pending, part of the broader Windows-TTS deferral.
+macOS equivalent is `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`. Windows uses `C:\Program Files\LLVM\bin` with LLVM installed via `choco install llvm` and MSVC tooling activated via `ilammy/msvc-dev-cmd@v1` in CI. espeak-ng on Windows needs an import lib synthesized from the choco-shipped DLL via `dumpbin /exports` + `lib /def:… /machine:x64 /out:espeak-ng.lib` — see the Windows block in `rust-test.yml`.
 
 ### OPENCLAW PLUGIN
 

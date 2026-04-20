@@ -82,13 +82,21 @@ jobs:
           "LIBRARY libespeak-ng`r`nEXPORTS" | Set-Content -Encoding ASCII $def
           # dumpbin /exports rows look like:
           #     1    0 00001A20 espeak_Cancel
-          # — grab just the symbol name (4th column).
-          dumpbin /exports $dll |
-            Select-String '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)' |
-            ForEach-Object { $_.Matches.Groups[1].Value } |
-            Add-Content -Encoding ASCII $def
-          $exportCount = (Get-Content $def | Measure-Object -Line).Lines - 2
-          Write-Host "Generated .def with $exportCount exports"
+          # — grab just the symbol name (4th column). Hex is case-insensitive
+          # in case a future toolchain flips output style.
+          $exports = dumpbin /exports $dll |
+            Select-String '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)' |
+            ForEach-Object { $_.Matches.Groups[1].Value }
+          # Zero/near-zero exports means the regex drifted from dumpbin's
+          # output; fail loudly here instead of letting lib.exe produce a
+          # valid-looking empty .lib that breaks later in the cargo link step.
+          if ($exports.Count -lt 10) {
+            Write-Error "dumpbin produced $($exports.Count) exports — regex drift? Raw output:"
+            dumpbin /exports $dll | Select-Object -First 30 | Write-Host
+            exit 1
+          }
+          $exports | Add-Content -Encoding ASCII $def
+          Write-Host "Generated .def with $($exports.Count) exports"
           lib /def:$def /machine:x64 /out:"$libDir\espeak-ng.lib"
           if (-not (Test-Path "$libDir\espeak-ng.lib")) {
             Write-Error "lib.exe failed to produce espeak-ng.lib"

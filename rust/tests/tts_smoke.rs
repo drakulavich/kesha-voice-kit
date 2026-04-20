@@ -1,3 +1,5 @@
+#![cfg(feature = "tts")]
+
 use std::process::Command;
 
 #[test]
