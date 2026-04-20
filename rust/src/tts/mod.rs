@@ -75,6 +75,17 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             actual: len,
         });
     }
+    let engine_label: &str = match &opts.engine {
+        EngineChoice::Kokoro { .. } => "kokoro",
+        EngineChoice::Piper { .. } => "piper",
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        EngineChoice::AVSpeech { .. } => "avspeech",
+    };
+    crate::dtrace!(
+        "tts::say engine={engine_label} lang={} ssml={} chars={len}",
+        opts.lang,
+        opts.ssml
+    );
 
     // AVSpeech does its own G2P + synthesis inside Swift; skip espeak G2P entirely.
     #[cfg(all(feature = "system_tts", target_os = "macos"))]

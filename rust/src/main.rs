@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 mod audio;
 mod backend;
 mod capabilities;
+mod debug;
 mod lang_id;
 mod models;
 mod text_lang;
