@@ -1,19 +1,50 @@
 version: 2
 updates:
+  # CLI / TS deps
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    groups:
+      npm-dev:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      npm-prod:
+        dependency-type: production
+        update-types:
+          - patch
 
+  # Rust engine deps (kesha-engine). Added in the dependabot refresh — the
+  # crate has 70+ transitive deps and no previous tracking.
+  - package-ecosystem: cargo
+    directory: "/rust"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - rust
+    groups:
+      cargo-patch:
+        update-types:
+          - patch
+
+  # Workflow action versions across .github/workflows/*.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-
-  - package-ecosystem: swift
-    directory: "/swift"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
