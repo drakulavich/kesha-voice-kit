@@ -60,6 +60,7 @@ kesha audio.ogg                            # transcribe (plain text)
 kesha --format transcript audio.ogg        # text + language/confidence
 kesha --format json audio.ogg              # full JSON with lang fields
 kesha --json audio.ogg                     # alias for --format json
+kesha --toon audio.ogg                     # compact LLM-friendly TOON (same data as --json)
 kesha --verbose audio.ogg                  # show language detection details
 kesha --lang en audio.ogg                  # warn if detected language differs
 kesha status                               # show installed backend info

@@ -6,6 +6,13 @@ export type { TranscribeOptions };
 export { downloadEngine as downloadModel };
 export { say, type SayOptions, SayError } from "./say";
 
+/**
+ * Encode a `TranscribeResult[]` as TOON (#138). Same data shape as the
+ * `--json` / `--toon` CLI output; the CLI reads from stdin of a transcribe
+ * run, this helper is for programmatic callers that already have the array.
+ */
+export { formatToonOutput as toToon } from "./cli";
+
 /** Install Kokoro TTS models. Shorthand for `downloadModel({ tts: true })`. */
 export async function downloadTts(noCache = false): Promise<void> {
   await downloadEngine(noCache, undefined, { tts: true });

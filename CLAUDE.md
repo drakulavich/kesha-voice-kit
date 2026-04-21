@@ -257,7 +257,10 @@ kesha audio.ogg                        # plain text
 kesha --format transcript audio.ogg    # text + [lang: ru, confidence: 1.00]
 kesha --format json audio.ogg          # full JSON with lang fields
 kesha --json audio.ogg                 # alias for --format json
+kesha --toon audio.ogg                 # compact LLM-efficient TOON (#138)
 ```
+
+Prefer `--toon` when piping multi-file results into an LLM (OpenClaw, agent pipelines) — uniform-array compaction emits a single schema header + tabular rows, typically 30-60% fewer tokens than `--json` while round-tripping through `@toon-format/toon`'s `decode()` to the same `TranscribeResult[]`. `--json` and `--toon` are mutually exclusive (exit 2 if both passed).
 
 ### Rust engine features
 
