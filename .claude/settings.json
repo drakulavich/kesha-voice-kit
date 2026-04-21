@@ -20,6 +20,7 @@
       "Bash(bun install)",
       "Bash(bun link)",
       "Bash(bunx tsc*)",
+      "Bash(clawhub inspect *)",
       "Bash(cat *)",
       "Bash(ls *)",
       "Bash(head *)",
