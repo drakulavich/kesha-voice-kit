@@ -38,6 +38,10 @@ export async function showStatus(): Promise<void> {
 
   log.info(formatStatusLine("Runtime", `Bun ${Bun.version}`, true));
   log.info(formatStatusLine("Platform", `${process.platform} ${process.arch}`, true));
+  const mirror = activeModelMirror();
+  if (mirror) {
+    log.info(formatStatusLine("Mirror", mirror, true));
+  }
   log.info("");
 
   if (installed) {
@@ -58,6 +62,18 @@ export async function showStatus(): Promise<void> {
 
 function kesheCacheDir(): string {
   return process.env.KESHA_CACHE_DIR ?? join(homedir(), ".cache", "kesha");
+}
+
+/**
+ * Read the effective `KESHA_MODEL_MIRROR` base URL (#121). Returns null when
+ * unset, empty, or whitespace. Matches the Rust side's `model_mirror()` in
+ * `rust/src/models.rs` — keeping them in lockstep lets `kesha status`
+ * surface the exact URL the engine will hit on the next `kesha install`.
+ */
+export function activeModelMirror(): string | null {
+  const raw = process.env.KESHA_MODEL_MIRROR ?? "";
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function listInstalledVoices(): string[] {

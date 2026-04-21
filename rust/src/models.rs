@@ -72,6 +72,38 @@ pub fn cache_dir() -> PathBuf {
         .join("kesha")
 }
 
+/// Optional HuggingFace mirror base URL. Respects `KESHA_MODEL_MIRROR` (#121).
+///
+/// Empty string and unset both fall through to the default upstream. Trailing
+/// slashes are stripped so callers can safely concat with URL paths.
+pub fn model_mirror() -> Option<String> {
+    match std::env::var("KESHA_MODEL_MIRROR") {
+        Ok(s) => {
+            let trimmed = s.trim().trim_end_matches('/');
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+/// Rewrite a `huggingface.co` URL onto `KESHA_MODEL_MIRROR` if set. The HF
+/// path hierarchy (`/<owner>/<repo>/resolve/<ref>/<file>`) is preserved
+/// verbatim after the mirror base so operators can clone with `wget --mirror`
+/// or plain `rsync`. URLs on other hosts (e.g. github.com release assets)
+/// pass through unchanged — this env var only redirects model fetches.
+pub fn apply_mirror(url: &str) -> String {
+    if let Some(base) = model_mirror() {
+        if let Some(path) = url.strip_prefix("https://huggingface.co") {
+            return format!("{base}{path}");
+        }
+    }
+    url.to_string()
+}
+
 pub fn asr_model_dir() -> String {
     cache_dir()
         .join("models")
@@ -99,6 +131,9 @@ pub fn is_lang_id_cached(dir: &str) -> bool {
 }
 
 pub fn install(no_cache: bool) -> Result<()> {
+    if let Some(base) = model_mirror() {
+        eprintln!("Model mirror active: {base}");
+    }
     // ASR models (ONNX backend only for now)
     let asr_dir = asr_model_dir();
     if no_cache || !is_asr_cached(&asr_dir) {
@@ -119,6 +154,107 @@ pub fn install(no_cache: bool) -> Result<()> {
 
     cleanup_legacy();
     Ok(())
+}
+
+#[cfg(test)]
+mod mirror_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // env-var tests race if parallelized — serialize them here.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct MirrorEnv {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        original: Option<String>,
+    }
+
+    impl MirrorEnv {
+        fn set(val: &str) -> Self {
+            let guard = ENV_LOCK.lock().unwrap();
+            let original = std::env::var("KESHA_MODEL_MIRROR").ok();
+            unsafe {
+                std::env::set_var("KESHA_MODEL_MIRROR", val);
+            }
+            Self {
+                _guard: guard,
+                original,
+            }
+        }
+        fn unset() -> Self {
+            let guard = ENV_LOCK.lock().unwrap();
+            let original = std::env::var("KESHA_MODEL_MIRROR").ok();
+            unsafe {
+                std::env::remove_var("KESHA_MODEL_MIRROR");
+            }
+            Self {
+                _guard: guard,
+                original,
+            }
+        }
+    }
+
+    impl Drop for MirrorEnv {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(v) => unsafe { std::env::set_var("KESHA_MODEL_MIRROR", v) },
+                None => unsafe { std::env::remove_var("KESHA_MODEL_MIRROR") },
+            }
+        }
+    }
+
+    #[test]
+    fn unset_env_falls_through_to_upstream() {
+        let _g = MirrorEnv::unset();
+        assert_eq!(model_mirror(), None);
+        assert_eq!(
+            apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
+            "https://huggingface.co/foo/bar/resolve/main/file.onnx"
+        );
+    }
+
+    #[test]
+    fn empty_env_falls_through_to_upstream() {
+        let _g = MirrorEnv::set("");
+        assert_eq!(model_mirror(), None);
+        assert_eq!(
+            apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
+            "https://huggingface.co/foo/bar/resolve/main/file.onnx"
+        );
+    }
+
+    #[test]
+    fn whitespace_env_falls_through_to_upstream() {
+        let _g = MirrorEnv::set("   ");
+        assert_eq!(model_mirror(), None);
+    }
+
+    #[test]
+    fn rewrites_hf_url_onto_mirror_base_preserving_path() {
+        let _g = MirrorEnv::set("https://mirror.example.com/kesha");
+        assert_eq!(
+            apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
+            "https://mirror.example.com/kesha/foo/bar/resolve/main/file.onnx"
+        );
+    }
+
+    #[test]
+    fn strips_trailing_slash_from_mirror_base() {
+        let _g = MirrorEnv::set("https://mirror.example.com/kesha/");
+        assert_eq!(
+            apply_mirror("https://huggingface.co/x/y/resolve/main/z.bin"),
+            "https://mirror.example.com/kesha/x/y/resolve/main/z.bin"
+        );
+    }
+
+    #[test]
+    fn non_hf_urls_pass_through_unchanged() {
+        // github.com release assets (engine binary + avspeech sidecar) must
+        // NOT be redirected — KESHA_MODEL_MIRROR only covers model files.
+        let _g = MirrorEnv::set("https://mirror.example.com");
+        let url = "https://github.com/drakulavich/kesha-voice-kit/releases/download/v1.3.0/kesha-engine-darwin-arm64";
+        assert_eq!(apply_mirror(url), url);
+    }
 }
 
 #[cfg(all(test, feature = "tts"))]
@@ -191,7 +327,8 @@ mod tts_tests {
 fn download_hf_files(repo: &str, files: &[&str], dest_dir: &str) -> Result<()> {
     fs::create_dir_all(dest_dir)?;
     for file in files {
-        let url = format!("https://huggingface.co/{}/resolve/main/{}", repo, file);
+        let upstream = format!("https://huggingface.co/{}/resolve/main/{}", repo, file);
+        let url = apply_mirror(&upstream);
         let dest = Path::new(dest_dir).join(file);
         eprintln!("Downloading {}...", file);
 
@@ -231,7 +368,8 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         fs::create_dir_all(parent)?;
     }
     eprintln!("GET {}", f.rel_path);
-    let response = ureq::get(f.url)
+    let url = apply_mirror(f.url);
+    let response = ureq::get(&url)
         .call()
         .with_context(|| format!("download {}", f.rel_path))?;
     let mut reader = response.into_body().into_reader();
