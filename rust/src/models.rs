@@ -3,31 +3,68 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-const ASR_HF_REPO: &str = "istupakov/parakeet-tdt-0.6b-v3-onnx";
-const ASR_FILES: &[&str] = &[
-    "encoder-model.onnx",
-    "encoder-model.onnx.data",
-    "decoder_joint-model.onnx",
-    "nemo128.onnx",
-    "vocab.txt",
-];
-
-const LANG_ID_HF_REPO: &str = "drakulavich/SpeechBrain-coreml";
-const LANG_ID_FILES: &[&str] = &[
-    "lang-id-ecapa.onnx",
-    "lang-id-ecapa.onnx.data",
-    "labels.json",
-];
-
-/// A file in a model manifest. SHA256 is optional for legacy models; new
-/// TTS downloads verify it.
-#[cfg(feature = "tts")]
+/// A file in a model manifest. `rel_path` is relative to `cache_dir()`,
+/// uniform across ASR / lang-id / TTS. Every entry carries a pinned
+/// SHA-256 so an upstream rehost or a compromised `KESHA_MODEL_MIRROR`
+/// produces a clear hash mismatch rather than silently delivering
+/// unverified weights (#174).
 #[derive(Debug, Clone)]
 pub struct ModelFile {
     pub rel_path: &'static str,
     pub url: &'static str,
     pub sha256: &'static str,
 }
+
+/// Parakeet TDT v3 ONNX weights. Hashes pinned from a clean install against
+/// `huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx` — an upstream
+/// republish becomes a deliberate PR to bump.
+const ASR_FILES: &[ModelFile] = &[
+    ModelFile {
+        rel_path: "models/parakeet-tdt-v3/encoder-model.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx",
+        sha256: "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1",
+    },
+    ModelFile {
+        rel_path: "models/parakeet-tdt-v3/encoder-model.onnx.data",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx.data",
+        sha256: "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36",
+    },
+    ModelFile {
+        rel_path: "models/parakeet-tdt-v3/decoder_joint-model.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.onnx",
+        sha256: "e978ddf6688527182c10fde2eb4b83068421648985ef23f7a86be732be8706c1",
+    },
+    ModelFile {
+        rel_path: "models/parakeet-tdt-v3/nemo128.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx",
+        sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
+    },
+    ModelFile {
+        rel_path: "models/parakeet-tdt-v3/vocab.txt",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
+        sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+    },
+];
+
+/// SpeechBrain ECAPA-TDNN VoxLingua107 lang-id ONNX. Hashes pinned from
+/// `huggingface.co/drakulavich/SpeechBrain-coreml`.
+const LANG_ID_FILES: &[ModelFile] = &[
+    ModelFile {
+        rel_path: "models/lang-id-ecapa/lang-id-ecapa.onnx",
+        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/main/lang-id-ecapa.onnx",
+        sha256: "4af3b6a5b4165f78715fe363ed6b7650d5f77ed0a6e2966c500eadc46252a288",
+    },
+    ModelFile {
+        rel_path: "models/lang-id-ecapa/lang-id-ecapa.onnx.data",
+        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/main/lang-id-ecapa.onnx.data",
+        sha256: "78fefd776536f4a686bcf705dedb8e9a497b924a2107a949b42a24b2b90174a2",
+    },
+    ModelFile {
+        rel_path: "models/lang-id-ecapa/labels.json",
+        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/main/labels.json",
+        sha256: "9e515c3c7932659fd1e6c3febc395529d0a8092328adb9f5e75185a04bb523d0",
+    },
+];
 
 #[cfg(feature = "tts")]
 pub fn kokoro_manifest() -> Vec<ModelFile> {
@@ -136,37 +173,97 @@ pub fn lang_id_model_dir() -> String {
 }
 
 pub fn is_asr_cached(dir: &str) -> bool {
-    ASR_FILES.iter().all(|f| Path::new(dir).join(f).exists())
+    has_all_files(dir, ASR_FILES)
 }
 
 pub fn is_lang_id_cached(dir: &str) -> bool {
-    LANG_ID_FILES
-        .iter()
-        .all(|f| Path::new(dir).join(f).exists())
+    has_all_files(dir, LANG_ID_FILES)
+}
+
+/// Caller passes the per-model dir (e.g. `asr_model_dir()`); we pull the
+/// basename out of each manifest entry's cache-relative `rel_path` and
+/// check it's present. Keeps the public `dir`-based API while letting the
+/// manifest own the full URL + hash for the download path.
+fn has_all_files(dir: &str, files: &[ModelFile]) -> bool {
+    let dir = Path::new(dir);
+    files.iter().all(|f| {
+        Path::new(f.rel_path)
+            .file_name()
+            .map(|n| dir.join(n).exists())
+            .unwrap_or(false)
+    })
 }
 
 pub fn install(no_cache: bool) -> Result<()> {
     log_mirror_once();
-    // ASR models (ONNX backend only for now)
-    let asr_dir = asr_model_dir();
-    if no_cache || !is_asr_cached(&asr_dir) {
-        download_hf_files(ASR_HF_REPO, ASR_FILES, &asr_dir)?;
-        eprintln!("ASR models downloaded.");
-    } else {
-        eprintln!("ASR models already cached.");
-    }
+    let cache = cache_dir();
 
-    // Lang-ID models
-    let lang_id_dir = lang_id_model_dir();
-    if no_cache || !is_lang_id_cached(&lang_id_dir) {
-        download_hf_files(LANG_ID_HF_REPO, LANG_ID_FILES, &lang_id_dir)?;
-        eprintln!("Lang-ID models downloaded.");
-    } else {
-        eprintln!("Lang-ID models already cached.");
+    // Always run through download_verified so a silently-corrupted cached
+    // file gets caught on the next `kesha install` (hash mismatch → fall
+    // through and re-download). The per-file "OK (cached)" / "GET" log is
+    // emitted by download_verified itself — intentionally no summary line
+    // so the verbose-per-file output is the single source of truth.
+    for f in ASR_FILES {
+        download_verified(&cache, f, no_cache)?;
+    }
+    for f in LANG_ID_FILES {
+        download_verified(&cache, f, no_cache)?;
     }
 
     cleanup_legacy();
     Ok(())
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::*;
+
+    #[test]
+    fn asr_manifest_has_expected_files_and_hashes() {
+        assert_eq!(ASR_FILES.len(), 5);
+        assert!(ASR_FILES.iter().any(|f| f.rel_path.ends_with("/vocab.txt")));
+        assert!(ASR_FILES
+            .iter()
+            .any(|f| f.rel_path.ends_with("/encoder-model.onnx")));
+        for f in ASR_FILES {
+            assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
+            assert!(
+                f.url.starts_with("https://huggingface.co/"),
+                "{f:?} url not on huggingface.co — mirror rewrite relies on that prefix"
+            );
+            assert!(
+                f.rel_path.starts_with("models/parakeet-tdt-v3/"),
+                "{f:?} rel_path must live under the per-model cache dir"
+            );
+        }
+    }
+
+    #[test]
+    fn lang_id_manifest_has_expected_files_and_hashes() {
+        assert_eq!(LANG_ID_FILES.len(), 3);
+        assert!(LANG_ID_FILES
+            .iter()
+            .any(|f| f.rel_path.ends_with("/labels.json")));
+        for f in LANG_ID_FILES {
+            assert_eq!(f.sha256.len(), 64);
+            assert!(f.url.starts_with("https://huggingface.co/"));
+            assert!(f.rel_path.starts_with("models/lang-id-ecapa/"));
+        }
+    }
+
+    #[test]
+    fn verify_sha256_matches_and_mismatches() -> Result<()> {
+        let tmp = std::env::temp_dir().join("kesha-sha256-test.bin");
+        fs::write(&tmp, b"hello world")?;
+        // `echo -n 'hello world' | shasum -a 256`
+        let expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+        assert!(verify_sha256(&tmp, expected)?);
+        assert!(!verify_sha256(&tmp, &"0".repeat(64))?);
+        // Uppercase hashes in the manifest would still match (case-insensitive).
+        assert!(verify_sha256(&tmp, &expected.to_uppercase())?);
+        let _ = fs::remove_file(&tmp);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -337,29 +434,6 @@ mod tts_tests {
     }
 }
 
-// Note: no SHA-256 verification on the ASR + lang-id paths yet (only the
-// TTS path does — see `download_verified`). Tracked as follow-up in #174;
-// an untrusted `KESHA_MODEL_MIRROR` can substitute weights silently here.
-fn download_hf_files(repo: &str, files: &[&str], dest_dir: &str) -> Result<()> {
-    fs::create_dir_all(dest_dir)?;
-    for file in files {
-        let upstream = format!("https://huggingface.co/{}/resolve/main/{}", repo, file);
-        let url = apply_mirror(&upstream);
-        let dest = Path::new(dest_dir).join(file);
-        eprintln!("Downloading {}...", file);
-
-        let response = ureq::get(&url)
-            .call()
-            .with_context(|| format!("failed to download {}", file))?;
-
-        let mut reader = response.into_body().into_reader();
-        let mut out = fs::File::create(&dest)
-            .with_context(|| format!("failed to create {}", dest.display()))?;
-        io::copy(&mut reader, &mut out)?;
-    }
-    Ok(())
-}
-
 /// Download every TTS model file: Kokoro English + Piper Russian.
 /// Each file is streamed to disk, then SHA256-verified.
 #[cfg(feature = "tts")]
@@ -374,7 +448,11 @@ pub fn download_tts(no_cache: bool) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "tts")]
+/// Streams a manifest entry to its `cache/<rel_path>` destination, then
+/// SHA-256-verifies. Runs for ASR, lang-id, and TTS (uniform integrity
+/// check — see #174). A cached file that already matches the pinned hash
+/// short-circuits the network round-trip. A mismatch after download
+/// bails out hard so the bad file never loads at inference time.
 fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> {
     let target = cache.join(f.rel_path);
     if !no_cache && target.exists() && verify_sha256(&target, f.sha256)? {
@@ -395,29 +473,26 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     io::copy(&mut reader, &mut out)?;
     drop(out);
     if !verify_sha256(&target, f.sha256)? {
+        // Remove so the existence-only cache probes don't later resurrect
+        // unverified weights (#174). Best-effort — errors here are masked
+        // by the bail below which surfaces the real problem.
+        let _ = fs::remove_file(&target);
         anyhow::bail!("sha256 mismatch for {}", f.rel_path);
     }
     eprintln!("OK  {}", f.rel_path);
     Ok(())
 }
 
-#[cfg(feature = "tts")]
 fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
     use sha2::{Digest, Sha256};
-    let mut file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    // 64 KiB buffer keeps `io::copy` off its 8 KiB default so hashing a
+    // 2.4 GB model file stays IO-bound rather than syscall-bound.
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut reader = std::io::BufReader::with_capacity(65_536, file);
     let mut hasher = Sha256::new();
-    io::copy(&mut file, &mut hasher)?;
-    let actual = hex_encode(&hasher.finalize());
+    io::copy(&mut reader, &mut hasher)?;
+    let actual = format!("{:x}", hasher.finalize());
     Ok(actual.eq_ignore_ascii_case(expected))
-}
-
-#[cfg(feature = "tts")]
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
 }
 
 fn cleanup_legacy() {

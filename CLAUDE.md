@@ -130,6 +130,20 @@ Any plan that names a specific upstream artifact ("Silero via ONNX", "statically
 - Past pivots this rule would have prevented earlier: espeak-ng turned out to be dynamic-link-only in `espeakng-sys` (→ pivoted to system-dep + issue #124); Silero TTS ships PyTorch-only and has no public ONNX export (→ pivoted to Piper in M3).
 - Spike artifacts go in `/tmp/<name>-spike/` and are deleted after the finding is recorded in the plan doc.
 
+### MODEL HASHES ARE PINNED — UPSTREAM BUMPS GO THROUGH A PR
+
+Every entry in `rust/src/models.rs` (ASR, lang-id, TTS) carries a pinned SHA-256. `download_verified` refuses to cache a file whose hash doesn't match. This makes `KESHA_MODEL_MIRROR` safe (a compromised mirror can't silently swap weights) and turns an upstream HuggingFace republish into a deliberate decision rather than a silent swap.
+
+**To bump a model version:**
+
+```bash
+shasum -a 256 ~/.cache/kesha/models/<subdir>/<file>   # compute new hash
+# edit rust/src/models.rs → update sha256 for that ModelFile entry
+cargo test models::manifest_tests                      # confirms shape invariants
+```
+
+Never comment out the verification to "get it working" — that's the exact regression #174 fixed. If a fresh download produces a different hash, the upstream has actually changed; verify the new weights intentionally and then bump the constant.
+
 ### GREPTILE PR REVIEW IS A GATE
 
 PRs receive automated review from Greptile (as a PR comment on each push). Treat P1/P2 findings as merge blockers — address them before marking the PR ready-for-review.
