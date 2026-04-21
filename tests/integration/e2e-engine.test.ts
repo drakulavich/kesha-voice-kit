@@ -147,6 +147,24 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(parsed[0].file).toBe(FIXTURE_RU);
     expect(parsed[0].text.length).toBeGreaterThan(0);
   }, 60_000);
+
+  test("--toon output decodes to the same shape as --json (#138)", async () => {
+    const { decode: decodeToon } = await import("@toon-format/toon");
+    const [jsonRun, toonRun] = await Promise.all([
+      runCli(["--json", FIXTURE_RU]),
+      runCli(["--toon", FIXTURE_RU]),
+    ]);
+    expect(jsonRun.exitCode).toBe(0);
+    expect(toonRun.exitCode).toBe(0);
+    const fromJson = JSON.parse(jsonRun.stdout);
+    const fromToon = decodeToon(toonRun.stdout);
+    // Transcriptions are deterministic across consecutive runs of the same
+    // fixture, so the decoded arrays should match exactly (file, text, lang,
+    // audioLanguage, textLanguage). sttTimeMs varies; strip it before compare.
+    const stripTiming = (arr: unknown[]) =>
+      arr.map((r) => { const { sttTimeMs: _, ...rest } = r as Record<string, unknown>; return rest; });
+    expect(stripTiming(fromToon as unknown[])).toEqual(stripTiming(fromJson));
+  }, 120_000);
 });
 
 describe.skipIf(!engineInstalled)("e2e-lang-detection", () => {

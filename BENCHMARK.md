@@ -130,3 +130,25 @@ Kesha CoreML (ANE):                3.2s  ███
 - **Kesha CoreML** uses FluidAudio on Apple Neural Engine. Sub-second transcription for most voice messages.
 - All engines auto-detect language — no language hints provided.
 - English fixtures are TTS-generated (macOS Samantha voice). Russian fixtures are real Telegram voice messages.
+
+## Output size: `--json` vs `--toon` (#138)
+
+TOON is a compact, LLM-token-efficient encoding of the same data as `--json`. Size savings depend on how uniform the output array is.
+
+| Output shape | Mode | Bytes | vs JSON |
+|---|---|---|---|
+| Plain 3-file batch (flat: `{file, text, lang}`) | `--json` | 252 | baseline |
+| Plain 3-file batch | `--toon` (tabular form) | **117** | **−54%** |
+| Full 3-file batch with nested `audioLanguage` + `textLanguage` | `--json` | 1261 | baseline |
+| Full 3-file batch | `--toon` (block form) | **1077** | **−15%** |
+
+Observations:
+
+- **Flat uniform arrays compact the most** — TOON emits the field list exactly once as a schema header, then one row per object. Byte ratio ≈ token ratio for common LLM tokenizers.
+- **Nested objects fall back to block form** — still smaller than JSON (no braces, no repeated key quotation), but the tabular multiplier doesn't apply.
+- The savings are additive for longer batches because the schema header cost is amortized.
+- Lossless: `JSON.parse(formatJsonOutput(x))` and `decode(formatToonOutput(x))` both return the same `TranscribeResult[]`.
+
+When to use which:
+- `--json` — anything that consumes JSON downstream (scripts, jq pipelines, webhooks).
+- `--toon` — feeding multi-file results directly into an LLM (OpenClaw agents, custom pipelines, voice-message handlers) where token cost matters.

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
-import { mainCommand, installCommand, statusCommand, sayCommand, formatTextOutput, formatJsonOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
+import { decode as decodeToon } from "@toon-format/toon";
+import { mainCommand, installCommand, statusCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -19,6 +20,12 @@ describe("CLI help", () => {
   test("main help contains --json flag", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("--json");
+  });
+
+  test("main help contains --toon flag (#138)", async () => {
+    const usage = await renderUsage(mainCommand);
+    expect(usage).toContain("--toon");
+    expect(usage).toMatch(/TOON|LLM/i);
   });
 
   test("main help contains --lang flag", async () => {
@@ -72,6 +79,53 @@ describe("output formatting", () => {
   test("JSON output: empty array when no results", () => {
     const output = formatJsonOutput([]);
     expect(JSON.parse(output)).toEqual([]);
+  });
+});
+
+describe("TOON output (#138)", () => {
+  test("round-trips multi-file through decode", () => {
+    const input = [
+      { file: "a.ogg", text: "Hello", lang: "en" },
+      { file: "b.ogg", text: "Hola", lang: "es" },
+    ];
+    const output = formatToonOutput(input);
+    const decoded = decodeToon(output);
+    expect(decoded).toEqual(input);
+  });
+
+  test("multi-file uniform array has a single schema header row", () => {
+    const output = formatToonOutput([
+      { file: "a.ogg", text: "Hello", lang: "en" },
+      { file: "b.ogg", text: "World", lang: "en" },
+    ]);
+    // The tabular form emits the schema exactly once (`{file,text,lang}`);
+    // if the encoder ever fell back to per-object mode the field list would
+    // appear on every row — this guards that regression.
+    const schemaRows = output.match(/\{file,text,lang\}/g) ?? [];
+    expect(schemaRows).toHaveLength(1);
+  });
+
+  test("preserves sttTimeMs and nested language fields", () => {
+    const input = [{
+      file: "a.ogg",
+      text: "Hello",
+      lang: "en",
+      sttTimeMs: 427,
+      audioLanguage: { code: "en", confidence: 0.94 },
+      textLanguage: { code: "en", confidence: 0.98 },
+    }];
+    const decoded = decodeToon(formatToonOutput(input));
+    expect(decoded).toEqual(input);
+  });
+
+  test("empty array", () => {
+    const output = formatToonOutput([]);
+    expect(decodeToon(output)).toEqual([]);
+  });
+
+  test("ends with a trailing newline so it composes in pipelines", () => {
+    const output = formatToonOutput([{ file: "a.ogg", text: "Hi", lang: "en" }]);
+    expect(output.endsWith("\n")).toBe(true);
   });
 });
 

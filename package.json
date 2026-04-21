@@ -68,6 +68,7 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
+    "@toon-format/toon": "^2.1.0",
     "citty": "^0.2.2",
     "fastest-levenshtein": "^1.0.16",
     "picocolors": "^1.1.1",

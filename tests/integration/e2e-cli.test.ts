@@ -77,4 +77,13 @@ describe("e2e-cli", () => {
     const output = stdout + stderr;
     expect(output).not.toContain("Did you mean");
   });
+
+  test("--json + --toon are mutually exclusive → exit 2 (#138)", async () => {
+    // Exit 2 fires before any engine spawn, so this runs without the engine
+    // installed and validates the subprocess-level contract (matches the
+    // existing `empty text exits 2` pattern in rust/tests/tts_smoke.rs).
+    const { stderr, exitCode } = await runCli(["--json", "--toon", "a.wav"]);
+    expect(exitCode).toBe(2);
+    expect(stderr.toLowerCase()).toContain("mutually exclusive");
+  });
 });

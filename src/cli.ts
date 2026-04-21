@@ -2,6 +2,7 @@
 
 import { defineCommand, runMain } from "citty";
 import { detect } from "tinyld";
+import { formatToonOutput } from "./toon";
 import { transcribe } from "./lib";
 import { downloadEngine } from "./engine-install";
 import { detectAudioLanguageEngine, detectTextLanguageEngine, getEngineBinPath } from "./engine";
@@ -32,6 +33,7 @@ interface InstallCommandArgs {
 interface MainCommandArgs {
   _: string[];
   json: boolean;
+  toon: boolean;
   verbose: boolean;
   debug: boolean;
   format?: string;
@@ -269,6 +271,11 @@ export const mainCommand = defineCommand({
       description: "Output results as JSON",
       default: false,
     },
+    toon: {
+      type: "boolean",
+      description: "Output results as TOON (compact, LLM-friendly encoding of the same data as --json)",
+      default: false,
+    },
     verbose: {
       type: "boolean",
       description: "Show language detection details",
@@ -292,6 +299,11 @@ export const mainCommand = defineCommand({
     if (args.debug) log.debugEnabled = true;
     const files = args._;
 
+    if ((args.json || args.format === "json") && args.toon) {
+      log.error("--json and --toon are mutually exclusive (pick one output format).");
+      process.exit(2);
+    }
+
     if (files.length === 0) {
       log.info("Usage: kesha <audio_file> [audio_file ...]\n       kesha install [--no-cache]\n       kesha status");
       process.exit(1);
@@ -300,7 +312,7 @@ export const mainCommand = defineCommand({
     let hasError = false;
     const results: TranscribeResult[] = [];
 
-    const wantsLangId = !!(args.lang || args.verbose || args.json || args.format === "transcript" || args.format === "json");
+    const wantsLangId = !!(args.lang || args.verbose || args.json || args.toon || args.format === "transcript" || args.format === "json");
 
     for (const file of files) {
       const startedAt = performance.now();
@@ -353,6 +365,8 @@ export const mainCommand = defineCommand({
 
     if (args.json || args.format === "json") {
       process.stdout.write(formatJsonOutput(results));
+    } else if (args.toon) {
+      process.stdout.write(formatToonOutput(results));
     } else if (args.format === "transcript") {
       process.stdout.write(formatTranscriptOutput(results));
     } else if (args.verbose) {
@@ -463,6 +477,14 @@ export function formatTranscriptOutput(results: TranscribeResult[]): string {
 export function formatJsonOutput(results: TranscribeResult[]): string {
   return JSON.stringify(results, null, 2) + "\n";
 }
+
+/**
+ * TOON encoding of the same data shape as `formatJsonOutput` (#138).
+ * Implementation lives in `./toon` so the public API in `./lib` can
+ * re-export it without going through this file — avoids the runtime
+ * circular dependency that `lib.ts` → `cli.ts` would otherwise create.
+ */
+export { formatToonOutput } from "./toon";
 
 if (import.meta.main) {
   await runCli();
