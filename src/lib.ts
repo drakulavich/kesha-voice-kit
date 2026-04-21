@@ -15,11 +15,10 @@ export { formatToonOutput as toToon } from "./toon";
 
 /**
  * Output shape returned by `kesha --json` and the input shape expected by
- * `toToon`. Re-exported here so programmatic callers can type-check
- * their array without reaching into `./cli`. `export type` is erased at
- * runtime, so no cycle even though the value still lives in `cli.ts`.
+ * `toToon`. Lives in `./types` (since #179) so the public API stops
+ * reaching into the CLI-layer file.
  */
-export type { TranscribeResult } from "./cli";
+export type { TranscribeResult } from "./types";
 
 /** Install Kokoro TTS models. Shorthand for `downloadModel({ tts: true })`. */
 export async function downloadTts(noCache = false): Promise<void> {
