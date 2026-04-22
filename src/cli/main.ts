@@ -21,6 +21,7 @@ interface MainCommandArgs {
   toon: boolean;
   verbose: boolean;
   debug: boolean;
+  vad: boolean;
   format?: string;
   lang?: string;
 }
@@ -73,6 +74,11 @@ export const mainCommand = defineCommand({
       description: "Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)",
       default: false,
     },
+    vad: {
+      type: "boolean",
+      description: "Run Silero VAD preprocessing for long/silence-heavy audio (opt-in; kesha install --vad first)",
+      default: false,
+    },
   },
   async run({ args }: { args: MainCommandArgs }) {
     if (args.debug) log.debugEnabled = true;
@@ -99,7 +105,7 @@ export const mainCommand = defineCommand({
         // Run audio lang-id and transcription concurrently
         const [audioResult, text] = await Promise.all([
           wantsLangId ? detectAudioLanguageEngine(file) : Promise.resolve(null),
-          transcribe(file),
+          transcribe(file, { vad: args.vad }),
         ]);
 
         let audioLanguage: LangDetectResult | undefined;

@@ -75,6 +75,7 @@ kesha --json audio.ogg                     # alias for --format json
 kesha --toon audio.ogg                     # compact LLM-friendly TOON (same data as --json)
 kesha --verbose audio.ogg                  # show language detection details
 kesha --lang en audio.ogg                  # warn if detected language differs
+kesha --vad lecture.m4a                    # segment with Silero VAD first (long/silence-heavy audio)
 kesha status                               # show installed backend info
 ```
 
@@ -90,6 +91,17 @@ $ kesha freedom.ogg tahiti.ogg
 ```
 
 Stdout: transcript. Stderr: errors. Pipe-friendly. Also available as `parakeet` command (backward-compatible alias).
+
+### Long / silence-heavy audio: `--vad`
+
+For meetings, lectures, and podcasts, enable Silero VAD so Parakeet only sees the speech bits. Segment boundaries land at natural speech starts/ends instead of arbitrary cuts, and long silences are skipped entirely.
+
+```bash
+kesha install --vad                   # one-time, ~2.3MB
+kesha --vad lecture.m4a               # VAD segments → per-segment ASR → stitched transcript
+```
+
+Opt-in by design — voice messages (<30s of near-pure speech) don't benefit. Defaults: threshold 0.5, min-speech 250ms, min-silence 100ms, 30ms edge padding. See issue #128.
 
 ## Text-to-Speech
 
@@ -157,6 +169,7 @@ Kesha Voice Kit bundles open-source models optimized for on-device inference:
 | NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~2.5GB | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
 | SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
 | Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
+| Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
 
 All models run through `kesha-engine` — a Rust binary using [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML) on Apple Silicon and [ort](https://github.com/pykeio/ort) (ONNX Runtime) on other platforms.
 

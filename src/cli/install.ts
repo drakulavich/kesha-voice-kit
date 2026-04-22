@@ -9,6 +9,7 @@ interface InstallCommandArgs {
   onnx: boolean;
   "no-cache": boolean;
   tts: boolean;
+  vad: boolean;
 }
 
 const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
@@ -57,9 +58,9 @@ async function askForStar() {
   log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
 }
 
-async function performInstall(noCache: boolean, backend?: string, tts = false) {
+async function performInstall(noCache: boolean, backend?: string, tts = false, vad = false) {
   try {
-    await downloadEngine(noCache, backend, { tts });
+    await downloadEngine(noCache, backend, { tts, vad });
     await askForStar();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -94,9 +95,14 @@ export const installCommand = defineCommand({
       description: "Also install TTS models (Kokoro EN + Piper RU, ~390MB, requires espeak-ng on PATH)",
       default: false,
     },
+    vad: {
+      type: "boolean",
+      description: "Also install Silero VAD (~2.3MB) for long-audio preprocessing (#128)",
+      default: false,
+    },
   },
   async run({ args }: { args: InstallCommandArgs }) {
     const backend = resolveBackendFlag(args.coreml, args.onnx);
-    await performInstall(args["no-cache"], backend, args.tts);
+    await performInstall(args["no-cache"], backend, args.tts, args.vad);
   },
 });

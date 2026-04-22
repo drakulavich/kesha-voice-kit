@@ -2,9 +2,13 @@ import { isEngineInstalled, transcribeEngine } from "./engine";
 
 export interface TranscribeOptions {
   silent?: boolean;
+  /** Run Silero VAD preprocessing: segment the audio first, then transcribe
+   *  each speech span and stitch results (#128). Opt-in — requires the VAD
+   *  model to be installed (`kesha install --vad`). */
+  vad?: boolean;
 }
 
-export async function transcribe(audioPath: string, _opts: TranscribeOptions = {}): Promise<string> {
+export async function transcribe(audioPath: string, opts: TranscribeOptions = {}): Promise<string> {
   if (!isEngineInstalled()) {
     throw new Error(
       "Error: No transcription backend is installed\n\n" +
@@ -16,5 +20,5 @@ export async function transcribe(audioPath: string, _opts: TranscribeOptions = {
     );
   }
 
-  return transcribeEngine(audioPath);
+  return transcribeEngine(audioPath, { vad: opts.vad });
 }

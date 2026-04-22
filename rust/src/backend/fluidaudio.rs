@@ -25,4 +25,12 @@ impl TranscribeBackend for FluidAudioBackend {
             .context("FluidAudio transcription failed")?;
         Ok(result.text)
     }
+
+    fn transcribe_samples(&mut self, samples: &[f32]) -> Result<String> {
+        let result = self
+            .audio
+            .transcribe_samples(samples)
+            .context("FluidAudio sample transcription failed")?;
+        Ok(result.text)
+    }
 }

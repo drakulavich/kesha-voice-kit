@@ -11,6 +11,7 @@ mod text_lang;
 mod transcribe;
 #[cfg(feature = "tts")]
 mod tts;
+mod vad;
 
 #[derive(Parser)]
 #[command(name = "kesha-engine", version)]
@@ -29,6 +30,11 @@ enum Commands {
     Transcribe {
         /// Path to audio file
         audio_path: String,
+        /// Run Silero VAD first; transcribe each detected speech segment
+        /// and stitch the results. Opt-in (#128) — requires the VAD model
+        /// to be installed (`kesha install --vad`).
+        #[arg(long)]
+        vad: bool,
     },
     /// Detect spoken language from audio
     DetectLang {
@@ -49,6 +55,9 @@ enum Commands {
         #[cfg(feature = "tts")]
         #[arg(long)]
         tts: bool,
+        /// Also install Silero VAD (~2.3MB) for long-audio preprocessing (#128).
+        #[arg(long)]
+        vad: bool,
     },
     /// Synthesize speech from text (TTS)
     #[cfg(feature = "tts")]
@@ -290,8 +299,12 @@ fn main() -> Result<()> {
     }
 
     match cli.command {
-        Some(Commands::Transcribe { audio_path }) => {
-            let text = transcribe::transcribe(&audio_path)?;
+        Some(Commands::Transcribe { audio_path, vad }) => {
+            let text = if vad {
+                transcribe::transcribe_with_vad(&audio_path, vad::VadConfig::default())?
+            } else {
+                transcribe::transcribe(&audio_path)?
+            };
             println!("{}", text);
         }
         Some(Commands::DetectLang { audio_path }) => {
@@ -306,6 +319,7 @@ fn main() -> Result<()> {
             no_cache,
             #[cfg(feature = "tts")]
             tts,
+            vad,
         }) => {
             models::install(no_cache)?;
             #[cfg(feature = "tts")]
@@ -313,6 +327,10 @@ fn main() -> Result<()> {
                 ensure_espeak_available()?;
                 models::download_tts(no_cache)?;
                 eprintln!("TTS models installed.");
+            }
+            if vad {
+                models::download_vad(no_cache)?;
+                eprintln!("VAD model installed.");
             }
             eprintln!("Install complete.");
         }

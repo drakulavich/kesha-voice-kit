@@ -97,6 +97,8 @@ async function downloadAVSpeechSidecar(binPath: string, engineVersion: string): 
 export interface InstallOptions {
   /** Also install Kokoro TTS models. Requires espeak-ng on PATH. */
   tts?: boolean;
+  /** Also install Silero VAD model for long-audio preprocessing (#128). */
+  vad?: boolean;
 }
 
 export async function downloadEngine(
@@ -193,6 +195,7 @@ export async function downloadEngine(
     "install",
     ...(noCache ? ["--no-cache"] : []),
     ...(options.tts ? ["--tts"] : []),
+    ...(options.vad ? ["--vad"] : []),
   ];
   const proc = Bun.spawnSync([binPath, ...installArgs], {
     stdout: "pipe",

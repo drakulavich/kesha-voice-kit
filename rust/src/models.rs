@@ -46,6 +46,18 @@ const ASR_FILES: &[ModelFile] = &[
     },
 ];
 
+/// Silero VAD v5 ONNX (snakers4/silero-vad). Single 2.3 MB file; not cached
+/// on HuggingFace so we pull from the GitHub raw URL. Hash pinned (#128).
+///
+/// NOTE: `apply_mirror` only rewrites `huggingface.co` URLs, so this one
+/// passes through unchanged even with `KESHA_MODEL_MIRROR` set. Operators
+/// who need a mirrored VAD can pre-stage the file under the cache dir.
+const VAD_FILES: &[ModelFile] = &[ModelFile {
+    rel_path: "models/silero-vad/silero_vad.onnx",
+    url: "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx",
+    sha256: "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+}];
+
 /// SpeechBrain ECAPA-TDNN VoxLingua107 lang-id ONNX. Hashes pinned from
 /// `huggingface.co/drakulavich/SpeechBrain-coreml`.
 const LANG_ID_FILES: &[ModelFile] = &[
@@ -172,12 +184,24 @@ pub fn lang_id_model_dir() -> String {
         .to_string()
 }
 
+pub fn vad_model_dir() -> String {
+    cache_dir()
+        .join("models")
+        .join("silero-vad")
+        .to_string_lossy()
+        .to_string()
+}
+
 pub fn is_asr_cached(dir: &str) -> bool {
     has_all_files(dir, ASR_FILES)
 }
 
 pub fn is_lang_id_cached(dir: &str) -> bool {
     has_all_files(dir, LANG_ID_FILES)
+}
+
+pub fn is_vad_cached(dir: &str) -> bool {
+    has_all_files(dir, VAD_FILES)
 }
 
 /// Caller passes the per-model dir (e.g. `asr_model_dir()`); we pull the
@@ -266,6 +290,17 @@ mod manifest_tests {
                 "{f:?} rel_path must live under the per-model cache dir"
             );
         }
+    }
+
+    #[test]
+    fn vad_manifest_has_expected_files_and_hashes() {
+        assert_eq!(VAD_FILES.len(), 1);
+        let f = &VAD_FILES[0];
+        assert!(f.rel_path.ends_with("/silero_vad.onnx"));
+        assert_eq!(f.sha256.len(), 64);
+        // Silero VAD is hosted on github.com, not HF — apply_mirror leaves
+        // non-HF URLs untouched, so this is by design.
+        assert!(f.url.starts_with("https://github.com/snakers4/silero-vad/"));
     }
 
     #[test]
@@ -462,6 +497,16 @@ mod tts_tests {
             }
         }
     }
+}
+
+/// Download the Silero VAD ONNX. Opt-in via `kesha install --vad` (#128).
+/// Single-file manifest, so `parallel_download` reduces to one HTTP round
+/// trip — keeps the uniform hash-verify + retry path.
+pub fn download_vad(no_cache: bool) -> Result<()> {
+    log_mirror_once();
+    let cache = cache_dir();
+    let refs: Vec<&ModelFile> = VAD_FILES.iter().collect();
+    parallel_download(&cache, &refs, no_cache)
 }
 
 /// Download every TTS model file: Kokoro English + Piper Russian.

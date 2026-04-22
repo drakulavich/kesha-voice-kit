@@ -42,8 +42,18 @@ async function runEngine(args: string[]): Promise<{ stdout: string; stderr: stri
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
 
-export async function transcribeEngine(audioPath: string): Promise<string> {
-  const { stdout, stderr, exitCode } = await runEngine(["transcribe", audioPath]);
+export interface TranscribeEngineOptions {
+  /** Run Silero VAD preprocessing and transcribe each speech segment (#128). */
+  vad?: boolean;
+}
+
+export async function transcribeEngine(
+  audioPath: string,
+  opts: TranscribeEngineOptions = {},
+): Promise<string> {
+  const args = ["transcribe", audioPath];
+  if (opts.vad) args.push("--vad");
+  const { stdout, stderr, exitCode } = await runEngine(args);
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
   }
