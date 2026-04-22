@@ -182,7 +182,26 @@ fn resolves_from_cache_when_installed() {
             return;
         }
     };
-    // Build a temp cache dir that mirrors the real layout via symlinks.
+    // G2P became a runtime requirement in #123 (Phase 2a). Source dir
+    // comes from the parent `KESHA_CACHE_DIR` (set by the CI runner) —
+    // we copy the 3 ONNX files into the tempdir alongside Kokoro so the
+    // sub-process finds them under the test's own KESHA_CACHE_DIR.
+    let g2p_src = match std::env::var("KESHA_CACHE_DIR") {
+        Ok(c) => {
+            let p = std::path::PathBuf::from(c).join("models/g2p/byt5-tiny");
+            if p.join("encoder_model.onnx").exists() {
+                p
+            } else {
+                eprintln!("skipping: G2P not at $KESHA_CACHE_DIR/models/g2p/byt5-tiny");
+                return;
+            }
+        }
+        Err(_) => {
+            eprintln!("skipping: set KESHA_CACHE_DIR to a cache containing G2P models");
+            return;
+        }
+    };
+
     let tmp = tempfile::tempdir().unwrap();
     let voices_dir = tmp.path().join("models/kokoro-82m/voices");
     std::fs::create_dir_all(&voices_dir).unwrap();
@@ -190,6 +209,16 @@ fn resolves_from_cache_when_installed() {
     // creation requires elevated privileges and the os::unix API is not available).
     std::fs::copy(&model, tmp.path().join("models/kokoro-82m/model.onnx")).unwrap();
     std::fs::copy(&voice, voices_dir.join("af_heart.bin")).unwrap();
+
+    let g2p_dst = tmp.path().join("models/g2p/byt5-tiny");
+    std::fs::create_dir_all(&g2p_dst).unwrap();
+    for f in [
+        "encoder_model.onnx",
+        "decoder_model.onnx",
+        "decoder_with_past_model.onnx",
+    ] {
+        std::fs::copy(g2p_src.join(f), g2p_dst.join(f)).unwrap();
+    }
 
     let bin = env!("CARGO_BIN_EXE_kesha-engine");
     let out = Command::new(bin)

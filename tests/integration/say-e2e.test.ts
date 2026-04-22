@@ -11,10 +11,18 @@ const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
  */
 const SPIKE_MODEL = process.env.KOKORO_MODEL ?? "/tmp/kokoro-spike/model.onnx";
 const SPIKE_VOICE = process.env.KOKORO_VOICE ?? "/tmp/kokoro-spike/af_heart.bin";
-const SPIKE_AVAILABLE = existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE);
+// G2P source dir lives under the inherited KESHA_CACHE_DIR (CI runner
+// layout). Required since #123 Phase 2a — Kokoro pipes through ONNX G2P.
+const G2P_SRC_DIR = process.env.KESHA_CACHE_DIR
+  ? `${process.env.KESHA_CACHE_DIR}/models/g2p/byt5-tiny`
+  : "";
+const G2P_AVAILABLE =
+  G2P_SRC_DIR !== "" && existsSync(`${G2P_SRC_DIR}/encoder_model.onnx`);
+const SPIKE_AVAILABLE = existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE) && G2P_AVAILABLE;
 
 const CACHE_DIR = `/tmp/kesha-e2e-${Date.now()}`;
 const MODEL_DIR = `${CACHE_DIR}/models/kokoro-82m`;
+const G2P_DIR = `${CACHE_DIR}/models/g2p/byt5-tiny`;
 const BUILT_ENGINE = `${new URL("../..", import.meta.url).pathname}rust/target/release/kesha-engine`;
 
 beforeAll(() => {
@@ -22,6 +30,10 @@ beforeAll(() => {
   mkdirSync(`${MODEL_DIR}/voices`, { recursive: true });
   symlinkSync(SPIKE_MODEL, `${MODEL_DIR}/model.onnx`);
   symlinkSync(SPIKE_VOICE, `${MODEL_DIR}/voices/af_heart.bin`);
+  mkdirSync(G2P_DIR, { recursive: true });
+  for (const f of ["encoder_model.onnx", "decoder_model.onnx", "decoder_with_past_model.onnx"]) {
+    symlinkSync(`${G2P_SRC_DIR}/${f}`, `${G2P_DIR}/${f}`);
+  }
 });
 
 function spawnCli(args: string[], extraEnv: Record<string, string> = {}) {
