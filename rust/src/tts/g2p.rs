@@ -63,8 +63,15 @@ fn build_session(path: &Path) -> Result<Session> {
         .with_context(|| format!("open {}", path.display()))
 }
 
-/// Map espeak-style language codes to CharsiuG2P prompt codes. The training
-/// prompts use three-letter ISO codes with optional region suffix.
+/// Map espeak-style language codes to CharsiuG2P prompt codes.
+///
+/// The upstream checkpoint uses non-standard ISO-ish suffixes — Portuguese
+/// is `por-bz` (Brazilian) / `por-po` (European) rather than `-br`/`-pt`,
+/// per the training dictionary names in
+/// <https://github.com/lingjzhu/CharsiuG2P/tree/main/dicts>. Every code in
+/// this table is verified against that directory listing; "ISO-looking"
+/// substitutions (e.g. `por-br`) would silently produce garbage because
+/// the model has never seen that prompt.
 pub fn charsiu_lang(espeak: &str) -> Result<&'static str> {
     Ok(match espeak.to_ascii_lowercase().as_str() {
         "en-us" => "eng-us",
@@ -74,7 +81,8 @@ pub fn charsiu_lang(espeak: &str) -> Result<&'static str> {
         "de" | "de-de" => "ger",
         "es" | "es-es" => "spa",
         "it" | "it-it" => "ita",
-        "pt" | "pt-br" | "pt-pt" => "por-bz",
+        "pt" | "pt-br" => "por-bz",
+        "pt-pt" => "por-po",
         "ja" | "ja-jp" | "jp" => "jpn",
         "zh" | "zh-cn" | "cmn" => "cmn",
         "hi" | "hi-in" => "hin",
@@ -128,10 +136,13 @@ fn g2p_word(sess: &mut G2pSessions, charsiu_code: &str, word: &str) -> Result<St
 
     // --- Encoder ---
     let enc_ids = Array2::<i64>::from_shape_vec((1, n_in), input_ids.clone())?;
-    let enc_mask = Array2::<i64>::from_shape_vec((1, n_in), vec![1_i64; n_in])?;
+    // `Value::from_array` consumes its input, so the attention mask is a
+    // fresh all-ones Array2 at each boundary (encoder, step 0, and every
+    // decode step below). `Array2::ones` is an inline allocation rather
+    // than a clone of an outer binding — same memory, clearer intent.
     let enc_out = sess.encoder.run(ort::inputs![
         "input_ids" => Value::from_array(enc_ids)?,
-        "attention_mask" => Value::from_array(enc_mask.clone())?,
+        "attention_mask" => Value::from_array(Array2::<i64>::ones((1, n_in)))?,
     ])?;
     let (h_shape, h_data) = enc_out["last_hidden_state"].try_extract_tensor::<f32>()?;
     let h_shape_v: Vec<usize> = h_shape.iter().map(|&x| x as usize).collect();
@@ -142,11 +153,16 @@ fn g2p_word(sess: &mut G2pSessions, charsiu_code: &str, word: &str) -> Result<St
     let seed = Array2::<i64>::from_shape_vec((1, 1), vec![PAD])?;
     let step0 = sess.decoder.run(ort::inputs![
         "input_ids" => Value::from_array(seed)?,
-        "encoder_attention_mask" => Value::from_array(enc_mask.clone())?,
+        "encoder_attention_mask" => Value::from_array(Array2::<i64>::ones((1, n_in)))?,
         "encoder_hidden_states" => Value::from_array(encoder_hidden)?,
     ])?;
 
     let (_, logits0) = step0["logits"].try_extract_tensor::<f32>()?;
+    anyhow::ensure!(
+        logits0.len() >= VOCAB_SIZE,
+        "g2p decoder logits too small: got {}, need {VOCAB_SIZE}",
+        logits0.len()
+    );
     let next = argmax(&logits0[..VOCAB_SIZE]) as i64;
 
     // Harvest all 16 "present" KV entries (4 layers × {decoder, encoder} × {key, value}).
@@ -176,7 +192,7 @@ fn g2p_word(sess: &mut G2pSessions, charsiu_code: &str, word: &str) -> Result<St
 
         let mut inputs = ort::inputs![
             "input_ids" => Value::from_array(step_ids)?,
-            "encoder_attention_mask" => Value::from_array(enc_mask.clone())?,
+            "encoder_attention_mask" => Value::from_array(Array2::<i64>::ones((1, n_in)))?,
         ];
         for layer in 0..NUM_DECODER_LAYERS {
             for place in ["decoder", "encoder"] {
@@ -195,6 +211,11 @@ fn g2p_word(sess: &mut G2pSessions, charsiu_code: &str, word: &str) -> Result<St
         let out = sess.decoder_with_past.run(inputs)?;
 
         let (_, logits) = out["logits"].try_extract_tensor::<f32>()?;
+        anyhow::ensure!(
+            logits.len() >= VOCAB_SIZE,
+            "g2p decoder logits too small: got {}, need {VOCAB_SIZE}",
+            logits.len()
+        );
         let next = argmax(&logits[..VOCAB_SIZE]) as i64;
         if next == EOS {
             break;
