@@ -114,13 +114,7 @@ pub fn piper_ru_manifest() -> Vec<ModelFile> {
     ]
 }
 
-/// CharsiuG2P ByT5-tiny ONNX export (FP32) — replaces espeak-ng as the G2P
-/// backend (#123). CC-BY 4.0; attribution is in `NOTICES`. Hashes pinned
-/// from the spike capture; `v6.2.1`-style release pins aren't available on
-/// this repo (no tags), so the pin doubles as both integrity + availability
-/// check — any upstream content change (regular commit or force-push to
-/// `main`, content-addressed under git-LFS) flips the hash and the
-/// download bails.
+/// CharsiuG2P ByT5-tiny ONNX G2P backend (#123). CC-BY 4.0 — see NOTICES.
 #[cfg(feature = "tts")]
 pub fn g2p_onnx_manifest() -> Vec<ModelFile> {
     vec![
