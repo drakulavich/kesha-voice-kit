@@ -10,6 +10,7 @@ import {
 } from "@raycast/api";
 import { useEffect, useState } from "react";
 import { execFile } from "node:child_process";
+import { basename } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -38,12 +39,24 @@ export default function Command() {
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
+    // Guard against setState after unmount + strict-mode double-mount
+    // resurrecting a stale transcription. The subprocess itself is
+    // idempotent (same file → same transcript), so the worst a stray
+    // second run does is a duplicate `kesha --json` call — the setState
+    // gate stops the stale result from clobbering the real one.
+    let mounted = true;
     void transcribe(prefs.keshaBinPath?.trim() || "kesha")
-      .then(setState)
+      .then((next) => {
+        if (mounted) setState(next);
+      })
       .catch((err: unknown) => {
+        if (!mounted) return;
         const message = err instanceof Error ? err.message : String(err);
         setState({ status: "error", message });
       });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   if (state.status === "loading") {
@@ -159,9 +172,4 @@ function buildMarkdown(r: TranscribeResult): string {
   }
   lines.push(meta.join(" · "));
   return lines.join("\n");
-}
-
-function basename(p: string): string {
-  const ix = p.lastIndexOf("/");
-  return ix === -1 ? p : p.slice(ix + 1);
 }
