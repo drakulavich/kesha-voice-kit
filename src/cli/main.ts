@@ -22,6 +22,7 @@ interface MainCommandArgs {
   verbose: boolean;
   debug: boolean;
   vad: boolean;
+  "no-vad": boolean;
   format?: string;
   lang?: string;
 }
@@ -76,7 +77,12 @@ export const mainCommand = defineCommand({
     },
     vad: {
       type: "boolean",
-      description: "Run Silero VAD preprocessing for long/silence-heavy audio (opt-in; kesha install --vad first)",
+      description: "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
+      default: false,
+    },
+    "no-vad": {
+      type: "boolean",
+      description: "Disable VAD preprocessing regardless of duration or install state",
       default: false,
     },
   },
@@ -88,6 +94,12 @@ export const mainCommand = defineCommand({
       log.error("--json and --toon are mutually exclusive (pick one output format).");
       process.exit(2);
     }
+
+    if (args.vad && args["no-vad"]) {
+      log.error("--vad and --no-vad are mutually exclusive.");
+      process.exit(2);
+    }
+    const vadMode = args.vad ? "on" : args["no-vad"] ? "off" : "auto";
 
     if (files.length === 0) {
       log.info("Usage: kesha <audio_file> [audio_file ...]\n       kesha install [--no-cache]\n       kesha status");
@@ -105,7 +117,7 @@ export const mainCommand = defineCommand({
         // Run audio lang-id and transcription concurrently
         const [audioResult, text] = await Promise.all([
           wantsLangId ? detectAudioLanguageEngine(file) : Promise.resolve(null),
-          transcribe(file, { vad: args.vad }),
+          transcribe(file, { vad: vadMode }),
         ]);
 
         let audioLanguage: LangDetectResult | undefined;

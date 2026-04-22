@@ -42,9 +42,15 @@ async function runEngine(args: string[]): Promise<{ stdout: string; stderr: stri
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
 
+/** VAD preprocessing selector.
+ *  - `"auto"` (default): engine decides — VAD when audio ≥ 120 s and model installed
+ *  - `"on"`: force VAD (requires `kesha install --vad`)
+ *  - `"off"`: force full-file pass regardless of duration or install state
+ */
+export type VadMode = "auto" | "on" | "off";
+
 export interface TranscribeEngineOptions {
-  /** Run Silero VAD preprocessing and transcribe each speech segment. */
-  vad?: boolean;
+  vad?: VadMode;
 }
 
 export async function transcribeEngine(
@@ -52,7 +58,8 @@ export async function transcribeEngine(
   opts: TranscribeEngineOptions = {},
 ): Promise<string> {
   const args = ["transcribe", audioPath];
-  if (opts.vad) args.push("--vad");
+  if (opts.vad === "on") args.push("--vad");
+  else if (opts.vad === "off") args.push("--no-vad");
   const { stdout, stderr, exitCode } = await runEngine(args);
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);

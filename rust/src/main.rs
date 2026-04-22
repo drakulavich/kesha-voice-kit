@@ -30,11 +30,15 @@ enum Commands {
     Transcribe {
         /// Path to audio file
         audio_path: String,
-        /// Run Silero VAD first; transcribe each detected speech segment
-        /// and stitch the results. Requires the VAD model to be installed
-        /// (`kesha install --vad`).
-        #[arg(long)]
+        /// Force Silero VAD preprocessing. Requires the VAD model to be
+        /// installed (`kesha install --vad`). Mutually exclusive with
+        /// `--no-vad`. Without either flag, VAD auto-engages on audio
+        /// ≥ 120 s when the model is installed (#187).
+        #[arg(long, conflicts_with = "no_vad")]
         vad: bool,
+        /// Disable VAD preprocessing regardless of duration or install state.
+        #[arg(long = "no-vad")]
+        no_vad: bool,
     },
     /// Detect spoken language from audio
     DetectLang {
@@ -299,12 +303,13 @@ fn main() -> Result<()> {
     }
 
     match cli.command {
-        Some(Commands::Transcribe { audio_path, vad }) => {
-            let text = if vad {
-                transcribe::transcribe_with_vad(&audio_path, vad::VadConfig::default())?
-            } else {
-                transcribe::transcribe(&audio_path)?
-            };
+        Some(Commands::Transcribe {
+            audio_path,
+            vad,
+            no_vad,
+        }) => {
+            let mode = transcribe::VadMode::from_flags(vad, no_vad);
+            let text = transcribe::transcribe(&audio_path, mode)?;
             println!("{}", text);
         }
         Some(Commands::DetectLang { audio_path }) => {

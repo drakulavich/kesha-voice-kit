@@ -98,10 +98,12 @@ For meetings, lectures, and podcasts, enable Silero VAD so Parakeet only sees th
 
 ```bash
 kesha install --vad                   # one-time, ~2.3MB
-kesha --vad lecture.m4a               # VAD segments → per-segment ASR → stitched transcript
+kesha lecture.m4a                     # auto-on when audio ≥ 120s and VAD installed
+kesha --vad short-clip.ogg            # force VAD on any input
+kesha --no-vad meeting.m4a            # force VAD off even on long audio
 ```
 
-Opt-in by design — voice messages (<30s of near-pure speech) don't benefit. Defaults: threshold 0.5, min-speech 250ms, min-silence 100ms, 30ms edge padding. See issue #128.
+Auto-triggers at 120 s so voice messages (< 30 s of near-pure speech) stay on the fast path. If you have long audio without VAD installed, Kesha prints a one-time stderr hint. Defaults: threshold 0.5, min-speech 250 ms, min-silence 100 ms, 30 ms edge padding. See issues #128 (base) and #187 (auto-trigger).
 
 ## Text-to-Speech
 

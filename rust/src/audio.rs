@@ -5,9 +5,9 @@ use rubato::{
     SincInterpolationType, WindowFunction,
 };
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{CodecRegistry, DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::{CodecParameters, CodecRegistry, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::{Hint, Probe};
@@ -24,11 +24,11 @@ fn get_codec_registry() -> CodecRegistry {
     registry
 }
 
-/// Decode audio file to raw f32 mono samples at the native sample rate.
-/// Returns (samples, sample_rate, channels).
-fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
+/// Open `path`, probe format + select the first supported audio track.
+/// Shared by `decode_audio` and `probe_duration_seconds` so container
+/// detection + error messages live in one place.
+fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameters)> {
     let src = std::fs::File::open(path).with_context(|| format!("file not found: {path}"))?;
-
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     let mut hint = Hint::new();
@@ -51,26 +51,32 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
         )
         .with_context(|| format!("unsupported audio format: {path}"))?;
 
-    let mut format = probed.format;
-
-    let track = format
+    let track = probed
+        .format
         .tracks()
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .with_context(|| format!("no supported audio tracks in: {path}"))?;
 
-    let sample_rate = track
-        .codec_params
+    let track_id = track.id;
+    let codec_params = track.codec_params.clone();
+    Ok((probed.format, track_id, codec_params))
+}
+
+/// Decode audio file to raw f32 mono samples at the native sample rate.
+/// Returns (samples, sample_rate, channels).
+fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
+    let (mut format, track_id, codec_params) = open_format(path)?;
+
+    let sample_rate = codec_params
         .sample_rate
         .with_context(|| format!("unknown sample rate in: {path}"))?;
+    let channels = codec_params.channels.map(|c| c.count()).unwrap_or(1);
 
-    let channels = track.codec_params.channels.map(|c| c.count()).unwrap_or(1);
-
-    let track_id = track.id;
     let dec_opts = DecoderOptions::default();
     let codec_registry = get_codec_registry();
     let mut decoder = codec_registry
-        .make(&track.codec_params, &dec_opts)
+        .make(&codec_params, &dec_opts)
         .with_context(|| format!("unsupported codec in: {path}"))?;
 
     let mut all_samples: Vec<f32> = Vec::new();
@@ -223,4 +229,17 @@ pub fn load_audio_truncated(path: &str, max_seconds: f32) -> Result<Vec<f32>> {
     let samples = load_audio(path)?;
     let max_samples = (max_seconds * TARGET_SAMPLE_RATE as f32) as usize;
     Ok(samples.into_iter().take(max_samples).collect())
+}
+
+/// Probe audio duration in seconds without decoding. Returns `None` when the
+/// container doesn't report a frame count (some streaming Ogg/Opus files);
+/// callers should treat `None` as "unknown — skip auto-trigger" rather than
+/// falling back to a decode-and-measure, which would defeat the purpose of a
+/// cheap probe.
+pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
+    let (_format, _track_id, codec_params) = open_format(path)?;
+    match (codec_params.n_frames, codec_params.sample_rate) {
+        (Some(n), Some(sr)) if sr > 0 => Ok(Some(n as f32 / sr as f32)),
+        _ => Ok(None),
+    }
 }
