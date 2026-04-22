@@ -11,6 +11,7 @@ mod text_lang;
 mod transcribe;
 #[cfg(feature = "tts")]
 mod tts;
+mod util;
 mod vad;
 
 #[derive(Parser)]

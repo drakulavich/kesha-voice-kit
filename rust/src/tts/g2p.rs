@@ -1,14 +1,8 @@
-//! Grapheme-to-phoneme via CharsiuG2P ByT5-tiny ONNX (#123 — replaces
-//! espeak-ng). Three ORT sessions (encoder, decoder, decoder-with-past)
-//! plus greedy decoding with explicit KV-cache management.
-//!
-//! The ByT5 tokenizer is byte-level with a `+3` offset (PAD=0, EOS=1,
-//! UNK=2 reserved; actual byte tokens start at 3). Prompts look like
-//! `"<{lang}>: {word}"` where `{lang}` is a CharsiuG2P code (e.g. `eng-us`).
-//!
-//! Session lifetime: loaded once per `text_to_ipa` call, reused across
-//! all words in the input. This matches the Kokoro/Piper/VAD pattern —
-//! per-call load amortized over all words in one synthesis.
+//! Grapheme-to-phoneme via CharsiuG2P ByT5-tiny ONNX (#123). Three ORT
+//! sessions (encoder, decoder, decoder-with-past) plus greedy decoding
+//! with explicit KV-cache management. Byte-level tokenizer adds 3 to each
+//! UTF-8 byte (PAD=0, EOS=1, UNK=2 reserved). Prompt format is
+//! `<{lang}>: {word}` where `{lang}` is a CharsiuG2P code.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -19,6 +13,7 @@ use ort::session::Session;
 use ort::value::Value;
 
 use crate::models;
+use crate::util::argmax;
 
 const PAD: i64 = 0;
 const EOS: i64 = 1;
@@ -54,25 +49,19 @@ impl G2pSessions {
 }
 
 fn build_session(path: &Path) -> Result<Session> {
-    // `ort::Error<SessionBuilder>` isn't Send in 2.0.0-rc.12 so it can't
-    // convert through `?` into `anyhow::Error`. Inline `map_err` at each
-    // boundary — see the spike doc's "ort API gotchas" section.
     Session::builder()
-        .map_err(|e| anyhow::anyhow!("ort session builder: {e}"))?
+        .context("create g2p session builder")?
         .commit_from_file(path)
         .with_context(|| format!("open {}", path.display()))
 }
 
-/// Map espeak-style language codes to CharsiuG2P prompt codes.
-///
-/// The upstream checkpoint uses non-standard ISO-ish suffixes — Portuguese
-/// is `por-bz` (Brazilian) / `por-po` (European) rather than `-br`/`-pt`,
-/// per the training dictionary names in
-/// <https://github.com/lingjzhu/CharsiuG2P/tree/main/dicts>. Every code in
-/// this table is verified against that directory listing; "ISO-looking"
-/// substitutions (e.g. `por-br`) would silently produce garbage because
-/// the model has never seen that prompt.
-pub fn charsiu_lang(espeak: &str) -> Result<&'static str> {
+/// Map espeak-style language codes to CharsiuG2P prompt codes. The
+/// upstream training corpus uses non-standard suffixes — notably
+/// Portuguese is `por-bz` / `por-po` (not `-br`/`-pt`) per the dict
+/// filenames at <https://github.com/lingjzhu/CharsiuG2P/tree/main/dicts>.
+/// "ISO-looking" substitutions would silently produce garbage since the
+/// model has never seen that prompt.
+fn charsiu_lang(espeak: &str) -> Result<&'static str> {
     Ok(match espeak.to_ascii_lowercase().as_str() {
         "en-us" => "eng-us",
         "en" | "en-gb" | "en-uk" => "eng-uk",
@@ -90,9 +79,7 @@ pub fn charsiu_lang(espeak: &str) -> Result<&'static str> {
     })
 }
 
-/// Byte-level tokenization: UTF-8 bytes + 3 (ByT5 reserves 0/1/2), with
-/// trailing EOS. The prompt format (`<lang>: word`) is what the CharsiuG2P
-/// checkpoint was trained on; matches the Python reference exactly.
+/// Byte-level tokenization: `<{lang}>: {word}` → UTF-8 bytes + 3, EOS.
 fn tokenize(charsiu_code: &str, word: &str) -> Vec<i64> {
     let prompt = format!("<{charsiu_code}>: {word}");
     let mut ids: Vec<i64> = prompt.bytes().map(|b| b as i64 + BYTE_OFFSET).collect();
@@ -100,8 +87,7 @@ fn tokenize(charsiu_code: &str, word: &str) -> Vec<i64> {
     ids
 }
 
-/// Decode a run of token IDs back to UTF-8. IDs below `BYTE_OFFSET` are
-/// special tokens (PAD/EOS/UNK) and are dropped silently.
+/// Invert the byte+3 encoding. Special tokens (< `BYTE_OFFSET`) drop silently.
 fn detokenize(ids: &[i64]) -> String {
     let bytes: Vec<u8> = ids
         .iter()
@@ -116,16 +102,9 @@ fn detokenize(ids: &[i64]) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-fn argmax(logits: &[f32]) -> usize {
-    let mut best = 0usize;
-    let mut best_v = f32::NEG_INFINITY;
-    for (i, &v) in logits.iter().enumerate() {
-        if v > best_v {
-            best_v = v;
-            best = i;
-        }
-    }
-    best
+/// Build all 16 KV name keys: `{prefix}.{layer}.{place}.{kv}`.
+fn kv_names(prefix: &str, layer: usize, place: &str, kv: &str) -> String {
+    format!("{prefix}.{layer}.{place}.{kv}")
 }
 
 /// Convert one word to IPA. Sessions are passed in so the caller can amortize
@@ -137,9 +116,7 @@ fn g2p_word(sess: &mut G2pSessions, charsiu_code: &str, word: &str) -> Result<St
     // --- Encoder ---
     let enc_ids = Array2::<i64>::from_shape_vec((1, n_in), input_ids.clone())?;
     // `Value::from_array` consumes its input, so the attention mask is a
-    // fresh all-ones Array2 at each boundary (encoder, step 0, and every
-    // decode step below). `Array2::ones` is an inline allocation rather
-    // than a clone of an outer binding — same memory, clearer intent.
+    // fresh all-ones Array2 at each boundary.
     let enc_out = sess.encoder.run(ort::inputs![
         "input_ids" => Value::from_array(enc_ids)?,
         "attention_mask" => Value::from_array(Array2::<i64>::ones((1, n_in)))?,
@@ -165,17 +142,21 @@ fn g2p_word(sess: &mut G2pSessions, charsiu_code: &str, word: &str) -> Result<St
     );
     let next = argmax(&logits0[..VOCAB_SIZE]) as i64;
 
-    // Harvest all 16 "present" KV entries (4 layers × {decoder, encoder} × {key, value}).
-    let mut present_kv: HashMap<String, Array4<f32>> = HashMap::with_capacity(16);
+    // KV is split two ways: encoder-side entries are constants (the model
+    // never re-emits them), so we build them once and reuse by reference.
+    // Decoder-side entries update every step and are kept in a separate
+    // map we clone each iteration.
+    let mut encoder_kv: HashMap<String, Array4<f32>> = HashMap::with_capacity(8);
+    let mut decoder_kv: HashMap<String, Array4<f32>> = HashMap::with_capacity(8);
     for layer in 0..NUM_DECODER_LAYERS {
-        for place in ["decoder", "encoder"] {
-            for kv in ["key", "value"] {
-                let name = format!("present.{layer}.{place}.{kv}");
+        for kv in ["key", "value"] {
+            for (place, target) in [("encoder", &mut encoder_kv), ("decoder", &mut decoder_kv)] {
+                let name = kv_names("present", layer, place, kv);
                 let (shape, data) = step0[name.as_str()].try_extract_tensor::<f32>()?;
                 let sv: Vec<usize> = shape.iter().map(|&x| x as usize).collect();
                 let arr =
                     Array4::<f32>::from_shape_vec((sv[0], sv[1], sv[2], sv[3]), data.to_vec())?;
-                present_kv.insert(name, arr);
+                target.insert(name, arr);
             }
         }
     }
@@ -195,11 +176,11 @@ fn g2p_word(sess: &mut G2pSessions, charsiu_code: &str, word: &str) -> Result<St
             "encoder_attention_mask" => Value::from_array(Array2::<i64>::ones((1, n_in)))?,
         ];
         for layer in 0..NUM_DECODER_LAYERS {
-            for place in ["decoder", "encoder"] {
-                for kv in ["key", "value"] {
-                    let present_name = format!("present.{layer}.{place}.{kv}");
-                    let past_name = format!("past_key_values.{layer}.{place}.{kv}");
-                    let arr = present_kv
+            for kv in ["key", "value"] {
+                for (place, source) in [("encoder", &encoder_kv), ("decoder", &decoder_kv)] {
+                    let past_name = kv_names("past_key_values", layer, place, kv);
+                    let present_name = kv_names("present", layer, place, kv);
+                    let arr = source
                         .get(&present_name)
                         .expect("present KV missing — step 0 must have populated all 16 entries")
                         .clone();
@@ -223,15 +204,15 @@ fn g2p_word(sess: &mut G2pSessions, charsiu_code: &str, word: &str) -> Result<St
         output_ids.push(next);
 
         // decoder_with_past only emits *decoder*-side presents; encoder KV
-        // stays constant across steps, so we leave those entries untouched.
+        // stays constant across steps, so we leave `encoder_kv` alone.
         for layer in 0..NUM_DECODER_LAYERS {
             for kv in ["key", "value"] {
-                let present_name = format!("present.{layer}.decoder.{kv}");
+                let present_name = kv_names("present", layer, "decoder", kv);
                 let (shape, data) = out[present_name.as_str()].try_extract_tensor::<f32>()?;
                 let sv: Vec<usize> = shape.iter().map(|&x| x as usize).collect();
                 let arr =
                     Array4::<f32>::from_shape_vec((sv[0], sv[1], sv[2], sv[3]), data.to_vec())?;
-                present_kv.insert(present_name, arr);
+                decoder_kv.insert(present_name, arr);
             }
         }
     }
@@ -280,7 +261,6 @@ mod tests {
 
     #[test]
     fn detokenize_drops_specials() {
-        // EOS + PAD + byte('h') + byte('i') → "hi"
         let ids = vec![
             EOS,
             PAD,
@@ -302,6 +282,8 @@ mod tests {
         assert_eq!(charsiu_lang("en-us").unwrap(), "eng-us");
         assert_eq!(charsiu_lang("ru").unwrap(), "rus");
         assert_eq!(charsiu_lang("FR-FR").unwrap(), "fra");
+        assert_eq!(charsiu_lang("pt-br").unwrap(), "por-bz");
+        assert_eq!(charsiu_lang("pt-pt").unwrap(), "por-po");
         assert!(charsiu_lang("xx-XX").is_err());
     }
 

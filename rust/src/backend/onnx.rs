@@ -6,6 +6,7 @@ use ort::session::Session;
 use ort::value::Value;
 
 use crate::audio;
+use crate::util::argmax;
 
 use super::TranscribeBackend;
 
@@ -379,18 +380,6 @@ impl TranscribeBackend for OnnxBackend {
 
         Ok(text)
     }
-}
-
-fn argmax(arr: &[f32]) -> usize {
-    let mut best = 0;
-    let mut best_val = f32::NEG_INFINITY;
-    for (i, &v) in arr.iter().enumerate() {
-        if v > best_val {
-            best_val = v;
-            best = i;
-        }
-    }
-    best
 }
 
 fn top_k_indices(arr: &[f32], k: usize, exclude: usize) -> Vec<usize> {
