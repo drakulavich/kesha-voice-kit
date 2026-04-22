@@ -255,10 +255,10 @@ The repo's brand target is 20 MB *per model family*, not total. FP32 combined (e
 ## Risks
 
 - **CC-BY 4.0 attribution requirement.** Must land `NOTICES` and a reference in `CLAUDE.md`. Easy but easy to forget.
-- **Per-word latency on cold start.** First synthesis pays ~100 ms session-load cost for three sessions. Mitigation: keep the `OnceLock<Mutex<Sessions>>` alive across calls within a process — matches the existing `Kokoro::load` pattern.
+- **Per-word latency on cold start.** First synthesis pays ~100 ms session-load cost for three sessions. Accepted — matches the Kokoro/Piper per-call load pattern. A process-wide session cache would help batch callers but is a separate repo-wide refactor that would also apply to the other engines; not folded into this PR to keep the abstraction consistent.
 - **Multi-word inputs** go through the G2P per word. A 100-word input at 36 ms/word = 3.6 s on this sandbox, dominated by synthesis anyway. Optimisation (batched encoder inference, or a single "whole utterance" pass) is a follow-up, not a blocker.
 - **OpenVoiceOS uses a simpler direct-encoder-decoder ONNX export** (`byt5_g2p_model.onnx` single file); some upstream downstreams expect that format. klebster's encoder+decoder+decoder_with_past split is what Optimum produces for `ORTModelForSeq2SeqLM`. We consciously picked klebster because the KV-cache split runs faster. No interop cost — only we consume the artifact.
-- **ort 2.0.0-rc.12 is a release candidate.** Workspace is already on it; no bump needed. If the line bumps to stable 2.0 mid-implementation, `ort_try!` may become unnecessary — remove it then.
+- **ort 2.0.0-rc.12 is a release candidate.** Workspace is already on it; no bump needed. If the line bumps to stable 2.0 mid-implementation, the inline `map_err(anyhow::Error::msg)` sites may no longer be necessary (stable 2.0 likely relaxes the non-Send `Error<SessionBuilder>` constraint) — strip them then.
 - **INT8 quantization is deferred.** The klebster repo doesn't publish an INT8 variant; generating it at install time is non-deterministic and hostile to hash pinning. Phase 1 ships FP32 with the upstream-pinned SHAs captured here. INT8 lands as a follow-up PR + issue, hosted on `drakulavich/g2p-byt5-tiny-onnx` with its own pinned hash once quantized + parity-checked.
 
 ## Follow-ups
