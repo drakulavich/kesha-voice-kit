@@ -21,6 +21,7 @@
     "SKILL.md",
     "scripts/postinstall.cjs",
     "LICENSE",
+    "NOTICES.md",
     "README.md"
   ],
   "openclaw": {
