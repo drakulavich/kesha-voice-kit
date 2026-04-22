@@ -3,7 +3,7 @@
 **Date**: 2026-04-22
 **Status**: Spike complete; implementation plan proposed
 **Issue**: [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123)
-**Scope**: New `rust/src/tts/g2p_onnx.rs`, model manifest entry, cargo feature flag, parity harness
+**Scope**: New `rust/src/tts/g2p_onnx.rs`, model manifest entry, parity harness, SSML `<phoneme>` override (per-word G2P escape hatch)
 
 ## Problem
 
@@ -17,12 +17,13 @@ Issue #123 acceptance criteria are literal: "`kesha say` produces IPA phonemes p
 
 ## Decision
 
-Wire in the pre-converted ONNX export at [klebster/g2p_multilingual_byT5_tiny_onnx](https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx) (CC-BY 4.0, published 2026-04) and ship it opt-in for one release cycle via a cargo feature swap:
+**Hard swap to the pre-converted ONNX export at [klebster/g2p_multilingual_byT5_tiny_onnx](https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx)** (CC-BY 4.0, published 2026-04). Delete `rust/src/tts/g2p.rs` and drop `espeakng-sys` from the dependency graph in a single PR. No deprecation window.
 
-- `onnx-g2p` (new, default-on) — routes through the ONNX model
-- `legacy-g2p` (opt-in) — keeps the existing espeak-ng path
+**Why no `legacy-g2p` feature:** carrying espeak-ng for one more release cycle means keeping the Windows import-lib synthesis (`dumpbin /exports` + `lib /def:...`), the Linux `LIBCLANG_PATH` build-env, and the macOS `DYLD_FALLBACK_LIBRARY_PATH` runtime-env — i.e. exactly the operational tax this issue exists to remove. The escape hatch for a real regression is `git revert`, not a feature flag. Prior "feature swap" patterns (`system_tts` in #141; the `coreml`/`onnx` split in M2) were for *coexisting* backends — this is a straight replacement.
 
-After one release with the feature swap, `legacy-g2p` is removed entirely. This matches the prior pattern for risky backend swaps (`system_tts` in #141; the `coreml`/`onnx` split in M2) and provides an escape hatch if a real-world regression surfaces.
+**Weights default: FP32** (102 MB across three files), using the pinned hashes captured during the spike (section 1). INT8 quantization (~27 MB) is deferred to a follow-up because it requires a separate quantize-and-republish step (not published upstream) before the hashes can be pinned. FP32 lets Phase 1 start immediately with known-good artifacts; INT8 lands as its own PR once `drakulavich/g2p-byt5-tiny-onnx` mirror hosts the INT8 export.
+
+**SSML `<phoneme>` override is in scope** for this cycle, not deferred. Without it, users hitting G2P quality regressions (`pneumonia → ˈpnuˈmoʊniˌɑi`) have no workaround — and `<phoneme alphabet="ipa" ph="...">` is the exact ergonomic release valve SSML was designed for. Current v1 SSML (#140) strips `<phoneme>` with a warning; this PR wires it to bypass G2P and feed the caller-supplied IPA straight to the synthesis pipeline.
 
 ## Approaches considered and rejected
 
@@ -173,9 +174,9 @@ Two gotchas hit during the Rust spike — call them out so the implementation PR
 
 Tagged to issue #123 acceptance criteria.
 
-### Phase 1 — wire the model (no behaviour change yet)
+### Phase 1 — wire the FP32 model (no behaviour change yet)
 
-- **M1.1** Add a `g2p_onnx` manifest entry to `rust/src/models.rs`:
+- **M1.1** Add a `g2p_onnx` manifest entry to `rust/src/models.rs`. Pinned hashes are the FP32 artifacts captured during the spike (section 1):
   ```rust
   #[cfg(feature = "tts")]
   pub fn g2p_onnx_manifest() -> Vec<ModelFile> {
@@ -192,72 +193,64 @@ Tagged to issue #123 acceptance criteria.
       ]
   }
   ```
-  `cargo test models::manifest_tests` guards the shape invariants.
+  `cargo test models::manifest_tests` guards the shape invariants. `KESHA_MODEL_MIRROR` rewriting applies automatically since all three URLs are on HuggingFace — no mirror-path gymnastics needed.
 - **M1.2** Extend `kesha install --tts` to fetch the g2p manifest alongside Kokoro and Piper. No effect on default paths yet.
 - **M1.3** Add `NOTICES` entry crediting Kleber Noel (ONNX export) and Zhu et al. 2022 (upstream CharsiuG2P). Required by CC-BY 4.0.
 
-### Phase 2 — implement the ONNX G2P module (gated behind a feature flag)
+### Phase 2 — implement the ONNX G2P module (hard swap)
 
-- **M2.1** New cargo features. `Cargo.toml`:
+- **M2.1** `Cargo.toml` changes:
   ```toml
   [features]
-  default = ["onnx", "tts", "onnx-g2p"]
+  default = ["onnx", "tts"]
   tts = ["dep:hound", "dep:thiserror", "dep:ssml-parser"]
-  onnx-g2p = []                          # new default-on
-  legacy-g2p = ["tts", "dep:espeakng-sys"] # opt-in fallback for one release
+  # `espeakng-sys` removed entirely — no `legacy-g2p` feature.
   ```
-  `espeakng-sys` moves from `tts` to `legacy-g2p`.
-- **M2.2** New `rust/src/tts/g2p_onnx.rs`:
+  Drop `espeakng-sys` from `[dependencies]`. Delete `rust/src/tts/g2p.rs`. Neither file nor dependency survives the PR.
+- **M2.2** New `rust/src/tts/g2p_onnx.rs` (renamed to `g2p.rs` on the final push since there's no legacy version to distinguish from):
   - Thin wrapper loading three `ort::Session`s (encoder, decoder, decoder_with_past) via `ort 2.0.0-rc.12`.
   - Public function: `pub fn text_to_ipa(text: &str, lang: &str) -> anyhow::Result<String>`.
-  - Signature matches the existing espeak one so `mod.rs` dispatch stays trivial.
+  - Signature matches the deleted espeak one so `mod.rs` dispatch stays trivial — just a `use` line change.
   - Language codes: map espeak-style (`en-us`, `ru`) to CharsiuG2P codes (`eng-us`, `rus`) via a small match arm; reject unknown codes with a clear error.
   - Tokenization: `"<{lang}>: {word}"` → UTF-8 bytes → `byte + 3` → append EOS(1). Exactly matches the reference.
   - Decode loop: step 0 via `decoder_model` (seeded with PAD=0), harvest full KV; steps 1..128 via `decoder_with_past_model`, updating only decoder KV; break on EOS.
-  - Word-splitting: text is split on whitespace + punctuation, each word run through G2P, results joined with spaces. This matches `g2p.rs`'s output format so the downstream `tokenizer::Tokenizer::encode` doesn't change.
-  - Thread safety: `ort::Session::run` is `&mut self`; wrap each session in a `Mutex`. Static `OnceLock<G2pSessions>` so lazy-load happens once per process.
-- **M2.3** Refactor `rust/src/tts/mod.rs` dispatch:
-  ```rust
-  #[cfg(feature = "onnx-g2p")]
-  use crate::tts::g2p_onnx::text_to_ipa;
-  #[cfg(all(feature = "legacy-g2p", not(feature = "onnx-g2p")))]
-  use crate::tts::g2p::text_to_ipa;
-  ```
-  `g2p.rs` (espeak) stays in-tree behind `#[cfg(feature = "legacy-g2p")]` so `cargo test --features legacy-g2p` still covers it.
-- **M2.4** Runtime error when model files are missing — mirror the existing Kokoro/Piper UX. Message: `"G2P model not installed. Run `kesha install --tts` to download."`
-- **M2.5** Port ort-2.0 gotchas:
-  - `ort_try!` macro for non-Send error conversion (see spike section 7).
-  - `TensorRef::from_array_view` for zero-copy views, `Value::from_array` only where owning is cheaper.
+  - Word-splitting: text is split on whitespace + punctuation, each word run through G2P, results joined with spaces. Matches the deleted `g2p.rs`'s output format so the downstream `tokenizer::Tokenizer::encode` doesn't change.
+  - Session lifetime: follow the existing Kokoro/Piper/VAD pattern — load sessions per-call inside `text_to_ipa`, not a process-global `OnceLock`. Consistent with the rest of the codebase; global caching is a separate, repo-wide refactor if ever wanted.
+- **M2.3** Runtime error when model files are missing — mirror the existing Kokoro/Piper UX. Message: `"G2P model not installed. Run `kesha install --tts` to download."`
+- **M2.4** Port ort-2.0 gotchas:
+  - Non-Send `ort::Error<SessionBuilder>` — handle inline with `.map_err(anyhow::Error::msg)` at callsites (3-4 of them). A dedicated `ort_try!` macro is overkill for this usage count.
+  - `Value::from_array` requires owned ndarrays in 2.0.0-rc.12; `TensorRef::from_array_view(&arr)` when zero-copy views are worth it.
+- **M2.5** SSML `<phoneme alphabet="ipa" ph="...">` — wire into `tts/ssml.rs` so contained text is bypass-G2P and the `ph` IPA is fed directly to the tokenizer. Today this tag strips with a warning (#122 follow-up); this milestone promotes it to a first-class segment variant. `<phoneme alphabet>` values other than `ipa` continue to warn-strip.
 
 ### Phase 3 — parity harness
 
 - **M3.1** `rust/tests/g2p_onnx_parity.rs`:
   - Loads a 200-word CMU dict subset plus a 10-lang × 20-word per-language fixture (Russian, French, German, Japanese, Mandarin, Hindi, Italian, Portuguese-BR, British English).
-  - For each word: run through both backends if `legacy-g2p` is enabled; assert ONNX output is non-empty and valid UTF-8.
-  - `#[cfg(feature = "legacy-g2p")]` branches: also assert edit distance between ONNX and espeak outputs is under a threshold (exact threshold TBD after running; likely accept up to ~30% phoneme-level edit distance because the two toolchains have different conventions for schwa and stress markings). Goal is not pixel-perfect parity — it's "the model is not broken".
-  - Fixture files under `rust/fixtures/g2p/`; sha-pin so a diff in the file is a visible change.
-- **M3.2** Add `BENCHMARK.md` section: "G2P backend". Table rows: backend, binary size delta, latency ms/word @ 1 thread, latency @ 8 threads (where available), PER baseline.
-- **M3.3** Manual perceptual QA: synthesize 20 varied utterances through Kokoro (en-af_heart) and Piper (ru-denis), compare blind. Record results in the PR body. Acceptance criterion #3 literally.
+  - For each word: assert ONNX output is non-empty, valid UTF-8, and contains at least one character from the IPA Unicode block. Since the espeak backend is gone, there's no cross-backend edit-distance check here — parity is validated against the frozen reference corpus committed alongside the test (`rust/fixtures/g2p/reference-ipa.json`) generated from the FP32 model at the pinned SHAs.
+  - Fixture files under `rust/fixtures/g2p/`; the reference IPA JSON is sha-pinned too so a model rehost that changes outputs is a visible test failure.
+- **M3.2** Add `BENCHMARK.md` section: "G2P backend". Table rows: backend, binary size delta, latency ms/word @ 1 thread, PER baseline (8.1% per upstream paper).
+- **M3.3** Manual perceptual QA: synthesize 20 varied utterances through Kokoro (en-af_heart) and Piper (ru-denis), compare against the current v1.4.0 espeak-backed release blind. Record results in the PR body. Acceptance criterion #3 literally.
+- **M3.4** SSML `<phoneme>` parity test: `<speak>He said <phoneme alphabet="ipa" ph="nuˈmoʊniə">pneumonia</phoneme>.</speak>` produces audio where the phoneme override fully replaces what G2P would have emitted for "pneumonia". Regression guard for the ergonomic escape hatch.
 
 ### Phase 4 — docs + release
 
-- **M4.1** Update `CLAUDE.md` TTS section: drop the system-dep bullet, note the new G2P model, mention the feature-flag swap and the one-release deprecation window.
-- **M4.2** Update `README.md` TTS section similarly.
-- **M4.3** Update `rust-test.yml` — drop the `espeak-ng` install step on linux/windows CI (leave it for the `legacy-g2p` matrix row only).
-- **M4.4** Update `build-engine.yml` `features` matrix per the default-features rule: add `onnx-g2p` to every row that today has `tts`.
-- **M4.5** Write release notes: binary size delta, new default (ONNX G2P), deprecation window for `legacy-g2p`, the CC-BY 4.0 attribution.
-- **M4.6** After one release cycle (or on user request), follow-up PR deletes `g2p.rs` and the `legacy-g2p` feature. Close #124 (espeak-ng vendoring) as "no longer needed".
+- **M4.1** Update `CLAUDE.md` TTS section: drop the system-dep bullet, note the new G2P model, remove the espeak-ng build-env lines (`LIBCLANG_PATH`, `DYLD_FALLBACK_LIBRARY_PATH` stays for ORT).
+- **M4.2** Update `README.md` TTS section: remove the `brew install espeak-ng` line. Mention SSML `<phoneme>` override as a new supported tag.
+- **M4.3** Update `rust-test.yml` — drop the `espeak-ng` install step on linux/windows CI entirely. No matrix-row carve-out needed.
+- **M4.4** Update `build-engine.yml` `features` matrix — no new feature to add since `onnx-g2p` isn't a feature flag. The existing `tts` rows cover it automatically.
+- **M4.5** Write release notes: binary size delta (−15 MB engine, +102 MB models when `--tts` is installed), new default (ONNX G2P, hard swap — no opt-in/out), new SSML `<phoneme>` override, the CC-BY 4.0 attribution.
+- **M4.6** Close #124 (espeak-ng vendoring) as "no longer needed" — removing espeak-ng altogether is the cleaner resolution than vendoring it.
 
 ## Binary size impact
 
-| | before | after |
-|---|---|---|
-| Binary (release, stripped) | baseline | **−15 MB** (espeak-ng static link removed) |
-| Cached models (`~/.cache/kesha/`) | 0 | **+102 MB** FP32, or +27 MB INT8 |
-| Net delta when TTS is installed | 0 | +12 MB (INT8) / +87 MB (FP32) |
-| System deps | `espeak-ng` | none |
+| | before | after (FP32 default) | after (INT8 follow-up) |
+|---|---|---|---|
+| Binary (release, stripped) | baseline | **−15 MB** | −15 MB |
+| Cached models (`~/.cache/kesha/`) | 0 | **+102 MB** | +27 MB |
+| Net delta when TTS is installed | 0 | +87 MB | +12 MB |
+| System deps | `espeak-ng` | none | none |
 
-The repo's brand target is 20 MB *per model family*, not total. The FP32 G2P model stays under that if we count only the encoder or decoder alone; combined FP32 is over target. **Strong recommendation: ship INT8 as the default** (27 MB total), with FP32 opt-in via `--g2p-fp32` or an env var for users who want the reference-exact weights.
+The repo's brand target is 20 MB *per model family*, not total. FP32 combined (encoder + both decoder graphs) is 102 MB — over target. Accepted tradeoff for shipping FP32 first: reference-exact weights with pinned upstream SHAs, no quantize-publish-repin dance blocking issue #123. INT8 is tracked as a follow-up issue once `drakulavich/g2p-byt5-tiny-onnx` hosts the quantized export with its own pinned hash.
 
 ## Risks
 
@@ -266,14 +259,14 @@ The repo's brand target is 20 MB *per model family*, not total. The FP32 G2P mod
 - **Multi-word inputs** go through the G2P per word. A 100-word input at 36 ms/word = 3.6 s on this sandbox, dominated by synthesis anyway. Optimisation (batched encoder inference, or a single "whole utterance" pass) is a follow-up, not a blocker.
 - **OpenVoiceOS uses a simpler direct-encoder-decoder ONNX export** (`byt5_g2p_model.onnx` single file); some upstream downstreams expect that format. klebster's encoder+decoder+decoder_with_past split is what Optimum produces for `ORTModelForSeq2SeqLM`. We consciously picked klebster because the KV-cache split runs faster. No interop cost — only we consume the artifact.
 - **ort 2.0.0-rc.12 is a release candidate.** Workspace is already on it; no bump needed. If the line bumps to stable 2.0 mid-implementation, `ort_try!` may become unnecessary — remove it then.
-- **INT8 quantization is not published on the klebster repo as a pinned file.** We'd generate it at install time or we commit to FP32. Preferred path: host the INT8 export we produce on `drakulavich/g2p-byt5-tiny-onnx` (mirror the `drakulavich/SpeechBrain-coreml` precedent) and pin that SHA. Adds one repo, keeps manifest clean.
+- **INT8 quantization is deferred.** The klebster repo doesn't publish an INT8 variant; generating it at install time is non-deterministic and hostile to hash pinning. Phase 1 ships FP32 with the upstream-pinned SHAs captured here. INT8 lands as a follow-up PR + issue, hosted on `drakulavich/g2p-byt5-tiny-onnx` with its own pinned hash once quantized + parity-checked.
 
 ## Follow-ups
 
-- Issue #124 (espeak-ng vendoring) — close as "no longer needed" after `legacy-g2p` is deleted.
-- FluidAudio parity benchmark — optional. Since we converge on the same upstream PyTorch checkpoint, outputs should match byte-for-byte. If they don't, the difference is measurement noise or FluidAudio fine-tuned after conversion. Not a blocker for #123.
-- Homograph disambiguation (`read`, `lead`, `wind`) — requires a POS-tagging preprocessing pass, out of scope. Open a follow-up issue if it surfaces in user reports.
-- SSML `<phoneme>` tag override — bypass G2P, feed the caller-supplied IPA directly. Already listed as out-of-scope in #123 but worth a tracker issue.
+- **INT8 quantization** — file issue, host artifact on `drakulavich/g2p-byt5-tiny-onnx`, parity-check vs FP32, swap manifest SHAs. ~60 MB cache savings for TTS users.
+- **Issue #124 (espeak-ng vendoring)** — close as "no longer needed" as part of this PR's cleanup; removing espeak-ng altogether supersedes vendoring it.
+- **FluidAudio parity benchmark** — optional. Since we converge on the same upstream PyTorch checkpoint, outputs should match byte-for-byte. If they don't, the difference is measurement noise or FluidAudio fine-tuned after conversion. Not a blocker for #123.
+- **Homograph disambiguation** (`read`, `lead`, `wind`) — requires a POS-tagging preprocessing pass, out of scope. Open a follow-up issue if it surfaces in user reports.
 
 ## References
 
