@@ -76,7 +76,13 @@ jobs:
 
   integration-tests:
     needs: changes
-    if: needs.changes.outputs.integration == 'true'
+    # Skip on release/* branches: this job downloads the released engine
+    # binary (the version in `package.json#keshaEngine.version`), which
+    # doesn't exist yet on a version-bump PR — the tag is pushed AFTER
+    # merge per the CLAUDE.md release flow. All other jobs either build
+    # from source (tts-e2e) or test code directly (unit/rust-test), so
+    # end-to-end-against-published coverage is the one thing we skip.
+    if: needs.changes.outputs.integration == 'true' && !startsWith(github.head_ref, 'release/')
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
