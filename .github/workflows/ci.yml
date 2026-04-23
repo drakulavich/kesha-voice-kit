@@ -94,14 +94,6 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      # BRIDGE: integration-tests downloads the released `kesha-engine`
-      # binary, which still dynamic-links libespeak-ng because Phase 2a
-      # (ONNX G2P hard swap, #123) hasn't cut a new release yet. Once a
-      # fresh engine release ships, remove this step — the new binary
-      # has no espeak dep.
-      - name: Install espeak-ng (bridge for released engine binary)
-        run: brew install espeak-ng
-
       - name: 🔊 Setup integration backend
         uses: ./.github/actions/install-parakeet-backend
         with:
