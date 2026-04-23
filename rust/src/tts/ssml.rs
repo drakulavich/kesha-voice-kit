@@ -1,15 +1,19 @@
 //! SSML → linear segment list for the TTS pipeline.
 //!
-//! v1 scope (issue #122):
-//! - `<speak>` root wrapper
-//! - `<break time="...">` → silence segment of the given duration
-//! - plain text inside/between elements → text segment for synthesis
-//! - unknown tags: one stderr warning per tag name, contained text preserved
+//! Supported tags:
+//! - `<speak>` — required root wrapper
+//! - `<break time="...">` — silence of the given duration
+//! - `<phoneme alphabet="ipa" ph="...">text</phoneme>` — bypass G2P and
+//!   feed the IPA in `ph` directly to the synthesis tokenizer. Content
+//!   text (`text` above) is suppressed. `alphabet` defaults to IPA when
+//!   omitted; other values warn-strip with the inner text preserved.
+//! - plain text inside/between elements — synthesized via G2P
+//! - unknown tags — one stderr warning per name, contained text preserved
 
 use std::collections::HashSet;
 use std::time::Duration;
 
-use ssml_parser::elements::ParsedElement;
+use ssml_parser::elements::{ParsedElement, PhonemeAlphabet};
 use ssml_parser::parse_ssml;
 
 /// A linearized slice of an SSML document.
@@ -17,6 +21,9 @@ use ssml_parser::parse_ssml;
 pub enum Segment {
     /// Plain text to feed into the G2P → engine pipeline.
     Text(String),
+    /// Pre-phonemized IPA (from a `<phoneme>` override). Bypasses G2P —
+    /// the tokenizer receives the `ph` string verbatim.
+    Ipa(String),
     /// Silence of the given duration.
     Break(Duration),
 }
@@ -74,6 +81,32 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     .unwrap_or(DEFAULT_BREAK);
                 segments.push(Segment::Break(dur));
                 cursor = span.end;
+            }
+            ParsedElement::Phoneme(attrs) => {
+                // IPA override bypasses G2P. Alphabets other than `ipa`
+                // warn-strip (contained text still flows as a Text segment),
+                // so we only consume the span when the alphabet is IPA or
+                // absent (the spec's implementation-defined default, which
+                // we choose to be IPA since that's the only alphabet both
+                // Kokoro's tokenizer and Piper's phoneme-id map speak).
+                let is_ipa = matches!(&attrs.alphabet, None | Some(PhonemeAlphabet::Ipa));
+                if is_ipa {
+                    push_text_slice(&mut segments, &text, cursor, span.start);
+                    if !attrs.ph.is_empty() {
+                        segments.push(Segment::Ipa(attrs.ph.clone()));
+                    }
+                    cursor = span.end;
+                } else {
+                    let alpha = match &attrs.alphabet {
+                        Some(PhonemeAlphabet::Other(s)) => s.clone(),
+                        _ => "unknown".to_string(),
+                    };
+                    if warned.insert(format!("phoneme[alphabet={alpha}]")) {
+                        eprintln!(
+                            "warning: SSML <phoneme alphabet=\"{alpha}\"> not supported — only \"ipa\" is recognised; falling back to G2P on contained text"
+                        );
+                    }
+                }
             }
             other => {
                 let name = tag_name(other);
@@ -163,6 +196,7 @@ mod tests {
         for s in &segs {
             match s {
                 Segment::Text(_) => text_chunks += 1,
+                Segment::Ipa(_) => panic!("unexpected Ipa segment"),
                 Segment::Break(d) => {
                     assert_eq!(*d, Duration::from_millis(500));
                     breaks += 1;
@@ -263,6 +297,79 @@ mod tests {
             detail: None,
         });
         assert_eq!(tag_name(&el), "say-as");
+    }
+
+    #[test]
+    fn phoneme_with_ipa_alphabet_emits_ipa_segment_and_suppresses_inner_text() {
+        let segs = parse(
+            r#"<speak>He said <phoneme alphabet="ipa" ph="nuˈmoʊniə">pneumonia</phoneme>.</speak>"#,
+        )
+        .unwrap();
+        let ipas: Vec<&str> = segs
+            .iter()
+            .filter_map(|s| match s {
+                Segment::Ipa(p) => Some(p.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ipas, vec!["nuˈmoʊniə"]);
+        // The inner "pneumonia" text must NOT leak into a Text segment —
+        // that would double-speak the word (Kokoro would G2P it too).
+        let all_text: String = segs
+            .iter()
+            .filter_map(|s| match s {
+                Segment::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("|");
+        assert!(
+            !all_text.contains("pneumonia"),
+            "inner text leaked: {all_text:?}"
+        );
+        assert!(
+            all_text.contains("He said"),
+            "outer text missing: {all_text:?}"
+        );
+    }
+
+    #[test]
+    fn phoneme_without_alphabet_defaults_to_ipa() {
+        let segs = parse(r#"<speak><phoneme ph="həˈloʊ">hello</phoneme></speak>"#).unwrap();
+        assert!(segs
+            .iter()
+            .any(|s| matches!(s, Segment::Ipa(p) if p == "həˈloʊ")));
+    }
+
+    #[test]
+    fn phoneme_with_non_ipa_alphabet_falls_back_to_text() {
+        let segs =
+            parse(r#"<speak><phoneme alphabet="x-sampa" ph="h@_'low">hello</phoneme></speak>"#)
+                .unwrap();
+        // Non-IPA warn-strips: inner text flows as a Text segment so the
+        // content still gets synthesized via G2P rather than dropped.
+        assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa(_))));
+        assert!(segs
+            .iter()
+            .any(|s| matches!(s, Segment::Text(t) if t.contains("hello"))));
+    }
+
+    #[test]
+    fn phoneme_with_empty_ph_is_dropped_silently() {
+        let segs = parse(r#"<speak>pre <phoneme ph="">hello</phoneme> post</speak>"#).unwrap();
+        assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa(_))));
+        let all_text: String = segs
+            .iter()
+            .filter_map(|s| match s {
+                Segment::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("|");
+        assert!(
+            !all_text.contains("hello"),
+            "inner text leaked when ph is empty: {all_text:?}"
+        );
     }
 
     #[test]

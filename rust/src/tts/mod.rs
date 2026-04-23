@@ -179,17 +179,10 @@ fn synth_segments_kokoro(
             ssml::Segment::Text(t) => {
                 let ipa = g2p::text_to_ipa(t, lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
-                let ids = tok.encode(&ipa);
-                if ids.is_empty() {
-                    continue; // silent drop of non-speakable fragments
-                }
-                let active = ids.len();
-                let padded = tokenizer::Tokenizer::pad_to_context(ids);
-                let style = voices::select_style(&voice, active);
-                let audio = k
-                    .infer(&padded, style, speed)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
-                out.extend(audio);
+                synth_ipa_kokoro(&ipa, &tok, &voice, &mut k, speed, &mut out)?;
+            }
+            ssml::Segment::Ipa(ph) => {
+                synth_ipa_kokoro(ph, &tok, &voice, &mut k, speed, &mut out)?;
             }
             ssml::Segment::Break(dur) => {
                 let samples = ((dur.as_secs_f64() * sample_rate as f64).round()) as usize;
@@ -203,6 +196,28 @@ fn synth_segments_kokoro(
         ));
     }
     wav::encode_wav(&out, sample_rate).map_err(|e| TtsError::SynthesisFailed(format!("wav: {e}")))
+}
+
+fn synth_ipa_kokoro(
+    ipa: &str,
+    tok: &tokenizer::Tokenizer,
+    voice: &[f32],
+    k: &mut kokoro::Kokoro,
+    speed: f32,
+    out: &mut Vec<f32>,
+) -> Result<(), TtsError> {
+    let ids = tok.encode(ipa);
+    if ids.is_empty() {
+        return Ok(()); // silent drop of non-speakable fragments
+    }
+    let active = ids.len();
+    let padded = tokenizer::Tokenizer::pad_to_context(ids);
+    let style = voices::select_style(voice, active);
+    let audio = k
+        .infer(&padded, style, speed)
+        .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+    out.extend(audio);
+    Ok(())
 }
 
 fn synth_segments_piper(
@@ -222,14 +237,10 @@ fn synth_segments_piper(
             ssml::Segment::Text(t) => {
                 let ipa = g2p::text_to_ipa(t, lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
-                let ids = p.encode(&ipa);
-                if ids.len() <= empty_baseline {
-                    continue; // only BOS/EOS/pad — nothing to speak
-                }
-                let audio = p
-                    .infer_with_speed(&ids, speed)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
-                out.extend(audio);
+                synth_ipa_piper(&ipa, &mut p, empty_baseline, speed, &mut out)?;
+            }
+            ssml::Segment::Ipa(ph) => {
+                synth_ipa_piper(ph, &mut p, empty_baseline, speed, &mut out)?;
             }
             ssml::Segment::Break(dur) => {
                 let samples = ((dur.as_secs_f64() * sample_rate as f64).round()) as usize;
@@ -243,6 +254,24 @@ fn synth_segments_piper(
         ));
     }
     wav::encode_wav(&out, sample_rate).map_err(|e| TtsError::SynthesisFailed(format!("wav: {e}")))
+}
+
+fn synth_ipa_piper(
+    ipa: &str,
+    p: &mut piper::Piper,
+    empty_baseline: usize,
+    speed: f32,
+    out: &mut Vec<f32>,
+) -> Result<(), TtsError> {
+    let ids = p.encode(ipa);
+    if ids.len() <= empty_baseline {
+        return Ok(()); // only BOS/EOS/pad — nothing to speak
+    }
+    let audio = p
+        .infer_with_speed(&ids, speed)
+        .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+    out.extend(audio);
+    Ok(())
 }
 
 fn say_with_kokoro(
