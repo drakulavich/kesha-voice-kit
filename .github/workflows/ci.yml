@@ -38,6 +38,8 @@ jobs:
               - 'tests/integration/**'
               - 'fixtures/**'
               - 'rust/**'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
 
   unit-tests:
     needs: changes
