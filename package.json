@@ -36,8 +36,8 @@
     "test": "bun test",
     "test:unit": "bun test tests/unit/",
     "test:integration": "bun test tests/integration/",
-    "lint": "tsc --noEmit",
-    "lint:tsgo": "tsgo --noEmit",
+    "lint": "bunx tsc --noEmit",
+    "lint:tsgo": "bunx tsgo --noEmit",
     "postinstall": "node scripts/postinstall.cjs"
   },
   "keywords": [
