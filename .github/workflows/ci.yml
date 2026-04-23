@@ -182,16 +182,18 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@v6
 
-      - name: 🍞 Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: 📦 Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 20
+          cache: npm
+          cache-dependency-path: raycast/package-lock.json
 
       - name: 📦 Install
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: 🔍 Lint (ray lint includes tsc --noEmit)
-        run: bun run lint
+        run: npm run lint
 
   pr-comment:
     if: always() && github.event_name == 'pull_request' && (needs.unit-tests.result == 'success' || needs.integration-tests.result == 'success' || needs.tts-e2e.result == 'success')
