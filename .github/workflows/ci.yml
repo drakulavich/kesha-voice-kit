@@ -18,6 +18,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       integration: ${{ steps.filter.outputs.integration }}
+      raycast: ${{ steps.filter.outputs.raycast }}
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v6
@@ -40,6 +41,9 @@ jobs:
               - 'rust/**'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
+            raycast:
+              - 'raycast/**'
+              - '.github/workflows/ci.yml'
 
   unit-tests:
     needs: changes
@@ -165,6 +169,29 @@ jobs:
           KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
           DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
         run: bun test tests/integration/say-e2e.test.ts
+
+  raycast-lint:
+    needs: changes
+    if: needs.changes.outputs.raycast == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: raycast
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+
+      - name: 🍞 Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: 📦 Install
+        run: bun install --frozen-lockfile
+
+      - name: 🔍 Lint (ray lint includes tsc --noEmit)
+        run: bun run lint
 
   pr-comment:
     if: always() && github.event_name == 'pull_request' && (needs.unit-tests.result == 'success' || needs.integration-tests.result == 'success' || needs.tts-e2e.result == 'success')
