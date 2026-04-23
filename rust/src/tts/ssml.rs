@@ -97,9 +97,16 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     }
                     cursor = span.end;
                 } else {
+                    // `is_ipa` above already filtered `None` and `Some(Ipa)`,
+                    // so the only remaining variant today is `Other(s)`. Listed
+                    // exhaustively so a future `ssml-parser` enum addition
+                    // (e.g. explicit `Sampa`) breaks the build here instead of
+                    // silently displaying `"unknown"` in the warning.
                     let alpha = match &attrs.alphabet {
                         Some(PhonemeAlphabet::Other(s)) => s.clone(),
-                        _ => "unknown".to_string(),
+                        Some(PhonemeAlphabet::Ipa) | None => {
+                            unreachable!("filtered by is_ipa above")
+                        }
                     };
                     if warned.insert(format!("phoneme[alphabet={alpha}]")) {
                         eprintln!(
