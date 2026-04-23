@@ -36,6 +36,8 @@
     "test": "bun test",
     "test:unit": "bun test tests/unit/",
     "test:integration": "bun test tests/integration/",
+    "lint": "tsc --noEmit",
+    "lint:tsgo": "tsgo --noEmit",
     "postinstall": "node scripts/postinstall.cjs"
   },
   "keywords": [
@@ -65,6 +67,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20260423.1",
     "fast-xml-parser": "^5.5.10",
     "typescript": "^6.0.2"
   },

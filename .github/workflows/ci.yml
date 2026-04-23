@@ -64,6 +64,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: bunx tsc --noEmit
 
+      - name: 🔬 Type check (tsgo / TS 7 preview, advisory)
+        if: matrix.os == 'ubuntu-latest'
+        continue-on-error: true
+        run: bunx tsgo --noEmit
+
       - name: 🧪 Unit tests
         run: mkdir -p test-results && bun run test:unit --reporter=junit --reporter-outfile=test-results/unit-${{ matrix.os }}.xml
 

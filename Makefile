@@ -1,4 +1,4 @@
-.PHONY: install test unit integration lint smoke-test release publish help
+.PHONY: install test unit integration lint lint-tsgo smoke-test release publish help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -16,6 +16,9 @@ integration: ## Run integration tests
 
 lint: ## Type-check with tsc
 	bunx tsc --noEmit
+
+lint-tsgo: ## Type-check with tsgo (TypeScript 7 native preview, advisory)
+	bunx tsgo --noEmit
 
 smoke-test: ## Run smoke tests against fixtures
 	bun link @drakulavich/kesha-voice-kit
