@@ -15,7 +15,7 @@
 ## Working assumptions
 
 - Branch `docs/readme-trim` already exists (created during spec commit `849cf3f`).
-- All work happens from the repo root: `/Users/anton/Personal/repos/parakeet-cli`.
+- All work happens from the repo root.
 - "Verbatim" means the moved markdown is copied without editing prose, examples, or issue links. The only permitted edit to moved content is demoting the section's `##` heading to `#` when it becomes a standalone file's H1.
 - README keeps image paths (`assets/logo.png`, `assets/benchmark.svg`) at repo-root-relative paths. New docs pages that reference the benchmark link to the existing root-level `BENCHMARK.md` rather than re-embedding images.
 

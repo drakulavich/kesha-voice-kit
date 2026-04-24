@@ -21,7 +21,7 @@ Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Piper). OGG/Op
 
 ## macOS system voices
 
-`kesha say --voice macos-*` routes through `AVSpeechSynthesizer` on macOS, so you get voice synthesis for free — no 490 MB TTS bundle. The sidecar binary ships alongside `kesha-engine` on darwin-arm64 releases (#141); `kesha install` places both in `~/.cache/kesha/bin/`.
+`kesha say --voice macos-*` routes through `AVSpeechSynthesizer` on macOS, so you get voice synthesis for free — no 490 MB TTS bundle. The sidecar binary ships alongside `kesha-engine` on darwin-arm64 releases ([#141](https://github.com/drakulavich/kesha-voice-kit/issues/141)); `kesha install` places both in `~/.cache/kesha/bin/`.
 
 ```bash
 kesha say --list-voices | grep ^macos-                                       # discover installed voices
