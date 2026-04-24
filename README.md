@@ -14,7 +14,7 @@
 <p align="center"><b>Open-source voice toolkit.</b> Optimized for Apple Silicon (CoreML), works on any platform (ONNX fallback).<br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill for LLM agents.</p>
 
 - **Speech-to-text** — 25 languages, ~15x faster than Whisper on Apple Silicon, ~2.5x on CPU
-- **Language detection** — 107 languages from audio, text language via NLLanguageRecognizer
+- **Text-to-speech** — Kokoro (EN) + Piper (RU) + macOS system voices, SSML preview
 - **Rust engine** — single 20MB binary, no ffmpeg, no Python, no native Node addons
 - **OpenClaw-ready** — plug into your LLM agent as a voice processing skill
 
@@ -30,61 +30,17 @@ kesha install       # downloads engine + models
 kesha audio.ogg     # transcript to stdout
 ```
 
-### Air-gapped / corporate mirrors
+Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
 
-Set `KESHA_MODEL_MIRROR` to redirect all HuggingFace model downloads to an internal mirror ([#121](https://github.com/drakulavich/kesha-voice-kit/issues/121)). The HF path hierarchy is preserved, so any HTTP-readable mirror populated with `wget --mirror` or `rsync` works:
-
-```bash
-export KESHA_MODEL_MIRROR=https://models.corp.internal/kesha
-kesha install        # ASR + lang-id + TTS models fetch from your mirror
-kesha status         # confirms the active Mirror URL
-```
-
-Unset / empty falls back to `huggingface.co` with no regression. The engine binary itself still comes from GitHub Releases — this env var only redirects model downloads.
-
-## OpenClaw Integration
-
-Kesha Voice Kit ships as a plugin for [OpenClaw](https://github.com/openclaw/openclaw) — give your LLM agent ears. No API keys, everything runs locally on your machine.
+## Speech-to-text
 
 ```bash
-bun add -g @drakulavich/kesha-voice-kit && kesha install
-openclaw plugins install @drakulavich/kesha-voice-kit
-openclaw config set tools.media.audio.models \
-  '[{"type":"cli","command":"kesha","args":["--format","transcript","{{MediaPath}}"],"timeoutSeconds":15}]'
-```
-
-> If audio transcription is not already enabled: `openclaw config set tools.media.audio.enabled true`
-
-Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribes it locally, and the agent sees enriched context:
-
-```
-Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
-[lang: ru, confidence: 1.00]
-```
-
-Manage the plugin with `openclaw plugins list`, `openclaw plugins disable kesha-voice-kit`, or `openclaw plugins uninstall kesha-voice-kit`.
-
-## Raycast Extension (macOS)
-
-Transcribe audio and speak clipboard text from Raycast's launcher without opening a terminal. Two commands:
-
-- **Transcribe Selected Audio** — pick an audio file in Finder, hit the command, transcript lands on your clipboard.
-- **Speak Clipboard** — synthesize whatever's on your clipboard and play it through the default output.
-
-Source + install instructions: [`raycast/`](raycast/). Tracked in [#145](https://github.com/drakulavich/kesha-voice-kit/issues/145); not yet on the Raycast Store — install via `ray develop` from the subdirectory.
-
-## CLI Tools
-
-```bash
-kesha install                              # download engine and models
 kesha audio.ogg                            # transcribe (plain text)
 kesha --format transcript audio.ogg        # text + language/confidence
 kesha --format json audio.ogg              # full JSON with lang fields
-kesha --json audio.ogg                     # alias for --format json
-kesha --toon audio.ogg                     # compact LLM-friendly TOON (same data as --json)
+kesha --toon audio.ogg                     # compact LLM-friendly TOON
 kesha --verbose audio.ogg                  # show language detection details
 kesha --lang en audio.ogg                  # warn if detected language differs
-kesha --vad lecture.m4a                    # segment with Silero VAD first (long/silence-heavy audio)
 kesha status                               # show installed backend info
 ```
 
@@ -101,85 +57,19 @@ $ kesha freedom.ogg tahiti.ogg
 
 Stdout: transcript. Stderr: errors. Pipe-friendly. Also available as `parakeet` command (backward-compatible alias).
 
-### Long / silence-heavy audio: `--vad`
+For long / silence-heavy audio, use `--vad` (auto-on past 120 s). Details: [docs/vad.md](docs/vad.md).
 
-For meetings, lectures, and podcasts, enable Silero VAD so Parakeet only sees the speech bits. Segment boundaries land at natural speech starts/ends instead of arbitrary cuts, and long silences are skipped entirely.
+## Text-to-speech
 
-```bash
-kesha install --vad                   # one-time, ~2.3MB
-kesha lecture.m4a                     # auto-on when audio ≥ 120s and VAD installed
-kesha --vad short-clip.ogg            # force VAD on any input
-kesha --no-vad meeting.m4a            # force VAD off even on long audio
-```
-
-Auto-triggers at 120 s so voice messages (< 30 s of near-pure speech) stay on the fast path. If you have long audio without VAD installed, Kesha prints a one-time stderr hint. Defaults: threshold 0.5, min-speech 250 ms, min-silence 100 ms, 30 ms edge padding. See issues #128 (base) and #187 (auto-trigger).
-
-## Text-to-Speech
-
-Kesha speaks back via Kokoro-82M (English) and Piper (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Piper. Pass `--voice` to override.
+Kesha speaks back via Kokoro-82M (English) and Piper (Russian) — voice auto-picks from the text's language:
 
 ```bash
-kesha install --tts                 # ~490MB (Kokoro + Piper RU + ONNX G2P, opt-in)
+kesha install --tts                      # ~490MB (Kokoro + Piper RU + ONNX G2P, opt-in)
 kesha say "Hello, world" > hello.wav
-kesha say "Привет, мир" > privet.wav    # auto-routes to ru-denis
-echo "long text" | kesha say > reply.wav
-kesha say --out reply.wav "text"
-kesha say --voice en-af_heart "text"    # explicit voice overrides auto-routing
-kesha say --list-voices
+kesha say "Привет, мир" > privet.wav     # auto-routes to ru-denis
 ```
 
-Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Piper). OGG/Opus and MP3 are tracked in follow-up issues. Grapheme-to-phoneme runs entirely through ONNX (CharsiuG2P ByT5-tiny, [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123)) — no `espeak-ng` system dep.
-
-**Supported voices:**
-- English: `en-af_heart` (default), plus any Kokoro voice you download into `~/.cache/kesha/models/kokoro-82m/voices/`
-- Russian: `ru-denis` (default). More speakers (dmitri, irina, ruslan) are ready to drop in once needed.
-- macOS system voices: `macos-<identifier-or-language>` routes to `AVSpeechSynthesizer`. Zero install, any of the 180+ voices already on your Mac.
-
-### macOS system voices
-
-`kesha say --voice macos-*` routes through `AVSpeechSynthesizer` on macOS, so you get voice synthesis for free — no 490 MB TTS bundle. The sidecar binary ships alongside `kesha-engine` on darwin-arm64 releases (#141); `kesha install` places both in `~/.cache/kesha/bin/`.
-
-```bash
-kesha say --list-voices | grep ^macos-                                       # discover installed voices
-kesha say --voice macos-com.apple.voice.compact.en-US.Samantha "Hello" > out.wav
-kesha say --voice macos-ru-RU "Привет, мир" > hello-ru.wav                   # language-code fallback
-```
-
-Voice id format: `macos-<id>` where `<id>` is either a full Apple identifier (`com.apple.voice.compact.en-US.Samantha`) or a language code (`en-US`, `ru-RU`) — the Swift helper tries the identifier first and falls back to the language. Output is mono float32 @ 22050 Hz, structurally identical to Piper.
-
-Quality tradeoff is honest: macOS system voices are notification-grade. Use them when you want zero-install TTS on macOS; keep Kokoro/Piper for anything that needs to sound good.
-
-### SSML (preview)
-
-`kesha say --ssml` accepts [SSML](https://www.w3.org/TR/speech-synthesis11/) for pauses and text-structuring. v1 is deliberately small:
-
-```bash
-kesha say --ssml '<speak>Hello <break time="500ms"/> world.</speak>'
-kesha say --ssml --voice ru-denis '<speak>Привет <break time="1s"/> мир.</speak>'
-```
-
-| Tag | Status |
-|---|---|
-| `<speak>` | ✅ required root |
-| `<break time="Nms"\|"Ns"\|default>` | ✅ inserts silence of the given duration |
-| plain text inside `<speak>` | ✅ synthesized via the selected engine |
-| `<emphasis>`, `<prosody>`, `<phoneme>`, `<say-as>` | ⚠️ stripped with a stderr warning (contained text still synthesized); tracked in [#122](https://github.com/drakulavich/kesha-voice-kit/issues/122) |
-| `<!DOCTYPE>` | ❌ rejected (hardening against XXE) |
-
-SSML is opt-in via the explicit `--ssml` flag — inputs that happen to contain `<angle brackets>` aren't misinterpreted as SSML.
-
-## What's Inside
-
-Kesha Voice Kit bundles open-source models optimized for on-device inference:
-
-| Model | Task | Size | Source |
-|---|---|---|---|
-| NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~2.5GB | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
-| SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
-| Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
-| Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
-
-All models run through `kesha-engine` — a Rust binary using [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML) on Apple Silicon and [ort](https://github.com/pykeio/ort) (ONNX Runtime) on other platforms.
+macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tts.md](docs/tts.md).
 
 ## Performance
 
@@ -189,48 +79,39 @@ Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
 ![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](assets/benchmark.svg)
 
-<details>
-<summary>Full results with per-file breakdown</summary>
+See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + English).
 
-See [BENCHMARK.md](BENCHMARK.md) — includes Russian (real voice messages) and English transcription results with all four engines.
+## What's Inside
 
-</details>
+| Model | Task | Size | Source |
+|---|---|---|---|
+| NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~2.5GB | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
+| SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
+| Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
+| Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
+| Kokoro-82M / Piper (opt-in) | Text-to-speech | ~490MB | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) · [Piper](https://github.com/rhasspy/piper) |
 
-## Supported Audio Formats
+All models run through `kesha-engine` — a Rust binary using [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML) on Apple Silicon and [ort](https://github.com/pykeio/ort) (ONNX Runtime) on other platforms.
 
-Built-in audio decoding via [symphonia](https://github.com/pdeljanov/Symphonia) — no ffmpeg required:
+Audio decoding via [symphonia](https://github.com/pdeljanov/Symphonia) — WAV, MP3, OGG/Opus, FLAC, AAC, M4A. No ffmpeg.
 
-| Format | Extension |
-|---|---|
-| WAV | `.wav` |
-| MP3 | `.mp3` |
-| OGG Vorbis/Opus | `.ogg`, `.opus` |
-| FLAC | `.flac` |
-| AAC / M4A | `.aac`, `.m4a` |
+## Languages
 
-## Supported Languages
+- **Speech-to-text (25):** Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Ukrainian.
+- **Audio language detection (107):** [full list](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa).
 
-**Speech-to-text (25):** :bulgaria: Bulgarian, :croatia: Croatian, :czech_republic: Czech, :denmark: Danish, :netherlands: Dutch, :gb: English, :estonia: Estonian, :finland: Finnish, :fr: French, :de: German, :greece: Greek, :hungary: Hungarian, :it: Italian, :latvia: Latvian, :lithuania: Lithuanian, :malta: Maltese, :poland: Polish, :portugal: Portuguese, :romania: Romanian, :ru: Russian, :slovakia: Slovak, :slovenia: Slovenian, :es: Spanish, :sweden: Swedish, :ukraine: Ukrainian
+## Integrations
 
-**Audio language detection (107):** Full list at [speechbrain/lang-id-voxlingua107-ecapa](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa)
-
-## Architecture
-
-```
-kesha audio.ogg
-  → kesha-engine (Rust binary)
-    ├── Apple Silicon? → FluidAudio (CoreML / Neural Engine)
-    └── Other?        → ort (ONNX Runtime / CPU)
-  → transcript to stdout
-```
+- **OpenClaw** — give your LLM agent ears. Install & config: [docs/openclaw.md](docs/openclaw.md).
+- **Raycast** (macOS) — transcribe selected audio & speak clipboard from the launcher. Source + install: [`raycast/`](raycast/).
 
 ## Programmatic API
 
 ```typescript
 import { transcribe, downloadModel } from "@drakulavich/kesha-voice-kit/core";
 
-await downloadModel();                    // install engine + models
-const text = await transcribe("audio.ogg"); // transcribe
+await downloadModel();                       // install engine + models
+const text = await transcribe("audio.ogg");  // transcribe
 ```
 
 ## Requirements
