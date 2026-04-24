@@ -8,6 +8,15 @@ CLI and engine versions are **decoupled** — see `CLAUDE.md` for details. Tags
 with a `-cli` suffix are CLI-only patches that reuse the previous engine
 binary.
 
+## [1.4.3] — 2026-04-24
+
+### Changed
+- README trimmed from 247 → 128 lines. Advanced sections (VAD, TTS, OpenClaw
+  integration, air-gapped model mirror) moved into dedicated pages under
+  `docs/` with one-line pointers from the README. (#203)
+
+CLI-only release; engine v1.4.1 unchanged.
+
 ## [1.4.2] — 2026-04-23
 
 ### Added
