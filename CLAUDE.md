@@ -28,6 +28,21 @@ Two interfaces: the CLI and a programmatic API exported from `@drakulavich/kesha
 - TypeScript executed directly by Bun — no build step
 - The engine is a Rust binary invoked as a subprocess — not linked in-process
 
+### PYTHON DEPENDENCIES GO IN A VENV — NEVER SYSTEM-WIDE
+
+When investigating, spiking, or comparing against an upstream Python reference (piper-tts, misaki, phonemizer, num2words, etc.), **always create a venv first**. Never run `pip install --break-system-packages`, never `pip3 install <pkg>` against the system interpreter, never use `pipx` for libraries (only for global CLIs the user explicitly wants). The `--break-system-packages` flag exists because modern Python distros refuse system-wide installs for safety; bypassing it pollutes every project on the machine and shadows versions other tools expect.
+
+Throwaway recipe:
+
+```bash
+python3 -m venv /tmp/<spike-name>-venv
+/tmp/<spike-name>-venv/bin/pip install --quiet <pkg>
+/tmp/<spike-name>-venv/bin/python3 -c "..."
+rm -rf /tmp/<spike-name>-venv      # when done
+```
+
+If the spike persists into project work, ask which env tool the user wants (uv, poetry, requirements.txt) rather than installing system-wide as a stopgap. Past offence: 2026-04-26 spike installed `piper-tts`, `misaki`, `num2words`, `spacy`, `phonemizer-fork`, `en-core-web-sm` directly into pyenv 3.13 system site-packages — user had to flag it for cleanup.
+
 ### RELEASE PROCESS — CLI AND ENGINE ARE VERSIONED INDEPENDENTLY
 
 `package.json#version` (CLI) and `package.json#keshaEngine.version` (engine, mirrored in `rust/Cargo.toml`) are **decoupled**. `src/engine-install.ts` downloads from `v${keshaEngine.version}`, falling back to `package.json#version`.

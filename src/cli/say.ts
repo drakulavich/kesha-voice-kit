@@ -3,17 +3,21 @@ import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
 import { log } from "../log";
 import { say, SayError } from "../say";
 
+/** Workaround for #207 (Piper `ru-denis` unintelligible) — remove when Piper-ru is fixed. */
+const RU_DARWIN_FALLBACK_VOICE = "macos-com.apple.voice.compact.ru-RU.Milena";
+
 /** Map a detected language code to a default voice id. Unknown / low-confidence → undefined. */
 export function pickVoiceForLang(
   code: string | undefined,
   confidence: number,
+  platform: NodeJS.Platform = process.platform,
 ): string | undefined {
   if (!code || confidence < 0.5) return undefined;
   switch (code) {
     case "en":
       return "en-af_heart";
     case "ru":
-      return "ru-denis";
+      return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-denis";
     default:
       return undefined;
   }
