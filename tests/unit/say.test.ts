@@ -63,8 +63,15 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("en", 0.95)).toBe("en-af_heart");
   });
 
-  it("returns ru-denis for Russian with high confidence", () => {
-    expect(pickVoiceForLang("ru", 0.95)).toBe("ru-denis");
+  it("returns Milena for Russian on darwin (Piper ru-denis is unintelligible — #207)", () => {
+    expect(pickVoiceForLang("ru", 0.95, "darwin")).toBe(
+      "macos-com.apple.voice.compact.ru-RU.Milena",
+    );
+  });
+
+  it("falls back to ru-denis for Russian on non-darwin (no AVSpeech available)", () => {
+    expect(pickVoiceForLang("ru", 0.95, "linux")).toBe("ru-denis");
+    expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-denis");
   });
 
   it("returns undefined below 0.5 confidence (too ambiguous)", () => {

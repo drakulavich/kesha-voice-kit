@@ -3,17 +3,25 @@ import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
 import { log } from "../log";
 import { say, SayError } from "../say";
 
-/** Map a detected language code to a default voice id. Unknown / low-confidence → undefined. */
+/**
+ * Map a detected language code to a default voice id. Unknown / low-confidence → undefined.
+ *
+ * Russian on darwin routes to AVSpeech / Milena because Piper `ru-denis` is currently
+ * unintelligible — see #207. Non-darwin keeps `ru-denis` (no AVSpeech available).
+ */
 export function pickVoiceForLang(
   code: string | undefined,
   confidence: number,
+  platform: NodeJS.Platform = process.platform,
 ): string | undefined {
   if (!code || confidence < 0.5) return undefined;
   switch (code) {
     case "en":
       return "en-af_heart";
     case "ru":
-      return "ru-denis";
+      return platform === "darwin"
+        ? "macos-com.apple.voice.compact.ru-RU.Milena"
+        : "ru-denis";
     default:
       return undefined;
   }
