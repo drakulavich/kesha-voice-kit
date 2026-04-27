@@ -3,11 +3,13 @@
 use std::path::Path;
 
 pub mod g2p;
+pub mod g2p_espeak;
 pub mod kokoro;
 pub mod piper;
 pub mod ssml;
 pub mod tokenizer;
 pub mod voices;
+pub mod vosk;
 pub mod wav;
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]

@@ -303,7 +303,7 @@ pub fn is_g2p_cached(dir: &str) -> bool {
     })
 }
 
-// Used by vosk.rs (Task 1.3) — not yet wired, suppress until that phase lands.
+// Used by tts::vosk in tests; wired into production code in Task 1.5.
 #[cfg(feature = "tts")]
 #[allow(dead_code)]
 pub fn vosk_ru_model_dir() -> String {
@@ -313,7 +313,7 @@ pub fn vosk_ru_model_dir() -> String {
         .to_string()
 }
 
-// Used by vosk.rs (Task 1.3) — not yet wired, suppress until that phase lands.
+// Used by tts::vosk in tests; wired into production code in Task 1.5.
 #[cfg(feature = "tts")]
 #[allow(dead_code)]
 pub fn is_vosk_ru_cached(dir: &str) -> bool {
@@ -585,8 +585,7 @@ mod tts_tests {
     fn vosk_ru_manifest_has_expected_files() {
         let m = vosk_ru_manifest();
         assert_eq!(m.len(), 6);
-        let names: std::collections::HashSet<&str> =
-            m.iter().map(|f| f.rel_path).collect();
+        let names: std::collections::HashSet<&str> = m.iter().map(|f| f.rel_path).collect();
         for f in [
             "models/vosk-ru/model.onnx",
             "models/vosk-ru/dictionary",
@@ -599,7 +598,9 @@ mod tts_tests {
         }
         for f in &m {
             assert!(f.sha256.len() == 64, "sha256 must be 64 hex chars");
-            assert!(f.url.starts_with("https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/"));
+            assert!(f.url.starts_with(
+                "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/"
+            ));
         }
     }
 
