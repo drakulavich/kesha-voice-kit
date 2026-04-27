@@ -59,6 +59,9 @@ sha2 = "0.10"
 ssml-parser = { version = "0.1", optional = true }
 
 tempfile = { version = "3", optional = true }
+# Pinned exactly so transitive minor bumps can't silently mutate the IPA
+# our `g2p_parity` test freezes — see #207.
+misaki-rs = { version = "=0.3.0", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

@@ -356,7 +356,7 @@ const text = await transcribe("audio.ogg");
 - **CoreML engine**: macOS 14+, Apple Silicon (arm64)
 - **ONNX engine**: macOS, Linux, Windows
 - `ffmpeg` is **not required** — the Rust engine uses symphonia + rubato
-- **TTS**: no system deps. G2P runs as ONNX (CharsiuG2P ByT5-tiny, #123) alongside Kokoro/Piper.
+- **TTS**: no system deps. G2P for English uses [`misaki-rs`](https://github.com/MicheleYin/misaki-rs) (embedded lexicon + POS, #207); other languages use ONNX CharsiuG2P ByT5-tiny (#123).
 
 ## TTS
 
@@ -370,10 +370,10 @@ Opt-in via `kesha install --tts` (downloads Kokoro + Piper + ONNX G2P, ~490 MB).
 
 - TTS models are **never auto-downloaded** — `kesha say` fails loudly with a `kesha install --tts` hint when models are missing.
 - `kesha say` writes WAV mono f32 to stdout unless `--out` is given. Stderr is progress/errors only.
-- G2P uses CharsiuG2P ByT5-tiny ONNX (`rust/src/tts/g2p.rs`, FP32, ~100 MB), shared across Kokoro and Piper pipelines. See [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123) and `docs/superpowers/specs/2026-04-22-onnx-g2p-spike.md`.
+- G2P split (post-#207): English (`en`/`en-us`/`en-gb`) routes to embedded `misaki-rs` (Kokoro-trained inventory, no system deps, OOV words letter-spell). Other languages still use CharsiuG2P ByT5-tiny ONNX (`rust/src/tts/g2p.rs`, FP32, ~100 MB) until per-language replacements land (#210 for Russian, #212 for fr/it/es/pt). See [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123) for original CharsiuG2P spike.
 - **Auto-routing:** when `--voice` is omitted, the TS CLI calls `NLLanguageRecognizer` on the input text and picks `en-af_heart` or `ru-denis`. Confidence < 0.5 or unmapped language falls through to the engine default. `pickVoiceForLang` in `src/cli.ts` is the routing table — add a language by adding a match arm.
 - **SSML** (opt-in via `--ssml`): uses the `ssml-parser` crate; supports `<speak>` root and `<break time="...">` for silence. Unknown tags (`<emphasis>`, `<prosody>`, `<phoneme>`, `<say-as>`) warn to stderr once per name and are stripped, but contained text is still synthesized. Hardening: required `<speak>` root, `<!DOCTYPE>` rejected anywhere in input. `tts::ssml::parse` returns `Vec<Segment>`; `tts::say()` loads the engine once and concatenates f32 samples for text vs silence for breaks before a single `wav::encode_wav`. See issue #122 for the full scope matrix and future tag support.
-- Kokoro ONNX: `input_ids` (int64 `[1,N]`), `style` (f32 `[1,256]` — rank-2), `speed` (f32 `[1]`). Output name `"waveform"`. Voice file 510 rows × 256 cols.
+- Kokoro ONNX (post-#207, official `kokoro-onnx` v1.0 release): `tokens` (int64 `[1,N]`), `style` (f32 `[1,256]` — rank-2), `speed` (f32 `[1]`). Output name `"audio"`. Voice file 510 rows × 256 cols. The earlier HF onnx-community variant used `input_ids`/`waveform` and produced broken audio with `af_heart`.
 - Piper ONNX: `input` (int64 `[1,N]` — BOS + pad-interleaved phoneme IDs + EOS), `input_lengths` (int64 `[1]`), `scales` (f32 `[3]` = `[noise_scale, length_scale, noise_w]`). Output name `"output"`, rank-4 `[1,1,1,T]`. `--rate` is mapped to Piper via `length_scale = voice_default / speed`.
 - **AVSpeech** (#141, `system_tts` feature, default-on for darwin-arm64 release builds): `kesha-engine` spawns the `say-avspeech` Swift helper. Runtime path resolution tries sibling-of-exe first (release layout: `~/.cache/kesha/bin/say-avspeech` next to `kesha-engine`) and falls back to the build-time `$OUT_DIR/say-avspeech` baked in by `build.rs` for `cargo run` / `cargo test`. UTF-8 text on stdin, voice id as argv[1]; `--list-voices` prints `identifier|language|name` rows that the Rust side prefixes with `macos-` and merges into `say --list-voices`. Output: complete mono f32 IEEE_FLOAT WAV @ 22050 Hz. Gotcha: AVSpeechSynthesizer callbacks dispatch on the main queue, so the helper MUST pump `CFRunLoopRun()` — `DispatchSemaphore` hangs. `--rate` not wired yet (AVSpeechUtterance has its own `.rate`, mapping TBD). SSML + AVSpeech explicitly rejected in v1.
 - `KESHA_ENGINE_BIN` — override the engine-binary path (useful when iterating on `rust/target/release/kesha-engine`).

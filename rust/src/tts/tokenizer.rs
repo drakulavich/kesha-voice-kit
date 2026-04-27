@@ -5,9 +5,8 @@ use std::collections::HashMap;
 
 const VOCAB_JSON: &str = include_str!("../../fixtures/tts/kokoro_vocab.json");
 
-/// Kokoro's max context length. Input tensor is padded to this size.
-pub const KOKORO_MAX_TOKENS: usize = 512;
-/// Max *active* tokens — we reserve room for a leading+trailing 0 pad.
+/// Max *active* tokens — Kokoro's published context length is 512; we wrap
+/// with a leading+trailing 0, leaving 510 for actual phoneme IDs.
 pub const KOKORO_MAX_ACTIVE: usize = 510;
 
 pub struct Tokenizer {
@@ -31,19 +30,18 @@ impl Tokenizer {
             .collect()
     }
 
-    /// Pad to Kokoro's 512-token context with leading+trailing 0 tokens.
-    /// Truncates anything beyond [`KOKORO_MAX_ACTIVE`] silently.
+    /// Wrap with a single leading+trailing 0 — matches `kokoro-onnx` upstream
+    /// (`tokens = [[0, *tokens, 0]]`). Truncates beyond [`KOKORO_MAX_ACTIVE`]
+    /// silently. Earlier versions padded to 512 with trailing zeros, which the
+    /// model interpreted as additional silence/noise tokens — see #207.
     pub fn pad_to_context(mut ids: Vec<i64>) -> Vec<i64> {
         if ids.len() > KOKORO_MAX_ACTIVE {
             ids.truncate(KOKORO_MAX_ACTIVE);
         }
-        let mut out = Vec::with_capacity(KOKORO_MAX_TOKENS);
+        let mut out = Vec::with_capacity(ids.len() + 2);
         out.push(0);
         out.extend(ids);
         out.push(0);
-        while out.len() < KOKORO_MAX_TOKENS {
-            out.push(0);
-        }
         out
     }
 }
@@ -81,20 +79,17 @@ mod tests {
     }
 
     #[test]
-    fn pads_short_to_context() {
+    fn wraps_with_leading_and_trailing_zero() {
         let padded = Tokenizer::pad_to_context(vec![1, 2, 3]);
-        assert_eq!(padded.len(), KOKORO_MAX_TOKENS);
-        assert_eq!(&padded[..5], &[0, 1, 2, 3, 0]);
+        assert_eq!(padded, vec![0, 1, 2, 3, 0]);
     }
 
     #[test]
-    fn truncates_long_to_context() {
+    fn truncates_beyond_max_active() {
         let ids: Vec<i64> = (1..=600).collect();
         let padded = Tokenizer::pad_to_context(ids);
-        assert_eq!(padded.len(), KOKORO_MAX_TOKENS);
-        // Still has leading 0
+        assert_eq!(padded.len(), KOKORO_MAX_ACTIVE + 2);
         assert_eq!(padded[0], 0);
-        // Trailing pad 0 is at index 511 (last char of vocab is truncated to fit)
-        assert_eq!(padded[KOKORO_MAX_TOKENS - 1], 0);
+        assert_eq!(padded[padded.len() - 1], 0);
     }
 }

@@ -1,7 +1,11 @@
 //! Kokoro-82M ONNX inference session.
 //!
-//! Inputs:  `input_ids` (int64 [1,N]), `style` (f32 [1,256]), `speed` (f32 [1])
-//! Output:  `waveform` (f32 [1,T]) at 24 kHz
+//! Inputs:  `tokens` (int64 [1,N]), `style` (f32 [1,256]), `speed` (f32 [1])
+//! Output:  `audio` (f32 [T]) at 24 kHz
+//!
+//! Tensor names follow the kokoro-onnx official release. The earlier HF
+//! onnx-community variant used `(input_ids, waveform)` and produced
+//! unintelligible audio with `af_heart` — see #207.
 
 use std::path::Path;
 
@@ -43,12 +47,12 @@ impl Kokoro {
         let sp = Value::from_array(Array1::<f32>::from_vec(vec![speed]))?;
 
         let outputs = self.session.run(ort::inputs![
-            "input_ids" => ids,
-            "style"     => st,
-            "speed"     => sp,
+            "tokens" => ids,
+            "style"  => st,
+            "speed"  => sp,
         ])?;
 
-        let (_shape, data) = outputs["waveform"].try_extract_tensor::<f32>()?;
+        let (_shape, data) = outputs["audio"].try_extract_tensor::<f32>()?;
         Ok(data.to_vec())
     }
 }

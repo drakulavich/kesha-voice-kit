@@ -30,9 +30,11 @@ pub fn load_voice(path: &Path) -> anyhow::Result<Vec<f32>> {
 }
 
 /// Select the style embedding row for a given active-token count.
-/// Indexes by `min(token_count - 1, VOICE_ROWS - 1)` (clamp both ends to valid range).
+/// Indexes `voice[token_count]` (clamped to `VOICE_ROWS - 1`) to match
+/// `kokoro-onnx` upstream — earlier code used `token_count - 1` (off-by-one),
+/// see #207.
 pub fn select_style(voice: &[f32], token_count: usize) -> &[f32] {
-    let row = token_count.saturating_sub(1).min(VOICE_ROWS - 1);
+    let row = token_count.min(VOICE_ROWS - 1);
     &voice[row * VOICE_COLS..(row + 1) * VOICE_COLS]
 }
 
@@ -188,10 +190,10 @@ mod tests {
                 voice.push(row as f32);
             }
         }
-        // token_count = 8 should pick row 7
+        // token_count = 8 picks row 8 (kokoro-onnx uses voice[len(tokens)]).
         let s = select_style(&voice, 8);
-        assert_eq!(s[0], 7.0);
-        assert_eq!(s[VOICE_COLS - 1], 7.0);
+        assert_eq!(s[0], 8.0);
+        assert_eq!(s[VOICE_COLS - 1], 8.0);
     }
 
     fn populate_cache(cache: &Path) {

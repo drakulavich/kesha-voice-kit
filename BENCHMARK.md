@@ -144,6 +144,8 @@ Both engines preserve enough signal for downstream agents to act on the content 
 
 Grapheme-to-phoneme conversion for Kokoro (English) and Piper (Russian) ran on `espeak-ng` through v1.3.0; v1.4.0 replaced it with [klebster/g2p_multilingual_byT5_tiny_onnx](https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx) (CharsiuG2P ByT5-tiny ONNX, FP32). See issue [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123).
 
+> **Updated post-#207:** English moved off CharsiuG2P to embedded `misaki-rs` (the G2P Kokoro was actually trained against). The latency/quality numbers below still describe CharsiuG2P, which now serves only the non-English path (Russian via Piper today; tracked for further per-language replacement in [#210](https://github.com/drakulavich/kesha-voice-kit/issues/210) and [#212](https://github.com/drakulavich/kesha-voice-kit/issues/212)).
+
 | | espeak-ng (≤ v1.3.0) | CharsiuG2P ByT5-tiny (v1.4.0+) |
 |---|---|---|
 | Binary (release, stripped) | 23 MB + **system dep** | **23 MB**, no system dep |

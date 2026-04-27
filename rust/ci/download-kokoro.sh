@@ -13,9 +13,11 @@ DEST="${1:?usage: download-kokoro.sh <dest_dir>}"
 mkdir -p "$DEST"
 
 if [[ ! -f "$DEST/model.onnx" ]]; then
-  echo "Downloading Kokoro model.onnx..."
+  echo "Downloading Kokoro model.onnx (kokoro-onnx official release)..."
+  # Mirrors rust/src/models.rs::kokoro_manifest URL — see #207 for why we
+  # switched off the HF onnx-community variant.
   curl -fL -o "$DEST/model.onnx" \
-    https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model.onnx
+    https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
 fi
 
 if [[ ! -f "$DEST/af_heart.bin" ]]; then

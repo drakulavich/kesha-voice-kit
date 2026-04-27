@@ -12,7 +12,9 @@ kesha say --voice en-af_heart "text"    # explicit voice overrides auto-routing
 kesha say --list-voices
 ```
 
-Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Piper). OGG/Opus and MP3 are tracked in follow-up issues. Grapheme-to-phoneme runs entirely through ONNX (CharsiuG2P ByT5-tiny, [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123)) — no `espeak-ng` system dep.
+Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Piper). OGG/Opus and MP3 are tracked in follow-up issues.
+
+Grapheme-to-phoneme: English uses [misaki-rs](https://github.com/MicheleYin/misaki-rs) — a self-contained Rust port of [hexgrad/misaki](https://github.com/hexgrad/misaki) (the G2P Kokoro was trained against). Lexicon and POS-tagger weights are embedded at compile time, no system deps. Out-of-vocabulary words (proper nouns, technical jargon) currently spell letter-by-letter — `espeak-ng` fallback for OOV is tracked as a follow-up. Other languages (Russian via Piper) currently use the older CharsiuG2P ByT5-tiny ONNX path ([#123](https://github.com/drakulavich/kesha-voice-kit/issues/123)) — replacement tracked per-language ([#210](https://github.com/drakulavich/kesha-voice-kit/issues/210) for `ru`).
 
 **Supported voices:**
 - English: `en-af_heart` (default), plus any Kokoro voice you download into `~/.cache/kesha/models/kokoro-82m/voices/`

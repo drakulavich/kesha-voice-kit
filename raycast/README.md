@@ -22,7 +22,7 @@ kesha install          # downloads engine + ASR + lang-id models (~350 MB)
 kesha install --tts    # Kokoro + Piper + ONNX G2P (~490 MB, required by Speak Clipboard)
 ```
 
-No system dependencies. Grapheme-to-phoneme runs entirely through bundled ONNX (CharsiuG2P ByT5-tiny) — there's no longer any `espeak-ng` / `brew` / `apt` step.
+No system dependencies. Grapheme-to-phoneme: English uses `misaki-rs` (embedded lexicon, OOV words spell letter-by-letter); other languages use bundled ONNX (CharsiuG2P ByT5-tiny). No `espeak-ng` / `brew` / `apt` step.
 
 `macos-*` system voices need no install — they use voices already on your Mac.
 

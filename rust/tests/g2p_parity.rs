@@ -22,22 +22,24 @@ use kesha_engine::models;
 use kesha_engine::tts::g2p::text_to_ipa;
 
 /// Frozen reference. `(espeak-style lang code, input word, expected IPA)`.
+/// English entries pass through misaki-rs (#207 / #208); non-English still use
+/// CharsiuG2P ONNX, which is being tracked for replacement language-by-language.
 const REFERENCE: &[(&str, &str, &str)] = &[
-    // English (American) — in-dict and common engineering vocabulary
-    ("en-us", "hello", "ˈhɛɫoʊ"),
-    ("en-us", "world", "ˈwɝɫd"),
-    ("en-us", "cat", "ˈkætu"),
-    ("en-us", "dog", "ˈdɑɡz"),
-    ("en-us", "phone", "ˈfoʊniˈoʊ"),
-    ("en-us", "music", "ˈmuzɪk"),
-    ("en-us", "code", "ˈkoʊdeɪ"),
-    ("en-us", "review", "ɹɪvˈju"),
-    ("en-us", "deploy", "dɪˈpɫɔɪ"),
-    ("en-us", "test", "ˈtɛstoʊ"),
-    // English (British) — RP-ish
+    // English (American) — misaki-rs lexicon + espeak fallback for OOV.
+    ("en-us", "hello", "həlˈoʊ"),
+    ("en-us", "world", "wˈɜːld"),
+    ("en-us", "cat", "kˈæt"),
+    ("en-us", "dog", "dˈɑːɡ"),
+    ("en-us", "phone", "fˈoʊn"),
+    ("en-us", "music", "mjˈuːzɪk"),
+    ("en-us", "code", "kˈoʊd"),
+    ("en-us", "review", "ɹᵻvjˈuː"),
+    ("en-us", "deploy", "dᵻplˈɔɪ"),
+    ("en-us", "test", "tˈɛst"),
+    // English (British) — misaki-rs en-gb dialect.
     ("en-gb", "colour", "kˈʌlə"),
-    ("en-gb", "theatre", "tˈiːtɹeɪ"),
-    ("en-gb", "metre", "mˈɛtɹeɪ"),
+    ("en-gb", "theatre", "θˈiətə"),
+    ("en-gb", "metre", "mˈiːtə"),
     ("en-gb", "harbour", "hˈɑːbə"),
     // French
     ("fr", "bonjour", "bɔ̃ʒuʁ"),

@@ -85,9 +85,14 @@ const LANG_ID_FILES: &[ModelFile] = &[
 pub fn kokoro_manifest() -> Vec<ModelFile> {
     vec![
         ModelFile {
+            // The HF onnx-community variant produces unintelligible audio with
+            // `af_heart` — confirmed by audio bisection, see #207. Use the
+            // official kokoro-onnx project release, which uses different IO
+            // tensor names (`tokens`/`audio` vs `input_ids`/`waveform`) but
+            // same dtypes/shapes — handled in `kokoro::Kokoro::infer`.
             rel_path: "models/kokoro-82m/model.onnx",
-            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model.onnx",
-            sha256: "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb",
+            url: "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
+            sha256: "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
         },
         ModelFile {
             rel_path: "models/kokoro-82m/voices/af_heart.bin",
