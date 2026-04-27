@@ -95,26 +95,73 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
             sha256: "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
         },
         ModelFile {
-            rel_path: "models/kokoro-82m/voices/af_heart.bin",
-            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_heart.bin",
-            sha256: "d583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b",
+            // Kesha (Кеша) is a male name — default to a male voice.
+            // Switched from `af_heart` (female) in #210; per-CLAUDE.md
+            // "DEFAULT TTS VOICES MUST BE MALE". Other voices download on
+            // demand via explicit `--voice` after `kesha install --tts`.
+            rel_path: "models/kokoro-82m/voices/am_michael.bin",
+            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
+            sha256: "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
         },
     ]
 }
 
-/// Piper Russian voice (denis, medium quality). See [rhasspy/piper-voices].
+/// Piper Russian voice (ruslan, medium quality). See [rhasspy/piper-voices].
+/// Switched from `denis` in #210 — ruslan was rated more natural in user
+/// listening tests and is the default for `kesha install --tts`.
 #[cfg(feature = "tts")]
 pub fn piper_ru_manifest() -> Vec<ModelFile> {
     vec![
         ModelFile {
-            rel_path: "models/piper-ru/ru_RU-denis-medium.onnx",
-            url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/denis/medium/ru_RU-denis-medium.onnx",
-            sha256: "15fab56e11a097858ee115545d0f697fc2a316c41a291a5362349fb870411b0a",
+            rel_path: "models/piper-ru/ru_RU-ruslan-medium.onnx",
+            url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx",
+            sha256: "72a5f88e0b20928064eb45d88e1daa21f8af62d18613580d32cbb4aed48dcf7f",
         },
         ModelFile {
-            rel_path: "models/piper-ru/ru_RU-denis-medium.onnx.json",
-            url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/denis/medium/ru_RU-denis-medium.onnx.json",
-            sha256: "831c860dac0b5073eaa81610a0a638ec23d90a6cf8e5f871b4485c2cec3767c8",
+            rel_path: "models/piper-ru/ru_RU-ruslan-medium.onnx.json",
+            url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx.json",
+            sha256: "706a4fb17bc304abd07809b552deae615e64dcbffbfbd09854ba37ca59e88117",
+        },
+    ]
+}
+
+/// Vosk-TTS multi-speaker Russian model, mirrored to HF at
+/// `drakulavich/vosk-tts-ru-0.9-multi`. Replaces Piper-ru per
+/// `docs/superpowers/specs/2026-04-27-vosk-ru-replacement-design.md`.
+/// SHA-256 pins computed from the HF mirror — see CLAUDE.md MODEL HASHES
+/// ARE PINNED rule.
+#[cfg(feature = "tts")]
+pub fn vosk_ru_manifest() -> Vec<ModelFile> {
+    vec![
+        ModelFile {
+            rel_path: "models/vosk-ru/model.onnx",
+            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/model.onnx",
+            sha256: "0fa5a36b22a8bf7fe7179a3882c6371d2c01e5317019e717516f892d329c24b9",
+        },
+        ModelFile {
+            rel_path: "models/vosk-ru/dictionary",
+            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/dictionary",
+            sha256: "2939e72c170bb41ac8e256828cca1c5fac4db1e36717f9f53fde843b00a220ba",
+        },
+        ModelFile {
+            rel_path: "models/vosk-ru/config.json",
+            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/config.json",
+            sha256: "e155fb266a730e1858a2420442b465acf08a3236dffad7d1a507bf155b213d50",
+        },
+        ModelFile {
+            rel_path: "models/vosk-ru/bert/model.onnx",
+            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/model.onnx",
+            sha256: "2e2f1740eaae5e29c2b4844625cbb01ff644b2b5fb0560bd34374c35d8a092c1",
+        },
+        ModelFile {
+            rel_path: "models/vosk-ru/bert/vocab.txt",
+            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/vocab.txt",
+            sha256: "bbe5063cc3d7a314effd90e9c5099cf493b81f2b9552c155264e16eeab074237",
+        },
+        ModelFile {
+            rel_path: "models/vosk-ru/README.md",
+            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/README.md",
+            sha256: "e9db06085c65064c6f8e5220a85070f14fdf47bb8018d0b5c07cc0218cbb5a41",
         },
     ]
 }
@@ -254,6 +301,26 @@ pub fn is_g2p_cached(dir: &str) -> bool {
             .map(|n| dir.join(n).exists())
             .unwrap_or(false)
     })
+}
+
+// Used by vosk.rs (Task 1.3) — not yet wired, suppress until that phase lands.
+#[cfg(feature = "tts")]
+#[allow(dead_code)]
+pub fn vosk_ru_model_dir() -> String {
+    cache_dir()
+        .join("models/vosk-ru")
+        .to_string_lossy()
+        .to_string()
+}
+
+// Used by vosk.rs (Task 1.3) — not yet wired, suppress until that phase lands.
+#[cfg(feature = "tts")]
+#[allow(dead_code)]
+pub fn is_vosk_ru_cached(dir: &str) -> bool {
+    let base = std::path::Path::new(dir);
+    base.join("model.onnx").exists()
+        && base.join("dictionary").exists()
+        && base.join("bert/model.onnx").exists()
 }
 
 /// Caller passes the per-model dir (e.g. `asr_model_dir()`); we pull the
@@ -492,7 +559,7 @@ mod tts_tests {
     fn kokoro_manifest_has_expected_files() {
         let m = kokoro_manifest();
         assert!(m.iter().any(|f| f.rel_path.ends_with("model.onnx")));
-        assert!(m.iter().any(|f| f.rel_path.ends_with("af_heart.bin")));
+        assert!(m.iter().any(|f| f.rel_path.ends_with("am_michael.bin")));
         for f in &m {
             assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
             assert!(f.url.starts_with("https://"), "{f:?} url not https");
@@ -504,13 +571,35 @@ mod tts_tests {
         let m = piper_ru_manifest();
         assert!(m
             .iter()
-            .any(|f| f.rel_path.ends_with("ru_RU-denis-medium.onnx")));
+            .any(|f| f.rel_path.ends_with("ru_RU-ruslan-medium.onnx")));
         assert!(m
             .iter()
-            .any(|f| f.rel_path.ends_with("ru_RU-denis-medium.onnx.json")));
+            .any(|f| f.rel_path.ends_with("ru_RU-ruslan-medium.onnx.json")));
         for f in &m {
             assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
             assert!(f.url.starts_with("https://"), "{f:?} url not https");
+        }
+    }
+
+    #[test]
+    fn vosk_ru_manifest_has_expected_files() {
+        let m = vosk_ru_manifest();
+        assert_eq!(m.len(), 6);
+        let names: std::collections::HashSet<&str> =
+            m.iter().map(|f| f.rel_path).collect();
+        for f in [
+            "models/vosk-ru/model.onnx",
+            "models/vosk-ru/dictionary",
+            "models/vosk-ru/config.json",
+            "models/vosk-ru/bert/model.onnx",
+            "models/vosk-ru/bert/vocab.txt",
+            "models/vosk-ru/README.md",
+        ] {
+            assert!(names.contains(f), "missing {f}");
+        }
+        for f in &m {
+            assert!(f.sha256.len() == 64, "sha256 must be 64 hex chars");
+            assert!(f.url.starts_with("https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/"));
         }
     }
 
@@ -597,6 +686,7 @@ pub fn download_tts(no_cache: bool) -> Result<()> {
     let cache = cache_dir();
     let mut manifest = kokoro_manifest();
     manifest.extend(piper_ru_manifest());
+    manifest.extend(vosk_ru_manifest());
     manifest.extend(g2p_onnx_manifest());
     let refs: Vec<&ModelFile> = manifest.iter().collect();
     parallel_download(&cache, &refs, no_cache)
