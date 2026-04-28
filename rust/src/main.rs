@@ -129,9 +129,13 @@ fn list_kokoro_voices(cache: &std::path::Path) -> Vec<String> {
 }
 
 #[cfg(feature = "tts")]
-fn list_vosk_ru_voices(_cache: &std::path::Path) -> Vec<String> {
-    // Static catalogue — these speaker ids are baked into the multi-speaker model.
-    // Order: f01, f02, f03, m01, m02 (m02 is the spec default).
+fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
+    // Vosk-TTS Russian is a single multi-speaker model — once model.onnx is
+    // present, all five baked-in speakers are available. Skip listing when
+    // the model isn't installed so `--list-voices` shows the install hint.
+    if !cache.join("models/vosk-ru/model.onnx").exists() {
+        return Vec::new();
+    }
     vec![
         "ru-vosk-f01".into(),
         "ru-vosk-f02".into(),
