@@ -3,7 +3,6 @@
 use std::path::Path;
 
 pub mod g2p;
-pub mod g2p_espeak;
 pub mod kokoro;
 pub mod ssml;
 pub mod tokenizer;
