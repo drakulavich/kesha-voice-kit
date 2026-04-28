@@ -4,10 +4,10 @@ use std::path::Path;
 
 pub mod g2p;
 pub mod kokoro;
-pub mod piper;
 pub mod ssml;
 pub mod tokenizer;
 pub mod voices;
+pub mod vosk;
 pub mod wav;
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -16,6 +16,18 @@ pub mod avspeech;
 /// Soft limit on input text length. Rejects absurdly long inputs that would
 /// spend minutes on synthesis with poor quality.
 pub const MAX_TEXT_CHARS: usize = 5000;
+
+/// Per-`<break>` ceiling so a hostile SSML input can't allocate gigabytes of
+/// silence. 30s × 24 kHz × 4 B ≈ 2.9 MB max per tag, easily affordable.
+const MAX_BREAK_SECS: f64 = 30.0;
+
+/// Build a zero-PCM silence buffer for an SSML `<break>`, capped at
+/// [`MAX_BREAK_SECS`] regardless of declared duration.
+fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
+    let secs = dur.as_secs_f64().min(MAX_BREAK_SECS);
+    let n = (secs * sample_rate as f64).round() as usize;
+    vec![0.0_f32; n]
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum TtsError {
@@ -39,12 +51,11 @@ pub enum EngineChoice<'a> {
     /// `voice_id` is forwarded verbatim (an Apple identifier or a language code).
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
     AVSpeech { voice_id: &'a str },
-    /// Piper VITS: model + per-voice .onnx.json config.
-    Piper {
-        model_path: &'a Path,
-        config_path: &'a Path,
-        /// Speed multiplier: 1.0 = voice default, 2.0 = twice as fast, 0.5 = half speed.
-        /// Mapped to Piper's `length_scale = 1 / speed`.
+    /// Vosk-TTS Russian: model dir + speaker id (G2P happens inside vosk).
+    Vosk {
+        model_dir: &'a Path,
+        speaker_id: u32,
+        /// Speaking rate (1.0 = model default); passed to vosk's `speech_rate`.
         speed: f32,
     },
 }
@@ -63,7 +74,7 @@ pub struct SayOptions<'a> {
 ///
 /// Loads the ONNX session fresh on each call (~100-800ms). Fine for one-shot CLI
 /// usage; callers that synthesize in a loop should hold a [`kokoro::Kokoro`] or
-/// [`piper::Piper`] instance and drive it via its `infer` method.
+/// [`vosk::Vosk`] instance and drive it via its `infer` method.
 pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     if opts.text.is_empty() {
         return Err(TtsError::EmptyText);
@@ -77,7 +88,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     }
     let engine_label: &str = match &opts.engine {
         EngineChoice::Kokoro { .. } => "kokoro",
-        EngineChoice::Piper { .. } => "piper",
+        EngineChoice::Vosk { .. } => "vosk",
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => "avspeech",
     };
@@ -99,6 +110,19 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")));
     }
 
+    // Vosk-tts owns its own G2P + text normalisation; bypass our espeak/misaki path.
+    if let EngineChoice::Vosk {
+        model_dir,
+        speaker_id,
+        speed,
+    } = &opts.engine
+    {
+        if opts.ssml {
+            return synth_segments_vosk(opts.text, model_dir, *speaker_id, *speed);
+        }
+        return say_with_vosk(opts.text, model_dir, *speaker_id, *speed);
+    }
+
     if opts.ssml {
         return say_ssml(&opts);
     }
@@ -117,13 +141,9 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             voice_path,
             speed,
         } => say_with_kokoro(&ipa, model_path, voice_path, speed),
-        EngineChoice::Piper {
-            model_path,
-            config_path,
-            speed,
-        } => say_with_piper(&ipa, model_path, config_path, speed),
-        // The AVSpeech arm is handled by the early-return above. Keep a guard
-        // arm so the match stays exhaustive when the feature is enabled.
+        // Vosk and AVSpeech are handled by early-returns above. Keep guard arms
+        // so the match stays exhaustive when those features are enabled.
+        EngineChoice::Vosk { .. } => unreachable!("handled by early return above"),
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => unreachable!("handled by early return above"),
     }
@@ -146,11 +166,8 @@ fn say_ssml(opts: &SayOptions) -> Result<Vec<u8>, TtsError> {
             voice_path,
             speed,
         } => synth_segments_kokoro(&segments, opts.lang, model_path, voice_path, *speed),
-        EngineChoice::Piper {
-            model_path,
-            config_path,
-            speed,
-        } => synth_segments_piper(&segments, opts.lang, model_path, config_path, *speed),
+        // Vosk + SSML is handled by the early-return in say(); this arm keeps the match exhaustive.
+        EngineChoice::Vosk { .. } => unreachable!("handled by early return in say()"),
         // AVSpeech + SSML is rejected up-front in `say()`; this arm keeps the match exhaustive.
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => {
@@ -184,10 +201,7 @@ fn synth_segments_kokoro(
             ssml::Segment::Ipa(ph) => {
                 synth_ipa_kokoro(ph, &tok, &voice, &mut k, speed, &mut out)?;
             }
-            ssml::Segment::Break(dur) => {
-                let samples = ((dur.as_secs_f64() * sample_rate as f64).round()) as usize;
-                out.extend(std::iter::repeat_n(0.0_f32, samples));
-            }
+            ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
         }
     }
     if out.is_empty() {
@@ -215,60 +229,6 @@ fn synth_ipa_kokoro(
     let style = voices::select_style(voice, active);
     let audio = k
         .infer(&padded, style, speed)
-        .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
-    out.extend(audio);
-    Ok(())
-}
-
-fn synth_segments_piper(
-    segments: &[ssml::Segment],
-    lang: &str,
-    model_path: &Path,
-    config_path: &Path,
-    speed: f32,
-) -> Result<Vec<u8>, TtsError> {
-    let mut p = piper::Piper::load(model_path, config_path)
-        .map_err(|e| TtsError::SynthesisFailed(format!("piper load: {e}")))?;
-    let sample_rate = p.sample_rate();
-    let empty_baseline = p.encode("").len();
-    let mut out: Vec<f32> = Vec::new();
-    for seg in segments {
-        match seg {
-            ssml::Segment::Text(t) => {
-                let ipa = g2p::text_to_ipa(t, lang)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
-                synth_ipa_piper(&ipa, &mut p, empty_baseline, speed, &mut out)?;
-            }
-            ssml::Segment::Ipa(ph) => {
-                synth_ipa_piper(ph, &mut p, empty_baseline, speed, &mut out)?;
-            }
-            ssml::Segment::Break(dur) => {
-                let samples = ((dur.as_secs_f64() * sample_rate as f64).round()) as usize;
-                out.extend(std::iter::repeat_n(0.0_f32, samples));
-            }
-        }
-    }
-    if out.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "no audio produced from SSML input".into(),
-        ));
-    }
-    wav::encode_wav(&out, sample_rate).map_err(|e| TtsError::SynthesisFailed(format!("wav: {e}")))
-}
-
-fn synth_ipa_piper(
-    ipa: &str,
-    p: &mut piper::Piper,
-    empty_baseline: usize,
-    speed: f32,
-    out: &mut Vec<f32>,
-) -> Result<(), TtsError> {
-    let ids = p.encode(ipa);
-    if ids.len() <= empty_baseline {
-        return Ok(()); // only BOS/EOS/pad — nothing to speak
-    }
-    let audio = p
-        .infer_with_speed(&ids, speed)
         .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
     out.extend(audio);
     Ok(())
@@ -304,25 +264,54 @@ fn say_with_kokoro(
         .map_err(|e| TtsError::SynthesisFailed(format!("wav: {e}")))
 }
 
-fn say_with_piper(
-    ipa: &str,
-    model_path: &Path,
-    config_path: &Path,
+fn say_with_vosk(
+    text: &str,
+    model_dir: &Path,
+    speaker_id: u32,
     speed: f32,
 ) -> Result<Vec<u8>, TtsError> {
-    let mut p = piper::Piper::load(model_path, config_path)
-        .map_err(|e| TtsError::SynthesisFailed(format!("piper load: {e}")))?;
-    let ids = p.encode(ipa);
-    // `encode` always emits BOS + EOS; anything beyond the empty-input baseline means
-    // at least one phoneme matched. Parallel guard to the one in `say_with_kokoro`.
-    if ids.len() <= p.encode("").len() {
+    let mut v = vosk::Vosk::load(model_dir)
+        .map_err(|e| TtsError::SynthesisFailed(format!("vosk load: {e}")))?;
+    let sample_rate = v.sample_rate();
+    let audio = v
+        .infer(text, speaker_id, speed)
+        .map_err(|e| TtsError::SynthesisFailed(format!("vosk infer: {e}")))?;
+    wav::encode_wav(&audio, sample_rate).map_err(|e| TtsError::SynthesisFailed(format!("wav: {e}")))
+}
+
+fn synth_segments_vosk(
+    text: &str,
+    model_dir: &Path,
+    speaker_id: u32,
+    speed: f32,
+) -> Result<Vec<u8>, TtsError> {
+    let segments =
+        ssml::parse(text).map_err(|e| TtsError::SynthesisFailed(format!("ssml: {e}")))?;
+    if segments.is_empty() {
         return Err(TtsError::SynthesisFailed(
-            "no recognizable phonemes in input".into(),
+            "SSML had no speakable content".into(),
         ));
     }
-    let audio = p
-        .infer_with_speed(&ids, speed)
-        .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
-    wav::encode_wav(&audio, p.sample_rate())
-        .map_err(|e| TtsError::SynthesisFailed(format!("wav: {e}")))
+    let mut v = vosk::Vosk::load(model_dir)
+        .map_err(|e| TtsError::SynthesisFailed(format!("vosk load: {e}")))?;
+    let sample_rate = v.sample_rate();
+    let mut out: Vec<f32> = Vec::new();
+    for seg in segments {
+        match seg {
+            ssml::Segment::Text(t) | ssml::Segment::Ipa(t) => {
+                // Vosk has no IPA passthrough; <phoneme> falls back to text.
+                let audio = v
+                    .infer(&t, speaker_id, speed)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("vosk infer: {e}")))?;
+                out.extend(audio);
+            }
+            ssml::Segment::Break(dur) => out.extend(silence_samples(dur, sample_rate)),
+        }
+    }
+    if out.is_empty() {
+        return Err(TtsError::SynthesisFailed(
+            "no audio produced from SSML input".into(),
+        ));
+    }
+    wav::encode_wav(&out, sample_rate).map_err(|e| TtsError::SynthesisFailed(format!("wav: {e}")))
 }

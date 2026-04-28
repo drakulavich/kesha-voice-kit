@@ -2,8 +2,6 @@
 
 use std::process::Command;
 
-use kesha_engine::models;
-
 #[test]
 fn capabilities_advertises_tts() {
     let bin = env!("CARGO_BIN_EXE_kesha-engine");
@@ -184,36 +182,17 @@ fn resolves_from_cache_when_installed() {
             return;
         }
     };
-    // G2P became a runtime requirement in Phase 2a — copy the ONNX files
-    // into the tempdir alongside Kokoro so the sub-process finds them
-    // under the test's own KESHA_CACHE_DIR. Source layout mirrors
-    // `models::g2p_model_dir()`.
-    let g2p_src = {
-        let dir_str = models::g2p_model_dir();
-        if !models::is_g2p_cached(&dir_str) {
-            eprintln!("skipping: g2p model not installed at {dir_str}");
-            return;
-        }
-        std::path::PathBuf::from(dir_str)
-    };
-
+    // misaki-rs is embedded — no G2P model cache required post-#213.
     let tmp = tempfile::tempdir().unwrap();
     let voices_dir = tmp.path().join("models/kokoro-82m/voices");
     std::fs::create_dir_all(&voices_dir).unwrap();
     // Copy instead of symlink so the test works cross-platform (Windows symlink
     // creation requires elevated privileges and the os::unix API is not available).
     std::fs::copy(&model, tmp.path().join("models/kokoro-82m/model.onnx")).unwrap();
-    std::fs::copy(&voice, voices_dir.join("af_heart.bin")).unwrap();
-
-    let g2p_dst = tmp.path().join("models/g2p/byt5-tiny");
-    std::fs::create_dir_all(&g2p_dst).unwrap();
-    for f in [
-        "encoder_model.onnx",
-        "decoder_model.onnx",
-        "decoder_with_past_model.onnx",
-    ] {
-        std::fs::copy(g2p_src.join(f), g2p_dst.join(f)).unwrap();
-    }
+    // Stage as am_michael.bin since DEFAULT_VOICE_ID = "en-am_michael" (CLAUDE.md
+    // "DEFAULT TTS VOICES MUST BE MALE"); the bytes come from KOKORO_VOICE which
+    // run-cargo-test.sh now points at am_michael.bin.
+    std::fs::copy(&voice, voices_dir.join("am_michael.bin")).unwrap();
 
     let bin = env!("CARGO_BIN_EXE_kesha-engine");
     let out = Command::new(bin)

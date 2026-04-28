@@ -36,7 +36,14 @@ function getEngineBinaryName(): string {
 
   if (platform === "darwin" && arch === "arm64") return "kesha-engine-darwin-arm64";
   if (platform === "linux" && arch === "x64") return "kesha-engine-linux-x64";
-  if (platform === "win32" && arch === "x64") return "kesha-engine-windows-x64.exe";
+  if (platform === "win32" && arch === "x64") {
+    throw new Error(
+      "Windows x64 is temporarily unsupported in v1.5.0 — the Vosk-TTS engine has " +
+        "native deps that trip MSVC at link time. Tracked at " +
+        "https://github.com/drakulavich/kesha-voice-kit/issues/216. " +
+        "Use v1.4.x as a workaround until the fix lands.",
+    );
+  }
 
   throw new Error(`Unsupported platform: ${platform} ${arch}`);
 }
@@ -51,7 +58,7 @@ function getEngineBinaryName(): string {
  * Best-effort: 404s (older engine versions predate the sidecar) and
  * network errors log a warning and return — macos-* voices simply won't
  * be available, which is a graceful degradation. The user keeps Kokoro +
- * Piper.
+ * Vosk-TTS.
  */
 async function downloadAVSpeechSidecar(binPath: string, engineVersion: string): Promise<void> {
   if (process.platform !== "darwin" || process.arch !== "arm64") return;
@@ -95,7 +102,7 @@ async function downloadAVSpeechSidecar(binPath: string, engineVersion: string): 
 }
 
 export interface InstallOptions {
-  /** Also install Kokoro + Piper + ONNX G2P TTS models. */
+  /** Also install Kokoro + Vosk-TTS models. */
   tts?: boolean;
   /** Also install Silero VAD model for long-audio preprocessing. */
   vad?: boolean;

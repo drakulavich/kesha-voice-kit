@@ -3,7 +3,11 @@ import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
 import { log } from "../log";
 import { say, SayError } from "../say";
 
-/** Workaround for #207 (Piper `ru-denis` unintelligible) — remove when Piper-ru is fixed. */
+/**
+ * Darwin defaults to AVSpeech Milena — zero install, no model download required.
+ * Linux/Windows fall through to Vosk-TTS `ru-vosk-m02` (male, per CLAUDE.md
+ * "DEFAULT TTS VOICES MUST BE MALE"; replaces Piper-ruslan as of #213).
+ */
 const RU_DARWIN_FALLBACK_VOICE = "macos-com.apple.voice.compact.ru-RU.Milena";
 
 /** Map a detected language code to a default voice id. Unknown / low-confidence → undefined. */
@@ -15,9 +19,9 @@ export function pickVoiceForLang(
   if (!code || confidence < 0.5) return undefined;
   switch (code) {
     case "en":
-      return "en-af_heart";
+      return "en-am_michael";
     case "ru":
-      return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-denis";
+      return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-vosk-m02";
     default:
       return undefined;
   }
@@ -54,7 +58,7 @@ export const sayCommand = defineCommand({
   },
   args: {
     text: { type: "positional", required: false, description: "Text to speak (stdin if omitted)" },
-    voice: { type: "string", description: "Voice id, e.g. en-af_heart" },
+    voice: { type: "string", description: "Voice id, e.g. en-am_michael" },
     lang: { type: "string", description: "BCP 47 language code (default en-us)" },
     out: { type: "string", description: "Write WAV to file instead of stdout" },
     rate: { type: "string", description: "Speaking rate 0.5–2.0", default: "1.0" },

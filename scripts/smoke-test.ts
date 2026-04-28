@@ -69,7 +69,7 @@ check("typo suggestion works", typoProc.exitCode === 1 && typoProc.stderr.toStri
 if (process.argv.includes("--tts")) {
   for (const [label, text] of [
     ["en (Kokoro)", "Hello, world"],
-    ["ru (Piper, auto-routed)", "Привет, мир"],
+    ["ru (Vosk, auto-routed)", "Привет, мир"],
   ] as const) {
     const tmpWav = `/tmp/kesha-smoke-${label.split(" ")[0]}.wav`;
     const sayProc = Bun.spawnSync(["kesha", "say", text, "--out", tmpWav], {

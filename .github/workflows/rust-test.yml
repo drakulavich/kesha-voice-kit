@@ -9,7 +9,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest, windows-latest]
+        # windows-latest temporarily dropped — vosk-tts-rs transitive
+        # MSVC link conflicts (LNK2005). Restore when #216 lands.
+        os: [macos-14, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
@@ -25,6 +27,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+
+      - uses: ./.github/actions/install-protoc
 
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
@@ -47,7 +51,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v3-${{ runner.os }}
+          key: kokoro-spike-v5-${{ runner.os }}
 
       - name: Download Kokoro model (if cache miss)
         shell: bash

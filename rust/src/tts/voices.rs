@@ -39,7 +39,7 @@ pub fn select_style(voice: &[f32], token_count: usize) -> &[f32] {
 }
 
 /// Default voice id used when neither `--voice` nor auto-routing resolves one.
-pub const DEFAULT_VOICE_ID: &str = "en-af_heart";
+pub const DEFAULT_VOICE_ID: &str = "en-am_michael";
 
 /// Resolved engine + paths for a given voice id.
 #[derive(Debug)]
@@ -49,10 +49,10 @@ pub enum ResolvedVoice {
         voice_path: std::path::PathBuf,
         espeak_lang: &'static str,
     },
-    Piper {
-        model_path: std::path::PathBuf,
-        config_path: std::path::PathBuf,
-        espeak_lang: &'static str,
+    /// Vosk-TTS multi-speaker Russian (replaces Piper-ru per spec/PR for #210).
+    Vosk {
+        model_dir: std::path::PathBuf,
+        speaker_id: u32,
     },
     /// macOS system TTS via AVSpeechSynthesizer (#141). The voice id is
     /// whatever the user passed after the `macos-` prefix — forwarded to the
@@ -65,7 +65,8 @@ pub enum ResolvedVoice {
 impl ResolvedVoice {
     pub fn espeak_lang(&self) -> &'static str {
         match self {
-            Self::Kokoro { espeak_lang, .. } | Self::Piper { espeak_lang, .. } => espeak_lang,
+            Self::Kokoro { espeak_lang, .. } => espeak_lang,
+            Self::Vosk { .. } => "",
             // AVSpeech does its own G2P; the espeak language tag is unused.
             #[cfg(all(feature = "system_tts", target_os = "macos"))]
             Self::AVSpeech { .. } => "",
@@ -73,7 +74,7 @@ impl ResolvedVoice {
     }
 }
 
-/// Parse a voice id like `en-af_heart` or `ru-denis` into engine + paths.
+/// Parse a voice id like `en-am_michael` or `ru-ruslan` into engine + paths.
 /// Voice id is `<lang>-<name>`; lang picks the engine and espeak language code.
 /// The special `macos-*` prefix routes to AVSpeechSynthesizer on supported builds.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
@@ -82,7 +83,10 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
     })?;
     match lang {
         "en" => resolve_kokoro(cache_dir, voice_id, name),
-        "ru" => resolve_piper_ru(cache_dir, voice_id, name),
+        "ru" => {
+            let suffix = name.strip_prefix("vosk-").unwrap_or(name);
+            resolve_vosk_ru(cache_dir, voice_id, suffix)
+        }
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         "macos" => {
             if name.is_empty() {
@@ -125,20 +129,29 @@ fn resolve_kokoro(cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Resul
     })
 }
 
-fn resolve_piper_ru(cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Result<ResolvedVoice> {
-    // Piper filenames follow the upstream convention `ru_RU-<name>-medium.*`.
-    let base = cache_dir
-        .join("models/piper-ru")
-        .join(format!("ru_RU-{name}-medium"));
-    let model_path = base.with_extension("onnx");
-    let config_path = base.with_extension("onnx.json");
-    if !model_path.exists() || !config_path.exists() {
+fn resolve_vosk_ru(
+    cache_dir: &Path,
+    voice_id: &str,
+    suffix: &str,
+) -> anyhow::Result<ResolvedVoice> {
+    let speaker_id: u32 = match suffix {
+        "f01" => 0,
+        "f02" => 1,
+        "f03" => 2,
+        "m01" => 3,
+        "m02" => 4,
+        _ => anyhow::bail!(
+            "unknown Russian voice '{voice_id}'. valid: ru-vosk-f01, ru-vosk-f02, \
+             ru-vosk-f03, ru-vosk-m01, ru-vosk-m02"
+        ),
+    };
+    let model_dir = cache_dir.join("models/vosk-ru");
+    if !crate::models::is_vosk_ru_cached(&model_dir) {
         anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
     }
-    Ok(ResolvedVoice::Piper {
-        model_path,
-        config_path,
-        espeak_lang: "ru",
+    Ok(ResolvedVoice::Vosk {
+        model_dir,
+        speaker_id,
     })
 }
 
@@ -199,7 +212,7 @@ mod tests {
     fn populate_cache(cache: &Path) {
         let voices = cache.join("models/kokoro-82m/voices");
         std::fs::create_dir_all(&voices).unwrap();
-        std::fs::write(voices.join("af_heart.bin"), vec![0u8; VOICE_FILE_BYTES]).unwrap();
+        std::fs::write(voices.join("am_michael.bin"), vec![0u8; VOICE_FILE_BYTES]).unwrap();
         std::fs::write(cache.join("models/kokoro-82m/model.onnx"), b"dummy").unwrap();
     }
 
@@ -207,26 +220,19 @@ mod tests {
     fn resolve_installed_kokoro_voice() {
         let tmp = tempfile::tempdir().unwrap();
         populate_cache(tmp.path());
-        let r = resolve_voice(tmp.path(), "en-af_heart").unwrap();
+        let r = resolve_voice(tmp.path(), "en-am_michael").unwrap();
         match r {
             ResolvedVoice::Kokoro {
                 voice_path,
                 model_path,
                 espeak_lang,
             } => {
-                assert!(voice_path.ends_with("af_heart.bin"));
+                assert!(voice_path.ends_with("am_michael.bin"));
                 assert!(model_path.ends_with("model.onnx"));
                 assert_eq!(espeak_lang, "en-us");
             }
             other => panic!("expected Kokoro, got {other:?}"),
         }
-    }
-
-    fn populate_piper_ru(cache: &Path) {
-        let dir = cache.join("models/piper-ru");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("ru_RU-denis-medium.onnx"), b"dummy").unwrap();
-        std::fs::write(dir.join("ru_RU-denis-medium.onnx.json"), b"{}").unwrap();
     }
 
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -274,30 +280,77 @@ mod tests {
         assert!(err.contains("system_tts"), "msg: {err}");
     }
 
+    fn populate_vosk_ru(cache: &Path) {
+        let dir = cache.join("models/vosk-ru");
+        std::fs::create_dir_all(dir.join("bert")).unwrap();
+        std::fs::write(dir.join("model.onnx"), b"dummy").unwrap();
+        std::fs::write(dir.join("dictionary"), b"dummy").unwrap();
+        std::fs::write(dir.join("config.json"), b"{}").unwrap();
+        std::fs::write(dir.join("bert/model.onnx"), b"dummy").unwrap();
+        std::fs::write(dir.join("bert/vocab.txt"), b"v").unwrap();
+    }
+
     #[test]
-    fn resolve_installed_piper_voice() {
+    fn resolve_vosk_ru_default_voice() {
         let tmp = tempfile::tempdir().unwrap();
-        populate_piper_ru(tmp.path());
-        let r = resolve_voice(tmp.path(), "ru-denis").unwrap();
+        populate_vosk_ru(tmp.path());
+        let r = resolve_voice(tmp.path(), "ru-vosk-m02").unwrap();
         match r {
-            ResolvedVoice::Piper {
-                model_path,
-                config_path,
-                espeak_lang,
+            ResolvedVoice::Vosk {
+                model_dir,
+                speaker_id,
             } => {
-                assert!(model_path.ends_with("ru_RU-denis-medium.onnx"));
-                assert!(config_path.ends_with("ru_RU-denis-medium.onnx.json"));
-                assert_eq!(espeak_lang, "ru");
+                assert!(model_dir.ends_with("models/vosk-ru"));
+                assert_eq!(speaker_id, 4);
             }
-            other => panic!("expected Piper, got {other:?}"),
+            other => panic!("expected Vosk, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn resolve_vosk_ru_all_speaker_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        populate_vosk_ru(tmp.path());
+        for (id, n) in [
+            ("f01", 0u32),
+            ("f02", 1),
+            ("f03", 2),
+            ("m01", 3),
+            ("m02", 4),
+        ] {
+            let voice = format!("ru-vosk-{id}");
+            match resolve_voice(tmp.path(), &voice).unwrap() {
+                ResolvedVoice::Vosk { speaker_id, .. } => assert_eq!(speaker_id, n, "{voice}"),
+                other => panic!("{voice}: expected Vosk, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_vosk_ru_unknown_speaker_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        populate_vosk_ru(tmp.path());
+        let err = resolve_voice(tmp.path(), "ru-vosk-zzz")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("vosk"), "msg: {err}");
+    }
+
+    #[test]
+    fn resolve_vosk_ru_missing_model_errors_with_install_hint() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No model on disk
+        let err = resolve_voice(tmp.path(), "ru-vosk-m02")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("install --tts"), "msg: {err}");
     }
 
     #[test]
     fn resolve_missing_voice_errors_with_hint() {
         let tmp = tempfile::tempdir().unwrap();
         // Cache exists but voice does not
-        let err = resolve_voice(tmp.path(), "en-af_heart").unwrap_err();
+        let err = resolve_voice(tmp.path(), "en-am_michael").unwrap_err();
         assert!(err.to_string().contains("install --tts"), "msg: {err}");
     }
 
@@ -307,8 +360,8 @@ mod tests {
         // Voice present but model missing
         let voices = tmp.path().join("models/kokoro-82m/voices");
         std::fs::create_dir_all(&voices).unwrap();
-        std::fs::write(voices.join("af_heart.bin"), vec![0u8; VOICE_FILE_BYTES]).unwrap();
-        let err = resolve_voice(tmp.path(), "en-af_heart").unwrap_err();
+        std::fs::write(voices.join("am_michael.bin"), vec![0u8; VOICE_FILE_BYTES]).unwrap();
+        let err = resolve_voice(tmp.path(), "en-am_michael").unwrap_err();
         assert!(err.to_string().contains("install --tts"), "msg: {err}");
     }
 

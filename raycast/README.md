@@ -10,7 +10,7 @@ Select an audio file in Finder (`.ogg`, `.opus`, `.mp3`, `.m4a`, `.wav`, `.flac`
 
 ### Speak Clipboard
 
-Synthesize speech from the current clipboard text and play it through the default audio output. Auto-routes English → Kokoro, Russian → Piper, or override with the _Default voice_ preference (any valid `kesha say --voice` value including `macos-*` system voices).
+Synthesize speech from the current clipboard text and play it through the default audio output. Auto-routes English → Kokoro, Russian → Vosk-TTS, or override with the _Default voice_ preference (any valid `kesha say --voice` value including `macos-*` system voices).
 
 ## Prerequisites
 
@@ -19,10 +19,10 @@ Install the `kesha` CLI and fetch the engine + models:
 ```bash
 npm install -g @drakulavich/kesha-voice-kit   # or bun add --global
 kesha install          # downloads engine + ASR + lang-id models (~350 MB)
-kesha install --tts    # Kokoro + Piper + ONNX G2P (~490 MB, required by Speak Clipboard)
+kesha install --tts    # Kokoro + Vosk-TTS (~990 MB, required by Speak Clipboard)
 ```
 
-No system dependencies. Grapheme-to-phoneme: English uses `misaki-rs` (embedded lexicon, OOV words spell letter-by-letter); other languages use bundled ONNX (CharsiuG2P ByT5-tiny). No `espeak-ng` / `brew` / `apt` step.
+No system dependencies. Grapheme-to-phoneme: English uses `misaki-rs` (embedded lexicon, OOV words spell letter-by-letter); Russian uses Vosk-TTS (embedded G2P + ONNX). No `espeak-ng` / `brew` / `apt` step.
 
 `macos-*` system voices need no install — they use voices already on your Mac.
 

@@ -142,20 +142,15 @@ Both engines preserve enough signal for downstream agents to act on the content 
 
 ## G2P backend (TTS)
 
-Grapheme-to-phoneme conversion for Kokoro (English) and Piper (Russian) ran on `espeak-ng` through v1.3.0; v1.4.0 replaced it with [klebster/g2p_multilingual_byT5_tiny_onnx](https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx) (CharsiuG2P ByT5-tiny ONNX, FP32). See issue [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123).
+| | espeak-ng (≤ v1.3.0) | CharsiuG2P ByT5-tiny (v1.4.0–v1.4.x) | Current (v1.5.0+) |
+|---|---|---|---|
+| English G2P | espeak subprocess | misaki-rs (embedded, post-#207) | misaki-rs (embedded) |
+| Russian G2P | espeak subprocess | espeak subprocess (post-#210) | Vosk internal (BERT + dictionary) |
+| Linux runtime dep | `libespeak-ng1` (apt) | `libespeak-ng1` (apt, ru only) | none |
+| macOS runtime dep | `espeak-ng` (brew) | `espeak-ng` (brew, ru only) | none |
+| TTS install size | ~150 MB | ~490 MB | ~990 MB |
 
-> **Updated post-#207:** English moved off CharsiuG2P to embedded `misaki-rs` (the G2P Kokoro was actually trained against). The latency/quality numbers below still describe CharsiuG2P, which now serves only the non-English path (Russian via Piper today; tracked for further per-language replacement in [#210](https://github.com/drakulavich/kesha-voice-kit/issues/210) and [#212](https://github.com/drakulavich/kesha-voice-kit/issues/212)).
-
-| | espeak-ng (≤ v1.3.0) | CharsiuG2P ByT5-tiny (v1.4.0+) |
-|---|---|---|
-| Binary (release, stripped) | 23 MB + **system dep** | **23 MB**, no system dep |
-| Models on disk | 0 | 101 MB (55 + 25 + 22) FP32 |
-| Install-time TTS bundle | ~390 MB | **~490 MB** |
-| Windows install-link dance | `dumpbin /exports` + `lib /def` in CI | not required |
-| macOS runtime dep | `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` | none |
-| Linux runtime dep | `libespeak-ng1` (apt) | none |
-| Latency (end-to-end, 40-word multilingual corpus, release build, Apple M3 Pro) | not measured | **149 ms/word** measured |
-| PER baseline (upstream) | unpublished | 8.1% / 25.3% WER per [Zhu et al. 2022](https://arxiv.org/abs/2204.03067) |
+The "no system deps" brand promise is restored as of v1.5.0 — `kesha install --tts` is the only step. CharsiuG2P (ByT5-tiny ONNX) and the espeak-ng subprocess fallback were both removed in [#213](https://github.com/drakulavich/kesha-voice-kit/issues/213); CharsiuG2P numbers below are kept for historical reference but no longer reflect the shipped engine.
 
 Latency breakdown (release build, M3 Pro): the 149 ms/word figure is measured with the **current per-call session-load pattern** — each `text_to_ipa` call opens all three ONNX sessions fresh. About 100 ms of that is session-load overhead (ORT init + commit for encoder + two decoders); the remaining ~40 ms is actual inference over a byte-level 128-step max decode. A process-wide session cache would drop throughput to ≈ 40 ms/word — **not shipped in v1.4.0; tracked as a follow-up** alongside similar caching for Kokoro / Piper / VAD (their `load()` calls follow the same per-call pattern).
 

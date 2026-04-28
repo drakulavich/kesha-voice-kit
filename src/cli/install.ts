@@ -92,7 +92,7 @@ export const installCommand = defineCommand({
     },
     tts: {
       type: "boolean",
-      description: "Also install TTS models (Kokoro EN + Piper RU + ONNX G2P, ~490MB)",
+      description: "Also install TTS models (Kokoro EN + Vosk-TTS RU, ~990MB)",
       default: false,
     },
     vad: {

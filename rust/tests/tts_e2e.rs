@@ -36,34 +36,6 @@ fn kokoro_hello_world_produces_wav() {
 }
 
 #[test]
-fn piper_russian_produces_wav() {
-    let (model, config) = match (std::env::var("PIPER_MODEL"), std::env::var("PIPER_CONFIG")) {
-        (Ok(m), Ok(c)) => (m, c),
-        _ => {
-            eprintln!("skipping: set PIPER_MODEL + PIPER_CONFIG");
-            return;
-        }
-    };
-    let wav = tts::say(SayOptions {
-        text: "Привет, мир",
-        lang: "ru",
-        engine: EngineChoice::Piper {
-            model_path: Path::new(&model),
-            config_path: Path::new(&config),
-            speed: 1.0,
-        },
-        ssml: false,
-    })
-    .unwrap();
-    assert_eq!(&wav[..4], b"RIFF");
-    assert!(
-        wav.len() > 44 + 1000 * 4,
-        "audio too short: {} bytes",
-        wav.len()
-    );
-}
-
-#[test]
 fn empty_text_errors() {
     let res = tts::say(SayOptions {
         text: "",

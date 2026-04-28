@@ -56,7 +56,7 @@ enum Commands {
         /// Re-download even if cached
         #[arg(long)]
         no_cache: bool,
-        /// Also install TTS models (Kokoro EN + Piper RU + ONNX G2P, ~490MB).
+        /// Also install TTS models (Kokoro EN + Vosk RU, ~990MB).
         #[cfg(feature = "tts")]
         #[arg(long)]
         tts: bool,
@@ -69,7 +69,7 @@ enum Commands {
     Say {
         /// Text to synthesize (omit to read from stdin)
         text: Option<String>,
-        /// Voice id, e.g. `en-af_heart`
+        /// Voice id, e.g. `en-am_michael`
         #[arg(long)]
         voice: Option<String>,
         /// Override the voice's default BCP 47 language code, e.g. `en-gb`
@@ -129,24 +129,20 @@ fn list_kokoro_voices(cache: &std::path::Path) -> Vec<String> {
 }
 
 #[cfg(feature = "tts")]
-fn list_piper_ru_voices(cache: &std::path::Path) -> Vec<String> {
-    // Piper RU files follow `ru_RU-<name>-<quality>.onnx`; report just the <name>.
-    let dir = cache.join("models/piper-ru");
-    std::fs::read_dir(&dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let p = e.path();
-            if p.extension().and_then(|s| s.to_str()) != Some("onnx") {
-                return None;
-            }
-            let stem = p.file_stem()?.to_string_lossy().into_owned();
-            // stem like "ru_RU-denis-medium" → "denis"
-            let name = stem.strip_prefix("ru_RU-")?.split('-').next()?;
-            Some(format!("ru-{name}"))
-        })
-        .collect()
+fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
+    // Vosk-TTS Russian is a single multi-speaker model — once installed, all
+    // five baked-in speakers are available. Same gate as resolve_vosk_ru, so
+    // partial installs don't advertise voices that fail at synthesis time.
+    if !models::is_vosk_ru_cached(&cache.join("models/vosk-ru")) {
+        return Vec::new();
+    }
+    vec![
+        "ru-vosk-f01".into(),
+        "ru-vosk-f02".into(),
+        "ru-vosk-f03".into(),
+        "ru-vosk-m01".into(),
+        "ru-vosk-m02".into(),
+    ]
 }
 
 /// Map a TTS error to the documented exit code for `kesha say`.
@@ -169,11 +165,11 @@ fn run_say(a: SayArgs) -> i32 {
         let cache = models::cache_dir();
         let mut voice_ids: Vec<String> = list_kokoro_voices(&cache)
             .into_iter()
-            .chain(list_piper_ru_voices(&cache))
+            .chain(list_vosk_ru_voices(&cache))
             .collect();
         // macos-* voices live in the OS, not the cache — enumerate them via
         // the AVSpeech helper (#141). Best-effort: if the helper is absent or
-        // errors out, we still show Kokoro/Piper voices.
+        // errors out, we still show Kokoro/Vosk voices.
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         voice_ids.extend(tts::avspeech::list_voices(None));
         voice_ids.sort();
@@ -237,13 +233,12 @@ fn run_say(a: SayArgs) -> i32 {
             voice_path,
             speed: a.rate,
         },
-        tts::voices::ResolvedVoice::Piper {
-            model_path,
-            config_path,
-            ..
-        } => tts::EngineChoice::Piper {
-            model_path,
-            config_path,
+        tts::voices::ResolvedVoice::Vosk {
+            model_dir,
+            speaker_id,
+        } => tts::EngineChoice::Vosk {
+            model_dir,
+            speaker_id: *speaker_id,
             speed: a.rate,
         },
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
