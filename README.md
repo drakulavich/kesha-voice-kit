@@ -117,7 +117,8 @@ const text = await transcribe("audio.ogg");  // transcribe
 ## Requirements
 
 - [Bun](https://bun.sh) >= 1.3
-- macOS arm64, Linux x64, or Windows x64
+- macOS arm64 or Linux x64
+- Windows x64 temporarily unsupported in v1.5.0 — Vosk-TTS native deps trigger MSVC link conflicts. Tracked in [#216](https://github.com/drakulavich/kesha-voice-kit/issues/216).
 
 ## Contributing
 

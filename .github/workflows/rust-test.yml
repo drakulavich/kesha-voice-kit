@@ -9,7 +9,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest, windows-latest]
+        # windows-latest temporarily dropped — vosk-tts-rs transitive
+        # MSVC link conflicts (LNK2005). Restore when #216 lands.
+        os: [macos-14, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike

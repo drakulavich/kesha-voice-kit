@@ -41,10 +41,10 @@ jobs:
             target: x86_64-unknown-linux-gnu
             features: onnx,tts
             binary: kesha-engine-linux-x64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            features: onnx,tts
-            binary: kesha-engine-windows-x64.exe
+          # Windows MSVC build temporarily disabled — vosk-tts-rs transitive
+          # native deps (tokenizers/onig_sys/etc.) trigger LIBCMT/MSVCRT
+          # link conflicts (LNK2005). Tracked in #216 with a vendor pivot
+          # plan. Restore the windows-latest row when the issue closes.
     runs-on: ${{ matrix.os }}
     env:
       # Target macOS 14 so the Swift compiler treats concurrency as
