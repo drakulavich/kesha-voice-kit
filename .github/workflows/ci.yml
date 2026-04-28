@@ -169,7 +169,7 @@ jobs:
       - name: 🧪 TTS e2e tests
         env:
           KOKORO_MODEL: ${{ env.KOKORO_CACHE }}/model.onnx
-          KOKORO_VOICE: ${{ env.KOKORO_CACHE }}/af_heart.bin
+          KOKORO_VOICE: ${{ env.KOKORO_CACHE }}/am_michael.bin
           # Vosk-ru lives under this dir (see rust/ci/download-kokoro.sh)
           # — runtime loader resolves it via `models::vosk_ru_model_dir()`.
           KESHA_CACHE_DIR: ${{ env.KOKORO_CACHE }}
