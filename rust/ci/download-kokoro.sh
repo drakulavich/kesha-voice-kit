@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Download Kokoro + CharsiuG2P ONNX models for CI tts_e2e tests.
+# Download Kokoro + Vosk-TTS-Russian ONNX models for CI tts_e2e tests.
 # Called by rust-test.yml; cache warms on subsequent runs.
 #
 # Kokoro files land directly in $DEST (legacy layout — the test env vars
-# KOKORO_MODEL / KOKORO_VOICE take direct paths). G2P files land under
-# $DEST/models/g2p/byt5-tiny/, matching `models::cache_dir()` so the
+# KOKORO_MODEL / KOKORO_VOICE take direct paths). Vosk files land under
+# $DEST/models/vosk-ru/, matching `models::vosk_ru_model_dir()` so the
 # runtime loader finds them when KESHA_CACHE_DIR=$DEST is set by the
 # test runner.
 set -euo pipefail
@@ -26,28 +26,24 @@ if [[ ! -f "$DEST/af_heart.bin" ]]; then
     https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_heart.bin
 fi
 
-G2P_DIR="$DEST/models/g2p/byt5-tiny"
-mkdir -p "$G2P_DIR"
-for f in encoder_model.onnx decoder_model.onnx decoder_with_past_model.onnx; do
-  if [[ ! -f "$G2P_DIR/$f" ]]; then
-    echo "Downloading G2P $f..."
-    curl -fL -o "$G2P_DIR/$f" \
-      "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/$f"
+# Vosk-TTS Russian (replaces old engine as of #213). Multi-speaker model,
+# 6 files, ~935 MB total. SHA-256 pinned in rust/src/models.rs::vosk_ru_manifest().
+VOSK_DIR="$DEST/models/vosk-ru"
+mkdir -p "$VOSK_DIR/bert"
+VOSK_BASE="https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main"
+for f in model.onnx dictionary config.json README.md; do
+  if [[ ! -f "$VOSK_DIR/$f" ]]; then
+    echo "Downloading Vosk $f..."
+    curl -fL -o "$VOSK_DIR/$f" "$VOSK_BASE/$f"
   fi
 done
-
-# Piper RU is needed by piper_russian_produces_wav in tts_e2e.rs — runs
-# under the same KESHA_CACHE_DIR layout.
-PIPER_DIR="$DEST/models/piper-ru"
-mkdir -p "$PIPER_DIR"
-for f in ru_RU-denis-medium.onnx ru_RU-denis-medium.onnx.json; do
-  if [[ ! -f "$PIPER_DIR/$f" ]]; then
-    echo "Downloading Piper $f..."
-    curl -fL -o "$PIPER_DIR/$f" \
-      "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/denis/medium/$f"
+for f in model.onnx vocab.txt; do
+  if [[ ! -f "$VOSK_DIR/bert/$f" ]]; then
+    echo "Downloading Vosk bert/$f..."
+    curl -fL -o "$VOSK_DIR/bert/$f" "$VOSK_BASE/bert/$f"
   fi
 done
 
 ls -lh "$DEST"
-ls -lh "$G2P_DIR"
-ls -lh "$PIPER_DIR"
+ls -lh "$VOSK_DIR"
+ls -lh "$VOSK_DIR/bert"

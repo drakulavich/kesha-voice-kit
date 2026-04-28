@@ -17,21 +17,19 @@ case "$RUNNER_OS" in
     ;;
 esac
 
-if [[ -f "$KOKORO_CACHE/model.onnx" && -f "$KOKORO_CACHE/af_heart.bin" ]]; then
+if [[ -f "$KOKORO_CACHE/model.onnx" && -f "$KOKORO_CACHE/am_michael.bin" ]]; then
   export KOKORO_MODEL="$KOKORO_CACHE/model.onnx"
-  export KOKORO_VOICE="$KOKORO_CACHE/af_heart.bin"
+  export KOKORO_VOICE="$KOKORO_CACHE/am_michael.bin"
   echo "Running with real Kokoro models from $KOKORO_CACHE"
 else
   echo "Kokoro cache empty — gated tests will skip"
 fi
 
-# G2P + Piper live under $KOKORO_CACHE/models/... matching the
-# runtime `models::cache_dir()` layout (see download-kokoro.sh).
-if [[ -d "$KOKORO_CACHE/models/g2p/byt5-tiny" ]]; then
+# Vosk-ru lives under $KOKORO_CACHE/models/vosk-ru/... matching the
+# runtime `models::vosk_ru_model_dir()` layout (see download-kokoro.sh).
+if [[ -f "$KOKORO_CACHE/models/vosk-ru/model.onnx" && -f "$KOKORO_CACHE/models/vosk-ru/bert/model.onnx" ]]; then
   export KESHA_CACHE_DIR="$KOKORO_CACHE"
-  export PIPER_MODEL="$KOKORO_CACHE/models/piper-ru/ru_RU-denis-medium.onnx"
-  export PIPER_CONFIG="$KOKORO_CACHE/models/piper-ru/ru_RU-denis-medium.onnx.json"
-  echo "KESHA_CACHE_DIR=$KESHA_CACHE_DIR (G2P + Piper gated tests enabled)"
+  echo "KESHA_CACHE_DIR=$KESHA_CACHE_DIR (Vosk gated tests enabled)"
 fi
 
 cargo test --verbose

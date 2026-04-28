@@ -153,7 +153,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v3-${{ runner.os }}
+          key: kokoro-spike-v5-${{ runner.os }}
 
       - name: 📥 Download Kokoro models (if cache miss)
         run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
@@ -168,8 +168,8 @@ jobs:
         env:
           KOKORO_MODEL: ${{ env.KOKORO_CACHE }}/model.onnx
           KOKORO_VOICE: ${{ env.KOKORO_CACHE }}/af_heart.bin
-          # G2P + Piper live under this dir (see rust/ci/download-kokoro.sh)
-          # — runtime loader resolves them via `models::cache_dir()`.
+          # Vosk-ru lives under this dir (see rust/ci/download-kokoro.sh)
+          # — runtime loader resolves it via `models::vosk_ru_model_dir()`.
           KESHA_CACHE_DIR: ${{ env.KOKORO_CACHE }}
           KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
           DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
