@@ -172,9 +172,11 @@ function listInstalledVoices(): string[] {
     /* Kokoro not installed */
   }
   try {
-    // Vosk-TTS Russian is a single multi-speaker model (5 baked-in voices);
-    // any model.onnx in models/vosk-ru means all five are available.
+    // Vosk-TTS Russian is a single multi-speaker model. Mirror the Rust-side
+    // gate (models::is_vosk_ru_cached) — checking model.onnx + bert/model.onnx
+    // avoids advertising voices that would fail to load on a partial install.
     statSync(join(cache, "models", "vosk-ru", "model.onnx"));
+    statSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"));
     for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
       voices.push(`ru-vosk-${id}`);
     }

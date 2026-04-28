@@ -146,7 +146,7 @@ fn resolve_vosk_ru(
         ),
     };
     let model_dir = cache_dir.join("models/vosk-ru");
-    if !model_dir.join("model.onnx").exists() || !model_dir.join("bert/model.onnx").exists() {
+    if !crate::models::is_vosk_ru_cached(&model_dir) {
         anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
     }
     Ok(ResolvedVoice::Vosk {

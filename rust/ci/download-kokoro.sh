@@ -29,22 +29,24 @@ if [[ ! -f "$DEST/am_michael.bin" ]]; then
 fi
 
 # Vosk-TTS Russian (replaces old engine as of #213). Multi-speaker model,
-# 6 files, ~935 MB total. SHA-256 pinned in rust/src/models.rs::vosk_ru_manifest().
+# 5 files, ~935 MB total. SHA-256 pinned in rust/src/models.rs::vosk_ru_manifest().
+# Downloads run in parallel to keep cold-cache CI times bounded.
 VOSK_DIR="$DEST/models/vosk-ru"
 mkdir -p "$VOSK_DIR/bert"
 VOSK_BASE="https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main"
-for f in model.onnx dictionary config.json README.md; do
-  if [[ ! -f "$VOSK_DIR/$f" ]]; then
-    echo "Downloading Vosk $f..."
-    curl -fL -o "$VOSK_DIR/$f" "$VOSK_BASE/$f"
+download_if_missing() {
+  local rel="$1"
+  if [[ ! -f "$VOSK_DIR/$rel" ]]; then
+    echo "Downloading Vosk $rel..."
+    curl -fL -o "$VOSK_DIR/$rel" "$VOSK_BASE/$rel"
   fi
-done
-for f in model.onnx vocab.txt; do
-  if [[ ! -f "$VOSK_DIR/bert/$f" ]]; then
-    echo "Downloading Vosk bert/$f..."
-    curl -fL -o "$VOSK_DIR/bert/$f" "$VOSK_BASE/bert/$f"
-  fi
-done
+}
+download_if_missing model.onnx &
+download_if_missing dictionary &
+download_if_missing config.json &
+download_if_missing bert/model.onnx &
+download_if_missing bert/vocab.txt &
+wait
 
 ls -lh "$DEST"
 ls -lh "$VOSK_DIR"

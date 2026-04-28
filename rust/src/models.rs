@@ -139,17 +139,12 @@ pub fn vosk_ru_manifest() -> Vec<ModelFile> {
             url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/vocab.txt",
             sha256: "bbe5063cc3d7a314effd90e9c5099cf493b81f2b9552c155264e16eeab074237",
         },
-        ModelFile {
-            rel_path: "models/vosk-ru/README.md",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/README.md",
-            sha256: "e9db06085c65064c6f8e5220a85070f14fdf47bb8018d0b5c07cc0218cbb5a41",
-        },
+        // removed: README.md (drakulavich/vosk-tts-ru-0.9-multi) — not opened at
+        // runtime; pinning its SHA forced a manifest bump on every upstream
+        // doc copy-edit. CharsiuG2P entries (3 byt5-tiny ONNX) were also
+        // removed in PR #213 — Russian uses vosk-tts internal G2P now.
     ]
 }
-
-// removed: CharsiuG2P ByT5-tiny ONNX entirely in PR #213 — model no longer
-// shipped; Russian routes through vosk-tts internal G2P. The three
-// byt5-tiny SHAs above are intentionally deleted, not bumped to a new model.
 
 pub fn cache_dir() -> PathBuf {
     if let Ok(p) = std::env::var("KESHA_CACHE_DIR") {
@@ -244,24 +239,22 @@ pub fn is_vad_cached(dir: &str) -> bool {
     has_all_files(dir, VAD_FILES)
 }
 
-// Used by tts::vosk in tests; wired into production code in Task 1.5.
-#[cfg(feature = "tts")]
-#[allow(dead_code)]
-pub fn vosk_ru_model_dir() -> String {
-    cache_dir()
-        .join("models/vosk-ru")
-        .to_string_lossy()
-        .to_string()
+/// Default Vosk-ru model directory under the active cache. Test-only —
+/// production callers (resolver, list-voices) build the path from the
+/// caller-supplied `cache_dir` so they honour `tempfile::tempdir()` test
+/// fixtures and explicit `KESHA_CACHE_DIR` overrides.
+#[cfg(all(feature = "tts", test))]
+pub fn vosk_ru_model_dir() -> PathBuf {
+    cache_dir().join("models/vosk-ru")
 }
 
-// Used by tts::vosk in tests; wired into production code in Task 1.5.
+/// True iff the Vosk-ru install has the runtime-required files. Mirror what
+/// `vosk_tts::Model::new` actually opens — keep these gates aligned.
 #[cfg(feature = "tts")]
-#[allow(dead_code)]
-pub fn is_vosk_ru_cached(dir: &str) -> bool {
-    let base = std::path::Path::new(dir);
-    base.join("model.onnx").exists()
-        && base.join("dictionary").exists()
-        && base.join("bert/model.onnx").exists()
+pub fn is_vosk_ru_cached(dir: &Path) -> bool {
+    dir.join("model.onnx").exists()
+        && dir.join("dictionary").exists()
+        && dir.join("bert/model.onnx").exists()
 }
 
 /// Caller passes the per-model dir (e.g. `asr_model_dir()`); we pull the
@@ -510,7 +503,7 @@ mod tts_tests {
     #[test]
     fn vosk_ru_manifest_has_expected_files() {
         let m = vosk_ru_manifest();
-        assert_eq!(m.len(), 6);
+        assert_eq!(m.len(), 5);
         let names: std::collections::HashSet<&str> = m.iter().map(|f| f.rel_path).collect();
         for f in [
             "models/vosk-ru/model.onnx",
@@ -518,7 +511,6 @@ mod tts_tests {
             "models/vosk-ru/config.json",
             "models/vosk-ru/bert/model.onnx",
             "models/vosk-ru/bert/vocab.txt",
-            "models/vosk-ru/README.md",
         ] {
             assert!(names.contains(f), "missing {f}");
         }

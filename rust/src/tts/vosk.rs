@@ -76,12 +76,15 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_speaker() {
-        let dir_str = crate::models::vosk_ru_model_dir();
-        if !crate::models::is_vosk_ru_cached(&dir_str) {
-            eprintln!("vosk model not cached at {dir_str} — skipping speaker_id range test");
+        let dir = crate::models::vosk_ru_model_dir();
+        if !crate::models::is_vosk_ru_cached(&dir) {
+            eprintln!(
+                "vosk model not cached at {} — skipping speaker_id range test",
+                dir.display()
+            );
             return;
         }
-        let mut v = Vosk::load(std::path::Path::new(&dir_str)).expect("load vosk");
+        let mut v = Vosk::load(&dir).expect("load vosk");
         let err = v.infer("привет", SPEAKER_COUNT, 1.0).unwrap_err();
         assert!(err.to_string().contains("speaker_id"), "msg: {err}");
     }
@@ -90,12 +93,15 @@ mod tests {
     /// produces non-trivial PCM and uses the model-reported sample rate.
     #[test]
     fn synth_short_phrase_produces_audio() {
-        let dir_str = crate::models::vosk_ru_model_dir();
-        if !crate::models::is_vosk_ru_cached(&dir_str) {
-            eprintln!("vosk model not cached at {dir_str} — skipping synth e2e test");
+        let dir = crate::models::vosk_ru_model_dir();
+        if !crate::models::is_vosk_ru_cached(&dir) {
+            eprintln!(
+                "vosk model not cached at {} — skipping synth e2e test",
+                dir.display()
+            );
             return;
         }
-        let mut v = Vosk::load(std::path::Path::new(&dir_str)).expect("load vosk");
+        let mut v = Vosk::load(&dir).expect("load vosk");
         assert_eq!(v.sample_rate(), 22050, "vosk-ru-0.9-multi is 22.05 kHz");
         let pcm = v.infer("Привет, мир.", 4, 1.0).expect("synth");
         // ~0.5s at 22.05kHz = 11025 samples lower bound; allow loose floor.

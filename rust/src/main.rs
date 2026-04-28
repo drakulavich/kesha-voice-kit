@@ -130,12 +130,10 @@ fn list_kokoro_voices(cache: &std::path::Path) -> Vec<String> {
 
 #[cfg(feature = "tts")]
 fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
-    // Vosk-TTS Russian is a single multi-speaker model. resolve_vosk_ru also
-    // requires bert/model.onnx, so check both — otherwise a partial install
-    // would advertise voices that fail to load. Mirrors the resolver gate.
-    if !cache.join("models/vosk-ru/model.onnx").exists()
-        || !cache.join("models/vosk-ru/bert/model.onnx").exists()
-    {
+    // Vosk-TTS Russian is a single multi-speaker model — once installed, all
+    // five baked-in speakers are available. Same gate as resolve_vosk_ru, so
+    // partial installs don't advertise voices that fail at synthesis time.
+    if !models::is_vosk_ru_cached(&cache.join("models/vosk-ru")) {
         return Vec::new();
     }
     vec![

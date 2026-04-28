@@ -17,6 +17,18 @@ pub mod avspeech;
 /// spend minutes on synthesis with poor quality.
 pub const MAX_TEXT_CHARS: usize = 5000;
 
+/// Per-`<break>` ceiling so a hostile SSML input can't allocate gigabytes of
+/// silence. 30s × 24 kHz × 4 B ≈ 2.9 MB max per tag, easily affordable.
+const MAX_BREAK_SECS: f64 = 30.0;
+
+/// Build a zero-PCM silence buffer for an SSML `<break>`, capped at
+/// [`MAX_BREAK_SECS`] regardless of declared duration.
+fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
+    let secs = dur.as_secs_f64().min(MAX_BREAK_SECS);
+    let n = (secs * sample_rate as f64).round() as usize;
+    vec![0.0_f32; n]
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TtsError {
     #[error("text is empty")]
@@ -43,7 +55,7 @@ pub enum EngineChoice<'a> {
     Vosk {
         model_dir: &'a Path,
         speaker_id: u32,
-        /// Reserved for future rate scaling; passed through to vosk's speech_rate.
+        /// Speaking rate (1.0 = model default); passed to vosk's `speech_rate`.
         speed: f32,
     },
 }
@@ -189,10 +201,7 @@ fn synth_segments_kokoro(
             ssml::Segment::Ipa(ph) => {
                 synth_ipa_kokoro(ph, &tok, &voice, &mut k, speed, &mut out)?;
             }
-            ssml::Segment::Break(dur) => {
-                let samples = ((dur.as_secs_f64() * sample_rate as f64).round()) as usize;
-                out.extend(std::iter::repeat_n(0.0_f32, samples));
-            }
+            ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
         }
     }
     if out.is_empty() {
@@ -296,10 +305,7 @@ fn synth_segments_vosk(
                     .map_err(|e| TtsError::SynthesisFailed(format!("vosk infer: {e}")))?;
                 out.extend(audio);
             }
-            ssml::Segment::Break(dur) => {
-                let samples = ((dur.as_secs_f64() * sample_rate as f64).round()) as usize;
-                out.extend(std::iter::repeat_n(0.0_f32, samples));
-            }
+            ssml::Segment::Break(dur) => out.extend(silence_samples(dur, sample_rate)),
         }
     }
     if out.is_empty() {
