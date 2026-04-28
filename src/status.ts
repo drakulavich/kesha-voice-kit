@@ -104,8 +104,7 @@ function showDiskUsage(binPath: string): void {
     { label: "Language ID", path: join(cache, "models/lang-id-ecapa") },
     { label: "VAD (Silero)", path: join(cache, "models/silero-vad") },
     { label: "TTS (Kokoro)", path: join(cache, "models/kokoro-82m") },
-    { label: "TTS (Piper)", path: join(cache, "models/piper-ru") },
-    { label: "TTS (G2P)", path: join(cache, "models/g2p") },
+    { label: "TTS (Vosk)", path: join(cache, "models/vosk-ru") },
   ];
 
   const rows: Array<{ label: string; size: number }> = [];
@@ -173,16 +172,14 @@ function listInstalledVoices(): string[] {
     /* Kokoro not installed */
   }
   try {
-    // Piper RU files follow `ru_RU-<name>-<quality>.onnx` — report just `<name>`.
-    const piper = readdirSync(join(cache, "models", "piper-ru"));
-    for (const f of piper) {
-      if (!f.endsWith(".onnx")) continue;
-      const stem = f.replace(/\.onnx$/, "");
-      const name = stem.replace(/^ru_RU-/, "").split("-")[0];
-      if (name) voices.push(`ru-${name}`);
+    // Vosk-TTS Russian is a single multi-speaker model (5 baked-in voices);
+    // any model.onnx in models/vosk-ru means all five are available.
+    statSync(join(cache, "models", "vosk-ru", "model.onnx"));
+    for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
+      voices.push(`ru-vosk-${id}`);
     }
   } catch {
-    /* Piper not installed */
+    /* Vosk not installed */
   }
   return voices.sort();
 }

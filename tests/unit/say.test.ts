@@ -20,8 +20,8 @@ describe("buildSayArgs", () => {
   });
 
   it("passes --voice when given", () => {
-    expect(buildSayArgs({ text: "Hi", voice: "en-af_heart" })).toEqual(
-      expect.arrayContaining(["--voice", "en-af_heart"]),
+    expect(buildSayArgs({ text: "Hi", voice: "en-am_michael" })).toEqual(
+      expect.arrayContaining(["--voice", "en-am_michael"]),
     );
   });
 
@@ -59,19 +59,19 @@ describe("buildSayArgs", () => {
 });
 
 describe("pickVoiceForLang (auto-routing)", () => {
-  it("returns en-af_heart for English with high confidence", () => {
-    expect(pickVoiceForLang("en", 0.95)).toBe("en-af_heart");
+  it("returns en-am_michael for English with high confidence", () => {
+    expect(pickVoiceForLang("en", 0.95)).toBe("en-am_michael");
   });
 
-  it("returns Milena for Russian on darwin (Piper ru-denis is unintelligible — #207)", () => {
+  it("returns Milena for Russian on darwin (zero-install AVSpeech path)", () => {
     expect(pickVoiceForLang("ru", 0.95, "darwin")).toBe(
       "macos-com.apple.voice.compact.ru-RU.Milena",
     );
   });
 
-  it("falls back to ru-denis for Russian on non-darwin (no AVSpeech available)", () => {
-    expect(pickVoiceForLang("ru", 0.95, "linux")).toBe("ru-denis");
-    expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-denis");
+  it("falls back to ru-vosk-m02 for Russian on non-darwin (Vosk replaces Piper-ruslan, #213)", () => {
+    expect(pickVoiceForLang("ru", 0.95, "linux")).toBe("ru-vosk-m02");
+    expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-vosk-m02");
   });
 
   it("returns undefined below 0.5 confidence (too ambiguous)", () => {

@@ -8,7 +8,7 @@ export interface SayOptions {
    * arg) handles stdin separately before invoking `say()`.
    */
   text?: string;
-  /** Voice id, e.g. `en-af_heart`. Defaults to engine default. */
+  /** Voice id, e.g. `en-am_michael`. Defaults to engine default. */
   voice?: string;
   /** Override the voice's default BCP 47 language code (e.g. `en-us`, `ru`). */
   lang?: string;
