@@ -44,5 +44,29 @@
       "Bash(make smoke-test)",
       "Bash(make release)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/auto-fmt-rust.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/guard-sha-bump.sh"
+          }
+        ]
+      }
+    ]
   }
 }
