@@ -189,7 +189,10 @@ fn resolves_from_cache_when_installed() {
     // Copy instead of symlink so the test works cross-platform (Windows symlink
     // creation requires elevated privileges and the os::unix API is not available).
     std::fs::copy(&model, tmp.path().join("models/kokoro-82m/model.onnx")).unwrap();
-    std::fs::copy(&voice, voices_dir.join("af_heart.bin")).unwrap();
+    // Stage as am_michael.bin since DEFAULT_VOICE_ID = "en-am_michael" (CLAUDE.md
+    // "DEFAULT TTS VOICES MUST BE MALE"); the bytes come from KOKORO_VOICE which
+    // run-cargo-test.sh now points at am_michael.bin.
+    std::fs::copy(&voice, voices_dir.join("am_michael.bin")).unwrap();
 
     let bin = env!("CARGO_BIN_EXE_kesha-engine");
     let out = Command::new(bin)
