@@ -49,11 +49,6 @@ pub enum ResolvedVoice {
         voice_path: std::path::PathBuf,
         espeak_lang: &'static str,
     },
-    Piper {
-        model_path: std::path::PathBuf,
-        config_path: std::path::PathBuf,
-        espeak_lang: &'static str,
-    },
     /// Vosk-TTS multi-speaker Russian (replaces Piper-ru per spec/PR for #210).
     Vosk {
         model_dir: std::path::PathBuf,
@@ -70,7 +65,7 @@ pub enum ResolvedVoice {
 impl ResolvedVoice {
     pub fn espeak_lang(&self) -> &'static str {
         match self {
-            Self::Kokoro { espeak_lang, .. } | Self::Piper { espeak_lang, .. } => espeak_lang,
+            Self::Kokoro { espeak_lang, .. } => espeak_lang,
             Self::Vosk { .. } => "",
             // AVSpeech does its own G2P; the espeak language tag is unused.
             #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -89,13 +84,8 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
     match lang {
         "en" => resolve_kokoro(cache_dir, voice_id, name),
         "ru" => {
-            // ru-vosk-* is the new path; ru-ruslan still routes to Piper
-            // until Phase 2 of the migration deletes the Piper engine.
-            if let Some(rest) = name.strip_prefix("vosk-") {
-                resolve_vosk_ru(cache_dir, voice_id, rest)
-            } else {
-                resolve_piper_ru(cache_dir, voice_id, name)
-            }
+            let suffix = name.strip_prefix("vosk-").unwrap_or(name);
+            resolve_vosk_ru(cache_dir, voice_id, suffix)
         }
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         "macos" => {
@@ -136,23 +126,6 @@ fn resolve_kokoro(cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Resul
         model_path,
         voice_path,
         espeak_lang: "en-us",
-    })
-}
-
-fn resolve_piper_ru(cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Result<ResolvedVoice> {
-    // Piper filenames follow the upstream convention `ru_RU-<name>-medium.*`.
-    let base = cache_dir
-        .join("models/piper-ru")
-        .join(format!("ru_RU-{name}-medium"));
-    let model_path = base.with_extension("onnx");
-    let config_path = base.with_extension("onnx.json");
-    if !model_path.exists() || !config_path.exists() {
-        anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
-    }
-    Ok(ResolvedVoice::Piper {
-        model_path,
-        config_path,
-        espeak_lang: "ru",
     })
 }
 
@@ -262,13 +235,6 @@ mod tests {
         }
     }
 
-    fn populate_piper_ru(cache: &Path) {
-        let dir = cache.join("models/piper-ru");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("ru_RU-ruslan-medium.onnx"), b"dummy").unwrap();
-        std::fs::write(dir.join("ru_RU-ruslan-medium.onnx.json"), b"{}").unwrap();
-    }
-
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
     #[test]
     fn resolve_macos_voice_returns_avspeech() {
@@ -312,25 +278,6 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("system_tts"), "msg: {err}");
-    }
-
-    #[test]
-    fn resolve_installed_piper_voice() {
-        let tmp = tempfile::tempdir().unwrap();
-        populate_piper_ru(tmp.path());
-        let r = resolve_voice(tmp.path(), "ru-ruslan").unwrap();
-        match r {
-            ResolvedVoice::Piper {
-                model_path,
-                config_path,
-                espeak_lang,
-            } => {
-                assert!(model_path.ends_with("ru_RU-ruslan-medium.onnx"));
-                assert!(config_path.ends_with("ru_RU-ruslan-medium.onnx.json"));
-                assert_eq!(espeak_lang, "ru");
-            }
-            other => panic!("expected Piper, got {other:?}"),
-        }
     }
 
     fn populate_vosk_ru(cache: &Path) {

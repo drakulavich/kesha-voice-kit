@@ -106,25 +106,6 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
     ]
 }
 
-/// Piper Russian voice (ruslan, medium quality). See [rhasspy/piper-voices].
-/// Switched from `denis` in #210 — ruslan was rated more natural in user
-/// listening tests and is the default for `kesha install --tts`.
-#[cfg(feature = "tts")]
-pub fn piper_ru_manifest() -> Vec<ModelFile> {
-    vec![
-        ModelFile {
-            rel_path: "models/piper-ru/ru_RU-ruslan-medium.onnx",
-            url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx",
-            sha256: "72a5f88e0b20928064eb45d88e1daa21f8af62d18613580d32cbb4aed48dcf7f",
-        },
-        ModelFile {
-            rel_path: "models/piper-ru/ru_RU-ruslan-medium.onnx.json",
-            url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx.json",
-            sha256: "706a4fb17bc304abd07809b552deae615e64dcbffbfbd09854ba37ca59e88117",
-        },
-    ]
-}
-
 /// Vosk-TTS multi-speaker Russian model, mirrored to HF at
 /// `drakulavich/vosk-tts-ru-0.9-multi`. Replaces Piper-ru per
 /// `docs/superpowers/specs/2026-04-27-vosk-ru-replacement-design.md`.
@@ -567,21 +548,6 @@ mod tts_tests {
     }
 
     #[test]
-    fn piper_ru_manifest_has_expected_files() {
-        let m = piper_ru_manifest();
-        assert!(m
-            .iter()
-            .any(|f| f.rel_path.ends_with("ru_RU-ruslan-medium.onnx")));
-        assert!(m
-            .iter()
-            .any(|f| f.rel_path.ends_with("ru_RU-ruslan-medium.onnx.json")));
-        for f in &m {
-            assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
-            assert!(f.url.starts_with("https://"), "{f:?} url not https");
-        }
-    }
-
-    #[test]
     fn vosk_ru_manifest_has_expected_files() {
         let m = vosk_ru_manifest();
         assert_eq!(m.len(), 6);
@@ -678,15 +644,14 @@ pub fn download_vad(no_cache: bool) -> Result<()> {
     parallel_download(&cache, &refs, no_cache)
 }
 
-/// Download every TTS model file: Kokoro English + Piper Russian + G2P.
+/// Download every TTS model file: Kokoro English + Vosk Russian + G2P.
 /// Each file is streamed to disk, then SHA256-verified. 4 concurrent
-/// downloads (#178) — 7 files now, one HF round-trip per file.
+/// downloads (#178).
 #[cfg(feature = "tts")]
 pub fn download_tts(no_cache: bool) -> Result<()> {
     log_mirror_once();
     let cache = cache_dir();
     let mut manifest = kokoro_manifest();
-    manifest.extend(piper_ru_manifest());
     manifest.extend(vosk_ru_manifest());
     manifest.extend(g2p_onnx_manifest());
     let refs: Vec<&ModelFile> = manifest.iter().collect();

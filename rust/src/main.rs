@@ -56,7 +56,7 @@ enum Commands {
         /// Re-download even if cached
         #[arg(long)]
         no_cache: bool,
-        /// Also install TTS models (Kokoro EN + Piper RU + ONNX G2P, ~490MB).
+        /// Also install TTS models (Kokoro EN + Vosk RU, ~990MB).
         #[cfg(feature = "tts")]
         #[arg(long)]
         tts: bool,
@@ -129,27 +129,6 @@ fn list_kokoro_voices(cache: &std::path::Path) -> Vec<String> {
 }
 
 #[cfg(feature = "tts")]
-fn list_piper_ru_voices(cache: &std::path::Path) -> Vec<String> {
-    // Piper RU files follow `ru_RU-<name>-<quality>.onnx`; report just the <name>.
-    let dir = cache.join("models/piper-ru");
-    std::fs::read_dir(&dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let p = e.path();
-            if p.extension().and_then(|s| s.to_str()) != Some("onnx") {
-                return None;
-            }
-            let stem = p.file_stem()?.to_string_lossy().into_owned();
-            // stem like "ru_RU-denis-medium" → "denis"
-            let name = stem.strip_prefix("ru_RU-")?.split('-').next()?;
-            Some(format!("ru-{name}"))
-        })
-        .collect()
-}
-
-#[cfg(feature = "tts")]
 fn list_vosk_ru_voices(_cache: &std::path::Path) -> Vec<String> {
     // Static catalogue — these speaker ids are baked into the multi-speaker model.
     // Order: f01, f02, f03, m01, m02 (m02 is the spec default).
@@ -182,12 +161,11 @@ fn run_say(a: SayArgs) -> i32 {
         let cache = models::cache_dir();
         let mut voice_ids: Vec<String> = list_kokoro_voices(&cache)
             .into_iter()
-            .chain(list_piper_ru_voices(&cache))
             .chain(list_vosk_ru_voices(&cache))
             .collect();
         // macos-* voices live in the OS, not the cache — enumerate them via
         // the AVSpeech helper (#141). Best-effort: if the helper is absent or
-        // errors out, we still show Kokoro/Piper voices.
+        // errors out, we still show Kokoro/Vosk voices.
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         voice_ids.extend(tts::avspeech::list_voices(None));
         voice_ids.sort();
@@ -249,15 +227,6 @@ fn run_say(a: SayArgs) -> i32 {
         } => tts::EngineChoice::Kokoro {
             model_path,
             voice_path,
-            speed: a.rate,
-        },
-        tts::voices::ResolvedVoice::Piper {
-            model_path,
-            config_path,
-            ..
-        } => tts::EngineChoice::Piper {
-            model_path,
-            config_path,
             speed: a.rate,
         },
         tts::voices::ResolvedVoice::Vosk {
