@@ -28,6 +28,7 @@ make release         # lint + test + smoke-test
 
 - **NEVER** auto-download engine or models — `kesha install` only
 - **NEVER** use Node.js APIs — Bun-only (`Bun.spawn`, `Bun.write`, `Bun.file`)
+- **NEVER** tell users to `npm install/update/uninstall` the package — user-facing install/upgrade/remove guidance (release notes, READMEs, error hints, support replies) is bun: `bun add -g @drakulavich/kesha-voice-kit[@latest|@x.y.z]`, `bun remove -g …`. The maintainer publish path (`npm publish --access public`) is the only npm command that stays.
 - **NEVER** push directly to `main` — PRs only
 - **NEVER** forward CLI flags blindly to `kesha-engine` — validate against `--capabilities-json`
 - **BEFORE npm publish**: `make smoke-test`

@@ -37,6 +37,7 @@ When adding a new default, list available `m_*` voices first (`kesha say --list-
 - Bun-native APIs only (`Bun.spawn`, `Bun.write`, `Bun.file`, `Bun.which`)
 - TypeScript executed directly by Bun — no build step
 - The engine is a Rust binary invoked as a subprocess — not linked in-process
+- **User-facing install/upgrade/remove instructions use bun, never npm.** Release notes, READMEs, error-message hints, support replies — always `bun add -g @drakulavich/kesha-voice-kit[@latest|@x.y.z]`, `bun add -g @drakulavich/kesha-voice-kit@latest` for upgrade, `bun remove -g @drakulavich/kesha-voice-kit` for uninstall. Don't even mention `npm i -g` as an alternative. The maintainer publish path (`npm publish --access public`) is exempt — that's a publish step, not user guidance.
 
 ### PYTHON DEPENDENCIES GO IN A VENV — NEVER SYSTEM-WIDE
 

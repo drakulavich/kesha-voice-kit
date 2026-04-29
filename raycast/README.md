@@ -17,7 +17,7 @@ Synthesize speech from the current clipboard text and play it through the defaul
 Install the `kesha` CLI and fetch the engine + models:
 
 ```bash
-npm install -g @drakulavich/kesha-voice-kit   # or bun add --global
+bun add -g @drakulavich/kesha-voice-kit
 kesha install          # downloads engine + ASR + lang-id models (~350 MB)
 kesha install --tts    # Kokoro + Vosk-TTS (~990 MB, required by Speak Clipboard)
 ```
