@@ -238,6 +238,43 @@ Recommended user config:
 
 `build-engine.yml` creates a DRAFT release with the 3 platform binaries. The download URLs (`/releases/download/vX.Y.Z/kesha-engine-*`) return HTTP 404 to unauthenticated clients while the release is a draft — `make smoke-test` / `kesha install` will fail. Run smoke-test AFTER `gh release edit vX.Y.Z --draft=false`, not before. CLAUDE.md's numbered flow above reflects this (publish → smoke → npm publish), easy to flip the order absent-mindedly.
 
+### `make smoke-test` ALONE DOES NOT VALIDATE A NEW ENGINE — DOWNLOAD AND EXERCISE THE PUBLISHED ASSET DIRECTLY BEFORE `npm publish`
+
+`make smoke-test` does `bun link @drakulavich/kesha-voice-kit` then `kesha install` then `bun scripts/smoke-test.ts`. **`bun link` does not always replace a globally-installed `kesha`** — if `bun add -g @drakulavich/kesha-voice-kit@<old>` previously ran on this machine, the global shim wins, `kesha --version` keeps reporting the old CLI, `kesha install` re-fetches the OLD `keshaEngine.version`, and the smoke test happily passes against the previous engine release. The "6/6 passed" turns into a false-green publish gate.
+
+Lesson learned the hard way: v1.5.0 darwin engine ran `--capabilities-json` clean (CI's pre-upload smoke) but actually crashed on Kokoro synth (`Invalid input name: tokens`). `make smoke-test` reported pass because it was still routing through the locally-installed v1.4.4 CLI + v1.4.1 engine.
+
+**Always run this independent v\<NEW\>.\<NEW\>.\<NEW\> validation between `gh release edit --draft=false` and `npm publish`:**
+
+```bash
+SMOKE=/tmp/kesha-vX.Y.Z-smoke && rm -rf "$SMOKE" && mkdir "$SMOKE" && cd "$SMOKE"
+curl -sLfo kesha-engine \
+  "https://github.com/drakulavich/kesha-voice-kit/releases/download/vX.Y.Z/kesha-engine-darwin-arm64"
+chmod +x kesha-engine && xattr -d com.apple.quarantine kesha-engine 2>/dev/null
+
+# 1. Version string MUST equal the new tag — sanity check
+./kesha-engine --version          # → "kesha-engine X.Y.Z"
+
+# 2. Capability surface — must include every feature the build matrix promised
+./kesha-engine --capabilities-json | jq .features
+
+# 3. Real end-to-end exercise (the one CI's --capabilities-json check misses).
+#    For TTS: synthesize a known-good voice into a fresh KESHA_CACHE_DIR.
+#    For ASR: transcribe a fixture from rust/tests/fixtures/.
+KESHA_CACHE_DIR="$SMOKE/cache" ./kesha-engine install --tts
+echo "Hello world" | KESHA_CACHE_DIR="$SMOKE/cache" \
+  ./kesha-engine say --voice en-am_michael --out "$SMOKE/en.wav"
+file "$SMOKE/en.wav"              # must report a valid WAV
+[[ -s "$SMOKE/en.wav" ]] || { echo "ERROR: en.wav is empty — synthesis failed"; exit 1; }
+# Optional belt-and-braces: enforce a minimum byte count (1s mono f32 24kHz ≈ 96 KB).
+[[ $(stat -f%z "$SMOKE/en.wav" 2>/dev/null || stat -c%s "$SMOKE/en.wav") -gt 50000 ]] \
+  || { echo "ERROR: en.wav is suspiciously small — header-only stub?"; exit 1; }
+```
+
+Repeat for `kesha-engine-linux-x64` (run via Docker if not on Linux). If ANY of those three steps fail, **DO NOT `npm publish`**. Either yank the GitHub release (`gh release delete vX.Y.Z --yes`, delete the tag, bump patch, retry) or push a fix and rebuild via `gh workflow run "🔨 Build Engine"`.
+
+The CI smoke step (`--capabilities-json` only) is a sanity check on the toolchain, not a behavior test. Behavior testing is the human-in-the-loop pre-publish gate; it lives in this checklist, not in the workflow file.
+
 ### TESTS THAT STAGE A TEMPDIR CACHE MUST STAGE G2P TOO
 
 Post-#123 (v1.4.0), Kokoro + Piper synthesis flows through the ONNX G2P at `$KESHA_CACHE_DIR/models/g2p/byt5-tiny/`. Any test that creates a fresh `KESHA_CACHE_DIR` tempdir and copies in only Kokoro / Piper will fail with `SynthesisFailed("g2p: G2P model not installed")`. Use `models::is_g2p_cached(dir)` + `models::g2p_model_dir()` to gate + copy the ONNX files. Examples: `rust/tests/tts_smoke.rs::resolves_from_cache_when_installed`, `tests/integration/say-e2e.test.ts::beforeAll`.
