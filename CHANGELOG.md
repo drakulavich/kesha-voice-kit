@@ -8,6 +8,30 @@ CLI and engine versions are **decoupled** — see `CLAUDE.md` for details. Tags
 with a `-cli` suffix are CLI-only patches that reuse the previous engine
 binary.
 
+## [1.4.4] — 2026-04-29
+
+### Changed
+- Default voice for English auto-routing flipped from `en-af_heart` (female) to
+  `en-am_michael` (male) to match Kesha's brand voice. Pass `--voice` to
+  override. (#211)
+- `kesha status` reports the `vosk-ru` cache directory and lists Vosk-TTS
+  speaker ids (`ru-vosk-{f01,f02,f03,m01,m02}`) instead of the Piper layout.
+  Aligns the CLI with the engine work queued for the next engine release.
+  (#214)
+- Russian auto-routing on darwin now picks AVSpeech `Milena` (zero install);
+  Linux/Windows fall through to `ru-vosk-m02`. (#209, #214)
+
+### Internal
+- `protoc` install pulled into a reusable composite action and shared across
+  `ci.yml`, `rust-test.yml`, and `build-engine.yml`.
+- `actions/setup-node` bumped 4 → 6. (#215)
+- Raycast extension `CHANGELOG.md` tracked in repo. (#206)
+
+CLI-only release; engine v1.4.1 unchanged. Engine source in `main` carries the
+Vosk-TTS / misaki-rs / AVSpeech-routing changes (#209, #211, #214) which will
+ship with the next engine bump — Linux/Windows users hitting `ru-vosk-m02`
+auto-routing today will get an "unknown voice" error until that release.
+
 ## [1.4.3] — 2026-04-24
 
 ### Changed
