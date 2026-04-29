@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <style>
+    .title { font-size: 18px; font-weight: 700; fill: #1a1a2e; }
+    .subtitle { font-size: 12px; fill: #666; }
+    .label { font-size: 13px; fill: #333; }
+    .value { font-size: 13px; font-weight: 600; fill: #333; }
+    .speedup { font-size: 11px; fill: #666; }
+    .bar-whisper { fill: #6c757d; }
+    .bar-faster { fill: #adb5bd; }
+    .bar-coreml { fill: #2dc653; }
+    .legend-text { font-size: 11px; fill: #444; }
+  </style>
+
+  <!-- Title -->
+  <text x="24" y="30" class="title">Benchmark: Speech-to-Text (10 Russian voice messages)</text>
+  <text x="24" y="48" class="subtitle">Whisper large-v3-turbo vs Kesha Voice Kit — Apple M3 Pro, 36 GB RAM — auto language detection</text>
+
+  <!-- Legend -->
+  <rect x="24" y="62" width="12" height="12" rx="2" class="bar-whisper"/>
+  <text x="40" y="73" class="legend-text">openai-whisper (OpenClaw default)</text>
+  <rect x="240" y="62" width="12" height="12" rx="2" class="bar-faster"/>
+  <text x="256" y="73" class="legend-text">faster-whisper</text>
+  <rect x="370" y="62" width="12" height="12" rx="2" class="bar-coreml"/>
+  <text x="386" y="73" class="legend-text">Kesha CoreML (Apple Neural Engine)</text>
+
+  <!-- openai-whisper: 54.1s -->
+  <text x="24" y="122" class="label">openai-whisper</text>
+  <rect x="200" y="108" width="244" height="24" rx="3" class="bar-whisper"/>
+  <text x="449" y="125" class="value">54.1s</text>
+  <text x="497" y="125" class="speedup">baseline</text>
+
+  <!-- faster-whisper: 106.2s -->
+  <text x="24" y="166" class="label">faster-whisper</text>
+  <rect x="200" y="152" width="480" height="24" rx="3" class="bar-faster"/>
+  <text x="208" y="169" class="value" fill="white">106.2s</text>
+  <text x="685" y="169" class="speedup">2x slower</text>
+
+  <!-- Kesha CoreML: 3.6s -->
+  <text x="24" y="210" class="label">Kesha CoreML</text>
+  <rect x="200" y="196" width="16" height="24" rx="3" class="bar-coreml"/>
+  <text x="221" y="213" class="value">3.6s</text>
+  <text x="261" y="213" class="speedup">~15x faster</text>
+
+  <!-- Footer -->
+  <text x="24" y="262" class="subtitle">All engines: Whisper large-v3-turbo model, auto language detection, no hints. Run: make benchmark</text>
+</svg>

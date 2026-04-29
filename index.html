@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kesha Voice Kit — Open-source voice toolkit for Apple Silicon</title>
+    <meta
+      name="description"
+      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~15× faster than Whisper on Apple Silicon. Text-to-speech with Kokoro & Vosk. A 20MB Rust binary. No Python."
+    />
+    <meta name="theme-color" content="#0b1014" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Kesha Voice Kit" />
+    <meta
+      property="og:description"
+      content="Open-source voice toolkit. ~15× faster than Whisper on Apple Silicon. STT in 25 languages, TTS, VAD, language detection — all from a single 20MB Rust binary."
+    />
+    <meta property="og:image" content="assets/logo.png" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Kesha Voice Kit" />
+    <meta
+      name="twitter:description"
+      content="Open-source voice toolkit. ~15× faster than Whisper on Apple Silicon."
+    />
+    <meta name="twitter:image" content="assets/logo.png" />
+
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="apple-touch-icon" href="assets/logo.png" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+
+  <body>
+    <!-- Decorative background -->
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--1" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--2" aria-hidden="true"></div>
+
+    <!-- Header -->
+    <header class="header" id="header">
+      <div class="container header__inner">
+        <a href="#top" class="brand" aria-label="Kesha Voice Kit — home">
+          <svg
+            class="brand__mark"
+            width="32"
+            height="32"
+            viewBox="0 0 32 32"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect x="2" y="13" width="2" height="6" rx="1" fill="currentColor" />
+            <rect x="6" y="9" width="2" height="14" rx="1" fill="currentColor" />
+            <rect x="10" y="5" width="2" height="22" rx="1" fill="currentColor" opacity="0.85" />
+            <rect x="14" y="2" width="2" height="28" rx="1" fill="currentColor" />
+            <rect x="18" y="6" width="2" height="20" rx="1" fill="currentColor" opacity="0.85" />
+            <rect x="22" y="10" width="2" height="12" rx="1" fill="currentColor" />
+            <rect x="26" y="13" width="2" height="6" rx="1" fill="currentColor" opacity="0.7" />
+            <rect x="29" y="14" width="1.5" height="4" rx="0.75" fill="currentColor" opacity="0.5" />
+          </svg>
+          <span class="brand__name">kesha<span class="brand__dot">·</span>voice<span class="brand__dot">·</span>kit</span>
+        </a>
+
+        <nav class="nav" aria-label="Primary">
+          <a href="#features">Features</a>
+          <a href="#performance">Performance</a>
+          <a href="#install">Install</a>
+          <a href="#models">Models</a>
+          <a href="#integrations">Integrations</a>
+        </nav>
+
+        <div class="header__actions">
+          <button
+            class="theme-toggle"
+            data-theme-toggle
+            aria-label="Switch to light mode"
+            type="button"
+          ></button>
+          <a
+            class="btn btn--ghost"
+            href="https://github.com/drakulavich/kesha-voice-kit"
+            target="_blank"
+            rel="noopener"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2.16c-3.2.7-3.87-1.36-3.87-1.36-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.24 3.34.95.1-.74.4-1.24.72-1.53-2.55-.29-5.23-1.28-5.23-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18a10.96 10.96 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.13v3.16c0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"
+              />
+            </svg>
+            <span>GitHub</span>
+            <span class="stars" id="github-stars" aria-label="GitHub stars">★ 26</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- Hero -->
+      <section class="hero">
+        <div class="container hero__inner">
+          <div class="eyebrow">
+            <span class="eyebrow__dot"></span>
+            <span>v1.5 · MIT licensed · CoreML + ONNX</span>
+          </div>
+
+          <h1 class="hero__title">
+            <span class="serif italic">Voice in,</span>
+            <span class="serif italic">text out.</span>
+            <span class="hero__title-rest">A Rust toolkit that's <span class="hl">~15× faster</span> than Whisper on Apple Silicon.</span>
+          </h1>
+
+          <p class="hero__sub">
+            A collection of small, fast, open-source audio models — speech-to-text, text-to-speech,
+            voice activity detection, language identification — packaged as CLI tools and an
+            OpenClaw skill for LLM agents. <strong>One 20MB binary. No Python. No ffmpeg.</strong>
+          </p>
+
+          <!-- Animated waveform -->
+          <div class="waveform" aria-hidden="true">
+            <div class="waveform__bars">
+              <span style="--i: 0"></span><span style="--i: 1"></span><span style="--i: 2"></span
+              ><span style="--i: 3"></span><span style="--i: 4"></span><span style="--i: 5"></span
+              ><span style="--i: 6"></span><span style="--i: 7"></span><span style="--i: 8"></span
+              ><span style="--i: 9"></span><span style="--i: 10"></span><span style="--i: 11"></span
+              ><span style="--i: 12"></span><span style="--i: 13"></span><span style="--i: 14"></span
+              ><span style="--i: 15"></span><span style="--i: 16"></span><span style="--i: 17"></span
+              ><span style="--i: 18"></span><span style="--i: 19"></span><span style="--i: 20"></span
+              ><span style="--i: 21"></span><span style="--i: 22"></span><span style="--i: 23"></span
+              ><span style="--i: 24"></span><span style="--i: 25"></span><span style="--i: 26"></span
+              ><span style="--i: 27"></span><span style="--i: 28"></span><span style="--i: 29"></span
+              ><span style="--i: 30"></span><span style="--i: 31"></span>
+            </div>
+          </div>
+
+          <div class="hero__cta">
+            <a class="btn btn--primary" href="#install">
+              <span>Get started</span>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <path d="M5 12h14M13 5l7 7-7 7" />
+              </svg>
+            </a>
+            <a
+              class="btn btn--ghost"
+              href="https://github.com/drakulavich/kesha-voice-kit"
+              target="_blank"
+              rel="noopener"
+              >View on GitHub</a
+            >
+          </div>
+
+          <!-- Quick install pill -->
+          <div class="install-pill">
+            <code><span class="prompt">$</span> bun install -g @drakulavich/kesha-voice-kit</code>
+            <button class="copy" data-copy="bun install -g @drakulavich/kesha-voice-kit" aria-label="Copy install command">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Stats row -->
+          <ul class="stat-row" role="list">
+            <li>
+              <span class="stat-num">25</span>
+              <span class="stat-label">STT languages</span>
+            </li>
+            <li>
+              <span class="stat-num">107</span>
+              <span class="stat-label">Detection langs</span>
+            </li>
+            <li>
+              <span class="stat-num">~20MB</span>
+              <span class="stat-label">Single binary</span>
+            </li>
+            <li>
+              <span class="stat-num">15×</span>
+              <span class="stat-label">vs Whisper (M-series)</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Features grid -->
+      <section class="section" id="features">
+        <div class="container">
+          <header class="section-head">
+            <p class="section-eyebrow">Capabilities</p>
+            <h2 class="section-title">
+              <span class="serif italic">Everything voice,</span> in a single CLI.
+            </h2>
+            <p class="section-sub">
+              Four pipelines, one binary. Pick what you need; the rest stays out of your way.
+            </p>
+          </header>
+
+          <div class="feature-grid">
+            <article class="feature feature--lg">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M12 2v20" />
+                  <path d="M8 6v12" />
+                  <path d="M16 6v12" />
+                  <path d="M4 10v4" />
+                  <path d="M20 10v4" />
+                </svg>
+              </div>
+              <h3>Speech-to-text</h3>
+              <p>
+                25 languages via NVIDIA Parakeet TDT. ~15× faster than Whisper on Apple Silicon, ~2.5× on
+                CPU. Auto language detection, optional VAD for long audio, plain text or
+                LLM-friendly TOON output.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>EN · RU · DE · FR · ES</li>
+                <li>+ 20 more</li>
+                <li>VAD opt-in</li>
+                <li>JSON / TOON</li>
+              </ul>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M3 10v4" />
+                  <path d="M7 6v12" />
+                  <path d="M11 3v18" />
+                  <path d="M15 7v10" />
+                  <path d="M19 10v4" />
+                </svg>
+              </div>
+              <h3>Text-to-speech</h3>
+              <p>
+                Kokoro-82M for English, Vosk-TTS for Russian, plus ~180 macOS system voices.
+                Auto-routes by detected language. SSML preview supported.
+              </p>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M8 12a4 4 0 0 1 8 0" />
+                </svg>
+              </div>
+              <h3>Language detection</h3>
+              <p>
+                SpeechBrain ECAPA-TDNN identifies 107 languages from audio. Apple
+                NLLanguageRecognizer handles text. Both run locally.
+              </p>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M3 12h3l3-9 4 18 3-9h5" />
+                </svg>
+              </div>
+              <h3>Voice activity detection</h3>
+              <p>
+                Silero VAD v5 trims silence on long, sparse recordings. Auto-enabled past 120
+                seconds of audio.
+              </p>
+            </article>
+
+            <article class="feature feature--rust">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M4 4h12l4 4v12H4z" />
+                  <path d="M16 4v4h4" />
+                  <path d="M8 12h8M8 16h6" />
+                </svg>
+              </div>
+              <h3>Rust engine, zero deps</h3>
+              <p>
+                A single 20MB binary running FluidAudio (CoreML) on Apple Silicon and ort (ONNX) on
+                everything else. Audio decoded by Symphonia: WAV, MP3, OGG/Opus, FLAC, AAC, M4A.
+                <strong>No ffmpeg. No Python. No native Node addons.</strong>
+              </p>
+            </article>
+
+            <article class="feature feature--openclaw">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                  <path d="M14 17.5h7" />
+                  <path d="M17.5 14v7" />
+                </svg>
+              </div>
+              <h3>OpenClaw-ready</h3>
+              <p>
+                Plug straight into your LLM agent as a voice-processing skill. Give Claude (or any
+                agent) ears and a voice in one install.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Performance / benchmark -->
+      <section class="section section--alt" id="performance">
+        <div class="container">
+          <div class="bench-layout">
+            <div class="bench-copy">
+              <p class="section-eyebrow">Performance</p>
+              <h2 class="section-title">
+                <span class="serif italic">Faster than Whisper.</span><br />Quieter than your fans.
+              </h2>
+              <p class="section-sub">
+                Compared against Whisper <code>large-v3-turbo</code> across Russian and English
+                clips — every engine left to auto-detect language. CoreML on M3 Pro lands at roughly
+                15× real-time; the ONNX path on x86 still beats Whisper by ~2.5×.
+              </p>
+              <ul class="bench-stats" role="list">
+                <li>
+                  <strong>~15×</strong>
+                  <span>vs openai-whisper · M3 Pro</span>
+                </li>
+                <li>
+                  <strong>~2.5×</strong>
+                  <span>vs openai-whisper · CPU x86</span>
+                </li>
+                <li>
+                  <strong>~7×</strong>
+                  <span>vs faster-whisper · M3 Pro</span>
+                </li>
+              </ul>
+              <a
+                class="link-arrow"
+                href="https://github.com/drakulavich/kesha-voice-kit/blob/main/BENCHMARK.md"
+                target="_blank"
+                rel="noopener"
+              >
+                Read the full benchmark
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M5 12h14M13 5l7 7-7 7" />
+                </svg>
+              </a>
+            </div>
+            <figure class="bench-figure">
+              <img
+                src="assets/benchmark.svg"
+                alt="Bar chart comparing transcription speed: openai-whisper vs faster-whisper vs Kesha Voice Kit"
+                loading="lazy"
+              />
+              <figcaption>Lower bars = faster. Source: BENCHMARK.md.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- Install / Quickstart -->
+      <section class="section" id="install">
+        <div class="container">
+          <header class="section-head">
+            <p class="section-eyebrow">Quick start</p>
+            <h2 class="section-title">
+              <span class="serif italic">Three commands</span> to a working transcript.
+            </h2>
+            <p class="section-sub">
+              Requires <a href="https://bun.sh" target="_blank" rel="noopener">Bun</a> ≥ 1.3 on
+              macOS arm64 or Linux x64.
+            </p>
+          </header>
+
+          <div class="quick-grid">
+            <div class="step">
+              <div class="step__num">01</div>
+              <h3>Install Bun</h3>
+              <p>Skip if you already have it.</p>
+              <div class="code-block">
+                <pre><code><span class="muted">$</span> curl -fsSL https://bun.sh/install | bash</code></pre>
+                <button class="copy" data-copy="curl -fsSL https://bun.sh/install | bash" aria-label="Copy">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step__num">02</div>
+              <h3>Install Kesha</h3>
+              <p>Pulls the engine and base STT models.</p>
+              <div class="code-block">
+                <pre><code><span class="muted">$</span> bun install -g @drakulavich/kesha-voice-kit
+<span class="muted">$</span> kesha install</code></pre>
+                <button class="copy" data-copy="bun install -g @drakulavich/kesha-voice-kit
+kesha install" aria-label="Copy">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step__num">03</div>
+              <h3>Transcribe</h3>
+              <p>Pipe-friendly. Stdout = transcript, stderr = errors.</p>
+              <div class="code-block">
+                <pre><code><span class="muted">$</span> kesha audio.ogg
+Свободу попугаям! Свободу!</code></pre>
+                <button class="copy" data-copy="kesha audio.ogg" aria-label="Copy">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tabs / examples -->
+          <div class="tabs" data-tabs>
+            <div class="tabs__nav" role="tablist" aria-label="Usage examples">
+              <button role="tab" class="is-active" data-tab="stt">Speech-to-text</button>
+              <button role="tab" data-tab="tts">Text-to-speech</button>
+              <button role="tab" data-tab="api">Programmatic API</button>
+              <button role="tab" data-tab="batch">Batch / piping</button>
+            </div>
+
+            <div class="tabs__panel is-active" data-panel="stt">
+              <div class="code-block code-block--lg">
+                <pre><code><span class="cm"># Plain transcript</span>
+<span class="muted">$</span> kesha audio.ogg
+
+<span class="cm"># Text + language/confidence</span>
+<span class="muted">$</span> kesha --format transcript audio.ogg
+
+<span class="cm"># Full JSON with lang fields</span>
+<span class="muted">$</span> kesha --format json audio.ogg
+
+<span class="cm"># Compact, LLM-friendly TOON</span>
+<span class="muted">$</span> kesha --toon audio.ogg
+
+<span class="cm"># Long / silence-heavy audio (auto past 120s)</span>
+<span class="muted">$</span> kesha --vad lecture.m4a
+
+<span class="cm"># Warn if detected language differs</span>
+<span class="muted">$</span> kesha --lang en interview.wav</code></pre>
+              </div>
+            </div>
+
+            <div class="tabs__panel" data-panel="tts">
+              <div class="code-block code-block--lg">
+                <pre><code><span class="cm"># Opt-in TTS pack: Kokoro (EN) + Vosk-TTS (RU), ~990MB</span>
+<span class="muted">$</span> kesha install --tts
+
+<span class="cm"># Speak — voice auto-picks from text language</span>
+<span class="muted">$</span> kesha say "Hello, world" &gt; hello.wav
+<span class="muted">$</span> kesha say "Привет, мир" &gt; privet.wav
+
+<span class="cm"># Use a macOS system voice</span>
+<span class="muted">$</span> kesha say --voice Milena "Чао!"</code></pre>
+              </div>
+            </div>
+
+            <div class="tabs__panel" data-panel="api">
+              <div class="code-block code-block--lg">
+                <pre><code><span class="kw">import</span> { transcribe, downloadModel } <span class="kw">from</span> <span class="str">"@drakulavich/kesha-voice-kit/core"</span>;
+
+<span class="cm">// One-time install</span>
+<span class="kw">await</span> downloadModel();
+
+<span class="cm">// Transcribe a file</span>
+<span class="kw">const</span> text = <span class="kw">await</span> transcribe(<span class="str">"audio.ogg"</span>);
+
+<span class="cm">// With detection metadata</span>
+<span class="kw">const</span> result = <span class="kw">await</span> transcribe(<span class="str">"audio.ogg"</span>, { format: <span class="str">"json"</span> });
+console.<span class="fn">log</span>(result.language, result.confidence);</code></pre>
+              </div>
+            </div>
+
+            <div class="tabs__panel" data-panel="batch">
+              <div class="code-block code-block--lg">
+                <pre><code><span class="cm"># Multiple files — headers per file, like `head`</span>
+<span class="muted">$</span> kesha freedom.ogg tahiti.ogg
+=== freedom.ogg ===
+Свободу попугаям! Свободу!
+
+=== tahiti.ogg ===
+Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
+
+<span class="cm"># Pipe transcripts into your favorite LLM</span>
+<span class="muted">$</span> kesha --toon meeting.m4a | llm "Summarize action items"
+
+<span class="cm"># Status of installed engine + models</span>
+<span class="muted">$</span> kesha status</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Models -->
+      <section class="section section--alt" id="models">
+        <div class="container">
+          <header class="section-head">
+            <p class="section-eyebrow">What's inside</p>
+            <h2 class="section-title">
+              <span class="serif italic">Six models,</span> one runtime.
+            </h2>
+            <p class="section-sub">
+              Each model is best-in-class for its task and runs through
+              <code>kesha-engine</code> — Rust, with CoreML on Apple Silicon and ONNX everywhere
+              else.
+            </p>
+          </header>
+
+          <div class="models-table">
+            <div class="models-table__head" role="row">
+              <span>Model</span>
+              <span>Task</span>
+              <span>Size</span>
+              <span>Source</span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">NVIDIA Parakeet TDT 0.6B v3</span>
+              <span class="model-task">Speech-to-text</span>
+              <span class="model-size">~2.5 GB</span>
+              <span>
+                <a
+                  href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
+                  target="_blank"
+                  rel="noopener"
+                  >HuggingFace ↗</a
+                >
+              </span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">SpeechBrain ECAPA-TDNN</span>
+              <span class="model-task">Audio language detection</span>
+              <span class="model-size">~86 MB</span>
+              <span>
+                <a
+                  href="https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa"
+                  target="_blank"
+                  rel="noopener"
+                  >HuggingFace ↗</a
+                >
+              </span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">Apple NLLanguageRecognizer</span>
+              <span class="model-task">Text language detection</span>
+              <span class="model-size">built-in</span>
+              <span>macOS framework</span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">Silero VAD v5 <em>(opt-in)</em></span>
+              <span class="model-task">Voice activity detection</span>
+              <span class="model-size">~2.3 MB</span>
+              <span>
+                <a href="https://github.com/snakers4/silero-vad" target="_blank" rel="noopener"
+                  >snakers4/silero-vad ↗</a
+                >
+              </span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">Kokoro-82M <em>(opt-in)</em></span>
+              <span class="model-task">Text-to-speech · English</span>
+              <span class="model-size">~990 MB</span>
+              <span>
+                <a
+                  href="https://huggingface.co/hexgrad/Kokoro-82M"
+                  target="_blank"
+                  rel="noopener"
+                  >HuggingFace ↗</a
+                >
+              </span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">Vosk-TTS <em>(opt-in)</em></span>
+              <span class="model-task">Text-to-speech · Russian</span>
+              <span class="model-size">bundled</span>
+              <span>
+                <a href="https://github.com/alphacep/vosk-tts" target="_blank" rel="noopener"
+                  >alphacep/vosk-tts ↗</a
+                >
+              </span>
+            </div>
+          </div>
+
+          <p class="models-foot">
+            Audio decoding via
+            <a href="https://github.com/pdeljanov/Symphonia" target="_blank" rel="noopener"
+              >Symphonia</a
+            >
+            — WAV, MP3, OGG/Opus, FLAC, AAC, M4A.
+          </p>
+        </div>
+      </section>
+
+      <!-- Languages -->
+      <section class="section">
+        <div class="container">
+          <header class="section-head">
+            <p class="section-eyebrow">Languages</p>
+            <h2 class="section-title">
+              <span class="serif italic">25 for transcription.</span>
+              <span class="serif italic">107 for detection.</span>
+            </h2>
+          </header>
+
+          <div class="lang-cloud" role="list">
+            <span role="listitem">English</span>
+            <span role="listitem">Spanish</span>
+            <span role="listitem">German</span>
+            <span role="listitem">French</span>
+            <span role="listitem">Italian</span>
+            <span role="listitem">Portuguese</span>
+            <span role="listitem">Russian</span>
+            <span role="listitem">Polish</span>
+            <span role="listitem">Dutch</span>
+            <span role="listitem">Czech</span>
+            <span role="listitem">Slovak</span>
+            <span role="listitem">Slovenian</span>
+            <span role="listitem">Croatian</span>
+            <span role="listitem">Bulgarian</span>
+            <span role="listitem">Romanian</span>
+            <span role="listitem">Greek</span>
+            <span role="listitem">Hungarian</span>
+            <span role="listitem">Finnish</span>
+            <span role="listitem">Swedish</span>
+            <span role="listitem">Danish</span>
+            <span role="listitem">Estonian</span>
+            <span role="listitem">Latvian</span>
+            <span role="listitem">Lithuanian</span>
+            <span role="listitem">Ukrainian</span>
+            <span role="listitem">Maltese</span>
+          </div>
+          <p class="lang-foot">
+            Need detection only? VoxLingua107 covers
+            <a
+              href="https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa"
+              target="_blank"
+              rel="noopener"
+              >107 languages</a
+            >.
+          </p>
+        </div>
+      </section>
+
+      <!-- Integrations -->
+      <section class="section section--alt" id="integrations">
+        <div class="container">
+          <header class="section-head">
+            <p class="section-eyebrow">Integrations</p>
+            <h2 class="section-title">
+              <span class="serif italic">Drop in</span> where you already work.
+            </h2>
+          </header>
+
+          <div class="integrations">
+            <article class="integration-card">
+              <div class="integration-card__icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                  <path d="M14 17.5h7M17.5 14v7" />
+                </svg>
+              </div>
+              <h3>OpenClaw</h3>
+              <p>Give your LLM agent ears. Voice-processing skill, pre-wired.</p>
+              <a
+                href="https://github.com/drakulavich/kesha-voice-kit/blob/main/docs/openclaw.md"
+                target="_blank"
+                rel="noopener"
+                >Setup guide →</a
+              >
+            </article>
+
+            <article class="integration-card">
+              <div class="integration-card__icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="2" y="6" width="20" height="12" rx="2" />
+                  <path d="M8 10v4M12 8v8M16 10v4" />
+                </svg>
+              </div>
+              <h3>Raycast</h3>
+              <p>
+                macOS launcher commands: transcribe selected audio, speak the clipboard. From the
+                <code>raycast/</code> directory.
+              </p>
+              <a
+                href="https://github.com/drakulavich/kesha-voice-kit/tree/main/raycast"
+                target="_blank"
+                rel="noopener"
+                >Source &amp; install →</a
+              >
+            </article>
+
+            <article class="integration-card">
+              <div class="integration-card__icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                </svg>
+              </div>
+              <h3>Programmatic API</h3>
+              <p>
+                Import <code>transcribe()</code> and <code>downloadModel()</code> directly into any
+                Bun/Node project.
+              </p>
+              <a href="#install">See examples →</a>
+            </article>
+
+            <article class="integration-card">
+              <div class="integration-card__icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M7 9h10M7 13h10M7 17h6" />
+                </svg>
+              </div>
+              <h3>Air-gapped mirrors</h3>
+              <p>Behind a corporate proxy or fully offline? Point Kesha at your model mirror.</p>
+              <a
+                href="https://github.com/drakulavich/kesha-voice-kit/blob/main/docs/model-mirror.md"
+                target="_blank"
+                rel="noopener"
+                >Mirror docs →</a
+              >
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- CTA -->
+      <section class="section cta-section">
+        <div class="container">
+          <div class="cta">
+            <h2 class="cta__title">
+              <span class="serif italic">Ready to</span> ship voice?
+            </h2>
+            <p class="cta__sub">
+              Open source, MIT licensed, and improving every week. Star the repo or jump straight to
+              the install.
+            </p>
+            <div class="cta__actions">
+              <a
+                class="btn btn--primary"
+                href="https://github.com/drakulavich/kesha-voice-kit"
+                target="_blank"
+                rel="noopener"
+                >Star on GitHub</a
+              >
+              <a
+                class="btn btn--ghost"
+                href="https://www.npmjs.com/package/@drakulavich/kesha-voice-kit"
+                target="_blank"
+                rel="noopener"
+                >View on npm</a
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer__inner">
+        <div class="footer__brand">
+          <span class="brand__name">kesha<span class="brand__dot">·</span>voice<span class="brand__dot">·</span>kit</span>
+          <p>Made with 💛🩵 and 🥤 energy under MIT License.</p>
+        </div>
+        <div class="footer__cols">
+          <div>
+            <h4>Project</h4>
+            <ul role="list">
+              <li><a href="https://github.com/drakulavich/kesha-voice-kit" target="_blank" rel="noopener">GitHub</a></li>
+              <li><a href="https://www.npmjs.com/package/@drakulavich/kesha-voice-kit" target="_blank" rel="noopener">npm</a></li>
+              <li><a href="https://github.com/drakulavich/kesha-voice-kit/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></li>
+              <li><a href="https://github.com/drakulavich/kesha-voice-kit/issues" target="_blank" rel="noopener">Issues</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4>Docs</h4>
+            <ul role="list">
+              <li><a href="https://github.com/drakulavich/kesha-voice-kit/blob/main/docs/tts.md" target="_blank" rel="noopener">TTS guide</a></li>
+              <li><a href="https://github.com/drakulavich/kesha-voice-kit/blob/main/docs/vad.md" target="_blank" rel="noopener">VAD guide</a></li>
+              <li><a href="https://github.com/drakulavich/kesha-voice-kit/blob/main/docs/openclaw.md" target="_blank" rel="noopener">OpenClaw</a></li>
+              <li><a href="https://github.com/drakulavich/kesha-voice-kit/blob/main/docs/model-mirror.md" target="_blank" rel="noopener">Model mirror</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4>Stack</h4>
+            <ul role="list">
+              <li><a href="https://bun.sh" target="_blank" rel="noopener">Bun</a></li>
+              <li><a href="https://github.com/FluidInference/FluidAudio" target="_blank" rel="noopener">FluidAudio</a></li>
+              <li><a href="https://github.com/pykeio/ort" target="_blank" rel="noopener">ort (ONNX)</a></li>
+              <li><a href="https://github.com/pdeljanov/Symphonia" target="_blank" rel="noopener">Symphonia</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="container footer__legal">
+        <span>© <span id="year">2026</span> drakulavich · MIT License</span>
+        <span>Hosted on GitHub Pages</span>
+      </div>
+    </footer>
+
+    <!-- Toast for copy -->
+    <div class="toast" id="toast" role="status" aria-live="polite">Copied</div>
+
+    <script src="script.js" defer></script>
+  </body>
+</html>
