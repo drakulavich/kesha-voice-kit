@@ -98,6 +98,14 @@ impl KokoroSession {
 }
 
 /// Map of `Vosk` instances keyed by model directory. Eviction on infer error.
+///
+/// Eviction asymmetry vs [`KokoroSession`]: Vosk-tts holds mutable
+/// per-instance state (BERT prosody buffers, dictionary) that a synth error
+/// may leave inconsistent — the next call could fail in surprising ways
+/// against a half-broken `Synth`. Kokoro inference is a stateless ONNX
+/// `Session::run` per call (each call constructs fresh tensors and reads
+/// the result without retaining state), so a failed `Kokoro::infer` doesn't
+/// poison the session — keeping it cached is safe.
 #[derive(Default)]
 pub struct VoskCache {
     inner: HashMap<PathBuf, Vosk>,

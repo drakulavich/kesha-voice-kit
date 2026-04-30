@@ -127,9 +127,16 @@ pub fn run() -> i32 {
                 return 4;
             }
         }
-        let line = std::str::from_utf8(&buf)
-            .unwrap_or("")
-            .trim_end_matches(['\n', '\r']);
+        let line = match std::str::from_utf8(&buf) {
+            Ok(s) => s.trim_end_matches(['\n', '\r']),
+            Err(_) => {
+                // A request whose bytes aren't valid UTF-8 must surface as a
+                // visible err frame, otherwise the client blocks forever on
+                // the response that never arrives.
+                let _ = write_err(&mut stdout, 0, "request is not valid UTF-8");
+                continue;
+            }
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -279,19 +286,48 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
 // ---------------------------------------------------------------------------
 
 pub(crate) fn write_ok<W: Write>(w: &mut W, id: u32, payload: &[u8]) -> std::io::Result<()> {
-    write_frame(w, STATUS_OK, id, payload)
+    write_ok_capped(w, id, payload, MAX_PAYLOAD_BYTES)
 }
 
 pub(crate) fn write_err<W: Write>(w: &mut W, id: u32, msg: &str) -> std::io::Result<()> {
-    write_frame(w, STATUS_ERR, id, msg.as_bytes())
+    write_err_capped(w, id, msg.as_bytes(), MAX_PAYLOAD_BYTES)
 }
 
+/// `write_ok` with an injectable cap so unit tests can exercise the
+/// oversize-downgrade path without allocating 256 MB.
+fn write_ok_capped<W: Write>(
+    w: &mut W,
+    id: u32,
+    payload: &[u8],
+    max: usize,
+) -> std::io::Result<()> {
+    if payload.len() > max {
+        // Engine bug: silent truncation under STATUS_OK would let the client
+        // accept a corrupt audio blob as complete. Surface it as a visible err
+        // frame instead so a misbehaving engine can't masquerade as healthy.
+        let msg = format!(
+            "engine produced {} bytes (max {max}); response would be truncated",
+            payload.len()
+        );
+        return write_err_capped(w, id, msg.as_bytes(), max);
+    }
+    write_frame(w, STATUS_OK, id, payload)
+}
+
+/// Errors are usually under a KB; on the unlikely path where one exceeds the
+/// cap, truncate the *message* rather than fail to surface the error at all.
+fn write_err_capped<W: Write>(w: &mut W, id: u32, msg: &[u8], max: usize) -> std::io::Result<()> {
+    let trimmed = if msg.len() > max { &msg[..max] } else { msg };
+    write_frame(w, STATUS_ERR, id, trimmed)
+}
+
+/// Inner writer; assumes `payload.len() <= u32::MAX as usize` (caller-enforced
+/// via the `_capped` helpers above).
 fn write_frame<W: Write>(w: &mut W, status: u8, id: u32, payload: &[u8]) -> std::io::Result<()> {
-    let len = payload.len().min(MAX_PAYLOAD_BYTES) as u32;
     w.write_all(&[status])?;
     w.write_all(&id.to_le_bytes())?;
-    w.write_all(&len.to_le_bytes())?;
-    w.write_all(&payload[..len as usize])?;
+    w.write_all(&(payload.len() as u32).to_le_bytes())?;
+    w.write_all(payload)?;
     w.flush()
 }
 
@@ -309,6 +345,13 @@ pub(crate) enum LineRead {
 /// Read until a `\n` or `max` bytes, whichever comes first. On overflow,
 /// drains the rest of the over-long line so the next read stays aligned to
 /// a request boundary.
+///
+/// Implementation note: byte-by-byte reads through `BufRead`. `BufRead::read_until`
+/// would be faster per-byte but doesn't accept a max-bytes cap and would happily
+/// allocate a multi-GB Vec if a client never sent `\n`. Our request lines are
+/// small (~JSON of `tts::MAX_TEXT_CHARS`-bounded text, in practice < 32 KB),
+/// so the byte-loop's overhead is negligible against the synth cost (hundreds
+/// of ms). Trading microoptimisation for the safety guarantee.
 pub(crate) fn read_line_bounded<R: BufRead>(
     r: &mut R,
     buf: &mut Vec<u8>,
@@ -378,16 +421,32 @@ mod tests {
     }
 
     #[test]
-    fn frame_payload_capped_at_max() {
-        // The framing layer should refuse to claim a length beyond
-        // MAX_PAYLOAD_BYTES even when handed a giant slice. Today no engine
-        // can produce that much, but the cap defends downstream readers.
-        let big = vec![0u8; MAX_PAYLOAD_BYTES + 16];
+    fn write_ok_oversize_downgrades_to_err_frame() {
+        // Engine bug guard: payloads above the cap MUST NOT emit STATUS_OK
+        // with truncated bytes, because a client would happily decode the
+        // truncated blob as a complete response. Test the boundary with a
+        // tiny synthetic cap to avoid 256 MB allocations on CI.
         let mut out: Vec<u8> = Vec::new();
-        write_ok(&mut out, 0, &big).unwrap();
-        let claimed_len = u32::from_le_bytes([out[5], out[6], out[7], out[8]]) as usize;
-        assert_eq!(claimed_len, MAX_PAYLOAD_BYTES);
-        assert_eq!(out.len(), 9 + MAX_PAYLOAD_BYTES);
+        let oversize = b"abcdefghij"; // 10 bytes
+        write_ok_capped(&mut out, 42, oversize, 4).unwrap();
+        assert_eq!(out[0], STATUS_ERR, "oversize OK must downgrade to ERR");
+        assert_eq!(u32::from_le_bytes([out[1], out[2], out[3], out[4]]), 42);
+        // Err message itself was clipped to the same cap (4 bytes), so the
+        // frame's len header equals the cap, not the original message length.
+        assert_eq!(u32::from_le_bytes([out[5], out[6], out[7], out[8]]), 4);
+        assert_eq!(out.len(), 9 + 4);
+    }
+
+    #[test]
+    fn write_err_truncates_oversize_message() {
+        // An err whose message exceeds the cap is clipped (vs. dropped) so
+        // the client still sees *something* surfaced. The frame stays valid.
+        let mut out: Vec<u8> = Vec::new();
+        let huge = vec![b'X'; 100];
+        write_err_capped(&mut out, 1, &huge, 8).unwrap();
+        assert_eq!(out[0], STATUS_ERR);
+        assert_eq!(u32::from_le_bytes([out[5], out[6], out[7], out[8]]), 8);
+        assert_eq!(&out[9..], b"XXXXXXXX");
     }
 
     #[test]
