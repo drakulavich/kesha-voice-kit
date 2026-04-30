@@ -28,10 +28,11 @@ use super::wav;
 
 /// Wire format for [`encode`]. New variants live behind `--format` on the CLI;
 /// values are spelled in kebab-case to match `clap` parsing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OutputFormat {
     /// 32-bit float mono RIFF WAV at the engine's native sample rate.
     /// This is the historical default and the no-resample path.
+    #[default]
     Wav,
     /// OGG-encapsulated Opus, mono.
     ///
@@ -60,12 +61,6 @@ impl OutputFormat {
             bitrate: 32_000,
             sample_rate: 24_000,
         }
-    }
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        Self::Wav
     }
 }
 
@@ -105,7 +100,7 @@ pub fn format_from_extension(ext: &str) -> Option<OutputFormat> {
 #[cfg(feature = "tts")]
 pub fn encode(samples: &[f32], src_rate: u32, fmt: OutputFormat) -> anyhow::Result<Vec<u8>> {
     match fmt {
-        OutputFormat::Wav => wav::encode_wav(samples, src_rate).map_err(Into::into),
+        OutputFormat::Wav => wav::encode_wav(samples, src_rate),
         OutputFormat::OggOpus {
             bitrate,
             sample_rate,
@@ -222,9 +217,9 @@ fn encode_ogg_opus(
             .encode_float(&pcm_buf, &mut packet)
             .map_err(|e| anyhow::anyhow!("opus encode (frame {i}): {e}"))?;
 
-        sample_pos_48k += u64::from(target_to_48k(frame_size as u32, target_sr));
+        sample_pos_48k += target_to_48k(frame_size as u32, target_sr);
 
-        let is_last = i + 1 == n_full_packets && total_samples % frame_size == 0;
+        let is_last = i + 1 == n_full_packets && total_samples.is_multiple_of(frame_size);
         let info = if is_last {
             ogg::PacketWriteEndInfo::EndStream
         } else {
@@ -252,7 +247,7 @@ fn encode_ogg_opus(
         let nbytes = enc
             .encode_float(&pcm_buf, &mut packet)
             .map_err(|e| anyhow::anyhow!("opus encode (tail): {e}"))?;
-        sample_pos_48k += u64::from(target_to_48k(leftover as u32, target_sr));
+        sample_pos_48k += target_to_48k(leftover as u32, target_sr);
         writer
             .write_packet(
                 packet[..nbytes].to_vec(),
