@@ -104,6 +104,10 @@ GitHub's immutable-releases permanently reserves tag names after publish. **Brok
 
 **Why `--all-targets` matters:** CI's ubuntu job runs clippy; the macOS jobs run only `cargo test`. Without `--all-targets`, local clippy misses dead code in `#[cfg(test)]` blocks and tests — which then breaks CI after push. (Lesson: #125 M1 landed a dead enum variant + struct field that passed on macOS but failed ubuntu.)
 
+**Clippy lint set differs by rustc minor version.** Ubuntu CI typically runs a newer rustc than the developer's local toolchain (we have no `rust-toolchain.toml`). Each Rust release adds new lints under `-D warnings` — local can pass while CI fails on lints like `derivable_impls`, `useless_conversion`, `manual_is_multiple_of`. When CI fails but local passes, pull the exact errors via `gh run view <id> --log-failed` and fix from the report rather than re-running locally. Mechanical fixes: `#[derive(Default)]` + `#[default]` for unit-default enums; drop redundant `.map_err(Into::into)` and `u64::from(u64_value)`; use `x.is_multiple_of(n)` instead of `x % n == 0`. (Lesson: PR #224 hit this — 5 lints in `tts/encode.rs` flagged only by ubuntu's rustc 1.95 vs local 1.94.)
+
+**Fresh cargo builds need `protoc` on PATH.** `vosk-tts-rs` uses `prost-build`, which shells out to `protoc` at build-script time. macOS: `brew install protobuf` then `export PATH="/opt/homebrew/opt/protobuf/bin:$PATH"` (or set `PROTOC=...`). Cached builds hide this — only `cargo clean` runs surface the missing dep.
+
 ### NO SPECULATIVE FIELDS OR ENUM VARIANTS
 
 Don't add struct fields, enum variants, or constants "for later." Clippy's `dead_code` lint is a hard error under `-D warnings`, so any unused public item will fail CI.
