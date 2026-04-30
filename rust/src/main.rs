@@ -106,6 +106,10 @@ enum Commands {
         /// Explicit voice embedding file (testing override)
         #[arg(long = "voice-file", hide = true)]
         voice_file: Option<std::path::PathBuf>,
+        /// Long-lived loop: read newline-delimited JSON requests on stdin,
+        /// reuse loaded engines across calls. Spike for #213.
+        #[arg(long = "stdin-loop", hide = true)]
+        stdin_loop: bool,
     },
 }
 
@@ -123,6 +127,7 @@ struct SayArgs {
     sample_rate: Option<u32>,
     model: Option<std::path::PathBuf>,
     voice_file: Option<std::path::PathBuf>,
+    stdin_loop: bool,
 }
 
 /// Resolve the user-supplied `--format` / `--bitrate` / `--sample-rate` /
@@ -250,6 +255,10 @@ fn run_say(a: SayArgs) -> i32 {
         return 0;
     }
 
+    if a.stdin_loop {
+        return run_say_stdin_loop();
+    }
+
     let text_joined = match a.text {
         Some(s) => s,
         None => {
@@ -354,6 +363,190 @@ fn run_say(a: SayArgs) -> i32 {
     0
 }
 
+// =============================================================================
+// --stdin-loop spike for #213
+//
+// Long-lived TTS process. Stdin: newline-delimited JSON requests. Stdout:
+// framed binary responses (1-byte status + 4-byte LE u32 length + payload).
+// Loaded engines (Kokoro, Vosk, voice files, tokenizer) are cached across
+// requests, amortising the ~21 s/call Vosk model load and ~1 s/call Kokoro
+// load measured on this machine.
+//
+// Protocol is intentionally simple — clients are co-located (Bun spawning the
+// engine), no auth, no auth surface, no daemon lifecycle. SSML is not yet
+// supported in the loop. Plain text + Kokoro/Vosk/AVSpeech only.
+// =============================================================================
+
+#[cfg(feature = "tts")]
+#[derive(serde::Deserialize)]
+struct LoopRequest {
+    text: String,
+    voice: String,
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    bitrate: Option<i32>,
+    #[serde(default)]
+    sample_rate: Option<u32>,
+    #[serde(default)]
+    lang: Option<String>,
+    #[serde(default = "default_rate")]
+    rate: f32,
+}
+
+#[cfg(feature = "tts")]
+fn default_rate() -> f32 {
+    1.0
+}
+
+#[cfg(feature = "tts")]
+#[derive(Default)]
+struct LoopCache {
+    tokenizer: Option<tts::tokenizer::Tokenizer>,
+    kokoro: Option<(std::path::PathBuf, tts::kokoro::Kokoro)>,
+    voice_files: std::collections::HashMap<std::path::PathBuf, Vec<f32>>,
+    vosk: std::collections::HashMap<std::path::PathBuf, tts::vosk::Vosk>,
+}
+
+#[cfg(feature = "tts")]
+fn run_say_stdin_loop() -> i32 {
+    use std::io::BufRead;
+
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout().lock();
+    let cache_dir = models::cache_dir();
+    let mut cache = LoopCache::default();
+
+    for line_res in stdin.lock().lines() {
+        let line = match line_res {
+            Ok(l) => l,
+            Err(e) => {
+                let _ = write_loop_err(&mut stdout, &format!("read: {e}"));
+                return 4;
+            }
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let req: LoopRequest = match serde_json::from_str(&line) {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = write_loop_err(&mut stdout, &format!("json: {e}"));
+                continue;
+            }
+        };
+        match handle_loop_request(&req, &cache_dir, &mut cache) {
+            Ok(bytes) => {
+                let _ = write_loop_ok(&mut stdout, &bytes);
+            }
+            Err(msg) => {
+                let _ = write_loop_err(&mut stdout, &msg);
+            }
+        }
+    }
+    0
+}
+
+#[cfg(feature = "tts")]
+fn write_loop_ok(w: &mut impl std::io::Write, payload: &[u8]) -> std::io::Result<()> {
+    w.write_all(&[0u8])?;
+    w.write_all(&(payload.len() as u32).to_le_bytes())?;
+    w.write_all(payload)?;
+    w.flush()
+}
+
+#[cfg(feature = "tts")]
+fn write_loop_err(w: &mut impl std::io::Write, msg: &str) -> std::io::Result<()> {
+    let bytes = msg.as_bytes();
+    w.write_all(&[1u8])?;
+    w.write_all(&(bytes.len() as u32).to_le_bytes())?;
+    w.write_all(bytes)?;
+    w.flush()
+}
+
+#[cfg(feature = "tts")]
+fn handle_loop_request(
+    req: &LoopRequest,
+    cache_dir: &std::path::Path,
+    c: &mut LoopCache,
+) -> Result<Vec<u8>, String> {
+    let format = resolve_output_format(req.format.as_deref(), req.bitrate, req.sample_rate, None)?;
+    let resolved = tts::voices::resolve_voice(cache_dir, &req.voice).map_err(|e| e.to_string())?;
+    let espeak_lang = req
+        .lang
+        .clone()
+        .unwrap_or_else(|| resolved.espeak_lang().to_string());
+
+    match resolved {
+        tts::voices::ResolvedVoice::Kokoro {
+            model_path,
+            voice_path,
+            ..
+        } => {
+            if c.tokenizer.is_none() {
+                c.tokenizer = Some(
+                    tts::tokenizer::Tokenizer::load()
+                        .map_err(|e| format!("tokenizer load: {e}"))?,
+                );
+            }
+            if c.kokoro.as_ref().is_none_or(|(p, _)| p != &model_path) {
+                let k = tts::kokoro::Kokoro::load(&model_path)
+                    .map_err(|e| format!("kokoro load: {e}"))?;
+                c.kokoro = Some((model_path.clone(), k));
+            }
+            if !c.voice_files.contains_key(&voice_path) {
+                let v =
+                    tts::voices::load_voice(&voice_path).map_err(|e| format!("voice load: {e}"))?;
+                c.voice_files.insert(voice_path.clone(), v);
+            }
+            let tok = c.tokenizer.as_ref().expect("tokenizer just loaded");
+            let voice = c.voice_files.get(&voice_path).expect("voice just loaded");
+            let k = &mut c.kokoro.as_mut().expect("kokoro just loaded").1;
+
+            let ipa =
+                tts::g2p::text_to_ipa(&req.text, &espeak_lang).map_err(|e| format!("g2p: {e}"))?;
+            let ids = tok.encode(&ipa);
+            if ids.is_empty() {
+                return Err("no recognizable phonemes in input".into());
+            }
+            let active = ids.len();
+            let padded = tts::tokenizer::Tokenizer::pad_to_context(ids);
+            let style = tts::voices::select_style(voice, active);
+            let audio = k
+                .infer(&padded, style, req.rate)
+                .map_err(|e| format!("infer: {e}"))?;
+            tts::encode::encode(&audio, tts::kokoro::SAMPLE_RATE, format)
+                .map_err(|e| format!("encode: {e}"))
+        }
+        tts::voices::ResolvedVoice::Vosk {
+            model_dir,
+            speaker_id,
+        } => {
+            if !c.vosk.contains_key(&model_dir) {
+                let v = tts::vosk::Vosk::load(&model_dir).map_err(|e| format!("vosk load: {e}"))?;
+                c.vosk.insert(model_dir.clone(), v);
+            }
+            let v = c.vosk.get_mut(&model_dir).expect("vosk just loaded");
+            let sample_rate = v.sample_rate();
+            let audio = v
+                .infer(&req.text, speaker_id, req.rate)
+                .map_err(|e| format!("vosk infer: {e}"))?;
+            tts::encode::encode(&audio, sample_rate, format).map_err(|e| format!("encode: {e}"))
+        }
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        tts::voices::ResolvedVoice::AVSpeech { voice_id } => tts::say(tts::SayOptions {
+            text: &req.text,
+            lang: &espeak_lang,
+            engine: tts::EngineChoice::AVSpeech {
+                voice_id: &voice_id,
+            },
+            ssml: false,
+            format,
+        })
+        .map_err(|e| e.to_string()),
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -413,6 +606,7 @@ fn main() -> Result<()> {
             sample_rate,
             model,
             voice_file,
+            stdin_loop,
         }) => {
             std::process::exit(run_say(SayArgs {
                 text,
@@ -427,6 +621,7 @@ fn main() -> Result<()> {
                 sample_rate,
                 model,
                 voice_file,
+                stdin_loop,
             }));
         }
         None => {
