@@ -29,7 +29,9 @@ Text-to-speech (English). Apache 2.0. ONNX export by [onnx-community/Kokoro-82M-
 
 ### Vosk-TTS (Russian, multi-speaker)
 
-Text-to-speech (Russian, 5 baked-in speakers). Apache 2.0. Model: [alphacep/vosk-tts](https://huggingface.co/alphacep/vosk-tts) (`vosk-model-tts-ru-0.9-multi`). Integrated via [`vosk-tts-rs`](https://github.com/alphacep/vosk-tts-rs).
+Text-to-speech (Russian, 5 baked-in speakers). Apache 2.0. Model: [alphacep/vosk-tts](https://huggingface.co/alphacep/vosk-tts) (`vosk-model-tts-ru-0.9-multi`).
+
+**Runtime code:** Originally pulled from `crates.io` as `vosk-tts-rs 0.1.0`. As of #216 the runtime subset is **vendored** under `rust/vendor/vosk-tts/` (Apache 2.0; copied from [`andreytkachenko/vosk-tts-rs`](https://github.com/andreytkachenko/vosk-tts-rs) — see `rust/vendor/vosk-tts/LICENSE` and `rust/vendor/vosk-tts/NOTICE`). The vendored copy drops the upstream gRPC server/CLI/HTTP-model-fetch modules and replaces the `tokenizers` crate with a small inline BERT WordPiece tokenizer, eliminating the `prost`, `tonic`, `tokio`, `axum`, `hyper`, `reqwest`, `tokenizers`, `onig_sys`, `esaxx-rs`, `bzip2-sys`, `lzma-sys`, and `zstd-sys` transitive dependencies that broke Windows MSVC linkage.
 
 ### misaki-rs (English G2P)
 

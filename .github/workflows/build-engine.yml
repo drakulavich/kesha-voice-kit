@@ -41,10 +41,10 @@ jobs:
             target: x86_64-unknown-linux-gnu
             features: onnx,tts
             binary: kesha-engine-linux-x64
-          # Windows MSVC build temporarily disabled — vosk-tts-rs transitive
-          # native deps (tokenizers/onig_sys/etc.) trigger LIBCMT/MSVCRT
-          # link conflicts (LNK2005). Tracked in #216 with a vendor pivot
-          # plan. Restore the windows-latest row when the issue closes.
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            features: onnx,tts
+            binary: kesha-engine-windows-x64.exe
     runs-on: ${{ matrix.os }}
     env:
       # Target macOS 14 so the Swift compiler treats concurrency as
@@ -66,8 +66,6 @@ jobs:
         with:
           workspaces: rust
 
-      - uses: ./.github/actions/install-protoc
-
       - uses: ilammy/msvc-dev-cmd@v1
         if: matrix.os == 'windows-latest'
 
@@ -88,9 +86,11 @@ jobs:
       - name: Install system Opus
         # audiopus_sys / opusic-sys (added in #224 for OGG/Opus output) try
         # pkg-config first; on miss they fall back to a vendored libopus
-        # cmake build that's incompatible with macOS runner cmake ≥4.
-        # Installing the system lib makes pkg-config succeed and skips
-        # the cmake build entirely.
+        # cmake build that's incompatible with runner cmake ≥4 (the
+        # vendored CMakeLists.txt declares `cmake_minimum_required(<3.5)`).
+        # Linux/macOS: install the system lib so pkg-config succeeds and
+        # cmake never runs. Windows: pkg-config isn't really there; let
+        # the cmake fallback through with a policy override.
         shell: bash
         run: |
           if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
@@ -99,6 +99,15 @@ jobs:
           elif [[ "${{ matrix.os }}" == "macos-14" ]]; then
             brew install opus pkg-config
           fi
+
+      - name: Allow legacy cmake_minimum_required (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        # The vendored libopus CMakeLists.txt declares `cmake_minimum_required(<3.5)`,
+        # which the runner's cmake ≥4 refuses. The escape hatch is documented
+        # by CMake itself: `CMAKE_POLICY_VERSION_MINIMUM=3.5` forgives it for
+        # configure-time. Cheaper than installing libopus via vcpkg.
+        run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
 
       - name: Build release binary
         run: cd rust && cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }} --no-default-features

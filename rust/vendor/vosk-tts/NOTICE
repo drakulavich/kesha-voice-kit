@@ -1,0 +1,31 @@
+Kesha Voice Kit — vendored vosk-tts runtime subset
+====================================================
+
+This crate is a trimmed copy of the runtime portions of
+`andreytkachenko/vosk-tts-rs` v0.1.0
+(https://github.com/andreytkachenko/vosk-tts-rs), licensed under
+Apache License 2.0. See `LICENSE` in this directory.
+
+Original authors: andrey@iadev.ru, Alpha Cephei Inc.
+
+We vendor only what `Synth::synth_audio` transitively needs:
+
+- `model.rs`  — model + dictionary + config loader (download/path-discovery
+                paths removed; callers always pass an explicit directory).
+- `synth.rs`  — phoneme assembly + ONNX inference.
+- `g2p.rs`    — Russian rule-based grapheme-to-phoneme (unchanged).
+- `tokenizer.rs` — small inline BERT WordPiece tokenizer (NEW; replaces
+                `tokenizers` crate to drop onig_sys / esaxx-rs / bzip2 /
+                lzma / zstd transitives that broke Windows MSVC linkage).
+
+Dropped from upstream (not needed for the kesha-engine runtime path):
+
+- gRPC server/client (`tonic`, `prost`, `tokio`, `axum`, `hyper`, `tower`)
+- HTTP model download (`reqwest`, `zip`)
+- `tokenizers` crate (replaced with inline WordPiece — see Apache 2.0
+   parity-test commentary in `src/tokenizer.rs`).
+- `dirs`, `clap`, `log`, `env_logger`, `num_cpus`, `rayon`, `hound`
+   (the WAV writer; kesha re-uses its own `tts::wav::encode_wav`).
+- The `bin/` entrypoints (CLI + server + client).
+
+Modifications: see git history under `rust/vendor/vosk-tts/`.

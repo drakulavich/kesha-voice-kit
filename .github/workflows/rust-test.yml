@@ -9,9 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # windows-latest temporarily dropped — vosk-tts-rs transitive
-        # MSVC link conflicts (LNK2005). Restore when #216 lands.
-        os: [macos-14, ubuntu-latest]
+        os: [macos-14, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
@@ -27,8 +25,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-
-      - uses: ./.github/actions/install-protoc
 
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
@@ -51,10 +47,11 @@ jobs:
         # audiopus_sys 0.2.2 / opusic-sys 0.6.0 (added in #224 for OGG/Opus
         # output) try pkg-config first; on miss they fall back to a vendored
         # libopus build via cmake whose CMakeLists.txt declares
-        # `cmake_minimum_required(VERSION <3.5)`. macOS runners now ship cmake
-        # ≥4 which refuses that — build aborts. Installing system libopus +
-        # pkg-config makes the build script find the lib and skip cmake
-        # entirely.
+        # `cmake_minimum_required(VERSION <3.5)`. Linux/macOS: install the
+        # system lib so pkg-config succeeds and cmake never runs. Windows:
+        # set `CMAKE_POLICY_VERSION_MINIMUM=3.5` so the cmake fallback build
+        # is forgiven (cheaper than vcpkg-installing opus).
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
@@ -63,6 +60,11 @@ jobs:
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
             brew install opus pkg-config
           fi
+
+      - name: Allow legacy cmake_minimum_required (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
 
       - name: Cache Kokoro spike models
         uses: actions/cache@v5

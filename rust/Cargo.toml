@@ -68,7 +68,7 @@ tempfile = { version = "3", optional = true }
 # Pinned exactly so transitive minor bumps can't silently mutate the IPA
 # our `g2p_parity` test freezes — see #207.
 misaki-rs = { version = "=0.3.0", default-features = false }
-vosk_tts = { package = "vosk-tts-rs", version = "0.1.0" }
+vosk_tts = { path = "vendor/vosk-tts" }
 
 [dev-dependencies]
 tempfile = "3"
