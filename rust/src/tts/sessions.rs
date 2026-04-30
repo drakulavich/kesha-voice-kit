@@ -60,14 +60,15 @@ impl KokoroSession {
     }
 
     fn voice(&mut self, voice_path: &Path) -> anyhow::Result<&[f32]> {
-        if !self.voices.contains_key(voice_path) {
-            let v = voices::load_voice(voice_path)?;
-            self.voices.insert(voice_path.to_path_buf(), v);
-        }
-        Ok(self
-            .voices
-            .get(voice_path)
-            .expect("voice just inserted into cache"))
+        use std::collections::hash_map::Entry;
+        let v = match self.voices.entry(voice_path.to_path_buf()) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => {
+                let loaded = voices::load_voice(voice_path)?;
+                e.insert(loaded)
+            }
+        };
+        Ok(v.as_slice())
     }
 
     /// Synthesise raw IPA. Returns mono f32 PCM at [`super::kokoro::SAMPLE_RATE`].
@@ -117,14 +118,14 @@ impl VoskCache {
     }
 
     fn ensure(&mut self, model_dir: &Path) -> anyhow::Result<&mut Vosk> {
-        if !self.inner.contains_key(model_dir) {
-            let v = Vosk::load(model_dir)?;
-            self.inner.insert(model_dir.to_path_buf(), v);
+        use std::collections::hash_map::Entry;
+        match self.inner.entry(model_dir.to_path_buf()) {
+            Entry::Occupied(e) => Ok(e.into_mut()),
+            Entry::Vacant(e) => {
+                let v = Vosk::load(model_dir)?;
+                Ok(e.insert(v))
+            }
         }
-        Ok(self
-            .inner
-            .get_mut(model_dir)
-            .expect("vosk instance just inserted into cache"))
     }
 
     /// Expose the model's reported sample rate without synthesising. Loads

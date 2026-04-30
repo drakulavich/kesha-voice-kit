@@ -361,27 +361,23 @@ pub(crate) fn read_line_bounded<R: BufRead>(
     loop {
         if buf.len() >= max {
             // Consume to next newline so subsequent calls land on a fresh line.
+            // Both EOF-during-drain and a found newline yield TooLong.
             loop {
-                match r.read(&mut byte)? {
-                    0 => return Ok(LineRead::TooLong),
-                    _ if byte[0] == b'\n' => return Ok(LineRead::TooLong),
-                    _ => continue,
+                if r.read(&mut byte)? == 0 || byte[0] == b'\n' {
+                    return Ok(LineRead::TooLong);
                 }
             }
         }
-        match r.read(&mut byte)? {
-            0 => {
-                if buf.is_empty() {
-                    return Ok(LineRead::Eof);
-                }
-                return Ok(LineRead::Line);
-            }
-            _ => {
-                buf.push(byte[0]);
-                if byte[0] == b'\n' {
-                    return Ok(LineRead::Line);
-                }
-            }
+        if r.read(&mut byte)? == 0 {
+            return Ok(if buf.is_empty() {
+                LineRead::Eof
+            } else {
+                LineRead::Line
+            });
+        }
+        buf.push(byte[0]);
+        if byte[0] == b'\n' {
+            return Ok(LineRead::Line);
         }
     }
 }
