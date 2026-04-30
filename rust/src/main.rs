@@ -7,6 +7,8 @@ mod capabilities;
 mod debug;
 mod lang_id;
 mod models;
+#[cfg(feature = "tts")]
+mod say_loop;
 mod text_lang;
 mod transcribe;
 #[cfg(feature = "tts")]
@@ -106,6 +108,11 @@ enum Commands {
         /// Explicit voice embedding file (testing override)
         #[arg(long = "voice-file", hide = true)]
         voice_file: Option<std::path::PathBuf>,
+        /// Long-lived loop: read newline-delimited JSON requests on stdin,
+        /// reuse loaded engines across calls, write framed binary responses
+        /// on stdout. See `docs/tts-stdin-loop.md`. Issue #213.
+        #[arg(long = "stdin-loop", hide = true)]
+        stdin_loop: bool,
     },
 }
 
@@ -123,6 +130,7 @@ struct SayArgs {
     sample_rate: Option<u32>,
     model: Option<std::path::PathBuf>,
     voice_file: Option<std::path::PathBuf>,
+    stdin_loop: bool,
 }
 
 /// Resolve the user-supplied `--format` / `--bitrate` / `--sample-rate` /
@@ -139,7 +147,7 @@ struct SayArgs {
 /// defaults. When the user picked WAV but supplied either flag, we surface a
 /// clear error rather than silently dropping them.
 #[cfg(feature = "tts")]
-fn resolve_output_format(
+pub(crate) fn resolve_output_format(
     format: Option<&str>,
     bitrate: Option<i32>,
     sample_rate: Option<u32>,
@@ -248,6 +256,10 @@ fn run_say(a: SayArgs) -> i32 {
             }
         }
         return 0;
+    }
+
+    if a.stdin_loop {
+        return say_loop::run();
     }
 
     let text_joined = match a.text {
@@ -413,6 +425,7 @@ fn main() -> Result<()> {
             sample_rate,
             model,
             voice_file,
+            stdin_loop,
         }) => {
             std::process::exit(run_say(SayArgs {
                 text,
@@ -427,6 +440,7 @@ fn main() -> Result<()> {
                 sample_rate,
                 model,
                 voice_file,
+                stdin_loop,
             }));
         }
         None => {

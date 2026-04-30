@@ -5,6 +5,7 @@ use std::path::Path;
 pub mod encode;
 pub mod g2p;
 pub mod kokoro;
+pub mod sessions;
 pub mod ssml;
 pub mod tokenizer;
 pub mod voices;
@@ -202,12 +203,23 @@ fn synth_segments_kokoro(
     speed: f32,
     format: OutputFormat,
 ) -> Result<Vec<u8>, TtsError> {
-    let tok = tokenizer::Tokenizer::load()
-        .map_err(|e| TtsError::SynthesisFailed(format!("tokenizer load: {e}")))?;
-    let voice = voices::load_voice(voice_path)
-        .map_err(|e| TtsError::SynthesisFailed(format!("voice load: {e}")))?;
-    let mut k = kokoro::Kokoro::load(model_path)
-        .map_err(|e| TtsError::SynthesisFailed(format!("kokoro load: {e}")))?;
+    let mut sess = sessions::KokoroSession::load(model_path)
+        .map_err(|e| TtsError::SynthesisFailed(e.to_string()))?;
+    synth_segments_kokoro_with(&mut sess, segments, lang, voice_path, speed, format)
+}
+
+/// Drive an SSML segment list against an already-constructed Kokoro session.
+/// Used by both the one-shot `tts::say()` SSML path and the long-lived
+/// `--stdin-loop` (#213). Concatenates audio for `<break>` and text/IPA
+/// segments, encodes once at the engine's native sample rate.
+pub fn synth_segments_kokoro_with(
+    sess: &mut sessions::KokoroSession,
+    segments: &[ssml::Segment],
+    lang: &str,
+    voice_path: &Path,
+    speed: f32,
+    format: OutputFormat,
+) -> Result<Vec<u8>, TtsError> {
     let sample_rate = kokoro::SAMPLE_RATE;
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
@@ -215,10 +227,16 @@ fn synth_segments_kokoro(
             ssml::Segment::Text(t) => {
                 let ipa = g2p::text_to_ipa(t, lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
-                synth_ipa_kokoro(&ipa, &tok, &voice, &mut k, speed, &mut out)?;
+                let audio = sess
+                    .infer_ipa(&ipa, voice_path, speed)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+                out.extend(audio);
             }
             ssml::Segment::Ipa(ph) => {
-                synth_ipa_kokoro(ph, &tok, &voice, &mut k, speed, &mut out)?;
+                let audio = sess
+                    .infer_ipa(ph, voice_path, speed)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+                out.extend(audio);
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
         }
@@ -231,28 +249,6 @@ fn synth_segments_kokoro(
     encode_or_fail(&out, sample_rate, format)
 }
 
-fn synth_ipa_kokoro(
-    ipa: &str,
-    tok: &tokenizer::Tokenizer,
-    voice: &[f32],
-    k: &mut kokoro::Kokoro,
-    speed: f32,
-    out: &mut Vec<f32>,
-) -> Result<(), TtsError> {
-    let ids = tok.encode(ipa);
-    if ids.is_empty() {
-        return Ok(()); // silent drop of non-speakable fragments
-    }
-    let active = ids.len();
-    let padded = tokenizer::Tokenizer::pad_to_context(ids);
-    let style = voices::select_style(voice, active);
-    let audio = k
-        .infer(&padded, style, speed)
-        .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
-    out.extend(audio);
-    Ok(())
-}
-
 fn say_with_kokoro(
     ipa: &str,
     model_path: &Path,
@@ -260,26 +256,16 @@ fn say_with_kokoro(
     speed: f32,
     format: OutputFormat,
 ) -> Result<Vec<u8>, TtsError> {
-    let tok = tokenizer::Tokenizer::load()
-        .map_err(|e| TtsError::SynthesisFailed(format!("tokenizer load: {e}")))?;
-    let ids = tok.encode(ipa);
-    if ids.is_empty() {
+    let mut sess = sessions::KokoroSession::load(model_path)
+        .map_err(|e| TtsError::SynthesisFailed(e.to_string()))?;
+    let audio = sess
+        .infer_ipa(ipa, voice_path, speed)
+        .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+    if audio.is_empty() {
         return Err(TtsError::SynthesisFailed(
             "no recognizable phonemes in input".into(),
         ));
     }
-    let active = ids.len();
-    let padded = tokenizer::Tokenizer::pad_to_context(ids);
-
-    let voice = voices::load_voice(voice_path)
-        .map_err(|e| TtsError::SynthesisFailed(format!("voice load: {e}")))?;
-    let style = voices::select_style(&voice, active);
-
-    let mut k = kokoro::Kokoro::load(model_path)
-        .map_err(|e| TtsError::SynthesisFailed(format!("kokoro load: {e}")))?;
-    let audio = k
-        .infer(&padded, style, speed)
-        .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
     encode_or_fail(&audio, kokoro::SAMPLE_RATE, format)
 }
 
@@ -290,12 +276,10 @@ fn say_with_vosk(
     speed: f32,
     format: OutputFormat,
 ) -> Result<Vec<u8>, TtsError> {
-    let mut v = vosk::Vosk::load(model_dir)
-        .map_err(|e| TtsError::SynthesisFailed(format!("vosk load: {e}")))?;
-    let sample_rate = v.sample_rate();
-    let audio = v
-        .infer(text, speaker_id, speed)
-        .map_err(|e| TtsError::SynthesisFailed(format!("vosk infer: {e}")))?;
+    let mut cache = sessions::VoskCache::new();
+    let (audio, sample_rate) = cache
+        .infer(model_dir, text, speaker_id, speed)
+        .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     encode_or_fail(&audio, sample_rate, format)
 }
 
@@ -313,20 +297,36 @@ fn synth_segments_vosk(
             "SSML had no speakable content".into(),
         ));
     }
-    let mut v = vosk::Vosk::load(model_dir)
-        .map_err(|e| TtsError::SynthesisFailed(format!("vosk load: {e}")))?;
-    let sample_rate = v.sample_rate();
+    let mut cache = sessions::VoskCache::new();
+    synth_segments_vosk_with(&mut cache, &segments, model_dir, speaker_id, speed, format)
+}
+
+/// Drive an SSML segment list against a Vosk cache. Mirrors
+/// [`synth_segments_kokoro_with`]. The model is loaded once via
+/// `cache.sample_rate()` so a leading `<break>` can size its silence buffer
+/// correctly.
+pub fn synth_segments_vosk_with(
+    cache: &mut sessions::VoskCache,
+    segments: &[ssml::Segment],
+    model_dir: &Path,
+    speaker_id: u32,
+    speed: f32,
+    format: OutputFormat,
+) -> Result<Vec<u8>, TtsError> {
+    let sample_rate = cache
+        .sample_rate(model_dir)
+        .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
         match seg {
             ssml::Segment::Text(t) | ssml::Segment::Ipa(t) => {
                 // Vosk has no IPA passthrough; <phoneme> falls back to text.
-                let audio = v
-                    .infer(&t, speaker_id, speed)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("vosk infer: {e}")))?;
+                let (audio, _sr) = cache
+                    .infer(model_dir, t, speaker_id, speed)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
                 out.extend(audio);
             }
-            ssml::Segment::Break(dur) => out.extend(silence_samples(dur, sample_rate)),
+            ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
         }
     }
     if out.is_empty() {
