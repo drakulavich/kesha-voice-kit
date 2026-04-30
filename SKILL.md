@@ -17,12 +17,13 @@ install:
 
 Local voice toolkit: transcribe voice messages to text, synthesize speech, detect language of audio or text. Fully offline after `kesha install`. No API keys, no per-minute billing.
 
-**Trigger keywords for when to use this skill:** voice message, voice memo, .ogg, .wav, .mp3, audio file, transcribe, transcription, speech-to-text, STT, text-to-speech, TTS, synthesize speech, say, multilingual voice, multilingual ASR, language detection, offline voice, privacy, Apple Silicon, CoreML.
+**Trigger keywords for when to use this skill:** voice message, voice memo, voice note, .ogg, .opus, .wav, .mp3, audio file, transcribe, transcription, speech-to-text, STT, text-to-speech, TTS, synthesize speech, say, telegram voice note, whatsapp voice note, ogg-opus, opus, multilingual voice, multilingual ASR, language detection, offline voice, privacy, Apple Silicon, CoreML.
 
 ## When to use
 
 - **Voice memo arrived** (Telegram, WhatsApp, Slack, Signal .ogg/.opus/.m4a): transcribe with `kesha --json <path>` and branch on the detected language.
-- **Need to reply with audio**: synthesize with `kesha say "<text>" > reply.wav`. Auto-routes by detected language (Kokoro-82M for English, Vosk-TTS for Russian). For other languages and ~180 more voices use `--voice macos-*` on macOS (zero model download).
+- **Need to reply with audio (file playback)**: synthesize with `kesha say "<text>" > reply.wav`. Auto-routes by detected language (Kokoro-82M for English, Vosk-TTS for Russian). For other languages and ~180 more voices use `--voice macos-*` on macOS (zero model download).
+- **Need to send a voice note (Telegram, WhatsApp, Signal, Discord)**: synthesize directly into the messenger-native format with `kesha say "<text>" --format ogg-opus --out reply.ogg`. Default is mono 24 kHz @ 32 kbps — what Telegram `sendVoice` expects. No `ffmpeg` round-trip needed.
 - **Need to detect what language a file is in** before choosing a pipeline: `kesha --json audio.ogg` returns both audio-based and text-based language detection with confidence scores.
 
 ## STT: transcribe audio
@@ -61,7 +62,17 @@ kesha say --voice macos-de-DE "Guten Tag" > de.wav # any macOS system voice — 
 kesha say --list-voices                            # Kokoro + Vosk-TTS + ~180 macos-* voices
 ```
 
-Output: WAV mono float32. `--out <path>` writes to a file instead of stdout.
+Output: WAV mono float32 by default. `--out <path>` writes to a file instead of stdout.
+
+**Voice notes (Telegram / WhatsApp / Signal / Discord):** add `--format ogg-opus` to emit OGG/Opus directly — the format messenger APIs render as a native voice message:
+
+```bash
+kesha say "Hello there" --format ogg-opus --out reply.ogg                  # 24 kHz @ 32 kbps mono — Telegram-grade
+kesha say "Привет" --voice ru-vosk-m02 --format ogg-opus --out reply.ogg   # Russian voice note
+kesha say "Hi" --format ogg-opus --bitrate 16000 --out tiny.ogg            # tinier file, intelligible but lossy
+```
+
+Format is also inferred from `--out` extension (`.ogg` / `.opus` / `.oga` → OGG/Opus). `--bitrate` (6 000–510 000 bps) and `--sample-rate` (8 000 / 12 000 / 16 000 / 24 000 / 48 000 Hz) tune the encoder.
 
 ## Language detection standalone
 
