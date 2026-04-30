@@ -178,7 +178,9 @@ fn encode_ogg_opus(
     //   page 0: OpusHead (BOS, sequence 0, granule 0)
     //   page 1: OpusTags (sequence 1, granule 0)
     //   page 2..: audio packets, with EOS on the last
-    let mut buf: Vec<u8> = Vec::with_capacity(samples.len());
+    // Rough upper bound for compressed bytes: bitrate × duration + header pages.
+    let cap = (samples.len() as u64 * bitrate as u64 / (8 * src_rate as u64)) as usize + 4 * 1024;
+    let mut buf: Vec<u8> = Vec::with_capacity(cap);
     let cursor = std::io::Cursor::new(&mut buf);
     let mut writer = ogg::PacketWriter::new(cursor);
 
@@ -212,9 +214,8 @@ fn encode_ogg_opus(
 
     for i in 0..n_full_packets {
         let start = i * frame_size;
-        pcm_buf.copy_from_slice(&resampled[start..start + frame_size]);
         let nbytes = enc
-            .encode_float(&pcm_buf, &mut packet)
+            .encode_float(&resampled[start..start + frame_size], &mut packet)
             .map_err(|e| anyhow::anyhow!("opus encode (frame {i}): {e}"))?;
 
         sample_pos_48k += target_to_48k(frame_size as u32, target_sr);
