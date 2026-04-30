@@ -41,7 +41,7 @@
       "type": "textfield",
       "required": false,
       "default": "",
-      "placeholder": "en-af_heart, ru-denis, macos-com.apple.voice.compact.en-US.Samantha, ..."
+      "placeholder": "en-am_michael, ru-vosk-m02, macos-com.apple.voice.compact.en-US.Samantha, ..."
     }
   ],
   "dependencies": {
