@@ -251,14 +251,14 @@ mod tests {
     fn unknown_chunk_falls_back_to_unk() {
         // Build a tiny synthetic vocab so the test is deterministic without
         // shipping a real BERT vocab.
-        let dir = tempdir_for_test();
-        let path = dir.join("vocab.txt");
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("vocab.txt");
         // Order matters — line index = id.
         let lines = ["[PAD]", "[unused1]", "[unused2]", "[CLS]_placeholder"];
         let _ = std::fs::write(&path, lines.join("\n"));
         // We only check the [UNK] fallback path here; build a minimal vocab
         // including [UNK] at id 0.
-        let path2 = dir.join("vocab2.txt");
+        let path2 = dir.path().join("vocab2.txt");
         std::fs::write(&path2, "[UNK]\n[CLS]\n[SEP]\n").unwrap();
         let tok = Tokenizer::from_vocab_file(&path2).unwrap();
         // Need [CLS]/[SEP] at conventional ids for `encode` to inject them
@@ -272,16 +272,4 @@ mod tests {
         assert_eq!(ids, vec![0]); // [UNK] is id 0 in our synthetic vocab
     }
 
-    fn tempdir_for_test() -> PathBuf {
-        let mut d = std::env::temp_dir();
-        d.push(format!(
-            "vosk-tts-vendor-test-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&d).unwrap();
-        d
-    }
 }

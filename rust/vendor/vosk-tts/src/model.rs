@@ -21,6 +21,7 @@ use crate::tokenizer::{Encoding, Tokenizer};
 use ndarray::ArrayD;
 use ort::session::Session;
 use ort::value::Value;
+use regex::Regex;
 use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
 use std::cell::RefCell;
@@ -28,6 +29,10 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+static RE_PUNCT_TOKEN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"[-,.?!;:"]"#).expect("compile RE_PUNCT_TOKEN"));
 
 #[derive(Debug, Deserialize)]
 pub struct AudioConfig {
@@ -255,15 +260,10 @@ impl Model {
         let (_shape, data) = outputs[0].try_extract_tensor::<f32>().ok()?;
 
         let hidden_size = 768;
-        let punc_pattern = regex::Regex::new(r#"[-,.?!;:"]"#).ok();
         let mut selected: Vec<Vec<f32>> = Vec::new();
         for (i, token) in tokens.iter().enumerate() {
             if !token.starts_with('#') {
-                let skip_punc = nopunc
-                    && punc_pattern
-                        .as_ref()
-                        .map(|p| p.is_match(token))
-                        .unwrap_or(false);
+                let skip_punc = nopunc && RE_PUNCT_TOKEN.is_match(token);
                 if !skip_punc {
                     let start = i * hidden_size;
                     let end = start + hidden_size;

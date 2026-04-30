@@ -15,6 +15,19 @@ use crate::g2p;
 use crate::model::{Model, PhonemeIdValue};
 use ndarray::ArrayD;
 use ort::value::Value;
+use regex::Regex;
+use std::sync::LazyLock;
+
+// Hoisted from per-call `Regex::new` sites in the g2p_* methods — pattern compilation
+// is non-trivial (NFA/DFA construction) and these strings are constants, so once is enough.
+static RE_PUNCT_SPLIT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"([,.?!;:"() ])"#).expect("compile RE_PUNCT_SPLIT"));
+static RE_PUNCT_MULTISTREAM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(\.\.\.|- |[ ,.?!;:"()])"#).expect("compile RE_PUNCT_MULTISTREAM")
+});
+static RE_PUNCT_MULTISTREAM_SCALES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(\.\.\.|- |[ ,.?!;:"()_])"#).expect("compile RE_PUNCT_MULTISTREAM_SCALES")
+});
 
 #[derive(Clone, Default)]
 pub struct Synth;
@@ -187,7 +200,7 @@ impl Synth {
     }
 
     fn g2p_with_embeddings(&self, model: &Model, text: &str) -> Result<G2PResult> {
-        let re = regex::Regex::new(r#"([,.?!;:"() ])"#)?;
+        let re = &*RE_PUNCT_SPLIT;
         let mut phonemes = vec!["^".to_string()];
         let bert_embeddings = model.get_word_bert(text, false).unwrap_or_default();
         let mut word_indices = vec![0usize];
@@ -259,7 +272,7 @@ impl Synth {
     }
 
     fn g2p_noblank(&self, model: &Model, text: &str) -> Result<G2PResult> {
-        let re = regex::Regex::new(r#"([,.?!;:"() ])"#)?;
+        let re = &*RE_PUNCT_SPLIT;
         let mut phonemes = vec!["^".to_string()];
         let bert_embeddings = model.get_word_bert(text, false).unwrap_or_default();
         let mut word_indices = vec![0usize];
@@ -313,7 +326,7 @@ impl Synth {
     }
 
     fn g2p_multistream(&self, model: &Model, text: &str, word_pos: bool) -> Result<G2PResult> {
-        let re = regex::Regex::new(r#"(\.\.\.|- |[ ,.?!;:"()])"#)?;
+        let re = &*RE_PUNCT_MULTISTREAM;
         let text_clean = text.replace(" -", "- ");
         let bert_embeddings = model.get_word_bert(&text_clean, true).unwrap_or_default();
 
@@ -468,7 +481,7 @@ impl Synth {
     }
 
     fn g2p_multistream_scales(&self, model: &Model, text: &str) -> Result<G2PResult> {
-        let re = regex::Regex::new(r#"(\.\.\.|- |[ ,.?!;:"()_])"#)?;
+        let re = &*RE_PUNCT_MULTISTREAM_SCALES;
         let text_clean = text.replace(" -", "- ");
         let bert_embeddings = model.get_word_bert(&text_clean, true).unwrap_or_default();
 
@@ -630,7 +643,7 @@ impl Synth {
     }
 
     fn g2p_no_embeddings(&self, model: &Model, text: &str) -> Result<G2PResult> {
-        let re = regex::Regex::new(r#"([,.?!;:"() ])"#)?;
+        let re = &*RE_PUNCT_SPLIT;
         let mut phonemes = vec!["^".to_string()];
 
         for word in re.split(&text.to_lowercase()) {
