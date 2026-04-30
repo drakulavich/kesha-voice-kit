@@ -40,7 +40,7 @@
 //!   pipe and respawn on broken pipe / unexpected exit. Idle-eviction of the
 //!   ~934 MB Vosk session is a separate follow-up issue.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
 use crate::{models, tts};
