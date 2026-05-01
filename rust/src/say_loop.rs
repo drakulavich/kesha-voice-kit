@@ -41,7 +41,6 @@
 //!   ~934 MB Vosk session is a separate follow-up issue.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 
 use crate::{models, tts};
 
@@ -89,7 +88,6 @@ fn default_rate() -> f32 {
 }
 
 struct LoopState {
-    cache_dir: PathBuf,
     /// One Kokoro session, reused across requests. The session itself
     /// supports model swaps (e.g. en-* vs a hypothetical multi-model setup),
     /// so this stays `Option` only to defer the load until the first Kokoro
@@ -107,7 +105,6 @@ pub fn run() -> i32 {
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
     let mut state = LoopState {
-        cache_dir: models::cache_dir(),
         kokoro: None,
         vosk: tts::sessions::VoskCache::new(),
     };
@@ -173,11 +170,11 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
     let format =
         crate::resolve_output_format(req.format.as_deref(), req.bitrate, req.sample_rate, None)?;
     let resolved =
-        tts::voices::resolve_voice(&state.cache_dir, &req.voice).map_err(|e| e.to_string())?;
-    let espeak_lang = req
+        tts::voices::resolve_voice(&models::cache_dir(), &req.voice).map_err(|e| e.to_string())?;
+    let espeak_lang: &str = req
         .lang
-        .clone()
-        .unwrap_or_else(|| resolved.espeak_lang().to_string());
+        .as_deref()
+        .unwrap_or_else(|| resolved.espeak_lang());
 
     match resolved {
         tts::voices::ResolvedVoice::Kokoro {
@@ -185,22 +182,17 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
             voice_path,
             ..
         } => {
-            // Lazy-init or hot-swap the cached Kokoro session.
-            match state.kokoro.as_mut() {
-                Some(s) => s
-                    .ensure_model(&model_path)
-                    .map_err(|e| format!("kokoro reload: {e}"))?,
-                None => {
-                    state.kokoro = Some(
-                        tts::sessions::KokoroSession::load(&model_path)
-                            .map_err(|e| format!("kokoro load: {e}"))?,
-                    );
+            let sess = match state.kokoro.as_mut() {
+                Some(s) => {
+                    s.ensure_model(&model_path)
+                        .map_err(|e| format!("kokoro reload: {e}"))?;
+                    s
                 }
-            }
-            let sess = state
-                .kokoro
-                .as_mut()
-                .expect("kokoro session populated immediately above");
+                None => state.kokoro.insert(
+                    tts::sessions::KokoroSession::load(&model_path)
+                        .map_err(|e| format!("kokoro load: {e}"))?,
+                ),
+            };
 
             if req.ssml {
                 let segments = tts::ssml::parse(&req.text).map_err(|e| format!("ssml: {e}"))?;
@@ -210,14 +202,14 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 tts::synth_segments_kokoro_with(
                     sess,
                     &segments,
-                    &espeak_lang,
+                    espeak_lang,
                     &voice_path,
                     req.rate,
                     format,
                 )
                 .map_err(|e| e.to_string())
             } else {
-                let ipa = tts::g2p::text_to_ipa(&req.text, &espeak_lang)
+                let ipa = tts::g2p::text_to_ipa(&req.text, espeak_lang)
                     .map_err(|e| format!("g2p: {e}"))?;
                 if ipa.trim().is_empty() {
                     return Err("no phonemes produced for input (empty after G2P)".into());
@@ -261,13 +253,12 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         tts::voices::ResolvedVoice::AVSpeech { voice_id } => {
             // AVSpeech is a Swift sidecar — no in-process state to cache.
-            // The loop path is identical to the one-shot CLI invocation.
             if req.ssml {
                 return Err("SSML is not yet supported with macos-* voices (#141)".into());
             }
             tts::say(tts::SayOptions {
                 text: &req.text,
-                lang: &espeak_lang,
+                lang: espeak_lang,
                 engine: tts::EngineChoice::AVSpeech {
                     voice_id: &voice_id,
                 },
@@ -283,11 +274,11 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
 // Framing
 // ---------------------------------------------------------------------------
 
-pub(crate) fn write_ok<W: Write>(w: &mut W, id: u32, payload: &[u8]) -> std::io::Result<()> {
+fn write_ok<W: Write>(w: &mut W, id: u32, payload: &[u8]) -> std::io::Result<()> {
     write_ok_capped(w, id, payload, MAX_PAYLOAD_BYTES)
 }
 
-pub(crate) fn write_err<W: Write>(w: &mut W, id: u32, msg: &str) -> std::io::Result<()> {
+fn write_err<W: Write>(w: &mut W, id: u32, msg: &str) -> std::io::Result<()> {
     write_err_capped(w, id, msg.as_bytes(), MAX_PAYLOAD_BYTES)
 }
 
@@ -334,7 +325,7 @@ fn write_frame<W: Write>(w: &mut W, status: u8, id: u32, payload: &[u8]) -> std:
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum LineRead {
+enum LineRead {
     Line,
     Eof,
     TooLong,
@@ -350,7 +341,7 @@ pub(crate) enum LineRead {
 /// small (~JSON of `tts::MAX_TEXT_CHARS`-bounded text, in practice < 32 KB),
 /// so the byte-loop's overhead is negligible against the synth cost (hundreds
 /// of ms). Trading microoptimisation for the safety guarantee.
-pub(crate) fn read_line_bounded<R: BufRead>(
+fn read_line_bounded<R: BufRead>(
     r: &mut R,
     buf: &mut Vec<u8>,
     max: usize,
