@@ -26,6 +26,15 @@ pub enum Segment {
     Ipa(String),
     /// Silence of the given duration.
     Break(Duration),
+    /// Letter-by-letter spelling request from `<say-as interpret-as="characters">`.
+    /// The Russian-Vosk normalization step expands this to a `Text` segment via
+    /// `tts::ru::letter_table::expand_chars`. Other engines pass it through as text
+    /// (their G2P will read the cyrillic word verbatim — acceptable until per-engine
+    /// support lands).
+    // Parser wiring lands in Task 2; normalization in Task 6 (#232). The variant
+    // must exist now so mod.rs match arms are exhaustive — suppress until wired.
+    #[allow(dead_code)]
+    Spell(String),
 }
 
 /// Default `<break/>` duration when the `time` attribute is omitted.
@@ -202,6 +211,7 @@ mod tests {
             match s {
                 Segment::Text(_) => text_chunks += 1,
                 Segment::Ipa(_) => panic!("unexpected Ipa segment"),
+                Segment::Spell(_) => panic!("unexpected Spell segment"),
                 Segment::Break(d) => {
                     assert_eq!(*d, Duration::from_millis(500));
                     breaks += 1;
@@ -394,5 +404,15 @@ mod tests {
             (99..=101).contains(&break_ms[0]) && (199..=201).contains(&break_ms[1]),
             "breaks out of tolerance: {break_ms:?}"
         );
+    }
+
+    #[test]
+    fn segment_has_spell_variant() {
+        // Ensure the variant exists and is constructible. Parser wiring lands in Task 2.
+        let s = Segment::Spell("ВОЗ".to_string());
+        match s {
+            Segment::Spell(t) => assert_eq!(t, "ВОЗ"),
+            _ => panic!("expected Segment::Spell"),
+        }
     }
 }

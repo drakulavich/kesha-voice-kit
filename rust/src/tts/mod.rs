@@ -224,7 +224,7 @@ pub fn synth_segments_kokoro_with(
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
         match seg {
-            ssml::Segment::Text(t) => {
+            ssml::Segment::Text(t) | ssml::Segment::Spell(t) => {
                 let ipa = g2p::text_to_ipa(t, lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
                 let audio = sess
@@ -319,8 +319,10 @@ pub fn synth_segments_vosk_with(
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
         match seg {
-            ssml::Segment::Text(t) | ssml::Segment::Ipa(t) => {
+            ssml::Segment::Text(t) | ssml::Segment::Ipa(t) | ssml::Segment::Spell(t) => {
                 // Vosk has no IPA passthrough; <phoneme> falls back to text.
+                // Spell is normalized to Text by tts::ru::normalize_segments before this
+                // function runs once #232 is fully wired (task 6); arm kept for exhaustiveness.
                 let (audio, _sr) = cache
                     .infer(model_dir, t, speaker_id, speed)
                     .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
