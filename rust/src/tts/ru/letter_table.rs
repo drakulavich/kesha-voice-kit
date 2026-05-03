@@ -5,6 +5,13 @@
 //! silent; their entries are kept in the table for completeness so the
 //! match is exhaustive.
 
+// dead_code allow: the consumer (tts::ru::normalize_segments) lands in T5
+// and the bin reachability via synth_segments_vosk_with lands in T6 (#232).
+// REMOVE this allow when T6 lands. cargo clippy --all-targets fires on the
+// bin target until then because main.rs has no caller in its reachability
+// graph yet.
+#![allow(dead_code)]
+
 const LETTERS: &[(char, &str)] = &[
     ('а', "а"),
     ('б', "бэ"),
