@@ -3,11 +3,12 @@
 //!
 //! Rules (see spec 2026-05-03 §"Acronym matcher"):
 //! 1. Tokenize on Unicode whitespace, preserving the original spacing.
-//! 2. Strip a trailing run of `.,:;!?»)„"…—–-` to a `tail`; the rest is `core`.
+//! 2. Strip a leading run of `«("„` (head) and a trailing run of
+//!    `.,:;!?»)„"…—–-` (tail); the rest is `core`.
 //! 3. `core` must be 2..=5 chars, all `[А-ЯЁ]`, and not contain Ъ or Ь.
 //! 4. `core` must not be in `STOP_LIST` (matches emphatic uppercase forms
 //!    of common short Russian words like ОН, МЫ, КАК).
-//! 5. Otherwise, replace the token with `expand_chars(core) + tail`.
+//! 5. Otherwise, replace the token with `head + expand_chars(core) + tail`.
 
 // dead_code allow: the consumer (tts::ru::normalize_segments) lands in T5
 // and the bin reachability via synth_segments_vosk_with lands in T6 (#232).
@@ -19,6 +20,7 @@ use super::letter_table::expand_chars;
 /// Common short Russian words that are sometimes written in CAPS for emphasis.
 /// They look like acronyms to the matcher but are not. Length 2..=5 only —
 /// shorter / longer is already filtered by the length rule.
+// Note: Я (length 1) is intentionally omitted — the length filter rejects length-1 tokens before the stop-list is consulted.
 const STOP_LIST: &[&str] = &[
     "ВСЁ", "ВЫ", "ДА", "ДЛЯ", "ЕЁ", "ЕМУ", "ЕЩЁ", "ИЛИ", "ИМ", "ИХ", "КАК", "КТО", "МНЕ", "МЫ",
     "НЕ", "НЕТ", "НИ", "ОН", "ОНА", "ОНИ", "ОНО", "ТОТ", "ТЫ", "УЖ", "ЧТО",
