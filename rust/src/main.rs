@@ -345,6 +345,7 @@ fn run_say(a: SayArgs) -> i32 {
         engine,
         ssml: a.ssml,
         format,
+        expand_abbrev: true,
     }) {
         Ok(w) => w,
         Err(e) => {

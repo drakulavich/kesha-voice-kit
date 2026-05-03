@@ -9,14 +9,17 @@
 //! `normalize_segments` (added in T5) routes [`crate::tts::ssml::Segment`]
 //! values through the appropriate primitive.
 
-// dead_code allow: normalize_segments is called by tts::mod in T6 (#232).
-// REMOVE this allow when T6 lands and wires this into synth_segments_vosk_with.
-#![allow(dead_code)]
-
 pub(super) mod acronym;
 pub(super) mod letter_table;
 
 use crate::tts::ssml::Segment;
+
+/// Auto-expand all-uppercase Cyrillic acronyms in plain text. Used by the
+/// non-SSML Vosk path; the SSML path goes through `normalize_segments`
+/// instead so it can also handle `Segment::Spell`.
+pub fn expand_text(text: &str) -> String {
+    acronym::expand_acronyms(text)
+}
 
 /// Normalize a segment list for the Russian Vosk path:
 /// - `Spell(t)` → `Text(letter_table::expand_chars(t))`

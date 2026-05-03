@@ -264,6 +264,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 },
                 ssml: false,
                 format,
+                expand_abbrev: true,
             })
             .map_err(|e| e.to_string())
         }

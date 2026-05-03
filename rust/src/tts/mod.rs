@@ -77,6 +77,10 @@ pub struct SayOptions<'a> {
     /// callers (and the historical `kesha say > out.wav` flow) stay
     /// bit-exact. See #223.
     pub format: OutputFormat,
+    /// Auto-expand all-uppercase Cyrillic acronyms before Vosk synth (#232).
+    /// Default `true`. `<say-as interpret-as="characters">` is always honored,
+    /// regardless of this flag. No effect for non-`ru-vosk-*` voices.
+    pub expand_abbrev: bool,
 }
 
 /// Synthesize speech and return WAV bytes (mono float32; sample rate depends on engine).
@@ -131,9 +135,23 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     } = &opts.engine
     {
         if opts.ssml {
-            return synth_segments_vosk(opts.text, model_dir, *speaker_id, *speed, opts.format);
+            return synth_segments_vosk(
+                opts.text,
+                model_dir,
+                *speaker_id,
+                *speed,
+                opts.format,
+                opts.expand_abbrev,
+            );
         }
-        return say_with_vosk(opts.text, model_dir, *speaker_id, *speed, opts.format);
+        return say_with_vosk(
+            opts.text,
+            model_dir,
+            *speaker_id,
+            *speed,
+            opts.format,
+            opts.expand_abbrev,
+        );
     }
 
     if opts.ssml {
@@ -280,10 +298,16 @@ fn say_with_vosk(
     speaker_id: u32,
     speed: f32,
     format: OutputFormat,
+    expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
+    let normalized = if expand_abbrev {
+        ru::expand_text(text)
+    } else {
+        text.to_string()
+    };
     let mut cache = sessions::VoskCache::new();
     let (audio, sample_rate) = cache
-        .infer(model_dir, text, speaker_id, speed)
+        .infer(model_dir, &normalized, speaker_id, speed)
         .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     encode_or_fail(&audio, sample_rate, format)
 }
@@ -294,6 +318,7 @@ fn synth_segments_vosk(
     speaker_id: u32,
     speed: f32,
     format: OutputFormat,
+    expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
     let segments =
         ssml::parse(text).map_err(|e| TtsError::SynthesisFailed(format!("ssml: {e}")))?;
@@ -302,6 +327,7 @@ fn synth_segments_vosk(
             "SSML had no speakable content".into(),
         ));
     }
+    let segments = ru::normalize_segments(segments, expand_abbrev);
     let mut cache = sessions::VoskCache::new();
     synth_segments_vosk_with(&mut cache, &segments, model_dir, speaker_id, speed, format)
 }

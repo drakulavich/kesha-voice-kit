@@ -10,11 +10,6 @@
 //!    of common short Russian words like ОН, МЫ, КАК).
 //! 5. Otherwise, replace the token with `head + expand_chars(core) + tail`.
 
-// dead_code allow: the consumer (tts::ru::normalize_segments) lands in T5
-// and the bin reachability via synth_segments_vosk_with lands in T6 (#232).
-// REMOVE this allow when T6 lands. Same justification as letter_table.rs.
-#![allow(dead_code)]
-
 use super::letter_table::expand_chars;
 
 /// Common short Russian words that are sometimes written in CAPS for emphasis.
