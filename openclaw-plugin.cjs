@@ -5,9 +5,16 @@
 // through Kesha (Parakeet TDT via CoreML on Apple Silicon, ONNX elsewhere).
 // 25 languages, no cloud, ~19x faster than Whisper.
 //
+// The same `kesha` CLI also produces messenger-ready voice notes via
+// `kesha say --text "..." --format ogg-opus --out reply.ogg` (Telegram /
+// Discord ingest OGG/Opus directly — no transcoding needed). Not wired into
+// OpenClaw's media-understanding capability here; invoke it from a hook or
+// agent tool when you want Kesha to speak.
+//
 // Prerequisite: the `kesha` binary must be on PATH. Install it with:
 //   bun add -g @drakulavich/kesha-voice-kit
-//   kesha install
+//   kesha install            # ASR models
+//   kesha install --tts      # TTS models (Kokoro + Vosk-TTS), only if you use `kesha say`
 //
 // The module specifier below is split across `+` on purpose — see the
 // OpenClaw skill-scanner rule "dangerous-exec" in

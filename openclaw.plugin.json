@@ -1,7 +1,7 @@
 {
   "id": "kesha-voice-kit",
   "name": "Kesha Voice Kit",
-  "description": "Local speech-to-text for voice messages. 25 languages, ~19x faster than Whisper on Apple Silicon.",
+  "description": "Local speech-to-text for voice messages — 25 languages, ~19x faster than Whisper on Apple Silicon. Bundled `kesha` CLI also synthesizes Telegram-ready OGG/Opus voice notes via `kesha say --format ogg-opus`.",
   "providers": ["kesha-voice-kit"],
   "configSchema": {
     "type": "object",
