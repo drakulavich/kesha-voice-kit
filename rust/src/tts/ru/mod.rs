@@ -9,4 +9,5 @@
 //! `normalize_segments` (added in T5) routes [`crate::tts::ssml::Segment`]
 //! values through the appropriate primitive.
 
+pub mod acronym;
 pub mod letter_table;

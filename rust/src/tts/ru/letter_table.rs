@@ -51,26 +51,32 @@ const LETTERS: &[(char, &str)] = &[
 /// Expand `input` to space-separated Russian letter names.
 /// Non-Cyrillic characters pass through unchanged. Silent letters
 /// (Ъ, Ь) are dropped without leaving a double space.
-pub fn expand_chars(input: &str) -> String {
+pub(super) fn expand_chars(input: &str) -> String {
     let mut out = String::with_capacity(input.len() * 3);
-    let mut first = true;
+    // `last_was_cyrillic` tracks whether the previous emitted token was a
+    // Cyrillic letter-name. Spaces are inserted only between tokens that
+    // involve at least one Cyrillic side, so pure non-Cyrillic runs pass
+    // through without inserted spaces (e.g. "---" → "---") while mixed
+    // runs still get spaces (e.g. "AБ1" → "A бэ 1").
+    let mut last_was_cyrillic = false;
     for c in input.chars() {
+        // Cyrillic uppercase always lowercases to a single char; unwrap_or(c) handles non-Cyrillic passthrough.
         let lc = c.to_lowercase().next().unwrap_or(c);
         match LETTERS.iter().find(|(k, _)| *k == lc) {
             Some((_, "")) => {} // silent (Ъ, Ь)
             Some((_, name)) => {
-                if !first {
+                if !out.is_empty() {
                     out.push(' ');
                 }
                 out.push_str(name);
-                first = false;
+                last_was_cyrillic = true;
             }
             None => {
-                if !first {
+                if last_was_cyrillic {
                     out.push(' ');
                 }
                 out.push(c);
-                first = false;
+                last_was_cyrillic = false;
             }
         }
     }
@@ -133,5 +139,11 @@ mod tests {
         // The matcher (T4) won't pass non-Cyrillic to us; this is a sanity guard
         // for explicit <say-as> with mixed input.
         assert_eq!(expand_chars("AБ1"), "A бэ 1");
+    }
+
+    #[test]
+    fn pure_non_cyrillic_passes_through_without_leading_space() {
+        assert_eq!(expand_chars("---"), "---");
+        assert_eq!(expand_chars("123"), "123");
     }
 }
