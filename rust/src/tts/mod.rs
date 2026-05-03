@@ -224,6 +224,10 @@ pub fn synth_segments_kokoro_with(
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
         match seg {
+            // Spell: passed through to G2P with the same path as Text. The synth
+            // does not yet do per-letter routing; ru::normalize_segments (#232 task 6)
+            // converts Spell → Text via letter_table::expand_chars before this
+            // function runs for ru-vosk-* voices, so this path is never hit there.
             ssml::Segment::Text(t) | ssml::Segment::Spell(t) => {
                 let ipa = g2p::text_to_ipa(t, lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
