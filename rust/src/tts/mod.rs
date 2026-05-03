@@ -5,6 +5,7 @@ use std::path::Path;
 pub mod encode;
 pub mod g2p;
 pub mod kokoro;
+pub mod ru;
 pub mod sessions;
 pub mod ssml;
 pub mod tokenizer;
