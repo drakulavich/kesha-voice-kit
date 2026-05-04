@@ -82,6 +82,12 @@ export const sayCommand = defineCommand({
       description:
         "Opus encoder sample rate (8000/12000/16000/24000/48000). Only with --format ogg-opus.",
     },
+    "no-expand-abbrev": {
+      type: "boolean",
+      description:
+        "Disable Russian acronym auto-expansion (ВОЗ → 'вэ о зэ') for ru-vosk-* voices. " +
+        "<say-as interpret-as='characters'> still works. No effect for non-ru-vosk voices.",
+    },
     verbose: {
       type: "boolean",
       description: "Log TTS synthesis time to stderr",
@@ -148,6 +154,7 @@ export const sayCommand = defineCommand({
       format,
       bitrate: args.bitrate ? Number(args.bitrate) : undefined,
       sampleRate: args["sample-rate"] ? Number(args["sample-rate"]) : undefined,
+      noExpandAbbrev: Boolean(args["no-expand-abbrev"]),
     };
 
     try {
