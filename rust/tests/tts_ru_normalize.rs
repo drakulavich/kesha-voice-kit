@@ -61,26 +61,30 @@ fn synth(text: &str, ssml: bool, expand_abbrev: bool, model_dir: &PathBuf) -> Ve
 // Tests
 // =============================================================================
 
-/// Auto-expanding "ВОЗ" (3 Cyrillic letters → "вэ-о-зэ", 6 syllables) must
-/// produce noticeably more audio than passing "ВОЗ" straight to Vosk without
-/// expansion. Threshold: ≥1.7× by byte count.
+/// Auto-expanding "ФСБ" (3 all-consonant letters → "фэ эс бэ", 6 syllables)
+/// must produce noticeably more audio than passing "ФСБ" straight to Vosk
+/// without expansion. Threshold: ≥1.7× by byte count.
+///
+/// Note: ВОЗ is no longer used here because the vowel-cluster rule (#232)
+/// passes it through as a word (alternating C-V-C reads fine as "воз").
+/// ФСБ has no vowels → always spells.
 #[test]
-fn auto_expand_plain_voz_is_longer_than_noexpand() {
+fn auto_expand_plain_fsb_is_longer_than_noexpand() {
     let model_dir = match vosk_model_dir_or_skip() {
         Some(d) => d,
         None => {
             eprintln!(
-                "skipping auto_expand_plain_voz_is_longer_than_noexpand: vosk-ru models not found"
+                "skipping auto_expand_plain_fsb_is_longer_than_noexpand: vosk-ru models not found"
             );
             return;
         }
     };
 
     let expanded = synth(
-        "ВОЗ", /*ssml=*/ false, /*expand_abbrev=*/ true, &model_dir,
+        "ФСБ", /*ssml=*/ false, /*expand_abbrev=*/ true, &model_dir,
     );
     let plain = synth(
-        "ВОЗ", /*ssml=*/ false, /*expand_abbrev=*/ false, &model_dir,
+        "ФСБ", /*ssml=*/ false, /*expand_abbrev=*/ false, &model_dir,
     );
 
     let ratio = expanded.len() as f64 / plain.len() as f64;
@@ -93,7 +97,7 @@ fn auto_expand_plain_voz_is_longer_than_noexpand() {
     );
 }
 
-/// `<say-as interpret-as="characters">ВОЗ</say-as>` must spell out the letters
+/// `<say-as interpret-as="characters">ФСБ</say-as>` must spell out the letters
 /// just like auto-expand does, so the audio length should be within ±10% of
 /// the auto-expanded form.
 #[test]
@@ -106,9 +110,9 @@ fn say_as_characters_matches_auto_expand_within_tolerance() {
         }
     };
 
-    let auto = synth("ВОЗ", false, true, &model_dir);
+    let auto = synth("ФСБ", false, true, &model_dir);
     let ssml = synth(
-        r#"<speak><say-as interpret-as="characters">ВОЗ</say-as></speak>"#,
+        r#"<speak><say-as interpret-as="characters">ФСБ</say-as></speak>"#,
         true,
         false, // <say-as> wins regardless of expand_abbrev flag
         &model_dir,

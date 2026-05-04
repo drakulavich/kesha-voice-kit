@@ -8,7 +8,11 @@
 //! 3. `core` must be 2..=5 chars, all `[А-ЯЁ]`, and not contain Ъ or Ь.
 //! 4. `core` must not be in `STOP_LIST` (matches emphatic uppercase forms
 //!    of common short Russian words like ОН, МЫ, КАК).
-//! 5. Otherwise, replace the token with `head + expand_chars(core) + tail`.
+//! 5. `core` must pass `should_spell`: length ≤ 2, OR any adjacent same-type
+//!    letter pair (both vowels or both consonants). Tokens with strict
+//!    CV/CVC alternation (ВОЗ, КОТ, НАТО, ОПЕК) read fine as words and are
+//!    NOT expanded. Closes #232.
+//! 6. Otherwise, replace the token with `head + expand_chars(core) + tail`.
 
 use super::letter_table::expand_chars;
 
@@ -27,6 +31,24 @@ const TRAILING_PUNCT: &[char] = &[
 
 const LEADING_PUNCT: &[char] = &['«', '(', '"', '„'];
 
+const VOWELS: &[char] = &['А', 'Е', 'Ё', 'И', 'О', 'У', 'Ы', 'Э', 'Ю', 'Я'];
+
+fn is_vowel(c: char) -> bool {
+    VOWELS.contains(&c)
+}
+
+/// User's rule (#232): spell out only if Vosk cannot read the token as a
+/// natural Russian syllable — i.e. length ≤ 2 OR there's any pair of
+/// adjacent same-type letters (both vowels or both consonants). Tokens
+/// with strict CV/CVC alternation read fine as words (ВОЗ, КОТ, НАТО, ОПЕК).
+fn should_spell(core: &str) -> bool {
+    let chars: Vec<char> = core.chars().collect();
+    if chars.len() <= 2 {
+        return true;
+    }
+    chars.windows(2).any(|w| is_vowel(w[0]) == is_vowel(w[1]))
+}
+
 /// Returns true if `core` is a candidate acronym worth expanding.
 /// Pure structural check — does not consult the stop-list.
 fn is_acronym_token(core: &str) -> bool {
@@ -44,7 +66,7 @@ fn is_acronym_token(core: &str) -> bool {
             return false;
         }
     }
-    true
+    should_spell(core)
 }
 
 /// Auto-expand all-uppercase Cyrillic acronyms in `input`. Whitespace and
@@ -119,27 +141,50 @@ mod tests {
 
     fn cases() -> Vec<(&'static str, &'static str)> {
         vec![
-            // Core happy-path
-            ("ВОЗ", "вэ о зэ"),
-            ("ВОЗ.", "вэ о зэ."),
-            ("ВОЗ объявила", "вэ о зэ объявила"),
-            ("ФСБ и ЦРУ", "эф эс бэ и цэ эр у"),
-            // Stop-list and inflected forms preserved
+            // Spell out — 0 vowels (all consonants → always has a same-type adjacent pair).
+            ("ФСБ", "фэ эс бэ"),
+            ("ФСБ.", "фэ эс бэ."),
+            ("ФСБ объявила", "фэ эс бэ объявила"),
+            ("СНГ", "сэ эн гэ"),
+            ("МВД", "эм вэ дэ"),
+            ("РЖД", "эр жэ дэ"),
+            ("ВВП", "вэ вэ пэ"),
+            // Spell out — consecutive vowels.
+            ("ОАЭ", "о а э"),
+            ("АЭС", "а э эс"),
+            // Spell out — consonant cluster adjacent to vowel (США = С+Ш adjacent, both consonants).
+            ("США", "сэ шэ а"),
+            ("ЦСКА", "цэ эс ка а"),
+            // Spell out — length 2 (always spell regardless of structure).
+            ("ИП", "и пэ"),
+            ("ЕС", "е эс"),
+            ("РФ", "эр фэ"),
+            // Don't spell — alternating CVC/CVCV (Vosk reads as word).
+            ("ВОЗ", "ВОЗ"),
+            ("КОТ", "КОТ"),
+            ("НАТО", "НАТО"),
+            ("ОПЕК", "ОПЕК"),
+            // Stop-list preserved.
             ("ОН пришёл", "ОН пришёл"),
+            ("МЫ идём", "МЫ идём"),
+            // Inflected forms preserved.
             ("ВОЗа", "ВОЗа"),
-            // Wrong shape preserved
+            // Wrong shape preserved.
             ("дом", "дом"),
             ("НасА", "НасА"),
             ("NASA", "NASA"),
             ("В", "В"),
             ("АБВГДЕ", "АБВГДЕ"),
-            // Soft/hard sign rejection
+            // Soft/hard sign rejection.
             ("ОБЪЁМ", "ОБЪЁМ"),
             ("СЪЕЗД", "СЪЕЗД"),
             ("КРЕМЛЬ", "КРЕМЛЬ"),
-            // Punctuation
-            ("«ВОЗ»", "«вэ о зэ»"),
-            ("ВОЗ! ФСБ?", "вэ о зэ! эф эс бэ?"),
+            // Punctuation around a 0-vowel acronym.
+            ("«ФСБ»", "«фэ эс бэ»"),
+            ("ФСБ! СНГ?", "фэ эс бэ! сэ эн гэ?"),
+            // Don't-spell tokens preserve their punct.
+            ("ВОЗ.", "ВОЗ."),
+            ("«НАТО»", "«НАТО»"),
         ]
     }
 
@@ -148,6 +193,24 @@ mod tests {
         for (input, expected) in cases() {
             assert_eq!(expand_acronyms(input), expected, "input: {input:?}");
         }
+    }
+
+    #[test]
+    fn vowel_cluster_or_short_or_consonant_cluster_only() {
+        // 0 vowels (all consonants → always has a same-type adjacent pair) → spell.
+        assert_eq!(expand_acronyms("ФСБ"), "фэ эс бэ");
+        assert_eq!(expand_acronyms("МВД"), "эм вэ дэ");
+        // Consecutive vowels → spell.
+        assert_eq!(expand_acronyms("ОАЭ"), "о а э");
+        // Consonant cluster adjacent + vowel → spell.
+        assert_eq!(expand_acronyms("США"), "сэ шэ а");
+        // Length 2 → spell (always; only stop-list overrides).
+        assert_eq!(expand_acronyms("ИП"), "и пэ");
+        assert_eq!(expand_acronyms("ЕС"), "е эс");
+        // Alternating CVC / CVCV → don't spell.
+        assert_eq!(expand_acronyms("ВОЗ"), "ВОЗ");
+        assert_eq!(expand_acronyms("НАТО"), "НАТО");
+        assert_eq!(expand_acronyms("ОПЕК"), "ОПЕК");
     }
 
     #[test]

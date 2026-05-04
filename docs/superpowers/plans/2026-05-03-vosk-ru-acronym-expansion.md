@@ -618,27 +618,50 @@ mod tests {
 
     fn cases() -> Vec<(&'static str, &'static str)> {
         vec![
-            // Core happy-path
-            ("ВОЗ", "вэ о зэ"),
-            ("ВОЗ.", "вэ о зэ."),
-            ("ВОЗ объявила", "вэ о зэ объявила"),
-            ("ФСБ и ЦРУ", "эф эс бэ и цэ эр у"),
-            // Stop-list and inflected forms preserved
+            // Spell out — 0 vowels (all consonants → always has a same-type adjacent pair).
+            ("ФСБ", "фэ эс бэ"),
+            ("ФСБ.", "фэ эс бэ."),
+            ("ФСБ объявила", "фэ эс бэ объявила"),
+            ("СНГ", "сэ эн гэ"),
+            ("МВД", "эм вэ дэ"),
+            ("РЖД", "эр жэ дэ"),
+            ("ВВП", "вэ вэ пэ"),
+            // Spell out — consecutive vowels.
+            ("ОАЭ", "о а э"),
+            ("АЭС", "а э эс"),
+            // Spell out — consonant cluster adjacent to vowel.
+            ("США", "сэ шэ а"),
+            ("ЦСКА", "цэ эс ка а"),
+            // Spell out — length 2 (always spell regardless of structure).
+            ("ИП", "и пэ"),
+            ("ЕС", "е эс"),
+            ("РФ", "эр фэ"),
+            // Don't spell — alternating CVC/CVCV (Vosk reads as word).
+            ("ВОЗ", "ВОЗ"),
+            ("КОТ", "КОТ"),
+            ("НАТО", "НАТО"),
+            ("ОПЕК", "ОПЕК"),
+            // Stop-list preserved.
             ("ОН пришёл", "ОН пришёл"),
+            ("МЫ идём", "МЫ идём"),
+            // Inflected forms preserved.
             ("ВОЗа", "ВОЗа"),
-            // Wrong shape preserved
+            // Wrong shape preserved.
             ("дом", "дом"),
             ("НасА", "НасА"),
             ("NASA", "NASA"),
             ("В", "В"),
             ("АБВГДЕ", "АБВГДЕ"),
-            // Soft/hard sign rejection
+            // Soft/hard sign rejection.
             ("ОБЪЁМ", "ОБЪЁМ"),
             ("СЪЕЗД", "СЪЕЗД"),
             ("КРЕМЛЬ", "КРЕМЛЬ"),
-            // Punctuation
-            ("«ВОЗ»", "«вэ о зэ»"),
-            ("ВОЗ! ФСБ?", "вэ о зэ! эф эс бэ?"),
+            // Punctuation around a 0-vowel acronym.
+            ("«ФСБ»", "«фэ эс бэ»"),
+            ("ФСБ! СНГ?", "фэ эс бэ! сэ эн гэ?"),
+            // Don't-spell tokens preserve their punct.
+            ("ВОЗ.", "ВОЗ."),
+            ("«НАТО»", "«НАТО»"),
         ]
     }
 

@@ -72,18 +72,18 @@ kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwi
 **Russian abbreviations** (`ru-vosk-*` voices):
 
 ```bash
-# Auto-detect on by default — ВОЗ reads as "вэ-о-зэ"
-kesha say --voice ru-vosk-m02 'ВОЗ объявила пандемию.'
+# Auto-detect on by default — ФСБ reads as "фэ-эс-бэ"
+kesha say --voice ru-vosk-m02 'ФСБ объявила решение.'
 
-# Force a literal reading
-kesha say --voice ru-vosk-m02 --no-expand-abbrev 'ВОЗ.'
+# Force a literal reading (Vosk reads as "фсб")
+kesha say --voice ru-vosk-m02 --no-expand-abbrev 'ФСБ.'
 
-# Explicit SSML control (overrides the stop-list)
+# Explicit SSML control (overrides the rule and the stop-list)
 kesha say --voice ru-vosk-m02 --ssml \
-  '<speak><say-as interpret-as="characters">ОН</say-as> пришёл</speak>'
+  '<speak><say-as interpret-as="characters">КОТ</say-as></speak>'
 ```
 
-Detection rule: 2–5 letter all-uppercase Cyrillic tokens, with a small stop-list for common short words (ОН, МЫ, ВЫ, КАК, ЧТО, …). Tokens containing Ъ or Ь are skipped (filters out emphatic uppercase forms of regular words). See [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
+Detection rule: auto-expand fires when the token cannot be pronounced as a natural Russian syllable — length ≤ 2 (ИП, ЕС), 0 vowels (ФСБ, СНГ), 2+ consecutive vowels (ОАЭ), or 2+ consecutive consonants (США, ЦСКА). Tokens with strict CVC/CVCV alternation pass through (ВОЗ → "воз", НАТО → "нато", ОПЕК → "опек"). Small stop-list for common short words (ОН, МЫ, ВЫ, КАК, ЧТО, …) and Ъ/Ь-containing tokens are always skipped. See [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
 
 macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tts.md](docs/tts.md).
 
