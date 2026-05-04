@@ -233,6 +233,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 if segments.is_empty() {
                     return Err("SSML had no speakable content".into());
                 }
+                let segments = tts::ru::normalize_segments(segments, true);
                 tts::synth_segments_vosk_with(
                     &mut state.vosk,
                     &segments,
@@ -243,9 +244,10 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 )
                 .map_err(|e| e.to_string())
             } else {
+                let text = tts::ru::expand_text(&req.text);
                 let (audio, sample_rate) = state
                     .vosk
-                    .infer(&model_dir, &req.text, speaker_id, req.rate)
+                    .infer(&model_dir, &text, speaker_id, req.rate)
                     .map_err(|e| format!("vosk: {e}"))?;
                 tts::encode::encode(&audio, sample_rate, format).map_err(|e| format!("encode: {e}"))
             }
