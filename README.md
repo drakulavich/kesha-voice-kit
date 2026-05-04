@@ -69,6 +69,22 @@ kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
 ```
 
+**Russian abbreviations** (`ru-vosk-*` voices):
+
+```bash
+# Auto-detect on by default — ВОЗ reads as "вэ-о-зэ"
+kesha say --voice ru-vosk-m02 'ВОЗ объявила пандемию.'
+
+# Force a literal reading
+kesha say --voice ru-vosk-m02 --no-expand-abbrev 'ВОЗ.'
+
+# Explicit SSML control (overrides the stop-list)
+kesha say --voice ru-vosk-m02 --ssml \
+  '<speak><say-as interpret-as="characters">ОН</say-as> пришёл</speak>'
+```
+
+Detection rule: 2–5 letter all-uppercase Cyrillic tokens, with a small stop-list for common short words (ОН, МЫ, ВЫ, КАК, ЧТО, …). Tokens containing Ъ or Ь are skipped (filters out emphatic uppercase forms of regular words). See [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
+
 macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tts.md](docs/tts.md).
 
 ## Performance
