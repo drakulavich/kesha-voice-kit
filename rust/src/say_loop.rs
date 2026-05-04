@@ -23,11 +23,13 @@
 //!
 //! ```json
 //! {"id": 7, "text": "hello", "voice": "en-am_michael",
-//!  "format": "wav", "rate": 1.0, "ssml": false}
+//!  "format": "wav", "rate": 1.0, "ssml": false, "expand_abbrev": true}
 //! ```
 //!
 //! All fields except `text` and `voice` are optional. `format` /
-//! `bitrate` / `sample_rate` mirror the CLI flags.
+//! `bitrate` / `sample_rate` mirror the CLI flags. `expand_abbrev`
+//! defaults to `true`; set to `false` to suppress Cyrillic acronym
+//! expansion for `ru-vosk-*` voices (mirrors `--no-expand-abbrev`).
 //!
 //! ## What this is NOT
 //!
@@ -81,10 +83,19 @@ struct LoopRequest {
     /// When true, `text` is parsed as SSML. Mirrors the CLI `--ssml` flag.
     #[serde(default)]
     ssml: bool,
+    /// Auto-expand all-uppercase Cyrillic acronyms for `ru-vosk-*` voices
+    /// (#232). Defaults to `true` when absent so legacy clients keep current
+    /// behavior. Mirrors the CLI `--no-expand-abbrev` flag (inverted).
+    #[serde(default = "default_expand_abbrev")]
+    expand_abbrev: bool,
 }
 
 fn default_rate() -> f32 {
     1.0
+}
+
+fn default_expand_abbrev() -> bool {
+    true
 }
 
 struct LoopState {
@@ -233,7 +244,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 if segments.is_empty() {
                     return Err("SSML had no speakable content".into());
                 }
-                let segments = tts::ru::normalize_segments(segments, true);
+                let segments = tts::ru::normalize_segments(segments, req.expand_abbrev);
                 tts::synth_segments_vosk_with(
                     &mut state.vosk,
                     &segments,
@@ -244,7 +255,11 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 )
                 .map_err(|e| e.to_string())
             } else {
-                let text = tts::ru::expand_text(&req.text);
+                let text: std::borrow::Cow<'_, str> = if req.expand_abbrev {
+                    std::borrow::Cow::Owned(tts::ru::expand_text(&req.text))
+                } else {
+                    std::borrow::Cow::Borrowed(&req.text)
+                };
                 let (audio, sample_rate) = state
                     .vosk
                     .infer(&model_dir, &text, speaker_id, req.rate)
@@ -266,7 +281,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 },
                 ssml: false,
                 format,
-                expand_abbrev: true,
+                expand_abbrev: req.expand_abbrev,
             })
             .map_err(|e| e.to_string())
         }
@@ -500,6 +515,23 @@ mod tests {
             LineRead::Line
         );
         assert_eq!(buf, b"ok\n");
+    }
+
+    #[test]
+    fn loop_request_expand_abbrev_defaults_to_true() {
+        // When a client omits `expand_abbrev`, legacy behavior (expansion on)
+        // must be preserved — the field must deserialize to `true`.
+        let json = r#"{"text":"ФСБ","voice":"ru-vosk-m02"}"#;
+        let req: LoopRequest = serde_json::from_str(json).unwrap();
+        assert!(req.expand_abbrev, "expand_abbrev must default to true");
+    }
+
+    #[test]
+    fn loop_request_expand_abbrev_false_honored() {
+        // A client that explicitly opts out must get expand_abbrev = false.
+        let json = r#"{"text":"ФСБ","voice":"ru-vosk-m02","expand_abbrev":false}"#;
+        let req: LoopRequest = serde_json::from_str(json).unwrap();
+        assert!(!req.expand_abbrev, "expand_abbrev:false must be honored");
     }
 
     #[test]
