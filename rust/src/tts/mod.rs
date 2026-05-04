@@ -1,5 +1,6 @@
 //! Text-to-speech dispatch across per-engine modules.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 pub mod encode;
@@ -243,10 +244,7 @@ pub fn synth_segments_kokoro_with(
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
         match seg {
-            // Spell: passed through to G2P with the same path as Text. The synth
-            // does not yet do per-letter routing; ru::normalize_segments (#232 task 6)
-            // converts Spell → Text via letter_table::expand_chars before this
-            // function runs for ru-vosk-* voices, so this path is never hit there.
+            // Spell: G2P-routed (Vosk path normalizes Spell→Text upstream of synth).
             ssml::Segment::Text(t) | ssml::Segment::Spell(t) => {
                 let ipa = g2p::text_to_ipa(t, lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
@@ -300,14 +298,14 @@ fn say_with_vosk(
     format: OutputFormat,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
-    let normalized = if expand_abbrev {
-        ru::expand_text(text)
+    let normalized: Cow<'_, str> = if expand_abbrev {
+        Cow::Owned(ru::expand_text(text))
     } else {
-        text.to_string()
+        Cow::Borrowed(text)
     };
     let mut cache = sessions::VoskCache::new();
     let (audio, sample_rate) = cache
-        .infer(model_dir, &normalized, speaker_id, speed)
+        .infer(model_dir, normalized.as_ref(), speaker_id, speed)
         .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     encode_or_fail(&audio, sample_rate, format)
 }
@@ -351,9 +349,7 @@ pub fn synth_segments_vosk_with(
     for seg in segments {
         match seg {
             ssml::Segment::Text(t) | ssml::Segment::Ipa(t) | ssml::Segment::Spell(t) => {
-                // Vosk has no IPA passthrough; <phoneme> falls back to text.
-                // Spell is normalized to Text by tts::ru::normalize_segments before this
-                // function runs once #232 is fully wired (task 6); arm kept for exhaustiveness.
+                // Vosk path normalizes Spell→Text upstream; arm kept for match exhaustiveness.
                 let (audio, _sr) = cache
                     .infer(model_dir, t, speaker_id, speed)
                     .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;

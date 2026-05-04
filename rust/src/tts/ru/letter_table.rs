@@ -105,9 +105,9 @@ pub(super) fn expand_chars(input: &str) -> String {
 }
 
 fn phrase_override(input: &str) -> Option<&'static str> {
-    match input.to_lowercase().as_str() {
-        "аэс" => Some("а эс"),
-        "цска" => Some("цэ эс ка"),
+    match input {
+        "АЭС" | "аэс" => Some("а эс"),
+        "ЦСКА" | "цска" => Some("цэ эс ка"),
         _ => None,
     }
 }

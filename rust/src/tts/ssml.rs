@@ -124,10 +124,10 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     // the inner text. Cursor advances past the closing tag so we
                     // don't double-emit the inner content as a Text fall-through.
                     push_text_slice(&mut segments, &text, cursor, span.start);
-                    let inner: String = text[span.start..span.end].iter().collect();
-                    let trimmed = inner.trim().to_string();
+                    let raw: String = text[span.start..span.end].iter().collect();
+                    let trimmed = raw.trim();
                     if !trimmed.is_empty() {
-                        segments.push(Segment::Spell(trimmed));
+                        segments.push(Segment::Spell(trimmed.to_string()));
                     }
                     cursor = span.end;
                 } else {

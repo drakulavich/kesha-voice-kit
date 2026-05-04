@@ -14,6 +14,8 @@
 //!    NOT expanded. Closes #232.
 //! 6. Otherwise, replace the token with `head + expand_chars(core) + tail`.
 
+use std::borrow::Cow;
+
 use super::letter_table::expand_chars;
 
 /// Common short Russian words that are sometimes written in CAPS for emphasis.
@@ -37,26 +39,17 @@ fn is_vowel(c: char) -> bool {
     VOWELS.contains(&c)
 }
 
-/// User's rule (#232): spell out only if Vosk cannot read the token as a
-/// natural Russian syllable — i.e. length ≤ 2 OR there's any pair of
-/// adjacent same-type letters (both vowels or both consonants). Tokens
-/// with strict CV/CVC alternation read fine as words (ВОЗ, КОТ, НАТО, ОПЕК).
-fn should_spell(core: &str) -> bool {
-    let chars: Vec<char> = core.chars().collect();
-    if chars.len() <= 2 {
-        return true;
-    }
-    chars.windows(2).any(|w| is_vowel(w[0]) == is_vowel(w[1]))
-}
-
 /// Returns true if `core` is a candidate acronym worth expanding.
 /// Pure structural check — does not consult the stop-list.
+/// Single-pass: collects chars once, validates range + soft/hard sign,
+/// then inlines the former `should_spell` check via `windows(2)`.
 fn is_acronym_token(core: &str) -> bool {
-    let len = core.chars().count();
+    let chars: Vec<char> = core.chars().collect();
+    let len = chars.len();
     if !(2..=5).contains(&len) {
         return false;
     }
-    for c in core.chars() {
+    for &c in &chars {
         // Reject anything outside [А-ЯЁ] and any soft/hard sign.
         let in_range = ('А'..='Я').contains(&c) || c == 'Ё';
         if !in_range {
@@ -66,7 +59,10 @@ fn is_acronym_token(core: &str) -> bool {
             return false;
         }
     }
-    should_spell(core)
+    // Spell out if length ≤ 2 (always), OR any adjacent same-type pair
+    // (both vowels or both consonants). Strict CV/CVC alternation reads
+    // fine as a word (ВОЗ, КОТ, НАТО, ОПЕК) — don't expand those.
+    len <= 2 || chars.windows(2).any(|w| is_vowel(w[0]) == is_vowel(w[1]))
 }
 
 /// Auto-expand all-uppercase Cyrillic acronyms in `input`. Whitespace and
@@ -76,9 +72,8 @@ pub(super) fn expand_acronyms(input: &str) -> String {
     let mut buf = String::new();
     for c in input.chars() {
         if c.is_whitespace() {
-            // Flush pending token, then emit the whitespace.
             if !buf.is_empty() {
-                out.push_str(&expand_token(&buf));
+                out.push_str(expand_token(&buf).as_ref());
                 buf.clear();
             }
             out.push(c);
@@ -87,30 +82,29 @@ pub(super) fn expand_acronyms(input: &str) -> String {
         }
     }
     if !buf.is_empty() {
-        out.push_str(&expand_token(&buf));
+        out.push_str(expand_token(&buf).as_ref());
     }
     out
 }
 
-fn expand_token(token: &str) -> String {
+fn expand_token(token: &str) -> Cow<'_, str> {
     let (head, mid, tail) = split_punct(token);
     if !is_acronym_token(mid) {
-        return token.to_string();
+        return Cow::Borrowed(token);
     }
     if STOP_LIST.contains(&mid) {
-        return token.to_string();
+        return Cow::Borrowed(token);
     }
     let mut s = String::from(head);
     s.push_str(&expand_chars(mid));
     s.push_str(tail);
-    s
+    Cow::Owned(s)
 }
 
 /// Split `token` into (leading_punct, core, trailing_punct).
 /// Leading and trailing punctuation runs are peeled off so that tokens like
 /// `«ВОЗ»` or `ФСБ.` are correctly identified and expanded.
 fn split_punct(token: &str) -> (&str, &str, &str) {
-    // Find start of core (skip leading punct).
     let start = token
         .char_indices()
         .find(|(_, c)| !LEADING_PUNCT.contains(c))
@@ -119,7 +113,6 @@ fn split_punct(token: &str) -> (&str, &str, &str) {
 
     let rest = &token[start..];
 
-    // Find end of core (peel trailing punct).
     let mut end = rest.len();
     for (idx, c) in rest.char_indices().rev() {
         if TRAILING_PUNCT.contains(&c) {
