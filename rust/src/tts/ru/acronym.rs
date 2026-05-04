@@ -142,23 +142,23 @@ mod tests {
     fn cases() -> Vec<(&'static str, &'static str)> {
         vec![
             // Spell out — 0 vowels (all consonants → always has a same-type adjacent pair).
-            ("ФСБ", "фэ эс бэ"),
-            ("ФСБ.", "фэ эс бэ."),
-            ("ФСБ объявила", "фэ эс бэ объявила"),
+            ("ФСБ", "эф эс бэ"),
+            ("ФСБ.", "эф эс бэ."),
+            ("ФСБ объявила", "эф эс бэ объявила"),
             ("СНГ", "сэ эн гэ"),
             ("МВД", "эм вэ дэ"),
             ("РЖД", "эр жэ дэ"),
             ("ВВП", "вэ вэ пэ"),
             // Spell out — consecutive vowels.
             ("ОАЭ", "о а э"),
-            ("АЭС", "а э эс"),
+            ("АЭС", "а эс"),
             // Spell out — consonant cluster adjacent to vowel (США = С+Ш adjacent, both consonants).
             ("США", "сэ шэ а"),
-            ("ЦСКА", "цэ эс ка а"),
+            ("ЦСКА", "цэ эс ка"),
             // Spell out — length 2 (always spell regardless of structure).
             ("ИП", "и пэ"),
             ("ЕС", "е эс"),
-            ("РФ", "эр фэ"),
+            ("РФ", "эр эф"),
             // Don't spell — alternating CVC/CVCV (Vosk reads as word).
             ("ВОЗ", "ВОЗ"),
             ("КОТ", "КОТ"),
@@ -180,8 +180,8 @@ mod tests {
             ("СЪЕЗД", "СЪЕЗД"),
             ("КРЕМЛЬ", "КРЕМЛЬ"),
             // Punctuation around a 0-vowel acronym.
-            ("«ФСБ»", "«фэ эс бэ»"),
-            ("ФСБ! СНГ?", "фэ эс бэ! сэ эн гэ?"),
+            ("«ФСБ»", "«эф эс бэ»"),
+            ("ФСБ! СНГ?", "эф эс бэ! сэ эн гэ?"),
             // Don't-spell tokens preserve their punct.
             ("ВОЗ.", "ВОЗ."),
             ("«НАТО»", "«НАТО»"),
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn vowel_cluster_or_short_or_consonant_cluster_only() {
         // 0 vowels (all consonants → always has a same-type adjacent pair) → spell.
-        assert_eq!(expand_acronyms("ФСБ"), "фэ эс бэ");
+        assert_eq!(expand_acronyms("ФСБ"), "эф эс бэ");
         assert_eq!(expand_acronyms("МВД"), "эм вэ дэ");
         // Consecutive vowels → spell.
         assert_eq!(expand_acronyms("ОАЭ"), "о а э");

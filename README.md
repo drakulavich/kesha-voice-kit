@@ -72,7 +72,7 @@ kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwi
 **Russian abbreviations** (`ru-vosk-*` voices):
 
 ```bash
-# Auto-detect on by default — ФСБ reads as "фэ-эс-бэ"
+# Auto-detect on by default — ФСБ reads as "эф-эс-бэ"
 kesha say --voice ru-vosk-m02 'ФСБ объявила решение.'
 
 # Force a literal reading (Vosk reads as "фсб")

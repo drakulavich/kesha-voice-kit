@@ -54,7 +54,7 @@ mod tests {
     fn text_runs_acronym_expansion_when_auto_expand_is_true() {
         // ВОЗ no longer auto-expands (alternating CVC → reads as word); use ФСБ instead.
         let out = normalize_segments(vec![Segment::Text("ФСБ объявила".to_string())], true);
-        assert_eq!(out, vec![Segment::Text("фэ эс бэ объявила".to_string())]);
+        assert_eq!(out, vec![Segment::Text("эф эс бэ объявила".to_string())]);
     }
 
     #[test]

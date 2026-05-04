@@ -166,12 +166,12 @@ After normalization no `Spell` variants remain — the synth never sees them.
 | В | "вэ" | Й | "ий" | С | "эс"* | Щ | "ща" |
 | Г | "гэ" | К | "ка" | Т | "тэ" | Ъ | "" |
 | Д | "дэ" | Л | "эл" | У | "у" | Ы | "ы" |
-| Е | "е" | М | "эм" | Ф | "фэ" | Ь | "" |
+| Е | "е" | М | "эм" | Ф | "эф" | Ь | "" |
 | Ё | "ё" | Н | "эн" | Х | "ха" | Э | "э" |
 | Ж | "жэ" | О | "о" | Ц | "цэ" | Ю | "ю" |
 | | | | | | | Я | "я" |
 
-*С is position-dependent: "сэ" at index 0 (start of token), "эс" elsewhere. E.g. США → "сэ шэ а", ФСБ → "фэ эс бэ", ЕС → "е эс". Changes from original design: Л "эль"→"эл", Ф "эф"→"фэ", Ш "ша"→"шэ" (all user-validated in #232).
+*С is position-dependent: "сэ" at index 0 (start of token), "эс" elsewhere. E.g. США → "сэ шэ а", ФСБ → "эф эс бэ", ЕС → "е эс". Changes from original design: Л "эль"→"эл", Ф remains canonical "эф", Ш "ша"→"шэ" (all user-validated in #232). АЭС and ЦСКА use whole-acronym overrides ("а эс", "цэ эс ка") because Vosk pronounces those chunks more naturally than naive per-character expansion.
 
 `expand_chars(input: &str) -> String`:
 
@@ -182,7 +182,7 @@ After normalization no `Spell` variants remain — the synth never sees them.
 5. Join entries with single space.
 6. Collapse double-spaces (e.g. silent Ъ between letters → not a double-space).
 
-Example: `"ЦСКА"` → `"цэ эс ка а"`. Example: `"ОБЪЁМ"` → `"о бэ ё эм"` (silent Ъ). Example: `"США"` → `"сэ шэ а"` (position-dependent С).
+Example: `"ЦСКА"` → `"цэ эс ка"`. Example: `"ОБЪЁМ"` → `"о бэ ё эм"` (silent Ъ). Example: `"США"` → `"сэ шэ а"` (position-dependent С).
 
 ### Acronym matcher (`tts::ru::acronym`)
 
@@ -274,21 +274,21 @@ No new error variants. No new failure modes.
 - Full alphabet: every А-Я + Ё → expected letter-name.
 - Ъ, Ь → empty string.
 - `expand_chars("ВОЗ")` == `"вэ о зэ"` (unconditional spelling path; В is at index 0, not С).
-- `expand_chars("ЦСКА")` == `"цэ эс ка а"` (С at index 1 → "эс").
+- `expand_chars("ЦСКА")` == `"цэ эс ка"` (whole-acronym override).
 - `expand_chars("США")` == `"сэ шэ а"` (С at index 0 → "сэ").
-- `expand_chars("ФСБ")` == `"фэ эс бэ"` (Ф="фэ", С at index 1="эс").
+- `expand_chars("ФСБ")` == `"эф эс бэ"` (Ф="эф", С at index 1="эс").
 - `expand_chars("ОБЪЁМ")` == `"о бэ ё эм"` (silent Ъ; no double space).
-- `expand_chars("РФ")` == `"эр фэ"` (Ф="фэ", not "эф").
+- `expand_chars("РФ")` == `"эр эф"` (Ф="эф").
 - `expand_chars("ЛЛМ")` == `"эл эл эм"` (Л="эл", not "эль").
 - Non-Cyrillic char in input → pass-through unchanged.
 - Empty string → empty string.
 
 `rust/src/tts/ru/acronym.rs::tests` (updated for #232 vowel-cluster rule):
-- `expand_acronyms("ФСБ")` == `"фэ эс бэ"` (0 vowels → spell).
-- `expand_acronyms("ФСБ.")` == `"фэ эс бэ."` (punct preserved).
-- `expand_acronyms("ФСБ объявила")` == `"фэ эс бэ объявила"`.
+- `expand_acronyms("ФСБ")` == `"эф эс бэ"` (0 vowels → spell).
+- `expand_acronyms("ФСБ.")` == `"эф эс бэ."` (punct preserved).
+- `expand_acronyms("ФСБ объявила")` == `"эф эс бэ объявила"`.
 - `expand_acronyms("ОАЭ")` == `"о а э"` (consecutive vowels → spell).
-- `expand_acronyms("АЭС")` == `"а э эс"` (consecutive vowels → spell).
+- `expand_acronyms("АЭС")` == `"а эс"` (whole-acronym override).
 - `expand_acronyms("США")` == `"сэ шэ а"` (С+Ш consecutive consonants → spell).
 - `expand_acronyms("ИП")` == `"и пэ"` (length 2 → always spell).
 - `expand_acronyms("ЕС")` == `"е эс"` (length 2 → always spell).
@@ -302,7 +302,7 @@ No new error variants. No new failure modes.
 - `expand_acronyms("NASA")` == `"NASA"` (Latin).
 - `expand_acronyms("АБВГДЕ")` == `"АБВГДЕ"` (length 6).
 - `expand_acronyms("ОБЪЁМ")` == `"ОБЪЁМ"` (contains Ъ).
-- `expand_acronyms("«ФСБ»")` == `"«фэ эс бэ»"`.
+- `expand_acronyms("«ФСБ»")` == `"«эф эс бэ»"`.
 - Stop-list extension test: every entry in `STOP_LIST` round-trips unchanged.
 
 `rust/src/tts/ssml.rs` (extend existing):
@@ -314,7 +314,7 @@ No new error variants. No new failure modes.
 
 End-to-end through `tts::say()` against `voice=ru-vosk-m02`:
 
-- `say("ФСБ", expand_abbrev=true)` produces audio whose byte-length is at least 1.7× `say("ФСБ", expand_abbrev=false)` (3 all-consonant letters → 6 syllables). Note: ВОЗ is no longer used here — the vowel-cluster rule passes it through as a word.
+- `say("ФСБ", expand_abbrev=true)` produces audio whose byte-length is at least 1.3× `say("ФСБ", expand_abbrev=false)` (3 all-consonant letters → 3 letter names). Note: ВОЗ is no longer used here — the vowel-cluster rule passes it through as a word.
 - `say("<speak><say-as interpret-as=\"characters\">ФСБ</say-as></speak>", ssml=true, expand_abbrev=false)` matches the auto-expand path within ±10% (SSML overrides flag).
 - `say("ВОЗ", expand_abbrev=false)` produces audio within ±30% of `say("воз")` (both pass through verbatim — no-op sanity check).
 

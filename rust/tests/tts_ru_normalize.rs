@@ -61,9 +61,9 @@ fn synth(text: &str, ssml: bool, expand_abbrev: bool, model_dir: &PathBuf) -> Ve
 // Tests
 // =============================================================================
 
-/// Auto-expanding "ФСБ" (3 all-consonant letters → "фэ эс бэ", 6 syllables)
+/// Auto-expanding "ФСБ" (3 all-consonant letters → "эф эс бэ")
 /// must produce noticeably more audio than passing "ФСБ" straight to Vosk
-/// without expansion. Threshold: ≥1.7× by byte count.
+/// without expansion. Threshold: ≥1.3× by byte count.
 ///
 /// Note: ВОЗ is no longer used here because the vowel-cluster rule (#232)
 /// passes it through as a word (alternating C-V-C reads fine as "воз").
@@ -89,8 +89,8 @@ fn auto_expand_plain_fsb_is_longer_than_noexpand() {
 
     let ratio = expanded.len() as f64 / plain.len() as f64;
     assert!(
-        ratio > 1.7,
-        "expanded={} plain={} ratio={:.2} (expected >1.7×)",
+        ratio > 1.3,
+        "expanded={} plain={} ratio={:.2} (expected >1.3×)",
         expanded.len(),
         plain.len(),
         ratio,

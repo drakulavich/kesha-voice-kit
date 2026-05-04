@@ -6,9 +6,11 @@
 //! match is exhaustive.
 //!
 //! Letter-name forms are tuned to user-validated pronunciation (#232):
-//! Л = "эл" (not "эль"), Ф = "фэ" (not "эф"), Ш = "шэ" (not "ша").
+//! Л = "эл" (not "эль"), Ф = "эф" (not "фэ"), Ш = "шэ" (not "ша").
 //! С is position-dependent: "сэ" at index 0 (start of token), "эс" elsewhere
-//! (e.g. США → "сэ шэ а", ФСБ → "фэ эс бэ", ЕС → "е эс").
+//! (e.g. США → "сэ шэ а", ФСБ → "эф эс бэ", ЕС → "е эс").
+//! Some tokens use whole-acronym forms because Vosk pronounces those chunks
+//! more naturally than naive per-character expansion (АЭС, ЦСКА).
 
 // Russian letter-name table for acronym spell-out. Forms chosen to match
 // what Vosk-TTS BERT-prosody pronounces naturally — see #232 user-listening
@@ -35,7 +37,7 @@ const LETTERS: &[(char, &str)] = &[
     ('с', "эс"),
     ('т', "тэ"),
     ('у', "у"),
-    ('ф', "фэ"),
+    ('ф', "эф"),
     ('х', "ха"),
     ('ц', "цэ"),
     ('ч', "че"),
@@ -54,8 +56,12 @@ const LETTERS: &[(char, &str)] = &[
 /// (Ъ, Ь) are dropped without leaving a double space.
 ///
 /// Position-dependent rule: С at index 0 (start of the token) uses "сэ";
-/// С elsewhere uses "эс". E.g. США → "сэ шэ а", ФСБ → "фэ эс бэ".
+/// С elsewhere uses "эс". E.g. США → "сэ шэ а", ФСБ → "эф эс бэ".
 pub(super) fn expand_chars(input: &str) -> String {
+    if let Some(expanded) = phrase_override(input) {
+        return expanded.to_string();
+    }
+
     let mut out = String::with_capacity(input.len() * 3);
     // `last_was_cyrillic` tracks whether the previous emitted token was a
     // Cyrillic letter-name. Spaces are inserted only between tokens that
@@ -69,7 +75,7 @@ pub(super) fn expand_chars(input: &str) -> String {
         let lc = c.to_lowercase().next().unwrap_or(c);
 
         // Position-dependent: С at the start of the token uses "сэ" form
-        // (e.g. США → "сэ шэ а"), but in middle/end uses "эс" (ФСБ → "фэ эс бэ",
+        // (e.g. США → "сэ шэ а"), but in middle/end uses "эс" (ФСБ → "эф эс бэ",
         // ЕС → "е эс"). User-specified per #232.
         let name = if i == 0 && lc == 'с' {
             Some("сэ")
@@ -98,6 +104,14 @@ pub(super) fn expand_chars(input: &str) -> String {
     out
 }
 
+fn phrase_override(input: &str) -> Option<&'static str> {
+    match input.to_lowercase().as_str() {
+        "аэс" => Some("а эс"),
+        "цска" => Some("цэ эс ка"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,9 +124,8 @@ mod tests {
     }
 
     #[test]
-    fn cska_expands_to_four_letter_names() {
-        // С is at index 1 (not start) → "эс".
-        assert_eq!(expand_chars("ЦСКА"), "цэ эс ка а");
+    fn cska_uses_vosk_validated_chunking() {
+        assert_eq!(expand_chars("ЦСКА"), "цэ эс ка");
     }
 
     #[test]
@@ -173,18 +186,12 @@ mod tests {
     }
 
     #[test]
-    fn s_in_middle_or_end_uses_es_form() {
-        // С not at index 0 → "эс" (user-confirmed).
-        assert_eq!(expand_chars("ФСБ"), "фэ эс бэ");
+    fn user_validated_abbreviation_forms() {
+        assert_eq!(expand_chars("ФСБ"), "эф эс бэ");
         assert_eq!(expand_chars("ЕС"), "е эс");
-        assert_eq!(expand_chars("АЭС"), "а э эс");
-        assert_eq!(expand_chars("ЦСКА"), "цэ эс ка а");
-    }
-
-    #[test]
-    fn updated_letter_forms() {
-        // Ф is now "фэ" (not "эф") — user-confirmed.
-        assert_eq!(expand_chars("РФ"), "эр фэ");
+        assert_eq!(expand_chars("АЭС"), "а эс");
+        assert_eq!(expand_chars("ЦСКА"), "цэ эс ка");
+        assert_eq!(expand_chars("РФ"), "эр эф");
         // Ш is now "шэ" (not "ша") — user-confirmed.
         assert_eq!(expand_chars("ШУМ"), "шэ у эм");
         // Л is now "эл" (not "эль") — user-confirmed.

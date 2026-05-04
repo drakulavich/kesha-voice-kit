@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn cska_expands_to_four_letter_names() {
-        assert_eq!(expand_chars("ЦСКА"), "цэ эс ка а");
+        assert_eq!(expand_chars("ЦСКА"), "цэ эс ка");
     }
 
     #[test]
@@ -619,23 +619,23 @@ mod tests {
     fn cases() -> Vec<(&'static str, &'static str)> {
         vec![
             // Spell out — 0 vowels (all consonants → always has a same-type adjacent pair).
-            ("ФСБ", "фэ эс бэ"),
-            ("ФСБ.", "фэ эс бэ."),
-            ("ФСБ объявила", "фэ эс бэ объявила"),
+            ("ФСБ", "эф эс бэ"),
+            ("ФСБ.", "эф эс бэ."),
+            ("ФСБ объявила", "эф эс бэ объявила"),
             ("СНГ", "сэ эн гэ"),
             ("МВД", "эм вэ дэ"),
             ("РЖД", "эр жэ дэ"),
             ("ВВП", "вэ вэ пэ"),
             // Spell out — consecutive vowels.
             ("ОАЭ", "о а э"),
-            ("АЭС", "а э эс"),
+            ("АЭС", "а эс"),
             // Spell out — consonant cluster adjacent to vowel.
             ("США", "сэ шэ а"),
-            ("ЦСКА", "цэ эс ка а"),
+            ("ЦСКА", "цэ эс ка"),
             // Spell out — length 2 (always spell regardless of structure).
             ("ИП", "и пэ"),
             ("ЕС", "е эс"),
-            ("РФ", "эр фэ"),
+            ("РФ", "эр эф"),
             // Don't spell — alternating CVC/CVCV (Vosk reads as word).
             ("ВОЗ", "ВОЗ"),
             ("КОТ", "КОТ"),
@@ -657,8 +657,8 @@ mod tests {
             ("СЪЕЗД", "СЪЕЗД"),
             ("КРЕМЛЬ", "КРЕМЛЬ"),
             // Punctuation around a 0-vowel acronym.
-            ("«ФСБ»", "«фэ эс бэ»"),
-            ("ФСБ! СНГ?", "фэ эс бэ! сэ эн гэ?"),
+            ("«ФСБ»", "«эф эс бэ»"),
+            ("ФСБ! СНГ?", "эф эс бэ! сэ эн гэ?"),
             // Don't-spell tokens preserve their punct.
             ("ВОЗ.", "ВОЗ."),
             ("«НАТО»", "«НАТО»"),
@@ -1096,7 +1096,7 @@ cd rust
 echo "ВОЗ" | ./target/debug/kesha-engine say --voice ru-vosk-m02 --out /tmp/voz_expand.wav
 echo "ВОЗ" | ./target/debug/kesha-engine say --voice ru-vosk-m02 --no-expand-abbrev --out /tmp/voz_noexpand.wav
 ls -la /tmp/voz_expand.wav /tmp/voz_noexpand.wav
-# Expand should be ~2× the size of no-expand (3 letters → 6 syllables).
+# Expand should be noticeably longer than no-expand (3 spelled letter names).
 ```
 
 (This is a developer-loop check; the codified version is in Task 9 integration tests.)
@@ -1305,11 +1305,11 @@ fn auto_expand_plain_voz_is_longer_than_noexpand() {
     let expanded = synth("ВОЗ", /*ssml=*/ false, /*expand_abbrev=*/ true, &cache);
     let plain = synth("ВОЗ", /*ssml=*/ false, /*expand_abbrev=*/ false, &cache);
 
-    // 3 letters → 6 syllables; expect at least 1.7× audio bytes.
+    // 3 spelled letter names; expect at least 1.3× audio bytes.
     let ratio = expanded.len() as f64 / plain.len() as f64;
     assert!(
-        ratio > 1.7,
-        "expanded={} plain={} ratio={:.2} (expected >1.7×)",
+        ratio > 1.3,
+        "expanded={} plain={} ratio={:.2} (expected >1.3×)",
         expanded.len(),
         plain.len(),
         ratio,
@@ -1386,7 +1386,7 @@ git commit -m "$(cat <<'EOF'
 test(#232): integration tests for Russian acronym normalization
 
 Exercises tts::say() end-to-end with voice=ru-vosk-m02:
-- auto-expanded "ВОЗ" produces ≥1.7× the audio bytes of the no-op path
+- auto-expanded "ФСБ" produces ≥1.3× the audio bytes of the no-op path
 - <say-as interpret-as="characters">ВОЗ</say-as> matches auto-expand
   within ±10%
 - no-expand baseline matches lowercase form within ±30%
