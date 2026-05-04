@@ -4,12 +4,23 @@
 //! regression in the new tts::ru layer (or in how SayOptions threads
 //! `expand_abbrev`) shows up as a hard test failure rather than a
 //! subjective audio change.
+//!
+//! Session strategy: most tests drive the engine via `--stdin-loop` so a
+//! single Vosk model load (~1-2 s) is shared across requests. One test
+//! keeps the cold `tts::say()` path for regression coverage of the
+//! direct-call stack.
 
 #![cfg(feature = "tts")]
 
+use std::io::{BufReader, Read, Write};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 use kesha_engine::tts::{self, EngineChoice, OutputFormat, SayOptions};
+
+// =============================================================================
+// Shared helpers
+// =============================================================================
 
 /// Return the vosk-ru model dir if the required runtime files are present;
 /// otherwise return None so callers can skip gracefully.
@@ -40,7 +51,8 @@ fn vosk_model_dir_or_skip() -> Option<PathBuf> {
     }
 }
 
-fn synth(text: &str, ssml: bool, expand_abbrev: bool, model_dir: &PathBuf) -> Vec<u8> {
+/// Cold synthesis via `tts::say()` — kept for direct-call regression coverage.
+fn synth_cold(text: &str, ssml: bool, expand_abbrev: bool, model_dir: &PathBuf) -> Vec<u8> {
     tts::say(SayOptions {
         text,
         lang: "ru",
@@ -58,12 +70,112 @@ fn synth(text: &str, ssml: bool, expand_abbrev: bool, model_dir: &PathBuf) -> Ve
 }
 
 // =============================================================================
+// stdin-loop engine wrapper
+// =============================================================================
+
+/// Thin wrapper around a `kesha-engine say --stdin-loop` subprocess.
+///
+/// One `LoopEngine` holds a single Vosk model load, amortising the ~1-2 s
+/// cold-start across multiple `synth` calls.
+struct LoopEngine {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    stdout: BufReader<std::process::ChildStdout>,
+}
+
+impl LoopEngine {
+    /// Spawn the engine subprocess. Returns `None` when the vosk-ru models
+    /// are not installed (same skip gate as the cold-path tests).
+    fn spawn() -> Option<Self> {
+        vosk_model_dir_or_skip()?;
+        let bin = env!("CARGO_BIN_EXE_kesha-engine");
+        let mut child = Command::new(bin)
+            .args(["say", "--voice", "ru-vosk-m02", "--stdin-loop"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn kesha-engine --stdin-loop");
+        let stdin = child.stdin.take().expect("child stdin");
+        let stdout = BufReader::new(child.stdout.take().expect("child stdout"));
+        Some(Self {
+            child,
+            stdin,
+            stdout,
+        })
+    }
+
+    /// Synthesise `text` and return the raw audio bytes (WAV).
+    ///
+    /// Wire protocol (from `say_loop.rs`):
+    /// - request:  `<JSON>\n`
+    /// - response: `<status:u8><id:u32 LE><len:u32 LE><payload:[u8; len]>`
+    ///   - status 0 = ok (WAV bytes), status 1 = error (UTF-8 message)
+    fn synth(&mut self, text: &str, ssml: bool, expand_abbrev: bool) -> Vec<u8> {
+        // --- write request ---
+        let req = serde_json::json!({
+            "id": 1,
+            "text": text,
+            "voice": "ru-vosk-m02",
+            "format": "wav",
+            "ssml": ssml,
+            "expand_abbrev": expand_abbrev,
+        });
+        let mut line = req.to_string();
+        line.push('\n');
+        self.stdin
+            .write_all(line.as_bytes())
+            .expect("write request");
+        self.stdin.flush().expect("flush request");
+
+        // --- read response header (9 bytes: 1 status + 4 id + 4 len) ---
+        let mut header = [0u8; 9];
+        self.stdout
+            .read_exact(&mut header)
+            .expect("read response header");
+        let status = header[0];
+        // id (header[1..5]) echoed back — not checked here
+        let len = u32::from_le_bytes([header[5], header[6], header[7], header[8]]) as usize;
+
+        // --- read payload ---
+        let mut payload = vec![0u8; len];
+        self.stdout
+            .read_exact(&mut payload)
+            .expect("read response payload");
+
+        if status != 0 {
+            panic!(
+                "engine error: {}",
+                std::str::from_utf8(&payload).unwrap_or("<non-utf8>")
+            );
+        }
+        payload
+    }
+}
+
+impl Drop for LoopEngine {
+    fn drop(&mut self) {
+        // Close stdin → engine sees EOF → exits cleanly.
+        // ChildStdin doesn't have a standalone close, but dropping the
+        // field achieves the same effect via the pipe's write-end closing.
+        // We need to move it out; use a zero-write + explicit flush first
+        // then let Rust drop the field when this struct goes out of scope.
+        let _ = self.stdin.flush();
+        // Reap the child to avoid zombies; ignore errors (e.g. already dead).
+        let _ = self.child.wait();
+    }
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
 /// Auto-expanding "ФСБ" (3 all-consonant letters → "эф эс бэ")
 /// must produce noticeably more audio than passing "ФСБ" straight to Vosk
 /// without expansion. Threshold: ≥1.3× by byte count.
+///
+/// This test exercises the cold `tts::say()` path directly — kept as
+/// regression coverage for the direct-call stack (no subprocess).
 ///
 /// Note: ВОЗ is no longer used here because the vowel-cluster rule (#232)
 /// passes it through as a word (alternating C-V-C reads fine as "воз").
@@ -80,10 +192,10 @@ fn auto_expand_plain_fsb_is_longer_than_noexpand() {
         }
     };
 
-    let expanded = synth(
+    let expanded = synth_cold(
         "ФСБ", /*ssml=*/ false, /*expand_abbrev=*/ true, &model_dir,
     );
-    let plain = synth(
+    let plain = synth_cold(
         "ФСБ", /*ssml=*/ false, /*expand_abbrev=*/ false, &model_dir,
     );
 
@@ -97,61 +209,48 @@ fn auto_expand_plain_fsb_is_longer_than_noexpand() {
     );
 }
 
-/// `<say-as interpret-as="characters">ФСБ</say-as>` must spell out the letters
-/// just like auto-expand does, so the audio length should be within ±10% of
-/// the auto-expanded form.
+/// Warm-session batch: two ratio checks under a single Vosk model load via
+/// `kesha-engine say --stdin-loop`. Spawns one `LoopEngine` and runs:
+///
+/// 1. `<say-as interpret-as="characters">ФСБ</say-as>` must spell out
+///    letters identically to auto-expand: within ±10% by byte length.
+/// 2. With `expand_abbrev=false`, uppercase "ВОЗ" and lowercase "воз" must
+///    produce audio within ±30% (they read the same phonetically to Vosk).
 #[test]
-fn say_as_characters_matches_auto_expand_within_tolerance() {
-    let model_dir = match vosk_model_dir_or_skip() {
-        Some(d) => d,
+fn warm_session_say_as_and_baseline_checks() {
+    let mut eng = match LoopEngine::spawn() {
+        Some(e) => e,
         None => {
-            eprintln!("skipping say_as_characters_matches_auto_expand_within_tolerance: vosk-ru models not found");
+            eprintln!("skipping warm_session_say_as_and_baseline_checks: vosk-ru models not found");
             return;
         }
     };
 
-    let auto = synth("ФСБ", false, true, &model_dir);
-    let ssml = synth(
+    // --- check 1: <say-as characters> parity with auto-expand ---
+    let auto_fsb = eng.synth("ФСБ", false, true);
+    let ssml_fsb = eng.synth(
         r#"<speak><say-as interpret-as="characters">ФСБ</say-as></speak>"#,
         true,
         false, // <say-as> wins regardless of expand_abbrev flag
-        &model_dir,
+    );
+    let ratio1 = ssml_fsb.len() as f64 / auto_fsb.len() as f64;
+    assert!(
+        (0.9..=1.1).contains(&ratio1),
+        "say-as/auto-expand parity: auto_fsb={} ssml_fsb={} ratio={:.2} (expected 0.9..=1.1)",
+        auto_fsb.len(),
+        ssml_fsb.len(),
+        ratio1,
     );
 
-    let ratio = ssml.len() as f64 / auto.len() as f64;
+    // --- check 2: no-expand ВОЗ vs воз baseline ---
+    let upper_voz = eng.synth("ВОЗ", false, false);
+    let lower_voz = eng.synth("воз", false, false);
+    let ratio2 = upper_voz.len() as f64 / lower_voz.len() as f64;
     assert!(
-        (0.9..=1.1).contains(&ratio),
-        "auto={} ssml={} ratio={:.2} (expected 0.9..=1.1)",
-        auto.len(),
-        ssml.len(),
-        ratio,
-    );
-}
-
-/// Sanity check: with `expand_abbrev=false`, uppercase "ВОЗ" is passed
-/// verbatim to Vosk (same as the lowercase word "воз"). The two audio clips
-/// must be within ±30% of each other in byte length.
-#[test]
-fn no_expand_baseline_matches_lowercase_form() {
-    let model_dir = match vosk_model_dir_or_skip() {
-        Some(d) => d,
-        None => {
-            eprintln!(
-                "skipping no_expand_baseline_matches_lowercase_form: vosk-ru models not found"
-            );
-            return;
-        }
-    };
-
-    let upper = synth("ВОЗ", false, false, &model_dir);
-    let lower = synth("воз", false, false, &model_dir);
-
-    let ratio = upper.len() as f64 / lower.len() as f64;
-    assert!(
-        (0.7..=1.3).contains(&ratio),
-        "upper={} lower={} ratio={:.2} (expected 0.7..=1.3)",
-        upper.len(),
-        lower.len(),
-        ratio,
+        (0.7..=1.3).contains(&ratio2),
+        "ВОЗ/воз baseline: upper={} lower={} ratio={:.2} (expected 0.7..=1.3)",
+        upper_voz.len(),
+        lower_voz.len(),
+        ratio2,
     );
 }
