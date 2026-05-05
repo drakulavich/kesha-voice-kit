@@ -94,12 +94,13 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     let mut cursor: usize = 0;
 
     for span in &spans {
-        // If a parent span already consumed this region (advanced cursor past
-        // span.end via Phoneme/SayAs/Emphasis arm), skip the inner span — the
-        // parent emitted a single segment for the entire content. Without
-        // this, nested structural tags would double-emit (e.g. <emphasis>
-        // around <say-as> producing both an Emphasis and a Spell segment for
-        // the same text). See #233 final review.
+        // If a higher-priority sibling span (sorted via span_priority) already
+        // consumed this region — i.e. its arm advanced cursor past the current
+        // span.start — skip the current span. This implements the spec's
+        // "inner structural tag wins" rule: SayAs / Phoneme have priority 0 and
+        // run before the enclosing Emphasis (priority 2) when they share the
+        // same character range, so the outer Emphasis is silently absorbed.
+        // See #233.
         if span.start < cursor {
             continue;
         }
@@ -152,10 +153,8 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     // the inner text. Cursor advances past the closing tag so we
                     // don't double-emit the inner content as a Text fall-through.
                     push_text_slice(&mut segments, &text, cursor, span.start);
-                    let raw: String = text[span.start..span.end].iter().collect();
-                    let trimmed = raw.trim();
-                    if !trimmed.is_empty() {
-                        segments.push(Segment::Spell(trimmed.to_string()));
+                    if let Some(inner) = extract_inner_text(&text, span.start, span.end) {
+                        segments.push(Segment::Spell(inner));
                     }
                     cursor = span.end;
                 } else {
@@ -173,17 +172,12 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
             }
             ParsedElement::Emphasis(attrs) => {
                 push_text_slice(&mut segments, &text, cursor, span.start);
-                let raw: String = text[span.start..span.end].iter().collect();
-                let trimmed = raw.trim();
-                if !trimmed.is_empty() {
+                if let Some(content) = extract_inner_text(&text, span.start, span.end) {
                     // SSML 1.1: missing/empty level == "moderate" (default). Only
                     // `level="none"` triggers suppression — all other variants
                     // (Strong, Moderate, Reduced) collapse to "honor `+` markers".
                     let suppress = matches!(attrs.level, Some(EmphasisLevel::None));
-                    segments.push(Segment::Emphasis {
-                        content: trimmed.to_string(),
-                        suppress,
-                    });
+                    segments.push(Segment::Emphasis { content, suppress });
                 }
                 // Cursor advances past the entire emphasis span. Any structural child
                 // (e.g. <break/>, <say-as>, <phoneme>) whose `start` falls within
@@ -210,10 +204,18 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     Ok(segments)
 }
 
-/// Secondary sort key for spans that share the same `start` position.
-/// Lower value = processed first. Structural inner tags (Phoneme, SayAs) must
-/// run before their enclosing Emphasis so the cursor-guard correctly skips the
-/// outer tag ("inner tag wins" per the SSML spec decisions table, #233).
+/// Sort key for span ordering: lower priority runs FIRST in the segment
+/// loop. When two spans share `span.start` (e.g. an inner `<say-as>`
+/// nested inside `<emphasis>`), the lower-priority arm runs first and
+/// advances the cursor; the higher-priority arm is then skipped by the
+/// loop-top `cursor` guard. This implements the spec's "inner structural
+/// tag wins" rule for nested SSML.
+///
+/// Priority assignments (#233):
+/// - 0: structural-leaf tags (Phoneme, SayAs) — run first, consume span
+/// - 1: Break and other non-overlapping containers
+/// - 2: Emphasis — run after inner leaves; otherwise wraps them
+/// - 3: Speak root wrapper
 fn span_priority(el: &ParsedElement) -> u8 {
     match el {
         ParsedElement::Phoneme(_) | ParsedElement::SayAs(_) => 0,
@@ -231,6 +233,19 @@ fn push_text_slice(out: &mut Vec<Segment>, text: &[char], start: usize, end: usi
     let chunk: String = text[start..end].iter().collect();
     if !chunk.trim().is_empty() {
         out.push(Segment::Text(chunk));
+    }
+}
+
+/// Collect the inner text of a structural span and trim whitespace.
+/// Returns `None` for empty/whitespace-only content. Used by tags that
+/// emit a single segment carrying their inner content (SayAs, Emphasis).
+fn extract_inner_text(text: &[char], start: usize, end: usize) -> Option<String> {
+    let raw: String = text[start..end].iter().collect();
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 

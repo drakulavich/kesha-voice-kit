@@ -1,8 +1,10 @@
 //! Per-process warn-once helper for SSML feature gates.
 //!
-//! Used by the emphasis (#233) and acronym (#232) paths to emit a single
-//! stderr line when a non-fatal SSML feature is misused (e.g. `<emphasis>`
-//! content without a `+vowel` marker). Dedup is keyed by a `&'static str`
+//! Engine-agnostic: called from both the Russian-Vosk path and the Kokoro /
+//! Vosk defensive arms in `tts::mod`. Emits a single stderr line when a
+//! non-fatal SSML feature is misused (e.g. `<emphasis>` content without a
+//! `+vowel` marker on a `ru-vosk-*` voice, or `<emphasis>` on a non-Vosk
+//! voice where `+` markers are stripped). Dedup is keyed by a `&'static str`
 //! identifier so all instances of the same warning across `kesha say`
 //! invocations within the same process print only once.
 

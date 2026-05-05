@@ -11,7 +11,6 @@
 
 pub(super) mod acronym;
 pub(super) mod letter_table;
-pub(super) mod warn;
 
 use crate::tts::ssml::Segment;
 
@@ -40,10 +39,15 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
             Segment::Spell(t) => Segment::Text(letter_table::expand_chars(&t)),
             Segment::Emphasis { content, suppress } => {
                 if suppress {
-                    Segment::Text(content.replace('+', ""))
+                    let stripped = if content.contains('+') {
+                        content.replace('+', "")
+                    } else {
+                        content
+                    };
+                    Segment::Text(stripped)
                 } else {
                     if !content.contains('+') {
-                        warn::warn_once(
+                        crate::tts::warn::warn_once(
                             "emphasis-no-plus",
                             "<emphasis> content has no `+` marker; \
                              ru-vosk-* needs `сл+ово` syntax to shift stress \

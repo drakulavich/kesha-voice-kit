@@ -280,11 +280,7 @@ fn emphasis_marker_shifts_stress() {
 
     let baseline = eng.synth("дома", false, false);
 
-    let stressed_last = eng.synth(
-        r#"<speak><emphasis>дом+а</emphasis></speak>"#,
-        true,
-        false,
-    );
+    let stressed_last = eng.synth(r#"<speak><emphasis>дом+а</emphasis></speak>"#, true, false);
     assert!(
         stressed_last.len() > baseline.len() + 2000,
         "дом+а={} baseline={} (expected >baseline+2KB)",
@@ -292,11 +288,8 @@ fn emphasis_marker_shifts_stress() {
         baseline.len(),
     );
 
-    let agrees_with_default = eng.synth(
-        r#"<speak><emphasis>д+ома</emphasis></speak>"#,
-        true,
-        false,
-    );
+    let agrees_with_default =
+        eng.synth(r#"<speak><emphasis>д+ома</emphasis></speak>"#, true, false);
     let r1 = agrees_with_default.len() as f64 / baseline.len() as f64;
     assert!(
         (0.95..=1.05).contains(&r1),
