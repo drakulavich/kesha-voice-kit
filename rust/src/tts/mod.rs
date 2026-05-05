@@ -260,6 +260,18 @@ pub fn synth_segments_kokoro_with(
                 out.extend(audio);
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
+            ssml::Segment::Emphasis { content, .. } => {
+                // Placeholder arm — proper warn-once + strip-`+` lands in T4 (#233).
+                // Strip the `+` markers defensively so Kokoro G2P doesn't choke
+                // on the unfamiliar character.
+                let stripped = content.replace('+', "");
+                let ipa = g2p::text_to_ipa(&stripped, lang)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
+                let audio = sess
+                    .infer_ipa(&ipa, voice_path, speed)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+                out.extend(audio);
+            }
         }
     }
     if out.is_empty() {
@@ -356,6 +368,16 @@ pub fn synth_segments_vosk_with(
                 out.extend(audio);
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
+            ssml::Segment::Emphasis { content, .. } => {
+                // ru::normalize_segments converts Emphasis→Text upstream; this arm
+                // is defensive in case a caller bypasses the normalizer. Strip `+`
+                // here. T4 (#233) wires the proper warn-once + handling.
+                let stripped = content.replace('+', "");
+                let (audio, _sr) = cache
+                    .infer(model_dir, &stripped, speaker_id, speed)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
+                out.extend(audio);
+            }
         }
     }
     if out.is_empty() {

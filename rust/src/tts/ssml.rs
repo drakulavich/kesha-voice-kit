@@ -32,6 +32,17 @@ pub enum Segment {
     /// (their G2P will read the cyrillic word verbatim — acceptable until per-engine
     /// support lands).
     Spell(String),
+    /// SSML `<emphasis>` content. The Russian-Vosk normalization step honors
+    /// any `+` markers in `content` (passing them through to Vosk, which
+    /// interprets `+vowel` as a stress hint per the #233 spike). On non-
+    /// `ru-vosk-*` voices the `+` markers are stripped before reaching G2P.
+    /// `suppress` is set when the source tag had `level="none"` — strip `+`
+    /// markers regardless of voice (SSML composition: a
+    /// `<emphasis level="none">` overrides an inherited emphasis).
+    ///
+    /// Parser wiring (constructing this variant from `<emphasis>` tags) lands in T2 (#233).
+    #[allow(dead_code)]
+    Emphasis { content: String, suppress: bool },
 }
 
 /// Default `<break/>` duration when the `time` attribute is omitted.
@@ -234,6 +245,9 @@ mod tests {
                 Segment::Text(_) => text_chunks += 1,
                 Segment::Ipa(_) => panic!("unexpected Ipa segment"),
                 Segment::Spell(_) => unreachable!("parser does not emit Spell in this fixture"),
+                Segment::Emphasis { .. } => {
+                    unreachable!("parser does not emit Emphasis in this fixture")
+                }
                 Segment::Break(d) => {
                     assert_eq!(*d, Duration::from_millis(500));
                     breaks += 1;
@@ -477,6 +491,21 @@ mod tests {
             Ok(segs) => {
                 assert!(!segs.iter().any(|s| matches!(s, Segment::Spell(_))));
             }
+        }
+    }
+
+    #[test]
+    fn segment_has_emphasis_variant() {
+        let s = Segment::Emphasis {
+            content: "д+ома".to_string(),
+            suppress: false,
+        };
+        match s {
+            Segment::Emphasis { content, suppress } => {
+                assert_eq!(content, "д+ома");
+                assert!(!suppress);
+            }
+            _ => panic!("expected Segment::Emphasis"),
         }
     }
 }

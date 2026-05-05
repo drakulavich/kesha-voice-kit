@@ -11,6 +11,7 @@
 
 pub(super) mod acronym;
 pub(super) mod letter_table;
+pub(super) mod warn;
 
 use crate::tts::ssml::Segment;
 
