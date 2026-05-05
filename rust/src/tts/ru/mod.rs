@@ -24,6 +24,10 @@ pub fn expand_text(text: &str) -> String {
 
 /// Normalize a segment list for the Russian Vosk path:
 /// - `Spell(t)` → `Text(letter_table::expand_chars(t))`
+/// - `Emphasis(_)` is converted to `Text` here: `suppress=true` strips `+`
+///   markers; `suppress=false` passes content through verbatim and emits a
+///   once-per-process warning when no `+` marker is present (caller has not
+///   provided a usable stress hint).
 /// - `Text(t)`  → `Text(acronym::expand_acronyms(t))` if `auto_expand`
 /// - `Ipa(_)`, `Break(_)` → unchanged
 ///
@@ -34,6 +38,21 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
     segs.into_iter()
         .map(|s| match s {
             Segment::Spell(t) => Segment::Text(letter_table::expand_chars(&t)),
+            Segment::Emphasis { content, suppress } => {
+                if suppress {
+                    Segment::Text(content.replace('+', ""))
+                } else {
+                    if !content.contains('+') {
+                        warn::warn_once(
+                            "emphasis-no-plus",
+                            "<emphasis> content has no `+` marker; \
+                             ru-vosk-* needs `сл+ово` syntax to shift stress \
+                             away from the default first-syllable position",
+                        );
+                    }
+                    Segment::Text(content)
+                }
+            }
             Segment::Text(t) if auto_expand => Segment::Text(acronym::expand_acronyms(&t)),
             other => other,
         })
@@ -78,5 +97,67 @@ mod tests {
             Segment::Ipa("ɪpɑ".to_string()),
         ];
         assert_eq!(normalize_segments(segs.clone(), true), segs);
+    }
+
+    #[test]
+    fn emphasis_with_plus_marker_passes_through() {
+        let out = normalize_segments(
+            vec![Segment::Emphasis {
+                content: "д+ома".to_string(),
+                suppress: false,
+            }],
+            false,
+        );
+        assert_eq!(out, vec![Segment::Text("д+ома".to_string())]);
+    }
+
+    #[test]
+    fn emphasis_suppress_strips_plus() {
+        let out = normalize_segments(
+            vec![Segment::Emphasis {
+                content: "д+ома".to_string(),
+                suppress: true,
+            }],
+            false,
+        );
+        assert_eq!(out, vec![Segment::Text("дома".to_string())]);
+    }
+
+    #[test]
+    fn emphasis_without_plus_still_yields_text() {
+        // Data shape only — the warn_once side-effect is tested by absence of
+        // panic and by the helper's own tests in tts::ru::warn.
+        let out = normalize_segments(
+            vec![Segment::Emphasis {
+                content: "обычное слово".to_string(),
+                suppress: false,
+            }],
+            false,
+        );
+        assert_eq!(out, vec![Segment::Text("обычное слово".to_string())]);
+    }
+
+    #[test]
+    fn emphasis_with_multiple_plus_markers_pass_all_through() {
+        let out = normalize_segments(
+            vec![Segment::Emphasis {
+                content: "я зн+аю это".to_string(),
+                suppress: false,
+            }],
+            false,
+        );
+        assert_eq!(out, vec![Segment::Text("я зн+аю это".to_string())]);
+    }
+
+    #[test]
+    fn emphasis_suppress_strips_multiple_plus_markers() {
+        let out = normalize_segments(
+            vec![Segment::Emphasis {
+                content: "я зн+аю +это".to_string(),
+                suppress: true,
+            }],
+            false,
+        );
+        assert_eq!(out, vec![Segment::Text("я знаю это".to_string())]);
     }
 }
