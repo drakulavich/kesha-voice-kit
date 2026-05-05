@@ -10,6 +10,20 @@ binary.
 
 ## [Unreleased]
 
+## [1.8.0] (unreleased)
+
+### Added
+
+- **SSML `<emphasis>` honored on the Russian Vosk path.** Caller-provided `+`-before-vowel markers (`<emphasis>дом+а</emphasis>`) are passed through to vosk-tts-rs, which honors them as a stress hint when they shift stress AWAY from the model's default first-syllable position. `<emphasis level="none">` suppresses inherited emphasis (strips `+`). Once-per-process stderr warning when content lacks any `+` marker. Closes [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
+- **Engine `--capabilities-json` reports `tts.ru_emphasis_marker`** in the `features` array. Lets future clients gate `<emphasis>` against older engines.
+- **`<emphasis>` on non-Russian-Vosk voices (Kokoro, AVSpeech)** silently strips `+` markers before reaching G2P / Swift sidecar, with a once-per-process stderr warning. The text content otherwise synthesizes normally — no caller-visible synth failure.
+
+### Notes
+
+- No new CLI flag. `<emphasis>` is pure SSML, ships via `--ssml`.
+- No auto-stress dictionary. Path B (engine guesses ударение without a `+`) is intentionally deferred — see issue #233 for the design rationale.
+- `<prosody rate/pitch/volume>` is tracked separately in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
+
 ## [1.7.0] (unreleased)
 
 ### Added

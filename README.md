@@ -85,6 +85,20 @@ kesha say --voice ru-vosk-m02 --ssml \
 
 Detection rule: auto-expand fires when the token cannot be pronounced as a natural Russian syllable — length ≤ 2 (ИП, ЕС), 0 vowels (ФСБ, СНГ), 2+ consecutive vowels (ОАЭ), or 2+ consecutive consonants (США, ЦСКА). Tokens with strict CVC/CVCV alternation pass through (ВОЗ → "воз", НАТО → "нато", ОПЕК → "опек"). Small stop-list for common short words (ОН, МЫ, ВЫ, КАК, ЧТО, …) and Ъ/Ь-containing tokens are always skipped. See [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
 
+**Russian word stress** (`ru-vosk-*` voices):
+
+```bash
+# Caller provides `+` before the stressed vowel; engine passes it to Vosk
+kesha say --voice ru-vosk-m02 --ssml \
+  '<speak><emphasis>дом+а</emphasis></speak>'   # genitive до-МА́
+
+# Suppress an inherited <emphasis> with level="none"
+kesha say --voice ru-vosk-m02 --ssml \
+  '<speak><emphasis level="none">дом+а</emphasis></speak>'   # default ДО́ма
+```
+
+Vosk-TTS 0.9-multi honors a `+` placed BEFORE the target stressed vowel — but only when the marker shifts stress AWAY from the model's default (first-syllable). `+` agreeing with the default is a no-op. See [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
+
 macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tts.md](docs/tts.md).
 
 ## Performance

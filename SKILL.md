@@ -76,6 +76,8 @@ Format is also inferred from `--out` extension (`.ogg` / `.opus` / `.oga` → OG
 
 **Russian abbreviation handling** (`ru-vosk-*` only): all-uppercase Cyrillic tokens (length 2–5) auto-expand letter-by-letter when the token cannot be pronounced as a natural Russian syllable — `ФСБ объявила` → `эф-эс-бэ объявила`. Tokens with strict CVC/CVCV alternation pass through (ВОЗ → "воз", НАТО → "нато"). Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). Stop-list for common short words (ОН, МЫ, ВЫ, КАК, ЧТО) prevents false positives. Closes [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
 
+**Russian word stress** (`ru-vosk-*` only): `<emphasis>сл+ово</emphasis>` shifts stress to the vowel marked with `+`. `<emphasis level="none">сл+ово</emphasis>` strips the `+` (cancel inherited emphasis). Other voices (`en-*`, `macos-*`) silently strip the `+` and warn once per process. Auto-stress dictionary not provided — caller writes the `+` manually. Closes [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
+
 ## Language detection standalone
 
 `kesha --json audio.ogg` includes both audio-based (`audioLanguage`) and text-based (`textLanguage`) detection. Use audio detection to identify the language before running language-specific logic.
