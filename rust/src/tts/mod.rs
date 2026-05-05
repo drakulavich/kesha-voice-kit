@@ -261,9 +261,14 @@ pub fn synth_segments_kokoro_with(
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
             ssml::Segment::Emphasis { content, .. } => {
-                // Placeholder arm — proper warn-once + strip-`+` lands in T4 (#233).
-                // Strip the `+` markers defensively so Kokoro G2P doesn't choke
-                // on the unfamiliar character.
+                // <emphasis> stress markers are honored only on ru-vosk-* voices.
+                // For Kokoro, strip `+` from content (G2P would otherwise choke on
+                // the unfamiliar character) and warn the user once per process.
+                crate::tts::ru::warn::warn_once(
+                    "emphasis-non-ru-vosk",
+                    "<emphasis> stress markers are honored only on ru-vosk-* voices; \
+                     stripping `+` from content for non-Vosk path",
+                );
                 let stripped = content.replace('+', "");
                 let ipa = g2p::text_to_ipa(&stripped, lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
@@ -369,9 +374,16 @@ pub fn synth_segments_vosk_with(
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
             ssml::Segment::Emphasis { content, .. } => {
-                // ru::normalize_segments converts Emphasis→Text upstream; this arm
-                // is defensive in case a caller bypasses the normalizer. Strip `+`
-                // here. T4 (#233) wires the proper warn-once + handling.
+                // ru::normalize_segments converts Emphasis→Text upstream of this
+                // function for the Russian Vosk SSML path. This arm is defensive:
+                // if a caller bypasses the normalizer, treat the `+` markers as
+                // unrecognised and warn-once. Production callers (kesha-engine
+                // say --ssml + ru-vosk-*) never reach this branch.
+                crate::tts::ru::warn::warn_once(
+                    "emphasis-non-ru-vosk",
+                    "<emphasis> reached the Vosk synth without ru::normalize_segments \
+                     preprocessing; stripping `+` markers as a fallback",
+                );
                 let stripped = content.replace('+', "");
                 let (audio, _sr) = cache
                     .infer(model_dir, &stripped, speaker_id, speed)
