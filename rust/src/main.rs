@@ -113,6 +113,11 @@ enum Commands {
         /// on stdout. See `docs/tts-stdin-loop.md`. Issue #213.
         #[arg(long = "stdin-loop", hide = true)]
         stdin_loop: bool,
+        /// Disable auto-expansion of Russian acronyms (e.g. ВОЗ → "вэ о зэ").
+        /// `<say-as interpret-as="characters">` in SSML remains honored.
+        /// No effect for non-`ru-vosk-*` voices.
+        #[arg(long = "no-expand-abbrev", default_value_t = false)]
+        no_expand_abbrev: bool,
     },
 }
 
@@ -131,6 +136,7 @@ struct SayArgs {
     model: Option<std::path::PathBuf>,
     voice_file: Option<std::path::PathBuf>,
     stdin_loop: bool,
+    no_expand_abbrev: bool,
 }
 
 /// Resolve the user-supplied `--format` / `--bitrate` / `--sample-rate` /
@@ -345,6 +351,7 @@ fn run_say(a: SayArgs) -> i32 {
         engine,
         ssml: a.ssml,
         format,
+        expand_abbrev: !a.no_expand_abbrev,
     }) {
         Ok(w) => w,
         Err(e) => {
@@ -426,6 +433,7 @@ fn main() -> Result<()> {
             model,
             voice_file,
             stdin_loop,
+            no_expand_abbrev,
         }) => {
             std::process::exit(run_say(SayArgs {
                 text,
@@ -441,6 +449,7 @@ fn main() -> Result<()> {
                 model,
                 voice_file,
                 stdin_loop,
+                no_expand_abbrev,
             }));
         }
         None => {

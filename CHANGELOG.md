@@ -10,6 +10,13 @@ binary.
 
 ## [Unreleased]
 
+## [1.7.0] (unreleased)
+
+### Added
+- **Russian abbreviation auto-expansion for `ru-vosk-*` voices.** Detects 2–5 letter all-uppercase Cyrillic tokens and reads them letter-by-letter via the embedded letter-name table. The rule fires when the token cannot be pronounced as a natural Russian syllable — length ≤ 2 (ИП → "и пэ"), 0 vowels (ФСБ → "эф эс бэ"), 2+ consecutive vowels (ОАЭ → "о а э"), or 2+ consecutive consonants (США → "сэ шэ а"). Tokens with strict CVC/CVCV alternation pass through (ВОЗ → "воз", НАТО → "нато", ОПЕК → "опек"). Letter-name forms tuned to user-validated pronunciation: Ф → "эф", Ш → "шэ", Л → "эл", С → "сэ" at start / "эс" elsewhere. Stop-list for common short words (ОН, МЫ, КАК, ЧТО, …) prevents false positives. Tokens containing Ъ/Ь are passed through literally. Opt-out via `--no-expand-abbrev` flag. Closes [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
+- **SSML `<say-as interpret-as="characters">…</say-as>` honored on the Russian Vosk path.** Always wins, regardless of `--no-expand-abbrev` setting. Other `interpret-as` values (cardinal, ordinal, date, …) continue to warn and strip.
+- **Engine `--capabilities-json` reports `tts.ru_acronym_expansion: true`** in the `features` array for compatibility with the TS CLI gate. The CLI uses this to conditionally forward `--no-expand-abbrev` only to engines that support it.
+
 ## [1.6.0] — 2026-04-30
 
 Engine release. Adds OGG/Opus voice-note output, restores Windows MSVC builds via a vendored vosk-tts crate, and tightens the Opus hot path. CLI surface is unchanged — npm consumers get the new format flag automatically once the engine binary updates.

@@ -1,4 +1,4 @@
-import { getEngineBinPath, isEngineInstalled } from "./engine";
+import { getEngineBinPath, isEngineInstalled, getEngineCapabilities, type EngineCapabilities } from "./engine";
 import { log } from "./log";
 
 /**
@@ -38,10 +38,17 @@ export interface SayOptions {
    * Must be one of 8000, 12000, 16000, 24000, 48000. Default 24000.
    */
   sampleRate?: number;
+  /**
+   * Disable Russian acronym auto-expansion for `ru-vosk-*` voices.
+   * When true, passes `--no-expand-abbrev` to the engine (requires engine
+   * capability `tts.ru_acronym_expansion`; silently dropped for older engines).
+   * `<say-as interpret-as="characters">` still works regardless of this flag.
+   */
+  noExpandAbbrev?: boolean;
 }
 
 /** Build the argv passed to `kesha-engine say` (pure, unit-testable). */
-export function buildSayArgs(o: SayOptions): string[] {
+export function buildSayArgs(o: SayOptions, capabilities?: EngineCapabilities | null): string[] {
   const args: string[] = ["say"];
   if (o.voice) args.push("--voice", o.voice);
   if (o.lang) args.push("--lang", o.lang);
@@ -51,6 +58,16 @@ export function buildSayArgs(o: SayOptions): string[] {
   if (o.format) args.push("--format", o.format);
   if (o.bitrate !== undefined) args.push("--bitrate", String(o.bitrate));
   if (o.sampleRate !== undefined) args.push("--sample-rate", String(o.sampleRate));
+  if (o.noExpandAbbrev) {
+    const supportsRuExpand = capabilities?.features?.includes("tts.ru_acronym_expansion") ?? false;
+    if (supportsRuExpand) {
+      args.push("--no-expand-abbrev");
+    } else {
+      log.debug(
+        "kesha-engine does not advertise tts.ru_acronym_expansion; dropping --no-expand-abbrev",
+      );
+    }
+  }
   if (o.text !== undefined && o.text.length > 0) args.push(o.text);
   return args;
 }
@@ -78,7 +95,8 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
       "",
     );
   }
-  const args = buildSayArgs({ ...opts, text: undefined });
+  const capabilities = opts.noExpandAbbrev ? await getEngineCapabilities() : null;
+  const args = buildSayArgs({ ...opts, text: undefined }, capabilities);
   const startedAt = performance.now();
   log.debug(`spawn ${getEngineBinPath()} ${args.join(" ")} (text: ${opts.text?.length ?? 0} chars)`);
   const proc = Bun.spawn([getEngineBinPath(), ...args], {

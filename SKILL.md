@@ -74,6 +74,8 @@ kesha say "Hi" --format ogg-opus --bitrate 16000 --out tiny.ogg            # tin
 
 Format is also inferred from `--out` extension (`.ogg` / `.opus` / `.oga` → OGG/Opus). `--bitrate` (6 000–510 000 bps) and `--sample-rate` (8 000 / 12 000 / 16 000 / 24 000 / 48 000 Hz) tune the encoder.
 
+**Russian abbreviation handling** (`ru-vosk-*` only): all-uppercase Cyrillic tokens (length 2–5) auto-expand letter-by-letter when the token cannot be pronounced as a natural Russian syllable — `ФСБ объявила` → `эф-эс-бэ объявила`. Tokens with strict CVC/CVCV alternation pass through (ВОЗ → "воз", НАТО → "нато"). Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). Stop-list for common short words (ОН, МЫ, ВЫ, КАК, ЧТО) prevents false positives. Closes [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
+
 ## Language detection standalone
 
 `kesha --json audio.ogg` includes both audio-based (`audioLanguage`) and text-based (`textLanguage`) detection. Use audio detection to identify the language before running language-specific logic.

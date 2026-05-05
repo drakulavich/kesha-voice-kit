@@ -58,6 +58,38 @@ describe("buildSayArgs", () => {
   });
 });
 
+describe("--no-expand-abbrev (#232)", () => {
+  const baseOpts = {
+    voice: "ru-vosk-m02",
+    out: "/tmp/x.wav",
+    text: "ВОЗ",
+  };
+
+  it("not present by default", () => {
+    const args = buildSayArgs({
+      ...baseOpts,
+      noExpandAbbrev: false,
+    }, { protocolVersion: 1, backend: "onnx", features: ["tts", "tts.ru_acronym_expansion"] });
+    expect(args).not.toContain("--no-expand-abbrev");
+  });
+
+  it("forwarded when flag is set and engine supports it", () => {
+    const args = buildSayArgs({
+      ...baseOpts,
+      noExpandAbbrev: true,
+    }, { protocolVersion: 1, backend: "onnx", features: ["tts", "tts.ru_acronym_expansion"] });
+    expect(args).toContain("--no-expand-abbrev");
+  });
+
+  it("dropped silently when engine lacks the capability", () => {
+    const args = buildSayArgs({
+      ...baseOpts,
+      noExpandAbbrev: true,
+    }, { protocolVersion: 1, backend: "onnx", features: ["tts"] });
+    expect(args).not.toContain("--no-expand-abbrev");
+  });
+});
+
 describe("pickVoiceForLang (auto-routing)", () => {
   it("returns en-am_michael for English with high confidence", () => {
     expect(pickVoiceForLang("en", 0.95)).toBe("en-am_michael");

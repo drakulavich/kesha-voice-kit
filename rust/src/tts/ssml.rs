@@ -26,6 +26,12 @@ pub enum Segment {
     Ipa(String),
     /// Silence of the given duration.
     Break(Duration),
+    /// Letter-by-letter spelling request from `<say-as interpret-as="characters">`.
+    /// The Russian-Vosk normalization step expands this to a `Text` segment via
+    /// `tts::ru::letter_table::expand_chars`. Other engines pass it through as text
+    /// (their G2P will read the cyrillic word verbatim — acceptable until per-engine
+    /// support lands).
+    Spell(String),
 }
 
 /// Default `<break/>` duration when the `time` attribute is omitted.
@@ -108,6 +114,31 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     if warned.insert(format!("phoneme[alphabet={alpha}]")) {
                         eprintln!(
                             "warning: SSML <phoneme alphabet=\"{alpha}\"> not supported — only \"ipa\" is recognised; falling back to G2P on contained text"
+                        );
+                    }
+                }
+            }
+            ParsedElement::SayAs(attrs) => {
+                if attrs.interpret_as == "characters" {
+                    // Emit any pending text up to the tag, then a Spell segment for
+                    // the inner text. Cursor advances past the closing tag so we
+                    // don't double-emit the inner content as a Text fall-through.
+                    push_text_slice(&mut segments, &text, cursor, span.start);
+                    let raw: String = text[span.start..span.end].iter().collect();
+                    let trimmed = raw.trim();
+                    if !trimmed.is_empty() {
+                        segments.push(Segment::Spell(trimmed.to_string()));
+                    }
+                    cursor = span.end;
+                } else {
+                    // Other interpret-as values (cardinal, ordinal, date, telephone, …)
+                    // are out of scope for #232. Keep the established warn+strip
+                    // behavior; the inner text falls through as a Text segment.
+                    let key = format!("say-as[interpret-as={}]", attrs.interpret_as);
+                    if warned.insert(key) {
+                        eprintln!(
+                            "warning: SSML <say-as interpret-as=\"{}\"> is not supported — only \"characters\" is recognised; falling back to plain text",
+                            attrs.interpret_as
                         );
                     }
                 }
@@ -202,6 +233,7 @@ mod tests {
             match s {
                 Segment::Text(_) => text_chunks += 1,
                 Segment::Ipa(_) => panic!("unexpected Ipa segment"),
+                Segment::Spell(_) => unreachable!("parser does not emit Spell in this fixture"),
                 Segment::Break(d) => {
                     assert_eq!(*d, Duration::from_millis(500));
                     breaks += 1;
@@ -394,5 +426,57 @@ mod tests {
             (99..=101).contains(&break_ms[0]) && (199..=201).contains(&break_ms[1]),
             "breaks out of tolerance: {break_ms:?}"
         );
+    }
+
+    #[test]
+    fn segment_has_spell_variant() {
+        // Ensure the variant exists and is constructible. Parser wiring lands in Task 2.
+        let s = Segment::Spell("ВОЗ".to_string());
+        match s {
+            Segment::Spell(t) => assert_eq!(t, "ВОЗ"),
+            _ => panic!("expected Segment::Spell"),
+        }
+    }
+
+    #[test]
+    fn say_as_characters_emits_spell_segment() {
+        let segs =
+            parse(r#"<speak><say-as interpret-as="characters">ВОЗ</say-as></speak>"#).unwrap();
+        let spell_chunks: Vec<&str> = segs
+            .iter()
+            .filter_map(|s| match s {
+                Segment::Spell(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(spell_chunks, vec!["ВОЗ"]);
+        // No stray text segments either side.
+        let text_chunks = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Text(t) if !t.trim().is_empty()))
+            .count();
+        assert_eq!(text_chunks, 0);
+    }
+
+    #[test]
+    fn say_as_cardinal_continues_warn_strip() {
+        // interpret-as="cardinal" is not in scope for #232; keep the current
+        // warn + strip behavior so the inner text is still synthesized.
+        let segs = parse(r#"<speak><say-as interpret-as="cardinal">123</say-as></speak>"#).unwrap();
+        assert!(matches!(segs.first(), Some(Segment::Text(t)) if t.contains("123")));
+        assert!(!segs.iter().any(|s| matches!(s, Segment::Spell(_))));
+    }
+
+    #[test]
+    fn say_as_without_interpret_as_continues_warn_strip() {
+        // ssml-parser 0.1.4 treats `interpret-as` as a required attribute and returns
+        // an Err when it is absent. Either an Err OR a successful parse without a Spell
+        // segment is acceptable — no Spell must be emitted in the absent-attribute path.
+        match parse(r#"<speak><say-as>literal</say-as></speak>"#) {
+            Err(_) => {} // upstream parser rejects the malformed tag — acceptable
+            Ok(segs) => {
+                assert!(!segs.iter().any(|s| matches!(s, Segment::Spell(_))));
+            }
+        }
     }
 }

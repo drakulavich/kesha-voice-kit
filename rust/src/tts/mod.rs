@@ -1,10 +1,12 @@
 //! Text-to-speech dispatch across per-engine modules.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 pub mod encode;
 pub mod g2p;
 pub mod kokoro;
+pub mod ru;
 pub mod sessions;
 pub mod ssml;
 pub mod tokenizer;
@@ -76,6 +78,10 @@ pub struct SayOptions<'a> {
     /// callers (and the historical `kesha say > out.wav` flow) stay
     /// bit-exact. See #223.
     pub format: OutputFormat,
+    /// Auto-expand all-uppercase Cyrillic acronyms before Vosk synth (#232).
+    /// Default `true`. `<say-as interpret-as="characters">` is always honored,
+    /// regardless of this flag. No effect for non-`ru-vosk-*` voices.
+    pub expand_abbrev: bool,
 }
 
 /// Synthesize speech and return WAV bytes (mono float32; sample rate depends on engine).
@@ -130,9 +136,23 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     } = &opts.engine
     {
         if opts.ssml {
-            return synth_segments_vosk(opts.text, model_dir, *speaker_id, *speed, opts.format);
+            return synth_segments_vosk(
+                opts.text,
+                model_dir,
+                *speaker_id,
+                *speed,
+                opts.format,
+                opts.expand_abbrev,
+            );
         }
-        return say_with_vosk(opts.text, model_dir, *speaker_id, *speed, opts.format);
+        return say_with_vosk(
+            opts.text,
+            model_dir,
+            *speaker_id,
+            *speed,
+            opts.format,
+            opts.expand_abbrev,
+        );
     }
 
     if opts.ssml {
@@ -224,7 +244,8 @@ pub fn synth_segments_kokoro_with(
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
         match seg {
-            ssml::Segment::Text(t) => {
+            // Spell: G2P-routed (Vosk path normalizes Spell→Text upstream of synth).
+            ssml::Segment::Text(t) | ssml::Segment::Spell(t) => {
                 let ipa = g2p::text_to_ipa(t, lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
                 let audio = sess
@@ -275,10 +296,16 @@ fn say_with_vosk(
     speaker_id: u32,
     speed: f32,
     format: OutputFormat,
+    expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
+    let normalized: Cow<'_, str> = if expand_abbrev {
+        Cow::Owned(ru::expand_text(text))
+    } else {
+        Cow::Borrowed(text)
+    };
     let mut cache = sessions::VoskCache::new();
     let (audio, sample_rate) = cache
-        .infer(model_dir, text, speaker_id, speed)
+        .infer(model_dir, normalized.as_ref(), speaker_id, speed)
         .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     encode_or_fail(&audio, sample_rate, format)
 }
@@ -289,6 +316,7 @@ fn synth_segments_vosk(
     speaker_id: u32,
     speed: f32,
     format: OutputFormat,
+    expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
     let segments =
         ssml::parse(text).map_err(|e| TtsError::SynthesisFailed(format!("ssml: {e}")))?;
@@ -297,6 +325,7 @@ fn synth_segments_vosk(
             "SSML had no speakable content".into(),
         ));
     }
+    let segments = ru::normalize_segments(segments, expand_abbrev);
     let mut cache = sessions::VoskCache::new();
     synth_segments_vosk_with(&mut cache, &segments, model_dir, speaker_id, speed, format)
 }
@@ -319,8 +348,8 @@ pub fn synth_segments_vosk_with(
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
         match seg {
-            ssml::Segment::Text(t) | ssml::Segment::Ipa(t) => {
-                // Vosk has no IPA passthrough; <phoneme> falls back to text.
+            ssml::Segment::Text(t) | ssml::Segment::Ipa(t) | ssml::Segment::Spell(t) => {
+                // Vosk path normalizes Spell→Text upstream; arm kept for match exhaustiveness.
                 let (audio, _sr) = cache
                     .infer(model_dir, t, speaker_id, speed)
                     .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;

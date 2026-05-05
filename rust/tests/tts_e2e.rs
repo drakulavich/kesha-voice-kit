@@ -26,6 +26,7 @@ fn kokoro_hello_world_produces_wav() {
         },
         ssml: false,
         format: OutputFormat::Wav,
+        expand_abbrev: true,
     })
     .unwrap();
     assert_eq!(&wav[..4], b"RIFF", "not a WAV");
@@ -48,6 +49,7 @@ fn empty_text_errors() {
         },
         ssml: false,
         format: OutputFormat::Wav,
+        expand_abbrev: true,
     });
     assert!(matches!(res, Err(TtsError::EmptyText)));
 }
@@ -65,6 +67,7 @@ fn too_long_errors() {
         },
         ssml: false,
         format: OutputFormat::Wav,
+        expand_abbrev: true,
     });
     assert!(matches!(res, Err(TtsError::TextTooLong { .. })));
 }
@@ -88,6 +91,7 @@ fn kokoro_ssml_with_break_produces_wav() {
         },
         ssml: true,
         format: OutputFormat::Wav,
+        expand_abbrev: true,
     })
     .unwrap();
     assert_eq!(&wav[..4], b"RIFF");
@@ -112,6 +116,7 @@ fn ssml_input_without_speak_root_errors() {
         },
         ssml: true,
         format: OutputFormat::Wav,
+        expand_abbrev: true,
     });
     assert!(matches!(res, Err(TtsError::SynthesisFailed(_))));
 }
