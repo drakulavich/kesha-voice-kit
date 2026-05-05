@@ -185,6 +185,15 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                         suppress,
                     });
                 }
+                // Cursor advances past the entire emphasis span. Any structural child
+                // (e.g. <break/>, <say-as>, <phoneme>) whose `start` falls within
+                // [span.start, span.end) will be skipped by the loop-top
+                // `if span.start < cursor { continue; }` guard. For <say-as> /
+                // <phoneme> this is the desired "inner tag wins" behavior (the inner
+                // arm runs first via span_priority sort and consumes its own range);
+                // for <break/> the silence is silently absorbed into the emphasis
+                // content. Out of scope per the #233 spec; tracked separately if a
+                // real user hits it.
                 cursor = span.end;
             }
             other => {
