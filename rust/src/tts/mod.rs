@@ -261,15 +261,20 @@ pub fn synth_segments_kokoro_with(
                 out.extend(audio);
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
-            ssml::Segment::Emphasis { content, .. } => {
+            ssml::Segment::Emphasis { content, suppress } => {
                 // <emphasis> stress markers are honored only on ru-vosk-* voices.
                 // For Kokoro, strip `+` from content (G2P would otherwise choke on
                 // the unfamiliar character) and warn the user once per process.
-                crate::tts::warn::warn_once(
-                    "emphasis-non-ru-vosk",
-                    "<emphasis> stress markers are honored only on ru-vosk-* voices; \
-                     stripping `+` from content for non-Vosk path",
-                );
+                // Skip the warning when suppress=true: the caller used level="none"
+                // to explicitly opt out of stress markers — the warning would be
+                // misleading. Closes #238.
+                if !suppress {
+                    crate::tts::warn::warn_once(
+                        "emphasis-non-ru-vosk",
+                        "<emphasis> stress markers are honored only on ru-vosk-* voices; \
+                         stripping `+` from content for non-Vosk path",
+                    );
+                }
                 let stripped = if content.contains('+') {
                     content.replace('+', "")
                 } else {
@@ -378,13 +383,18 @@ pub fn synth_segments_vosk_with(
                 out.extend(audio);
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
-            ssml::Segment::Emphasis { content, .. } => {
+            ssml::Segment::Emphasis { content, suppress } => {
                 // Defensive fallback: ru::normalize_segments converts Emphasis→Text upstream.
-                crate::tts::warn::warn_once(
-                    "emphasis-non-ru-vosk",
-                    "<emphasis> reached the Vosk synth without ru::normalize_segments \
-                     preprocessing; stripping `+` markers as a fallback",
-                );
+                // Skip the warning when suppress=true: the caller used level="none"
+                // to explicitly opt out of stress markers — the warning would be
+                // misleading. Closes #238.
+                if !suppress {
+                    crate::tts::warn::warn_once(
+                        "emphasis-non-ru-vosk",
+                        "<emphasis> reached the Vosk synth without ru::normalize_segments \
+                         preprocessing; stripping `+` markers as a fallback",
+                    );
+                }
                 let stripped = if content.contains('+') {
                     content.replace('+', "")
                 } else {

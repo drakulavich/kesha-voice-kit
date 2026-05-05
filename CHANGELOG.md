@@ -10,6 +10,16 @@ binary.
 
 ## [Unreleased]
 
+## [1.8.1] (unreleased)
+
+### Fixed
+
+- **`<emphasis level="none">` no longer triggers the "non-ru-vosk" warning** on Kokoro and the defensive Vosk arm. The user explicitly opted out of stress markers via `level="none"`; emitting "stress markers are honored only on ru-vosk-* voices" was technically accurate but misleading. The `warn_once` call is now gated on `!suppress`. Closes [#238](https://github.com/drakulavich/kesha-voice-kit/issues/238).
+
+### Added
+
+- **End-to-end test for warn-once dedup** across multiple `<emphasis>` calls in the same engine process (`emphasis_warn_once_dedups_across_calls` in `rust/tests/tts_ru_normalize.rs`). The `LoopEngine` test wrapper now captures stderr to a tempfile via a new `into_stderr_log()` consuming method so the contract "one warning per process, not per call" is verified at the integration layer. Closes [#237](https://github.com/drakulavich/kesha-voice-kit/issues/237).
+
 ## [1.8.0] (unreleased)
 
 ### Added
