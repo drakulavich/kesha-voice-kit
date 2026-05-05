@@ -19,6 +19,8 @@ pub fn get_capabilities() -> Capabilities {
     features.push("tts");
     #[cfg(feature = "tts")]
     features.push("tts.ru_acronym_expansion");
+    #[cfg(feature = "tts")]
+    features.push("tts.ru_emphasis_marker");
 
     Capabilities {
         protocol_version: 2,
