@@ -77,14 +77,32 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     let text: Vec<char> = ssml.get_text().chars().collect();
 
     // Collect all spans + sort by start. The iterator order isn't guaranteed to be textual.
+    // Secondary sort: when spans share the same `start` (nested tags all map to the same
+    // character range), more-specific structural tags (Phoneme, SayAs) must sort BEFORE
+    // Emphasis, which must sort before Speak. This ensures that when an <emphasis> wraps
+    // a <say-as> or <phoneme>, the inner tag runs first, advances `cursor`, and the outer
+    // Emphasis arm is then skipped by the cursor-guard below ("inner tag wins" spec rule).
     let mut spans: Vec<_> = ssml.tags().collect();
-    spans.sort_by_key(|s| s.start);
+    spans.sort_by(|a, b| {
+        a.start
+            .cmp(&b.start)
+            .then_with(|| span_priority(&a.element).cmp(&span_priority(&b.element)))
+    });
 
     let mut segments: Vec<Segment> = Vec::new();
     let mut warned: HashSet<String> = HashSet::new();
     let mut cursor: usize = 0;
 
     for span in &spans {
+        // If a parent span already consumed this region (advanced cursor past
+        // span.end via Phoneme/SayAs/Emphasis arm), skip the inner span — the
+        // parent emitted a single segment for the entire content. Without
+        // this, nested structural tags would double-emit (e.g. <emphasis>
+        // around <say-as> producing both an Emphasis and a Spell segment for
+        // the same text). See #233 final review.
+        if span.start < cursor {
+            continue;
+        }
         match &span.element {
             // `<speak>` covers the whole document; nothing to emit for the wrapper itself.
             ParsedElement::Speak(_) => {}
@@ -181,6 +199,20 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     // Trailing text after the last span.
     push_text_slice(&mut segments, &text, cursor, text.len());
     Ok(segments)
+}
+
+/// Secondary sort key for spans that share the same `start` position.
+/// Lower value = processed first. Structural inner tags (Phoneme, SayAs) must
+/// run before their enclosing Emphasis so the cursor-guard correctly skips the
+/// outer tag ("inner tag wins" per the SSML spec decisions table, #233).
+fn span_priority(el: &ParsedElement) -> u8 {
+    match el {
+        ParsedElement::Phoneme(_) | ParsedElement::SayAs(_) => 0,
+        ParsedElement::Break(_) => 1,
+        ParsedElement::Emphasis(_) => 2,
+        ParsedElement::Speak(_) => 3,
+        _ => 1,
+    }
 }
 
 fn push_text_slice(out: &mut Vec<Segment>, text: &[char], start: usize, end: usize) {
@@ -579,5 +611,59 @@ mod tests {
             }
             _ => panic!("expected Segment::Emphasis"),
         }
+    }
+
+    #[test]
+    fn emphasis_wrapping_say_as_does_not_double_emit() {
+        // <emphasis><say-as interpret-as="characters">ВОЗ</say-as></emphasis>
+        // — spec says "inner say-as wins". The parser should produce a single
+        // segment for the inner content; the outer <emphasis> must NOT also
+        // emit an Emphasis segment carrying the same text (would synth twice).
+        let segs = parse(
+            r#"<speak><emphasis><say-as interpret-as="characters">ВОЗ</say-as></emphasis></speak>"#,
+        )
+        .unwrap();
+
+        let emphasis_count = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Emphasis { .. }))
+            .count();
+        let spell_count = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Spell(_)))
+            .count();
+
+        assert_eq!(
+            spell_count, 1,
+            "exactly one Spell segment expected, got: {segs:?}"
+        );
+        assert_eq!(
+            emphasis_count, 0,
+            "no Emphasis segment expected — inner say-as consumed the span, got: {segs:?}",
+        );
+    }
+
+    #[test]
+    fn emphasis_wrapping_phoneme_does_not_double_emit() {
+        // Defensive: same nesting principle for <phoneme> inside <emphasis>.
+        let segs = parse(
+            r#"<speak><emphasis><phoneme alphabet="ipa" ph="dʌm">дом</phoneme></emphasis></speak>"#,
+        )
+        .unwrap();
+
+        let emphasis_count = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Emphasis { .. }))
+            .count();
+        let ipa_count = segs.iter().filter(|s| matches!(s, Segment::Ipa(_))).count();
+
+        assert_eq!(
+            ipa_count, 1,
+            "exactly one Ipa segment expected, got: {segs:?}"
+        );
+        assert_eq!(
+            emphasis_count, 0,
+            "no Emphasis when <phoneme> nested inside, got: {segs:?}"
+        );
     }
 }
