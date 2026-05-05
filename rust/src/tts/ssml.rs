@@ -7,13 +7,15 @@
 //!   feed the IPA in `ph` directly to the synthesis tokenizer. Content
 //!   text (`text` above) is suppressed. `alphabet` defaults to IPA when
 //!   omitted; other values warn-strip with the inner text preserved.
+//! - `<emphasis level="...">text</emphasis>` — stress hint; `level="none"` sets
+//!   `suppress=true` (strip `+` markers); all other levels preserve them for Vosk
 //! - plain text inside/between elements — synthesized via G2P
 //! - unknown tags — one stderr warning per name, contained text preserved
 
 use std::collections::HashSet;
 use std::time::Duration;
 
-use ssml_parser::elements::{ParsedElement, PhonemeAlphabet};
+use ssml_parser::elements::{EmphasisLevel, ParsedElement, PhonemeAlphabet};
 use ssml_parser::parse_ssml;
 
 /// A linearized slice of an SSML document.
@@ -39,9 +41,6 @@ pub enum Segment {
     /// `suppress` is set when the source tag had `level="none"` — strip `+`
     /// markers regardless of voice (SSML composition: a
     /// `<emphasis level="none">` overrides an inherited emphasis).
-    ///
-    /// Parser wiring (constructing this variant from `<emphasis>` tags) lands in T2 (#233).
-    #[allow(dead_code)]
     Emphasis { content: String, suppress: bool },
 }
 
@@ -153,6 +152,22 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                         );
                     }
                 }
+            }
+            ParsedElement::Emphasis(attrs) => {
+                push_text_slice(&mut segments, &text, cursor, span.start);
+                let raw: String = text[span.start..span.end].iter().collect();
+                let trimmed = raw.trim();
+                if !trimmed.is_empty() {
+                    // SSML 1.1: missing/empty level == "moderate" (default). Only
+                    // `level="none"` triggers suppression — all other variants
+                    // (Strong, Moderate, Reduced) collapse to "honor `+` markers".
+                    let suppress = matches!(attrs.level, Some(EmphasisLevel::None));
+                    segments.push(Segment::Emphasis {
+                        content: trimmed.to_string(),
+                        suppress,
+                    });
+                }
+                cursor = span.end;
             }
             other => {
                 let name = tag_name(other);
@@ -282,8 +297,8 @@ mod tests {
 
     #[test]
     fn unknown_tag_is_stripped_with_warning() {
-        // <emphasis> is in our non-goal list for v1 — should warn + strip, preserve text.
-        let segs = parse(r#"<speak>Hi <emphasis>there</emphasis></speak>"#).unwrap();
+        // <prosody> is not supported — should warn + strip, preserve text.
+        let segs = parse(r#"<speak>Hi <prosody rate="fast">there</prosody></speak>"#).unwrap();
         let all_text: String = segs
             .iter()
             .filter_map(|s| match s {
@@ -492,6 +507,63 @@ mod tests {
                 assert!(!segs.iter().any(|s| matches!(s, Segment::Spell(_))));
             }
         }
+    }
+
+    #[test]
+    fn emphasis_default_level_emits_unsuppressed_segment() {
+        let segs = parse(r#"<speak><emphasis>д+ома</emphasis></speak>"#).unwrap();
+        let emphases: Vec<(&str, bool)> = segs
+            .iter()
+            .filter_map(|s| match s {
+                Segment::Emphasis { content, suppress } => Some((content.as_str(), *suppress)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(emphases, vec![("д+ома", false)]);
+        let text_chunks = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Text(t) if !t.trim().is_empty()))
+            .count();
+        assert_eq!(text_chunks, 0);
+    }
+
+    #[test]
+    fn emphasis_level_none_sets_suppress_true() {
+        let segs = parse(r#"<speak><emphasis level="none">д+ома</emphasis></speak>"#).unwrap();
+        assert!(matches!(
+            segs.first(),
+            Some(Segment::Emphasis { content, suppress: true }) if content == "д+ома"
+        ));
+    }
+
+    #[test]
+    fn emphasis_level_strong_keeps_suppress_false() {
+        let segs = parse(r#"<speak><emphasis level="strong">д+ома</emphasis></speak>"#).unwrap();
+        assert!(matches!(
+            segs.first(),
+            Some(Segment::Emphasis {
+                suppress: false,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn emphasis_level_reduced_keeps_suppress_false() {
+        let segs = parse(r#"<speak><emphasis level="reduced">тест</emphasis></speak>"#).unwrap();
+        assert!(matches!(
+            segs.first(),
+            Some(Segment::Emphasis {
+                suppress: false,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn empty_emphasis_emits_no_segment() {
+        let segs = parse(r#"<speak><emphasis></emphasis></speak>"#).unwrap();
+        assert!(!segs.iter().any(|s| matches!(s, Segment::Emphasis { .. })));
     }
 
     #[test]
