@@ -12,7 +12,7 @@
 
 #![cfg(feature = "tts")]
 
-use std::io::{BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -79,8 +79,12 @@ fn synth_cold(text: &str, ssml: bool, expand_abbrev: bool, model_dir: &PathBuf) 
 /// cold-start across multiple `synth` calls.
 struct LoopEngine {
     child: std::process::Child,
-    stdin: std::process::ChildStdin,
-    stdout: BufReader<std::process::ChildStdout>,
+    /// Wrapped in `Option` so `Drop` can `take()` and explicitly drop the
+    /// write end of the stdin pipe BEFORE `child.wait()` — otherwise the
+    /// engine sits in `read_line` waiting for EOF that never arrives, and
+    /// the test deadlocks at end-of-scope.
+    stdin: Option<std::process::ChildStdin>,
+    stdout: std::process::ChildStdout,
 }
 
 impl LoopEngine {
@@ -97,10 +101,10 @@ impl LoopEngine {
             .spawn()
             .expect("spawn kesha-engine --stdin-loop");
         let stdin = child.stdin.take().expect("child stdin");
-        let stdout = BufReader::new(child.stdout.take().expect("child stdout"));
+        let stdout = child.stdout.take().expect("child stdout");
         Some(Self {
             child,
-            stdin,
+            stdin: Some(stdin),
             stdout,
         })
     }
@@ -112,7 +116,6 @@ impl LoopEngine {
     /// - response: `<status:u8><id:u32 LE><len:u32 LE><payload:[u8; len]>`
     ///   - status 0 = ok (WAV bytes), status 1 = error (UTF-8 message)
     fn synth(&mut self, text: &str, ssml: bool, expand_abbrev: bool) -> Vec<u8> {
-        // --- write request ---
         let req = serde_json::json!({
             "id": 1,
             "text": text,
@@ -123,18 +126,19 @@ impl LoopEngine {
         });
         let mut line = req.to_string();
         line.push('\n');
-        self.stdin
-            .write_all(line.as_bytes())
-            .expect("write request");
-        self.stdin.flush().expect("flush request");
+        let stdin = self
+            .stdin
+            .as_mut()
+            .expect("stdin held while LoopEngine is alive");
+        stdin.write_all(line.as_bytes()).expect("write request");
+        stdin.flush().expect("flush request");
 
-        // --- read response header (9 bytes: 1 status + 4 id + 4 len) ---
+        // --- read response header (9 bytes) ---
         let mut header = [0u8; 9];
         self.stdout
             .read_exact(&mut header)
             .expect("read response header");
         let status = header[0];
-        // id (header[1..5]) echoed back — not checked here
         let len = u32::from_le_bytes([header[5], header[6], header[7], header[8]]) as usize;
 
         // --- read payload ---
@@ -155,13 +159,11 @@ impl LoopEngine {
 
 impl Drop for LoopEngine {
     fn drop(&mut self) {
-        // Close stdin → engine sees EOF → exits cleanly.
-        // ChildStdin doesn't have a standalone close, but dropping the
-        // field achieves the same effect via the pipe's write-end closing.
-        // We need to move it out; use a zero-write + explicit flush first
-        // then let Rust drop the field when this struct goes out of scope.
-        let _ = self.stdin.flush();
-        // Reap the child to avoid zombies; ignore errors (e.g. already dead).
+        // Close the write end of stdin BEFORE waiting on the child — engine
+        // sees EOF on its read_line loop and exits cleanly. If we leave the
+        // ChildStdin alive (the natural field-drop order would close it
+        // AFTER this Drop body returns), `child.wait()` deadlocks.
+        drop(self.stdin.take());
         let _ = self.child.wait();
     }
 }
