@@ -85,6 +85,9 @@ struct LoopEngine {
     /// the test deadlocks at end-of-scope.
     stdin: Option<std::process::ChildStdin>,
     stdout: std::process::ChildStdout,
+    /// Path to a tempfile where the child's stderr is captured.
+    /// Used by `into_stderr_log()` to verify warn-once dedup. (#237)
+    stderr_path: std::path::PathBuf,
 }
 
 impl LoopEngine {
@@ -93,11 +96,21 @@ impl LoopEngine {
     fn spawn() -> Option<Self> {
         vosk_model_dir_or_skip()?;
         let bin = env!("CARGO_BIN_EXE_kesha-engine");
+        // Capture stderr to a tempfile so tests can assert warn-once dedup. (#237)
+        let stderr_path = std::env::temp_dir().join(format!(
+            "kesha-loop-test-{}-{}.stderr.log",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ));
+        let stderr_file = std::fs::File::create(&stderr_path).expect("create stderr log");
         let mut child = Command::new(bin)
             .args(["say", "--voice", "ru-vosk-m02", "--stdin-loop"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::from(stderr_file))
             .spawn()
             .expect("spawn kesha-engine --stdin-loop");
         let stdin = child.stdin.take().expect("child stdin");
@@ -106,7 +119,20 @@ impl LoopEngine {
             child,
             stdin: Some(stdin),
             stdout,
+            stderr_path,
         })
+    }
+
+    /// Consume the engine, close stdin (→ engine exits), wait for the child,
+    /// read the captured stderr log, and return its contents.
+    ///
+    /// Call this INSTEAD of letting the engine drop naturally when a test
+    /// wants to inspect stderr — it reads the file before Drop removes it.
+    fn into_stderr_log(mut self) -> String {
+        // Close stdin → engine sees EOF and exits cleanly.
+        drop(self.stdin.take());
+        let _ = self.child.wait();
+        std::fs::read_to_string(&self.stderr_path).unwrap_or_default()
     }
 
     /// Synthesise `text` and return the raw audio bytes (WAV).
@@ -311,5 +337,47 @@ fn emphasis_marker_shifts_stress() {
         suppressed.len(),
         baseline.len(),
         r2,
+    );
+}
+
+/// Issue #237 — verify that `warn_once("emphasis-no-plus", ...)` is
+/// deduplicated across multiple SSML calls within the same engine process.
+/// The stdin-loop daemon shares one Vosk session AND one warn-once HashSet,
+/// so multiple bad inputs must produce ONE stderr line, not N.
+#[test]
+fn emphasis_warn_once_dedups_across_calls() {
+    let mut eng = match LoopEngine::spawn() {
+        Some(e) => e,
+        None => {
+            eprintln!("skipping emphasis_warn_once_dedups_across_calls: vosk-ru models not staged");
+            return;
+        }
+    };
+
+    // Three calls without `+` markers — should fire warn_once exactly once.
+    let _ = eng.synth(r#"<speak><emphasis>обычно</emphasis></speak>"#, true, false);
+    let _ = eng.synth(
+        r#"<speak><emphasis>другое слово</emphasis></speak>"#,
+        true,
+        false,
+    );
+    let _ = eng.synth(
+        r#"<speak><emphasis>третий вход</emphasis></speak>"#,
+        true,
+        false,
+    );
+
+    // Consume the engine: closes stdin → engine exits → stderr file fully
+    // written before we read it.
+    let stderr = eng.into_stderr_log();
+
+    let warn_count = stderr
+        .lines()
+        .filter(|l| l.contains("emphasis-no-plus") || l.contains("no `+` marker"))
+        .count();
+
+    assert_eq!(
+        warn_count, 1,
+        "expected exactly one emphasis-no-plus warning across 3 calls, got {warn_count}.\nstderr:\n{stderr}"
     );
 }
