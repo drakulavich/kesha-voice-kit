@@ -7,13 +7,15 @@
 //!   feed the IPA in `ph` directly to the synthesis tokenizer. Content
 //!   text (`text` above) is suppressed. `alphabet` defaults to IPA when
 //!   omitted; other values warn-strip with the inner text preserved.
+//! - `<emphasis level="...">text</emphasis>` — stress hint; `level="none"` sets
+//!   `suppress=true` (strip `+` markers); all other levels preserve them for Vosk
 //! - plain text inside/between elements — synthesized via G2P
 //! - unknown tags — one stderr warning per name, contained text preserved
 
 use std::collections::HashSet;
 use std::time::Duration;
 
-use ssml_parser::elements::{ParsedElement, PhonemeAlphabet};
+use ssml_parser::elements::{EmphasisLevel, ParsedElement, PhonemeAlphabet};
 use ssml_parser::parse_ssml;
 
 /// A linearized slice of an SSML document.
@@ -32,6 +34,14 @@ pub enum Segment {
     /// (their G2P will read the cyrillic word verbatim — acceptable until per-engine
     /// support lands).
     Spell(String),
+    /// SSML `<emphasis>` content. The Russian-Vosk normalization step honors
+    /// any `+` markers in `content` (passing them through to Vosk, which
+    /// interprets `+vowel` as a stress hint per the #233 spike). On non-
+    /// `ru-vosk-*` voices the `+` markers are stripped before reaching G2P.
+    /// `suppress` is set when the source tag had `level="none"` — strip `+`
+    /// markers regardless of voice (SSML composition: a
+    /// `<emphasis level="none">` overrides an inherited emphasis).
+    Emphasis { content: String, suppress: bool },
 }
 
 /// Default `<break/>` duration when the `time` attribute is omitted.
@@ -67,14 +77,33 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     let text: Vec<char> = ssml.get_text().chars().collect();
 
     // Collect all spans + sort by start. The iterator order isn't guaranteed to be textual.
+    // Secondary sort: when spans share the same `start` (nested tags all map to the same
+    // character range), more-specific structural tags (Phoneme, SayAs) must sort BEFORE
+    // Emphasis, which must sort before Speak. This ensures that when an <emphasis> wraps
+    // a <say-as> or <phoneme>, the inner tag runs first, advances `cursor`, and the outer
+    // Emphasis arm is then skipped by the cursor-guard below ("inner tag wins" spec rule).
     let mut spans: Vec<_> = ssml.tags().collect();
-    spans.sort_by_key(|s| s.start);
+    spans.sort_by(|a, b| {
+        a.start
+            .cmp(&b.start)
+            .then_with(|| span_priority(&a.element).cmp(&span_priority(&b.element)))
+    });
 
     let mut segments: Vec<Segment> = Vec::new();
     let mut warned: HashSet<String> = HashSet::new();
     let mut cursor: usize = 0;
 
     for span in &spans {
+        // If a higher-priority sibling span (sorted via span_priority) already
+        // consumed this region — i.e. its arm advanced cursor past the current
+        // span.start — skip the current span. This implements the spec's
+        // "inner structural tag wins" rule: SayAs / Phoneme have priority 0 and
+        // run before the enclosing Emphasis (priority 2) when they share the
+        // same character range, so the outer Emphasis is silently absorbed.
+        // See #233.
+        if span.start < cursor {
+            continue;
+        }
         match &span.element {
             // `<speak>` covers the whole document; nothing to emit for the wrapper itself.
             ParsedElement::Speak(_) => {}
@@ -124,10 +153,8 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     // the inner text. Cursor advances past the closing tag so we
                     // don't double-emit the inner content as a Text fall-through.
                     push_text_slice(&mut segments, &text, cursor, span.start);
-                    let raw: String = text[span.start..span.end].iter().collect();
-                    let trimmed = raw.trim();
-                    if !trimmed.is_empty() {
-                        segments.push(Segment::Spell(trimmed.to_string()));
+                    if let Some(inner) = extract_inner_text(&text, span.start, span.end) {
+                        segments.push(Segment::Spell(inner));
                     }
                     cursor = span.end;
                 } else {
@@ -143,6 +170,26 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     }
                 }
             }
+            ParsedElement::Emphasis(attrs) => {
+                push_text_slice(&mut segments, &text, cursor, span.start);
+                if let Some(content) = extract_inner_text(&text, span.start, span.end) {
+                    // SSML 1.1: missing/empty level == "moderate" (default). Only
+                    // `level="none"` triggers suppression — all other variants
+                    // (Strong, Moderate, Reduced) collapse to "honor `+` markers".
+                    let suppress = matches!(attrs.level, Some(EmphasisLevel::None));
+                    segments.push(Segment::Emphasis { content, suppress });
+                }
+                // Cursor advances past the entire emphasis span. Any structural child
+                // (e.g. <break/>, <say-as>, <phoneme>) whose `start` falls within
+                // [span.start, span.end) will be skipped by the loop-top
+                // `if span.start < cursor { continue; }` guard. For <say-as> /
+                // <phoneme> this is the desired "inner tag wins" behavior (the inner
+                // arm runs first via span_priority sort and consumes its own range);
+                // for <break/> the silence is silently absorbed into the emphasis
+                // content. Out of scope per the #233 spec; tracked separately if a
+                // real user hits it.
+                cursor = span.end;
+            }
             other => {
                 let name = tag_name(other);
                 if warned.insert(name.clone()) {
@@ -157,6 +204,28 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     Ok(segments)
 }
 
+/// Sort key for span ordering: lower priority runs FIRST in the segment
+/// loop. When two spans share `span.start` (e.g. an inner `<say-as>`
+/// nested inside `<emphasis>`), the lower-priority arm runs first and
+/// advances the cursor; the higher-priority arm is then skipped by the
+/// loop-top `cursor` guard. This implements the spec's "inner structural
+/// tag wins" rule for nested SSML.
+///
+/// Priority assignments (#233):
+/// - 0: structural-leaf tags (Phoneme, SayAs) — run first, consume span
+/// - 1: Break and other non-overlapping containers
+/// - 2: Emphasis — run after inner leaves; otherwise wraps them
+/// - 3: Speak root wrapper
+fn span_priority(el: &ParsedElement) -> u8 {
+    match el {
+        ParsedElement::Phoneme(_) | ParsedElement::SayAs(_) => 0,
+        ParsedElement::Break(_) => 1,
+        ParsedElement::Emphasis(_) => 2,
+        ParsedElement::Speak(_) => 3,
+        _ => 1,
+    }
+}
+
 fn push_text_slice(out: &mut Vec<Segment>, text: &[char], start: usize, end: usize) {
     if start >= end {
         return;
@@ -164,6 +233,19 @@ fn push_text_slice(out: &mut Vec<Segment>, text: &[char], start: usize, end: usi
     let chunk: String = text[start..end].iter().collect();
     if !chunk.trim().is_empty() {
         out.push(Segment::Text(chunk));
+    }
+}
+
+/// Collect the inner text of a structural span and trim whitespace.
+/// Returns `None` for empty/whitespace-only content. Used by tags that
+/// emit a single segment carrying their inner content (SayAs, Emphasis).
+fn extract_inner_text(text: &[char], start: usize, end: usize) -> Option<String> {
+    let raw: String = text[start..end].iter().collect();
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
@@ -234,6 +316,9 @@ mod tests {
                 Segment::Text(_) => text_chunks += 1,
                 Segment::Ipa(_) => panic!("unexpected Ipa segment"),
                 Segment::Spell(_) => unreachable!("parser does not emit Spell in this fixture"),
+                Segment::Emphasis { .. } => {
+                    unreachable!("parser does not emit Emphasis in this fixture")
+                }
                 Segment::Break(d) => {
                     assert_eq!(*d, Duration::from_millis(500));
                     breaks += 1;
@@ -268,8 +353,8 @@ mod tests {
 
     #[test]
     fn unknown_tag_is_stripped_with_warning() {
-        // <emphasis> is in our non-goal list for v1 — should warn + strip, preserve text.
-        let segs = parse(r#"<speak>Hi <emphasis>there</emphasis></speak>"#).unwrap();
+        // <prosody> is not supported — should warn + strip, preserve text.
+        let segs = parse(r#"<speak>Hi <prosody rate="fast">there</prosody></speak>"#).unwrap();
         let all_text: String = segs
             .iter()
             .filter_map(|s| match s {
@@ -478,5 +563,131 @@ mod tests {
                 assert!(!segs.iter().any(|s| matches!(s, Segment::Spell(_))));
             }
         }
+    }
+
+    #[test]
+    fn emphasis_default_level_emits_unsuppressed_segment() {
+        let segs = parse(r#"<speak><emphasis>д+ома</emphasis></speak>"#).unwrap();
+        let emphases: Vec<(&str, bool)> = segs
+            .iter()
+            .filter_map(|s| match s {
+                Segment::Emphasis { content, suppress } => Some((content.as_str(), *suppress)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(emphases, vec![("д+ома", false)]);
+        let text_chunks = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Text(t) if !t.trim().is_empty()))
+            .count();
+        assert_eq!(text_chunks, 0);
+    }
+
+    #[test]
+    fn emphasis_level_none_sets_suppress_true() {
+        let segs = parse(r#"<speak><emphasis level="none">д+ома</emphasis></speak>"#).unwrap();
+        assert!(matches!(
+            segs.first(),
+            Some(Segment::Emphasis { content, suppress: true }) if content == "д+ома"
+        ));
+    }
+
+    #[test]
+    fn emphasis_level_strong_keeps_suppress_false() {
+        let segs = parse(r#"<speak><emphasis level="strong">д+ома</emphasis></speak>"#).unwrap();
+        assert!(matches!(
+            segs.first(),
+            Some(Segment::Emphasis {
+                suppress: false,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn emphasis_level_reduced_keeps_suppress_false() {
+        let segs = parse(r#"<speak><emphasis level="reduced">тест</emphasis></speak>"#).unwrap();
+        assert!(matches!(
+            segs.first(),
+            Some(Segment::Emphasis {
+                suppress: false,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn empty_emphasis_emits_no_segment() {
+        let segs = parse(r#"<speak><emphasis></emphasis></speak>"#).unwrap();
+        assert!(!segs.iter().any(|s| matches!(s, Segment::Emphasis { .. })));
+    }
+
+    #[test]
+    fn segment_has_emphasis_variant() {
+        let s = Segment::Emphasis {
+            content: "д+ома".to_string(),
+            suppress: false,
+        };
+        match s {
+            Segment::Emphasis { content, suppress } => {
+                assert_eq!(content, "д+ома");
+                assert!(!suppress);
+            }
+            _ => panic!("expected Segment::Emphasis"),
+        }
+    }
+
+    #[test]
+    fn emphasis_wrapping_say_as_does_not_double_emit() {
+        // <emphasis><say-as interpret-as="characters">ВОЗ</say-as></emphasis>
+        // — spec says "inner say-as wins". The parser should produce a single
+        // segment for the inner content; the outer <emphasis> must NOT also
+        // emit an Emphasis segment carrying the same text (would synth twice).
+        let segs = parse(
+            r#"<speak><emphasis><say-as interpret-as="characters">ВОЗ</say-as></emphasis></speak>"#,
+        )
+        .unwrap();
+
+        let emphasis_count = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Emphasis { .. }))
+            .count();
+        let spell_count = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Spell(_)))
+            .count();
+
+        assert_eq!(
+            spell_count, 1,
+            "exactly one Spell segment expected, got: {segs:?}"
+        );
+        assert_eq!(
+            emphasis_count, 0,
+            "no Emphasis segment expected — inner say-as consumed the span, got: {segs:?}",
+        );
+    }
+
+    #[test]
+    fn emphasis_wrapping_phoneme_does_not_double_emit() {
+        // Defensive: same nesting principle for <phoneme> inside <emphasis>.
+        let segs = parse(
+            r#"<speak><emphasis><phoneme alphabet="ipa" ph="dʌm">дом</phoneme></emphasis></speak>"#,
+        )
+        .unwrap();
+
+        let emphasis_count = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::Emphasis { .. }))
+            .count();
+        let ipa_count = segs.iter().filter(|s| matches!(s, Segment::Ipa(_))).count();
+
+        assert_eq!(
+            ipa_count, 1,
+            "exactly one Ipa segment expected, got: {segs:?}"
+        );
+        assert_eq!(
+            emphasis_count, 0,
+            "no Emphasis when <phoneme> nested inside, got: {segs:?}"
+        );
     }
 }

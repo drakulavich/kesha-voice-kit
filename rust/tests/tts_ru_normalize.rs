@@ -256,3 +256,60 @@ fn warm_session_say_as_and_baseline_checks() {
         ratio2,
     );
 }
+
+/// Per-#233 spike result: vosk-tts-rs 0.9-multi honours `+vowel` markers
+/// when they shift stress AWAY from the model's default first-syllable
+/// position. Markers that AGREE with the default are no-ops.
+///
+/// Ratios chosen from the spike data:
+/// - дом+а (genitive shift до-МА́): +3072 bytes vs baseline (~5.7%)
+/// - д+ома (agrees with default ДО́ма): byte-identical to baseline
+/// - <emphasis level="none">дом+а</emphasis>: strip `+`, matches baseline
+///
+/// Tolerance widened slightly to keep the test robust against minor model
+/// updates: ≥+2KB for the shift, ±5% for the no-op cases.
+#[test]
+fn emphasis_marker_shifts_stress() {
+    let mut eng = match LoopEngine::spawn() {
+        Some(e) => e,
+        None => {
+            eprintln!("skipping emphasis_marker_shifts_stress: vosk-ru models not staged");
+            return;
+        }
+    };
+
+    let baseline = eng.synth("дома", false, false);
+
+    let stressed_last = eng.synth(r#"<speak><emphasis>дом+а</emphasis></speak>"#, true, false);
+    assert!(
+        stressed_last.len() > baseline.len() + 2000,
+        "дом+а={} baseline={} (expected >baseline+2KB)",
+        stressed_last.len(),
+        baseline.len(),
+    );
+
+    let agrees_with_default =
+        eng.synth(r#"<speak><emphasis>д+ома</emphasis></speak>"#, true, false);
+    let r1 = agrees_with_default.len() as f64 / baseline.len() as f64;
+    assert!(
+        (0.95..=1.05).contains(&r1),
+        "д+ома={} baseline={} ratio={:.2} (expected 0.95..=1.05)",
+        agrees_with_default.len(),
+        baseline.len(),
+        r1,
+    );
+
+    let suppressed = eng.synth(
+        r#"<speak><emphasis level="none">дом+а</emphasis></speak>"#,
+        true,
+        false,
+    );
+    let r2 = suppressed.len() as f64 / baseline.len() as f64;
+    assert!(
+        (0.95..=1.05).contains(&r2),
+        "suppressed={} baseline={} ratio={:.2} (expected 0.95..=1.05)",
+        suppressed.len(),
+        baseline.len(),
+        r2,
+    );
+}

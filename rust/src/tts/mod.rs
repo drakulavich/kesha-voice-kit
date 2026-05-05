@@ -12,6 +12,7 @@ pub mod ssml;
 pub mod tokenizer;
 pub mod voices;
 pub mod vosk;
+pub mod warn;
 pub mod wav;
 
 pub use encode::OutputFormat;
@@ -260,6 +261,27 @@ pub fn synth_segments_kokoro_with(
                 out.extend(audio);
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
+            ssml::Segment::Emphasis { content, .. } => {
+                // <emphasis> stress markers are honored only on ru-vosk-* voices.
+                // For Kokoro, strip `+` from content (G2P would otherwise choke on
+                // the unfamiliar character) and warn the user once per process.
+                crate::tts::warn::warn_once(
+                    "emphasis-non-ru-vosk",
+                    "<emphasis> stress markers are honored only on ru-vosk-* voices; \
+                     stripping `+` from content for non-Vosk path",
+                );
+                let stripped = if content.contains('+') {
+                    content.replace('+', "")
+                } else {
+                    content.clone()
+                };
+                let ipa = g2p::text_to_ipa(&stripped, lang)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
+                let audio = sess
+                    .infer_ipa(&ipa, voice_path, speed)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+                out.extend(audio);
+            }
         }
     }
     if out.is_empty() {
@@ -356,6 +378,23 @@ pub fn synth_segments_vosk_with(
                 out.extend(audio);
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
+            ssml::Segment::Emphasis { content, .. } => {
+                // Defensive fallback: ru::normalize_segments converts Emphasis→Text upstream.
+                crate::tts::warn::warn_once(
+                    "emphasis-non-ru-vosk",
+                    "<emphasis> reached the Vosk synth without ru::normalize_segments \
+                     preprocessing; stripping `+` markers as a fallback",
+                );
+                let stripped = if content.contains('+') {
+                    content.replace('+', "")
+                } else {
+                    content.clone()
+                };
+                let (audio, _sr) = cache
+                    .infer(model_dir, &stripped, speaker_id, speed)
+                    .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
+                out.extend(audio);
+            }
         }
     }
     if out.is_empty() {
