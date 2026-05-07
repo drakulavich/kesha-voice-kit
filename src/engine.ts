@@ -161,12 +161,22 @@ export interface EngineCapabilities {
   features: string[];
 }
 
+let cachedEngineCapabilities:
+  | { binPath: string; capabilities: EngineCapabilities }
+  | null = null;
+
 export async function getEngineCapabilities(): Promise<EngineCapabilities | null> {
-  if (!isEngineInstalled()) return null;
+  const binPath = getEngineBinPath();
+  if (cachedEngineCapabilities?.binPath === binPath) {
+    return cachedEngineCapabilities.capabilities;
+  }
+  if (!existsSync(binPath)) return null;
   const { stdout, exitCode } = await runEngine(["--capabilities-json"]);
   if (exitCode !== 0) return null;
   try {
-    return JSON.parse(stdout) as EngineCapabilities;
+    const capabilities = JSON.parse(stdout) as EngineCapabilities;
+    cachedEngineCapabilities = { binPath, capabilities };
+    return capabilities;
   } catch {
     return null;
   }
