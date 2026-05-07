@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use serde::Serialize;
 use std::path::Path;
 use std::time::Instant;
 
@@ -46,6 +47,19 @@ impl VadMode {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TranscriptionSegment {
+    pub start: f32,
+    pub end: f32,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TranscriptionOutput {
+    pub text: String,
+    pub segments: Vec<TranscriptionSegment>,
+}
+
 /// Pure decision function so the auto-trigger rules can be unit-tested
 /// without ONNX, disk, or symphonia in the loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +83,18 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
 }
 
 pub fn transcribe(audio_path: &str, mode: VadMode) -> Result<String> {
+    Ok(transcribe_inner(audio_path, mode, false)?.text)
+}
+
+pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
+    transcribe_inner(audio_path, mode, true)
+}
+
+fn transcribe_inner(
+    audio_path: &str,
+    mode: VadMode,
+    timestamps_required: bool,
+) -> Result<TranscriptionOutput> {
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::vad_model_dir();
     let vad_installed = models::is_vad_cached(&vad_dir);
@@ -88,29 +114,38 @@ pub fn transcribe(audio_path: &str, mode: VadMode) -> Result<String> {
         VadDecision::Vad => {
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
         }
-        VadDecision::Plain => transcribe_plain(audio_path, &model_dir),
+        VadDecision::Plain => transcribe_plain(audio_path, &model_dir, timestamps_required),
         VadDecision::PlainWithHint => {
             let secs = duration.unwrap_or(0.0);
             eprintln!(
                 "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
             );
-            transcribe_plain(audio_path, &model_dir)
+            transcribe_plain(audio_path, &model_dir, timestamps_required)
         }
     }
 }
 
-fn transcribe_plain(audio_path: &str, model_dir: &str) -> Result<String> {
+fn transcribe_plain(
+    audio_path: &str,
+    model_dir: &str,
+    timestamps_required: bool,
+) -> Result<TranscriptionOutput> {
     let t0 = Instant::now();
     let mut be = backend::create_backend(model_dir)?;
     dtrace!("asr::backend_loaded dt={}ms", t0.elapsed().as_millis());
     let t1 = Instant::now();
-    let out = be.transcribe(audio_path)?;
+    let text = be.transcribe(audio_path)?;
     dtrace!(
         "asr::transcribe.end dt={}ms chars={}",
         t1.elapsed().as_millis(),
-        out.chars().count()
+        text.chars().count()
     );
-    Ok(out)
+    let segments = if timestamps_required {
+        whole_file_segment(audio_path, &text)?
+    } else {
+        vec![]
+    };
+    Ok(TranscriptionOutput { segments, text })
 }
 
 /// VAD-preprocessed transcription: segment the audio with Silero VAD,
@@ -123,7 +158,7 @@ fn transcribe_via_vad(
     model_dir: &str,
     vad_dir: &str,
     cfg: VadConfig,
-) -> Result<String> {
+) -> Result<TranscriptionOutput> {
     if !models::is_vad_cached(vad_dir) {
         anyhow::bail!(
             "Error: VAD model not installed\n\n\
@@ -159,11 +194,15 @@ fn transcribe_via_vad(
                 "warning: VAD produced no speech segments; transcribing full file (consider lowering --vad threshold or skipping --vad)"
             );
         }
-        return be.transcribe_samples(&samples);
+        let text = be.transcribe_samples(&samples)?;
+        return Ok(TranscriptionOutput {
+            segments: sample_span_segment(0.0, samples.len(), &text),
+            text,
+        });
     }
 
     let sr = VAD_SAMPLE_RATE as f32;
-    let mut transcripts: Vec<String> = Vec::with_capacity(segments.len());
+    let mut output_segments: Vec<TranscriptionSegment> = Vec::with_capacity(segments.len());
     for (start_s, end_s) in &segments {
         let start = (*start_s * sr) as usize;
         let end = ((*end_s * sr) as usize).min(samples.len());
@@ -183,7 +222,11 @@ fn transcribe_via_vad(
                 );
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
-                    transcripts.push(trimmed.to_string());
+                    output_segments.push(TranscriptionSegment {
+                        start: *start_s,
+                        end: *end_s,
+                        text: trimmed.to_string(),
+                    });
                 }
             }
             Err(e) => {
@@ -196,7 +239,47 @@ fn transcribe_via_vad(
         }
     }
 
-    Ok(transcripts.join(" "))
+    let text = output_segments
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    Ok(TranscriptionOutput {
+        text,
+        segments: output_segments,
+    })
+}
+
+fn whole_file_segment(audio_path: &str, text: &str) -> Result<Vec<TranscriptionSegment>> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(vec![]);
+    }
+    let duration = audio::probe_duration_seconds(audio_path)
+        .with_context(|| {
+            format!("failed to probe audio duration for timestamped segments: {audio_path}")
+        })?
+        .with_context(|| {
+            format!("audio duration is unavailable for timestamped segments: {audio_path}")
+        })?;
+    Ok(vec![TranscriptionSegment {
+        start: 0.0,
+        end: duration,
+        text: trimmed.to_string(),
+    }])
+}
+
+fn sample_span_segment(start_s: f32, sample_count: usize, text: &str) -> Vec<TranscriptionSegment> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return vec![];
+    }
+    vec![TranscriptionSegment {
+        start: start_s,
+        end: start_s + sample_count as f32 / VAD_SAMPLE_RATE as f32,
+        text: trimmed.to_string(),
+    }]
 }
 
 /// Probe audio duration for the `Auto` decision, gated on a cheap
@@ -316,6 +399,24 @@ mod tests {
         assert_eq!(
             probe_duration_if_plausible("/nonexistent/path/to/audio.wav"),
             None
+        );
+    }
+
+    #[test]
+    fn whole_file_segment_errors_when_duration_is_unavailable() {
+        let tmp = tempfile::Builder::new()
+            .prefix("kesha-no-duration-")
+            .suffix(".raw")
+            .tempfile()
+            .unwrap();
+        std::fs::write(tmp.path(), b"not an audio container").unwrap();
+
+        let err = whole_file_segment(tmp.path().to_str().unwrap(), "hello")
+            .expect_err("timestamped output should require a known duration");
+        assert!(
+            err.to_string()
+                .contains("failed to probe audio duration for timestamped segments"),
+            "{err}"
         );
     }
 
