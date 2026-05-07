@@ -10,6 +10,12 @@ binary.
 
 ## [Unreleased]
 
+## [1.8.2] (unreleased)
+
+### Fixed
+
+- **Mono WAV output now plays in both ears, not just the left one** ([#245](https://github.com/drakulavich/kesha-voice-kit/issues/245)). The previous hound-based encoder wrote `WAVE_FORMAT_EXTENSIBLE` (0xFFFE) with `dwChannelMask=0x4`, which Apple's CoreAudio interpreted as "Front Left" for mono streams — Kokoro and Vosk-TTS playback ended up in the left ear only on AirPods / left speaker only on stereo. Replaced with a hand-rolled writer that emits plain `WAVE_FORMAT_IEEE_FLOAT` (0x0003) without the EXTENSIBLE extension. AVSpeech sidecar and OGG/Opus paths were not affected and remain unchanged.
+
 ## [1.8.1] (unreleased)
 
 ### Fixed
