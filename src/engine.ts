@@ -173,11 +173,12 @@ let cachedEngineCapabilities:
   | null = null;
 
 export async function getEngineCapabilities(): Promise<EngineCapabilities | null> {
-  if (!isEngineInstalled()) return null;
   const binPath = getEngineBinPath();
-  // Cache key: (binPath, mtimeMs). The mtime check invalidates the cache when
-  // `kesha install` overwrites the binary in-place within a single long-lived
-  // process (closes #248 item 7).
+  // Cache key includes `mtimeMs` so the cache invalidates when `kesha
+  // install` overwrites the binary in-place within a single long-lived
+  // process (#248). `statSync` throws on missing-file; the catch returns
+  // `null` — same effect as the previous explicit `isEngineInstalled()`
+  // pre-flight, one fewer redundant fs call.
   let mtime: number;
   try {
     mtime = statSync(binPath).mtimeMs;

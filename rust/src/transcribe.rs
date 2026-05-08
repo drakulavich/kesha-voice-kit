@@ -94,16 +94,16 @@ pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<Transcriptio
     transcribe_inner(audio_path, mode, true)
 }
 
-/// `whole_file_segment_required` gates the non-VAD plain path's call to
-/// `whole_file_segment` — text-only callers (`transcribe()`) skip it because
-/// duration probing fails for streaming Ogg/Opus without a frame count, which
-/// would otherwise turn into a hard error for inputs that previously
-/// transcribed cleanly. The VAD path always builds segments cheaply (it
-/// already has per-span boundaries from VAD output).
+/// `timestamps_required` gates the non-VAD plain path's call to
+/// `whole_file_segment`. Text-only callers (`pub fn transcribe`) skip it
+/// because `audio::probe_duration_seconds` returns `Ok(None)` for streaming
+/// Ogg/Opus without a frame count, which would turn into a hard error for
+/// inputs that previously transcribed cleanly. The VAD path always builds
+/// segments cheaply (per-span boundaries already in hand from VAD output).
 fn transcribe_inner(
     audio_path: &str,
     mode: VadMode,
-    whole_file_segment_required: bool,
+    timestamps_required: bool,
 ) -> Result<TranscriptionOutput> {
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::vad_model_dir();
@@ -125,26 +125,17 @@ fn transcribe_inner(
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
         }
         // Pass the already-probed duration through so `whole_file_segment`
-        // doesn't re-open the file (closes #248 item 1). For `On`/`Off`
-        // modes we didn't probe, so it's `None` and the segment helper
-        // does the work.
-        VadDecision::Plain => transcribe_plain(
-            audio_path,
-            &model_dir,
-            duration,
-            whole_file_segment_required,
-        ),
+        // doesn't re-open the file (#248). On `On`/`Off` modes we didn't
+        // probe, so it's `None` and the segment helper does the work.
+        VadDecision::Plain => {
+            transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
+        }
         VadDecision::PlainWithHint => {
             let secs = duration.unwrap_or(0.0);
             eprintln!(
                 "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
             );
-            transcribe_plain(
-                audio_path,
-                &model_dir,
-                duration,
-                whole_file_segment_required,
-            )
+            transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
         }
     }
 }
@@ -153,7 +144,7 @@ fn transcribe_plain(
     audio_path: &str,
     model_dir: &str,
     duration: Option<f32>,
-    whole_file_segment_required: bool,
+    timestamps_required: bool,
 ) -> Result<TranscriptionOutput> {
     let t0 = Instant::now();
     let mut be = backend::create_backend(model_dir)?;
@@ -170,7 +161,7 @@ fn transcribe_plain(
     // `probe_duration_seconds`, which `whole_file_segment` turns into a
     // hard error — surfacing it for callers that don't even need segments
     // would be a regression vs pre-#248 behavior.
-    let segments = if whole_file_segment_required {
+    let segments = if timestamps_required {
         whole_file_segment(audio_path, &text, duration)?
     } else {
         vec![]
@@ -303,7 +294,7 @@ where
 }
 
 /// Build the single-segment vec produced by the non-VAD plain path. Re-uses
-/// the caller-supplied duration when available (closes #248 item 1) — the
+/// the caller-supplied duration when available (#248) — the
 /// `Auto` mode probe-and-decide step already opens the file once.
 fn whole_file_segment(
     audio_path: &str,
@@ -464,8 +455,8 @@ mod tests {
 
     #[test]
     fn whole_file_segment_uses_caller_supplied_duration_without_probing() {
-        // Item 1: when the caller already probed (Auto mode), the helper
-        // must NOT re-open the file.
+        // When the caller already probed (Auto mode), the helper must NOT
+        // re-open the file (#248).
         let tmp = tempfile::Builder::new()
             .prefix("kesha-no-probe-")
             .suffix(".raw")
@@ -512,9 +503,9 @@ mod tests {
 
     #[test]
     fn vad_output_segments_preserve_input_ordering_and_invariants() {
-        // Item 8: lock the VAD-path contract. For a sorted span list, the
-        // output must satisfy `end > start` per segment and `start[i+1] >=
-        // start[i]` across segments (monotonic).
+        // Lock the VAD-path contract: for a sorted span list, output must
+        // satisfy `end > start` per segment and `start[i+1] >= start[i]`
+        // across segments (monotonic). #248.
         let spans = vec![(0.5, 1.5), (2.0, 3.5), (4.0, 5.2)];
         let samples = vec![0.0_f32; 16_000 * 6];
         let mut call = 0;
