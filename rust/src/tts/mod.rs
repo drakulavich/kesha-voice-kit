@@ -171,7 +171,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         speed,
     } = &opts.engine
     {
-        if opts.lang.starts_with("en") {
+        if en::is_en(opts.lang) {
             return synth_segments_kokoro(
                 vec![ssml::Segment::Text(opts.text.to_string())],
                 opts.lang,
@@ -255,7 +255,7 @@ fn synth_segments_kokoro(
     // letter table, Text→acronym-expanded (when expand_abbrev), Emphasis→Text
     // with `+`-strip + warn-once. Mirror of synth_segments_vosk's call to
     // ru::normalize_segments. Closes #244.
-    let segments = if lang.starts_with("en") {
+    let segments = if en::is_en(lang) {
         en::normalize_segments(segments, expand_abbrev)
     } else {
         segments

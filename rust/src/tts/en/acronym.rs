@@ -104,10 +104,15 @@ pub fn expand_to_segments(text: &str, auto_expand: bool) -> Vec<Segment> {
     if !tok.is_empty() {
         process_token(&tok, auto_expand, &mut buf, &mut out);
     }
-    if !buf.is_empty() {
-        out.push(Segment::Text(std::mem::take(&mut buf)));
-    }
+    flush_buf(&mut buf, &mut out);
     out
+}
+
+/// Drain `buf` into `out` as a `Segment::Text` if non-empty. No-op otherwise.
+fn flush_buf(buf: &mut String, out: &mut Vec<Segment>) {
+    if !buf.is_empty() {
+        out.push(Segment::Text(std::mem::take(buf)));
+    }
 }
 
 fn process_token(token: &str, auto_expand: bool, buf: &mut String, out: &mut Vec<Segment>) {
@@ -116,9 +121,7 @@ fn process_token(token: &str, auto_expand: bool, buf: &mut String, out: &mut Vec
     if let Some(ipa) = IPA_LEXICON.iter().find(|(k, _)| *k == mid).map(|(_, v)| *v) {
         // Flush accumulated text + leading punct, emit Ipa, start new buf with tail.
         buf.push_str(head);
-        if !buf.is_empty() {
-            out.push(Segment::Text(std::mem::take(buf)));
-        }
+        flush_buf(buf, out);
         out.push(Segment::Ipa(ipa.to_string()));
         buf.push_str(tail);
         return;
@@ -301,6 +304,38 @@ mod tests {
         for w in STOP_LIST {
             let segs = expand_to_segments(w, true);
             assert_eq!(flatten(&segs), *w, "stop-list entry escaped: {w}");
+        }
+    }
+
+    /// Sanity check that every IPA_LEXICON value contains only characters
+    /// from the IPA / stress-mark / length-mark / separator alphabet that
+    /// Kokoro's `infer_ipa` accepts. Catches typos like a Latin "e" in place
+    /// of an IPA "ɛ" or a smart-quote sneaking in. A failure here points to
+    /// a maintainer-side data error, not a code bug.
+    #[test]
+    fn ipa_lexicon_values_are_well_formed() {
+        for (key, ipa) in IPA_LEXICON {
+            assert!(!ipa.is_empty(), "IPA_LEXICON entry {key:?} has empty value");
+            for ch in ipa.chars() {
+                let ok = ch.is_ascii_lowercase()           // a-z (rare in IPA but ok)
+                    || ch.is_whitespace()                  // space-separated phoneme groups
+                    || matches!(
+                        ch,
+                        // Stress + length + syllable separator
+                        'ˈ' | 'ˌ' | 'ː' | '.' |
+                        // Vowel symbols
+                        'ə' | 'ɛ' | 'ɪ' | 'ɒ' | 'ɔ' | 'ʌ' | 'ʊ' | 'æ' | 'ɑ' |
+                        // Consonant symbols
+                        'ʃ' | 'ʒ' | 'ʧ' | 'ʤ' | 'ŋ' | 'θ' | 'ð' | 'ɹ' | 'ɾ' | 'ɫ' |
+                        // Velar g (IPA U+0261, distinct from ASCII 'g') + tie / glottal
+                        'ɡ' | 'ʔ' | '͡'
+                    );
+                assert!(
+                    ok,
+                    "IPA_LEXICON[{key:?}] contains unexpected char {ch:?} (U+{:04X})",
+                    ch as u32
+                );
+            }
         }
     }
 }

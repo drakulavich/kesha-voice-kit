@@ -21,6 +21,12 @@ pub(super) mod letter_table;
 
 use crate::tts::ssml::Segment;
 
+/// Returns true when `lang` is an English variant (`en`, `en-us`, `en-gb`, …).
+/// Centralized here so plain/SSML/stdin-loop call sites all agree on the gate.
+pub fn is_en(lang: &str) -> bool {
+    lang.starts_with("en")
+}
+
 /// Normalize a segment list for the Kokoro path. Each input segment becomes
 /// zero or more output segments:
 /// - `Spell(t)` → `Text(letter_table::expand_chars(t))` — always (not gated

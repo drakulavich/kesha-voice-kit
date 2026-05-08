@@ -214,7 +214,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 // Apply English acronym normalization (Spell→letter names,
                 // Text→expand when expand_abbrev) for en-* voices. Mirrors
                 // the one-shot path in tts::synth_segments_kokoro (#244).
-                let segments = if espeak_lang.starts_with("en") {
+                let segments = if tts::en::is_en(espeak_lang) {
                     tts::en::normalize_segments(segments, req.expand_abbrev)
                 } else {
                     segments
@@ -228,7 +228,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                     format,
                 )
                 .map_err(|e| e.to_string())
-            } else if espeak_lang.starts_with("en") {
+            } else if tts::en::is_en(espeak_lang) {
                 // English on Kokoro: route plain text through the segment
                 // pipeline so IPA_LEXICON overrides (EPAM, JSON, Anthropic, …)
                 // emit `Segment::Ipa` and bypass G2P. Mirrors tts::say()'s
