@@ -47,7 +47,7 @@ const IPA_LEXICON: &[(&str, &str)] = &[
     ("Microsoft", "ˈmaɪkroʊsɔːft"),
     ("Anthropic", "ænˈθrɒpɪk"),
     ("Claude", "klɔːd"),
-    ("NVIDIA", "ɛnˈvɪdiə"),
+    ("NVIDIA", "ɛnˈvɪdiːə"),
     ("Kubernetes", "ˌkuːbərˈnɛtiːz"),
     ("PostgreSQL", "ˈpoʊstɡrɛs"),
     ("GraphQL", "ˌɡræfˈkjuːɛl"),
