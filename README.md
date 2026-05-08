@@ -100,7 +100,12 @@ kesha say --voice en-am_michael --ssml \
   '<speak><say-as interpret-as="characters">NASA</say-as></speak>'
 ```
 
-Detection rule: auto-expand fires on all-uppercase Latin tokens 2–5 chars (no digits, no mixed case). A 30-entry stop-list passes natural-English caps words (NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA) and emphatic length-2 caps (OK, NO, GO, IT, IS, AS, AT, BY, IN, ON, OR, OF, TO, WE, US, MY, ME, HE, BE, DO) through unchanged. A separate `KNOWN_PRONUNCIATIONS` table substitutes brand-style pronunciations (EPAM → "epam", JSON → "jay son"). Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+Three-table mechanism:
+- **Letter-spell** — uppercase Latin tokens 2–5 chars (no digits, no mixed case) get expanded letter-by-letter (FBI → "ef bee eye"). Disable with `--no-expand-abbrev`.
+- **`STOP_LIST`** (30 entries) — natural-English caps words pass through unchanged: NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA + emphatic length-2 caps (OK, NO, GO, IT, IS, AS, AT, BY, IN, ON, OR, OF, TO, WE, US, MY, ME, HE, BE, DO).
+- **`IPA_LEXICON`** (20 entries) — case-sensitive token → IPA-phoneme map that bypasses G2P entirely. Covers all-caps acronyms with industry pronunciations (EPAM, JSON, JPEG, SQL, ASAP, GIF, CRUD, JWT) AND mixed-case proper nouns (Anthropic, Microsoft, Claude, NVIDIA, Kubernetes, PostgreSQL, GraphQL, Linux, Tokio, macOS, Granola, OAuth). IPA hits fire even with `--no-expand-abbrev` — they're intent-explicit, parallel to `<say-as>`.
+
+Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always letter-spells via the table). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
 
 **Russian word stress** (`ru-vosk-*` voices):
 

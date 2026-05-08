@@ -161,15 +161,31 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         return say_ssml(&opts);
     }
 
-    // Auto-expand English acronyms when the voice is en-* and the user
-    // hasn't passed --no-expand-abbrev. <say-as> is honored on the SSML
-    // path (synth_segments_kokoro) regardless. Closes #244 (mirror of #232).
-    let normalized_text: Cow<'_, str> = if opts.expand_abbrev && opts.lang.starts_with("en") {
-        Cow::Owned(en::expand_text(opts.text))
-    } else {
-        Cow::Borrowed(opts.text)
-    };
-    let ipa = g2p::text_to_ipa(normalized_text.as_ref(), opts.lang)
+    // English on Kokoro: route plain text through the segment pipeline so
+    // IPA_LEXICON overrides (EPAM, JSON, Anthropic, Microsoft, …) emit
+    // `Segment::Ipa` and bypass G2P. Letter-spell rule + STOP_LIST run inside
+    // `en::normalize_segments`. Closes #244.
+    if let EngineChoice::Kokoro {
+        model_path,
+        voice_path,
+        speed,
+    } = &opts.engine
+    {
+        if opts.lang.starts_with("en") {
+            return synth_segments_kokoro(
+                vec![ssml::Segment::Text(opts.text.to_string())],
+                opts.lang,
+                model_path,
+                voice_path,
+                *speed,
+                opts.format,
+                opts.expand_abbrev,
+            );
+        }
+    }
+
+    // Non-English Kokoro: legacy G2P + say_with_kokoro path.
+    let ipa = g2p::text_to_ipa(opts.text, opts.lang)
         .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
     if ipa.trim().is_empty() {
         return Err(TtsError::SynthesisFailed(

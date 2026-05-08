@@ -1,10 +1,18 @@
 //! English-specific text normalization for the Kokoro path.
 //!
-//! Mirrors `tts::ru` but tuned for misaki-rs G2P + Kokoro:
+//! Two-table mechanism:
 //! - `letter_table::expand_chars` — letter-by-letter spelling for
-//!   `<say-as interpret-as="characters">`.
-//! - `acronym::expand_acronyms` — auto-detect all-uppercase Latin acronyms.
-//! - `normalize_segments` — routes `Spell`/`Text`/`Emphasis` segments.
+//!   `<say-as interpret-as="characters">` and the auto-expand rule.
+//! - `acronym::IPA_LEXICON` — case-sensitive token → IPA-phoneme override.
+//!   Hits emit `Segment::Ipa` which `synth_segments_kokoro_with` routes
+//!   directly to `infer_ipa`, bypassing G2P.
+//! - `acronym::STOP_LIST` — natural-English caps words that pass through
+//!   to Kokoro's training-derived pronunciation.
+//!
+//! `normalize_segments` is the single entry point — both the SSML pipeline
+//! (`synth_segments_kokoro`) and the plain-text Kokoro path
+//! (`tts::say()` and `say_loop.rs`) wrap their input in a `Segment::Text`
+//! and call this function.
 //!
 //! Closes #244.
 
@@ -13,24 +21,21 @@ pub(super) mod letter_table;
 
 use crate::tts::ssml::Segment;
 
-/// Auto-expand all-uppercase Latin acronyms in plain text. Used by the
-/// non-SSML Kokoro path; the SSML path goes through `normalize_segments`
-/// instead so it can also handle `Segment::Spell` and `Segment::Emphasis`.
-pub fn expand_text(text: &str) -> String {
-    acronym::expand_acronyms(text)
-}
-
-/// Normalize a segment list for the Kokoro path:
-/// - `Spell(t)` → `Text(letter_table::expand_chars(t))` — always (not gated by `auto_expand`).
+/// Normalize a segment list for the Kokoro path. Each input segment becomes
+/// zero or more output segments:
+/// - `Spell(t)` → `Text(letter_table::expand_chars(t))` — always (not gated
+///   by `auto_expand`).
 /// - `Emphasis { content, suppress }` → `Text(content_stripped_of_plus)`. If
 ///   `!suppress`, emit a once-per-process warning that `<emphasis>` stress
 ///   markers are honored only on `ru-vosk-*` voices.
-/// - `Text(t)` → `Text(acronym::expand_acronyms(t))` if `auto_expand`; else unchanged.
+/// - `Text(t)` → tokenized via `expand_to_segments`, producing a mix of
+///   `Text` and `Ipa` segments. `auto_expand` controls letter-spelling;
+///   `IPA_LEXICON` hits fire regardless (intent-explicit).
 /// - `Ipa(_)`, `Break(_)` → unchanged.
 pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment> {
     segs.into_iter()
-        .map(|s| match s {
-            Segment::Spell(t) => Segment::Text(letter_table::expand_chars(&t)),
+        .flat_map(|s| match s {
+            Segment::Spell(t) => vec![Segment::Text(letter_table::expand_chars(&t))],
             Segment::Emphasis { content, suppress } => {
                 if !suppress {
                     crate::tts::warn::warn_once(
@@ -44,10 +49,10 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
                 } else {
                     content
                 };
-                Segment::Text(stripped)
+                vec![Segment::Text(stripped)]
             }
-            Segment::Text(t) if auto_expand => Segment::Text(acronym::expand_acronyms(&t)),
-            other => other,
+            Segment::Text(t) => acronym::expand_to_segments(&t, auto_expand),
+            other => vec![other],
         })
         .collect()
 }
@@ -64,9 +69,8 @@ mod tests {
     }
 
     #[test]
-    fn text_runs_acronym_expansion_when_auto_expand_is_true() {
-        // FBI is not on STOP_LIST (EPAM is, post-#244 brand-pronunciation tweak),
-        // so this exercises the actual spell-out branch.
+    fn text_letter_spells_when_auto_expand() {
+        // FBI letter-spells (no IPA_LEXICON entry, not on stop-list).
         let out = normalize_segments(vec![Segment::Text("FBI investigation".to_string())], true);
         assert_eq!(
             out,
@@ -75,14 +79,38 @@ mod tests {
     }
 
     #[test]
-    fn text_passes_through_when_auto_expand_is_false() {
+    fn text_passes_through_when_auto_expand_false_and_no_lexicon_hit() {
         let out = normalize_segments(vec![Segment::Text("FBI investigation".to_string())], false);
         assert_eq!(out, vec![Segment::Text("FBI investigation".to_string())]);
     }
 
     #[test]
+    fn ipa_lexicon_hit_emits_ipa_segment() {
+        let out = normalize_segments(vec![Segment::Text("EPAM partners".to_string())], true);
+        assert_eq!(
+            out,
+            vec![
+                Segment::Ipa("ˈiːpæm".to_string()),
+                Segment::Text(" partners".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn ipa_lexicon_fires_even_without_auto_expand() {
+        // Lexicon overrides are intent-explicit; not gated by auto_expand.
+        let out = normalize_segments(vec![Segment::Text("EPAM partners".to_string())], false);
+        assert_eq!(
+            out,
+            vec![
+                Segment::Ipa("ˈiːpæm".to_string()),
+                Segment::Text(" partners".to_string()),
+            ]
+        );
+    }
+
+    #[test]
     fn spell_wins_even_when_auto_expand_is_false() {
-        // expand_chars("OK") = "oh kay" (O→"oh", K→"kay").
         let out = normalize_segments(vec![Segment::Spell("OK".to_string())], false);
         assert_eq!(out, vec![Segment::Text("oh kay".to_string())]);
     }
