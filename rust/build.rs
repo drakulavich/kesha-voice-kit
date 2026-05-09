@@ -14,6 +14,16 @@ fn main() {
     // other targets so `--features system_tts` works in cross-platform builds.
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
     build_avspeech_helper();
+
+    // `system_diarize` (#199): compile the kesha-diarize Swift sidecar on macOS arm64.
+    // Writes the sidecar binary to $OUT_DIR/kesha-diarize. Silently no-op on
+    // other targets so `--features system_diarize` works in cross-platform builds.
+    #[cfg(all(
+        feature = "system_diarize",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    build_diarize_sidecar();
 }
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -53,6 +63,59 @@ fn build_avspeech_helper() {
     // path as the fallback for `cargo run` / `cargo test`.
     println!(
         "cargo:rustc-env=KESHA_AVSPEECH_HELPER={}",
+        out_bin.display()
+    );
+}
+
+#[cfg(all(
+    feature = "system_diarize",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn build_diarize_sidecar() {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let swift_pkg = manifest_dir.parent().unwrap().join("swift/kesha-diarize");
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out_bin = out_dir.join("kesha-diarize");
+
+    println!("cargo:rerun-if-changed={}", swift_pkg.display());
+    println!(
+        "cargo:rerun-if-changed={}/Sources/kesha-diarize/main.swift",
+        swift_pkg.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/Package.swift",
+        swift_pkg.display()
+    );
+
+    let status = Command::new("swift")
+        .arg("build")
+        .arg("--configuration")
+        .arg("release")
+        .arg("--package-path")
+        .arg(&swift_pkg)
+        .status()
+        .expect(
+            "swift not found — install Xcode command-line tools or disable --features system_diarize",
+        );
+    assert!(
+        status.success(),
+        "swift build failed for kesha-diarize at {}",
+        swift_pkg.display()
+    );
+
+    let built = swift_pkg.join(".build/release/kesha-diarize");
+    std::fs::copy(&built, &out_bin).expect("failed to copy kesha-diarize sidecar to OUT_DIR");
+
+    // Expose the path to runtime code via env!("KESHA_DIARIZE_SIDECAR").
+    // See KNOWN LIMITATION in build_avspeech_helper() — $OUT_DIR is ephemeral.
+    // Fallback for deployed binaries is "look up a sibling kesha-diarize
+    // next to the current executable", keeping this path for cargo run / cargo test.
+    println!(
+        "cargo:rustc-env=KESHA_DIARIZE_SIDECAR={}",
         out_bin.display()
     );
 }
