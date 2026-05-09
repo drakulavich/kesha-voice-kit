@@ -6,9 +6,16 @@ import { log } from "./log";
 /**
  * Capability-flag string surfaced via `kesha-engine --capabilities-json`. Single
  * source of truth so the engine, the TS CLI gate, and the integration tests
- * can't drift. Mirrors `rust/src/transcribe.rs::TRANSCRIBE_SEGMENTS_FEATURE`.
+ * can't drift. Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_SEGMENTS_FEATURE`.
  */
 export const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
+
+/**
+ * Capability-flag string for speaker diarization. Engine advertises this only
+ * on darwin-arm64 builds with the `system_diarize` cargo feature (#199).
+ * Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_DIARIZE_FEATURE`.
+ */
+export const TRANSCRIBE_DIARIZE_FEATURE = "transcribe.diarize";
 
 export interface LangDetectResult {
   code: string;
@@ -19,6 +26,8 @@ export interface TranscriptionSegment {
   start: number;
   end: number;
   text: string;
+  /** Speaker cluster id when `--speakers` was requested (#199). */
+  speaker?: number;
 }
 
 export interface TranscriptionOutput {
@@ -69,6 +78,9 @@ export type VadMode = "auto" | "on" | "off";
 
 export interface TranscribeEngineOptions {
   vad?: VadMode;
+  /** Request speaker labels in transcript segments. Requires the engine to
+   * advertise `transcribe.diarize` (darwin-arm64 only — see #199). */
+  speakers?: boolean;
 }
 
 export async function transcribeEngine(
@@ -100,11 +112,9 @@ function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
     ) {
       throw new Error("Invalid transcription segment returned by kesha-engine");
     }
-    return {
-      start: s.start,
-      end: s.end,
-      text: s.text,
-    };
+    const out: TranscriptionSegment = { start: s.start, end: s.end, text: s.text };
+    if (typeof s.speaker === "number") out.speaker = s.speaker;
+    return out;
   });
 
   return { text: parsed.text, segments };
@@ -124,6 +134,15 @@ export async function transcribeEngineWithSegments(
   const args = ["transcribe", audioPath, "--json"];
   if (opts.vad === "on") args.push("--vad");
   else if (opts.vad === "off") args.push("--no-vad");
+  if (opts.speakers) {
+    if (!caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
+      throw new Error(
+        "speaker diarization is currently darwin-arm64 only " +
+          "(see https://github.com/drakulavich/kesha-voice-kit/issues/199)",
+      );
+    }
+    args.push("--speakers");
+  }
   const { stdout, stderr, exitCode } = await runEngine(args);
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
