@@ -78,6 +78,6 @@ Eliminate four-way drift in TTS feature documentation. `docs/tts.md` becomes the
 
 ### Task 6: Update plan tracking + open PR
 
-- [ ] Move `docs/plans/2026-05-09-consolidate-ipa-lexicon-docs.md` to `docs/plans/completed/`.
-- [ ] Open PR titled "docs(#255): consolidate IPA_LEXICON / English acronym docs to docs/tts.md" with body `Closes #255` so the issue auto-closes on merge.
-- [ ] Add `WIP` label to issue #255 at start; remove on PR merge per CLAUDE.md "FLAG ACTIVE WORK WITH A `WIP` LABEL".
+- [x] Move `docs/plans/2026-05-09-consolidate-ipa-lexicon-docs.md` to `docs/plans/completed/`.
+- [x] Open PR titled "docs(#255): consolidate IPA_LEXICON / English acronym docs to docs/tts.md" with body `Closes #255` so the issue auto-closes on merge.
+- [x] Add `WIP` label to issue #255 at start; remove on PR merge per CLAUDE.md "FLAG ACTIVE WORK WITH A `WIP` LABEL". (WIP label already present on #255; removal on PR merge is a manual post-merge step.)
