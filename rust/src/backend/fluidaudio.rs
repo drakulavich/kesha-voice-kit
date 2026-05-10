@@ -147,14 +147,25 @@ fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce() -> R) -> 
             Some(OwnedFd::from_raw_fd(raw))
         }
     };
+    let have_save = saved.is_some();
     let _guard = StdoutGuard { saved };
 
-    if let Some(devnull) = devnull {
-        // SAFETY: devnull is the long-lived fd cached on FluidAudioBackend;
-        // dup2 atomically replaces fd 1 with a duplicate of devnull, and
-        // the cached fd remains valid for subsequent calls.
-        unsafe {
-            libc::dup2(devnull.as_raw_fd(), libc::STDOUT_FILENO);
+    // Only redirect if we successfully saved stdout — otherwise dup2
+    // would point fd 1 at /dev/null with no way to restore, silently
+    // swallowing the engine's final JSON for the rest of the process.
+    if have_save {
+        if let Some(devnull) = devnull {
+            // SAFETY: devnull is the long-lived fd cached on FluidAudioBackend;
+            // dup2 atomically replaces fd 1 with a duplicate of devnull, and
+            // the cached fd remains valid for subsequent calls.
+            let rc = unsafe { libc::dup2(devnull.as_raw_fd(), libc::STDOUT_FILENO) };
+            if rc < 0 {
+                let errno = std::io::Error::last_os_error();
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "warning: failed to silence stdout before FluidAudio call: {errno}"
+                );
+            }
         }
     }
     f()
