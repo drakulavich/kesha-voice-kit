@@ -55,3 +55,50 @@ export function shouldShowStarPrompt(current: string, seen: string | null): bool
 export function hasStarMarker(binPath: string): boolean {
   return existsSync(starSeenPath(binPath));
 }
+
+/**
+ * Prompt the user to star the repo if and only if `shouldShowStarPrompt`
+ * agrees (first install + major-or-minor bumps, never on patch). Records
+ * the prompt against the current version up front so a single run never
+ * prompts twice — failures from the gh subprocess below don't reopen the
+ * gate. Shared by `kesha install` and `kesha status` so opt-in installs
+ * (`--tts`, `--diarize`) and `status` reuse the same marker; a user who
+ * saw the prompt on the base install won't see it again on the opt-in or
+ * the status check.
+ *
+ * No-ops when the gate says skip, when `currentVersion` is null, or when
+ * `gh` is missing / unauthenticated / says the user has already starred.
+ */
+export async function maybeAskForStar(
+  binPath: string,
+  currentVersion: string | null,
+  log: { info: (msg: string) => void },
+): Promise<void> {
+  if (!currentVersion) return;
+  const seen = readStarSeen(binPath);
+  if (!shouldShowStarPrompt(currentVersion, seen)) {
+    return;
+  }
+  try {
+    writeStarSeen(binPath, currentVersion);
+  } catch {
+    /* Non-fatal — falling through to the prompt is still OK. */
+  }
+
+  const gh = Bun.which("gh");
+  if (!gh) {
+    log.info("\nIf you enjoy Kesha Voice Kit, consider starring the repo:");
+    log.info("  https://github.com/drakulavich/kesha-voice-kit");
+    return;
+  }
+  const authCheck = Bun.spawnSync([gh, "auth", "status"], { stdout: "ignore", stderr: "ignore" });
+  if (authCheck.exitCode !== 0) return;
+  const starred = Bun.spawnSync(
+    [gh, "api", "user/starred/drakulavich/kesha-voice-kit"],
+    { stdout: "ignore", stderr: "ignore" },
+  );
+  if (starred.exitCode === 0) return; // already starred
+  log.info("\n⭐ If you enjoy Kesha Voice Kit, star it on GitHub:");
+  log.info("  https://github.com/drakulavich/kesha-voice-kit");
+  log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
+}
