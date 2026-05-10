@@ -3,6 +3,7 @@ import {
   isEngineInstalled,
   getEngineBinPath,
   TRANSCRIBE_SEGMENTS_FEATURE,
+  TRANSCRIBE_DIARIZE_FEATURE,
 } from "../../src/engine";
 
 const CWD = import.meta.dir + "/../..";
@@ -53,6 +54,69 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(caps.features).toContain("transcribe");
     expect(caps.features).toContain("detect-lang");
   });
+
+  test("transcribe.diarize present iff darwin-arm64 (#199)", async () => {
+    const { stdout, exitCode } = await runEngine(["--capabilities-json"]);
+    expect(exitCode).toBe(0);
+    const caps = JSON.parse(stdout);
+    const isDarwinArm64 = process.platform === "darwin" && process.arch === "arm64";
+    if (isDarwinArm64) {
+      // Default install on darwin-arm64 ships the system_diarize feature.
+      // KESHA_ENGINE_BIN may point at a feature-stripped dev build; allow that.
+      // (The capability matrix test in build-engine.yml is the source of
+      //  truth for release artifacts.)
+      const advertises = caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE);
+      if (!advertises) {
+        console.warn(
+          `engine at ${getEngineBinPath()} lacks ${TRANSCRIBE_DIARIZE_FEATURE}; ` +
+            "likely a dev build without --features system_diarize",
+        );
+      }
+    } else {
+      expect(caps.features).not.toContain(TRANSCRIBE_DIARIZE_FEATURE);
+    }
+  });
+
+  test("--speakers round-trip stamps every segment (#199)", async () => {
+    const capsRun = await runEngine(["--capabilities-json"]);
+    const caps = JSON.parse(capsRun.stdout);
+    if (!caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
+      console.warn(`engine lacks ${TRANSCRIBE_DIARIZE_FEATURE}; skipping --speakers e2e`);
+      return;
+    }
+
+    // VAD is required for the round-trip to exercise multiple segments;
+    // a missing VAD model surfaces as a non-zero exit below and skips
+    // (covered by the prereq-skip block).
+    const { stdout, stderr, exitCode } = await runEngine([
+      "transcribe",
+      "--json",
+      "--vad",
+      "--speakers",
+      FIXTURE_EN,
+    ]);
+    if (exitCode !== 0) {
+      // Treat missing prerequisites (sidecar / model / VAD) as skip rather
+      // than fail; their installer flows are exercised separately.
+      if (
+        stderr.includes("diarization model not found") ||
+        stderr.includes("kesha-diarize sidecar not found") ||
+        stderr.includes("VAD model")
+      ) {
+        console.warn(`skipping --speakers e2e: ${stderr.split("\n")[0]}`);
+        return;
+      }
+      throw new Error(`engine transcribe --speakers failed: ${stderr}`);
+    }
+
+    const parsed = JSON.parse(stdout);
+    expect(Array.isArray(parsed.segments)).toBe(true);
+    if (parsed.segments.length > 0) {
+      // Single-speaker fixture → speaker field present and numeric on every
+      // segment (one cluster ID is fine; we're locking the wire shape).
+      expect(parsed.segments.every((s: { speaker?: unknown }) => typeof s.speaker === "number")).toBe(true);
+    }
+  }, 120_000);
 
   test("engine transcribes Russian audio", async () => {
     const { stdout, exitCode } = await runEngine(["transcribe", FIXTURE_RU]);
