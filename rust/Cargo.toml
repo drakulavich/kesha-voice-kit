@@ -17,7 +17,10 @@ default = ["onnx", "tts"]
 # ASR backend selection. Language detection always uses ONNX regardless.
 # `tempfile` is pulled in by `coreml` because the FluidAudio backend writes
 # a temp WAV per VAD segment (`fluidaudio-rs 0.1.0` lacks transcribe_samples).
-coreml = ["dep:fluidaudio-rs", "dep:tempfile"]
+# `libc` is used by the coreml backend to silence FluidAudio's stdout during
+# transcribe_file calls — without it, the Swift-side `print("Transcribe error:
+# invalidAudioData")` (see #259) interleaves with kesha-engine's JSON output.
+coreml = ["dep:fluidaudio-rs", "dep:tempfile", "dep:libc"]
 onnx = []
 tts = ["dep:hound", "dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg"]
 # macOS-only AVSpeechSynthesizer backend for `macos-*` voices (#141).
@@ -68,6 +71,7 @@ opus = { version = "0.3", optional = true }
 ogg = { version = "0.9", optional = true }
 
 tempfile = { version = "3", optional = true }
+libc = { version = "0.2", optional = true }
 # Pinned exactly so transitive minor bumps can't silently mutate the IPA
 # our `g2p_parity` test freezes — see #207.
 misaki-rs = { version = "=0.3.0", default-features = false }

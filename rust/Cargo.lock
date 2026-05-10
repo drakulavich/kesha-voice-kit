@@ -708,6 +708,7 @@ dependencies = [
  "dirs",
  "fluidaudio-rs",
  "hound",
+ "libc",
  "misaki-rs",
  "ndarray",
  "ogg",
