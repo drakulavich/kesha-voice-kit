@@ -24,6 +24,7 @@ interface MainCommandArgs {
   vad: boolean;
   "no-vad": boolean;
   timestamps: boolean;
+  speakers: boolean;
   format?: string;
   lang?: string;
 }
@@ -61,6 +62,11 @@ export const mainCommand = defineCommand({
     timestamps: {
       type: "boolean",
       description: "Include timestamped transcript segments in JSON/TOON output",
+      default: false,
+    },
+    speakers: {
+      type: "boolean",
+      description: "Include speaker labels in transcript segments. Requires --json / --toon / --format json. Implies --timestamps. Currently darwin-arm64 only (#199).",
       default: false,
     },
     verbose: {
@@ -109,6 +115,10 @@ export const mainCommand = defineCommand({
       log.error("--timestamps requires --json, --toon, or --format json.");
       process.exit(2);
     }
+    if (args.speakers && !(args.json || args.toon || args.format === "json")) {
+      log.error("--speakers requires --json, --toon, or --format json.");
+      process.exit(2);
+    }
     const vadMode = args.vad ? "on" : args["no-vad"] ? "off" : "auto";
 
     if (files.length === 0) {
@@ -127,7 +137,7 @@ export const mainCommand = defineCommand({
         // Run audio lang-id and transcription concurrently.
         const [audioResult, transcript] = await Promise.all([
           wantsLangId ? detectAudioLanguageEngine(file) : Promise.resolve(null),
-          transcribeWithSegments(file, { vad: vadMode, timestamps: args.timestamps }),
+          transcribeWithSegments(file, { vad: vadMode, timestamps: args.timestamps, speakers: args.speakers }),
         ]);
         const { text, segments } = transcript;
 

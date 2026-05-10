@@ -45,6 +45,10 @@ enum Commands {
         /// Disable VAD preprocessing regardless of duration or install state.
         #[arg(long = "no-vad")]
         no_vad: bool,
+        /// Include speaker labels in transcript segments. Requires --json.
+        /// Currently darwin-arm64 only (#199).
+        #[arg(long)]
+        speakers: bool,
     },
     /// Detect spoken language from audio
     DetectLang {
@@ -68,6 +72,11 @@ enum Commands {
         /// Also install Silero VAD (~2.3MB) for long-audio preprocessing.
         #[arg(long)]
         vad: bool,
+        /// Also install the Sortformer streaming-diarization model (~245MB,
+        /// darwin-arm64 only, #199).
+        #[cfg(feature = "system_diarize")]
+        #[arg(long)]
+        diarize: bool,
     },
     /// Synthesize speech from text (TTS)
     #[cfg(feature = "tts")]
@@ -391,9 +400,16 @@ fn main() -> Result<()> {
             json,
             vad,
             no_vad,
+            speakers,
         }) => {
             let mode = transcribe::VadMode::from_flags(vad, no_vad);
-            if json {
+            if speakers {
+                if !json {
+                    anyhow::bail!("--speakers requires --json");
+                }
+                let output = transcribe::transcribe_output_with_speakers(&audio_path, mode)?;
+                println!("{}", serde_json::to_string(&output)?);
+            } else if json {
                 let output = transcribe::transcribe_output(&audio_path, mode)?;
                 println!("{}", serde_json::to_string(&output)?);
             } else {
@@ -414,6 +430,8 @@ fn main() -> Result<()> {
             #[cfg(feature = "tts")]
             tts,
             vad,
+            #[cfg(feature = "system_diarize")]
+            diarize,
         }) => {
             models::install(no_cache)?;
             #[cfg(feature = "tts")]
@@ -424,6 +442,11 @@ fn main() -> Result<()> {
             if vad {
                 models::download_vad(no_cache)?;
                 eprintln!("VAD model installed.");
+            }
+            #[cfg(feature = "system_diarize")]
+            if diarize {
+                models::download_diarize(no_cache)?;
+                eprintln!("Diarization model installed.");
             }
             eprintln!("Install complete.");
         }

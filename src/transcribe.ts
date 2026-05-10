@@ -15,6 +15,10 @@ export interface TranscribeOptions {
   vad?: VadMode;
   /** Request timestamped transcript segments from the engine. */
   timestamps?: boolean;
+  /** Request speaker labels in transcript segments (#199). Implies `timestamps`.
+   * Currently darwin-arm64 only — throws when the engine doesn't advertise
+   * `transcribe.diarize`. */
+  speakers?: boolean;
 }
 
 export async function transcribe(audioPath: string, opts: TranscribeOptions = {}): Promise<string> {
@@ -36,8 +40,11 @@ export async function transcribeWithSegments(
     );
   }
 
-  if (opts.timestamps) {
-    return transcribeEngineWithSegments(audioPath, { vad: opts.vad });
+  if (opts.timestamps || opts.speakers) {
+    return transcribeEngineWithSegments(audioPath, {
+      vad: opts.vad,
+      speakers: opts.speakers,
+    });
   }
 
   const text = await transcribeEngine(audioPath, { vad: opts.vad });

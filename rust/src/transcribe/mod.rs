@@ -1,3 +1,6 @@
+#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+pub(crate) mod diarize;
+
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::path::Path;
@@ -12,6 +15,12 @@ use crate::vad::{VadConfig, VadDetector, SAMPLE_RATE as VAD_SAMPLE_RATE};
 /// Capability-flag string surfaced via `--capabilities-json`. Single source of
 /// truth so the engine, the TS CLI gate, and the integration tests can't drift.
 pub const TRANSCRIBE_SEGMENTS_FEATURE: &str = "transcribe.segments";
+
+/// Capability flag surfaced via `--capabilities-json` when the engine ships
+/// with FluidAudio diarization. Only true on darwin-arm64 release builds
+/// that include the `system_diarize` feature. Closes #199 angle D.
+#[cfg_attr(not(feature = "system_diarize"), allow(dead_code))]
+pub const TRANSCRIBE_DIARIZE_FEATURE: &str = "transcribe.diarize";
 
 /// Duration at which the `Auto` VAD mode flips to VAD preprocessing.
 /// Voice messages (<30 s) and short clips don't benefit; meetings and
@@ -56,6 +65,12 @@ pub struct TranscriptionSegment {
     pub start: f32,
     pub end: f32,
     pub text: String,
+    /// Cluster ID from speaker diarization. `None` when `--speakers` was not
+    /// requested (default) or when diarization could not assign a speaker
+    /// to this segment. Stable within one `--json --timestamps --speakers`
+    /// invocation; not stable across files.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -87,11 +102,22 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
 }
 
 pub fn transcribe(audio_path: &str, mode: VadMode) -> Result<String> {
-    Ok(transcribe_inner(audio_path, mode, false)?.text)
+    Ok(transcribe_inner(audio_path, mode, false, false)?.text)
 }
 
 pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
-    transcribe_inner(audio_path, mode, true)
+    transcribe_inner(audio_path, mode, true, false)
+}
+
+/// Transcribe `audio_path` with speaker diarization enabled. Returns segments
+/// with `speaker: Some(u32)` populated where the diarization timeline
+/// covered the segment's midpoint. Currently darwin-arm64 only — fails
+/// on other platforms with a #199 tracking-issue link.
+pub fn transcribe_output_with_speakers(
+    audio_path: &str,
+    mode: VadMode,
+) -> Result<TranscriptionOutput> {
+    transcribe_inner(audio_path, mode, true, true)
 }
 
 /// `timestamps_required` gates the non-VAD plain path's call to
@@ -100,10 +126,16 @@ pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<Transcriptio
 /// Ogg/Opus without a frame count, which would turn into a hard error for
 /// inputs that previously transcribed cleanly. The VAD path always builds
 /// segments cheaply (per-span boundaries already in hand from VAD output).
+///
+/// `speakers_required` triggers the diarization post-step after ASR completes.
+/// On darwin-arm64 with the `system_diarize` feature it invokes
+/// `diarize::run` + `diarize::merge_into`; on all other platforms it returns
+/// a clear error pointing at #199.
 fn transcribe_inner(
     audio_path: &str,
     mode: VadMode,
     timestamps_required: bool,
+    speakers_required: bool,
 ) -> Result<TranscriptionOutput> {
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::vad_model_dir();
@@ -120,7 +152,12 @@ fn transcribe_inner(
         duration
     );
 
-    match decision {
+    // `mut` is only consumed by the diarization post-step below.
+    #[cfg_attr(
+        not(all(feature = "system_diarize", target_os = "macos")),
+        allow(unused_mut)
+    )]
+    let mut output = match decision {
         VadDecision::Vad => {
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
         }
@@ -137,7 +174,30 @@ fn transcribe_inner(
             );
             transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
         }
+    }?;
+
+    // --- Speaker diarization post-step ---
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    {
+        if speakers_required {
+            let model_path = resolve_diarize_model_path()
+                .context("speaker diarization requires a model path")?;
+            let spans = diarize::run(std::path::Path::new(audio_path), &model_path)
+                .context("speaker diarization failed")?;
+            output.segments = diarize::merge_into(output.segments, &spans);
+        }
     }
+    #[cfg(not(all(feature = "system_diarize", target_os = "macos")))]
+    {
+        if speakers_required {
+            anyhow::bail!(
+                "speaker diarization is currently darwin-arm64 only.\n\
+                 Tracked at https://github.com/drakulavich/kesha-voice-kit/issues/199.",
+            );
+        }
+    }
+
+    Ok(output)
 }
 
 fn transcribe_plain(
@@ -278,6 +338,7 @@ where
                         start: start_s,
                         end: end_s,
                         text: trimmed.to_string(),
+                        speaker: None,
                     });
                 }
             }
@@ -330,6 +391,7 @@ fn single_segment(start: f32, end: f32, text: &str) -> Vec<TranscriptionSegment>
         start,
         end,
         text: trimmed.to_string(),
+        speaker: None,
     }]
 }
 
@@ -350,6 +412,35 @@ fn probe_duration_if_plausible(path: &str) -> Option<f32> {
             None
         }
     }
+}
+
+/// Resolve the diarization model path. Priority:
+/// 1. `KESHA_DIARIZE_MODEL_PATH` env var (must point to an existing path).
+/// 2. Default cache location populated by `kesha install --diarize`
+///    (`~/.cache/kesha/models/diarize/SortformerNvidiaLow_v2.mlpackage`).
+#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
+    if let Ok(env_path) = std::env::var("KESHA_DIARIZE_MODEL_PATH") {
+        let p = std::path::PathBuf::from(env_path);
+        if p.exists() {
+            return Ok(p);
+        }
+        anyhow::bail!(
+            "KESHA_DIARIZE_MODEL_PATH set but path does not exist: {}",
+            p.display()
+        );
+    }
+
+    let default = crate::models::diarize_model_dir();
+    if crate::models::is_diarize_cached(&default) {
+        return Ok(default);
+    }
+
+    anyhow::bail!(
+        "diarization model not found at {}. \
+         Run `kesha install --diarize` (or set KESHA_DIARIZE_MODEL_PATH).",
+        default.display()
+    )
 }
 
 /// Returns the cached ASR model dir or bails with the install hint.
@@ -604,5 +695,35 @@ mod tests {
         // Unknown duration → treat as short, never surprise the user with VAD.
         assert_eq!(decide(VadMode::Auto, None, true), VadDecision::Plain);
         assert_eq!(decide(VadMode::Auto, None, false), VadDecision::Plain);
+    }
+
+    #[test]
+    fn transcription_segment_speaker_field_omits_when_none() {
+        let s = TranscriptionSegment {
+            start: 0.0,
+            end: 1.0,
+            text: "hi".into(),
+            speaker: None,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            !json.contains("\"speaker\""),
+            "speaker:None should be omitted, got {json}"
+        );
+    }
+
+    #[test]
+    fn transcription_segment_speaker_field_serializes_when_some() {
+        let s = TranscriptionSegment {
+            start: 0.0,
+            end: 1.0,
+            text: "hi".into(),
+            speaker: Some(2),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            json.contains("\"speaker\":2"),
+            "expected speaker:2 in {json}"
+        );
     }
 }

@@ -1,5 +1,13 @@
 use serde::Serialize;
 
+// `transcribe::diarize` is the runtime module gated on
+// `all(feature = "system_diarize", target_os = "macos")` (see
+// transcribe/mod.rs). Mirror that gate here so the advertised
+// capability matches the runtime: building `--features system_diarize`
+// on Linux otherwise pushes the flag without an executable code path,
+// and `--speakers` would advertise OK then bail out at request time.
+#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+use crate::transcribe::TRANSCRIBE_DIARIZE_FEATURE;
 use crate::transcribe::TRANSCRIBE_SEGMENTS_FEATURE;
 
 #[derive(Serialize)]
@@ -30,6 +38,9 @@ pub fn get_capabilities() -> Capabilities {
     features.push("tts.en_acronym_expansion");
     #[cfg(feature = "tts")]
     features.push("tts.ru_emphasis_marker");
+
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    features.push(TRANSCRIBE_DIARIZE_FEATURE);
 
     Capabilities {
         protocol_version: 2,
