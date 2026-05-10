@@ -26,8 +26,13 @@ if argv.count < 2 || argv.count > 3 { usage() }
 
 let arg = argv[1]
 
+// MAINTENANCE: keep in sync with the `revision:` pin in Package.swift.
+// Single source of truth for the rev string so `--list-models` doesn't
+// drift on a Package.swift bump.
+let fluidAudioRevision = "ce59fb1"
+
 if arg == "--list-models" {
-    print("FluidAudio.SortformerDiarizer (FluidAudio rev ce59fb1)")
+    print("FluidAudio.SortformerDiarizer (FluidAudio rev \(fluidAudioRevision))")
     exit(0)
 }
 
