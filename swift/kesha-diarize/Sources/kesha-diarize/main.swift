@@ -71,8 +71,14 @@ var timeline: DiarizerTimeline?
 Task {
     defer { semaphore.signal() }
     do {
+        // Config must match the SHIPPED .mlpackage variant — the model carries
+        // fixed input/output shapes baked in at conversion time. We ship
+        // SortformerNvidiaLow_v2.mlpackage (#199 / models.rs DIARIZE_FILES);
+        // its fifoLen is 188, so the matching SortformerConfig is .balancedV2.
+        // SortformerConfig.default (fifoLen=40) → MultiArray shape (1×40×512)
+        // vs the model's (1×188×512) and CoreML rejects the eval at runtime.
         let diarizer = SortformerDiarizer(
-            config: SortformerConfig.default,
+            config: SortformerConfig.balancedV2,
             timelineConfig: DiarizerTimelineConfig.sortformerDefault
         )
         try await diarizer.initialize(mainModelPath: modelURL)

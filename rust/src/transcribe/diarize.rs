@@ -74,7 +74,18 @@ pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpa
             stderr.trim()
         ));
     }
-    let parsed: SidecarOutput = serde_json::from_slice(&output.stdout).with_context(|| {
+    // The sidecar prints the JSON object as a single line (see main.swift),
+    // but CoreML — running below it — occasionally writes its own
+    // "E5RT encountered an STL exception..." messages to stdout AFTER our
+    // exit-success JSON. Strict serde_json::from_slice rejects the trailing
+    // garbage with "trailing characters at line 2 column 1". Read only the
+    // first non-empty line as JSON to insulate against that noise.
+    let first_line = output
+        .stdout
+        .split(|b| *b == b'\n')
+        .find(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .unwrap_or(&output.stdout);
+    let parsed: SidecarOutput = serde_json::from_slice(first_line).with_context(|| {
         format!(
             "invalid JSON from kesha-diarize: {}",
             String::from_utf8_lossy(&output.stdout)
