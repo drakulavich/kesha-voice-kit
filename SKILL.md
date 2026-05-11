@@ -100,6 +100,8 @@ Format is also inferred from `--out` extension (`.ogg` / `.opus` / `.oga` → OG
 
 **Russian word stress** (`ru-vosk-*` only): `<emphasis>сл+ово</emphasis>` shifts stress to the vowel marked with `+`. `<emphasis level="none">сл+ово</emphasis>` strips the `+` (cancel inherited emphasis). Other voices (`en-*`, `macos-*`) silently strip the `+` and warn once per process. Auto-stress dictionary not provided — caller writes the `+` manually. Closes [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
 
+**Speech rate via SSML** (`ru-vosk-*` and `en-*` voices): wrap the utterance in `<prosody rate="…">` to slow down or speed up synthesis. Supports SSML named values (`x-slow`/`slow`/`medium`/`fast`/`x-fast`), absolute `N%` (e.g. `120%`), and relative `+N%`/`-N%`. Honored only when `<prosody>` wraps the whole utterance — mid-utterance prosody warns and synthesizes at default rate. `--rate` and `<prosody rate>` compose multiplicatively; result is clamped to 0.5×–2.0×. AVSpeech (`macos-*` voices) does not yet accept SSML — see [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
+
 ## Language detection standalone
 
 `kesha --json audio.ogg` includes both audio-based (`audioLanguage`) and text-based (`textLanguage`) detection. Use audio detection to identify the language before running language-specific logic.

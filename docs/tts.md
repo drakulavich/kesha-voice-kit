@@ -91,6 +91,34 @@ kesha say --voice ru-vosk-m02 --ssml \
 
 Once-per-process stderr warning fires when `<emphasis>` content lacks any `+` marker. `<emphasis>` on Kokoro / AVSpeech voices strips `+` and warns once (Kokoro has no `+`-marker analog). Engine reports `tts.ru_emphasis_marker: true`. Closes [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
 
+### `<prosody rate>` — speech rate via SSML
+
+Honored on `ru-vosk-*` (Vosk-TTS) and `en-*` (Kokoro) voices when the
+`<prosody>` element wraps the WHOLE utterance:
+
+```bash
+kesha say --voice ru-vosk-m02 --ssml \
+  '<speak><prosody rate="slow">Привет, как дела.</prosody></speak>' --out slow.wav
+
+kesha say --voice en-am_michael --ssml \
+  '<speak><prosody rate="120%">Read this slightly fast.</prosody></speak>' --out fast.wav
+```
+
+**Supported values** (W3C SSML 1.1 rate attribute):
+
+| Form | Examples | Effective multiplier |
+|---|---|---|
+| Named | `x-slow` `slow` `medium` `fast` `x-fast` | 0.5 / 0.75 / 1.0 / 1.25 / 1.5 |
+| Absolute percent | `100%` `150%` `200%` | `N / 100` |
+| Relative percent | `+25%` `-25%` | `1.0 ± N/100` |
+
+Range clamped to 0.5×–2.0×; values outside the range are clamped silently. `--rate <float>` (CLI flag) and `<prosody rate>` (SSML) compose multiplicatively — final speed = `cli_rate × ssml_rate`, then clamped.
+
+**Limitations (v1):**
+- Mid-utterance prosody (`<speak>Hi <prosody rate="fast">there</prosody> bye</speak>`) emits a `prosody-mid-utterance` stderr warning and synthesizes the full text at default rate. Per-segment splitting is a v2 follow-up — requires verifying boundary cuts don't produce click/pop. Tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
+- AVSpeech (`macos-*`) voices don't accept SSML yet (#141 follow-up); `--ssml` on a `macos-*` voice errors out before any prosody handling runs.
+- `<prosody pitch>` and `<prosody volume>` are NOT supported in v1 — they warn-once and strip. See #236 for the v2 design considerations.
+
 ## SSML
 
 `kesha say --ssml` accepts a subset of [SSML](https://www.w3.org/TR/speech-synthesis11/):

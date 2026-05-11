@@ -10,6 +10,17 @@ binary.
 
 ## [Unreleased]
 
+## [1.13.0] (unreleased)
+
+Engine release. Adds SSML `<prosody rate>` support for Vosk + Kokoro voices.
+
+### Added
+- **SSML `<prosody rate>` honored on `ru-vosk-*` and `en-*` voices** when it wraps the whole utterance — `<speak><prosody rate="fast">…</prosody></speak>`. Supports W3C named values (`x-slow`/`slow`/`medium`/`fast`/`x-fast`), absolute `N%`, and relative `+N%`/`-N%`. Result is multiplied by the existing `--rate` flag and clamped to 0.5×–2.0×. New capability flag `tts.prosody_rate`. Closes [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) (rate-only conservative scope; pitch + volume deferred).
+
+### Notes
+- Mid-utterance `<prosody>` (anything not whole-utterance) emits a `prosody-mid-utterance` stderr warning and synthesizes the content at default rate. Per-segment splitting is a v2 follow-up — requires the boundary-cut spike from #236.
+- AVSpeech (`macos-*`) voices don't accept SSML yet (#141 follow-up); the rejection happens before any prosody handling runs.
+
 ## [1.12.0] (unreleased)
 
 Engine release. Adds speaker diarization on Apple Silicon via a Swift sidecar

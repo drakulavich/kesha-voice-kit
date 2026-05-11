@@ -98,6 +98,18 @@ kesha say --voice ru-vosk-m02 --ssml \
 
 Vosk-TTS 0.9-multi honors a `+` placed BEFORE the target stressed vowel — but only when the marker shifts stress AWAY from the model's default (first-syllable). `+` agreeing with the default is a no-op. See [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
 
+**Speech rate via SSML** (`ru-vosk-*` and `en-*` voices):
+
+```bash
+kesha say --voice ru-vosk-m02 --ssml \
+  '<speak><prosody rate="slow">Привет, как дела.</prosody></speak>' --out slow.wav
+
+kesha say --voice en-am_michael --ssml \
+  '<speak><prosody rate="x-fast">Read this fast.</prosody></speak>' --out fast.wav
+```
+
+Honored when `<prosody rate>` wraps the whole utterance. Mid-utterance prosody warns and synthesizes at default rate (whole-segment-only is a v1 limitation; mid-utterance support tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236)). `--rate` and `<prosody rate>` compose multiplicatively. Range clamped to 0.5×–2.0×.
+
 macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tts.md](docs/tts.md).
 
 ## Performance
