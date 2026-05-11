@@ -28,6 +28,10 @@ pub fn expand_text(text: &str) -> String {
 ///   once-per-process warning when no `+` marker is present (caller has not
 ///   provided a usable stress hint).
 /// - `Text(t)`  → `Text(acronym::expand_acronyms(t))` if `auto_expand`
+/// - `ProsodyRate { rate, content }` → same shape with `content` recursively
+///   normalized. Without this recursion, `<prosody rate>` would silently
+///   disable Cyrillic acronym expansion, `<say-as characters>`, and
+///   `<emphasis>` processing for any content nested inside it.
 /// - `Ipa(_)`, `Break(_)` → unchanged
 ///
 /// `<say-as interpret-as="characters">` always wins (its content is the
@@ -58,6 +62,10 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
                 }
             }
             Segment::Text(t) if auto_expand => Segment::Text(acronym::expand_acronyms(&t)),
+            Segment::ProsodyRate { rate, content } => Segment::ProsodyRate {
+                rate,
+                content: normalize_segments(content, auto_expand),
+            },
             other => other,
         })
         .collect()
@@ -163,5 +171,44 @@ mod tests {
             false,
         );
         assert_eq!(out, vec![Segment::Text("я знаю это".to_string())]);
+    }
+
+    #[test]
+    fn prosody_rate_recurses_spell_inside() {
+        // Regression: <prosody rate="slow"><say-as characters>ФСБ</say-as></prosody>
+        // must still letter-spell the inner content.
+        let out = normalize_segments(
+            vec![Segment::ProsodyRate {
+                rate: 0.75,
+                content: vec![Segment::Spell("ФСБ".to_string())],
+            }],
+            false,
+        );
+        assert_eq!(
+            out,
+            vec![Segment::ProsodyRate {
+                rate: 0.75,
+                content: vec![Segment::Text("эф эс бэ".to_string())],
+            }]
+        );
+    }
+
+    #[test]
+    fn prosody_rate_recurses_acronym_expand_inside() {
+        // Regression: ФСБ inside <prosody rate> must still auto-expand.
+        let out = normalize_segments(
+            vec![Segment::ProsodyRate {
+                rate: 0.75,
+                content: vec![Segment::Text("ФСБ объявила".to_string())],
+            }],
+            true,
+        );
+        assert_eq!(
+            out,
+            vec![Segment::ProsodyRate {
+                rate: 0.75,
+                content: vec![Segment::Text("эф эс бэ объявила".to_string())],
+            }]
+        );
     }
 }

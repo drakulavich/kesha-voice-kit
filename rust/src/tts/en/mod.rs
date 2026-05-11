@@ -37,6 +37,10 @@ pub fn is_en(lang: &str) -> bool {
 /// - `Text(t)` → tokenized via `expand_to_segments`, producing a mix of
 ///   `Text` and `Ipa` segments. `auto_expand` controls letter-spelling;
 ///   `IPA_LEXICON` hits fire regardless (intent-explicit).
+/// - `ProsodyRate { rate, content }` → same shape with `content` recursively
+///   normalized. Without this recursion, `<prosody rate>` would silently
+///   disable `IPA_LEXICON` overrides, `<say-as characters>`, and `<emphasis>`
+///   warnings for any content nested inside it.
 /// - `Ipa(_)`, `Break(_)` → unchanged.
 pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment> {
     segs.into_iter()
@@ -58,6 +62,10 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
                 vec![Segment::Text(stripped)]
             }
             Segment::Text(t) => acronym::expand_to_segments(&t, auto_expand),
+            Segment::ProsodyRate { rate, content } => vec![Segment::ProsodyRate {
+                rate,
+                content: normalize_segments(content, auto_expand),
+            }],
             other => vec![other],
         })
         .collect()
@@ -164,5 +172,47 @@ mod tests {
             false,
         );
         assert_eq!(out, vec![Segment::Text("дома".to_string())]);
+    }
+
+    #[test]
+    fn prosody_rate_recurses_ipa_lexicon_inside() {
+        // Regression: EPAM inside <prosody rate> must still hit IPA_LEXICON.
+        let out = normalize_segments(
+            vec![Segment::ProsodyRate {
+                rate: 0.75,
+                content: vec![Segment::Text("EPAM partners".to_string())],
+            }],
+            false,
+        );
+        assert_eq!(
+            out,
+            vec![Segment::ProsodyRate {
+                rate: 0.75,
+                content: vec![
+                    Segment::Ipa("ˈiːpæm".to_string()),
+                    Segment::Text(" partners".to_string()),
+                ],
+            }]
+        );
+    }
+
+    #[test]
+    fn prosody_rate_recurses_spell_inside() {
+        // Regression: <prosody rate><say-as characters>EPAM</say-as></prosody>
+        // must still letter-spell the inner content.
+        let out = normalize_segments(
+            vec![Segment::ProsodyRate {
+                rate: 1.25,
+                content: vec![Segment::Spell("EPAM".to_string())],
+            }],
+            false,
+        );
+        assert_eq!(
+            out,
+            vec![Segment::ProsodyRate {
+                rate: 1.25,
+                content: vec![Segment::Text("ee pee ay em".to_string())],
+            }]
+        );
     }
 }
