@@ -38,6 +38,16 @@ pub fn get_capabilities() -> Capabilities {
     features.push("tts.en_acronym_expansion");
     #[cfg(feature = "tts")]
     features.push("tts.ru_emphasis_marker");
+    // `tts.prosody_rate` applies to the Vosk (`ru-vosk-*`) and Kokoro
+    // (`en-*`) engines. AVSpeech (`macos-*`) is unaffected: it rejects SSML
+    // wholesale at `tts::say` before any prosody dispatch runs (see
+    // `rust/src/tts/mod.rs:120-124`), so callers sending
+    // `<prosody rate>` to a `macos-*` voice get the existing
+    // "SSML is not yet supported with macos-* voices" error rather than a
+    // surprise success. AVSpeech-native rate is tracked as a v2 follow-up
+    // in #236.
+    #[cfg(feature = "tts")]
+    features.push("tts.prosody_rate");
 
     #[cfg(all(feature = "system_diarize", target_os = "macos"))]
     features.push(TRANSCRIBE_DIARIZE_FEATURE);
