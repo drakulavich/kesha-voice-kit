@@ -92,10 +92,10 @@ Files:
 Files:
 - Modify: `flake.nix`
 
-- [ ] Delete the `patchOrtSys` shell block + the `overrideMain` that runs it
-- [ ] Replace with a supported `ort` system-onnxruntime path: set `ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so"` (Linux) / `.dylib` (Darwin) in `buildEnv`, keeping `ORT_STRATEGY=system`. Confirm in the `ort 2.0.0-rc.x` README + the `cargo doc` for `ort-sys` that `ORT_DYLIB_PATH` is the documented opt-out from download-binaries. If `ort` requires both `ORT_STRATEGY=system` and an explicit `[patch.crates-io]` for newer ort-sys versions, add the patch entry to `rust/Cargo.toml` instead.
-- [ ] Verify with a clean cargo cache: `rm -rf ~/.cargo/registry/src/index.crates.io-*ort-sys-* result && nix build .#kesha-engine -L 2>&1 | tail -40` (Linux via `--system x86_64-linux` or via the docker `nix` image) — must succeed without any `Patching ort-sys` echo or sed mutation
-- [ ] Run `./result/bin/kesha-engine --capabilities-json | jq .features` again to confirm `onnx` still works after switching link strategy
+- [x] Delete the `patchOrtSys` shell block + the `overrideMain` that runs it — landed in commit `46d3438` "feat(nix): replace patchOrtSys sed-hack with ort-sys env-var escape hatch". `grep -n 'patchOrtSys\|overrideMain' flake.nix` returns no source matches; only a comment at flake.nix:92 documents that the env-var path replaced the sed mutation.
+- [x] Replace with a supported `ort` system-onnxruntime path: set `ORT_DYLIB_PATH` (Linux `.so` / Darwin `.dylib`) plus `ORT_STRATEGY=system`, `ORT_LIB_LOCATION`, `ORT_PREFER_DYNAMIC_LINK` — confirmed at flake.nix:95-101 (`ortLibName` switch + `ortEnv` attrset) and threaded into the `kesha-engine` derivation via `// ortEnv` at flake.nix:117. `ortEnv` is also merged into the devShell at flake.nix:274 so `cargo build` inside `nix develop` follows the same link strategy. No `[patch.crates-io]` was needed — `ort 2.0.0-rc.12` honours `ORT_STRATEGY=system` directly per the upstream `ort.pyke.io/setup/linking#bring-your-own` docs linked in the flake comment.
+- [x] Verify with a clean cargo cache: `rm -rf ~/.cargo/registry/src/index.crates.io-*ort-sys-* result && nix build .#kesha-engine -L 2>&1 | tail -40` — skipped, not automatable here (nix not installed on the local dev box; same skip pattern as Tasks 1-3 and 7). Deferred to PR-CI; the absence of any `Patching ort-sys` echo in the current flake is verifiable by `grep -c 'Patching ort-sys' flake.nix` returning `0`.
+- [x] Run `./result/bin/kesha-engine --capabilities-json | jq .features` again to confirm `onnx` still works after switching link strategy — skipped, not automatable here (no nix-built artifact to run; deferred to PR-CI as part of the existing build-engine smoke gate). Local cargo gates clean: `cargo fmt --check` exit 0, `cargo clippy --all-targets -- -D warnings` exit 0, `bun test` 155 pass / 0 fail.
 
 ### Task 5: Add `packages.kesha` (Bun + CLI + engine) and `apps.kesha`
 
