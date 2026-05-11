@@ -1,6 +1,10 @@
 import { dirname, join } from "path";
-import { existsSync, mkdirSync, chmodSync } from "fs";
-import { getEngineBinPath, getEngineCapabilities } from "./engine";
+import { existsSync, mkdirSync, chmodSync, accessSync, constants } from "fs";
+import {
+  getEngineBinPath,
+  getEngineCapabilities,
+  TRANSCRIBE_DIARIZE_FEATURE,
+} from "./engine";
 import { log } from "./log";
 import { streamResponseToFile } from "./progress";
 import {
@@ -151,19 +155,56 @@ export async function downloadEngine(
         : "unknown";
 
   const installedVersion = readInstalledEngineVersion(binPath);
-  const cacheValid =
-    !noCache && existsSync(binPath) && installedVersion === engineVersion;
+  const engineDir = dirname(binPath);
+
+  // Detect a read-only engine directory (e.g., a Nix-store install —
+  // `KESHA_ENGINE_BIN` points into `/nix/store/.../bin/`). Used twice
+  // below: to honor `--no-cache` only when the engine is writable, and
+  // to skip the sidecar top-up that would otherwise emit confusing
+  // "install failed" warnings for paths we physically can't write to.
+  let canWriteEngineDir = true;
+  if (existsSync(engineDir)) {
+    try {
+      accessSync(engineDir, constants.W_OK);
+    } catch {
+      canWriteEngineDir = false;
+    }
+  }
+
+  const versionMatches =
+    existsSync(binPath) && installedVersion === engineVersion;
+  // When the engine sits on a read-only filesystem at the matching
+  // version, `--no-cache` can't re-download it without an EROFS crash
+  // and there's nothing to refresh anyway — treat as cache-valid and
+  // forward `--no-cache` to the model install step below.
+  const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 
   if (cacheValid) {
-    log.success(`Engine binary already installed (v${engineVersion}).`);
+    if (noCache && !canWriteEngineDir) {
+      log.info(
+        `Engine binary at v${engineVersion} is on a read-only filesystem; --no-cache skipped for engine (still forwarded to model installs).`,
+      );
+    } else {
+      log.success(`Engine binary already installed (v${engineVersion}).`);
+    }
     // Top up any sidecars missing from this cached install. Pre-#141 / pre-#199
     // engines never shipped them, so a cache-valid binary may still need
     // fetching. Run independent fetches concurrently — same shape as the
     // cold path below.
-    const missing = SIDECARS.filter(
-      (s) => !existsSync(join(dirname(binPath), s.fileBasename)),
-    );
-    await Promise.all(missing.map((s) => downloadSidecar(s, binPath, engineVersion)));
+    //
+    // Skip the top-up entirely when the engine sits in a read-only
+    // filesystem (e.g., a Nix-store install). Those installs stage the
+    // supported sidecars at build time; writing more is impossible, and
+    // attempting it would emit a confusing "install failed" warning for
+    // a feature the Nix README explicitly documents as unsupported
+    // (diarize on Nix needs network access at build time, which the
+    // sandbox forbids).
+    if (canWriteEngineDir) {
+      const missing = SIDECARS.filter(
+        (s) => !existsSync(join(engineDir, s.fileBasename)),
+      );
+      await Promise.all(missing.map((s) => downloadSidecar(s, binPath, engineVersion)));
+    }
   } else {
     // Log why we're downloading — helps diagnose surprising re-downloads.
     if (existsSync(binPath) && installedVersion && installedVersion !== engineVersion) {
@@ -221,6 +262,25 @@ export async function downloadEngine(
     if (caps && caps.backend !== backend) {
       throw new Error(
         `Requested backend "${backend}" is not available: the installed engine for this platform uses "${caps.backend}".\n  Fix: omit --${backend} to use the auto-detected backend, or run on a platform that ships the "${backend}" build.`,
+      );
+    }
+  }
+
+  // Catch the case where the platform check passed (darwin-arm64) but the
+  // engine itself was built without `system_diarize` — e.g., the Nix build,
+  // which compiles `coreml,tts,system_tts` and intentionally omits diarize
+  // because the FluidAudio CoreML weights need network at build time and the
+  // Nix sandbox forbids it. Without this guard, `kesha-engine install
+  // --diarize` would fail with clap's generic "unexpected argument" error.
+  if (options.diarize) {
+    const caps = await getEngineCapabilities();
+    if (caps && !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
+      throw new Error(
+        "--diarize is not supported by the installed engine: it was built " +
+          "without the 'system_diarize' feature (the Nix build is one such " +
+          "case — see README's Nix Install section).\n" +
+          "  Fix: install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, " +
+          "which ships the diarize-enabled engine on darwin-arm64.",
       );
     }
   }

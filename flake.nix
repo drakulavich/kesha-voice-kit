@@ -120,8 +120,22 @@
           # EROFS-fails against the read-only `/nix/store` path. Pinned to
           # package.json#keshaEngine.version so it matches the version the
           # CLI checks for.
+          #
+          # On darwin-arm64 we also need to stage the `say-avspeech` Swift
+          # sidecar next to the engine. `rust/build.rs` writes it to
+          # `target/.../build/kesha-engine-<hash>/out/say-avspeech`; runtime
+          # lookup (rust/src/tts/avspeech.rs::helper_path) tries sibling-of-exe
+          # first. Without this step, `macos-*` voices fail under Nix because
+          # the build-time `$OUT_DIR` no longer exists at install time.
           postInstall = ''
             echo "${cliPkg.keshaEngine.version}" > $out/bin/kesha-engine.version
+          '' + lib.optionalString (isDarwin && isAarch64) ''
+            sidecar=$(find . -path '*/build/*/out/say-avspeech' -type f 2>/dev/null | head -1)
+            if [ -z "$sidecar" ]; then
+              echo "error: say-avspeech sidecar not found — system_tts may not have compiled" >&2
+              exit 1
+            fi
+            install -Dm755 "$sidecar" "$out/bin/say-avspeech"
           '';
         } // ortEnv // linuxEnv);
 

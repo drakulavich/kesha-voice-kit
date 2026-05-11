@@ -25,7 +25,7 @@ Runtime: **[Bun](https://bun.sh)** >= 1.3.0.
 ```bash
 curl -fsSL https://bun.sh/install | bash   # skip if Bun is already installed
 
-bun install -g @drakulavich/kesha-voice-kit
+bun add -g @drakulavich/kesha-voice-kit
 kesha install       # downloads engine + models
 kesha audio.ogg     # transcript to stdout
 ```
@@ -51,7 +51,7 @@ kesha install       # downloads models
 kesha audio.ogg     # transcript to stdout
 ```
 
-`packages.default` ships the Bun CLI (`kesha`, `parakeet`) wired to the Nix-built engine. After `nix profile install`, both shims are on `PATH` and behave identically to the npm install.
+`packages.default` ships the Bun CLI (`kesha`, `parakeet`) wired to the Nix-built engine. After `nix profile install`, both shims are on `PATH` and run transcription, language detection, and TTS (including `macos-*` AVSpeech voices on darwin-arm64) identically to the npm install. Speaker diarization (`kesha install --diarize` / `--speakers`) is not yet wired into the Nix build — the `kesha-diarize` Swift sidecar needs network-fetched FluidAudio at build time, which the Nix sandbox forbids; use the Bun install path (`bun add -g @drakulavich/kesha-voice-kit`) on darwin-arm64 if you need that feature (tracked alongside [#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
 
 ### Engine only (no Bun, no Node)
 For users who just want the Rust binary:
