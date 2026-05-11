@@ -310,6 +310,8 @@ make release                   # lint + test + smoke-test
 make publish                   # release + npm publish
 ```
 
+Alternate reproducible build path: the repo also ships a Nix flake (`flake.nix`, PR #242 + follow-up #264). Supported systems are `aarch64-darwin` and `x86_64-linux`; `nix build .#kesha-engine` produces the Rust binary, `nix run .#kesha -- <args>` runs the Bun CLI wrapped around the Nix-built engine. The flake is not a CI gate — npm publish and the `make` flow above remain canonical.
+
 ## Project Structure
 
 ```

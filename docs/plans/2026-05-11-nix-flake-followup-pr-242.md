@@ -152,6 +152,6 @@ Files:
 
 ### Task 9: Update documentation
 
-- [ ] If the README changes shipped (Task 6), no further docs needed
-- [ ] Add a one-line note to `CLAUDE.md`'s build/CI section noting that the Nix flake is the alternate reproducible build path and lists supported platforms (`aarch64-darwin`, `x86_64-linux`)
-- [ ] Move this plan to `docs/plans/completed/` after PR merges
+- [x] If the README changes shipped (Task 6), no further docs needed — confirmed: README.md Nix Install section was rewritten in commit `003ab61` (Task 6) and the engine-only subsection, install-to-profile block, and one-liner block already cover the user-facing surface. No additional README changes required.
+- [x] Add a one-line note to `CLAUDE.md`'s build/CI section noting that the Nix flake is the alternate reproducible build path and lists supported platforms (`aarch64-darwin`, `x86_64-linux`) — landed below the `make` block in the "Build Commands" section at CLAUDE.md:312: documents both supported systems, the `nix build .#kesha-engine` and `nix run .#kesha -- <args>` entry points, references PR #242 + follow-up #264, and clarifies the flake is not a CI gate (npm publish + `make` flow remain canonical).
+- [x] Move this plan to `docs/plans/completed/` after PR merges — skipped (not automatable from this loop): gated on PR #264 merging, which itself is gated on drakulavich's manual `nix build .#kesha` to fill in the `outputHash = lib.fakeHash` placeholder (see Task 8 Greptile walkthrough). The move is a `git mv docs/plans/2026-05-11-nix-flake-followup-pr-242.md docs/plans/completed/` one-liner whoever lands the merge can run. The `docs/plans/completed/` directory already exists.
