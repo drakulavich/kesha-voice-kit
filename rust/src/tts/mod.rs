@@ -323,6 +323,9 @@ pub fn synth_segments_kokoro_with(
                     .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
                 out.extend(audio);
             }
+            ssml::Segment::ProsodyRate { .. } => {
+                unimplemented!("Segment::ProsodyRate wiring is T4")
+            }
         }
     }
     if out.is_empty() {
@@ -440,6 +443,9 @@ pub fn synth_segments_vosk_with(
                     .infer(model_dir, &stripped, speaker_id, speed)
                     .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
                 out.extend(audio);
+            }
+            ssml::Segment::ProsodyRate { .. } => {
+                unimplemented!("Segment::ProsodyRate wiring is T4")
             }
         }
     }

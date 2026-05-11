@@ -9,6 +9,9 @@
 //!   omitted; other values warn-strip with the inner text preserved.
 //! - `<emphasis level="...">text</emphasis>` — stress hint; `level="none"` sets
 //!   `suppress=true` (strip `+` markers); all other levels preserve them for Vosk
+//! - `<prosody rate="...">text</prosody>` — speed multiplier; only supported when
+//!   the prosody wraps the entire utterance (immediate child of `<speak>` with no
+//!   other meaningful content). Mid-utterance prosody is warned and stripped.
 //! - plain text inside/between elements — synthesized via G2P
 //! - unknown tags — one stderr warning per name, contained text preserved
 
@@ -42,6 +45,13 @@ pub enum Segment {
     /// markers regardless of voice (SSML composition: a
     /// `<emphasis level="none">` overrides an inherited emphasis).
     Emphasis { content: String, suppress: bool },
+    /// SSML `<prosody rate>` content where the prosody wraps the entire
+    /// utterance (immediate child of `<speak>`, no sibling content). The
+    /// dispatcher multiplies `rate` by the CLI `--rate` and threads the
+    /// result into the per-engine speed knob. Mid-utterance prosody is
+    /// warned+stripped at parse time and never reaches a `ProsodyRate`
+    /// segment.
+    ProsodyRate { rate: f32, content: Vec<Segment> },
 }
 
 /// Default `<break/>` duration when the `time` attribute is omitted.
@@ -51,8 +61,6 @@ const DEFAULT_BREAK: Duration = Duration::from_millis(250);
 /// Parse an SSML `prosody rate` attribute value into a multiplier.
 /// Supports W3C named values, absolute `N%`, and relative `+N%` / `-N%`.
 /// Clamps the result to 0.5..=2.0; returns None on malformed input.
-/// Used by the `Segment::ProsodyRate` dispatcher in task T3.
-#[allow(dead_code)]
 fn parse_rate_value(s: &str) -> Option<f32> {
     let s = s.trim();
     let mult = match s {
@@ -224,6 +232,53 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                 // real user hits it.
                 cursor = span.end;
             }
+            ParsedElement::Prosody(attrs) => {
+                // Whole-utterance detection: the prosody is whole-utterance when
+                // the text outside [span.start, span.end) within the <speak> root
+                // is entirely whitespace. Whitespace-only siblings (leading/trailing
+                // spaces) are acceptable per the spec watch-out in T3.
+                let prefix: String = text[..span.start].iter().collect();
+                let suffix: String = text[span.end..].iter().collect();
+                let is_whole_utterance = prefix.trim().is_empty() && suffix.trim().is_empty();
+
+                if is_whole_utterance {
+                    // Attempt to parse the rate attribute.
+                    let rate_str = attrs.rate.as_ref().map(|r| r.to_string());
+                    let parsed_rate = rate_str.as_deref().and_then(parse_rate_value);
+                    if let Some(rate) = parsed_rate {
+                        // Emit ProsodyRate with the inner content parsed recursively.
+                        // The inner text of the prosody span is text[span.start..span.end].
+                        // Recurse: collect the sub-spans that fall within this prosody's
+                        // range and parse them as a nested segment list.
+                        push_text_slice(&mut segments, &text, cursor, span.start);
+                        let inner_segs =
+                            parse_inner_spans(&spans, &text, span.start, span.end, &mut warned);
+                        segments.push(Segment::ProsodyRate {
+                            rate,
+                            content: inner_segs,
+                        });
+                        cursor = span.end;
+                    } else {
+                        // Whole-utterance but unparseable rate attribute — warn+strip.
+                        if warned.insert("prosody-no-supported-attr".to_string()) {
+                            eprintln!(
+                                "warning: SSML <prosody> without a parseable rate= attribute \
+                                 is not supported (pitch/volume scoped to a follow-up); stripping"
+                            );
+                        }
+                        // Leave cursor unchanged; inner text flows through as Text.
+                    }
+                } else {
+                    // Mid-utterance prosody — warn+strip.
+                    if warned.insert("prosody-mid-utterance".to_string()) {
+                        eprintln!(
+                            "warning: SSML <prosody> mid-utterance is not yet supported \
+                             (whole-utterance only); stripping rate, pitch, and volume"
+                        );
+                    }
+                    // Leave cursor unchanged; inner text falls through as Text.
+                }
+            }
             other => {
                 let name = tag_name(other);
                 if warned.insert(name.clone()) {
@@ -254,7 +309,7 @@ fn span_priority(el: &ParsedElement) -> u8 {
     match el {
         ParsedElement::Phoneme(_) | ParsedElement::SayAs(_) => 0,
         ParsedElement::Break(_) => 1,
-        ParsedElement::Emphasis(_) => 2,
+        ParsedElement::Emphasis(_) | ParsedElement::Prosody(_) => 2,
         ParsedElement::Speak(_) => 3,
         _ => 1,
     }
@@ -268,6 +323,106 @@ fn push_text_slice(out: &mut Vec<Segment>, text: &[char], start: usize, end: usi
     if !chunk.trim().is_empty() {
         out.push(Segment::Text(chunk));
     }
+}
+
+/// Parse the inner content of a whole-utterance `<prosody>` span into segments.
+/// Iterates the sub-spans whose character range falls strictly within
+/// `[prosody_start, prosody_end)`, applying the same rules as the top-level
+/// walker (Break, Phoneme, SayAs, Emphasis). Unknown tags warn+strip. The
+/// outer `warned` set is shared so each warning fires at most once per
+/// document regardless of nesting.
+fn parse_inner_spans(
+    all_spans: &[&ssml_parser::parser::Span],
+    text: &[char],
+    prosody_start: usize,
+    prosody_end: usize,
+    warned: &mut HashSet<String>,
+) -> Vec<Segment> {
+    let mut segments: Vec<Segment> = Vec::new();
+    let mut cursor = prosody_start;
+
+    // Filter to spans that are strictly children of the prosody span
+    // (start >= prosody_start, end <= prosody_end) and are not the prosody
+    // span itself (we skip the Prosody element and the Speak wrapper).
+    for span in all_spans {
+        if span.start < prosody_start || span.end > prosody_end {
+            continue;
+        }
+        if span.start < cursor {
+            continue;
+        }
+        match &span.element {
+            ParsedElement::Speak(_) | ParsedElement::Prosody(_) => {
+                // Skip wrappers — we're already inside them.
+            }
+            ParsedElement::Break(attrs) => {
+                push_text_slice(&mut segments, text, cursor, span.start);
+                let dur = attrs
+                    .time
+                    .as_ref()
+                    .map(|t| t.duration())
+                    .unwrap_or(DEFAULT_BREAK);
+                segments.push(Segment::Break(dur));
+                cursor = span.end;
+            }
+            ParsedElement::Phoneme(attrs) => {
+                let is_ipa = matches!(&attrs.alphabet, None | Some(PhonemeAlphabet::Ipa));
+                if is_ipa {
+                    push_text_slice(&mut segments, text, cursor, span.start);
+                    if !attrs.ph.is_empty() {
+                        segments.push(Segment::Ipa(attrs.ph.clone()));
+                    }
+                    cursor = span.end;
+                } else {
+                    let alpha = match &attrs.alphabet {
+                        Some(PhonemeAlphabet::Other(s)) => s.clone(),
+                        other => format!("{other:?}"),
+                    };
+                    if warned.insert(format!("phoneme[alphabet={alpha}]")) {
+                        eprintln!(
+                            "warning: SSML <phoneme alphabet=\"{alpha}\"> not supported — \
+                             only \"ipa\" is recognised; falling back to G2P on contained text"
+                        );
+                    }
+                }
+            }
+            ParsedElement::SayAs(attrs) => {
+                if attrs.interpret_as == "characters" {
+                    push_text_slice(&mut segments, text, cursor, span.start);
+                    if let Some(inner) = extract_inner_text(text, span.start, span.end) {
+                        segments.push(Segment::Spell(inner));
+                    }
+                    cursor = span.end;
+                } else {
+                    let key = format!("say-as[interpret-as={}]", attrs.interpret_as);
+                    if warned.insert(key) {
+                        eprintln!(
+                            "warning: SSML <say-as interpret-as=\"{}\"> is not supported — \
+                             only \"characters\" is recognised; falling back to plain text",
+                            attrs.interpret_as
+                        );
+                    }
+                }
+            }
+            ParsedElement::Emphasis(attrs) => {
+                push_text_slice(&mut segments, text, cursor, span.start);
+                if let Some(content) = extract_inner_text(text, span.start, span.end) {
+                    let suppress = matches!(attrs.level, Some(EmphasisLevel::None));
+                    segments.push(Segment::Emphasis { content, suppress });
+                }
+                cursor = span.end;
+            }
+            other => {
+                let name = tag_name(other);
+                if warned.insert(name.clone()) {
+                    eprintln!("warning: SSML tag <{name}> is not supported — stripping");
+                }
+            }
+        }
+    }
+    // Trailing text inside the prosody span.
+    push_text_slice(&mut segments, text, cursor, prosody_end);
+    segments
 }
 
 /// Collect the inner text of a structural span and trim whitespace.
@@ -352,6 +507,9 @@ mod tests {
                 Segment::Spell(_) => unreachable!("parser does not emit Spell in this fixture"),
                 Segment::Emphasis { .. } => {
                     unreachable!("parser does not emit Emphasis in this fixture")
+                }
+                Segment::ProsodyRate { .. } => {
+                    unreachable!("parser does not emit ProsodyRate in this fixture")
                 }
                 Segment::Break(d) => {
                     assert_eq!(*d, Duration::from_millis(500));
@@ -764,5 +922,74 @@ mod tests {
         assert_eq!(parse_rate_value("100"), None);
         assert_eq!(parse_rate_value("--50%"), None);
         assert_eq!(parse_rate_value("xx-slow"), None);
+    }
+
+    #[test]
+    fn prosody_whole_utterance_emits_prosody_rate() {
+        let segs = parse(r#"<speak><prosody rate="fast">Hello</prosody></speak>"#).unwrap();
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            Segment::ProsodyRate { rate, content } => {
+                assert!((*rate - 1.25).abs() < 1e-6, "expected 1.25, got {rate}");
+                assert_eq!(content.len(), 1);
+                assert!(matches!(&content[0], Segment::Text(t) if t.contains("Hello")));
+            }
+            other => panic!("expected ProsodyRate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prosody_mid_utterance_warns_and_flattens() {
+        // Surrounding text outside the prosody → not whole-utterance.
+        let segs = parse(r#"<speak>Hi <prosody rate="fast">there</prosody> bye</speak>"#).unwrap();
+        assert!(!segs
+            .iter()
+            .any(|s| matches!(s, Segment::ProsodyRate { .. })));
+        let combined: String = segs
+            .iter()
+            .filter_map(|s| {
+                if let Segment::Text(t) = s {
+                    Some(t.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            combined.contains("Hi"),
+            "missing 'Hi' in flattened text: {combined}"
+        );
+        assert!(
+            combined.contains("there"),
+            "missing 'there' in flattened text: {combined}"
+        );
+        assert!(
+            combined.contains("bye"),
+            "missing 'bye' in flattened text: {combined}"
+        );
+    }
+
+    #[test]
+    fn prosody_whole_utterance_named_values() {
+        for (name, expected) in [
+            ("x-slow", 0.5_f32),
+            ("slow", 0.75),
+            ("medium", 1.0),
+            ("fast", 1.25),
+            ("x-fast", 1.5),
+        ] {
+            let xml = format!(r#"<speak><prosody rate="{name}">Hi</prosody></speak>"#);
+            let segs = parse(&xml).unwrap();
+            match &segs[0] {
+                Segment::ProsodyRate { rate, .. } => {
+                    assert!(
+                        (*rate - expected).abs() < 1e-6,
+                        "rate={name}: got {rate}, expected {expected}"
+                    );
+                }
+                other => panic!("rate={name}: expected ProsodyRate, got {other:?}"),
+            }
+        }
     }
 }
