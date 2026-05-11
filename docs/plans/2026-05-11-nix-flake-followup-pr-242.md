@@ -120,15 +120,15 @@ Files:
 
 ### Task 7: Verify acceptance criteria + open PR
 
-- [ ] `nix flake check 2>&1 | tee /tmp/nix-flake-check-final.txt` — clean
-- [ ] `nix build .#kesha-engine` on darwin-arm64: succeeds, `--capabilities-json` shows `coreml,tts,system_tts`
-- [ ] `nix build .#kesha-engine --system x86_64-linux` (or via remote builder / docker): succeeds, `--capabilities-json` shows `onnx,tts`
-- [ ] `nix run .#kesha -- --version` and `nix run .#kesha -- transcribe rust/tests/fixtures/<short>.wav` both work on darwin-arm64
-- [ ] `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings` clean (no Rust changes expected, but the flake replaces `patchOrtSys` so the build does still need to compile; clippy belt-and-braces)
-- [ ] `bun test && bunx tsc --noEmit` (smoke check — no TS changes expected in this PR)
-- [ ] Open PR against `main` with body sections: Summary, What changed, Verification (paste `nix flake check` + `--capabilities-json` for both platforms), Closes/Refs link to PR #242 follow-ups. Title: `nix: address PR #242 review (macOS Swift, ORT escape hatch, kesha wrapper)`.
-- [ ] Add `Closes #<follow-up-issue>` if drakulavich filed one for the macOS work; otherwise `Refs #242`
-- [ ] Add the `WIP` label per CLAUDE.md, remove after merge
+- [x] (skipped — nix not installed on local dev machine; same constraint as Tasks 1-6) `nix flake check` deferred to PR CI gates on PR #264. The plan-level fallback recipes for each Greptile P1/P2 finding are inlined in Tasks 2-5 completion notes if CI surfaces a regression.
+- [x] (skipped — nix not installed) `nix build .#kesha-engine` on darwin-arm64 deferred to PR CI. Expected feature set per `rustFeatures` (flake.nix L42-44): `coreml,tts,system_tts`.
+- [x] (skipped — nix not installed) `nix build .#kesha-engine --system x86_64-linux` deferred to PR CI. Expected feature set: `onnx,tts`.
+- [x] (skipped — nix not installed) `nix run .#kesha -- --version` / `nix run .#kesha -- transcribe …` deferred to PR CI. Expected `--version` output is `1.13.0` (sourced from `package.json#version`); transcribe routes through the wrapper's `KESHA_ENGINE_BIN`-pinned engine.
+- [x] `cd rust && cargo fmt --check` clean and `cargo clippy --all-targets -- -D warnings` clean — both run from `/Users/anton/Personal/repos/kesha-voice-kit-nix-followup/rust` against the post-Task-6 worktree HEAD (`003ab61`). Clippy exit 0; final line: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 24.81s`.
+- [x] `bun test` — 155 pass / 4 skip / 0 fail (the 4 skips are diarize-feature-gated, not regressions). `bunx tsc --noEmit` — clean. Both run against worktree HEAD `003ab61`.
+- [x] Opened PR #264 against `main` from `feat/nix-flake-followup`. Title: `nix: address PR #242 review (macOS Swift, ORT escape hatch, kesha wrapper)`. Body sections: Summary, What changed (one block per Task 2-6), Verification (local cargo/bun output + deferred nix gates with expected feature sets), Refs. URL: https://github.com/drakulavich/kesha-voice-kit/pull/264.
+- [x] PR body uses `Refs #242` (no follow-up issue was filed for the macOS work — PR #242 itself is the parent thread).
+- [x] Added `WIP` label to PR #264 per CLAUDE.md. Remove after merge (deferred to Task 8 / final merge).
 
 ### Task 8: Re-trigger Greptile + address any new findings
 
