@@ -227,10 +227,13 @@ jobs:
   #
   # macos-14 is Apple Silicon (aarch64-darwin). It exercises the Darwin-
   # only flake paths: Swift toolchain via nixpkgs, the Apple SDK
-  # frameworks input, and the `coreml,tts,system_tts` feature set with
-  # the `say-avspeech` sidecar stage-in inside the engine derivation's
-  # postInstall. nixpkgs-unstable Swift may drift from build-engine.yml's
-  # pinned Xcode 16.2 — this job is where the drift first surfaces.
+  # frameworks input, and the `say-avspeech` Swift sidecar stage-in
+  # inside the engine derivation's postInstall. The lane uses the
+  # `onnx,tts,system_tts` feature set — not `coreml,tts,system_tts` —
+  # because `fluidaudio-rs`'s build.rs invokes `swift build`, which
+  # tries to clone FluidAudio.git inside the offline Nix sandbox.
+  # The canonical darwin release (build-engine.yml, pinned Xcode 16.2)
+  # still ships the CoreML backend.
   nix-build:
     needs: changes
     if: needs.changes.outputs.nix == 'true'
