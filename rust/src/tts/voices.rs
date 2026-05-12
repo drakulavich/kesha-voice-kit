@@ -145,8 +145,8 @@ fn resolve_vosk_ru(
              ru-vosk-f03, ru-vosk-m01, ru-vosk-m02"
         ),
     };
-    let model_dir = cache_dir.join("models/vosk-ru");
-    if !crate::models::is_vosk_ru_cached(&model_dir) {
+    let model_dir = crate::models::model_dir_at(crate::models::ModelKind::VoskRu, cache_dir);
+    if !crate::models::is_cached_in(crate::models::ModelKind::VoskRu, &model_dir) {
         anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
     }
     Ok(ResolvedVoice::Vosk {

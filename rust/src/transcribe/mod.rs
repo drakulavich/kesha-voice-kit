@@ -138,8 +138,10 @@ fn transcribe_inner(
     speakers_required: bool,
 ) -> Result<TranscriptionOutput> {
     let model_dir = ensure_asr_installed()?;
-    let vad_dir = models::vad_model_dir();
-    let vad_installed = models::is_vad_cached(&vad_dir);
+    let vad_dir = models::model_dir(models::ModelKind::Vad)
+        .to_string_lossy()
+        .into_owned();
+    let vad_installed = models::is_cached(models::ModelKind::Vad);
 
     // `Auto` needs a duration probe first. `On`/`Off` are deterministic.
     let duration = match mode {
@@ -240,7 +242,7 @@ fn transcribe_via_vad(
     vad_dir: &str,
     cfg: VadConfig,
 ) -> Result<TranscriptionOutput> {
-    if !models::is_vad_cached(vad_dir) {
+    if !models::is_cached_in(models::ModelKind::Vad, std::path::Path::new(vad_dir)) {
         anyhow::bail!(
             "Error: VAD model not installed\n\n\
              Please run: kesha install --vad"
@@ -431,8 +433,8 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
         );
     }
 
-    let default = crate::models::diarize_model_dir();
-    if crate::models::is_diarize_cached(&default) {
+    let default = crate::models::model_dir(crate::models::ModelKind::Diarize);
+    if crate::models::is_cached(crate::models::ModelKind::Diarize) {
         return Ok(default);
     }
 
@@ -445,14 +447,15 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
 
 /// Returns the cached ASR model dir or bails with the install hint.
 fn ensure_asr_installed() -> Result<String> {
-    let model_dir = models::asr_model_dir();
-    if !models::is_asr_cached(&model_dir) {
+    if !models::is_cached(models::ModelKind::Asr) {
         anyhow::bail!(
             "Error: No transcription models installed\n\n\
              Please run: kesha install"
         );
     }
-    Ok(model_dir)
+    Ok(models::model_dir(models::ModelKind::Asr)
+        .to_string_lossy()
+        .into_owned())
 }
 
 #[cfg(test)]

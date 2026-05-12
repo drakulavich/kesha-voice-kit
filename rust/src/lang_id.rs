@@ -2,7 +2,6 @@ use crate::audio;
 use crate::models;
 use anyhow::{Context, Result};
 use serde::Serialize;
-use std::path::Path;
 
 #[derive(Serialize)]
 pub struct LangDetectResult {
@@ -13,12 +12,11 @@ pub struct LangDetectResult {
 const MAX_SECONDS: f32 = 10.0;
 
 pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
-    let model_dir = models::lang_id_model_dir();
-    if !models::is_lang_id_cached(&model_dir) {
+    if !models::is_cached(models::ModelKind::LangId) {
         anyhow::bail!("Lang-ID model not installed. Run: kesha install");
     }
 
-    let dir = Path::new(&model_dir);
+    let dir = models::model_dir(models::ModelKind::LangId);
 
     // Load ONNX session
     let mut session = ort::session::Session::builder()

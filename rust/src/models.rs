@@ -238,56 +238,91 @@ fn log_mirror_once() {
     });
 }
 
-pub fn asr_model_dir() -> String {
-    cache_dir()
-        .join("models")
-        .join("parakeet-tdt-v3")
-        .to_string_lossy()
-        .to_string()
+/// Kinds of model bundle the engine can install, locate, and check. Adding
+/// a new backend means adding a variant plus a `subdir` arm and (if the
+/// layout isn't flat enough for `has_all_files`) a custom layout helper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelKind {
+    /// Parakeet TDT ONNX ASR weights.
+    Asr,
+    /// SpeechBrain ECAPA-TDNN VoxLingua107 audio lang-id ONNX.
+    LangId,
+    /// Silero VAD v5 ONNX.
+    Vad,
+    /// Vosk-TTS multi-speaker Russian model (model + dictionary + BERT).
+    #[cfg(feature = "tts")]
+    VoskRu,
+    /// FluidAudio Sortformer streaming diarizer (`.mlpackage`).
+    #[cfg(feature = "system_diarize")]
+    Diarize,
 }
 
-pub fn lang_id_model_dir() -> String {
-    cache_dir()
-        .join("models")
-        .join("lang-id-ecapa")
-        .to_string_lossy()
-        .to_string()
+impl ModelKind {
+    /// Cache-relative subdirectory.
+    pub fn subdir(self) -> &'static str {
+        match self {
+            ModelKind::Asr => "models/parakeet-tdt-v3",
+            ModelKind::LangId => "models/lang-id-ecapa",
+            ModelKind::Vad => "models/silero-vad",
+            #[cfg(feature = "tts")]
+            ModelKind::VoskRu => "models/vosk-ru",
+            #[cfg(feature = "system_diarize")]
+            ModelKind::Diarize => "models/diarize/SortformerNvidiaLow_v2.mlpackage",
+        }
+    }
 }
 
-pub fn vad_model_dir() -> String {
-    cache_dir()
-        .join("models")
-        .join("silero-vad")
-        .to_string_lossy()
-        .to_string()
+/// Absolute path to a kind's directory under the active cache (honours
+/// `KESHA_CACHE_DIR`).
+pub fn model_dir(kind: ModelKind) -> PathBuf {
+    model_dir_at(kind, &cache_dir())
 }
 
-/// Path to the cached Sortformer `.mlpackage` directory. The Swift sidecar
-/// (`kesha-diarize`) takes this directory as `argv[1]` and feeds it to
-/// `MLModel.compileModel(at:)`. (#199)
+/// Same as [`model_dir`] but with a caller-supplied cache root — for the
+/// list-voices / resolver paths that already have the root and want to
+/// avoid re-reading the env var.
+pub fn model_dir_at(kind: ModelKind, cache_root: &Path) -> PathBuf {
+    cache_root.join(kind.subdir())
+}
+
+/// True iff `kind`'s required files are present under the active cache.
+pub fn is_cached(kind: ModelKind) -> bool {
+    is_cached_in(kind, &model_dir(kind))
+}
+
+/// True iff `kind`'s required files are present in `dir` — callers that
+/// resolved the directory themselves (e.g. from a function-supplied cache
+/// root) use this instead of [`is_cached`] so the cache root parameter
+/// stays single-source.
+pub fn is_cached_in(kind: ModelKind, dir: &Path) -> bool {
+    match kind {
+        ModelKind::Asr => has_all_files(dir, ASR_FILES),
+        ModelKind::LangId => has_all_files(dir, LANG_ID_FILES),
+        ModelKind::Vad => has_all_files(dir, VAD_FILES),
+        #[cfg(feature = "tts")]
+        ModelKind::VoskRu => has_vosk_ru_layout(dir),
+        #[cfg(feature = "system_diarize")]
+        ModelKind::Diarize => has_diarize_layout(dir),
+    }
+}
+
+/// `vosk_tts::Model::new` opens these three files — keep this layout check
+/// aligned with the loader. `has_all_files` flattens the manifest to basenames,
+/// which would treat the top-level `model.onnx` and `bert/model.onnx` as
+/// duplicates; this custom walk handles the nested path instead.
+#[cfg(feature = "tts")]
+fn has_vosk_ru_layout(dir: &Path) -> bool {
+    dir.join("model.onnx").exists()
+        && dir.join("dictionary").exists()
+        && dir.join("bert/model.onnx").exists()
+}
+
+/// `.mlpackage` is a directory tree — the runtime-required files live at
+/// nested paths under `Data/com.apple.CoreML/`. Same basename-flattening
+/// problem as the Vosk layout above (two `*-weight.bin` siblings under
+/// different `weights/` subdirs), so we walk each path explicitly. (#199)
 #[cfg(feature = "system_diarize")]
-pub fn diarize_model_dir() -> PathBuf {
-    cache_dir().join("models/diarize/SortformerNvidiaLow_v2.mlpackage")
-}
-
-pub fn is_asr_cached(dir: &str) -> bool {
-    has_all_files(dir, ASR_FILES)
-}
-
-pub fn is_lang_id_cached(dir: &str) -> bool {
-    has_all_files(dir, LANG_ID_FILES)
-}
-
-pub fn is_vad_cached(dir: &str) -> bool {
-    has_all_files(dir, VAD_FILES)
-}
-
-/// True iff the Sortformer `.mlpackage` has every runtime-required file.
-/// `has_all_files` flattens to basenames; `.mlpackage` is a directory tree
-/// with two `*-weight.bin` siblings under nested paths, so we check
-/// each canonical relative path explicitly. (#199)
-#[cfg(feature = "system_diarize")]
-pub fn is_diarize_cached(dir: &Path) -> bool {
+fn has_diarize_layout(dir: &Path) -> bool {
     dir.join("Manifest.json").exists()
         && dir.join("Data/com.apple.CoreML/model.mlmodel").exists()
         && dir
@@ -298,30 +333,12 @@ pub fn is_diarize_cached(dir: &Path) -> bool {
             .exists()
 }
 
-/// Default Vosk-ru model directory under the active cache. Test-only —
-/// production callers (resolver, list-voices) build the path from the
-/// caller-supplied `cache_dir` so they honour `tempfile::tempdir()` test
-/// fixtures and explicit `KESHA_CACHE_DIR` overrides.
-#[cfg(all(feature = "tts", test))]
-pub fn vosk_ru_model_dir() -> PathBuf {
-    cache_dir().join("models/vosk-ru")
-}
-
-/// True iff the Vosk-ru install has the runtime-required files. Mirror what
-/// `vosk_tts::Model::new` actually opens — keep these gates aligned.
-#[cfg(feature = "tts")]
-pub fn is_vosk_ru_cached(dir: &Path) -> bool {
-    dir.join("model.onnx").exists()
-        && dir.join("dictionary").exists()
-        && dir.join("bert/model.onnx").exists()
-}
-
-/// Caller passes the per-model dir (e.g. `asr_model_dir()`); we pull the
-/// basename out of each manifest entry's cache-relative `rel_path` and
-/// check it's present. Keeps the public `dir`-based API while letting the
-/// manifest own the full URL + hash for the download path.
-fn has_all_files(dir: &str, files: &[ModelFile]) -> bool {
-    let dir = Path::new(dir);
+/// Caller passes the per-model dir (typically [`model_dir`] /
+/// [`model_dir_at`]); we pull the basename out of each manifest entry's
+/// cache-relative `rel_path` and check it's present. Keeps the per-kind
+/// layout check simple while letting the manifest own the full URL + hash
+/// for the download path.
+fn has_all_files(dir: &Path, files: &[ModelFile]) -> bool {
     files.iter().all(|f| {
         Path::new(f.rel_path)
             .file_name()

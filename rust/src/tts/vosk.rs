@@ -76,8 +76,8 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_speaker() {
-        let dir = crate::models::vosk_ru_model_dir();
-        if !crate::models::is_vosk_ru_cached(&dir) {
+        let dir = crate::models::model_dir(crate::models::ModelKind::VoskRu);
+        if !crate::models::is_cached(crate::models::ModelKind::VoskRu) {
             eprintln!(
                 "vosk model not cached at {} — skipping speaker_id range test",
                 dir.display()
@@ -93,8 +93,8 @@ mod tests {
     /// produces non-trivial PCM and uses the model-reported sample rate.
     #[test]
     fn synth_short_phrase_produces_audio() {
-        let dir = crate::models::vosk_ru_model_dir();
-        if !crate::models::is_vosk_ru_cached(&dir) {
+        let dir = crate::models::model_dir(crate::models::ModelKind::VoskRu);
+        if !crate::models::is_cached(crate::models::ModelKind::VoskRu) {
             eprintln!(
                 "vosk model not cached at {} — skipping synth e2e test",
                 dir.display()
