@@ -39,8 +39,18 @@
 
         # Rust features per platform
         # Note: --no-default-features disables download-binaries from ort/ort-sys
+        #
+        # darwin-arm64 deliberately uses `onnx` rather than `coreml`. The
+        # `coreml` feature pulls in `fluidaudio-rs`, whose build script
+        # invokes `swift build` against a Package.swift that depends on
+        # `github.com/FluidInference/FluidAudio.git`. Nix derivations run in
+        # a sandboxed, offline environment, so the SwiftPM clone fails. The
+        # canonical darwin release (`build-engine.yml`, pinned Xcode 16.2)
+        # still ships the CoreML backend; this flake lane validates the
+        # ONNX path + Swift toolchain + Apple SDK frameworks + the
+        # `say-avspeech` sidecar postInstall on darwin.
         rustFeatures = if isDarwin && isAarch64
-          then "coreml,tts,system_tts"
+          then "onnx,tts,system_tts"
           else "onnx,tts";
 
         # Build-time dependencies (tools needed to compile).
@@ -54,7 +64,16 @@
           pkg-config
           cmake
           makeWrapper
-        ] ++ lib.optionals isDarwin [ pkgs.swift ];
+        ] ++ lib.optionals isDarwin [
+          # `swift` is the compiler (swiftc); `swiftpm` is the package manager
+          # that exposes `swift build` / `swift run` / `swift test`. They live
+          # in separate nixpkgs derivations — including only `swift` leaves
+          # the swift wrapper failing at `exec: swift-build: not found` when
+          # fluidaudio-rs's build.rs shells out to `swift build` to compile
+          # its FluidAudioBridge Swift package.
+          pkgs.swift
+          pkgs.swiftpm
+        ];
 
         # Runtime / link-time dependencies. `protobuf` is in `nativeBuildInputs`.
         buildInputs = with pkgs; [
@@ -66,9 +85,13 @@
           onnxruntime
           abseil-cpp
         ]) ++ lib.optionals isDarwin (with pkgs; [
-          darwin.apple_sdk.frameworks.AVFoundation
-          darwin.apple_sdk.frameworks.CoreML
-          darwin.apple_sdk.frameworks.Foundation
+          # The legacy `darwin.apple_sdk.frameworks.{AVFoundation,CoreML,Foundation}`
+          # stubs were removed from nixpkgs (apple_sdk_11_0 → apple-sdk migration).
+          # The modern `apple-sdk` package is the umbrella that exposes every
+          # framework the system SDK ships — fluidaudio-rs's `-framework CoreML`
+          # / `-framework AVFoundation` link directives resolve through it.
+          # Docs: https://nixos.org/manual/nixpkgs/stable/#sec-darwin-legacy-frameworks
+          apple-sdk
         ]);
 
         # Environment variables for build - passed directly to mkDerivation.
@@ -106,6 +129,18 @@
           RUSTFLAGS = "-L native=${pkgs.onnxruntime}/lib -L native=${pkgs.protobuf}/lib -L native=${pkgs.abseil-cpp}/lib -l onnxruntime -l protobuf -l absl_base -l absl_log_internal_check_op -l absl_log_internal_conditions -l absl_log_internal_message -l absl_log_internal_nullguard -l absl_examine_stack -l absl_log_internal_format -l absl_log_internal_structured_proto -l absl_log_internal_log_sink_set -l absl_log_sink -l absl_log_entry -l absl_log_internal_proto -l absl_flags_internal -l absl_flags_marshalling -l absl_flags_reflection -l absl_flags_config -l absl_flags_program_name -l absl_flags_private_handle_accessor -l absl_statusor -l absl_log_initialize -l absl_die_if_null";
         };
 
+        # darwin-specific link flags. nixpkgs auto-patches ELF RPATH on
+        # Linux via fixupPhase but the macOS equivalent only rewrites
+        # existing absolute install names, it does NOT add LC_RPATH
+        # entries. With ORT_PREFER_DYNAMIC_LINK=1, ort embeds
+        # `@rpath/libonnxruntime.<ver>.dylib` as the dylib load command,
+        # which dyld then fails to resolve at runtime. Pass an explicit
+        # `-rpath` linker arg so the binary carries an LC_RPATH pointing
+        # at the nixpkgs onnxruntime store path.
+        darwinEnv = lib.optionalAttrs isDarwin {
+          RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.onnxruntime}/lib";
+        };
+
         # Naersk build for kesha-engine
         kesha-engine = naersk'.buildPackage ({
           src = ./rust;
@@ -137,7 +172,7 @@
             fi
             install -Dm755 "$sidecar" "$out/bin/say-avspeech"
           '';
-        } // ortEnv // linuxEnv);
+        } // ortEnv // linuxEnv // darwinEnv);
 
         # Read CLI version from package.json so the package version stays in
         # lockstep with npm publishes (CLI version, not keshaEngine.version —
@@ -297,6 +332,7 @@
             ''}
             ${lib.optionalString isDarwin ''
               export MACOSX_DEPLOYMENT_TARGET="14.0"
+              export RUSTFLAGS="${darwinEnv.RUSTFLAGS}"
             ''}
           '';
         } // ortEnv);

@@ -224,11 +224,25 @@ jobs:
   # `.#kesha` uses a fixed-output derivation whose `outputHash` requires
   # a nix-equipped developer to populate (see flake.nix `keshaNodeModules`
   # block + #264 plan T5); CI without that hash can't build it.
+  #
+  # macos-14 is Apple Silicon (aarch64-darwin). It exercises the Darwin-
+  # only flake paths: Swift toolchain via nixpkgs, the Apple SDK
+  # frameworks input, and the `say-avspeech` Swift sidecar stage-in
+  # inside the engine derivation's postInstall. The lane uses the
+  # `onnx,tts,system_tts` feature set — not `coreml,tts,system_tts` —
+  # because `fluidaudio-rs`'s build.rs invokes `swift build`, which
+  # tries to clone FluidAudio.git inside the offline Nix sandbox.
+  # The canonical darwin release (build-engine.yml, pinned Xcode 16.2)
+  # still ships the CoreML backend.
   nix-build:
     needs: changes
     if: needs.changes.outputs.nix == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v6
@@ -236,8 +250,10 @@ jobs:
       - name: ❄️  Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
 
-      - name: 💾 Setup Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v13
+      # No remote Nix cache: DeterminateSystems retired the free
+      # `magic-nix-cache-action` backend (the macos-14 row of this job hung
+      # in `Setup Nix cache` for the full 35-min timeout). FlakeHub Cache
+      # works but requires auth; revisit if cold builds become painful.
 
       - name: 🔍 Validate flake metadata
         run: nix flake metadata --no-update-lock-file
