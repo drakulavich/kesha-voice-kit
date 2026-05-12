@@ -226,7 +226,8 @@ fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
     // Vosk-TTS Russian is a single multi-speaker model — once installed, all
     // five baked-in speakers are available. Same gate as resolve_vosk_ru, so
     // partial installs don't advertise voices that fail at synthesis time.
-    if !models::is_vosk_ru_cached(&cache.join("models/vosk-ru")) {
+    let dir = models::model_dir_at(models::ModelKind::VoskRu, cache);
+    if !models::is_cached_in(models::ModelKind::VoskRu, &dir) {
         return Vec::new();
     }
     vec![
