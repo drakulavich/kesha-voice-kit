@@ -66,19 +66,10 @@ jobs:
         shell: pwsh
         run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
 
-      - name: Cache Kokoro spike models
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v5-${{ runner.os }}
-
-      - name: Download Kokoro model (if cache miss)
-        shell: bash
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
-
-      - name: Run tests (with real Kokoro)
-        shell: bash
-        run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "${{ runner.os }}"
+      # Fail-fast ladder: cheap-to-fail checks first so a typo in fmt
+      # doesn't burn 30 minutes of cargo test before surfacing. fmt
+      # (~5s) → clippy (~30s on warm cache) → coreml check (~5min) →
+      # Kokoro model download + cargo test (~10-30min).
 
       - name: Check formatting
         if: matrix.os == 'ubuntu-latest'
@@ -93,3 +84,17 @@ jobs:
       - name: Check coreml feature
         if: matrix.os == 'macos-14'
         run: cd rust && cargo check --features coreml --no-default-features
+
+      - name: Cache Kokoro spike models
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.KOKORO_CACHE }}
+          key: kokoro-spike-v5-${{ runner.os }}
+
+      - name: Download Kokoro model (if cache miss)
+        shell: bash
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+
+      - name: Run tests (with real Kokoro)
+        shell: bash
+        run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "${{ runner.os }}"
