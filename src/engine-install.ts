@@ -274,7 +274,11 @@ export async function downloadEngine(
   // --diarize` would fail with clap's generic "unexpected argument" error.
   if (options.diarize) {
     const caps = await getEngineCapabilities();
-    if (caps && !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
+    // Treat null (pre-capabilities-JSON engine, or capability probe failed)
+    // the same as an engine that advertised features but omitted ours —
+    // forwarding `--diarize` to a binary that doesn't understand it would
+    // surface as clap's generic "unexpected argument" error.
+    if (!caps || !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
       throw new Error(
         "--diarize is not supported by the installed engine: it was built " +
           "without the 'system_diarize' feature (the Nix build is one such " +
