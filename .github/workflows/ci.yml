@@ -247,8 +247,10 @@ jobs:
       - name: ❄️  Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
 
-      - name: 💾 Setup Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v13
+      # No remote Nix cache: DeterminateSystems retired the free
+      # `magic-nix-cache-action` backend (the macos-14 row of this job hung
+      # in `Setup Nix cache` for the full 35-min timeout). FlakeHub Cache
+      # works but requires auth; revisit if cold builds become painful.
 
       - name: 🔍 Validate flake metadata
         run: nix flake metadata --no-update-lock-file
