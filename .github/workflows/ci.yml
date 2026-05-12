@@ -137,8 +137,16 @@ jobs:
           retention-days: 7
 
   tts-e2e:
-    needs: changes
-    if: needs.changes.outputs.integration == 'true'
+    # Job-level fail-fast: tts-e2e burns ~15-20 min on `cargo build
+    # --release` + the e2e tests. Gate it on `unit-tests` so a typo
+    # caught by `tsc --noEmit` (10 s into unit-tests) cancels the slow
+    # job instead of running it to completion. `unit-tests` is skipped
+    # for rust-only PRs (code filter false); the explicit
+    # `result == 'skipped'` allowance keeps tts-e2e running in that case.
+    needs: [changes, unit-tests]
+    if: |
+      needs.changes.outputs.integration == 'true' &&
+      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped')
     runs-on: macos-latest
     timeout-minutes: 20
     env:
