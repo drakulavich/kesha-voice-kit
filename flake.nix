@@ -66,9 +66,13 @@
           onnxruntime
           abseil-cpp
         ]) ++ lib.optionals isDarwin (with pkgs; [
-          darwin.apple_sdk.frameworks.AVFoundation
-          darwin.apple_sdk.frameworks.CoreML
-          darwin.apple_sdk.frameworks.Foundation
+          # The legacy `darwin.apple_sdk.frameworks.{AVFoundation,CoreML,Foundation}`
+          # stubs were removed from nixpkgs (apple_sdk_11_0 → apple-sdk migration).
+          # The modern `apple-sdk` package is the umbrella that exposes every
+          # framework the system SDK ships — fluidaudio-rs's `-framework CoreML`
+          # / `-framework AVFoundation` link directives resolve through it.
+          # Docs: https://nixos.org/manual/nixpkgs/stable/#sec-darwin-legacy-frameworks
+          apple-sdk
         ]);
 
         # Environment variables for build - passed directly to mkDerivation.
