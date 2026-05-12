@@ -129,6 +129,18 @@
           RUSTFLAGS = "-L native=${pkgs.onnxruntime}/lib -L native=${pkgs.protobuf}/lib -L native=${pkgs.abseil-cpp}/lib -l onnxruntime -l protobuf -l absl_base -l absl_log_internal_check_op -l absl_log_internal_conditions -l absl_log_internal_message -l absl_log_internal_nullguard -l absl_examine_stack -l absl_log_internal_format -l absl_log_internal_structured_proto -l absl_log_internal_log_sink_set -l absl_log_sink -l absl_log_entry -l absl_log_internal_proto -l absl_flags_internal -l absl_flags_marshalling -l absl_flags_reflection -l absl_flags_config -l absl_flags_program_name -l absl_flags_private_handle_accessor -l absl_statusor -l absl_log_initialize -l absl_die_if_null";
         };
 
+        # darwin-specific link flags. nixpkgs auto-patches ELF RPATH on
+        # Linux via fixupPhase but the macOS equivalent only rewrites
+        # existing absolute install names, it does NOT add LC_RPATH
+        # entries. With ORT_PREFER_DYNAMIC_LINK=1, ort embeds
+        # `@rpath/libonnxruntime.<ver>.dylib` as the dylib load command,
+        # which dyld then fails to resolve at runtime. Pass an explicit
+        # `-rpath` linker arg so the binary carries an LC_RPATH pointing
+        # at the nixpkgs onnxruntime store path.
+        darwinEnv = lib.optionalAttrs isDarwin {
+          RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.onnxruntime}/lib";
+        };
+
         # Naersk build for kesha-engine
         kesha-engine = naersk'.buildPackage ({
           src = ./rust;
@@ -160,7 +172,7 @@
             fi
             install -Dm755 "$sidecar" "$out/bin/say-avspeech"
           '';
-        } // ortEnv // linuxEnv);
+        } // ortEnv // linuxEnv // darwinEnv);
 
         # Read CLI version from package.json so the package version stays in
         # lockstep with npm publishes (CLI version, not keshaEngine.version —
@@ -320,6 +332,7 @@
             ''}
             ${lib.optionalString isDarwin ''
               export MACOSX_DEPLOYMENT_TARGET="14.0"
+              export RUSTFLAGS="${darwinEnv.RUSTFLAGS}"
             ''}
           '';
         } // ortEnv);
