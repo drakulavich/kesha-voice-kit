@@ -20,9 +20,17 @@
           inherit system overlays;
         };
 
-        naersk' = pkgs.callPackage naersk {};
-
         inherit (pkgs) lib;
+
+        # Get Rust toolchain from rust-overlay (declared early so naersk can pick it up)
+        rustToolchain = pkgs.rust-bin.stable.latest.default;
+
+        # Wire the pinned rust-overlay toolchain into naersk so the package build
+        # and the dev shell agree on rustc / cargo.
+        naersk' = pkgs.callPackage naersk {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
 
         # Platform detection
         isLinux = lib.hasSuffix "linux" system;
@@ -35,16 +43,20 @@
           then "coreml,tts,system_tts"
           else "onnx,tts";
 
-        # Build-time dependencies (tools needed to compile)
+        # Build-time dependencies (tools needed to compile).
+        # `swift` drives `rust/build.rs` for the `system_tts` feature on
+        # darwin and is a build-host toolchain, so it stays here. Apple SDK
+        # frameworks are link-time inputs and live in `buildInputs` below,
+        # where the nixpkgs Darwin linker hook picks them up via `-F`.
         nativeBuildInputs = with pkgs; [
           protobuf
           llvmPackages.libclang
           pkg-config
           cmake
           makeWrapper
-        ];
+        ] ++ lib.optionals isDarwin [ pkgs.swift ];
 
-        # Runtime dependencies (libraries to link against)
+        # Runtime / link-time dependencies. `protobuf` is in `nativeBuildInputs`.
         buildInputs = with pkgs; [
           openssl
           opus
@@ -52,14 +64,17 @@
           clang
           llvmPackages.llvm
           onnxruntime
-          protobuf
           abseil-cpp
+        ]) ++ lib.optionals isDarwin (with pkgs; [
+          darwin.apple_sdk.frameworks.AVFoundation
+          darwin.apple_sdk.frameworks.CoreML
+          darwin.apple_sdk.frameworks.Foundation
         ]);
 
-        darwinBuildInputs = with pkgs; [
-        ];
-
-        # Environment variables for build - passed directly to mkDerivation
+        # Environment variables for build - passed directly to mkDerivation.
+        # MACOSX_DEPLOYMENT_TARGET=14.0 mirrors build-engine.yml so the
+        # `-Wl,-rpath,/usr/lib/swift` rpath fix-up in rust/build.rs lines up
+        # with the runner SDK; harmless on Linux (ignored by ld).
         buildEnv = {
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           PROTOC = "${pkgs.protobuf}/bin/protoc";
@@ -67,82 +82,210 @@
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
           SYS_OPUS = "1";
           CMAKE_POLICY_VERSION_MINIMUM = "3.5";
+          MACOSX_DEPLOYMENT_TARGET = "14.0";
         };
 
-        # Linux-specific env vars for onnxruntime
-        linuxEnv = lib.optionalAttrs isLinux {
-          ORT_STRATEGY = "system";
-          ORT_LIB_LOCATION = "${pkgs.onnxruntime}/lib";
-          ORT_PREFER_DYNAMIC_LINK = "1";
-          RUSTFLAGS = "-L native=${pkgs.onnxruntime}/lib -L native=${pkgs.protobuf}/lib -L native=${pkgs.abseil-cpp}/lib -l onnxruntime -l protobuf -l absl_base -l absl_log_internal_check_op -l absl_log_internal_conditions -l absl_log_internal_message -l absl_log_internal_nullguard -l absl_examine_stack -l absl_log_internal_format -l absl_log_internal_structured_proto -l absl_log_internal_log_sink_set -l absl_log_sink -l absl_log_entry -l absl_log_internal_proto -l absl_flags_internal -l absl_flags_marshalling -l absl_flags_reflection -l absl_flags_config -l absl_flags_program_name -l absl_flags_private_handle_accessor -l absl_statusor -l absl_log_initialize -l absl_die_if_null";
-        };
-
-        # Get Rust toolchain from rust-overlay
-        rustToolchain = pkgs.rust-bin.stable.latest.default;
-
-        # Environment for ort-sys to use system onnxruntime
-        # Need to set these BEFORE cargo runs
+        # ort 2.0.0-rc.12 sandboxed-build escape hatch.
+        # ORT_STRATEGY=system tells ort-sys/build.rs to skip its
+        # download-binaries path and link against the system onnxruntime at
+        # ORT_LIB_LOCATION; ORT_DYLIB_PATH points the load-dynamic loader at
+        # the same file at runtime. This replaces the previous sed-based
+        # patch that mutated ort-sys's Cargo.toml inside the build sandbox.
+        # Docs: https://ort.pyke.io/setup/linking#bring-your-own
+        ortLibName = if isDarwin then "libonnxruntime.dylib" else "libonnxruntime.so";
         ortEnv = {
           ORT_STRATEGY = "system";
           ORT_LIB_LOCATION = "${pkgs.onnxruntime}/lib";
+          ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/${ortLibName}";
           ORT_PREFER_DYNAMIC_LINK = "1";
-          ORT_SKIP_DOWNLOAD = "1";
         };
 
-        # Patch ort-sys source to use system onnxruntime
-        # This runs before cargo, so we modify Cargo.toml to disable download-binaries
-        patchOrtSys = ''
-          echo "Patching ort-sys to use system onnxruntime..."
-
-          # Find and patch ort-sys Cargo.toml to disable download-binaries feature
-          find . -path "*/ort-sys*/Cargo.toml" -exec sh -c '
-            file="$1"
-            if grep -q "download-binaries" "$file"; then
-              # Comment out or remove the download-binaries feature
-              sed -i "s/\"download-binaries\"/\"/g" "$file"
-              echo "Patched $file to disable download-binaries"
-            fi
-          ' _ {} \; 2>/dev/null || true
-
-          # Also patch build.rs to skip the link check that tries to download
-          find . -path "*/ort-sys*/build.rs" -exec sed -i 's/.*ort-sys could not link.*/eprintln!("Skipping ort-sys link check in Nix"); return;/' {} \; 2>/dev/null || true
-
-          echo "Done patching ort-sys"
-        '';
+        # Linux-specific link flags. RUSTFLAGS adds the abseil deps the
+        # nixpkgs-shipped onnxruntime needs but doesn't expose via pkg-config.
+        linuxEnv = lib.optionalAttrs isLinux {
+          RUSTFLAGS = "-L native=${pkgs.onnxruntime}/lib -L native=${pkgs.protobuf}/lib -L native=${pkgs.abseil-cpp}/lib -l onnxruntime -l protobuf -l absl_base -l absl_log_internal_check_op -l absl_log_internal_conditions -l absl_log_internal_message -l absl_log_internal_nullguard -l absl_examine_stack -l absl_log_internal_format -l absl_log_internal_structured_proto -l absl_log_internal_log_sink_set -l absl_log_sink -l absl_log_entry -l absl_log_internal_proto -l absl_flags_internal -l absl_flags_marshalling -l absl_flags_reflection -l absl_flags_config -l absl_flags_program_name -l absl_flags_private_handle_accessor -l absl_statusor -l absl_log_initialize -l absl_die_if_null";
+        };
 
         # Naersk build for kesha-engine
-        kesha-engine = naersk'.buildPackage {
+        kesha-engine = naersk'.buildPackage ({
           src = ./rust;
           root = ./rust;
-          inherit (buildEnv) LIBCLANG_PATH PROTOC OPENSSL_LIB_DIR OPENSSL_INCLUDE_DIR SYS_OPUS CMAKE_POLICY_VERSION_MINIMUM;
+          inherit (buildEnv) LIBCLANG_PATH PROTOC OPENSSL_LIB_DIR OPENSSL_INCLUDE_DIR SYS_OPUS CMAKE_POLICY_VERSION_MINIMUM MACOSX_DEPLOYMENT_TARGET;
           inherit nativeBuildInputs buildInputs;
           cargoBuildOptions = old: old ++ [ "--features" rustFeatures "--no-default-features" ];
           cargoTestOptions = old: old ++ [ "--features" rustFeatures "--no-default-features" ];
-          overrideMain = old: old // {
-            preBuild = patchOrtSys;
-          };
-          # Set env vars before cargo runs (affects dependency builds too)
-          preConfigure = ''
-            export ORT_STRATEGY="system"
-            export ORT_LIB_LOCATION="${pkgs.onnxruntime}/lib"
-            export ORT_PREFER_DYNAMIC_LINK="1"
-            export ORT_SKIP_DOWNLOAD="1"
+          # Write the version marker `src/engine-version-marker.ts` reads. Without
+          # it the TS CLI treats the Nix-built engine as version-unknown,
+          # falls into the re-download branch of `downloadEngine`, and
+          # EROFS-fails against the read-only `/nix/store` path. Pinned to
+          # package.json#keshaEngine.version so it matches the version the
+          # CLI checks for.
+          #
+          # On darwin-arm64 we also need to stage the `say-avspeech` Swift
+          # sidecar next to the engine. `rust/build.rs` writes it to
+          # `target/.../build/kesha-engine-<hash>/out/say-avspeech`; runtime
+          # lookup (rust/src/tts/avspeech.rs::helper_path) tries sibling-of-exe
+          # first. Without this step, `macos-*` voices fail under Nix because
+          # the build-time `$OUT_DIR` no longer exists at install time.
+          postInstall = ''
+            echo "${cliPkg.keshaEngine.version}" > $out/bin/kesha-engine.version
+          '' + lib.optionalString (isDarwin && isAarch64) ''
+            sidecar=$(find . -path '*/build/*/out/say-avspeech' -type f 2>/dev/null | head -1)
+            if [ -z "$sidecar" ]; then
+              echo "error: say-avspeech sidecar not found — system_tts may not have compiled" >&2
+              exit 1
+            fi
+            install -Dm755 "$sidecar" "$out/bin/say-avspeech"
           '';
-        } // (if isLinux then linuxEnv else {});
+        } // ortEnv // linuxEnv);
+
+        # Read CLI version from package.json so the package version stays in
+        # lockstep with npm publishes (CLI version, not keshaEngine.version —
+        # the engine is shipped via `kesha-engine` above which has its own
+        # rust/Cargo.toml version).
+        cliPkg = lib.importJSON ./package.json;
+
+        # Bun's production dependency closure for the CLI. This is a
+        # fixed-output derivation: Nix's sandbox blocks network access, but
+        # FODs are allowed to fetch as long as `outputHash` matches the
+        # resulting tree.
+        #
+        # ⚠ KNOWN BROKEN AT MERGE TIME: `outputHash = lib.fakeHash` below is the
+        # canonical Nix placeholder ("tell me the real hash") — it WILL fail
+        # `nix build .#kesha` with a hash-mismatch error every time until a
+        # developer with `nix` installed populates the real value. This is
+        # intentional: the dev workflow is
+        #
+        #   nix build .#kesha 2>&1 | grep -A1 'hash mismatch'
+        #
+        # then paste the `got:` value into `outputHash` below. PR #242 spec
+        # explicitly deferred `nix build` verification to a nix-equipped
+        # reviewer; CI without nix can't populate the hash either. `bun2nix`
+        # would eliminate this manual step; left as a follow-up (tracked in
+        # the PR body) since nixpkgs-unstable doesn't ship it yet.
+        #
+        # Until populated, `packages.default`, `apps.default`, and the
+        # README's `nix run` / `nix profile install` snippets all fail with
+        # the hash-mismatch error. Greptile flags this as P1 on every review;
+        # the answer is "yes, fix at merge".
+        keshaNodeModules = pkgs.stdenv.mkDerivation {
+          pname = "kesha-node-modules";
+          version = cliPkg.version;
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./package.json
+              ./bun.lock
+              ./scripts/postinstall.cjs
+            ];
+          };
+          nativeBuildInputs = with pkgs; [ bun cacert nodejs ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            export HOME=$TMPDIR
+            # --frozen-lockfile pins to bun.lock; --production drops devDeps;
+            # --ignore-scripts skips the package.json postinstall (which is a
+            # PATH-probe warning for end users, irrelevant inside the
+            # sandbox).
+            bun install --frozen-lockfile --production --ignore-scripts --no-progress
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mv node_modules $out
+            runHook postInstall
+          '';
+          outputHash = lib.fakeHash;
+          outputHashMode = "recursive";
+        };
+
+        # Bun-based `kesha` CLI bundle. Bun executes TypeScript directly so
+        # there is no transpile step — we just stage the source tree and
+        # makeWrapper a shim that locks `KESHA_ENGINE_BIN` to the flake-built
+        # Rust engine. `parakeet` is exposed as a backward-compatible alias.
+        #
+        # `kesha install` reads the engine version marker written by the
+        # `kesha-engine` derivation's postInstall and short-circuits the
+        # binary download, going straight to model fetches under
+        # `~/.cache/kesha/models/`.
+        kesha = pkgs.stdenv.mkDerivation {
+          pname = "kesha";
+          version = cliPkg.version;
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./bin
+              ./src
+              ./package.json
+              ./tsconfig.json
+              ./openclaw.plugin.json
+              ./openclaw-plugin.cjs
+              ./SKILL.md
+              ./LICENSE
+              ./NOTICES.md
+              ./scripts/postinstall.cjs
+            ];
+          };
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          dontBuild = true;
+          installPhase = ''
+            runHook preInstall
+
+            mkdir -p $out/lib/kesha $out/bin
+            cp -r bin src scripts package.json tsconfig.json \
+                  openclaw-plugin.cjs openclaw.plugin.json SKILL.md LICENSE NOTICES.md \
+                  $out/lib/kesha/
+            ln -s ${keshaNodeModules} $out/lib/kesha/node_modules
+
+            # bin/kesha.js has a `#!/usr/bin/env bun` shebang and imports
+            # ../src/cli.ts directly — Bun resolves the TS at runtime.
+            # makeWrapper sets PATH so the shebang's `env bun` resolves to
+            # the Nix-built Bun, and pins KESHA_ENGINE_BIN to the flake's
+            # engine output so the CLI never falls back to the
+            # ~/.cache/kesha download path.
+            chmod +x $out/lib/kesha/bin/kesha.js
+            for shim in kesha parakeet; do
+              makeWrapper $out/lib/kesha/bin/kesha.js $out/bin/$shim \
+                --prefix PATH : ${lib.makeBinPath [ pkgs.bun ]} \
+                --set KESHA_ENGINE_BIN ${kesha-engine}/bin/kesha-engine
+            done
+
+            runHook postInstall
+          '';
+
+          meta = with lib; {
+            description = "Fast multilingual voice toolkit (Bun CLI + Rust engine)";
+            homepage = "https://github.com/drakulavich/kesha-voice-kit";
+            license = licenses.mit;
+            mainProgram = "kesha";
+            platforms = [ "x86_64-linux" "aarch64-darwin" ];
+          };
+        };
 
       in
       {
         packages = {
-          kesha-engine = kesha-engine;
-          default = kesha-engine;
+          inherit kesha kesha-engine;
+          default = kesha;
         };
 
-        devShells.default = pkgs.mkShell {
+        apps =
+          let keshaApp = { type = "app"; program = "${kesha}/bin/kesha"; };
+          in {
+            kesha = keshaApp;
+            default = keshaApp;
+          };
+
+        devShells.default = pkgs.mkShell ({
+          inherit nativeBuildInputs;
           buildInputs = [ rustToolchain ] ++ buildInputs ++ (with pkgs; [
             cargo-make
             bun
             gnumake
           ]);
+          # Export LIBCLANG_PATH everywhere so bindgen can dlopen libclang in the dev shell.
+          LIBCLANG_PATH = buildEnv.LIBCLANG_PATH;
           shellHook = ''
             echo "✓ Kesha Voice Kit development environment"
             echo "  - Rust: $(rustc --version 2>/dev/null || echo 'not found')"
@@ -150,12 +293,13 @@
             echo "  - Protoc: $(protoc --version 2>/dev/null || echo 'not found')"
             echo "  - Features: ${rustFeatures}"
             ${lib.optionalString isLinux ''
-              export ORT_STRATEGY="system"
-              export ORT_LIB_LOCATION="${pkgs.onnxruntime.out}/lib"
-              export RUSTFLAGS="${linuxEnv.RUSTFLAGS or ""}"
+              export RUSTFLAGS="${linuxEnv.RUSTFLAGS}"
+            ''}
+            ${lib.optionalString isDarwin ''
+              export MACOSX_DEPLOYMENT_TARGET="14.0"
             ''}
           '';
-        };
+        } // ortEnv);
       }
     );
 }
