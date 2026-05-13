@@ -62,8 +62,8 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
 
 1. Bump only `package.json#version`. Leave `keshaEngine.version` and `rust/Cargo.toml` alone.
 2. PR CI uses the existing engine binary — integration tests pass.
-3. Merge, `npm publish --access public`.
-4. Cut a marker release: `gh release create vX.Y.Z-cli --title "vX.Y.Z (CLI-only)" --notes "Engine: v<keshaEngine.version> (unchanged)."` The `-cli` suffix is excluded from `build-engine.yml`'s tag filter — no Rust rebuild.
+3. Merge to main.
+4. Cut a marker release: `gh release create vX.Y.Z-cli --title "vX.Y.Z (CLI-only)" --notes "Engine: v<keshaEngine.version> (unchanged)."` The `-cli` suffix is excluded from `build-engine.yml`'s tag filter — no Rust rebuild. `gh release create` creates a published (non-draft) release, which fires the `📦 npm Publish` workflow → `npm publish --provenance --access public` runs automatically. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`.
 
 **Engine release** (anything under `rust/`, or bumping `keshaEngine.version`):
 
@@ -86,9 +86,9 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
    gh api -X PATCH "repos/OWNER/REPO/releases/$RELEASE_ID" --input body.json
    ```
    v1.1.3 shipped with empty notes and was recovered this way.
-5. Publish the draft: `gh release edit vX.Y.Z --draft=false`.
-6. `make smoke-test` locally. Do NOT publish if smoke tests fail.
-7. `npm publish --access public`.
+5. Validate the draft assets BEFORE un-drafting (see the "make smoke-test ALONE DOES NOT VALIDATE" section below). Authenticated `gh release download vX.Y.Z -p "kesha-engine-darwin-arm64" -D <smoke-dir>` works on drafts; anonymous `curl` does not (see "DRAFT RELEASE ASSET URLS ARE NOT PUBLIC").
+6. `make smoke-test` locally is still useful but only sees the OLD globally-installed engine — treat it as a sanity check, not a release gate. The gate is step 5.
+7. Publish the draft: `gh release edit vX.Y.Z --draft=false`. This fires the `📦 npm Publish` workflow (`release: published` event) which runs `npm publish --provenance --access public` with provenance attestation. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`. Manual fallback if the workflow is broken: `npm publish --access public` from the maintainer's laptop.
 
 ### TAG NAMES ARE ONE-USE
 
@@ -238,22 +238,24 @@ Recommended user config:
 
 `integration-tests` in `.github/workflows/ci.yml` downloads the RELEASED `kesha-engine` binary at the version pinned in `package.json#keshaEngine.version`. On a version-bump PR (branch `release/X.Y.Z`) that tag doesn't exist yet — HTTP 404, CI red. The job is filtered via `if: needs.changes.outputs.integration == 'true' && !startsWith(github.head_ref, 'release/')`. Don't remove that filter. If you add a new job that downloads release artifacts, use the same branch guard.
 
-### DRAFT RELEASE ASSET URLS ARE NOT PUBLIC
+### DRAFT RELEASE ASSET URLS ARE 404 TO ANONYMOUS CLIENTS — USE `gh release download`
 
-`build-engine.yml` creates a DRAFT release with the 3 platform binaries. The download URLs (`/releases/download/vX.Y.Z/kesha-engine-*`) return HTTP 404 to unauthenticated clients while the release is a draft — `make smoke-test` / `kesha install` will fail. Run smoke-test AFTER `gh release edit vX.Y.Z --draft=false`, not before. CLAUDE.md's numbered flow above reflects this (publish → smoke → npm publish), easy to flip the order absent-mindedly.
+`build-engine.yml` creates a DRAFT release with the 3 platform binaries. The download URLs (`/releases/download/vX.Y.Z/kesha-engine-*`) return HTTP 404 to **unauthenticated** clients while the release is a draft, so `curl` and `kesha install` (anonymous) will fail. **Authenticated** `gh release download vX.Y.Z -p "..." -D <dir>` works on drafts and is the right tool for the pre-undraft validation step (see next section).
 
-### `make smoke-test` ALONE DOES NOT VALIDATE A NEW ENGINE — DOWNLOAD AND EXERCISE THE PUBLISHED ASSET DIRECTLY BEFORE `npm publish`
+`make smoke-test` is anonymous (`kesha install` curls the URL), so it cannot run against a draft. Treat it as a sanity check AFTER un-drafting — but post-#291 (auto npm publish on un-draft), un-drafting is the irreversible commit point, so the actual release gate is the `gh release download`-based validation BELOW.
+
+### `make smoke-test` ALONE DOES NOT VALIDATE A NEW ENGINE — `gh release download` THE DRAFT BINARY AND EXERCISE IT BEFORE `gh release edit --draft=false`
 
 `make smoke-test` does `bun link @drakulavich/kesha-voice-kit` then `kesha install` then `bun scripts/smoke-test.ts`. **`bun link` does not always replace a globally-installed `kesha`** — if `bun add -g @drakulavich/kesha-voice-kit@<old>` previously ran on this machine, the global shim wins, `kesha --version` keeps reporting the old CLI, `kesha install` re-fetches the OLD `keshaEngine.version`, and the smoke test happily passes against the previous engine release. The "6/6 passed" turns into a false-green publish gate.
 
 Lesson learned the hard way: v1.5.0 darwin engine ran `--capabilities-json` clean (CI's pre-upload smoke) but actually crashed on Kokoro synth (`Invalid input name: tokens`). `make smoke-test` reported pass because it was still routing through the locally-installed v1.4.4 CLI + v1.4.1 engine.
 
-**Always run this independent v\<NEW\>.\<NEW\>.\<NEW\> validation between `gh release edit --draft=false` and `npm publish`:**
+**Always run this independent v\<NEW\>.\<NEW\>.\<NEW\> validation BEFORE `gh release edit --draft=false`.** Once un-drafted, the `📦 npm Publish` workflow fires within ~60 s and the publish is permanent (npm allows unpublish only within 72 h, and provenance attestations make a re-publish noisy). Greptile reviewed #291 and flagged this ordering. **Use `gh release download` (authenticated, works on drafts), NOT `curl` (which 404s on drafts):**
 
 ```bash
 SMOKE=/tmp/kesha-vX.Y.Z-smoke && rm -rf "$SMOKE" && mkdir "$SMOKE" && cd "$SMOKE"
-curl -sLfo kesha-engine \
-  "https://github.com/drakulavich/kesha-voice-kit/releases/download/vX.Y.Z/kesha-engine-darwin-arm64"
+gh release download vX.Y.Z -R drakulavich/kesha-voice-kit \
+  -p "kesha-engine-darwin-arm64" -D "$SMOKE"
 chmod +x kesha-engine && xattr -d com.apple.quarantine kesha-engine 2>/dev/null
 
 # 1. Version string MUST equal the new tag — sanity check
@@ -275,9 +277,9 @@ file "$SMOKE/en.wav"              # must report a valid WAV
   || { echo "ERROR: en.wav is suspiciously small — header-only stub?"; exit 1; }
 ```
 
-Repeat for `kesha-engine-linux-x64` (run via Docker if not on Linux). If ANY of those three steps fail, **DO NOT `npm publish`**. Either yank the GitHub release (`gh release delete vX.Y.Z --yes`, delete the tag, bump patch, retry) or push a fix and rebuild via `gh workflow run "🔨 Build Engine"`.
+Repeat for `kesha-engine-linux-x64` (run via Docker if not on Linux). If ANY of those three steps fail, **DO NOT un-draft** — un-drafting fires `📦 npm Publish` automatically. Either yank the GitHub release (`gh release delete vX.Y.Z --yes`, delete the tag, bump patch, retry) or push a fix and rebuild via `gh workflow run "🔨 Build Engine"`. Since the draft never went public, no recall is needed.
 
-The CI smoke step (`--capabilities-json` only) is a sanity check on the toolchain, not a behavior test. Behavior testing is the human-in-the-loop pre-publish gate; it lives in this checklist, not in the workflow file.
+The CI smoke step (`--capabilities-json` only) is a sanity check on the toolchain, not a behavior test. Behavior testing is the human-in-the-loop pre-undraft gate; it lives in this checklist, not in the workflow file.
 
 ### TESTS THAT STAGE A TEMPDIR CACHE MUST STAGE G2P TOO
 
