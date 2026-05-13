@@ -369,7 +369,7 @@ bun remove -g @drakulavich/kesha-voice-kit   # delete the previously-installed c
 bun link                                      # re-register from package root
 # verify:
 readlink ~/.bun/install/global/node_modules/@drakulavich/kesha-voice-kit
-# should print: /Users/anton/Personal/repos/kesha-voice-kit
+# should print: /path/to/your/kesha-voice-kit checkout (absolute path)
 ```
 
 Incident this session: I ran `bun link` to test local main, `kesha --version` reported `1.14.0` (looked right because npm-published 1.14.0 happened to match the local checkout). But `kesha install` showed `Upgrading engine v1.14.0 → v1.6.0...` — proving the global shim was the OLD `bun add -g` v1.6.0 install, NOT the local link. `bun remove -g` + `bun link` fixed it.
