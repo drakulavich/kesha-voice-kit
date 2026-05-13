@@ -14,7 +14,7 @@
 
 4. **Dedup global, not per-call.** `tts::warn::warn_once` dedups via `Mutex<HashSet>` for the whole process. `ssml::parse()` dedups via a local `HashSet` rebuilt on every call. The two co-exist with no documented contract — inside `--stdin-loop` (long-lived process, #213), the same SSML quirk re-warns on every request.
 
-5. **One source of truth per env var.** `KESHA_DEBUG` is parsed in two places (`src/log.ts` and `rust/src/debug.rs`) with subtly different rules. TS rejects `"0"` and case-insensitive `"false"`. Rust rejects `"0"`, exact-case `"false"`, and `""`. `KESHA_DEBUG=False kesha audio.ogg` flips the TS side ON and the engine side OFF.
+5. **One source of truth per env var.** `KESHA_DEBUG` is parsed in two places (`src/log.ts` and `rust/src/debug.rs`) with subtly different rules. TS rejects `"0"` and case-insensitive `"false"` — `"False"` lower-cases to `"false"`, debug goes OFF. Rust rejects `"0"`, **exact-case** `"false"`, and `""` — `"False"` does NOT match the pattern, falls into the `Ok(_) => true` arm, debug goes ON. `KESHA_DEBUG=False kesha audio.ogg` flips the TS side OFF and the engine side ON.
 
 ## Findings
 
@@ -66,7 +66,7 @@
 
 - [ ] **D9. `KESHA_DEBUG` parse rules drift between TS and Rust** (`src/log.ts`, `rust/src/debug.rs`)
   Tags: `[one source of truth] [env-var]`.
-  TS rejects `"0"` and case-insensitive `"false"`. Rust rejects `"0"`, exact-case `"false"`, and `""`. `KESHA_DEBUG=False` flips the TS side ON and the engine side OFF — silently inconsistent.
+  TS: `!!v && v !== "0" && v.toLowerCase() !== "false"` — case-insensitive `"false"` rejected, so `"False"` lower-cases to `"false"` and turns debug OFF. Rust: `match … { Ok("0" | "false" | "") | Err(_) => false, Ok(_) => true }` — only exact-case `"false"` matches the reject pattern, so `"False"` falls into `Ok(_) => true` and turns debug ON. `KESHA_DEBUG=False` therefore turns the TS-side debug OFF and the engine-side debug ON — silently inconsistent.
   **Action:** align both sides on the same grammar: case-insensitive reject of `{"", "0", "false", "no", "off"}`. Document the grammar in both files so the next contributor can't drift them apart again.
 
 - [ ] **D10. `resolve_output_format` silent coercions** (`rust/src/main.rs`)
