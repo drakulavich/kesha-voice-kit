@@ -6,7 +6,7 @@
     <title>Kesha Voice Kit — Open-source voice toolkit for Apple Silicon</title>
     <meta
       name="description"
-      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Speaker diarization, OGG/Opus voice notes, timestamped transcripts, Kokoro & Vosk-TTS. A 20MB Rust binary. No Python, no ffmpeg."
+      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Speaker diarization, OGG/Opus voice notes, SSML prosody, Kokoro & Vosk-TTS. A 20MB Rust binary. No Python, no ffmpeg."
     />
     <meta name="theme-color" content="#0b1014" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="Kesha Voice Kit" />
     <meta
       property="og:description"
-      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon. STT in 25 languages, speaker diarization for meetings, TTS with OGG/Opus voice notes — all from a single 20MB Rust binary."
+      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon. STT in 25 languages, speaker diarization for meetings, TTS with OGG/Opus voice notes and SSML prosody — all from a single 20MB Rust binary."
     />
     <meta property="og:image" content="assets/logo.png" />
 
@@ -111,7 +111,7 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.12 · MIT licensed · CoreML + ONNX</span>
+            <span>v1.15 · MIT licensed · CoreML + ONNX</span>
           </div>
 
           <h1 class="hero__title">
@@ -251,7 +251,7 @@
                   <path d="M12 20c0-3 2.5-5 5-5s5 2 5 5" />
                 </svg>
               </div>
-              <span class="badge-new">New in v1.12</span>
+              <span class="badge-new">New</span>
               <h3>Speaker diarization</h3>
               <p>
                 Drop a meeting recording in, get back timestamped segments tagged with a stable
@@ -280,7 +280,8 @@
               <p>
                 Kokoro-82M for English with acronym auto-expand (FBI, EPAM, JSON), Vosk-TTS for
                 Russian with stress markers and abbreviation handling, plus ~180 macOS system
-                voices. Auto-routes by detected language. SSML supported.
+                voices. Auto-routes by detected language. SSML with
+                <code>&lt;prosody rate&gt;</code> for variable-speed playback.
               </p>
             </article>
 
@@ -480,7 +481,10 @@
             <div class="step">
               <div class="step__num">02</div>
               <h3>Install Kesha</h3>
-              <p>Pulls the engine and base STT models.</p>
+              <p>
+                Pulls the engine, base STT models, and warms the Neural Engine — first transcribe
+                runs in ~500 ms instead of a 25-second hang.
+              </p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> bun add -g @drakulavich/kesha-voice-kit
 <span class="muted">$</span> kesha install</code></pre>
@@ -553,6 +557,11 @@ kesha install" aria-label="Copy">
 
 <span class="cm"># OGG/Opus voice notes (drop straight into Telegram)</span>
 <span class="muted">$</span> kesha say --format ogg-opus "Уже бегу!" --out voice.ogg
+
+<span class="cm"># Variable-speed playback via SSML &lt;prosody rate&gt;</span>
+<span class="muted">$</span> kesha say --voice en-am_michael --ssml \
+    '&lt;speak&gt;&lt;prosody rate="x-fast"&gt;Read this fast.&lt;/prosody&gt;&lt;/speak&gt;' \
+    --out fast.wav
 
 <span class="cm"># Use a macOS system voice</span>
 <span class="muted">$</span> kesha say --voice Milena "Чао!"</code></pre>
