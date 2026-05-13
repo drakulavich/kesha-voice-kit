@@ -76,7 +76,7 @@ export const mainCommand = defineCommand({
     },
     format: {
       type: "string",
-      description: "Output format: transcript (enriched text with lang/confidence)",
+      description: "Output format: transcript | json | toon (long-form alias for --json / --toon)",
     },
     lang: {
       type: "string",
@@ -102,7 +102,24 @@ export const mainCommand = defineCommand({
     if (args.debug) log.debugEnabled = true;
     const files = args._;
 
-    if ((args.json || args.format === "json") && args.toon) {
+    // Validate `--format <value>` and normalize into the boolean flags
+    // that the rest of this handler consults. `--format toon` was
+    // silently producing plain text before this normalization because
+    // none of the dispatch branches recognized the string (only the
+    // boolean `args.toon` flag was checked). Same shape as `--json`
+    // already being equivalent to `--format json`.
+    const SUPPORTED_FORMATS = ["transcript", "json", "toon"];
+    if (args.format !== undefined && !SUPPORTED_FORMATS.includes(args.format)) {
+      log.error(
+        `unknown --format '${args.format}'. supported: ${SUPPORTED_FORMATS.join(", ")}`,
+      );
+      process.exit(2);
+    }
+    const wantsJson = !!args.json || args.format === "json";
+    const wantsToon = !!args.toon || args.format === "toon";
+    const wantsTranscript = args.format === "transcript";
+
+    if (wantsJson && wantsToon) {
       log.error("--json and --toon are mutually exclusive (pick one output format).");
       process.exit(2);
     }
@@ -111,12 +128,12 @@ export const mainCommand = defineCommand({
       log.error("--vad and --no-vad are mutually exclusive.");
       process.exit(2);
     }
-    if (args.timestamps && !(args.json || args.toon || args.format === "json")) {
-      log.error("--timestamps requires --json, --toon, or --format json.");
+    if (args.timestamps && !(wantsJson || wantsToon)) {
+      log.error("--timestamps requires --json, --toon, or --format {json,toon}.");
       process.exit(2);
     }
-    if (args.speakers && !(args.json || args.toon || args.format === "json")) {
-      log.error("--speakers requires --json, --toon, or --format json.");
+    if (args.speakers && !(wantsJson || wantsToon)) {
+      log.error("--speakers requires --json, --toon, or --format {json,toon}.");
       process.exit(2);
     }
     const vadMode = args.vad ? "on" : args["no-vad"] ? "off" : "auto";
@@ -129,7 +146,7 @@ export const mainCommand = defineCommand({
     let hasError = false;
     const results: TranscribeResult[] = [];
 
-    const wantsLangId = !!(args.lang || args.verbose || args.json || args.toon || args.format === "transcript" || args.format === "json");
+    const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
 
     for (const file of files) {
       const startedAt = performance.now();
@@ -185,11 +202,11 @@ export const mainCommand = defineCommand({
       }
     }
 
-    if (args.json || args.format === "json") {
+    if (wantsJson) {
       process.stdout.write(formatJsonOutput(results));
-    } else if (args.toon) {
+    } else if (wantsToon) {
       process.stdout.write(formatToonOutput(results));
-    } else if (args.format === "transcript") {
+    } else if (wantsTranscript) {
       process.stdout.write(formatTranscriptOutput(results));
     } else if (args.verbose) {
       process.stdout.write(formatVerboseOutput(results));
