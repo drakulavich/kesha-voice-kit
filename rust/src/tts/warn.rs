@@ -13,6 +13,19 @@
 //!
 //! Lock poisoning is treated as fatal — at that point another thread panicked
 //! while holding the lock and the process is in an unrecoverable state.
+//!
+//! **Test-isolation caveat** (Greptile P2 on #284): the backing `HashSet` is a
+//! `static OnceLock`, so any key inserted by one `#[test]` persists for the
+//! whole process. Today's tests in this module use synthetic keys
+//! (`test-warn-once-key-*`) that don't collide with production keys, but the
+//! `tts::ssml::tests` block runs in the same `cargo test --lib` process and
+//! WILL insert real SSML warn keys (`prosody-mid-utterance`, `say-as[...]`,
+//! `phoneme[alphabet=...]`, etc.) into the shared set. A future test that
+//! asserts a key is *absent* before calling `parse()`, or that counts how
+//! many times a particular warning fires within a single test, would be
+//! order-dependent. If that comes up, add a `#[cfg(test)] pub(crate) fn
+//! reset_for_test()` here and call it in the test's `setUp` — don't try
+//! to work around it from the test side.
 
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
