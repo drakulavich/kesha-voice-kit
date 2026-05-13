@@ -150,3 +150,126 @@
       .forEach((el) => el.classList.add('is-revealed'));
   }
 })();
+
+/* ============================================================
+   Audio players for the "Hear it" section
+   - Lightweight, framework-free
+   - Only one track plays at a time
+   - Falls back to "missing" state if the asset 404s
+   ============================================================ */
+(function () {
+  const players = Array.from(document.querySelectorAll('.audio-player'));
+  if (!players.length) return;
+
+  const PLAY_ICON =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+  const PAUSE_ICON =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+
+  function fmt(t) {
+    if (!isFinite(t)) return '0:00';
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  const all = [];
+
+  players.forEach((el) => {
+    const src = el.getAttribute('data-src');
+    const label = el.getAttribute('data-label') || 'Audio sample';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'audio-player__btn';
+    btn.setAttribute('aria-label', `Play ${label}`);
+    btn.innerHTML = PLAY_ICON;
+
+    const track = document.createElement('div');
+    track.className = 'audio-player__track';
+    const bar = document.createElement('div');
+    bar.className = 'audio-player__bar';
+    const fill = document.createElement('div');
+    fill.className = 'audio-player__fill';
+    bar.appendChild(fill);
+    track.appendChild(bar);
+
+    const time = document.createElement('span');
+    time.className = 'audio-player__time';
+    time.textContent = '0:00';
+
+    el.appendChild(btn);
+    el.appendChild(track);
+    el.appendChild(time);
+
+    const audio = new Audio();
+    audio.preload = 'none';
+    audio.src = src;
+
+    let dur = 0;
+    let ready = false;
+
+    function setMissing() {
+      el.setAttribute('data-state', 'missing');
+      btn.disabled = true;
+      btn.setAttribute('aria-label', `${label} not available`);
+      time.textContent = '—';
+    }
+
+    audio.addEventListener('error', setMissing);
+    audio.addEventListener('loadedmetadata', () => {
+      ready = true;
+      dur = audio.duration;
+      time.textContent = fmt(dur);
+    });
+    audio.addEventListener('timeupdate', () => {
+      const pct = dur ? (audio.currentTime / dur) * 100 : 0;
+      fill.style.width = pct + '%';
+      time.textContent = fmt(dur - audio.currentTime);
+    });
+    audio.addEventListener('ended', () => {
+      el.setAttribute('data-state', 'idle');
+      btn.innerHTML = PLAY_ICON;
+      btn.setAttribute('aria-label', `Play ${label}`);
+      fill.style.width = '0%';
+      time.textContent = fmt(dur);
+    });
+
+    btn.addEventListener('click', () => {
+      if (audio.paused) {
+        all.forEach((p) => {
+          if (p.audio !== audio && !p.audio.paused) p.pause();
+        });
+        if (!ready) {
+          audio.load();
+        }
+        audio.play().catch(setMissing);
+        el.setAttribute('data-state', 'playing');
+        btn.innerHTML = PAUSE_ICON;
+        btn.setAttribute('aria-label', `Pause ${label}`);
+      } else {
+        audio.pause();
+        el.setAttribute('data-state', 'idle');
+        btn.innerHTML = PLAY_ICON;
+        btn.setAttribute('aria-label', `Play ${label}`);
+      }
+    });
+
+    track.addEventListener('click', (e) => {
+      if (!ready || !dur) return;
+      const rect = bar.getBoundingClientRect();
+      const x = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
+      audio.currentTime = (x / rect.width) * dur;
+    });
+
+    // Probe for asset presence (HEAD). If 404, mark missing immediately.
+    fetch(src, { method: 'HEAD' }).then((r) => {
+      if (!r.ok) setMissing();
+    }).catch(() => {
+      // Network error — leave state idle; the <audio> error handler will catch
+      // it if the user tries to play.
+    });
+
+    all.push({ audio, pause: () => audio.pause() });
+  });
+})();

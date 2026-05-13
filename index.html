@@ -74,6 +74,7 @@
 
         <nav class="nav" aria-label="Primary">
           <a href="#features">Features</a>
+          <a href="#hear">Hear it</a>
           <a href="#performance">Performance</a>
           <a href="#install">Install</a>
           <a href="#models">Models</a>
@@ -399,6 +400,97 @@
         </div>
       </section>
 
+      <!-- Hear it — TTS audio samples -->
+      <section class="section" id="hear">
+        <div class="container">
+          <header class="section-head reveal">
+            <p class="section-eyebrow">Hear it</p>
+            <h2 class="section-title">
+              <span class="serif italic">Four samples,</span> two engines, two languages.
+            </h2>
+            <p class="section-sub">
+              Real output from <code>kesha say</code> — Kokoro-82M for English, Vosk-TTS for Russian.
+              SSML <code>&lt;prosody rate&gt;</code> renders the same text at different speeds without
+              resampling artifacts.
+            </p>
+          </header>
+
+          <div class="audio-grid reveal">
+            <article class="audio-card">
+              <header class="audio-card__head">
+                <span class="audio-card__tag">EN · Kokoro-82M</span>
+                <span class="audio-card__rate">medium (1.0×)</span>
+              </header>
+              <p class="audio-card__text">
+                “Kesha turns voice into text in a single command — no Python, no ffmpeg.”
+              </p>
+              <div
+                class="audio-player"
+                data-src="assets/audio/en-kokoro-medium.mp3"
+                data-label="Kokoro English medium"
+              ></div>
+              <code class="audio-card__cmd">kesha say --voice en-am_michael "…" --out demo.mp3</code>
+            </article>
+
+            <article class="audio-card">
+              <header class="audio-card__head">
+                <span class="audio-card__tag">EN · Kokoro-82M</span>
+                <span class="audio-card__rate audio-card__rate--accent"
+                  >&lt;prosody rate=&quot;x-fast&quot;&gt; · 1.5×</span
+                >
+              </header>
+              <p class="audio-card__text">
+                Same text, x-fast prosody. Tempo only — pitch and timbre unchanged.
+              </p>
+              <div
+                class="audio-player"
+                data-src="assets/audio/en-kokoro-xfast.mp3"
+                data-label="Kokoro English x-fast"
+              ></div>
+              <code class="audio-card__cmd"
+                >kesha say --voice en-am_michael --ssml '&lt;speak&gt;&lt;prosody rate="x-fast"&gt;…'</code
+              >
+            </article>
+
+            <article class="audio-card">
+              <header class="audio-card__head">
+                <span class="audio-card__tag">RU · Vosk-TTS</span>
+                <span class="audio-card__rate">medium (1.0×)</span>
+              </header>
+              <p class="audio-card__text">
+                «Кеша превращает голос в текст одной командой — без Python, без ffmpeg.»
+              </p>
+              <div
+                class="audio-player"
+                data-src="assets/audio/ru-vosk-medium.mp3"
+                data-label="Vosk Russian medium"
+              ></div>
+              <code class="audio-card__cmd">kesha say --voice ru-vosk-m02 "…" --out demo.mp3</code>
+            </article>
+
+            <article class="audio-card">
+              <header class="audio-card__head">
+                <span class="audio-card__tag">RU · Vosk-TTS</span>
+                <span class="audio-card__rate audio-card__rate--accent"
+                  >&lt;prosody rate=&quot;slow&quot;&gt; · 0.75×</span
+                >
+              </header>
+              <p class="audio-card__text">
+                Same text, slow prosody. Useful for accessibility and dictation.
+              </p>
+              <div
+                class="audio-player"
+                data-src="assets/audio/ru-vosk-slow.mp3"
+                data-label="Vosk Russian slow"
+              ></div>
+              <code class="audio-card__cmd"
+                >kesha say --voice ru-vosk-m02 --ssml '&lt;speak&gt;&lt;prosody rate="slow"&gt;…'</code
+              >
+            </article>
+          </div>
+        </div>
+      </section>
+
       <!-- Performance / benchmark -->
       <section class="section section--alt" id="performance">
         <div class="container">
@@ -566,6 +658,10 @@ kesha install" aria-label="Copy">
 <span class="cm"># Use a macOS system voice</span>
 <span class="muted">$</span> kesha say --voice Milena "Чао!"</code></pre>
               </div>
+              <p class="tabs__footnote">
+                Want to hear what these voices sound like?
+                <a class="link-arrow link-arrow--sm" href="#hear">Play the four samples ↗</a>
+              </p>
             </div>
 
             <div class="tabs__panel" data-panel="api">
