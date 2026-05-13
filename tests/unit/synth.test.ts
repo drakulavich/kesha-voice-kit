@@ -1,5 +1,6 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, spyOn } from "bun:test";
 import { buildSayArgs } from "../../src/synth";
+import { log } from "../../src/log";
 
 describe("buildSayArgs", () => {
   it("starts with the 'say' subcommand", () => {
@@ -82,14 +83,36 @@ describe("--no-expand-abbrev (#232)", () => {
 
   it("dropped from argv with a warning when engine lacks the capability (#275 D3)", () => {
     // The drop is no longer silent — `buildSayArgs` emits a `log.warn` so
-    // the user notices their flag had no effect. We can't intercept the
-    // colored stderr from bun:test cleanly, so we only assert the argv
-    // shape here; the warn-call is exercised by the e2e tests on stderr.
-    const args = buildSayArgs({
-      ...baseOpts,
-      noExpandAbbrev: true,
-    }, { protocolVersion: 1, backend: "onnx", features: ["tts"] });
-    expect(args).not.toContain("--no-expand-abbrev");
+    // the user notices their flag had no effect. Verify the warn call
+    // directly via spyOn (Greptile follow-up on #277).
+    const warnSpy = spyOn(log, "warn").mockImplementation(() => {});
+    try {
+      const args = buildSayArgs({
+        ...baseOpts,
+        noExpandAbbrev: true,
+      }, { protocolVersion: 1, backend: "onnx", features: ["tts"] });
+      expect(args).not.toContain("--no-expand-abbrev");
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const warnArg = warnSpy.mock.calls[0]?.[0] ?? "";
+      expect(warnArg).toContain("--no-expand-abbrev");
+      expect(warnArg).toContain("flag ignored");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not warn when engine supports the capability", () => {
+    // Symmetric: when the capability IS advertised, no warning fires.
+    const warnSpy = spyOn(log, "warn").mockImplementation(() => {});
+    try {
+      buildSayArgs({
+        ...baseOpts,
+        noExpandAbbrev: true,
+      }, { protocolVersion: 1, backend: "onnx", features: ["tts", "tts.ru_acronym_expansion"] });
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 
