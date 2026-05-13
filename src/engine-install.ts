@@ -142,10 +142,15 @@ function darwinTrustBinary(path: string, displayName: string): void {
     );
   }
   if (!codesignOk && !xattrOk) {
+    // Single-quote the path in the manual-fix hint so spaces / shell
+    // metachars in `~/.cache/.../bin/...` don't break paste-into-shell.
+    // POSIX single-quote escape: close the quote, insert escaped `'`,
+    // re-open. Cheap and correct on bash/zsh.
+    const q = (p: string) => `'${p.replace(/'/g, `'\\''`)}'`;
     log.warn(
       `Could not unblock ${displayName} for macOS Gatekeeper (both codesign ` +
         `and xattr failed); if the binary refuses to run, manually run: ` +
-        `codesign --force --sign - ${path}  &&  xattr -d com.apple.provenance ${path}`,
+        `codesign --force --sign - ${q(path)}  &&  xattr -d com.apple.provenance ${q(path)}`,
     );
   }
 }
@@ -262,6 +267,18 @@ export async function downloadEngine(
     } else {
       log.success(`Engine binary already installed (v${engineVersion}).`);
     }
+    // Re-run the macOS trust step against the cached binary too. Reason:
+    // a user who upgraded to macOS 15+ Sequoia AFTER installing kesha
+    // would have a v<X> binary on disk with `com.apple.provenance` still
+    // attached, and `kesha install` would normally bail at "already
+    // installed" without healing the SIGKILL. Idempotent — re-signing
+    // an already-correctly-signed binary is a ~10 ms no-op; `xattr -d`
+    // on an absent attr is handled (exit 1 + "No such xattr" treated
+    // as success in `darwinTrustBinary`). Skipped on read-only
+    // filesystems (Nix-store installs) — no write access anyway.
+    if (canWriteEngineDir && existsSync(binPath)) {
+      darwinTrustBinary(binPath, "kesha-engine binary");
+    }
     // Top up any sidecars missing from this cached install. Pre-#141 / pre-#199
     // engines never shipped them, so a cache-valid binary may still need
     // fetching. Run independent fetches concurrently — same shape as the
@@ -279,6 +296,14 @@ export async function downloadEngine(
         (s) => !existsSync(join(engineDir, s.fileBasename)),
       );
       await Promise.all(missing.map((s) => downloadSidecar(s, binPath, engineVersion)));
+      // The cache-valid branch also re-trusts any sidecars that already
+      // exist alongside the engine — same upgrade-to-Sequoia scenario as
+      // above. The `missing.map` above only handles NEW sidecars; this
+      // loop handles ALREADY-PRESENT ones.
+      for (const s of SIDECARS) {
+        const p = join(engineDir, s.fileBasename);
+        if (existsSync(p)) darwinTrustBinary(p, s.displayName);
+      }
     }
   } else {
     // Log why we're downloading — helps diagnose surprising re-downloads.
