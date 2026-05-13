@@ -77,6 +77,43 @@ const SIDECARS: SidecarSpec[] = [
 ];
 
 /**
+ * Re-apply an ad-hoc signature to a freshly-downloaded Mach-O on macOS.
+ * The release binaries ship `Signature=adhoc` (built via `cargo build`,
+ * no Apple Developer ID). When fetched via HTTPS into `~/.cache/...`,
+ * macOS attaches a `com.apple.provenance` xattr; combined with stricter
+ * Gatekeeper policy on macOS 15+ Sequoia, the resulting "untrusted
+ * downloaded ad-hoc binary" is killed with SIGKILL on first invocation
+ * (exit 137), with no log line — Gatekeeper denies before Rust's main
+ * runs. Re-signing with the user's own host identity (`codesign -s -`)
+ * strips the provenance trust mismatch and lets the binary execute.
+ *
+ * Best-effort: if `codesign` is missing from PATH (corporate-locked
+ * machine, minimal CI image) we log a warning and continue — the user
+ * can re-sign manually, and Linux/Windows paths never hit this code.
+ */
+function darwinRecodesign(path: string, displayName: string): void {
+  if (process.platform !== "darwin") return;
+  try {
+    const proc = Bun.spawnSync(["codesign", "--force", "--sign", "-", path], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (proc.exitCode !== 0) {
+      const stderr = new TextDecoder().decode(proc.stderr).trim();
+      log.warn(
+        `Could not re-sign ${displayName} on macOS (codesign exit ${proc.exitCode}: ${stderr}); ` +
+          `if the binary refuses to run, manually run: codesign --force --sign - ${path}`,
+      );
+    }
+  } catch (e) {
+    log.warn(
+      `Could not re-sign ${displayName} on macOS (${e instanceof Error ? e.message : e}); ` +
+        `if the binary refuses to run, manually run: codesign --force --sign - ${path}`,
+    );
+  }
+}
+
+/**
  * Fetch a single Swift sidecar and place it next to the engine binary on
  * darwin-arm64. Best-effort: 404s (older engine versions predate this
  * sidecar) and network errors log a warning and return — the corresponding
@@ -119,6 +156,7 @@ async function downloadSidecar(
   try {
     await streamResponseToFile(res, sidecarPath, spec.displayName);
     chmodSync(sidecarPath, 0o755);
+    darwinRecodesign(sidecarPath, spec.displayName);
     log.success(`${spec.displayName} installed (${spec.availableHint}).`);
   } catch (e) {
     log.warn(
@@ -252,6 +290,7 @@ export async function downloadEngine(
 
     await streamResponseToFile(res, binPath, "kesha-engine binary");
     chmodSync(binPath, 0o755);
+    darwinRecodesign(binPath, "kesha-engine binary");
     writeInstalledEngineVersion(binPath, engineVersion);
     log.success(`Engine binary downloaded (v${engineVersion}).`);
     await Promise.all(sidecarPromises);
