@@ -379,7 +379,7 @@ if !(lo..=hi).contains(&raw) {
 ```
 
 - Idiomatic (clippy prefers `RangeInclusive::contains` over `raw < lo || raw > hi`, lint `manual_range_contains`).
-- NaN-safe: `NaN < x` and `x < NaN` are both false → `contains` returns false → guard does NOT fire on NaN by default. (If you DO want to surface NaN, check `raw.is_nan()` explicitly first.)
+- **NaN flows through and fires the guard.** `NaN < x` and `x < NaN` are both false → `(lo..=hi).contains(&NaN) == false` → `!false == true` → guard DOES fire on NaN. `f32::clamp(NaN, lo, hi)` returns NaN unchanged (NaN-passthrough), so the warning text will say "rate NaN ... clamped to NaN" — typically intentional, because NaN at this layer means an upstream parse bug and surfacing it on stderr beats silently feeding NaN into the downstream model. If you DO want to suppress, check `raw.is_nan()` explicitly first and decide what to do. (Same NaN inversion that #289 corrected in `compose_rate` — re-introducing it here was caught by Greptile on #294.)
 - Symmetric with the `clamp` itself.
 
 Past incidents: #287 → #288 → #289 cascade for F9 (`compose_rate` rate-clamp warning). #287 shipped with `EPSILON`, Greptile P2 caught the ULP gap, #288 fixed via `!(0.5..=2.0).contains(&raw)`, #289 corrected an inverted NaN claim in the accompanying comment.
