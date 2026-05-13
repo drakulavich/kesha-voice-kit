@@ -60,6 +60,15 @@ impl VadMode {
     }
 }
 
+/// `Default` lives with the type it's for. `TranscribeOptions::default()`
+/// uses `Auto` so it matches the historical text-only `transcribe(_, Auto)`
+/// behavior.
+impl Default for VadMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct TranscriptionSegment {
     pub start: f32,
@@ -99,14 +108,6 @@ pub struct TranscribeOptions {
     /// with its `speaker` cluster id. Currently darwin-arm64 only;
     /// `transcribe_with_options` returns an error on other platforms.
     pub with_speakers: bool,
-}
-
-/// VadMode's `Default` is `Auto` so `TranscribeOptions::default()` matches
-/// the historical `transcribe(_, VadMode::Auto)` text-only behavior.
-impl Default for VadMode {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 /// Pure decision function so the auto-trigger rules can be unit-tested
@@ -159,6 +160,11 @@ pub fn transcribe_output_with_speakers(
     audio_path: &str,
     mode: VadMode,
 ) -> Result<TranscriptionOutput> {
+    // `TranscribeOptions` is not `#[non_exhaustive]`, so Rust enforces
+    // exhaustive struct init at this site: adding a new field to the
+    // struct produces a compile error here pointing at the literal —
+    // which is the same forward-compat safety `..Default::default()`
+    // would give, minus a `needless_update` clippy warning.
     let opts = TranscribeOptions {
         mode,
         with_segments: true,
