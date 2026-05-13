@@ -41,8 +41,11 @@ export interface SayOptions {
   /**
    * Disable acronym auto-expansion for `ru-vosk-*` and `en-*` voices.
    * When true, passes `--no-expand-abbrev` to the engine (requires engine
-   * capability `tts.ru_acronym_expansion` or `tts.en_acronym_expansion`; silently dropped for older engines).
-   * `<say-as interpret-as="characters">` still works regardless of this flag.
+   * capability `tts.ru_acronym_expansion` or `tts.en_acronym_expansion`).
+   * On older engines that don't advertise the capability, the flag is
+   * dropped from argv and `log.warn` surfaces the drop on every
+   * invocation (post-#275 D3). `<say-as interpret-as="characters">`
+   * still works regardless of this flag.
    */
   noExpandAbbrev?: boolean;
 }
