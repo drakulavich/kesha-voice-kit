@@ -50,7 +50,12 @@ fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
 fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     let raw = cli_rate * ssml_rate;
     let clamped = raw.clamp(0.5, 2.0);
-    if (raw - clamped).abs() > f32::EPSILON {
+    // Exact bound check, not `(raw - clamped).abs() > EPSILON`: at raw≈0.5
+    // the f32 ULP (~6e-8) is below `EPSILON` (~1.2e-7), so a value one ULP
+    // outside the bound would clamp silently (Greptile P2 on #287). NaN
+    // is unordered against any bound → `contains` returns false → no warning,
+    // matching the clamp's own NaN-passthrough behavior.
+    if !(0.5..=2.0).contains(&raw) {
         crate::tts::warn::warn_once(
             "compose-rate-clamped",
             &format!(
@@ -583,5 +588,17 @@ mod tests {
         // Idempotent: a second clamp doesn't change set membership.
         let _ = super::compose_rate(0.1, 0.1); // 0.01 → 0.5 (clamp low)
         assert!(crate::tts::warn::was_warned("compose-rate-clamped"));
+    }
+
+    #[test]
+    fn compose_rate_in_range_does_not_warn() {
+        // The `0.5..=2.0` range is honored exactly — values just inside
+        // the bounds must NOT trigger the clamp warning. (Outside-the-
+        // bound coverage is exercised by `compose_rate_warns_once_on_clamp`
+        // above; we can't assert "warn key absent" portably because the
+        // warn set persists across tests in this `cargo test --lib` proc.)
+        assert!((super::compose_rate(0.5, 1.0) - 0.5).abs() < 1e-6);
+        assert!((super::compose_rate(2.0, 1.0) - 2.0).abs() < 1e-6);
+        assert!((super::compose_rate(1.0, 1.0) - 1.0).abs() < 1e-6);
     }
 }
