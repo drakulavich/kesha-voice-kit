@@ -1,0 +1,91 @@
+name: "📦 npm Publish"
+
+# Fires once a GitHub release leaves draft (the manual gate per CLAUDE.md
+# release flow). Both real engine releases (`vX.Y.Z`) and CLI-only marker
+# releases (`vX.Y.Z-cli`) un-draft into the same `published` event — both
+# need `npm publish`. Also exposes `workflow_dispatch` so the maintainer
+# can re-publish a tag manually (e.g. after fixing a publishConfig bug)
+# without re-creating the release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (must already exist and have a published GitHub release)"
+        required: true
+
+# `id-token: write` is what unlocks npm provenance attestation. The OIDC
+# token issued by GitHub is signed by GHA's identity provider, which npm
+# verifies against the public sigstore log. Without this permission the
+# `--provenance` flag would fail.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout at tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # npm provenance requires npm CLI ≥ 9.5. Node 22 (LTS) ships with
+      # npm 10.x. `registry-url` configures the auth token line that
+      # `NODE_AUTH_TOKEN` consumes via `npm publish`.
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      # Guard: refuse to publish if `package.json#version` doesn't match
+      # the release tag. Catches an accidental release of a tag that
+      # points at a commit whose package.json wasn't bumped — that
+      # combination is silently bad (npm publishes whatever's in the
+      # checkout, regardless of the GitHub release name).
+      - name: Verify package.json version matches tag
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          # Strip leading "v" and optional "-cli" suffix used for CLI-only
+          # marker releases (see CLAUDE.md → RELEASE PROCESS).
+          expected="${tag#v}"
+          expected="${expected%-cli}"
+          actual=$(jq -r .version package.json)
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::Tag $tag implies version $expected but package.json says $actual" >&2
+            exit 1
+          fi
+          echo "package.json version $actual matches tag $tag — OK"
+
+      # Idempotent guard: if this exact version is already on npm, skip
+      # the publish step rather than failing. Lets `workflow_dispatch`
+      # re-runs no-op cleanly after a successful publish.
+      - name: Check npm registry for prior publish
+        id: registry
+        run: |
+          name=$(jq -r .name package.json)
+          version=$(jq -r .version package.json)
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "$name@$version is already on npm — publish step will be skipped."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm with provenance
+        if: steps.registry.outputs.already_published == 'false'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

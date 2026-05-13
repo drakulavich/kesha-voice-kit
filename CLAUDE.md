@@ -62,8 +62,8 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
 
 1. Bump only `package.json#version`. Leave `keshaEngine.version` and `rust/Cargo.toml` alone.
 2. PR CI uses the existing engine binary — integration tests pass.
-3. Merge, `npm publish --access public`.
-4. Cut a marker release: `gh release create vX.Y.Z-cli --title "vX.Y.Z (CLI-only)" --notes "Engine: v<keshaEngine.version> (unchanged)."` The `-cli` suffix is excluded from `build-engine.yml`'s tag filter — no Rust rebuild.
+3. Merge to main.
+4. Cut a marker release: `gh release create vX.Y.Z-cli --title "vX.Y.Z (CLI-only)" --notes "Engine: v<keshaEngine.version> (unchanged)."` The `-cli` suffix is excluded from `build-engine.yml`'s tag filter — no Rust rebuild. `gh release create` creates a published (non-draft) release, which fires the `📦 npm Publish` workflow → `npm publish --provenance --access public` runs automatically. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`.
 
 **Engine release** (anything under `rust/`, or bumping `keshaEngine.version`):
 
@@ -86,9 +86,9 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
    gh api -X PATCH "repos/OWNER/REPO/releases/$RELEASE_ID" --input body.json
    ```
    v1.1.3 shipped with empty notes and was recovered this way.
-5. Publish the draft: `gh release edit vX.Y.Z --draft=false`.
-6. `make smoke-test` locally. Do NOT publish if smoke tests fail.
-7. `npm publish --access public`.
+5. Validate the draft assets BEFORE un-drafting (see the "make smoke-test ALONE DOES NOT VALIDATE" section below). Authenticated `gh release download vX.Y.Z -p "kesha-engine-darwin-arm64" -D <smoke-dir>` works on drafts; anonymous `curl` does not (see "DRAFT RELEASE ASSET URLS ARE NOT PUBLIC").
+6. `make smoke-test` locally is still useful but only sees the OLD globally-installed engine — treat it as a sanity check, not a release gate. The gate is step 5.
+7. Publish the draft: `gh release edit vX.Y.Z --draft=false`. This fires the `📦 npm Publish` workflow (`release: published` event) which runs `npm publish --provenance --access public` with provenance attestation. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`. Manual fallback if the workflow is broken: `npm publish --access public` from the maintainer's laptop.
 
 ### TAG NAMES ARE ONE-USE
 
