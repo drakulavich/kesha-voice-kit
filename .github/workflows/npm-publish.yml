@@ -27,13 +27,24 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # Both `inputs.tag` (workflow_dispatch) and `github.event.release.tag_name`
+      # (release event) flow through `env:` rather than direct
+      # `${{ … }}` interpolation in the `run:` script. The job holds
+      # `id-token: write`; an attacker-controlled tag containing `$(cmd)` or
+      # `;` would otherwise execute arbitrary code AND get the OIDC token
+      # for npm provenance. GHA security hardening guide:
+      # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
       - name: Resolve tag
         id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+            echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout at tag
