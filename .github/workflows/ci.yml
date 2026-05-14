@@ -3,6 +3,13 @@ name: 🧪 CI
 on:
   pull_request:
     branches: [main]
+  # Also run on push to main to catch regressions that slip through admin
+  # force-merges, post-merge hotfixes, or any other code path that lands on
+  # main without exercising the PR gate. The `changes` path-filter still
+  # applies — on push events, dorny/paths-filter diffs against the previous
+  # commit on `main`, so an unrelated touch doesn't run the full matrix.
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -152,9 +159,17 @@ jobs:
     # `code == 'true'`, so `unit-tests` is never `skipped` here and the
     # standard `result == 'success'` gate is enough.
     needs: [changes, unit-tests]
+    # Two skip cases for the published-engine download:
+    # 1. PR from a `release/*` branch — the version bump's new tag doesn't
+    #    exist yet (`head_ref` is set on pull_request events only).
+    # 2. Push to main where the merged commit IS the release bump —
+    #    same window between merge and tag-push. `head_commit.message`
+    #    is set on push events; on PRs it's null and `startsWith` short-
+    #    circuits to false so the clause is a no-op there.
     if: |
       needs.changes.outputs.integration == 'true' &&
       !startsWith(github.head_ref, 'release/') &&
+      !startsWith(github.event.head_commit.message, 'chore(release):') &&
       needs.unit-tests.result == 'success'
     runs-on: macos-latest
     timeout-minutes: 10
