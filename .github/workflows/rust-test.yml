@@ -6,12 +6,16 @@ on:
 
 permissions:
   contents: read
-  # Flakiness.io CLI authenticates via GitHub's OIDC provider; the
-  # upload step in each matrix row requests its own token.
-  id-token: write
 
 jobs:
   test:
+    permissions:
+      contents: read
+      # Flakiness.io CLI authenticates via GitHub OIDC; scope the
+      # write capability to this job only so a future second job in
+      # this workflow doesn't inherit it implicitly (symmetric with
+      # the per-job scoping in ci.yml per Greptile #301).
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -130,7 +134,12 @@ jobs:
         if: always()
 
       - name: 🪼 Upload to Flakiness.io
+        # `if: always()` runs the step but doesn't suppress its exit
+        # code; `continue-on-error: true` keeps a Flakiness outage /
+        # OIDC handshake failure off the test-job verdict (Greptile
+        # #301 P1). Telemetry upload is best-effort, not a release gate.
         if: always()
+        continue-on-error: true
         shell: bash
         run: |
           bunx flakiness convert-junit rust/target/nextest/ci/junit.xml \
