@@ -132,12 +132,13 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
 /// Canonical transcribe entry. New flags should land in [`TranscribeOptions`]
 /// instead of growing a new top-level wrapper.
 ///
-/// `opts.with_segments` gates the non-VAD plain path's call to
-/// `whole_file_segment`. Text-only callers skip it because
-/// `audio::probe_duration_seconds` returns `Ok(None)` for streaming
-/// Ogg/Opus without a frame count, which would turn into a hard error for
-/// inputs that previously transcribed cleanly. The VAD path always builds
-/// segments cheaply (per-span boundaries already in hand from VAD output).
+/// `opts.with_segments` gates whether the non-VAD plain path probes audio
+/// duration to attach a single whole-file segment. Text-only callers skip
+/// the probe because `audio::probe_duration_seconds` returns `Ok(None)`
+/// for streaming Ogg/Opus without a frame count, which would turn into a
+/// hard error for inputs that previously transcribed cleanly. The VAD
+/// path always builds segments cheaply (per-span boundaries already in
+/// hand from VAD output).
 ///
 /// `opts.with_speakers` triggers the diarization post-step after ASR completes.
 /// On darwin-arm64 with the `system_diarize` feature it invokes
@@ -191,9 +192,9 @@ pub fn transcribe_with_options(
         VadDecision::Vad => {
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
         }
-        // Pass the already-probed duration through so `whole_file_segment`
-        // doesn't re-open the file (#248). On `On`/`Off` modes we didn't
-        // probe, so it's `None` and the segment helper does the work.
+        // Pass the already-probed duration through so `resolve_segment_duration`
+        // doesn't re-open the file (#248). On `On`/`Off` modes we didn't probe,
+        // so it's `None` and the helper does the work.
         VadDecision::Plain => {
             transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
         }
@@ -397,11 +398,10 @@ where
     out
 }
 
-/// Build the single-segment vec produced by the non-VAD plain path. Re-uses
-/// the caller-supplied duration when available (#248) — the
-/// `Auto` mode probe-and-decide step already opens the file once.
 /// Honor a caller-supplied audio duration if present; otherwise probe the
-/// file. Split from `transcribe_plain` so the probe-vs-hint contract can be
+/// file. Re-uses the duration already computed during the `Auto` mode
+/// probe-and-decide step (#248) so the plain path doesn't re-open the file.
+/// Split from `transcribe_plain` so the probe-vs-hint contract can be
 /// unit-tested without spinning up an ASR backend.
 fn resolve_segment_duration(audio_path: &str, hint: Option<f32>) -> Result<f32> {
     if let Some(d) = hint {
@@ -594,8 +594,7 @@ mod tests {
             .tempfile()
             .unwrap();
         std::fs::write(tmp.path(), b"not an audio container").unwrap();
-        let dur =
-            resolve_segment_duration(tmp.path().to_str().unwrap(), Some(7.5)).unwrap();
+        let dur = resolve_segment_duration(tmp.path().to_str().unwrap(), Some(7.5)).unwrap();
         assert_eq!(dur, 7.5);
     }
 
