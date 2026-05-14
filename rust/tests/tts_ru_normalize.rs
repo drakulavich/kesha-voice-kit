@@ -354,7 +354,9 @@ fn emphasis_warn_fires_per_request_in_stdin_loop() {
     let mut eng = match LoopEngine::spawn() {
         Some(e) => e,
         None => {
-            eprintln!("skipping emphasis_warn_fires_per_request_in_stdin_loop: vosk-ru models not staged");
+            eprintln!(
+                "skipping emphasis_warn_fires_per_request_in_stdin_loop: vosk-ru models not staged"
+            );
             return;
         }
     };
