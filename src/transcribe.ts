@@ -35,8 +35,8 @@ export async function transcribeWithSegments(
       "╔══════════════════════════════════════════════════════════╗\n" +
       "║ Please run the following commands to get started:        ║\n" +
       "║                                                          ║\n" +
-      "║     bun add -g @drakulavich/kesha-voice-kit             ║\n" +
-      "║     kesha install                                       ║\n" +
+      "║     bun add -g @drakulavich/kesha-voice-kit              ║\n" +
+      "║     kesha install                                        ║\n" +
       "╚══════════════════════════════════════════════════════════╝",
     );
   }
