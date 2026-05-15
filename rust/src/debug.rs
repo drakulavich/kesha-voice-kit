@@ -330,9 +330,18 @@ mod tests {
     /// `ipa.chars().count()` at `tts/g2p.rs:35` (an O(n) char walk)
     /// would run on every release-build invocation.
     ///
+    /// Earlier draft of this test (Greptile P2 on #326) used a `Display`
+    /// impl with a side-effecting `fmt`. That test passed under the
+    /// pre-fix macro too because `Display::fmt` only runs when the
+    /// `Arguments<'_>` is actually written — which `trace_fmt`'s own
+    /// internal guard already blocked. To genuinely detect a regression
+    /// to eager-arg-eval we have to use an expression Rust evaluates
+    /// EAGERLY as part of building the `Arguments` — i.e. a function
+    /// call whose return value becomes the format argument.
+    ///
     /// The test relies on the default test-process state: `cargo test`
     /// and nextest don't set `KESHA_DEBUG`, so the cached `enabled()`
-    /// resolves to false. We skip with a note if it's on, so a deliberate
+    /// resolves to false. Skips harmlessly when on so a deliberate
     /// `KESHA_DEBUG=1 cargo test` doesn't produce an ambiguous failure.
     #[test]
     fn dtrace_skips_arg_evaluation_when_debug_is_off() {
@@ -344,24 +353,25 @@ mod tests {
         }
 
         static COUNT: AtomicUsize = AtomicUsize::new(0);
-        struct Counter;
-        impl std::fmt::Display for Counter {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                COUNT.fetch_add(1, Ordering::Relaxed);
-                write!(f, "counted")
-            }
+
+        fn side_effecting_arg() -> u32 {
+            COUNT.fetch_add(1, Ordering::Relaxed);
+            42
         }
 
-        // With KESHA_DEBUG off, the call-site `if enabled() { ... }`
-        // guard must short-circuit BEFORE format_args!. The Counter
-        // value is bound into the format-args expression but its
-        // Display::fmt should never run.
-        crate::dtrace!("f22-test {}", Counter);
+        // `format_args!("{}", side_effecting_arg())` requires the call
+        // to be evaluated BEFORE the `Arguments<'_>` value is built —
+        // its return is captured as the format argument. So if the
+        // macro short-circuits at the call site (new behaviour), the
+        // function never runs; if it eagerly expands `format_args!`
+        // and only guards the eprintln (old behaviour), the function
+        // DOES run and COUNT increments.
+        crate::dtrace!("f22-test {}", side_effecting_arg());
 
         assert_eq!(
             COUNT.load(Ordering::Relaxed),
             0,
-            "dtrace! evaluated its argument's Display impl when KESHA_DEBUG was off; \
+            "dtrace! eagerly evaluated its format-arg expression when KESHA_DEBUG was off; \
              the call-site guard regressed (#313 F22)"
         );
     }
