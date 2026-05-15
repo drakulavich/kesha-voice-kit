@@ -145,7 +145,7 @@ export const sayCommand = defineCommand({
       if (opts.out) {
         console.error(`Saved ${opts.out} (${ttsTimeMs}ms)`);
       }
-      if (args.verbose) {
+      if (args.verbose && !opts.out) {
         // stderr — stdout may carry raw audio bytes when --out is omitted.
         console.error(`TTS time: ${ttsTimeMs}ms`);
       }

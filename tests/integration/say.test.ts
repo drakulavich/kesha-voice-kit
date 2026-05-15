@@ -86,4 +86,36 @@ describe("kesha say (CLI)", () => {
     expect(stderr).toMatch(/Saved .*reply\.wav \(\d+ms\)/);
     expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe("RIFF");
   });
+
+  it("--verbose --out does not duplicate timing output", async () => {
+    const dir = `/tmp/kesha-fake-engine-${Date.now()}-${Math.random()}`;
+    const enginePath = await createFakeEngine(dir);
+    const outPath = `${dir}/reply.wav`;
+    const proc = spawn([
+      "bun",
+      CLI_PATH,
+      "say",
+      "--voice",
+      "ru-vosk-m02",
+      "--out",
+      outPath,
+      "--verbose",
+      "Привет",
+    ], {
+      env: {
+        ...process.env,
+        KESHA_CACHE_DIR: dir,
+        KESHA_ENGINE_BIN: enginePath,
+        HOME: dir,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(await proc.exited).toBe(0);
+    const stderr = await new Response(proc.stderr).text();
+
+    expect(stderr).toMatch(/Saved .*reply\.wav \(\d+ms\)/);
+    expect(stderr).not.toContain("TTS time:");
+  });
 });
