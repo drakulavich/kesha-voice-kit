@@ -100,12 +100,13 @@ Each segment gets a `speaker` integer (cluster ID, stable within one file). Linu
 
 ## Text-to-speech
 
-Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX (23 languages) — voice auto-picks from the text's language:
+Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX (23 languages) — voice auto-picks from the text's language. Use `--lang <tag>` to choose a language's default voice, or `--voice <id>` for an exact voice:
 
 ```bash
 kesha install --tts                      # ~3.3GB (Kokoro + Chatterbox, opt-in)
 kesha say "Hello, world" > hello.wav
-kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-chatterbox-m01 elsewhere)
+kesha say "Привет, мир" > privet.wav     # Chatterbox if installed; Milena fallback on darwin
+kesha say --lang de "Hallo"              # picks de-chatterbox-m01
 ```
 
 Chatterbox voice ids use `<lang>-chatterbox-m01` for `ar`, `da`, `de`, `el`, `en`, `es`, `fi`, `fr`, `he`, `hi`, `it`, `ja`, `ko`, `ms`, `nl`, `no`, `pl`, `pt`, `ru`, `sv`, `sw`, `tr`, `zh`.

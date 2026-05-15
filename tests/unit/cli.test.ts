@@ -240,6 +240,12 @@ describe("say --verbose (TTS time, parallel to #139)", () => {
     const usage = await renderUsage(sayCommand);
     expect(usage).toMatch(/TTS|synthesis time/i);
   });
+
+  test("say help explains --lang picks a default voice", async () => {
+    const usage = await renderUsage(sayCommand);
+    expect(usage).toContain("--lang");
+    expect(usage).toMatch(/default voice/i);
+  });
 });
 
 describe("sttTimeMs field (#139)", () => {

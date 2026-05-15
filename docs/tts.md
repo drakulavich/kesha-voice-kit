@@ -1,11 +1,12 @@
 # Text-to-Speech
 
-Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX. Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` routes to macOS AVSpeech on darwin and Chatterbox elsewhere, and other Chatterbox languages route to Chatterbox. Pass `--voice` to override.
+Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX. Voice is auto-picked from the input text's language — `en` routes to Kokoro, Chatterbox languages route to Chatterbox, and `ru` on darwin uses Milena only as the zero-install fallback when Chatterbox is not installed. Pass `--lang <tag>` to choose a language's default voice, or `--voice <id>` to pick an exact voice.
 
 ```bash
 kesha install --tts                 # ~3.3GB (Kokoro + Chatterbox, opt-in)
 kesha say "Hello, world" > hello.wav
-kesha say "Привет, мир" > privet.wav    # auto-routes (Milena on darwin, ru-chatterbox-m01 elsewhere)
+kesha say "Привет, мир" > privet.wav    # auto-routes (Chatterbox if installed; Milena fallback on darwin)
+kesha say --lang de "Hallo"             # picks de-chatterbox-m01
 echo "long text" | kesha say > reply.wav
 kesha say --out reply.wav "text"
 kesha say --voice en-am_michael "text"    # explicit voice overrides auto-routing
@@ -22,7 +23,7 @@ Chatterbox voice ids use `<lang>-chatterbox-m01`. Supported language tags:
 
 `ar`, `da`, `de`, `el`, `en`, `es`, `fi`, `fr`, `he`, `hi`, `it`, `ja`, `ko`, `ms`, `nl`, `no`, `pl`, `pt`, `ru`, `sv`, `sw`, `tr`, `zh`
 
-Default voices are **male** per CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE": `am_michael` for English Kokoro, `ru-chatterbox-m01` for Russian Chatterbox on Linux/Windows. The darwin Russian fallback uses `Milena` (AVSpeech) for the zero-install path.
+Default voices are **male** per CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE": `am_michael` for English Kokoro, `ru-chatterbox-m01` for Russian Chatterbox. The darwin Russian fallback uses `Milena` (AVSpeech) only for the zero-install path before `kesha install --tts`.
 
 **Supported voices:**
 - English: `en-am_michael` (default), plus any Kokoro voice you download into `~/.cache/kesha/models/kokoro-82m/voices/` (`am_*`/`bm_*` male, `af_*`/`bf_*` female).

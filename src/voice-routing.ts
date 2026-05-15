@@ -35,10 +35,33 @@ export function pickVoiceForLang(
   code: string | undefined,
   confidence: number,
   platform: NodeJS.Platform = process.platform,
+  opts: { chatterboxInstalled?: boolean } = {},
 ): string | undefined {
   if (!code || confidence < 0.5) return undefined;
-  if (code === "ru" && platform === "darwin") {
+  if (code === "ru" && platform === "darwin" && !opts.chatterboxInstalled) {
     return RU_DARWIN_FALLBACK_VOICE;
   }
   return AUTO_VOICE_BY_LANG[code];
+}
+
+export function resolveSayVoice(options: {
+  explicitVoice?: string;
+  explicitLang?: string;
+  detectedCode?: string;
+  detectedConfidence?: number;
+  platform?: NodeJS.Platform;
+  chatterboxInstalled?: boolean;
+}): string | undefined {
+  if (options.explicitVoice) return options.explicitVoice;
+  const platform = options.platform ?? process.platform;
+  const routeOptions = { chatterboxInstalled: options.chatterboxInstalled };
+  if (options.explicitLang) {
+    return pickVoiceForLang(options.explicitLang, 1.0, platform, routeOptions);
+  }
+  return pickVoiceForLang(
+    options.detectedCode,
+    options.detectedConfidence ?? 0,
+    platform,
+    routeOptions,
+  );
 }
