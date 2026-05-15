@@ -2,6 +2,7 @@ import { defineCommand } from "citty";
 import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
 import { log } from "../log";
 import { say, SayError, type SayFormat } from "../synth";
+import { artifactFromBytes, artifactFromFile, createStatsRecorder } from "../stats";
 import { pickVoiceForLang } from "../voice-routing";
 
 /** Run NLLanguageRecognizer (via engine) on the text and pick a default voice. */
@@ -133,19 +134,29 @@ export const sayCommand = defineCommand({
       sampleRate: args["sample-rate"] ? Number(args["sample-rate"]) : undefined,
       noExpandAbbrev: Boolean(args["no-expand-abbrev"]),
     };
+    const stats = createStatsRecorder("say");
 
     try {
       const startedAt = performance.now();
-      const audio = await say(opts);
+      const audio = await stats.timeStage("tts", () => say(opts));
       const ttsTimeMs = Math.round(performance.now() - startedAt);
       if (args.verbose) {
         // stderr — stdout may carry raw audio bytes when --out is omitted.
         console.error(`TTS time: ${ttsTimeMs}ms`);
       }
+      if (opts.out) {
+        const outputArtifact = artifactFromFile(opts.out, "output_audio");
+        if (outputArtifact) stats.recordArtifact(outputArtifact);
+      } else {
+        stats.recordArtifact(artifactFromBytes(audio.byteLength, "output_audio", opts.format ?? "wav"));
+      }
+      stats.finish("success", 1);
       if (!opts.out) {
         process.stdout.write(audio);
       }
     } catch (err) {
+      stats.recordError("tts", err);
+      stats.finish("failed", 1);
       if (err instanceof SayError) {
         log.error(err.stderr.trim() || err.message);
         process.exit(err.exitCode);

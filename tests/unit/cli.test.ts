@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, installCommand, statusCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
+import { mainCommand, installCommand, statusCommand, statsCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -53,6 +53,12 @@ describe("CLI help", () => {
     const usage = await renderUsage(statusCommand);
     expect(usage).toContain("status");
     expect(usage).toContain("Show backend installation status");
+  });
+
+  test("stats help has command description", async () => {
+    const usage = await renderUsage(statsCommand);
+    expect(usage).toContain("stats");
+    expect(usage).toContain("enable");
   });
 });
 
@@ -221,6 +227,11 @@ describe("CLI help with status", () => {
   test("main help includes status command", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("status");
+  });
+
+  test("main description mentions stats command", async () => {
+    const usage = await renderUsage(mainCommand);
+    expect(usage).toContain("stats");
   });
 });
 

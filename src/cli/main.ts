@@ -13,6 +13,7 @@ import {
   formatVerboseOutput,
 } from "../format";
 import { formatToonOutput } from "../toon";
+import { artifactFromFile, createStatsRecorder } from "../stats";
 
 const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
 
@@ -110,6 +111,7 @@ export const mainCommand = defineCommand({
     description:
       "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
       "  Run 'kesha install [--no-cache]' to download engine and models.\n" +
+      "  Run 'kesha stats enable' to collect local anonymous performance stats.\n" +
       "  Run 'kesha status' to inspect installed backend.",
   },
   args: {
@@ -203,22 +205,30 @@ export const mainCommand = defineCommand({
 
     let hasError = false;
     const results: TranscribeResult[] = [];
+    const stats = createStatsRecorder("transcribe");
 
     const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
 
     for (const file of files) {
       if (!existsSync(file)) {
         hasError = true;
+        stats.recordError("input", new Error("File not found"), "file_not_found");
         log.error(`${file}: File not found`);
         continue;
       }
+      const inputArtifact = artifactFromFile(file, "input_audio");
+      if (inputArtifact) stats.recordArtifact(inputArtifact);
 
       const startedAt = performance.now();
       try {
         // Run audio lang-id and transcription concurrently.
         const [audioResult, transcript] = await Promise.all([
-          wantsLangId ? detectAudioLanguageEngine(file) : Promise.resolve(null),
-          transcribeWithSegments(file, { vad: vadMode, timestamps: args.timestamps, speakers: args.speakers }),
+          wantsLangId
+            ? stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file))
+            : Promise.resolve(null),
+          stats.timeStage("transcribe", () =>
+            transcribeWithSegments(file, { vad: vadMode, timestamps: args.timestamps, speakers: args.speakers })
+          ),
         ]);
         const { text, segments } = transcript;
 
@@ -236,7 +246,7 @@ export const mainCommand = defineCommand({
         let textLanguage: LangDetectResult | undefined;
 
         if (wantsLangId) {
-          const engineTextResult = await detectTextLanguageEngine(text);
+          const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text));
           if (engineTextResult && engineTextResult.code) {
             textLanguage = engineTextResult;
           }
@@ -261,6 +271,7 @@ export const mainCommand = defineCommand({
         results.push(result);
       } catch (err: unknown) {
         hasError = true;
+        stats.recordError("transcribe", err);
         const message = err instanceof Error ? err.message : String(err);
         log.error(`${file}: ${message}`);
       }
@@ -277,6 +288,8 @@ export const mainCommand = defineCommand({
     } else {
       process.stdout.write(formatTextOutput(results));
     }
+
+    stats.finish(hasError ? "failed" : "success", files.length);
 
     if (hasError) process.exit(1);
   },
