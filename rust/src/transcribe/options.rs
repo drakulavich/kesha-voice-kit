@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 
 use super::{TranscribeOptions, VadMode};
 
-pub mod marker {
+pub(crate) mod marker {
     /// Builder state: segments not yet enabled. `with_speakers()` is unavailable.
     pub struct NoSegments;
     /// Builder state: segments enabled. `with_speakers()` is available.
