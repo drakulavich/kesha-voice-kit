@@ -150,6 +150,14 @@ Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
 See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + English).
 
+Reproduce the headline locally:
+
+```bash
+kesha benchmark --sample-set fixtures/benchmark,fixtures/benchmark-en
+```
+
+The command prints Markdown and writes `benchmark-results.json` with machine, backend, package, Bun, sample-set, and per-file timing metadata.
+
 ## What's Inside
 
 | Model | Task | Size | Source |

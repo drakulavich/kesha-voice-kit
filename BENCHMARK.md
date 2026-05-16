@@ -4,6 +4,14 @@ Three-way comparison: openai-whisper (OpenClaw default) vs faster-whisper vs Kes
 
 **Whisper model:** `large-v3-turbo` — all engines auto-detect language, no hints provided.
 
+## Reproduce
+
+```bash
+kesha benchmark --sample-set fixtures/benchmark,fixtures/benchmark-en
+```
+
+The command prints a Markdown report and writes `benchmark-results.json`. The JSON includes platform, package version, Bun version, selected Kesha backend, Whisper model, sample-set paths, file counts, per-file timings, and transcripts. Use `--out-json <path>` to write the machine-readable report somewhere else, or `--sample-set <dir>[,<dir>]` to benchmark another `.ogg` fixture set.
+
 ## Apple M3 Pro, 36 GB RAM
 
 **Date:** 2026-04-16

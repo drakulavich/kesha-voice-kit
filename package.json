@@ -1,7 +1,7 @@
 {
   "name": "@drakulavich/kesha-voice-kit",
   "version": "1.18.0",
-  "description": "Open-source voice toolkit. Speech-to-text (25 langs, ~19x faster than Whisper on Apple Silicon, ONNX fallback on CPU), text-to-speech (Kokoro + Vosk-TTS + ~180 macOS system voices, SSML), voice-activity detection, language detection (107 langs). Rust engine, OpenClaw skill.",
+  "description": "Open-source voice toolkit. Speech-to-text (25 langs, ~15x faster than Whisper on Apple Silicon, ONNX fallback on CPU), text-to-speech (Kokoro + Vosk-TTS + ~180 macOS system voices, SSML), voice-activity detection, language detection (107 langs). Rust engine, OpenClaw skill.",
   "type": "module",
   "bin": {
     "kesha": "bin/kesha.js",
@@ -18,6 +18,9 @@
     "tsconfig.json",
     "openclaw.plugin.json",
     "openclaw-plugin.cjs",
+    "fixtures/benchmark/",
+    "fixtures/benchmark-en/",
+    "BENCHMARK.md",
     "SKILL.md",
     "scripts/postinstall.cjs",
     "LICENSE",

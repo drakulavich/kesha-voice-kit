@@ -37,7 +37,7 @@ smoke-test-tts: ## Run smoke tests with TTS
 	bun scripts/smoke-test.ts --tts
 
 benchmark: ## Run benchmark (openai-whisper vs faster-whisper vs Kesha)
-	bun scripts/benchmark.ts
+	bun bin/kesha.js benchmark
 
 release: lint test smoke-test ## Verify everything before publish
 	@echo "All checks passed. Ready to publish."

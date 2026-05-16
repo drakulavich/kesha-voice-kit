@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, installCommand, statusCommand, statsCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
+import { mainCommand, benchmarkCommand, installCommand, statusCommand, statsCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat, resolveSampleSets } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -13,6 +13,7 @@ describe("CLI help", () => {
   test("main help shows subcommand inventory (#324)", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("Commands:");
+    expect(usage).toContain("benchmark  Run reproducible STT benchmarks.");
     expect(usage).toContain("install    Download engine and models.");
     expect(usage).toContain("status     Inspect installed backend.");
     expect(usage).toContain("say        Synthesize speech from text.");
@@ -24,6 +25,13 @@ describe("CLI help", () => {
     expect(usage).toContain("--coreml");
     expect(usage).toContain("--onnx");
     expect(usage).toContain("--no-cache");
+  });
+
+  test("benchmark help contains sample-set and out-json options (#345 P0)", async () => {
+    const usage = await renderUsage(benchmarkCommand);
+    expect(usage).toContain("--sample-set");
+    expect(usage).toContain("--out-json");
+    expect(usage).toContain("platform/profile metadata");
   });
 
   test("main help contains --json flag", async () => {
@@ -68,6 +76,14 @@ describe("CLI help", () => {
     const usage = await renderUsage(statsCommand);
     expect(usage).toContain("stats");
     expect(usage).toContain("enable");
+  });
+});
+
+describe("benchmark sample-set resolution (#345 P0)", () => {
+  test("default sample sets resolve to shipped Russian and English fixtures", () => {
+    const sampleSets = resolveSampleSets(undefined, process.cwd());
+    expect(sampleSets.map((set) => set.name)).toEqual(["Russian", "English"]);
+    expect(sampleSets.every((set) => set.files.length > 0)).toBe(true);
   });
 });
 
