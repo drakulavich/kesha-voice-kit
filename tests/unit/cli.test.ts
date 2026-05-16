@@ -1,6 +1,9 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { mainCommand, benchmarkCommand, installCommand, statusCommand, statsCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat, resolveSampleSets } from "../../src/cli";
 
 describe("CLI help", () => {
@@ -84,6 +87,22 @@ describe("benchmark sample-set resolution (#345 P0)", () => {
     const sampleSets = resolveSampleSets(undefined, process.cwd());
     expect(sampleSets.map((set) => set.name)).toEqual(["Russian", "English"]);
     expect(sampleSets.every((set) => set.files.length > 0)).toBe(true);
+  });
+
+  test("relative custom sample sets resolve from cwd before package root", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "kesha-benchmark-cwd-"));
+    const packageRoot = mkdtempSync(join(tmpdir(), "kesha-benchmark-package-"));
+    try {
+      mkdirSync(join(cwd, "custom-fixtures"));
+      writeFileSync(join(cwd, "custom-fixtures", "01-test.ogg"), "");
+
+      const [sampleSet] = resolveSampleSets("custom-fixtures", packageRoot, cwd);
+      expect(sampleSet.dir).toBe(join(cwd, "custom-fixtures"));
+      expect(sampleSet.files).toEqual([join(cwd, "custom-fixtures", "01-test.ogg")]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(packageRoot, { recursive: true, force: true });
+    }
   });
 });
 

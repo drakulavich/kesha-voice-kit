@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import { Glob } from "bun";
-import { basename, resolve } from "path";
+import { basename, isAbsolute, resolve } from "path";
 import { existsSync, mkdirSync } from "fs";
 import { homedir } from "os";
 
@@ -8,8 +8,6 @@ const DEFAULT_SAMPLE_SETS = "fixtures/benchmark,fixtures/benchmark-en";
 const DEFAULT_RESULTS_FILE = "benchmark-results.json";
 const DEFAULT_COREML_BIN = "/tmp/coreml-bench/parakeet-coreml";
 const VENV_DIR = resolve(homedir(), ".cache", "kesha", "benchmark-venv");
-
-const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
 
 interface BenchmarkCommandArgs {
   "sample-set": string;
@@ -53,8 +51,6 @@ export interface BenchmarkReport {
     whisperModel: string;
     sampleSets: Array<{ name: string; path: string; fileCount: number }>;
   };
-  keshaBackend: string;
-  whisperModel: string;
   groups: GroupResult[];
 }
 
@@ -81,6 +77,11 @@ function titleFromPath(path: string): string {
   if (base === "benchmark") return "Russian";
   if (base === "benchmark-en") return "English";
   return base.replace(/^benchmark-?/, "").replace(/[-_]+/g, " ") || "sample";
+}
+
+async function getPackageVersion(): Promise<string> {
+  const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
+  return typeof pkg.version === "string" ? pkg.version : "unknown";
 }
 
 function getSystemInfo(): BenchmarkReport["platform"] {
@@ -148,9 +149,20 @@ function scanFixtures(dir: string): string[] {
   return [...new Glob("*.ogg").scanSync(dir)].sort().map((file) => resolve(dir, file));
 }
 
-export function resolveSampleSets(sampleSetArg = DEFAULT_SAMPLE_SETS, repoDir = resolve(import.meta.dir, "../..")): SampleSet[] {
+function resolveSampleSetDir(entry: string, packageRoot: string, cwd: string): string {
+  if (isAbsolute(entry)) return entry;
+  const cwdPath = resolve(cwd, entry);
+  if (existsSync(cwdPath)) return cwdPath;
+  return resolve(packageRoot, entry);
+}
+
+export function resolveSampleSets(
+  sampleSetArg = DEFAULT_SAMPLE_SETS,
+  packageRoot = resolve(import.meta.dir, "../.."),
+  cwd = process.cwd(),
+): SampleSet[] {
   return splitCsv(sampleSetArg).map((entry) => {
-    const dir = resolve(repoDir, entry);
+    const dir = resolveSampleSetDir(entry, packageRoot, cwd);
     return {
       name: titleFromPath(entry),
       dir,
@@ -367,6 +379,7 @@ export async function runBenchmark(options: RunBenchmarkOptions = {}): Promise<B
 
   const platform = getSystemInfo();
   const keshaBackend = getKeshaBackend(keshaCommand);
+  const packageVersion = await getPackageVersion();
   const python = ensureVenv();
   const groups: GroupResult[] = [];
 
@@ -406,7 +419,7 @@ export async function runBenchmark(options: RunBenchmarkOptions = {}): Promise<B
     date: new Date().toISOString().split("T")[0],
     platform,
     profile: {
-      packageVersion: typeof pkg.version === "string" ? pkg.version : "unknown",
+      packageVersion,
       bunVersion: Bun.version,
       keshaBackend,
       whisperModel: "large-v3-turbo",
@@ -416,8 +429,6 @@ export async function runBenchmark(options: RunBenchmarkOptions = {}): Promise<B
         fileCount: set.files.length,
       })),
     },
-    keshaBackend,
-    whisperModel: "large-v3-turbo",
     groups,
   };
 
