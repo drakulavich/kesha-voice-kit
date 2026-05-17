@@ -25,6 +25,50 @@ if (outIndex >= 0) {
   return enginePath;
 }
 
+async function createFailingEngine(dir: string): Promise<string> {
+  mkdirSync(dir, { recursive: true });
+  const enginePath = `${dir}/kesha-engine-fail-on-use`;
+  await Bun.write(enginePath, `#!/usr/bin/env bun
+console.error("fake engine should not have been invoked: " + JSON.stringify(Bun.argv.slice(2)));
+process.exit(99);
+`);
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+const INVALID_NUMERIC_FLAG_CASES: Array<{ name: string; args: string[]; message: string }> = [
+  {
+    name: "non-numeric rate",
+    args: ["--rate", "fast", "Hello"],
+    message: "--rate must be a finite number",
+  },
+  {
+    name: "empty rate",
+    args: ["--rate", "", "Hello"],
+    message: "--rate must be a finite number",
+  },
+  {
+    name: "out-of-range rate",
+    args: ["--rate", "3", "Hello"],
+    message: "--rate must be between 0.5 and 2.0",
+  },
+  {
+    name: "non-numeric bitrate",
+    args: ["--format", "ogg-opus", "--bitrate", "wide", "Hello"],
+    message: "--bitrate must be a finite number",
+  },
+  {
+    name: "negative bitrate",
+    args: ["--format", "ogg-opus", "--bitrate", "-1", "Hello"],
+    message: "--bitrate must be a positive integer",
+  },
+  {
+    name: "unsupported sample rate",
+    args: ["--format", "ogg-opus", "--sample-rate", "44100", "Hello"],
+    message: "--sample-rate must be one of",
+  },
+];
+
 describe("kesha say (CLI)", () => {
   it("--help exits 0 and mentions --voice", async () => {
     const proc = spawn(["bun", CLI_PATH, "say", "--help"], {
@@ -118,4 +162,28 @@ describe("kesha say (CLI)", () => {
     expect(stderr).toMatch(/Saved .*reply\.wav \(\d+ms\)/);
     expect(stderr).not.toContain("TTS time:");
   });
+
+  for (const tc of INVALID_NUMERIC_FLAG_CASES) {
+    it(`rejects ${tc.name} before spawning the engine`, async () => {
+      const dir = `/tmp/kesha-fail-engine-${Date.now()}-${Math.random()}`;
+      const enginePath = await createFailingEngine(dir);
+      const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", ...tc.args], {
+        env: {
+          ...process.env,
+          KESHA_CACHE_DIR: dir,
+          KESHA_ENGINE_BIN: enginePath,
+          HOME: dir,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      expect(await proc.exited).toBe(2);
+      const stdout = await new Response(proc.stdout).text();
+      const stderr = await new Response(proc.stderr).text();
+      expect(stdout).toBe("");
+      expect(stderr).toContain(tc.message);
+      expect(stderr).not.toContain("fake engine should not have been invoked");
+    });
+  }
 });
