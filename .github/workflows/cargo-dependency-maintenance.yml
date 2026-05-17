@@ -1,0 +1,74 @@
+name: "🦀 Cargo Dependency Maintenance"
+
+on:
+  schedule:
+    # Monthly signal for Rust dependency drift. Dependabot's cargo ecosystem
+    # remains disabled here because its runner hits sparse-index curl errors.
+    - cron: "17 7 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  checklist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧾 Open monthly Cargo checklist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          month="$(date -u +'%Y-%m')"
+          title="Cargo dependency maintenance - ${month}"
+
+          existing="$(
+            gh issue list \
+              -R "$REPO" \
+              --state open \
+              --search "\"$title\" in:title" \
+              --json number,title \
+              --jq ".[] | select(.title == \"$title\") | .number" |
+              head -n 1
+          )"
+
+          if [[ -n "$existing" ]]; then
+            echo "Cargo maintenance issue already exists: #$existing"
+            exit 0
+          fi
+
+          body="$RUNNER_TEMP/cargo-maintenance.md"
+          cat > "$body" <<'EOF'
+          Monthly Rust dependency upkeep checklist.
+
+          Dependabot Cargo updates are intentionally disabled in this repo because its runner has repeatedly failed against the crates.io sparse index. This issue keeps the replacement process explicit and visible.
+
+          ## Checklist
+
+          - [ ] Create a branch from current `main`
+          - [ ] Run `cd rust && cargo update`
+          - [ ] Review `rust/Cargo.lock` for major, security-sensitive, or native dependency changes
+          - [ ] Run `cd rust && cargo fmt -- --check`
+          - [ ] Run `cd rust && cargo clippy --all-targets -- -D warnings`
+          - [ ] Run `cd rust && cargo nextest run --features tts`
+          - [ ] If backend or platform crates changed, also run `cd rust && cargo check --features coreml --no-default-features`
+          - [ ] Open a PR titled `chore(deps): refresh Rust dependencies`
+          - [ ] Link this issue from the PR and note any risky transitive changes
+
+          If `cargo update` produces no diff, close this issue with a short note.
+          EOF
+
+          gh issue create \
+            -R "$REPO" \
+            --title "$title" \
+            --body-file "$body" \
+            --label dependencies \
+            --label rust
