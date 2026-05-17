@@ -88,6 +88,10 @@ jobs:
         run: |
           cd tap
           tap_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's#^origin/##')"
+          test -n "$tap_branch" || {
+            echo "::error::Could not resolve default branch for $TAP_REPO"
+            exit 1
+          }
           if git diff --quiet -- Formula/kesha-voice-kit.rb; then
             echo "Homebrew formula already matches ${{ steps.tag.outputs.tag }}"
             exit 0
