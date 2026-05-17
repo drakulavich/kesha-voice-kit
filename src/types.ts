@@ -17,4 +17,17 @@ export type TranscribeResult = {
   sttTimeMs?: number;
 };
 
+export type TranscribeErrorRecord = {
+  file: string;
+  code: "file_not_found" | "transcribe_failed";
+  message: string;
+};
+
+export type TranscribeJsonOutput =
+  | TranscribeResult[]
+  | {
+      results: TranscribeResult[];
+      errors: TranscribeErrorRecord[];
+    };
+
 export type { LangDetectResult, TranscriptionSegment };

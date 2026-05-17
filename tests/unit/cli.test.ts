@@ -48,6 +48,11 @@ describe("CLI help", () => {
     expect(usage).toContain("--json");
   });
 
+  test("main help contains --include-errors flag (#324 P1)", async () => {
+    const usage = await renderUsage(mainCommand);
+    expect(usage).toContain("--include-errors");
+  });
+
   test("main help contains --toon flag (#138)", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("--toon");
@@ -116,6 +121,28 @@ describe("output formatting", () => {
   test("JSON output: empty array when no results", () => {
     const output = formatJsonOutput([]);
     expect(JSON.parse(output)).toEqual([]);
+  });
+
+  test("JSON output can opt into structured file errors (#324 P1)", () => {
+    const output = formatJsonOutput(
+      [{ file: "ok.ogg", text: "Hello", lang: "en" }],
+      [{ file: "missing.ogg", code: "file_not_found", message: "File not found" }],
+    );
+    expect(JSON.parse(output)).toEqual({
+      results: [{ file: "ok.ogg", text: "Hello", lang: "en" }],
+      errors: [{ file: "missing.ogg", code: "file_not_found", message: "File not found" }],
+    });
+  });
+
+  test("JSON output with --include-errors and no errors still uses envelope shape", () => {
+    const output = formatJsonOutput(
+      [{ file: "ok.ogg", text: "Hello", lang: "en" }],
+      [],
+    );
+    expect(JSON.parse(output)).toEqual({
+      results: [{ file: "ok.ogg", text: "Hello", lang: "en" }],
+      errors: [],
+    });
   });
 
   test("JSON output preserves timestamped segments", () => {

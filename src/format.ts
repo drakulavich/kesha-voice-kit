@@ -1,4 +1,4 @@
-import type { TranscribeResult } from "./types";
+import type { TranscribeErrorRecord, TranscribeJsonOutput, TranscribeResult } from "./types";
 
 export function formatTextOutput(results: TranscribeResult[]): string {
   if (results.length === 1) {
@@ -52,6 +52,11 @@ export function formatTranscriptOutput(results: TranscribeResult[]): string {
     .join("\n") + "\n";
 }
 
-export function formatJsonOutput(results: TranscribeResult[]): string {
-  return JSON.stringify(results, null, 2) + "\n";
+export function formatJsonOutput(
+  results: TranscribeResult[],
+  errors?: TranscribeErrorRecord[],
+): string {
+  const payload: TranscribeJsonOutput =
+    errors === undefined ? results : { results, errors };
+  return JSON.stringify(payload, null, 2) + "\n";
 }
