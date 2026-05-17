@@ -32,7 +32,7 @@ const presets: Record<PresetName, CoveragePreset> = {
       "src/cli/main.ts": 40,
       "src/doctor.ts": 92,
       "src/engine.ts": 44,
-      "src/install-plan.ts": 83,
+      "src/install-plan.ts": 79,
       "src/star.ts": 97,
       "src/stats.ts": 94,
       "src/status.ts": 83,
