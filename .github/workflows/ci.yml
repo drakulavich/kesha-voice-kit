@@ -35,6 +35,7 @@ jobs:
       raycast: ${{ steps.filter.outputs.raycast }}
       nix: ${{ steps.filter.outputs.nix }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      homebrew: ${{ steps.filter.outputs.homebrew }}
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v6
@@ -100,6 +101,10 @@ jobs:
               - '.github/scripts/**'
               - 'package.json'
               - 'bun.lock'
+            homebrew:
+              - 'Formula/**'
+              - 'docs/homebrew.md'
+              - '.github/workflows/ci.yml'
 
   workflow-lint:
     needs: changes
@@ -117,6 +122,36 @@ jobs:
 
       - name: 🧾 Check release manifest metadata
         run: bun run check:release-manifest
+
+  homebrew-formula:
+    needs: changes
+    if: needs.changes.outputs.homebrew == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+
+      - name: 🍞 Tap Bun formula
+        run: brew tap oven-sh/bun
+
+      - name: 🧪 Create local test tap
+        run: |
+          brew tap-new local/kesha
+          cp Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/kesha-voice-kit.rb"
+
+      - name: 📦 Install formula
+        run: brew install --build-from-source local/kesha/kesha-voice-kit
+
+      - name: 🔍 Audit formula
+        run: brew audit --strict --formula local/kesha/kesha-voice-kit
+
+      - name: 🚬 Test formula
+        run: brew test local/kesha/kesha-voice-kit
+
+      - name: 🧹 Uninstall formula
+        if: always()
+        run: brew uninstall local/kesha/kesha-voice-kit || true
 
   unit-tests:
     needs: changes
