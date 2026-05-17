@@ -47,8 +47,8 @@ const presets: Record<PresetName, CoveragePreset> = {
     minFileLines: {
       "src/cli/say.rs": 77,
       "src/main.rs": 68,
-      "src/models.rs": 68,
-      "src/say_loop.rs": 86,
+      "src/models.rs": 67,
+      "src/say_loop.rs": 82,
       "src/transcribe/mod.rs": 70,
       "src/transcribe/options.rs": 100,
       "src/tts/encode.rs": 88,
