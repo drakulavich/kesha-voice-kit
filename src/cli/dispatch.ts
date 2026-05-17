@@ -7,9 +7,10 @@ import { installCommand } from "./install";
 import { sayCommand } from "./say";
 import { statsCommand } from "./stats";
 import { statusCommand } from "./status";
+import { supportBundleCommand } from "./support-bundle";
 import { mainCommand } from "./main";
 
-const SUBCOMMANDS = ["doctor", "install", "status", "say", "stats"];
+const SUBCOMMANDS = ["doctor", "install", "status", "say", "stats", "support-bundle"];
 
 function isPathLike(arg: string): boolean {
   return arg.includes(".") || arg.includes("/") || existsSync(arg);
@@ -40,6 +41,11 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
 
   if (firstArg === "stats") {
     await runMain(statsCommand, { rawArgs: restArgs });
+    return;
+  }
+
+  if (firstArg === "support-bundle") {
+    await runMain(supportBundleCommand, { rawArgs: restArgs });
     return;
   }
 

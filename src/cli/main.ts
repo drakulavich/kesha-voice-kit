@@ -116,7 +116,8 @@ export const mainCommand = defineCommand({
       "  install    Download engine and models.\n" +
       "  status     Inspect installed backend.\n" +
       "  say        Synthesize speech from text.\n" +
-      "  stats      Manage local anonymous performance stats.",
+      "  stats      Manage local anonymous performance stats.\n" +
+      "  support-bundle  Create a redacted diagnostics archive.",
   },
   args: {
     json: {
@@ -209,7 +210,8 @@ export const mainCommand = defineCommand({
           "       kesha install [--no-cache]\n" +
           "       kesha status\n" +
           "       kesha say <text>\n" +
-          "       kesha stats [enable|disable|status|week|errors]",
+          "       kesha stats [enable|disable|status|week|errors]\n" +
+          "       kesha support-bundle [--output path.tar.gz]",
       );
       process.exit(1);
     }

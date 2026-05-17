@@ -51,6 +51,17 @@ kesha audio.ogg     # transcript to stdout
 
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
 
+## Support diagnostics
+
+Kesha can collect local diagnostics without downloading models or mutating cache state:
+
+```bash
+kesha doctor --json --redact
+kesha support-bundle --output kesha-support.tar.gz
+```
+
+`support-bundle` creates a redacted `.tar.gz` archive for GitHub issues. It includes runtime, engine, cache, optional-component, Stats status, and known Kesha environment settings. It does not include audio, transcripts, model files, or the Stats database.
+
 ## Nix Install
 
 Alternative reproducible-build path on `aarch64-darwin` / `x86_64-linux`:

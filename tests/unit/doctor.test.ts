@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { gunzipSync } from "node:zlib";
 import {
   collectDoctorReport,
   formatDoctorReport,
   redactDiagnosticValue,
 } from "../../src/doctor";
+import { createSupportBundle } from "../../src/support-bundle";
 
 describe("redactDiagnosticValue", () => {
   test("redacts secret-like keys", () => {
@@ -113,6 +115,62 @@ describe("collectDoctorReport", () => {
       expect(output).toContain("Runtime:");
       expect(output).toContain("Engine:");
       expect(output).toContain("Environment:");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("createSupportBundle", () => {
+  const savedEnv = {
+    HOME: process.env.HOME,
+    KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
+    KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
+    KESHA_MODEL_MIRROR: process.env.KESHA_MODEL_MIRROR,
+    KESHA_STATS_DB: process.env.KESHA_STATS_DB,
+    KESHA_DEBUG: process.env.KESHA_DEBUG,
+    KESHA_DEBUG_FD: process.env.KESHA_DEBUG_FD,
+  };
+
+  function restoreEnv() {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  test("creates a redacted tar.gz archive safe to attach to support issues", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-support-bundle-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+      process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+      process.env.KESHA_MODEL_MIRROR = "https://user:pass@example.com/kesha?token=abc";
+      mkdirSync(join(dir, ".cache", "kesha", "models", "silero-vad"), { recursive: true });
+      writeFileSync(join(dir, ".cache", "kesha", "models", "silero-vad", "model.onnx"), "vad");
+
+      const output = join(dir, "bundle.tar.gz");
+      const result = await createSupportBundle({
+        output,
+        now: new Date("2026-05-17T12:34:56Z"),
+      });
+      const archive = gunzipSync(readFileSync(output)).toString("utf8");
+
+      expect(result.path).toBe(output);
+      expect(result.entries).toContain("bundle/doctor.json");
+      expect(result.entries).toContain("bundle/doctor.txt");
+      expect(result.entries).toContain("bundle/manifest.json");
+      expect(archive).toContain("bundle/README.txt");
+      expect(archive).toContain('"redacted": true');
+      expect(archive).toContain("~/engine/bin/kesha-engine");
+      expect(archive).toContain("https://example.com/kesha");
+      expect(archive).not.toContain(dir);
+      expect(archive).not.toContain("user:pass");
+      expect(archive).not.toContain("token=abc");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
