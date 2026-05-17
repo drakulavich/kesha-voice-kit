@@ -355,6 +355,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       # Need the tag object available locally to read its annotation. Default
       # actions/checkout doesn't fetch tag objects under `on.push.tags`, so
@@ -382,10 +383,31 @@ jobs:
           Download the published binaries and checksums, then verify them:
 
           \`\`\`bash
-          gh release download $TAG_NAME -p SHA256SUMS -p 'kesha-*' -p 'say-*'
+          gh release download $TAG_NAME -p SHA256SUMS -p '*.sigstore.json' -p 'kesha-*' -p 'say-*'
           sha256sum -c SHA256SUMS
+
+          cosign verify-blob \\
+            --bundle kesha-engine-darwin-arm64.sigstore.json \\
+            --certificate-identity "https://github.com/drakulavich/kesha-voice-kit/.github/workflows/build-engine.yml@refs/tags/$TAG_NAME" \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
+            kesha-engine-darwin-arm64
           \`\`\`
+
+          The release also includes a source SBOM: \`kesha-voice-kit-$TAG_NAME.spdx.json\`.
           EOF
+
+      - name: Prepare release asset directory
+        run: mkdir -p release-assets
+
+      - name: Generate source SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: release-assets/kesha-voice-kit-${{ github.ref_name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
@@ -397,8 +419,24 @@ jobs:
         shell: bash
         run: |
           cd release-assets
-          sha256sum * > SHA256SUMS
+          tmp="$(mktemp)"
+          find . -maxdepth 1 -type f ! -name '*.sigstore.json' ! -name 'SHA256SUMS' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > "$tmp"
+          mv "$tmp" SHA256SUMS
           cat SHA256SUMS
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Sign release assets
+        shell: bash
+        run: |
+          cd release-assets
+          while IFS= read -r -d '' asset; do
+            name="${asset#./}"
+            cosign sign-blob --yes --bundle "${name}.sigstore.json" "$name"
+          done < <(find . -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
 
       - name: Create draft release with binaries
         uses: softprops/action-gh-release@v3
