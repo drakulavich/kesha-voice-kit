@@ -32,6 +32,7 @@ async function resolveText(inline: string | undefined): Promise<string> {
 function parseFiniteNumberFlag(name: string, value: unknown): number | undefined {
   if (value === undefined || value === null || value === false) return undefined;
   const raw = String(value).trim();
+  if (raw === "") return undefined;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) {
     log.error(`${name} must be a finite number.`);
