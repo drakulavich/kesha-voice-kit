@@ -9,6 +9,7 @@ export { sayCommand } from "./cli/say";
 export { pickVoiceForLang } from "./voice-routing";
 export { statusCommand } from "./cli/status";
 export { statsCommand } from "./cli/stats";
+export { supportBundleCommand } from "./cli/support-bundle";
 export {
   mainCommand,
   detectLanguage,
@@ -32,6 +33,8 @@ export {
   redactDiagnosticValue,
 } from "./doctor";
 export type { DoctorReport } from "./doctor";
+export { createSupportBundle } from "./support-bundle";
+export type { SupportBundleResult } from "./support-bundle";
 export { keshaCacheDir } from "./paths";
 
 import { runCli } from "./cli/dispatch";

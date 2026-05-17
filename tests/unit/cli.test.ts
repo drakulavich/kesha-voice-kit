@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, doctorCommand, installCommand, statusCommand, statsCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
+import { mainCommand, doctorCommand, installCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -18,6 +18,7 @@ describe("CLI help", () => {
     expect(usage).toContain("status     Inspect installed backend.");
     expect(usage).toContain("say        Synthesize speech from text.");
     expect(usage).toContain("stats      Manage local anonymous performance stats.");
+    expect(usage).toContain("support-bundle");
   });
 
   test("install help contains backend and cache options", async () => {
@@ -32,6 +33,13 @@ describe("CLI help", () => {
     expect(usage).toContain("--json");
     expect(usage).toContain("--redact");
     expect(usage).toContain("support diagnostics");
+  });
+
+  test("support-bundle help contains archive output option (#345 P0)", async () => {
+    const usage = await renderUsage(supportBundleCommand);
+    expect(usage).toContain("support-bundle");
+    expect(usage).toContain("--output");
+    expect(usage).toContain("redacted diagnostics archive");
   });
 
   test("main help contains --json flag", async () => {
