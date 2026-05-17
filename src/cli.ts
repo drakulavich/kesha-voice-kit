@@ -19,7 +19,11 @@ export {
 export type { ResolvedOutputFormat } from "./cli/main";
 export { runCli } from "./cli/dispatch";
 
-export type { TranscribeResult } from "./types";
+export type {
+  TranscribeErrorRecord,
+  TranscribeJsonOutput,
+  TranscribeResult,
+} from "./types";
 export {
   formatJsonOutput,
   formatTextOutput,

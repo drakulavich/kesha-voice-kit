@@ -221,6 +221,62 @@ describe("e2e-cli", () => {
     expect(stderr).toContain("a.wav");
   });
 
+  test("--json --include-errors reports structured missing-file errors", async () => {
+    const { stdout, stderr, exitCode } = await runCli([
+      "--json",
+      "--include-errors",
+      "a.wav",
+      "b.wav",
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("a.wav");
+    expect(JSON.parse(stdout)).toEqual({
+      results: [],
+      errors: [
+        { file: "a.wav", code: "file_not_found", message: "File not found" },
+        { file: "b.wav", code: "file_not_found", message: "File not found" },
+      ],
+    });
+  });
+
+  test("--json --include-errors preserves successes and adds file errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-json-errors-cli-"));
+    tempDirs.push(dir);
+    const mediaPath = join(dir, "sample.wav");
+    const enginePath = createFakeEngine(dir);
+    writeFileSync(mediaPath, "fake wav bytes");
+
+    const { stdout, stderr, exitCode } = await runCli([
+      "--json",
+      "--include-errors",
+      mediaPath,
+      "missing.wav",
+    ], {
+      env: {
+        HOME: dir,
+        KESHA_CACHE_DIR: dir,
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+
+    const parsed = JSON.parse(stdout);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("missing.wav");
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0].file).toBe(mediaPath);
+    expect(parsed.results[0].text).toContain("Привет с воркшопа");
+    expect(parsed.errors).toEqual([
+      { file: "missing.wav", code: "file_not_found", message: "File not found" },
+    ]);
+  });
+
+  test("--include-errors requires JSON output", async () => {
+    const { stderr, exitCode } = await runCli(["--include-errors", "a.wav"]);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("--include-errors requires");
+  });
+
   test("unknown subcommand suggests closest match", async () => {
     const { stderr, exitCode } = await runCli(["instal"]);
     expect(exitCode).toBe(1);

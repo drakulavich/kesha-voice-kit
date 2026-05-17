@@ -5,7 +5,7 @@ import { transcribeWithSegments } from "../transcribe";
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
-import type { TranscribeResult } from "../types";
+import type { TranscribeErrorRecord, TranscribeResult } from "../types";
 import {
   formatJsonOutput,
   formatTextOutput,
@@ -28,6 +28,7 @@ interface MainCommandArgs {
   no_vad?: boolean;
   timestamps: boolean;
   speakers: boolean;
+  "include-errors": boolean;
   format?: string;
   lang?: string;
 }
@@ -141,6 +142,11 @@ export const mainCommand = defineCommand({
       description: "Include speaker labels in transcript segments. Requires --json / --toon / --format json. Implies --timestamps. Currently darwin-arm64 only (#199).",
       default: false,
     },
+    "include-errors": {
+      type: "boolean",
+      description: "With --json, output { results, errors } so scripts can read per-file failures without parsing stderr",
+      default: false,
+    },
     verbose: {
       type: "boolean",
       description: "Show language detection details",
@@ -207,6 +213,10 @@ export const mainCommand = defineCommand({
       log.error("--speakers requires --json, --toon, or --format {json,toon}.");
       process.exit(2);
     }
+    if (args["include-errors"] && !wantsJson) {
+      log.error("--include-errors requires --json or --format json.");
+      process.exit(2);
+    }
     const vadMode = vad ? "on" : noVad ? "off" : "auto";
 
     if (files.length === 0) {
@@ -224,6 +234,7 @@ export const mainCommand = defineCommand({
 
     let hasError = false;
     const results: TranscribeResult[] = [];
+    const errors: TranscribeErrorRecord[] = [];
     const stats = createStatsRecorder("transcribe");
 
     const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
@@ -233,6 +244,7 @@ export const mainCommand = defineCommand({
       if (!existsSync(file)) {
         hasError = true;
         stats.recordError("input", new Error("File not found"), "file_not_found");
+        errors.push({ file, code: "file_not_found", message: "File not found" });
         log.error(`${file}: File not found`);
         continue;
       }
@@ -300,12 +312,13 @@ export const mainCommand = defineCommand({
         hasError = true;
         stats.recordError("transcribe", err);
         const message = err instanceof Error ? err.message : String(err);
+        errors.push({ file, code: "transcribe_failed", message });
         log.error(`${file}: ${message}`);
       }
     }
 
     if (wantsJson) {
-      process.stdout.write(formatJsonOutput(results));
+      process.stdout.write(formatJsonOutput(results, args["include-errors"] ? errors : undefined));
     } else if (wantsToon) {
       process.stdout.write(formatToonOutput(results));
     } else if (wantsTranscript) {

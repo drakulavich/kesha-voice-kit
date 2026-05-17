@@ -23,7 +23,11 @@ export { formatToonOutput as toToon } from "./toon";
  * `toToon`. Lives in `./types` (since #179) so the public API stops
  * reaching into the CLI-layer file.
  */
-export type { TranscribeResult } from "./types";
+export type {
+  TranscribeErrorRecord,
+  TranscribeJsonOutput,
+  TranscribeResult,
+} from "./types";
 
 /** Install Kokoro TTS models. Shorthand for `downloadModel({ tts: true })`. */
 export async function downloadTts(noCache = false): Promise<void> {
