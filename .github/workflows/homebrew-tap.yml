@@ -17,7 +17,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     env:
-      TAP_REPO: drakulavich/homebrew-kesha
+      TAP_REPO: drakulavich/homebrew-tap
     steps:
       - name: Resolve tag
         id: tag
