@@ -110,7 +110,17 @@ CI gates against silent drift via `bun .github/scripts/check-versions.ts` (also 
    gh api -X PATCH "repos/OWNER/REPO/releases/$RELEASE_ID" --input body.json
    ```
    v1.1.3 shipped with empty notes and was recovered this way.
-5. Validate the draft assets BEFORE un-drafting (see the "make smoke-test ALONE DOES NOT VALIDATE" section below). Authenticated `gh release download vX.Y.Z -p "kesha-engine-darwin-arm64" -D <smoke-dir>` works on drafts; anonymous `curl` does not (see "DRAFT RELEASE ASSET URLS ARE NOT PUBLIC").
+5. Validate the draft assets BEFORE un-drafting (see the "make smoke-test ALONE DOES NOT VALIDATE" section below). Authenticated `gh release download vX.Y.Z -p "kesha-engine-darwin-arm64" -D <smoke-dir>` works on drafts; anonymous `curl` does not (see "DRAFT RELEASE ASSET URLS ARE NOT PUBLIC"). Release drafts must include `SHA256SUMS`, one `*.sigstore.json` bundle per non-signature asset, and `kesha-voice-kit-vX.Y.Z.spdx.json`. Verify at least the primary engine binary before publishing:
+   ```bash
+   gh release download vX.Y.Z -p SHA256SUMS -p '*.sigstore.json' -p 'kesha-*' -p 'say-*' -D <smoke-dir>
+   cd <smoke-dir>
+   sha256sum -c SHA256SUMS
+   cosign verify-blob \
+     --bundle kesha-engine-darwin-arm64.sigstore.json \
+     --certificate-identity "https://github.com/drakulavich/kesha-voice-kit/.github/workflows/build-engine.yml@refs/tags/vX.Y.Z" \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     kesha-engine-darwin-arm64
+   ```
 6. `make smoke-test` locally is still useful but only sees the OLD globally-installed engine — treat it as a sanity check, not a release gate. The gate is step 5.
 7. Publish the draft: `gh release edit vX.Y.Z --draft=false`. This fires the `📦 npm Publish` workflow (`release: published` event) which runs `npm publish --provenance --access public` with provenance attestation. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`. Manual fallback if the workflow is broken: `npm publish --access public` from the maintainer's laptop.
 
