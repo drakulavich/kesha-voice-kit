@@ -122,6 +122,7 @@ function engineAssetForPlatform(): ReleaseAssetSpec | null {
 
 function sidecarFilename(assetName: string): string {
   if (assetName === "say-avspeech-darwin-arm64") return "say-avspeech";
+  if (assetName === "kesha-diarize-darwin-arm64") return "kesha-diarize-darwin-arm64";
   if (assetName === "kesha-kokoro-darwin-arm64") return "kesha-kokoro";
   if (assetName === "kesha-textlang-darwin-arm64") return "kesha-textlang";
   return assetName;
@@ -201,7 +202,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
         source: `GitHub release v${engineVersion}`,
         sizeBytes: sidecar.sizeBytes,
         cached: existsSync(join(engineDir, sidecarFilename(sidecar.assetName))),
-        refresh: false,
+        refresh: noCache,
       });
     }
   }

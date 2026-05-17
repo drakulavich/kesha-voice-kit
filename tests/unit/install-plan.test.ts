@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { renderInstallPlan } from "../../src/install-plan";
@@ -54,6 +54,29 @@ describe("renderInstallPlan", () => {
       expect(output).toContain("refresh");
       expect(output).toContain("VAD Silero v5");
       expect(output).toContain("Run: kesha install --no-cache --vad");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("darwin sidecar cache state follows installed filenames", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-sidecar-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      const engineDir = join(dir, "engine", "bin");
+      process.env.KESHA_ENGINE_BIN = join(engineDir, "kesha-engine");
+      mkdirSync(engineDir, { recursive: true });
+      writeFileSync(join(engineDir, "kesha-diarize-darwin-arm64"), "sidecar");
+
+      const output = await renderInstallPlan({ noCache: true });
+
+      if (process.platform === "darwin" && process.arch === "arm64") {
+        expect(output).toContain("Sidecar kesha-diarize-darwin-arm64");
+        expect(output).toContain("refresh, GitHub release");
+      } else {
+        expect(output).not.toContain("Sidecar kesha-diarize-darwin-arm64");
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
