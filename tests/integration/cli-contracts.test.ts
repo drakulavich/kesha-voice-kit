@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -10,6 +10,7 @@ import {
 } from "./cli-scenario";
 
 const tempDirs: string[] = [];
+const DEFAULT_CWD = import.meta.dir + "/../..";
 
 async function runCli(
   args: string[],
@@ -36,7 +37,7 @@ function createFakeEngine(dir: string): string {
   const enginePath = join(dir, "kesha-engine");
   writeFileSync(
     enginePath,
-    `#!/usr/bin/env bun
+    `#!${process.execPath}
 const args = Bun.argv.slice(2);
 
 if (args[0] === "--capabilities-json") {
@@ -90,6 +91,88 @@ process.exit(99);
   );
   chmodSync(enginePath, 0o755);
   return enginePath;
+}
+
+function createSignalAwareEngine(dir: string, helperPidPath: string): string {
+  const enginePath = join(dir, "kesha-engine-signal-aware");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "transcribe") {
+  const child = Bun.spawn(["sh", "-c", "trap '' TERM; while :; do sleep 1; done"], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  await Bun.write(${JSON.stringify(helperPidPath)}, String(child.pid));
+  await new Promise(() => {});
+}
+if (args[0] === "detect-lang") {
+  await Bun.write(${JSON.stringify(helperPidPath)}, String(process.pid));
+  await new Promise(() => {});
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+function createSiblingCancellationEngine(dir: string, langPidPath: string): string {
+  const enginePath = join(dir, "kesha-engine-sibling-cancel");
+  writeFileSync(
+    enginePath,
+    `#!/usr/bin/env bun
+const args = Bun.argv.slice(2);
+if (args[0] === "--capabilities-json") {
+  console.log(JSON.stringify({ protocolVersion: 1, backend: "fake", features: [] }));
+  process.exit(0);
+}
+if (args[0] === "detect-lang") {
+  await Bun.write(${JSON.stringify(langPidPath)}, String(process.pid));
+  await new Promise(() => {});
+}
+if (args[0] === "transcribe") {
+  await Bun.sleep(100);
+  console.error("transcribe failed quickly");
+  process.exit(42);
+}
+if (args[0] === "detect-text-lang") {
+  console.log(JSON.stringify({ code: "en", confidence: 0.95 }));
+  process.exit(0);
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+async function waitForPidFile(path: string): Promise<number> {
+  for (let i = 0; i < 80; i++) {
+    if (existsSync(path)) return Number(readFileSync(path, "utf8"));
+    await Bun.sleep(25);
+  }
+  throw new Error(`timed out waiting for pid file: ${path}`);
+}
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPidExit(pid: number): Promise<boolean> {
+  for (let i = 0; i < 120; i++) {
+    if (!pidIsAlive(pid)) return true;
+    await Bun.sleep(25);
+  }
+  return false;
 }
 
 function expectContract(
@@ -342,6 +425,62 @@ describe("CLI contracts", () => {
       stderrContains: [`Transcribing ${mediaPath}`, "0%", `Transcribed ${mediaPath}`, "100%"],
     });
     expect(JSON.parse(noVadJson.stdout)[0].text).toBe("Привет без VAD");
+  });
+
+  test("Ctrl+C terminates helper processes below the engine", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-sigint-");
+    const helperPidPath = join(dir, "helper.pid");
+    const enginePath = createSignalAwareEngine(dir, helperPidPath);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+
+    const proc = Bun.spawn([process.execPath, "run", "src/cli.ts", mediaPath], {
+      cwd: DEFAULT_CWD,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+    const stdoutPromise = new Response(proc.stdout).text();
+    const stderrPromise = new Response(proc.stderr).text();
+    const helperPid = await waitForPidFile(helperPidPath);
+
+    proc.kill("SIGINT");
+
+    const [stdout, stderr, exitCode] = await Promise.all([stdoutPromise, stderrPromise, proc.exited]);
+    expect(exitCode).not.toBe(0);
+    expect(stdout).not.toContain("fake media");
+    expect(stderr).toContain(`Transcribing ${mediaPath}`);
+    expect(await waitForPidExit(helperPid)).toBe(true);
+  });
+
+  test("early transcription failure cancels the concurrent audio language engine", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-sibling-cancel-");
+    const langPidPath = join(dir, "lang.pid");
+    const enginePath = createSiblingCancellationEngine(dir, langPidPath);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+    };
+
+    const run = await runCli(["--json", mediaPath], { env, timeoutMs: 4_000 });
+    const langPid = await waitForPidFile(langPidPath);
+
+    expectContract(run, {
+      exitCode: 1,
+      stderrContains: ["transcribe failed quickly"],
+    });
+    expect(JSON.parse(run.stdout)).toEqual([]);
+    expect(await waitForPidExit(langPid)).toBe(true);
   });
 
   test("diagnostic and support commands return parseable/readable contracts without leaking temp home", async () => {

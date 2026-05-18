@@ -12,6 +12,7 @@ export type { TranscriptionOutput };
 
 export interface TranscribeOptions {
   silent?: boolean;
+  signal?: AbortSignal;
   /** Silero VAD preprocessing selector. Defaults to `"auto"`. */
   vad?: VadMode;
   /** Request timestamped transcript segments from the engine. */
@@ -56,10 +57,11 @@ export async function transcribeWithSegments(
   if (opts.timestamps || opts.speakers) {
     return transcribeEngineWithSegments(audioPath, {
       vad: opts.vad,
+      signal: opts.signal,
       speakers: opts.speakers,
     });
   }
 
-  const text = await transcribeEngine(audioPath, { vad: opts.vad });
+  const text = await transcribeEngine(audioPath, { vad: opts.vad, signal: opts.signal });
   return { text, segments: [] };
 }

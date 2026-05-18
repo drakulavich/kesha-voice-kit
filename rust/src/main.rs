@@ -8,6 +8,7 @@ mod cli;
 mod debug;
 mod lang_id;
 mod models;
+mod process_tree;
 mod record;
 #[cfg(feature = "tts")]
 mod say_loop;

@@ -15,6 +15,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::process_tree::ChildGuard;
+
 // FluidAudio 0.14.5 voice snapshot. Keep this list in sync with
 // swift/kesha-kokoro/Package.resolved whenever the FluidAudio pin changes.
 const VOICES: &[&str] = &[
@@ -74,7 +76,7 @@ pub fn synthesize(
     let bin = helper.map(PathBuf::from).unwrap_or_else(helper_path);
     let speed_arg = format!("{speed:.3}");
 
-    let mut child = Command::new(&bin)
+    let child = Command::new(&bin)
         .arg("--voice")
         .arg(voice_id)
         .arg("--speed")
@@ -84,13 +86,13 @@ pub fn synthesize(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| anyhow::anyhow!("spawn {}: {e}", bin.display()))?;
+    let mut child = ChildGuard::new(child);
 
     child
-        .stdin
-        .as_mut()
+        .stdin_mut()
         .ok_or_else(|| anyhow::anyhow!("fluid-kokoro: stdin unavailable"))?
         .write_all(text.as_bytes())?;
-    drop(child.stdin.take());
+    child.close_stdin();
 
     let output = child.wait_with_output()?;
     if !output.status.success() {
