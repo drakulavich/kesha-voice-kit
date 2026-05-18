@@ -34,8 +34,11 @@ export const log = {
   error: (msg: string) => console.error(pc.red(msg)),
 
   debugEnabled: false,
+  isDebugEnabled(): boolean {
+    return this.debugEnabled || envDebug();
+  },
   debug(msg: string): void {
-    if (this.debugEnabled || envDebug()) {
+    if (this.isDebugEnabled()) {
       // `[debug +Nms]` prefix sits on the CLI process's own timeline so
       // the reader can see when each line fired. The Rust engine emits
       // the same `+Nms` shape from `rust/src/debug.rs::trace_fmt`, but

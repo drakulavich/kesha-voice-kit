@@ -1,7 +1,10 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat, resolveRecordArgs } from "../../src/cli";
+import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress } from "../../src/cli";
 
 type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
 
@@ -29,6 +32,34 @@ function defaultMainArgs(overrides: Record<string, unknown> = {}): Record<string
     ...overrides,
   };
 }
+
+function fakeFailingTranscribeEngine(killMarker: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-cli-cancel-engine-"));
+  const path = join(dir, "kesha-engine");
+  writeFileSync(
+    path,
+    `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '{"protocolVersion":2,"backend":"fake","features":["transcribe.segments"]}'
+  exit 0
+fi
+if [ "$1" = "detect-lang" ]; then
+  trap 'printf killed > '"'"'${killMarker}'"'"'; exit 143' TERM INT
+  while :; do :; done
+fi
+if [ "$1" = "transcribe" ]; then
+  sleep 0.1
+  printf '%s\\n' 'forced transcribe failure' >&2
+  exit 42
+fi
+exit 2
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+const posixFakeEngineTest = process.platform === "win32" ? test.skip : test;
 
 async function expectMainExit(
   args: Record<string, unknown>,
@@ -183,6 +214,53 @@ describe("main command validation side effects", () => {
 
   test("empty invocation exits after printing usage", async () => {
     await expect(expectMainExit(defaultMainArgs(), [])).resolves.toBe(1);
+  });
+
+  posixFakeEngineTest("cancels parallel audio language detection when transcription fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-cli-cancel-"));
+    const input = join(dir, "input.wav");
+    const marker = join(dir, "detect-lang-killed");
+    writeFileSync(input, "placeholder");
+    const savedEngine = process.env.KESHA_ENGINE_BIN;
+    try {
+      process.env.KESHA_ENGINE_BIN = fakeFailingTranscribeEngine(marker);
+      await expect(
+        expectMainExit(defaultMainArgs({ json: true, _: [input] }), ["--json", input]),
+      ).resolves.toBe(1);
+      expect(existsSync(marker)).toBe(true);
+    } finally {
+      if (savedEngine === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = savedEngine;
+    }
+  });
+});
+
+describe("transcription progress reporting", () => {
+  test("reports progress for redirected stdout or interactive stderr", () => {
+    expect(
+      shouldReportTranscribeProgress({
+        stderrIsTty: false,
+        stdoutIsTty: false,
+        debugEnabled: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldReportTranscribeProgress({
+        stderrIsTty: true,
+        stdoutIsTty: true,
+        debugEnabled: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("suppresses progress in debug mode so stderr remains line-oriented", () => {
+    expect(
+      shouldReportTranscribeProgress({
+        stderrIsTty: true,
+        stdoutIsTty: false,
+        debugEnabled: true,
+      }),
+    ).toBe(false);
   });
 });
 

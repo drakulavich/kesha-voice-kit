@@ -14,6 +14,8 @@ export interface TranscribeOptions {
   silent?: boolean;
   /** Silero VAD preprocessing selector. Defaults to `"auto"`. */
   vad?: VadMode;
+  /** Cancel any in-flight engine subprocess for this transcription. */
+  signal?: AbortSignal;
   /** Request timestamped transcript segments from the engine. */
   timestamps?: boolean;
   /** Request speaker labels in transcript segments (#199). Implies `timestamps`.
@@ -56,10 +58,11 @@ export async function transcribeWithSegments(
   if (opts.timestamps || opts.speakers) {
     return transcribeEngineWithSegments(audioPath, {
       vad: opts.vad,
+      signal: opts.signal,
       speakers: opts.speakers,
     });
   }
 
-  const text = await transcribeEngine(audioPath, { vad: opts.vad });
+  const text = await transcribeEngine(audioPath, { vad: opts.vad, signal: opts.signal });
   return { text, segments: [] };
 }
