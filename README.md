@@ -11,12 +11,12 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun" alt="Bun"></a>
 </p>
 
-<p align="center"><b>Open-source voice toolkit.</b> Optimized for Apple Silicon (CoreML), with ONNX fallback on supported Linux/Windows builds.<br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill for LLM agents.</p>
+<p align="center"><b>Give your local tools and LLM agents a voice.</b><br>Fast speech-to-text, text-to-speech, voice-activity detection, and language detection in one local-first CLI: Apple Silicon CoreML first, ONNX fallback on supported Linux/Windows builds.</p>
 
-- **Speech-to-text** — 25 languages, ~15x faster than Whisper on Apple Silicon, ~2.5x on CPU
-- **Text-to-speech** — Kokoro (EN) + Vosk-TTS (RU) + macOS system voices, SSML preview
-- **Rust engine** — single 20MB binary, no ffmpeg, no Python, no native Node addons
-- **OpenClaw-ready** — plug into your LLM agent as a voice processing skill
+- **Transcribe locally** — 25 languages, up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
+- **Speak back** — Kokoro (EN), Vosk-TTS (RU), macOS system voices, and SSML preview
+- **Plug into agents** — ship voice workflows as CLI commands or an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill
+- **Small Rust engine** — single ~20MB binary, no ffmpeg, no Python, no native Node addons
 
 See [Product positioning](docs/product-positioning.md) for supported workflows, non-goals, maturity labels, and the platform matrix.
 
@@ -267,7 +267,7 @@ macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tt
 
 ## Performance
 
-> **~15x faster than Whisper** on Apple Silicon (M3 Pro), **~2.5x faster** on CPU
+> **Up to ~19x faster than Whisper** on Apple Silicon (M3 Pro), **~2.5x faster** on CPU
 
 Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
