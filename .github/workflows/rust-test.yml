@@ -13,6 +13,26 @@ permissions:
   contents: read
 
 jobs:
+  lint-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Install system audio deps (Opus)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
+
+      - name: Check formatting
+        run: cd rust && cargo fmt -- --check
+
+      - name: Clippy
+        run: bash rust/ci/run-clippy.sh Linux
+
   test:
     permissions:
       contents: read
@@ -24,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest, windows-latest]
+        os: [macos-14, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
@@ -90,19 +110,6 @@ jobs:
         shell: pwsh
         run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
 
-      # Fail-fast ladder: cheap-to-fail checks first so a typo in fmt
-      # doesn't burn 30 minutes of cargo test before surfacing. fmt
-      # (~5s) → clippy (~30s on warm cache) → coreml check (~5min) →
-      # Kokoro model download + cargo test (~10-30min).
-
-      - name: Check formatting
-        if: matrix.os == 'ubuntu-latest'
-        run: cd rust && cargo fmt -- --check
-
-      - name: Clippy
-        if: matrix.os == 'ubuntu-latest'
-        run: bash rust/ci/run-clippy.sh "${{ runner.os }}"
-
       # Guard against coreml-backend rot: v1.0.0 shipped with broken
       # coreml code because no PR CI job ever tried to build it.
       - name: Check coreml feature
@@ -152,10 +159,14 @@ jobs:
           bunx flakiness upload ./flakiness-report
 
   coverage:
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
+      NEXTEST_PROFILE: ci
     steps:
       - uses: actions/checkout@v6
 
@@ -206,6 +217,27 @@ jobs:
             echo "KESHA_CACHE_DIR=$KOKORO_CACHE" >> "$GITHUB_ENV"
           fi
           bun run coverage:rust
+
+      - name: 📤 Upload Ubuntu JUnit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-junit-ubuntu-latest
+          path: rust/target/nextest/ci/junit.xml
+          retention-days: 7
+
+      - name: 🪼 Upload Ubuntu tests to Flakiness.io
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [[ ! -f rust/target/nextest/ci/junit.xml ]]; then
+            echo "No Ubuntu JUnit report found; skipping Flakiness.io upload."
+            exit 0
+          fi
+          bunx flakiness convert-junit rust/target/nextest/ci/junit.xml \
+            --category rust --project Laputa/kesha-voice-kit
+          bunx flakiness upload ./flakiness-report
 
       - name: 🧯 Enforce Rust coverage gates
         run: bun run coverage:check:rust
