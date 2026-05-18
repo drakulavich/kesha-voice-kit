@@ -53,7 +53,7 @@ export function createActivityProgress(
 
   const intervalMs = options.intervalMs ?? 250;
   const startedAt = performance.now();
-  let frame = 0;
+  let frame = 1;
   let lastLineLength = 0;
   let timer: Timer | undefined;
 
