@@ -646,7 +646,7 @@ fn trim_repeated_prefix<'a>(previous: &str, current: &'a str) -> &'a str {
         if !previous.is_char_boundary(prev_start) || !current.is_char_boundary(n) {
             continue;
         }
-        if previous[prev_start..].eq_ignore_ascii_case(&current[..n]) {
+        if previous[prev_start..].to_lowercase() == current[..n].to_lowercase() {
             return current[n..].trim_start();
         }
     }
