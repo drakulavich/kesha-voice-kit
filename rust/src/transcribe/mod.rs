@@ -545,10 +545,9 @@ where
                 // overlap with the next chunk; scanning the full transcript
                 // is both wasteful and increases false-positive risk from
                 // repeated phrases appearing elsewhere in the recording.
-                let overlap_chars =
-                    (FIXED_CHUNK_OVERLAP_SECONDS * 20.0).ceil() as usize;
-                let acc_tail = &accumulated_text
-                    [accumulated_text.len().saturating_sub(overlap_chars * 4)..];
+                let overlap_chars = (FIXED_CHUNK_OVERLAP_SECONDS * 20.0).ceil() as usize;
+                let acc_tail =
+                    &accumulated_text[accumulated_text.len().saturating_sub(overlap_chars * 4)..];
                 let trimmed = trim_repeated_prefix(acc_tail, text.trim());
                 if trimmed.is_empty() {
                     continue;
