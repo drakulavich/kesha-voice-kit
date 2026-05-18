@@ -186,7 +186,7 @@ export const mainCommand = defineCommand({
     },
     "no-vad": {
       type: "boolean",
-      description: "Disable VAD preprocessing regardless of duration or install state",
+      description: "Force full-file ASR for short/medium files; long audio fails early",
       default: false,
     },
   },

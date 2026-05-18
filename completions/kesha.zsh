@@ -31,7 +31,7 @@ _kesha() {
       '--lang=[Expected language code (ISO 639-1), warn if mismatch]:lang:' \
       '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]' \
       '--vad[Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.]' \
-      '--no-vad[Disable VAD preprocessing regardless of duration or install state]'
+      '--no-vad[Force full-file ASR for short/medium files; long audio fails early]'
     else
       _describe -t commands 'kesha command' commands
     fi
@@ -117,7 +117,7 @@ _kesha() {
       '--lang=[Expected language code (ISO 639-1), warn if mismatch]:lang:' \
       '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]' \
       '--vad[Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.]' \
-      '--no-vad[Disable VAD preprocessing regardless of duration or install state]'
+      '--no-vad[Force full-file ASR for short/medium files; long audio fails early]'
       ;;
   esac
 }

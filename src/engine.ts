@@ -52,10 +52,6 @@ export function isEngineInstalled(): boolean {
 /** A Bun.spawn `stdio` array entry: per-fd action or inherit-by-number. */
 type SpawnStdioEntry = "inherit" | "pipe" | "ignore" | number;
 
-interface RunEngineOptions {
-  signal?: AbortSignal;
-}
-
 /**
  * Upper bound on the fd number we'll forward (#323 Greptile P2).
  *
@@ -167,7 +163,7 @@ async function runEngine(
 /** VAD preprocessing selector.
  *  - `"auto"` (default): engine decides — VAD when audio ≥ 120 s and model installed
  *  - `"on"`: force VAD (requires `kesha install --vad`)
- *  - `"off"`: force full-file pass regardless of duration or install state
+ *  - `"off"`: force full-file ASR for short/medium files; long audio fails early
  */
 export type VadMode = "auto" | "on" | "off";
 
