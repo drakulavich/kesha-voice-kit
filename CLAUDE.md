@@ -54,6 +54,64 @@ rm -rf /tmp/<spike-name>-venv      # when done
 
 If the spike persists into project work, ask which env tool the user wants (uv, poetry, requirements.txt) rather than installing system-wide as a stopgap. Past offence: 2026-04-26 spike installed `piper-tts`, `misaki`, `num2words`, `spacy`, `phonemizer-fork`, `en-core-web-sm` directly into pyenv 3.13 system site-packages — user had to flag it for cleanup.
 
+### AGENTS MUST WORK IN ISOLATED TREES FROM FRESH MAIN
+
+The shared repo checkout is coordination state, not a place for agent edits. Agents must not switch the shared checkout from `main` to a feature branch (or from one feature branch to another), because other sessions can then see unrelated files, stale branch contents, or half-finished work.
+
+Allowed in the shared checkout: `fetch`, status/log inspection, `git worktree list`, `jj workspace list`, and creating an isolated tree. Not allowed there: `git switch`, `git checkout`, `jj edit`, `jj new`, file edits, formatting, tests that write outputs, commits, or pushes.
+
+Before editing, create a fresh isolated Git worktree from the remote main bookmark:
+
+```bash
+REPO=/path/to/repo
+WT_ROOT=/path/to/worktrees/kesha-voice-kit
+TASK=short-task-slug
+BRANCH=codex/$TASK-$(date +%Y%m%d-%H%M%S)
+WT=$WT_ROOT/$TASK
+
+git -C "$REPO" fetch --prune origin main
+git -C "$REPO" worktree add -b "$BRANCH" "$WT" origin/main
+
+cd "$WT"
+git status --short --branch
+```
+
+Work only inside `$WT`: edit, test, commit, push, and open the PR from there. Use `origin/main`, not local `main`, as the base; local `main` may be stale or may not be the checked-out branch. To open a PR: `gh pr create --base main --head "$BRANCH"`.
+
+For JJ, use a separate workspace from the remote main bookmark, not the shared workspace:
+
+```bash
+REPO=/path/to/repo
+WT_ROOT=/path/to/worktrees/kesha-voice-kit
+TASK=short-task-slug
+WT=$WT_ROOT/$TASK-jj
+
+jj --repository "$REPO" --ignore-working-copy git fetch --remote origin
+jj --repository "$REPO" --ignore-working-copy workspace add \
+  --name "$TASK" \
+  --revision 'main@origin' \
+  "$WT"
+
+cd "$WT"
+jj status
+```
+
+Push JJ work with a task-specific bookmark:
+
+```bash
+jj describe -m "feat: concise message"
+jj git push --named "codex/$TASK=@"
+gh pr create --base main --head "codex/$TASK"
+```
+
+When done, remove only the isolated tree/workspace:
+
+```bash
+git -C "$REPO" worktree remove --force "$WT" && git -C "$REPO" worktree prune
+# or, for JJ:
+jj --repository "$REPO" workspace forget "$TASK" && rm -rf "$WT"
+```
+
 ### RELEASE PROCESS — CLI AND ENGINE ARE VERSIONED INDEPENDENTLY
 
 `package.json#version` (CLI) and `package.json#keshaEngine.version` (engine, mirrored in `rust/Cargo.toml`) are decoupled. `src/engine-install.ts` downloads `v${keshaEngine.version}` with fallback to `package.json#version`.
@@ -342,9 +400,9 @@ Operational lessons from the 2026-05-16 setup:
 - If `jj --version` still shows Homebrew's binary, `which -a jj` usually lists `/opt/homebrew/bin/jj` before `~/.cargo/bin/jj`; run `brew unlink jj`. The fork reporting `jj 0.35.0-<sha>` is expected.
 - Preserve identity after switching: `jj config set --user user.name "<Your Name>"` and `jj config set --user user.email "<your@email.com>"`; use your own credentials, never the repo owner's.
 - Existing `.jj`: do not reclone. Keep the colocated checkout, set config, run `git lfs pull`, verify `jj status`.
-- Normal agent isolation: use a new JJ change/bookmark, not a Git worktree. Start with `jj status` / `jj log`; use Git worktrees only if the user asks or JJ is unavailable/broken.
-- Disk model: changes/bookmarks share history and are cheap; extra workspaces add a checked-out tree plus duplicated `node_modules`, `rust/target`, temp caches, and materialized LFS files. Prefer changes/bookmarks; create workspaces only for genuinely parallel physical checkouts.
-- If two checkouts are needed, use `jj workspace add ../kesha-voice-kit-<topic> --name <topic> --revision main`. A JJ workspace may lack `.git`; inspect with `jj status` / `jj diff` / `jj log`, and use `gh -R drakulavich/kesha-voice-kit ...` for GitHub operations.
+- Normal agent isolation: follow "AGENTS MUST WORK IN ISOLATED TREES FROM FRESH MAIN" above. Use a Git worktree or a separate JJ workspace from fresh `origin/main` / `main@origin`, then edit only inside that isolated tree.
+- Disk model: changes/bookmarks share history and are cheap, but they do not isolate the on-disk working copy. Agent tasks need physical workspace isolation even if that duplicates `node_modules`, `rust/target`, temp caches, and materialized LFS files.
+- A JJ workspace may lack `.git`; inspect with `jj status` / `jj diff` / `jj log`, and use `gh -R drakulavich/kesha-voice-kit ...` for GitHub operations.
 - Before calling files "external changes", distinguish dirty edits from a stale checked-out feature branch: check `jj status` + `jj workspace list` everywhere; in the colocated checkout also `git status --short --branch` + `git log --oneline --decorate -5`. After a PR merges and the remote branch is deleted, fetch, move back to `main`, then start the next task.
 - If JJ looks suspicious, trust Git as the source of truth: `git status --short --branch` must be clean before release/PR decisions.
 
