@@ -6,6 +6,7 @@ import {
   type EngineCapabilities,
 } from "./engine";
 import { log } from "./log";
+import { registerProcessTree } from "./process-tree";
 
 /**
  * Wire format for the synthesized audio. Matches the engine's `--format` flag.
@@ -125,8 +126,10 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   const startedAt = performance.now();
   log.debug(`spawn ${getEngineBinPath()} ${args.join(" ")} (text: ${opts.text?.length ?? 0} chars)`);
   const proc = Bun.spawn([getEngineBinPath(), ...args], {
+    detached: true,
     stdio: spawnStdioWithDebugFd(["pipe", "pipe", "pipe"]),
   });
+  const tree = registerProcessTree(proc);
   // The `stdio: [...]` form widens stdin/stdout/stderr into a union
   // (Bun.spawn can't infer that indices 0/1/2 are always "pipe" given
   // the helper's return type). All three are guaranteed `FileSink` /
@@ -143,11 +146,18 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     await stdin.end();
   }
 
-  const [stdoutBuf, stderrText, exitCode] = await Promise.all([
-    new Response(stdout).arrayBuffer(),
-    new Response(stderr).text(),
-    proc.exited,
-  ]);
+  let stdoutBuf: ArrayBuffer;
+  let stderrText: string;
+  let exitCode: number;
+  try {
+    [stdoutBuf, stderrText, exitCode] = await Promise.all([
+      new Response(stdout).arrayBuffer(),
+      new Response(stderr).text(),
+      proc.exited,
+    ]);
+  } finally {
+    tree.dispose();
+  }
 
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms bytes=${stdoutBuf.byteLength}`);
 

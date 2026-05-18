@@ -15,6 +15,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::process_tree::ChildGuard;
+
 /// Path to the sidecar `say-avspeech` binary.
 ///
 /// Resolution order:
@@ -53,20 +55,20 @@ pub fn synthesize(text: &str, voice_id: &str, helper: Option<&Path>) -> anyhow::
     }
     let bin = helper.map(PathBuf::from).unwrap_or_else(helper_path);
 
-    let mut child = Command::new(&bin)
+    let child = Command::new(&bin)
         .arg(voice_id)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| anyhow::anyhow!("spawn {}: {e}", bin.display()))?;
+    let mut child = ChildGuard::new(child);
 
     child
-        .stdin
-        .as_mut()
+        .stdin_mut()
         .ok_or_else(|| anyhow::anyhow!("avspeech: stdin unavailable"))?
         .write_all(text.as_bytes())?;
-    drop(child.stdin.take());
+    child.close_stdin();
 
     let output = child.wait_with_output()?;
     if !output.status.success() {

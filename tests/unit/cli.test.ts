@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat, resolveRecordArgs } from "../../src/cli";
+import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress } from "../../src/cli";
 
 type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
 
@@ -183,6 +183,32 @@ describe("main command validation side effects", () => {
 
   test("empty invocation exits after printing usage", async () => {
     await expect(expectMainExit(defaultMainArgs(), [])).resolves.toBe(1);
+  });
+});
+
+describe("transcription progress reporting", () => {
+  test("reports progress on terminals and redirected stdout unless debug is enabled", () => {
+    expect(
+      shouldReportTranscribeProgress({
+        stderrIsTty: true,
+        stdoutIsTty: true,
+        debugEnabled: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldReportTranscribeProgress({
+        stderrIsTty: false,
+        stdoutIsTty: false,
+        debugEnabled: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldReportTranscribeProgress({
+        stderrIsTty: true,
+        stdoutIsTty: true,
+        debugEnabled: true,
+      }),
+    ).toBe(false);
   });
 });
 

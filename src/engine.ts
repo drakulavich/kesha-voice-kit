@@ -2,6 +2,7 @@ import { existsSync, statSync } from "fs";
 import { join } from "path";
 import { log } from "./log";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
+import { engineAbortError, registerProcessTree } from "./process-tree";
 
 /**
  * Capability-flag string surfaced via `kesha-engine --capabilities-json`. Single
@@ -96,26 +97,57 @@ export function spawnStdioWithDebugFd(
   return out as [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry, ...SpawnStdioEntry[]];
 }
 
-async function runEngine(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+export interface RunEngineOptions {
+  signal?: AbortSignal;
+}
+
+async function runEngine(
+  args: string[],
+  opts: RunEngineOptions = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  if (opts.signal?.aborted) throw engineAbortError();
   const binPath = getEngineBinPath();
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
   const proc = Bun.spawn([binPath, ...args], {
+    detached: true,
     stdio: spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
   });
+  const tree = registerProcessTree(proc);
+  let aborted = false;
+  let forceKillTimer: Timer | undefined;
+  const abort = () => {
+    aborted = true;
+    tree.terminate("SIGTERM");
+    forceKillTimer ??= tree.forceKillAfterGrace();
+  };
+  opts.signal?.addEventListener("abort", abort, { once: true });
   // `stdio: [...]` widens stdout/stderr into a union; indices 1/2 are
   // pinned to "pipe" by the helper, so the narrow ReadableStream type
   // is correct. Cast to drop the spurious `number` arm.
   const stdoutStream = proc.stdout as ReadableStream<Uint8Array>;
   const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(stdoutStream).text(),
-    new Response(stderrStream).text(),
-    proc.exited,
-  ]);
+  let stdout: string;
+  let stderr: string;
+  let exitCode: number;
+  try {
+    [stdout, stderr, exitCode] = await Promise.all([
+      new Response(stdoutStream).text(),
+      new Response(stderrStream).text(),
+      proc.exited,
+    ]);
+  } finally {
+    opts.signal?.removeEventListener("abort", abort);
+    tree.dispose();
+    if (!aborted && forceKillTimer) clearTimeout(forceKillTimer);
+  }
 
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
+  if (aborted) {
+    log.debug(`aborted args=${JSON.stringify(args)}`);
+    throw engineAbortError();
+  }
 
   // #275 D4: surface engine stderr on the success path so warnings like
   // `hint: audio is 180s`, `Model mirror active:`, and the dtrace lines
@@ -137,6 +169,7 @@ export type VadMode = "auto" | "on" | "off";
 
 export interface TranscribeEngineOptions {
   vad?: VadMode;
+  signal?: AbortSignal;
   /** Request speaker labels in transcript segments. Requires the engine to
    * advertise `transcribe.diarize` (darwin-arm64 only — see #199). */
   speakers?: boolean;
@@ -197,7 +230,7 @@ export async function transcribeEngine(
   const args = ["transcribe", audioPath];
   if (opts.vad === "on") args.push("--vad");
   else if (opts.vad === "off") args.push("--no-vad");
-  const { stdout, stderr, exitCode } = await runEngine(args);
+  const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
   }
@@ -239,7 +272,7 @@ export async function transcribeEngineWithSegments(
   if (opts.speakers) {
     args.push("--speakers");
   }
-  const { stdout, stderr, exitCode } = await runEngine(args);
+  const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
   }
@@ -257,9 +290,16 @@ export async function recordEngine(outPath: string, maxSeconds: number): Promise
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
   const proc = Bun.spawn([binPath, ...args], {
+    detached: true,
     stdio: spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
   });
-  const exitCode = await proc.exited;
+  const tree = registerProcessTree(proc);
+  let exitCode: number;
+  try {
+    exitCode = await proc.exited;
+  } finally {
+    tree.dispose();
+  }
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
   if (exitCode !== 0) {
     throw new Error(`kesha-engine record exited with code ${exitCode}`);
@@ -278,17 +318,23 @@ export function parseLangResult(stdout: string): LangDetectResult | null {
   }
 }
 
-export async function detectAudioLanguageEngine(audioPath: string): Promise<LangDetectResult | null> {
+export async function detectAudioLanguageEngine(
+  audioPath: string,
+  opts: RunEngineOptions = {},
+): Promise<LangDetectResult | null> {
   if (!isEngineInstalled()) return null;
-  const { stdout, exitCode } = await runEngine(["detect-lang", audioPath]);
+  const { stdout, exitCode } = await runEngine(["detect-lang", audioPath], opts);
   if (exitCode !== 0) return null;
   return parseLangResult(stdout);
 }
 
-export async function detectTextLanguageEngine(text: string): Promise<LangDetectResult | null> {
+export async function detectTextLanguageEngine(
+  text: string,
+  opts: RunEngineOptions = {},
+): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
-  const { stdout, exitCode } = await runEngine(["detect-text-lang", text]);
+  const { stdout, exitCode } = await runEngine(["detect-text-lang", text], opts);
   if (exitCode !== 0) return null;
   return parseLangResult(stdout);
 }

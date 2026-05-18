@@ -16,6 +16,7 @@ import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
 import { artifactFromFile, createStatsRecorder } from "../stats";
 import { createPercentProgress } from "../progress";
+import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 
 interface MainCommandArgs {
   _: string[];
@@ -105,6 +106,15 @@ export function resolveOutputFormat(input: {
 export function checkLanguageMismatch(expected: string | undefined, detected: string): string | null {
   if (!expected || !detected || expected === detected) return null;
   return `warning: expected language "${expected}" but detected "${detected}"`;
+}
+
+export function shouldReportTranscribeProgress(input: {
+  stderrIsTty: boolean;
+  stdoutIsTty: boolean;
+  debugEnabled: boolean;
+}): boolean {
+  if (input.debugEnabled) return false;
+  return input.stderrIsTty || !input.stdoutIsTty;
 }
 
 export const mainCommand = defineCommand({
@@ -245,7 +255,11 @@ export const mainCommand = defineCommand({
     const stats = createStatsRecorder("transcribe");
 
     const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
-    const reportProgress = process.stderr.isTTY === true || process.stdout.isTTY !== true;
+    const reportProgress = shouldReportTranscribeProgress({
+      stderrIsTty: process.stderr.isTTY === true,
+      stdoutIsTty: process.stdout.isTTY === true,
+      debugEnabled: log.isDebugEnabled(),
+    });
 
     for (const file of files) {
       if (!existsSync(file)) {
@@ -271,15 +285,31 @@ export const mainCommand = defineCommand({
               estimatedTotalMs: args.speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
             })
           : null;
-        // Run audio lang-id and transcription concurrently.
-        const [audioResult, transcript] = await Promise.all([
-          wantsLangId
-            ? stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file))
-            : Promise.resolve(null),
-          stats.timeStage("transcribe", () =>
-            transcribeWithSegments(file, { vad: vadMode, timestamps: args.timestamps, speakers: args.speakers })
-          ),
-        ]);
+        // Run audio lang-id and transcription concurrently, but do not leave
+        // the sibling engine process alive if one side fails first.
+        const engineAbort = new AbortController();
+        const audioPromise = wantsLangId
+          ? stats.timeStage("lang_id_audio", () =>
+              detectAudioLanguageEngine(file, { signal: engineAbort.signal })
+            )
+          : Promise.resolve(null);
+        const transcriptPromise = stats.timeStage("transcribe", () =>
+          transcribeWithSegments(file, {
+            vad: vadMode,
+            signal: engineAbort.signal,
+            timestamps: args.timestamps,
+            speakers: args.speakers,
+          })
+        );
+        let audioResult: LangDetectResult | null;
+        let transcript: Awaited<ReturnType<typeof transcribeWithSegments>>;
+        try {
+          [audioResult, transcript] = await Promise.all([audioPromise, transcriptPromise]);
+        } catch (err) {
+          engineAbort.abort();
+          await Promise.allSettled([audioPromise, transcriptPromise]);
+          throw err;
+        }
         const { text, segments } = transcript;
 
         let audioLanguage: LangDetectResult | undefined;
@@ -349,6 +379,13 @@ export const mainCommand = defineCommand({
 
     stats.finish(hasError ? "failed" : "success", files.length);
 
-    if (hasError) process.exit(1);
+    if (hasError) {
+      const signalExitCode = getPendingSignalExitCode();
+      if (signalExitCode !== null) {
+        await waitForPendingSignalCleanup();
+        process.exit(signalExitCode);
+      }
+      process.exit(1);
+    }
   },
 });

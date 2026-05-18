@@ -19,6 +19,7 @@ export {
   detectLanguage,
   checkLanguageMismatch,
   resolveOutputFormat,
+  shouldReportTranscribeProgress,
 } from "./cli/main";
 export type { ResolvedOutputFormat } from "./cli/main";
 export { runCli } from "./cli/dispatch";

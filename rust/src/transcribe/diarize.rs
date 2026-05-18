@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::process_tree::ChildGuard;
+
 use super::TranscriptionSegment;
 
 /// One speaker span emitted by the sidecar. Cluster IDs are stable within
@@ -63,13 +65,14 @@ fn sidecar_path() -> Result<PathBuf> {
 /// using the diarization model at `model_path`. Returns the parsed span list.
 pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpan>> {
     let sidecar = sidecar_path()?;
-    let mut child = Command::new(&sidecar)
+    let child = Command::new(&sidecar)
         .arg(audio_path)
         .arg(model_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("failed to spawn {}", sidecar.display()))?;
+    let mut child = ChildGuard::new(child);
 
     let timeout = diarize_timeout();
     let started = Instant::now();
@@ -82,9 +85,8 @@ pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpa
             break;
         }
         if started.elapsed() >= timeout {
-            let _ = child.kill();
             let output = child
-                .wait_with_output()
+                .kill_and_wait_with_output()
                 .with_context(|| format!("failed to collect timed-out {}", sidecar.display()))?;
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!(

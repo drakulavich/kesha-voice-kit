@@ -2,11 +2,13 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
   parseLangResult,
   getEngineBinPath,
   preflightTranscribeEngineWithSegments,
   spawnStdioWithDebugFd,
+  transcribeEngine,
   transcribeEngineWithSegments,
 } from "../../src/engine";
 
@@ -32,6 +34,28 @@ exit 2
 }
 
 const fakeEngineTest = process.platform === "win32" ? test.skip : test;
+
+function fakeLongRunningEngine(dir: string, helperPidFile: string): string {
+  const path = join(dir, "kesha-engine-long-running");
+  writeFileSync(
+    path,
+    `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "transcribe") {
+  const child = Bun.spawn(["sh", "-c", "trap '' TERM INT; while :; do sleep 1; done"], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  await Bun.write(${JSON.stringify(helperPidFile)}, String(child.pid));
+  await new Promise(() => {});
+}
+console.error("unexpected args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
 
 async function withEngineEnv<T>(
   enginePath: string,
@@ -133,6 +157,22 @@ describe("engine", () => {
       },
       { KESHA_DIARIZE_MODEL_PATH: modelPath },
     );
+  });
+
+  fakeEngineTest("abort terminates the spawned engine process tree", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-tree-"));
+    const helperPidFile = join(dir, "helper.pid");
+    const enginePath = fakeLongRunningEngine(dir, helperPidFile);
+    await withEngineEnv(enginePath, async () => {
+      const controller = new AbortController();
+      const run = transcribeEngine("audio.wav", { signal: controller.signal });
+      const helperPid = await waitForPidFile(helperPidFile);
+
+      controller.abort();
+
+      await expect(run).rejects.toThrow("kesha-engine process aborted");
+      expect(await waitForPidExit(helperPid)).toBe(true);
+    });
   });
 });
 

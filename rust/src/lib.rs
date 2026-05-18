@@ -34,6 +34,7 @@ pub mod cli;
 pub mod debug;
 pub mod lang_id;
 pub mod models;
+mod process_tree;
 pub mod record;
 #[cfg(feature = "tts")]
 pub mod say_loop;

@@ -65,19 +65,21 @@ pub(crate) fn detect_with_helper(
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let mut child = Command::new(helper)
+    use crate::process_tree::ChildGuard;
+
+    let child = Command::new(helper)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("spawn {} failed", helper.display()))?;
+    let mut child = ChildGuard::new(child);
 
     child
-        .stdin
-        .as_mut()
+        .stdin_mut()
         .context("kesha-textlang: stdin unavailable")?
         .write_all(text.as_bytes())?;
-    drop(child.stdin.take());
+    child.close_stdin();
 
     let output = child.wait_with_output()?;
     if !output.status.success() {
