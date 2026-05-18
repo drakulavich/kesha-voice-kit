@@ -76,7 +76,7 @@ cd "$WT"
 git status --short --branch
 ```
 
-Work only inside `$WT`: edit, test, commit, push, and open the PR from there. Use `origin/main`, not local `main`, as the base; local `main` may be stale or may not be the checked-out branch.
+Work only inside `$WT`: edit, test, commit, push, and open the PR from there. Use `origin/main`, not local `main`, as the base; local `main` may be stale or may not be the checked-out branch. To open a PR: `gh pr create --base main --head "$BRANCH"`.
 
 For JJ, use a separate workspace from the remote main bookmark, not the shared workspace:
 
