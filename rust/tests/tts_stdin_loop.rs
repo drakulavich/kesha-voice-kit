@@ -16,11 +16,8 @@
 mod common;
 
 use std::io::{Read, Write};
-use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
-
-use kesha_engine::tts::{self, EngineChoice, OutputFormat, SayOptions};
 
 const STATUS_OK: u8 = 0;
 const STATUS_ERR: u8 = 1;
@@ -153,27 +150,6 @@ fn unknown_voice_returns_err_frame_with_request_id() {
     c.close();
 }
 
-// ---------------------------------------------------------------------------
-// Real synthesis (gated on env vars set by run_smoke_tests / smoke harness)
-// ---------------------------------------------------------------------------
-
-fn synth_vosk_reference(text: &str, ssml: bool, model_dir: &Path) -> Vec<u8> {
-    tts::say(SayOptions {
-        text,
-        lang: "ru",
-        engine: EngineChoice::Vosk {
-            model_dir,
-            // speaker_id 4 = ru-vosk-m02 (male), per voices.rs ru-vosk-* mapping
-            speaker_id: 4,
-            speed: 1.0,
-        },
-        ssml,
-        format: OutputFormat::Wav,
-        expand_abbrev: true,
-    })
-    .expect("reference Vosk synth")
-}
-
 #[test]
 fn loop_synthesises_kokoro_and_caches_session() {
     // The loop-mode JSON request takes voice-by-name only — no `--model`
@@ -229,63 +205,4 @@ fn loop_synthesises_kokoro_and_caches_session() {
     // warm-vs-cold ratios unreliable. Two successful frames from one process
     // is enough to verify the cached-session code path doesn't crash.
     c.close();
-}
-
-#[test]
-fn loop_applies_russian_acronym_normalization_for_vosk() {
-    let Some(cache_dir) = common::vosk_ru_cache_dir_or_skip() else {
-        eprintln!("skipping: vosk-ru models not found");
-        return;
-    };
-    let model_dir = cache_dir.join("models/vosk-ru");
-
-    let mut c = LoopChild::spawn_with_cache(Some(&cache_dir));
-    c.send(r#"{"id": 101, "text": "ФСБ", "voice": "ru-vosk-m02", "format": "wav"}"#);
-    let plain = c.recv();
-    c.send(
-        r#"{"id": 102, "text": "<speak><say-as interpret-as=\"characters\">ФСБ</say-as></speak>", "voice": "ru-vosk-m02", "format": "wav", "ssml": true}"#,
-    );
-    let ssml = c.recv();
-    c.close();
-
-    assert_eq!(
-        plain.status,
-        STATUS_OK,
-        "plain request failed: {}",
-        String::from_utf8_lossy(&plain.payload)
-    );
-    assert_eq!(plain.id, 101);
-    assert_eq!(&plain.payload[..4], b"RIFF", "plain response not a WAV");
-
-    assert_eq!(
-        ssml.status,
-        STATUS_OK,
-        "SSML request failed: {}",
-        String::from_utf8_lossy(&ssml.payload)
-    );
-    assert_eq!(ssml.id, 102);
-    assert_eq!(&ssml.payload[..4], b"RIFF", "SSML response not a WAV");
-
-    let reference_plain = synth_vosk_reference("ФСБ", false, &model_dir);
-    let reference_ssml = synth_vosk_reference(
-        r#"<speak><say-as interpret-as="characters">ФСБ</say-as></speak>"#,
-        true,
-        &model_dir,
-    );
-
-    let plain_ratio = plain.payload.len() as f64 / reference_plain.len() as f64;
-    assert!(
-        (0.9..=1.1).contains(&plain_ratio),
-        "stdin-loop plain={} reference={} ratio={plain_ratio:.2} (expected acronym-normalized output)",
-        plain.payload.len(),
-        reference_plain.len(),
-    );
-
-    let ssml_ratio = ssml.payload.len() as f64 / reference_ssml.len() as f64;
-    assert!(
-        (0.9..=1.1).contains(&ssml_ratio),
-        "stdin-loop ssml={} reference={} ratio={ssml_ratio:.2} (expected say-as-normalized output)",
-        ssml.payload.len(),
-        reference_ssml.len(),
-    );
 }

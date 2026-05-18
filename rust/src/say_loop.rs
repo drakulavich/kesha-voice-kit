@@ -595,6 +595,41 @@ mod tests {
     }
 
     #[test]
+    fn handle_resets_warning_scope_per_request_before_validation() {
+        let key = "test-say-loop-handle-reset";
+        tts::warn::reset();
+        tts::warn::warn_once(key, "seed warning scope");
+        assert!(
+            tts::warn::was_warned(key),
+            "test setup should record the warning key"
+        );
+
+        let req = LoopRequest {
+            id: 1,
+            text: String::new(),
+            voice: "en-am_michael".into(),
+            format: None,
+            bitrate: None,
+            sample_rate: None,
+            lang: None,
+            rate: 1.0,
+            ssml: false,
+            expand_abbrev: true,
+        };
+        let mut state = LoopState {
+            kokoro: None,
+            vosk: tts::sessions::VoskCache::new(),
+        };
+
+        let err = handle(&req, &mut state).unwrap_err();
+        assert_eq!(err, "text is empty");
+        assert!(
+            !tts::warn::was_warned(key),
+            "handle() must reset warn-once scope at the start of each request"
+        );
+    }
+
+    #[test]
     fn read_line_bounded_too_long_at_eof() {
         // Over-long line with no trailing newline before EOF: we still
         // return TooLong, and the next call sees EOF.
