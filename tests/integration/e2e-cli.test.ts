@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { runCliScenario, type CliScenarioResult } from "./cli-scenario";
+import { installFakeDiarizeModel, runCliScenario, type CliScenarioResult } from "./cli-scenario";
 
 const tempDirs: string[] = [];
 
@@ -342,6 +342,7 @@ describe("e2e-cli", () => {
     const enginePath = createFakeEngine(dir);
     const mediaPath = join(dir, "workshop.mp4");
     writeFileSync(mediaPath, "fake media");
+    installFakeDiarizeModel(dir);
 
     const { stdout, stderr, exitCode } = await runCli(
       [mediaPath, "--json", "--speakers"],

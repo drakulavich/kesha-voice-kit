@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { runCliScenario, type CliScenarioOptions, type CliScenarioResult } from "./cli-scenario";
+import {
+  installFakeDiarizeModel,
+  runCliScenario,
+  type CliScenarioOptions,
+  type CliScenarioResult,
+} from "./cli-scenario";
 
 const tempDirs: string[] = [];
 
@@ -273,6 +278,7 @@ describe("CLI contracts", () => {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
     };
+    installFakeDiarizeModel(env.KESHA_CACHE_DIR);
 
     const json = await runCli([mediaPath, "--json", "--speakers"], { env });
     expectContract(json, {
@@ -294,6 +300,18 @@ describe("CLI contracts", () => {
       end: 1.2,
       text: "Привет с воркшопа",
       speaker: 0,
+    });
+
+    const missingDiarizeEnv: Record<string, string> = {
+      ...isolatedEnv(makeTempDir("kesha-cli-contract-missing-diarize-")),
+      KESHA_ENGINE_BIN: enginePath,
+    };
+    const missingDiarize = await runCli([mediaPath, "--json", "--speakers"], { env: missingDiarizeEnv });
+    expectContract(missingDiarize, {
+      exitCode: 1,
+      stderrContains: ["diarization model not found"],
+      stderrNotContains: ["Transcribing", "Transcribed"],
+      stdoutNotContains: ["Привет с воркшопа"],
     });
 
     const transcript = await runCli([mediaPath, "--format", "transcript"], { env });
