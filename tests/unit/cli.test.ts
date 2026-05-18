@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, doctorCommand, installCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
+import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
 
 function normalizeUsage(usage: string): string {
   return usage
@@ -22,8 +22,10 @@ describe("CLI help", () => {
   test("main help shows subcommand inventory (#324)", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("Commands:");
+    expect(usage).toContain("completions");
     expect(usage).toContain("doctor     Collect support diagnostics.");
     expect(usage).toContain("install    Download engine and models.");
+    expect(usage).toContain("manpage");
     expect(usage).toContain("status     Inspect installed backend.");
     expect(usage).toContain("say        Synthesize speech from text.");
     expect(usage).toContain("stats      Manage local anonymous performance stats.");
@@ -50,6 +52,18 @@ describe("CLI help", () => {
     expect(usage).toContain("support-bundle");
     expect(usage).toContain("--output");
     expect(usage).toContain("redacted diagnostics archive");
+  });
+
+  test("completions help contains supported shells (#344 P2)", async () => {
+    const usage = await renderUsage(completionsCommand);
+    expect(usage).toContain("completions");
+    expect(usage).toContain("bash | zsh | fish");
+  });
+
+  test("manpage help contains command description (#344 P2)", async () => {
+    const usage = await renderUsage(manpageCommand);
+    expect(usage).toContain("manpage");
+    expect(usage).toContain("kesha(1)");
   });
 
   test("main help contains --json flag", async () => {
@@ -113,8 +127,10 @@ describe("CLI help golden contracts (#324 P1)", () => {
     expect(normalizeUsage(await renderUsage(mainCommand))).toBe(`Kesha Voice Kit — open-source voice toolkit for Apple Silicon.
 
 Commands:
+  completions  Print shell completion script.
   doctor     Collect support diagnostics.
   install    Download engine and models.
+  manpage    Print the kesha(1) manpage.
   status     Inspect installed backend.
   say        Synthesize speech from text.
   stats      Manage local anonymous performance stats.
