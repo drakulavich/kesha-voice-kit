@@ -31,6 +31,8 @@ exit 2
   return path;
 }
 
+const fakeEngineTest = process.platform === "win32" ? test.skip : test;
+
 async function withEngineEnv<T>(
   enginePath: string,
   fn: () => T | Promise<T>,
@@ -91,13 +93,13 @@ describe("engine", () => {
     expect(parseLangResult('{"confidence":0.94}')).toBeNull();
   });
 
-  test("preflight rejects timestamp requests when the engine lacks segment support", async () => {
+  fakeEngineTest("preflight rejects timestamp requests when the engine lacks segment support", async () => {
     await withEngineEnv(fakeEngine([]), async () => {
       await expect(preflightTranscribeEngineWithSegments()).rejects.toThrow("Timestamped segments require");
     });
   });
 
-  test("preflight rejects speakers when the engine lacks diarization support", async () => {
+  fakeEngineTest("preflight rejects speakers when the engine lacks diarization support", async () => {
     await withEngineEnv(fakeEngine(["transcribe.segments"]), async () => {
       await expect(preflightTranscribeEngineWithSegments({ speakers: true })).rejects.toThrow(
         "speaker diarization is currently darwin-arm64 only",
@@ -105,7 +107,7 @@ describe("engine", () => {
     });
   });
 
-  test("preflight rejects missing KESHA_DIARIZE_MODEL_PATH before transcription", async () => {
+  fakeEngineTest("preflight rejects missing KESHA_DIARIZE_MODEL_PATH before transcription", async () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
       async () => {
@@ -117,7 +119,7 @@ describe("engine", () => {
     );
   });
 
-  test("transcribeEngineWithSegments accepts a valid diarize override and parses speakers", async () => {
+  fakeEngineTest("transcribeEngineWithSegments accepts a valid diarize override and parses speakers", async () => {
     const modelPath = mkdtempSync(join(tmpdir(), "kesha-diarize-model-"));
     mkdirSync(join(modelPath, "Data", "com.apple.CoreML", "weights"), { recursive: true });
     await withEngineEnv(

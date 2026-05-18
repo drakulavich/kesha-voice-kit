@@ -34,6 +34,8 @@ exit 2
   return path;
 }
 
+const fakeEngineIt = process.platform === "win32" ? it.skip : it;
+
 async function withEngine<T>(enginePath: string, fn: () => T | Promise<T>): Promise<T> {
   const saved = process.env.KESHA_ENGINE_BIN;
   try {
@@ -91,7 +93,7 @@ describe("lib API", () => {
     }
   });
 
-  it("preflights timestamp support before segment transcription", async () => {
+  fakeEngineIt("preflights timestamp support before segment transcription", async () => {
     await withEngine(fakeEngine([]), async () => {
       await expect(preflightTranscribeWithSegments({ timestamps: true })).rejects.toThrow(
         "Timestamped segments require",
@@ -99,7 +101,7 @@ describe("lib API", () => {
     });
   });
 
-  it("routes timestamp requests through the JSON segment path", async () => {
+  fakeEngineIt("routes timestamp requests through the JSON segment path", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
       await expect(transcribeWithSegments("audio.wav", { timestamps: true })).resolves.toEqual({
         text: "ok",
@@ -108,7 +110,7 @@ describe("lib API", () => {
     });
   });
 
-  it("plain transcription still returns an empty segment list", async () => {
+  fakeEngineIt("plain transcription still returns an empty segment list", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
       await expect(transcribeWithSegments("audio.wav")).resolves.toEqual({
         text: "ok",
