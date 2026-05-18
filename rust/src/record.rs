@@ -64,13 +64,18 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
 
     let started = Instant::now();
     let mut sample_count = 0u64;
-    loop {
+    'recording: loop {
         if stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration {
             break;
         }
         match sample_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(samples) => {
-                for sample in samples {
+                for (index, sample) in samples.into_iter().enumerate() {
+                    if index % 1024 == 0
+                        && (stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration)
+                    {
+                        break 'recording;
+                    }
                     writer
                         .write_sample(sample.clamp(-1.0, 1.0))
                         .context("failed to write microphone sample")?;
