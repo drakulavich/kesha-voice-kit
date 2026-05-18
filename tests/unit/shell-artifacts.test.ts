@@ -1,0 +1,38 @@
+import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { generateShellArtifacts } from "../../src/shell-artifacts";
+
+describe("shell artifacts (#344 P2)", () => {
+  test("generated completions and manpage match checked-in package files", async () => {
+    const artifacts = await generateShellArtifacts();
+    expect(artifacts.map((artifact) => artifact.path).sort()).toEqual([
+      "completions/kesha.bash",
+      "completions/kesha.fish",
+      "completions/kesha.zsh",
+      "man/kesha.1",
+    ]);
+
+    for (const artifact of artifacts) {
+      expect(readFileSync(artifact.path, "utf8")).toBe(artifact.content);
+    }
+  });
+
+  test("completions cover command aliases and new installer commands", async () => {
+    const bash = readFileSync("completions/kesha.bash", "utf8");
+    expect(bash).toContain("complete -F _kesha_completion kesha");
+    expect(bash).toContain("complete -F _kesha_completion parakeet");
+    expect(bash).toContain("completions doctor install manpage say stats status support-bundle");
+
+    const fish = readFileSync("completions/kesha.fish", "utf8");
+    expect(fish).toContain("complete -c kesha");
+    expect(fish).toContain("complete -c parakeet");
+  });
+
+  test("manpage documents generated completion files", () => {
+    const manpage = readFileSync("man/kesha.1", "utf8");
+    expect(manpage).toContain(".TH KESHA 1");
+    expect(manpage).toContain("completions/kesha.bash");
+    expect(manpage).toContain("completions/kesha.zsh");
+    expect(manpage).toContain("completions/kesha.fish");
+  });
+});

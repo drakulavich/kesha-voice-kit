@@ -114,8 +114,10 @@ export const mainCommand = defineCommand({
       "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
       "\n" +
       "Commands:\n" +
+      "  completions  Print shell completion script.\n" +
       "  doctor     Collect support diagnostics.\n" +
       "  install    Download engine and models.\n" +
+      "  manpage    Print the kesha(1) manpage.\n" +
       "  status     Inspect installed backend.\n" +
       "  say        Synthesize speech from text.\n" +
       "  stats      Manage local anonymous performance stats.\n" +
@@ -222,8 +224,10 @@ export const mainCommand = defineCommand({
     if (files.length === 0) {
       log.info(
         "Usage: kesha <audio_file> [audio_file ...]\n" +
+          "       kesha completions <bash|zsh|fish>\n" +
           "       kesha doctor [--json] [--redact]\n" +
           "       kesha install [--no-cache]\n" +
+          "       kesha manpage\n" +
           "       kesha status\n" +
           "       kesha say <text>\n" +
           "       kesha stats [enable|disable|status|week|errors]\n" +

@@ -51,6 +51,32 @@ kesha audio.ogg     # transcript to stdout
 
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
 
+## Shell Completions and Manpage
+
+The npm package includes bash, zsh, and fish completions plus `kesha(1)`.
+The CLI can print the packaged files, so install paths do not depend on the
+Bun global package layout:
+
+```bash
+# bash
+mkdir -p ~/.local/share/bash-completion/completions
+kesha completions bash > ~/.local/share/bash-completion/completions/kesha
+
+# zsh
+mkdir -p ~/.zsh/completions
+kesha completions zsh > ~/.zsh/completions/_kesha
+# add to ~/.zshrc once: fpath=(~/.zsh/completions $fpath); autoload -Uz compinit; compinit
+
+# fish
+mkdir -p ~/.config/fish/completions
+kesha completions fish > ~/.config/fish/completions/kesha.fish
+
+# manpage
+mkdir -p ~/.local/share/man/man1
+kesha manpage > ~/.local/share/man/man1/kesha.1
+mandb ~/.local/share/man 2>/dev/null || true
+```
+
 ## Homebrew Install
 
 Homebrew installs the Bun-based CLI wrapper. Engine and model downloads remain

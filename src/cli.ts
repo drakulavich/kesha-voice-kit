@@ -4,7 +4,9 @@
 // tests and lib.ts keep importing from "./cli" via these re-exports so the
 // public surface is unchanged.
 export { doctorCommand } from "./cli/doctor";
+export { completionsCommand } from "./cli/completions";
 export { installCommand } from "./cli/install";
+export { manpageCommand } from "./cli/manpage";
 export { sayCommand } from "./cli/say";
 export { pickVoiceForLang } from "./voice-routing";
 export { statusCommand } from "./cli/status";

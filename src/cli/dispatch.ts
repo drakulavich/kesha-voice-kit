@@ -2,15 +2,17 @@ import { runMain } from "citty";
 import { existsSync } from "fs";
 import { log } from "../log";
 import { suggestCommand } from "../suggest-command";
+import { completionsCommand } from "./completions";
 import { doctorCommand } from "./doctor";
 import { installCommand } from "./install";
+import { manpageCommand } from "./manpage";
 import { sayCommand } from "./say";
 import { statsCommand } from "./stats";
 import { statusCommand } from "./status";
 import { supportBundleCommand } from "./support-bundle";
 import { mainCommand } from "./main";
 
-const SUBCOMMANDS = ["doctor", "install", "status", "say", "stats", "support-bundle"];
+const SUBCOMMANDS = ["doctor", "install", "status", "say", "stats", "support-bundle", "completions", "manpage"];
 
 function isPathLike(arg: string): boolean {
   return arg.includes(".") || arg.includes("/") || existsSync(arg);
@@ -24,8 +26,18 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
     return;
   }
 
+  if (firstArg === "completions") {
+    await runMain(completionsCommand, { rawArgs: restArgs });
+    return;
+  }
+
   if (firstArg === "install") {
     await runMain(installCommand, { rawArgs: restArgs });
+    return;
+  }
+
+  if (firstArg === "manpage") {
+    await runMain(manpageCommand, { rawArgs: restArgs });
     return;
   }
 
