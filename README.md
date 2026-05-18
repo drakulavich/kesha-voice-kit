@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Kesha Voice Kit" width="200">
+  <img src="docs/assets/logo.png" alt="Kesha Voice Kit" width="200">
 </p>
 
 <h1 align="center">Kesha Voice Kit</h1>
@@ -209,7 +209,7 @@ $ kesha freedom.ogg tahiti.ogg
 Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
 ```
 
-Stdout: transcript. Stderr: errors. Pipe-friendly. Also available as `parakeet` command (backward-compatible alias).
+Stdout: transcript. Stderr: errors. Pipe-friendly.
 
 For long / silence-heavy audio, use `--vad` (auto-on past 120 s). Details: [docs/vad.md](docs/vad.md).
 
@@ -271,7 +271,7 @@ macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tt
 
 Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
-![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](assets/benchmark.svg)
+![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](docs/assets/benchmark.svg)
 
 See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + English).
 

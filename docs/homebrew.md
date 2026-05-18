@@ -13,8 +13,8 @@ kesha install
 kesha audio.ogg
 ```
 
-The formula depends on Bun from the official Bun tap and exposes both `kesha`
-and the backward-compatible `parakeet` alias.
+The formula depends on Bun from the official Bun tap and exposes the `kesha`
+command.
 
 ## Package Scope
 
@@ -22,7 +22,7 @@ Homebrew installs:
 
 - the TypeScript CLI wrapper
 - production Bun dependencies
-- the `kesha` and `parakeet` commands
+- the `kesha` command
 
 `kesha install` still downloads release assets into the Kesha cache. This keeps
 the package install lightweight and preserves the no-surprise-downloads release
@@ -37,7 +37,7 @@ release:
 ```bash
 brew tap oven-sh/bun
 brew tap-new local/tap
-cp Formula/kesha-voice-kit.rb "$(brew --repository local/tap)/Formula/"
+cp packaging/homebrew/Formula/kesha-voice-kit.rb "$(brew --repository local/tap)/Formula/"
 brew install local/tap/kesha-voice-kit
 brew test local/tap/kesha-voice-kit
 brew audit --strict --formula local/tap/kesha-voice-kit
