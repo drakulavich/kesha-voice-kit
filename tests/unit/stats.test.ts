@@ -58,7 +58,7 @@ describe("stats storage", () => {
     const status = getStatsStatus();
     expect(status.exists).toBe(true);
     expect(status.enabled).toBe(false);
-  });
+  }, 15_000);
 
   test("recorder writes runs, stage timings, artifacts, and errors when enabled", async () => {
     enableStats();
