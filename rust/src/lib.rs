@@ -28,9 +28,19 @@
 //! disclaimer.
 
 pub mod audio;
+pub mod backend;
+pub mod capabilities;
+pub mod cli;
 pub mod debug;
+pub mod lang_id;
 pub mod models;
+pub mod record;
+#[cfg(feature = "tts")]
+pub mod say_loop;
+pub mod text_lang;
+pub mod transcribe;
 pub mod util;
+pub mod vad;
 
 #[cfg(feature = "tts")]
 pub mod tts;

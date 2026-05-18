@@ -15,6 +15,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "kesha-engine"
 path = "src/main.rs"
+test = false
 
 [features]
 default = ["onnx", "tts"]
@@ -86,8 +87,8 @@ ogg = { version = "0.9", optional = true }
 
 tempfile = { version = "3", optional = true }
 libc = { version = "0.2", optional = true }
-# Pinned exactly so transitive minor bumps can't silently mutate the IPA
-# our `g2p_parity` test freezes — see #207.
+# Keep G2P dependency changes explicit; intentional bumps should review the
+# source-level routing/shape smoke tests instead of relying on transitive drift.
 misaki-rs = { version = "=0.3.0", default-features = false }
 vosk_tts = { path = "vendor/vosk-tts" }
 

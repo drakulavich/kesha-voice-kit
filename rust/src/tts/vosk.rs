@@ -74,8 +74,19 @@ impl Vosk {
 mod tests {
     use super::*;
 
+    fn ci_true_or_skip(test_name: &str) -> bool {
+        if std::env::var("CI").as_deref() == Ok("true") {
+            return true;
+        }
+        eprintln!("{test_name}: CI=true not set; skipping slow Vosk synth smoke");
+        false
+    }
+
     #[test]
     fn rejects_out_of_range_speaker() {
+        if !ci_true_or_skip("rejects_out_of_range_speaker") {
+            return;
+        }
         let dir = crate::models::model_dir(crate::models::ModelKind::VoskRu);
         if !crate::models::is_cached(crate::models::ModelKind::VoskRu) {
             eprintln!(
@@ -93,6 +104,9 @@ mod tests {
     /// produces non-trivial PCM and uses the model-reported sample rate.
     #[test]
     fn synth_short_phrase_produces_audio() {
+        if !ci_true_or_skip("synth_short_phrase_produces_audio") {
+            return;
+        }
         let dir = crate::models::model_dir(crate::models::ModelKind::VoskRu);
         if !crate::models::is_cached(crate::models::ModelKind::VoskRu) {
             eprintln!(
