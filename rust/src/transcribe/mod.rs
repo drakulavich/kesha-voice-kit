@@ -37,6 +37,22 @@ const AUTO_VAD_MIN_SECONDS: f32 = 120.0;
 /// absent — can reach seconds on large CBR files).
 const AUTO_VAD_MIN_FILE_SIZE: u64 = 200_000;
 
+/// Conservative full-file ASR ceiling. NVIDIA's Parakeet model cards describe
+/// full-attention single-pass inference as duration/memory-bound, with ~24
+/// minutes as the upstream guidance before local attention or buffered
+/// inference becomes the safe path. Kesha's local backends do not expose local
+/// attention yet, so explicit `--no-vad` fails above this and Auto mode uses
+/// fixed-window chunking when VAD is unavailable.
+const FULL_FILE_SINGLE_PASS_MAX_SECONDS: f32 = 24.0 * 60.0;
+
+/// Fixed-window fallback used when long audio has no VAD-backed path. Keep
+/// windows comfortably below the single-pass ceiling; overlap gives the model
+/// a little boundary context, and output timestamps are trimmed back to
+/// non-overlapping ranges.
+const FIXED_CHUNK_SECONDS: f32 = 10.0 * 60.0;
+const FIXED_CHUNK_OVERLAP_SECONDS: f32 = 5.0;
+const CHUNK_DEDUP_MIN_CHARS: usize = 8;
+
 /// Caller-requested VAD behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VadMode {
@@ -122,6 +138,7 @@ enum VadDecision {
     Vad,
     Plain,
     PlainWithHint,
+    ChunkedWithHint,
 }
 
 fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDecision {
@@ -130,6 +147,7 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
         VadMode::Off => VadDecision::Plain,
         VadMode::Auto => match duration_s {
             Some(d) if d >= AUTO_VAD_MIN_SECONDS && vad_installed => VadDecision::Vad,
+            Some(d) if d >= FULL_FILE_SINGLE_PASS_MAX_SECONDS => VadDecision::ChunkedWithHint,
             Some(d) if d >= AUTO_VAD_MIN_SECONDS => VadDecision::PlainWithHint,
             // Unknown duration or short clip → plain, no hint.
             _ => VadDecision::Plain,
@@ -206,11 +224,14 @@ pub fn transcribe_with_options(
         .into_owned();
     let vad_installed = models::is_cached(models::ModelKind::Vad);
 
-    // `Auto` needs a duration probe first. `On`/`Off` are deterministic.
+    // `Auto` needs a duration probe for routing. `Off` probes too so explicit
+    // full-file ASR can fail before loading a backend for media beyond the
+    // duration/memory-bound single-pass contract.
     let duration = match mode {
-        VadMode::Auto => probe_duration_if_plausible(audio_path),
+        VadMode::Auto | VadMode::Off => probe_duration_if_plausible(audio_path),
         _ => None,
     };
+    validate_plain_transcribe_safety(mode, duration, vad_installed)?;
     let decision = decide(mode, duration, vad_installed);
     dtrace!(
         "asr::mode={mode:?} duration={:?} vad_installed={vad_installed} decision={decision:?}",
@@ -238,6 +259,14 @@ pub fn transcribe_with_options(
                 "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
             );
             transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
+        }
+        VadDecision::ChunkedWithHint => {
+            let secs = duration.unwrap_or(0.0);
+            eprintln!(
+                "hint: audio is {secs:.0}s; VAD is not installed, so Kesha is using fixed-window ASR chunks. \
+                 Run `kesha install --vad` for better long-audio boundaries."
+            );
+            transcribe_chunked(audio_path, &model_dir, timestamps_required)
         }
     }?;
 
@@ -286,11 +315,41 @@ fn transcribe_plain(
     Ok(TranscriptionOutput { segments, text })
 }
 
+fn transcribe_chunked(
+    audio_path: &str,
+    model_dir: &str,
+    timestamps_required: bool,
+) -> Result<TranscriptionOutput> {
+    let t_audio = Instant::now();
+    let samples = audio::load_audio(audio_path)?;
+    dtrace!(
+        "chunked::audio_loaded dt={}ms samples={}",
+        t_audio.elapsed().as_millis(),
+        samples.len()
+    );
+
+    let t0 = Instant::now();
+    let mut be = backend::create_backend(model_dir)?;
+    let dt_ms = t0.elapsed().as_millis() as u64;
+    dtrace!("asr::backend_loaded dt={dt_ms}ms");
+    dtrace_json!("asr.backend_loaded", { "dt_ms": dt_ms });
+
+    transcribe_chunked_samples(&samples, &mut |slice| be.transcribe_samples(slice)).map(
+        |mut output| {
+            if !timestamps_required {
+                output.segments.clear();
+            }
+            output
+        },
+    )
+}
+
 /// VAD-preprocessed transcription: segment the audio with Silero VAD,
 /// transcribe each speech span independently, stitch with spaces.
 ///
-/// All-silence inputs fall back to a single full-file pass (with a stderr
-/// warning) so a misconfigured threshold never silently drops input.
+/// All-silence inputs fall back to a single full-file pass for short/medium
+/// clips, or fixed-window chunking for very long audio, so a misconfigured
+/// threshold never silently drops input and never forces unsafe full-file ASR.
 fn transcribe_via_vad(
     audio_path: &str,
     model_dir: &str,
@@ -339,9 +398,18 @@ fn transcribe_via_vad(
             cfg.threshold
         );
         if samples.len() >= min_speech_samples {
-            eprintln!(
-                "warning: VAD produced no speech segments; transcribing full file (consider lowering --vad threshold or skipping --vad)"
-            );
+            if total_secs >= FULL_FILE_SINGLE_PASS_MAX_SECONDS {
+                eprintln!(
+                    "warning: VAD produced no speech segments for very long audio; using fixed-window ASR chunks instead of unsafe full-file ASR"
+                );
+                return transcribe_chunked_samples(&samples, &mut |slice| {
+                    be.transcribe_samples(slice)
+                });
+            } else {
+                eprintln!(
+                    "warning: VAD produced no speech segments; transcribing full file (consider lowering --vad threshold or skipping --vad)"
+                );
+            }
         }
         let text = be.transcribe_samples(&samples)?;
         // Reuse the duration we already computed for the dtrace above
@@ -423,6 +491,168 @@ where
     out
 }
 
+fn transcribe_chunked_samples<F>(
+    samples: &[f32],
+    transcribe_chunk: &mut F,
+) -> Result<TranscriptionOutput>
+where
+    F: FnMut(&[f32]) -> Result<String>,
+{
+    let segments = build_chunked_output_segments(
+        samples,
+        VAD_SAMPLE_RATE as f32,
+        FIXED_CHUNK_SECONDS,
+        FIXED_CHUNK_OVERLAP_SECONDS,
+        transcribe_chunk,
+    )?;
+    let text = segments
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    Ok(TranscriptionOutput { text, segments })
+}
+
+fn build_chunked_output_segments<F>(
+    samples: &[f32],
+    sr: f32,
+    chunk_seconds: f32,
+    overlap_seconds: f32,
+    mut transcribe_chunk: F,
+) -> Result<Vec<TranscriptionSegment>>
+where
+    F: FnMut(&[f32]) -> Result<String>,
+{
+    let windows = fixed_chunk_windows(samples.len(), sr, chunk_seconds, overlap_seconds);
+    let mut out = Vec::with_capacity(windows.len());
+    let mut accumulated_text = String::new();
+    let mut failures = 0usize;
+    let mut first_failure: Option<String> = None;
+
+    for window in windows {
+        let slice = &samples[window.input_start..window.input_end];
+        let t = Instant::now();
+        match transcribe_chunk(slice) {
+            Ok(text) => {
+                dtrace!(
+                    "chunked::segment dt={}ms range={:.2}-{:.2}s chars={}",
+                    t.elapsed().as_millis(),
+                    window.output_start_s,
+                    window.output_end_s,
+                    text.chars().count()
+                );
+                // Only pass the tail of accumulated_text that can plausibly
+                // overlap with the next chunk; scanning the full transcript
+                // is both wasteful and increases false-positive risk from
+                // repeated phrases appearing elsewhere in the recording.
+                let overlap_chars =
+                    (FIXED_CHUNK_OVERLAP_SECONDS * 20.0).ceil() as usize;
+                let acc_tail = &accumulated_text
+                    [accumulated_text.len().saturating_sub(overlap_chars * 4)..];
+                let trimmed = trim_repeated_prefix(acc_tail, text.trim());
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if !accumulated_text.is_empty() {
+                    accumulated_text.push(' ');
+                }
+                accumulated_text.push_str(trimmed);
+                out.push(TranscriptionSegment {
+                    start: window.output_start_s,
+                    end: window.output_end_s,
+                    text: trimmed.to_string(),
+                    speaker: None,
+                });
+            }
+            Err(e) => {
+                failures += 1;
+                if first_failure.is_none() {
+                    first_failure = Some(e.to_string());
+                }
+                eprintln!(
+                    "warning: fixed-window ASR chunk {:.2}-{:.2}s failed: {e}",
+                    window.output_start_s, window.output_end_s
+                );
+            }
+        }
+    }
+
+    if out.is_empty() && failures > 0 {
+        let first = first_failure.unwrap_or_else(|| "unknown error".to_string());
+        anyhow::bail!("all fixed-window ASR chunks failed; first failure: {first}");
+    }
+
+    Ok(out)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ChunkWindow {
+    input_start: usize,
+    input_end: usize,
+    output_start_s: f32,
+    output_end_s: f32,
+}
+
+fn fixed_chunk_windows(
+    total_samples: usize,
+    sr: f32,
+    chunk_seconds: f32,
+    overlap_seconds: f32,
+) -> Vec<ChunkWindow> {
+    if total_samples == 0 || sr <= 0.0 || chunk_seconds <= 0.0 {
+        return vec![];
+    }
+
+    let chunk_samples = ((chunk_seconds * sr).round() as usize).max(1);
+    let overlap_samples =
+        ((overlap_seconds.max(0.0) * sr).round() as usize).min(chunk_samples.saturating_sub(1));
+    let step = chunk_samples.saturating_sub(overlap_samples).max(1);
+
+    let mut windows = Vec::new();
+    let mut start = 0usize;
+    while start < total_samples {
+        let end = start.saturating_add(chunk_samples).min(total_samples);
+        let output_start = if windows.is_empty() {
+            start
+        } else {
+            start.saturating_add(overlap_samples).min(end)
+        };
+        if output_start < end {
+            windows.push(ChunkWindow {
+                input_start: start,
+                input_end: end,
+                output_start_s: output_start as f32 / sr,
+                output_end_s: end as f32 / sr,
+            });
+        }
+        if end == total_samples {
+            break;
+        }
+        start = start.saturating_add(step);
+    }
+    windows
+}
+
+fn trim_repeated_prefix<'a>(previous: &str, current: &'a str) -> &'a str {
+    let previous = previous.trim_end();
+    let current = current.trim_start();
+    if previous.is_empty() || current.is_empty() {
+        return current;
+    }
+
+    let max = previous.len().min(current.len());
+    for n in (CHUNK_DEDUP_MIN_CHARS..=max).rev() {
+        let prev_start = previous.len() - n;
+        if !previous.is_char_boundary(prev_start) || !current.is_char_boundary(n) {
+            continue;
+        }
+        if previous[prev_start..].to_lowercase() == current[..n].to_lowercase() {
+            return current[n..].trim_start();
+        }
+    }
+    current
+}
+
 /// Honor a caller-supplied audio duration if present; otherwise probe the
 /// file. Re-uses the duration already computed during the `Auto` mode
 /// probe-and-decide step (#248) so the plain path doesn't re-open the file.
@@ -474,6 +704,34 @@ fn probe_duration_if_plausible(path: &str) -> Option<f32> {
             None
         }
     }
+}
+
+fn validate_plain_transcribe_safety(
+    mode: VadMode,
+    duration_s: Option<f32>,
+    vad_installed: bool,
+) -> Result<()> {
+    if mode != VadMode::Off {
+        return Ok(());
+    }
+
+    let Some(duration_s) = duration_s else {
+        return Ok(());
+    };
+    if duration_s < FULL_FILE_SINGLE_PASS_MAX_SECONDS {
+        return Ok(());
+    }
+
+    let action = if vad_installed {
+        "omit --no-vad so Kesha can segment the file with VAD"
+    } else {
+        "run `kesha install --vad`, then rerun without --no-vad"
+    };
+    anyhow::bail!(
+        "refusing --no-vad for very long audio \
+         (detected {duration_s:.0}s; single-pass limit is {FULL_FILE_SINGLE_PASS_MAX_SECONDS:.0}s). \
+         Parakeet full-file ASR is duration/memory-bound; {action}."
+    );
 }
 
 /// Resolve the diarization model path. Priority:
@@ -642,6 +900,149 @@ mod tests {
     }
 
     #[test]
+    fn no_vad_rejects_very_long_plain_runs() {
+        let err = validate_plain_transcribe_safety(
+            VadMode::Off,
+            Some(FULL_FILE_SINGLE_PASS_MAX_SECONDS + 1.0),
+            true,
+        )
+        .expect_err("very long --no-vad should be rejected before backend load");
+        assert!(err.to_string().contains("refusing --no-vad"), "{err}");
+        assert!(err.to_string().contains("omit --no-vad"), "{err}");
+        assert!(err.to_string().contains("duration/memory-bound"), "{err}");
+    }
+
+    #[test]
+    fn no_vad_rejection_points_at_vad_install_when_missing() {
+        let err = validate_plain_transcribe_safety(
+            VadMode::Off,
+            Some(FULL_FILE_SINGLE_PASS_MAX_SECONDS + 1.0),
+            false,
+        )
+        .expect_err("very long --no-vad should explain missing VAD");
+        assert!(err.to_string().contains("kesha install --vad"), "{err}");
+    }
+
+    #[test]
+    fn plain_safety_allows_short_or_auto_or_unknown_duration_runs() {
+        assert!(
+            validate_plain_transcribe_safety(
+                VadMode::Off,
+                Some(FULL_FILE_SINGLE_PASS_MAX_SECONDS - 1.0),
+                true,
+            )
+            .is_ok(),
+            "short --no-vad runs should still be allowed"
+        );
+        assert!(
+            validate_plain_transcribe_safety(
+                VadMode::Auto,
+                Some(FULL_FILE_SINGLE_PASS_MAX_SECONDS + 1.0),
+                true,
+            )
+            .is_ok(),
+            "Auto mode should route through the VAD/chunked decision path"
+        );
+        assert!(
+            validate_plain_transcribe_safety(VadMode::Off, None, true).is_ok(),
+            "unknown duration should not fail before the backend can report the real error"
+        );
+    }
+
+    #[test]
+    fn fixed_windows_cover_new_audio_once_with_overlap_context() {
+        let windows = fixed_chunk_windows(30, 10.0, 1.0, 0.2);
+        assert_eq!(
+            windows,
+            vec![
+                ChunkWindow {
+                    input_start: 0,
+                    input_end: 10,
+                    output_start_s: 0.0,
+                    output_end_s: 1.0,
+                },
+                ChunkWindow {
+                    input_start: 8,
+                    input_end: 18,
+                    output_start_s: 1.0,
+                    output_end_s: 1.8,
+                },
+                ChunkWindow {
+                    input_start: 16,
+                    input_end: 26,
+                    output_start_s: 1.8,
+                    output_end_s: 2.6,
+                },
+                ChunkWindow {
+                    input_start: 24,
+                    input_end: 30,
+                    output_start_s: 2.6,
+                    output_end_s: 3.0,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn chunked_segments_trim_overlap_and_preserve_successful_chunks() {
+        let samples = vec![0.0_f32; 30];
+        let mut call = 0usize;
+        let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
+            call += 1;
+            match call {
+                1 => Ok("hello sharedtext".to_string()),
+                2 => Ok("sharedtext world".to_string()),
+                3 => anyhow::bail!("synthetic chunk failure"),
+                4 => Ok("tail".to_string()),
+                _ => unreachable!(),
+            }
+        })
+        .expect("one failed chunk should not discard successful chunks");
+
+        assert_eq!(segs.len(), 3);
+        assert_eq!(segs[0].text, "hello sharedtext");
+        assert_eq!(segs[1].text, "world");
+        assert_eq!(segs[2].text, "tail");
+        assert_eq!(segs[0].start, 0.0);
+        assert_eq!(segs[1].start, 1.0);
+        assert_eq!(segs[2].start, 2.6);
+        for s in &segs {
+            assert!(s.end > s.start, "{s:?} violates end > start");
+        }
+    }
+
+    #[test]
+    fn chunked_segments_error_when_every_chunk_fails() {
+        let samples = vec![0.0_f32; 20];
+        let err = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
+            anyhow::bail!("backend unavailable")
+        })
+        .expect_err("all failed chunks should still fail the command");
+        assert!(
+            err.to_string()
+                .contains("all fixed-window ASR chunks failed"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn chunked_segments_skip_empty_transcriptions() {
+        let samples = vec![0.0_f32; 12];
+        let mut call = 0usize;
+        let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
+            call += 1;
+            if call == 1 {
+                Ok("   ".to_string())
+            } else {
+                Ok("spoken tail".to_string())
+            }
+        })
+        .unwrap();
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].text, "spoken tail");
+    }
+
+    #[test]
     fn single_segment_trims_text_and_drops_empty() {
         assert_eq!(single_segment(0.0, 1.0, "  hi  ")[0].text, "hi");
         assert!(single_segment(0.0, 1.0, "  ").is_empty());
@@ -743,6 +1144,18 @@ mod tests {
         assert_eq!(
             decide(VadMode::Auto, Some(300.0), false),
             VadDecision::PlainWithHint
+        );
+    }
+
+    #[test]
+    fn auto_very_long_audio_without_vad_routes_to_chunked_fallback() {
+        assert_eq!(
+            decide(
+                VadMode::Auto,
+                Some(FULL_FILE_SINGLE_PASS_MAX_SECONDS),
+                false
+            ),
+            VadDecision::ChunkedWithHint
         );
     }
 

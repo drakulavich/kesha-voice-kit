@@ -211,7 +211,7 @@ $ kesha freedom.ogg tahiti.ogg
 
 Stdout: transcript. Stderr: errors. Pipe-friendly.
 
-For long / silence-heavy audio, use `--vad` (auto-on past 120 s). Details: [docs/vad.md](docs/vad.md).
+For long / silence-heavy audio, install VAD (`kesha install --vad`) and run without `--no-vad`. Kesha auto-uses VAD past 120 s when installed; without VAD, very long audio falls back to fixed ASR chunks. Details: [docs/vad.md](docs/vad.md).
 
 **Speaker diarization** (darwin-arm64, post-v1.12.0):
 

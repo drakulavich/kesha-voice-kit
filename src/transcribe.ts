@@ -12,9 +12,10 @@ export type { TranscriptionOutput };
 
 export interface TranscribeOptions {
   silent?: boolean;
-  signal?: AbortSignal;
   /** Silero VAD preprocessing selector. Defaults to `"auto"`. */
   vad?: VadMode;
+  /** Cancel any in-flight engine subprocess for this transcription. */
+  signal?: AbortSignal;
   /** Request timestamped transcript segments from the engine. */
   timestamps?: boolean;
   /** Request speaker labels in transcript segments (#199). Implies `timestamps`.

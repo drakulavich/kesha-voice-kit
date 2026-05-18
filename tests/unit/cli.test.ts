@@ -184,6 +184,7 @@ describe("main command validation side effects", () => {
   test("empty invocation exits after printing usage", async () => {
     await expect(expectMainExit(defaultMainArgs(), [])).resolves.toBe(1);
   });
+
 });
 
 describe("transcription progress reporting", () => {
@@ -279,7 +280,7 @@ OPTIONS
       --lang=<lang>    Expected language code (ISO 639-1), warn if mismatch
             --debug    Trace engine subprocess calls on stderr (or KESHA_DEBUG=1) (Default: false)
               --vad    Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s. (Default: false)
-           --no-vad    Disable VAD preprocessing regardless of duration or install state (Default: false)`);
+           --no-vad    Force full-file ASR for short/medium files; long audio fails early (Default: false)`);
   });
 
   test("install help matches the normalized golden output", async () => {

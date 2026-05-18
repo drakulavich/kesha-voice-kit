@@ -163,7 +163,7 @@ async function runEngine(
 /** VAD preprocessing selector.
  *  - `"auto"` (default): engine decides — VAD when audio ≥ 120 s and model installed
  *  - `"on"`: force VAD (requires `kesha install --vad`)
- *  - `"off"`: force full-file pass regardless of duration or install state
+ *  - `"off"`: force full-file ASR for short/medium files; long audio fails early
  */
 export type VadMode = "auto" | "on" | "off";
 

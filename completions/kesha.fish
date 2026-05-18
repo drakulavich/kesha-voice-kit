@@ -23,7 +23,7 @@ complete -c kesha -n '__fish_use_subcommand' -l format -r -d 'Output format: tra
 complete -c kesha -n '__fish_use_subcommand' -l lang -r -d 'Expected language code (ISO 639-1), warn if mismatch'
 complete -c kesha -n '__fish_use_subcommand' -l debug -d 'Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)'
 complete -c kesha -n '__fish_use_subcommand' -l vad -d 'Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.'
-complete -c kesha -n '__fish_use_subcommand' -l no-vad -d 'Disable VAD preprocessing regardless of duration or install state'
+complete -c kesha -n '__fish_use_subcommand' -l no-vad -d 'Force full-file ASR for short/medium files; long audio fails early'
 complete -c kesha -n '__fish_seen_subcommand_from completions' -l help -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from completions' -s h -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from doctor' -l help -d 'Show help'
