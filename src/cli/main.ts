@@ -305,11 +305,9 @@ export const mainCommand = defineCommand({
               estimatedTotalMs: args.speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
             })
           : null;
-        const engineAbort = new AbortController();
         const transcript = await stats.timeStage("transcribe", () =>
           transcribeWithSegments(file, {
             vad: vadMode,
-            signal: engineAbort.signal,
             timestamps: args.timestamps,
             speakers: args.speakers,
           })
@@ -319,9 +317,7 @@ export const mainCommand = defineCommand({
 
         let audioResult: LangDetectResult | null = null;
         if (shouldRunAudioLanguageDetection({ wantsLangId, transcriptDurationSeconds })) {
-          audioResult = await stats.timeStage("lang_id_audio", () =>
-            detectAudioLanguageEngine(file, { signal: engineAbort.signal })
-          );
+          audioResult = await stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file));
         } else if (wantsLangId) {
           log.debug(
             `skip lang_id_audio for ${file}: transcript duration ${transcriptDurationSeconds?.toFixed(1)}s exceeds ` +
