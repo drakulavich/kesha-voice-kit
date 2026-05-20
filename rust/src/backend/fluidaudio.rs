@@ -10,7 +10,7 @@ use super::TranscribeBackend;
 /// `invalidAudioData` and prints the error to stdout — see #259).
 /// VAD spans frequently produce sub-second segments at speech onsets /
 /// offsets, so we pad them with trailing silence before handing to
-/// `transcribe_file`. 1.5 s @ 16 kHz = 24 000 samples; well above the
+/// `transcribe_samples`. 1.5 s @ 16 kHz = 24 000 samples; well above the
 /// observed failure threshold and small enough that the extra silence
 /// doesn't cost meaningful ASR latency.
 const MIN_SAMPLES: usize = 16_000 + 16_000 / 2; // 1.5 s @ 16 kHz
