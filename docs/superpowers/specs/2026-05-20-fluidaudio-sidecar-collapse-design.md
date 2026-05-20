@@ -94,10 +94,13 @@ safe wrapper) → `src/lib.rs` (public method):
      (`AVAudioPCMBuffer` vs the WAV `Data` it returns) is **spike #1**.
 3. **Add a model-path diarization variant** — `fluidaudio_diarize_file_with_models(ptr,
    audio_path, model_dir, …)` that loads our pre-staged Sortformer model instead of
-   auto-downloading. Rust: `diarize_file_with_models(audio, model_dir) ->
-   Result<Vec<DiarizationSegment>>`. Our current `kesha-diarize/main.swift` already loads from
-   an explicit model path (`SortformerConfig.balancedV2`), so the underlying Swift API
-   supports it — confirming the binding is **spike #3**.
+   auto-downloading. The bridge **hardcodes `SortformerConfig.balancedV2`** to match the shipped
+   `SortformerNvidiaLow_v2.mlpackage` — a mismatched config is a hard CoreML shape error at
+   runtime (Greptile #427). We ship exactly one diarization model, so the config variant is
+   **not** a parameter (YAGNI); if we ever ship a second model, expose it then. Rust:
+   `diarize_file_with_models(audio, model_dir) -> Result<Vec<DiarizationSegment>>`. Our current
+   `kesha-diarize/main.swift` already uses this exact path (`.balancedV2` +
+   `SortformerNvidiaLow_v2.mlpackage`), so the binding is a port — confirmed by **spike #3**.
 
 **Exit strategy:** open the same patch as an upstream PR to FluidInference/fluidaudio-rs;
 once merged + released, switch the kesha dep back to the crates.io version and retire the fork.
@@ -147,6 +150,14 @@ once merged + released, switch the kesha dep back to the crates.io version and r
 - Errors: missing diarization model → existing actionable `kesha install --diarize` error (no
   auto-download); Kokoro / ASR init failure → contextful `anyhow` error matching peer modules
   (`.context(...)?`, per the `ort` style note in CLAUDE.md).
+- **stdout discipline — carry the ASR guard to the new call sites (Greptile #427).** FluidAudio's
+  Swift layer prints diagnostics to stdout (e.g. `Transcribe error: invalidAudioData`, #259). The
+  ASR path already wraps calls in `backend/fluidaudio.rs::with_silenced_stdout`. The native
+  **Kokoro** call is especially exposed — `kesha say` writes the WAV bytes to stdout, so a stray
+  FluidAudio print would corrupt the audio stream; the native **diarize** call shares the engine's
+  `--json` stdout. Both go through the same Swift bridge, so **both MUST reuse the guard**. Promote
+  `with_silenced_stdout` to a shared module (with a one-shot variant that opens `/dev/null` itself,
+  since these are not the per-segment ASR hot path) and wrap all three call sites.
 
 ### Validation spikes (gate the implementation)
 

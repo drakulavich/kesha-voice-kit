@@ -24,7 +24,8 @@
 - Create: `examples/kokoro.rs` — runnable smoke for the new TTS path.
 
 **kesha repo (`drakulavich/kesha-voice-kit`, branch `feat/fluidaudio-native`):**
-- Modify: `rust/Cargo.toml` — `fluidaudio-rs` → fork git rev; `system_kokoro`/`system_diarize` features.
+- Create: `rust/src/fluid_stdout.rs` — shared `with_silenced_stdout` (moved from `backend/fluidaudio.rs`) + a one-shot variant for the Kokoro/diarize call sites.
+- Modify: `rust/Cargo.toml` — `fluidaudio-rs` → fork git rev; `system_kokoro`/`system_diarize` features pull `dep:fluidaudio-rs` + `dep:libc`.
 - Rewrite: `rust/src/tts/fluid_kokoro.rs` — crate call instead of `Command`.
 - Modify: `rust/src/transcribe/diarize.rs` — swap the `Command`-spawn (`run()`, ~lines 88–199) for `diarize_file_with_models`; keep coverage-validation + speaker-merge.
 - Modify: `rust/build.rs` — delete the `system_kokoro` (~46–90) and `system_diarize` (~133–184) swift-build blocks.
@@ -310,7 +311,7 @@ git add src/lib.rs examples/kokoro.rs && git commit -m "feat: public Kokoro TTS 
 
 **Files:** Modify `swift/FluidAudioBridge.swift`.
 
-- [ ] **Step 1: Add the model-path variant** next to `fluidaudio_diarize_file`, porting the explicit-model-path init from `kesha-diarize/main.swift` (Task 0.3 finding). Same out-param shape as `fluidaudio_diarize_file` (speaker_ids/start/end/quality/count), but the initializer loads from `modelDir` with `SortformerConfig.balancedV2` instead of `downloadAndLoad()`:
+- [ ] **Step 1: Add the model-path variant** next to `fluidaudio_diarize_file`, porting the explicit-model-path init from `kesha-diarize/main.swift` (Task 0.3 finding). Same out-param shape as `fluidaudio_diarize_file` (speaker_ids/start/end/quality/count), but the initializer loads from `modelDir` with `SortformerConfig.balancedV2` instead of `downloadAndLoad()`. **The `.balancedV2` config is mandatory, not optional:** it must match the shipped `SortformerNvidiaLow_v2.mlpackage` (`fifoLen=188`) or CoreML fails with a hard tensor-shape mismatch at runtime (Greptile #427). Hardcode it in the bridge — we ship one model, so it is not a parameter.
 
 ```swift
 @_cdecl("fluidaudio_diarize_file_with_models")
@@ -390,6 +391,43 @@ git rev-parse HEAD   # record <FORK_SHA> for kesha Cargo.toml
 
 Work in a kesha worktree off `origin/main`: `git worktree add .worktrees/feat-fluidaudio-native -b feat/fluidaudio-native origin/main`.
 
+### Task 3.0: Promote `with_silenced_stdout` to a shared module (Greptile #427)
+
+**Files:** Create `rust/src/fluid_stdout.rs`; Modify `rust/src/backend/fluidaudio.rs` (remove the local copy), `rust/src/lib.rs` + `rust/src/main.rs` (`mod fluid_stdout;`), `rust/Cargo.toml` (libc under the new features).
+
+FluidAudio's Swift layer prints diagnostics to stdout (#259); the native Kokoro + diarize calls hit the same layer, and Kokoro's WAV goes to stdout, so all three call sites need the guard. The guard uses `libc::dup`/`dup2`, so every feature with a FluidAudio call site (`coreml`, `system_kokoro`, `system_diarize`) must pull `dep:libc`.
+
+- [ ] **Step 1: Create `rust/src/fluid_stdout.rs`** — move `with_silenced_stdout(devnull, f)` here verbatim and add a one-shot variant:
+
+```rust
+use std::os::fd::OwnedFd;
+
+/// One-shot stdout silencer for non-hot-path FluidAudio calls (Kokoro synth,
+/// diarization). Opens /dev/null itself; a failed open falls back to running
+/// `f` with stdout untouched (best-effort — never worse than no guard).
+pub fn with_silenced_stdout_oneshot<R>(f: impl FnOnce() -> R) -> R {
+    let devnull: Option<OwnedFd> = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/null")
+        .ok()
+        .map(OwnedFd::from);
+    with_silenced_stdout(devnull.as_ref(), f)
+}
+```
+
+- [ ] **Step 2:** In `backend/fluidaudio.rs`, replace the local `with_silenced_stdout` with `use crate::fluid_stdout::with_silenced_stdout;`. Add `dep:libc` to the `system_kokoro` and `system_diarize` feature lists in `Cargo.toml` (it is already under `coreml`).
+
+- [ ] **Step 3: Build every feature set that compiles a call site**
+
+Run: `cargo check --features coreml --no-default-features`, `cargo check --features onnx,tts,system_kokoro,system_diarize --no-default-features` → both PASS.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add rust/src/fluid_stdout.rs rust/src/backend/fluidaudio.rs rust/src/lib.rs rust/src/main.rs rust/Cargo.toml
+git commit -m "refactor: shared with_silenced_stdout + one-shot variant for FluidAudio calls"
+```
+
 ### Task 3.1: Point the dependency at the fork
 
 **Files:** Modify `rust/Cargo.toml`, `rust/Cargo.lock`.
@@ -443,9 +481,14 @@ use fluidaudio_rs::FluidAudio;
 /// Synthesize English text via FluidAudio Kokoro (CoreML/ANE). Returns f32 PCM
 /// at the engine's TTS sample rate (24 kHz). Replaces the kesha-kokoro sidecar.
 pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<Vec<f32>> {
-    let audio = FluidAudio::new().context("init FluidAudio bridge")?;
-    audio.init_kokoro(voice_id).context("init Kokoro (first run downloads model)")?;
-    let wav = audio.synthesize_kokoro(text, voice_id, speed).context("Kokoro synthesis")?;
+    // FluidAudio prints diagnostics to stdout; `kesha say` writes the WAV bytes to
+    // stdout, so a stray print corrupts the audio stream. Silence stdout for the
+    // whole call via the shared one-shot guard (Task 3.0 / Greptile #427).
+    let wav = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
+        let audio = FluidAudio::new().context("init FluidAudio bridge")?;
+        audio.init_kokoro(voice_id).context("init Kokoro (first run downloads model)")?;
+        audio.synthesize_kokoro(text, voice_id, speed).context("Kokoro synthesis")
+    })?;
     decode_wav_f32(&wav)
 }
 
@@ -504,15 +547,19 @@ Expected: FAIL.
 - [ ] **Step 3: Replace `Command`-spawn in `run()`** (~lines 88–199) — keep the adaptive-timeout, coverage-validation (≥95% midpoint), and speaker-merge code; replace ONLY the subprocess+JSON-parse with:
 
 ```rust
-let segments = FluidAudio::new()
-    .context("init FluidAudio bridge")?
-    .also(|a| a.init_diarization(0.6))?   // or keep current threshold constant
-    .diarize_file_with_models(audio_path, model_path)
-    .context("FluidAudio diarization failed")?;
+// Same FluidAudio Swift layer as ASR/Kokoro -> silence stdout for the call so
+// diagnostics can't corrupt the engine's --json output (Task 3.0 / Greptile #427).
+let segments = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
+    let audio = FluidAudio::new().context("init FluidAudio bridge")?;
+    audio.init_diarization(0.6).context("init diarization")?; // keep the current threshold constant
+    audio
+        .diarize_file_with_models(audio_path, model_path)
+        .context("FluidAudio diarization failed")
+})?;
 // map fluidaudio_rs::DiarizationSegment { speaker_id: String, start_time, end_time, .. }
 // into our existing span type (parse "SPEAKER_NN" -> u32, or carry the label).
 ```
-Adjust: `init_diarization` then `diarize_file_with_models` are two calls (no `.also` combinator in std — write them as plain statements). Map `speaker_id: "SPEAKER_03"` → `3u32` via suffix parse, preserving the existing merge contract. Delete `sidecar_path()` and the JSON `Deserialize` structs.
+Map `speaker_id: "SPEAKER_03"` → `3u32` via suffix parse, preserving the existing merge contract. Delete `sidecar_path()` and the JSON `Deserialize` structs.
 
 - [ ] **Step 4: Run → passes** (locally).
 
