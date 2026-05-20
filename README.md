@@ -243,26 +243,26 @@ Users / agents
   shell | scripts | OpenClaw | Hermes | Raycast | @drakulavich/kesha-voice-kit/core
         |
         v
-+------------------------------ Kesha CLI ------------------------------+
-| Bun + TypeScript wrapper                                               |
-| - parses commands and formats stdout/stderr                            |
++------------------------------- Kesha CLI -------------------------------+
+| Bun + TypeScript wrapper                                                |
+| - parses commands and formats stdout/stderr                             |
 | - installs pinned engine/model assets only when explicitly requested    |
-| - keeps cache, support bundle, and local Stats lifecycle on the CLI side|
-+----------------------------------+-------------------------------------+
+| - keeps cache, support bundles, and local Stats in the CLI              |
++-----------------------------------+-------------------------------------+
                                    |
                                    | spawns one local process
                                    v
-+----------------------------- kesha-engine -----------------------------+
++----------------------------- kesha-engine ------------------------------+
 | Rust binary, no cloud calls, no Python, no ffmpeg                       |
-|                                                                        |
+|                                                                         |
 |  Audio input                 Text input                  Diagnostics    |
-|  WAV/MP3/OGG/FLAC/AAC/M4A   plain text / SSML           status/support |
+|  WAV/MP3/OGG/FLAC/AAC/M4A   plain text / SSML           status/support  |
 |       |                           |                           |         |
 |       v                           v                           v         |
 |  Symphonia decode            TTS preprocessing           runtime probes |
 |       |                           |                                     |
 |       +--> optional VAD           +--> voice routing                    |
-|       |    + diarization          |    Kokoro / Vosk / macOS voices    |
+|       |    + diarization          |    Kokoro / Vosk / macOS voices     |
 |       |                           |                                     |
 |       +--> audio lang ID          +--> speech synthesis                 |
 |       |    SpeechBrain ONNX                                             |
@@ -270,7 +270,7 @@ Users / agents
 |       +--> ASR backend                                                  |
 |            CoreML on Apple Silicon                                      |
 |            ONNX Runtime on Linux/Windows/fallback                       |
-+----------------------------------+-------------------------------------+
++-----------------------------------+-------------------------------------+
                                    |
                                    v
                          transcript | JSON/TOON | WAV | local diagnostics
