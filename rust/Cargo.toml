@@ -75,7 +75,7 @@ audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
 hound = "3.5"
-thiserror = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
 sha2 = "0.10"
 ssml-parser = { version = "0.1", optional = true }
 
