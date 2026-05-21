@@ -1,11 +1,11 @@
 name: "📦 npm Publish"
 
 # Fires once a GitHub release leaves draft (the manual gate per CLAUDE.md
-# release flow). Both real engine releases (`vX.Y.Z`) and CLI-only marker
-# releases (`vX.Y.Z-cli`) un-draft into the same `published` event — both
-# need `npm publish`. Also exposes `workflow_dispatch` so the maintainer
-# can re-publish a tag manually (e.g. after fixing a publishConfig bug)
-# without re-creating the release.
+# release flow). Stable releases publish to npm's default `latest` dist-tag;
+# SemVer prereleases (`vX.Y.Z-beta.N`) publish to the `beta` dist-tag so
+# normal `bun add -g @drakulavich/kesha-voice-kit@latest` users do not get
+# unstable builds. CLI-only marker releases (`vX.Y.Z-cli`) follow the same
+# dist-tag rule after stripping `-cli`.
 on:
   release:
     types: [published]
@@ -95,8 +95,21 @@ jobs:
             echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve npm dist-tag
+        id: dist_tag
+        run: |
+          version=$(jq -r .version package.json)
+          if [[ "$version" == *-* ]]; then
+            echo "tag=beta" >> "$GITHUB_OUTPUT"
+            echo "$version is a prerelease — publishing to npm dist-tag beta."
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            echo "$version is stable — publishing to npm dist-tag latest."
+          fi
+
       - name: Publish to npm with provenance
         if: steps.registry.outputs.already_published == 'false'
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"
         env:
+          NPM_DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

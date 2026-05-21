@@ -146,6 +146,14 @@ npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
 7. Publish: `gh release edit vX.Y.Z --draft=false`. This fires `📦 npm Publish`; verify `npm view @drakulavich/kesha-voice-kit version` within ~60s. Manual fallback: `npm publish --access public` from the maintainer laptop.
 8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo, and attach Linux x64 `.deb`/`.rpm` packages covered by `SHA256SUMS` + Sigstore. CLI-only marker releases skip Homebrew/packages.
 
+**Beta engine release** (unstable channel):
+
+- Use SemVer prerelease versions in all three places: `package.json#version`, `package.json#keshaEngine.version`, and `rust/Cargo.toml`, for example `1.18.7-beta.1`; tag as `v1.18.7-beta.1`.
+- `build-engine.yml` accepts `vX.Y.Z-beta.N`, creates a **draft prerelease**, and uploads engine binaries, sidecars, `SHA256SUMS`, manifest, SBOM, and Sigstore bundles. It intentionally skips Homebrew and Linux `.deb`/`.rpm` packages for beta tags.
+- After draft asset validation, publish with `gh release edit vX.Y.Z-beta.N --draft=false`. `📦 npm Publish` publishes prerelease package versions with `npm publish --tag beta`, so `@latest` stays on the latest stable release.
+- Verify beta with `npm view @drakulavich/kesha-voice-kit@beta version`; user-facing beta install is `bun add -g @drakulavich/kesha-voice-kit@beta && kesha install`.
+- Promote by cutting a later stable `vX.Y.Z` release; do not reuse the beta tag or try to retag it as stable.
+
 **Alternate tag path:** `workflow_dispatch` validates tag shape and authors notes inline, useful when a sandbox cannot push tags:
 
 ```bash
@@ -173,6 +181,7 @@ Post-#291 happy path: publishing a GitHub release runs `.github/workflows/npm-pu
 - Trigger: `release: published` (engine un-draft or published `v*-cli` marker) plus `workflow_dispatch` re-runs.
 - Provenance: `permissions.id-token: write` gives npm the GHA OIDC chain (`commit SHA` → built tarball) and the npm "verified" badge.
 - Guards: tag must match `package.json#version` after stripping leading `v` and trailing `-cli`; already-published versions skip publish and exit 0.
+- Dist-tags: stable package versions publish to `latest`; SemVer prerelease package versions publish to `beta`.
 - Injection rule: route `inputs.tag` / `github.event.release.tag_name` through `env:`, never directly into `run:` while the job holds `id-token: write`.
 - Required secret: `NPM_TOKEN` (granular publish-only token for `@drakulavich/kesha-voice-kit`), set with `gh secret set NPM_TOKEN -R drakulavich/kesha-voice-kit`. If missing, the release remains published but the publish step fails; fallback is `npm publish --access public` from a laptop.
 - Release implication: un-draft is the commit-to-publish point. Validate draft assets via authenticated `gh release download` before un-drafting; npm publish is effectively permanent (72 h unpublish window, noisy provenance). If validation fails before publish: delete release + tag, bump patch, retry.
