@@ -25,8 +25,9 @@ updates:
   # Dependabot runner image ships a libcurl that mishandles the sparse
   # HTTP framing, and no cargo PR has ever merged successfully since we
   # added the ecosystem in PR #160.
-  # Workaround: run `cd rust && cargo update` manually and open a PR.
-  # Revisit once Dependabot ships a fix upstream.
+  # Replacement signal: `.github/workflows/cargo-dependency-maintenance.yml`
+  # opens a monthly checklist issue for the manual `cargo update` pass.
+  # Revisit Dependabot once it ships a fix upstream.
 
   # Workflow action versions across .github/workflows/*.
   - package-ecosystem: github-actions
