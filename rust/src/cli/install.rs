@@ -92,9 +92,11 @@ pub fn run(
             "Warming up diarization model (one-time compile ~1-2 min on first install, ~4 s after)..."
         );
         let t = std::time::Instant::now();
-        match fluidaudio_rs::FluidAudio::new()
-            .and_then(|fa| fa.compile_diarization_model(&diarize_pkg))
-        {
+        let result = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
+            fluidaudio_rs::FluidAudio::new()
+                .and_then(|fa| fa.compile_diarization_model(&diarize_pkg))
+        });
+        match result {
             Ok(_) => eprintln!(
                 "Diarization model warmed up (dt={}ms).",
                 t.elapsed().as_millis()
