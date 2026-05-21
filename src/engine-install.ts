@@ -88,6 +88,40 @@ const SIDECARS: SidecarSpec[] = [
   },
 ];
 
+const RETIRED_SIDECAR_FILENAMES = [
+  // Historical installed filenames.
+  "kesha-kokoro",
+  "kesha-diarize",
+  // Historical release-asset filenames. Keep these explicit: AVSpeech and
+  // text-lang helpers are still active and must not be swept up by a glob.
+  "kesha-kokoro-darwin-arm64",
+  "kesha-diarize-darwin-arm64",
+];
+
+export function cleanupRetiredSidecars(engineDir: string): string[] {
+  const removed: string[] = [];
+
+  for (const filename of RETIRED_SIDECAR_FILENAMES) {
+    const path = join(engineDir, filename);
+    if (!existsSync(path)) continue;
+
+    try {
+      rmSync(path);
+      removed.push(filename);
+    } catch (e) {
+      log.warn(
+        `Could not remove retired sidecar ${filename} (${e instanceof Error ? e.message : e}); continuing.`,
+      );
+    }
+  }
+
+  if (removed.length > 0) {
+    log.success(`Removed retired sidecars: ${removed.join(", ")}.`);
+  }
+
+  return removed;
+}
+
 /**
  * Make a freshly-downloaded Mach-O runnable on macOS 15+ Sequoia.
  *
@@ -488,6 +522,10 @@ export async function downloadEngine(
 
   if (options.tts) {
     await warmDarwinKokoro(binPath);
+  }
+
+  if (canWriteEngineDir) {
+    cleanupRetiredSidecars(engineDir);
   }
 
   log.success("Backend installed successfully.");
