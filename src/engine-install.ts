@@ -69,20 +69,9 @@ const SIDECARS: SidecarSpec[] = [
     availableHint: "macOS voices available",
     unavailableHint: "macos-* voices unavailable",
   },
-  {
-    fileBasename: "kesha-diarize-darwin-arm64",
-    assetName: "kesha-diarize-darwin-arm64",
-    displayName: "Diarization sidecar",
-    availableHint: "--speakers available",
-    unavailableHint: "--speakers unavailable",
-  },
-  {
-    fileBasename: "kesha-kokoro",
-    assetName: "kesha-kokoro-darwin-arm64",
-    displayName: "FluidAudio Kokoro sidecar",
-    availableHint: "Kokoro uses FluidAudio CoreML",
-    unavailableHint: "en-* Kokoro voices unavailable on Darwin",
-  },
+  // Kokoro TTS (#207) and speaker diarization (#199) no longer ship as Swift
+  // sidecars — both run in-engine via the native `fluidaudio-rs` binding. Only
+  // the AVSpeech and text-lang sidecars remain.
   {
     // Runtime resolver looks for plain `kesha-textlang` next to the engine
     // (see `rust/src/text_lang.rs::helper_path`), not the platform-suffixed
@@ -232,8 +221,10 @@ async function downloadSidecar(
 
 async function warmDarwinKokoro(binPath: string): Promise<void> {
   if (process.platform !== "darwin" || process.arch !== "arm64") return;
-  const sidecarPath = join(dirname(binPath), "kesha-kokoro");
-  if (!existsSync(sidecarPath)) return;
+  // Kokoro now runs in-engine (FluidAudio CoreML, system_kokoro) — warm it by
+  // exercising the engine's own `say`, not a sidecar. The first synthesis
+  // compiles/fetches FluidAudio's CoreML Kokoro cache.
+  if (!existsSync(binPath)) return;
 
   const outPath = join(tmpdir(), `kesha-kokoro-warmup-${process.pid}.wav`);
   log.progress("Warming FluidAudio Kokoro CoreML cache...");

@@ -81,10 +81,10 @@ const DIARIZE_FILES: PlanFile[] = [
   },
 ];
 
+// Kokoro (#207) and diarization (#199) are in-engine now (native fluidaudio-rs),
+// so only AVSpeech and text-lang ship as separate Swift-sidecar assets.
 const DARWIN_SIDECARS: ReleaseAssetSpec[] = [
   { assetName: "say-avspeech-darwin-arm64", sizeBytes: 63_056 },
-  { assetName: "kesha-diarize-darwin-arm64", sizeBytes: 7_228_000 },
-  { assetName: "kesha-kokoro-darwin-arm64", sizeBytes: 7_189_648 },
   { assetName: "kesha-textlang-darwin-arm64", sizeBytes: 57_648 },
 ];
 
@@ -123,8 +123,6 @@ function engineAssetForPlatform(): ReleaseAssetSpec | null {
 
 function sidecarFilename(assetName: string): string {
   if (assetName === "say-avspeech-darwin-arm64") return "say-avspeech";
-  if (assetName === "kesha-diarize-darwin-arm64") return "kesha-diarize-darwin-arm64";
-  if (assetName === "kesha-kokoro-darwin-arm64") return "kesha-kokoro";
   if (assetName === "kesha-textlang-darwin-arm64") return "kesha-textlang";
   return assetName;
 }
@@ -234,11 +232,11 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
       );
       components.push({
         name: "TTS Kokoro EN",
-        source: "FluidAudio CoreML sidecar",
+        source: "FluidAudio CoreML (in-engine)",
         sizeBytes: 0,
-        cached: existsSync(join(engineDir, "kesha-kokoro")),
+        cached: existsSync(binPath),
         refresh: false,
-        note: "no Kokoro ONNX model is downloaded by Kesha on darwin-arm64; warm-up may compile/update FluidAudio's CoreML cache",
+        note: "Kokoro runs in-engine via FluidAudio CoreML; no Kokoro ONNX model is downloaded by Kesha on darwin-arm64; warm-up may compile/update FluidAudio's CoreML cache",
       });
     } else {
       components.push(

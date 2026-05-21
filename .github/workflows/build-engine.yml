@@ -101,10 +101,9 @@ jobs:
           # Swift sidecar. kesha install places the sidecar next to the
           # engine binary; runtime lookup is sibling-first (see
           # rust/src/tts/avspeech.rs::helper_path).
-          # system_diarize (#199) adds the Sortformer streaming-diarization
-          # backend via a second Swift sidecar (kesha-diarize). Same
-          # sibling-of-engine resolution as AVSpeech (see
-          # rust/src/transcribe/diarize.rs::sidecar_path).
+          # system_kokoro (#207) and system_diarize (#199) add Kokoro TTS and
+          # Sortformer diarization in-engine via the native fluidaudio-rs
+          # binding — no separate Swift sidecars (unlike AVSpeech / text-lang).
           - os: macos-14
             target: aarch64-apple-darwin
             features: coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang
@@ -209,37 +208,11 @@ jobs:
           cp "$sidecar" ./say-avspeech              # sibling-next-to-engine for smoke test
           cp "$sidecar" say-avspeech-darwin-arm64    # release artifact name
 
-      # system_diarize (#199): the Swift kesha-diarize sidecar lives in the
-      # same OUT_DIR shape as AVSpeech. Same find-and-stage pattern; sibling
-      # placement is what rust/src/transcribe/diarize.rs::sidecar_path
-      # probes for, both at smoke time and at runtime in shipped releases.
-      - name: Stage kesha-diarize sidecar (macOS)
-        if: matrix.os == 'macos-14'
-        shell: bash
-        run: |
-          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name kesha-diarize -type f | head -1)
-          if [ -z "$sidecar" ]; then
-            echo "kesha-diarize sidecar not found — system_diarize feature may not have compiled" >&2
-            exit 1
-          fi
-          echo "Sidecar at: $sidecar"
-          cp "$sidecar" ./kesha-diarize-darwin-arm64    # sibling-next-to-engine for smoke test
-          # The runtime probe (sidecar_path) tries kesha-diarize-darwin-arm64
-          # first, then plain kesha-diarize. The release-asset name is the
-          # platform-suffixed one — same convention as say-avspeech-*.
-
-      - name: Stage FluidAudio Kokoro sidecar (macOS)
-        if: matrix.os == 'macos-14'
-        shell: bash
-        run: |
-          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name kesha-kokoro -type f | head -1)
-          if [ -z "$sidecar" ]; then
-            echo "kesha-kokoro sidecar not found — system_kokoro feature may not have compiled" >&2
-            exit 1
-          fi
-          echo "Sidecar at: $sidecar"
-          cp "$sidecar" ./kesha-kokoro
-          cp "$sidecar" kesha-kokoro-darwin-arm64
+      # NOTE: Kokoro TTS (#207) and Sortformer diarization (#199) no longer
+      # ship as Swift sidecars — both run in-engine via native fluidaudio-rs,
+      # so there is nothing to stage for them here (the engine binary carries
+      # the feature; the diarization model is fetched by `kesha install
+      # --diarize`).
 
       # detect-text-lang fast-path sidecar: replaces the per-call `swift -e`
       # shell-out. Always built on macOS by `rust/build.rs::build_text_lang_helper`
@@ -266,10 +239,10 @@ jobs:
         # MATRIX MIRRORS CARGO DEFAULTS".
         #
         # macOS additionally checks that `say --list-voices` surfaces at
-        # least one `macos-*` entry and one FluidAudio-backed Kokoro voice.
-        # That exercises the Swift sidecar voice-listing paths end-to-end,
-        # so a broken sidecar fails the build instead of shipping in a
-        # release.
+        # least one `macos-*` entry (AVSpeech Swift sidecar) and one
+        # FluidAudio-backed Kokoro voice (in-engine via system_kokoro). A
+        # broken AVSpeech sidecar or a Kokoro-less engine fails the build
+        # instead of shipping in a release.
         run: |
           chmod +x "${{ matrix.binary }}"
           caps=$("./${{ matrix.binary }}" --capabilities-json)
@@ -327,20 +300,6 @@ jobs:
         with:
           name: say-avspeech-darwin-arm64
           path: say-avspeech-darwin-arm64
-
-      - name: Upload kesha-diarize sidecar (macOS)
-        if: matrix.os == 'macos-14'
-        uses: actions/upload-artifact@v7
-        with:
-          name: kesha-diarize-darwin-arm64
-          path: kesha-diarize-darwin-arm64
-
-      - name: Upload FluidAudio Kokoro sidecar (macOS)
-        if: matrix.os == 'macos-14'
-        uses: actions/upload-artifact@v7
-        with:
-          name: kesha-kokoro-darwin-arm64
-          path: kesha-kokoro-darwin-arm64
 
       - name: Upload kesha-textlang sidecar (macOS)
         if: matrix.os == 'macos-14'

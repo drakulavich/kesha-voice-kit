@@ -67,15 +67,17 @@ describe("renderInstallPlan", () => {
       const engineDir = join(dir, "engine", "bin");
       process.env.KESHA_ENGINE_BIN = join(engineDir, "kesha-engine");
       mkdirSync(engineDir, { recursive: true });
-      writeFileSync(join(engineDir, "kesha-diarize-darwin-arm64"), "sidecar");
+      // say-avspeech is staged under its unsuffixed filename (see
+      // install-plan sidecarFilename); the plan reports the asset name.
+      writeFileSync(join(engineDir, "say-avspeech"), "sidecar");
 
       const output = await renderInstallPlan({ noCache: true });
 
       if (process.platform === "darwin" && process.arch === "arm64") {
-        expect(output).toContain("Sidecar kesha-diarize-darwin-arm64");
+        expect(output).toContain("Sidecar say-avspeech-darwin-arm64");
         expect(output).toContain("refresh, GitHub release");
       } else {
-        expect(output).not.toContain("Sidecar kesha-diarize-darwin-arm64");
+        expect(output).not.toContain("Sidecar say-avspeech-darwin-arm64");
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -257,19 +257,18 @@ function collectOptionalComponents(redact: boolean): OptionalComponent[] {
       ...pathSummary(join(cache, "models/vosk-ru")),
     },
     {
-      name: "Diarization sidecar",
-      note: "darwin-arm64 only",
-      ...pathSummary(join(sidecarDir, "kesha-diarize-darwin-arm64")),
+      // Diarization (#199) and Kokoro (#207) run in-engine now (native
+      // fluidaudio-rs) — no Swift sidecar binaries. The Sortformer model is
+      // the only installable diarization artifact; Kokoro is covered by the
+      // "TTS (Kokoro)" entry above.
+      name: "Diarization (Sortformer)",
+      note: "enabled with `kesha install --diarize` (darwin-arm64); runs in-engine",
+      ...pathSummary(join(cache, "models/diarize")),
     },
     {
       name: "AVSpeech sidecar",
       note: "macOS voices",
       ...pathSummary(join(sidecarDir, "say-avspeech")),
-    },
-    {
-      name: "FluidAudio Kokoro sidecar",
-      note: "darwin-arm64 Kokoro",
-      ...pathSummary(join(sidecarDir, "kesha-kokoro")),
     },
     {
       name: "Text language sidecar",
