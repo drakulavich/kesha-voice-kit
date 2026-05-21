@@ -1,10 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import {
+  cleanupRetiredSidecars,
   getVersionMarkerPath,
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
 } from "../../src/engine-install";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -61,5 +62,62 @@ describe("engine-install version marker (#151)", () => {
     writeInstalledEngineVersion(binPath, "1.2.0");
     expect(readInstalledEngineVersion(binPath)).toBe("1.2.0");
     rmSync(binPath + ".version");
+  });
+});
+
+describe("engine-install retired sidecar cleanup (#438)", () => {
+  test("removes old Kokoro and diarize helpers without touching active helpers", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-retired-sidecar-test-"));
+    const engineDir = join(dir, "engine", "bin");
+
+    try {
+      mkdirSync(engineDir, { recursive: true });
+      for (const filename of [
+        "kesha-kokoro",
+        "kesha-kokoro-darwin-arm64",
+        "kesha-diarize",
+        "kesha-diarize-darwin-arm64",
+        "say-avspeech",
+        "say-avspeech-darwin-arm64",
+        "kesha-textlang",
+        "kesha-textlang-darwin-arm64",
+        "kesha-engine",
+      ]) {
+        writeFileSync(join(engineDir, filename), "binary");
+      }
+
+      const removed = cleanupRetiredSidecars(engineDir).sort();
+
+      expect(removed).toEqual([
+        "kesha-diarize",
+        "kesha-diarize-darwin-arm64",
+        "kesha-kokoro",
+        "kesha-kokoro-darwin-arm64",
+      ]);
+      for (const filename of removed) {
+        expect(existsSync(join(engineDir, filename))).toBe(false);
+      }
+      for (const filename of [
+        "say-avspeech",
+        "say-avspeech-darwin-arm64",
+        "kesha-textlang",
+        "kesha-textlang-darwin-arm64",
+        "kesha-engine",
+      ]) {
+        expect(existsSync(join(engineDir, filename))).toBe(true);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("is a no-op when retired helpers are absent", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-retired-sidecar-empty-test-"));
+
+    try {
+      expect(cleanupRetiredSidecars(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
