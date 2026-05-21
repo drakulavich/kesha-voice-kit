@@ -76,6 +76,45 @@ pub fn run(
             ),
         }
     }
+    // Diarization warm-up (macOS `system_diarize` only). Pre-compile the Sortformer
+    // `.mlpackage` to its stable `.mlmodelc` sibling so CoreML's ANE program-compile
+    // (~100 s, cached in `com.apple.e5rt.e5bundlecache` keyed by the compiled model
+    // path) happens HERE rather than on the first `kesha transcribe --speakers`. The
+    // diarize bridge recompiled a throwaway temp model every call before this, so the
+    // first real diarize paid ~100 s and tripped the adaptive timeout; after warm-up
+    // it loads the stable `.mlmodelc` in ~4 s. Only when this install requested the
+    // diarize model and the model is on disk; warm-up failure is NON-FATAL (matches
+    // the ASR warm-up above).
+    #[cfg(feature = "system_diarize")]
+    if diarize && !no_warmup && models::is_cached(models::ModelKind::Diarize) {
+        let diarize_pkg = models::model_dir(models::ModelKind::Diarize);
+        eprintln!(
+            "Warming up diarization model (one-time compile ~1-2 min on first install, ~4 s after)..."
+        );
+        let t = std::time::Instant::now();
+        let result = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
+            fluidaudio_rs::FluidAudio::new()
+                .and_then(|fa| fa.compile_diarization_model(&diarize_pkg))
+        });
+        match result {
+            Ok(_) => {
+                eprintln!(
+                    "Diarization model warmed up (dt={}ms).",
+                    t.elapsed().as_millis()
+                );
+                match models::cleanup_diarize_compiled_sidecars(&diarize_pkg) {
+                    Ok(0) => {}
+                    Ok(n) => eprintln!("Removed {n} stale diarization sidecar(s)."),
+                    Err(e) => eprintln!("warning: diarization sidecar cleanup failed ({e})"),
+                }
+            }
+            Err(e) => eprintln!(
+                "warning: diarization warm-up failed ({e}); install still \
+                 complete but the first `kesha transcribe --speakers` will \
+                 pay the cold-start compile."
+            ),
+        }
+    }
     eprintln!("Install complete.");
     Ok(())
 }

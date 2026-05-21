@@ -476,6 +476,73 @@ mod manifest_tests {
     }
 }
 
+#[cfg(all(test, feature = "system_diarize"))]
+mod diarize_sidecar_tests {
+    use super::*;
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(name: &str) -> Result<Self> {
+            let path = std::env::temp_dir().join(format!(
+                "kesha-{name}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_nanos()
+            ));
+            fs::create_dir_all(&path)?;
+            Ok(Self { path })
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn cleanup_diarize_sidecars_keeps_current_and_removes_stale() -> Result<()> {
+        let tmp = TempDir::new("diarize-sidecars")?;
+        let current = tmp.path.join("SortformerNvidiaLow_v2.mlpackage");
+        let current_sidecar = tmp.path.join("SortformerNvidiaLow_v2.mlpackage.mlmodelc");
+        let old_sidecar = tmp.path.join("SortformerNvidiaLow_v1.mlpackage.mlmodelc");
+        let old_sidecar_file = tmp.path.join("SortformerNvidiaLow_v0.mlpackage.mlmodelc");
+        let source_package = tmp.path.join("SortformerNvidiaLow_v1.mlpackage");
+        let unrelated = tmp.path.join("README.md");
+
+        fs::create_dir_all(&current)?;
+        fs::create_dir_all(&current_sidecar)?;
+        fs::create_dir_all(&old_sidecar)?;
+        fs::write(&old_sidecar_file, b"compiled")?;
+        fs::create_dir_all(&source_package)?;
+        fs::write(&unrelated, b"leave me")?;
+
+        let removed = cleanup_diarize_compiled_sidecars(&current)?;
+
+        assert_eq!(removed, 2);
+        assert!(current.exists());
+        assert!(current_sidecar.exists());
+        assert!(source_package.exists());
+        assert!(unrelated.exists());
+        assert!(!old_sidecar.exists());
+        assert!(!old_sidecar_file.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn cleanup_diarize_sidecars_ignores_missing_parent() -> Result<()> {
+        let tmp = TempDir::new("diarize-sidecars-missing")?;
+        let missing = tmp.path.join("missing/Current.mlpackage");
+
+        assert_eq!(cleanup_diarize_compiled_sidecars(&missing)?, 0);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod mirror_tests {
     use super::*;
@@ -676,6 +743,55 @@ pub fn download_diarize(no_cache: bool) -> Result<()> {
     let cache = cache_dir();
     let refs: Vec<&ModelFile> = DIARIZE_FILES.iter().collect();
     parallel_download(&cache, &refs, no_cache)
+}
+
+/// Remove stale CoreML-compiled diarization sidecars after the current model
+/// was successfully warmed. Only deletes Kesha-owned siblings next to the
+/// active `.mlpackage`; never touches the source `.mlpackage` or Apple's e5rt
+/// cache.
+#[cfg(feature = "system_diarize")]
+pub fn cleanup_diarize_compiled_sidecars(keep_model_package: &Path) -> Result<usize> {
+    let Some(parent) = keep_model_package.parent() else {
+        return Ok(0);
+    };
+    if !parent.exists() {
+        return Ok(0);
+    }
+
+    let keep_sidecar = compiled_model_sidecar(keep_model_package);
+    let mut removed = 0;
+    for entry in
+        fs::read_dir(parent).with_context(|| format!("read diarize cache {}", parent.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if path == keep_sidecar || !is_compiled_mlpackage_sidecar(&path) {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("remove stale diarize sidecar {}", path.display()))?;
+        } else {
+            fs::remove_file(&path)
+                .with_context(|| format!("remove stale diarize sidecar {}", path.display()))?;
+        }
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+#[cfg(feature = "system_diarize")]
+fn compiled_model_sidecar(model_package: &Path) -> PathBuf {
+    let mut sidecar = model_package.as_os_str().to_os_string();
+    sidecar.push(".mlmodelc");
+    PathBuf::from(sidecar)
+}
+
+#[cfg(feature = "system_diarize")]
+fn is_compiled_mlpackage_sidecar(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".mlpackage.mlmodelc"))
 }
 
 /// Download the Silero VAD ONNX. Opt-in via `kesha install --vad` (#128).
