@@ -1,8 +1,9 @@
-use std::io::Write;
 use std::os::fd::OwnedFd;
 
 use anyhow::{Context, Result};
 use fluidaudio_rs::FluidAudio;
+
+use crate::fluid_stdout::with_silenced_stdout;
 
 use super::TranscribeBackend;
 
@@ -81,84 +82,6 @@ fn pad_to_min(samples: &[f32], min_len: usize) -> std::borrow::Cow<'_, [f32]> {
         padded.resize(min_len, 0.0);
         std::borrow::Cow::Owned(padded)
     }
-}
-
-/// Run `f` with the process's stdout temporarily redirected to `devnull`.
-/// FluidAudio's CoreML pipeline writes diagnostic strings (`Transcribe
-/// error: invalidAudioData`) to stdout via Swift's `print(...)` — when
-/// `kesha-engine transcribe --json` is the caller, that noise interleaves
-/// with our JSON serialization and breaks downstream `jq` parsers (#259).
-/// Restoring stdout in a `Drop` impl keeps the redirect short-lived even
-/// if `f` panics.
-///
-/// `devnull` is the long-lived fd cached on `FluidAudioBackend`; passing
-/// `None` runs `f` with stdout untouched (best-effort fallback for the
-/// pathological case where opening /dev/null at backend init failed).
-fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce() -> R) -> R {
-    use std::os::fd::{AsRawFd, FromRawFd};
-
-    struct StdoutGuard {
-        saved: Option<OwnedFd>,
-    }
-    impl Drop for StdoutGuard {
-        fn drop(&mut self) {
-            if let Some(saved) = self.saved.take() {
-                // SAFETY: saved is a dup'd stdout fd we own. as_raw_fd
-                // borrows it for the dup2 call (atomic in the kernel);
-                // `saved` is then dropped at end of this block, closing
-                // the duplicate. dup2 retains its own reference on fd 1.
-                let rc = unsafe { libc::dup2(saved.as_raw_fd(), libc::STDOUT_FILENO) };
-                if rc < 0 {
-                    // Restore failed — fd 1 stays pointed at /dev/null and
-                    // every subsequent `println!` (including our final JSON)
-                    // silently vanishes. Surface the OS error on stderr so the
-                    // caller has any chance of noticing the broken pipe.
-                    // Rare path (fd exhaustion mid-run); we can't do better
-                    // than warn from a Drop impl.
-                    let errno = std::io::Error::last_os_error();
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "warning: failed to restore stdout after FluidAudio call: {errno}"
-                    );
-                }
-            }
-        }
-    }
-
-    // SAFETY: dup(STDOUT) returns a fresh fd we own; OwnedFd takes
-    // responsibility for closing it on drop. dup failure is best-effort —
-    // we just run f without a guard, never worse than the pre-#259
-    // behaviour.
-    let saved: Option<OwnedFd> = unsafe {
-        let raw = libc::dup(libc::STDOUT_FILENO);
-        if raw < 0 {
-            None
-        } else {
-            Some(OwnedFd::from_raw_fd(raw))
-        }
-    };
-    let have_save = saved.is_some();
-    let _guard = StdoutGuard { saved };
-
-    // Only redirect if we successfully saved stdout — otherwise dup2
-    // would point fd 1 at /dev/null with no way to restore, silently
-    // swallowing the engine's final JSON for the rest of the process.
-    if have_save {
-        if let Some(devnull) = devnull {
-            // SAFETY: devnull is the long-lived fd cached on FluidAudioBackend;
-            // dup2 atomically replaces fd 1 with a duplicate of devnull, and
-            // the cached fd remains valid for subsequent calls.
-            let rc = unsafe { libc::dup2(devnull.as_raw_fd(), libc::STDOUT_FILENO) };
-            if rc < 0 {
-                let errno = std::io::Error::last_os_error();
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "warning: failed to silence stdout before FluidAudio call: {errno}"
-                );
-            }
-        }
-    }
-    f()
 }
 
 #[cfg(test)]

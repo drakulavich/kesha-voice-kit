@@ -33,18 +33,12 @@ const ENGINE_ASSETS = [
   },
 ];
 
+// Kokoro (#207) and diarization (#199) run in-engine now (native fluidaudio-rs),
+// so only AVSpeech and text-lang ship as separate Swift-sidecar assets.
 const DARWIN_SIDECARS = [
   {
     name: "say-avspeech-darwin-arm64",
     install: { directory: "engine/bin", filename: "say-avspeech" },
-  },
-  {
-    name: "kesha-diarize-darwin-arm64",
-    install: { directory: "engine/bin", filename: "kesha-diarize-darwin-arm64" },
-  },
-  {
-    name: "kesha-kokoro-darwin-arm64",
-    install: { directory: "engine/bin", filename: "kesha-kokoro" },
   },
   {
     name: "kesha-textlang-darwin-arm64",

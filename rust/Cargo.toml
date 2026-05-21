@@ -30,13 +30,13 @@ tts = ["dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg"]
 # Opt-in — builds a Swift sidecar via swiftc in build.rs. Silently no-op on
 # non-macOS targets even when enabled.
 system_tts = ["tts"]
-# macOS arm64 Kokoro via FluidAudio CoreML sidecar. Keeps Linux/Windows on the
-# existing ONNX Kokoro path while darwin-arm64 release builds avoid ONNX for
-# English TTS.
-system_kokoro = ["tts"]
-# darwin-arm64 speaker diarization via FluidAudio (#199). Requires FluidAudio's
-# diarization SDK and companion helper binary. Darwin-only.
-system_diarize = []
+# macOS arm64 Kokoro via FluidAudio (native fluidaudio-rs binding). Keeps
+# Linux/Windows on the existing ONNX Kokoro path; darwin-arm64 release builds
+# use the ANE for English TTS.
+system_kokoro = ["tts", "dep:fluidaudio-rs", "dep:libc"]
+# darwin-arm64 speaker diarization via FluidAudio (#199), through the native
+# fluidaudio-rs `diarize_file_with_models` (pre-staged model, no download).
+system_diarize = ["dep:fluidaudio-rs", "dep:libc"]
 # macOS-only fast-path for `detect-text-lang`: precompiled NLLanguageRecognizer
 # sidecar replacing the per-call `swift -e` shell-out. Opt-in — requires
 # `swiftc` at build time (build.rs::build_text_lang_helper). When off, the
@@ -67,8 +67,10 @@ rayon = "1"
 ort = { version = "2.0.0-rc.12" }
 ndarray = { version = "0.17" }
 
-# CoreML backend (macOS): FluidAudio/Apple Neural Engine for ASR.
-fluidaudio-rs = { version = "0.14", optional = true }
+# FluidAudio (macOS): ASR (CoreML/ANE), native Kokoro TTS, and model-path
+# diarization. Forked to add the Kokoro binding + `diarize_file_with_models`
+# (upstream PR pending; retire the fork once merged).
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", branch = "forked-main", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)

@@ -6,6 +6,15 @@ mod backend;
 mod capabilities;
 mod cli;
 mod debug;
+#[cfg(all(
+    target_os = "macos",
+    any(
+        feature = "coreml",
+        feature = "system_diarize",
+        feature = "system_kokoro"
+    )
+))]
+mod fluid_stdout;
 mod lang_id;
 mod models;
 mod process_tree;
