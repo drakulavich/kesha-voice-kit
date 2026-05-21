@@ -157,11 +157,10 @@ fn run_with_timeout(
     match rx.recv_timeout(timeout) {
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => bail!(
-            "speaker diarization timed out after {}s for {:.0}s of audio; split the \
-             recording or raise KESHA_DIARIZE_TIMEOUT_SECS (currently {}s)",
+            "speaker diarization timed out after {}s for {:.0}s of audio; \
+             set KESHA_DIARIZE_TIMEOUT_SECS to override the adaptive limit",
             timeout.as_secs(),
             audio_secs,
-            timeout.as_secs()
         ),
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             bail!("speaker diarization worker terminated unexpectedly")
