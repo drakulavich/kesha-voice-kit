@@ -271,9 +271,9 @@ Never comment out the verification to "get it working" — that's the exact regr
 
 ### GREPTILE PR REVIEW IS A GATE
 
-PRs receive automated review from Greptile (as a PR comment on each push). Treat P1/P2 findings as merge blockers — address them before marking the PR ready-for-review.
+PRs receive automated review from Greptile when a PR opens and when new commits are pushed to the PR branch. Treat P1/P2 findings as merge blockers — address them before marking the PR ready-for-review.
 
-- Pattern: push → wait for CI + Greptile → fix comments → push → request fresh Greptile review if auto-re-review missed the fix → wait for CI + Greptile again → merge.
+- Pattern: push → wait for CI + Greptile → fix comments → push → wait for Greptile's automatic new-commit review → merge only after CI and Greptile both cover the latest head SHA.
 - After opening a PR, do not stop at the PR URL. Wait for CI to finish, inspect Greptile's top-level summary and inline review comments, and report whether the latest head SHA is green/reviewed or still waiting.
 - Past incidents caught this way: `--backend=` forwarded to an engine that didn't accept it (#125 P1); `--rate` silently discarded for Piper voices (#126 P1); hard-coded 22050 Hz assertion that would break on other Piper voices (#126 P2); silent zero-speakers on `transcribe_with_options({with_speakers: true, with_segments: false})` (#290 P1).
 - Exception: findings that are clearly false positives can be dismissed with a PR comment explaining why — but that's rare in practice.
@@ -281,8 +281,6 @@ PRs receive automated review from Greptile (as a PR comment on each push). Treat
 Greptile comment mechanics:
 
 - It updates one existing top-level comment, not a new comment per review. Confirm re-review by checking both the "Last reviewed commit" SHA (`body | match("commit/([a-f0-9]+)")`) and the issue-comment `.updated_at`; `gh pr view --json comments` has null `updatedAt`, so use `gh api repos/OWNER/REPO/issues/<N>/comments`.
-- Never post `@greptileai review` immediately after PR creation; the initial review auto-fires (#298 reminder).
-- Subsequent pushes do not reliably auto-re-review (#287/#288/#292 did; #291/#293/#294 did not). If the verdict materially changed and auto-trigger missed it, run `gh pr comment <N> --body "@greptileai review"` after the subsequent push. Trigger for P1/P2 fixes, new coverage for flagged behavior, logic/security/workflow-input changes, and release version bumps. Skip for initial PR open, comment/typo/docs-only text shuffles, pure formatting, and same-branch reverts. Typical latency: 1-5 min.
 - Do not arm auto-merge before Greptile reviews the latest head; otherwise CI-green can merge before a new P1/P2 arrives (#287→#288→#289; #290→#291→#292 avoided by waiting). Merge by hand after `Confidence Score: ≥4/5` references the latest SHA.
 - If Greptile is the next gate, set a real wait: `ScheduleWakeup(delaySeconds: 300-900, prompt: "<<autonomous-loop-dynamic>>", reason: "<...>")` (270s for cache-warm, 900s+ for cache miss; avoid the dead zone around 300s). Optional auto-merge poll: `while :; do gh api repos/drakulavich/kesha-voice-kit/issues/N/comments --jq '.[] | select(.user.login | contains("greptile"))'; done`, merging only when `Confidence Score: ≥4/5` and `commit/SHA` match head. Stop the poll if the user says to wait.
 
