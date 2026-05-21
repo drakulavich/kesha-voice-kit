@@ -32,10 +32,10 @@ pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
     use std::path::PathBuf;
 
     /// Sibling-of-current-exe first, then build-time fallback. Matches the
-    /// resolution strategy in `tts::avspeech::helper_path` and
-    /// `transcribe::diarize::sidecar_path` so the three sidecars are
-    /// discoverable identically — `~/.cache/kesha/engine/bin/kesha-textlang`
-    /// in the release layout, `$OUT_DIR/kesha-textlang` for `cargo run`.
+    /// resolution strategy in `tts::avspeech::helper_path` so the remaining
+    /// Swift sidecars are discoverable identically —
+    /// `~/.cache/kesha/engine/bin/kesha-textlang` in the release layout,
+    /// `$OUT_DIR/kesha-textlang` for `cargo run`.
     fn helper_path() -> PathBuf {
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {

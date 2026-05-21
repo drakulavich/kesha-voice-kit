@@ -115,7 +115,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
                 "SSML is not yet supported with FluidAudio Kokoro voices".into(),
             ));
         }
-        let wav_bytes = super::fluid_kokoro::synthesize(opts.text, voice_id, *speed, None)
+        let wav_bytes = super::fluid_kokoro::synthesize(opts.text, voice_id, *speed)
             .map_err(|e| TtsError::SynthesisFailed(format!("fluid-kokoro: {e}")))?;
         return transcode_to(&wav_bytes, opts.format);
     }

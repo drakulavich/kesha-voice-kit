@@ -1,9 +1,8 @@
 //! FluidAudio Kokoro backend — macOS arm64, behind `system_kokoro`.
 //!
-//! The public `fluidaudio-rs` crate does not expose Kokoro TTS yet, so Kesha
-//! shells out to a small Swift sidecar that links FluidAudio directly. This
-//! mirrors the AVSpeech/diarize sidecar pattern and keeps non-Darwin builds on
-//! the existing ONNX Kokoro implementation.
+//! Uses the forked `fluidaudio-rs` crate's native Kokoro binding (in-process),
+//! replacing the previous Swift sidecar. Non-Darwin builds stay on the existing
+//! ONNX Kokoro implementation.
 
 #![cfg(all(
     feature = "system_kokoro",
@@ -11,14 +10,11 @@
     target_arch = "aarch64"
 ))]
 
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use anyhow::{Context, Result};
+use fluidaudio_rs::FluidAudio;
 
-use crate::process_tree::ChildGuard;
-
-// FluidAudio 0.14.5 voice snapshot. Keep this list in sync with
-// swift/kesha-kokoro/Package.resolved whenever the FluidAudio pin changes.
+// FluidAudio 0.14.5 voice snapshot. Keep this list in sync with the FluidAudio
+// pin in the fluidaudio-rs fork whenever it changes.
 const VOICES: &[&str] = &[
     "af_alloy",
     "af_aoede",
@@ -50,78 +46,31 @@ pub fn supports_voice(name: &str) -> bool {
     VOICES.contains(&name)
 }
 
-pub fn helper_path() -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            for name in ["kesha-kokoro", "kesha-kokoro-darwin-arm64"] {
-                let sibling = parent.join(name);
-                if sibling.exists() {
-                    return sibling;
-                }
-            }
-        }
-    }
-    PathBuf::from(env!("KESHA_KOKORO_HELPER"))
-}
-
-pub fn synthesize(
-    text: &str,
-    voice_id: &str,
-    speed: f32,
-    helper: Option<&Path>,
-) -> anyhow::Result<Vec<u8>> {
+/// Synthesize `text` with FluidAudio Kokoro (CoreML/ANE) via the native
+/// `fluidaudio-rs` binding. `voice_id` is the bare FluidAudio voice (e.g.
+/// `am_michael`). Returns a complete WAV byte buffer (24 kHz mono, 16-bit PCM);
+/// `tts::say::transcode_to` decodes/re-encodes it for the requested format.
+pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<Vec<u8>> {
     if text.is_empty() {
         anyhow::bail!("fluid-kokoro: text is empty");
     }
-    let bin = helper.map(PathBuf::from).unwrap_or_else(helper_path);
-    let speed_arg = format!("{speed:.3}");
-
-    let child = Command::new(&bin)
-        .arg("--voice")
-        .arg(voice_id)
-        .arg("--speed")
-        .arg(speed_arg)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("spawn {}: {e}", bin.display()))?;
-    let mut child = ChildGuard::new(child);
-
-    child
-        .stdin_mut()
-        .ok_or_else(|| anyhow::anyhow!("fluid-kokoro: stdin unavailable"))?
-        .write_all(text.as_bytes())?;
-    child.close_stdin();
-
-    let output = child.wait_with_output()?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "fluid-kokoro helper exited {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(output.stdout)
+    // `kesha say` writes the WAV bytes to stdout; silence FluidAudio's CoreML
+    // stdout noise for the whole FluidAudio lifetime so it can't corrupt the
+    // audio stream (#259, mirrors the diarize/ASR guard).
+    crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
+        let audio = FluidAudio::new().context("init FluidAudio bridge")?;
+        audio
+            .init_kokoro(voice_id)
+            .context("init FluidAudio Kokoro (downloads the model on first run)")?;
+        audio
+            .synthesize_kokoro(text, voice_id, speed)
+            .context("FluidAudio Kokoro synthesis")
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
-    fn fake_helper(tmp: &TempDir, script: &str) -> PathBuf {
-        let path = tmp.path().join("fake-fluid-kokoro.sh");
-        let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, "#!/bin/sh").unwrap();
-        writeln!(f, "{script}").unwrap();
-        drop(f);
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&path).unwrap().permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&path, perms).unwrap();
-        path
-    }
 
     #[test]
     fn lists_supported_kesha_voice_ids() {
@@ -131,21 +80,20 @@ mod tests {
     }
 
     #[test]
-    fn helper_stdout_is_returned_verbatim() {
-        let tmp = TempDir::new().unwrap();
-        let helper = fake_helper(&tmp, r#"cat >/dev/null; printf 'RIFFmock'"#);
-        let bytes = synthesize("hello", "am_michael", 1.0, Some(&helper)).unwrap();
-        assert_eq!(&bytes, b"RIFFmock");
+    fn supports_known_voice() {
+        assert!(supports_voice("am_michael"));
+        assert!(!supports_voice("nonexistent"));
     }
 
     #[test]
-    fn helper_nonzero_exit_surfaces_stderr() {
-        let tmp = TempDir::new().unwrap();
-        let helper = fake_helper(&tmp, r#"echo 'voice not found: xyz' >&2; exit 2"#);
-        let err = synthesize("hello", "xyz", 1.0, Some(&helper))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("voice not found"), "msg: {err}");
-        assert!(err.contains("exited"), "msg: {err}");
+    #[ignore = "downloads the FluidAudio Kokoro model; run locally on darwin-arm64"]
+    fn synthesize_returns_wav() {
+        let wav = synthesize("Hello world", "am_michael", 1.0).expect("synth");
+        assert!(
+            wav.len() > 1000,
+            "expected a non-trivial WAV, got {}",
+            wav.len()
+        );
+        assert_eq!(&wav[..4], b"RIFF", "expected a RIFF/WAVE header");
     }
 }

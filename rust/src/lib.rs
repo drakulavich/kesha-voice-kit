@@ -32,6 +32,15 @@ pub mod backend;
 pub mod capabilities;
 pub mod cli;
 pub mod debug;
+#[cfg(all(
+    target_os = "macos",
+    any(
+        feature = "coreml",
+        feature = "system_diarize",
+        feature = "system_kokoro"
+    )
+))]
+mod fluid_stdout;
 pub mod lang_id;
 pub mod models;
 mod process_tree;

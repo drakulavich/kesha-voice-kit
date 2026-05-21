@@ -1,22 +1,16 @@
-//! Speaker diarization on darwin-arm64 via the `kesha-diarize` Swift sidecar
-//! (FluidAudio framework, SortformerDiarizer). Mirrors the AVSpeech sidecar
-//! pattern (#141). Closes #199 angle D.
+//! Speaker diarization on darwin-arm64 via the native `fluidaudio-rs`
+//! `diarize_file_with_models` (FluidAudio SortformerDiarizer, pre-staged model,
+//! no download). Closes #199 angle D.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::path::Path;
 
-use crate::process_tree::ChildGuard;
 use crate::{dtrace, dtrace_json};
+use fluidaudio_rs::FluidAudio;
 
 use super::TranscriptionSegment;
 
-const DEFAULT_DIARIZE_TIMEOUT_SECS: u64 = 90;
-const MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS: u64 = 1_800;
-const DIARIZE_TIMEOUT_SECONDS_PER_AUDIO_SECOND: f32 = 0.05;
-const DIARIZE_TIMEOUT_SECONDS_PER_ASR_SEGMENT: f32 = 0.10;
 const MIN_DIARIZE_SEGMENT_COVERAGE: f32 = 0.95;
 const MAX_DIARIZE_TAIL_GAP_SECONDS: f32 = 30.0;
 
@@ -29,155 +23,58 @@ pub(crate) struct DiarizeSpan {
     pub speaker: u32,
 }
 
-#[derive(Debug, Deserialize)]
-struct SidecarOutput {
-    spans: Vec<DiarizeSpan>,
-}
-
-fn diarize_timeout(asr_segments: &[TranscriptionSegment], duration: Option<f32>) -> Duration {
-    if let Some(secs) = std::env::var("KESHA_DIARIZE_TIMEOUT_SECS")
-        .ok()
-        .and_then(|raw| raw.parse::<u64>().ok())
-        .filter(|secs| *secs > 0)
-    {
-        return Duration::from_secs(secs);
-    }
-
-    let asr_end = max_asr_end(asr_segments);
-    let audio_secs = duration.or(asr_end).unwrap_or(0.0).max(0.0);
-    let by_audio = (audio_secs * DIARIZE_TIMEOUT_SECONDS_PER_AUDIO_SECOND).ceil() as u64;
-    let by_segments =
-        (asr_segments.len() as f32 * DIARIZE_TIMEOUT_SECONDS_PER_ASR_SEGMENT).ceil() as u64;
-    let secs = DEFAULT_DIARIZE_TIMEOUT_SECS
-        .max(by_audio)
-        .max(by_segments)
-        .min(MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS);
-    Duration::from_secs(secs)
-}
-
-/// Resolve the sidecar path. Sibling-of-engine first (release layout
-/// `~/.cache/kesha/bin/kesha-diarize-darwin-arm64`), `KESHA_DIARIZE_SIDECAR`
-/// fallback (set by `rust/build.rs` for `cargo run` / `cargo test`).
-fn sidecar_path() -> Result<PathBuf> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            for name in ["kesha-diarize-darwin-arm64", "kesha-diarize"] {
-                let candidate = parent.join(name);
-                if candidate.exists() {
-                    return Ok(candidate);
-                }
-            }
-        }
-    }
-    if let Some(dev) = option_env!("KESHA_DIARIZE_SIDECAR") {
-        let p = PathBuf::from(dev);
-        if p.exists() {
-            return Ok(p);
-        }
-    }
-    bail!(
-        "kesha-diarize sidecar not found next to the engine binary; run \
-         `kesha install` to fetch it (darwin-arm64 only)"
-    )
-}
-
-/// Run the sidecar against `audio_path` using the diarization model at
-/// `model_path`. Returns a span list that is validated against the ASR
-/// timeline before merge, so callers never receive silently partial speaker
-/// labels (#397).
+/// Diarize `audio_path` using the pre-staged model at `model_path` via the
+/// native FluidAudio binding (`diarize_file_with_models` — no download). The
+/// span list is validated against the ASR timeline before merge, so callers
+/// never receive silently partial speaker labels (#397).
 pub(crate) fn run(
     audio_path: &Path,
     model_path: &Path,
     asr_segments: &[TranscriptionSegment],
     duration: Option<f32>,
 ) -> Result<Vec<DiarizeSpan>> {
-    let sidecar = sidecar_path()?;
-    let timeout = diarize_timeout(asr_segments, duration);
     let audio_secs = duration
         .or_else(|| max_asr_end(asr_segments))
         .unwrap_or(0.0);
     dtrace!(
-        "diarize::start timeout={}s audio_secs={:.1} asr_segments={}",
-        timeout.as_secs(),
+        "diarize::start audio_secs={:.1} asr_segments={}",
         audio_secs,
         asr_segments.len()
     );
     dtrace_json!(
         "diarize.start",
         {
-            "timeout_secs": timeout.as_secs(),
             "audio_secs": audio_secs,
             "asr_segments": asr_segments.len()
         }
     );
-    let child = Command::new(&sidecar)
-        .arg(audio_path)
-        .arg(model_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .with_context(|| format!("failed to spawn {}", sidecar.display()))?;
-    let mut child = ChildGuard::new(child);
 
-    let started = Instant::now();
-    loop {
-        if child
-            .try_wait()
-            .with_context(|| format!("failed to poll {}", sidecar.display()))?
-            .is_some()
-        {
-            break;
-        }
-        if started.elapsed() >= timeout {
-            let output = child
-                .kill_and_wait_with_output()
-                .with_context(|| format!("failed to collect timed-out {}", sidecar.display()))?;
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "kesha-diarize timed out after {}s for {:.0}s audio; try splitting the file \
-                 or set KESHA_DIARIZE_TIMEOUT_SECS={} (or larger): {}",
-                timeout.as_secs(),
-                audio_secs,
-                timeout.as_secs().saturating_mul(2),
-                stderr.trim()
-            );
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    // FluidAudio's CoreML diarizer prints noise to stdout. This scoped guard
+    // catches synchronous prints during the call; the *asynchronous* teardown
+    // print (`E5RT encountered an STL exception`, emitted on a background queue
+    // after this returns) is NOT catchable here — it is silenced by
+    // `StdoutShield` at the CLI layer, which keeps fd 1 redirected past process
+    // exit (see `cli::transcribe` + `fluid_stdout::StdoutShield`). (#259/#397)
+    let spans: Vec<DiarizeSpan> =
+        crate::fluid_stdout::with_silenced_stdout_oneshot(|| -> Result<Vec<DiarizeSpan>> {
+            let audio = FluidAudio::new().context("failed to initialize FluidAudio bridge")?;
+            let segments = audio
+                .diarize_file_with_models(audio_path, model_path)
+                .context("FluidAudio diarization failed")?;
+            Ok(segments
+                .into_iter()
+                .map(|seg| DiarizeSpan {
+                    start: seg.start_time,
+                    end: seg.end_time,
+                    speaker: speaker_index(&seg.speaker_id),
+                })
+                .collect())
+        })?;
 
-    let output = child
-        .wait_with_output()
-        .with_context(|| format!("failed to collect {}", sidecar.display()))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!(
-            "kesha-diarize exited {}: {}",
-            output.status,
-            stderr.trim()
-        ));
-    }
-    // The sidecar prints the JSON object as a single line (see main.swift),
-    // but CoreML — running below it — occasionally writes its own
-    // "E5RT encountered an STL exception..." messages to stdout AFTER our
-    // exit-success JSON. Strict serde_json::from_slice rejects the trailing
-    // garbage with "trailing characters at line 2 column 1". Read only the
-    // first non-empty line as JSON to insulate against that noise.
-    let first_line = output
-        .stdout
-        .split(|b| *b == b'\n')
-        .find(|line| !line.iter().all(u8::is_ascii_whitespace))
-        .unwrap_or(&output.stdout);
-    let parsed: SidecarOutput = serde_json::from_slice(first_line).with_context(|| {
-        format!(
-            "invalid JSON from kesha-diarize: {}",
-            String::from_utf8_lossy(&output.stdout)
-        )
-    })?;
-    let coverage = validate_coverage(asr_segments, &parsed.spans)?;
+    let coverage = validate_coverage(asr_segments, &spans)?;
     dtrace!(
         "diarize::coverage spans={} labeled={}/{} ratio={:.3} span_end={:.1}s asr_end={:.1}s",
-        parsed.spans.len(),
+        spans.len(),
         coverage.labeled_segments,
         coverage.total_segments,
         coverage.coverage_ratio,
@@ -187,7 +84,7 @@ pub(crate) fn run(
     dtrace_json!(
         "diarize.coverage",
         {
-            "spans": parsed.spans.len(),
+            "spans": spans.len(),
             "labeled_segments": coverage.labeled_segments,
             "total_segments": coverage.total_segments,
             "coverage_ratio": coverage.coverage_ratio,
@@ -195,7 +92,18 @@ pub(crate) fn run(
             "max_asr_end": coverage.max_asr_end
         }
     );
-    Ok(parsed.spans)
+    Ok(spans)
+}
+
+/// Parse FluidAudio's `"SPEAKER_NN"` label into a numeric cluster id. Falls back
+/// to 0 if the suffix isn't numeric — the merge contract only needs ids that are
+/// stable within a single call.
+fn speaker_index(speaker_id: &str) -> u32 {
+    speaker_id
+        .rsplit('_')
+        .next()
+        .and_then(|n| n.parse::<u32>().ok())
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -434,116 +342,5 @@ mod tests {
         assert_eq!(coverage.total_segments, 0);
         assert_eq!(coverage.labeled_segments, 0);
         assert_eq!(coverage.coverage_ratio, 1.0);
-    }
-
-    #[test]
-    fn adaptive_timeout_keeps_short_audio_near_current_default() {
-        let _guard = EnvLockGuard::new();
-        let segs = vec![seg(0.0, 1.0, "a")];
-
-        unsafe {
-            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
-        }
-
-        assert_eq!(
-            diarize_timeout(&segs, Some(10.0)),
-            Duration::from_secs(DEFAULT_DIARIZE_TIMEOUT_SECS)
-        );
-    }
-
-    #[test]
-    fn adaptive_timeout_scales_for_long_audio() {
-        let _guard = EnvLockGuard::new();
-        let segs: Vec<_> = (0..6_000)
-            .map(|i| {
-                let start = i as f32;
-                seg(start, start + 0.5, "a")
-            })
-            .collect();
-
-        unsafe {
-            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
-        }
-
-        assert_eq!(
-            diarize_timeout(&segs, Some(12_000.0)),
-            Duration::from_secs(600)
-        );
-    }
-
-    #[test]
-    fn adaptive_timeout_is_capped() {
-        let _guard = EnvLockGuard::new();
-        let segs: Vec<_> = (0..100_000)
-            .map(|i| {
-                let start = i as f32;
-                seg(start, start + 0.5, "a")
-            })
-            .collect();
-
-        unsafe {
-            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
-        }
-
-        assert_eq!(
-            diarize_timeout(&segs, Some(100_000.0)),
-            Duration::from_secs(MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS)
-        );
-    }
-
-    #[test]
-    fn adaptive_timeout_env_override_wins() {
-        let _guard = EnvLockGuard::new();
-        let segs = vec![seg(0.0, 1.0, "a")];
-        let _env = EnvGuard::set("KESHA_DIARIZE_TIMEOUT_SECS", "3600");
-
-        assert_eq!(
-            diarize_timeout(&segs, Some(1.0)),
-            Duration::from_secs(3_600)
-        );
-    }
-
-    struct EnvLockGuard {
-        _guard: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl EnvLockGuard {
-        fn new() -> Self {
-            static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-            Self {
-                _guard: LOCK
-                    .get_or_init(|| std::sync::Mutex::new(()))
-                    .lock()
-                    .unwrap(),
-            }
-        }
-    }
-
-    struct EnvGuard {
-        key: &'static str,
-        original: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, val: &str) -> Self {
-            let original = std::env::var(key).ok();
-            unsafe {
-                std::env::set_var(key, val);
-            }
-            Self { key, original }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            match &self.original {
-                Some(v) => unsafe {
-                    std::env::set_var(self.key, v);
-                },
-                None => unsafe {
-                    std::env::remove_var(self.key);
-                },
-            }
-        }
     }
 }
