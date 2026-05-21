@@ -76,10 +76,14 @@ loadSortformerCached(mlpackagePath:) -> SortformerModels
 - `rust/Cargo.toml` + `Cargo.lock`: bump the `fluidaudio-rs` git pin to the new fork SHA.
 - `rust/src/main.rs` install flow: the existing warm-up step (`--no-warmup`,
   main.rs:101-110) already triggers the ASR ANE compile. Extend it so that **when the
-  diarize model is installed** (`--diarize`, or already cached) and `!no_warmup`, it calls
-  `FluidAudio::compile_diarization_model(diarize_model_dir)` once — paying the ~100s ANE
-  compile at the explicit install step. Print a progress line ("Warming diarization model
-  (one-time ~1-2 min)…"). Skipped on `--no-warmup` and on non-`system_diarize` builds.
+  current install requested the diarize model** (`--diarize`) and `!no_warmup`, it calls
+  `FluidAudio::compile_diarization_model(diarize_model_dir)` once inside the existing
+  stdout-silencing helper — paying the ~100s ANE compile at the explicit install step.
+  Print a progress line ("Warming diarization model (one-time compile ~1-2 min on first
+  install, ~4 s after)…"). Skipped on `--no-warmup` and on non-`system_diarize` builds.
+- After a successful diarize warm-up, remove stale Kesha-owned compiled sidecars
+  (`*.mlpackage.mlmodelc`) next to the active diarize `.mlpackage`. Keep the current warmed
+  sidecar and all source `.mlpackage` directories; never touch Apple's e5rt cache.
 - Runtime `transcribe --speakers` is unchanged (`diarize.rs` keeps #435's adaptive timeout
   + worker thread); after install-warm it loads the stable `.mlmodelc` in ~4s.
 

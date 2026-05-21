@@ -97,10 +97,17 @@ pub fn run(
                 .and_then(|fa| fa.compile_diarization_model(&diarize_pkg))
         });
         match result {
-            Ok(_) => eprintln!(
-                "Diarization model warmed up (dt={}ms).",
-                t.elapsed().as_millis()
-            ),
+            Ok(_) => {
+                eprintln!(
+                    "Diarization model warmed up (dt={}ms).",
+                    t.elapsed().as_millis()
+                );
+                match models::cleanup_diarize_compiled_sidecars(&diarize_pkg) {
+                    Ok(0) => {}
+                    Ok(n) => eprintln!("Removed {n} stale diarization sidecar(s)."),
+                    Err(e) => eprintln!("warning: diarization sidecar cleanup failed ({e})"),
+                }
+            }
             Err(e) => eprintln!(
                 "warning: diarization warm-up failed ({e}); install still \
                  complete but the first `kesha transcribe --speakers` will \

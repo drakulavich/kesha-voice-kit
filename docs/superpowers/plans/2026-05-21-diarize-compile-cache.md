@@ -54,9 +54,10 @@
 
 ### Task B2: warm diarize at install
 
-**File:** `rust/src/cli/install.rs`
+**Files:** `rust/src/cli/install.rs`, `rust/src/models.rs`
 
-- [ ] After the ASR warm-up block, add `#[cfg(feature = "system_diarize")]` block: if `!no_warmup` and the diarize model is cached (`models::*` cache predicate), call `fluidaudio_rs::FluidAudio::new().and_then(|fa| fa.compile_diarization_model(models::model_dir(models::ModelKind::Diarize)))`, with a "Warming up diarization model (one-time, ~1-2 min)…" line; warm-up failure is **non-fatal** (match the ASR pattern). Match diarize.rs's `fluidaudio_rs` import path.
+- [ ] After the ASR warm-up block, add `#[cfg(feature = "system_diarize")]` block: if `diarize && !no_warmup` and the diarize model is cached (`models::*` cache predicate), call `fluidaudio_rs::FluidAudio::new().and_then(|fa| fa.compile_diarization_model(models::model_dir(models::ModelKind::Diarize)))` inside the stdout-silencing helper, with a "Warming up diarization model (one-time compile ~1-2 min on first install, ~4 s after)…" line; warm-up failure is **non-fatal** (match the ASR pattern). Match diarize.rs's `fluidaudio_rs` import path.
+- [ ] After a successful warm-up, remove stale Kesha-owned compiled sidecars (`*.mlpackage.mlmodelc`) next to the active diarize `.mlpackage`, keeping the current warmed sidecar and all source `.mlpackage` directories.
 
 ### Task B3: verify kesha
 
