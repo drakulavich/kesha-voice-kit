@@ -3,12 +3,14 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { renderInstallPlan } from "../install-plan";
 import { log } from "../log";
-import { performInstall, resolveBackendFlag } from "./install";
+import { performInstall, resolveBackendFlag, resolveNoCacheFlag } from "./install";
 
 export interface InitCommandArgs {
   coreml: boolean;
   onnx: boolean;
   "no-cache": boolean;
+  noCache?: boolean;
+  no_cache?: boolean;
   tts: boolean;
   vad: boolean;
   diarize: boolean;
@@ -38,9 +40,10 @@ export function canInstallDiarizeOnPlatform(
 export function resolveInitSelection(
   args: InitCommandArgs,
   backend = resolveBackendFlag(args.coreml, args.onnx),
+  noCache = resolveNoCacheFlag(args),
 ): InitSelection {
   return {
-    noCache: args["no-cache"],
+    noCache,
     backend,
     tts: args.tts,
     vad: args.vad,
@@ -59,6 +62,29 @@ export function initInstallArgs(selection: InitSelection): string[] {
     selection.vad ? "--vad" : "",
     selection.diarize ? "--diarize" : "",
   ].filter(Boolean);
+}
+
+export function initSuggestionCommands(
+  selection: InitSelection,
+  canDiarize = canInstallDiarizeOnPlatform(),
+): string[][] {
+  const variants: InitSelection[] = [
+    selection,
+    { ...selection, tts: false, vad: true, diarize: false },
+    { ...selection, tts: true, vad: true, diarize: false },
+  ];
+
+  if (canDiarize) {
+    variants.push({ ...selection, tts: false, vad: true, diarize: true });
+  }
+
+  const seen = new Set<string>();
+  return variants.map(initInstallArgs).filter((command) => {
+    const key = command.join("\0");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function renderInitOverview(canDiarize = canInstallDiarizeOnPlatform()): string {
@@ -83,16 +109,20 @@ export async function promptInitSelection(
   args: InitCommandArgs,
   prompt: PromptApi,
   backend = resolveBackendFlag(args.coreml, args.onnx),
+  canDiarize = canInstallDiarizeOnPlatform(),
+  noCache = resolveNoCacheFlag(args),
 ): Promise<InitSelection> {
-  const canDiarize = canInstallDiarizeOnPlatform();
   const tts = await askYesNo(prompt, "Install text-to-speech models for `kesha say`?", args.tts);
   const vad = await askYesNo(prompt, "Install VAD for long or silence-heavy audio?", args.vad);
-  const diarize = canDiarize
-    ? await askYesNo(prompt, "Install speaker diarization for `--speakers`?", args.diarize)
-    : args.diarize;
+  let diarize = false;
+  if (canDiarize) {
+    diarize = await askYesNo(prompt, "Install speaker diarization for `--speakers`?", args.diarize);
+  } else if (args.diarize) {
+    log.warn("--diarize is currently darwin-arm64 only; omitting it from the interactive install.");
+  }
 
   return {
-    noCache: args["no-cache"],
+    noCache,
     backend,
     tts,
     vad,
@@ -124,14 +154,17 @@ async function printPlan(selection: InitSelection): Promise<void> {
 }
 
 async function runNonInteractive(selection: InitSelection): Promise<void> {
-  log.info(renderInitOverview());
-  await printPlan(selection);
+  const canDiarize = canInstallDiarizeOnPlatform();
+  const printableSelection =
+    selection.diarize && !canDiarize ? { ...selection, diarize: false } : selection;
+  if (selection.diarize && !canDiarize) {
+    log.warn("--diarize is currently darwin-arm64 only; omitting it from non-interactive examples.");
+  }
+  log.info(renderInitOverview(canDiarize));
+  await printPlan(printableSelection);
   log.info("Run one of these commands from an interactive terminal:");
-  log.info(`  ${initInstallArgs(selection).join(" ")}`);
-  log.info("  kesha install --vad");
-  log.info("  kesha install --tts --vad");
-  if (canInstallDiarizeOnPlatform()) {
-    log.info("  kesha install --vad --diarize");
+  for (const command of initSuggestionCommands(printableSelection, canDiarize)) {
+    log.info(`  ${command.join(" ")}`);
   }
 }
 
@@ -182,9 +215,10 @@ export const initCommand = defineCommand({
       default: false,
     },
   },
-  async run({ args }: { args: InitCommandArgs }) {
+  async run({ args, rawArgs }: { args: InitCommandArgs; rawArgs: string[] }) {
     const backend = resolveBackendFlag(args.coreml, args.onnx);
-    const selection = resolveInitSelection(args, backend);
+    const noCache = resolveNoCacheFlag(args, rawArgs);
+    const selection = resolveInitSelection(args, backend, noCache);
 
     if (args.plan) {
       log.info(renderInitOverview());
@@ -207,7 +241,7 @@ export const initCommand = defineCommand({
     log.info(renderInitOverview());
     const rl = createInterface({ input, output });
     try {
-      const prompted = await promptInitSelection(args, rl, backend);
+      const prompted = await promptInitSelection(args, rl, backend, canInstallDiarizeOnPlatform(), noCache);
       log.info("");
       await printPlan(prompted);
       const confirmed = await askYesNo(rl, `Run \`${initInstallArgs(prompted).join(" ")}\` now?`, true);

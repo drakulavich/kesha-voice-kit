@@ -5,10 +5,11 @@
 // public surface is unchanged.
 export { doctorCommand } from "./cli/doctor";
 export { completionsCommand } from "./cli/completions";
-export { initCommand } from "./cli/init";
 export {
   canInstallDiarizeOnPlatform,
+  initCommand,
   initInstallArgs,
+  initSuggestionCommands,
   promptInitSelection,
   renderInitOverview,
   resolveInitSelection,

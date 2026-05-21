@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   canInstallDiarizeOnPlatform,
   initInstallArgs,
+  initSuggestionCommands,
+  promptInitSelection,
   renderInitOverview,
   resolveInitSelection,
   type InitCommandArgs,
@@ -12,6 +14,8 @@ function initArgs(overrides: Partial<InitCommandArgs> = {}): InitCommandArgs {
     coreml: false,
     onnx: false,
     "no-cache": false,
+    noCache: false,
+    no_cache: false,
     tts: false,
     vad: false,
     diarize: false,
@@ -48,6 +52,44 @@ describe("init onboarding", () => {
       "--vad",
       "--diarize",
     ]);
+  });
+
+  test("interactive selection drops unsupported diarize preselection before confirmation", async () => {
+    const prompts: string[] = [];
+    const savedError = console.error;
+    console.error = () => {};
+    try {
+      const selection = await promptInitSelection(
+        initArgs({ diarize: true }),
+        {
+          async question(prompt: string) {
+            prompts.push(prompt);
+            return "";
+          },
+        },
+        undefined,
+        false,
+      );
+
+      expect(selection.diarize).toBe(false);
+      expect(initInstallArgs(selection)).toEqual(["kesha", "install"]);
+      expect(prompts).toHaveLength(2);
+      expect(prompts.join("\n")).not.toContain("diarization");
+    } finally {
+      console.error = savedError;
+    }
+  });
+
+  test("non-interactive suggestions preserve backend and cache flags", () => {
+    const commands = initSuggestionCommands(
+      { noCache: true, backend: "coreml", tts: false, vad: false, diarize: false },
+      true,
+    ).map((command) => command.join(" "));
+
+    expect(commands).toContain("kesha install --no-cache --coreml");
+    expect(commands).toContain("kesha install --no-cache --coreml --vad");
+    expect(commands).toContain("kesha install --no-cache --coreml --tts --vad");
+    expect(commands).toContain("kesha install --no-cache --coreml --vad --diarize");
   });
 
   test("diarization availability is darwin-arm64 only", () => {
