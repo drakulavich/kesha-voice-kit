@@ -5,6 +5,8 @@ import { linuxPackageNames } from "./linux-package-names.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const MANIFEST_NAME = "kesha-release-manifest.json";
+const RELEASE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+(?:-beta\.[0-9]+)?$/;
+const STABLE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
 
 const ENGINE_ASSETS = [
   {
@@ -70,9 +72,13 @@ function linuxPackageAssets(version) {
   ];
 }
 
+function isStableTag(tag) {
+  return STABLE_TAG_RE.test(tag);
+}
+
 function usage() {
   console.error(
-    "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z] [--out path] [--check]",
+    "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N]] [--out path] [--check]",
   );
   process.exit(2);
 }
@@ -123,9 +129,11 @@ function buildManifest(tag) {
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),
     ...DARWIN_SIDECARS.map((s) => asset(s.name, "sidecar", ["darwin-arm64"], s.install)),
-    ...linuxPackageAssets(packageVersion).map((p) =>
-      asset(p.name, p.kind, p.platforms, p.install),
-    ),
+    ...(isStableTag(tag)
+      ? linuxPackageAssets(packageVersion).map((p) =>
+          asset(p.name, p.kind, p.platforms, p.install),
+        )
+      : []),
     asset(sbomName, "sbom", []),
     asset(MANIFEST_NAME, "manifest", []),
     asset("SHA256SUMS", "checksum", [], undefined, false),
@@ -209,8 +217,8 @@ function validateSourceConsistency(manifest) {
 const pkg = readPackage();
 const defaultTag = `v${pkg.version}`;
 const tag = getArg("--tag") ?? defaultTag;
-if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag)) {
-  throw new Error(`release manifest tag must look like vX.Y.Z, got: ${tag}`);
+if (!RELEASE_TAG_RE.test(tag)) {
+  throw new Error(`release manifest tag must look like vX.Y.Z or vX.Y.Z-beta.N, got: ${tag}`);
 }
 
 const manifest = buildManifest(tag);

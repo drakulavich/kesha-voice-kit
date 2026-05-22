@@ -13,7 +13,7 @@ kesha install
 
 ## Contents
 
-The manifest records:
+For stable `vX.Y.Z` releases, the manifest records:
 
 - the repository, release tag, CLI version, and engine version
 - released engine binaries and macOS sidecars
@@ -21,6 +21,9 @@ The manifest records:
 - the install layout used by `kesha install`
 - supported platform status for package managers
 - checksum and Sigstore bundle naming conventions
+
+For prerelease tags such as `vX.Y.Z-beta.1`, Linux `.deb` and `.rpm` package
+assets are omitted.
 
 `SHA256SUMS` and Sigstore bundles cover the manifest itself, so downstream
 packaging can verify the metadata before consuming it.
