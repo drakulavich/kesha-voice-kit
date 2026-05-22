@@ -147,10 +147,7 @@ function buildManifest(tag) {
     engineVersion,
     packaging: {
       runtime: "bun",
-      userInstall: isStableTag(tag)
-        ? "bun add -g @drakulavich/kesha-voice-kit"
-        : "bun add -g @drakulavich/kesha-voice-kit@beta",
-      npmDistTag: isStableTag(tag) ? "latest" : "beta",
+      userInstall: "bun add -g @drakulavich/kesha-voice-kit",
       manifestPurpose:
         "Release metadata for package-manager channels; it does not replace the Bun-first user install path.",
     },
