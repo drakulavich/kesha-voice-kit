@@ -22,9 +22,8 @@ Local voice toolkit: transcribe voice messages to text, synthesize speech, detec
 ## When to use
 
 - **Voice memo arrived** (Telegram, WhatsApp, Slack, Signal .ogg/.opus/.m4a): transcribe with `kesha --json <path>` and branch on the detected language.
-- **Need to reply with audio in Telegram/OpenClaw**: synthesize directly into messenger-native OGG/Opus with `kesha say --format ogg-opus --out /tmp/openclaw/reply.ogg "<text>"`. Default is mono 24 kHz @ 32 kbps - what Telegram `sendVoice` expects. No WAV redirect and no `ffmpeg` round-trip.
+- **Need to send a voice note (Telegram, WhatsApp, Signal, Discord)**: synthesize directly into messenger-native OGG/Opus with `kesha say --format ogg-opus --out reply.ogg "<text>"`. Default is mono 24 kHz @ 32 kbps - what Telegram `sendVoice` expects. No WAV redirect and no `ffmpeg` round-trip.
 - **Need local file playback/debug output**: WAV is still available with `kesha say --out reply.wav "<text>"`, but do not use WAV for Telegram voice replies. Auto-routes by detected language (Kokoro-82M for English, Vosk-TTS for Russian). On darwin-arm64, English Kokoro uses FluidAudio CoreML instead of ONNX. For other languages and ~180 more voices use `--voice macos-*` on macOS (zero model download).
-- **Need to send a voice note (Telegram, WhatsApp, Signal, Discord)**: synthesize directly into the messenger-native format with `kesha say --format ogg-opus --out reply.ogg "<text>"`. Default is mono 24 kHz @ 32 kbps - what Telegram `sendVoice` expects. No `ffmpeg` round-trip needed.
 - **Need to detect what language a file is in** before choosing a pipeline: `kesha --json audio.ogg` returns both audio-based and text-based language detection with confidence scores.
 
 ## OpenClaw plugin setup
@@ -103,6 +102,8 @@ openclaw config patch --stdin <<'JSON5'
 JSON5
 ```
 
+When invoking Kesha manually from an OpenClaw flow, write OGG/Opus into an OpenClaw-owned temp path, for example `kesha say --format ogg-opus --out /tmp/openclaw/reply.ogg "<text>"`, after ensuring the directory exists. The configured `tts-local-cli` provider should use OpenClaw's `{{OutputPath}}` placeholder instead of a hardcoded path.
+
 Do not configure OpenClaw Telegram TTS as `kesha say "<text>" > reply.wav`; that creates a WAV file and will not render as a native Telegram voice note.
 
 ## STT: transcribe audio
@@ -161,7 +162,7 @@ kesha say --voice macos-de-DE "Guten Tag" > de.wav # any macOS system voice — 
 kesha say --list-voices                            # Kokoro + Vosk-TTS + ~180 macos-* voices
 ```
 
-Output: WAV mono float32 by default. `--out <path>` writes to a file instead of stdout. For Telegram/OpenClaw replies, prefer `--format ogg-opus --out /tmp/openclaw/<name>.ogg`.
+Output: WAV mono float32 by default. `--out <path>` writes to a file instead of stdout. For Telegram/OpenClaw replies, prefer `--format ogg-opus --out reply.ogg` or the OpenClaw-provided `{{OutputPath}}`.
 
 **Voice notes (Telegram / WhatsApp / Signal / Discord):** add `--format ogg-opus` to emit OGG/Opus directly — the format messenger APIs render as a native voice message:
 
