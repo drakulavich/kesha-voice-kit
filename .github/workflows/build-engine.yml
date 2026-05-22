@@ -57,7 +57,7 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+          if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
             echo "::error::Tag '$INPUT_TAG' must match vX.Y.Z or vX.Y.Z-beta.N (CLI-only marker tags vX.Y.Z-cli are not supported by this workflow)"
             exit 1
           fi

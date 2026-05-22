@@ -5,7 +5,7 @@ import { linuxPackageNames } from "./linux-package-names.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const MANIFEST_NAME = "kesha-release-manifest.json";
-const RELEASE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const RELEASE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+(?:-beta\.[0-9]+)?$/;
 const STABLE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
 
 const ENGINE_ASSETS = [
@@ -147,7 +147,9 @@ function buildManifest(tag) {
     engineVersion,
     packaging: {
       runtime: "bun",
-      userInstall: "bun add -g @drakulavich/kesha-voice-kit",
+      userInstall: isStableTag(tag)
+        ? "bun add -g @drakulavich/kesha-voice-kit"
+        : "bun add -g @drakulavich/kesha-voice-kit@beta",
       npmDistTag: isStableTag(tag) ? "latest" : "beta",
       manifestPurpose:
         "Release metadata for package-manager channels; it does not replace the Bun-first user install path.",
