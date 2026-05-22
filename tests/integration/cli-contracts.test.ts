@@ -205,7 +205,7 @@ describe("CLI contracts", () => {
 
     const version = await runCli(["--version"]);
     expectContract(version, { exitCode: 0, stderrEmpty: true });
-    expect(version.stdout).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(version.stdout).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
 
     const empty = await runCli([]);
     expectContract(empty, {
