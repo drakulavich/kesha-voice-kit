@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "kesha-engine"
-version = "1.18.6"
+version = "1.19.0-beta.1"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
