@@ -31,10 +31,10 @@ afterEach(() => {
 });
 
 describe("diagnostic log storage", () => {
-  test("starts disabled and does not create files", () => {
+  test("defaults to retain-on-failure without creating files", () => {
     const status = getDiagnosticLogStatus();
-    expect(status.enabled).toBe(false);
-    expect(status.mode).toBe("off");
+    expect(status.enabled).toBe(true);
+    expect(status.mode).toBe("retain-on-failure");
     expect(status.activePath).toBe(join(dir, "kesha.ndjson"));
     expect(status.exists).toBe(false);
     expect(existsSync(status.activePath)).toBe(false);

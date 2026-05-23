@@ -614,8 +614,8 @@ describe("CLI contracts", () => {
     expectContract(logsStatus, {
       exitCode: 0,
       stdoutContains: [
-        "Kesha diagnostic logs: disabled",
-        "Mode: off",
+        "Kesha diagnostic logs: enabled",
+        "Mode: retain-on-failure",
         `Path: ${join(env.KESHA_LOG_DIR, "kesha.ndjson")}`,
         "Rotated files: 0",
       ],

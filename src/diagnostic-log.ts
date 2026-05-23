@@ -68,7 +68,7 @@ function resolveStatePath(): string {
 
 function defaultConfig(): DiagnosticLogConfig {
   return {
-    mode: "off",
+    mode: "retain-on-failure",
     maxBytes: DEFAULT_MAX_BYTES,
     retain: DEFAULT_RETAIN,
   };

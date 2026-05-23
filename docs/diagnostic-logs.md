@@ -5,7 +5,8 @@ and runtime troubleshooting. They are separate from Kesha Stats: Stats stores
 aggregate timings in SQLite after explicit opt-in, while diagnostic logs keep a
 small local ring buffer of structured events.
 
-Diagnostic logs are disabled by default:
+Diagnostic logs default to `retain-on-failure`: passing commands leave no log
+file, while failed commands can preserve a small local trace for debugging.
 
 ```bash
 kesha logs status
@@ -23,12 +24,11 @@ Diagnostic logs follow a Playwright-style retention model:
 - `off`: do not record diagnostic events.
 - `on`: append events to the rotated local log immediately.
 - `retain-on-failure`: buffer events for the current command and write them only
-  if the command fails.
+  if the command fails. This is the default.
 
 `kesha logs enable` is shorthand for `kesha logs mode on`; `kesha logs disable`
-is shorthand for `kesha logs mode off`. `retain-on-failure` is the preferred
-future default for richer instrumentation because passing runs do not leave
-diagnostic artifacts behind, while failed runs keep enough context to debug.
+is shorthand for `kesha logs mode off`. `retain-on-failure` keeps passing runs
+artifact-free while failed runs keep enough context to debug.
 
 ## Privacy Contract
 

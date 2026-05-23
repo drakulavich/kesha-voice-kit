@@ -327,7 +327,7 @@ kesha logs status
 `support-bundle` creates a redacted `.tar.gz` archive for GitHub issues. It includes runtime, engine, cache, optional-component, Stats status, and known Kesha environment settings. It does not include audio, transcripts, model files, or the Stats database.
 
 `kesha logs` manages local, rotated diagnostic logs for troubleshooting. Logs
-are disabled by default and support `off`, `on`, and `retain-on-failure` modes.
+default to `retain-on-failure` and also support explicit `off` and `on` modes.
 They use content-free NDJSON events: command/stage names, versions, durations,
 exit codes, and coarse audio metadata only. They must not store audio,
 transcripts, input text, generated speech text, file names, full paths, raw
