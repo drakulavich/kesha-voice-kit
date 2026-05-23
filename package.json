@@ -21,7 +21,6 @@
     "openclaw-plugin.cjs",
     "docs/product-positioning.md",
     "SKILL.md",
-    "scripts/postinstall.cjs",
     "LICENSE",
     "NOTICES.md",
     "README.md"
@@ -49,8 +48,7 @@
     "check": "bun run lint && bun run check:versions && bun run test:cli-fast",
     "check:workflows": "bun .github/scripts/check-workflows.ts",
     "check:release-manifest": "bun .github/scripts/release-manifest.mjs --check",
-    "check:versions": "bun .github/scripts/check-versions.ts",
-    "postinstall": "node scripts/postinstall.cjs"
+    "check:versions": "bun .github/scripts/check-versions.ts"
   },
   "keywords": [
     "asr",

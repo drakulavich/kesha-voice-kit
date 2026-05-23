@@ -211,7 +211,6 @@
             fileset = lib.fileset.unions [
               ./package.json
               ./bun.lock
-              ./scripts/postinstall.cjs
             ];
           };
           nativeBuildInputs = with pkgs; [ bun cacert nodejs ];
@@ -219,10 +218,7 @@
           buildPhase = ''
             runHook preBuild
             export HOME=$TMPDIR
-            # --frozen-lockfile pins to bun.lock; --production drops devDeps;
-            # --ignore-scripts skips the package.json postinstall (which is a
-            # PATH-probe warning for end users, irrelevant inside the
-            # sandbox).
+            # --frozen-lockfile pins to bun.lock; --production drops devDeps.
             bun install --frozen-lockfile --production --ignore-scripts --no-progress
             runHook postBuild
           '';
@@ -259,7 +255,6 @@
               ./SKILL.md
               ./LICENSE
               ./NOTICES.md
-              ./scripts/postinstall.cjs
             ];
           };
           nativeBuildInputs = [ pkgs.makeWrapper ];
