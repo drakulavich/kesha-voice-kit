@@ -677,6 +677,32 @@ describe("CLI contracts", () => {
       stderrEmpty: true,
     });
 
+    const logsStatusJson = await runCli(["logs", "status", "--json"], { env });
+    expectContract(logsStatusJson, {
+      exitCode: 0,
+      stderrEmpty: true,
+    });
+    const logsStatusReport = JSON.parse(logsStatusJson.stdout);
+    expect(logsStatusReport).toMatchObject({
+      dir: env.KESHA_LOG_DIR,
+      activePath: join(env.KESHA_LOG_DIR, "kesha.ndjson"),
+      statePath: join(env.KESHA_LOG_DIR, "diagnostic-logs.json"),
+      exists: false,
+      activeSizeBytes: 0,
+      rotatedFiles: [],
+      totalSizeBytes: 0,
+      mode: "retain-on-failure",
+      maxBytes: 10 * 1024 * 1024,
+      retain: 5,
+    });
+
+    const logsEnableJson = await runCli(["logs", "enable", "--json"], { env });
+    expectContract(logsEnableJson, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["usage: kesha logs status --json"],
+    });
+
     const logsEnable = await runCli(["logs", "enable"], { env });
     expectContract(logsEnable, {
       exitCode: 0,

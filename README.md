@@ -323,6 +323,7 @@ kesha doctor --json --redact
 kesha support-bundle --output kesha-support.tar.gz
 kesha support-bundle --include-logs --output kesha-support-with-logs.tar.gz
 kesha logs status
+kesha logs status --json
 ```
 
 `support-bundle` creates a redacted `.tar.gz` archive for GitHub issues. It includes runtime, engine, cache, optional-component, Stats status, and known Kesha environment settings. It does not include audio, transcripts, model files, or the Stats database.
@@ -331,6 +332,8 @@ bounded tail of Kesha's privacy-safe NDJSON diagnostic log.
 
 `kesha logs` manages local, rotated diagnostic logs for troubleshooting. Logs
 default to `retain-on-failure` and also support explicit `off` and `on` modes.
+Use `kesha logs status --json` for a stable machine-readable status contract
+covering the active path, mode, size, rotation settings, and rotated-file list.
 They use content-free NDJSON events: command/stage names, versions, durations,
 exit codes, and coarse audio metadata only. They must not store audio,
 transcripts, input text, generated speech text, file names, full paths, raw

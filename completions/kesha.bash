@@ -22,7 +22,7 @@ _kesha_completion() {
     doctor) opts="--help -h --json --redact" ;;
     init) opts="--help -h --coreml --onnx --no-cache --plan --yes --tts --vad --diarize" ;;
     install) opts="--help -h --coreml --onnx --no-cache --plan --tts --vad --diarize" ;;
-    logs) opts="--help -h" ;;
+    logs) opts="--help -h --json" ;;
     manpage) opts="--help -h" ;;
     record) opts="--help -h --out --max-seconds --debug" ;;
     say) opts="--help -h --voice --lang --out --rate --list-voices --ssml --format --bitrate --sample-rate --no-expand-abbrev --verbose --debug" ;;
