@@ -5,6 +5,7 @@ import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
+import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
 
 export interface InstallCommandArgs {
   coreml: boolean;
@@ -46,6 +47,28 @@ function defaultBackendForPlatform(): string | undefined {
   return undefined;
 }
 
+type InstallDiagnosticErrorKind = "validation_failed" | "install_failed";
+
+function finishInstallDiagnostic(
+  diagnosticLog: DiagnosticLogSession | null,
+  startedAt: number,
+  status: "success" | "failed",
+  errorKind?: InstallDiagnosticErrorKind,
+): void {
+  if (!diagnosticLog) return;
+  try {
+    diagnosticLog.event("command.finish", {
+      command: "install",
+      status,
+      durationMs: Math.round(performance.now() - startedAt),
+      ...(errorKind ? { errorKind } : {}),
+    });
+    diagnosticLog.finish(status);
+  } catch (err) {
+    log.debug(`install diagnostic log finish dropped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 export async function performInstall(
   noCache: boolean,
   backend?: string,
@@ -58,26 +81,42 @@ export async function performInstall(
     log.info(await renderInstallPlan({ noCache, backend, tts, vad, diarize }));
     return;
   }
-  if (diarize && !(process.platform === "darwin" && process.arch === "arm64")) {
-    log.error(
-      "--diarize is currently darwin-arm64 only " +
-      "(see https://github.com/drakulavich/kesha-voice-kit/issues/199).",
-    );
-    process.exit(1);
-  }
-  const platformBackend = defaultBackendForPlatform();
-  if (backend && !process.env.KESHA_ENGINE_BIN && platformBackend && backend !== platformBackend) {
-    log.error(
-      `Requested backend "${backend}" is not available on this platform; ` +
-        `the release engine uses "${platformBackend}".`,
-    );
-    process.exit(1);
-  }
+
+  let diagnosticLog: DiagnosticLogSession | null = null;
+  let errorKind: InstallDiagnosticErrorKind = "install_failed";
+  const startedAt = performance.now();
   try {
+    diagnosticLog = createDiagnosticLogSession();
+    diagnosticLog.event("command.start", {
+      command: "install",
+      backend: backend ?? "auto",
+      noCache,
+      tts,
+      vad,
+      diarize,
+    });
+
+    if (diarize && !(process.platform === "darwin" && process.arch === "arm64")) {
+      errorKind = "validation_failed";
+      throw new Error(
+        "--diarize is currently darwin-arm64 only " +
+        "(see https://github.com/drakulavich/kesha-voice-kit/issues/199).",
+      );
+    }
+    const platformBackend = defaultBackendForPlatform();
+    if (backend && !process.env.KESHA_ENGINE_BIN && platformBackend && backend !== platformBackend) {
+      errorKind = "validation_failed";
+      throw new Error(
+        `Requested backend "${backend}" is not available on this platform; ` +
+          `the release engine uses "${platformBackend}".`,
+      );
+    }
     await downloadEngine(noCache, backend, { tts, vad, diarize });
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);
+    finishInstallDiagnostic(diagnosticLog, startedAt, "success");
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    finishInstallDiagnostic(diagnosticLog, startedAt, "failed", errorKind);
     log.error(message);
     process.exit(1);
   }

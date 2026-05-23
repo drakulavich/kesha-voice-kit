@@ -41,11 +41,11 @@ Diagnostic logs are content-free. Event payloads are built from an allowlist of
 typed fields such as command name, app version, platform, backend, feature flags,
 stage names, exit codes, duration numbers, and stable error codes.
 
-When enabled, `kesha <audio>` and `kesha say` record command lifecycle events
-such as `command.start`, `input.audio`, `input.missing`, `engine.exit`, and
-`command.finish`. These events use only counts, booleans, format extensions,
-duration milliseconds, and bucket labels. In the default `retain-on-failure`
-mode, successful runs still leave no log file behind.
+When enabled, `kesha install`, `kesha <audio>`, and `kesha say` record command
+lifecycle events such as `command.start`, `input.audio`, `input.missing`,
+`engine.exit`, and `command.finish`. These events use only counts, booleans,
+format extensions, duration milliseconds, and bucket labels. In the default
+`retain-on-failure` mode, successful runs still leave no log file behind.
 
 Diagnostic logs must not store:
 

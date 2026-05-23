@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
+import { engineVersion } from "../../src/package-info";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
   installFakeDiarizeModel,
@@ -95,12 +96,34 @@ if (args[0] === "transcribe") {
   process.exit(0);
 }
 
+if (args[0] === "install") {
+  if (process.env.KESHA_FAKE_INSTALL_ERROR) {
+    console.error(process.env.KESHA_FAKE_INSTALL_ERROR);
+    process.exit(42);
+  }
+  if (process.env.KESHA_FAKE_INSTALL_ARGS_PATH) {
+    await Bun.write(process.env.KESHA_FAKE_INSTALL_ARGS_PATH, JSON.stringify(args.slice(1)));
+  }
+  process.exit(0);
+}
+
 console.error("unexpected fake engine args: " + JSON.stringify(args));
 process.exit(2);
 `,
   );
   chmodSync(enginePath, 0o755);
   return enginePath;
+}
+
+function markFakeEngineInstalled(enginePath: string): void {
+  writeFileSync(`${enginePath}.version`, `${engineVersion}\n`);
+  if (process.platform === "darwin" && process.arch === "arm64") {
+    for (const sidecar of ["say-avspeech", "kesha-textlang"]) {
+      const path = join(dirname(enginePath), sidecar);
+      writeFileSync(path, "");
+      chmodSync(path, 0o755);
+    }
+  }
 }
 
 function createFailingEngine(dir: string): string {
@@ -497,6 +520,75 @@ describe("CLI contracts", () => {
       status: "success",
       ranAudioLangId: true,
       ranTxtLangId: true,
+    });
+  });
+
+  test("diagnostic logs record successful install events without content", async () => {
+    const dir = makeTempDir("kesha-cli-contract-install-diagnostic-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const installArgsPath = join(dir, "install-args.json");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_INSTALL_ARGS_PATH: installArgsPath,
+    };
+    enableDiagnosticLogs(env.KESHA_LOG_DIR);
+
+    const run = await runCli(["install", "--vad"], { env });
+    expectContract(run, {
+      exitCode: 0,
+      stdoutContains: ["Engine binary already installed", "Backend installed successfully"],
+      stdoutNotContains: [dir],
+      stderrEmpty: true,
+    });
+    expect(JSON.parse(readFileSync(installArgsPath, "utf8"))).toEqual(["--vad"]);
+
+    const { raw: diagnosticLog, events } = readDiagnosticLog(env.KESHA_LOG_DIR);
+    expect(diagnosticLog).not.toContain(dir);
+    expect(diagnosticLog).not.toContain(enginePath);
+    expect(events.map((event) => event.event)).toEqual(["command.start", "command.finish"]);
+    expect(events[0]).toMatchObject({
+      command: "install",
+      backend: "auto",
+      noCache: false,
+      tts: false,
+      vad: true,
+      diarize: false,
+    });
+    expect(events[1]).toMatchObject({
+      command: "install",
+      status: "success",
+    });
+    expect(typeof events[1].durationMs).toBe("number");
+  });
+
+  test("diagnostic logs record failed install events without content", async () => {
+    const dir = makeTempDir("kesha-cli-contract-install-diagnostic-failure-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_INSTALL_ERROR: `fake model install failed in ${dir}`,
+    };
+
+    const run = await runCli(["install", "--vad"], { env });
+    expectContract(run, {
+      exitCode: 1,
+      stdoutContains: ["Engine binary already installed"],
+      stderrContains: ["Failed to install models:"],
+    });
+
+    const { raw: diagnosticLog, events } = readDiagnosticLog(env.KESHA_LOG_DIR);
+    expect(diagnosticLog).not.toContain(dir);
+    expect(diagnosticLog).not.toContain(enginePath);
+    expect(diagnosticLog).not.toContain("fake model install failed");
+    expect(events.map((event) => event.event)).toEqual(["command.start", "command.finish"]);
+    expect(events[1]).toMatchObject({
+      command: "install",
+      status: "failed",
+      errorKind: "install_failed",
     });
   });
 
