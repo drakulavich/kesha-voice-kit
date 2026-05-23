@@ -102,11 +102,15 @@ describe("collectDoctorReport", () => {
       process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
       process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
       process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+      process.env.KESHA_LOG_DIR = join(dir, "logs");
       process.env.KESHA_MODEL_MIRROR = "https://user:pass@example.com/kesha?token=abc";
       process.env.KESHA_DEBUG = "1";
 
       mkdirSync(join(dir, ".cache", "kesha", "models", "silero-vad"), { recursive: true });
       writeFileSync(join(dir, ".cache", "kesha", "models", "silero-vad", "model.onnx"), "vad");
+      mkdirSync(process.env.KESHA_LOG_DIR, { recursive: true });
+      writeFileSync(join(process.env.KESHA_LOG_DIR, "kesha.ndjson"), "diagnostic\n");
+      writeFileSync(join(process.env.KESHA_LOG_DIR, "kesha.1.ndjson"), "rotated\n");
       mkdirSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_15s.mlmodelc"), {
         recursive: true,
       });
@@ -132,6 +136,14 @@ describe("collectDoctorReport", () => {
       expect(report.env.KESHA_MODEL_MIRROR).toBe("https://example.com/kesha");
       expect(report.env.KESHA_DEBUG).toBe("1");
       expect("runCount" in report.stats).toBe(true);
+      expect(report.diagnosticLogs.mode).toBe("retain-on-failure");
+      expect(report.diagnosticLogs.dir).toBe("~/logs");
+      expect(report.diagnosticLogs.activePath).toBe("~/logs/kesha.ndjson");
+      expect(report.diagnosticLogs.statePath).toBe("~/logs/diagnostic-logs.json");
+      expect(report.diagnosticLogs.exists).toBe(true);
+      expect(report.diagnosticLogs.activeSizeBytes).toBeGreaterThan(0);
+      expect(report.diagnosticLogs.totalSizeBytes).toBeGreaterThan(report.diagnosticLogs.activeSizeBytes);
+      expect(report.diagnosticLogs.rotatedFiles).toEqual(["kesha.1.ndjson"]);
 
       const fluidCache = report.cache.components.find(
         (component) => component.label === "FluidAudio Kokoro cache (external)",
@@ -206,6 +218,9 @@ describe("collectDoctorReport", () => {
       process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
       process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
       process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+      process.env.KESHA_LOG_DIR = join(dir, "logs");
+      mkdirSync(process.env.KESHA_LOG_DIR, { recursive: true });
+      writeFileSync(join(process.env.KESHA_LOG_DIR, "kesha.ndjson"), "diagnostic\n");
 
       // Stage a >1 KB cached model so the cache-size line exercises
       // humanBytes' KB/MB scaling, not just the sub-1 KB "N B" branch.
@@ -219,6 +234,10 @@ describe("collectDoctorReport", () => {
       expect(output).toContain("Kesha Doctor");
       expect(output).toContain("Runtime:");
       expect(output).toContain("Engine:");
+      expect(output).toContain("Diagnostic logs:");
+      expect(output).toContain("Mode: retain-on-failure");
+      expect(output).toContain("Path: ~/logs/kesha.ndjson");
+      expect(output).toContain("Rotated files: 0");
       expect(output).toContain("Environment:");
       expect(output).toMatch(/Cache:.*KB/);
     } finally {
@@ -310,10 +329,23 @@ exit 2
         exists: false,
         retentionDays: 90,
       },
+      diagnosticLogs: {
+        dir: "~/logs",
+        activePath: "~/logs/kesha.ndjson",
+        statePath: "~/logs/diagnostic-logs.json",
+        exists: true,
+        activeSizeBytes: 1024,
+        rotatedFiles: ["kesha.1.ndjson"],
+        totalSizeBytes: 2048,
+        mode: "on",
+        maxBytes: 10 * 1024 * 1024,
+        retain: 5,
+      },
       env: {},
     });
 
     expect(output).toContain("2.0 TB");
+    expect(output).toContain("Size: 2.0 KB");
   });
 });
 

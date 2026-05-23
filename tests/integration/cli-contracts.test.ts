@@ -605,6 +605,8 @@ describe("CLI contracts", () => {
     expect(report.engine.capabilities.backend).toBe("fake");
     expect(report.env.KESHA_ENGINE_BIN).toBe("~/kesha-engine");
     expect(report.env.KESHA_STATS_DB).toBe("~/stats.sqlite");
+    expect(report.diagnosticLogs.activePath).toBe("~/logs/kesha.ndjson");
+    expect(report.diagnosticLogs.mode).toBe("retain-on-failure");
 
     const bundlePath = join(dir, "bundle.tar.gz");
     const bundle = await runCli(["support-bundle", "--output", bundlePath], {
