@@ -245,6 +245,36 @@ describe("collectDoctorReport", () => {
     }
   });
 
+  posixEngineTest("reports diagnostic log collection errors without throwing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-log-error-test-"));
+    const logDir = join(dir, "logs");
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+      process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+      process.env.KESHA_LOG_DIR = logDir;
+      mkdirSync(logDir, { recursive: true });
+      chmodSync(logDir, 0o000);
+
+      const report = await collectDoctorReport({ redact: true });
+      expect(report.diagnosticLogs.dir).toBe("~/logs");
+      expect(report.diagnosticLogs.activePath).toBe("~/logs/kesha.ndjson");
+      expect(report.diagnosticLogs.statePath).toBe("~/logs/diagnostic-logs.json");
+      expect(report.diagnosticLogs.exists).toBe(false);
+      expect(report.diagnosticLogs.totalSizeBytes).toBe(0);
+      expect(report.diagnosticLogs.error).toContain("~/logs");
+      expect(report.diagnosticLogs.error).not.toContain(dir);
+
+      const output = formatDoctorReport(report);
+      expect(output).toContain("Diagnostic logs:");
+      expect(output).toContain("Error:");
+    } finally {
+      chmodSync(logDir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   posixEngineTest("reports installed engine capabilities", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-engine-test-"));
     try {
