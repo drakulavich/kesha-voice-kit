@@ -263,7 +263,7 @@
             runHook preInstall
 
             mkdir -p $out/lib/kesha $out/bin
-            cp -r bin src scripts package.json tsconfig.json \
+            cp -r bin src package.json tsconfig.json \
                   openclaw-plugin.cjs openclaw.plugin.json SKILL.md LICENSE NOTICES.md \
                   $out/lib/kesha/
             ln -s ${keshaNodeModules} $out/lib/kesha/node_modules
