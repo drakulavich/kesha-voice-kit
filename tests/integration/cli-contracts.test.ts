@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
@@ -652,6 +652,24 @@ describe("CLI contracts", () => {
 
     const missing = await runCli(["private-recording.wav"], { env });
     expect(missing.exitCode).toBe(1);
+    const diagnosticLog = readFileSync(join(env.KESHA_LOG_DIR, "kesha.ndjson"), "utf8");
+    expect(diagnosticLog).not.toContain("private-recording.wav");
+    const diagnosticEvents = diagnosticLog.trim().split("\n").map((line) => JSON.parse(line));
+    expect(diagnosticEvents.map((event) => event.event)).toEqual([
+      "command.start",
+      "input.missing",
+      "command.finish",
+    ]);
+    expect(diagnosticEvents[0]).toMatchObject({
+      command: "transcribe",
+      itemCount: 1,
+      outputFormat: "text",
+    });
+    expect(diagnosticEvents[2]).toMatchObject({
+      command: "transcribe",
+      status: "failed",
+      errorCount: 1,
+    });
 
     const week = await runCli(["stats", "week"], { env });
     expectContract(week, {

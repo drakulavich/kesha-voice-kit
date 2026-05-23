@@ -18,6 +18,8 @@ import { artifactFromFile, createStatsRecorder } from "../stats";
 import { createPercentProgress } from "../progress";
 import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 import type { TranscriptionSegment } from "../types";
+import { createDiagnosticLogSession } from "../diagnostic-log";
+import { diagnosticSizeBucket } from "../diagnostic-events";
 
 interface MainCommandArgs {
   _: string[];
@@ -254,6 +256,7 @@ export const mainCommand = defineCommand({
       process.exit(2);
     }
     const vadMode = vad ? "on" : noVad ? "off" : "auto";
+    const outputFormat = wantsJson ? "json" : wantsToon ? "toon" : wantsTranscript ? "transcript" : "text";
 
     if (files.length === 0) {
       log.info(
@@ -276,6 +279,17 @@ export const mainCommand = defineCommand({
     const results: TranscribeResult[] = [];
     const errors: TranscribeErrorRecord[] = [];
     const stats = createStatsRecorder("transcribe");
+    const diagnosticLog = createDiagnosticLogSession();
+    diagnosticLog.event("command.start", {
+      command: "transcribe",
+      itemCount: files.length,
+      outputFormat,
+      vadMode,
+      timestamps: args.timestamps,
+      speakers: args.speakers,
+      includeErrors: args["include-errors"],
+      hasExpectedLang: Boolean(args.lang),
+    });
 
     const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
     const reportProgress = shouldReportTranscribeProgress({
@@ -288,12 +302,20 @@ export const mainCommand = defineCommand({
       if (!existsSync(file)) {
         hasError = true;
         stats.recordError("input", new Error("File not found"), "file_not_found");
+        diagnosticLog.event("input.missing", { command: "transcribe" });
         errors.push({ file, code: "file_not_found", message: "File not found" });
         log.error(`${file}: File not found`);
         continue;
       }
       const inputArtifact = artifactFromFile(file, "input_audio");
-      if (inputArtifact) stats.recordArtifact(inputArtifact);
+      if (inputArtifact) {
+        stats.recordArtifact(inputArtifact);
+        diagnosticLog.event("input.audio", {
+          command: "transcribe",
+          format: inputArtifact.format ?? null,
+          sizeBucket: diagnosticSizeBucket(inputArtifact.sizeBytes),
+        });
+      }
 
       const startedAt = performance.now();
       let progress: ReturnType<typeof createPercentProgress> | null = null;
@@ -370,11 +392,24 @@ export const mainCommand = defineCommand({
           result.segments = segments;
         }
         results.push(result);
+        diagnosticLog.event("engine.exit", {
+          command: "transcribe",
+          status: "success",
+          durationMs: sttTimeMs,
+          segmentCount: segments.length,
+          ranAudioLangId: audioResult !== null,
+          ranTextLangId: textLanguage !== undefined,
+        });
         progress?.finish(`Transcribed ${file}`);
       } catch (err: unknown) {
         progress?.stop();
         hasError = true;
         stats.recordError("transcribe", err);
+        diagnosticLog.event("engine.exit", {
+          command: "transcribe",
+          status: "failed",
+          errorKind: "transcribe_failed",
+        });
         const message = err instanceof Error ? err.message : String(err);
         errors.push({ file, code: "transcribe_failed", message });
         log.error(`${file}: ${message}`);
@@ -394,6 +429,14 @@ export const mainCommand = defineCommand({
     }
 
     stats.finish(hasError ? "failed" : "success", files.length);
+    diagnosticLog.event("command.finish", {
+      command: "transcribe",
+      status: hasError ? "failed" : "success",
+      itemCount: files.length,
+      resultCount: results.length,
+      errorCount: errors.length,
+    });
+    diagnosticLog.finish(hasError ? "failed" : "success");
 
     if (hasError) {
       const signalExitCode = getPendingSignalExitCode();

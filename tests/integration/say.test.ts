@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { spawn } from "bun";
-import { chmodSync, mkdirSync } from "fs";
+import { chmodSync, mkdirSync, readFileSync } from "fs";
 
 const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
 
@@ -99,6 +99,9 @@ describe("kesha say (CLI)", () => {
     const dir = `/tmp/kesha-fake-engine-${Date.now()}-${Math.random()}`;
     const enginePath = await createFakeEngine(dir);
     const outPath = `${dir}/reply.wav`;
+    const logDir = `${dir}/logs`;
+    mkdirSync(logDir, { recursive: true });
+    await Bun.write(`${logDir}/diagnostic-logs.json`, `${JSON.stringify({ mode: "on" })}\n`);
     const proc = spawn([
       "bun",
       CLI_PATH,
@@ -113,6 +116,7 @@ describe("kesha say (CLI)", () => {
         ...process.env,
         KESHA_CACHE_DIR: dir,
         KESHA_ENGINE_BIN: enginePath,
+        KESHA_LOG_DIR: logDir,
         HOME: dir,
       },
       stdout: "pipe",
@@ -129,6 +133,24 @@ describe("kesha say (CLI)", () => {
     expect(stderr).toContain(outPath);
     expect(stderr).toMatch(/Saved .*reply\.wav \(\d+ms\)/);
     expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe("RIFF");
+
+    const diagnosticLog = readFileSync(`${logDir}/kesha.ndjson`, "utf8");
+    expect(diagnosticLog).not.toContain("Привет");
+    expect(diagnosticLog).not.toContain(outPath);
+    const events = diagnosticLog.trim().split("\n").map((line) => JSON.parse(line));
+    expect(events.map((event) => event.event)).toEqual(["command.start", "command.finish"]);
+    expect(events[0]).toMatchObject({
+      command: "say",
+      charBucket: "lt100",
+      hasVoice: true,
+      hasOut: true,
+    });
+    expect(events[1]).toMatchObject({
+      command: "say",
+      status: "success",
+      outputFormat: ".wav",
+      outputSizeBucket: "lt1MB",
+    });
   });
 
   it("--verbose --out does not duplicate timing output", async () => {
