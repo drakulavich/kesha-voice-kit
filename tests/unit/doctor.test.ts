@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { gunzipSync } from "node:zlib";
@@ -9,6 +9,17 @@ import {
   redactDiagnosticValue,
 } from "../../src/doctor";
 import { createSupportBundle } from "../../src/support-bundle";
+
+const fakeCapabilities = {
+  protocolVersion: 2,
+  backend: "fake-coreml",
+  features: ["transcribe.segments", "transcribe.diarize"],
+};
+
+function writeFakeEngine(path: string, body: string): void {
+  writeFileSync(path, body);
+  chmodSync(path, 0o755);
+}
 
 describe("redactDiagnosticValue", () => {
   test("redacts secret-like keys", () => {
@@ -51,6 +62,12 @@ describe("redactDiagnosticValue", () => {
         "/tmp/home",
       ),
     ).toBe("https://example.com/~/mirror");
+  });
+
+  test("leaves malformed URL-like values unchanged", () => {
+    expect(redactDiagnosticValue("KESHA_MODEL_MIRROR", "https://[broken", "/tmp/home")).toBe(
+      "https://[broken",
+    );
   });
 });
 
@@ -204,6 +221,96 @@ describe("collectDoctorReport", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("reports installed engine capabilities", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-engine-test-"));
+    try {
+      const binDir = join(dir, "engine", "bin");
+      mkdirSync(binDir, { recursive: true });
+      const binPath = join(binDir, "kesha-engine");
+      writeFakeEngine(
+        binPath,
+        `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${JSON.stringify(fakeCapabilities)}'
+  exit 0
+fi
+exit 2
+`,
+      );
+      process.env.HOME = dir;
+      process.env.KESHA_ENGINE_BIN = binPath;
+      process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+
+      const report = await collectDoctorReport({ redact: true });
+      expect(report.engine.installed).toBe(true);
+      expect(report.engine.capabilities).toEqual(fakeCapabilities);
+      expect(report.engine.probeError).toBeNull();
+
+      const output = formatDoctorReport(report);
+      expect(output).toContain("fake-coreml, protocol v2");
+      expect(output).toContain("transcribe.diarize");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("formats stats collection errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-stats-error-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+      process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_STATS_DB = dir;
+
+      const output = formatDoctorReport(await collectDoctorReport({ redact: true }));
+      expect(output).toContain("Stats:");
+      expect(output).toContain("Error:");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("formats large cache sizes", () => {
+    const output = formatDoctorReport({
+      generatedAt: "2026-05-23T00:00:00.000Z",
+      redacted: true,
+      package: { name: "kesha-test", version: "0.0.0" },
+      runtime: { bunVersion: "1.0.0", platform: "darwin", arch: "arm64" },
+      engine: {
+        path: "~/engine/bin/kesha-engine",
+        installed: false,
+        versionMarker: null,
+        capabilities: null,
+        probeError: null,
+      },
+      cache: {
+        path: "~/.cache/kesha",
+        exists: true,
+        totalBytes: 2 * 1024 * 1024 * 1024 * 1024,
+        components: [
+          {
+            label: "Huge model",
+            path: "~/.cache/kesha/models/huge",
+            exists: true,
+            sizeBytes: 2 * 1024 * 1024 * 1024 * 1024,
+          },
+        ],
+      },
+      optionalComponents: [],
+      stats: {
+        enabled: false,
+        dbPath: "~/stats.sqlite",
+        runCount: 0,
+        exists: false,
+        retentionDays: 90,
+      },
+      env: {},
+    });
+
+    expect(output).toContain("2.0 TB");
   });
 });
 
