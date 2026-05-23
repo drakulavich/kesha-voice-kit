@@ -53,6 +53,7 @@ complete -c kesha -n '__fish_seen_subcommand_from install' -l vad -d 'Also insta
 complete -c kesha -n '__fish_seen_subcommand_from install' -l diarize -d 'Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)'
 complete -c kesha -n '__fish_seen_subcommand_from logs' -l help -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from logs' -s h -d 'Show help'
+complete -c kesha -n '__fish_seen_subcommand_from logs' -l json -d 'Output status as JSON'
 complete -c kesha -n '__fish_seen_subcommand_from manpage' -l help -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from manpage' -s h -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from record' -l help -d 'Show help'

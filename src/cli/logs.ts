@@ -12,6 +12,7 @@ import { log } from "../log";
 interface LogsCommandArgs {
   action?: string;
   value?: string;
+  json?: boolean;
 }
 
 export const logsCommand = defineCommand({
@@ -30,9 +31,18 @@ export const logsCommand = defineCommand({
       required: false,
       description: "Action value: off | on | retain-on-failure",
     },
+    json: {
+      type: "boolean",
+      description: "Output status as JSON",
+      default: false,
+    },
   },
   run({ args }: { args: LogsCommandArgs }) {
     const action = args.action ?? "status";
+    if (args.json && action !== "status") {
+      log.error("usage: kesha logs status --json");
+      process.exit(2);
+    }
     switch (action) {
       case "enable": {
         const status = setDiagnosticLogMode("on");
@@ -51,6 +61,10 @@ export const logsCommand = defineCommand({
       }
       case "status": {
         const status = getDiagnosticLogStatus();
+        if (args.json) {
+          console.log(JSON.stringify(status, null, 2));
+          return;
+        }
         log.info(`Kesha diagnostic logs: ${status.mode === "off" ? "disabled" : "enabled"}`);
         log.info(`Mode: ${status.mode}`);
         log.info(`Path: ${status.activePath}`);

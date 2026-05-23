@@ -76,7 +76,8 @@ _kesha() {
       ;;
     logs)
       _arguments '--help[Show help]' \
-        '-h[Show help]'
+        '-h[Show help]' \
+        '--json[Output status as JSON]'
       ;;
     manpage)
       _arguments '--help[Show help]' \

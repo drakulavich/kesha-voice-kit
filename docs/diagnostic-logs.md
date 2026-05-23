@@ -10,6 +10,7 @@ file, while failed commands can preserve a small local trace for debugging.
 
 ```bash
 kesha logs status
+kesha logs status --json
 kesha logs enable
 kesha logs disable
 kesha logs mode retain-on-failure
@@ -29,6 +30,10 @@ Diagnostic logs follow a Playwright-style retention model:
 `kesha logs enable` is shorthand for `kesha logs mode on`; `kesha logs disable`
 is shorthand for `kesha logs mode off`. `retain-on-failure` keeps passing runs
 artifact-free while failed runs keep enough context to debug.
+
+`kesha logs status --json` prints the same local status as a stable JSON object:
+`dir`, `activePath`, `statePath`, `exists`, `activeSizeBytes`, `rotatedFiles`,
+`totalSizeBytes`, `mode`, `maxBytes`, and `retain`.
 
 ## Privacy Contract
 
@@ -78,3 +83,11 @@ reset` deletes Kesha log files but preserves the selected mode.
 `kesha support-bundle` does not include diagnostic log contents by default. Use
 `kesha support-bundle --include-logs` to add a bounded tail of the active
 already-sanitized NDJSON log when a support issue needs recent command events.
+Recommended flow for a bug report:
+
+```bash
+kesha logs status
+kesha logs mode retain-on-failure
+# reproduce the failure
+kesha support-bundle --include-logs --output kesha-support-with-logs.tar.gz
+```
