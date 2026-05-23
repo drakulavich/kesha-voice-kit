@@ -6,7 +6,7 @@ import { keshaCacheDir } from "./paths";
 import { engineVersion, packageVersion } from "./package-info";
 import {
   FLUID_KOKORO_CACHE_NOTE,
-  fluidKokoroCacheInfo,
+  fluidKokoroCachePath,
   isDarwinArm64,
 } from "./fluid-kokoro-cache";
 
@@ -237,10 +237,9 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
           "Russian ru-vosk-* voices",
         ),
       );
-      const fluidKokoro = fluidKokoroCacheInfo();
       warmups.push({
         name: "TTS Kokoro EN",
-        note: `${FLUID_KOKORO_CACHE_NOTE} (${fluidKokoro.path})`,
+        note: `${FLUID_KOKORO_CACHE_NOTE} (${fluidKokoroCachePath()})`,
       });
     } else {
       components.push(

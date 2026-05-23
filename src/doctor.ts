@@ -1,6 +1,5 @@
-import { existsSync, readdirSync, statSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { dirname, join, sep } from "path";
-import { homedir } from "os";
 import {
   getEngineBinPath,
   getEngineCapabilities,
@@ -11,7 +10,11 @@ import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
-import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
+import {
+  fluidKokoroCacheInfo,
+  type FluidKokoroCacheInfo,
+} from "./fluid-kokoro-cache";
+import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 
 const KNOWN_ENV_KEYS = [
   "KESHA_ENGINE_BIN",
@@ -71,10 +74,6 @@ export interface DoctorReport {
   env: Record<string, string | null>;
 }
 
-function diagnosticHomeDir(): string {
-  return process.env.HOME ?? homedir();
-}
-
 function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -85,21 +84,6 @@ function humanBytes(bytes: number): string {
     i++;
   }
   return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
-}
-
-function dirSizeBytes(path: string): number {
-  let total = 0;
-  try {
-    const st = statSync(path);
-    if (st.isFile()) return st.size;
-    for (const entry of readdirSync(path, { withFileTypes: true })) {
-      const p = join(path, entry.name);
-      total += entry.isDirectory() ? dirSizeBytes(p) : statSync(p).size;
-    }
-  } catch {
-    return total;
-  }
-  return total;
 }
 
 function pathSummary(path: string): PathSummary {
@@ -215,7 +199,10 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   };
 }
 
-function collectCache(redact: boolean): DoctorReport["cache"] {
+function collectCache(
+  redact: boolean,
+  fluidKokoro: FluidKokoroCacheInfo,
+): DoctorReport["cache"] {
   const cache = keshaCacheDir();
   const binPath = getEngineBinPath();
   const engineDir = dirname(dirname(binPath));
@@ -227,7 +214,6 @@ function collectCache(redact: boolean): DoctorReport["cache"] {
     { label: "TTS (Kokoro)", ...pathSummary(join(cache, "models/kokoro-82m")) },
     { label: "TTS (Vosk)", ...pathSummary(join(cache, "models/vosk-ru")) },
   ];
-  const fluidKokoro = fluidKokoroCacheInfo();
   if (fluidKokoro.supported) {
     components.push({
       label: "FluidAudio Kokoro cache (external)",
@@ -247,10 +233,12 @@ function collectCache(redact: boolean): DoctorReport["cache"] {
   };
 }
 
-function collectOptionalComponents(redact: boolean): OptionalComponent[] {
+function collectOptionalComponents(
+  redact: boolean,
+  fluidKokoro: FluidKokoroCacheInfo,
+): OptionalComponent[] {
   const cache = keshaCacheDir();
   const sidecarDir = dirname(getEngineBinPath());
-  const fluidKokoro = fluidKokoroCacheInfo();
   const components: OptionalComponent[] = [
     {
       name: "VAD (Silero)",
@@ -326,6 +314,7 @@ export async function collectDoctorReport(
   options: DoctorOptions = {},
 ): Promise<DoctorReport> {
   const redact = options.redact === true;
+  const fluidKokoro = fluidKokoroCacheInfo();
   return {
     generatedAt: new Date().toISOString(),
     redacted: redact,
@@ -336,8 +325,8 @@ export async function collectDoctorReport(
       arch: process.arch,
     },
     engine: await collectEngine(redact),
-    cache: collectCache(redact),
-    optionalComponents: collectOptionalComponents(redact),
+    cache: collectCache(redact, fluidKokoro),
+    optionalComponents: collectOptionalComponents(redact, fluidKokoro),
     stats: collectStats(redact),
     env: collectEnv(redact),
   };

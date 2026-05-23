@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, statSync } from "fs";
-import { homedir } from "os";
+import { existsSync } from "fs";
 import { join } from "path";
+import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 
 export const FLUID_KOKORO_CACHE_NOTE =
   "FluidAudio CoreML in-engine; first warm-up may download/compile FluidAudio's Kokoro CoreML cache outside Kesha's pinned model cache";
@@ -19,25 +19,6 @@ export function isDarwinArm64(
   arch = process.arch,
 ): boolean {
   return platform === "darwin" && arch === "arm64";
-}
-
-function diagnosticHomeDir(): string {
-  return process.env.HOME ?? homedir();
-}
-
-function dirSizeBytes(path: string): number {
-  let total = 0;
-  try {
-    const st = statSync(path);
-    if (st.isFile()) return st.size;
-    for (const entry of readdirSync(path, { withFileTypes: true })) {
-      const p = join(path, entry.name);
-      total += entry.isDirectory() ? dirSizeBytes(p) : statSync(p).size;
-    }
-  } catch {
-    return total;
-  }
-  return total;
 }
 
 export function fluidKokoroCachePath(homeDir = diagnosticHomeDir()): string {

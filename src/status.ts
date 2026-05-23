@@ -4,6 +4,7 @@ import { isEngineInstalled, getEngineBinPath, getEngineCapabilities } from "./en
 import { log } from "./log";
 import { keshaCacheDir } from "./paths";
 import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
+import { dirSizeBytes } from "./diagnostic-paths";
 import pc from "picocolors";
 
 function humanBytes(bytes: number): string {
@@ -16,21 +17,6 @@ function humanBytes(bytes: number): string {
     i++;
   }
   return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
-}
-
-function dirSizeBytes(path: string): number {
-  let total = 0;
-  try {
-    const st = statSync(path);
-    if (st.isFile()) return st.size;
-    for (const entry of readdirSync(path, { withFileTypes: true })) {
-      const p = join(path, entry.name);
-      total += entry.isDirectory() ? dirSizeBytes(p) : statSync(p).size;
-    }
-  } catch {
-    /* missing path — component not installed */
-  }
-  return total;
 }
 
 export function formatStatusLine(
