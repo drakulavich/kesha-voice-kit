@@ -5,6 +5,8 @@ import { tmpdir } from "os";
 import { formatStatusLine, activeModelMirror, showStatus } from "../../src/status";
 import { starSeenPath } from "../../src/star";
 
+const posixEngineTest = process.platform === "win32" ? test.skip : test;
+
 describe("formatStatusLine", () => {
   test("formats installed component", () => {
     const line = formatStatusLine("Binary", "/path/to/bin", true);
@@ -172,7 +174,7 @@ describe("showStatus", () => {
     }
   });
 
-  test("prints engine capabilities, mirror, and installed voices", async () => {
+  posixEngineTest("prints engine capabilities, mirror, and installed voices", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-installed-test-"));
     const cache = join(dir, ".cache", "kesha");
     const binDir = join(cache, "engine", "bin");

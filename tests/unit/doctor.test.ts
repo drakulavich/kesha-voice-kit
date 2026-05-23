@@ -21,6 +21,8 @@ function writeFakeEngine(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
+const posixEngineTest = process.platform === "win32" ? test.skip : test;
+
 describe("redactDiagnosticValue", () => {
   test("redacts secret-like keys", () => {
     expect(redactDiagnosticValue("API_KEY", "secret", "/tmp/home")).toBe("[REDACTED]");
@@ -223,7 +225,7 @@ describe("collectDoctorReport", () => {
     }
   });
 
-  test("reports installed engine capabilities", async () => {
+  posixEngineTest("reports installed engine capabilities", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-engine-test-"));
     try {
       const binDir = join(dir, "engine", "bin");
