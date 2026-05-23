@@ -312,7 +312,7 @@ export const mainCommand = defineCommand({
         stats.recordArtifact(inputArtifact);
         diagnosticLog.event("input.audio", {
           command: "transcribe",
-          format: inputArtifact.format ?? null,
+          format: inputArtifact.format || null,
           sizeBucket: diagnosticSizeBucket(inputArtifact.sizeBytes),
         });
       }
@@ -398,7 +398,7 @@ export const mainCommand = defineCommand({
           durationMs: sttTimeMs,
           segmentCount: segments.length,
           ranAudioLangId: audioResult !== null,
-          ranTextLangId: textLanguage !== undefined,
+          ranTxtLangId: textLanguage !== undefined,
         });
         progress?.finish(`Transcribed ${file}`);
       } catch (err: unknown) {

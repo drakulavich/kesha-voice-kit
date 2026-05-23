@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
@@ -32,6 +32,19 @@ function isolatedEnv(dir = makeTempDir("kesha-cli-contract-")): Record<string, s
     KESHA_CACHE_DIR: join(dir, "cache"),
     KESHA_LOG_DIR: join(dir, "logs"),
     KESHA_STATS_DB: join(dir, "stats.sqlite"),
+  };
+}
+
+function enableDiagnosticLogs(logDir: string): void {
+  mkdirSync(logDir, { recursive: true });
+  writeFileSync(join(logDir, "diagnostic-logs.json"), `${JSON.stringify({ mode: "on" })}\n`);
+}
+
+function readDiagnosticLog(logDir: string): { raw: string; events: Array<Record<string, unknown>> } {
+  const raw = readFileSync(join(logDir, "kesha.ndjson"), "utf8");
+  return {
+    raw,
+    events: raw.trim().split("\n").map((line) => JSON.parse(line)),
   };
 }
 
@@ -447,6 +460,46 @@ describe("CLI contracts", () => {
     expect(JSON.parse(noVadJson.stdout)[0].text).toBe("Привет без VAD");
   });
 
+  test("diagnostic logs record successful transcribe events without content", async () => {
+    const dir = makeTempDir("kesha-cli-contract-diagnostic-success-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "recording");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+    };
+    enableDiagnosticLogs(env.KESHA_LOG_DIR);
+
+    const run = await runCli(["--json", mediaPath], { env });
+    expectContract(run, {
+      exitCode: 0,
+      stdoutContains: ["Привет с воркшопа"],
+      stderrContains: [`Transcribing ${mediaPath}`, `Transcribed ${mediaPath}`],
+    });
+
+    const { raw: diagnosticLog, events } = readDiagnosticLog(env.KESHA_LOG_DIR);
+    expect(diagnosticLog).not.toContain(mediaPath);
+    expect(diagnosticLog).not.toContain("Привет");
+    expect(events.map((event) => event.event)).toEqual([
+      "command.start",
+      "input.audio",
+      "engine.exit",
+      "command.finish",
+    ]);
+    expect(events[1]).toMatchObject({
+      command: "transcribe",
+      format: null,
+      sizeBucket: "lt1MB",
+    });
+    expect(events[2]).toMatchObject({
+      command: "transcribe",
+      status: "success",
+      ranAudioLangId: true,
+      ranTxtLangId: true,
+    });
+  });
+
   test("long speaker transcripts skip whole-file audio language detection", async () => {
     const dir = makeTempDir("kesha-cli-contract-long-speakers-");
     const enginePath = createFakeEngine(dir);
@@ -652,9 +705,8 @@ describe("CLI contracts", () => {
 
     const missing = await runCli(["private-recording.wav"], { env });
     expect(missing.exitCode).toBe(1);
-    const diagnosticLog = readFileSync(join(env.KESHA_LOG_DIR, "kesha.ndjson"), "utf8");
+    const { raw: diagnosticLog, events: diagnosticEvents } = readDiagnosticLog(env.KESHA_LOG_DIR);
     expect(diagnosticLog).not.toContain("private-recording.wav");
-    const diagnosticEvents = diagnosticLog.trim().split("\n").map((line) => JSON.parse(line));
     expect(diagnosticEvents.map((event) => event.event)).toEqual([
       "command.start",
       "input.missing",

@@ -181,7 +181,6 @@ export const sayCommand = defineCommand({
     const text = await resolveText(inlineText);
     const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
     const voice = explicitVoice ?? (await autoRouteVoice(text));
-    const textChars = Array.from(text).length;
 
     const opts = {
       text,
@@ -199,7 +198,7 @@ export const sayCommand = defineCommand({
     const diagnosticLog = createDiagnosticLogSession();
     diagnosticLog.event("command.start", {
       command: "say",
-      charBucket: diagnosticCharBucket(textChars),
+      charBucket: diagnosticCharBucket(Array.from(text).length),
       hasInlineInput: inlineText !== undefined,
       hasVoice: explicitVoice !== undefined,
       autoVoice: explicitVoice === undefined && voice !== undefined,
@@ -224,28 +223,24 @@ export const sayCommand = defineCommand({
         // stderr — stdout may carry raw audio bytes when --out is omitted.
         console.error(`TTS time: ${ttsTimeMs}ms`);
       }
+      let outputFormat: string = opts.format ?? "wav";
+      let outputSizeBytes: number | null | undefined = audio.byteLength;
       if (opts.out) {
         const outputArtifact = artifactFromFile(opts.out, "output_audio");
         if (outputArtifact) stats.recordArtifact(outputArtifact);
-        diagnosticLog.event("command.finish", {
-          command: "say",
-          status: "success",
-          durationMs: ttsTimeMs,
-          hasOut: true,
-          outputFormat: outputArtifact?.format ?? opts.format ?? "auto",
-          outputSizeBucket: diagnosticSizeBucket(outputArtifact?.sizeBytes),
-        });
+        outputFormat = outputArtifact?.format || opts.format || "auto";
+        outputSizeBytes = outputArtifact?.sizeBytes;
       } else {
         stats.recordArtifact(artifactFromBytes(audio.byteLength, "output_audio", opts.format ?? "wav"));
-        diagnosticLog.event("command.finish", {
-          command: "say",
-          status: "success",
-          durationMs: ttsTimeMs,
-          hasOut: false,
-          outputFormat: opts.format ?? "wav",
-          outputSizeBucket: diagnosticSizeBucket(audio.byteLength),
-        });
       }
+      diagnosticLog.event("command.finish", {
+        command: "say",
+        status: "success",
+        durationMs: ttsTimeMs,
+        hasOut: Boolean(opts.out),
+        outputFormat,
+        outputSizeBucket: diagnosticSizeBucket(outputSizeBytes),
+      });
       if (!opts.out) {
         process.stdout.write(audio);
       }
