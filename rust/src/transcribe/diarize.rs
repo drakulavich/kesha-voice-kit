@@ -19,9 +19,12 @@ const MAX_DIARIZE_TAIL_GAP_SECONDS: f32 = 30.0;
 
 // Adaptive diarization timeout: the in-process `diarize_file_with_models` call is
 // blocking and un-interruptible, so `run_with_timeout` runs it on a worker thread
-// and bails if it overruns. Default 90 s, scaled up by audio length / ASR segment
-// count, capped at 30 min, overridable via `KESHA_DIARIZE_TIMEOUT_SECS`. (#434)
-const DEFAULT_DIARIZE_TIMEOUT_SECS: u64 = 90;
+// and bails if it overruns. Default 150 s, scaled up by audio length / ASR
+// segment count, capped at 30 min, overridable via `KESHA_DIARIZE_TIMEOUT_SECS`.
+// The floor intentionally covers a cold Apple e5rt/ANE compile after the OS
+// evicts its cache, turning the next `--speakers` call into "slow once" instead
+// of a deterministic timeout. (#443)
+const DEFAULT_DIARIZE_TIMEOUT_SECS: u64 = 150;
 const MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS: u64 = 1_800;
 const DIARIZE_TIMEOUT_SECONDS_PER_AUDIO_SECOND: f32 = 0.05;
 const DIARIZE_TIMEOUT_SECONDS_PER_ASR_SEGMENT: f32 = 0.10;
@@ -156,16 +159,23 @@ fn run_with_timeout(
 
     match rx.recv_timeout(timeout) {
         Ok(result) => result,
-        Err(mpsc::RecvTimeoutError::Timeout) => bail!(
-            "speaker diarization timed out after {}s for {:.0}s of audio; \
-             set KESHA_DIARIZE_TIMEOUT_SECS to override the adaptive limit",
-            timeout.as_secs(),
-            audio_secs,
-        ),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            bail!("{}", diarize_timeout_error(timeout, audio_secs))
+        }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             bail!("speaker diarization worker terminated unexpectedly")
         }
     }
+}
+
+fn diarize_timeout_error(timeout: Duration, audio_secs: f32) -> String {
+    format!(
+        "speaker diarization timed out after {}s for {:.0}s of audio; \
+         the Apple ANE cache may be cold or evicted. Re-run `kesha install --diarize` \
+         to warm it, or set KESHA_DIARIZE_TIMEOUT_SECS to override the adaptive limit",
+        timeout.as_secs(),
+        audio_secs,
+    )
 }
 
 /// Map FluidAudio's speaker labels to stable numeric ids by first-seen order.
@@ -432,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn adaptive_timeout_keeps_short_audio_near_current_default() {
+    fn adaptive_timeout_floor_covers_cold_e5rt_compile() {
         let _guard = EnvLockGuard::new();
         let segs = vec![seg(0.0, 1.0, "a")];
 
@@ -444,6 +454,16 @@ mod tests {
             diarize_timeout(&segs, Some(10.0)),
             Duration::from_secs(DEFAULT_DIARIZE_TIMEOUT_SECS)
         );
+    }
+
+    #[test]
+    fn timeout_error_mentions_rewarming_the_ane_cache() {
+        let msg = diarize_timeout_error(Duration::from_secs(DEFAULT_DIARIZE_TIMEOUT_SECS), 4.0);
+
+        assert!(msg.contains("speaker diarization timed out after 150s for 4s of audio"));
+        assert!(msg.contains("Apple ANE cache may be cold or evicted"));
+        assert!(msg.contains("kesha install --diarize"));
+        assert!(msg.contains("KESHA_DIARIZE_TIMEOUT_SECS"));
     }
 
     #[test]
