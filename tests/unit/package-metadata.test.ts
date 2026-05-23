@@ -8,7 +8,8 @@ interface PackageJson {
 
 describe("package metadata", () => {
   test("does not publish lifecycle scripts", () => {
-    const pkg = JSON.parse(readFileSync("package.json", "utf8")) as PackageJson;
+    const pkgPath = new URL("../../package.json", import.meta.url).pathname;
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as PackageJson;
 
     expect(pkg.scripts?.postinstall).toBeUndefined();
     expect(pkg.files ?? []).not.toContain("scripts/postinstall.cjs");
