@@ -33,10 +33,17 @@ describe("renderInstallPlan", () => {
       expect(output).toContain("ASR Parakeet TDT v3");
       expect(output).toContain("Audio language ID ECAPA");
       expect(output).toContain("TTS");
-      expect(output).toContain("Cold-cache download:");
-      expect(output).toContain("Expected network for this run:");
+      expect(output).toContain("Cold-cache Kesha-managed download:");
+      expect(output).toContain("Expected Kesha-managed network for this run:");
       expect(output).toContain("No files are downloaded or changed by --plan.");
       expect(output).toContain("Run: kesha install --tts");
+      if (process.platform === "darwin" && process.arch === "arm64") {
+        expect(output).toContain("Warm-ups:");
+        expect(output).toContain("TTS Kokoro EN: FluidAudio CoreML in-engine");
+        expect(output).toContain(".cache/fluidaudio/Models/kokoro");
+        expect(output).toContain("outside Kesha's pinned model cache");
+        expect(output).not.toContain("TTS Kokoro EN: 0 B");
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

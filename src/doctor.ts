@@ -11,6 +11,7 @@ import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
+import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
 
 const KNOWN_ENV_KEYS = [
   "KESHA_ENGINE_BIN",
@@ -226,6 +227,15 @@ function collectCache(redact: boolean): DoctorReport["cache"] {
     { label: "TTS (Kokoro)", ...pathSummary(join(cache, "models/kokoro-82m")) },
     { label: "TTS (Vosk)", ...pathSummary(join(cache, "models/vosk-ru")) },
   ];
+  const fluidKokoro = fluidKokoroCacheInfo();
+  if (fluidKokoro.supported) {
+    components.push({
+      label: "FluidAudio Kokoro cache (external)",
+      path: fluidKokoro.path,
+      exists: fluidKokoro.exists,
+      sizeBytes: fluidKokoro.sizeBytes,
+    });
+  }
   const engineInsideCache = engineDir === cache || engineDir.startsWith(`${cache}${sep}`);
   const engineOutsideCache = engineInsideCache ? 0 : dirSizeBytes(engineDir);
 
@@ -240,6 +250,7 @@ function collectCache(redact: boolean): DoctorReport["cache"] {
 function collectOptionalComponents(redact: boolean): OptionalComponent[] {
   const cache = keshaCacheDir();
   const sidecarDir = dirname(getEngineBinPath());
+  const fluidKokoro = fluidKokoroCacheInfo();
   const components: OptionalComponent[] = [
     {
       name: "VAD (Silero)",
@@ -256,6 +267,17 @@ function collectOptionalComponents(redact: boolean): OptionalComponent[] {
       note: "enabled with `kesha install --tts`",
       ...pathSummary(join(cache, "models/vosk-ru")),
     },
+    ...(fluidKokoro.supported
+      ? [
+          {
+            name: "FluidAudio Kokoro cache",
+            note: "darwin-arm64; managed by FluidAudio outside Kesha's pinned model cache",
+            path: fluidKokoro.path,
+            exists: fluidKokoro.exists,
+            sizeBytes: fluidKokoro.sizeBytes,
+          },
+        ]
+      : []),
     {
       // Diarization (#199) and Kokoro (#207) run in-engine now (native
       // fluidaudio-rs) — no Swift sidecar binaries. The Sortformer model is

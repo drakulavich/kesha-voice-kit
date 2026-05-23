@@ -3,6 +3,7 @@ import { join } from "path";
 import { isEngineInstalled, getEngineBinPath, getEngineCapabilities } from "./engine";
 import { log } from "./log";
 import { keshaCacheDir } from "./paths";
+import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
 import pc from "picocolors";
 
 function humanBytes(bytes: number): string {
@@ -149,6 +150,12 @@ function showDiskUsage(binPath: string): void {
   if (total > componentTotal) {
     const other = total - componentTotal;
     log.info(pc.dim(`  (includes ${humanBytes(other)} of other cache files)`));
+  }
+  const fluidKokoro = fluidKokoroCacheInfo();
+  if (fluidKokoro.exists && fluidKokoro.sizeBytes > 0) {
+    log.info("");
+    log.info(`External caches (not included in Kesha total):`);
+    log.info(`  FluidAudio Kokoro: ${humanBytes(fluidKokoro.sizeBytes)} (${fluidKokoro.path})`);
   }
   log.info("");
   log.info(pc.dim(`  To reset cache: rm -rf ${cache} — next \`kesha install\` re-downloads.`));

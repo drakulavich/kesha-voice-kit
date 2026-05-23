@@ -129,7 +129,7 @@ describe("e2e-cli", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Kesha install plan");
-    expect(stdout).toContain("Expected network for this run:");
+    expect(stdout).toContain("Expected Kesha-managed network for this run:");
     expect(stdout).toContain("Run: kesha install --tts");
     expect(stderr).not.toContain("fake engine should not have been invoked");
   });

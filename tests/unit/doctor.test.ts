@@ -87,6 +87,21 @@ describe("collectDoctorReport", () => {
 
       mkdirSync(join(dir, ".cache", "kesha", "models", "silero-vad"), { recursive: true });
       writeFileSync(join(dir, ".cache", "kesha", "models", "silero-vad", "model.onnx"), "vad");
+      mkdirSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_15s.mlmodelc"), {
+        recursive: true,
+      });
+      writeFileSync(
+        join(
+          dir,
+          ".cache",
+          "fluidaudio",
+          "Models",
+          "kokoro",
+          "kokoro_21_15s.mlmodelc",
+          "coremldata.bin",
+        ),
+        "coreml",
+      );
 
       const report = await collectDoctorReport({ redact: true });
       expect(report.redacted).toBe(true);
@@ -97,6 +112,68 @@ describe("collectDoctorReport", () => {
       expect(report.env.KESHA_MODEL_MIRROR).toBe("https://example.com/kesha");
       expect(report.env.KESHA_DEBUG).toBe("1");
       expect("runCount" in report.stats).toBe(true);
+
+      const fluidCache = report.cache.components.find(
+        (component) => component.label === "FluidAudio Kokoro cache (external)",
+      );
+      const fluidOptional = report.optionalComponents.find(
+        (component) => component.name === "FluidAudio Kokoro cache",
+      );
+      if (process.platform === "darwin" && process.arch === "arm64") {
+        expect(fluidCache).toMatchObject({
+          path: "~/.cache/fluidaudio/Models/kokoro",
+          exists: true,
+        });
+        expect(fluidCache?.sizeBytes).toBeGreaterThan(0);
+        expect(fluidOptional).toMatchObject({
+          path: "~/.cache/fluidaudio/Models/kokoro",
+          exists: true,
+        });
+      } else {
+        expect(fluidCache).toBeUndefined();
+        expect(fluidOptional).toBeUndefined();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("reports unredacted FluidAudio Kokoro cache on darwin-arm64", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-fluid-kokoro-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+      process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+      mkdirSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_5s.mlmodelc"), {
+        recursive: true,
+      });
+      writeFileSync(
+        join(
+          dir,
+          ".cache",
+          "fluidaudio",
+          "Models",
+          "kokoro",
+          "kokoro_21_5s.mlmodelc",
+          "coremldata.bin",
+        ),
+        "coreml",
+      );
+
+      const report = await collectDoctorReport({ redact: false });
+      const fluidCache = report.cache.components.find(
+        (component) => component.label === "FluidAudio Kokoro cache (external)",
+      );
+      if (process.platform === "darwin" && process.arch === "arm64") {
+        expect(fluidCache).toMatchObject({
+          path: join(dir, ".cache", "fluidaudio", "Models", "kokoro"),
+          exists: true,
+        });
+        expect(fluidCache?.sizeBytes).toBeGreaterThan(0);
+      } else {
+        expect(fluidCache).toBeUndefined();
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

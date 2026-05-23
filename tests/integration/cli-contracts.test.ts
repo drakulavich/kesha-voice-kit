@@ -582,7 +582,11 @@ describe("CLI contracts", () => {
     expect(plan.envDiff.overrides.KESHA_ENGINE_BIN).toBe(enginePath);
     expectContract(plan, {
       exitCode: 0,
-      stdoutContains: ["Kesha install plan", "Expected network for this run:", "Run: kesha install --tts"],
+      stdoutContains: [
+        "Kesha install plan",
+        "Expected Kesha-managed network for this run:",
+        "Run: kesha install --tts",
+      ],
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
