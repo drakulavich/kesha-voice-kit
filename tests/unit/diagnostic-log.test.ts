@@ -90,6 +90,11 @@ describe("diagnostic log storage", () => {
       { format: "meeting.wma" },
       { format: "meeting.webm" },
       { format: "meeting.mp4" },
+      { event: "other.event" },
+      { level: "debug" },
+      { app_version: "1.2.3" },
+      { pid: 123 },
+      { ts: null },
     ];
 
     for (const fields of unsafeValues) {
@@ -127,6 +132,28 @@ describe("diagnostic log storage", () => {
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]).event).toBe("command.start");
     expect(JSON.parse(lines[1]).exitCode).toBe(42);
+  });
+
+  test("retain-on-failure session finish is terminal", () => {
+    setDiagnosticLogMode("retain-on-failure");
+
+    const failed = createDiagnosticLogSession();
+    expect(failed.event("command.start", { command: "transcribe", runId: "fail-once" })).toBe(true);
+    expect(failed.finish("failed")).toBe(true);
+    expect(failed.finish("failed")).toBe(false);
+    expect(failed.event("engine.exit", { command: "transcribe", exitCode: 1 })).toBe(false);
+
+    const lines = readFileSync(resolveDiagnosticLogPath(), "utf8").trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]).runId).toBe("fail-once");
+
+    const success = createDiagnosticLogSession();
+    expect(success.event("command.start", { command: "transcribe", runId: "success-first" })).toBe(true);
+    expect(success.finish("success")).toBe(false);
+    expect(success.finish("failed")).toBe(false);
+
+    const afterSuccess = readFileSync(resolveDiagnosticLogPath(), "utf8").trim().split("\n");
+    expect(afterSuccess).toHaveLength(1);
   });
 
   test("retain-on-failure flush uses current log directory", () => {
