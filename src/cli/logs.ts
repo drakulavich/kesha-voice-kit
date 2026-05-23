@@ -1,7 +1,5 @@
 import { defineCommand } from "citty";
 import {
-  disableDiagnosticLogs,
-  enableDiagnosticLogs,
   getDiagnosticLogStatus,
   humanBytes,
   parseDiagnosticLogMode,
@@ -37,7 +35,7 @@ export const logsCommand = defineCommand({
     const action = args.action ?? "status";
     switch (action) {
       case "enable": {
-        const status = enableDiagnosticLogs();
+        const status = setDiagnosticLogMode("on");
         log.success("Kesha diagnostic logs enabled");
         log.info(`Mode: ${status.mode}`);
         log.info(`Path: ${status.activePath}`);
@@ -45,7 +43,7 @@ export const logsCommand = defineCommand({
         return;
       }
       case "disable": {
-        const status = disableDiagnosticLogs();
+        const status = setDiagnosticLogMode("off");
         log.info("Kesha diagnostic logs disabled");
         log.info(`Mode: ${status.mode}`);
         log.info(`Path: ${status.activePath}`);
@@ -53,7 +51,7 @@ export const logsCommand = defineCommand({
       }
       case "status": {
         const status = getDiagnosticLogStatus();
-        log.info(`Kesha diagnostic logs: ${status.enabled ? "enabled" : "disabled"}`);
+        log.info(`Kesha diagnostic logs: ${status.mode === "off" ? "disabled" : "enabled"}`);
         log.info(`Mode: ${status.mode}`);
         log.info(`Path: ${status.activePath}`);
         log.info(`Size: ${humanBytes(status.totalSizeBytes)}`);

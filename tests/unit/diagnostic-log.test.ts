@@ -5,13 +5,10 @@ import { join } from "path";
 import {
   buildDiagnosticLogLine,
   createDiagnosticLogSession,
-  disableDiagnosticLogs,
-  enableDiagnosticLogs,
   getDiagnosticLogStatus,
   resetDiagnosticLogs,
   resolveDiagnosticLogPath,
   setDiagnosticLogMode,
-  writeDiagnosticEvent,
   type DiagnosticLogFields,
 } from "../../src/diagnostic-log";
 
@@ -33,7 +30,6 @@ afterEach(() => {
 describe("diagnostic log storage", () => {
   test("defaults to retain-on-failure without creating files", () => {
     const status = getDiagnosticLogStatus();
-    expect(status.enabled).toBe(true);
     expect(status.mode).toBe("retain-on-failure");
     expect(status.activePath).toBe(join(dir, "kesha.ndjson"));
     expect(status.exists).toBe(false);
@@ -41,10 +37,10 @@ describe("diagnostic log storage", () => {
   });
 
   test("enable, write, disable, and reset manage local NDJSON logs", () => {
-    const enabled = enableDiagnosticLogs();
-    expect(enabled.enabled).toBe(true);
+    const enabled = setDiagnosticLogMode("on");
     expect(enabled.mode).toBe("on");
-    expect(writeDiagnosticEvent("engine.exit", {
+    const session = createDiagnosticLogSession();
+    expect(session.event("engine.exit", {
       command: "transcribe",
       exitCode: 0,
       durationMs: 42,
@@ -58,16 +54,15 @@ describe("diagnostic log storage", () => {
     expect(payload.exitCode).toBe(0);
     expect(payload.backend).toBe("coreml");
 
-    const disabled = disableDiagnosticLogs();
-    expect(disabled.enabled).toBe(false);
+    const disabled = setDiagnosticLogMode("off");
     expect(disabled.mode).toBe("off");
-    expect(writeDiagnosticEvent("engine.exit", { command: "transcribe" })).toBe(false);
+    expect(createDiagnosticLogSession().event("engine.exit", { command: "transcribe" })).toBe(false);
 
-    enableDiagnosticLogs();
+    setDiagnosticLogMode("on");
     const reset = resetDiagnosticLogs();
     expect(reset.deleted).toBe(1);
     expect(existsSync(resolveDiagnosticLogPath())).toBe(false);
-    expect(getDiagnosticLogStatus().enabled).toBe(true);
+    expect(getDiagnosticLogStatus().mode).toBe("on");
   });
 
   test("rejects fields that could carry user content", () => {
@@ -115,12 +110,6 @@ describe("diagnostic log storage", () => {
     expect(payload.durationBucket).toBe("0-30s");
   });
 
-  test("runtime writer drops unsafe events without writing them", () => {
-    enableDiagnosticLogs();
-    expect(writeDiagnosticEvent("privacy.test", { path: "/Users/alice/private/audio.wav" })).toBe(false);
-    expect(existsSync(resolveDiagnosticLogPath())).toBe(false);
-  });
-
   test("retain-on-failure session buffers successful runs and writes failed runs", () => {
     setDiagnosticLogMode("retain-on-failure");
 
@@ -160,11 +149,14 @@ describe("diagnostic log storage", () => {
   test("rotates active log by size and keeps bounded history", () => {
     writeFileSync(
       join(dir, "diagnostic-logs.json"),
-      JSON.stringify({ enabled: true, maxBytes: 180, retain: 2 }),
+      JSON.stringify({ mode: "on", maxBytes: 180, retain: 2 }),
     );
 
     for (let i = 0; i < 6; i++) {
-      expect(writeDiagnosticEvent("rotation.test", { runId: `run-${i}`, bucket: "aaaaaaaaaaaaaaaaaaaa" })).toBe(true);
+      expect(createDiagnosticLogSession().event("rotation.test", {
+        runId: `run-${i}`,
+        bucket: "aaaaaaaaaaaaaaaaaaaa",
+      })).toBe(true);
     }
 
     const status = getDiagnosticLogStatus();

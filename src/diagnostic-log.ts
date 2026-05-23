@@ -28,7 +28,6 @@ export interface DiagnosticLogConfig {
 }
 
 export interface DiagnosticLogStatus extends DiagnosticLogConfig {
-  enabled: boolean;
   dir: string;
   activePath: string;
   statePath: string;
@@ -81,9 +80,8 @@ function readConfig(): DiagnosticLogConfig {
   try {
     const parsed = JSON.parse(readFileSync(statePath, "utf8")) as Partial<DiagnosticLogConfig>;
     const parsedMode = parseMode(parsed.mode);
-    const legacyEnabled = (parsed as { enabled?: boolean }).enabled === true;
     return {
-      mode: parsedMode ?? (legacyEnabled ? "on" : "off"),
+      mode: parsedMode ?? defaultConfig().mode,
       maxBytes: positiveInt(parsed.maxBytes, DEFAULT_MAX_BYTES),
       retain: positiveInt(parsed.retain, DEFAULT_RETAIN),
     };
@@ -110,16 +108,6 @@ function writeConfig(config: DiagnosticLogConfig): void {
   writeFileSync(statePath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
-export function enableDiagnosticLogs(): DiagnosticLogStatus {
-  writeConfig({ ...readConfig(), mode: "on" });
-  return getDiagnosticLogStatus();
-}
-
-export function disableDiagnosticLogs(): DiagnosticLogStatus {
-  writeConfig({ ...readConfig(), mode: "off" });
-  return getDiagnosticLogStatus();
-}
-
 export function setDiagnosticLogMode(mode: DiagnosticLogMode): DiagnosticLogStatus {
   writeConfig({ ...readConfig(), mode });
   return getDiagnosticLogStatus();
@@ -135,7 +123,6 @@ export function getDiagnosticLogStatus(): DiagnosticLogStatus {
   const rotatedSizeBytes = rotatedFiles.reduce((sum, file) => sum + fileSize(join(dir, file)), 0);
   return {
     ...config,
-    enabled: config.mode !== "off",
     dir,
     activePath,
     statePath,
@@ -179,19 +166,6 @@ export function resetDiagnosticLogs(): { deleted: number; bytes: number; dir: st
     deleted++;
   }
   return { deleted, bytes, dir };
-}
-
-export function writeDiagnosticEvent(event: string, fields: DiagnosticLogFields = {}): boolean {
-  const status = getDiagnosticLogStatus();
-  if (status.mode !== "on") return false;
-  try {
-    const line = buildDiagnosticLogLine(event, fields);
-    appendDiagnosticLogLine(line, status);
-    return true;
-  } catch (err) {
-    log.debug(`diagnostic log event dropped: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
-  }
 }
 
 export function createDiagnosticLogSession(): DiagnosticLogSession {
