@@ -17,14 +17,17 @@ const PATH_LIKE_VALUE =
 
 export type DiagnosticLogValue = string | number | boolean | null;
 export type DiagnosticLogFields = Record<string, DiagnosticLogValue>;
+export type DiagnosticLogMode = "off" | "on" | "retain-on-failure";
+export type DiagnosticSessionStatus = "success" | "failed";
 
 export interface DiagnosticLogConfig {
-  enabled: boolean;
+  mode: DiagnosticLogMode;
   maxBytes: number;
   retain: number;
 }
 
 export interface DiagnosticLogStatus extends DiagnosticLogConfig {
+  enabled: boolean;
   dir: string;
   activePath: string;
   statePath: string;
@@ -37,6 +40,11 @@ export interface DiagnosticLogStatus extends DiagnosticLogConfig {
 interface DiagnosticLogOptions {
   now?: Date;
   pid?: number;
+}
+
+export interface DiagnosticLogSession {
+  event(event: string, fields?: DiagnosticLogFields): boolean;
+  finish(status: DiagnosticSessionStatus): boolean;
 }
 
 export function resolveDiagnosticLogDir(): string {
@@ -60,7 +68,7 @@ function resolveStatePath(): string {
 
 function defaultConfig(): DiagnosticLogConfig {
   return {
-    enabled: false,
+    mode: "off",
     maxBytes: DEFAULT_MAX_BYTES,
     retain: DEFAULT_RETAIN,
   };
@@ -71,14 +79,24 @@ function readConfig(): DiagnosticLogConfig {
   if (!existsSync(statePath)) return defaultConfig();
   try {
     const parsed = JSON.parse(readFileSync(statePath, "utf8")) as Partial<DiagnosticLogConfig>;
+    const parsedMode = parseMode(parsed.mode);
+    const legacyEnabled = (parsed as { enabled?: boolean }).enabled === true;
     return {
-      enabled: parsed.enabled === true,
+      mode: parsedMode ?? (legacyEnabled ? "on" : "off"),
       maxBytes: positiveInt(parsed.maxBytes, DEFAULT_MAX_BYTES),
       retain: positiveInt(parsed.retain, DEFAULT_RETAIN),
     };
   } catch {
     return defaultConfig();
   }
+}
+
+export function parseDiagnosticLogMode(value: string): DiagnosticLogMode | null {
+  return parseMode(value);
+}
+
+function parseMode(value: unknown): DiagnosticLogMode | null {
+  return value === "off" || value === "on" || value === "retain-on-failure" ? value : null;
 }
 
 function positiveInt(value: unknown, fallback: number): number {
@@ -92,12 +110,17 @@ function writeConfig(config: DiagnosticLogConfig): void {
 }
 
 export function enableDiagnosticLogs(): DiagnosticLogStatus {
-  writeConfig({ ...readConfig(), enabled: true });
+  writeConfig({ ...readConfig(), mode: "on" });
   return getDiagnosticLogStatus();
 }
 
 export function disableDiagnosticLogs(): DiagnosticLogStatus {
-  writeConfig({ ...readConfig(), enabled: false });
+  writeConfig({ ...readConfig(), mode: "off" });
+  return getDiagnosticLogStatus();
+}
+
+export function setDiagnosticLogMode(mode: DiagnosticLogMode): DiagnosticLogStatus {
+  writeConfig({ ...readConfig(), mode });
   return getDiagnosticLogStatus();
 }
 
@@ -111,6 +134,7 @@ export function getDiagnosticLogStatus(): DiagnosticLogStatus {
   const rotatedSizeBytes = rotatedFiles.reduce((sum, file) => sum + fileSize(join(dir, file)), 0);
   return {
     ...config,
+    enabled: config.mode !== "off",
     dir,
     activePath,
     statePath,
@@ -158,17 +182,58 @@ export function resetDiagnosticLogs(): { deleted: number; bytes: number; dir: st
 
 export function writeDiagnosticEvent(event: string, fields: DiagnosticLogFields = {}): boolean {
   const status = getDiagnosticLogStatus();
-  if (!status.enabled) return false;
+  if (status.mode !== "on") return false;
   try {
     const line = buildDiagnosticLogLine(event, fields);
-    mkdirSync(status.dir, { recursive: true });
-    rotateIfNeeded(status.activePath, line.byteLength, status.maxBytes, status.retain);
-    writeFileSync(status.activePath, line, { flag: "a" });
+    appendDiagnosticLogLine(line, status);
     return true;
   } catch (err) {
     log.debug(`diagnostic log event dropped: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   }
+}
+
+export function createDiagnosticLogSession(): DiagnosticLogSession {
+  const status = getDiagnosticLogStatus();
+  const buffered: Uint8Array[] = [];
+  if (status.mode === "off") return noopSession();
+
+  return {
+    event(event: string, fields: DiagnosticLogFields = {}): boolean {
+      try {
+        const line = buildDiagnosticLogLine(event, fields);
+        if (status.mode === "retain-on-failure") {
+          buffered.push(line);
+          return true;
+        }
+        appendDiagnosticLogLine(line, status);
+        return true;
+      } catch (err) {
+        log.debug(`diagnostic log event dropped: ${err instanceof Error ? err.message : String(err)}`);
+        return false;
+      }
+    },
+    finish(sessionStatus: DiagnosticSessionStatus): boolean {
+      if (status.mode !== "retain-on-failure" || sessionStatus !== "failed" || buffered.length === 0) {
+        return false;
+      }
+      for (const line of buffered) appendDiagnosticLogLine(line, status);
+      return true;
+    },
+  };
+}
+
+function noopSession(): DiagnosticLogSession {
+  return {
+    event: () => false,
+    finish: () => false,
+  };
+}
+
+function appendDiagnosticLogLine(line: Uint8Array, status: DiagnosticLogStatus): void {
+  mkdirSync(status.dir, { recursive: true });
+  rotateIfNeeded(status.activePath, line.byteLength, status.maxBytes, status.retain);
+  writeFileSync(status.activePath, line, { flag: "a" });
 }
 
 export function buildDiagnosticLogLine(

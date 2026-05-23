@@ -4,11 +4,13 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   buildDiagnosticLogLine,
+  createDiagnosticLogSession,
   disableDiagnosticLogs,
   enableDiagnosticLogs,
   getDiagnosticLogStatus,
   resetDiagnosticLogs,
   resolveDiagnosticLogPath,
+  setDiagnosticLogMode,
   writeDiagnosticEvent,
   type DiagnosticLogFields,
 } from "../../src/diagnostic-log";
@@ -32,6 +34,7 @@ describe("diagnostic log storage", () => {
   test("starts disabled and does not create files", () => {
     const status = getDiagnosticLogStatus();
     expect(status.enabled).toBe(false);
+    expect(status.mode).toBe("off");
     expect(status.activePath).toBe(join(dir, "kesha.ndjson"));
     expect(status.exists).toBe(false);
     expect(existsSync(status.activePath)).toBe(false);
@@ -40,6 +43,7 @@ describe("diagnostic log storage", () => {
   test("enable, write, disable, and reset manage local NDJSON logs", () => {
     const enabled = enableDiagnosticLogs();
     expect(enabled.enabled).toBe(true);
+    expect(enabled.mode).toBe("on");
     expect(writeDiagnosticEvent("engine.exit", {
       command: "transcribe",
       exitCode: 0,
@@ -56,6 +60,7 @@ describe("diagnostic log storage", () => {
 
     const disabled = disableDiagnosticLogs();
     expect(disabled.enabled).toBe(false);
+    expect(disabled.mode).toBe("off");
     expect(writeDiagnosticEvent("engine.exit", { command: "transcribe" })).toBe(false);
 
     enableDiagnosticLogs();
@@ -102,6 +107,25 @@ describe("diagnostic log storage", () => {
     enableDiagnosticLogs();
     expect(writeDiagnosticEvent("privacy.test", { path: "/Users/alice/private/audio.wav" })).toBe(false);
     expect(existsSync(resolveDiagnosticLogPath())).toBe(false);
+  });
+
+  test("retain-on-failure session buffers successful runs and writes failed runs", () => {
+    setDiagnosticLogMode("retain-on-failure");
+
+    const success = createDiagnosticLogSession();
+    expect(success.event("command.start", { command: "transcribe", runId: "ok-1" })).toBe(true);
+    expect(success.finish("success")).toBe(false);
+    expect(existsSync(resolveDiagnosticLogPath())).toBe(false);
+
+    const failed = createDiagnosticLogSession();
+    expect(failed.event("command.start", { command: "transcribe", runId: "fail-1" })).toBe(true);
+    expect(failed.event("engine.exit", { command: "transcribe", exitCode: 42 })).toBe(true);
+    expect(failed.finish("failed")).toBe(true);
+
+    const lines = readFileSync(resolveDiagnosticLogPath(), "utf8").trim().split("\n");
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0]).event).toBe("command.start");
+    expect(JSON.parse(lines[1]).exitCode).toBe(42);
   });
 
   test("rotates active log by size and keeps bounded history", () => {

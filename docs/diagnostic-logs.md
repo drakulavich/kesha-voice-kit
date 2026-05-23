@@ -11,9 +11,24 @@ Diagnostic logs are disabled by default:
 kesha logs status
 kesha logs enable
 kesha logs disable
+kesha logs mode retain-on-failure
 kesha logs path
 kesha logs reset
 ```
+
+## Modes
+
+Diagnostic logs follow a Playwright-style retention model:
+
+- `off`: do not record diagnostic events.
+- `on`: append events to the rotated local log immediately.
+- `retain-on-failure`: buffer events for the current command and write them only
+  if the command fails.
+
+`kesha logs enable` is shorthand for `kesha logs mode on`; `kesha logs disable`
+is shorthand for `kesha logs mode off`. `retain-on-failure` is the preferred
+future default for richer instrumentation because passing runs do not leave
+diagnostic artifacts behind, while failed runs keep enough context to debug.
 
 ## Privacy Contract
 
@@ -50,7 +65,7 @@ Set `KESHA_LOG_DIR` to override the directory. The active file is
 so on.
 
 The first implementation rotates at 10 MB and keeps 5 rotated files. `kesha logs
-reset` deletes Kesha log files but preserves the enabled/disabled setting.
+reset` deletes Kesha log files but preserves the selected mode.
 
 ## Support Bundles
 

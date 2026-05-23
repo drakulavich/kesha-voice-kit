@@ -615,6 +615,7 @@ describe("CLI contracts", () => {
       exitCode: 0,
       stdoutContains: [
         "Kesha diagnostic logs: disabled",
+        "Mode: off",
         `Path: ${join(env.KESHA_LOG_DIR, "kesha.ndjson")}`,
         "Rotated files: 0",
       ],
@@ -624,7 +625,14 @@ describe("CLI contracts", () => {
     const logsEnable = await runCli(["logs", "enable"], { env });
     expectContract(logsEnable, {
       exitCode: 0,
-      stdoutContains: ["Kesha diagnostic logs enabled", `Path: ${join(env.KESHA_LOG_DIR, "kesha.ndjson")}`],
+      stdoutContains: ["Kesha diagnostic logs enabled", "Mode: on", `Path: ${join(env.KESHA_LOG_DIR, "kesha.ndjson")}`],
+      stderrEmpty: true,
+    });
+
+    const logsMode = await runCli(["logs", "mode", "retain-on-failure"], { env });
+    expectContract(logsMode, {
+      exitCode: 0,
+      stdoutContains: ["Kesha diagnostic log mode set to retain-on-failure"],
       stderrEmpty: true,
     });
 

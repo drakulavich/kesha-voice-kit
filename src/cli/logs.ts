@@ -4,13 +4,16 @@ import {
   enableDiagnosticLogs,
   getDiagnosticLogStatus,
   humanBytes,
+  parseDiagnosticLogMode,
   resetDiagnosticLogs,
   resolveDiagnosticLogPath,
+  setDiagnosticLogMode,
 } from "../diagnostic-log";
 import { log } from "../log";
 
 interface LogsCommandArgs {
   action?: string;
+  value?: string;
 }
 
 export const logsCommand = defineCommand({
@@ -22,7 +25,12 @@ export const logsCommand = defineCommand({
     action: {
       type: "positional",
       required: false,
-      description: "Action: status | enable | disable | path | reset",
+      description: "Action: status | enable | disable | mode | path | reset",
+    },
+    value: {
+      type: "positional",
+      required: false,
+      description: "Action value: off | on | retain-on-failure",
     },
   },
   run({ args }: { args: LogsCommandArgs }) {
@@ -31,6 +39,7 @@ export const logsCommand = defineCommand({
       case "enable": {
         const status = enableDiagnosticLogs();
         log.success("Kesha diagnostic logs enabled");
+        log.info(`Mode: ${status.mode}`);
         log.info(`Path: ${status.activePath}`);
         log.info(`Rotation: ${humanBytes(status.maxBytes)}, keep ${status.retain}`);
         return;
@@ -38,16 +47,34 @@ export const logsCommand = defineCommand({
       case "disable": {
         const status = disableDiagnosticLogs();
         log.info("Kesha diagnostic logs disabled");
+        log.info(`Mode: ${status.mode}`);
         log.info(`Path: ${status.activePath}`);
         return;
       }
       case "status": {
         const status = getDiagnosticLogStatus();
         log.info(`Kesha diagnostic logs: ${status.enabled ? "enabled" : "disabled"}`);
+        log.info(`Mode: ${status.mode}`);
         log.info(`Path: ${status.activePath}`);
         log.info(`Size: ${humanBytes(status.totalSizeBytes)}`);
         log.info(`Rotated files: ${status.rotatedFiles.length}`);
         log.info(`Rotation: ${humanBytes(status.maxBytes)}, keep ${status.retain}`);
+        return;
+      }
+      case "mode": {
+        if (!args.value) {
+          const status = getDiagnosticLogStatus();
+          log.info(`Kesha diagnostic log mode: ${status.mode}`);
+          return;
+        }
+        const mode = parseDiagnosticLogMode(args.value);
+        if (!mode) {
+          log.error("usage: kesha logs mode <off|on|retain-on-failure>");
+          process.exit(2);
+        }
+        const status = setDiagnosticLogMode(mode);
+        log.info(`Kesha diagnostic log mode set to ${status.mode}`);
+        log.info(`Path: ${status.activePath}`);
         return;
       }
       case "path": {
@@ -61,7 +88,7 @@ export const logsCommand = defineCommand({
       }
       default:
         log.error(`unknown logs action '${action}'`);
-        log.warn("supported: enable, disable, status, path, reset");
+        log.warn("supported: enable, disable, mode, status, path, reset");
         process.exit(2);
     }
   },

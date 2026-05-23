@@ -261,7 +261,7 @@ export const mainCommand = defineCommand({
           "       kesha completions <bash|zsh|fish>\n" +
           "       kesha doctor [--json] [--redact]\n" +
           "       kesha install [--no-cache]\n" +
-          "       kesha logs [enable|disable|status|path|reset]\n" +
+          "       kesha logs [enable|disable|mode|status|path|reset]\n" +
           "       kesha manpage\n" +
           "       kesha record --out path.wav [--max-seconds 120]\n" +
           "       kesha status\n" +
