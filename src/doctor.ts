@@ -15,6 +15,11 @@ import {
   type FluidKokoroCacheInfo,
 } from "./fluid-kokoro-cache";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
+import {
+  getDiagnosticLogStatus,
+  resolveDiagnosticLogDir,
+  type DiagnosticLogStatus,
+} from "./diagnostic-log";
 
 const KNOWN_ENV_KEYS = [
   "KESHA_ENGINE_BIN",
@@ -44,6 +49,8 @@ interface OptionalComponent extends PathSummary {
   note?: string;
 }
 
+type DoctorDiagnosticLogStatus = DiagnosticLogStatus & { error?: string };
+
 export interface DoctorReport {
   generatedAt: string;
   redacted: boolean;
@@ -71,6 +78,7 @@ export interface DoctorReport {
   };
   optionalComponents: OptionalComponent[];
   stats: StatsStatus | (Partial<StatsStatus> & { error: string });
+  diagnosticLogs: DoctorDiagnosticLogStatus;
   env: Record<string, string | null>;
 }
 
@@ -302,6 +310,39 @@ function collectStats(redact: boolean): DoctorReport["stats"] {
   }
 }
 
+function collectDiagnosticLogs(redact: boolean): DoctorReport["diagnosticLogs"] {
+  try {
+    const status = getDiagnosticLogStatus();
+    return redact
+      ? {
+          ...status,
+          dir: redactPath(status.dir, true),
+          activePath: redactPath(status.activePath, true),
+          statePath: redactPath(status.statePath, true),
+        }
+      : status;
+  } catch (err) {
+    const dir = resolveDiagnosticLogDir();
+    const activePath = join(dir, "kesha.ndjson");
+    const statePath = join(dir, "diagnostic-logs.json");
+    return {
+      dir: redactPath(dir, redact),
+      activePath: redactPath(activePath, redact),
+      statePath: redactPath(statePath, redact),
+      exists: false,
+      activeSizeBytes: 0,
+      rotatedFiles: [],
+      totalSizeBytes: 0,
+      mode: "retain-on-failure",
+      maxBytes: 10 * 1024 * 1024,
+      retain: 5,
+      error:
+        redactString("diagnosticLogsError", err instanceof Error ? err.message : String(err), redact) ??
+        "unknown",
+    };
+  }
+}
+
 function collectEnv(redact: boolean): DoctorReport["env"] {
   const env: Record<string, string | null> = {};
   for (const key of KNOWN_ENV_KEYS) {
@@ -328,6 +369,7 @@ export async function collectDoctorReport(
     cache: collectCache(redact, fluidKokoro),
     optionalComponents: collectOptionalComponents(redact, fluidKokoro),
     stats: collectStats(redact),
+    diagnosticLogs: collectDiagnosticLogs(redact),
     env: collectEnv(redact),
   };
 }
@@ -375,6 +417,14 @@ export function formatDoctorReport(report: DoctorReport): string {
     lines.push(`  Database: ${report.stats.dbPath}`);
     lines.push(`  Runs: ${report.stats.runCount}`);
   }
+
+  lines.push("", "Diagnostic logs:");
+  lines.push(`  Mode: ${report.diagnosticLogs.mode}`);
+  lines.push(`  Path: ${report.diagnosticLogs.activePath}`);
+  lines.push(`  Size: ${humanBytes(report.diagnosticLogs.totalSizeBytes)}`);
+  lines.push(`  Rotated files: ${report.diagnosticLogs.rotatedFiles.length}`);
+  lines.push(`  Rotation: ${humanBytes(report.diagnosticLogs.maxBytes)}, keep ${report.diagnosticLogs.retain}`);
+  if (report.diagnosticLogs.error) lines.push(`  Error: ${report.diagnosticLogs.error}`);
 
   lines.push("", "Environment:");
   for (const [key, value] of Object.entries(report.env)) {
