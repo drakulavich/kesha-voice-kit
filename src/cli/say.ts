@@ -4,6 +4,8 @@ import { log } from "../log";
 import { say, SayError, type SayFormat } from "../synth";
 import { artifactFromBytes, artifactFromFile, createStatsRecorder } from "../stats";
 import { pickVoiceForLang } from "../voice-routing";
+import { createDiagnosticLogSession } from "../diagnostic-log";
+import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
 
 /** Run NLLanguageRecognizer (via engine) on the text and pick a default voice. */
 async function autoRouteVoice(text: string): Promise<string | undefined> {
@@ -193,6 +195,18 @@ export const sayCommand = defineCommand({
       noExpandAbbrev: Boolean(args["no-expand-abbrev"]),
     };
     const stats = createStatsRecorder("say");
+    const diagnosticLog = createDiagnosticLogSession();
+    diagnosticLog.event("command.start", {
+      command: "say",
+      charBucket: diagnosticCharBucket(Array.from(text).length),
+      hasInlineInput: inlineText !== undefined,
+      hasVoice: explicitVoice !== undefined,
+      autoVoice: explicitVoice === undefined && voice !== undefined,
+      hasOut: typeof opts.out === "string",
+      outputFormat: opts.format ?? "auto",
+      ssml: opts.ssml,
+      noExpandAbbrev: opts.noExpandAbbrev,
+    });
 
     try {
       const startedAt = performance.now();
@@ -209,19 +223,39 @@ export const sayCommand = defineCommand({
         // stderr — stdout may carry raw audio bytes when --out is omitted.
         console.error(`TTS time: ${ttsTimeMs}ms`);
       }
+      let outputFormat: string = opts.format ?? "wav";
+      let outputSizeBytes: number | null | undefined = audio.byteLength;
       if (opts.out) {
         const outputArtifact = artifactFromFile(opts.out, "output_audio");
         if (outputArtifact) stats.recordArtifact(outputArtifact);
+        outputFormat = outputArtifact?.format || opts.format || "auto";
+        outputSizeBytes = outputArtifact?.sizeBytes;
       } else {
         stats.recordArtifact(artifactFromBytes(audio.byteLength, "output_audio", opts.format ?? "wav"));
       }
+      diagnosticLog.event("command.finish", {
+        command: "say",
+        status: "success",
+        durationMs: ttsTimeMs,
+        hasOut: Boolean(opts.out),
+        outputFormat,
+        outputSizeBucket: diagnosticSizeBucket(outputSizeBytes),
+      });
       if (!opts.out) {
         process.stdout.write(audio);
       }
       stats.finish("success", 1);
+      diagnosticLog.finish("success");
     } catch (err) {
       stats.recordError("tts", err);
       stats.finish("failed", 1);
+      diagnosticLog.event("command.finish", {
+        command: "say",
+        status: "failed",
+        errorKind: err instanceof SayError ? "say_error" : "error",
+        exitCode: err instanceof SayError ? err.exitCode : 4,
+      });
+      diagnosticLog.finish("failed");
       if (err instanceof SayError) {
         log.error(err.stderr.trim() || err.message);
         process.exit(err.exitCode);

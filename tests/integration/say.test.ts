@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { spawn } from "bun";
-import { chmodSync, mkdirSync } from "fs";
+import { chmodSync, mkdirSync, readFileSync } from "fs";
 
 const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
 
@@ -36,6 +36,19 @@ process.exit(99);
   return enginePath;
 }
 
+async function enableDiagnosticLogs(logDir: string): Promise<void> {
+  mkdirSync(logDir, { recursive: true });
+  await Bun.write(`${logDir}/diagnostic-logs.json`, `${JSON.stringify({ mode: "on" })}\n`);
+}
+
+function readDiagnosticLog(logDir: string): { raw: string; events: Array<Record<string, unknown>> } {
+  const raw = readFileSync(`${logDir}/kesha.ndjson`, "utf8");
+  return {
+    raw,
+    events: raw.trim().split("\n").map((line) => JSON.parse(line)),
+  };
+}
+
 const INVALID_NUMERIC_FLAG_CASES: Array<{ name: string; args: string[]; message: string }> = [
   {
     name: "non-numeric rate",
@@ -69,6 +82,19 @@ const INVALID_NUMERIC_FLAG_CASES: Array<{ name: string; args: string[]; message:
   },
 ];
 
+const SAY_OUT_DIAGNOSTIC_CASES = [
+  {
+    name: "say --out reports stderr progress while keeping stdout empty",
+    outputName: "reply.wav",
+    outputFormat: ".wav",
+  },
+  {
+    name: "keeps diagnostic finish event for extensionless --out paths",
+    outputName: "reply",
+    outputFormat: "auto",
+  },
+];
+
 describe("kesha say (CLI)", () => {
   it("--help exits 0 and mentions --voice", async () => {
     const proc = spawn(["bun", CLI_PATH, "say", "--help"], {
@@ -95,41 +121,63 @@ describe("kesha say (CLI)", () => {
     expect(stderr).toMatch(/install/);
   });
 
-  it("say --out reports stderr progress while keeping stdout empty", async () => {
-    const dir = `/tmp/kesha-fake-engine-${Date.now()}-${Math.random()}`;
-    const enginePath = await createFakeEngine(dir);
-    const outPath = `${dir}/reply.wav`;
-    const proc = spawn([
-      "bun",
-      CLI_PATH,
-      "say",
-      "--voice",
-      "ru-vosk-m02",
-      "--out",
-      outPath,
-      "Привет",
-    ], {
-      env: {
-        ...process.env,
-        KESHA_CACHE_DIR: dir,
-        KESHA_ENGINE_BIN: enginePath,
-        HOME: dir,
-      },
-      stdout: "pipe",
-      stderr: "pipe",
+  for (const tc of SAY_OUT_DIAGNOSTIC_CASES) {
+    it(tc.name, async () => {
+      const dir = `/tmp/kesha-fake-engine-${Date.now()}-${Math.random()}`;
+      const enginePath = await createFakeEngine(dir);
+      const outPath = `${dir}/${tc.outputName}`;
+      const logDir = `${dir}/logs`;
+      await enableDiagnosticLogs(logDir);
+      const proc = spawn([
+        "bun",
+        CLI_PATH,
+        "say",
+        "--voice",
+        "ru-vosk-m02",
+        "--out",
+        outPath,
+        "Привет",
+      ], {
+        env: {
+          ...process.env,
+          KESHA_CACHE_DIR: dir,
+          KESHA_ENGINE_BIN: enginePath,
+          KESHA_LOG_DIR: logDir,
+          HOME: dir,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      expect(await proc.exited).toBe(0);
+      const stdout = await new Response(proc.stdout).text();
+      const stderr = await new Response(proc.stderr).text();
+      const bytes = new Uint8Array(await Bun.file(outPath).arrayBuffer());
+
+      expect(stdout).toBe("");
+      expect(stderr).toContain("Synthesizing ru-vosk-m02 ->");
+      expect(stderr).toContain(outPath);
+      expect(stderr).toContain(`Saved ${outPath}`);
+      expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe("RIFF");
+
+      const { raw: diagnosticLog, events } = readDiagnosticLog(logDir);
+      expect(diagnosticLog).not.toContain("Привет");
+      expect(diagnosticLog).not.toContain(outPath);
+      expect(events.map((event) => event.event)).toEqual(["command.start", "command.finish"]);
+      expect(events[0]).toMatchObject({
+        command: "say",
+        charBucket: "lt100",
+        hasVoice: true,
+        hasOut: true,
+      });
+      expect(events[1]).toMatchObject({
+        command: "say",
+        status: "success",
+        outputFormat: tc.outputFormat,
+        outputSizeBucket: "lt1MB",
+      });
     });
-
-    expect(await proc.exited).toBe(0);
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-    const bytes = new Uint8Array(await Bun.file(outPath).arrayBuffer());
-
-    expect(stdout).toBe("");
-    expect(stderr).toContain("Synthesizing ru-vosk-m02 ->");
-    expect(stderr).toContain(outPath);
-    expect(stderr).toMatch(/Saved .*reply\.wav \(\d+ms\)/);
-    expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe("RIFF");
-  });
+  }
 
   it("--verbose --out does not duplicate timing output", async () => {
     const dir = `/tmp/kesha-fake-engine-${Date.now()}-${Math.random()}`;
