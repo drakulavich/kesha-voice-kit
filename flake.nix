@@ -211,7 +211,6 @@
             fileset = lib.fileset.unions [
               ./package.json
               ./bun.lock
-              ./scripts/postinstall.cjs
             ];
           };
           nativeBuildInputs = with pkgs; [ bun cacert nodejs ];
@@ -219,10 +218,7 @@
           buildPhase = ''
             runHook preBuild
             export HOME=$TMPDIR
-            # --frozen-lockfile pins to bun.lock; --production drops devDeps;
-            # --ignore-scripts skips the package.json postinstall (which is a
-            # PATH-probe warning for end users, irrelevant inside the
-            # sandbox).
+            # --frozen-lockfile pins to bun.lock; --production drops devDeps.
             bun install --frozen-lockfile --production --ignore-scripts --no-progress
             runHook postBuild
           '';
@@ -259,7 +255,6 @@
               ./SKILL.md
               ./LICENSE
               ./NOTICES.md
-              ./scripts/postinstall.cjs
             ];
           };
           nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -268,7 +263,7 @@
             runHook preInstall
 
             mkdir -p $out/lib/kesha $out/bin
-            cp -r bin src scripts package.json tsconfig.json \
+            cp -r bin src package.json tsconfig.json \
                   openclaw-plugin.cjs openclaw.plugin.json SKILL.md LICENSE NOTICES.md \
                   $out/lib/kesha/
             ln -s ${keshaNodeModules} $out/lib/kesha/node_modules
