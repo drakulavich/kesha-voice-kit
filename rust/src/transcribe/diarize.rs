@@ -94,7 +94,7 @@ pub(crate) fn run(
 }
 
 /// Adaptive deadline for one diarization call. `KESHA_DIARIZE_TIMEOUT_SECS`
-/// overrides everything; otherwise scale up from a 90 s floor by audio length and
+/// overrides everything; otherwise scale up from a 150 s floor by audio length and
 /// ASR-segment count, capped at 30 min.
 fn diarize_timeout(asr_segments: &[TranscriptionSegment], duration: Option<f32>) -> Duration {
     if let Some(secs) = std::env::var("KESHA_DIARIZE_TIMEOUT_SECS")
@@ -460,7 +460,10 @@ mod tests {
     fn timeout_error_mentions_rewarming_the_ane_cache() {
         let msg = diarize_timeout_error(Duration::from_secs(DEFAULT_DIARIZE_TIMEOUT_SECS), 4.0);
 
-        assert!(msg.contains("speaker diarization timed out after 150s for 4s of audio"));
+        assert!(msg.contains(&format!(
+            "speaker diarization timed out after {}s for 4s of audio",
+            DEFAULT_DIARIZE_TIMEOUT_SECS
+        )));
         assert!(msg.contains("Apple ANE cache may be cold or evicted"));
         assert!(msg.contains("kesha install --diarize"));
         assert!(msg.contains("KESHA_DIARIZE_TIMEOUT_SECS"));
