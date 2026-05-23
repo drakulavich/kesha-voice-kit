@@ -8,12 +8,13 @@ const ACTIVE_LOG_FILE = "kesha.ndjson";
 const STATE_FILE = "diagnostic-logs.json";
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_RETAIN = 5;
-const SAFE_LABEL = /^[A-Za-z0-9_.:/@+-]{1,120}$/;
+const SAFE_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const SAFE_STRING_VALUE = /^[A-Za-z0-9_.@+-]{1,120}$/;
 const SAFE_EVENT = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/;
 const DISALLOWED_FIELD_NAME =
   /(?:path|file|filename|basename|message|text|transcript|stdout|stderr|env|token|secret|password|key|url|prompt|content|raw)/i;
-const PATH_LIKE_VALUE =
-  /(?:\/Users\/|\/home\/|\/tmp\/|\/private\/tmp\/|\/var\/folders\/|[A-Za-z]:\\|[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:wav|ogg|m4a|mp3|flac)\b)/i;
+const UNSAFE_STRING_VALUE =
+  /(?:[\\/]|^[A-Za-z][A-Za-z0-9+.-]*:|[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:aac|aiff?|caf|flac|m4a|m4v|mov|mp3|mp4|ogg|opus|wav|webm|wma)\b|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b)/i;
 
 export type DiagnosticLogValue = string | number | boolean | null;
 export type DiagnosticLogFields = Record<string, DiagnosticLogValue>;
@@ -217,7 +218,9 @@ export function createDiagnosticLogSession(): DiagnosticLogSession {
       if (status.mode !== "retain-on-failure" || sessionStatus !== "failed" || buffered.length === 0) {
         return false;
       }
-      for (const line of buffered) appendDiagnosticLogLine(line, status);
+      const flushStatus = getDiagnosticLogStatus();
+      if (flushStatus.mode === "off") return false;
+      for (const line of buffered) appendDiagnosticLogLine(line, flushStatus);
       return true;
     },
   };
@@ -263,11 +266,11 @@ function validateEventName(event: string): void {
 }
 
 function validateField(key: string, value: DiagnosticLogValue): void {
-  if (!SAFE_LABEL.test(key) || DISALLOWED_FIELD_NAME.test(key)) {
+  if (!SAFE_FIELD_NAME.test(key) || DISALLOWED_FIELD_NAME.test(key)) {
     throw new Error(`unsafe diagnostic field name: ${key}`);
   }
   if (typeof value === "string") {
-    if (!SAFE_LABEL.test(value) || PATH_LIKE_VALUE.test(value)) {
+    if (!SAFE_STRING_VALUE.test(value) || UNSAFE_STRING_VALUE.test(value)) {
       throw new Error(`unsafe diagnostic string field: ${key}`);
     }
   }

@@ -74,6 +74,13 @@ describe("diagnostic log storage", () => {
     const unsafeValues: DiagnosticLogFields[] = [
       { path: "/Users/alice/private/audio.wav" },
       { filename: "therapy-session.m4a" },
+      { binary: "/opt/kesha/bin/kesha-engine" },
+      { binary: "/usr/local/bin/kesha-engine" },
+      { binary: "/Applications/Kesha.app" },
+      { binary: "relative/private/audio.wav" },
+      { binary: "..\\private\\audio.wav" },
+      { endpoint: "https://api.example.com/v1?token=secret" },
+      { endpoint: "api.example.com" },
       { text: "hello private transcript" },
       { message: "arbitrary error prose" },
       { transcript: "private words" },
@@ -83,6 +90,11 @@ describe("diagnostic log storage", () => {
       { token: "secret" },
       { format: "/Users/alice/private/audio.wav" },
       { format: "therapy-session.m4a" },
+      { format: "meeting.aac" },
+      { format: "meeting.opus" },
+      { format: "meeting.wma" },
+      { format: "meeting.webm" },
+      { format: "meeting.mp4" },
     ];
 
     for (const fields of unsafeValues) {
@@ -126,6 +138,23 @@ describe("diagnostic log storage", () => {
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]).event).toBe("command.start");
     expect(JSON.parse(lines[1]).exitCode).toBe(42);
+  });
+
+  test("retain-on-failure flush uses current log directory", () => {
+    setDiagnosticLogMode("retain-on-failure");
+    const session = createDiagnosticLogSession();
+    expect(session.event("command.start", { command: "transcribe", runId: "move-1" })).toBe(true);
+
+    const nextDir = mkdtempSync(join(tmpdir(), "kesha-diagnostic-log-moved-"));
+    try {
+      process.env.KESHA_LOG_DIR = nextDir;
+      expect(session.finish("failed")).toBe(true);
+      expect(existsSync(join(nextDir, "kesha.ndjson"))).toBe(true);
+      expect(existsSync(join(dir, "kesha.ndjson"))).toBe(false);
+    } finally {
+      rmSync(nextDir, { recursive: true, force: true });
+      process.env.KESHA_LOG_DIR = dir;
+    }
   });
 
   test("rotates active log by size and keeps bounded history", () => {
