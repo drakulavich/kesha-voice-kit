@@ -1,9 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { formatStatusLine, activeModelMirror, showStatus } from "../../src/status";
 import { starSeenPath } from "../../src/star";
+
+const posixEngineTest = process.platform === "win32" ? test.skip : test;
 
 describe("formatStatusLine", () => {
   test("formats installed component", () => {
@@ -75,6 +77,7 @@ describe("showStatus", () => {
   const savedEngineBin = process.env.KESHA_ENGINE_BIN;
   const savedCacheDir = process.env.KESHA_CACHE_DIR;
   const savedHome = process.env.HOME;
+  const savedMirror = process.env.KESHA_MODEL_MIRROR;
 
   function restoreEnv() {
     if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
@@ -83,6 +86,8 @@ describe("showStatus", () => {
     else process.env.KESHA_CACHE_DIR = savedCacheDir;
     if (savedHome === undefined) delete process.env.HOME;
     else process.env.HOME = savedHome;
+    if (savedMirror === undefined) delete process.env.KESHA_MODEL_MIRROR;
+    else process.env.KESHA_MODEL_MIRROR = savedMirror;
   }
 
   beforeEach(restoreEnv);
@@ -162,6 +167,60 @@ describe("showStatus", () => {
       } else {
         expect(lines.join("\n")).not.toContain("FluidAudio Kokoro:");
       }
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("prints engine capabilities, mirror, and installed voices", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-installed-test-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '{"protocolVersion":2,"backend":"fake-coreml","features":["transcribe.segments","transcribe.diarize"]}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(binPath, 0o755);
+    mkdirSync(join(cache, "models", "kokoro-82m", "voices"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voices", "am_michael.bin"), "voice");
+    writeFileSync(join(cache, "models", "kokoro-82m", "voices", "README.txt"), "ignored");
+    mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
+    writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
+    writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    process.env.KESHA_MODEL_MIRROR = "https://mirror.example.com/kesha///";
+
+    const originalLog = console.log;
+    const originalError = console.error;
+    const lines: string[] = [];
+    console.log = (msg: string) => {
+      lines.push(msg);
+    };
+    console.error = () => {};
+    try {
+      await showStatus();
+      const output = lines.join("\n");
+      expect(output).toContain("Backend: fake-coreml");
+      expect(output).toContain("Protocol: v2");
+      expect(output).toContain("Features: transcribe.segments, transcribe.diarize");
+      expect(output).toContain("Mirror: https://mirror.example.com/kesha");
+      expect(output).toContain("TTS voices:");
+      expect(output).toContain("en-am_michael");
+      expect(output).toContain("ru-vosk-m02");
+      expect(output).not.toContain("README");
     } finally {
       console.log = originalLog;
       console.error = originalError;
