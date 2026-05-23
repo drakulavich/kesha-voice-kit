@@ -75,6 +75,6 @@ reset` deletes Kesha log files but preserves the selected mode.
 
 ## Support Bundles
 
-`kesha support-bundle` does not include diagnostic log contents by default. A
-future opt-in flag may include a bounded tail of already-sanitized NDJSON, but
-users should always explicitly choose that.
+`kesha support-bundle` does not include diagnostic log contents by default. Use
+`kesha support-bundle --include-logs` to add a bounded tail of the active
+already-sanitized NDJSON log when a support issue needs recent command events.

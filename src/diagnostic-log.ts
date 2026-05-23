@@ -1,4 +1,16 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { log } from "./log";
@@ -8,6 +20,7 @@ const ACTIVE_LOG_FILE = "kesha.ndjson";
 const STATE_FILE = "diagnostic-logs.json";
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_RETAIN = 5;
+const DEFAULT_TAIL_BYTES = 64 * 1024;
 const SAFE_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const SAFE_STRING_VALUE = /^[A-Za-z0-9_.@+-]{1,120}$/;
 const SAFE_EVENT = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/;
@@ -36,6 +49,13 @@ export interface DiagnosticLogStatus extends DiagnosticLogConfig {
   activeSizeBytes: number;
   rotatedFiles: string[];
   totalSizeBytes: number;
+}
+
+export interface DiagnosticLogTail {
+  path: string;
+  sizeBytes: number;
+  truncated: boolean;
+  contents: string;
 }
 
 interface DiagnosticLogOptions {
@@ -132,6 +152,34 @@ export function getDiagnosticLogStatus(): DiagnosticLogStatus {
     rotatedFiles,
     totalSizeBytes: activeSizeBytes + rotatedSizeBytes,
   };
+}
+
+export function readDiagnosticLogTail(maxBytes = DEFAULT_TAIL_BYTES): DiagnosticLogTail | null {
+  const path = resolveDiagnosticLogPath();
+  if (!existsSync(path)) return null;
+  const sizeBytes = fileSize(path);
+  if (sizeBytes === 0) {
+    return { path, sizeBytes, truncated: false, contents: "" };
+  }
+
+  const bytesToRead = Math.min(maxBytes, sizeBytes);
+  const offset = sizeBytes - bytesToRead;
+  const buffer = new Uint8Array(bytesToRead);
+  const fd = openSync(path, "r");
+  let bytesRead = 0;
+  try {
+    bytesRead = readSync(fd, buffer, 0, bytesToRead, offset);
+  } finally {
+    closeSync(fd);
+  }
+
+  let contents = new TextDecoder().decode(buffer.subarray(0, bytesRead));
+  const truncated = offset > 0;
+  if (truncated) {
+    const firstLineBreak = contents.indexOf("\n");
+    contents = firstLineBreak === -1 ? "" : contents.slice(firstLineBreak + 1);
+  }
+  return { path, sizeBytes, truncated, contents };
 }
 
 function listRotatedLogFiles(dir: string): string[] {

@@ -80,6 +80,7 @@ describe("collectDoctorReport", () => {
     KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
     KESHA_MODEL_MIRROR: process.env.KESHA_MODEL_MIRROR,
     KESHA_STATS_DB: process.env.KESHA_STATS_DB,
+    KESHA_LOG_DIR: process.env.KESHA_LOG_DIR,
     KESHA_DEBUG: process.env.KESHA_DEBUG,
     KESHA_DEBUG_FD: process.env.KESHA_DEBUG_FD,
   };
@@ -344,9 +345,15 @@ describe("createSupportBundle", () => {
       process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
       process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
       process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+      process.env.KESHA_LOG_DIR = join(dir, "logs");
       process.env.KESHA_MODEL_MIRROR = "https://user:pass@example.com/kesha?token=abc";
       mkdirSync(join(dir, ".cache", "kesha", "models", "silero-vad"), { recursive: true });
       writeFileSync(join(dir, ".cache", "kesha", "models", "silero-vad", "model.onnx"), "vad");
+      mkdirSync(process.env.KESHA_LOG_DIR, { recursive: true });
+      writeFileSync(
+        join(process.env.KESHA_LOG_DIR, "kesha.ndjson"),
+        `${JSON.stringify({ event: "command.start", command: "transcribe", status: "failed" })}\n`,
+      );
 
       const output = join(dir, "bundle.tar.gz");
       const result = await createSupportBundle({
@@ -359,13 +366,52 @@ describe("createSupportBundle", () => {
       expect(result.entries).toContain("bundle/doctor.json");
       expect(result.entries).toContain("bundle/doctor.txt");
       expect(result.entries).toContain("bundle/manifest.json");
+      expect(result.entries).not.toContain("bundle/diagnostic-logs/kesha.ndjson");
       expect(archive).toContain("bundle/README.txt");
       expect(archive).toContain('"redacted": true');
+      expect(archive).toContain('"included": false');
+      expect(archive).not.toContain("command.start");
       expect(archive).toContain("~/engine/bin/kesha-engine");
       expect(archive).toContain("https://example.com/kesha");
       expect(archive).not.toContain(dir);
       expect(archive).not.toContain("user:pass");
       expect(archive).not.toContain("token=abc");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("includes bounded diagnostic log tail only when requested", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-support-bundle-logs-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_LOG_DIR = join(dir, "logs");
+      mkdirSync(process.env.KESHA_LOG_DIR, { recursive: true });
+      writeFileSync(
+        join(process.env.KESHA_LOG_DIR, "kesha.ndjson"),
+        [
+          JSON.stringify({ event: "command.start", command: "say", charBucket: "lt100" }),
+          JSON.stringify({ event: "command.finish", command: "say", status: "failed", errorKind: "say_error" }),
+          "",
+        ].join("\n"),
+      );
+
+      const output = join(dir, "bundle.tar.gz");
+      const result = await createSupportBundle({
+        output,
+        includeLogs: true,
+        now: new Date("2026-05-17T12:34:56Z"),
+      });
+      const archive = gunzipSync(readFileSync(output)).toString("utf8");
+
+      expect(result.entries).toContain("bundle/diagnostic-logs/README.txt");
+      expect(result.entries).toContain("bundle/diagnostic-logs/kesha.ndjson");
+      expect(result.entries).toContain("bundle/diagnostic-logs/status.json");
+      expect(archive).toContain('"diagnosticLogs"');
+      expect(archive).toContain('"included": true');
+      expect(archive).toContain('"event":"command.start"');
+      expect(archive).toContain('"event":"command.finish"');
+      expect(archive).not.toContain(process.env.KESHA_LOG_DIR);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

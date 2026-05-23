@@ -28,7 +28,7 @@ _kesha_completion() {
     say) opts="--help -h --voice --lang --out --rate --list-voices --ssml --format --bitrate --sample-rate --no-expand-abbrev --verbose --debug" ;;
     stats) opts="--help -h --format" ;;
     status) opts="--help -h --disk" ;;
-    support-bundle) opts="--help -h --output" ;;
+    support-bundle) opts="--help -h --output --include-logs" ;;
     *) opts="--help -h --version -v --json --toon --timestamps --speakers --include-errors --verbose --format --lang --debug --vad --no-vad" ;;
   esac
 
