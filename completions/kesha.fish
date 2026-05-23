@@ -83,3 +83,4 @@ complete -c kesha -n '__fish_seen_subcommand_from status' -l disk -d 'Include re
 complete -c kesha -n '__fish_seen_subcommand_from support-bundle' -l help -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from support-bundle' -s h -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from support-bundle' -l output -r -d 'Write archive to this .tar.gz path'
+complete -c kesha -n '__fish_seen_subcommand_from support-bundle' -l include-logs -d 'Include a bounded tail of privacy-safe diagnostic logs'

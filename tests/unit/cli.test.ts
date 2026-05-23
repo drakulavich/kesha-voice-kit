@@ -107,6 +107,7 @@ describe("CLI help", () => {
     const usage = await renderUsage(supportBundleCommand);
     expect(usage).toContain("support-bundle");
     expect(usage).toContain("--output");
+    expect(usage).toContain("--include-logs");
     expect(usage).toContain("redacted diagnostics archive");
   });
 

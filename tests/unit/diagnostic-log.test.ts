@@ -6,6 +6,7 @@ import {
   buildDiagnosticLogLine,
   createDiagnosticLogSession,
   getDiagnosticLogStatus,
+  readDiagnosticLogTail,
   resetDiagnosticLogs,
   resolveDiagnosticLogPath,
   setDiagnosticLogMode,
@@ -190,5 +191,26 @@ describe("diagnostic log storage", () => {
     expect(status.exists).toBe(true);
     expect(status.rotatedFiles.length).toBeLessThanOrEqual(2);
     expect(status.rotatedFiles).toContain("kesha.1.ndjson");
+  });
+
+  test("reads a bounded active log tail from line boundaries", () => {
+    writeFileSync(
+      resolveDiagnosticLogPath(),
+      [
+        JSON.stringify({ event: "command.start", runId: "first" }),
+        JSON.stringify({ event: "engine.exit", runId: "middle" }),
+        JSON.stringify({ event: "command.finish", runId: "last" }),
+        "",
+      ].join("\n"),
+    );
+
+    const tail = readDiagnosticLogTail(90);
+    expect(tail?.truncated).toBe(true);
+    expect(tail?.contents).not.toContain("first");
+    expect(tail?.contents).toContain("middle");
+    expect(tail?.contents).toContain("last");
+    for (const line of tail?.contents.trim().split("\n") ?? []) {
+      expect(() => JSON.parse(line)).not.toThrow();
+    }
   });
 });

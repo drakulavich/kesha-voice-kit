@@ -118,7 +118,8 @@ _kesha() {
     support-bundle)
       _arguments '--help[Show help]' \
         '-h[Show help]' \
-        '--output=[Write archive to this .tar.gz path]:output:'
+        '--output=[Write archive to this .tar.gz path]:output:' \
+        '--include-logs[Include a bounded tail of privacy-safe diagnostic logs]'
       ;;
     *)
       _arguments '--help[Show help]' \
