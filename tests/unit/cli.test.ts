@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, completionsCommand, doctorCommand, initCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection } from "../../src/cli";
+import { mainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection } from "../../src/cli";
 
 type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
 
@@ -70,6 +70,7 @@ describe("CLI help", () => {
     expect(usage).toContain("doctor     Collect support diagnostics.");
     expect(usage).toContain("init       Interactive setup guide for Kesha features.");
     expect(usage).toContain("install    Download engine and models.");
+    expect(usage).toContain("logs       Manage local privacy-safe diagnostic logs.");
     expect(usage).toContain("manpage");
     expect(usage).toContain("record     Record microphone audio to a WAV file.");
     expect(usage).toContain("status     Inspect installed backend.");
@@ -119,6 +120,13 @@ describe("CLI help", () => {
     const usage = await renderUsage(manpageCommand);
     expect(usage).toContain("manpage");
     expect(usage).toContain("kesha(1)");
+  });
+
+  test("logs help has command description", async () => {
+    const usage = await renderUsage(logsCommand);
+    expect(usage).toContain("logs");
+    expect(usage).toContain("enable");
+    expect(usage).toContain("privacy-safe diagnostic logs");
   });
 
   test("main help contains --json flag", async () => {
@@ -309,6 +317,7 @@ Commands:
   doctor     Collect support diagnostics.
   init       Interactive setup guide for Kesha features.
   install    Download engine and models.
+  logs       Manage local privacy-safe diagnostic logs.
   manpage    Print the kesha(1) manpage.
   record     Record microphone audio to a WAV file.
   status     Inspect installed backend.

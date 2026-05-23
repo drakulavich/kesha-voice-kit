@@ -8,6 +8,7 @@ _kesha() {
     'doctor:Collect support diagnostics without changing local state'
     'init:Interactive setup guide for Kesha features'
     'install:Download inference engine and models'
+    'logs:Manage local privacy-safe diagnostic logs'
     'manpage:Print the kesha(1) manpage'
     'record:Record microphone audio to a WAV file'
     'say:Synthesize speech from text (TTS). Writes audio to stdout (or --out file). Defaults to WAV; use --format ogg-opus for messenger-ready voice notes.'
@@ -72,6 +73,10 @@ _kesha() {
         '--tts[Also install TTS models (Kokoro EN + Vosk-TTS RU, ~990MB)]' \
         '--vad[Also install Silero VAD (~2.3MB) for long-audio preprocessing]' \
         '--diarize[Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)]'
+      ;;
+    logs)
+      _arguments '--help[Show help]' \
+        '-h[Show help]'
       ;;
     manpage)
       _arguments '--help[Show help]' \

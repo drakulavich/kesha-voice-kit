@@ -3,6 +3,7 @@ import { completionsCommand } from "./cli/completions";
 import { doctorCommand } from "./cli/doctor";
 import { initCommand } from "./cli/init";
 import { installCommand } from "./cli/install";
+import { logsCommand } from "./cli/logs";
 import { mainCommand } from "./cli/main";
 import { manpageCommand } from "./cli/manpage";
 import { recordCommand } from "./cli/record";
@@ -47,6 +48,7 @@ const CLI_COMMANDS: CliCommand[] = [
   { name: "doctor", command: doctorCommand },
   { name: "init", command: initCommand },
   { name: "install", command: installCommand },
+  { name: "logs", command: logsCommand },
   { name: "manpage", command: manpageCommand },
   { name: "record", command: recordCommand },
   { name: "say", command: sayCommand },

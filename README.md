@@ -321,9 +321,17 @@ Kesha can collect local diagnostics without downloading models or mutating cache
 ```bash
 kesha doctor --json --redact
 kesha support-bundle --output kesha-support.tar.gz
+kesha logs status
 ```
 
 `support-bundle` creates a redacted `.tar.gz` archive for GitHub issues. It includes runtime, engine, cache, optional-component, Stats status, and known Kesha environment settings. It does not include audio, transcripts, model files, or the Stats database.
+
+`kesha logs` manages local, rotated diagnostic logs for troubleshooting. Logs
+are disabled by default and use content-free NDJSON events: command/stage names,
+versions, durations, exit codes, and coarse audio metadata only. They must not
+store audio, transcripts, input text, generated speech text, file names, full
+paths, raw stdout/stderr, environment variables, tokens, or URLs. See
+[Diagnostic logs](docs/diagnostic-logs.md).
 
 ## Local Stats privacy and lifecycle
 

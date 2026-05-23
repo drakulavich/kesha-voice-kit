@@ -19,6 +19,7 @@
     "tsconfig.json",
     "openclaw.plugin.json",
     "openclaw-plugin.cjs",
+    "docs/diagnostic-logs.md",
     "docs/product-positioning.md",
     "SKILL.md",
     "LICENSE",

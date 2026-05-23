@@ -30,6 +30,7 @@ function isolatedEnv(dir = makeTempDir("kesha-cli-contract-")): Record<string, s
   return {
     HOME: dir,
     KESHA_CACHE_DIR: join(dir, "cache"),
+    KESHA_LOG_DIR: join(dir, "logs"),
     KESHA_STATS_DB: join(dir, "stats.sqlite"),
   };
 }
@@ -199,7 +200,7 @@ describe("CLI contracts", () => {
     const help = await runCli(["--help"]);
     expectContract(help, {
       exitCode: 0,
-      stdoutContains: ["Kesha Voice Kit", "kesha install", "--json", "--format"],
+      stdoutContains: ["Kesha Voice Kit", "kesha install", "logs", "--json", "--format"],
       stderrEmpty: true,
     });
 
@@ -210,7 +211,7 @@ describe("CLI contracts", () => {
     const empty = await runCli([]);
     expectContract(empty, {
       exitCode: 1,
-      stdoutContains: ["Usage: kesha <audio_file>", "kesha stats", "kesha support-bundle"],
+      stdoutContains: ["Usage: kesha <audio_file>", "kesha logs", "kesha stats", "kesha support-bundle"],
       stderrEmpty: true,
     });
   });
@@ -606,6 +607,31 @@ describe("CLI contracts", () => {
     expectContract(status, {
       exitCode: 0,
       stdoutContains: ["Kesha Stats: disabled", `Database: ${env.KESHA_STATS_DB}`, "Runs: 0", "Retention: 90 day(s)"],
+      stderrEmpty: true,
+    });
+
+    const logsStatus = await runCli(["logs", "status"], { env });
+    expectContract(logsStatus, {
+      exitCode: 0,
+      stdoutContains: [
+        "Kesha diagnostic logs: disabled",
+        `Path: ${join(env.KESHA_LOG_DIR, "kesha.ndjson")}`,
+        "Rotated files: 0",
+      ],
+      stderrEmpty: true,
+    });
+
+    const logsEnable = await runCli(["logs", "enable"], { env });
+    expectContract(logsEnable, {
+      exitCode: 0,
+      stdoutContains: ["Kesha diagnostic logs enabled", `Path: ${join(env.KESHA_LOG_DIR, "kesha.ndjson")}`],
+      stderrEmpty: true,
+    });
+
+    const logsReset = await runCli(["logs", "reset"], { env });
+    expectContract(logsReset, {
+      exitCode: 0,
+      stdoutContains: ["Kesha diagnostic logs reset:"],
       stderrEmpty: true,
     });
 

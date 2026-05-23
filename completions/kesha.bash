@@ -6,7 +6,7 @@ _kesha_completion() {
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   command="${COMP_WORDS[1]}"
-  commands="completions doctor init install manpage record say stats status support-bundle"
+  commands="completions doctor init install logs manpage record say stats status support-bundle"
 
   if [[ "$COMP_CWORD" -eq 1 ]]; then
     if [[ "$cur" == -* ]]; then
@@ -22,6 +22,7 @@ _kesha_completion() {
     doctor) opts="--help -h --json --redact" ;;
     init) opts="--help -h --coreml --onnx --no-cache --plan --yes --tts --vad --diarize" ;;
     install) opts="--help -h --coreml --onnx --no-cache --plan --tts --vad --diarize" ;;
+    logs) opts="--help -h" ;;
     manpage) opts="--help -h" ;;
     record) opts="--help -h --out --max-seconds --debug" ;;
     say) opts="--help -h --voice --lang --out --rate --list-voices --ssml --format --bitrate --sample-rate --no-expand-abbrev --verbose --debug" ;;
