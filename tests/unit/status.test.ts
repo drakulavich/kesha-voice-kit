@@ -121,6 +121,21 @@ describe("showStatus", () => {
     writeFileSync(binPath, "not a real executable");
     mkdirSync(join(dir, "models", "parakeet-tdt-v3"), { recursive: true });
     writeFileSync(join(dir, "models", "parakeet-tdt-v3", "model.onnx"), "model");
+    mkdirSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_15s.mlmodelc"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(
+        dir,
+        ".cache",
+        "fluidaudio",
+        "Models",
+        "kokoro",
+        "kokoro_21_15s.mlmodelc",
+        "coremldata.bin",
+      ),
+      "coreml",
+    );
 
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = dir;
@@ -140,6 +155,13 @@ describe("showStatus", () => {
       lines.length = 0;
       await showStatus({ disk: true });
       expect(lines.join("\n")).toContain("Disk usage");
+      if (process.platform === "darwin" && process.arch === "arm64") {
+        expect(lines.join("\n")).toContain("External caches (not included in Kesha total):");
+        expect(lines.join("\n")).toContain("FluidAudio Kokoro:");
+        expect(lines.join("\n")).toContain(".cache/fluidaudio/Models/kokoro");
+      } else {
+        expect(lines.join("\n")).not.toContain("FluidAudio Kokoro:");
+      }
     } finally {
       console.log = originalLog;
       console.error = originalError;

@@ -4,6 +4,11 @@ import { getEngineBinPath } from "./engine";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { engineVersion, packageVersion } from "./package-info";
+import {
+  FLUID_KOKORO_CACHE_NOTE,
+  fluidKokoroCachePath,
+  isDarwinArm64,
+} from "./fluid-kokoro-cache";
 
 export interface InstallPlanOptions {
   noCache?: boolean;
@@ -25,6 +30,11 @@ interface PlanComponent {
   cached: boolean;
   refresh: boolean;
   note?: string;
+}
+
+interface PlanWarmup {
+  name: string;
+  note: string;
 }
 
 interface ReleaseAssetSpec {
@@ -87,10 +97,6 @@ const DARWIN_SIDECARS: ReleaseAssetSpec[] = [
   { assetName: "say-avspeech-darwin-arm64", sizeBytes: 63_056 },
   { assetName: "kesha-textlang-darwin-arm64", sizeBytes: 57_648 },
 ];
-
-function isDarwinArm64(): boolean {
-  return process.platform === "darwin" && process.arch === "arm64";
-}
 
 function sumFiles(files: PlanFile[]): number {
   return files.reduce((sum, file) => sum + file.sizeBytes, 0);
@@ -158,6 +164,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
   const engineDir = dirname(binPath);
   const noCache = options.noCache === true;
   const components: PlanComponent[] = [];
+  const warmups: PlanWarmup[] = [];
 
   const engineAsset = engineAssetForPlatform();
   if (engineAsset) {
@@ -230,13 +237,9 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
           "Russian ru-vosk-* voices",
         ),
       );
-      components.push({
+      warmups.push({
         name: "TTS Kokoro EN",
-        source: "FluidAudio CoreML (in-engine)",
-        sizeBytes: 0,
-        cached: existsSync(binPath),
-        refresh: false,
-        note: "Kokoro runs in-engine via FluidAudio CoreML; no Kokoro ONNX model is downloaded by Kesha on darwin-arm64; warm-up may compile/update FluidAudio's CoreML cache",
+        note: `${FLUID_KOKORO_CACHE_NOTE} (${fluidKokoroCachePath()})`,
       });
     } else {
       components.push(
@@ -320,11 +323,18 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     if (component.note) lines.push(`    ${component.note}`);
   }
 
+  if (warmups.length > 0) {
+    lines.push("", "Warm-ups:");
+    for (const warmup of warmups) {
+      lines.push(`  - ${warmup.name}: ${warmup.note}`);
+    }
+  }
+
   lines.push(
     "",
     "Totals:",
-    `  Cold-cache download: ${humanBytes(coldBytes)}`,
-    `  Expected network for this run: ${humanBytes(expectedNetworkBytes)}`,
+    `  Cold-cache Kesha-managed download: ${humanBytes(coldBytes)}`,
+    `  Expected Kesha-managed network for this run: ${humanBytes(expectedNetworkBytes)}`,
     "",
     "Install behavior:",
     "  - No files are downloaded or changed by --plan.",
@@ -337,7 +347,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
 
   if (options.tts && isDarwinArm64()) {
     lines.push(
-      "  - --tts also warms FluidAudio Kokoro CoreML; first en-* synthesis may compile/update a system CoreML cache.",
+      "  - --tts also warms FluidAudio Kokoro CoreML; FluidAudio may download/compile its own Kokoro cache on first use.",
     );
   }
 

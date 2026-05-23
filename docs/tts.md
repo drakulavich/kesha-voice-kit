@@ -1,6 +1,6 @@
 # Text-to-Speech
 
-Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Vosk. Pass `--voice` to override. On darwin-arm64 release builds, English Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path.
+Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Vosk. Pass `--voice` to override. On darwin-arm64 release builds, English Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path. FluidAudio keeps its CoreML Kokoro cache at `~/.cache/fluidaudio/Models/kokoro`; those files are managed by FluidAudio, not Kesha's pinned model downloader.
 
 ```bash
 kesha install --tts                 # TTS models, opt-in (Darwin Kokoro uses FluidAudio cache)

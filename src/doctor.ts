@@ -1,6 +1,5 @@
-import { existsSync, readdirSync, statSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { dirname, join, sep } from "path";
-import { homedir } from "os";
 import {
   getEngineBinPath,
   getEngineCapabilities,
@@ -11,6 +10,11 @@ import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
+import {
+  fluidKokoroCacheInfo,
+  type FluidKokoroCacheInfo,
+} from "./fluid-kokoro-cache";
+import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 
 const KNOWN_ENV_KEYS = [
   "KESHA_ENGINE_BIN",
@@ -70,10 +74,6 @@ export interface DoctorReport {
   env: Record<string, string | null>;
 }
 
-function diagnosticHomeDir(): string {
-  return process.env.HOME ?? homedir();
-}
-
 function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -84,21 +84,6 @@ function humanBytes(bytes: number): string {
     i++;
   }
   return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
-}
-
-function dirSizeBytes(path: string): number {
-  let total = 0;
-  try {
-    const st = statSync(path);
-    if (st.isFile()) return st.size;
-    for (const entry of readdirSync(path, { withFileTypes: true })) {
-      const p = join(path, entry.name);
-      total += entry.isDirectory() ? dirSizeBytes(p) : statSync(p).size;
-    }
-  } catch {
-    return total;
-  }
-  return total;
 }
 
 function pathSummary(path: string): PathSummary {
@@ -214,7 +199,10 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   };
 }
 
-function collectCache(redact: boolean): DoctorReport["cache"] {
+function collectCache(
+  redact: boolean,
+  fluidKokoro: FluidKokoroCacheInfo,
+): DoctorReport["cache"] {
   const cache = keshaCacheDir();
   const binPath = getEngineBinPath();
   const engineDir = dirname(dirname(binPath));
@@ -226,6 +214,14 @@ function collectCache(redact: boolean): DoctorReport["cache"] {
     { label: "TTS (Kokoro)", ...pathSummary(join(cache, "models/kokoro-82m")) },
     { label: "TTS (Vosk)", ...pathSummary(join(cache, "models/vosk-ru")) },
   ];
+  if (fluidKokoro.supported) {
+    components.push({
+      label: "FluidAudio Kokoro cache (external)",
+      path: fluidKokoro.path,
+      exists: fluidKokoro.exists,
+      sizeBytes: fluidKokoro.sizeBytes,
+    });
+  }
   const engineInsideCache = engineDir === cache || engineDir.startsWith(`${cache}${sep}`);
   const engineOutsideCache = engineInsideCache ? 0 : dirSizeBytes(engineDir);
 
@@ -237,7 +233,10 @@ function collectCache(redact: boolean): DoctorReport["cache"] {
   };
 }
 
-function collectOptionalComponents(redact: boolean): OptionalComponent[] {
+function collectOptionalComponents(
+  redact: boolean,
+  fluidKokoro: FluidKokoroCacheInfo,
+): OptionalComponent[] {
   const cache = keshaCacheDir();
   const sidecarDir = dirname(getEngineBinPath());
   const components: OptionalComponent[] = [
@@ -256,6 +255,17 @@ function collectOptionalComponents(redact: boolean): OptionalComponent[] {
       note: "enabled with `kesha install --tts`",
       ...pathSummary(join(cache, "models/vosk-ru")),
     },
+    ...(fluidKokoro.supported
+      ? [
+          {
+            name: "FluidAudio Kokoro cache",
+            note: "darwin-arm64; managed by FluidAudio outside Kesha's pinned model cache",
+            path: fluidKokoro.path,
+            exists: fluidKokoro.exists,
+            sizeBytes: fluidKokoro.sizeBytes,
+          },
+        ]
+      : []),
     {
       // Diarization (#199) and Kokoro (#207) run in-engine now (native
       // fluidaudio-rs) — no Swift sidecar binaries. The Sortformer model is
@@ -304,6 +314,7 @@ export async function collectDoctorReport(
   options: DoctorOptions = {},
 ): Promise<DoctorReport> {
   const redact = options.redact === true;
+  const fluidKokoro = fluidKokoroCacheInfo();
   return {
     generatedAt: new Date().toISOString(),
     redacted: redact,
@@ -314,8 +325,8 @@ export async function collectDoctorReport(
       arch: process.arch,
     },
     engine: await collectEngine(redact),
-    cache: collectCache(redact),
-    optionalComponents: collectOptionalComponents(redact),
+    cache: collectCache(redact, fluidKokoro),
+    optionalComponents: collectOptionalComponents(redact, fluidKokoro),
     stats: collectStats(redact),
     env: collectEnv(redact),
   };
