@@ -112,7 +112,7 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.18 · MIT licensed · macOS · Linux · Windows</span>
+            <span>v1.19 · MIT licensed · macOS · Linux · Windows</span>
           </div>
 
           <h1 class="hero__title">
@@ -258,7 +258,9 @@
               <p>
                 Drop a meeting recording in, get back timestamped segments tagged with a stable
                 speaker ID. Powered by FluidAudio’s Sortformer model running on the Apple Neural
-                Engine via a Swift sidecar — ~4.6× real-time on a 71-minute Zoom call.
+                Engine via a Swift sidecar — ~4.6× real-time on a 71-minute Zoom call. v1.19
+                gives the cold ANE warmup extra headroom so the first <code>--speakers</code> call
+                on a fresh process no longer hits a false timeout.
               </p>
               <ul class="chip-row" role="list">
                 <li>--speakers</li>
@@ -363,6 +365,52 @@
                 synthesis hits ~10 ms cold-start instead of ~800 ms. Ideal for chatbots,
                 live agents, and long agentic loops.
               </p>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="9" y="3" width="6" height="12" rx="3" />
+                  <path d="M5 11a7 7 0 0 0 14 0" />
+                  <path d="M12 18v3" />
+                  <path d="M9 21h6" />
+                </svg>
+              </div>
+              <span class="badge-new">New</span>
+              <h3><code>kesha record</code></h3>
+              <p>
+                Capture voice notes from the default microphone and pipe straight into
+                <code>kesha --json</code> to close the transcribe-then-reply loop. No
+                ffmpeg, no separate recorder process.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>kesha record</li>
+                <li>| kesha --json</li>
+                <li>WAV mono</li>
+              </ul>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z" />
+                  <path d="M9 12l2 2 4-4" />
+                </svg>
+              </div>
+              <span class="badge-new">New</span>
+              <h3>Privacy-safe diagnostic logs</h3>
+              <p>
+                Opt-in local-only command events with paths and user-supplied text redacted.
+                <code>kesha doctor</code> surfaces status; <code>kesha logs</code> manages them;
+                <code>kesha support-bundle</code> bundles them for support. Mode
+                <code>retain-on-failure</code> keeps logs only when a command actually fails.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>kesha doctor</li>
+                <li>kesha logs</li>
+                <li>support-bundle</li>
+                <li>local only</li>
+              </ul>
             </article>
 
             <article class="feature feature--rust">
@@ -581,13 +629,16 @@
               <p>
                 Pulls the engine and base STT models, then warms the Neural Engine on macOS
                 (<code>--tts</code> also warms the Kokoro CoreML cache). First transcribe runs in
-                ~500 ms instead of a 25-second hang.
+                ~500 ms instead of a 25-second hang. v1.19 splits the entry points:
+                <code>kesha init</code> for humans (guided, interactive), <code>kesha install</code>
+                for CI and agents (explicit, scriptable). Both run the same install code.
               </p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> bun add -g @drakulavich/kesha-voice-kit
-<span class="muted">$</span> kesha install</code></pre>
+<span class="muted">$</span> kesha init       <span class="cm"># humans (interactive)</span>
+<span class="muted">$</span> kesha install    <span class="cm"># agents / CI (scriptable)</span></code></pre>
                 <button class="copy" data-copy="bun add -g @drakulavich/kesha-voice-kit
-kesha install" aria-label="Copy">
+kesha init" aria-label="Copy">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
                 </button>
               </div>
@@ -640,7 +691,10 @@ kesha install" aria-label="Copy">
 <span class="muted">$</span> kesha --json --vad --speakers meeting.m4a
 
 <span class="cm"># Warn if detected language differs</span>
-<span class="muted">$</span> kesha --lang en interview.wav</code></pre>
+<span class="muted">$</span> kesha --lang en interview.wav
+
+<span class="cm"># Record from default mic, then transcribe straight to JSON</span>
+<span class="muted">$</span> kesha record | kesha --json</code></pre>
               </div>
             </div>
 
@@ -700,7 +754,13 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
 <span class="muted">$</span> kesha --toon meeting.m4a | llm "Summarize action items"
 
 <span class="cm"># Status of installed engine + models</span>
-<span class="muted">$</span> kesha status</code></pre>
+<span class="muted">$</span> kesha status
+
+<span class="cm"># Diagnose env, log status, and CoreML caches (v1.19)</span>
+<span class="muted">$</span> kesha doctor
+
+<span class="cm"># Bundle logs + manifests for a bug report</span>
+<span class="muted">$</span> kesha support-bundle</code></pre>
               </div>
             </div>
           </div>
