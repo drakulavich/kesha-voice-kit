@@ -223,13 +223,17 @@ export async function preflightTranscribeEngineWithSegments(
   );
 }
 
+function vadArg(vad: VadMode | undefined): string[] {
+  if (vad === "on") return ["--vad"];
+  if (vad === "off") return ["--no-vad"];
+  return [];
+}
+
 export async function transcribeEngine(
   audioPath: string,
   opts: TranscribeEngineOptions = {},
 ): Promise<string> {
-  const args = ["transcribe", audioPath];
-  if (opts.vad === "on") args.push("--vad");
-  else if (opts.vad === "off") args.push("--no-vad");
+  const args = ["transcribe", audioPath, ...vadArg(opts.vad)];
   const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
@@ -266,12 +270,8 @@ export async function transcribeEngineWithSegments(
 ): Promise<TranscriptionOutput> {
   await preflightTranscribeEngineWithSegments(opts);
 
-  const args = ["transcribe", audioPath, "--json"];
-  if (opts.vad === "on") args.push("--vad");
-  else if (opts.vad === "off") args.push("--no-vad");
-  if (opts.speakers) {
-    args.push("--speakers");
-  }
+  const args = ["transcribe", audioPath, "--json", ...vadArg(opts.vad)];
+  if (opts.speakers) args.push("--speakers");
   const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
