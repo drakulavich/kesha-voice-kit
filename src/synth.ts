@@ -5,6 +5,7 @@ import {
   spawnStdioWithDebugFd,
   type EngineCapabilities,
 } from "./engine";
+import { installHint } from "./install-hint";
 import { log } from "./log";
 import { registerProcessTree } from "./process-tree";
 
@@ -116,7 +117,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
 
   if (!isEngineInstalled()) {
     throw new SayError(
-      "kesha-engine not installed. run: kesha install",
+      `kesha-engine not installed. run: ${installHint("--tts")}`,
       1,
       "",
     );

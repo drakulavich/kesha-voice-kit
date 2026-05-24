@@ -1,6 +1,7 @@
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
 import { isEngineInstalled, getEngineBinPath, getEngineCapabilities } from "./engine";
+import { installHint } from "./install-hint";
 import { log } from "./log";
 import { keshaCacheDir } from "./paths";
 import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
@@ -82,7 +83,7 @@ export async function showStatus(options: ShowStatusOptions = {}): Promise<void>
   }
 
   if (!installed) {
-    log.warn('Run "kesha install" to download the engine and models.');
+    log.warn(`Run \`${installHint()}\` to download the engine and models.`);
     return;
   }
 }

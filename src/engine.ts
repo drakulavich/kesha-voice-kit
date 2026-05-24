@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "fs";
 import { join } from "path";
+import { installHint } from "./install-hint";
 import { log } from "./log";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, registerProcessTree } from "./process-tree";
@@ -219,7 +220,7 @@ export async function preflightTranscribeEngineWithSegments(
   if (hasDiarizeModelLayout(modelPath)) return;
   throw new Error(
     `speaker diarization requires a model path\n\nCaused by:\n    diarization model not found at ${modelPath}. ` +
-      "Run `kesha install --diarize` (or set KESHA_DIARIZE_MODEL_PATH).",
+      `Run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH).`,
   );
 }
 
