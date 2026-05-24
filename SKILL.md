@@ -192,12 +192,22 @@ Format is also inferred from `--out` extension (`.ogg` / `.opus` / `.oga` → OG
 
 ## Install
 
+**Humans use `kesha init` (guided). Agents and scripts use `kesha install` (deterministic).**
+
 ```bash
-bun add -g @drakulavich/kesha-voice-kit          # global CLI install
-kesha install                                    # downloads engine (~350 MB)
-kesha install --tts                              # adds Kokoro + Vosk-TTS RU (~990 MB more, for TTS)
-kesha init                                       # optional: interactive setup guide for first-time users
+bun add -g @drakulavich/kesha-voice-kit          # global CLI install (always first)
+
+# For humans: interactive setup that prompts for backend / TTS / VAD / diarize
+kesha init
+
+# For agents and CI: explicit, scriptable install commands
+kesha install                                    # engine only (~350 MB)
+kesha install --tts                              # + Kokoro + Vosk-TTS RU (~990 MB more)
+kesha install --tts --vad                        # + Silero VAD (long-audio chunking)
+kesha install --tts --vad --diarize              # + speaker diarization (darwin-arm64 only)
 ```
+
+Kesha's runtime error/warning messages adapt to the same split: when `kesha` is invoked from a TTY, hints suggest `kesha init`; when stderr is piped (CI logs, OpenClaw, agent subprocess), hints suggest the equivalent `kesha install [...flags]`. Both run the same install code under the hood — pick the one your caller is.
 
 For pre-release builds: `bun add -g @drakulavich/kesha-voice-kit@beta` (current `beta` channel; `@latest` stays on the last stable release).
 

@@ -6,6 +6,7 @@ import {
   type TranscriptionOutput,
   type VadMode,
 } from "./engine";
+import { installHint } from "./install-hint";
 
 export type { VadMode };
 export type { TranscriptionOutput };
@@ -31,13 +32,10 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
 export async function preflightTranscribeWithSegments(opts: TranscribeOptions = {}): Promise<void> {
   if (!isEngineInstalled()) {
     throw new Error(
-      "Error: No transcription backend is installed\n\n" +
-      "╔══════════════════════════════════════════════════════════╗\n" +
-      "║ Please run the following commands to get started:        ║\n" +
-      "║                                                          ║\n" +
-      "║     bun add -g @drakulavich/kesha-voice-kit              ║\n" +
-      "║     kesha install                                        ║\n" +
-      "╚══════════════════════════════════════════════════════════╝",
+      "Error: No transcription backend is installed.\n\n" +
+      "Run the following to get started:\n\n" +
+      "    bun add -g @drakulavich/kesha-voice-kit\n" +
+      `    ${installHint()}`,
     );
   }
 
