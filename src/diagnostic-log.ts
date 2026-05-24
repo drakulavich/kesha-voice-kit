@@ -100,9 +100,8 @@ function readConfig(): DiagnosticLogConfig {
   if (!existsSync(statePath)) return defaultConfig();
   try {
     const parsed = JSON.parse(readFileSync(statePath, "utf8")) as Partial<DiagnosticLogConfig>;
-    const parsedMode = parseMode(parsed.mode);
     return {
-      mode: parsedMode ?? defaultConfig().mode,
+      mode: parseDiagnosticLogMode(parsed.mode) ?? defaultConfig().mode,
       maxBytes: positiveInt(parsed.maxBytes, DEFAULT_MAX_BYTES),
       retain: positiveInt(parsed.retain, DEFAULT_RETAIN),
     };
@@ -111,11 +110,7 @@ function readConfig(): DiagnosticLogConfig {
   }
 }
 
-export function parseDiagnosticLogMode(value: string): DiagnosticLogMode | null {
-  return parseMode(value);
-}
-
-function parseMode(value: unknown): DiagnosticLogMode | null {
+export function parseDiagnosticLogMode(value: unknown): DiagnosticLogMode | null {
   return value === "off" || value === "on" || value === "retain-on-failure" ? value : null;
 }
 
@@ -219,9 +214,11 @@ export function resetDiagnosticLogs(): { deleted: number; bytes: number; dir: st
 
 export function createDiagnosticLogSession(): DiagnosticLogSession {
   const status = getDiagnosticLogStatus();
+  if (status.mode === "off") {
+    return { event: () => false, finish: () => false };
+  }
   const buffered: Uint8Array[] = [];
   let finished = false;
-  if (status.mode === "off") return noopSession();
 
   return {
     event(event: string, fields: DiagnosticLogFields = {}): boolean {
@@ -258,13 +255,6 @@ export function createDiagnosticLogSession(): DiagnosticLogSession {
         buffered.length = 0;
       }
     },
-  };
-}
-
-function noopSession(): DiagnosticLogSession {
-  return {
-    event: () => false,
-    finish: () => false,
   };
 }
 
