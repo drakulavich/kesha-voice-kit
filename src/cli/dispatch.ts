@@ -40,7 +40,7 @@ function isPathLike(arg: string): boolean {
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
   const [firstArg, ...restArgs] = rawArgs;
 
-  if (firstArg && firstArg in SUBCOMMANDS) {
+  if (firstArg && Object.hasOwn(SUBCOMMANDS, firstArg)) {
     await runMain(SUBCOMMANDS[firstArg], { rawArgs: restArgs });
     return;
   }
