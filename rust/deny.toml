@@ -46,6 +46,8 @@ exceptions = [
 ]
 
 [bans]
+# Intentionally a warning, not an error: duplicate transitive versions are
+# hygiene noise here, not a release blocker. Revisit if the dep tree bloats.
 multiple-versions = "warn"
 wildcards = "deny"
 # Allow path = "..." dependencies without a version (the vendored vosk_tts
