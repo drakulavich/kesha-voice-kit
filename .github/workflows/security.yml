@@ -61,6 +61,10 @@ jobs:
 
   bun-audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Only the scheduled run needs to upsert the findings issue.
+      issues: write
     # NON-BLOCKING on first landing (see cargo-deny note above).
     continue-on-error: true
     steps:
@@ -70,5 +74,26 @@ jobs:
           bun-version: "1.3.13"
       - name: Install deps (frozen lockfile)
         run: bun install --frozen-lockfile
-      - name: Audit JS dependencies
+      - id: audit
+        name: Audit JS dependencies
         run: bun audit --audit-level=high
+        continue-on-error: true
+      - name: Report findings (scheduled only)
+        if: github.event_name == 'schedule' && steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          {
+            echo "## bun audit findings ($(date -u +%Y-%m-%d))"
+            echo
+            echo "The weekly JS advisory re-check failed. Run \`bun audit --audit-level=high\` locally and resolve (\`bun update\` or a patched dependency release)."
+            echo
+            echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > /tmp/bun-audit-body.md
+          bash .github/scripts/upsert-audit-issue.sh /tmp/bun-audit-body.md "JS security audit findings (weekly)"
+      - name: Fail job if audit failed on PR
+        if: github.event_name != 'schedule' && steps.audit.outcome == 'failure'
+        run: |
+          echo "::warning::bun audit reported findings (non-blocking until promotion PR)"
+          exit 1

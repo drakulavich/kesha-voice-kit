@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Upsert a single "Security audit findings" issue when the weekly cron
-# detects advisory/license problems. Reuses one issue (by exact title +
-# label) instead of opening a new one each week. Mirrors the upsert
-# pattern in cargo-dependency-maintenance.yml.
+# Upsert a single findings issue when the weekly cron detects advisory/license
+# problems. Reuses one issue (by exact title + label) instead of opening a new
+# one each week. Mirrors the upsert pattern in cargo-dependency-maintenance.yml.
 #
-# Usage: upsert-audit-issue.sh <body-file>
+# Usage: upsert-audit-issue.sh <body-file> [title]
+#   <title> defaults to the Rust findings issue. The bun-audit job passes its
+#   own title so Rust and JS findings live in separate issues and never clobber
+#   each other's body on a shared cron run.
 #   Env: GH_TOKEN, REPO (owner/name)
 set -euo pipefail
 
 body_file="$1"
-title="Security audit findings (weekly)"
+title="${2:-Security audit findings (weekly)}"
 label="security"
 
 existing="$(
