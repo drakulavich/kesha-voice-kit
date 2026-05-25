@@ -14,7 +14,9 @@ label="security"
 
 existing="$(
   gh issue list -R "$REPO" --state open --label "$label" \
-    --search "in:title \"$title\"" --json number --jq '.[0].number // empty'
+    --search "in:title \"$title\"" \
+    --json number,title \
+    --jq "map(select(.title == \"$title\")) | first | .number // empty"
 )"
 
 if [[ -n "$existing" ]]; then
