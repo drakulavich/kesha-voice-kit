@@ -749,6 +749,11 @@ pub fn download_diarize(no_cache: bool) -> Result<()> {
 /// was successfully warmed. Only deletes Kesha-owned siblings next to the
 /// active `.mlpackage`; never touches the source `.mlpackage` or Apple's e5rt
 /// cache.
+///
+/// Keeping the active sidecar is load-bearing, not just tidiness: e5rt is keyed
+/// by the compiled bundle's identity, not its path, so a recompiled `.mlmodelc`
+/// at the same path is a cache MISS that re-pays the ~98 s cold ANE compile
+/// (#444). Deleting only stale siblings preserves the warmed sidecar's cache hit.
 #[cfg(feature = "system_diarize")]
 pub fn cleanup_diarize_compiled_sidecars(keep_model_package: &Path) -> Result<usize> {
     let Some(parent) = keep_model_package.parent() else {

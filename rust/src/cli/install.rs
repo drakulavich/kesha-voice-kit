@@ -78,13 +78,16 @@ pub fn run(
     }
     // Diarization warm-up (macOS `system_diarize` only). Pre-compile the Sortformer
     // `.mlpackage` to its stable `.mlmodelc` sibling so CoreML's ANE program-compile
-    // (~100 s, cached in `com.apple.e5rt.e5bundlecache` keyed by the compiled model
-    // path) happens HERE rather than on the first `kesha transcribe --speakers`. The
-    // diarize bridge recompiled a throwaway temp model every call before this, so the
-    // first real diarize paid ~100 s and tripped the adaptive timeout; after warm-up
-    // it loads the stable `.mlmodelc` in ~4 s. Only when this install requested the
-    // diarize model and the model is on disk; warm-up failure is NON-FATAL (matches
-    // the ASR warm-up above).
+    // (~100 s, cached in `com.apple.e5rt.e5bundlecache`) happens HERE rather than on
+    // the first `kesha transcribe --speakers`. The e5rt cache is keyed by the compiled
+    // bundle's IDENTITY (compile UUID/content), NOT by path — so recreating the
+    // `.mlmodelc` at the same path (model-version bump GC, or a user deleting the
+    // cache) is still a cache MISS and re-pays the full cold compile (#444 measured
+    // 97.7 s on a same-path recompile). The diarize bridge recompiled a throwaway temp
+    // model every call before this, so the first real diarize paid ~100 s and tripped
+    // the adaptive timeout; after warm-up it loads the stable `.mlmodelc` in ~4 s. Only
+    // when this install requested the diarize model and the model is on disk; warm-up
+    // failure is NON-FATAL (matches the ASR warm-up above).
     #[cfg(feature = "system_diarize")]
     if diarize && !no_warmup && models::is_cached(models::ModelKind::Diarize) {
         let diarize_pkg = models::model_dir(models::ModelKind::Diarize);
