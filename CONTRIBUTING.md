@@ -7,6 +7,18 @@ Thanks for your interest in `@drakulavich/kesha-voice-kit`!
 ```bash
 git clone https://github.com/drakulavich/kesha-voice-kit.git
 cd kesha-voice-kit
+make dev-setup           # checks toolchains/system deps, runs safe local setup
+```
+
+`make dev-setup` is the one-command bootstrap: it auto-runs the safe,
+project-local steps (`bun install`, `bun link`, `git lfs pull`, and installs
+`cargo-nextest`) and **checks** for the system dependencies the Rust build needs
+(`protoc`, `libopus` + `pkg-config`, `libclang` on Linux, `git-lfs`), printing
+the exact per-OS install command for anything missing. It never runs
+`brew`/`sudo apt-get` on your behalf, and it's safe to re-run. The manual
+equivalent:
+
+```bash
 bun install
 bun link
 kesha install            # downloads the engine binary + ASR / lang-id models

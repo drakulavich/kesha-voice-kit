@@ -1,7 +1,10 @@
-.PHONY: install check cli-fast coverage-ts coverage-rust test unit integration rust-test lint lint-tsgo versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
+.PHONY: dev-setup install check cli-fast coverage-ts coverage-rust test unit integration rust-test lint lint-tsgo versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
+
+dev-setup: ## Bootstrap a contributor checkout (checks deps, runs safe local setup)
+	bash scripts/dev-setup.sh
 
 install: ## Install dependencies
 	bun install
