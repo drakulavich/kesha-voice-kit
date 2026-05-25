@@ -1,0 +1,62 @@
+# cargo-deny policy. Run `cd rust && cargo deny check` locally before pushing.
+# See docs/superpowers/specs/2026-05-25-security-ci-gates-design.md.
+
+[advisories]
+# RUSTSEC advisory DB. Unfixable transitive CVEs go in `ignore` below, each
+# with a one-line justification + RUSTSEC link. Keep this list short and
+# revisit on every cargo update.
+yanked = "deny"
+ignore = [
+  # audiopus_sys (via opus, for Opus encode/decode) is implicitly unmaintained;
+  # upstream advisory states "No safe upgrade is available!" — transitive, no fix.
+  # https://rustsec.org/advisories/RUSTSEC-2026-0150 — revisit 2026-08-25.
+  "RUSTSEC-2026-0150",
+]
+
+[licenses]
+# Permissive allow-list. Anything outside this set fails the check.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "Zlib",
+  "MPL-2.0",
+  "CC0-1.0",
+]
+confidence-threshold = 0.9
+# Skip license checks on this workspace's own unpublished crates (kesha-engine,
+# vendored vosk_tts) — they have no `license` field and are not distributed via
+# crates.io. First-party code, not a third-party dependency to vet.
+private = { ignore = true }
+# Per-crate exceptions for known-good permissive oddballs outside the global
+# allow-list. Narrower than widening `allow` for every crate.
+exceptions = [
+  # WTFPL — public-domain-equivalent, FSF Free/Libre. G2P tokenizer pulled in
+  # transitively by misaki-rs (English G2P).
+  { name = "language-tokenizer", allow = ["WTFPL"] },
+  # CDLA-Permissive-2.0 — permissive Community Data License (the bundled root
+  # CA certificate set), via ureq/ort. Data license, distribution-permissive.
+  { name = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+  { name = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
+
+[bans]
+# Intentionally a warning, not an error: duplicate transitive versions are
+# hygiene noise here, not a release blocker. Revisit if the dep tree bloats.
+multiple-versions = "warn"
+wildcards = "deny"
+# Allow path = "..." dependencies without a version (the vendored vosk_tts
+# crate under rust/vendor/). Wildcard ban still applies to registry crates.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# First-party fork consumed by the `coreml`/`system_*` features (#199, #259).
+allow-git = ["https://github.com/drakulavich/fluidaudio-rs"]

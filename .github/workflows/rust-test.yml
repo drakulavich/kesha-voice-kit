@@ -8,12 +8,18 @@ on:
       - ".github/scripts/check-coverage.ts"
       - "package.json"
       - "bun.lock"
+  push:
+    branches: [main]
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust-test.yml"
 
 permissions:
   contents: read
 
 jobs:
   lint-ubuntu:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -34,6 +40,7 @@ jobs:
         run: bash rust/ci/run-clippy.sh Linux
 
   test:
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       # Flakiness.io CLI authenticates via GitHub OIDC; scope the
@@ -160,6 +167,7 @@ jobs:
             --category rust --flakiness-project Laputa/kesha-voice-kit
 
   coverage:
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       id-token: write
@@ -259,3 +267,30 @@ jobs:
           name: coverage-rust
           path: coverage/rust
           retention-days: 30
+
+  rust-push-gate:
+    # Lean post-merge gate: catches semantic merge conflicts (two PRs green
+    # alone, broken together) fast and cheap. The 3-OS matrix already ran on
+    # the PR; build-engine.yml is the cross-platform release gate. Ubuntu-only
+    # on purpose.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Install system audio deps (Opus)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Check formatting
+        run: cd rust && cargo fmt -- --check
+      - name: Clippy
+        run: bash rust/ci/run-clippy.sh Linux
+      - name: Tests
+        run: cd rust && cargo nextest run --features tts
