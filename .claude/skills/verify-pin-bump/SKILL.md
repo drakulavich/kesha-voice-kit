@@ -96,6 +96,13 @@ If the bump represents a model version change (not just a re-export), also:
 - Update the URL/rel_path if needed (e.g. `<old-version>-multi` → `<new-version>-multi`)
 - Bump any related model dir constant
 - Update `docs/tts.md` install size table if size changed materially
+- **Diarize (`SortformerNvidiaLow_v*.mlpackage`) only:** expect a one-time **~98 s cold
+  ANE recompile** at the next `kesha install --diarize`. Apple's e5rt cache is keyed by the
+  compiled bundle's identity, not its path, so the new model version is a guaranteed cache
+  MISS — even a same-path recompile pays full cost (#444). The warm-at-install step (#437)
+  absorbs this, surfaced by the "one-time compile ~1-2 min on first install" message; it is
+  install-time cost, not a `transcribe --speakers` failure. Call it out in the release notes
+  so end users expect the slow `install --diarize` after the bump.
 
 ### Step 6: Verify shape invariants
 
