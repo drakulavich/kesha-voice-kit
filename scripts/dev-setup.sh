@@ -113,8 +113,10 @@ if have cargo; then
   if cargo nextest --version >/dev/null 2>&1; then
     ok "cargo-nextest already installed"
   else
-    run "cargo install cargo-nextest --locked  (the required test runner)"
-    if cargo install cargo-nextest --locked >/dev/null 2>&1; then
+    run "cargo install cargo-nextest --locked  (the required test runner — may take a few minutes; output streams below)"
+    # Don't silence: this can be a multi-minute compile and a quiet hang is
+    # alarming. Let cargo's progress through to the terminal.
+    if cargo install cargo-nextest --locked; then
       ok "cargo-nextest installed"
     else
       todo "cargo install cargo-nextest --locked failed — run it manually"
@@ -124,9 +126,12 @@ fi
 
 # --- macOS runtime env hint ---
 if [ "$OS" = macos ]; then
+  # Resolve the Homebrew prefix instead of hardcoding it: /opt/homebrew on
+  # Apple Silicon, /usr/local on Intel Macs.
+  brew_prefix="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
   bold "macOS env (add to your shell rc for local Rust runs)"
-  run "export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib"
-  run "export RUSTFLAGS=\"-L /opt/homebrew/lib\""
+  run "export DYLD_FALLBACK_LIBRARY_PATH=$brew_prefix/lib"
+  run "export RUSTFLAGS=\"-L $brew_prefix/lib\""
   run "export LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib"
 fi
 
