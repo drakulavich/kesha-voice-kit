@@ -146,7 +146,7 @@ Transcribe meeting recordings with speaker labels and timestamps.
 ```bash
 kesha install --diarize                                     # one-time, ~245 MB
 kesha --json --vad --speakers meeting.m4a > meeting.json
-jq '.[0].segments[] | "[\(.speaker)] \(.start)-\(.end): \(.text)"' meeting.json
+jq -r '.[0].segments[] | "[\(.speaker)] \(.start)-\(.end): \(.text)"' meeting.json
 # → [0] 0.0-2.3: Good morning everyone
 # → [1] 2.5-5.1: Let's start with Q3 results
 ```
@@ -155,7 +155,7 @@ jq '.[0].segments[] | "[\(.speaker)] \(.start)-\(.end): \(.text)"' meeting.json
 
 ```bash
 kesha --json --timestamps meeting.m4a > meeting.json
-jq '.[0].segments[] | "\(.start | tostring | .[0:5])s: \(.text)"' meeting.json
+jq -r '.[0].segments[] | "\(.start | tostring | .[0:5])s: \(.text)"' meeting.json
 ```
 
 **Skip silence in long recordings:**
