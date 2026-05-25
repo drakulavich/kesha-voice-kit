@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="Kesha Voice Kit" width="200">
+  <img src="https://raw.githubusercontent.com/drakulavich/kesha-voice-kit/main/docs/assets/logo.png" alt="Kesha Voice Kit" width="200">
 </p>
 
 <h1 align="center">Kesha Voice Kit</h1>
@@ -21,7 +21,7 @@
 See [Product positioning](docs/product-positioning.md) for supported workflows, non-goals, maturity labels, and the platform matrix.
 
 <p align="center">
-  <img src="./demo.gif" alt="kesha demo — English + Russian transcription with automatic language detection" width="800">
+  <img src="https://raw.githubusercontent.com/drakulavich/kesha-voice-kit/main/demo.gif" alt="kesha demo — English + Russian transcription with automatic language detection" width="800">
 </p>
 
 ## Quick Start
@@ -232,7 +232,7 @@ mandb ~/.local/share/man 2>/dev/null || true
 
 Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
-![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](docs/assets/benchmark.svg)
+![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](https://raw.githubusercontent.com/drakulavich/kesha-voice-kit/main/docs/assets/benchmark.svg)
 
 See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + English).
 
