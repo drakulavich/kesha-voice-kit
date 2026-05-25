@@ -43,7 +43,6 @@ system_diarize = ["dep:fluidaudio-rs", "dep:libc"]
 # macOS arm of text_lang.rs falls back to the legacy `swift -e` path, so
 # minimal dev environments without Xcode CLT continue to build.
 system_text_lang = []
-flacenc = ["dep:flacenc"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

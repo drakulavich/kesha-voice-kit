@@ -1,8 +1,9 @@
 //! Output audio encoding: f32 PCM samples → wire bytes.
 //!
-//! Closes #223. Today the engine only spoke WAV; this module adds OGG/Opus
-//! (the format Telegram, WhatsApp, Signal, and Discord render as native voice
-//! messages) and keeps the door open for `mp3` / `flac` / `raw-pcm` later.
+//! Closes #223. Adds OGG/Opus (the format Telegram, WhatsApp, Signal, and
+//! Discord render as native voice messages) and FLAC (lossless, royalty-free,
+//! browser-universal incl. Safari) alongside the original WAV. Keeps the door
+//! open for `mp3` / `raw-pcm` later.
 //!
 //! ## Design
 //! - One enum [`OutputFormat`] selects the wire format.
