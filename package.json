@@ -79,7 +79,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@typescript/native-preview": "^7.0.0-dev.20260423.1",
-    "fast-xml-parser": "^5.5.10",
+    "fast-xml-parser": "^5.8.0",
     "typescript": "^6.0.2",
     "yaml": "^2.9.0"
   },
