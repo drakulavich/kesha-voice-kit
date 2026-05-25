@@ -280,6 +280,10 @@ Cache boundary: `kesha install` and opt-in feature installs populate the local
 cache; ordinary transcription and speech commands fail fast if required assets
 are missing.
 
+Contributors: see [`docs/architecture.md`](docs/architecture.md) for the
+code-level map (repo layout, CLI↔engine boundary, backends, model pinning,
+tests, and a "where to change X" table).
+
 ## What's Inside
 
 | Model | Task | Size | Source |
