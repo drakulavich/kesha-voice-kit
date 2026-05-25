@@ -245,22 +245,26 @@ rm transcript.json response.ogg
 **Air-gapped machine setup:**
 
 ```bash
-# On a USB drive from an internet-connected machine:
-bun pack @drakulavich/kesha-voice-kit --destination /Volumes/USB/kesha.tar.gz
-kesha cache export --destination /Volumes/USB/kesha-models/
+# On an internet-connected machine: install the CLI and fetch every model.
+bun add -g @drakulavich/kesha-voice-kit
+kesha install --tts          # populates ~/.cache/kesha (engine + ASR + TTS models)
 
-# On the air-gapped machine:
-tar xzf kesha.tar.gz -C /usr/local/
-kesha cache import --source /Volumes/USB/kesha-models/
-kesha status  # → All engines ready, no network required
+# Copy the populated cache to the air-gapped machine (USB, rsync, etc.):
+rsync -a ~/.cache/kesha/ /Volumes/USB/kesha-cache/
+
+# On the air-gapped machine: install the same CLI version, then point kesha at
+# the copied cache. kesha never auto-downloads, so once the cache is present it
+# runs fully offline.
+export KESHA_CACHE_DIR=/path/to/kesha-cache
+kesha status                 # → engines ready, no network required
 ```
 
 **CI/CD pipeline with zero external calls:**
 
 ```bash
 # Test that speech synthesis matches expected output
-kesha say "Hello world" > test.wav
-checksum=$(sha256sum test.wav | cut -d' ' -f1)
+kesha say --out test.wav "Hello world"
+checksum=$(shasum -a 256 test.wav | cut -d' ' -f1)   # macOS; on Linux either shasum or sha256sum works
 
 # Verify language detection accuracy in test suite
 kesha --json test-samples/de_sample.ogg | jq -e '.[0].audioLanguage.code == "de"'
@@ -270,7 +274,7 @@ kesha --json test-samples/de_sample.ogg | jq -e '.[0].audioLanguage.code == "de"
 
 - KESHA is MIT-licensed — embed it in enterprise products, medical devices, or offline kiosks without royalties.
 - Model files are plain `.ort` (ONNX) for STT and `.onnx`/`.bin` for TTS — no proprietary formats, no license servers, no phone-home.
-- `kesha cache export/import` supports USB transfers and air-gapped deployments.
+- The whole model set lives under `~/.cache/kesha` (override with `KESHA_CACHE_DIR`); copy that directory for USB transfers and air-gapped deployments — kesha never phones home.
 
 ## AI Agent Integration
 
@@ -401,7 +405,7 @@ Once installed, ask your agent naturally: "transcribe this voice message", "repl
 
 For more advanced workflows, see:
 
-- [TTs reference](tts.md) — all TTS engines, voices, SSML support, abbreviations
+- [TTS reference](tts.md) — all TTS engines, voices, SSML support, abbreviations
 - [OpenClaw integration](openclaw.md) — full agent configuration
 - [Nix install](nix-install.md) — reproducible, declarative setup
 - [Homebrew tap](homebrew.md) — macOS-native package management
