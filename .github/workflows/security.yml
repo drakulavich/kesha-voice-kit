@@ -1,0 +1,33 @@
+name: "🛡️ Security Audit"
+
+on:
+  pull_request:
+    paths:
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/deny.toml"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/security.yml"
+  schedule:
+    # Weekly advisory-DB re-check against unchanged deps (RUSTSEC/npm
+    # advisories update independently of our code). Offset from the
+    # monthly cargo-dependency-maintenance cron so they don't collide.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    runs-on: ubuntu-latest
+    # NON-BLOCKING on first landing. Remove this line in the promotion PR
+    # once the initial findings are triaged into rust/deny.toml.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@a531616d8ce3b9177443e48a1159bc945a099823 # v2.0.19
+        with:
+          manifest-path: rust/Cargo.toml
+          command: check advisories licenses bans sources
