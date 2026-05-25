@@ -36,7 +36,6 @@ src/                  Bun/TS CLI + library
   voice-routing.ts   omitted-`--voice` language→voice picker
   lib.ts             public API exported at @drakulavich/kesha-voice-kit/core
   *.ts               doctor, support-bundle, stats, diagnostic-log, paths, ...
-  __tests__/         TS unit tests colocated with some modules
 
 rust/src/             kesha-engine (Rust)
   main.rs            clap CLI: transcribe / say / detect-lang / install / record / ...
@@ -88,9 +87,9 @@ per-platform variants selected by cargo features, mirrored in every
   (ONNX Runtime, Linux/Windows/fallback). They're mutually exclusive at the
   module level (`backend/mod.rs` trait, `onnx.rs`, `fluidaudio.rs`).
 - `lang_id.rs` always uses ONNX regardless of ASR backend.
-- TTS (`tts` feature): routed by **voice-id prefix** in `tts/mod.rs` —
-  `en-*` → Kokoro (`kokoro.rs`), `ru-*` → Vosk-TTS (`vosk.rs`),
-  `macos-*` → AVSpeech (`avspeech.rs`).
+- TTS (`tts` feature): routed by **voice-id prefix** in
+  `tts/voices.rs::resolve_voice` — `en-*` → Kokoro (`kokoro.rs`),
+  `ru-*` → Vosk-TTS (`vosk.rs`), `macos-*` → AVSpeech (`avspeech.rs`).
 
 **Sidecars** are resolved at runtime sibling-first (next to the engine binary,
 then build-time `$OUT_DIR`): the `say-avspeech` Swift helper (`system_tts`,
@@ -110,8 +109,8 @@ darwin) and the native `fluidaudio-rs` CoreML path (`coreml` / `system_diarize`)
 
 ## Build, test & release
 
-- **TS tests:** `tests/unit/` + `tests/integration/` (and some colocated
-  `src/**/__tests__/`), run with `bun test` / `make test`.
+- **TS tests:** `tests/unit/` + `tests/integration/`, run with `bun test` /
+  `make test`.
 - **Rust tests:** `cargo nextest run --features tts` / `make rust-test`; nextest
   integration binaries live in `rust/tests/`. Never plain `cargo test` (CI uses
   nextest) except `cargo test --doc`.
@@ -132,8 +131,9 @@ darwin) and the native `fluidaudio-rs` CoreML path (`coreml` / `system_diarize`)
   `tools.media.audio.models` CLI route and TTS provider config;
   `openclaw.plugin.json` + `openclaw-plugin.cjs` register the plugin.
 - **Raycast:** the `raycast/` extension (its own package, own lockfile).
-- **Programmatic API:** `@drakulavich/kesha-voice-kit/core` re-exports
-  `transcribe`, `downloadEngine`, `getEngineCapabilities` from `src/lib.ts`.
+- **Programmatic API:** `@drakulavich/kesha-voice-kit/core` (`src/lib.ts`)
+  exports `transcribe`, `transcribeWithTimestamps`, `say`, and the
+  `downloadModel` / `downloadTts` installers.
 
 ## Where to change X
 
