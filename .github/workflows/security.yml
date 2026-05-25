@@ -31,3 +31,17 @@ jobs:
         with:
           manifest-path: rust/Cargo.toml
           command: check advisories licenses bans sources
+
+  bun-audit:
+    runs-on: ubuntu-latest
+    # NON-BLOCKING on first landing (see cargo-deny note above).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - name: Install deps (frozen lockfile)
+        run: bun install --frozen-lockfile
+      - name: Audit JS dependencies
+        run: bun audit --audit-level=high
