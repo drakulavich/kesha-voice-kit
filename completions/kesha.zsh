@@ -99,7 +99,7 @@ _kesha() {
         '--rate=[Speaking rate 0.5–2.0]:rate:' \
         '--list-voices[List installed voices and exit]' \
         '--ssml[Parse input as SSML (supports <speak>, <break>; strips unknown tags)]' \
-        '--format=[Output format: wav (default) or ogg-opus (Telegram-ready voice note). Inferred from --out extension when omitted.]:format:' \
+        '--format=[Output format: wav (default), ogg-opus (Telegram-ready voice note), or flac (lossless, plays in all browsers incl. Safari). Inferred from --out extension when omitted.]:format:' \
         '--bitrate=[Opus bitrate in bits/sec (e.g. 32000). Only with --format ogg-opus.]:bitrate:' \
         '--sample-rate=[Opus encoder sample rate (8000/12000/16000/24000/48000). Only with --format ogg-opus.]:sample rate:' \
         '--no-expand-abbrev[Disable Russian acronym auto-expansion (ВОЗ → '\''вэ о зэ'\'') for ru-vosk-* voices. <say-as interpret-as='\''characters'\''> still works. Applies to Russian (ru-vosk-*) and English (en-*) voices.]' \

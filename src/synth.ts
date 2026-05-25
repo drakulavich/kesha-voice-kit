@@ -15,7 +15,7 @@ import { registerProcessTree } from "./process-tree";
  * - `ogg-opus`: OGG-encapsulated Opus, mono. The format Telegram, WhatsApp,
  *   Signal, and Discord render as native voice messages. See #223.
  */
-export type SayFormat = "wav" | "ogg-opus";
+export type SayFormat = "wav" | "ogg-opus" | "flac";
 export const MAX_TEXT_CHARS = 5000;
 
 export interface SayOptions {

@@ -104,6 +104,16 @@ kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
 ```
 
+**Output formats** (`--format`, or inferred from `--out` extension):
+
+```bash
+kesha say "Hello" --out hi.wav                       # WAV (default, uncompressed)
+kesha say "Hello" --format ogg-opus --out hi.ogg     # OGG/Opus — messenger voice notes (Telegram/WhatsApp/Signal)
+kesha say "Hello" --format flac --out hi.flac        # FLAC — lossless, royalty-free, plays in every browser incl. Safari/iOS
+```
+
+FLAC is the format for web-embeddable samples: it plays natively in all modern browsers (including Safari/iOS, where OGG/Opus does not), stays royalty-free like Opus, and keeps the engine's native sample rate (no resample). `--bitrate` / `--sample-rate` apply only to `--format ogg-opus`.
+
 **Russian abbreviations** (`ru-vosk-*`): all-uppercase Cyrillic 2-5-char tokens auto-expand letter-by-letter when not pronounceable as a Russian syllable (ФСБ → "эф-эс-бэ", ВОЗ → "воз"). Disable with `--no-expand-abbrev`. See [docs/tts.md#russian-abbreviation-auto-expansion](docs/tts.md#russian-abbreviation-auto-expansion).
 
 **English acronyms** (`en-*`, Kokoro): three-table mechanism (letter-spell rule + STOP_LIST + IPA_LEXICON) auto-expands FBI → "ef bee eye" and gives EPAM/JSON/Anthropic the right IPA. Disable letter-spell with `--no-expand-abbrev`. See [docs/tts.md#english-acronym-auto-expansion](docs/tts.md#english-acronym-auto-expansion).

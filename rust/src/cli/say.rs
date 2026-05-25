@@ -72,9 +72,8 @@ pub(crate) fn resolve_output_format(
         if let Some(r) = sample_rate {
             *sr = r;
         }
-    } else if matches!(chosen, tts::OutputFormat::Wav)
-        && (bitrate.is_some() || sample_rate.is_some())
-    {
+    } else if bitrate.is_some() || sample_rate.is_some() {
+        // Non-Opus formats (Wav, Flac) have no encoder bitrate/sample-rate knob.
         return Err("--bitrate / --sample-rate only apply to --format ogg-opus".to_string());
     }
 
