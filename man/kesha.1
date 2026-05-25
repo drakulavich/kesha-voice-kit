@@ -1,4 +1,4 @@
-.TH KESHA 1 "May 2026" "kesha 1.19.0" "User Commands"
+.TH KESHA 1 "May 2026" "kesha 1.20.0" "User Commands"
 .SH NAME
 kesha \- open-source local voice toolkit
 .SH SYNOPSIS
@@ -167,7 +167,7 @@ List installed voices and exit
 Parse input as SSML (supports <speak>, <break>; strips unknown tags)
 .TP
 .B \-\-format
-Output format: wav (default) or ogg\-opus (Telegram\-ready voice note). Inferred from \-\-out extension when omitted.
+Output format: wav (default), ogg\-opus (Telegram\-ready voice note), or flac (lossless, plays in all browsers incl. Safari). Inferred from \-\-out extension when omitted.
 .TP
 .B \-\-bitrate
 Opus bitrate in bits/sec (e.g. 32000). Only with \-\-format ogg\-opus.

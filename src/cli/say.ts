@@ -100,7 +100,7 @@ export const sayCommand = defineCommand({
     format: {
       type: "string",
       description:
-        "Output format: wav (default) or ogg-opus (Telegram-ready voice note). Inferred from --out extension when omitted.",
+        "Output format: wav (default), ogg-opus (Telegram-ready voice note), or flac (lossless, plays in all browsers incl. Safari). Inferred from --out extension when omitted.",
     },
     bitrate: {
       type: "string",
@@ -145,12 +145,12 @@ export const sayCommand = defineCommand({
     const fmtArg = typeof args.format === "string" ? args.format.toLowerCase() : undefined;
     let format: SayFormat | undefined;
     if (fmtArg) {
-      if (fmtArg === "wav" || fmtArg === "ogg-opus") {
+      if (fmtArg === "wav" || fmtArg === "ogg-opus" || fmtArg === "flac") {
         format = fmtArg;
       } else if (fmtArg === "opus" || fmtArg === "ogg") {
         format = "ogg-opus";
       } else {
-        log.error(`unknown --format '${args.format}'. supported: wav, ogg-opus`);
+        log.error(`unknown --format '${args.format}'. supported: wav, ogg-opus, flac`);
         process.exit(2);
       }
     }
@@ -166,7 +166,10 @@ export const sayCommand = defineCommand({
         ? args.out.split(".").pop()?.toLowerCase()
         : undefined;
       const impliesOpus = outExt && ["ogg", "opus", "oga"].includes(outExt);
-      if (format === "wav" || (format === undefined && !impliesOpus)) {
+      // --bitrate / --sample-rate are Opus-only. Reject for wav and flac
+      // (both lossless / no encoder knobs) and for any non-Opus extension.
+      const resolvesToOpus = format === "ogg-opus" || (format === undefined && impliesOpus);
+      if (!resolvesToOpus) {
         log.error("--bitrate and --sample-rate are only valid with --format ogg-opus");
         process.exit(2);
       }

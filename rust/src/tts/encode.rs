@@ -1,8 +1,9 @@
 //! Output audio encoding: f32 PCM samples → wire bytes.
 //!
-//! Closes #223. Today the engine only spoke WAV; this module adds OGG/Opus
-//! (the format Telegram, WhatsApp, Signal, and Discord render as native voice
-//! messages) and keeps the door open for `mp3` / `flac` / `raw-pcm` later.
+//! Closes #223. Adds OGG/Opus (the format Telegram, WhatsApp, Signal, and
+//! Discord render as native voice messages) and FLAC (lossless, royalty-free,
+//! browser-universal incl. Safari) alongside the original WAV. Keeps the door
+//! open for `mp3` / `raw-pcm` later.
 //!
 //! ## Design
 //! - One enum [`OutputFormat`] selects the wire format.
@@ -50,6 +51,15 @@ pub enum OutputFormat {
         /// is used — matches Kokoro's native rate so most calls skip resampling.
         sample_rate: u32,
     },
+    /// FLAC, mono, lossless.
+    ///
+    /// Royalty-free (Xiph, same ethos as Opus) and plays in every modern
+    /// browser including Safari/iOS — the format for web-embeddable samples.
+    /// FLAC accepts the engine's native rate, so unlike Opus there is no
+    /// resample round-trip and no bitrate knob (lossless). f32 is quantized to
+    /// 16-bit PCM, transparent for TTS. Encoded via the pure-Rust `flacenc`
+    /// crate (Apache-2.0) — no C dependency.
+    Flac,
 }
 
 impl OutputFormat {
@@ -75,8 +85,9 @@ impl FromStr for OutputFormat {
         match s.to_ascii_lowercase().as_str() {
             "wav" => Ok(Self::Wav),
             "ogg-opus" | "opus" | "ogg" => Ok(Self::ogg_opus_default()),
+            "flac" => Ok(Self::Flac),
             other => Err(format!(
-                "unknown --format '{other}'. supported: wav, ogg-opus"
+                "unknown --format '{other}'. supported: wav, ogg-opus, flac"
             )),
         }
     }
@@ -88,6 +99,7 @@ pub fn format_from_extension(ext: &str) -> Option<OutputFormat> {
     match ext.to_ascii_lowercase().as_str() {
         "wav" => Some(OutputFormat::Wav),
         "ogg" | "opus" | "oga" => Some(OutputFormat::ogg_opus_default()),
+        "flac" => Some(OutputFormat::Flac),
         _ => None,
     }
 }
@@ -105,7 +117,62 @@ pub fn encode(samples: &[f32], src_rate: u32, fmt: OutputFormat) -> anyhow::Resu
             bitrate,
             sample_rate,
         } => encode_ogg_opus(samples, src_rate, sample_rate, bitrate),
+        OutputFormat::Flac => encode_flac(samples, src_rate),
     }
+}
+
+// =============================================================================
+// FLAC encoding (lossless, royalty-free, browser-universal incl. Safari)
+// =============================================================================
+
+/// Encode mono f32 PCM to FLAC bytes via the pure-Rust `flacenc` crate.
+///
+/// No resample (FLAC accepts the engine's native rate) and no bitrate (lossless).
+/// f32 in `[-1.0, 1.0]` is quantized to signed 16-bit PCM — transparent for TTS
+/// output and the most broadly compatible FLAC bit depth.
+#[cfg(feature = "tts")]
+fn encode_flac(samples: &[f32], src_rate: u32) -> anyhow::Result<Vec<u8>> {
+    use flacenc::component::BitRepr;
+    use flacenc::error::Verify;
+
+    const BITS_PER_SAMPLE: usize = 16;
+    const CHANNELS: usize = 1;
+
+    // f32 [-1.0, 1.0] -> signed 16-bit PCM, held in i32 as flacenc expects.
+    let pcm: Vec<i32> = samples
+        .iter()
+        .map(|&s| (s.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i32)
+        .collect();
+
+    let config = flacenc::config::Encoder::default()
+        .into_verified()
+        .map_err(|e| anyhow::anyhow!("flac encoder config invalid: {e:?}"))?;
+
+    let source = flacenc::source::MemSource::from_samples(
+        &pcm,
+        CHANNELS,
+        BITS_PER_SAMPLE,
+        src_rate as usize,
+    );
+
+    let mut stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size)
+        .map_err(|e| anyhow::anyhow!("flac encode failed: {e:?}"))?;
+
+    // flacenc records STREAMINFO min_block_size as the (shorter) final block,
+    // which flags the stream "variable block size" and trips strict decoders
+    // like Symphonia. For a fixed-block-size encode the conventional header
+    // (libFLAC, ffmpeg) sets min == max == nominal; the short final block is
+    // signaled per-frame, not in STREAMINFO. Normalize for max decoder reach.
+    stream
+        .stream_info_mut()
+        .set_block_sizes(config.block_size, config.block_size)
+        .map_err(|e| anyhow::anyhow!("flac stream_info fixup failed: {e:?}"))?;
+
+    let mut sink = flacenc::bitsink::ByteSink::new();
+    stream
+        .write(&mut sink)
+        .map_err(|e| anyhow::anyhow!("flac serialization failed: {e:?}"))?;
+    Ok(sink.as_slice().to_vec())
 }
 
 // =============================================================================
@@ -434,6 +501,12 @@ mod tests {
             OutputFormat::from_str("ogg").unwrap(),
             OutputFormat::OggOpus { .. }
         ));
+        assert_eq!(OutputFormat::from_str("flac").unwrap(), OutputFormat::Flac);
+        assert_eq!(
+            OutputFormat::from_str("FLAC").unwrap(),
+            OutputFormat::Flac,
+            "case-insensitive"
+        );
         // Bogus values must be rejected with a useful message — clap surfaces it.
         let err = OutputFormat::from_str("mp3").unwrap_err();
         assert!(err.contains("mp3") && err.contains("supported"));
@@ -451,6 +524,8 @@ mod tests {
             format_from_extension("opus"),
             Some(OutputFormat::OggOpus { .. })
         ));
+        assert_eq!(format_from_extension("flac"), Some(OutputFormat::Flac));
+        assert_eq!(format_from_extension("FLAC"), Some(OutputFormat::Flac));
         assert_eq!(format_from_extension("mp3"), None);
         assert_eq!(format_from_extension(""), None);
     }
@@ -581,5 +656,50 @@ mod tests {
             .collect();
         let bytes = encode(&samples, src_sr, OutputFormat::ogg_opus_default()).unwrap();
         assert_eq!(&bytes[..4], b"OggS", "resampled output is still valid Ogg");
+    }
+
+    #[test]
+    fn flac_produces_valid_magic_and_decodes_round_trip() {
+        // 1 second of a 440 Hz tone at 24 kHz mono (Kokoro's native rate).
+        let sr = 24_000u32;
+        let samples: Vec<f32> = (0..sr)
+            .map(|i| (i as f32 * 2.0 * std::f32::consts::PI * 440.0 / sr as f32).sin() * 0.3)
+            .collect();
+        let bytes = encode(&samples, sr, OutputFormat::Flac).unwrap();
+
+        // Native FLAC streams begin with the 4-byte stream marker "fLaC".
+        assert_eq!(&bytes[..4], b"fLaC", "missing FLAC stream marker");
+        // Lossless, but still smaller than the raw 16-bit WAV it came from.
+        let wav_bytes = encode(&samples, sr, OutputFormat::Wav).unwrap();
+        assert!(
+            bytes.len() < wav_bytes.len(),
+            "flac ({}) should be smaller than wav ({})",
+            bytes.len(),
+            wav_bytes.len()
+        );
+
+        // Strongest check: it actually decodes via Symphonia (the same decoder
+        // the STT path uses). Round-trip through a temp file and confirm we get
+        // a non-silent signal of roughly the right duration back.
+        let path = std::env::temp_dir().join(format!("kesha-flac-rt-{}.flac", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let decoded = crate::audio::load_audio(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert!(!decoded.is_empty(), "decoded FLAC was empty");
+        let rms = (decoded.iter().map(|s| s * s).sum::<f32>() / decoded.len() as f32).sqrt();
+        assert!(rms > 0.01, "decoded FLAC is silent (rms={rms})");
+    }
+
+    #[test]
+    fn flac_uses_engine_native_rate_without_resample() {
+        // Vosk-RU runs at 22.05 kHz. Unlike Opus (which only accepts a fixed set
+        // of rates and must resample), FLAC takes the native rate directly — so
+        // this must succeed and stay valid with no resample round-trip.
+        let src_sr = 22_050u32;
+        let samples: Vec<f32> = (0..src_sr)
+            .map(|i| (i as f32 * 2.0 * std::f32::consts::PI * 220.0 / src_sr as f32).sin() * 0.25)
+            .collect();
+        let bytes = encode(&samples, src_sr, OutputFormat::Flac).unwrap();
+        assert_eq!(&bytes[..4], b"fLaC");
     }
 }

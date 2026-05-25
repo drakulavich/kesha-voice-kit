@@ -168,6 +168,12 @@ kesha say --list-voices                            # Kokoro + Vosk-TTS + ~180 ma
 
 Output: WAV mono float32 by default. `--out <path>` writes to a file instead of stdout. For Telegram/OpenClaw replies, prefer `--format ogg-opus --out reply.ogg` or the OpenClaw-provided `{{OutputPath}}`.
 
+**Output formats** (`--format`, or inferred from the `--out` extension): `wav` (default, uncompressed), `ogg-opus` (messenger voice notes), `flac` (lossless, royalty-free, plays in every browser incl. Safari/iOS — the format for web-embeddable samples). FLAC keeps the engine's native rate; `--bitrate` / `--sample-rate` apply only to `ogg-opus`.
+
+```bash
+kesha say --format flac --out sample.flac "Hello"   # web-embeddable, Safari-safe
+```
+
 **Voice notes (Telegram / WhatsApp / Signal / Discord):** add `--format ogg-opus` to emit OGG/Opus directly — the format messenger APIs render as a native voice message:
 
 ```bash

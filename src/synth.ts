@@ -14,8 +14,10 @@ import { registerProcessTree } from "./process-tree";
  * - `wav` (default): RIFF WAV at the engine's native sample rate.
  * - `ogg-opus`: OGG-encapsulated Opus, mono. The format Telegram, WhatsApp,
  *   Signal, and Discord render as native voice messages. See #223.
+ * - `flac`: lossless, royalty-free, plays in every modern browser including
+ *   Safari/iOS. Keeps the engine's native rate; no bitrate knob.
  */
-export type SayFormat = "wav" | "ogg-opus";
+export type SayFormat = "wav" | "ogg-opus" | "flac";
 export const MAX_TEXT_CHARS = 5000;
 
 export interface SayOptions {
