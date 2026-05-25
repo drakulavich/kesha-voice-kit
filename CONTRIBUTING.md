@@ -20,6 +20,10 @@ downloaded from GitHub Releases at the version pinned in
 independently — see [`CLAUDE.md`](./CLAUDE.md) "RELEASE PROCESS" for the
 full split.
 
+New here? [`docs/architecture.md`](./docs/architecture.md) is the code-level
+map — repo layout, the CLI↔engine boundary, ASR/TTS backends, model pinning,
+where tests live, and a "where to change X" table.
+
 ## Development
 
 ```bash
