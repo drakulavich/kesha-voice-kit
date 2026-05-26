@@ -349,9 +349,9 @@ Audio decoding via [symphonia](https://github.com/pdeljanov/Symphonia) — WAV, 
 ## MCP server
 
 `kesha mcp` runs a local Model Context Protocol server over stdio, exposing
-`transcribe_audio`, `synthesize_speech`, and `list_voices` to any MCP client.
-Models are never auto-downloaded — tools fail with a `kesha install` /
-`kesha install --tts` hint when missing.
+`transcribe_audio`, `synthesize_speech`, `list_voices`, and `list_languages` to
+any MCP client. Models are never auto-downloaded — tools fail with a
+`kesha install` / `kesha install --tts` hint when missing.
 
 Add to your client config:
 
