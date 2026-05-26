@@ -1,16 +1,15 @@
 import { describe, test, expect } from "bun:test";
-import { fileURLToPath } from "node:url";
 
 describe("mcp stdout discipline", () => {
   test("stdout carries only JSON-RPC frames", async () => {
     // process.execPath is the absolute path to the running bun binary — a bare
-    // "bun" fails uv_spawn on Windows (no PATH/.exe resolution). fileURLToPath
-    // avoids the broken "/D:/..." that URL.pathname yields on Windows.
+    // "bun" fails uv_spawn on Windows (no PATH/.exe resolution). import.meta.dir
+    // (Bun-native, absolute) anchors the repo root so this works regardless of cwd.
     const proc = Bun.spawn([process.execPath, "bin/kesha.js", "mcp"], {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      cwd: `${import.meta.dir}/../..`,
     });
     const initialize = {
       jsonrpc: "2.0",
