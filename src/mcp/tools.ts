@@ -38,11 +38,16 @@ export function registerTools(server: McpServer): void {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => {
-      const voices = await listVoices();
-      return {
-        content: [{ type: "text" as const, text: `${voices.length} voices installed.` }],
-        structuredContent: { voices },
-      };
+      try {
+        const voices = await listVoices();
+        return {
+          content: [{ type: "text" as const, text: `${voices.length} voices installed.` }],
+          structuredContent: { voices },
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { isError: true, content: [{ type: "text" as const, text: `list_voices failed: ${msg}` }] };
+      }
     },
   );
 }
