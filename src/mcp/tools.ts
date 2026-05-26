@@ -39,7 +39,7 @@ export function registerTools(server: McpServer): void {
           const out = await transcribeWithTimestamps(path);
           return {
             content: [{ type: "text" as const, text: out.text }],
-            structuredContent: { text: out.text, segments: out.segments },
+            structuredContent: { text: out.text, segments: out.segments ?? [] },
           };
         }
         const text = await transcribe(path);
