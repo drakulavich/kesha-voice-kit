@@ -6,6 +6,7 @@ import { installCommand } from "./cli/install";
 import { logsCommand } from "./cli/logs";
 import { mainCommand } from "./cli/main";
 import { manpageCommand } from "./cli/manpage";
+import { mcpCommand } from "./cli/mcp";
 import { recordCommand } from "./cli/record";
 import { sayCommand } from "./cli/say";
 import { statsCommand } from "./cli/stats";
@@ -50,6 +51,7 @@ const CLI_COMMANDS: CliCommand[] = [
   { name: "install", command: installCommand },
   { name: "logs", command: logsCommand },
   { name: "manpage", command: manpageCommand },
+  { name: "mcp", command: mcpCommand },
   { name: "record", command: recordCommand },
   { name: "say", command: sayCommand },
   { name: "stats", command: statsCommand },
