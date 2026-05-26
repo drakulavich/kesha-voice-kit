@@ -346,6 +346,26 @@ Audio decoding via [symphonia](https://github.com/pdeljanov/Symphonia) — WAV, 
 - **Hermes Agent** — local STT/TTS through Hermes command providers. Setup: [docs/hermes.md](docs/hermes.md).
 - **Raycast** (macOS) — transcribe selected audio & speak clipboard from the launcher. Source + install: [`raycast/`](raycast/).
 
+## MCP server
+
+`kesha mcp` runs a local Model Context Protocol server over stdio, exposing
+`transcribe_audio`, `synthesize_speech`, and `list_voices` to any MCP client.
+Models are never auto-downloaded — tools fail with a `kesha install` /
+`kesha install --tts` hint when missing.
+
+Add to your client config:
+
+```json
+{ "mcpServers": { "kesha": { "command": "kesha", "args": ["mcp"] } } }
+```
+
+- **Claude Desktop:** `claude_desktop_config.json`
+- **Claude Code:** `claude mcp add kesha -- kesha mcp`
+- **Cursor:** `.cursor/mcp.json`
+
+If a tool returns "models not installed", run `kesha install` (ASR) or
+`kesha install --tts` (TTS) once, then retry.
+
 ## Programmatic API
 
 ```typescript
