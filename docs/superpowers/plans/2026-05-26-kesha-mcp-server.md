@@ -719,12 +719,50 @@ describe("synthesize_speech errors", () => {
 Run: `bun test tests/unit/mcp-say-errors.test.ts`
 Expected: FAIL — tool not registered.
 
-- [ ] **Step 3: Implement the tool (append inside `registerTools`)**
+- [ ] **Step 3a: Register a readable audio resource template (idiomatic MCP)**
+
+Per the resolved design, synthesized audio is exposed as a real MCP resource so
+clients can `resources/read` it — `registerResource` also auto-advertises the
+`resources` capability. Add this near the top of `registerTools(server)` (before the
+tools), using a custom `kesha-audio://{file}` scheme that maps to the temp dir:
+
+```ts
+// add imports at top of src/mcp/tools.ts
+import { readFileSync } from "fs";
+import { basename, join } from "path";
+import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { audioDir } from "./audio-output";
+
+function mimeForExt(file: string): string {
+  if (file.endsWith(".flac")) return "audio/flac";
+  if (file.endsWith(".ogg")) return "audio/ogg";
+  return "audio/wav";
+}
+
+// inside registerTools(server), FIRST:
+server.registerResource(
+  "synthesized-audio",
+  new ResourceTemplate("kesha-audio://{file}", { list: undefined }),
+  { title: "Synthesized audio", description: "WAV/OGG/FLAC produced by synthesize_speech." },
+  async (uri, { file }) => {
+    // `file` is the basename only; reject anything that escapes the temp dir.
+    const name = basename(String(file));
+    const path = join(audioDir(), name);
+    const bytes = readFileSync(path); // throws if absent → surfaced as resource error
+    return {
+      contents: [
+        { uri: uri.href, mimeType: mimeForExt(name), blob: bytes.toString("base64") },
+      ],
+    };
+  },
+);
+```
+
+- [ ] **Step 3b: Implement the tool (append inside `registerTools`)**
 
 ```ts
 // add imports at top of src/mcp/tools.ts
 import { chmodSync, statSync } from "fs";
-import { pathToFileURL } from "url";
 import { say, type SayFormat } from "../synth";
 import { allocAudioPath } from "./audio-output";
 
@@ -764,13 +802,14 @@ server.registerTool(
       await say({ text, voice, rate, format: fmt, out: outPath });
       chmodSync(outPath, 0o600); // engine writes 0644; restrict (shared /tmp)
       const bytes = statSync(outPath).size;
-      const uri = pathToFileURL(outPath).href;
+      const file = basename(outPath);
+      const uri = `kesha-audio://${file}`; // resolves via the registered resource template
       const mimeType = fmt === "wav" ? "audio/wav" : fmt === "flac" ? "audio/flac" : "audio/ogg";
       const resolvedVoice = voice ?? "(auto)";
       return {
         content: [
-          { type: "resource_link", uri, name: `speech.${fmt === "ogg-opus" ? "ogg" : fmt}`, mimeType },
-          { type: "text", text: `Synthesized ${bytes} bytes to ${uri} (voice=${resolvedVoice}, format=${fmt}).` },
+          { type: "resource_link", uri, name: file, mimeType },
+          { type: "text", text: `Synthesized ${bytes} bytes (voice=${resolvedVoice}, format=${fmt}); read it via resources/read ${uri}.` },
         ],
         structuredContent: { uri, path: outPath, format: fmt, voice: resolvedVoice, bytes },
       };
@@ -793,12 +832,17 @@ test("synthesize_speech returns a readable resource_link to a valid file", async
   });
   expect(res.isError).toBeFalsy();
   const link = (res.content as Array<{ type: string; uri: string }>).find((c) => c.type === "resource_link");
-  expect(link?.uri.startsWith("file://")).toBe(true);
-  const sc = res.structuredContent as { path: string; bytes: number };
+  expect(link?.uri.startsWith("kesha-audio://")).toBe(true);
+  const sc = res.structuredContent as { uri: string; path: string; bytes: number };
   const { existsSync, statSync } = await import("fs");
   expect(existsSync(sc.path)).toBe(true);
   expect((statSync(sc.path).mode & 0o777)).toBe(0o600);
   expect(sc.bytes).toBeGreaterThan(1000);
+  // resources/read must return the audio bytes as a base64 blob.
+  const read = await cl.readResource({ uri: sc.uri });
+  const blob = (read.contents[0] as { blob?: string }).blob;
+  expect(typeof blob).toBe("string");
+  expect(Buffer.from(blob as string, "base64").length).toBe(sc.bytes);
 });
 ```
 > This test needs TTS models (+ g2p) staged exactly like
@@ -977,18 +1021,15 @@ BODY
 
 ## Self-review
 
-- **Spec coverage:** 3 tools (T4-T6) ✓; resource_link + registerResource note (T6 returns
-  resource_link content; a full `registerResource` template is unnecessary because the
-  link points at a `file://` path the local client reads directly — recorded as a
-  simplification) ; temp dir 0700 + 0600 + sweep (T2, T6) ✓; never-download error contract
-  (T5/T6 isError + toToolError) ✓; stdout discipline (T7) ✓; conformance handshake (T7) ✓;
-  annotations + outputSchema (T4-T6) ✓; CLI-only release (T8) ✓; README per-client (T8) ✓;
-  cancellation pre-flight (T5/T6 `extra.signal.aborted`) ✓, mid-flight deferred (Follow-ups) ✓.
-- **Note on resources:** the spec calls for declaring a `resources` capability and
-  `registerResource`. Returning a `resource_link` to a `file://` URI does not by itself
-  require a registered resource (the client reads the file). If strict `resources/read`
-  support is wanted, add a `registerResource` with a `file://` template in T6; flagged here
-  so the implementer makes a deliberate choice rather than silently dropping it.
+- **Spec coverage:** 3 tools (T4-T6) ✓; full `registerResource` + `resources` capability
+  via a `kesha-audio://{file}` template, `resource_link` in tool output, and a
+  `resources/read` test (T6 Step 3a + e2e) ✓; temp dir 0700 + 0600 + sweep (T2, T6) ✓;
+  never-download error contract (T5/T6 isError + toToolError) ✓; stdout discipline (T7) ✓;
+  conformance handshake (T7) ✓; annotations + outputSchema (T4-T6) ✓; CLI-only release (T8) ✓;
+  README per-client (T8) ✓; cancellation pre-flight (T5/T6 `extra.signal.aborted`) ✓,
+  mid-flight deferred (Follow-ups) ✓.
+- **Resource security:** the template read callback uses `basename()` on the `{file}`
+  param so a malicious `kesha-audio://../../etc/passwd` cannot escape the temp dir.
 - **Placeholder scan:** the two engine-dependent gates (T4, T5) intentionally say
   "mirror say-e2e gating" with the exact reference file named — the implementer must read
   that file for the precise probe. No other TODOs.
