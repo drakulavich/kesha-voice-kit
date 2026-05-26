@@ -189,8 +189,7 @@ export function registerTools(server: McpServer): void {
           structuredContent: { languages },
         };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { isError: true, content: [{ type: "text" as const, text: `list_languages failed: ${msg}` }] };
+        return { isError: true, content: [{ type: "text" as const, text: `list_languages failed: ${toToolError(err)}` }] };
       }
     },
   );

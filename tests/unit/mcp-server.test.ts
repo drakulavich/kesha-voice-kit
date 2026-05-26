@@ -13,7 +13,7 @@ async function connect() {
 }
 
 describe("kesha mcp server", () => {
-  test("handshake succeeds and lists the three tools", async () => {
+  test("handshake succeeds and lists the four tools", async () => {
     const { client } = await connect();
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();

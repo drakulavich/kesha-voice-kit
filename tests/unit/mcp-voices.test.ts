@@ -56,6 +56,14 @@ describe("parseVoiceLines", () => {
     ]);
   });
 
+  test("malformed en- id falls through to unknown", () => {
+    const [v] = parseVoiceLines("en-zzz");
+    expect(v.modelId).toBe("unknown");
+    expect(v.modelName).toBe("Unknown");
+    expect(v.gender).toBeNull();
+    expect(v.languageCode).toBe("");
+  });
+
   test("vosk female voice has gender female", () => {
     const [v] = parseVoiceLines("ru-vosk-f01");
     expect(v.gender).toBe("female");

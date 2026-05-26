@@ -44,13 +44,12 @@ function parseVoiceInfo(id: string): VoiceInfo {
     };
   }
 
-  if (id.startsWith("en-")) {
+  if (id.startsWith("en-") && /^[ab][fm]_/.test(id.slice(3))) {
     const suffix = id.slice("en-".length); // e.g. "am_michael" or "bf_emma"
     const accent = suffix[0]; // 'a' = American, 'b' = British
     const genderChar = suffix[1]; // 'f' = female, 'm' = male
-    const languageCode = accent === "a" ? "en-US" : accent === "b" ? "en-GB" : "en";
-    const gender: "male" | "female" | null =
-      genderChar === "f" ? "female" : genderChar === "m" ? "male" : null;
+    const languageCode = accent === "a" ? "en-US" : "en-GB";
+    const gender: "male" | "female" = genderChar === "f" ? "female" : "male";
     return {
       voiceId: id,
       modelId: "kokoro",
