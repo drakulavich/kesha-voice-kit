@@ -17,6 +17,6 @@ describe("kesha mcp server", () => {
     const { client } = await connect();
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(["list_voices", "synthesize_speech", "transcribe_audio"]);
+    expect(names).toEqual(["list_languages", "list_voices", "synthesize_speech", "transcribe_audio"]);
   });
 });

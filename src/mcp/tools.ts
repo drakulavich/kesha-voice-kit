@@ -3,7 +3,7 @@ import { z } from "zod";
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
 import { basename, join } from "path";
 import { transcribe, transcribeWithTimestamps } from "../lib";
-import { listVoices } from "./voices";
+import { listVoices, aggregateLanguages } from "./voices";
 import { say, type SayFormat } from "../synth";
 import { allocAudioPath, audioDir } from "./audio-output";
 
@@ -140,9 +140,12 @@ export function registerTools(server: McpServer): void {
       outputSchema: {
         voices: z.array(
           z.object({
-            id: z.string(),
-            engine: z.enum(["kokoro", "vosk", "avspeech", "unknown"]),
-            lang: z.string().nullable(),
+            voiceId: z.string(),
+            modelId: z.enum(["kokoro", "vosk", "avspeech", "unknown"]),
+            modelName: z.string(),
+            languageCode: z.string(),
+            languageName: z.string(),
+            gender: z.enum(["male", "female"]).nullable(),
           }),
         ),
       },
@@ -157,6 +160,37 @@ export function registerTools(server: McpServer): void {
         };
       } catch (err) {
         return { isError: true, content: [{ type: "text" as const, text: `list_voices failed: ${toToolError(err)}` }] };
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_languages",
+    {
+      title: "List languages",
+      description: "List languages available for synthesis, derived from installed voices.",
+      inputSchema: {},
+      outputSchema: {
+        languages: z.array(
+          z.object({
+            languageCode: z.string(),
+            languageName: z.string(),
+            voiceCount: z.number(),
+          }),
+        ),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        const languages = aggregateLanguages(await listVoices());
+        return {
+          content: [{ type: "text" as const, text: `${languages.length} languages available.` }],
+          structuredContent: { languages },
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { isError: true, content: [{ type: "text" as const, text: `list_languages failed: ${msg}` }] };
       }
     },
   );
