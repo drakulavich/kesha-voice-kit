@@ -33,9 +33,12 @@ export async function listVoices(): Promise<VoiceInfo[]> {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
   if (code !== 0) {
-    const err = await new Response(proc.stderr).text();
     throw new Error(`engine list-voices failed (exit ${code}): ${err.trim()}`);
   }
   return parseVoiceLines(out);
