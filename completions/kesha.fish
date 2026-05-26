@@ -6,7 +6,7 @@ complete -c kesha -n '__fish_use_subcommand' -a 'init' -d 'Interactive setup gui
 complete -c kesha -n '__fish_use_subcommand' -a 'install' -d 'Download inference engine and models'
 complete -c kesha -n '__fish_use_subcommand' -a 'logs' -d 'Manage local privacy-safe diagnostic logs'
 complete -c kesha -n '__fish_use_subcommand' -a 'manpage' -d 'Print the kesha(1) manpage'
-complete -c kesha -n '__fish_use_subcommand' -a 'mcp' -d 'Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices). Configure an MCP client with: { command: \'kesha\', args: [\'mcp\'] }.'
+complete -c kesha -n '__fish_use_subcommand' -a 'mcp' -d 'Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices, list_languages). Configure an MCP client with: { command: \'kesha\', args: [\'mcp\'] }.'
 complete -c kesha -n '__fish_use_subcommand' -a 'record' -d 'Record microphone audio to a WAV file'
 complete -c kesha -n '__fish_use_subcommand' -a 'say' -d 'Synthesize speech from text (TTS). Writes audio to stdout (or --out file). Defaults to WAV; use --format ogg-opus for messenger-ready voice notes.'
 complete -c kesha -n '__fish_use_subcommand' -a 'stats' -d 'Manage local anonymous Kesha Stats'

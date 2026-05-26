@@ -10,7 +10,7 @@ _kesha() {
     'install:Download inference engine and models'
     'logs:Manage local privacy-safe diagnostic logs'
     'manpage:Print the kesha(1) manpage'
-    'mcp:Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices). Configure an MCP client with: { command: '\''kesha'\'', args: \['\''mcp'\''\] }.'
+    'mcp:Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices, list_languages). Configure an MCP client with: { command: '\''kesha'\'', args: \['\''mcp'\''\] }.'
     'record:Record microphone audio to a WAV file'
     'say:Synthesize speech from text (TTS). Writes audio to stdout (or --out file). Defaults to WAV; use --format ogg-opus for messenger-ready voice notes.'
     'stats:Manage local anonymous Kesha Stats'

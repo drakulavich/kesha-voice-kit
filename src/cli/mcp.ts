@@ -6,7 +6,7 @@ export const mcpCommand = defineCommand({
   meta: {
     name: "mcp",
     description:
-      "Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices). " +
+      "Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices, list_languages). " +
       "Configure an MCP client with: { command: 'kesha', args: ['mcp'] }.",
   },
   async run() {
