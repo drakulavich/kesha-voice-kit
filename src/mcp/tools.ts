@@ -20,8 +20,13 @@ export function registerTools(server: McpServer): void {
     { title: "Synthesized audio", description: "WAV/OGG/FLAC produced by synthesize_speech." },
     async (uri, { file }) => {
       const name = basename(String(file)); // sandbox: reject path traversal
-      const path = join(audioDir(), name);
-      const bytes = readFileSync(path);
+      const filePath = join(audioDir(), name);
+      let bytes: Buffer;
+      try {
+        bytes = readFileSync(filePath);
+      } catch {
+        throw new Error(`synthesized-audio: file not found or already swept: ${name}`);
+      }
       return { contents: [{ uri: uri.href, mimeType: mimeForExt(name), blob: bytes.toString("base64") }] };
     },
   );
@@ -52,7 +57,7 @@ export function registerTools(server: McpServer): void {
       if (extra.signal?.aborted) {
         return { isError: true, content: [{ type: "text" as const, text: "request cancelled" }] };
       }
-      if (rate !== undefined && (rate < 0.5 || rate > 2.0)) {
+      if (rate !== undefined && !(rate >= 0.5 && rate <= 2.0)) {
         return { isError: true, content: [{ type: "text" as const, text: `rate ${rate} out of range (0.5-2.0)` }] };
       }
       const fmt: SayFormat = format ?? "wav";

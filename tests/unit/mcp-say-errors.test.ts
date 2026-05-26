@@ -19,6 +19,11 @@ describe("synthesize_speech errors", () => {
     expect((res.content as Array<{ text: string }>)[0].text).toMatch(/rate/i);
   });
 
+  test("NaN rate is isError", async () => {
+    const res = await call({ text: "hi", rate: NaN });
+    expect(res.isError).toBe(true);
+  });
+
   test("missing models fails loud with install hint and no download", async () => {
     const prev = process.env.KESHA_CACHE_DIR;
     process.env.KESHA_CACHE_DIR = "/tmp/kesha-mcp-empty-" + Date.now();
