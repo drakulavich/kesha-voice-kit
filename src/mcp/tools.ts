@@ -1,13 +1,56 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { existsSync } from "fs";
+import { transcribe, transcribeWithTimestamps } from "../lib";
 import { listVoices } from "./voices";
 
 export function registerTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "transcribe_audio",
-    "Transcribe speech from an audio file to text.",
-    { audio_path: z.string().describe("Absolute path to the audio file to transcribe.") },
-    async () => ({ content: [{ type: "text" as const, text: "" }] }),
+    {
+      title: "Transcribe audio",
+      description: "Transcribe a local audio file to text. Set timestamps for segment timings.",
+      inputSchema: {
+        path: z.string().describe("Absolute or relative path to a local audio file"),
+        timestamps: z.boolean().optional().describe("Return per-segment start/end times"),
+      },
+      outputSchema: {
+        text: z.string(),
+        segments: z.array(
+          z.object({
+            text: z.string(),
+            start: z.number(),
+            end: z.number(),
+            speaker: z.number().optional(),
+          }),
+        ),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ path, timestamps }, extra) => {
+      if (extra.signal?.aborted) {
+        return { isError: true, content: [{ type: "text" as const, text: "request cancelled" }] };
+      }
+      if (!existsSync(path)) {
+        return { isError: true, content: [{ type: "text" as const, text: `File not found: ${path}` }] };
+      }
+      try {
+        if (timestamps) {
+          const out = await transcribeWithTimestamps(path);
+          return {
+            content: [{ type: "text" as const, text: out.text }],
+            structuredContent: { text: out.text, segments: out.segments },
+          };
+        }
+        const text = await transcribe(path);
+        return {
+          content: [{ type: "text" as const, text: text }],
+          structuredContent: { text, segments: [] },
+        };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text" as const, text: toToolError(err) }] };
+      }
+    },
   );
 
   server.tool(
@@ -45,9 +88,12 @@ export function registerTools(server: McpServer): void {
           structuredContent: { voices },
         };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { isError: true, content: [{ type: "text" as const, text: `list_voices failed: ${msg}` }] };
+        return { isError: true, content: [{ type: "text" as const, text: `list_voices failed: ${toToolError(err)}` }] };
       }
     },
   );
+}
+
+function toToolError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
