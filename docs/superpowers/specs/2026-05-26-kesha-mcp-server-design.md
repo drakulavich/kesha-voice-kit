@@ -76,10 +76,13 @@ annotations so clients can reason about auto-approval.
 - **Handler:**
   - If `!existsSync(path)` → `isError` result: `File not found: <path>`.
   - `timestamps === false` → `transcribe(path)` → text content = transcript.
-  - `timestamps === true` → `transcribeWithTimestamps(path)` →
-    `structuredContent: { text, language, segments: [{ text, start, end, speaker? }] }`
+  - `timestamps === true` → `transcribeWithTimestamps(path)` (returns
+    `TranscriptionOutput { text, segments }`) →
+    `structuredContent: { text, segments: [{ text, start, end, speaker? }] }`
     plus `content` text = the transcript.
-- **outputSchema (timestamps variant):** `{ text: string, language: string, segments: Array<{ text: string, start: number, end: number, speaker?: string }> }`.
+    (No `language` field — the lib transcribe path does not detect language;
+    audio language detection is a separate engine call, out of scope for v1.)
+- **outputSchema (timestamps variant):** `{ text: string, segments: Array<{ text: string, start: number, end: number, speaker?: number }> }`.
 
 ### 2. `synthesize_speech`
 - **Annotations:** `readOnlyHint: false`, `openWorldHint: false`.
@@ -102,11 +105,16 @@ annotations so clients can reason about auto-approval.
 - **Annotations:** `readOnlyHint: true`, `openWorldHint: false`.
 - **Input:** none.
 - **Handler:** `voices.ts` spawns the **existing** `kesha-engine say --list-voices`
-  (same path `src/cli/say.ts:133` already uses — no new engine subcommand), parses
-  `identifier|language|name` lines into structured records.
-  `structuredContent: { voices: [{ id, lang, name, engine }] }` where `engine` is
-  derived from the id prefix (`en-*`→kokoro, `ru-vosk-*`→vosk, `macos-*`→avspeech).
-- **outputSchema:** `{ voices: Array<{ id: string, lang: string, name: string, engine: string }> }`.
+  (same engine call `src/cli/say.ts:133` uses, but with `stdout: "pipe"` to capture).
+  The engine prints **one bare voice id per line** (e.g. `en-am_michael`,
+  `ru-vosk-m02`, `macos-com.apple.eloquence.de-DE.Eddy`) — there is no name/lang
+  column. Each line is mapped to `{ id, engine, lang }`:
+  - `engine`: `en-*`→`kokoro`, `ru-vosk-*`→`vosk`, `macos-*`→`avspeech`.
+  - `lang`: `en-*`→`en`, `ru-vosk-*`→`ru`, `macos-*`→the BCP-47 token matched by
+    `/[a-z]{2}-[A-Z]{2}/` in the id (e.g. `de-DE`), else `null`.
+  `structuredContent: { voices: [{ id, engine, lang }] }`.
+- **outputSchema:** `{ voices: Array<{ id: string, engine: string, lang: string | null }> }`.
+  (No `name` — the engine output does not include one.)
 
 ## Audio output lifecycle (`audio-output.ts`)
 
@@ -149,10 +157,13 @@ every message.
 
 ## Cancellation
 
-Long transcriptions must honor `notifications/cancelled`: the handler wires the
-request's `AbortSignal` (provided by the SDK) to abort the underlying engine
-subprocess. (Progress notifications via `_meta.progressToken` are deferred to a
-follow-up issue.)
+v1 honors `notifications/cancelled` at the boundary: each handler checks
+`extra.signal.aborted` before spawning the engine and returns an `isError`
+"request cancelled" result if already aborted. **Mid-flight** subprocess kill
+(threading the `AbortSignal` into the lib's internal `Bun.spawn`) requires a
+TS-only change to `transcribe`/`say` that the lib does not expose today — deferred
+to a follow-up issue together with progress notifications (`_meta.progressToken`).
+This keeps v1 pure orchestration of existing functions per the ticket constraint.
 
 ## Testing
 
