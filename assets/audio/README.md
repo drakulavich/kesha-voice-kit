@@ -9,7 +9,7 @@ and MP3 was dropped over LGPL encoder licensing).
 |---|---|---|---|---|
 | `en-kokoro-medium.flac` | `en-am_michael` (Kokoro-82M) | default rate | "Kesha turns voice into text in a single command — no Python, no ffmpeg." | ✅ committed |
 | `en-kokoro-xfast.flac` | `en-am_michael` (Kokoro-82M) | x-fast (1.5×) | same text | ⛔ not committed — see note |
-| `ru-vosk-medium.flac` | `ru-vosk-m02` (Vosk-TTS) | default rate | «Кеша превращает голос в текст одной командой — без Python, без ffmpeg.» | ✅ committed |
+| `ru-vosk-medium.flac` | `ru-vosk-m02` (Vosk-TTS) | default rate | «Кеша превращает голос в текст одной командой — без зависимостей.» | ✅ committed |
 | `ru-vosk-slow.flac` | `ru-vosk-m02` (Vosk-TTS) | slow (0.75×) | same text | ✅ committed |
 
 ## Generation commands (actual)
@@ -25,12 +25,12 @@ kesha say --voice en-am_michael \
 
 # 2. Russian, normal speed
 kesha say --voice ru-vosk-m02 \
-  "Кеша превращает голос в текст одной командой — без Python, без ffmpeg." \
+  "Кеша превращает голос в текст одной командой — без зависимостей." \
   --out ru-vosk-medium.flac
 
 # 3. Russian, slow
 kesha say --voice ru-vosk-m02 --rate 0.75 \
-  "Кеша превращает голос в текст одной командой — без Python, без ffmpeg." \
+  "Кеша превращает голос в текст одной командой — без зависимостей." \
   --out ru-vosk-slow.flac
 ```
 
