@@ -17,7 +17,8 @@ describe("mcp audio-output", () => {
     expect(a.startsWith(audioDir())).toBe(true);
   });
 
-  test("dir is created with 0700", () => {
+  // Unix mode bits don't apply on Windows (ACL-based; mkdirSync mode is a no-op there).
+  test.skipIf(process.platform === "win32")("dir is created with 0700", () => {
     allocAudioPath("wav");
     const mode = statSync(audioDir()).mode & 0o777;
     expect(mode).toBe(0o700);
