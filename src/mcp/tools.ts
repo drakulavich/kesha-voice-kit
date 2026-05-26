@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { listVoices } from "./voices";
 
 export function registerTools(server: McpServer): void {
   server.tool(
@@ -19,10 +20,29 @@ export function registerTools(server: McpServer): void {
     async () => ({ content: [{ type: "text" as const, text: "" }] }),
   );
 
-  server.tool(
+  server.registerTool(
     "list_voices",
-    "List available TTS voices.",
-    {},
-    async () => ({ content: [{ type: "text" as const, text: "" }] }),
+    {
+      title: "List voices",
+      description: "List installed TTS voices with their engine and language.",
+      inputSchema: {},
+      outputSchema: {
+        voices: z.array(
+          z.object({
+            id: z.string(),
+            engine: z.enum(["kokoro", "vosk", "avspeech", "unknown"]),
+            lang: z.string().nullable(),
+          }),
+        ),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      const voices = await listVoices();
+      return {
+        content: [{ type: "text" as const, text: `${voices.length} voices installed.` }],
+        structuredContent: { voices },
+      };
+    },
   );
 }
