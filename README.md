@@ -146,6 +146,33 @@ Honored when `<prosody rate>` wraps the whole utterance. Mid-utterance prosody w
 
 macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tts.md](docs/tts.md).
 
+### Examples
+
+```bash
+# Auto-detect language and pick a male default (en-am_michael / ru-vosk-m02)
+kesha say "Hello, world" --out hello.wav
+kesha say "Привет, мир"  --out privet.wav
+
+# Choose a specific voice
+kesha say --voice en-am_michael "Voice in, text out." --out en.wav
+kesha say --voice ru-vosk-m02   "Голос в текст." --out ru.wav
+
+# List installed voices
+kesha say --list-voices
+
+# Output formats — inferred from the --out extension, or set with --format
+kesha say "Lossless, plays in Safari/iOS"   --out demo.flac        # FLAC (v1.20.0+)
+kesha say "Telegram-ready voice note" --format ogg-opus --out vn.ogg
+kesha say "Stream raw WAV to stdout"  > out.wav                    # default: WAV
+
+# Speaking rate, 0.5×–2.0× (Vosk honors it on every platform)
+kesha say --voice ru-vosk-m02 --rate 0.75 "Помедленнее." --out slow.flac
+kesha say --voice ru-vosk-m02 --rate 1.5  "Побыстрее."   --out fast.flac
+
+# macOS system voice — zero model download
+kesha say --voice macos-com.apple.voice.compact.ru-RU.Milena "Привет" --out milena.wav
+```
+
 ## Homebrew Install
 
 Homebrew installs the Bun-based CLI wrapper. Engine and model downloads remain
