@@ -688,7 +688,7 @@ dependencies = [
 [[package]]
 name = "fluidaudio-rs"
 version = "0.14.1"
-source = "git+https://github.com/drakulavich/fluidaudio-rs?branch=forked-main#3463cbb31c7e161231f5bc2f23da9960fbcfdc2a"
+source = "git+https://github.com/drakulavich/fluidaudio-rs?rev=ddcb14d9519232fbf01111cd31292680adaa1fcf#ddcb14d9519232fbf01111cd31292680adaa1fcf"
 dependencies = [
  "thiserror 1.0.69",
 ]
@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "kesha-engine"
-version = "1.20.0"
+version = "1.21.0"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",

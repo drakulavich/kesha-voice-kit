@@ -1,6 +1,6 @@
 [package]
 name = "kesha-engine"
-version = "1.20.0"
+version = "1.21.0"
 edition = "2021"
 description = "Inference engine for Kesha Voice Kit: ASR + language detection"
 # Not for crates.io. The library target (`src/lib.rs`) exists only for the
@@ -70,7 +70,12 @@ ndarray = { version = "0.17" }
 # FluidAudio (macOS): ASR (CoreML/ANE), native Kokoro TTS, and model-path
 # diarization. Forked to add the Kokoro binding + `diarize_file_with_models`
 # (upstream PR pending; retire the fork once merged).
-fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", branch = "forked-main", optional = true }
+# Pinned to the FluidAudio 0.14.7 KokoroAneManager migration on the
+# `feat/fluidaudio-0.14.7-kokoro-ane-speed` branch (fork PR #2) so `--rate`
+# actually feeds the model `speed` input on the CoreML Kokoro path (#475).
+# Cargo forbids `branch` + `rev` together, so we pin by `rev`; re-point to
+# `branch = "forked-main"` once fork PR #2 merges to the fork's main.
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "ddcb14d9519232fbf01111cd31292680adaa1fcf", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
