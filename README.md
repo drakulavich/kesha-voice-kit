@@ -435,7 +435,13 @@ state and retention.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Project docs:
+
+- [Architecture](docs/architecture.md) — TS CLI ↔ Rust engine ↔ ASR/TTS backends, model cache, where tests live
+- [Use cases](docs/use-cases.md) — copy-paste recipes (transcribe a meeting, speak from OpenClaw, run offline, move the cache)
+- [Roadmap](ROADMAP.md) — Now / Next / Later
+- [Decision log](docs/decision-log.md) — why the platform/model choices were made (and reversed)
+- Dev setup: `make dev-setup` (Bun, Rust, nextest, platform libs)
 
 ## License
 
