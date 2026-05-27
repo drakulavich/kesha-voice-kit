@@ -123,6 +123,23 @@ jobs:
         if: matrix.os == 'macos-14'
         run: cd rust && cargo check --features coreml --no-default-features
 
+      # The default-feature nextest run (`run-cargo-test.sh`) builds only
+      # `onnx,tts`, so the darwin-arm64 FluidAudio paths — `system_kokoro`
+      # (#475 `--rate`), `system_diarize`, `system_tts` — and their gated
+      # integration tests (`kokoro_rate_e2e.rs`, `diarize_e2e.rs`) never
+      # compile in PR CI. The runtime e2e bodies can't run here (the ANE
+      # Kokoro model isn't downloaded on the runner; it's a local /
+      # release-smoke gate), but `--all-targets` clippy at least type-checks
+      # and lints the test code + the install-time voice-pack staging so a
+      # darwin-only break is caught before a release tag builds it.
+      - name: Lint darwin release feature set (incl. system_kokoro)
+        if: matrix.os == 'macos-14'
+        run: |
+          cd rust
+          cargo clippy --all-targets \
+            --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
+            --no-default-features -- -D warnings
+
       - name: Cache Kokoro spike models
         uses: actions/cache@v5
         with:
