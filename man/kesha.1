@@ -1,4 +1,4 @@
-.TH KESHA 1 "May 2026" "kesha 1.20.0" "User Commands"
+.TH KESHA 1 "May 2026" "kesha 1.20.1" "User Commands"
 .SH NAME
 kesha \- open-source local voice toolkit
 .SH SYNOPSIS
@@ -28,6 +28,9 @@ Manage local privacy\-safe diagnostic logs
 .TP
 .B manpage
 Print the kesha(1) manpage
+.TP
+.B mcp
+Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices, list_languages). Configure an MCP client with: { command: 'kesha', args: ['mcp'] }.
 .TP
 .B record
 Record microphone audio to a WAV file

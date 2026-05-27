@@ -14,6 +14,7 @@ import { statsCommand } from "./stats";
 import { statusCommand } from "./status";
 import { supportBundleCommand } from "./support-bundle";
 import { mainCommand } from "./main";
+import { mcpCommand } from "./mcp";
 
 // Single source of truth: keyed lookup also feeds the `did you mean` suggester.
 // `CommandDef<any>` is intentional — citty's generic is invariant in the args
@@ -31,6 +32,7 @@ const SUBCOMMANDS: Record<string, CommandDef<any>> = {
   "support-bundle": supportBundleCommand,
   completions: completionsCommand,
   manpage: manpageCommand,
+  mcp: mcpCommand,
 };
 
 function isPathLike(arg: string): boolean {
