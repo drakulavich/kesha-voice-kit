@@ -10,8 +10,7 @@ curated lens over them. Suggestions welcome via an issue.
 
 ## Now (in flight)
 
-- **Contributor + user docs** — architecture map, dev-setup, use-case recipes, this
-  roadmap + decision log. ([#463](https://github.com/drakulavich/kesha-voice-kit/issues/463))
+- **Fix Kokoro `--rate` on CoreML** — speaking-rate currently ignored (silently) for
 - **Raycast integration on macOS** — drive transcription/TTS from Raycast.
   ([#145](https://github.com/drakulavich/kesha-voice-kit/issues/145))
 - **Fix Kokoro `--rate` on CoreML** — speaking-rate currently ignored (silently) for
