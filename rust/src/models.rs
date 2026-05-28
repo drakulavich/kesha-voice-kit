@@ -152,6 +152,171 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
     }
 }
 
+/// FluidAudio ANE Kokoro voice packs (`system_kokoro` darwin path, #475).
+///
+/// FluidAudio 0.14.7's `KokoroAneManager` resolves `<voice>.bin` LOCAL-FIRST
+/// from its own cache (`~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/`)
+/// before any download. The ANE English bundle only ships `af_heart`, so
+/// `am_michael` (kesha's male brand default) and the rest of the catalog 404
+/// from the bundle. These packs are 510×256 f32 `.bin` — byte-identical to
+/// the standard onnx-community Kokoro packs kesha used on the ONNX path — so
+/// we download them from onnx-community and stage them into the ANE cache at
+/// install time (see [`stage_ane_kokoro_voices`]). `af_heart` is intentionally
+/// EXCLUDED: FluidAudio 0.14.7 auto-downloads its own `af_heart.bin` into the
+/// ANE dir on first synth, and staging our own copy would risk an SHA mismatch
+/// overwriting FluidAudio's authoritative pack. Kesha only stages the voices
+/// the ANE bundle LACKS (`am_michael` and the rest of the catalog).
+///
+/// SHA-256 pins computed from `onnx-community/Kokoro-82M-v1.0-ONNX` — an
+/// upstream rehost becomes a deliberate PR to bump (CLAUDE.md MODEL HASHES).
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+const ANE_KOKORO_VOICES: &[ModelFile] = &[
+    ModelFile {
+        rel_path: "af_alloy.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_alloy.bin",
+        sha256: "c4a6b876047fd7fb472edf4ebd63cfac7c3b958a7cae7c106e8f038ca6308c45",
+    },
+    ModelFile {
+        rel_path: "af_aoede.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_aoede.bin",
+        sha256: "4a004c33430762e2461eedb2013fad808ef4ab3121f5300f554476caf58d8361",
+    },
+    ModelFile {
+        rel_path: "af_bella.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_bella.bin",
+        sha256: "f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b",
+    },
+    // `af_heart` intentionally excluded: FluidAudio 0.14.7 ships/auto-downloads
+    // its own `af_heart.bin` into this ANE dir. Staging our own copy would risk
+    // overwriting FluidAudio's authoritative pack if the upstream hash ever
+    // drifted.
+    ModelFile {
+        rel_path: "af_jessica.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_jessica.bin",
+        sha256: "a240a5e3c15b43563d6e923bdca8ef5613a23471d9b77653694012435df23bd8",
+    },
+    ModelFile {
+        rel_path: "af_kore.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_kore.bin",
+        sha256: "9be5221b6a941c04b561959b8ff0b06e809444dcc4ab7e75a7b23606f691819e",
+    },
+    ModelFile {
+        rel_path: "af_nicole.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_nicole.bin",
+        sha256: "cd2191ab31b914ed7b318416b0e4440fdf392ddad9106a060819aa600a64f59a",
+    },
+    ModelFile {
+        rel_path: "af_nova.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_nova.bin",
+        sha256: "18778272caa0d0eebaea251c35fd635f038434f9eee5e691d02a174bd328414f",
+    },
+    ModelFile {
+        rel_path: "af_river.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_river.bin",
+        sha256: "00a2bcf82b1d86e8f19902ede58c65ccf6c0e43b44b7d74fad54e5d8933c9c30",
+    },
+    ModelFile {
+        rel_path: "af_sarah.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_sarah.bin",
+        sha256: "4409fbc125afabacc615d94db5398d847006a737b0247d6892b7a9a0007a2f0a",
+    },
+    ModelFile {
+        rel_path: "af_sky.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_sky.bin",
+        sha256: "4435255c9744f3f31659e0d714ab7689bf65d9e77ec1cce060f083912614f0b9",
+    },
+    ModelFile {
+        rel_path: "am_adam.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_adam.bin",
+        sha256: "162b035ed91cfc48b6046982184c645f72edcdd1b82843347f605d7bf7b15716",
+    },
+    ModelFile {
+        rel_path: "am_echo.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_echo.bin",
+        sha256: "3968b92c3c4cd1c4416dbded36c13eaa388a90d5788d02a13e4d781f5f8cf3c3",
+    },
+    ModelFile {
+        rel_path: "am_eric.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_eric.bin",
+        sha256: "e8b5be17edd1e3636901ce7598baafe2dc8dd8ff707a0c23bf9e461add7e2832",
+    },
+    ModelFile {
+        rel_path: "am_fenrir.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_fenrir.bin",
+        sha256: "c27989f741f7ee34d273a39d8a595cc0837d35f5ced9a29b7cc162614616df43",
+    },
+    ModelFile {
+        rel_path: "am_liam.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_liam.bin",
+        sha256: "52403be32fd047c6a44517cb0bcd6b134f2a18baa73e70ef41651e0eab921ade",
+    },
+    ModelFile {
+        rel_path: "am_michael.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
+        sha256: "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
+    },
+    ModelFile {
+        rel_path: "am_onyx.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_onyx.bin",
+        sha256: "da5d135b424164916d75a68ffb4c2abce3d7d5ccc82dd1ee6cf447ce286145e6",
+    },
+    ModelFile {
+        rel_path: "am_puck.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_puck.bin",
+        sha256: "fcf73c989033e9233e0b98713eca600c8c74dcc1614b37009d5450ff4a2274a0",
+    },
+    ModelFile {
+        rel_path: "am_santa.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_santa.bin",
+        sha256: "61150cf726ab6c5ed7a99f90a304f91f5a72c00c592e89ec94e5df11c319227a",
+    },
+];
+
+/// FluidAudio's Kokoro ANE voice-pack cache directory. NOT under
+/// `KESHA_CACHE_DIR` — FluidAudio 0.14.7 owns this path and reads voice packs
+/// from here local-first. We pre-stage onnx-community packs here so the full
+/// en-* catalog (and the male `am_michael` default) resolve without a 404
+/// against the ANE bundle. Mirrors the existing CLAUDE.md note that darwin
+/// Kokoro uses the fluidaudio cache rather than `KESHA_CACHE_DIR`.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
+    dirs::home_dir()
+        .expect("cannot determine home directory")
+        .join(".cache")
+        .join("fluidaudio")
+        .join("Models")
+        .join("kokoro-82m-coreml")
+        .join("ANE")
+}
+
+/// Download + SHA-verify every en-* Kokoro voice pack directly into
+/// FluidAudio's ANE cache so `KokoroAneManager.ensureVoicePack` resolves them
+/// local-first (#475). Idempotent: an existing pack that already matches its
+/// pinned hash short-circuits the network round-trip, identical to
+/// [`download_verified`]. Runs only on the `system_kokoro` darwin path; the
+/// ONNX Kokoro path keeps using `kokoro_manifest()` under `KESHA_CACHE_DIR`.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn stage_ane_kokoro_voices(no_cache: bool) -> Result<()> {
+    let ane_dir = fluidaudio_ane_kokoro_dir();
+    fs::create_dir_all(&ane_dir)
+        .with_context(|| format!("create FluidAudio ANE dir {}", ane_dir.display()))?;
+    // `rel_path = "<voice>.bin"` + `cache = ane_dir` → flat ANE dir.
+    let manifest: Vec<&ModelFile> = ANE_KOKORO_VOICES.iter().collect();
+    parallel_download(&ane_dir, &manifest, no_cache)
+}
+
 /// Vosk-TTS multi-speaker Russian model, mirrored to HF at
 /// `drakulavich/vosk-tts-ru-0.9-multi`. Replaces Piper-ru per
 /// `docs/superpowers/specs/2026-04-27-vosk-ru-replacement-design.md`.
@@ -696,6 +861,51 @@ mod tts_tests {
         }
     }
 
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn ane_kokoro_voices_shape_and_male_default() {
+        // Pins must stay 64 hex chars on huggingface.co so the mirror rewrite
+        // and hash gate keep working; rel_path is a flat `<voice>.bin` because
+        // it lands directly in the ANE cache dir.
+        assert!(!ANE_KOKORO_VOICES.is_empty());
+        let names: std::collections::HashSet<&str> =
+            ANE_KOKORO_VOICES.iter().map(|f| f.rel_path).collect();
+        // The male brand default must be staged (CLAUDE.md DEFAULT TTS VOICES).
+        assert!(
+            names.contains("am_michael.bin"),
+            "missing male default pack"
+        );
+        for f in ANE_KOKORO_VOICES {
+            assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
+            assert!(
+                f.url.starts_with("https://huggingface.co/"),
+                "{f:?} url not on huggingface.co — mirror rewrite relies on that prefix"
+            );
+            assert!(
+                f.rel_path.ends_with(".bin") && !f.rel_path.contains('/'),
+                "{f:?} rel_path must be a flat <voice>.bin for the ANE cache"
+            );
+        }
+        // Every FluidAudio Kokoro voice kesha advertises must have a staged
+        // pack, or `--voice en-<x>` resolves then 404s on the ANE bundle —
+        // EXCEPT `af_heart`, which FluidAudio 0.14.7 auto-provides into the
+        // same ANE dir on first synth, so kesha must NOT stage its own copy.
+        for v in crate::tts::fluid_kokoro::available_voice_ids() {
+            let bare = v.strip_prefix("en-").unwrap_or(&v);
+            if bare == "af_heart" {
+                continue;
+            }
+            assert!(
+                names.contains(format!("{bare}.bin").as_str()),
+                "advertised voice {v} has no staged ANE pack"
+            );
+        }
+    }
+
     #[test]
     fn cache_dir_honors_env_var() {
         let guard = EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-test-xyz");
@@ -817,7 +1027,19 @@ pub fn download_tts(no_cache: bool) -> Result<()> {
     let mut manifest = kokoro_manifest();
     manifest.extend(vosk_ru_manifest());
     let refs: Vec<&ModelFile> = manifest.iter().collect();
-    parallel_download(&cache, &refs, no_cache)
+    parallel_download(&cache, &refs, no_cache)?;
+    // On the FluidAudio ANE Kokoro path `kokoro_manifest()` is empty (the model
+    // graph + `af_heart` auto-download into FluidAudio's own cache on first
+    // synth). Stage the rest of the en-* catalog — including the male
+    // `am_michael` default — into FluidAudio's ANE voice-pack cache so they
+    // resolve local-first instead of 404ing against the ANE bundle (#475).
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    stage_ane_kokoro_voices(no_cache)?;
+    Ok(())
 }
 
 /// Streams a manifest entry to its `cache/<rel_path>` destination, then
