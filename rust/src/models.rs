@@ -312,11 +312,9 @@ pub fn stage_ane_kokoro_voices(no_cache: bool) -> Result<()> {
     let ane_dir = fluidaudio_ane_kokoro_dir();
     fs::create_dir_all(&ane_dir)
         .with_context(|| format!("create FluidAudio ANE dir {}", ane_dir.display()))?;
-    let refs: Vec<&ModelFile> = ANE_KOKORO_VOICES.iter().collect();
-    // Reuse the bounded 4-worker pool. `download_verified` writes to
-    // `cache.join(rel_path)`; with `rel_path = "<voice>.bin"` and `cache =
-    // ane_dir`, the target lands flat inside the ANE dir.
-    parallel_download(&ane_dir, &refs, no_cache)
+    // `rel_path = "<voice>.bin"` + `cache = ane_dir` → flat ANE dir.
+    let manifest: Vec<&ModelFile> = ANE_KOKORO_VOICES.iter().collect();
+    parallel_download(&ane_dir, &manifest, no_cache)
 }
 
 /// Vosk-TTS multi-speaker Russian model, mirrored to HF at
