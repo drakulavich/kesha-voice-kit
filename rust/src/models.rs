@@ -161,8 +161,11 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
 /// from the bundle. These packs are 510×256 f32 `.bin` — byte-identical to
 /// the standard onnx-community Kokoro packs kesha used on the ONNX path — so
 /// we download them from onnx-community and stage them into the ANE cache at
-/// install time (see [`stage_ane_kokoro_voices`]). `af_heart` is included for
-/// completeness/offline installs even though FluidAudio can fetch it.
+/// install time (see [`stage_ane_kokoro_voices`]). `af_heart` is intentionally
+/// EXCLUDED: FluidAudio 0.14.7 auto-downloads its own `af_heart.bin` into the
+/// ANE dir on first synth, and staging our own copy would risk an SHA mismatch
+/// overwriting FluidAudio's authoritative pack. Kesha only stages the voices
+/// the ANE bundle LACKS (`am_michael` and the rest of the catalog).
 ///
 /// SHA-256 pins computed from `onnx-community/Kokoro-82M-v1.0-ONNX` — an
 /// upstream rehost becomes a deliberate PR to bump (CLAUDE.md MODEL HASHES).
@@ -187,11 +190,10 @@ const ANE_KOKORO_VOICES: &[ModelFile] = &[
         url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_bella.bin",
         sha256: "f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b",
     },
-    ModelFile {
-        rel_path: "af_heart.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_heart.bin",
-        sha256: "d583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b",
-    },
+    // `af_heart` intentionally excluded: FluidAudio 0.14.7 ships/auto-downloads
+    // its own `af_heart.bin` into this ANE dir. Staging our own copy would risk
+    // overwriting FluidAudio's authoritative pack if the upstream hash ever
+    // drifted.
     ModelFile {
         rel_path: "af_jessica.bin",
         url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_jessica.bin",
@@ -891,9 +893,14 @@ mod tts_tests {
             );
         }
         // Every FluidAudio Kokoro voice kesha advertises must have a staged
-        // pack, or `--voice en-<x>` resolves then 404s on the ANE bundle.
+        // pack, or `--voice en-<x>` resolves then 404s on the ANE bundle —
+        // EXCEPT `af_heart`, which FluidAudio 0.14.7 auto-provides into the
+        // same ANE dir on first synth, so kesha must NOT stage its own copy.
         for v in crate::tts::fluid_kokoro::available_voice_ids() {
             let bare = v.strip_prefix("en-").unwrap_or(&v);
+            if bare == "af_heart" {
+                continue;
+            }
             assert!(
                 names.contains(format!("{bare}.bin").as_str()),
                 "advertised voice {v} has no staged ANE pack"

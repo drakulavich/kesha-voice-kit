@@ -75,11 +75,14 @@ fn say_rate(exe: &Path, text: &str, voice: &str, rate: &str, out: &Path) -> bool
     }
     let stderr = String::from_utf8_lossy(&result.stderr);
     // Missing-model / missing-voice failures are skips, not regressions —
-    // mirrors diarize_e2e.rs's prerequisite handling.
+    // mirrors diarize_e2e.rs's prerequisite handling. `ane_kokoro_ready()`
+    // already confirmed the model + voice exist before we synthesized, so we
+    // match only the specific "models not installed" prerequisite messages the
+    // engine emits — NOT a bare "download" substring, which would also swallow
+    // a genuine synthesis regression whose error happens to mention downloads.
     if stderr.contains("install --tts")
         || stderr.contains("not installed")
         || stderr.contains("voice pack")
-        || stderr.contains("download")
     {
         eprintln!(
             "skipping: ANE Kokoro prerequisite missing (run `kesha install --tts`):\n{stderr}"
@@ -157,7 +160,7 @@ fn kokoro_rate_changes_duration() {
     }
 
     let (dur_slow, samples_slow) = wav_duration_and_samples(&slow);
-    let (dur_fast, _samples_fast) = wav_duration_and_samples(&fast);
+    let (dur_fast, samples_fast) = wav_duration_and_samples(&fast);
     let ratio = dur_slow / dur_fast;
     eprintln!(
         "kokoro_rate_changes_duration: rate=1.0 -> {dur_slow:.3}s, \
@@ -171,12 +174,15 @@ fn kokoro_rate_changes_duration() {
         peak(&samples_slow)
     );
 
-    // (2) `--rate` is honored, not silently dropped: the two encodings differ.
-    let bytes_slow = std::fs::read(&slow).unwrap();
-    let bytes_fast = std::fs::read(&fast).unwrap();
+    // (2) `--rate` is honored, not silently dropped: a no-op rate would emit
+    // identical-length audio. We reuse the already-decoded sample buffers
+    // instead of re-reading both WAVs from disk — different durations imply
+    // different data-chunk sizes, so this is the cheap in-memory corollary of
+    // the duration-ratio assertion below.
     assert_ne!(
-        bytes_slow, bytes_fast,
-        "rate 1.0 and rate 1.5 produced byte-identical WAVs — --rate was ignored (#475 regression)"
+        samples_slow.len(),
+        samples_fast.len(),
+        "rate 1.0 and rate 1.5 produced equal-length audio — --rate was ignored (#475 regression)"
     );
 
     // (1) The objective #475 guard: 1.5× must produce ~1.5× shorter audio.
