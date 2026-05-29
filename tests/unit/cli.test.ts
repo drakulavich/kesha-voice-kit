@@ -7,6 +7,12 @@ type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => 
 
 function normalizeUsage(usage: string): string {
   return usage
+    // Strip ANSI SGR escapes (color/bold/underline). citty colorizes usage when
+    // it detects a TTY or a color-forcing env (FORCE_COLOR), so the raw output
+    // differs between CI (NO_COLOR) and a local color terminal. The golden
+    // strings are plain text — normalize both to that.
+    // eslint-disable-next-line no-control-regex
+    .replace(/\u001b\[[0-9;]*m/g, "")
     .replace(/\(kesha v\d+\.\d+\.\d+(?:[-+][^)]+)?\)/g, "(kesha v<version>)")
     .split("\n")
     .map((line) => line.trimEnd())
