@@ -12,7 +12,6 @@ import { sayCommand } from "./cli/say";
 import { statsCommand } from "./cli/stats";
 import { statusCommand } from "./cli/status";
 import { supportBundleCommand } from "./cli/support-bundle";
-import { packageVersion } from "./package-info";
 
 type Shell = "bash" | "zsh" | "fish";
 
@@ -280,7 +279,7 @@ function renderManpage(model: ArtifactModel): string {
     })
     .join("\n");
 
-  return `.TH KESHA 1 "${manpageDate()}" "kesha ${packageVersion}" "User Commands"
+  return `.TH KESHA 1 "${manpageDate()}" "kesha" "User Commands"
 .SH NAME
 kesha \\- open-source local voice toolkit
 .SH SYNOPSIS
