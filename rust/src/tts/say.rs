@@ -111,9 +111,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     ))]
     if let EngineChoice::FluidKokoro { voice_id, speed } = &opts.engine {
         if opts.ssml {
-            return Err(TtsError::SynthesisFailed(
-                "SSML is not yet supported with FluidAudio Kokoro voices".into(),
-            ));
+            return synth_segments_fluid_kokoro(opts.text, voice_id, *speed, opts.format);
         }
         let wav_bytes = super::fluid_kokoro::synthesize(opts.text, voice_id, *speed)
             .map_err(|e| TtsError::SynthesisFailed(format!("fluid-kokoro: {e}")))?;
@@ -366,6 +364,119 @@ pub fn synth_segments_kokoro_with(
         ));
     }
     encode_or_fail(&out, sample_rate, format)
+}
+
+/// SSML path for FluidAudio Kokoro (CoreML/ANE), behind `system_kokoro`.
+///
+/// FluidAudio performs its own internal G2P from raw text, so — unlike the ONNX
+/// Kokoro path — we deliberately do NOT run `en::normalize_segments` (which
+/// would emit `Segment::Ipa` chunks FluidAudio cannot accept). Instead we walk
+/// the parsed segments feeding plain text per chunk, threading `<prosody rate>`
+/// into the model-native `speed` and interleaving `<break>` silence. This
+/// restores the prosody/break parity the pre-#479 ONNX path had on
+/// darwin-arm64 (closes #481).
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn synth_segments_fluid_kokoro(
+    text: &str,
+    voice_id: &str,
+    speed: f32,
+    format: OutputFormat,
+) -> Result<Vec<u8>, TtsError> {
+    let segments =
+        ssml::parse(text).map_err(|e| TtsError::SynthesisFailed(format!("ssml: {e}")))?;
+    if segments.is_empty() {
+        return Err(TtsError::SynthesisFailed(
+            "SSML had no speakable content".into(),
+        ));
+    }
+    let synth = |t: &str, sp: f32| super::fluid_kokoro::synthesize_pcm(t, voice_id, sp);
+    let sample_rate = super::fluid_kokoro::SAMPLE_RATE;
+    let mut out: Vec<f32> = Vec::new();
+    for seg in &segments {
+        synth_one_fluid_kokoro(&synth, seg, speed, sample_rate, &mut out)
+            .map_err(|e| TtsError::SynthesisFailed(format!("fluid-kokoro: {e}")))?;
+    }
+    if out.is_empty() {
+        return Err(TtsError::SynthesisFailed(
+            "no audio produced from SSML input".into(),
+        ));
+    }
+    encode_or_fail(&out, sample_rate, format)
+}
+
+/// Append the PCM for one SSML segment to `out`, mirroring `synth_one_vosk` for
+/// the FluidAudio Kokoro engine. `synth(text, speed)` turns a text chunk into
+/// f32 samples (the real impl calls `fluid_kokoro::synthesize_pcm`; tests inject
+/// a deterministic fake). Behaviour per variant:
+///
+/// - `Text` → synthesize at the current speed.
+/// - `Break` → append `sample_rate`-sized silence.
+/// - `ProsodyRate` → recurse with the CLI×SSML [`compose_rate`] product.
+/// - `Emphasis` → strip `+` stress markers (warn-once unless `suppress`), then
+///   synthesize — FluidAudio has no stress input. Mirrors the ONNX path's
+///   fallback.
+/// - `Spell` → warn-once and read as plain text; FluidAudio can't letter-spell.
+/// - `Ipa` → warn-once and skip; FluidAudio's internal G2P can't accept IPA.
+///
+/// Not cfg-gated narrower than `system_kokoro` so the unit test can exercise the
+/// walker without the FluidAudio model.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn synth_one_fluid_kokoro(
+    synth: &dyn Fn(&str, f32) -> anyhow::Result<Vec<f32>>,
+    seg: &ssml::Segment,
+    speed: f32,
+    sample_rate: u32,
+    out: &mut Vec<f32>,
+) -> anyhow::Result<()> {
+    match seg {
+        ssml::Segment::Text(t) => out.extend(synth(t, speed)?),
+        ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
+        ssml::Segment::Emphasis { content, suppress } => {
+            if !suppress {
+                crate::tts::warn::warn_once(
+                    "emphasis-non-ru-vosk",
+                    "<emphasis> stress markers are honored only on ru-vosk-* voices; \
+                     stripping `+` from content for FluidAudio Kokoro",
+                );
+            }
+            let stripped = if content.contains('+') {
+                content.replace('+', "")
+            } else {
+                content.clone()
+            };
+            out.extend(synth(&stripped, speed)?);
+        }
+        ssml::Segment::ProsodyRate { rate, content } => {
+            let effective = compose_rate(speed, *rate);
+            for inner in content {
+                synth_one_fluid_kokoro(synth, inner, effective, sample_rate, out)?;
+            }
+        }
+        ssml::Segment::Spell(s) => {
+            crate::tts::warn::warn_once(
+                "spell-fluid-kokoro",
+                "SSML <say-as interpret-as=\"characters\"> letter-spelling is not honored on \
+                 FluidAudio Kokoro; reading the content as plain text",
+            );
+            out.extend(synth(s, speed)?);
+        }
+        ssml::Segment::Ipa(_) => {
+            crate::tts::warn::warn_once(
+                "ipa-fluid-kokoro",
+                "SSML <phoneme alphabet=\"ipa\"> is not supported on FluidAudio Kokoro \
+                 (internal G2P only); skipping the phoneme segment",
+            );
+        }
+    }
+    Ok(())
 }
 
 fn say_with_kokoro(
@@ -653,5 +764,103 @@ mod tests {
         assert!((super::compose_rate(0.5, 1.0) - 0.5).abs() < 1e-6);
         assert!((super::compose_rate(2.0, 1.0) - 2.0).abs() < 1e-6);
         assert!((super::compose_rate(1.0, 1.0) - 1.0).abs() < 1e-6);
+    }
+}
+
+/// Walker tests for the FluidAudio Kokoro SSML path (#481). A fake `synth`
+/// callback records `(text, speed)` and returns one sentinel sample per
+/// character, so the whole table runs without the FluidAudio model. Gated on
+/// the same triple as the walker; runs locally on darwin-arm64 and is
+/// compile-checked by CI's macos `system_kokoro` clippy step.
+#[cfg(all(
+    test,
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+mod fluid_kokoro_ssml_tests {
+    use super::*;
+    use crate::tts::ssml::Segment;
+    use std::cell::RefCell;
+    use std::time::Duration;
+
+    /// Build a fake synth recording every call into `log`; returns
+    /// `text.chars().count()` sentinel samples so the caller can assert which
+    /// chunks were synthesized and in what order.
+    fn recording_synth(
+        log: &RefCell<Vec<(String, f32)>>,
+    ) -> impl Fn(&str, f32) -> anyhow::Result<Vec<f32>> + '_ {
+        move |t: &str, sp: f32| {
+            log.borrow_mut().push((t.to_string(), sp));
+            Ok(vec![0.5_f32; t.chars().count()])
+        }
+    }
+
+    #[test]
+    fn text_and_break_concatenate_with_silence() {
+        let log = RefCell::new(Vec::new());
+        let synth = recording_synth(&log);
+        let mut out = Vec::new();
+        // 24 kHz × 0.25 s = 6000 samples of silence between two text chunks.
+        let segs = [
+            Segment::Text("abc".into()),
+            Segment::Break(Duration::from_millis(250)),
+            Segment::Text("de".into()),
+        ];
+        for seg in &segs {
+            synth_one_fluid_kokoro(&synth, seg, 1.0, 24_000, &mut out).unwrap();
+        }
+        assert_eq!(out.len(), 3 + 6000 + 2);
+        let calls = log.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, "abc");
+        assert_eq!(calls[1].0, "de");
+    }
+
+    #[test]
+    fn prosody_rate_threads_composed_speed_to_inner_text() {
+        let log = RefCell::new(Vec::new());
+        let synth = recording_synth(&log);
+        let mut out = Vec::new();
+        // x-fast (1.5) wrapping the whole utterance, CLI rate 1.0 → effective 1.5.
+        let seg = Segment::ProsodyRate {
+            rate: 1.5,
+            content: vec![Segment::Text("hi".into())],
+        };
+        synth_one_fluid_kokoro(&synth, &seg, 1.0, 24_000, &mut out).unwrap();
+        let calls = log.borrow();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "hi");
+        assert!(
+            (calls[0].1 - 1.5).abs() < 1e-6,
+            "expected composed speed 1.5, got {}",
+            calls[0].1
+        );
+    }
+
+    #[test]
+    fn emphasis_strips_plus_markers_before_synth() {
+        let log = RefCell::new(Vec::new());
+        let synth = recording_synth(&log);
+        let mut out = Vec::new();
+        let seg = Segment::Emphasis {
+            content: "д+ома".into(),
+            suppress: false,
+        };
+        synth_one_fluid_kokoro(&synth, &seg, 1.0, 24_000, &mut out).unwrap();
+        let calls = log.borrow();
+        assert_eq!(calls[0].0, "дома", "`+` stress markers must be stripped");
+    }
+
+    #[test]
+    fn ipa_segment_is_skipped_without_calling_synth() {
+        let log = RefCell::new(Vec::new());
+        let synth = recording_synth(&log);
+        let mut out = Vec::new();
+        // FluidAudio's internal G2P can't accept IPA; the segment is dropped.
+        let seg = Segment::Ipa("həˈloʊ".into());
+        synth_one_fluid_kokoro(&synth, &seg, 1.0, 24_000, &mut out).unwrap();
+        assert!(out.is_empty(), "Ipa segment must produce no audio");
+        assert!(log.borrow().is_empty(), "synth must not be called for Ipa");
     }
 }
