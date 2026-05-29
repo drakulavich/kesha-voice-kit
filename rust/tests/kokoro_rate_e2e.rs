@@ -199,3 +199,115 @@ fn kokoro_rate_changes_duration() {
         tol * 100.0
     );
 }
+
+/// Synthesize SSML `markup` with `voice` into `out` via the real engine binary
+/// (`--ssml`). Same skip/panic contract as [`say_rate`]: a missing-prerequisite
+/// failure returns `false` (skip), success returns `true`, anything else panics.
+fn say_ssml(exe: &Path, markup: &str, voice: &str, out: &Path) -> bool {
+    let result = Command::new(exe)
+        .args([
+            "say",
+            "--voice",
+            voice,
+            "--ssml",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .arg(markup)
+        .output()
+        .expect("spawn kesha-engine say --ssml");
+    if result.status.success() {
+        return true;
+    }
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    if stderr.contains("install --tts")
+        || stderr.contains("not installed")
+        || stderr.contains("voice pack")
+    {
+        eprintln!(
+            "skipping: ANE Kokoro prerequisite missing (run `kesha install --tts`):\n{stderr}"
+        );
+        return false;
+    }
+    panic!("kesha-engine say --ssml failed unexpectedly: {stderr}");
+}
+
+#[test]
+fn kokoro_ssml_prosody_rate_changes_duration() {
+    // #481: SSML `<prosody rate="x-fast">` on the FluidAudio ANE Kokoro path
+    // must SPEED UP synthesis (threaded into the model-native speed input), not
+    // error out ("SSML is not yet supported with FluidAudio Kokoro voices") and
+    // not be a silent no-op. x-fast maps to 1.5×, so the prosody-wrapped
+    // utterance should be ~1.5× shorter than the same text synthesized as plain
+    // text at 1.0×. Both are single synth calls, so FluidAudio's fixed
+    // leading/trailing silence padding cancels in the ratio.
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+    if !ane_kokoro_ready() {
+        eprintln!(
+            "skipping: FluidAudio ANE Kokoro model + am_michael voice pack not staged \
+             (run `kesha install --tts`)"
+        );
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-kokoro-ssml-")
+        .tempdir()
+        .unwrap();
+    let plain = tmp.path().join("plain-1.0.wav");
+    let xfast = tmp.path().join("ssml-xfast.wav");
+
+    let text = "The quick brown fox jumps over the lazy dog near the riverbank at noon.";
+    let voice = "en-am_michael";
+    let ssml = format!("<speak><prosody rate=\"x-fast\">{text}</prosody></speak>");
+
+    if !say_rate(&exe, text, voice, "1.0", &plain) {
+        return; // prerequisite missing — skip cleanly
+    }
+    if !say_ssml(&exe, &ssml, voice, &xfast) {
+        return;
+    }
+
+    // `samples_plain` is unused — the existing `kokoro_rate_changes_duration`
+    // already guards am_michael non-silence at 1.0×; here we only need the
+    // plain-text duration as the prosody baseline.
+    let (dur_plain, _) = wav_duration_and_samples(&plain);
+    let (dur_xfast, samples_xfast) = wav_duration_and_samples(&xfast);
+    eprintln!(
+        "kokoro_ssml_prosody_rate_changes_duration: plain@1.0 -> {dur_plain:.3}s, \
+         x-fast -> {dur_xfast:.3}s, ratio(plain/xfast)={:.3} (expected ~1.5)",
+        dur_plain / dur_xfast
+    );
+
+    // Prosody output is audible — not an empty/silent buffer from a swallowed
+    // segment.
+    assert!(
+        peak(&samples_xfast) > 0.01,
+        "x-fast prosody produced (near-)silent audio (peak {})",
+        peak(&samples_xfast)
+    );
+
+    // The #481 guard: prosody must shorten the audio, and by ~1.5×. A rejected
+    // or no-op `<prosody rate>` would either fail synthesis (caught above) or
+    // emit plain-duration audio.
+    assert!(
+        dur_xfast < dur_plain,
+        "SSML <prosody rate=\"x-fast\"> did not shorten audio ({dur_xfast:.3}s vs plain \
+         {dur_plain:.3}s) — prosody ignored or rejected (#481)"
+    );
+    let expected = dur_plain / 1.5;
+    let tol = 0.12;
+    let lo = expected * (1.0 - tol);
+    let hi = expected * (1.0 + tol);
+    assert!(
+        (lo..=hi).contains(&dur_xfast),
+        "x-fast duration {dur_xfast:.3}s outside ±{:.0}% of expected {expected:.3}s \
+         (range {lo:.3}..={hi:.3}); plain was {dur_plain:.3}s. <prosody rate> not threaded \
+         into the FluidAudio Kokoro speed input (#481).",
+        tol * 100.0
+    );
+}

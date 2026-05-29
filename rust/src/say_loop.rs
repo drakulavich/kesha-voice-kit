@@ -279,9 +279,9 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
             target_arch = "aarch64"
         ))]
         tts::voices::ResolvedVoice::FluidKokoro { voice_id, .. } => {
-            if req.ssml {
-                return Err("SSML is not yet supported with FluidAudio Kokoro voices".into());
-            }
+            // SSML is handled inside `tts::say` for FluidAudio Kokoro post-#481
+            // (prosody rate → model-native speed, break silence stitching). No
+            // in-process session to cache: each `say` re-inits the bridge.
             tts::say(tts::SayOptions {
                 text: &req.text,
                 lang: espeak_lang,
@@ -289,7 +289,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                     voice_id: &voice_id,
                     speed: req.rate,
                 },
-                ssml: false,
+                ssml: req.ssml,
                 format,
                 expand_abbrev: req.expand_abbrev,
             })

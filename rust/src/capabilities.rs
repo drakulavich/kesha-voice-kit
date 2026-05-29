@@ -39,7 +39,10 @@ pub fn get_capabilities() -> Capabilities {
     #[cfg(feature = "tts")]
     features.push("tts.ru_emphasis_marker");
     // `tts.prosody_rate` applies to the Vosk (`ru-vosk-*`) and Kokoro
-    // (`en-*`) engines. AVSpeech (`macos-*`) is unaffected: it rejects SSML
+    // (`en-*`) engines — including the darwin-arm64 FluidAudio Kokoro path,
+    // which threads `<prosody rate>` into its model-native speed input as of
+    // #481 (earlier builds rejected SSML wholesale and made this flag a lie).
+    // AVSpeech (`macos-*`) is unaffected: it rejects SSML
     // wholesale at `tts::say` before any prosody dispatch runs (see
     // `rust/src/tts/mod.rs:120-124`), so callers sending
     // `<prosody rate>` to a `macos-*` voice get the existing
