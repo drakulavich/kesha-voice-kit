@@ -853,6 +853,21 @@ mod fluid_kokoro_ssml_tests {
     }
 
     #[test]
+    fn spell_segment_reads_as_plain_text() {
+        // FluidAudio can't letter-spell, so `<say-as interpret-as="characters">`
+        // degrades to synthesizing the raw content (warn-once on the side).
+        let log = RefCell::new(Vec::new());
+        let synth = recording_synth(&log);
+        let mut out = Vec::new();
+        let seg = Segment::Spell("ВОЗ".into());
+        synth_one_fluid_kokoro(&synth, &seg, 1.0, 24_000, &mut out).unwrap();
+        let calls = log.borrow();
+        assert_eq!(calls.len(), 1, "Spell must synthesize its content as text");
+        assert_eq!(calls[0].0, "ВОЗ");
+        assert_eq!(out.len(), 3, "expected one sentinel sample per character");
+    }
+
+    #[test]
     fn ipa_segment_is_skipped_without_calling_synth() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);

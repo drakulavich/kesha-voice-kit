@@ -103,10 +103,11 @@ pub fn synthesize_pcm(text: &str, voice_id: &str, speed: f32) -> Result<Vec<f32>
     wav_to_f32(&wav)
 }
 
-/// Decode a FluidAudio Kokoro WAV buffer (24 kHz mono, 16-bit PCM) into f32
-/// samples normalized to `[-1.0, 1.0]`. Mirrors the i16→f32 conversion in
-/// `tts::say::wav_to_mono_f32` but stays mono-only since FluidAudio always
-/// emits a single channel.
+/// Decode a FluidAudio Kokoro WAV buffer (24 kHz, 16-bit PCM) into f32 samples
+/// normalized to `[-1.0, 1.0]`. FluidAudio emits mono today, but we downmix any
+/// multi-channel buffer to mono rather than trusting that — an interleaved
+/// stereo buffer left as-is would silently double the sample count and corrupt
+/// the SSML walker's duration/`<break>` math. Mirrors `tts::say::wav_to_mono_f32`.
 fn wav_to_f32(wav: &[u8]) -> Result<Vec<f32>> {
     let reader =
         hound::WavReader::new(std::io::Cursor::new(wav)).context("decode FluidAudio Kokoro WAV")?;
@@ -125,7 +126,14 @@ fn wav_to_f32(wav: &[u8]) -> Result<Vec<f32>> {
             .collect::<std::result::Result<Vec<f32>, _>>()
             .context("read FluidAudio Kokoro float samples")?,
     };
-    Ok(samples)
+    let channels = spec.channels as usize;
+    if channels <= 1 {
+        return Ok(samples);
+    }
+    Ok(samples
+        .chunks_exact(channels)
+        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+        .collect())
 }
 
 #[cfg(test)]
