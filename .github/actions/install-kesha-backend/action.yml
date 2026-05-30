@@ -38,7 +38,7 @@ runs:
       shell: bash
       run: |
         case "${{ inputs.ffmpeg-provider }}" in
-          apt) sudo apt-get install -y ffmpeg ;;
+          apt) sudo apt-get update -qq && sudo apt-get install -y ffmpeg ;;
           brew) which ffmpeg || brew install ffmpeg ;;
           skip) exit 0 ;;
           *) echo "Unsupported ffmpeg provider: ${{ inputs.ffmpeg-provider }}" >&2; exit 1 ;;
