@@ -47,7 +47,12 @@ pub struct RecordSummary {
 
 #[cfg(not(target_os = "macos"))]
 pub fn record_default_input_to_wav(_path: &Path, _max_duration: Duration) -> Result<RecordSummary> {
-    bail!("microphone recording is currently supported on macOS only");
+    use crate::coded_bail;
+    use crate::errors::ErrorCode;
+    coded_bail!(
+        ErrorCode::UnsupportedPlatform,
+        "microphone recording is currently supported on macOS only"
+    );
 }
 
 #[cfg(target_os = "macos")]
