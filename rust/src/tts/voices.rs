@@ -486,6 +486,15 @@ mod tests {
         assert!(err.contains("install --tts"), "msg: {err}");
     }
 
+    // ONNX Kokoro install-check path: en voices resolve to a cached model file
+    // here, but on darwin-arm64 `system_kokoro` they resolve through FluidAudio
+    // (which validates the id and defers model loading), so the "install --tts"
+    // hint doesn't apply — gate this test off the fluid build.
+    #[cfg(not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )))]
     #[test]
     fn resolve_missing_voice_errors_with_hint() {
         let tmp = tempfile::tempdir().unwrap();
@@ -494,6 +503,13 @@ mod tests {
         assert!(err.to_string().contains("install --tts"), "msg: {err}");
     }
 
+    // ONNX-only path (see resolve_missing_voice_errors_with_hint): not
+    // applicable on darwin-arm64 `system_kokoro` where en routes via FluidAudio.
+    #[cfg(not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )))]
     #[test]
     fn resolve_missing_model_errors() {
         let tmp = tempfile::tempdir().unwrap();
@@ -517,7 +533,14 @@ mod tests {
     fn resolve_unsupported_language() {
         let tmp = tempfile::tempdir().unwrap();
         let err = resolve_voice(tmp.path(), "fr-something").unwrap_err();
-        assert!(err.to_string().contains("not supported"), "msg: {err}");
-        assert_eq!(crate::errors::code_of(&err), ErrorCode::VoiceUnknown);
+        // The human message differs by build — FluidAudio Kokoro (darwin-arm64,
+        // `system_kokoro`) reports "unknown FluidAudio Kokoro voice", other
+        // builds report "language not supported" — but the stable code is the
+        // contract. Match on the code, not the message (see docs/errors.md).
+        assert_eq!(
+            crate::errors::code_of(&err),
+            ErrorCode::VoiceUnknown,
+            "msg: {err}"
+        );
     }
 }

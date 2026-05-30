@@ -17,19 +17,29 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-vosk-m02");
   });
 
-  it("routes supported Kokoro languages to male FluidAudio voices on darwin", () => {
-    expect(pickVoiceForLang("es", 0.95, "darwin")).toBe("es-em_alex");
-    expect(pickVoiceForLang("es-ES", 0.95, "darwin")).toBe("es-em_alex");
-    expect(pickVoiceForLang("hi", 0.95, "darwin")).toBe("hi-hm_omega");
-    expect(pickVoiceForLang("it", 0.95, "darwin")).toBe("it-im_nicola");
-    expect(pickVoiceForLang("ja", 0.95, "darwin")).toBe("ja-jm_kumo");
-    expect(pickVoiceForLang("pt-BR", 0.95, "darwin")).toBe("pt-pm_alex");
-    expect(pickVoiceForLang("zh-Hans", 0.95, "darwin")).toBe("zh-zm_yunjian");
+  it("routes supported Kokoro languages to male FluidAudio voices on darwin-arm64", () => {
+    expect(pickVoiceForLang("es", 0.95, "darwin", "arm64")).toBe("es-em_alex");
+    expect(pickVoiceForLang("es-ES", 0.95, "darwin", "arm64")).toBe("es-em_alex");
+    expect(pickVoiceForLang("hi", 0.95, "darwin", "arm64")).toBe("hi-hm_omega");
+    expect(pickVoiceForLang("it", 0.95, "darwin", "arm64")).toBe("it-im_nicola");
+    expect(pickVoiceForLang("ja", 0.95, "darwin", "arm64")).toBe("ja-jm_kumo");
+    expect(pickVoiceForLang("pt-BR", 0.95, "darwin", "arm64")).toBe("pt-pm_alex");
+    expect(pickVoiceForLang("zh-Hans", 0.95, "darwin", "arm64")).toBe("zh-zm_yunjian");
   });
 
   it("does not auto-route Kokoro-only languages on non-darwin", () => {
     expect(pickVoiceForLang("es", 0.95, "linux")).toBeUndefined();
     expect(pickVoiceForLang("ja", 0.95, "win32")).toBeUndefined();
+  });
+
+  it("does not auto-route multilingual Kokoro on Intel macOS (no FluidAudio voice pack)", () => {
+    expect(pickVoiceForLang("es", 0.95, "darwin", "x64")).toBeUndefined();
+    expect(pickVoiceForLang("ja", 0.95, "darwin", "x64")).toBeUndefined();
+    // en (ONNX Kokoro) and ru (AVSpeech Milena) still route on Intel Macs.
+    expect(pickVoiceForLang("en", 0.95, "darwin", "x64")).toBe("en-am_michael");
+    expect(pickVoiceForLang("ru", 0.95, "darwin", "x64")).toBe(
+      "macos-com.apple.voice.compact.ru-RU.Milena",
+    );
   });
 
   it("returns undefined below 0.5 confidence (too ambiguous)", () => {
