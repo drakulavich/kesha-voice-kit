@@ -387,7 +387,7 @@ ARGUMENTS
 OPTIONS
 
               --voice=<voice>    Voice id, e.g. en-am_michael
-                --lang=<lang>    BCP 47 language code (default en-us)
+                --lang=<lang>    BCP 47 language code (default en-us). With no --voice, routes to that language's default voice and skips text-language detection.
                   --out=<out>    Write audio to file instead of stdout
                 --rate=<rate>    Speaking rate 0.5–2.0 (Default: 1.0)
                 --list-voices    List installed voices and exit

@@ -67,7 +67,7 @@ complete -c kesha -n '__fish_seen_subcommand_from record' -l debug -d 'Trace eng
 complete -c kesha -n '__fish_seen_subcommand_from say' -l help -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from say' -s h -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l voice -r -d 'Voice id, e.g. en-am_michael'
-complete -c kesha -n '__fish_seen_subcommand_from say' -l lang -r -d 'BCP 47 language code (default en-us)'
+complete -c kesha -n '__fish_seen_subcommand_from say' -l lang -r -d 'BCP 47 language code (default en-us). With no --voice, routes to that language\'s default voice and skips text-language detection.'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l out -r -d 'Write audio to file instead of stdout'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l rate -r -d 'Speaking rate 0.5–2.0'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l list-voices -d 'List installed voices and exit'

@@ -5,19 +5,35 @@
  */
 const RU_DARWIN_FALLBACK_VOICE = "macos-com.apple.voice.compact.ru-RU.Milena";
 
+const DARWIN_KOKORO_DEFAULTS: Record<string, string> = {
+  es: "es-em_alex",
+  hi: "hi-hm_omega",
+  it: "it-im_nicola",
+  ja: "ja-jm_kumo",
+  pt: "pt-pm_alex",
+  zh: "zh-zm_yunjian",
+};
+
 /** Map a detected language code to a default voice id. Unknown / low-confidence → undefined. */
 export function pickVoiceForLang(
   code: string | undefined,
   confidence: number,
   platform: NodeJS.Platform = process.platform,
+  arch: NodeJS.Architecture = process.arch,
 ): string | undefined {
   if (!code || confidence < 0.5) return undefined;
-  switch (code) {
+  const baseCode = code.toLowerCase().split(/[-_]/, 1)[0];
+  switch (baseCode) {
     case "en":
       return "en-am_michael";
     case "ru":
+      // AVSpeech Milena is a macOS system voice (any arch); Vosk elsewhere.
       return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-vosk-m02";
     default:
+      // Multilingual Kokoro voices ship only on darwin-arm64 (FluidAudio ANE).
+      // Intel Macs have no such voice pack, so don't auto-route to ids the
+      // engine can't honour — fall through to the engine default instead.
+      if (platform === "darwin" && arch === "arm64") return DARWIN_KOKORO_DEFAULTS[baseCode];
       return undefined;
   }
 }

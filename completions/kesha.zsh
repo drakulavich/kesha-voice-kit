@@ -99,7 +99,7 @@ _kesha() {
       _arguments '--help[Show help]' \
         '-h[Show help]' \
         '--voice=[Voice id, e.g. en-am_michael]:voice:' \
-        '--lang=[BCP 47 language code (default en-us)]:lang:' \
+        '--lang=[BCP 47 language code (default en-us). With no --voice, routes to that language'\''s default voice and skips text-language detection.]:lang:' \
         '--out=[Write audio to file instead of stdout]:out:' \
         '--rate=[Speaking rate 0.5–2.0]:rate:' \
         '--list-voices[List installed voices and exit]' \

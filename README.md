@@ -96,12 +96,13 @@ Each segment gets a `speaker` integer (cluster ID, stable within one file). Linu
 
 ## Text-to-speech
 
-Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian) — voice auto-picks from the text's language. On darwin-arm64, Kokoro uses FluidAudio CoreML instead of ONNX; FluidAudio stores that CoreML cache at `~/.cache/fluidaudio/Models/kokoro`, outside Kesha's pinned model cache:
+Kesha speaks back via Kokoro-82M (English plus selected multilingual voices on Apple Silicon) and Vosk-TTS (Russian) — voice auto-picks from the text's language. On darwin-arm64, Kokoro uses FluidAudio CoreML instead of ONNX; FluidAudio stores that CoreML cache at `~/.cache/fluidaudio/Models/kokoro`, outside Kesha's pinned model cache:
 
 ```bash
 kesha install --tts                      # TTS, opt-in; Darwin Kokoro uses FluidAudio cache
 kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
+kesha say --voice es-em_alex "Hola, mundo" > hola.wav
 ```
 
 **Output formats** (`--format`, or inferred from `--out` extension):

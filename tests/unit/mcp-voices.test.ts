@@ -64,6 +64,36 @@ describe("parseVoiceLines", () => {
     expect(v.languageCode).toBe("");
   });
 
+  test("maps multilingual Kokoro ids", () => {
+    const out = parseVoiceLines("es-em_alex\nja-jm_kumo\nfr-ff_siwis\n");
+    expect(out).toEqual([
+      {
+        voiceId: "es-em_alex",
+        modelId: "kokoro",
+        modelName: "Kokoro-82M",
+        languageCode: "es",
+        languageName: "Spanish",
+        gender: "male",
+      },
+      {
+        voiceId: "ja-jm_kumo",
+        modelId: "kokoro",
+        modelName: "Kokoro-82M",
+        languageCode: "ja",
+        languageName: "Japanese",
+        gender: "male",
+      },
+      {
+        voiceId: "fr-ff_siwis",
+        modelId: "kokoro",
+        modelName: "Kokoro-82M",
+        languageCode: "fr",
+        languageName: "French",
+        gender: "female",
+      },
+    ]);
+  });
+
   test("vosk female voice has gender female", () => {
     const [v] = parseVoiceLines("ru-vosk-f01");
     expect(v.gender).toBe("female");

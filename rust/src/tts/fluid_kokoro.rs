@@ -17,37 +17,168 @@ use fluidaudio_rs::FluidAudio;
 /// SSML `<break>` silence buffers when the segment walker stitches audio.
 pub const SAMPLE_RATE: u32 = 24_000;
 
-// FluidAudio 0.14.5 voice snapshot. Keep this list in sync with the FluidAudio
+#[derive(Clone, Copy)]
+pub struct VoiceSpec {
+    /// Public Kesha voice id, including the language prefix.
+    pub public_id: &'static str,
+    /// Bare FluidAudio/Kokoro voice id staged in the ANE cache.
+    pub fluid_id: &'static str,
+    /// Language tag used for diagnostics and non-Fluid Kokoro compatibility.
+    pub lang: &'static str,
+}
+
+// FluidAudio 0.14.5 voice snapshot plus the multilingual Kokoro voice packs
+// validated against the ANE cache. Keep this list in sync with the FluidAudio
 // pin in the fluidaudio-rs fork whenever it changes.
-const VOICES: &[&str] = &[
-    "af_alloy",
-    "af_aoede",
-    "af_bella",
-    "af_heart",
-    "af_jessica",
-    "af_kore",
-    "af_nicole",
-    "af_nova",
-    "af_river",
-    "af_sarah",
-    "af_sky",
-    "am_adam",
-    "am_echo",
-    "am_eric",
-    "am_fenrir",
-    "am_liam",
-    "am_michael",
-    "am_onyx",
-    "am_puck",
-    "am_santa",
+const VOICES: &[VoiceSpec] = &[
+    VoiceSpec {
+        public_id: "en-af_alloy",
+        fluid_id: "af_alloy",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_aoede",
+        fluid_id: "af_aoede",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_bella",
+        fluid_id: "af_bella",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_heart",
+        fluid_id: "af_heart",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_jessica",
+        fluid_id: "af_jessica",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_kore",
+        fluid_id: "af_kore",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_nicole",
+        fluid_id: "af_nicole",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_nova",
+        fluid_id: "af_nova",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_river",
+        fluid_id: "af_river",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_sarah",
+        fluid_id: "af_sarah",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-af_sky",
+        fluid_id: "af_sky",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_adam",
+        fluid_id: "am_adam",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_echo",
+        fluid_id: "am_echo",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_eric",
+        fluid_id: "am_eric",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_fenrir",
+        fluid_id: "am_fenrir",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_liam",
+        fluid_id: "am_liam",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_michael",
+        fluid_id: "am_michael",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_onyx",
+        fluid_id: "am_onyx",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_puck",
+        fluid_id: "am_puck",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-am_santa",
+        fluid_id: "am_santa",
+        lang: "en-us",
+    },
+    VoiceSpec {
+        public_id: "en-bm_lewis",
+        fluid_id: "bm_lewis",
+        lang: "en-gb",
+    },
+    VoiceSpec {
+        public_id: "es-em_alex",
+        fluid_id: "em_alex",
+        lang: "es",
+    },
+    VoiceSpec {
+        public_id: "hi-hm_omega",
+        fluid_id: "hm_omega",
+        lang: "hi",
+    },
+    VoiceSpec {
+        public_id: "it-im_nicola",
+        fluid_id: "im_nicola",
+        lang: "it",
+    },
+    VoiceSpec {
+        public_id: "ja-jm_kumo",
+        fluid_id: "jm_kumo",
+        lang: "ja",
+    },
+    VoiceSpec {
+        public_id: "pt-pm_alex",
+        fluid_id: "pm_alex",
+        lang: "pt-br",
+    },
+    VoiceSpec {
+        public_id: "zh-zm_yunjian",
+        fluid_id: "zm_yunjian",
+        lang: "zh",
+    },
+    VoiceSpec {
+        public_id: "fr-ff_siwis",
+        fluid_id: "ff_siwis",
+        lang: "fr-fr",
+    },
 ];
 
 pub fn available_voice_ids() -> Vec<String> {
-    VOICES.iter().map(|v| format!("en-{v}")).collect()
+    VOICES.iter().map(|v| v.public_id.to_string()).collect()
 }
 
-pub fn supports_voice(name: &str) -> bool {
-    VOICES.contains(&name)
+pub fn resolve_voice(public_id: &str) -> Option<VoiceSpec> {
+    VOICES.iter().copied().find(|v| v.public_id == public_id)
 }
 
 /// Initialize a FluidAudio Kokoro bridge for `voice_id` and run `f` against it
@@ -145,12 +276,24 @@ mod tests {
         let voices = available_voice_ids();
         assert!(voices.contains(&"en-am_michael".to_string()));
         assert!(voices.contains(&"en-af_heart".to_string()));
+        assert!(voices.contains(&"es-em_alex".to_string()));
+        assert!(voices.contains(&"ja-jm_kumo".to_string()));
+        assert!(voices.contains(&"zh-zm_yunjian".to_string()));
     }
 
     #[test]
     fn supports_known_voice() {
-        assert!(supports_voice("am_michael"));
-        assert!(!supports_voice("nonexistent"));
+        assert!(resolve_voice("en-am_michael").is_some());
+        assert!(resolve_voice("es-em_alex").is_some());
+        assert!(resolve_voice("en-em_alex").is_none());
+        assert!(resolve_voice("nonexistent").is_none());
+    }
+
+    #[test]
+    fn resolves_public_voice_to_fluid_id_and_lang() {
+        let spec = resolve_voice("pt-pm_alex").expect("pt voice");
+        assert_eq!(spec.fluid_id, "pm_alex");
+        assert_eq!(spec.lang, "pt-br");
     }
 
     #[test]

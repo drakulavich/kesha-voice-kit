@@ -141,6 +141,14 @@ fn empty_text_exits_2() {
     );
 }
 
+// ONNX-path behavior: on darwin-arm64 `system_kokoro` the default en voice
+// resolves through FluidAudio (separate model cache) and synthesizes, so a
+// fresh KESHA_CACHE_DIR neither exits 1 nor prints an install hint.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
 #[test]
 fn missing_voice_in_cache_exits_1_with_install_hint() {
     let tmp = tempfile::tempdir().unwrap();
@@ -194,6 +202,14 @@ fn resolves_from_cache_when_installed() {
     assert_eq!(&out.stdout[..4], b"RIFF");
 }
 
+// ONNX-path behavior: on darwin-arm64 `system_kokoro`, `--list-voices` lists the
+// statically-known FluidAudio voices (no install hint), so this fresh-cache
+// invariant is ONNX/Vosk-only.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
 #[test]
 fn list_voices_empty_on_fresh_cache() {
     let tmp = tempfile::tempdir().unwrap();

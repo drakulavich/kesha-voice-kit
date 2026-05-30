@@ -14,6 +14,25 @@ async function autoRouteVoice(text: string): Promise<string | undefined> {
   return pickVoiceForLang(detected?.code, detected?.confidence ?? 0);
 }
 
+/**
+ * Resolve the voice for `kesha say`. Precedence: explicit `--voice` > explicit
+ * `--lang` (route by the stated language, skipping detection — also the path on
+ * Linux/Windows where text-language detection is unavailable) > macOS
+ * text-language auto-detection > engine default (`undefined`). A `--lang` with
+ * no mapped voice (an unsupported language, or French which has no male Kokoro
+ * voice) resolves to `undefined` (engine default) rather than re-running
+ * detection — the user stated the language explicitly.
+ */
+export async function resolveSayVoice(
+  explicitVoice: string | undefined,
+  langHint: string | undefined,
+  text: string,
+): Promise<string | undefined> {
+  if (explicitVoice !== undefined) return explicitVoice;
+  if (langHint !== undefined) return pickVoiceForLang(langHint, 1);
+  return autoRouteVoice(text);
+}
+
 /** Resolve the text to synthesize: inline positional, else read from stdin. */
 async function resolveText(inline: string | undefined): Promise<string> {
   if (inline !== undefined && inline.length > 0) return inline;
@@ -89,7 +108,11 @@ export const sayCommand = defineCommand({
   args: {
     text: { type: "positional", required: false, description: "Text to speak (stdin if omitted)" },
     voice: { type: "string", description: "Voice id, e.g. en-am_michael" },
-    lang: { type: "string", description: "BCP 47 language code (default en-us)" },
+    lang: {
+      type: "string",
+      description:
+        "BCP 47 language code (default en-us). With no --voice, routes to that language's default voice and skips text-language detection.",
+    },
     out: { type: "string", description: "Write audio to file instead of stdout" },
     rate: { type: "string", description: "Speaking rate 0.5–2.0", default: "1.0" },
     "list-voices": { type: "boolean", description: "List installed voices and exit" },
@@ -183,12 +206,13 @@ export const sayCommand = defineCommand({
     }
     const text = await resolveText(inlineText);
     const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
-    const voice = explicitVoice ?? (await autoRouteVoice(text));
+    const langHint = typeof args.lang === "string" ? args.lang : undefined;
+    const voice = await resolveSayVoice(explicitVoice, langHint, text);
 
     const opts = {
       text,
       voice,
-      lang: typeof args.lang === "string" ? args.lang : undefined,
+      lang: langHint,
       out: typeof args.out === "string" ? args.out : undefined,
       rate,
       ssml: Boolean(args.ssml),

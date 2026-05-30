@@ -1,6 +1,6 @@
 # Text-to-Speech
 
-Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Vosk. Pass `--voice` to override. On darwin-arm64 release builds, English Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path. FluidAudio keeps its CoreML Kokoro cache at `~/.cache/fluidaudio/Models/kokoro`; those files are managed by FluidAudio, not Kesha's pinned model downloader.
+Kesha speaks back via Kokoro-82M (English plus selected multilingual voices on Apple Silicon) and Vosk-TTS (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Vosk. Pass `--voice` to override. On darwin-arm64 release builds, Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path. FluidAudio keeps its CoreML Kokoro cache at `~/.cache/fluidaudio/Models/kokoro`; those files are managed by FluidAudio, not Kesha's pinned model downloader.
 
 ```bash
 kesha install --tts                 # TTS models, opt-in (Darwin Kokoro uses FluidAudio cache)
@@ -9,20 +9,25 @@ kesha say "Привет, мир" > privet.wav    # auto-routes (Milena on darwin
 echo "long text" | kesha say > reply.wav
 kesha say --out reply.wav "text"
 kesha say --voice en-am_michael "text"    # explicit voice overrides auto-routing
+kesha say --lang es "Hola, mundo" > hola.wav   # route by stated language, skip detection
 kesha say --list-voices
 ```
+
+Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → engine default (`en-am_michael`). A `--lang` whose language has no mapped male voice (e.g. French) falls to the engine default rather than re-detecting.
 
 Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Vosk). OGG/Opus and MP3 are tracked in follow-up issues.
 
 Grapheme-to-phoneme:
-- **English** uses FluidAudio Kokoro CoreML on darwin-arm64 release builds. Other platforms use [misaki-rs](https://github.com/MicheleYin/misaki-rs) plus the ONNX Kokoro model.
+- **Kokoro on darwin-arm64** uses FluidAudio CoreML/ANE for English, Spanish, Hindi, Italian, Japanese, Mandarin Chinese, Brazilian Portuguese, and the single native French Kokoro voice.
+- **English on other platforms** uses [misaki-rs](https://github.com/MicheleYin/misaki-rs) plus the ONNX Kokoro model.
 - **Russian** is handled internally by [Vosk-TTS](https://github.com/alphacep/vosk-tts) — text normalisation, stress, palatalisation, and a BERT prosody model all run inside the bundled ONNX (no separate G2P pass, no system `espeak-ng` dependency).
 - **Other languages**: not supported by the on-disk engines we ship today — tracked per-language in [#212](https://github.com/drakulavich/kesha-voice-kit/issues/212).
 
 Default voices are **male** per CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE": `am_michael` for English Kokoro, `ru-vosk-m02` for Russian Vosk on Linux/Windows. The darwin Russian fallback uses `Milena` (AVSpeech, female) for the zero-install path; pass `--voice ru-vosk-m02` to opt into Vosk on macOS too.
 
 **Supported voices:**
-- English: `en-am_michael` (default). Darwin FluidAudio builds expose the supported FluidAudio Kokoro American-English voices via `kesha say --list-voices`; ONNX builds also see any `.bin` voice you add under `~/.cache/kesha/models/kokoro-82m/voices/`.
+- English: `en-am_michael` (default). Darwin FluidAudio builds expose the supported FluidAudio Kokoro English voices via `kesha say --list-voices`; ONNX builds also see any `.bin` voice you add under `~/.cache/kesha/models/kokoro-82m/voices/`.
+- Apple Silicon Kokoro multilingual voices: `es-em_alex`, `hi-hm_omega`, `it-im_nicola`, `ja-jm_kumo`, `pt-pm_alex`, `zh-zm_yunjian`, and `fr-ff_siwis`. The Spanish, Hindi, Italian, Japanese, Portuguese, and Chinese defaults are male; upstream Kokoro currently has no native male French voice, so French remains explicit-only.
 - Russian: 5 Vosk-TTS speakers baked into the multi-speaker model — `ru-vosk-m02` (default, male), `ru-vosk-m01` (male), `ru-vosk-f01`/`f02`/`f03` (female).
 - macOS system voices: `macos-<identifier-or-language>` routes to `AVSpeechSynthesizer`. Zero install, any of the 180+ voices already on your Mac.
 
