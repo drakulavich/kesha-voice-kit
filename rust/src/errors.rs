@@ -6,13 +6,6 @@
 //! returns the process exit code. See
 //! `docs/superpowers/specs/2026-05-30-structured-error-taxonomy-design.md`.
 
-// Foundation module: this task lands the taxonomy + helpers with no call sites
-// wired in (the bin compiles `errors.rs` separately from the lib, so every item
-// reads as dead until later tasks call them). Subsequent tasks wire `report` in
-// main.rs and the `coded_bail!`/`.coded()` helpers into voices/ssml/audio/models/
-// backend call sites. Lib-target coverage lives in the `tests` module below.
-#![allow(dead_code)]
-
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +26,7 @@ pub enum ErrorCode {
     SsmlUnsupported,
     TranscribeFailed,
     DiarizeTimeout,
+    InvalidArg,
     Internal,
 }
 
@@ -48,7 +42,7 @@ pub enum Category {
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 17] = [
+    pub const ALL: [ErrorCode; 18] = [
         ErrorCode::InputNotFound,
         ErrorCode::BadAudio,
         ErrorCode::ModelMissing,
@@ -65,6 +59,7 @@ impl ErrorCode {
         ErrorCode::SsmlUnsupported,
         ErrorCode::TranscribeFailed,
         ErrorCode::DiarizeTimeout,
+        ErrorCode::InvalidArg,
         ErrorCode::Internal,
     ];
 
@@ -86,6 +81,7 @@ impl ErrorCode {
             ErrorCode::SsmlUnsupported => "E_SSML_UNSUPPORTED",
             ErrorCode::TranscribeFailed => "E_TRANSCRIBE_FAILED",
             ErrorCode::DiarizeTimeout => "E_DIARIZE_TIMEOUT",
+            ErrorCode::InvalidArg => "E_INVALID_ARG",
             ErrorCode::Internal => "E_INTERNAL",
         }
     }
@@ -108,13 +104,16 @@ impl ErrorCode {
             ErrorCode::SsmlUnsupported => "SSML not supported for this engine",
             ErrorCode::TranscribeFailed => "Transcription failed",
             ErrorCode::DiarizeTimeout => "Speaker diarization timed out",
+            ErrorCode::InvalidArg => "Invalid command-line argument",
             ErrorCode::Internal => "Unexpected internal error",
         }
     }
 
     pub fn category(self) -> Category {
         match self {
-            ErrorCode::InputNotFound | ErrorCode::BadAudio => Category::Input,
+            ErrorCode::InputNotFound | ErrorCode::BadAudio | ErrorCode::InvalidArg => {
+                Category::Input
+            }
             ErrorCode::ModelMissing
             | ErrorCode::ModelDownload
             | ErrorCode::CacheCorrupt

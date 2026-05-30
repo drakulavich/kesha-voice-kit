@@ -97,9 +97,12 @@ impl ResolvedVoice {
 /// Voice id is `<lang>-<name>`; lang picks the engine and espeak language code.
 /// The special `macos-*` prefix routes to AVSpeechSynthesizer on supported builds.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
-    let (lang, name) = voice_id.split_once('-').ok_or_else(|| {
-        anyhow::anyhow!("voice id must be in 'lang-name' form (got '{voice_id}')")
-    })?;
+    let Some((lang, name)) = voice_id.split_once('-') else {
+        coded_bail!(
+            ErrorCode::VoiceUnknown,
+            "voice id must be in 'lang-name' form (got '{voice_id}')"
+        );
+    };
     match lang {
         "en" => resolve_kokoro(cache_dir, voice_id, name),
         "ru" => {
@@ -109,7 +112,8 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         "macos" => {
             if name.is_empty() {
-                anyhow::bail!(
+                coded_bail!(
+                    ErrorCode::VoiceUnknown,
                     "'macos-' voice id requires a suffix (identifier or language code, e.g. macos-en-US)"
                 );
             }
@@ -118,11 +122,15 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
             })
         }
         #[cfg(not(all(feature = "system_tts", target_os = "macos")))]
-        "macos" => anyhow::bail!(
+        "macos" => coded_bail!(
+            ErrorCode::UnsupportedPlatform,
             "'macos-*' voices require a macOS build with --features system_tts (got '{voice_id}')"
         ),
         other => {
-            anyhow::bail!("language '{other}' not supported (use 'en-*', 'ru-*', or 'macos-*')")
+            coded_bail!(
+                ErrorCode::VoiceUnknown,
+                "language '{other}' not supported (use 'en-*', 'ru-*', or 'macos-*')"
+            )
         }
     }
 }
@@ -135,7 +143,8 @@ fn resolve_kokoro(_cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Resu
     ))]
     {
         if !crate::tts::fluid_kokoro::supports_voice(name) {
-            anyhow::bail!(
+            coded_bail!(
+                ErrorCode::VoiceUnknown,
                 "unknown FluidAudio Kokoro voice '{voice_id}'. run: kesha say --list-voices"
             );
         }
@@ -351,10 +360,10 @@ mod tests {
     #[test]
     fn resolve_macos_voice_errors_without_feature() {
         let tmp = tempfile::tempdir().unwrap();
-        let err = resolve_voice(tmp.path(), "macos-en-US")
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("system_tts"), "msg: {err}");
+        let err = resolve_voice(tmp.path(), "macos-en-US").unwrap_err();
+        assert!(err.to_string().contains("system_tts"), "msg: {err}");
+        // Missing the macOS feature is a platform failure, not an unknown voice.
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::UnsupportedPlatform);
     }
 
     fn populate_vosk_ru(cache: &Path) {
@@ -447,6 +456,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let err = resolve_voice(tmp.path(), "gibberish").unwrap_err();
         assert!(err.to_string().contains("lang-name"));
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::VoiceUnknown);
     }
 
     #[test]
@@ -454,5 +464,6 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let err = resolve_voice(tmp.path(), "fr-something").unwrap_err();
         assert!(err.to_string().contains("not supported"), "msg: {err}");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::VoiceUnknown);
     }
 }
