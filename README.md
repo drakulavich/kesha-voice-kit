@@ -359,6 +359,8 @@ Add to your client config:
 { "mcpServers": { "kesha": { "command": "kesha", "args": ["mcp"] } } }
 ```
 
+Claude Desktop users can place the same JSON in `claude_desktop_config.json`.
+
 <details>
 <summary>Claude Code</summary>
 
