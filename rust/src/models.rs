@@ -3,6 +3,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::coded_bail;
+use crate::errors::{CodedContext, ErrorCode};
+
 /// A file in a model manifest. `rel_path` is relative to `cache_dir()`,
 /// uniform across ASR / lang-id / TTS. Every entry carries a pinned
 /// SHA-256 so an upstream rehost or a compromised `KESHA_MODEL_MIRROR`
@@ -1064,7 +1067,8 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     // fails — anyhow's context surfaces the URL through the bail.
     let response = ureq::get(&url)
         .call()
-        .with_context(|| format!("GET {url} ({})", f.rel_path))?;
+        .with_context(|| format!("GET {url} ({})", f.rel_path))
+        .coded(ErrorCode::ModelDownload)?;
     let mut reader = response.into_body().into_reader();
     let mut out =
         fs::File::create(&target).with_context(|| format!("create {}", target.display()))?;
@@ -1080,7 +1084,8 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         // unverified weights (#174). Best-effort — errors here are masked
         // by the bail below which surfaces the real problem.
         let _ = fs::remove_file(&target);
-        anyhow::bail!(
+        coded_bail!(
+            ErrorCode::CacheCorrupt,
             "sha256 mismatch for {}: expected {} got {}",
             f.rel_path,
             f.sha256.get(..12).unwrap_or(f.sha256),

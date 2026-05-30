@@ -1,4 +1,6 @@
 use crate::audio;
+use crate::coded_bail;
+use crate::errors::{CodedContext, ErrorCode};
 use crate::models;
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -15,16 +17,21 @@ pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
     audio::ensure_audio_track(audio_path)?;
 
     if !models::is_cached(models::ModelKind::LangId) {
-        anyhow::bail!("Lang-ID model not installed. Run: kesha install");
+        coded_bail!(
+            ErrorCode::ModelMissing,
+            "Lang-ID model not installed. Run: kesha install"
+        );
     }
 
     let dir = models::model_dir(models::ModelKind::LangId);
 
     // Load ONNX session
     let mut session = ort::session::Session::builder()
-        .context("failed to create lang-id session builder")?
+        .context("failed to create lang-id session builder")
+        .coded(ErrorCode::ModelLoad)?
         .commit_from_file(dir.join("lang-id-ecapa.onnx"))
-        .context("failed to load lang-id model")?;
+        .context("failed to load lang-id model")
+        .coded(ErrorCode::ModelLoad)?;
 
     // Load labels
     let labels: Vec<String> = {

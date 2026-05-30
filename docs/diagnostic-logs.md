@@ -91,3 +91,9 @@ kesha logs mode retain-on-failure
 # reproduce the failure
 kesha support-bundle --include-logs --output kesha-support-with-logs.tar.gz
 ```
+
+## Error codes
+
+Failure events record a stable `error_code` field (leak-free by construction).
+The same code is printed to stderr as `error [CODE]: …` and recorded in Stats.
+See [Error codes](errors.md) for the full reference.

@@ -5,6 +5,7 @@ import {
   spawnStdioWithDebugFd,
   type EngineCapabilities,
 } from "./engine";
+import { engineErrorCode, TS_NATIVE_CODES } from "./error-codes";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { registerProcessTree } from "./process-tree";
@@ -97,6 +98,7 @@ export class SayError extends Error {
     message: string,
     public readonly exitCode: number,
     public readonly stderr: string,
+    public readonly code: string = "E_INTERNAL",
   ) {
     super(message);
     this.name = "SayError";
@@ -110,11 +112,16 @@ export class SayError extends Error {
 export async function say(opts: SayOptions): Promise<Uint8Array> {
   const text = opts.text ?? "";
   if (text.length === 0) {
-    throw new SayError("text is empty", 2, "");
+    throw new SayError("text is empty", 2, "", "E_TEXT_EMPTY");
   }
   const chars = Array.from(text).length;
   if (chars > MAX_TEXT_CHARS) {
-    throw new SayError(`text exceeds ${MAX_TEXT_CHARS} chars (${chars})`, 5, "");
+    throw new SayError(
+      `text exceeds ${MAX_TEXT_CHARS} chars (${chars})`,
+      5,
+      "",
+      "E_TEXT_TOO_LONG",
+    );
   }
 
   if (!isEngineInstalled()) {
@@ -122,6 +129,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
       `kesha-engine not installed. run: ${installHint("--tts")}`,
       1,
       "",
+      TS_NATIVE_CODES.ENGINE_SPAWN,
     );
   }
   const capabilities = opts.noExpandAbbrev ? await getEngineCapabilities() : null;
@@ -176,6 +184,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
       stderrText.trim() || `kesha-engine say exited ${exitCode}`,
       exitCode,
       stderrText,
+      engineErrorCode(stderrText),
     );
   }
   return new Uint8Array(stdoutBuf);

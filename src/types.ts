@@ -19,7 +19,13 @@ export type TranscribeResult = {
 
 export type TranscribeErrorRecord = {
   file: string;
-  code: "file_not_found" | "transcribe_failed";
+  /**
+   * Taxonomy error code. The canonical set lives in Rust and is documented in
+   * `docs/errors.md`; we type it as `string` so the precise engine code (e.g.
+   * `E_DIARIZE_TIMEOUT`, `E_MODEL_MISSING`) flows through to `--include-errors`
+   * output instead of being collapsed to a narrow union.
+   */
+  code: string;
   message: string;
 };
 

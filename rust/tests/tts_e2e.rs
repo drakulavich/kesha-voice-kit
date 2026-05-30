@@ -7,6 +7,7 @@ mod common;
 
 use std::path::Path;
 
+use kesha_engine::errors::ErrorCode;
 use kesha_engine::tts::{self, EngineChoice, OutputFormat, SayOptions, TtsError};
 
 #[test]
@@ -114,5 +115,13 @@ fn ssml_input_without_speak_root_errors() {
         format: OutputFormat::Wav,
         expand_abbrev: true,
     });
-    assert!(matches!(res, Err(TtsError::SynthesisFailed(_))));
+    // A malformed SSML body now preserves the engine's SsmlInvalid code via
+    // TtsError::Coded instead of collapsing into the generic SynthesisFailed.
+    assert!(matches!(
+        res,
+        Err(TtsError::Coded {
+            code: ErrorCode::SsmlInvalid,
+            ..
+        })
+    ));
 }

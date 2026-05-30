@@ -122,9 +122,10 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
     if let EngineChoice::AVSpeech { voice_id } = &opts.engine {
         if opts.ssml {
-            return Err(TtsError::SynthesisFailed(
-                "SSML is not yet supported with macos-* voices (#141 follow-up)".into(),
-            ));
+            return Err(TtsError::Coded {
+                code: crate::errors::ErrorCode::SsmlUnsupported,
+                message: "SSML is not yet supported with macos-* voices (#141 follow-up)".into(),
+            });
         }
         let wav_bytes = avspeech::synthesize(opts.text, voice_id, None)
             .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")))?;
@@ -220,8 +221,10 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
 /// SSML path: parse, then synthesize each text segment through the engine (loaded once),
 /// interleaving silence for `<break>` segments. Concatenate the f32 samples and wrap as WAV.
 fn say_ssml(opts: &SayOptions) -> Result<Vec<u8>, TtsError> {
-    let segments =
-        ssml::parse(opts.text).map_err(|e| TtsError::SynthesisFailed(format!("ssml: {e}")))?;
+    let segments = ssml::parse(opts.text).map_err(|e| TtsError::Coded {
+        code: crate::errors::code_of(&e),
+        message: format!("ssml: {e:#}"),
+    })?;
     if segments.is_empty() {
         return Err(TtsError::SynthesisFailed(
             "SSML had no speakable content".into(),
@@ -386,8 +389,10 @@ fn synth_segments_fluid_kokoro(
     speed: f32,
     format: OutputFormat,
 ) -> Result<Vec<u8>, TtsError> {
-    let segments =
-        ssml::parse(text).map_err(|e| TtsError::SynthesisFailed(format!("ssml: {e}")))?;
+    let segments = ssml::parse(text).map_err(|e| TtsError::Coded {
+        code: crate::errors::code_of(&e),
+        message: format!("ssml: {e:#}"),
+    })?;
     if segments.is_empty() {
         return Err(TtsError::SynthesisFailed(
             "SSML had no speakable content".into(),
@@ -545,8 +550,10 @@ fn synth_segments_vosk(
     format: OutputFormat,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
-    let segments =
-        ssml::parse(text).map_err(|e| TtsError::SynthesisFailed(format!("ssml: {e}")))?;
+    let segments = ssml::parse(text).map_err(|e| TtsError::Coded {
+        code: crate::errors::code_of(&e),
+        message: format!("ssml: {e:#}"),
+    })?;
     if segments.is_empty() {
         return Err(TtsError::SynthesisFailed(
             "SSML had no speakable content".into(),

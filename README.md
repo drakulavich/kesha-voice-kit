@@ -456,6 +456,10 @@ exit codes, and coarse audio metadata only. They must not store audio,
 transcripts, input text, generated speech text, file names, full paths, raw
 stdout/stderr, environment variables, tokens, or URLs. See [Diagnostic logs](docs/diagnostic-logs.md).
 
+Every user-facing failure prints a stable `error [CODE]: …` line on stderr. See
+[Error codes](docs/errors.md) for the full reference; engine codes are also
+available via `kesha-engine --error-codes-json`.
+
 ## Local Stats privacy and lifecycle
 
 Kesha Stats is disabled by default. When you opt in with `kesha stats enable`,

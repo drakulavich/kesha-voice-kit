@@ -371,7 +371,7 @@ describe("CLI contracts", () => {
     expect(parsed.results).toHaveLength(1);
     expect(parsed.results[0].file).toBe(mediaPath);
     expect(parsed.errors).toEqual([
-      { file: "missing.wav", code: "file_not_found", message: "File not found" },
+      { file: "missing.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
     ]);
   });
 
@@ -404,8 +404,43 @@ describe("CLI contracts", () => {
     expect(parsed.errors).toEqual([
       {
         file: mediaPath,
-        code: "transcribe_failed",
+        code: "E_TRANSCRIBE_FAILED",
         message: diarizeError,
+      },
+    ]);
+  });
+
+  test("--json --include-errors preserves the engine's precise coded error (no collapse)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-coded-error-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    // Engine stderr carries a real `error [CODE]:` line; the CLI must surface
+    // that exact code in errors[].code rather than flattening it to
+    // E_TRANSCRIBE_FAILED. E_DIARIZE_TIMEOUT is retryable — losing it would
+    // discard real signal from the one user-facing structured output.
+    const codedError =
+      "error [E_DIARIZE_TIMEOUT]: speaker diarization timed out after 30s for 4s of audio";
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_TRANSCRIBE_ERROR: codedError,
+    };
+    installFakeDiarizeModel(env.KESHA_CACHE_DIR);
+
+    const run = await runCli(["--json", "--include-errors", "--speakers", mediaPath], { env });
+
+    expectContract(run, {
+      exitCode: 1,
+      stdoutNotContains: ["Transcribing"],
+    });
+    const parsed = JSON.parse(run.stdout);
+    expect(parsed.results).toEqual([]);
+    expect(parsed.errors).toEqual([
+      {
+        file: mediaPath,
+        code: "E_DIARIZE_TIMEOUT",
+        message: codedError,
       },
     ]);
   });
@@ -726,7 +761,21 @@ describe("CLI contracts", () => {
       KESHA_ENGINE_BIN: enginePath,
     };
 
-    const plan = await runCli(["install", "--plan", "--tts"], { env });
+    // These six commands are read-only and observe the pristine initial state
+    // (no stats run recorded yet; diagnostic logs at defaults). They don't
+    // mutate state or depend on each other, so run them concurrently to keep
+    // this spawn-heavy contract test well under its timeout even when the
+    // sibling model-download e2e tests saturate the runner. Everything from
+    // `logs enable` onward mutates state and stays sequential.
+    const [plan, initPlan, status, logsStatus, logsStatusJson, logsEnableJson] = await Promise.all([
+      runCli(["install", "--plan", "--tts"], { env }),
+      runCli(["init", "--plan", "--tts", "--vad"], { env }),
+      runCli(["stats", "status"], { env }),
+      runCli(["logs", "status"], { env }),
+      runCli(["logs", "status", "--json"], { env }),
+      runCli(["logs", "enable", "--json"], { env }),
+    ]);
+
     expect(plan.envDiff.overrides.KESHA_ENGINE_BIN).toBe(enginePath);
     expectContract(plan, {
       exitCode: 0,
@@ -738,7 +787,6 @@ describe("CLI contracts", () => {
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
-    const initPlan = await runCli(["init", "--plan", "--tts", "--vad"], { env });
     expectContract(initPlan, {
       exitCode: 0,
       stdoutContains: [
@@ -750,14 +798,12 @@ describe("CLI contracts", () => {
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
-    const status = await runCli(["stats", "status"], { env });
     expectContract(status, {
       exitCode: 0,
       stdoutContains: ["Kesha Stats: disabled", `Database: ${env.KESHA_STATS_DB}`, "Runs: 0", "Retention: 90 day(s)"],
       stderrEmpty: true,
     });
 
-    const logsStatus = await runCli(["logs", "status"], { env });
     expectContract(logsStatus, {
       exitCode: 0,
       stdoutContains: [
@@ -769,7 +815,6 @@ describe("CLI contracts", () => {
       stderrEmpty: true,
     });
 
-    const logsStatusJson = await runCli(["logs", "status", "--json"], { env });
     expectContract(logsStatusJson, {
       exitCode: 0,
       stderrEmpty: true,
@@ -788,7 +833,6 @@ describe("CLI contracts", () => {
       retain: 5,
     });
 
-    const logsEnableJson = await runCli(["logs", "enable", "--json"], { env });
     expectContract(logsEnableJson, {
       exitCode: 2,
       stdoutEmpty: true,
@@ -853,7 +897,7 @@ describe("CLI contracts", () => {
     const errors = await runCli(["stats", "errors"], { env });
     expectContract(errors, {
       exitCode: 0,
-      stdoutContains: ["file_not_found"],
+      stdoutContains: ["E_INPUT_NOT_FOUND"],
       stdoutNotContains: ["private-recording.wav"],
       stderrEmpty: true,
     });
@@ -894,5 +938,7 @@ describe("CLI contracts", () => {
       stdoutContains: ["Kesha Stats reset:", "run(s)"],
       stderrEmpty: true,
     });
-  });
+    // ~20 sequential CLI spawns; the default 5s bun timeout is too tight when
+    // this runs alongside the model-download e2e tests in the same job.
+  }, 30000);
 });

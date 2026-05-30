@@ -23,6 +23,9 @@ mod warnings;
 use ssml_parser::elements::{EmphasisLevel, ParsedElement, PhonemeAlphabet};
 use ssml_parser::parse_ssml;
 
+use crate::coded_bail;
+use crate::errors::ErrorCode;
+
 pub use segment::Segment;
 
 use super::warn::warn_once;
@@ -40,10 +43,11 @@ use warnings::{WARN_PROSODY_MID_UTTERANCE, WARN_PROSODY_NO_SUPPORTED_ATTR};
 pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     let trimmed = input.trim_start();
     if trimmed.is_empty() {
-        anyhow::bail!("SSML input is empty");
+        coded_bail!(ErrorCode::SsmlInvalid, "SSML input is empty");
     }
     if !trimmed.starts_with("<speak") {
-        anyhow::bail!(
+        coded_bail!(
+            ErrorCode::SsmlInvalid,
             "SSML must start with a <speak> element (got '{}...')",
             &trimmed.chars().take(20).collect::<String>()
         );
@@ -53,7 +57,10 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     // expand external entities. Input length is already bounded upstream
     // (`MAX_TEXT_CHARS`), so a full scan is cheap.
     if contains_doctype(trimmed) {
-        anyhow::bail!("SSML DOCTYPE declarations are not supported");
+        coded_bail!(
+            ErrorCode::SsmlInvalid,
+            "SSML DOCTYPE declarations are not supported"
+        );
     }
     // Reject relative-percent rate values (`+N%` / `-N%`) before handing off
     // to `ssml-parser`. The upstream crate strips the `+` sign during parse
@@ -64,7 +71,8 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     // percentage not allowed for rate" message. Tracked as a v2 follow-up
     // on #236.
     if let Some(rel) = find_relative_rate(trimmed) {
-        anyhow::bail!(
+        coded_bail!(
+            ErrorCode::SsmlInvalid,
             "SSML <prosody rate=\"{rel}\"> uses a relative percentage; \
              this is not yet supported. Use an absolute percentage (e.g. \
              \"125%\") or a named value (\"x-slow\"/\"slow\"/\"medium\"/\

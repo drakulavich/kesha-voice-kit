@@ -12,6 +12,8 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::{Hint, Probe};
 
+use crate::errors::{CodedContext, ErrorCode};
+
 const TARGET_SAMPLE_RATE: u32 = 16000;
 
 /// Build a codec registry that includes the default codecs plus libopus.
@@ -49,7 +51,19 @@ fn build_hint(path: &str) -> Hint {
 /// Shared by `decode_audio` and `probe_duration_seconds` so container
 /// detection + error messages live in one place.
 fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameters)> {
-    let src = std::fs::File::open(path).with_context(|| format!("file not found: {path}"))?;
+    let src = std::fs::File::open(path).map_err(|e| {
+        let code = if e.kind() == std::io::ErrorKind::NotFound {
+            ErrorCode::InputNotFound
+        } else {
+            ErrorCode::BadAudio
+        };
+        let message = if code == ErrorCode::InputNotFound {
+            format!("file not found: {path}")
+        } else {
+            format!("could not open audio file: {path}: {e}")
+        };
+        anyhow::Error::new(crate::errors::CodedError { code, message })
+    })?;
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     let hint = build_hint(path);
@@ -102,7 +116,11 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
             Ok(p) => p,
             Err(SymphoniaError::IoError(_)) => break,
             Err(SymphoniaError::ResetRequired) => break,
-            Err(e) => return Err(e).with_context(|| format!("decode error in: {path}")),
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("decode error in: {path}"))
+                    .coded(ErrorCode::BadAudio)
+            }
         };
 
         // Drain stale metadata
@@ -117,7 +135,11 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
         let decoded = match decoder.decode(&packet) {
             Ok(d) => d,
             Err(SymphoniaError::IoError(_)) | Err(SymphoniaError::DecodeError(_)) => continue,
-            Err(e) => return Err(e).with_context(|| format!("decode error in: {path}")),
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("decode error in: {path}"))
+                    .coded(ErrorCode::BadAudio)
+            }
         };
 
         // Initialise the sample buffer on first decoded frame
