@@ -36,14 +36,16 @@ needs sanitizing.
 
 ## Where codes come from
 
-- **Engine codes** (everything except `E_ENGINE_SPAWN` and `E_INVALID_ARG`) are
-  defined in the Rust engine and emitted on its stderr as `error [CODE]: …`.
-  List them with `kesha-engine --error-codes-json`.
-- **`E_ENGINE_SPAWN`** and **`E_INVALID_ARG`** originate in the TypeScript CLI,
-  for failures that happen before or around the engine subprocess (a failed
-  spawn, or CLI argument validation). `E_INPUT_NOT_FOUND` is emitted by both:
-  the CLI checks input existence up front, and the engine emits it too if a
-  missing file reaches it directly.
+- **Engine codes** (everything except `E_ENGINE_SPAWN`) are defined in the Rust
+  engine and emitted on its stderr as `error [CODE]: …`. List them with
+  `kesha-engine --error-codes-json`.
+- **`E_ENGINE_SPAWN`** originates only in the TypeScript CLI, for the failure to
+  spawn the engine subprocess at all.
+- **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
+  engine and the TypeScript CLI: the CLI validates arguments and checks input
+  existence up front, and the engine emits the same codes when a bad argument or
+  a missing file reaches it directly (e.g. `kesha-engine say` with conflicting
+  `--model` / `--voice-file`, or a malformed `--format`).
 
 ## Stability
 
