@@ -156,16 +156,16 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
 ///
 /// FluidAudio 0.14.7's `KokoroAneManager` resolves `<voice>.bin` LOCAL-FIRST
 /// from its own cache (`~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/`)
-/// before any download. The ANE English bundle only ships `af_heart`, so
-/// `am_michael` (kesha's male brand default) and the rest of the catalog 404
-/// from the bundle. These packs are 510×256 f32 `.bin` — byte-identical to
-/// the standard onnx-community Kokoro packs kesha used on the ONNX path — so
-/// we download them from onnx-community and stage them into the ANE cache at
-/// install time (see [`stage_ane_kokoro_voices`]). `af_heart` is intentionally
-/// EXCLUDED: FluidAudio 0.14.7 auto-downloads its own `af_heart.bin` into the
-/// ANE dir on first synth, and staging our own copy would risk an SHA mismatch
-/// overwriting FluidAudio's authoritative pack. Kesha only stages the voices
-/// the ANE bundle LACKS (`am_michael` and the rest of the catalog).
+/// before any download. The ANE bundle only ships `af_heart`, so `am_michael`
+/// (kesha's male brand default) and the rest of the advertised Kokoro catalog
+/// 404 from the bundle. These packs are 510×256 f32 `.bin` — byte-identical to
+/// the standard onnx-community Kokoro packs kesha used on the ONNX path — so we
+/// download them from onnx-community and stage them into the ANE cache at install
+/// time (see [`stage_ane_kokoro_voices`]). `af_heart` is intentionally EXCLUDED:
+/// FluidAudio 0.14.7 auto-downloads its own `af_heart.bin` into the ANE dir on
+/// first synth, and staging our own copy would risk an SHA mismatch overwriting
+/// FluidAudio's authoritative pack. Kesha only stages the voices the ANE bundle
+/// LACKS (`am_michael` and the rest of the advertised catalog).
 ///
 /// SHA-256 pins computed from `onnx-community/Kokoro-82M-v1.0-ONNX` — an
 /// upstream rehost becomes a deliberate PR to bump (CLAUDE.md MODEL HASHES).
@@ -274,14 +274,54 @@ const ANE_KOKORO_VOICES: &[ModelFile] = &[
         url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_santa.bin",
         sha256: "61150cf726ab6c5ed7a99f90a304f91f5a72c00c592e89ec94e5df11c319227a",
     },
+    ModelFile {
+        rel_path: "bm_lewis.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/bm_lewis.bin",
+        sha256: "b8f671cef828c30e66fdf0b0756a76bba58f6bb3398cbbf27058642acbcedb97",
+    },
+    ModelFile {
+        rel_path: "em_alex.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/em_alex.bin",
+        sha256: "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95",
+    },
+    ModelFile {
+        rel_path: "ff_siwis.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/ff_siwis.bin",
+        sha256: "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861",
+    },
+    ModelFile {
+        rel_path: "hm_omega.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/hm_omega.bin",
+        sha256: "b02d9222d9ed00ce26b302173a862c2c93f96cc40b5c422b8d14910b9ff34137",
+    },
+    ModelFile {
+        rel_path: "im_nicola.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/im_nicola.bin",
+        sha256: "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0",
+    },
+    ModelFile {
+        rel_path: "jm_kumo.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/jm_kumo.bin",
+        sha256: "09e959d239724c734d65661f06f14cdabcddfd476bfaaad905a937099ae9e64f",
+    },
+    ModelFile {
+        rel_path: "pm_alex.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/pm_alex.bin",
+        sha256: "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
+    },
+    ModelFile {
+        rel_path: "zm_yunjian.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/zm_yunjian.bin",
+        sha256: "de48a00bdbf3649f07162269a2b6e0513604389bfac8a2e6c75cb34b323ad6fa",
+    },
 ];
 
 /// FluidAudio's Kokoro ANE voice-pack cache directory. NOT under
 /// `KESHA_CACHE_DIR` — FluidAudio 0.14.7 owns this path and reads voice packs
 /// from here local-first. We pre-stage onnx-community packs here so the full
-/// en-* catalog (and the male `am_michael` default) resolve without a 404
-/// against the ANE bundle. Mirrors the existing CLAUDE.md note that darwin
-/// Kokoro uses the fluidaudio cache rather than `KESHA_CACHE_DIR`.
+/// advertised Kokoro catalog (and the male `am_michael` default) resolve
+/// without a 404 against the ANE bundle. Mirrors the existing CLAUDE.md note
+/// that darwin Kokoro uses the fluidaudio cache rather than `KESHA_CACHE_DIR`.
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -297,7 +337,7 @@ pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
         .join("ANE")
 }
 
-/// Download + SHA-verify every en-* Kokoro voice pack directly into
+/// Download + SHA-verify every advertised Kokoro voice pack directly into
 /// FluidAudio's ANE cache so `KokoroAneManager.ensureVoicePack` resolves them
 /// local-first (#475). Idempotent: an existing pack that already matches its
 /// pinned hash short-circuits the network round-trip, identical to
@@ -891,11 +931,14 @@ mod tts_tests {
             );
         }
         // Every FluidAudio Kokoro voice kesha advertises must have a staged
-        // pack, or `--voice en-<x>` resolves then 404s on the ANE bundle —
+        // pack, or `--voice <lang>-<x>` resolves then 404s on the ANE bundle —
         // EXCEPT `af_heart`, which FluidAudio 0.14.7 auto-provides into the
         // same ANE dir on first synth, so kesha must NOT stage its own copy.
         for v in crate::tts::fluid_kokoro::available_voice_ids() {
-            let bare = v.strip_prefix("en-").unwrap_or(&v);
+            let bare = v
+                .split_once('-')
+                .map(|(_, bare)| bare)
+                .unwrap_or(v.as_str());
             if bare == "af_heart" {
                 continue;
             }

@@ -5,6 +5,15 @@
  */
 const RU_DARWIN_FALLBACK_VOICE = "macos-com.apple.voice.compact.ru-RU.Milena";
 
+const DARWIN_KOKORO_DEFAULTS: Record<string, string> = {
+  es: "es-em_alex",
+  hi: "hi-hm_omega",
+  it: "it-im_nicola",
+  ja: "ja-jm_kumo",
+  pt: "pt-pm_alex",
+  zh: "zh-zm_yunjian",
+};
+
 /** Map a detected language code to a default voice id. Unknown / low-confidence → undefined. */
 export function pickVoiceForLang(
   code: string | undefined,
@@ -12,12 +21,14 @@ export function pickVoiceForLang(
   platform: NodeJS.Platform = process.platform,
 ): string | undefined {
   if (!code || confidence < 0.5) return undefined;
-  switch (code) {
+  const baseCode = code.toLowerCase().split(/[-_]/, 1)[0];
+  switch (baseCode) {
     case "en":
       return "en-am_michael";
     case "ru":
       return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-vosk-m02";
     default:
+      if (platform === "darwin") return DARWIN_KOKORO_DEFAULTS[baseCode];
       return undefined;
   }
 }

@@ -17,6 +17,21 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-vosk-m02");
   });
 
+  it("routes supported Kokoro languages to male FluidAudio voices on darwin", () => {
+    expect(pickVoiceForLang("es", 0.95, "darwin")).toBe("es-em_alex");
+    expect(pickVoiceForLang("es-ES", 0.95, "darwin")).toBe("es-em_alex");
+    expect(pickVoiceForLang("hi", 0.95, "darwin")).toBe("hi-hm_omega");
+    expect(pickVoiceForLang("it", 0.95, "darwin")).toBe("it-im_nicola");
+    expect(pickVoiceForLang("ja", 0.95, "darwin")).toBe("ja-jm_kumo");
+    expect(pickVoiceForLang("pt-BR", 0.95, "darwin")).toBe("pt-pm_alex");
+    expect(pickVoiceForLang("zh-Hans", 0.95, "darwin")).toBe("zh-zm_yunjian");
+  });
+
+  it("does not auto-route Kokoro-only languages on non-darwin", () => {
+    expect(pickVoiceForLang("es", 0.95, "linux")).toBeUndefined();
+    expect(pickVoiceForLang("ja", 0.95, "win32")).toBeUndefined();
+  });
+
   it("returns undefined below 0.5 confidence (too ambiguous)", () => {
     expect(pickVoiceForLang("ru", 0.3)).toBeUndefined();
   });

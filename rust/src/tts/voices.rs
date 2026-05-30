@@ -99,6 +99,12 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
     })?;
     match lang {
         "en" => resolve_kokoro(cache_dir, voice_id, name),
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        "es" | "fr" | "hi" | "it" | "ja" | "pt" | "zh" => resolve_fluid_kokoro(voice_id),
         "ru" => {
             let suffix = name.strip_prefix("vosk-").unwrap_or(name);
             resolve_vosk_ru(cache_dir, voice_id, suffix)
@@ -131,15 +137,8 @@ fn resolve_kokoro(_cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Resu
         target_arch = "aarch64"
     ))]
     {
-        if !crate::tts::fluid_kokoro::supports_voice(name) {
-            anyhow::bail!(
-                "unknown FluidAudio Kokoro voice '{voice_id}'. run: kesha say --list-voices"
-            );
-        }
-        return Ok(ResolvedVoice::FluidKokoro {
-            voice_id: name.to_string(),
-            espeak_lang: "en-us",
-        });
+        let _ = name;
+        return resolve_fluid_kokoro(voice_id);
     }
     #[allow(unreachable_code)]
     {
@@ -162,6 +161,21 @@ fn resolve_kokoro(_cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Resu
             espeak_lang: "en-us",
         })
     }
+}
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn resolve_fluid_kokoro(voice_id: &str) -> anyhow::Result<ResolvedVoice> {
+    let Some(spec) = crate::tts::fluid_kokoro::resolve_voice(voice_id) else {
+        anyhow::bail!("unknown FluidAudio Kokoro voice '{voice_id}'. run: kesha say --list-voices");
+    };
+    Ok(ResolvedVoice::FluidKokoro {
+        voice_id: spec.fluid_id.to_string(),
+        espeak_lang: spec.lang,
+    })
 }
 
 fn resolve_vosk_ru(
@@ -299,6 +313,44 @@ mod tests {
             }
             other => panic!("expected FluidKokoro, got {other:?}"),
         }
+    }
+
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn resolve_multilingual_kokoro_voice_uses_fluid_audio_on_darwin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = resolve_voice(tmp.path(), "es-em_alex").unwrap();
+        match r {
+            ResolvedVoice::FluidKokoro {
+                voice_id,
+                espeak_lang,
+            } => {
+                assert_eq!(voice_id, "em_alex");
+                assert_eq!(espeak_lang, "es");
+            }
+            other => panic!("expected FluidKokoro, got {other:?}"),
+        }
+    }
+
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn reject_cross_language_fluid_kokoro_alias() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = resolve_voice(tmp.path(), "en-em_alex")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("unknown FluidAudio Kokoro voice"),
+            "msg: {err}"
+        );
     }
 
     #[cfg(all(feature = "system_tts", target_os = "macos"))]

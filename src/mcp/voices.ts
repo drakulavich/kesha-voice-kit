@@ -60,6 +60,22 @@ function parseVoiceInfo(id: string): VoiceInfo {
     };
   }
 
+  const kokoro = id.match(/^(es|fr|hi|it|ja|pt|zh)-([a-z][fm]_.+)$/);
+  if (kokoro) {
+    const languageCode = kokoro[1];
+    const bareVoice = kokoro[2];
+    const genderChar = bareVoice[1];
+    const gender: "male" | "female" = genderChar === "f" ? "female" : "male";
+    return {
+      voiceId: id,
+      modelId: "kokoro",
+      modelName: "Kokoro-82M",
+      languageCode,
+      languageName: langNameFor(languageCode),
+      gender,
+    };
+  }
+
   if (id.startsWith("macos-")) {
     const m = id.match(/[a-z]{2}-[A-Z]{2}/);
     const languageCode = m ? m[0] : "";
