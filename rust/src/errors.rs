@@ -199,6 +199,29 @@ pub fn report(err: &anyhow::Error) -> i32 {
     1
 }
 
+#[derive(Serialize)]
+struct CodeEntry {
+    code: &'static str,
+    title: &'static str,
+    category: Category,
+    retryable: bool,
+}
+
+/// JSON array of every error code, for `--error-codes-json`, docs drift tests,
+/// and `kesha doctor`.
+pub fn error_codes_json() -> String {
+    let entries: Vec<CodeEntry> = ErrorCode::ALL
+        .iter()
+        .map(|&c| CodeEntry {
+            code: c.as_str(),
+            title: c.title(),
+            category: c.category(),
+            retryable: c.retryable(),
+        })
+        .collect();
+    serde_json::to_string(&entries).expect("error-codes serialize")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +299,24 @@ mod tests {
         assert_eq!(report(&coded.unwrap_err()), 1);
         let plain = anyhow::anyhow!("plain");
         assert_eq!(report(&plain), 1);
+    }
+
+    #[test]
+    fn error_codes_json_covers_all_variants() {
+        let json = error_codes_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let arr = parsed.as_array().unwrap();
+        assert_eq!(arr.len(), ErrorCode::ALL.len());
+        for c in ErrorCode::ALL {
+            assert!(
+                arr.iter().any(|e| e["code"] == c.as_str()),
+                "{} missing from --error-codes-json",
+                c.as_str()
+            );
+        }
+        let model_missing = arr.iter().find(|e| e["code"] == "E_MODEL_MISSING").unwrap();
+        assert_eq!(model_missing["category"], "model");
+        assert_eq!(model_missing["retryable"], false);
+        assert!(model_missing["title"].is_string());
     }
 }

@@ -38,6 +38,10 @@ struct Cli {
     /// Print capabilities as JSON
     #[arg(long = "capabilities-json")]
     capabilities_json: bool,
+
+    /// Print the error-code taxonomy as JSON and exit.
+    #[arg(long = "error-codes-json")]
+    error_codes_json: bool,
 }
 
 #[derive(Subcommand)]
@@ -178,6 +182,11 @@ fn main() {
             Ok(s) => println!("{s}"),
             Err(e) => std::process::exit(errors::report(&anyhow::Error::new(e))),
         }
+        return;
+    }
+
+    if cli.error_codes_json {
+        println!("{}", errors::error_codes_json());
         return;
     }
 
