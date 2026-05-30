@@ -20,7 +20,7 @@ import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../proces
 import type { TranscriptionSegment } from "../types";
 import { createDiagnosticLogSession } from "../diagnostic-log";
 import { diagnosticSizeBucket } from "../diagnostic-events";
-import { extractEngineErrorCode, TS_NATIVE_CODES } from "../error-codes";
+import { ENGINE_CODES, extractEngineErrorCode, TS_NATIVE_CODES } from "../error-codes";
 
 interface MainCommandArgs {
   _: string[];
@@ -409,7 +409,7 @@ export const mainCommand = defineCommand({
         progress?.stop();
         hasError = true;
         const stderrText = err instanceof Error ? err.message : String(err);
-        const code = extractEngineErrorCode(stderrText) ?? "E_TRANSCRIBE_FAILED";
+        const code = extractEngineErrorCode(stderrText) ?? ENGINE_CODES.TRANSCRIBE_FAILED;
         stats.recordError("transcribe", err, code);
         diagnosticLog.event("engine.exit", {
           command: "transcribe",

@@ -24,6 +24,17 @@ export const TS_NATIVE_CODES = {
 
 export type TsNativeCode = (typeof TS_NATIVE_CODES)[keyof typeof TS_NATIVE_CODES];
 
+/**
+ * Engine-owned codes the TS CLI also references by name (e.g. as a fallback
+ * when the engine died without printing an `error [CODE]:` line). These are NOT
+ * TS-native — the engine is the source of truth — so they stay out of
+ * {@link KNOWN_TS_CODES} and the drift test. Named here to avoid bare string
+ * literals scattered through the CLI.
+ */
+export const ENGINE_CODES = {
+  TRANSCRIBE_FAILED: "E_TRANSCRIBE_FAILED",
+} as const;
+
 /** The full set of TS-native codes, for the drift test. */
 export const KNOWN_TS_CODES: ReadonlySet<string> = new Set(Object.values(TS_NATIVE_CODES));
 
