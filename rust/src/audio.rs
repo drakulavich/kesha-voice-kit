@@ -12,6 +12,8 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::{Hint, Probe};
 
+use crate::errors::{CodedContext, ErrorCode};
+
 const TARGET_SAMPLE_RATE: u32 = 16000;
 
 /// Build a codec registry that includes the default codecs plus libopus.
@@ -102,7 +104,11 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
             Ok(p) => p,
             Err(SymphoniaError::IoError(_)) => break,
             Err(SymphoniaError::ResetRequired) => break,
-            Err(e) => return Err(e).with_context(|| format!("decode error in: {path}")),
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("decode error in: {path}"))
+                    .coded(ErrorCode::BadAudio)
+            }
         };
 
         // Drain stale metadata
@@ -117,7 +123,11 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
         let decoded = match decoder.decode(&packet) {
             Ok(d) => d,
             Err(SymphoniaError::IoError(_)) | Err(SymphoniaError::DecodeError(_)) => continue,
-            Err(e) => return Err(e).with_context(|| format!("decode error in: {path}")),
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("decode error in: {path}"))
+                    .coded(ErrorCode::BadAudio)
+            }
         };
 
         // Initialise the sample buffer on first decoded frame
