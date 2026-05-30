@@ -9,8 +9,11 @@ kesha say "Привет, мир" > privet.wav    # auto-routes (Milena on darwin
 echo "long text" | kesha say > reply.wav
 kesha say --out reply.wav "text"
 kesha say --voice en-am_michael "text"    # explicit voice overrides auto-routing
+kesha say --lang es "Hola, mundo" > hola.wav   # route by stated language, skip detection
 kesha say --list-voices
 ```
+
+Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → engine default (`en-am_michael`). A `--lang` whose language has no mapped male voice (e.g. French) falls to the engine default rather than re-detecting.
 
 Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Vosk). OGG/Opus and MP3 are tracked in follow-up issues.
 
