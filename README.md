@@ -359,9 +359,63 @@ Add to your client config:
 { "mcpServers": { "kesha": { "command": "kesha", "args": ["mcp"] } } }
 ```
 
-- **Claude Desktop:** `claude_desktop_config.json`
-- **Claude Code:** `claude mcp add kesha -- kesha mcp`
-- **Cursor:** `.cursor/mcp.json`
+<details>
+<summary>Claude Code</summary>
+
+```bash
+claude mcp add kesha -- kesha mcp
+```
+
+</details>
+
+<details>
+<summary>Codex</summary>
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.kesha]
+command = "kesha"
+args = ["mcp"]
+```
+
+</details>
+
+<details>
+<summary>Gemini CLI</summary>
+
+Add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "kesha": {
+      "command": "kesha",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Cursor</summary>
+
+Add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "kesha": {
+      "command": "kesha",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+</details>
 
 If a tool returns "models not installed", run `kesha install` (ASR) or
 `kesha install --tts` (TTS) once, then retry.
