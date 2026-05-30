@@ -5,6 +5,9 @@
 
 use std::path::Path;
 
+use crate::coded_bail;
+use crate::errors::ErrorCode;
+
 pub const VOICE_ROWS: usize = 510;
 /// Dimensions per row (voice embedding width).
 pub const VOICE_COLS: usize = 256;
@@ -148,10 +151,14 @@ fn resolve_kokoro(_cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Resu
             .join("models/kokoro-82m/voices")
             .join(format!("{name}.bin"));
         if !voice_path.exists() {
-            anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
+            coded_bail!(
+                ErrorCode::ModelMissing,
+                "voice '{voice_id}' not installed. run: kesha install --tts"
+            );
         }
         if !model_path.exists() {
-            anyhow::bail!(
+            coded_bail!(
+                ErrorCode::ModelMissing,
                 "kokoro model not installed at {}. run: kesha install --tts",
                 model_path.display()
             );
@@ -175,14 +182,18 @@ fn resolve_vosk_ru(
         "f03" => 2,
         "m01" => 3,
         "m02" => 4,
-        _ => anyhow::bail!(
+        _ => coded_bail!(
+            ErrorCode::VoiceUnknown,
             "unknown Russian voice '{voice_id}'. valid: ru-vosk-f01, ru-vosk-f02, \
              ru-vosk-f03, ru-vosk-m01, ru-vosk-m02"
         ),
     };
     let model_dir = crate::models::model_dir_at(crate::models::ModelKind::VoskRu, cache_dir);
     if !crate::models::is_cached_in(crate::models::ModelKind::VoskRu, &model_dir) {
-        anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
+        coded_bail!(
+            ErrorCode::ModelMissing,
+            "voice '{voice_id}' not installed. run: kesha install --tts"
+        );
     }
     Ok(ResolvedVoice::Vosk {
         model_dir,
