@@ -57,10 +57,12 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
         } else {
             ErrorCode::BadAudio
         };
-        anyhow::Error::new(crate::errors::CodedError {
-            code,
-            message: format!("file not found: {path}"),
-        })
+        let message = if code == ErrorCode::InputNotFound {
+            format!("file not found: {path}")
+        } else {
+            format!("could not open audio file: {path}: {e}")
+        };
+        anyhow::Error::new(crate::errors::CodedError { code, message })
     })?;
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
