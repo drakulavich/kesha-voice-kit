@@ -133,7 +133,7 @@ fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
     match e {
         tts::TtsError::EmptyText => 2,
         tts::TtsError::TextTooLong { .. } => 5,
-        tts::TtsError::SynthesisFailed(_) => 4,
+        tts::TtsError::SynthesisFailed(_) | tts::TtsError::Coded { .. } => 4,
     }
 }
 
@@ -174,7 +174,10 @@ pub fn run(a: SayArgs) -> i32 {
     ) {
         Ok(f) => f,
         Err(msg) => {
-            eprintln!("error [E_INVALID_ARG]: {msg}");
+            eprintln!(
+                "error [{}]: {msg}",
+                crate::errors::ErrorCode::InvalidArg.as_str()
+            );
             return 2;
         }
     };
@@ -215,7 +218,10 @@ pub fn run(a: SayArgs) -> i32 {
             espeak_lang: "en-us",
         },
         (Some(_), None) | (None, Some(_)) => {
-            eprintln!("error [E_INVALID_ARG]: pass both --model and --voice-file or neither");
+            eprintln!(
+                "error [{}]: pass both --model and --voice-file or neither",
+                crate::errors::ErrorCode::InvalidArg.as_str()
+            );
             return 2;
         }
         (None, None) => {

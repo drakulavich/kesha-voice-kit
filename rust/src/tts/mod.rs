@@ -46,6 +46,14 @@ pub enum TtsError {
     TextTooLong { max: usize, actual: usize },
     #[error("synthesis failed: {0}")]
     SynthesisFailed(String),
+    /// A synthesis failure that carries a precise taxonomy code recovered from
+    /// the underlying engine error (e.g. SSML parse failures preserve their
+    /// `SsmlInvalid` code instead of collapsing to `Internal`).
+    #[error("{message}")]
+    Coded {
+        code: crate::errors::ErrorCode,
+        message: String,
+    },
 }
 
 impl TtsError {
@@ -56,6 +64,7 @@ impl TtsError {
             TtsError::EmptyText => ErrorCode::TextEmpty,
             TtsError::TextTooLong { .. } => ErrorCode::TextTooLong,
             TtsError::SynthesisFailed(_) => ErrorCode::Internal,
+            TtsError::Coded { code, .. } => *code,
         }
     }
 }
@@ -125,6 +134,14 @@ mod code_tests {
         assert_eq!(
             TtsError::SynthesisFailed("x".into()).code(),
             ErrorCode::Internal
+        );
+        assert_eq!(
+            TtsError::Coded {
+                code: ErrorCode::SsmlInvalid,
+                message: "ssml: bad".into()
+            }
+            .code(),
+            ErrorCode::SsmlInvalid
         );
     }
 }
