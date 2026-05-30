@@ -6,6 +6,7 @@ mod backend;
 mod capabilities;
 mod cli;
 mod debug;
+mod errors;
 #[cfg(all(
     target_os = "macos",
     any(
@@ -37,6 +38,10 @@ struct Cli {
     /// Print capabilities as JSON
     #[arg(long = "capabilities-json")]
     capabilities_json: bool,
+
+    /// Print the error-code taxonomy as JSON and exit.
+    #[arg(long = "error-codes-json")]
+    error_codes_json: bool,
 }
 
 #[derive(Subcommand)]
@@ -164,7 +169,7 @@ enum Commands {
     },
 }
 
-fn main() -> Result<()> {
+fn main() {
     // Anchor the `KESHA_DEBUG=1` `+Nms` timeline before `Cli::parse()` so
     // clap parsing + env probes are counted toward the first `dtrace!`'s
     // prefix (Greptile P2 on #293). No-op when debug is off.
@@ -173,11 +178,25 @@ fn main() -> Result<()> {
 
     if cli.capabilities_json {
         let caps = capabilities::get_capabilities();
-        println!("{}", serde_json::to_string(&caps)?);
-        return Ok(());
+        match serde_json::to_string(&caps) {
+            Ok(s) => println!("{s}"),
+            Err(e) => std::process::exit(errors::report(&anyhow::Error::new(e))),
+        }
+        return;
     }
 
-    match cli.command {
+    if cli.error_codes_json {
+        println!("{}", errors::error_codes_json());
+        return;
+    }
+
+    if let Err(err) = run_command(cli.command) {
+        std::process::exit(errors::report(&err));
+    }
+}
+
+fn run_command(command: Option<Commands>) -> Result<()> {
+    match command {
         Some(Commands::Transcribe {
             audio_path,
             json,

@@ -133,7 +133,7 @@ fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
     match e {
         tts::TtsError::EmptyText => 2,
         tts::TtsError::TextTooLong { .. } => 5,
-        tts::TtsError::SynthesisFailed(_) => 4,
+        tts::TtsError::SynthesisFailed(_) | tts::TtsError::Coded { .. } => 4,
     }
 }
 
@@ -174,7 +174,10 @@ pub fn run(a: SayArgs) -> i32 {
     ) {
         Ok(f) => f,
         Err(msg) => {
-            eprintln!("error: {msg}");
+            eprintln!(
+                "error [{}]: {msg}",
+                crate::errors::ErrorCode::InvalidArg.as_str()
+            );
             return 2;
         }
     };
@@ -184,7 +187,7 @@ pub fn run(a: SayArgs) -> i32 {
         None => {
             let mut buf = String::new();
             if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
-                eprintln!("error: failed to read stdin: {e}");
+                eprintln!("error [E_INTERNAL]: failed to read stdin: {e}");
                 return 4;
             }
             buf.trim().to_string()
@@ -193,7 +196,7 @@ pub fn run(a: SayArgs) -> i32 {
 
     if text_joined.is_empty() {
         let err = tts::TtsError::EmptyText;
-        eprintln!("error: {err}");
+        eprintln!("error [{}]: {err}", err.code().as_str());
         return exit_code_for_tts_err(&err);
     }
     let len = text_joined.chars().count();
@@ -202,7 +205,7 @@ pub fn run(a: SayArgs) -> i32 {
             max: tts::MAX_TEXT_CHARS,
             actual: len,
         };
-        eprintln!("error: {err}");
+        eprintln!("error [{}]: {err}", err.code().as_str());
         return exit_code_for_tts_err(&err);
     }
 
@@ -215,15 +218,18 @@ pub fn run(a: SayArgs) -> i32 {
             espeak_lang: "en-us",
         },
         (Some(_), None) | (None, Some(_)) => {
-            eprintln!("error: pass both --model and --voice-file or neither");
+            eprintln!(
+                "error [{}]: pass both --model and --voice-file or neither",
+                crate::errors::ErrorCode::InvalidArg.as_str()
+            );
             return 2;
         }
         (None, None) => {
             let id = a.voice.as_deref().unwrap_or(tts::voices::DEFAULT_VOICE_ID);
             match tts::voices::resolve_voice(&models::cache_dir(), id) {
                 Ok(r) => r,
-                Err(e) => {
-                    eprintln!("error: {e}");
+                Err(err) => {
+                    eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
                     return 1;
                 }
             }
@@ -279,7 +285,7 @@ pub fn run(a: SayArgs) -> i32 {
     }) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("error: {e}");
+            eprintln!("error [{}]: {e}", e.code().as_str());
             return exit_code_for_tts_err(&e);
         }
     };
@@ -291,7 +297,7 @@ pub fn run(a: SayArgs) -> i32 {
             .map_err(|e| e.to_string()),
     };
     if let Err(msg) = write_result {
-        eprintln!("error: write failed: {msg}");
+        eprintln!("error [E_INTERNAL]: write failed: {msg}");
         return 4;
     }
     0

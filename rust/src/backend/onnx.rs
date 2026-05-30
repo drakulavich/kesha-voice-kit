@@ -6,6 +6,7 @@ use ort::session::Session;
 use ort::value::Value;
 
 use crate::audio;
+use crate::errors::{CodedContext, ErrorCode};
 use crate::util::argmax;
 
 use super::TranscribeBackend;
@@ -28,24 +29,29 @@ impl OnnxBackend {
         let model_path = Path::new(model_dir);
 
         let preprocessor = Session::builder()
-            .context("Failed to create preprocessor session builder")?
+            .context("Failed to create preprocessor session builder")
+            .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("nemo128.onnx"))
-            .context("Failed to load nemo128.onnx — run `kesha-engine install` first")?;
+            .context("Failed to load nemo128.onnx — run `kesha-engine install` first")
+            .coded(ErrorCode::ModelLoad)?;
 
         let encoder = Session::builder()
-            .context("Failed to create encoder session builder")?
+            .context("Failed to create encoder session builder")
+            .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("encoder-model.onnx"))
-            .context("Failed to load encoder-model.onnx — run `kesha-engine install` first")?;
+            .context("Failed to load encoder-model.onnx — run `kesha-engine install` first")
+            .coded(ErrorCode::ModelLoad)?;
 
         let decoder = Session::builder()
-            .context("Failed to create decoder session builder")?
+            .context("Failed to create decoder session builder")
+            .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("decoder_joint-model.onnx"))
-            .context(
-                "Failed to load decoder_joint-model.onnx — run `kesha-engine install` first",
-            )?;
+            .context("Failed to load decoder_joint-model.onnx — run `kesha-engine install` first")
+            .coded(ErrorCode::ModelLoad)?;
 
         let vocab = load_vocab(model_path.join("vocab.txt"))
-            .context("Failed to load vocab.txt — run `kesha-engine install` first")?;
+            .context("Failed to load vocab.txt — run `kesha-engine install` first")
+            .coded(ErrorCode::ModelLoad)?;
 
         let blank_id = vocab.len() - 1;
 

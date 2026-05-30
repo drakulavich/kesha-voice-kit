@@ -15,6 +15,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::coded_bail;
+use crate::errors::{CodedContext, ErrorCode};
 use crate::process_tree::ChildGuard;
 
 /// Path to the sidecar `say-avspeech` binary.
@@ -61,7 +63,8 @@ pub fn synthesize(text: &str, voice_id: &str, helper: Option<&Path>) -> anyhow::
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| anyhow::anyhow!("spawn {}: {e}", bin.display()))?;
+        .map_err(|e| anyhow::anyhow!("spawn {}: {e}", bin.display()))
+        .coded(ErrorCode::SidecarMissing)?;
     let mut child = ChildGuard::new(child);
 
     child
@@ -72,7 +75,8 @@ pub fn synthesize(text: &str, voice_id: &str, helper: Option<&Path>) -> anyhow::
 
     let output = child.wait_with_output()?;
     if !output.status.success() {
-        anyhow::bail!(
+        coded_bail!(
+            ErrorCode::SidecarMissing,
             "avspeech helper exited {}: {}",
             output.status,
             String::from_utf8_lossy(&output.stderr).trim()

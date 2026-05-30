@@ -434,11 +434,11 @@ describe("output formatting", () => {
   test("JSON output can opt into structured file errors (#324 P1)", () => {
     const output = formatJsonOutput(
       [{ file: "ok.ogg", text: "Hello", lang: "en" }],
-      [{ file: "missing.ogg", code: "file_not_found", message: "File not found" }],
+      [{ file: "missing.ogg", code: "E_INPUT_NOT_FOUND", message: "File not found" }],
     );
     expect(JSON.parse(output)).toEqual({
       results: [{ file: "ok.ogg", text: "Hello", lang: "en" }],
-      errors: [{ file: "missing.ogg", code: "file_not_found", message: "File not found" }],
+      errors: [{ file: "missing.ogg", code: "E_INPUT_NOT_FOUND", message: "File not found" }],
     });
   });
 

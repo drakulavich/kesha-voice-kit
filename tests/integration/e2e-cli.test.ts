@@ -274,8 +274,8 @@ describe("e2e-cli", () => {
     expect(JSON.parse(stdout)).toEqual({
       results: [],
       errors: [
-        { file: "a.wav", code: "file_not_found", message: "File not found" },
-        { file: "b.wav", code: "file_not_found", message: "File not found" },
+        { file: "a.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
+        { file: "b.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
       ],
     });
   });
@@ -307,7 +307,7 @@ describe("e2e-cli", () => {
     expect(parsed.results[0].file).toBe(mediaPath);
     expect(parsed.results[0].text).toContain("Привет с воркшопа");
     expect(parsed.errors).toEqual([
-      { file: "missing.wav", code: "file_not_found", message: "File not found" },
+      { file: "missing.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
     ]);
   });
 
@@ -403,7 +403,7 @@ describe("e2e-cli", () => {
 
     const errors = await runCli(["stats", "errors"], { env });
     expect(errors.exitCode).toBe(0);
-    expect(errors.stdout).toContain("file_not_found");
+    expect(errors.stdout).toContain("E_INPUT_NOT_FOUND");
     expect(errors.stdout).not.toContain("missing-private-name.wav");
 
     const db = new Database(dbPath, { readonly: true });

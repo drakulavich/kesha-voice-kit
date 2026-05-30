@@ -360,9 +360,65 @@ Add to your client config:
 { "mcpServers": { "kesha": { "command": "kesha", "args": ["mcp"] } } }
 ```
 
-- **Claude Desktop:** `claude_desktop_config.json`
-- **Claude Code:** `claude mcp add kesha -- kesha mcp`
-- **Cursor:** `.cursor/mcp.json`
+Claude Desktop users can place the same JSON in `claude_desktop_config.json`.
+
+<details>
+<summary>Claude Code</summary>
+
+```bash
+claude mcp add kesha -- kesha mcp
+```
+
+</details>
+
+<details>
+<summary>Codex</summary>
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.kesha]
+command = "kesha"
+args = ["mcp"]
+```
+
+</details>
+
+<details>
+<summary>Gemini CLI</summary>
+
+Add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "kesha": {
+      "command": "kesha",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Cursor</summary>
+
+Add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "kesha": {
+      "command": "kesha",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+</details>
 
 If a tool returns "models not installed", run `kesha install` (ASR) or
 `kesha install --tts` (TTS) once, then retry.
@@ -400,6 +456,10 @@ They use content-free NDJSON events: command/stage names, versions, durations,
 exit codes, and coarse audio metadata only. They must not store audio,
 transcripts, input text, generated speech text, file names, full paths, raw
 stdout/stderr, environment variables, tokens, or URLs. See [Diagnostic logs](docs/diagnostic-logs.md).
+
+Every user-facing failure prints a stable `error [CODE]: …` line on stderr. See
+[Error codes](docs/errors.md) for the full reference; engine codes are also
+available via `kesha-engine --error-codes-json`.
 
 ## Local Stats privacy and lifecycle
 

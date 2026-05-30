@@ -24,7 +24,12 @@ pub fn create_backend(model_dir: &str) -> Result<Box<dyn TranscribeBackend>> {
     }
     #[cfg(not(any(feature = "onnx", feature = "coreml")))]
     {
+        use crate::coded_bail;
+        use crate::errors::ErrorCode;
         let _ = model_dir;
-        anyhow::bail!("No backend available — build with --features onnx or coreml")
+        coded_bail!(
+            ErrorCode::NoBackend,
+            "No backend available — build with --features onnx or coreml"
+        )
     }
 }

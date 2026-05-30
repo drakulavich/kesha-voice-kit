@@ -11,7 +11,7 @@ use std::time::Instant;
 
 #[cfg(any(target_os = "macos", test))]
 use anyhow::Context;
-use anyhow::{bail, Result};
+use anyhow::Result;
 #[cfg(target_os = "macos")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 #[cfg(target_os = "macos")]
@@ -47,13 +47,18 @@ pub struct RecordSummary {
 
 #[cfg(not(target_os = "macos"))]
 pub fn record_default_input_to_wav(_path: &Path, _max_duration: Duration) -> Result<RecordSummary> {
-    bail!("microphone recording is currently supported on macOS only");
+    use crate::coded_bail;
+    use crate::errors::ErrorCode;
+    coded_bail!(
+        ErrorCode::UnsupportedPlatform,
+        "microphone recording is currently supported on macOS only"
+    );
 }
 
 #[cfg(target_os = "macos")]
 pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Result<RecordSummary> {
     if max_duration.is_zero() {
-        bail!("--max-seconds must be greater than 0");
+        anyhow::bail!("--max-seconds must be greater than 0");
     }
 
     let host = cpal::default_host();
@@ -78,7 +83,7 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         SampleFormat::F32 => build_input_stream::<f32>(&device, &config, sample_tx, err_fn)?,
         SampleFormat::I16 => build_input_stream::<i16>(&device, &config, sample_tx, err_fn)?,
         SampleFormat::U16 => build_input_stream::<u16>(&device, &config, sample_tx, err_fn)?,
-        other => bail!("unsupported microphone sample format: {other:?}"),
+        other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
     };
 
     stream
@@ -193,7 +198,7 @@ impl FromInputSample<u16> for f32 {
 #[cfg(target_os = "macos")]
 fn ensure_input_channels(channels: u16) -> Result<()> {
     if channels == 0 {
-        bail!("microphone reported zero channels");
+        anyhow::bail!("microphone reported zero channels");
     }
     Ok(())
 }

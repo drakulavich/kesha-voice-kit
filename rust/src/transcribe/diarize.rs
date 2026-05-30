@@ -4,6 +4,9 @@
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+
+use crate::coded_bail;
+use crate::errors::ErrorCode;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc;
@@ -160,10 +163,17 @@ fn run_with_timeout(
     match rx.recv_timeout(timeout) {
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            bail!("{}", diarize_timeout_error(timeout, audio_secs))
+            coded_bail!(
+                ErrorCode::DiarizeTimeout,
+                "{}",
+                diarize_timeout_error(timeout, audio_secs)
+            )
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
-            bail!("speaker diarization worker terminated unexpectedly")
+            coded_bail!(
+                ErrorCode::Internal,
+                "speaker diarization worker terminated unexpectedly"
+            )
         }
     }
 }

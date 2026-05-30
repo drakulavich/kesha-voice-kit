@@ -46,6 +46,27 @@ pub enum TtsError {
     TextTooLong { max: usize, actual: usize },
     #[error("synthesis failed: {0}")]
     SynthesisFailed(String),
+    /// A synthesis failure that carries a precise taxonomy code recovered from
+    /// the underlying engine error (e.g. SSML parse failures preserve their
+    /// `SsmlInvalid` code instead of collapsing to `Internal`).
+    #[error("{message}")]
+    Coded {
+        code: crate::errors::ErrorCode,
+        message: String,
+    },
+}
+
+impl TtsError {
+    /// Stable taxonomy code for this synthesis failure.
+    pub fn code(&self) -> crate::errors::ErrorCode {
+        use crate::errors::ErrorCode;
+        match self {
+            TtsError::EmptyText => ErrorCode::TextEmpty,
+            TtsError::TextTooLong { .. } => ErrorCode::TextTooLong,
+            TtsError::SynthesisFailed(_) => ErrorCode::Internal,
+            TtsError::Coded { code, .. } => *code,
+        }
+    }
 }
 
 /// Which TTS engine to run. Voice ids determine this via `voices::resolve_voice`.
@@ -92,4 +113,35 @@ pub struct SayOptions<'a> {
     /// (#232), Latin on `en-*` (#244). Default `true`. `<say-as interpret-as="characters">`
     /// is always honored regardless of this flag. No effect for `macos-*` voices.
     pub expand_abbrev: bool,
+}
+
+#[cfg(test)]
+mod code_tests {
+    use super::*;
+    use crate::errors::ErrorCode;
+
+    #[test]
+    fn tts_error_maps_to_codes() {
+        assert_eq!(TtsError::EmptyText.code(), ErrorCode::TextEmpty);
+        assert_eq!(
+            TtsError::TextTooLong {
+                max: 5000,
+                actual: 6000
+            }
+            .code(),
+            ErrorCode::TextTooLong
+        );
+        assert_eq!(
+            TtsError::SynthesisFailed("x".into()).code(),
+            ErrorCode::Internal
+        );
+        assert_eq!(
+            TtsError::Coded {
+                code: ErrorCode::SsmlInvalid,
+                message: "ssml: bad".into()
+            }
+            .code(),
+            ErrorCode::SsmlInvalid
+        );
+    }
 }

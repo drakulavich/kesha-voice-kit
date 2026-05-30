@@ -10,6 +10,10 @@ on:
   # commit on `main`, so an unrelated touch doesn't run the full matrix.
   push:
     branches: [main]
+  # Nightly heavy real-engine e2e on main: model-format/engine drift gate, and
+  # it warms the default-branch-scoped model cache so PR heavy runs restore it.
+  schedule:
+    - cron: '0 4 * * *'
 
 permissions:
   contents: read
@@ -31,7 +35,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       integration: ${{ steps.filter.outputs.integration }}
-      tts_e2e: ${{ steps.filter.outputs.tts_e2e }}
+      heavy_e2e: ${{ steps.filter.outputs.heavy_e2e }}
       raycast: ${{ steps.filter.outputs.raycast }}
       nix: ${{ steps.filter.outputs.nix }}
       workflows: ${{ steps.filter.outputs.workflows }}
@@ -51,9 +55,14 @@ jobs:
           #   — the `needs: unit-tests` gate then evaluates predictably without
           #   the skip-propagation hazard that #274 + the pre-rewrite of #280
           #   silently fell into.
-          # - `tts_e2e` is its own filter: rust + the TS files that drive the
-          #   say-e2e test. It is INDEPENDENT — no `unit-tests` gate, because a
-          #   rust-only PR (`code == 'false'`) still needs the e2e to run.
+          # - `heavy_e2e` gates the model-DOWNLOADING lanes (integration-tests-full,
+          #   published-engine-smoke, tts-e2e): engine/model paths only (rust/**,
+          #   model pins, the real-engine e2e test files) — deliberately NOT
+          #   `src/**`, so TS-only PRs skip the 2.4GB download (the fake/stub
+          #   suites cover the TS contract in the fast lane). It is NOT a subset
+          #   of `code` (it includes `rust/**`), so those lanes use an
+          #   `always() && unit-tests != failure` gate to survive a legitimately
+          #   skipped `unit-tests` on a rust-only PR (the #274 skip hazard).
           filters: |
             code:
               - 'src/**'
@@ -78,12 +87,14 @@ jobs:
               - 'bun.lock'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
-            tts_e2e:
-              - 'src/**'
-              - 'tests/integration/say-e2e.test.ts'
+            heavy_e2e:
               - 'rust/**'
               - 'package.json'
               - 'bun.lock'
+              - 'tests/fixtures/**'
+              - 'tests/integration/e2e-engine.test.ts'
+              - 'tests/integration/mcp-e2e.test.ts'
+              - 'tests/integration/say-e2e.test.ts'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
             raycast:
@@ -248,29 +259,25 @@ jobs:
           retention-days: 30
 
   integration-tests:
-    # Skip on release/* branches: this job downloads the released engine
-    # binary (the version in `package.json#keshaEngine.version`), which
-    # doesn't exist yet on a version-bump PR — the tag is pushed AFTER
-    # merge per the CLAUDE.md release flow. `release-branch-engine-smoke`
-    # below covers that high-risk path with a locally built engine instead.
+    # FAST lane: runs the full `tests/integration/` suite WITHOUT installing
+    # the engine or models. The model-dependent e2e suites
+    # (`e2e-engine`, `mcp-e2e`, `say-e2e`) self-skip via
+    # `describe.skipIf(!engineInstalled)` when no engine is present, so this
+    # lane exercises only the fake/stub-based contract suites
+    # (`cli-contracts`, `e2e-cli`, `say`). No `kesha install`, no cache, no
+    # download — so it's safe on every PR including release/* branches
+    # (no published-engine 404 risk without an install step). Real-engine
+    # coverage lives in `integration-tests-full` below, gated to engine/model
+    # changes + nightly.
     #
     # Fail-fast: gate on `unit-tests` so a `tsc --noEmit` failure cancels
-    # this 5-10 min lane. Safe because `integration` is a strict subset of
-    # `code` (see filter design above) — when `integration == 'true'`,
+    # this lane. Safe because `integration` is a strict subset of `code`
+    # (see filter design above) — when `integration == 'true'`,
     # `code == 'true'`, so `unit-tests` is never `skipped` here and the
     # standard `result == 'success'` gate is enough.
     needs: [changes, unit-tests]
-    # Two skip cases for the published-engine download:
-    # 1. PR from a `release/*` branch — the version bump's new tag doesn't
-    #    exist yet (`head_ref` is set on pull_request events only).
-    # 2. Push to main where the merged commit IS the release bump —
-    #    same window between merge and tag-push. `head_commit.message`
-    #    is set on push events; on PRs it's null and `startsWith` short-
-    #    circuits to false so the clause is a no-op there.
     if: |
       needs.changes.outputs.integration == 'true' &&
-      !startsWith(github.head_ref, 'release/') &&
-      !startsWith(github.event.head_commit.message, 'chore(release):') &&
       needs.unit-tests.result == 'success'
     runs-on: macos-latest
     timeout-minutes: 10
@@ -285,14 +292,6 @@ jobs:
 
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
-
-      - name: 🔊 Setup integration backend
-        uses: ./.github/actions/install-kesha-backend
-        with:
-          cache-path: |
-            ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-engine-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-engine-
 
       - name: 🧪 Integration tests
         run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration.xml
@@ -318,17 +317,97 @@ jobs:
           bunx @flakiness/junit-xml test-results/integration.xml \
             --category bun --flakiness-project Laputa/kesha-voice-kit
 
+  integration-tests-full:
+    # Real-engine integration: installs the ~2.4GB model bundle and runs the
+    # model-dependent e2e suites (which self-skip in the fast lane). Gated to
+    # engine/model changes, push-to-main of those paths, and the nightly cron —
+    # so doc/TS-only PRs never download models. Nightly run on main also seeds
+    # the default-branch-scoped model cache. Keep the release/* + chore(release)
+    # guards: this lane downloads the PUBLISHED engine, which doesn't exist yet
+    # during the release version-bump window.
+    needs: [changes, unit-tests]
+    # `always()` so a SKIPPED `unit-tests` (rust-only PRs have `code == 'false'`)
+    # doesn't skip-propagate and drop the heavy lane — `heavy_e2e` includes
+    # `rust/**` but `code` does not, so unit-tests is legitimately skipped on a
+    # rust-only PR yet the real-engine e2e must still run (#274 regression class).
+    # Still fail-fast if unit-tests actively FAILED/cancelled.
+    if: |
+      always() &&
+      needs.changes.result == 'success' &&
+      needs.unit-tests.result != 'failure' &&
+      needs.unit-tests.result != 'cancelled' &&
+      (
+        github.event_name == 'schedule' ||
+        (
+          needs.changes.outputs.heavy_e2e == 'true' &&
+          !startsWith(github.head_ref, 'release/') &&
+          !startsWith(github.event.head_commit.message, 'chore(release):')
+        )
+      )
+    runs-on: macos-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+      - name: 🔊 Setup integration backend
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          cache-path: |
+            ~/.cache/kesha
+          cache-key: ${{ runner.os }}-kesha-engine-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-engine-
+      - name: 🧪 Integration tests (real engine)
+        run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration-full.xml
+        timeout-minutes: 12
+      - name: 📊 Test summary
+        if: always()
+        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests — full (macos)" test-results/integration-full.xml >> $GITHUB_STEP_SUMMARY
+      - name: 📤 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-integration-full
+          path: test-results/integration-full.xml
+          retention-days: 7
+      - name: 🪼 Upload to Flakiness.io
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bunx @flakiness/junit-xml test-results/integration-full.xml \
+            --category bun --flakiness-project Laputa/kesha-voice-kit
+
   published-engine-smoke:
     # P1.10: keep at least one non-Darwin lane exercising the published
     # engine install path. Windows is intentionally omitted while
     # `src/engine-install.ts` still reports win32 x64 as unsupported; this
     # Linux x64 lane covers the currently supported non-Darwin release asset.
     needs: [changes, unit-tests]
+    # `always()` so a SKIPPED `unit-tests` (rust-only PRs have `code == 'false'`)
+    # doesn't skip-propagate and drop the heavy lane — `heavy_e2e` includes
+    # `rust/**` but `code` does not, so unit-tests is legitimately skipped on a
+    # rust-only PR yet the real-engine e2e must still run (#274 regression class).
+    # Still fail-fast if unit-tests actively FAILED/cancelled.
     if: |
-      needs.changes.outputs.integration == 'true' &&
-      !startsWith(github.head_ref, 'release/') &&
-      !startsWith(github.event.head_commit.message, 'chore(release):') &&
-      needs.unit-tests.result == 'success'
+      always() &&
+      needs.changes.result == 'success' &&
+      needs.unit-tests.result != 'failure' &&
+      needs.unit-tests.result != 'cancelled' &&
+      (
+        github.event_name == 'schedule' ||
+        (
+          needs.changes.outputs.heavy_e2e == 'true' &&
+          !startsWith(github.head_ref, 'release/') &&
+          !startsWith(github.event.head_commit.message, 'chore(release):')
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -447,9 +526,17 @@ jobs:
     needs: [changes, unit-tests]
     if: |
       always() &&
-      needs.changes.outputs.tts_e2e == 'true' &&
+      needs.changes.result == 'success' &&
       needs.unit-tests.result != 'failure' &&
-      needs.unit-tests.result != 'cancelled'
+      needs.unit-tests.result != 'cancelled' &&
+      (
+        github.event_name == 'schedule' ||
+        (
+          needs.changes.outputs.heavy_e2e == 'true' &&
+          !startsWith(github.head_ref, 'release/') &&
+          !startsWith(github.event.head_commit.message, 'chore(release):')
+        )
+      )
     runs-on: macos-latest
     timeout-minutes: 20
     permissions:

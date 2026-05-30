@@ -32,6 +32,7 @@ pub mod backend;
 pub mod capabilities;
 pub mod cli;
 pub mod debug;
+pub mod errors;
 #[cfg(all(
     target_os = "macos",
     any(
