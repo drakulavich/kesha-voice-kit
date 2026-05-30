@@ -761,7 +761,21 @@ describe("CLI contracts", () => {
       KESHA_ENGINE_BIN: enginePath,
     };
 
-    const plan = await runCli(["install", "--plan", "--tts"], { env });
+    // These six commands are read-only and observe the pristine initial state
+    // (no stats run recorded yet; diagnostic logs at defaults). They don't
+    // mutate state or depend on each other, so run them concurrently to keep
+    // this spawn-heavy contract test well under its timeout even when the
+    // sibling model-download e2e tests saturate the runner. Everything from
+    // `logs enable` onward mutates state and stays sequential.
+    const [plan, initPlan, status, logsStatus, logsStatusJson, logsEnableJson] = await Promise.all([
+      runCli(["install", "--plan", "--tts"], { env }),
+      runCli(["init", "--plan", "--tts", "--vad"], { env }),
+      runCli(["stats", "status"], { env }),
+      runCli(["logs", "status"], { env }),
+      runCli(["logs", "status", "--json"], { env }),
+      runCli(["logs", "enable", "--json"], { env }),
+    ]);
+
     expect(plan.envDiff.overrides.KESHA_ENGINE_BIN).toBe(enginePath);
     expectContract(plan, {
       exitCode: 0,
@@ -773,7 +787,6 @@ describe("CLI contracts", () => {
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
-    const initPlan = await runCli(["init", "--plan", "--tts", "--vad"], { env });
     expectContract(initPlan, {
       exitCode: 0,
       stdoutContains: [
@@ -785,14 +798,12 @@ describe("CLI contracts", () => {
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
-    const status = await runCli(["stats", "status"], { env });
     expectContract(status, {
       exitCode: 0,
       stdoutContains: ["Kesha Stats: disabled", `Database: ${env.KESHA_STATS_DB}`, "Runs: 0", "Retention: 90 day(s)"],
       stderrEmpty: true,
     });
 
-    const logsStatus = await runCli(["logs", "status"], { env });
     expectContract(logsStatus, {
       exitCode: 0,
       stdoutContains: [
@@ -804,7 +815,6 @@ describe("CLI contracts", () => {
       stderrEmpty: true,
     });
 
-    const logsStatusJson = await runCli(["logs", "status", "--json"], { env });
     expectContract(logsStatusJson, {
       exitCode: 0,
       stderrEmpty: true,
@@ -823,7 +833,6 @@ describe("CLI contracts", () => {
       retain: 5,
     });
 
-    const logsEnableJson = await runCli(["logs", "enable", "--json"], { env });
     expectContract(logsEnableJson, {
       exitCode: 2,
       stdoutEmpty: true,
@@ -929,5 +938,7 @@ describe("CLI contracts", () => {
       stdoutContains: ["Kesha Stats reset:", "run(s)"],
       stderrEmpty: true,
     });
-  });
+    // ~20 sequential CLI spawns; the default 5s bun timeout is too tight when
+    // this runs alongside the model-download e2e tests in the same job.
+  }, 30000);
 });
