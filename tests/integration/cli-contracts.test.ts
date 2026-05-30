@@ -410,6 +410,41 @@ describe("CLI contracts", () => {
     ]);
   });
 
+  test("--json --include-errors preserves the engine's precise coded error (no collapse)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-coded-error-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    // Engine stderr carries a real `error [CODE]:` line; the CLI must surface
+    // that exact code in errors[].code rather than flattening it to
+    // E_TRANSCRIBE_FAILED. E_DIARIZE_TIMEOUT is retryable — losing it would
+    // discard real signal from the one user-facing structured output.
+    const codedError =
+      "error [E_DIARIZE_TIMEOUT]: speaker diarization timed out after 30s for 4s of audio";
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_TRANSCRIBE_ERROR: codedError,
+    };
+    installFakeDiarizeModel(env.KESHA_CACHE_DIR);
+
+    const run = await runCli(["--json", "--include-errors", "--speakers", mediaPath], { env });
+
+    expectContract(run, {
+      exitCode: 1,
+      stdoutNotContains: ["Transcribing"],
+    });
+    const parsed = JSON.parse(run.stdout);
+    expect(parsed.results).toEqual([]);
+    expect(parsed.errors).toEqual([
+      {
+        file: mediaPath,
+        code: "E_DIARIZE_TIMEOUT",
+        message: codedError,
+      },
+    ]);
+  });
+
   test("successful machine-readable output keeps progress off stdout", async () => {
     const dir = makeTempDir("kesha-cli-contract-success-");
     const enginePath = createFakeEngine(dir);

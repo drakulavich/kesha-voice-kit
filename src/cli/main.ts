@@ -22,27 +22,6 @@ import { createDiagnosticLogSession } from "../diagnostic-log";
 import { diagnosticSizeBucket } from "../diagnostic-events";
 import { extractEngineErrorCode, TS_NATIVE_CODES } from "../error-codes";
 
-/**
- * The taxonomy codes the transcribe path can surface in `errors[].code`.
- * Mirrors the widened union in `TranscribeErrorRecord` (src/types.ts). Any
- * other engine code extracted from stderr collapses to E_TRANSCRIBE_FAILED
- * so the pushed value is always a valid union member (no `any` cast).
- */
-const TRANSCRIBE_ERROR_CODES = [
-  "E_INPUT_NOT_FOUND",
-  "E_TRANSCRIBE_FAILED",
-  "E_BAD_AUDIO",
-  "E_INTERNAL",
-] as const;
-
-type TranscribeErrorCode = (typeof TRANSCRIBE_ERROR_CODES)[number];
-
-function toTranscribeErrorCode(code: string): TranscribeErrorCode {
-  return (TRANSCRIBE_ERROR_CODES as readonly string[]).includes(code)
-    ? (code as TranscribeErrorCode)
-    : "E_TRANSCRIBE_FAILED";
-}
-
 interface MainCommandArgs {
   _: string[];
   json: boolean;
@@ -439,7 +418,7 @@ export const mainCommand = defineCommand({
           error_code: code,
         });
         const message = stderrText;
-        errors.push({ file, code: toTranscribeErrorCode(code), message });
+        errors.push({ file, code, message });
         log.error(`${file}: ${message}`);
       }
     }

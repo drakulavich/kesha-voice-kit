@@ -129,7 +129,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
       `kesha-engine not installed. run: ${installHint("--tts")}`,
       1,
       "",
-      TS_NATIVE_CODES.INVALID_ARG,
+      TS_NATIVE_CODES.ENGINE_SPAWN,
     );
   }
   const capabilities = opts.noExpandAbbrev ? await getEngineCapabilities() : null;
