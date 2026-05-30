@@ -12,3 +12,14 @@ benchmark-results.json
 .omc/
 coverage/
 result
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+
+# macOS
+.DS_Store
+
+# Agent tooling
+.agents/
+.codegraph/
+.codex/
+skills-lock.json
