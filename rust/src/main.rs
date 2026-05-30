@@ -6,6 +6,7 @@ mod backend;
 mod capabilities;
 mod cli;
 mod debug;
+mod errors;
 #[cfg(all(
     target_os = "macos",
     any(
