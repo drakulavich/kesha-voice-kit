@@ -51,7 +51,17 @@ fn build_hint(path: &str) -> Hint {
 /// Shared by `decode_audio` and `probe_duration_seconds` so container
 /// detection + error messages live in one place.
 fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameters)> {
-    let src = std::fs::File::open(path).with_context(|| format!("file not found: {path}"))?;
+    let src = std::fs::File::open(path).map_err(|e| {
+        let code = if e.kind() == std::io::ErrorKind::NotFound {
+            ErrorCode::InputNotFound
+        } else {
+            ErrorCode::BadAudio
+        };
+        anyhow::Error::new(crate::errors::CodedError {
+            code,
+            message: format!("file not found: {path}"),
+        })
+    })?;
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     let hint = build_hint(path);
