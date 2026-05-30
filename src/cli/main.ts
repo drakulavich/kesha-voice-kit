@@ -20,6 +20,28 @@ import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../proces
 import type { TranscriptionSegment } from "../types";
 import { createDiagnosticLogSession } from "../diagnostic-log";
 import { diagnosticSizeBucket } from "../diagnostic-events";
+import { extractEngineErrorCode, TS_NATIVE_CODES } from "../error-codes";
+
+/**
+ * The taxonomy codes the transcribe path can surface in `errors[].code`.
+ * Mirrors the widened union in `TranscribeErrorRecord` (src/types.ts). Any
+ * other engine code extracted from stderr collapses to E_TRANSCRIBE_FAILED
+ * so the pushed value is always a valid union member (no `any` cast).
+ */
+const TRANSCRIBE_ERROR_CODES = [
+  "E_INPUT_NOT_FOUND",
+  "E_TRANSCRIBE_FAILED",
+  "E_BAD_AUDIO",
+  "E_INTERNAL",
+] as const;
+
+type TranscribeErrorCode = (typeof TRANSCRIBE_ERROR_CODES)[number];
+
+function toTranscribeErrorCode(code: string): TranscribeErrorCode {
+  return (TRANSCRIBE_ERROR_CODES as readonly string[]).includes(code)
+    ? (code as TranscribeErrorCode)
+    : "E_TRANSCRIBE_FAILED";
+}
 
 interface MainCommandArgs {
   _: string[];
@@ -301,9 +323,12 @@ export const mainCommand = defineCommand({
     for (const file of files) {
       if (!existsSync(file)) {
         hasError = true;
-        stats.recordError("input", new Error("File not found"), "file_not_found");
-        diagnosticLog.event("input.missing", { command: "transcribe" });
-        errors.push({ file, code: "file_not_found", message: "File not found" });
+        stats.recordError("input", new Error("File not found"), TS_NATIVE_CODES.INPUT_NOT_FOUND);
+        diagnosticLog.event("input.missing", {
+          command: "transcribe",
+          error_code: TS_NATIVE_CODES.INPUT_NOT_FOUND,
+        });
+        errors.push({ file, code: TS_NATIVE_CODES.INPUT_NOT_FOUND, message: "File not found" });
         log.error(`${file}: File not found`);
         continue;
       }
@@ -404,14 +429,17 @@ export const mainCommand = defineCommand({
       } catch (err: unknown) {
         progress?.stop();
         hasError = true;
-        stats.recordError("transcribe", err);
+        const stderrText = err instanceof Error ? err.message : String(err);
+        const code = extractEngineErrorCode(stderrText) ?? "E_TRANSCRIBE_FAILED";
+        stats.recordError("transcribe", err, code);
         diagnosticLog.event("engine.exit", {
           command: "transcribe",
           status: "failed",
           errorKind: "transcribe_failed",
+          error_code: code,
         });
-        const message = err instanceof Error ? err.message : String(err);
-        errors.push({ file, code: "transcribe_failed", message });
+        const message = stderrText;
+        errors.push({ file, code: toTranscribeErrorCode(code), message });
         log.error(`${file}: ${message}`);
       }
     }

@@ -19,7 +19,7 @@ export type TranscribeResult = {
 
 export type TranscribeErrorRecord = {
   file: string;
-  code: "file_not_found" | "transcribe_failed";
+  code: "E_INPUT_NOT_FOUND" | "E_TRANSCRIBE_FAILED" | "E_BAD_AUDIO" | "E_INTERNAL";
   message: string;
 };
 

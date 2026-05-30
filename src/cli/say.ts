@@ -250,13 +250,15 @@ export const sayCommand = defineCommand({
       stats.finish("success", 1);
       diagnosticLog.finish("success");
     } catch (err) {
-      stats.recordError("tts", err);
+      const code = err instanceof SayError ? err.code : "E_INTERNAL";
+      stats.recordError("tts", err, code);
       stats.finish("failed", 1);
       diagnosticLog.event("command.finish", {
         command: "say",
         status: "failed",
         errorKind: err instanceof SayError ? "say_error" : "error",
         exitCode: err instanceof SayError ? err.exitCode : 4,
+        error_code: code,
       });
       diagnosticLog.finish("failed");
       if (err instanceof SayError) {

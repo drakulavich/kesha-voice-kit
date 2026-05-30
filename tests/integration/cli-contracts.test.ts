@@ -371,7 +371,7 @@ describe("CLI contracts", () => {
     expect(parsed.results).toHaveLength(1);
     expect(parsed.results[0].file).toBe(mediaPath);
     expect(parsed.errors).toEqual([
-      { file: "missing.wav", code: "file_not_found", message: "File not found" },
+      { file: "missing.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
     ]);
   });
 
@@ -404,7 +404,7 @@ describe("CLI contracts", () => {
     expect(parsed.errors).toEqual([
       {
         file: mediaPath,
-        code: "transcribe_failed",
+        code: "E_TRANSCRIBE_FAILED",
         message: diarizeError,
       },
     ]);
@@ -853,7 +853,7 @@ describe("CLI contracts", () => {
     const errors = await runCli(["stats", "errors"], { env });
     expectContract(errors, {
       exitCode: 0,
-      stdoutContains: ["file_not_found"],
+      stdoutContains: ["E_INPUT_NOT_FOUND"],
       stdoutNotContains: ["private-recording.wav"],
       stderrEmpty: true,
     });
