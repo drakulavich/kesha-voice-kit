@@ -3,18 +3,12 @@
 //! sentencepiece — encode/decode are pure byte arithmetic.
 
 /// ByT5 reserves ids 0..3 (pad=0, eos=1, unk=2) and offsets bytes by 3 (#185 §2).
-// Callers land in the next task (Charsiu struct + decode pipeline).
-#[allow(dead_code)]
 pub const BYTE_OFFSET: i64 = 3;
 /// EOS token id (#185 §2).
-// Callers land in the next task (Charsiu struct + decode pipeline).
-#[allow(dead_code)]
 pub const EOS_ID: i64 = 1;
 
 /// Encode `"<tag>: text"` into ByT5 byte ids with a trailing EOS.
 /// The `": "` separator matches CharsiuG2P's training format (#185 §4, e.g. `"<spa>: hola"`).
-// Callers land in the next task (Charsiu struct + decode pipeline).
-#[allow(dead_code)]
 pub fn encode_with_tag(text: &str, tag: &str) -> Vec<i64> {
     let mut ids: Vec<i64> = format!("{tag}: {text}")
         .bytes()
@@ -25,8 +19,6 @@ pub fn encode_with_tag(text: &str, tag: &str) -> Vec<i64> {
 }
 
 /// Decode generated ids back to a UTF-8 string, dropping reserved ids.
-// Callers land in the next task (Charsiu struct + decode pipeline).
-#[allow(dead_code)]
 pub fn decode(ids: &[i64]) -> String {
     let bytes: Vec<u8> = ids
         .iter()

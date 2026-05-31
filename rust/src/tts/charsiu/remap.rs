@@ -3,8 +3,6 @@
 //! in-vocab equivalents. Locked by a zero-residual-OOV regression test.
 
 /// Remap CharsiuG2P IPA into Kokoro's phoneme inventory.
-// Callers land in the next task (Charsiu struct + G2P pipeline).
-#[allow(dead_code)]
 pub fn remap(ipa: &str) -> String {
     ipa.replace("t͡s", "ʦ")
         .replace("t͡ʃ", "ʧ")
