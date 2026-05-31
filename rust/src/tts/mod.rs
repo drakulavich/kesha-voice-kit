@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+pub mod charsiu;
 pub mod en;
 pub mod encode;
 #[cfg(all(
