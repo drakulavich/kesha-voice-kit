@@ -24,6 +24,7 @@ pub enum ErrorCode {
     VoiceUnknown,
     SsmlInvalid,
     SsmlUnsupported,
+    ScriptUnsupported,
     TranscribeFailed,
     DiarizeTimeout,
     InvalidArg,
@@ -42,7 +43,7 @@ pub enum Category {
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 18] = [
+    pub const ALL: [ErrorCode; 19] = [
         ErrorCode::InputNotFound,
         ErrorCode::BadAudio,
         ErrorCode::ModelMissing,
@@ -57,6 +58,7 @@ impl ErrorCode {
         ErrorCode::VoiceUnknown,
         ErrorCode::SsmlInvalid,
         ErrorCode::SsmlUnsupported,
+        ErrorCode::ScriptUnsupported,
         ErrorCode::TranscribeFailed,
         ErrorCode::DiarizeTimeout,
         ErrorCode::InvalidArg,
@@ -79,6 +81,7 @@ impl ErrorCode {
             ErrorCode::VoiceUnknown => "E_VOICE_UNKNOWN",
             ErrorCode::SsmlInvalid => "E_SSML_INVALID",
             ErrorCode::SsmlUnsupported => "E_SSML_UNSUPPORTED",
+            ErrorCode::ScriptUnsupported => "E_SCRIPT_UNSUPPORTED",
             ErrorCode::TranscribeFailed => "E_TRANSCRIBE_FAILED",
             ErrorCode::DiarizeTimeout => "E_DIARIZE_TIMEOUT",
             ErrorCode::InvalidArg => "E_INVALID_ARG",
@@ -102,6 +105,7 @@ impl ErrorCode {
             ErrorCode::VoiceUnknown => "Unknown voice id",
             ErrorCode::SsmlInvalid => "Malformed SSML",
             ErrorCode::SsmlUnsupported => "SSML not supported for this engine",
+            ErrorCode::ScriptUnsupported => "Text script not supported for this voice",
             ErrorCode::TranscribeFailed => "Transcription failed",
             ErrorCode::DiarizeTimeout => "Speaker diarization timed out",
             ErrorCode::InvalidArg => "Invalid command-line argument",
@@ -125,7 +129,8 @@ impl ErrorCode {
             | ErrorCode::TextTooLong
             | ErrorCode::VoiceUnknown
             | ErrorCode::SsmlInvalid
-            | ErrorCode::SsmlUnsupported => Category::Tts,
+            | ErrorCode::SsmlUnsupported
+            | ErrorCode::ScriptUnsupported => Category::Tts,
             ErrorCode::TranscribeFailed | ErrorCode::DiarizeTimeout => Category::Transcribe,
             ErrorCode::Internal => Category::Internal,
         }
