@@ -11,6 +11,8 @@
 **Spec:** `docs/superpowers/specs/2026-05-31-onnx-kokoro-multilang-g2p-spike-design.md`
 **Tracking issue:** #212
 
+> **Note on paths:** `Run:` blocks use the absolute worktree path from the spike's own run (`/Users/anton/Personal/repos/kesha-voice-kit/.worktrees/...`) and the fixed scratch dir `/tmp/kokoro-mlang-spike/`. These are a record of how the spike actually executed — substitute your own worktree root if re-running on another machine. This is a throwaway spike plan, not a reusable script.
+
 ---
 
 ## Pre-flight (already done / verify)

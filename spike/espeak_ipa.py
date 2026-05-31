@@ -51,7 +51,16 @@ for lang, spec in CORPUS.items():
             capture_output=True,
             text=True,
         )
+        # Fail loud — a non-zero exit (missing voice, bad install) would
+        # otherwise yield an empty IPA line and silently skew the survival stat.
+        if result.returncode != 0:
+            raise SystemExit(
+                f"espeak-ng failed ({result.returncode}) for {lang}_{i} "
+                f"voice={voice}: {result.stderr.strip()}"
+            )
         raw_ipa = result.stdout.strip()
+        if not raw_ipa:
+            raise SystemExit(f"espeak-ng produced empty IPA for {lang}_{i}: {sentence!r}")
         ipa = clean_ipa(raw_ipa)
         tag = f"{lang}_{i}"
         lines.append(f"{tag}\t{ipa}")
