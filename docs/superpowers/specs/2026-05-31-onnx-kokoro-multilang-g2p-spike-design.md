@@ -1,7 +1,7 @@
 # Spike Design — ONNX Kokoro multilingual G2P (es/fr/it/pt-br parity with CoreML)
 
 - **Date:** 2026-05-31
-- **Status:** Design (pre-spike)
+- **Status:** Spike complete — decision recorded (recommend **Track B: CharsiuG2P + remap + text-normalizer**; Track A espeak-ng is GPL-blocked)
 - **Tracking issue:** [#212](https://github.com/drakulavich/kesha-voice-kit/issues/212)
 - **Related history:** [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123) (CharsiuG2P replaced espeak), [#210](https://github.com/drakulavich/kesha-voice-kit/issues/210) (CharsiuG2P IPA mismatch garbled Piper RU), [#213](https://github.com/drakulavich/kesha-voice-kit/issues/213) (espeak-ng + CharsiuG2P both removed, misaki-rs English-only survives), [#124](https://github.com/drakulavich/kesha-voice-kit/issues/124) (espeakng-sys is dynamic-link-only)
 
@@ -65,16 +65,31 @@ Run **A and B in parallel**, score both, then pick:
 2. Else if **B's IPA-remap audio passes A/B** → **B wins** (constraint-friendly, but only with audio proof — not blind like #123).
 3. Else → escalate to **C** (es/it first) or reopen scope with findings.
 
-Decision matrix (filled by the spike, recorded here + in #212):
+Decision matrix (filled by the spike 2026-05-31; raw evidence in the spike commits + `/tmp` run logs):
 
-| Criterion | Track A (espeak-ng static) | Track B (CharsiuG2P + remap) |
+| Criterion | Track A (espeak-ng) | Track B (CharsiuG2P + remap) |
 |---|---|---|
-| Phoneme match vs upstream misaki | _TBD by spike_ | _TBD by spike_ |
-| Audio A/B by ear (per lang) | _TBD_ | _TBD_ |
-| audio-quality-check pass | _TBD_ | _TBD_ |
-| Static/link or model feasibility | _TBD_ | _TBD_ |
-| Cross-platform viability (×3) | _TBD_ | _TBD_ |
-| Integration cost into tokenizer | _TBD_ | _TBD_ |
+| Phoneme match vs Kokoro vocab | ✅ **100%**, zero OOV (CLI espeak-ng v1.52.0 IPA) | ⚠️ 5 OOV symbol classes (tie-bar affricates `t͡s/t͡ʃ/d͡ʒ`, Latin `g`→`ɡ`, pre-composed nasals `õ/ũ/ẽ`→NFD); remapped to **zero residual**, but fragile |
+| Number / acronym expansion | ✅ complete (espeak expands `348`, `IBGE` internally) | ❌ **collapses** — digit/acronym sentences 18–25% short vs ref (0.25–0.91 s missing speech); needs a text-normalizer front-end |
+| Dialect correctness | ✅ Castilian θ | ⚠️ `<spa>` → Latin-American `s` (not θ); right tag per dialect needed |
+| Non-digit duration fidelity vs ref | ✅ uniform +8% (std 0.05) | ✅ 1.04× ref (std 0.05) |
+| audio-quality-check | ✅ pass (fr_0 clips — harness f32-no-clamp bug, hits both tracks, not G2P) | ✅ pass (same fr_0 caveat) |
+| Build / runtime feasibility | ✅ pure-Rust `espeak-ng` 0.1.2 + `bundled-data-*`, 1.8 MB, libSystem-only, no C dep (NOT `espeakng-sys`, which is dynamic-only — #124 reproduced) | ✅ runs on the existing `ort`; +1 pinned model in `kesha install --tts` |
+| Cross-platform (×3) | ✅ proven darwin-arm64; pure-Rust ⇒ clean ubuntu/windows path | ✅ `ort` already ships on all 3 |
+| **License** | ❌ **GPL-3.0** (espeak-ng engine + data + the Rust port) — incompatible with Kesha's **MIT** distributed binary | ✅ code **MIT** (`lingjzhu/CharsiuG2P`); ⚠️ HF weights repo has no explicit license — needs author clarification |
+| Integration cost | low G2P; **blocked by license** | medium: remap + text-normalizer + dialect tags + model pin |
+
+## Findings & recommendation (2026-05-31)
+
+**The decisive axis was licensing, which the original framing (#212, "via espeak-ng G2P") did not weigh.** Kokoro-82M's weights already speak all four languages; the only blocker is the G2P frontend, and both candidate frontends work phonetically. But:
+
+- **Track A (espeak-ng) is the phonetic winner yet license-blocked.** Its IPA hits 100% of Kokoro's vocab with full number/acronym expansion, and a *static, C-dependency-free* build is feasible via the pure-Rust `espeak-ng` crate. However espeak-ng — engine, language data, and the Rust port — is **GPL-3.0**, and embedding it in Kesha's **MIT** engine binary is a license conflict. `espeakng-sys` (the #124 FFI path) remains dynamic-link-only and is independently unviable. Every espeak-derived route (including misaki-rs's optional `espeak` feature) inherits the same GPL constraint.
+
+- **Track B (CharsiuG2P + IPA-remap) is the recommended path** — the only license-compatible option (code MIT). Its audio tracks the reference well on ordinary text, and the OOV→Kokoro-vocab remap is small and was driven to zero residual. Its two real weaknesses are **fixable in front-end text processing**, not in the model: (1) it does not expand digits or acronyms (so a multilingual numbers→words + acronym spell-out normalizer must run before G2P), and (2) the `<spa>` tag yields Latin-American Spanish (pick the dialect tag deliberately per voice).
+
+**Recommendation: pursue Track B.** Open a follow-up implementation spec covering: the CharsiuG2P model (pin + SHA-256 in `models.rs`, install-plan, build-engine feature matrix), the IPA-remap layer ported to Rust with a regression test over the OOV set, a **multilingual text-normalizer** (numbers + acronyms) ahead of G2P, per-dialect language-tag selection wired into `voices.rs` Latin-5 routing, and a CI audio-regression gate. **Clarify the CharsiuG2P weights license with the author before shipping.** Track A is documented here as GPL-blocked — revisit only if the project ever accepts GPL for the engine (or a separable, differently-licensed espeak-compatible G2P emerges).
+
+> Harness bug to carry into implementation: `spike_render.rs` wrote f32 WAV without clamping to [-1, 1]; Kokoro can emit samples >1.0 (fr_0), so the production synth path must clamp/normalize before encoding. Not a G2P issue, but a real encode bug worth a test.
 
 ## Shared harness & reference corpus (ground truth, built once)
 
