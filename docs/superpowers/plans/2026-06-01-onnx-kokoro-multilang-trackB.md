@@ -4,100 +4,59 @@
 
 **Goal:** Give the ONNX TTS path real per-language G2P for Spanish, French, Italian, Portuguese so `kesha say --voice {es,fr,it,pt}-*` produces natural (not English-accented, not digit-collapsed) speech.
 
-**Architecture:** A new `tts::charsiu` ONNX G2P engine (ByT5-tiny exported to ONNX, byte tokenizer, greedy autoregressive decode on the existing `ort`) feeding the existing Kokoro tokenizer/session, with a per-language `tts::normalize` pass (numbers + acronyms) ahead of it. Routing/model-pin wiring in `voices.rs`/`models.rs`. English (misaki) and the CoreML path are untouched.
+**Architecture:** A new `tts::charsiu` ONNX G2P engine — loading the **pre-converted [`klebster/g2p_multilingual_byT5_tiny_onnx`](https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx)** export (encoder + decoder + KV-cache `decoder_with_past`), byte tokenizer, KV-cache autoregressive decode on the existing `ort` — feeding the existing Kokoro tokenizer/session, with a per-language `tts::normalize` pass (numbers + acronyms) ahead of it. Routing/model-pin wiring in `voices.rs`/`models.rs`. English (misaki) and the CoreML path are untouched.
 
-**Tech Stack:** Rust (`ort`, `ndarray`), the existing `tts::{tokenizer, kokoro}`, a disposable Python venv for the Phase 0 export/spike, `cargo nextest`.
+**Tech Stack:** Rust (`ort 2.0.0-rc.12`, `ndarray`), the existing `tts::{tokenizer, kokoro}`, `cargo nextest`. No Python / no model export — we consume a published ONNX artifact.
 
 **Spec:** `docs/superpowers/specs/2026-06-01-onnx-kokoro-multilang-trackB-implementation-design.md`
-**Predecessor spike:** PR #507 (`spike/onnx-kokoro-multilang-g2p`).
+**Predecessor spikes:** Track-B-choice spike PR #507; **and the authoritative G2P-ONNX feasibility spike — `docs/superpowers/specs/2026-04-22-onnx-g2p-spike.md` (PR #185, on `main`)**, which already downloaded klebster, pinned its SHA-256 hashes, documented the full IO contract + `ort 2.0` gotchas, and verified byte-identical Rust↔Python IPA across 7 scripts.
 **Tracking issue:** #212
 
-> **Spike-gated plan.** Phase 0 is a hard gate. It writes a findings file `docs/superpowers/specs/charsiu-onnx-contract.md` recording the concrete ONNX IO contract — encoder/decoder input+output tensor names, the byte-token special-id offset, EOS id, and the per-language tag strings. **Phases 1+ reference those recorded values.** If Phase 0 fails (export infeasible, decode can't reproduce the Python IPA, or latency unacceptable for interactive `kesha say`), STOP and re-brainstorm the offline-lexicon fallback — do not proceed into Phase 1.
+> **Not a spike-gated plan.** Feasibility is already established by the April #185 spike (real, on-main, byte-identical Rust/ort parity with the klebster artifact). We pin and load that published export rather than exporting anything ourselves. The IO contract, hashes, decode algorithm, and `ort 2.0` gotchas all come from #185 — treat that doc as the source of truth.
 
-> **Path note:** `Run:` blocks use this worktree (`/Users/anton/Personal/repos/kesha-voice-kit/.worktrees/trackb-impl`) and the scratch dir `/tmp/charsiu-onnx-spike/`. Substitute your own roots if re-running elsewhere.
+> **Path note:** `Run:` blocks use this worktree (`/Users/anton/Personal/repos/kesha-voice-kit/.worktrees/trackb-impl`). Cache path for models is `~/.cache/kesha/models/`.
 
 ---
 
-## Phase 0 — Feasibility + latency spike (GATE)
+## Phase 0 — Stage & verify the klebster artifact (no export)
 
-### Task 0.1: Export CharsiuG2P ByT5 to ONNX
+Feasibility is already proven by the #185 spike. This phase only confirms the published artifact we'll pin is the exact one #185 validated — no export, no Python, no throwaway code.
 
-**Files:**
-- Create: `/tmp/charsiu-onnx-spike/export.sh` (scratch, not committed)
-
-- [ ] **Step 1: Disposable venv (CLAUDE.md: never system-wide)**
-
-Run:
-```bash
-mkdir -p /tmp/charsiu-onnx-spike
-python3 -m venv /tmp/charsiu-onnx-spike/venv
-/tmp/charsiu-onnx-spike/venv/bin/pip install --quiet "optimum[exporters]" transformers onnxruntime
-echo ok
-```
-Expected: `ok`.
-
-- [ ] **Step 2: Export the model to ONNX**
-
-Run:
-```bash
-/tmp/charsiu-onnx-spike/venv/bin/optimum-cli export onnx \
-  --model charsiu/g2p_multilingual_byT5_tiny_16_layers_100 \
-  --task text2text-generation \
-  /tmp/charsiu-onnx-spike/onnx/
-ls /tmp/charsiu-onnx-spike/onnx/
-```
-Expected: an `encoder_model.onnx` + `decoder_model.onnx` (and possibly `decoder_with_past_model.onnx`), plus `config.json`. If the export errors, record the failure in the findings file and STOP (gate fail).
-
-- [ ] **Step 3: Record the IO contract**
-
-Run (inspect tensor names + special tokens):
-```bash
-/tmp/charsiu-onnx-spike/venv/bin/python3 - <<'PY'
-import onnxruntime as ort, json, pathlib
-base = pathlib.Path("/tmp/charsiu-onnx-spike/onnx")
-for f in ["encoder_model.onnx","decoder_model.onnx"]:
-    s = ort.InferenceSession(str(base/f))
-    print(f"== {f} ==")
-    print(" inputs :", [(i.name, i.shape) for i in s.get_inputs()])
-    print(" outputs:", [(o.name, o.shape) for o in s.get_outputs()])
-cfg = json.loads((base/"config.json").read_text())
-print("eos_token_id:", cfg.get("eos_token_id"), "decoder_start_token_id:", cfg.get("decoder_start_token_id"), "pad:", cfg.get("pad_token_id"), "vocab_size:", cfg.get("vocab_size"))
-PY
-```
-Expected: prints the encoder/decoder input+output names, EOS id, decoder-start id, vocab size. **Write these into `docs/superpowers/specs/charsiu-onnx-contract.md`** along with the ByT5 byte-offset (3) and the per-language tag strings (`<spa>`, `<fra>`, `<ita>`, `<por-bz>` — confirm against the spike's `spike/charsiu_g2p.py` on PR #507).
-
-### Task 0.2: Prove a Rust/ort greedy decode reproduces the Python IPA
+### Task 0.1: Download + hash-verify the klebster ONNX export
 
 **Files:**
-- Create: `rust/examples/charsiu_spike.rs` (throwaway; removed before the feature PR)
+- None (stages cache files; the source pins land in Task 4.1).
 
-- [ ] **Step 1: Write a minimal greedy-decode example using the recorded contract**
-
-Implement: byte-tokenize `"<spa> hola"` (UTF-8 bytes + offset 3, append EOS), run encoder once, loop decoder (start token → argmax → append → until EOS/maxlen), map output ids back to bytes→UTF-8 IPA. Use the exact tensor names from `charsiu-onnx-contract.md`.
-
-- [ ] **Step 2: Build and run on the spike corpus**
+- [ ] **Step 1: Download the three klebster ONNX files into the kesha cache**
 
 Run:
 ```bash
-cd /Users/anton/Personal/repos/kesha-voice-kit/.worktrees/trackb-impl/rust
-cargo run --example charsiu_spike --features onnx -- /tmp/charsiu-onnx-spike/onnx "hola mundo"
+mkdir -p ~/.cache/kesha/models/g2p/byt5-tiny
+cd ~/.cache/kesha/models/g2p/byt5-tiny
+for f in encoder_model.onnx decoder_model.onnx decoder_with_past_model.onnx; do
+  curl -fsSL -o "$f" "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/$f"
+done
+ls -la
 ```
-Expected: an IPA string (e.g. `ola mundo`-like phonemes). Compare against the Python `transformers` output for the same words; they must match.
+Expected: three files (~55 MB / 25 MB / 22 MB).
 
-- [ ] **Step 3: Latency check**
+- [ ] **Step 2: Verify SHA-256 against the #185-pinned hashes**
 
-Run the example over the 16-sentence corpus (es/fr/it/pt) and print total + per-utterance ms.
-Expected: record the number. **Gate:** if a typical sentence takes longer than ~300 ms of pure G2P, flag it — the findings file records whether latency is acceptable for interactive `kesha say` or whether the lexicon fallback is needed.
-
-- [ ] **Step 4: Record the gate decision + clean up**
-
-Append to `charsiu-onnx-contract.md`: feasibility (export ✅/❌), IPA match (✅/❌), latency (ms). Commit the findings file. Then `rm rust/examples/charsiu_spike.rs` (throwaway) and commit its removal. If any gate failed → STOP, re-brainstorm the lexicon approach.
-
+Run:
 ```bash
-cd /Users/anton/Personal/repos/kesha-voice-kit/.worktrees/trackb-impl
-git add docs/superpowers/specs/charsiu-onnx-contract.md
-git commit -m "spike(tts): record CharsiuG2P ONNX IO contract + feasibility (refs #212)"
+cd ~/.cache/kesha/models/g2p/byt5-tiny
+shasum -a 256 encoder_model.onnx decoder_model.onnx decoder_with_past_model.onnx
 ```
+Expected — must match the #185 pins exactly. A mismatch means upstream rehosted; STOP and treat it as a deliberate model bump (MODEL HASHES rule), not a "get it working" override:
+```
+1ac7aca11845527873f9e0e870fbe1e3c3ac2cb009d8852230332d10541aab04  encoder_model.onnx
+de32477aae14e254d4a7dee4b2c324fb39f93a0dc254181c5bfdd8fc67492919  decoder_model.onnx
+fae30b9f3a8d935be01b32af851bae6d54f330813167073e84caf6d0a1890fcb  decoder_with_past_model.onnx
+```
+
+- [ ] **Step 3: Confirm the IO contract still matches #185 §3**
+
+The three sessions must expose the inputs/outputs #185 documented (encoder: `input_ids`,`attention_mask`→`last_hidden_state`; `decoder_model`: +`encoder_hidden_states`,`encoder_attention_mask`→`logits` + 16 `present.*` KV; `decoder_with_past_model`: +16 `past_key_values.*`→`logits` + 8 decoder-only `present.*`). These are the names Phase 1's decode loop wires against. No source change and no commit in this phase — it only stages the cache and confirms the contract is current.
 
 ---
 
@@ -151,7 +110,7 @@ Expected: FAIL (module/functions not defined).
 
 - [ ] **Step 3: Implement the tokenizer**
 
-In `tokenizer.rs` (constants from `charsiu-onnx-contract.md`):
+In `tokenizer.rs` (constants per #185 §2):
 ```rust
 //! ByT5 byte-level tokenizer for CharsiuG2P. ByT5 maps each UTF-8 byte to
 //! `byte + BYTE_OFFSET`; the first ids are reserved (pad/eos/unk). No
@@ -159,12 +118,14 @@ In `tokenizer.rs` (constants from `charsiu-onnx-contract.md`):
 
 /// ByT5 reserves ids 0..3 (pad=0, eos=1, unk=2) and offsets bytes by 3.
 pub const BYTE_OFFSET: i64 = 3;
-/// EOS token id (confirmed in charsiu-onnx-contract.md).
+/// EOS token id (#185 §2).
 pub const EOS_ID: i64 = 1;
 
-/// Encode `tag` + space + `text` into ByT5 byte ids with a trailing EOS.
+/// Encode `"<tag>: text"` into ByT5 byte ids with a trailing EOS.
+/// The `": "` separator matches CharsiuG2P's training format (#185 §4,
+/// e.g. `"<spa>: hola"`).
 pub fn encode_with_tag(text: &str, tag: &str) -> Vec<i64> {
-    let mut ids: Vec<i64> = format!("{tag} {text}")
+    let mut ids: Vec<i64> = format!("{tag}: {text}")
         .bytes()
         .map(|b| b as i64 + BYTE_OFFSET)
         .collect();
@@ -303,7 +264,7 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    /// Gated on CHARSIU_ONNX (dir with encoder_model.onnx/decoder_model.onnx).
+    /// Gated on CHARSIU_ONNX (klebster dir: encoder/decoder/decoder_with_past .onnx).
     #[test]
     fn to_ipa_phonemizes_spanish_when_model_available() {
         let Some(dir) = std::env::var_os("CHARSIU_ONNX") else {
@@ -328,82 +289,106 @@ Expected: FAIL (no `Charsiu`/`load`/`to_ipa`).
 
 - [ ] **Step 3: Implement decode + engine**
 
-`decode.rs` — greedy loop over two `ort` sessions, using tensor names from `charsiu-onnx-contract.md` (shown here with the canonical optimum names; adjust to the recorded contract):
+`decode.rs` — **KV-cache** greedy decode over the klebster 3-session split. Step 0 runs `decoder_model` (seeds all 16 `present.*` KV); steps 1..N run `decoder_with_past_model`, re-feeding the constant encoder KV and the updated decoder KV. **Exact IO names + shapes are in #185 §3** — the KV plumbing below follows that name list verbatim:
 ```rust
-//! Greedy autoregressive decode for CharsiuG2P ByT5 on ort.
-use anyhow::Result;
-use ndarray::{Array1, Array2};
+//! KV-cache autoregressive decode for the klebster CharsiuG2P ByT5 export.
+//! Three ort sessions (encoder, decoder, decoder_with_past). IO per #185 §3.
+use anyhow::{anyhow, Result};
+use ndarray::{Array2, Array3, Array4};
 use ort::session::Session;
 use ort::value::Value;
 
-const MAX_NEW_TOKENS: usize = 64;
-const DECODER_START_ID: i64 = 0; // pad id; per charsiu-onnx-contract.md
+const MAX_NEW_TOKENS: usize = 128;
+const DECODER_START_ID: i64 = 0; // pad id (#185 §2)
+const N_LAYERS: usize = 4;       // num_decoder_layers (#185 §2)
 
-/// Run encoder once, then greedily decode token-by-token until EOS/cap.
+/// argmax over the last decoder position of a `[1, S, 384]` logits tensor.
+fn argmax_last(logits: &Value) -> Result<i64> {
+    let (shape, data) = logits.try_extract_tensor::<f32>()?;
+    let vocab = shape[shape.len() - 1] as usize;
+    let last = &data[data.len() - vocab..];
+    Ok(last
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .map(|(i, _)| i as i64)
+        .unwrap())
+}
+
+/// Holds the 4 layers × {decoder,encoder} × {key,value} cache tensors as owned
+/// `Array4<f32>` (`[1, 6, seq, 64]`, #185 §3). `seed` captures step-0 `present.*`;
+/// `bind_past` feeds them as `past_key_values.{i}.{decoder,encoder}.{key,value}`;
+/// `update_decoder` overwrites only the decoder entries from each step's `present.*`
+/// (encoder entries are constant across steps — #185 §3 note).
+struct KvCache { /* 16 named Array4<f32>, keyed by (layer, decoder|encoder, key|value) */ }
+impl KvCache {
+    fn seed(out: &ort::session::SessionOutputs, layers: usize) -> Result<Self> { /* read present.* */ }
+    fn bind_past<'a>(&'a self, inputs: &mut Vec<(&'static str, Value)>) -> Result<()> { /* past_key_values.* */ }
+    fn update_decoder(&mut self, out: &ort::session::SessionOutputs, layers: usize) -> Result<()> { /* present.*.decoder.* */ }
+}
+
+/// Encode once, then KV-cache greedy decode until EOS / MAX_NEW_TOKENS.
 pub fn greedy(
     encoder: &mut Session,
     decoder: &mut Session,
+    decoder_past: &mut Session,
     input_ids: &[i64],
 ) -> Result<Vec<i64>> {
     let n = input_ids.len();
     let ids = Value::from_array(Array2::<i64>::from_shape_vec((1, n), input_ids.to_vec())?)?;
-    let mask = Value::from_array(Array2::<i64>::from_shape_vec((1, n), vec![1i64; n])?)?;
-    let enc = encoder.run(ort::inputs![
-        "input_ids" => ids, "attention_mask" => mask,
-    ])?;
-    let (eshape, edata) = enc["last_hidden_state"].try_extract_tensor::<f32>()?;
-    let hidden = Array2::from_shape_vec(
-        (eshape[1] as usize, eshape[2] as usize),
-        edata.to_vec(),
-    )?;
+    let mask = || Value::from_array(Array2::<i64>::from_shape_vec((1, n), vec![1i64; n]).unwrap());
+    let enc = encoder.run(ort::inputs!["input_ids" => ids, "attention_mask" => mask()])?;
+    let (hs, hd) = enc["last_hidden_state"].try_extract_tensor::<f32>()?;
+    let hidden = Array3::from_shape_vec((1, hs[1] as usize, hs[2] as usize), hd.to_vec())?;
 
-    let mut out = vec![DECODER_START_ID];
-    for _ in 0..MAX_NEW_TOKENS {
-        let dn = out.len();
-        let dec_ids = Value::from_array(Array2::<i64>::from_shape_vec((1, dn), out.clone())?)?;
-        let enc_hs = Value::from_array(
-            hidden.clone().insert_axis(ndarray::Axis(0)),
-        )?;
-        let enc_mask = Value::from_array(Array2::<i64>::from_shape_vec((1, n), vec![1i64; n])?)?;
-        let dec = decoder.run(ort::inputs![
-            "input_ids" => dec_ids,
-            "encoder_hidden_states" => enc_hs,
-            "encoder_attention_mask" => enc_mask,
-        ])?;
-        let (lshape, logits) = dec["logits"].try_extract_tensor::<f32>()?;
-        let vocab = lshape[2] as usize;
-        let last = &logits[(logits.len() - vocab)..];
-        let next = last
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .map(|(i, _)| i as i64)
-            .unwrap();
-        if next == super::tokenizer::EOS_ID {
-            break;
-        }
-        out.push(next);
+    // Step 0 — full decoder seeds all KV.
+    let start = Value::from_array(Array2::<i64>::from_shape_vec((1, 1), vec![DECODER_START_ID])?)?;
+    let out0 = decoder.run(ort::inputs![
+        "input_ids" => start,
+        "encoder_hidden_states" => Value::from_array(hidden)?,
+        "encoder_attention_mask" => mask(),
+    ])?;
+    let mut next = argmax_last(&out0["logits"])?;
+    let mut kv = KvCache::seed(&out0, N_LAYERS)?;
+
+    // Steps 1..N — decoder_with_past, feeding last token + past KV.
+    let mut tokens = Vec::new();
+    let mut step = 0;
+    while next != super::tokenizer::EOS_ID && step < MAX_NEW_TOKENS {
+        tokens.push(next);
+        let mut inputs = ort::inputs![
+            "input_ids" => Value::from_array(Array2::<i64>::from_shape_vec((1, 1), vec![next])?)?,
+            "encoder_attention_mask" => mask(),
+        ];
+        kv.bind_past(&mut inputs)?;
+        let out = decoder_past.run(inputs)?;
+        next = argmax_last(&out["logits"])?;
+        kv.update_decoder(&out, N_LAYERS)?;
+        step += 1;
     }
-    Ok(out)
+    Ok(tokens)
 }
 ```
 
-`mod.rs` — engine wrapper:
+> `KvCache`'s three method bodies are mechanical 16-tensor plumbing — read each `present.{0..3}.{decoder,encoder}.{key,value}` from the `SessionOutputs` into an owned `Array4<f32>`, and feed them back under the `past_key_values.*` names. The exact name list and `[1,6,seq,64]` shapes are in **#185 §3**; implement them straight from that table.
+
+`mod.rs` — engine wrapper (note the `ort 2.0` `Session::builder()` gotcha from #185 §7: its error is not `Send`, so `?` won't coerce to `anyhow` — wrap with `map_err`):
 ```rust
 pub(crate) mod decode;
 pub(crate) mod remap;
 pub(crate) mod tokenizer;
 
 use std::path::Path;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use ort::session::Session;
 
 pub struct Charsiu {
     encoder: Session,
     decoder: Session,
+    decoder_past: Session,
 }
 
-/// CharsiuG2P language tags (from charsiu-onnx-contract.md / spike).
+/// CharsiuG2P language tags (#185 §4). LatAm Spanish is `<spa>`.
 fn tag_for(lang: &str) -> Result<&'static str> {
     Ok(match lang {
         "es" => "<spa>",
@@ -416,9 +401,17 @@ fn tag_for(lang: &str) -> Result<&'static str> {
 
 impl Charsiu {
     pub fn load(dir: &Path) -> Result<Self> {
-        let enc = Session::builder()?.commit_from_file(dir.join("encoder_model.onnx"))?;
-        let dec = Session::builder()?.commit_from_file(dir.join("decoder_model.onnx"))?;
-        Ok(Self { encoder: enc, decoder: dec })
+        let open = |f: &str| -> Result<Session> {
+            Session::builder()
+                .map_err(|e| anyhow!("ort session builder: {e}"))? // #185 §7: non-Send error
+                .commit_from_file(dir.join(f))
+                .map_err(|e| anyhow!("ort load {f}: {e}"))
+        };
+        Ok(Self {
+            encoder: open("encoder_model.onnx")?,
+            decoder: open("decoder_model.onnx")?,
+            decoder_past: open("decoder_with_past_model.onnx")?,
+        })
     }
 
     /// Phonemize one chunk of text to Kokoro-vocab IPA.
@@ -431,8 +424,10 @@ impl Charsiu {
         let mut words = Vec::new();
         for w in text.split_whitespace() {
             let ids = tokenizer::encode_with_tag(w, tag);
-            let out = decode::greedy(&mut self.encoder, &mut self.decoder, &ids)
-                .with_context(|| format!("charsiu decode failed for {w:?}"))?;
+            let out = decode::greedy(
+                &mut self.encoder, &mut self.decoder, &mut self.decoder_past, &ids,
+            )
+            .with_context(|| format!("charsiu decode failed for {w:?}"))?;
             words.push(remap::remap(&tokenizer::decode(&out)));
         }
         Ok(words.join(" "))
@@ -444,9 +439,9 @@ impl Charsiu {
 
 Run:
 ```bash
-cd rust && CHARSIU_ONNX=/tmp/charsiu-onnx-spike/onnx cargo nextest run --features tts charsiu:: 2>&1 | tail
+cd rust && CHARSIU_ONNX=~/.cache/kesha/models/g2p/byt5-tiny cargo nextest run --features tts charsiu:: 2>&1 | tail
 ```
-Expected: PASS (and the un-gated tokenizer/remap tests still pass). If decode output diverges from Phase 0's Python IPA, fix tensor names/decoder-start id against `charsiu-onnx-contract.md`.
+Expected: PASS (and the un-gated tokenizer/remap tests still pass). If decode output diverges from #185's reference IPA (e.g. `hola → olao`), fix the KV-cache name binding against #185 §3.
 
 - [ ] **Step 5: Commit**
 
@@ -638,7 +633,7 @@ Expected: FAIL (still bails to #212).
 
 - [ ] **Step 3: Implement routing**
 
-In `text_to_ipa`, before the misaki `match`, add: if lang ∈ {es,fr,it,pt}, run `normalize::normalize(text, lang)` then load `Charsiu` from the cached model dir (`models/charsiu-g2p/` under the kesha cache) and return `to_ipa`. If the model dir is missing, bail with the loud `kesha install --tts` message (never auto-download). English/`en-*` keep the existing misaki path untouched.
+In `text_to_ipa`, before the misaki `match`, add: if lang ∈ {es,fr,it,pt}, run `normalize::normalize(text, lang)` then load `Charsiu` from the cached model dir (`models/g2p/byt5-tiny/` under the kesha cache) and return `to_ipa`. If the model dir is missing, bail with the loud `kesha install --tts` message (never auto-download). English/`en-*` keep the existing misaki path untouched.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -716,27 +711,34 @@ git commit -m "fix(tts): clamp Kokoro audio pre-encode + phonemeCount-1 style ro
 
 ## Phase 4 — Voices + model distribution
 
-### Task 4.1: Pin CharsiuG2P ONNX + multilingual voices in `models.rs`
+### Task 4.1: Pin the klebster G2P ONNX + multilingual voices in `models.rs`
 
 **Files:**
-- Modify: `rust/src/tts/charsiu/` (none) — `rust/src/models.rs`
+- Modify: `rust/src/models.rs`, `NOTICES`
 - Test: `cargo test models::manifest_tests` (existing shape invariants)
 
-- [ ] **Step 1: Compute SHA-256 of the artifacts**
+- [ ] **Step 1: Hashes are already pinned by #185 — reuse them**
 
-Run:
+The three klebster files' SHA-256 are recorded in #185 §1 (verified in Phase 0 Task 0.1 Step 2):
+```
+encoder_model.onnx              1ac7aca11845527873f9e0e870fbe1e3c3ac2cb009d8852230332d10541aab04
+decoder_model.onnx              de32477aae14e254d4a7dee4b2c324fb39f93a0dc254181c5bfdd8fc67492919
+decoder_with_past_model.onnx    fae30b9f3a8d935be01b32af851bae6d54f330813167073e84caf6d0a1890fcb
+```
+For the four voice `.bin` packs (onnx-community, same family as the existing `am_michael.bin`), compute hashes from the staged cache:
 ```bash
-shasum -a 256 /tmp/charsiu-onnx-spike/onnx/encoder_model.onnx /tmp/charsiu-onnx-spike/onnx/decoder_model.onnx
-# voice .bin packs (already used by the spike harness / onnx-community):
 for v in em_alex ff_siwis im_nicola pm_alex; do
-  shasum -a 256 /tmp/kokoro-mlang-spike/voices/$v.bin 2>/dev/null || echo "re-extract $v"
+  shasum -a 256 ~/.cache/kesha/models/kokoro-82m/voices/$v.bin
 done
 ```
-Record the hashes.
 
-- [ ] **Step 2: Add `ModelFile` entries**
+- [ ] **Step 2: Add `ModelFile` entries + NOTICES attribution**
 
-In `models.rs`, add to the ONNX (non-`system_kokoro`) TTS manifest: the two CharsiuG2P ONNX files under `rel_path: "models/charsiu-g2p/{encoder,decoder}_model.onnx"` with their HF `resolve` URLs + pinned `sha256`, and the four voice `.bin` packs under `models/kokoro-82m/voices/{em_alex,ff_siwis,im_nicola,pm_alex}.bin` from onnx-community with pinned `sha256` (mirror the existing `am_michael.bin` entry shape).
+In `models.rs`, add to the ONNX (non-`system_kokoro`) TTS manifest:
+- The **three** klebster G2P files under `rel_path: "models/g2p/byt5-tiny/{encoder_model,decoder_model,decoder_with_past_model}.onnx"`, `url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/<file>"`, with the pinned `sha256` above (mirror #185's Phase-1 `g2p_onnx_manifest()` snippet exactly).
+- The four voice `.bin` packs under `models/kokoro-82m/voices/{em_alex,ff_siwis,im_nicola,pm_alex}.bin` from onnx-community with pinned `sha256` (mirror the existing `am_michael.bin` entry).
+
+**CC-BY 4.0 attribution (required):** add a `NOTICES` entry crediting **Kleber Noel** (ONNX export) and **Zhu et al. 2022** (upstream CharsiuG2P, arXiv:2204.03067). This is the license obligation — not optional.
 
 - [ ] **Step 3: Run manifest shape tests**
 
@@ -846,7 +848,7 @@ Render each corpus sentence (gated on `CHARSIU_ONNX` + Kokoro model present), th
 
 Run:
 ```bash
-cd rust && CHARSIU_ONNX=/tmp/charsiu-onnx-spike/onnx cargo nextest run --features tts tts_multilang_audio 2>&1 | tail
+cd rust && CHARSIU_ONNX=~/.cache/kesha/models/g2p/byt5-tiny cargo nextest run --features tts tts_multilang_audio 2>&1 | tail
 ```
 Expected: PASS.
 
@@ -894,7 +896,8 @@ Per CLAUDE.md: wait for CI + Greptile to cover the head SHA; address P1/P2 findi
 
 ---
 
-## Pre-merge blockers (carry from the spec)
-- **CharsiuG2P weights license** — code is MIT; the HF weights repo lacks an explicit license. Clarify with the author before Task 4.1's pin merges. If unresolved, this blocks the model-pin PR.
-- **Phase 0 gate** — if the ONNX decode spike fails feasibility/latency, STOP and re-brainstorm the offline-lexicon fallback; do not proceed into Phase 1.
-- **French-female exception** — needs drakulavich sign-off in the PR (brand-rule carve-out).
+## Pre-merge blockers
+- **CC-BY 4.0 attribution** — the klebster export is CC-BY 4.0 (resolved: permissive, no copyleft). The obligation is the `NOTICES` entry (Task 4.1 Step 2) crediting Kleber Noel + Zhu et al. — easy to forget, easy to satisfy.
+- **French-female exception** — needs drakulavich sign-off in the PR (brand-rule carve-out: no male French voice exists in Kokoro v1.0).
+
+> Resolved vs. the original plan: the "export it ourselves / Phase 0 feasibility gate" and the "weights license unresolved" blockers are both gone — feasibility is established by #185 and the artifact is CC-BY 4.0.

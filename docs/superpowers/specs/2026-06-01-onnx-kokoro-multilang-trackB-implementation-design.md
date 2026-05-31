@@ -19,7 +19,7 @@ Give the ONNX TTS path real per-language G2P for **Spanish, French, Italian, Por
 | Decision | Choice | Rationale |
 |---|---|---|
 | Languages (v1) | es, fr, it, pt | All four; Kokoro-82M speaks them, only G2P was missing. |
-| G2P runtime | **CharsiuG2P ByT5 → ONNX → `ort` greedy decode**, spike-gated | Repo-aligned (ort already unconditional, SHA-256-pinnable), generalizes to OOV. Fallback: offline lexicon. |
+| G2P runtime | **Pre-converted klebster CharsiuG2P ByT5 ONNX → `ort` KV-cache decode** | Repo-aligned (ort already unconditional, SHA-256-pinnable), generalizes to OOV. Feasibility + byte-identical Rust parity already proven by #185 — no self-export, no spike gate. |
 | Spanish dialect | **Latin-American** (`<spa>`) default | Largest speaker base; spike-validated natural by ear. Castilian deferred. |
 | Normalizer | **numbers + acronyms**, per language | The two weaknesses the spike measured; integers + acronym spell-out only (YAGNI). |
 | French default voice | `fr-ff_siwis` (**female**) | **Documented exception** to the male-default brand rule: Kokoro v1.0 ships **no male French voice** (only `ff_siwis`). es/it/pt default to male (`em_alex`, `im_nicola`, `pm_alex`). Revisit French when a male voice exists. |
@@ -52,9 +52,9 @@ Each unit is independently testable: the normalizer is pure text→text; `charsi
 ## Components
 
 ### `charsiu` — ONNX G2P engine
-Wraps a pinned ByT5-tiny ONNX export (`encoder.onnx` + `decoder.onnx`) on the existing `ort`.
-- `tokenizer.rs`: ByT5 is byte-level — encode = UTF-8 bytes + 3 (offset for special tokens), plus EOS; no sentencepiece. The CharsiuG2P language tag (e.g. `<spa>`, `<fra>`, `<ita>`, `<por-bz>`) is prepended per the model's convention.
-- `decode.rs`: greedy autoregressive decode — run encoder once, loop decoder feeding the growing token sequence until EOS or a max-length cap; map output bytes back to the IPA string. A small per-word in-memory cache amortizes repeated tokens within an utterance.
+Loads the pinned **klebster 3-file ONNX export** (`encoder_model.onnx` + `decoder_model.onnx` + `decoder_with_past_model.onnx`) on the existing `ort`. IO contract per #185 §3.
+- `tokenizer.rs`: ByT5 is byte-level — encode = `"<tag>: word"` → UTF-8 bytes + 3 (special-token offset), plus EOS; no sentencepiece. Tags `<spa>`/`<fra>`/`<ita>`/`<por-bz>` (#185 §4).
+- `decode.rs`: **KV-cache** autoregressive decode — encoder once; step 0 via `decoder_model` (seeds all `present.*` KV); steps 1..N via `decoder_with_past_model` (re-feed constant encoder KV + updated decoder KV) until EOS or a max-length cap; map output bytes back to IPA.
 - `mod.rs`: word-segments the normalized text, phonemizes each, joins with spaces.
 
 ### `charsiu/remap.rs` — OOV → Kokoro vocab
@@ -74,14 +74,9 @@ CharsiuG2P collapses digits and acronyms, so normalize first:
 1. **Clamp** synthesized f32 to `[-1, 1]` before WAV encode — Kokoro can emit samples >1.0 (the spike's `fr_0` clipped); locked by the audio-regression "no clipping" check.
 2. Style-row index = `min(max(phonemeCount-1, 0), 509)` (the spike render used the padded length; FluidAudio's docs confirm `phonemeCount-1`).
 
-## The spike gate (Plan Phase 0 — mandatory)
+## Feasibility — already established (no spike gate)
 
-Per CLAUDE.md ("verify third-party model formats with a spike"), the ByT5→ONNX export is a named third-party artifact and must be proven before the engine commits to it. Phase 0 spike:
-1. Export `charsiu/g2p_multilingual_byT5_tiny_16_layers_100` to ONNX (optimum/transformers).
-2. Reproduce the spike's Python IPA from a Rust/`ort` greedy decode on the fixed corpus (es/fr/it/pt).
-3. Measure per-utterance latency for interactive `kesha say`.
-
-**Gate:** if export fails, decode-in-`ort` is infeasible, or latency is unacceptable → fall back to the **offline-lexicon** approach (bake `{word:IPA}` per language via CharsiuG2P + a rule-based OOV fallback, the misaki pattern). Record the decision before further work.
+CLAUDE.md's "verify third-party model formats with a spike" rule is **already satisfied** by the prior April spike `docs/superpowers/specs/2026-04-22-onnx-g2p-spike.md` (PR #185, on `main`): it downloaded the klebster export, pinned its SHA-256 hashes, documented the full IO contract (§3) + the `ort 2.0` gotchas (§7), and verified **byte-identical Rust↔Python IPA** across 7 scripts (incl. es/fr/it/pt) at ~36 ms/word. So this design pins and loads that published artifact rather than exporting anything. Plan Phase 0 is reduced to *download + hash-verify against the #185 pins*. If those hashes ever stop matching (upstream rehost), that's a deliberate model bump — not a "get it working" override.
 
 ## Error handling
 - Missing G2P/voice model → the existing loud `kesha install --tts` error (never auto-download).
@@ -94,13 +89,13 @@ Per CLAUDE.md ("verify third-party model formats with a spike"), the ByT5→ONNX
 - **Verification:** `cargo nextest run --features tts` + clippy `--all-targets` + fmt; Greptile + CI gate per repo rules.
 
 ## Rollout (PR-able increments)
-1. **Phase 0 spike** (feasibility/latency) — decision recorded.
-2. `charsiu` engine (tokenizer + decode + remap) behind tests, model pinned.
+1. **Phase 0** — download + hash-verify the klebster artifact against the #185 pins (no export).
+2. `charsiu` engine (tokenizer + KV-cache decode + remap) behind tests, model pinned.
 3. `normalize/` (numbers + acronyms).
 4. `voices.rs`/`models.rs` wiring + `kesha install --tts` + the `kokoro.rs` clamp/style fixes.
 5. CI audio-regression gate.
 
-**Before the model-pin PR merges:** clarify the CharsiuG2P **weights** license with the author (the code is MIT; the HF weights repo lacks an explicit license — flagged in the spike).
+**License:** the klebster export is **CC-BY 4.0** (permissive — resolves the earlier "weights license unresolved" concern). Obligation is a `NOTICES` attribution crediting Kleber Noel (ONNX export) + Zhu et al. 2022 (upstream CharsiuG2P), landed with the model-pin PR.
 
 ## Risks
 - **Autoregressive ONNX decode in `ort`** (KV-cache, EOS, latency) is the primary unknown — Phase 0 spike de-risks it; lexicon fallback if it fails.
