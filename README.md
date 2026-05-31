@@ -15,10 +15,8 @@
 
 - **Transcribe locally** — 25 languages, up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Speak back** — Kokoro (EN), Vosk-TTS (RU), macOS system voices, and SSML preview
-- **Plug into agents** — ship voice workflows as CLI commands or an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill; setup docs: [OpenClaw](docs/openclaw.md), [Hermes](docs/hermes.md)
+- **Plug into agents** — ship voice workflows as CLI commands, an MCP server, or an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill
 - **Small Rust engine** — single ~20MB binary, no ffmpeg, no Python, no native Node addons
-
-See [Product positioning](docs/product-positioning.md) for supported workflows, non-goals, maturity labels, and the platform matrix.
 
 <p align="center">
   <img src="https://github.com/drakulavich/kesha-voice-kit/raw/main/demo.gif" alt="kesha demo — English + Russian transcription with automatic language detection" width="800">
@@ -26,35 +24,23 @@ See [Product positioning](docs/product-positioning.md) for supported workflows, 
 
 ## Quick Start
 
-Runtime: **[Bun](https://bun.sh)** >= 1.3.0.
-
-Install Bun (skip if already installed) — pick one:
+Runtime: **[Bun](https://bun.sh)** >= 1.3.0 · Platforms: macOS arm64, Linux x64, Windows x64.
 
 ```bash
-# Linux & macOS
-curl -fsSL https://bun.sh/install | bash       # upstream installer
-brew install oven-sh/bun/bun                   # Homebrew
-```
+# 1. Install Bun (skip if you have it) — Linux & macOS:
+curl -fsSL https://bun.sh/install | bash        # or: brew install oven-sh/bun/bun
+# Windows: powershell -c "irm bun.sh/install.ps1 | iex"
 
-```powershell
-# Windows
-powershell -c "irm bun.sh/install.ps1 | iex"
-```
-
-Then install Kesha:
-
-```bash
+# 2. Install Kesha:
 bun add -g @drakulavich/kesha-voice-kit
-kesha install       # downloads engine + models
-kesha audio.ogg     # transcript to stdout
+kesha install        # downloads engine + models (explicit — never automatic)
+
+# 3. Transcribe:
+kesha audio.ogg      # transcript to stdout
 ```
 
+Prefer Homebrew, `.deb`/`.rpm`, Docker, or Nix? See [Other install methods](#other-install-methods).
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
-
-## Requirements
-
-- [Bun](https://bun.sh) >= 1.3
-- macOS arm64, Linux x64, or Windows x64
 
 ## Speech-to-text
 
@@ -64,12 +50,10 @@ kesha --format transcript audio.ogg        # text + language/confidence
 kesha --format json audio.ogg              # full JSON with lang fields
 kesha --json --timestamps audio.ogg        # JSON with timestamped segments
 kesha --toon audio.ogg                     # compact LLM-friendly TOON
-kesha --verbose audio.ogg                  # show language detection details
-kesha --lang en audio.ogg                  # warn if detected language differs
 kesha status                               # show installed backend info
 ```
 
-Multiple files — headers per file, like `head`:
+Multiple files get `head`-style headers; stdout is the transcript, stderr is errors — pipe-friendly:
 
 ```bash
 $ kesha freedom.ogg tahiti.ogg
@@ -80,429 +64,74 @@ $ kesha freedom.ogg tahiti.ogg
 Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
 ```
 
-Stdout: transcript. Stderr: errors. Pipe-friendly.
-
-For long / silence-heavy audio, install VAD (`kesha install --vad`) and run without `--no-vad`. Kesha auto-uses VAD past 120 s when installed; without VAD, very long audio falls back to fixed ASR chunks. Details: [docs/vad.md](docs/vad.md).
-
-**Speaker diarization** (darwin-arm64, post-v1.12.0):
-
-```bash
-kesha install --diarize                        # one-time, ~245MB Sortformer model
-kesha --json --vad --speakers meeting.m4a > out.json
-jq '.[0].segments[] | "\(.speaker)\t\(.text)"' out.json
-```
-
-Each segment gets a `speaker` integer (cluster ID, stable within one file). Linux / Windows: `--speakers` returns a clear "currently darwin-arm64 only" error — see [#199](https://github.com/drakulavich/kesha-voice-kit/issues/199).
+- **Long / silence-heavy audio:** install VAD (`kesha install --vad`); Kesha auto-uses it past 120 s. Without VAD, long audio falls back to fixed ASR chunks. See [docs/vad.md](docs/vad.md).
+- **Speaker diarization** (darwin-arm64): `kesha install --diarize`, then `kesha --json --vad --speakers meeting.m4a` stamps each segment with a `speaker` id. Linux/Windows return a clear "darwin-arm64 only" error ([#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
 
 ## Text-to-speech
 
-Kesha speaks back via Kokoro-82M (English plus selected multilingual voices on Apple Silicon) and Vosk-TTS (Russian) — voice auto-picks from the text's language. On darwin-arm64, Kokoro uses FluidAudio CoreML instead of ONNX; FluidAudio stores that CoreML cache at `~/.cache/fluidaudio/Models/kokoro`, outside Kesha's pinned model cache:
+Kesha speaks back via Kokoro-82M (English + select multilingual voices on Apple Silicon) and Vosk-TTS (Russian). The voice auto-picks from the text's language; pass `--voice` to choose.
 
 ```bash
-kesha install --tts                      # TTS, opt-in; Darwin Kokoro uses FluidAudio cache
+kesha install --tts                              # opt-in models (~990MB)
 kesha say "Hello, world" > hello.wav
-kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
-kesha say --voice es-em_alex "Hola, mundo" > hola.wav
+kesha say "Привет, мир" > privet.wav             # auto-routes by language
+kesha say --voice ru-vosk-m02 "Голос в текст." > ru.wav
 ```
 
-**Output formats** (`--format`, or inferred from `--out` extension):
+**Output formats** (`--format`, or inferred from the `--out` extension):
 
 ```bash
-kesha say "Hello" --out hi.wav                       # WAV (default, uncompressed)
-kesha say "Hello" --format ogg-opus --out hi.ogg     # OGG/Opus — messenger voice notes (Telegram/WhatsApp/Signal)
-kesha say "Hello" --format flac --out hi.flac        # FLAC — lossless, royalty-free, plays in every browser incl. Safari/iOS
+kesha say "Hello" --out hi.wav                    # WAV (default, uncompressed)
+kesha say "Hello" --format ogg-opus --out hi.ogg  # OGG/Opus — messenger voice notes
+kesha say "Hello" --format flac --out hi.flac     # FLAC — lossless, plays in every browser incl. Safari/iOS
 ```
 
-FLAC is the format for web-embeddable samples: it plays natively in all modern browsers (including Safari/iOS, where OGG/Opus does not), stays royalty-free like Opus, and keeps the engine's native sample rate (no resample). `--bitrate` / `--sample-rate` apply only to `--format ogg-opus`.
-
-**Russian abbreviations** (`ru-vosk-*`): all-uppercase Cyrillic 2-5-char tokens auto-expand letter-by-letter when not pronounceable as a Russian syllable (ФСБ → "эф-эс-бэ", ВОЗ → "воз"). Disable with `--no-expand-abbrev`. See [docs/tts.md#russian-abbreviation-auto-expansion](docs/tts.md#russian-abbreviation-auto-expansion).
-
-**English acronyms** (`en-*`, Kokoro): three-table mechanism (letter-spell rule + STOP_LIST + IPA_LEXICON) auto-expands FBI → "ef bee eye" and gives EPAM/JSON/Anthropic the right IPA. Disable letter-spell with `--no-expand-abbrev`. See [docs/tts.md#english-acronym-auto-expansion](docs/tts.md#english-acronym-auto-expansion).
-
-**Russian word stress** (`ru-vosk-*` voices):
-
-```bash
-# Caller provides `+` before the stressed vowel; engine passes it to Vosk
-kesha say --voice ru-vosk-m02 --ssml \
-  '<speak><emphasis>дом+а</emphasis></speak>'   # genitive до-МА́
-
-# Suppress an inherited <emphasis> with level="none"
-kesha say --voice ru-vosk-m02 --ssml \
-  '<speak><emphasis level="none">дом+а</emphasis></speak>'   # default ДО́ма
-```
-
-Vosk-TTS 0.9-multi honors a `+` placed BEFORE the target stressed vowel — but only when the marker shifts stress AWAY from the model's default (first-syllable). `+` agreeing with the default is a no-op. See [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
-
-**Speech rate via SSML** (`ru-vosk-*` and `en-*` voices):
-
-```bash
-kesha say --voice ru-vosk-m02 --ssml \
-  '<speak><prosody rate="slow">Привет, как дела.</prosody></speak>' --out slow.wav
-
-kesha say --voice en-am_michael --ssml \
-  '<speak><prosody rate="x-fast">Read this fast.</prosody></speak>' --out fast.wav
-```
-
-Honored when `<prosody rate>` wraps the whole utterance. Mid-utterance prosody warns and synthesizes at default rate (whole-segment-only is a v1 limitation; mid-utterance support tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236)). `--rate` and `<prosody rate>` compose multiplicatively. Range clamped to 0.5×–2.0×.
-
-macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tts.md](docs/tts.md).
-
-### Examples
-
-```bash
-# Auto-detect language and pick a male default (en-am_michael / ru-vosk-m02)
-kesha say "Hello, world" --out hello.wav
-kesha say "Привет, мир"  --out privet.wav
-
-# Choose a specific voice
-kesha say --voice en-am_michael "Voice in, text out." --out en.wav
-kesha say --voice ru-vosk-m02   "Голос в текст." --out ru.wav
-
-# List installed voices
-kesha say --list-voices
-
-# Output formats — inferred from the --out extension, or set with --format
-kesha say "Lossless, plays in Safari/iOS"   --out demo.flac        # FLAC (v1.20.0+)
-kesha say "Telegram-ready voice note" --format ogg-opus --out vn.ogg
-kesha say "Stream raw WAV to stdout"  > out.wav                    # default: WAV
-
-# Speaking rate, 0.5×–2.0× (Vosk honors it on every platform)
-kesha say --voice ru-vosk-m02 --rate 0.75 "Помедленнее." --out slow.flac
-kesha say --voice ru-vosk-m02 --rate 1.5  "Побыстрее."   --out fast.flac
-
-# macOS system voice — zero model download
-kesha say --voice macos-com.apple.voice.compact.ru-RU.Milena "Привет" --out milena.wav
-```
-
-## Homebrew Install
-
-Homebrew installs the Bun-based CLI wrapper. Engine and model downloads remain
-explicit:
-
-```bash
-brew tap oven-sh/bun
-brew install drakulavich/tap/kesha-voice-kit
-kesha install
-kesha audio.ogg
-```
-
-See [Homebrew install](docs/homebrew.md) for package scope and maintainer
-validation.
-
-## Linux Packages
-
-Stable engine releases also publish `.deb` and `.rpm` packages for Linux x64.
-They install the standalone CLI wrapper; engine and model downloads remain explicit:
-
-```bash
-kesha install
-kesha audio.ogg
-```
-
-See [Linux packages](docs/linux-packages.md) for install commands and package
-scope.
-
-## Docker
-
-Linux x64 CLI image, published to GHCR:
-
-```bash
-docker run --rm \
-  -v kesha-cache:/cache/kesha \
-  -v "$PWD:/work" -w /work \
-  ghcr.io/drakulavich/kesha-voice-kit:latest install
-
-docker run --rm \
-  -v kesha-cache:/cache/kesha \
-  -v "$PWD:/work" -w /work \
-  ghcr.io/drakulavich/kesha-voice-kit:latest audio.ogg
-```
-
-The image keeps model downloads and the engine cache under `/cache/kesha`.
-Mount that path as a named volume so `kesha install`, TTS models, VAD, and future
-runs reuse the same cache. `compose.yml` provides the same layout:
-
-```bash
-docker compose run --rm kesha install
-docker compose run --rm kesha audio.ogg
-```
-
-## Nix Install
-
-Alternative reproducible-build path on `aarch64-darwin` / `x86_64-linux`:
-
-```bash
-nix run github:drakulavich/kesha-voice-kit -- install      # downloads models (engine is bundled)
-nix run github:drakulavich/kesha-voice-kit -- audio.ogg    # transcribe
-```
-
-Full recipes (one-liner, profile install, engine-only, dev shell) live in [docs/nix-install.md](docs/nix-install.md).
-
-## Shell Completions and Manpage
-
-The npm package includes bash, zsh, and fish completions plus `kesha(1)`.
-The CLI can print the packaged files, so install paths do not depend on the
-Bun global package layout:
-
-```bash
-# bash
-mkdir -p ~/.local/share/bash-completion/completions
-kesha completions bash > ~/.local/share/bash-completion/completions/kesha
-
-# zsh
-mkdir -p ~/.zsh/completions
-kesha completions zsh > ~/.zsh/completions/_kesha
-# add to ~/.zshrc once: fpath=(~/.zsh/completions $fpath); autoload -Uz compinit; compinit
-
-# fish
-mkdir -p ~/.config/fish/completions
-kesha completions fish > ~/.config/fish/completions/kesha.fish
-
-# manpage
-mkdir -p ~/.local/share/man/man1
-kesha manpage > ~/.local/share/man/man1/kesha.1
-mandb ~/.local/share/man 2>/dev/null || true
-```
-
-## Performance
-
-> **Up to ~19x faster than Whisper** on Apple Silicon (M2), **~2.5x faster** on CPU
-
-Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
-
-![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](https://github.com/drakulavich/kesha-voice-kit/raw/main/docs/assets/benchmark.svg)
-
-See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + English).
-
-## Architecture
-
-```text
-Users / agents
-  shell | scripts | OpenClaw | Hermes | Raycast | @drakulavich/kesha-voice-kit/core
-        |
-        v
-+------------------------------- Kesha CLI -------------------------------+
-| Bun + TypeScript wrapper                                                |
-| - parses commands and formats stdout/stderr                             |
-| - installs pinned engine/model assets only when explicitly requested    |
-| - keeps cache, support bundles, and local Stats in the CLI              |
-+-----------------------------------+-------------------------------------+
-                                   |
-                                   | spawns one local process
-                                   v
-+----------------------------- kesha-engine ------------------------------+
-| Rust binary, no cloud calls, no Python, no ffmpeg                       |
-|                                                                         |
-|  Audio input                 Text input                  Diagnostics    |
-|  WAV/MP3/OGG/FLAC/AAC/M4A   plain text / SSML           status/support  |
-|       |                           |                           |         |
-|       v                           v                           v         |
-|  Symphonia decode            TTS preprocessing           runtime probes |
-|       |                           |                                     |
-|       +--> optional VAD           +--> voice routing                    |
-|       |    + diarization          |    Kokoro / Vosk / macOS voices     |
-|       |                           |                                     |
-|       +--> audio lang ID          +--> speech synthesis                 |
-|       |    SpeechBrain ONNX                                             |
-|       |                                                                 |
-|       +--> ASR backend                                                  |
-|            CoreML on Apple Silicon                                      |
-|            ONNX Runtime on Linux/Windows/fallback                       |
-+-----------------------------------+-------------------------------------+
-                                   |
-                                   v
-                         transcript | JSON/TOON | WAV | local diagnostics
-```
-
-Cache boundary: `kesha install` and opt-in feature installs populate the local
-cache; ordinary transcription and speech commands fail fast if required assets
-are missing.
-
-Contributors: see [`docs/architecture.md`](docs/architecture.md) for the
-code-level map (repo layout, CLI↔engine boundary, backends, model pinning,
-tests, and a "where to change X" table).
-
-## What's Inside
-
-| Model | Task | Size | Source |
-|---|---|---|---|
-| NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~2.5GB | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
-| SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
-| Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
-| Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
-| Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | ~990MB | [FluidAudio Kokoro](https://github.com/FluidInference/FluidAudio) on darwin-arm64 (FluidAudio cache, not Kesha-verified); ONNX Kokoro elsewhere · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
-
-All models run through `kesha-engine` — a Rust binary using [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML) on Apple Silicon and [ort](https://github.com/pykeio/ort) (ONNX Runtime) on other platforms.
-
-Audio decoding via [symphonia](https://github.com/pdeljanov/Symphonia) — WAV, MP3, OGG/Opus, FLAC, AAC, M4A. No ffmpeg.
+`kesha say --list-voices` lists what's installed. Voices, the full catalogue, macOS system voices, SSML, speaking rate (`--rate`, `<prosody>`), Russian word stress, and Russian/English abbreviation handling are all in **[docs/tts.md](docs/tts.md)**.
 
 ## Languages
 
 - **Speech-to-text (25):** Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Ukrainian.
 - **Audio language detection (107):** [full list](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa).
 
+## Performance
+
+> **Up to ~19x faster than Whisper** on Apple Silicon (M2), **~2.5x faster** on CPU
+
+Compared against Whisper `large-v3-turbo`, all engines auto-detecting language:
+
+![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](https://github.com/drakulavich/kesha-voice-kit/raw/main/docs/assets/benchmark.svg)
+
+Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md).
+
+## Other install methods
+
+All of these install the Bun CLI wrapper; engine + models still download explicitly via `kesha install`.
+
+- **Homebrew** — `brew install drakulavich/tap/kesha-voice-kit` · [docs/homebrew.md](docs/homebrew.md)
+- **Linux packages** (`.deb`/`.rpm`, x64) — [docs/linux-packages.md](docs/linux-packages.md)
+- **Docker** (GHCR image) — [docs/docker.md](docs/docker.md)
+- **Nix** (`aarch64-darwin` / `x86_64-linux`) — `nix run github:drakulavich/kesha-voice-kit -- install` · [docs/nix-install.md](docs/nix-install.md)
+- **Shell completions + manpage** — `kesha completions bash|zsh|fish` and `kesha manpage` print the packaged files to install wherever your shell expects them.
+
 ## Integrations
 
+- **MCP server** — `kesha mcp` exposes transcribe/synthesize/list tools to any MCP client (Claude, Cursor, Codex, Gemini). Setup: [docs/mcp.md](docs/mcp.md).
 - **OpenClaw** — give your LLM agent ears. Install & config: [docs/openclaw.md](docs/openclaw.md).
 - **Hermes Agent** — local STT/TTS through Hermes command providers. Setup: [docs/hermes.md](docs/hermes.md).
-- **Raycast** (macOS) — transcribe selected audio & speak clipboard from the launcher. Source + install: [`raycast/`](raycast/).
+- **Raycast** (macOS) — transcribe selected audio & speak the clipboard from the launcher. Source + install: [`raycast/`](raycast/).
+- **Programmatic API** — `@drakulavich/kesha-voice-kit/core` for use inside a Bun program. See [docs/api.md](docs/api.md).
 
-## MCP server
+## More
 
-`kesha mcp` runs a local Model Context Protocol server over stdio, exposing
-`transcribe_audio`, `synthesize_speech`, `list_voices`, and `list_languages` to
-any MCP client. Models are never auto-downloaded — tools fail with a
-`kesha install` / `kesha install --tts` hint when missing.
-
-Add to your client config:
-
-```json
-{ "mcpServers": { "kesha": { "command": "kesha", "args": ["mcp"] } } }
-```
-
-Claude Desktop users can place the same JSON in `claude_desktop_config.json`.
-
-<details>
-<summary>Claude Code</summary>
-
-```bash
-claude mcp add kesha -- kesha mcp
-```
-
-</details>
-
-<details>
-<summary>Codex</summary>
-
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.kesha]
-command = "kesha"
-args = ["mcp"]
-```
-
-</details>
-
-<details>
-<summary>Gemini CLI</summary>
-
-Add to `~/.gemini/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "kesha": {
-      "command": "kesha",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>Cursor</summary>
-
-Add to `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "kesha": {
-      "command": "kesha",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-</details>
-
-If a tool returns "models not installed", run `kesha install` (ASR) or
-`kesha install --tts` (TTS) once, then retry.
-
-## Programmatic API
-
-```typescript
-import { transcribe, downloadModel } from "@drakulavich/kesha-voice-kit/core";
-
-await downloadModel();                       // install engine + models
-const text = await transcribe("audio.ogg");  // transcribe
-```
-
-## Support diagnostics
-
-Kesha can collect local diagnostics without downloading models or mutating cache state:
-
-```bash
-kesha doctor --json --redact
-kesha support-bundle --output kesha-support.tar.gz
-kesha support-bundle --include-logs --output kesha-support-with-logs.tar.gz
-kesha logs status
-kesha logs status --json
-```
-
-`support-bundle` creates a redacted `.tar.gz` archive for GitHub issues. It includes runtime, engine, cache, optional-component, Stats status, and known Kesha environment settings. It does not include audio, transcripts, model files, or the Stats database.
-Diagnostic log contents are excluded by default; pass `--include-logs` to add a
-bounded tail of Kesha's privacy-safe NDJSON diagnostic log.
-
-`kesha logs` manages local, rotated diagnostic logs for troubleshooting. Logs
-default to `retain-on-failure` and also support explicit `off` and `on` modes.
-Use `kesha logs status --json` for a stable machine-readable status contract
-covering the active path, mode, size, rotation settings, and rotated-file list.
-They use content-free NDJSON events: command/stage names, versions, durations,
-exit codes, and coarse audio metadata only. They must not store audio,
-transcripts, input text, generated speech text, file names, full paths, raw
-stdout/stderr, environment variables, tokens, or URLs. See [Diagnostic logs](docs/diagnostic-logs.md).
-
-Every user-facing failure prints a stable `error [CODE]: …` line on stderr. See
-[Error codes](docs/errors.md) for the full reference; engine codes are also
-available via `kesha-engine --error-codes-json`.
-
-## Local Stats privacy and lifecycle
-
-Kesha Stats is disabled by default. When you opt in with `kesha stats enable`,
-Kesha writes a local SQLite database only on your machine:
-
-```bash
-kesha stats status
-kesha stats week
-kesha stats errors
-kesha stats export --format json   # or csv
-kesha stats retention 30           # default: 90 days
-kesha stats retention off          # keep until reset
-kesha stats reset                  # delete recorded stats rows
-kesha stats vacuum                 # compact the SQLite file
-```
-
-The database stores content-free operational records only: command name
-(`transcribe` or `say`), timestamps, success/failure status, app version, item
-count, anonymous stage timings, input/output artifact kind, file extension,
-size, optional duration/sample-rate/channel counts, and sanitized error
-class/code/message.
-
-Stats never stores audio bytes, transcripts, input text, generated speech text,
-file names, full file paths, raw stdout/stderr, environment variables, model
-files, API tokens, or cloud identifiers. `support-bundle` reports Stats status
-only; it never includes the Stats SQLite database.
-
-By default, Stats prunes rows older than 90 days before writing or exporting
-data. Use `kesha stats retention <days>` to change the TTL or `kesha stats
-retention off` to disable TTL pruning. `kesha stats reset` deletes recorded
-runs, artifacts, timings, and errors while preserving settings such as enabled
-state and retention.
+- [Architecture](docs/architecture.md) — runtime data flow, the models that ship, the CLI ↔ Rust engine boundary, model pinning, and where tests live.
+- [Use cases](docs/use-cases.md) — copy-paste recipes (transcribe a meeting, speak from OpenClaw, run offline, move the cache).
+- [Product positioning](docs/product-positioning.md) — supported workflows, non-goals, maturity labels, platform matrix.
+- **Diagnostics:** `kesha doctor`, `kesha support-bundle` (redacted `.tar.gz` for issues), and `kesha logs` produce local, content-free diagnostics — see [docs/diagnostic-logs.md](docs/diagnostic-logs.md). Every failure prints a stable `error [CODE]: …` line ([docs/errors.md](docs/errors.md)).
+- **Privacy / Local Stats:** Stats are **off by default** and fully local. Opt in with `kesha stats enable` to record content-free operational metrics in a local SQLite database — never networked, never storing audio, transcripts, text, or paths. Full commands & lifecycle: [docs/local-stats.md](docs/local-stats.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Project docs:
-
-- [Architecture](docs/architecture.md) — TS CLI ↔ Rust engine ↔ ASR/TTS backends, model cache, where tests live
-- [Use cases](docs/use-cases.md) — copy-paste recipes (transcribe a meeting, speak from OpenClaw, run offline, move the cache)
-- [Roadmap](ROADMAP.md) — Now / Next / Later
-- [Decision log](docs/decision-log.md) — why the platform/model choices were made (and reversed)
-- Dev setup: `make dev-setup` (Bun, Rust, nextest, platform libs)
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [Roadmap](ROADMAP.md) (Now / Next / Later), and the [Decision log](docs/decision-log.md) (why platform/model choices were made — and reversed). Dev setup: `make dev-setup` (Bun, Rust, nextest, platform libs).
 
 ## License
 
