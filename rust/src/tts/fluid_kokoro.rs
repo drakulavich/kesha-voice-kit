@@ -11,9 +11,11 @@
 ))]
 
 use anyhow::{Context, Result};
-use std::sync::Once;
 
 use fluidaudio_rs::FluidAudio;
+
+use crate::coded_bail;
+use crate::errors::ErrorCode;
 
 /// FluidAudio Kokoro native output rate (24 kHz mono, 16-bit PCM). Used to size
 /// SSML `<break>` silence buffers when the segment walker stitches audio.
@@ -220,35 +222,23 @@ fn unsupported_native_script(text: &str, fluid_id: &str) -> Option<&'static str>
     }
 }
 
-/// One-time stderr warning when native-script text is handed to a FluidAudio
-/// Kokoro voice that can't phonemize it (#492). It's a silent failure otherwise:
-/// audio is produced, just not speech.
-///
-/// Deduplication is **per language**, not process-wide: a multi-segment SSML
-/// utterance in one language warns at most once, but a process that synthesizes
-/// two non-Latin languages (e.g. Hindi then Japanese) still warns for each — a
-/// shared `Once` would let whichever fired first swallow the others' warnings.
-fn warn_if_unsupported_script(fluid_id: &str, text: &str) {
-    static WARNED_HI: Once = Once::new();
-    static WARNED_JA: Once = Once::new();
-    static WARNED_ZH: Once = Once::new();
-    let Some(script) = unsupported_native_script(text, fluid_id) else {
-        return;
-    };
-    let once = match lang_for_fluid_id(fluid_id) {
-        Some("hi") => &WARNED_HI,
-        Some("ja") => &WARNED_JA,
-        Some("zh") => &WARNED_ZH,
-        _ => return,
-    };
-    once.call_once(|| {
-        eprintln!(
-            "warning: FluidAudio Kokoro can only phonemize Latin-script input; voice \
-             '{fluid_id}' received {script} text, which synthesizes as noise rather than \
-             speech. Romanize the text (transliterate to Latin) for now. \
-             Tracking: https://github.com/drakulavich/kesha-voice-kit/issues/492"
+/// Fail fast when native-script text is handed to a FluidAudio Kokoro voice
+/// that can't phonemize it (#492). FluidAudio's Kokoro G2P only handles Latin
+/// input, so Devanagari/kana-kanji/Han would synthesize as noise rather than
+/// speech — refusing with a stable [`ErrorCode::ScriptUnsupported`] beats
+/// emitting a successful WAV of garbage. Romanized (Latin) input for the same
+/// voice passes the check.
+fn ensure_script_supported(fluid_id: &str, text: &str) -> Result<()> {
+    if let Some(script) = unsupported_native_script(text, fluid_id) {
+        coded_bail!(
+            ErrorCode::ScriptUnsupported,
+            "FluidAudio Kokoro voice '{fluid_id}' cannot phonemize {script} text; it only \
+             supports Latin-script input. Romanize the text (transliterate to Latin), or use a \
+             voice whose engine supports {script}. \
+             See https://github.com/drakulavich/kesha-voice-kit/issues/492"
         );
-    });
+    }
+    Ok(())
 }
 
 /// Initialize a FluidAudio Kokoro bridge for `voice_id` and run `f` against it
@@ -274,7 +264,7 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<Vec<u8>> {
     if text.is_empty() {
         anyhow::bail!("fluid-kokoro: text is empty");
     }
-    warn_if_unsupported_script(voice_id, text);
+    ensure_script_supported(voice_id, text)?;
     with_kokoro(voice_id, |audio| {
         audio
             .synthesize_kokoro(text, voice_id, speed)
@@ -297,7 +287,7 @@ pub fn synthesize_pcm(text: &str, voice_id: &str, speed: f32) -> Result<Vec<f32>
     if text.trim().is_empty() {
         return Ok(Vec::new());
     }
-    warn_if_unsupported_script(voice_id, text);
+    ensure_script_supported(voice_id, text)?;
     let wav = with_kokoro(voice_id, |audio| {
         audio
             .synthesize_kokoro(text, voice_id, speed)
@@ -427,6 +417,36 @@ mod tests {
         assert_eq!(unsupported_native_script("Hello world", "am_michael"), None);
         // Unknown / unmapped fluid id → no language → never flagged.
         assert_eq!(unsupported_native_script("日本語", "nonexistent"), None);
+    }
+
+    #[test]
+    fn ensure_script_supported_bails_with_code_on_native_script() {
+        for (text, voice) in [
+            ("नमस्ते", "hm_omega"),
+            ("こんにちは", "jm_kumo"),
+            ("你好", "zm_yunjian"),
+        ] {
+            let err =
+                ensure_script_supported(voice, text).expect_err("should reject native script");
+            assert_eq!(
+                crate::errors::code_of(&err),
+                ErrorCode::ScriptUnsupported,
+                "voice {voice} text {text:?} -> {err}"
+            );
+        }
+        // Romanized + Latin-script voices pass.
+        ensure_script_supported("hm_omega", "Namaste").expect("romanized hi ok");
+        ensure_script_supported("em_alex", "¡Hola!").expect("latin es ok");
+        ensure_script_supported("am_michael", "Hello").expect("english ok");
+    }
+
+    #[test]
+    fn synthesize_fails_fast_before_model_init() {
+        // Native-script input must error out *before* touching FluidAudio, so this
+        // needs no model download. Proves the gate refuses rather than emitting noise.
+        let err = synthesize("नमस्ते मेरा नाम केशा है", "hm_omega", 1.0)
+            .expect_err("native-script synth must fail fast");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ScriptUnsupported);
     }
 
     #[test]

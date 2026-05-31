@@ -113,8 +113,16 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         if opts.ssml {
             return synth_segments_fluid_kokoro(opts.text, voice_id, *speed, opts.format);
         }
-        let wav_bytes = super::fluid_kokoro::synthesize(opts.text, voice_id, *speed)
-            .map_err(|e| TtsError::SynthesisFailed(format!("fluid-kokoro: {e}")))?;
+        let wav_bytes =
+            super::fluid_kokoro::synthesize(opts.text, voice_id, *speed).map_err(|e| {
+                TtsError::Coded {
+                    // Preserve a precise code from the engine chain (e.g.
+                    // ScriptUnsupported for native-script input); plain synthesis
+                    // failures carry no CodedError, so code_of falls back to Internal.
+                    code: crate::errors::code_of(&e),
+                    message: format!("fluid-kokoro: {e}"),
+                }
+            })?;
         return transcode_to(&wav_bytes, opts.format);
     }
 
@@ -402,8 +410,15 @@ fn synth_segments_fluid_kokoro(
     let sample_rate = super::fluid_kokoro::SAMPLE_RATE;
     let mut out: Vec<f32> = Vec::new();
     for seg in &segments {
-        synth_one_fluid_kokoro(&synth, seg, speed, sample_rate, &mut out)
-            .map_err(|e| TtsError::SynthesisFailed(format!("fluid-kokoro: {e}")))?;
+        synth_one_fluid_kokoro(&synth, seg, speed, sample_rate, &mut out).map_err(|e| {
+            TtsError::Coded {
+                // Preserve a precise code from the engine chain (e.g.
+                // ScriptUnsupported for native-script input); plain synthesis
+                // failures carry no CodedError, so code_of falls back to Internal.
+                code: crate::errors::code_of(&e),
+                message: format!("fluid-kokoro: {e}"),
+            }
+        })?;
     }
     if out.is_empty() {
         return Err(TtsError::SynthesisFailed(
