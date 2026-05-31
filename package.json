@@ -29,7 +29,13 @@
   "openclaw": {
     "extensions": [
       "./openclaw-plugin.cjs"
-    ]
+    ],
+    "compat": {
+      "pluginApi": ">=2026.5.27"
+    },
+    "build": {
+      "openclawVersion": "2026.5.27"
+    }
   },
   "keshaEngine": {
     "version": "1.22.0"
