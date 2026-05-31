@@ -191,7 +191,15 @@ fn lang_for_fluid_id(fluid_id: &str) -> Option<&'static str> {
 }
 
 fn is_han(c: char) -> bool {
-    matches!(c, '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}')
+    matches!(
+        c,
+        '\u{3400}'..='\u{4DBF}'        // CJK Extension A
+            | '\u{4E00}'..='\u{9FFF}'  // CJK Unified Ideographs
+            | '\u{F900}'..='\u{FAFF}'  // CJK Compatibility Ideographs
+            | '\u{20000}'..='\u{2A6DF}' // Extension B
+            | '\u{2A700}'..='\u{2CEAF}' // Extensions C, D, E
+            | '\u{2CEB0}'..='\u{2EBEF}' // Extension F
+    )
 }
 
 /// FluidAudio's Kokoro G2P only phonemizes **Latin** input; for the non-Latin
@@ -214,20 +222,33 @@ fn unsupported_native_script(text: &str, fluid_id: &str) -> Option<&'static str>
 
 /// One-time stderr warning when native-script text is handed to a FluidAudio
 /// Kokoro voice that can't phonemize it (#492). It's a silent failure otherwise:
-/// audio is produced, just not speech. Shared `Once` so a multi-segment SSML
-/// utterance (many `synthesize_pcm` calls) warns at most once per process.
+/// audio is produced, just not speech.
+///
+/// Deduplication is **per language**, not process-wide: a multi-segment SSML
+/// utterance in one language warns at most once, but a process that synthesizes
+/// two non-Latin languages (e.g. Hindi then Japanese) still warns for each — a
+/// shared `Once` would let whichever fired first swallow the others' warnings.
 fn warn_if_unsupported_script(fluid_id: &str, text: &str) {
-    static SCRIPT_WARNING: Once = Once::new();
-    if let Some(script) = unsupported_native_script(text, fluid_id) {
-        SCRIPT_WARNING.call_once(|| {
-            eprintln!(
-                "warning: FluidAudio Kokoro can only phonemize Latin-script input; voice \
-                 '{fluid_id}' received {script} text, which synthesizes as noise rather than \
-                 speech. Romanize the text (transliterate to Latin) for now. \
-                 Tracking: https://github.com/drakulavich/kesha-voice-kit/issues/492"
-            );
-        });
-    }
+    static WARNED_HI: Once = Once::new();
+    static WARNED_JA: Once = Once::new();
+    static WARNED_ZH: Once = Once::new();
+    let Some(script) = unsupported_native_script(text, fluid_id) else {
+        return;
+    };
+    let once = match lang_for_fluid_id(fluid_id) {
+        Some("hi") => &WARNED_HI,
+        Some("ja") => &WARNED_JA,
+        Some("zh") => &WARNED_ZH,
+        _ => return,
+    };
+    once.call_once(|| {
+        eprintln!(
+            "warning: FluidAudio Kokoro can only phonemize Latin-script input; voice \
+             '{fluid_id}' received {script} text, which synthesizes as noise rather than \
+             speech. Romanize the text (transliterate to Latin) for now. \
+             Tracking: https://github.com/drakulavich/kesha-voice-kit/issues/492"
+        );
+    });
 }
 
 /// Initialize a FluidAudio Kokoro bridge for `voice_id` and run `f` against it
@@ -365,6 +386,11 @@ mod tests {
         );
         assert_eq!(
             unsupported_native_script("你好我叫凯沙", "zm_yunjian"),
+            Some("Chinese (Han)")
+        );
+        // Supplementary-plane CJK (Extension B, U+20000) must also be detected.
+        assert_eq!(
+            unsupported_native_script("\u{20000}", "zm_yunjian"),
             Some("Chinese (Han)")
         );
     }
