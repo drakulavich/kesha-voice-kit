@@ -14,8 +14,8 @@
 <p align="center"><b>Give your local tools and LLM agents a voice.</b><br>Fast speech-to-text, text-to-speech, voice-activity detection, and language detection in one local-first CLI: Apple Silicon CoreML first, ONNX fallback on supported Linux/Windows builds.</p>
 
 - **Transcribe locally** — [25 languages](docs/languages.md), up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
-- **Speak back** — Kokoro (EN), Vosk-TTS (RU), macOS system voices, and SSML preview
-- **Plug into agents** — ship voice workflows as CLI commands, an MCP server, or an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill
+- **Speak back** — text-to-speech in [9 languages](docs/languages.md)
+- **Plug into agents** — ship voice workflows as CLI commands, an MCP server, an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill, or a <a href="docs/hermes.md">Hermes</a> agent
 - **Small Rust engine** — single ~20MB binary, no ffmpeg, no Python, no native Node addons
 
 <p align="center">
@@ -69,7 +69,7 @@ $ kesha freedom.ogg tahiti.ogg
 
 ## Text-to-speech
 
-Kesha speaks back via Kokoro-82M (English + select multilingual voices on Apple Silicon) and Vosk-TTS (Russian). The voice auto-picks from the text's language; pass `--voice` to choose.
+Kesha speaks back in [9 languages](docs/languages.md), auto-picking the voice from the text's language. Override with `--lang <code>` or `--voice <id>`.
 
 ```bash
 kesha install --tts                              # opt-in models (~990MB)
