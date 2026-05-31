@@ -176,17 +176,20 @@ Any plan that names a specific upstream artifact ("Silero via ONNX", "statically
 
 ### MODEL HASHES ARE PINNED — UPSTREAM BUMPS GO THROUGH A PR
 
-Every entry in `rust/src/models.rs` (ASR, lang-id, TTS) carries a pinned SHA-256. `download_verified` refuses to cache a file whose hash doesn't match. This makes `KESHA_MODEL_MIRROR` safe (a compromised mirror can't silently swap weights) and turns an upstream HuggingFace republish into a deliberate decision rather than a silent swap.
+Every entry in `rust/src/models.rs` (ASR, lang-id, TTS) carries a pinned SHA-256;
+`download_verified` refuses to cache a file whose hash doesn't match. This makes
+`KESHA_MODEL_MIRROR` safe and turns an upstream HuggingFace republish into a deliberate
+decision. NEVER comment out verification to "get it working" (the #174 regression).
 
-**To bump a model version:**
+To bump a model version, use the `verify-pin-bump` skill — it walks the safe procedure
+(compute the new hash, verify the new upstream weights deliberately, update the `sha256` in
+`rust/src/models.rs`, then `cargo test models::manifest_tests`):
 
 ```bash
 shasum -a 256 ~/.cache/kesha/models/<subdir>/<file>   # compute new hash
 # edit rust/src/models.rs → update sha256 for that ModelFile entry
 cargo test models::manifest_tests                      # confirms shape invariants
 ```
-
-Never comment out the verification to "get it working" — that's the exact regression #174 fixed. If a fresh download produces a different hash, the upstream has actually changed; verify the new weights intentionally and then bump the constant.
 
 ### GREPTILE PR REVIEW IS A GATE
 
@@ -313,33 +316,33 @@ Alternate reproducible build path: the repo also ships a Nix flake (`flake.nix`,
 kesha-voice-kit/
 ├── bin/kesha.js                    # Shebang entry point
 ├── src/                            # Bun/TypeScript CLI + library
-│   ├── cli.ts                      # Argument parsing, --format, install/transcribe/status
-│   ├── lib.ts                      # Public API at `@drakulavich/kesha-voice-kit/core`
-│   ├── engine.ts                   # Engine subprocess wrapper + getEngineCapabilities
-│   ├── engine-install.ts           # Engine binary download (uses keshaEngine.version)
+│   ├── cli.ts                      # Arg parsing, --format, install/transcribe/status
+│   ├── lib.ts                      # Public `./core` API
+│   ├── engine.ts                   # Engine subprocess wrapper + capabilities
+│   ├── engine-install.ts           # Engine binary download
 │   ├── transcribe.ts               # Thin forwarder to the engine
 │   └── __tests__/                  # Unit tests
 ├── rust/                           # kesha-engine (Rust binary)
-│   ├── Cargo.toml                  # `onnx` (default) and `coreml` features
-│   ├── build.rs                    # Swift rpath under `coreml` feature
+│   ├── Cargo.toml                  # `onnx` (default) + `coreml` features
+│   ├── build.rs                    # Swift rpath under `coreml`
 │   └── src/
-│       ├── main.rs                 # clap: transcribe / detect-lang / detect-text-lang / install
-│       ├── audio.rs                # symphonia decode + rubato resample to 16kHz mono f32
-│       ├── models.rs               # HF download + cache for ASR and lang-id models
-│       ├── lang_id.rs              # ONNX speechbrain audio language detection (always built)
+│       ├── main.rs                 # clap subcommands
+│       ├── audio.rs                # symphonia decode + resample to 16kHz
+│       ├── models.rs               # HF download + cache
+│       ├── lang_id.rs              # ONNX audio lang detection (always built)
 │       ├── text_lang.rs            # macOS NLLanguageRecognizer (macOS only)
 │       └── backend/
-│           ├── mod.rs              # TranscribeBackend trait (audio_path → String)
-│           ├── onnx.rs             # ORT pipeline: nemo128 → encoder → decoder_joint (beam=4)
-│           └── fluidaudio.rs       # fluidaudio-rs 0.1 via transcribe_file (coreml feature)
+│           ├── mod.rs              # TranscribeBackend trait
+│           ├── onnx.rs             # ORT pipeline (beam=4)
+│           └── fluidaudio.rs       # fluidaudio-rs 0.1 (coreml feature)
 ├── tests/{unit,integration}/       # bun test
 ├── scripts/                        # benchmark.ts, smoke-test.ts
 ├── .github/workflows/
 │   ├── ci.yml                      # PR: unit + integration + type check
-│   ├── rust-test.yml               # PR: cargo test/fmt/clippy + coreml feature check
-│   └── build-engine.yml            # Tag push or dispatch: build 3 binaries + draft release
+│   ├── rust-test.yml               # PR: cargo test/fmt/clippy + coreml check
+│   └── build-engine.yml            # Tag/dispatch: 3 binaries + draft release
 ├── openclaw.plugin.json            # OpenClaw manifest (id + configSchema)
-├── openclaw-plugin.cjs             # OpenClaw plugin entry (registerMediaUnderstandingProvider)
+├── openclaw-plugin.cjs             # OpenClaw plugin entry
 └── package.json                    # @drakulavich/kesha-voice-kit
 ```
 
