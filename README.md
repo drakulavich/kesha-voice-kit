@@ -13,7 +13,7 @@
 
 <p align="center"><b>Give your local tools and LLM agents a voice.</b><br>Fast speech-to-text, text-to-speech, voice-activity detection, and language detection in one local-first CLI: Apple Silicon CoreML first, ONNX fallback on supported Linux/Windows builds.</p>
 
-- **Transcribe locally** — 25 languages, up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
+- **Transcribe locally** — [25 languages](docs/languages.md), up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Speak back** — Kokoro (EN), Vosk-TTS (RU), macOS system voices, and SSML preview
 - **Plug into agents** — ship voice workflows as CLI commands, an MCP server, or an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill
 - **Small Rust engine** — single ~20MB binary, no ffmpeg, no Python, no native Node addons
@@ -90,8 +90,7 @@ kesha say "Hello" --format flac --out hi.flac     # FLAC — lossless, plays in 
 
 ## Languages
 
-- **Speech-to-text (25):** Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Ukrainian.
-- **Audio language detection (107):** [full list](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa).
+**Speech-to-text** spans 25 languages and **text-to-speech** covers English, Russian, and select multilingual voices — full tables with codes and flags in **[docs/languages.md](docs/languages.md)**. Audio language detection identifies [107 languages](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa).
 
 ## Performance
 
