@@ -1,0 +1,38 @@
+{
+  "es": {
+    "voice": "em_alex",
+    "sentences": [
+      "El veloz murciélago hindú comía feliz cardillo y kiwi.",
+      "La niña añadió jalapeños al guiso con cariño.",
+      "Compré 27 libros y el código ISBN empezaba por X.",
+      "El señor Núñez viajó de Cádiz a Zaragoza."
+    ]
+  },
+  "fr": {
+    "voice": "ff_siwis",
+    "sentences": [
+      "Portez ce vieux whisky au juge blond qui fume.",
+      "Un bon vin blanc, un grand pont, enfin les enfants chantent.",
+      "Il a payé 348 euros pour le billet TGV.",
+      "Mademoiselle Béringer revient de Strasbourg."
+    ]
+  },
+  "it": {
+    "voice": "im_nicola",
+    "sentences": [
+      "Ma la volpe col suo balzo ha raggiunto il quieto Fido.",
+      "Nonna Gioacchina cucina gnocchi e tagliatelle squisite.",
+      "Ho speso 512 euro e la sigla era RAI.",
+      "Il signor Castagnoli parte per Cagliari."
+    ]
+  },
+  "pt": {
+    "voice": "pm_alex",
+    "sentences": [
+      "Um pequeno jabuti xereta viu dez cegonhas felizes.",
+      "A manhã de São João trouxe canções e corações cheios.",
+      "Paguei 936 reais e a sigla era IBGE.",
+      "O senhor Conceição viajou de Florianópolis a Belém."
+    ]
+  }
+}
