@@ -1,10 +1,8 @@
 # Architecture
 
 A contributor's map of kesha-voice-kit: where code lives, what the boundaries
-are, and where to make changes. For the **user-facing** data-flow view, see the
-[Architecture section in the README](../README.md#architecture). For the **why**
-behind specific designs, see the spec docs under
-[`docs/superpowers/specs/`](superpowers/specs/).
+are, and where to make changes. For the **why** behind specific designs, see the
+spec docs under [`docs/superpowers/specs/`](superpowers/specs/).
 
 ## Two-process model
 
@@ -22,6 +20,67 @@ TypeScript runs directly under Bun (no build step); the engine is a precompiled
 binary downloaded from GitHub Releases during `kesha install`. The two are
 [versioned independently](../CLAUDE.md) (`package.json#version` vs
 `package.json#keshaEngine.version`).
+
+## Runtime data flow
+
+```text
+Users / agents
+  shell | scripts | OpenClaw | Hermes | Raycast | @drakulavich/kesha-voice-kit/core
+        |
+        v
++------------------------------- Kesha CLI -------------------------------+
+| Bun + TypeScript wrapper                                                |
+| - parses commands and formats stdout/stderr                             |
+| - installs pinned engine/model assets only when explicitly requested    |
+| - keeps cache, support bundles, and local Stats in the CLI              |
++-----------------------------------+-------------------------------------+
+                                   |
+                                   | spawns one local process
+                                   v
++----------------------------- kesha-engine ------------------------------+
+| Rust binary, no cloud calls, no Python, no ffmpeg                       |
+|                                                                         |
+|  Audio input                 Text input                  Diagnostics    |
+|  WAV/MP3/OGG/FLAC/AAC/M4A   plain text / SSML           status/support  |
+|       |                           |                           |         |
+|       v                           v                           v         |
+|  Symphonia decode            TTS preprocessing           runtime probes |
+|       |                           |                                     |
+|       +--> optional VAD           +--> voice routing                    |
+|       |    + diarization          |    Kokoro / Vosk / macOS voices     |
+|       |                           |                                     |
+|       +--> audio lang ID          +--> speech synthesis                 |
+|       |    SpeechBrain ONNX                                             |
+|       |                                                                 |
+|       +--> ASR backend                                                  |
+|            CoreML on Apple Silicon                                      |
+|            ONNX Runtime on Linux/Windows/fallback                       |
++-----------------------------------+-------------------------------------+
+                                   |
+                                   v
+                         transcript | JSON/TOON | WAV | local diagnostics
+```
+
+Cache boundary: `kesha install` and opt-in feature installs populate the local
+cache; ordinary transcription and speech commands fail fast if required assets
+are missing.
+
+## Models
+
+| Model | Task | Size | Source |
+|---|---|---|---|
+| NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~2.5GB | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
+| SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
+| Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
+| Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
+| Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | ~990MB | [FluidAudio Kokoro](https://github.com/FluidInference/FluidAudio) on darwin-arm64 (FluidAudio cache, not Kesha-verified); ONNX Kokoro elsewhere · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
+
+All models run through `kesha-engine` — a Rust binary using
+[FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML) on Apple
+Silicon and [ort](https://github.com/pykeio/ort) (ONNX Runtime) on other
+platforms. Audio decoding via
+[symphonia](https://github.com/pdeljanov/Symphonia) — WAV, MP3, OGG/Opus, FLAC,
+AAC, M4A. No ffmpeg.
 
 ## Repository map
 
