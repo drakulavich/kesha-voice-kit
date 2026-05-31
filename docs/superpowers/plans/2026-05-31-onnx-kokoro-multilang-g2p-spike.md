@@ -45,6 +45,64 @@ Expected: `ready`
 
 ## Phase 0 — Shared harness & reference corpus
 
+> **Discovered at execution (2026-05-31):** the Kesha cache only holds English voice `.bin`s (`af_heart`, `am_michael`) — the ONNX path never downloads multilingual voices. Both the upstream reference (Task 0.2) and the Kesha-side render (Task 0.3) need the es/fr/it/pt voice embeddings, so Task 0.0 obtains them. The upstream `voices-v1.0.bin` is a combined `.npz`-style file keyed by voice name; Kesha's per-voice `.bin` is a flat little-endian f32 dump of the `[rows, 256]` style matrix.
+
+### Task 0.0: Obtain multilingual voice embeddings (upstream pack → Kesha flat-f32)
+
+**Files:**
+- Create: `.worktrees/kokoro-mlang-g2p-spike/spike/extract_voices.py`
+
+- [ ] **Step 1: Download the upstream kokoro-onnx voices pack into scratch**
+
+Run:
+```bash
+/tmp/kokoro-mlang-spike/venv/bin/python3 -c "
+from huggingface_hub import hf_hub_download
+p = hf_hub_download('hexgrad/Kokoro-82M', 'voices/em_alex.pt')" 2>/dev/null || true
+# Simpler/canonical: the combined voices-v1.0.bin shipped with kokoro-onnx releases.
+curl -fsSL -o /tmp/kokoro-mlang-spike/voices-v1.0.bin \
+  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+ls -la /tmp/kokoro-mlang-spike/voices-v1.0.bin
+```
+Expected: a ~26 MB file. (If the URL has moved, find the current `voices-*.bin` asset on the kokoro-onnx releases page — record the resolved URL in the spec.)
+
+- [ ] **Step 2: Write the extractor (upstream named arrays → Kesha flat-f32 `.bin`)**
+
+```python
+# spike/extract_voices.py — pull es/fr/it/pt voices into Kesha's flat-f32 layout.
+import numpy as np, pathlib
+SRC = "/tmp/kokoro-mlang-spike/voices-v1.0.bin"   # numpy .npz-style archive keyed by voice name
+OUT = pathlib.Path("/tmp/kokoro-mlang-spike/voices"); OUT.mkdir(parents=True, exist_ok=True)
+WANT = ["em_alex", "ff_siwis", "im_nicola", "pm_alex"]
+data = np.load(SRC)                                # dict-like: name -> [rows, 1, 256] or [rows, 256]
+for name in WANT:
+    arr = np.asarray(data[name], dtype="<f4")
+    arr = arr.reshape(arr.shape[0], -1)            # collapse to [rows, 256]
+    assert arr.shape[1] == 256, f"{name}: expected 256 style dims, got {arr.shape}"
+    (OUT / f"{name}.bin").write_bytes(arr.tobytes())
+    print(f"{name}: {arr.shape} -> {OUT / (name + '.bin')}")
+```
+
+- [ ] **Step 3: Run the extractor (after Task 0.2 Step 1 creates the venv) and verify shapes**
+
+Run:
+```bash
+cd /Users/anton/Personal/repos/kesha-voice-kit/.worktrees/kokoro-mlang-g2p-spike
+/tmp/kokoro-mlang-spike/venv/bin/pip install --quiet numpy
+/tmp/kokoro-mlang-spike/venv/bin/python3 spike/extract_voices.py
+ls /tmp/kokoro-mlang-spike/voices/*.bin | wc -l
+```
+Expected: `4`. Each `.bin` size = `rows * 256 * 4` bytes (rows ≈ 510). **Cross-check against a known-good Kesha voice:** `python3 -c "import os; print(os.path.getsize(os.path.expanduser('~/.cache/kesha/models/kokoro-82m/voices/am_michael.bin')))"` should equal the per-file size the extractor prints — if not, the reshape/layout is wrong and must be fixed before rendering.
+
+- [ ] **Step 4: Commit the extractor**
+
+```bash
+git add spike/extract_voices.py
+git commit -m "spike(tts): extract es/fr/it/pt voice embeddings into Kesha flat-f32"
+```
+
+> **Render tasks use these voices.** In Tasks 0.3 / A.2 / B.3, set `V=/tmp/kokoro-mlang-spike/voices` (NOT the Kesha cache, which lacks them).
+
 ### Task 0.1: Fixed phonetic corpus fixture
 
 **Files:**
@@ -127,9 +185,9 @@ from kokoro_onnx import Kokoro
 
 CORPUS = json.loads(pathlib.Path("spike/corpus.json").read_text())
 OUT = pathlib.Path("/tmp/kokoro-mlang-spike/refs")
-# Point these at the SAME files Kesha caches so weights match exactly.
+# Use the SAME Kokoro weights Kesha ships; voices come from the upstream pack (Task 0.0).
 MODEL = pathlib.Path.home() / ".cache/kesha/models/kokoro-82m/model.onnx"
-VOICES = pathlib.Path.home() / ".cache/kesha/models/kokoro-82m/voices.bin"  # adjust if layout differs
+VOICES = pathlib.Path("/tmp/kokoro-mlang-spike/voices-v1.0.bin")
 
 kokoro = Kokoro(str(MODEL), str(VOICES))
 LANG = {"es": "es", "fr": "fr-fr", "it": "it", "pt": "pt-br"}
@@ -295,7 +353,7 @@ Run:
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit/.worktrees/kokoro-mlang-g2p-spike/rust
 M=~/.cache/kesha/models/kokoro-82m/model.onnx
-V=~/.cache/kesha/models/kokoro-82m/voices
+V=/tmp/kokoro-mlang-spike/voices   # extracted in Task 0.0 (cache lacks these)
 declare -A VOICE=( [es]=em_alex [fr]=ff_siwis [it]=im_nicola [pt]=pm_alex )
 for lang in es fr it pt; do
   grep "^${lang}_" /tmp/kokoro-mlang-spike/ipa_a.tsv \
@@ -402,7 +460,7 @@ Run (same per-language render as Track A, into `out-b`):
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit/.worktrees/kokoro-mlang-g2p-spike/rust
 M=~/.cache/kesha/models/kokoro-82m/model.onnx
-V=~/.cache/kesha/models/kokoro-82m/voices
+V=/tmp/kokoro-mlang-spike/voices   # extracted in Task 0.0 (cache lacks these)
 declare -A VOICE=( [es]=em_alex [fr]=ff_siwis [it]=im_nicola [pt]=pm_alex )
 for lang in es fr it pt; do
   grep "^${lang}_" /tmp/kokoro-mlang-spike/ipa_b.tsv \
