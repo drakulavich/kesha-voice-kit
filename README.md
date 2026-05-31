@@ -15,7 +15,7 @@
 
 - **Transcribe locally** — [25 languages](docs/languages.md#speech-to-text-25), up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Speak back** — text-to-speech in [9 languages](docs/languages.md#text-to-speech)
-- **Plug into agents** — ship voice workflows as CLI commands, an MCP server, an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill, or a <a href="docs/hermes.md">Hermes</a> agent
+- **Plug into agents** — ship voice workflows as CLI commands, an MCP server, an <a href="docs/openclaw.md">OpenClaw</a> skill, or a <a href="docs/hermes.md">Hermes</a> agent
 - **Small Rust engine** — single ~20MB binary, no ffmpeg, no Python, no native Node addons
 
 <p align="center">
