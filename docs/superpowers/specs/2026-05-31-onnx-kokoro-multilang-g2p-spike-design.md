@@ -7,7 +7,7 @@
 
 ## Problem
 
-On the ONNX TTS path, Kokoro synthesizes **English only**. On the CoreML / FluidAudio path it also speaks es/fr/it/pt (+ romanized hi/ja/zh). We want the ONNX path to reach **Latin-5 parity** (en/es/fr/it/pt-br).
+On the ONNX TTS path, Kokoro synthesizes **English only**. On the CoreML / FluidAudio path it appears to also speak es/fr/it/pt (+ romanized hi/ja/zh). We want the ONNX path to reach **Latin-5 parity** (en/es/fr/it/pt-br). _(Caveat established during the spike — see the "CoreML parity target was a mirage" addendum: CoreML's es/fr/it/pt is the **English** G2P applied to Latin text, so the real bar is the upstream misaki reference, not CoreML.)_
 
 ### Why ONNX is English-only today (it is G2P, not the model)
 
@@ -88,6 +88,17 @@ Decision matrix (filled by the spike 2026-05-31; raw evidence in the spike commi
 - **Track B (CharsiuG2P + IPA-remap) is the recommended path** — the only license-compatible option (code MIT). Its audio tracks the reference well on ordinary text, and the OOV→Kokoro-vocab remap is small and was driven to zero residual. Its two real weaknesses are **fixable in front-end text processing**, not in the model: (1) it does not expand digits or acronyms (so a multilingual numbers→words + acronym spell-out normalizer must run before G2P), and (2) the `<spa>` tag yields Latin-American Spanish (pick the dialect tag deliberately per voice).
 
 **Recommendation: pursue Track B.** Open a follow-up implementation spec covering: the CharsiuG2P model (pin + SHA-256 in `models.rs`, install-plan, build-engine feature matrix), the IPA-remap layer ported to Rust with a regression test over the OOV set, a **multilingual text-normalizer** (numbers + acronyms) ahead of G2P, per-dialect language-tag selection wired into `voices.rs` Latin-5 routing, and a CI audio-regression gate. **Clarify the CharsiuG2P weights license with the author before shipping.** Track A is documented here as GPL-blocked — revisit only if the project ever accepts GPL for the engine (or a separable, differently-licensed espeak-compatible G2P emerges).
+
+### Empirical addendum (2026-05-31): the "CoreML parity" target was a mirage
+
+Cross-checking [FluidAudio's KokoroAne docs](https://github.com/FluidInference/FluidAudio/blob/main/Documentation/TTS/KokoroAne.md) and the pinned `fluidaudio-rs` binding revealed FluidAudio's Kokoro has **only two G2P pipelines — English (BART seq2seq → IPA) and Mandarin (dict+sandhi)** — and `kokoro_synthesize(text, voice, speed)` takes **no language argument**. Confirmed on this machine: the FluidAudio cache holds only an `ANE/` (English) variant (`KokoroAlbert` + one `vocab.json`), no per-language G2P.
+
+`kesha say --voice es-em_alex "El veloz murciélago…"` was synthesized and A/B'd by ear vs the upstream Spanish reference and the Track B (CharsiuG2P) render:
+
+- **CoreML `es-em_alex` → noticeably English-accented** (Spanish run through the English G2P).
+- **Track B (CharsiuG2P es) → natural Spanish.**
+
+**Conclusion: Kesha's CoreML es/fr/it/pt voices are the English G2P applied to foreign text — not real multilingual G2P.** (This also explains the `#492` guard: only *non-Latin* scripts are blocked, because Latin text "works" by falling through the English pipeline.) So the implementation's quality bar is **the upstream misaki reference, not the CoreML path**, and Track B is an *upgrade* over today's CoreML behavior for these four languages, not a sidegrade. Two corroborating notes from the docs: FluidAudio's own English G2P is a neural **seq2seq** model (BART), so Track B's seq2seq CharsiuG2P is the same architectural class; and the voice-pack style row is indexed by `min(max(phonemeCount−1, 0), 509)` — use `phonemeCount−1` (the spike's `spike_render.rs` used the padded length; correctness note for the Rust port).
 
 > Harness bug to carry into implementation: `spike_render.rs` wrote f32 WAV without clamping to [-1, 1]; Kokoro can emit samples >1.0 (fr_0), so the production synth path must clamp/normalize before encoding. Not a G2P issue, but a real encode bug worth a test.
 
