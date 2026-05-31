@@ -13,6 +13,11 @@ LANG = {"es": "es", "fr": "fr-fr", "it": "it", "pt": "pt-br"}
 for lang, spec in CORPUS.items():
     for i, text in enumerate(spec["sentences"]):
         samples, sr = kokoro.create(text, voice=spec["voice"], lang=LANG[lang])
+        # Conditional peak-safety normalize: only scale if clipping risk (peak > 0.95).
+        peak = float(abs(samples).max())
+        if peak > 0.95:
+            samples = samples * (0.95 / peak)
+            peak = 0.95
         path = OUT / f"{lang}_{i}.wav"
         sf.write(path, samples, sr)
-        print(f"wrote {path} ({len(samples)} samples @ {sr}Hz)")
+        print(f"wrote {path} ({len(samples)} samples @ {sr}Hz, peak={peak:.4f})")
