@@ -6,7 +6,7 @@
     <title>Kesha Voice Kit — Open-source voice toolkit for macOS, Linux, Windows</title>
     <meta
       name="description"
-      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Speaker diarization, OGG/Opus voice notes, SSML prosody, Kokoro & Vosk-TTS. A single Rust binary for macOS, Linux, and Windows. No Python, no ffmpeg."
+      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Multilingual TTS (English, Russian, Spanish, French, Italian, Portuguese, Hindi, Japanese, Chinese), speaker diarization, OGG/Opus + FLAC output, SSML prosody. A single Rust binary for macOS, Linux, and Windows. No Python, no ffmpeg."
     />
     <meta name="theme-color" content="#0b1014" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="Kesha Voice Kit" />
     <meta
       property="og:description"
-      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon, ~2.5× on Linux/Windows CPU. STT in 25 languages, speaker diarization for meetings, TTS with OGG/Opus voice notes — all from a single Rust binary."
+      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon, ~2.5× on Linux/Windows CPU. STT in 25 languages, multilingual TTS (EN, RU, ES, FR, IT, PT, HI, JA, ZH), speaker diarization, OGG/Opus + FLAC output — all from a single Rust binary."
     />
     <meta property="og:image" content="assets/logo.png" />
 
@@ -112,7 +112,7 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.19 · MIT licensed · macOS · Linux · Windows</span>
+            <span>v1.22 · MIT licensed · macOS · Linux · Windows</span>
           </div>
 
           <h1 class="hero__title">
@@ -285,7 +285,9 @@
                 Kokoro-82M for English (CoreML on Apple Silicon, ONNX elsewhere) with acronym
                 auto-expand (FBI, EPAM, JSON), Vosk-TTS for Russian with stress markers, plus ~180
                 macOS system voices. Auto-routes by detected language. SSML
-                <code>&lt;prosody rate&gt;</code> on RU, Linux, and Windows.
+                <code>&lt;prosody rate&gt;</code>, <code>&lt;break&gt;</code>, and
+                <code>&lt;emphasis&gt;</code> work on every backend — v1.21 closed the Apple
+                Silicon gap via FluidAudio 0.14.7’s model-native speed control.
               </p>
             </article>
 
@@ -413,6 +415,55 @@
               </ul>
             </article>
 
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18" />
+                  <path d="M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18" />
+                </svg>
+              </div>
+              <span class="badge-new">v1.22</span>
+              <h3>Multilingual TTS</h3>
+              <p>
+                Spanish, French, Italian, Portuguese, Hindi, Japanese, Chinese — plus English
+                (Kokoro) and Russian (Vosk-TTS) — via FluidAudio Kokoro voices running on the
+                Apple Neural Engine. <code>kesha say --list-voices</code> shows the full catalogue.
+                Non-Latin scripts targeting English-G2P voices fail fast with
+                <code>E_SCRIPT_UNSUPPORTED</code> instead of emitting noise.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>en · ru · es · fr</li>
+                <li>it · pt · hi</li>
+                <li>ja · zh</li>
+                <li>darwin-arm64</li>
+              </ul>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M12 9v4" />
+                  <path d="M12 17h.01" />
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                </svg>
+              </div>
+              <span class="badge-new">v1.22</span>
+              <h3>Structured error taxonomy</h3>
+              <p>
+                Every failure path prints a stable, machine-readable <code>error [CODE]: …</code>
+                line. <code>kesha-engine --error-codes-json</code> dumps the whole taxonomy; a
+                docs drift gate keeps <code>docs/errors.md</code> honest. Agents and CI can branch
+                on <em>why</em> something failed instead of regexing log soup.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>stable codes</li>
+                <li>--error-codes-json</li>
+                <li>exit codes</li>
+                <li>agent-friendly</li>
+              </ul>
+            </article>
+
             <article class="feature feature--rust">
               <div class="feature__icon" aria-hidden="true">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -426,8 +477,9 @@
                 A single Rust binary for macOS arm64, Linux x64, and Windows x64. FluidAudio
                 (CoreML) on Apple Silicon via dedicated sidecars (diarization, TTS, language
                 detection); ort (ONNX) elsewhere. Symphonia decodes WAV, MP3, OGG/Opus, FLAC,
-                AAC, M4A. Linux <code>.deb</code> and <code>.rpm</code> packages signed with
-                Sigstore.
+                AAC, M4A; pure-Rust <code>opus</code> + <code>flacenc</code> handle encode
+                — royalty-free codecs, no C dep, no patent exposure. Linux <code>.deb</code> and
+                <code>.rpm</code> packages signed with Sigstore.
                 <strong>No ffmpeg. No Python. No native Node addons.</strong>
               </p>
             </article>
@@ -463,8 +515,9 @@
             <p class="section-sub">
               Real output from <code>kesha say</code> — Kokoro-82M for English, Vosk-TTS for Russian.
               SSML <code>&lt;prosody rate&gt;</code> renders the same text at different speeds without
-              resampling artifacts. English samples generated on Linux/ONNX; on Apple Silicon,
-              prosody is available for Russian today.
+              resampling artifacts. v1.21 brought prosody to Apple Silicon Kokoro too — EN, RU,
+              and the v1.22 multilingual voices all honor <code>&lt;prosody&gt;</code>,
+              <code>&lt;break&gt;</code>, and <code>&lt;emphasis&gt;</code>.
             </p>
           </header>
 
@@ -628,15 +681,16 @@
               <h3>Install Kesha</h3>
               <p>
                 Pulls the engine and base STT models, then warms the Neural Engine on macOS
-                (<code>--tts</code> also warms the Kokoro CoreML cache). First transcribe runs in
-                ~500 ms instead of a 25-second hang. v1.19 splits the entry points:
-                <code>kesha init</code> for humans (guided, interactive), <code>kesha install</code>
-                for CI and agents (explicit, scriptable). Both run the same install code.
+                (<code>--tts</code> pulls Kokoro + multilingual voices, ~990 MB on darwin-arm64).
+                First transcribe runs in ~500 ms instead of a 25-second hang.
+                <code>kesha init</code> is the guided entry point for humans;
+                <code>kesha install</code> is the explicit one for CI and agents — same code
+                underneath.
               </p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> bun add -g @drakulavich/kesha-voice-kit
-<span class="muted">$</span> kesha init       <span class="cm"># humans (interactive)</span>
-<span class="muted">$</span> kesha install    <span class="cm"># agents / CI (scriptable)</span></code></pre>
+<span class="muted">$</span> kesha init             <span class="cm"># humans (interactive)</span>
+<span class="muted">$</span> kesha install --tts    <span class="cm"># + multilingual voices</span></code></pre>
                 <button class="copy" data-copy="bun add -g @drakulavich/kesha-voice-kit
 kesha init" aria-label="Copy">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
@@ -756,7 +810,7 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
 <span class="cm"># Status of installed engine + models</span>
 <span class="muted">$</span> kesha status
 
-<span class="cm"># Diagnose env, log status, and CoreML caches (v1.19)</span>
+<span class="cm"># Diagnose env, log status, and CoreML caches</span>
 <span class="muted">$</span> kesha doctor
 
 <span class="cm"># Bundle logs + manifests for a bug report</span>
@@ -773,12 +827,12 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
           <header class="section-head">
             <p class="section-eyebrow">What's inside</p>
             <h2 class="section-title">
-              <span class="serif italic">Eight models,</span> one runtime.
+              <span class="serif italic">Nine models,</span> one runtime.
             </h2>
             <p class="section-sub">
               Each model is best-in-class for its task and runs through
               <code>kesha-engine</code> — Rust, with CoreML sidecars on Apple Silicon and ONNX
-              everywhere else.
+              everywhere else. Nine multilingual voices ship in one bundle as of v1.22.
             </p>
           </header>
 
@@ -868,9 +922,9 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
               </span>
             </div>
             <div class="models-table__row" role="row">
-              <span class="model-name">FluidAudio Kokoro <em>(opt-in, darwin-arm64)</em></span>
-              <span class="model-task">Text-to-speech (CoreML)</span>
-              <span class="model-size">bundled</span>
+              <span class="model-name">FluidAudio Kokoro — multilingual <em>(opt-in, darwin-arm64)</em></span>
+              <span class="model-task">Text-to-speech (CoreML) · en, es, fr, it, pt, hi, ja, zh</span>
+              <span class="model-size">~990 MB</span>
               <span>
                 <a
                   href="https://github.com/FluidInference/FluidAudio"
