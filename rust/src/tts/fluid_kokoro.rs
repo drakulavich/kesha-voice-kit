@@ -11,6 +11,8 @@
 ))]
 
 use anyhow::{Context, Result};
+use std::sync::Once;
+
 use fluidaudio_rs::FluidAudio;
 
 /// FluidAudio Kokoro native output rate (24 kHz mono, 16-bit PCM). Used to size
@@ -181,6 +183,53 @@ pub fn resolve_voice(public_id: &str) -> Option<VoiceSpec> {
     VOICES.iter().copied().find(|v| v.public_id == public_id)
 }
 
+fn lang_for_fluid_id(fluid_id: &str) -> Option<&'static str> {
+    VOICES
+        .iter()
+        .find(|v| v.fluid_id == fluid_id)
+        .map(|v| v.lang)
+}
+
+fn is_han(c: char) -> bool {
+    matches!(c, '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}')
+}
+
+/// FluidAudio's Kokoro G2P only phonemizes **Latin** input; for the non-Latin
+/// languages it ships voices for (hi/ja/zh) native-script text is not converted
+/// to phonemes and synthesizes as noise rather than speech (#492). Returns the
+/// human-facing script name when `text` actually contains characters of the
+/// script `fluid_id`'s language is written in — romanized (Latin) input for the
+/// same voice returns `None` because it works. Latin-script Kokoro languages
+/// (en/es/fr/it/pt) always return `None`.
+fn unsupported_native_script(text: &str, fluid_id: &str) -> Option<&'static str> {
+    let any = |f: fn(char) -> bool| text.chars().any(f);
+    match lang_for_fluid_id(fluid_id)? {
+        "hi" => any(|c| ('\u{0900}'..='\u{097F}').contains(&c)).then_some("Devanagari"),
+        "ja" => any(|c| matches!(c, '\u{3040}'..='\u{30FF}') || is_han(c))
+            .then_some("Japanese (kana/kanji)"),
+        "zh" => any(is_han).then_some("Chinese (Han)"),
+        _ => None,
+    }
+}
+
+/// One-time stderr warning when native-script text is handed to a FluidAudio
+/// Kokoro voice that can't phonemize it (#492). It's a silent failure otherwise:
+/// audio is produced, just not speech. Shared `Once` so a multi-segment SSML
+/// utterance (many `synthesize_pcm` calls) warns at most once per process.
+fn warn_if_unsupported_script(fluid_id: &str, text: &str) {
+    static SCRIPT_WARNING: Once = Once::new();
+    if let Some(script) = unsupported_native_script(text, fluid_id) {
+        SCRIPT_WARNING.call_once(|| {
+            eprintln!(
+                "warning: FluidAudio Kokoro can only phonemize Latin-script input; voice \
+                 '{fluid_id}' received {script} text, which synthesizes as noise rather than \
+                 speech. Romanize the text (transliterate to Latin) for now. \
+                 Tracking: https://github.com/drakulavich/kesha-voice-kit/issues/492"
+            );
+        });
+    }
+}
+
 /// Initialize a FluidAudio Kokoro bridge for `voice_id` and run `f` against it
 /// with the process's stdout silenced for the whole bridge lifetime (create →
 /// call → drop). FluidAudio's CoreML pipeline writes diagnostics to stdout that
@@ -204,6 +253,7 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<Vec<u8>> {
     if text.is_empty() {
         anyhow::bail!("fluid-kokoro: text is empty");
     }
+    warn_if_unsupported_script(voice_id, text);
     with_kokoro(voice_id, |audio| {
         audio
             .synthesize_kokoro(text, voice_id, speed)
@@ -226,6 +276,7 @@ pub fn synthesize_pcm(text: &str, voice_id: &str, speed: f32) -> Result<Vec<f32>
     if text.trim().is_empty() {
         return Ok(Vec::new());
     }
+    warn_if_unsupported_script(voice_id, text);
     let wav = with_kokoro(voice_id, |audio| {
         audio
             .synthesize_kokoro(text, voice_id, speed)
@@ -294,6 +345,62 @@ mod tests {
         let spec = resolve_voice("pt-pm_alex").expect("pt voice");
         assert_eq!(spec.fluid_id, "pm_alex");
         assert_eq!(spec.lang, "pt-br");
+    }
+
+    #[test]
+    fn flags_native_script_for_non_latin_voices() {
+        // Native script for hi/ja/zh → flagged (FluidAudio can't phonemize it, #492).
+        assert_eq!(
+            unsupported_native_script("नमस्ते मेरा नाम केशा है", "hm_omega"),
+            Some("Devanagari")
+        );
+        assert_eq!(
+            unsupported_native_script("こんにちは、ケシャです", "jm_kumo"),
+            Some("Japanese (kana/kanji)")
+        );
+        // Kanji-only Japanese still flags via the Han range.
+        assert_eq!(
+            unsupported_native_script("日本語", "jm_kumo"),
+            Some("Japanese (kana/kanji)")
+        );
+        assert_eq!(
+            unsupported_native_script("你好我叫凯沙", "zm_yunjian"),
+            Some("Chinese (Han)")
+        );
+    }
+
+    #[test]
+    fn allows_romanized_input_for_non_latin_voices() {
+        // Romanized (Latin) input for the same voices works — must NOT be flagged.
+        assert_eq!(
+            unsupported_native_script("Namaste! Mera naam Kesha hai.", "hm_omega"),
+            None
+        );
+        assert_eq!(
+            unsupported_native_script("Konnichiwa! Watashi wa Kesha desu.", "jm_kumo"),
+            None
+        );
+        assert_eq!(
+            unsupported_native_script("Ni hao! Wo jiao Kesha.", "zm_yunjian"),
+            None
+        );
+    }
+
+    #[test]
+    fn never_flags_latin_script_voices() {
+        // Latin-script Kokoro languages always pass, including accented/punctuated text.
+        assert_eq!(
+            unsupported_native_script("¡Hola! Soy Kesha.", "em_alex"),
+            None
+        );
+        assert_eq!(
+            unsupported_native_script("Ciao, città però.", "im_nicola"),
+            None
+        );
+        assert_eq!(unsupported_native_script("Olá, coração.", "pm_alex"), None);
+        assert_eq!(unsupported_native_script("Hello world", "am_michael"), None);
+        // Unknown / unmapped fluid id → no language → never flagged.
+        assert_eq!(unsupported_native_script("日本語", "nonexistent"), None);
     }
 
     #[test]
