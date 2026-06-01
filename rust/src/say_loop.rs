@@ -268,7 +268,10 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 // session to avoid reloading ~100 MB of ONNX models per request.
                 // All other languages fall through to the one-shot text_to_ipa
                 // path (which will error with a lang-specific hint for ru etc.).
-                let ipa = if matches!(espeak_lang, "es" | "fr" | "it" | "pt") {
+                let ipa = if matches!(
+                    crate::tts::charsiu::base_lang(espeak_lang),
+                    "es" | "fr" | "it" | "pt"
+                ) {
                     state
                         .charsiu
                         .to_ipa(

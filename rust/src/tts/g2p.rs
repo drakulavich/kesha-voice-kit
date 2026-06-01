@@ -21,7 +21,8 @@ pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
     let lower = lang.to_ascii_lowercase();
 
     // Romance languages: normalize then CharsiuG2P (ONNX ByT5-tiny, #212).
-    if matches!(lower.as_str(), "es" | "fr" | "it" | "pt") {
+    let base = crate::tts::charsiu::base_lang(&lower);
+    if matches!(base, "es" | "fr" | "it" | "pt") {
         crate::dtrace!("g2p::route lang={lang} backend=charsiu text_chars={text_chars}");
         let dir = crate::models::cache_dir().join("models/g2p/byt5-tiny");
         check_charsiu_files(&dir)?;
@@ -73,7 +74,8 @@ pub(crate) fn charsiu_ipa(
     text: &str,
     lang: &str,
 ) -> Result<String> {
-    let normalized = crate::tts::normalize::normalize(text, lang);
+    let base = crate::tts::charsiu::base_lang(lang);
+    let normalized = crate::tts::normalize::normalize(text, base);
     g.to_ipa(&normalized, lang)
 }
 
@@ -152,6 +154,24 @@ mod tests {
                         "{lang}: still bails to #212: {m}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn castilian_region_routes_to_charsiu() {
+        match text_to_ipa("cielo", "es-ES") {
+            Ok(ipa) => assert!(!ipa.is_empty(), "es-ES: empty IPA"),
+            Err(e) => {
+                let m = e.to_string();
+                assert!(
+                    m.contains("install") || m.contains("G2P"),
+                    "es-ES unexpected: {m}"
+                );
+                assert!(
+                    !m.contains("not supported in this build"),
+                    "es-ES bailed to #212: {m}"
+                );
             }
         }
     }
