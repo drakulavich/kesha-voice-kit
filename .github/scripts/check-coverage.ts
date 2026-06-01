@@ -24,39 +24,22 @@ type FileCoverage = {
   linePct: number;
 };
 
+// Coverage policy: a single total-lines gate per language, no per-file floors.
+// The per-file map was an auto-ratchet pinned just below each file's current
+// coverage (with brittle 98%/100% outliers) — high friction (every feature that
+// touched a high-floor file had to add coverage-padding tests), low signal
+// (concentrated regressions are caught by review + the total gate). Dropped in
+// favour of one honest total floor.
 const presets: Record<PresetName, CoveragePreset> = {
   ts: {
     title: "TypeScript Coverage",
-    minTotalLines: 62,
-    minFileLines: {
-      "src/cli/main.ts": 40,
-      "src/doctor.ts": 92,
-      "src/engine.ts": 44,
-      "src/install-plan.ts": 79,
-      "src/star.ts": 97,
-      "src/stats.ts": 94,
-      "src/status.ts": 83,
-      "src/support-bundle.ts": 94,
-      "src/toon.ts": 100,
-      "src/transcribe.ts": 65,
-    },
+    minTotalLines: 70,
+    minFileLines: {},
   },
   rust: {
     title: "Rust Coverage",
-    minTotalLines: 65,
-    minFileLines: {
-      "src/cli/say.rs": 70,
-      "src/main.rs": 68,
-      "src/models.rs": 67,
-      "src/say_loop.rs": 64,
-      "src/transcribe/mod.rs": 70,
-      "src/transcribe/options.rs": 100,
-      "src/tts/encode.rs": 88,
-      "src/tts/say.rs": 23,
-      "src/tts/ssml/mod.rs": 83,
-      "src/tts/voices.rs": 98,
-      "src/vad.rs": 70,
-    },
+    minTotalLines: 70,
+    minFileLines: {},
   },
 };
 
