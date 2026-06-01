@@ -155,10 +155,27 @@ pub fn tts_engine_for(lang: &str) -> &'static str {
     }
 }
 
+/// Validate requested TTS language codes against what THIS build supports.
+/// Hard error (download nothing) naming the offending code and supported set.
+#[cfg(feature = "tts")]
+pub fn validate_tts_langs(langs: &[&str]) -> Result<()> {
+    let supported = tts_languages();
+    for l in langs {
+        if !supported.contains(l) {
+            coded_bail!(
+                ErrorCode::VoiceUnknown,
+                "TTS language '{l}' is not available on this build (supported: {})",
+                supported.join(", ")
+            );
+        }
+    }
+    Ok(())
+}
+
 // ── ONNX-path Kokoro shared consts ──────────────────────────────────────────
 // These are gated to the ONNX (non-ANE) build. Each literal appears exactly
-// once; both `kokoro_manifest()` and `kokoro_manifest_for(langs)` build their
-// outputs by cloning from these consts.
+// once; `kokoro_manifest_for(langs)` builds its output by cloning from these
+// consts.
 
 /// The Kokoro-82M ONNX graph (~326 MB). Single copy regardless of how many
 /// Kokoro languages are installed — all voices share this graph.
@@ -168,11 +185,14 @@ pub fn tts_engine_for(lang: &str) -> &'static str {
 /// official kokoro-onnx project release, which uses different IO
 /// tensor names (`tokens`/`audio` vs `input_ids`/`waveform`) but
 /// same dtypes/shapes — handled in `kokoro::Kokoro::infer`.
-#[cfg(not(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-)))]
+#[cfg(all(
+    feature = "tts",
+    not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))
+))]
 const KOKORO_GRAPH: ModelFile = ModelFile {
     rel_path: "models/kokoro-82m/model.onnx",
     url: "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
@@ -181,11 +201,14 @@ const KOKORO_GRAPH: ModelFile = ModelFile {
 
 /// Default English male voice pack (Кеша is a male name — CLAUDE.md brand rule).
 /// Switched from `af_heart` (female) in #210.
-#[cfg(not(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-)))]
+#[cfg(all(
+    feature = "tts",
+    not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))
+))]
 const KOKORO_EN_VOICE: ModelFile = ModelFile {
     rel_path: "models/kokoro-82m/voices/am_michael.bin",
     url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
@@ -195,11 +218,14 @@ const KOKORO_EN_VOICE: ModelFile = ModelFile {
 /// klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0).
 /// Pinned hashes from #185 (see NOTICES.md for attribution).
 /// These 3 files enable multilingual G2P for es/fr/it/pt voices.
-#[cfg(not(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-)))]
+#[cfg(all(
+    feature = "tts",
+    not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))
+))]
 const G2P_CHARSIU_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/g2p/byt5-tiny/encoder_model.onnx",
@@ -223,11 +249,14 @@ const G2P_CHARSIU_FILES: &[ModelFile] = &[
 /// em_alex (es, male), im_nicola (it, male), pm_alex (pt, male)
 /// satisfy the brand male-default rule. ff_siwis (fr, female) is
 /// the sole French voice Kokoro v1.0 ships — see voices.rs comment.
-#[cfg(not(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-)))]
+#[cfg(all(
+    feature = "tts",
+    not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))
+))]
 fn multilang_voice(lang: &str) -> Option<ModelFile> {
     let (rel, url, sha) = match lang {
         "es" => (
@@ -263,15 +292,16 @@ fn multilang_voice(lang: &str) -> Option<ModelFile> {
 /// language is selected; G2P only if a multilingual lang (es/fr/it/pt) is
 /// selected; per-language voices added individually.
 ///
-/// Groundwork for `download_tts(langs)` so an English-only install skips the
-/// ~30 MB CharsiuG2P pack and a Russian-only install skips Kokoro entirely.
-/// Wired to the install handler in the next task; `#[allow(dead_code)]` until then.
-#[cfg(not(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-)))]
-#[allow(dead_code)]
+/// An English-only install skips the ~30 MB CharsiuG2P pack and a Russian-only
+/// install skips Kokoro entirely. Consumed by [`download_tts`].
+#[cfg(all(
+    feature = "tts",
+    not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))
+))]
 fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
     const KOKORO_LANGS: [&str; 5] = ["en", "es", "fr", "it", "pt"];
     const MULTILANG: [&str; 4] = ["es", "fr", "it", "pt"];
@@ -291,27 +321,6 @@ fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
         }
     }
     out
-}
-
-#[cfg(feature = "tts")]
-pub fn kokoro_manifest() -> Vec<ModelFile> {
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
-    {
-        return Vec::new();
-    }
-    #[allow(unreachable_code)]
-    {
-        let mut v = vec![KOKORO_GRAPH.clone(), KOKORO_EN_VOICE.clone()];
-        v.extend(G2P_CHARSIU_FILES.iter().cloned());
-        for l in ["es", "fr", "it", "pt"] {
-            v.push(multilang_voice(l).expect("multilang voice"));
-        }
-        v
-    }
 }
 
 /// FluidAudio ANE Kokoro voice packs (`system_kokoro` darwin path, #475).
@@ -480,6 +489,44 @@ const ANE_KOKORO_VOICES: &[ModelFile] = &[
     // `tts::fluid_kokoro` zh-* voices.
 ];
 
+/// Map a flat ANE voice-pack basename (`<x><gender>_name.bin`) to its Kokoro
+/// language code. The first character of a Kokoro voice id selects language
+/// (`a`/`b` = English, `e` = Spanish, etc.); the second is the gender prefix.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn ane_voice_lang(rel_path: &str) -> Option<&'static str> {
+    // Kokoro voice files are `<x><gender>_name.bin`; first char picks language.
+    match rel_path.chars().next() {
+        Some('a') | Some('b') => Some("en"),
+        Some('e') => Some("es"),
+        Some('f') => Some("fr"),
+        Some('h') => Some("hi"),
+        Some('i') => Some("it"),
+        Some('j') => Some("ja"),
+        Some('p') => Some("pt"),
+        Some('z') => Some("zh"),
+        _ => None,
+    }
+}
+
+/// Subset of [`ANE_KOKORO_VOICES`] whose language is in `langs`. Drives the
+/// language-aware ANE staging so an English-only install skips the es/it/pt/…
+/// packs (and a Russian-only install stages nothing here).
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn ane_voices_for(langs: &[&str]) -> Vec<&'static ModelFile> {
+    ANE_KOKORO_VOICES
+        .iter()
+        .filter(|f| ane_voice_lang(f.rel_path).is_some_and(|l| langs.contains(&l)))
+        .collect()
+}
+
 /// FluidAudio's Kokoro ANE voice-pack cache directory. NOT under
 /// `KESHA_CACHE_DIR` — FluidAudio 0.14.7 owns this path and reads voice packs
 /// from here local-first. We pre-stage onnx-community packs here so the full
@@ -506,18 +553,21 @@ pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
 /// local-first (#475). Idempotent: an existing pack that already matches its
 /// pinned hash short-circuits the network round-trip, identical to
 /// [`download_verified`]. Runs only on the `system_kokoro` darwin path; the
-/// ONNX Kokoro path keeps using `kokoro_manifest()` under `KESHA_CACHE_DIR`.
+/// ONNX Kokoro path keeps using `kokoro_manifest_for()` under `KESHA_CACHE_DIR`.
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-pub fn stage_ane_kokoro_voices(no_cache: bool) -> Result<()> {
+pub fn stage_ane_kokoro_voices(langs: &[&str], no_cache: bool) -> Result<()> {
+    // `rel_path = "<voice>.bin"` + `cache = ane_dir` → flat ANE dir.
+    let manifest = ane_voices_for(langs);
+    if manifest.is_empty() {
+        return Ok(());
+    }
     let ane_dir = fluidaudio_ane_kokoro_dir();
     fs::create_dir_all(&ane_dir)
         .with_context(|| format!("create FluidAudio ANE dir {}", ane_dir.display()))?;
-    // `rel_path = "<voice>.bin"` + `cache = ane_dir` → flat ANE dir.
-    let manifest: Vec<&ModelFile> = ANE_KOKORO_VOICES.iter().collect();
     parallel_download(&ane_dir, &manifest, no_cache)
 }
 
@@ -1018,32 +1068,6 @@ mod tts_tests {
     use super::*;
 
     #[test]
-    fn kokoro_manifest_has_expected_files() {
-        let m = kokoro_manifest();
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
-        {
-            assert!(m.is_empty());
-        }
-        #[cfg(not(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        )))]
-        {
-            assert!(m.iter().any(|f| f.rel_path.ends_with("model.onnx")));
-            assert!(m.iter().any(|f| f.rel_path.ends_with("am_michael.bin")));
-            for f in &m {
-                assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
-                assert!(f.url.starts_with("https://"), "{f:?} url not https");
-            }
-        }
-    }
-
-    #[test]
     fn vosk_ru_manifest_has_expected_files() {
         let m = vosk_ru_manifest();
         assert_eq!(m.len(), 5);
@@ -1234,6 +1258,52 @@ mod tts_tests {
 
         assert!(kokoro_manifest_for(&["ru"]).is_empty());
     }
+
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn ane_voices_for_filters_by_language_prefix() {
+        let names = |langs: &[&str]| {
+            ane_voices_for(langs)
+                .iter()
+                .map(|f| f.rel_path.to_string())
+                .collect::<Vec<_>>()
+        };
+        let en = names(&["en"]);
+        assert!(en.iter().any(|n| n.starts_with("am_")));
+        assert!(en
+            .iter()
+            .all(|n| n.starts_with("am_") || n.starts_with("af_") || n.starts_with("bm_")));
+        let es = names(&["es"]);
+        assert!(!es.is_empty() && es.iter().all(|n| n.starts_with("e")));
+        assert!(!names(&["en"]).iter().any(|n| n == "af_heart.bin"));
+    }
+
+    #[test]
+    fn validate_tts_langs_accepts_known_rejects_unknown() {
+        assert!(validate_tts_langs(&["en"]).is_ok());
+        let err = validate_tts_langs(&["en", "klingon"])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("klingon"), "err names the bad code: {err}");
+        #[cfg(not(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        )))]
+        {
+            let err = validate_tts_langs(&["ja"]).unwrap_err().to_string();
+            assert!(err.contains("ja"), "ja unavailable on ONNX build: {err}");
+        }
+    }
+
+    #[test]
+    fn download_tts_empty_langs_is_noop() {
+        assert!(download_tts(&[], false).is_ok());
+    }
 }
 
 /// Download the Sortformer `.mlpackage`. Opt-in via `kesha install --diarize`
@@ -1311,27 +1381,52 @@ pub fn download_vad(no_cache: bool) -> Result<()> {
     parallel_download(&cache, &refs, no_cache)
 }
 
-/// Download every TTS model file: Kokoro English + Vosk Russian.
-/// Each file is streamed to disk, then SHA256-verified. 4 concurrent
-/// downloads (#178).
+/// Download the TTS model files needed for `langs` only. Each file is streamed
+/// to disk, then SHA256-verified, 4 concurrent (#178). An English-only install
+/// skips the CharsiuG2P pack; a Russian-only install skips Kokoro entirely.
+/// Empty `langs` is a no-op so the install handler can short-circuit a bare run.
 #[cfg(feature = "tts")]
-pub fn download_tts(no_cache: bool) -> Result<()> {
-    let cache = cache_dir();
-    let mut manifest = kokoro_manifest();
-    manifest.extend(vosk_ru_manifest());
-    let refs: Vec<&ModelFile> = manifest.iter().collect();
-    parallel_download(&cache, &refs, no_cache)?;
-    // On the FluidAudio ANE Kokoro path `kokoro_manifest()` is empty (the model
-    // graph + `af_heart` auto-download into FluidAudio's own cache on first
-    // synth). Stage the rest of the en-* catalog — including the male
-    // `am_michael` default — into FluidAudio's ANE voice-pack cache so they
-    // resolve local-first instead of 404ing against the ANE bundle (#475).
+pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
+    if langs.is_empty() {
+        return Ok(());
+    }
+
+    #[cfg(not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )))]
+    {
+        let cache = cache_dir();
+        let mut manifest = kokoro_manifest_for(langs);
+        if langs.contains(&"ru") {
+            manifest.extend(vosk_ru_manifest());
+        }
+        let refs: Vec<&ModelFile> = manifest.iter().collect();
+        parallel_download(&cache, &refs, no_cache)?;
+    }
+
+    // On the FluidAudio ANE Kokoro path the model graph + `af_heart`
+    // auto-download into FluidAudio's own cache on first synth. Stage only the
+    // requested en/es/it/… catalog — including the male `am_michael` default —
+    // into FluidAudio's ANE voice-pack cache so they resolve local-first
+    // instead of 404ing against the ANE bundle (#475). Vosk-RU still lands
+    // under KESHA_CACHE_DIR.
     #[cfg(all(
         feature = "system_kokoro",
         target_os = "macos",
         target_arch = "aarch64"
     ))]
-    stage_ane_kokoro_voices(no_cache)?;
+    {
+        if langs.contains(&"ru") {
+            let cache = cache_dir();
+            let manifest = vosk_ru_manifest();
+            let refs: Vec<&ModelFile> = manifest.iter().collect();
+            parallel_download(&cache, &refs, no_cache)?;
+        }
+        stage_ane_kokoro_voices(langs, no_cache)?;
+    }
+
     Ok(())
 }
 

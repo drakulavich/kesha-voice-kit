@@ -91,10 +91,12 @@ enum Commands {
         /// Re-download even if cached
         #[arg(long)]
         no_cache: bool,
-        /// Also install TTS models (Kokoro EN + Vosk RU, ~990MB).
+        /// Install TTS models for these languages (space-separated, e.g.
+        /// `--tts en ru`). Bare `--tts` installs English only. Codes are
+        /// validated against this build's supported set.
         #[cfg(feature = "tts")]
-        #[arg(long)]
-        tts: bool,
+        #[arg(long, num_args = 0.., value_name = "LANG", default_missing_value = "en")]
+        tts: Vec<String>,
         /// Also install Silero VAD (~2.3MB) for long-audio preprocessing.
         #[arg(long)]
         vad: bool,
