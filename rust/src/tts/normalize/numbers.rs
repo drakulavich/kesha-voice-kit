@@ -336,13 +336,16 @@ const PT_UNITS: [&str; 20] = [
     "onze",
     "doze",
     "treze",
-    "catorze",
+    "quatorze",
     "quinze",
-    "dezasseis",
-    "dezassete",
+    "dezesseis",
+    "dezessete",
     "dezoito",
-    "dezanove",
+    "dezenove",
 ];
+// NB: Brazilian Portuguese forms (quatorze/dezesseis/dezessete/dezenove) — the
+// CharsiuG2P tag is <por-bz>, so feeding European forms (catorze/dezasseis/…)
+// mispronounces. Greptile #509 P1.
 
 const PT_TENS: [&str; 10] = [
     "",
@@ -479,6 +482,11 @@ mod tests {
     #[test]
     fn portuguese_integers() {
         assert_eq!(to_words(936, "pt"), "novecentos e trinta e seis");
+        // Brazilian forms (G2P tag is <por-bz>), not European catorze/dezasseis/…
+        assert_eq!(to_words(14, "pt"), "quatorze");
+        assert_eq!(to_words(16, "pt"), "dezesseis");
+        assert_eq!(to_words(17, "pt"), "dezessete");
+        assert_eq!(to_words(19, "pt"), "dezenove");
     }
 
     #[test]

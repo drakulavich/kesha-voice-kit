@@ -68,7 +68,9 @@ const FR_LETTERS: [(&str, &str); 26] = [
 
 /// Italian letter names (a-z).
 /// Source: standard Italian alphabet letter names.
-const IT_LETTERS: [(&str, &str); 21] = [
+// Includes J/K/W/X/Y (not in the traditional 21-letter alphabet but common in
+// modern Italian acronyms — WC, OK, etc.); standard letter names. Greptile #509 P2.
+const IT_LETTERS: [(&str, &str); 26] = [
     ("A", "a"),
     ("B", "bi"),
     ("C", "ci"),
@@ -78,6 +80,8 @@ const IT_LETTERS: [(&str, &str); 21] = [
     ("G", "gi"),
     ("H", "acca"),
     ("I", "i"),
+    ("J", "i lunga"),
+    ("K", "cappa"),
     ("L", "elle"),
     ("M", "emme"),
     ("N", "enne"),
@@ -89,6 +93,9 @@ const IT_LETTERS: [(&str, &str); 21] = [
     ("T", "ti"),
     ("U", "u"),
     ("V", "vi"),
+    ("W", "doppia vu"),
+    ("X", "ics"),
+    ("Y", "ipsilon"),
     ("Z", "zeta"),
 ];
 
@@ -181,5 +188,13 @@ mod tests {
     fn spells_acronyms_with_spanish_letter_names() {
         assert_eq!(spell("RAI", "es"), "erre a i");
         assert_eq!(spell("IBGE", "pt"), "i bê gê é");
+    }
+
+    #[test]
+    fn spells_italian_acronyms_including_jkwxy() {
+        assert_eq!(spell("RAI", "it"), "erre a i");
+        // J/K/W/X/Y now resolve to standard Italian names, not raw-lowercase fallback.
+        assert_eq!(spell("WC", "it"), "doppia vu ci");
+        assert_eq!(spell("OK", "it"), "o cappa");
     }
 }
