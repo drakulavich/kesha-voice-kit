@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import { downloadEngine } from "../engine-install";
-import { getEngineBinPath } from "../engine";
+import { getEngineBinPath, getEngineCapabilities } from "../engine";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
@@ -8,6 +8,8 @@ import { packageVersion } from "../package-info";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
 
 export interface InstallCommandArgs {
+  /** Positional args after `install` — candidate TTS language codes. */
+  _?: string[];
   coreml: boolean;
   onnx: boolean;
   "no-cache": boolean;
@@ -17,6 +19,50 @@ export interface InstallCommandArgs {
   vad: boolean;
   diarize: boolean;
   plan: boolean;
+}
+
+/**
+ * TTS languages installable on EVERY build, used when the engine binary isn't
+ * installed yet (capabilities unavailable). hi/ja/zh are darwin-arm64-only and
+ * can't be assumed without capabilities, so they're excluded here.
+ */
+export const TTS_LANG_FALLBACK = ["en", "es", "fr", "it", "pt", "ru"];
+
+export interface TtsArgInput {
+  /** Whether --tts was passed. */
+  tts: boolean;
+  /** Positional args after the install command (candidate language codes). */
+  positionals: string[];
+}
+
+/**
+ * Resolve the requested TTS language list. Bare `--tts` defaults to English.
+ * Positionals without `--tts` are an error. When `supported` is provided,
+ * unsupported codes are a hard error (nothing downloads); when it's undefined
+ * (engine not yet installed, capabilities unavailable) the check is skipped and
+ * the engine validates authoritatively at download time.
+ */
+export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefined): string[] {
+  if (!input.tts) {
+    if (input.positionals.length > 0) {
+      throw new Error(
+        `Language codes (${input.positionals.join(", ")}) require the --tts flag, ` +
+          `e.g. \`kesha install --tts ${input.positionals.join(" ")}\`.`,
+      );
+    }
+    return [];
+  }
+  const langs = input.positionals.length > 0 ? input.positionals : ["en"];
+  if (supported) {
+    const bad = langs.filter((l) => !supported.includes(l));
+    if (bad.length > 0) {
+      throw new Error(
+        `Unsupported TTS language(s): ${bad.join(", ")}. ` +
+          `Supported on this platform: ${supported.join(", ")}.`,
+      );
+    }
+  }
+  return langs;
 }
 
 export function resolveNoCacheFlag(
@@ -71,14 +117,14 @@ function finishInstallDiagnostic(
 
 export async function performInstall(
   noCache: boolean,
-  backend?: string,
-  tts = false,
+  backend: string | undefined,
+  ttsLangs: string[],
   vad = false,
   diarize = false,
   plan = false,
 ) {
   if (plan) {
-    log.info(await renderInstallPlan({ noCache, backend, tts, vad, diarize }));
+    log.info(await renderInstallPlan({ noCache, backend, ttsLangs, vad, diarize }));
     return;
   }
 
@@ -91,7 +137,7 @@ export async function performInstall(
       command: "install",
       backend: backend ?? "auto",
       noCache,
-      tts,
+      tts: ttsLangs.length > 0,
       vad,
       diarize,
     });
@@ -111,7 +157,7 @@ export async function performInstall(
           `the release engine uses "${platformBackend}".`,
       );
     }
-    await downloadEngine(noCache, backend, { tts, vad, diarize });
+    await downloadEngine(noCache, backend, { ttsLangs, vad, diarize });
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);
     finishInstallDiagnostic(diagnosticLog, startedAt, "success");
   } catch (err: unknown) {
@@ -166,6 +212,23 @@ export const installCommand = defineCommand({
   },
   async run({ args, rawArgs }: { args: InstallCommandArgs; rawArgs: string[] }) {
     const backend = resolveBackendFlag(args.coreml, args.onnx);
-    await performInstall(resolveNoCacheFlag(args, rawArgs), backend, args.tts, args.vad, args.diarize, args.plan);
+    const positionals = (args._ ?? []).map(String);
+    const caps = await getEngineCapabilities();
+    const supported = caps?.tts?.languages.map((l) => l.code);
+    let ttsLangs: string[];
+    try {
+      ttsLangs = resolveTtsLangs({ tts: args.tts === true, positionals }, supported);
+    } catch (err) {
+      log.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+    await performInstall(
+      resolveNoCacheFlag(args, rawArgs),
+      backend,
+      ttsLangs,
+      args.vad,
+      args.diarize,
+      args.plan,
+    );
   },
 });

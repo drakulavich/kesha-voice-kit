@@ -4,7 +4,7 @@ use crate::{backend, models};
 
 pub fn run(
     no_cache: bool,
-    #[cfg(feature = "tts")] tts: bool,
+    #[cfg(feature = "tts")] tts_langs: Vec<String>,
     vad: bool,
     #[cfg(feature = "system_diarize")] diarize: bool,
     no_warmup: bool,
@@ -16,9 +16,11 @@ pub fn run(
     models::init_mirror_logging();
     models::install(no_cache)?;
     #[cfg(feature = "tts")]
-    if tts {
-        models::download_tts(no_cache)?;
-        eprintln!("TTS models installed.");
+    if !tts_langs.is_empty() {
+        let refs: Vec<&str> = tts_langs.iter().map(String::as_str).collect();
+        models::validate_tts_langs(&refs)?;
+        models::download_tts(&refs, no_cache)?;
+        eprintln!("TTS models installed ({}).", tts_langs.join(", "));
     }
     if vad {
         models::download_vad(no_cache)?;

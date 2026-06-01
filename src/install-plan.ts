@@ -13,7 +13,8 @@ import {
 export interface InstallPlanOptions {
   noCache?: boolean;
   backend?: string;
-  tts?: boolean;
+  /** Resolved TTS language codes, e.g. ["en", "ru"]. */
+  ttsLangs?: string[];
   vad?: boolean;
   diarize?: boolean;
 }
@@ -70,17 +71,29 @@ const G2P_CHARSIU_FILES: PlanFile[] = [
   { relPath: "models/g2p/byt5-tiny/decoder_with_past_model.onnx", sizeBytes: 5_427_260 },
 ];
 
-const KOKORO_FILES: PlanFile[] = [
-  { relPath: "models/kokoro-82m/model.onnx", sizeBytes: 325_532_387 },
-  { relPath: "models/kokoro-82m/voices/am_michael.bin", sizeBytes: 522_240 },
-  // Multilingual voice packs for es/fr/it/pt (#212).
-  // em_alex (es, male), ff_siwis (fr, female — only French voice in Kokoro v1.0),
-  // im_nicola (it, male), pm_alex (pt, male).
-  { relPath: "models/kokoro-82m/voices/em_alex.bin", sizeBytes: 522_240 },
-  { relPath: "models/kokoro-82m/voices/ff_siwis.bin", sizeBytes: 522_240 },
-  { relPath: "models/kokoro-82m/voices/im_nicola.bin", sizeBytes: 522_240 },
-  { relPath: "models/kokoro-82m/voices/pm_alex.bin", sizeBytes: 522_240 },
-];
+// Kokoro ONNX graph (shared by all Kokoro languages on non-darwin builds).
+const KOKORO_GRAPH_FILE: PlanFile = { relPath: "models/kokoro-82m/model.onnx", sizeBytes: 325_532_387 };
+
+// Per-language default voice files.
+// Multilingual voice packs for es/fr/it/pt (#212).
+// em_alex (es, male), ff_siwis (fr, female — only French voice in Kokoro v1.0),
+// im_nicola (it, male), pm_alex (pt, male).
+const KOKORO_VOICE_FILES: Record<string, PlanFile> = {
+  en: { relPath: "models/kokoro-82m/voices/am_michael.bin", sizeBytes: 522_240 },
+  es: { relPath: "models/kokoro-82m/voices/em_alex.bin", sizeBytes: 522_240 },
+  fr: { relPath: "models/kokoro-82m/voices/ff_siwis.bin", sizeBytes: 522_240 },
+  it: { relPath: "models/kokoro-82m/voices/im_nicola.bin", sizeBytes: 522_240 },
+  pt: { relPath: "models/kokoro-82m/voices/pm_alex.bin", sizeBytes: 522_240 },
+};
+
+function kokoroPlanFiles(langs: string[]): PlanFile[] {
+  const files: PlanFile[] = [KOKORO_GRAPH_FILE];
+  for (const l of langs) {
+    const v = KOKORO_VOICE_FILES[l];
+    if (v) files.push(v);
+  }
+  return files;
+}
 
 const VOSK_RU_FILES: PlanFile[] = [
   { relPath: "models/vosk-ru/model.onnx", sizeBytes: 179_314_533 },
@@ -240,53 +253,59 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     ),
   );
 
-  if (options.tts) {
+  const ttsLangs = options.ttsLangs ?? [];
+  // Darwin ANE serves every non-ru language through Kokoro (en/es/fr/it/pt + the
+  // ANE-only hi/ja/zh), so the warm-up gate mirrors engine-install.ts's
+  // `some((l) => l !== "ru")`. The ONNX component, by contrast, only covers the
+  // graph-backed en/es/fr/it/pt set (hi/ja/zh are darwin-only and rejected on ONNX).
+  const wantsAnyKokoro = ttsLangs.some((l) => l !== "ru");
+  const wantsOnnxKokoro = ttsLangs.some((l) => ["en", "es", "fr", "it", "pt"].includes(l));
+  const wantsG2p = ttsLangs.some((l) => ["es", "fr", "it", "pt"].includes(l));
+  const wantsRu = ttsLangs.includes("ru");
+
+  if (ttsLangs.length > 0) {
     if (isDarwinArm64()) {
-      components.push(
-        bundleComponent(
-          cacheRoot,
-          "TTS Vosk RU",
-          "model cache",
-          VOSK_RU_FILES,
-          noCache,
-          "Russian ru-vosk-* voices",
-        ),
-      );
-      warmups.push({
-        name: "TTS Kokoro EN",
-        note: `${FLUID_KOKORO_CACHE_NOTE} (${fluidKokoroCachePath()})`,
-      });
+      if (wantsAnyKokoro) {
+        warmups.push({
+          name: "TTS Kokoro (ANE)",
+          note: `${FLUID_KOKORO_CACHE_NOTE} (${fluidKokoroCachePath()})`,
+        });
+      }
+      if (wantsRu) {
+        components.push(
+          bundleComponent(cacheRoot, "TTS Vosk RU", "model cache", VOSK_RU_FILES, noCache, "Russian ru-vosk-* voices"),
+        );
+      }
     } else {
-      components.push(
-        bundleComponent(
-          cacheRoot,
-          "TTS Kokoro EN/ES/FR/IT/PT",
-          "model cache",
-          KOKORO_FILES,
-          noCache,
-          "English en-* voices + multilingual es-*/fr-*/it-*/pt-* voices",
-        ),
-      );
-      components.push(
-        bundleComponent(
-          cacheRoot,
-          "G2P CharsiuG2P byt5-tiny",
-          "model cache",
-          G2P_CHARSIU_FILES,
-          noCache,
-          "multilingual grapheme-to-phoneme for es/fr/it/pt Kokoro voices (CC-BY 4.0)",
-        ),
-      );
-      components.push(
-        bundleComponent(
-          cacheRoot,
-          "TTS Vosk RU",
-          "model cache",
-          VOSK_RU_FILES,
-          noCache,
-          "Russian ru-vosk-* voices",
-        ),
-      );
+      if (wantsOnnxKokoro) {
+        components.push(
+          bundleComponent(
+            cacheRoot,
+            "TTS Kokoro graph + voices",
+            "model cache",
+            kokoroPlanFiles(ttsLangs),
+            noCache,
+            `voices for ${ttsLangs.filter((l) => l !== "ru").join(", ")}`,
+          ),
+        );
+      }
+      if (wantsG2p) {
+        components.push(
+          bundleComponent(
+            cacheRoot,
+            "G2P CharsiuG2P byt5-tiny",
+            "model cache",
+            G2P_CHARSIU_FILES,
+            noCache,
+            "multilingual G2P for es/fr/it/pt (CC-BY 4.0)",
+          ),
+        );
+      }
+      if (wantsRu) {
+        components.push(
+          bundleComponent(cacheRoot, "TTS Vosk RU", "model cache", VOSK_RU_FILES, noCache, "Russian ru-vosk-* voices"),
+        );
+      }
     }
   }
 
@@ -370,7 +389,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     "  - install warms the ASR backend after downloads; CoreML warm-up is typically 20-30 s, ONNX warm-up is about 500 ms.",
   );
 
-  if (options.tts && isDarwinArm64()) {
+  if (ttsLangs.length > 0 && wantsAnyKokoro && isDarwinArm64()) {
     lines.push(
       "  - --tts also warms FluidAudio Kokoro CoreML; FluidAudio may download/compile its own Kokoro cache on first use.",
     );
@@ -382,7 +401,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     options.noCache ? "--no-cache" : "",
     options.backend === "coreml" ? "--coreml" : "",
     options.backend === "onnx" ? "--onnx" : "",
-    options.tts ? "--tts" : "",
+    ...(ttsLangs.length > 0 ? ["--tts", ...ttsLangs] : []),
     options.vad ? "--vad" : "",
     options.diarize ? "--diarize" : "",
   ].filter(Boolean);

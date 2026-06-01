@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
+  buildEngineInstallArgs,
   cleanupRetiredSidecars,
   getVersionMarkerPath,
   readInstalledEngineVersion,
@@ -62,6 +63,17 @@ describe("engine-install version marker (#151)", () => {
     writeInstalledEngineVersion(binPath, "1.2.0");
     expect(readInstalledEngineVersion(binPath)).toBe("1.2.0");
     rmSync(binPath + ".version");
+  });
+});
+
+describe("buildEngineInstallArgs (#517)", () => {
+  test("tts languages become positional args after --tts", () => {
+    expect(buildEngineInstallArgs({ noCache: false, ttsLangs: ["en", "ru"] }))
+      .toEqual(["install", "--tts", "en", "ru"]);
+  });
+  test("no tts langs omits --tts", () => {
+    expect(buildEngineInstallArgs({ noCache: true, ttsLangs: [] }))
+      .toEqual(["install", "--no-cache"]);
   });
 });
 

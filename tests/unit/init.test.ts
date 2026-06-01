@@ -32,7 +32,7 @@ describe("init onboarding", () => {
     expect(selection).toEqual({
       noCache: false,
       backend: undefined,
-      tts: false,
+      ttsLangs: [],
       vad: false,
       diarize: false,
     });
@@ -50,13 +50,27 @@ describe("init onboarding", () => {
       "--no-cache",
       "--coreml",
       "--tts",
+      "en",
       "--vad",
       "--diarize",
     ]);
   });
 
+  test("multiple tts languages emit positional codes after --tts", () => {
+    expect(
+      initInstallArgs({
+        noCache: false,
+        backend: undefined,
+        ttsLangs: ["en", "ru"],
+        vad: false,
+        diarize: false,
+      }),
+    ).toEqual(["kesha", "install", "--tts", "en", "ru"]);
+  });
+
   test("interactive selection drops unsupported diarize preselection before confirmation", async () => {
     const prompts: string[] = [];
+    const ttsPreselects: string[][] = [];
     const savedError = console.error;
     console.error = () => {};
     try {
@@ -70,12 +84,44 @@ describe("init onboarding", () => {
         },
         undefined,
         false,
+        false,
+        async (preselect) => {
+          ttsPreselects.push(preselect);
+          return [];
+        },
       );
 
       expect(selection.diarize).toBe(false);
+      expect(selection.ttsLangs).toEqual([]);
       expect(initInstallArgs(selection)).toEqual(["kesha", "install"]);
-      expect(prompts).toHaveLength(2);
+      // TTS is now a multiselect handled outside the yes/no PromptApi, so only
+      // the VAD question flows through `question` (diarize skipped off darwin).
+      expect(prompts).toHaveLength(1);
       expect(prompts.join("\n")).not.toContain("diarization");
+      expect(ttsPreselects).toEqual([[]]);
+    } finally {
+      console.error = savedError;
+    }
+  });
+
+  test("interactive TTS multiselect result flows into the selection", async () => {
+    const savedError = console.error;
+    console.error = () => {};
+    try {
+      const selection = await promptInitSelection(
+        initArgs({ tts: true }),
+        {
+          async question() {
+            return "";
+          },
+        },
+        undefined,
+        false,
+        false,
+        async () => ["en", "ru"],
+      );
+      expect(selection.ttsLangs).toEqual(["en", "ru"]);
+      expect(initInstallArgs(selection)).toEqual(["kesha", "install", "--tts", "en", "ru"]);
     } finally {
       console.error = savedError;
     }
@@ -83,13 +129,13 @@ describe("init onboarding", () => {
 
   test("non-interactive suggestions preserve backend and cache flags", () => {
     const commands = initSuggestionCommands(
-      { noCache: true, backend: "coreml", tts: false, vad: false, diarize: false },
+      { noCache: true, backend: "coreml", ttsLangs: [], vad: false, diarize: false },
       true,
     ).map((command) => command.join(" "));
 
     expect(commands).toContain("kesha install --no-cache --coreml");
     expect(commands).toContain("kesha install --no-cache --coreml --vad");
-    expect(commands).toContain("kesha install --no-cache --coreml --tts --vad");
+    expect(commands).toContain("kesha install --no-cache --coreml --tts en --vad");
     expect(commands).toContain("kesha install --no-cache --coreml --vad --diarize");
   });
 
@@ -97,7 +143,7 @@ describe("init onboarding", () => {
     const selection = {
       noCache: true,
       backend: "onnx",
-      tts: true,
+      ttsLangs: ["en"],
       vad: true,
       diarize: true,
     };
@@ -105,7 +151,7 @@ describe("init onboarding", () => {
     expect(omitUnsupportedDiarize(selection, false)).toEqual({
       noCache: true,
       backend: "onnx",
-      tts: true,
+      ttsLangs: ["en"],
       vad: true,
       diarize: false,
     });
@@ -115,6 +161,7 @@ describe("init onboarding", () => {
       "--no-cache",
       "--onnx",
       "--tts",
+      "en",
       "--vad",
     ]);
   });

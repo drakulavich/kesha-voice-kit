@@ -29,9 +29,13 @@ export type {
   TranscribeResult,
 } from "./types";
 
-/** Install Kokoro TTS models. Shorthand for `downloadModel({ tts: true })`. */
-export async function downloadTts(noCache = false): Promise<void> {
-  await downloadEngine(noCache, undefined, { tts: true });
+/**
+ * Install TTS models for the given languages (default: English only, matching
+ * `kesha install --tts`). Pass e.g. `["en", "ru"]` for more. Unsupported-on-platform
+ * codes are rejected by the engine.
+ */
+export async function downloadTts(noCache = false, langs: string[] = ["en"]): Promise<void> {
+  await downloadEngine(noCache, undefined, { ttsLangs: langs });
 }
 
 /** @deprecated Use `downloadModel` instead. */
