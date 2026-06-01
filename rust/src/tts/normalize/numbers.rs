@@ -134,7 +134,13 @@ fn fr_under_100(n: u32) -> String {
         // 70-79 = soixante + 10..19
         70..=79 => {
             let sub = FR_UNITS[(n - 60) as usize];
-            format!("soixante-{sub}")
+            // 71 takes the "et" connector (soixante-et-onze), mirroring
+            // vingt-et-un/.../soixante-et-un. 72-79 stay plain-hyphenated.
+            if n == 71 {
+                "soixante-et-onze".to_string()
+            } else {
+                format!("soixante-{sub}")
+            }
         }
         // 90-99 = quatre-vingt + 10..19
         90..=99 => {
@@ -433,7 +439,22 @@ fn pt_words(n: u32) -> String {
     if rem > 0 {
         parts.push(pt_under_1000(rem));
     }
-    parts.join(" e ")
+    // Portuguese inserts "e" between the thousands group and the remainder only
+    // when the remainder is < 100 OR an exact multiple of 100; otherwise the
+    // groups are joined with a plain space.
+    //   1024 -> "mil e vinte e quatro"             (rem 24, < 100)
+    //   1500 -> "mil e quinhentos"                 (rem 500, multiple of 100)
+    //   1524 -> "mil quinhentos e vinte e quatro"  (rem 524, non-round hundreds)
+    if parts.len() == 2 {
+        let connector = if rem < 100 || rem % 100 == 0 {
+            " e "
+        } else {
+            " "
+        };
+        format!("{}{}{}", parts[0], connector, parts[1])
+    } else {
+        parts.join(" ")
+    }
 }
 
 // ── Public entry point ────────────────────────────────────────────────────────
@@ -493,5 +514,26 @@ mod tests {
     fn french_integers() {
         assert_eq!(to_words(348, "fr"), "trois cent quarante-huit");
         assert_eq!(to_words(80, "fr"), "quatre-vingts");
+    }
+
+    #[test]
+    fn portuguese_thousands_connector() {
+        // "e" joins thousands↔remainder only when remainder < 100 or a multiple of 100.
+        assert_eq!(to_words(1024, "pt"), "mil e vinte e quatro"); // rem 24  < 100
+        assert_eq!(to_words(1500, "pt"), "mil e quinhentos"); // rem 500 multiple of 100
+        assert_eq!(to_words(1100, "pt"), "mil e cem"); // rem 100 multiple of 100
+        assert_eq!(to_words(1524, "pt"), "mil quinhentos e vinte e quatro"); // rem 524 non-round hundreds
+        assert_eq!(to_words(2350, "pt"), "dois mil trezentos e cinquenta"); // rem 350 non-round hundreds
+        assert_eq!(to_words(2000, "pt"), "dois mil"); // no remainder
+        assert_eq!(to_words(24, "pt"), "vinte e quatro"); // no thousands group
+    }
+
+    #[test]
+    fn french_seventy_one_takes_et() {
+        assert_eq!(to_words(71, "fr"), "soixante-et-onze");
+        assert_eq!(to_words(72, "fr"), "soixante-douze");
+        assert_eq!(to_words(79, "fr"), "soixante-dix-neuf");
+        assert_eq!(to_words(81, "fr"), "quatre-vingt-un");
+        assert_eq!(to_words(91, "fr"), "quatre-vingt-onze");
     }
 }

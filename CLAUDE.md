@@ -424,5 +424,12 @@ Spanish, French, Italian, and Portuguese are supported via CharsiuG2P (klebster 
 Kokoro v1.0 ships no male French voice; revisit when one exists). macOS CoreML (`system_kokoro`/FluidAudio)
 multilingual is a follow-up — those voices currently route through the English G2P.
 
+**Castilian Spanish:** select with `--lang es-ES`; `es` / `es-419` / `es-MX` use
+Latin-American (*seseo*). The upstream CharsiuG2P export has no Castilian θ tag (#511
+spike), so `es-ES` currently synthesizes Latin-American phonology and prints a one-time
+stderr note. Per-language acronym stop-lists (`ES/FR/IT/PT_STOP_LIST` in
+`rust/src/tts/normalize/acronyms.rs`) keep word-acronyms (OTAN, OVNI, FIFA…) from being
+letter-spelled; they are curated seeds, not exhaustive.
+
 **Engine internals, Kokoro/Vosk ONNX I/O shapes, G2P split, SSML handling, `KESHA_*` env vars,
 macOS dev/build env:** `docs/runbooks/tts-internals.md`.

@@ -15,6 +15,47 @@ pub(crate) mod decode;
 pub(crate) mod remap;
 pub(crate) mod tokenizer;
 
+/// True when an espeak-style lang code selects Castilian Spanish (e.g. "es-ES").
+/// LatAm regions ("es", "es-419", "es-MX", …) and non-Spanish codes are false.
+pub(crate) fn is_castilian_region(lang: &str) -> bool {
+    let lower = lang.to_ascii_lowercase();
+    lower == "es-es" || lower.starts_with("es-es-")
+}
+
+/// Reduce a (possibly region-tagged) code to the base lang Charsiu understands:
+/// "es-ES"/"es-419"/"es-MX" → "es"; "pt-br" → "pt"; passthrough otherwise.
+pub(crate) fn base_lang(lang: &str) -> &str {
+    // Return a canonical lowercase literal for the four supported bases so the
+    // result matches case-insensitively at every call site (routing guards) and
+    // feeds `normalize` (which only matches bare lowercase codes) correctly even
+    // for an uppercase region tag like "ES-ES". Unsupported codes pass through.
+    match lang
+        .split('-')
+        .next()
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("es") => "es",
+        Some("fr") => "fr",
+        Some("it") => "it",
+        Some("pt") => "pt",
+        _ => lang,
+    }
+}
+
+/// Spike-derived (#511 Phase 0): how to realize Castilian θ. Both variants are
+/// part of the documented decision surface; only one is selected per build.
+#[allow(dead_code)] // the non-selected variant is the documented alternative outcome
+enum Castilian {
+    /// Native CharsiuG2P tag that emits θ (Outcome A). Holds the tag string.
+    Tag(&'static str),
+    /// No upstream Castilian tag (Outcome B, what shipped): degrade to LatAm <spa>.
+    Degrade,
+}
+
+/// #511 Phase-0 spike found no Castilian tag (every candidate gave seseo /s/ or garbage).
+const CASTILIAN: Castilian = Castilian::Degrade;
+
 /// CharsiuG2P phonemizer holding the three decode sessions.
 pub struct Charsiu {
     encoder: Session,
@@ -50,8 +91,24 @@ impl Charsiu {
     // name reflects the conversion semantics, so silence wrong_self_convention.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_ipa(&mut self, text: &str, lang: &str) -> Result<String> {
-        let tag = match lang {
-            "es" => "<spa>",
+        let castilian = is_castilian_region(lang);
+        let tag = match base_lang(lang) {
+            "es" => match (&CASTILIAN, castilian) {
+                (Castilian::Tag(t), true) => t,
+                (Castilian::Degrade, true) => {
+                    // User-facing, one-time per process (survives --stdin-loop).
+                    use std::sync::Once;
+                    static NOTE: Once = Once::new();
+                    NOTE.call_once(|| {
+                        eprintln!(
+                            "note: Castilian (θ) pronunciation is unavailable; \
+                             using Latin-American Spanish."
+                        );
+                    });
+                    "<spa>"
+                }
+                _ => "<spa>",
+            },
             "fr" => "<fra>",
             "it" => "<ita>",
             "pt" => "<por-bz>",
@@ -77,6 +134,31 @@ impl Charsiu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn castilian_region_detection() {
+        assert!(is_castilian_region("es-ES"));
+        assert!(is_castilian_region("es-es"));
+        assert!(!is_castilian_region("es"));
+        assert!(!is_castilian_region("es-419"));
+        assert!(!is_castilian_region("es-MX"));
+        assert!(!is_castilian_region("fr"));
+    }
+
+    #[test]
+    fn base_lang_canonicalizes_case_and_region() {
+        // Region tags reduce to the bare base; the base is canonical lowercase
+        // even when the input lang subtag is uppercase (so routing guards and
+        // `normalize` see "es", not "ES").
+        assert_eq!(base_lang("es-ES"), "es");
+        assert_eq!(base_lang("ES-ES"), "es");
+        assert_eq!(base_lang("es-419"), "es");
+        assert_eq!(base_lang("pt-BR"), "pt");
+        assert_eq!(base_lang("FR"), "fr");
+        // Unsupported codes pass through unchanged.
+        assert_eq!(base_lang("de"), "de");
+        assert_eq!(base_lang("en-us"), "en-us");
+    }
 
     /// Gated on CHARSIU_ONNX env var. Skipped when unset so default CI stays fast.
     #[test]
