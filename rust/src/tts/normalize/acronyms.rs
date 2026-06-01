@@ -130,6 +130,33 @@ const PT_LETTERS: [(&str, &str); 26] = [
     ("Z", "zê"),
 ];
 
+// ── Stop-lists: all-caps tokens read as WORDS, not spelled out ───────────────
+// Hand-curated seeds, ALL-CAPS keys. NOT exhaustive — extend by ear. Mirrors
+// `tts/en/acronym.rs::STOP_LIST`. Initialisms that SHOULD spell (DNI, ADN, RAI,
+// EUA) are deliberately absent.
+pub(crate) const ES_STOP_LIST: &[&str] = &[
+    "OTAN", "OVNI", "SIDA", "OPEP", "OEA", "ONU", "UNESCO", "FIFA", "OMS",
+];
+pub(crate) const FR_STOP_LIST: &[&str] = &[
+    "OTAN", "OVNI", "SIDA", "UNESCO", "FIFA", "OPEP", "ONU", "OMS",
+];
+pub(crate) const IT_STOP_LIST: &[&str] = &["FIAT", "NATO", "FIFA", "AIDS", "UNESCO", "ONU"];
+pub(crate) const PT_STOP_LIST: &[&str] = &[
+    "OTAN", "OVNI", "SIDA", "AIDS", "FIFA", "UNESCO", "ONU", "OMS",
+];
+
+/// True if `token` is in `lang`'s stop-list (read as a word, not letter-spelled).
+fn is_stop_listed(token: &str, lang: &str) -> bool {
+    let list: &[&str] = match lang {
+        "es" => ES_STOP_LIST,
+        "fr" => FR_STOP_LIST,
+        "it" => IT_STOP_LIST,
+        "pt" => PT_STOP_LIST,
+        _ => &[],
+    };
+    list.iter().any(|w| w.eq_ignore_ascii_case(token))
+}
+
 fn lookup_letter(ch: char, table: &[(&str, &str)]) -> String {
     let s = ch.to_string();
     table
@@ -155,6 +182,10 @@ pub fn is_acronym_token(token: &str) -> bool {
 /// Letter names are joined with spaces. Unknown languages fall back to lowercased
 /// individual characters joined with spaces.
 pub fn spell(token: &str, lang: &str) -> String {
+    // Word-acronyms (read as words) pass through unspelled.
+    if is_stop_listed(token, lang) {
+        return token.to_string();
+    }
     let names: Vec<String> = match lang {
         "es" => token
             .chars()
@@ -196,5 +227,36 @@ mod tests {
         // J/K/W/X/Y now resolve to standard Italian names, not raw-lowercase fallback.
         assert_eq!(spell("WC", "it"), "doppia vu ci");
         assert_eq!(spell("OK", "it"), "o cappa");
+    }
+
+    #[test]
+    fn stop_listed_word_acronyms_pass_through_unspelled() {
+        assert_eq!(spell("OTAN", "es"), "OTAN");
+        assert_eq!(spell("OVNI", "es"), "OVNI");
+        assert_eq!(spell("FIFA", "fr"), "FIFA");
+        assert_eq!(spell("FIAT", "it"), "FIAT");
+        assert_eq!(spell("SIDA", "pt"), "SIDA");
+        // True initialisms still spell letter-by-letter.
+        assert_eq!(spell("DNI", "es"), "de ene i");
+        // Cross-language isolation: "OEA" is es/pt-list only; under "it" it letter-spells.
+        assert_eq!(spell("OEA", "it"), "o e a");
+    }
+
+    #[test]
+    fn every_stop_list_entry_passes_through() {
+        for (lang, list) in [
+            ("es", ES_STOP_LIST),
+            ("fr", FR_STOP_LIST),
+            ("it", IT_STOP_LIST),
+            ("pt", PT_STOP_LIST),
+        ] {
+            for w in list {
+                assert_eq!(
+                    spell(w, lang),
+                    *w,
+                    "stop-list entry was spelled: {w} ({lang})"
+                );
+            }
+        }
     }
 }
