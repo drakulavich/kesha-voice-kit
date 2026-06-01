@@ -53,13 +53,34 @@ impl Kokoro {
         ])?;
 
         let (_shape, data) = outputs["audio"].try_extract_tensor::<f32>()?;
-        Ok(data.to_vec())
+        Ok(clamp_audio(data.to_vec()))
     }
+}
+
+/// Clamp each sample to `[-1.0, 1.0]`.
+///
+/// Kokoro can produce |sample| > 1.0 on multilingual voices (observed on
+/// French voices in the Track-B spike). WAV float files technically allow
+/// any value, but downstream re-encoders (Opus, FLAC) and players clip
+/// at ±1.0, producing hard distortion. Clamping here is the single
+/// choke-point that protects every downstream format.
+pub fn clamp_audio(mut samples: Vec<f32>) -> Vec<f32> {
+    for s in &mut samples {
+        *s = s.clamp(-1.0, 1.0);
+    }
+    samples
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clamp_keeps_samples_in_range() {
+        let out = clamp_audio(vec![-1.5, -0.2, 0.5, 1.8]);
+        assert!(out.iter().all(|s| (-1.0..=1.0).contains(s)), "{out:?}");
+        assert_eq!(out[1], -0.2);
+    }
 
     /// Gated on KOKORO_MODEL env var. Skipped when unset so default CI stays fast.
     #[test]
