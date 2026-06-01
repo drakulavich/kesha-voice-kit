@@ -40,9 +40,14 @@ fn split_punct(token: &str) -> (&str, &str, &str) {
 fn normalize_token(token: &str, lang: &str) -> String {
     let (head, core, tail) = split_punct(token);
 
-    // Integer token?
+    // Integer token? Only expand numbers in the 0..=999_999 band that the
+    // per-language word tables cover. Larger numbers (≥ 1_000_000) are left
+    // verbatim so the G2P / synth still receives *something* and never crashes.
     if let Ok(n) = core.parse::<u32>() {
-        return format!("{head}{}{tail}", to_words(n, lang));
+        if n <= 999_999 {
+            return format!("{head}{}{tail}", to_words(n, lang));
+        }
+        return token.to_string();
     }
 
     // Acronym token?
@@ -102,5 +107,21 @@ mod tests {
     #[test]
     fn normalize_leaves_english_untouched() {
         assert_eq!(normalize("hello 5", "en"), "hello 5");
+    }
+
+    #[test]
+    fn normalize_large_number_does_not_panic() {
+        // Numbers >= 1_000_000 are outside the word-table range; they must pass
+        // through verbatim rather than panicking.
+        let out = normalize("Año 1000000", "es");
+        assert!(
+            out.contains("1000000"),
+            "large number should be verbatim, got: {out}"
+        );
+        // Surrounding words and punctuation are still handled normally.
+        assert!(out.contains("Año"), "got: {out}");
+        // u32::MAX must also be safe.
+        let max = normalize("4294967295", "es");
+        assert!(max.contains("4294967295"), "got: {max}");
     }
 }

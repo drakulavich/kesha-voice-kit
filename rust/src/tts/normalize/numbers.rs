@@ -53,6 +53,9 @@ const ES_HUNDREDS: [&str; 10] = [
 ];
 
 fn es_under_1000(n: u32) -> String {
+    if n >= 1000 {
+        return n.to_string();
+    }
     if n == 100 {
         return "cien".into();
     }
@@ -117,7 +120,9 @@ const FR_TENS: [&str; 10] = [
 ];
 
 fn fr_under_100(n: u32) -> String {
-    debug_assert!(n < 100);
+    if n >= 100 {
+        return n.to_string();
+    }
     if n < 20 {
         return FR_UNITS[n as usize].into();
     }
@@ -152,7 +157,9 @@ fn fr_under_100(n: u32) -> String {
 }
 
 fn fr_under_1000(n: u32) -> String {
-    debug_assert!(n < 1000);
+    if n >= 1000 {
+        return n.to_string();
+    }
     if n == 0 {
         return String::new();
     }
@@ -249,7 +256,9 @@ const IT_HUNDREDS: [&str; 10] = [
 ];
 
 fn it_under_100(n: u32) -> String {
-    debug_assert!(n < 100);
+    if n >= 100 {
+        return n.to_string();
+    }
     if n < 20 {
         return IT_UNITS[n as usize].into();
     }
@@ -271,7 +280,9 @@ fn it_under_100(n: u32) -> String {
 }
 
 fn it_under_1000(n: u32) -> String {
-    debug_assert!(n < 1000);
+    if n >= 1000 {
+        return n.to_string();
+    }
     if n == 0 {
         return String::new();
     }
@@ -360,7 +371,9 @@ const PT_HUNDREDS: [&str; 10] = [
 ];
 
 fn pt_under_100(n: u32) -> String {
-    debug_assert!(n < 100);
+    if n >= 100 {
+        return n.to_string();
+    }
     if n < 20 {
         return PT_UNITS[n as usize].into();
     }
@@ -374,7 +387,9 @@ fn pt_under_100(n: u32) -> String {
 }
 
 fn pt_under_1000(n: u32) -> String {
-    debug_assert!(n < 1000);
+    if n >= 1000 {
+        return n.to_string();
+    }
     if n == 0 {
         return String::new();
     }
@@ -437,6 +452,15 @@ pub fn to_words(n: u32, lang: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn large_numbers_do_not_panic() {
+        // Beyond the 0..=999_999 support band — must NOT panic; return *something* safe.
+        for lang in ["es", "fr", "it", "pt"] {
+            let _ = to_words(1_000_000, lang);
+            let _ = to_words(u32::MAX, lang);
+        }
+    }
 
     #[test]
     fn spanish_integers() {
