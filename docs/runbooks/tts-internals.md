@@ -60,6 +60,17 @@ the normalizer runs first so digit sentences produce longer, correctly-paced aud
 **IO contract and latency reference:** `docs/superpowers/specs/2026-04-22-onnx-g2p-spike.md`
 (PR #185) — verified ~36 ms/word on M2, byte-identical Rust↔Python IPA for es/fr/it/pt.
 
+### Multilingual G2P (#511)
+
+`--lang es-ES` selects Castilian Spanish via `charsiu::is_castilian_region` / `base_lang`
+resolution. Because the upstream CharsiuG2P klebster export contains no Castilian θ tag
+(confirmed in the #511 Phase-0 spike), the `CASTILIAN` decision constant is set to
+`Degrade`: the synthesizer falls back to Latin-American phonology (`<spa>` tag) and emits
+a one-time stderr note. `es` / `es-419` / `es-MX` continue to use Latin-American directly
+with no warning. Per-language acronym stop-lists (`ES/FR/IT/PT_STOP_LIST` in
+`rust/src/tts/normalize/acronyms.rs`) are curated seeds that prevent word-acronyms
+(OTAN, OVNI, FIFA…) from being letter-spelled; they are not exhaustive.
+
 ## History
 
 Original spec assumed Silero TTS; pivoted to Piper during M3 spike (Silero ships PyTorch-only, no public ONNX). See `docs/superpowers/specs/2026-04-16-bidirectional-voice-design.md`.
