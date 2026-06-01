@@ -66,6 +66,31 @@ describe("renderInstallPlan", () => {
     }
   });
 
+  test("--tts plan on non-darwin includes G2P + multilingual voice packs", async () => {
+    if (process.platform === "darwin" && process.arch === "arm64") {
+      // darwin-arm64 uses FluidAudio Kokoro warmup path, not the ONNX manifest
+      return;
+    }
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-multilang-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+
+      const output = await renderInstallPlan({ tts: true });
+
+      // G2P CharsiuG2P component present in plan
+      expect(output).toContain("G2P CharsiuG2P byt5-tiny");
+      expect(output).toContain("multilingual grapheme-to-phoneme for es/fr/it/pt");
+
+      // Kokoro component covers multilingual voices
+      expect(output).toContain("TTS Kokoro EN/ES/FR/IT/PT");
+      expect(output).toContain("multilingual es-*/fr-*/it-*/pt-*");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("darwin sidecar cache state follows installed filenames", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-sidecar-test-"));
     try {
