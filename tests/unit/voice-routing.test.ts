@@ -27,14 +27,35 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("zh-Hans", 0.95, "darwin", "arm64")).toBe("zh-zm_yunjian");
   });
 
-  it("does not auto-route Kokoro-only languages on non-darwin", () => {
-    expect(pickVoiceForLang("es", 0.95, "linux")).toBeUndefined();
-    expect(pickVoiceForLang("ja", 0.95, "win32")).toBeUndefined();
+  it("does not auto-route languages without an ONNX voice pack on non-darwin", () => {
+    // hi/ja/zh have no ONNX voice pack; they should not be auto-routed.
+    expect(pickVoiceForLang("ja", 0.95, "linux")).toBeUndefined();
+    expect(pickVoiceForLang("hi", 0.95, "win32")).toBeUndefined();
+    expect(pickVoiceForLang("zh", 0.95, "linux")).toBeUndefined();
   });
 
-  it("does not auto-route multilingual Kokoro on Intel macOS (no FluidAudio voice pack)", () => {
-    expect(pickVoiceForLang("es", 0.95, "darwin", "x64")).toBeUndefined();
+  it("routes es/fr/it/pt to multilingual ONNX voices on non-darwin-arm64 (Track B)", () => {
+    // Linux and Windows use ONNX Kokoro with CharsiuG2P for these four languages.
+    for (const platform of ["linux", "win32"] as const) {
+      expect(pickVoiceForLang("es", 0.95, platform)).toBe("es-em_alex");
+      expect(pickVoiceForLang("fr", 0.95, platform)).toBe("fr-ff_siwis");
+      expect(pickVoiceForLang("it", 0.95, platform)).toBe("it-im_nicola");
+      expect(pickVoiceForLang("pt", 0.95, platform)).toBe("pt-pm_alex");
+    }
+    // Intel macOS also uses ONNX path (no FluidAudio arm64 voice pack).
+    expect(pickVoiceForLang("es", 0.95, "darwin", "x64")).toBe("es-em_alex");
+    expect(pickVoiceForLang("fr", 0.95, "darwin", "x64")).toBe("fr-ff_siwis");
+    expect(pickVoiceForLang("it", 0.95, "darwin", "x64")).toBe("it-im_nicola");
+    expect(pickVoiceForLang("pt", 0.95, "darwin", "x64")).toBe("pt-pm_alex");
+  });
+
+  it("routes ONNX-supported langs on Intel macOS; ja/hi/zh without ONNX pack return undefined", () => {
+    // es/fr/it/pt now route via ONNX on Intel macOS too (Track B, #212).
+    expect(pickVoiceForLang("es", 0.95, "darwin", "x64")).toBe("es-em_alex");
+    expect(pickVoiceForLang("fr", 0.95, "darwin", "x64")).toBe("fr-ff_siwis");
+    // ja/hi/zh have no ONNX voice pack — still undefined on Intel macOS.
     expect(pickVoiceForLang("ja", 0.95, "darwin", "x64")).toBeUndefined();
+    expect(pickVoiceForLang("hi", 0.95, "darwin", "x64")).toBeUndefined();
     // en (ONNX Kokoro) and ru (AVSpeech Milena) still route on Intel Macs.
     expect(pickVoiceForLang("en", 0.95, "darwin", "x64")).toBe("en-am_michael");
     expect(pickVoiceForLang("ru", 0.95, "darwin", "x64")).toBe(

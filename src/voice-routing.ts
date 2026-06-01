@@ -14,6 +14,19 @@ const DARWIN_KOKORO_DEFAULTS: Record<string, string> = {
   zh: "zh-zm_yunjian",
 };
 
+/**
+ * ONNX-platform (Linux / Windows / Intel macOS) multilingual defaults.
+ * These mirror the Rust `default_voice_for_lang` in the engine.
+ * es/it/pt are male; fr is the documented brand-rule exception
+ * (Kokoro v1.0 ships no male French voice).
+ */
+const ONNX_KOKORO_DEFAULTS: Record<string, string> = {
+  es: "es-em_alex",
+  fr: "fr-ff_siwis",
+  it: "it-im_nicola",
+  pt: "pt-pm_alex",
+};
+
 /** Map a detected language code to a default voice id. Unknown / low-confidence → undefined. */
 export function pickVoiceForLang(
   code: string | undefined,
@@ -30,10 +43,11 @@ export function pickVoiceForLang(
       // AVSpeech Milena is a macOS system voice (any arch); Vosk elsewhere.
       return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-vosk-m02";
     default:
-      // Multilingual Kokoro voices ship only on darwin-arm64 (FluidAudio ANE).
-      // Intel Macs have no such voice pack, so don't auto-route to ids the
-      // engine can't honour — fall through to the engine default instead.
+      // darwin-arm64: FluidAudio ANE voice pack (full multilingual set).
       if (platform === "darwin" && arch === "arm64") return DARWIN_KOKORO_DEFAULTS[baseCode];
-      return undefined;
+      // ONNX platforms (Linux, Windows, Intel macOS): es/fr/it/pt are supported
+      // via CharsiuG2P + ONNX Kokoro. Other languages (hi, ja, zh, …) have no
+      // ONNX voice pack, so fall through to the engine default (undefined).
+      return ONNX_KOKORO_DEFAULTS[baseCode];
   }
 }
