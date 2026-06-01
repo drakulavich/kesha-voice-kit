@@ -688,7 +688,7 @@ dependencies = [
 [[package]]
 name = "fluidaudio-rs"
 version = "0.14.1"
-source = "git+https://github.com/drakulavich/fluidaudio-rs?rev=ddcb14d9519232fbf01111cd31292680adaa1fcf#ddcb14d9519232fbf01111cd31292680adaa1fcf"
+source = "git+https://github.com/drakulavich/fluidaudio-rs?rev=832d74b3d0057ad2f1fec5bf3b20ea94e253b703#832d74b3d0057ad2f1fec5bf3b20ea94e253b703"
 dependencies = [
  "thiserror 1.0.69",
 ]
