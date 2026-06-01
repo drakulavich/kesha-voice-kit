@@ -166,8 +166,8 @@ const VOICES: &[VoiceSpec] = &[
         lang: "pt-br",
     },
     VoiceSpec {
-        public_id: "zh-zm_yunjian",
-        fluid_id: "zm_yunjian",
+        public_id: "zh-zm_050",
+        fluid_id: "zm_050",
         lang: "zh",
     },
     VoiceSpec {
@@ -343,7 +343,7 @@ mod tests {
         assert!(voices.contains(&"en-af_heart".to_string()));
         assert!(voices.contains(&"es-em_alex".to_string()));
         assert!(voices.contains(&"ja-jm_kumo".to_string()));
-        assert!(voices.contains(&"zh-zm_yunjian".to_string()));
+        assert!(voices.contains(&"zh-zm_050".to_string()));
     }
 
     #[test]
@@ -379,11 +379,8 @@ mod tests {
         );
         // zh (Han) is now SUPPORTED via FluidAudio 0.14.8's Mandarin KokoroAne
         // variant (#492) — native-script Chinese must NOT be flagged.
-        assert_eq!(
-            unsupported_native_script("你好我叫凯沙", "zm_yunjian"),
-            None
-        );
-        assert_eq!(unsupported_native_script("\u{20000}", "zm_yunjian"), None);
+        assert_eq!(unsupported_native_script("你好我叫凯沙", "zm_050"), None);
+        assert_eq!(unsupported_native_script("\u{20000}", "zm_050"), None);
     }
 
     #[test]
@@ -398,7 +395,7 @@ mod tests {
             None
         );
         assert_eq!(
-            unsupported_native_script("Ni hao! Wo jiao Kesha.", "zm_yunjian"),
+            unsupported_native_script("Ni hao! Wo jiao Kesha.", "zm_050"),
             None
         );
     }
@@ -433,7 +430,7 @@ mod tests {
             );
         }
         // zh (Han) now passes — supported via the Mandarin KokoroAne variant (#492).
-        ensure_script_supported("zm_yunjian", "你好").expect("zh native ok");
+        ensure_script_supported("zm_050", "你好").expect("zh native ok");
         // Romanized + Latin-script voices pass.
         ensure_script_supported("hm_omega", "Namaste").expect("romanized hi ok");
         ensure_script_supported("em_alex", "¡Hola!").expect("latin es ok");
