@@ -6,12 +6,6 @@
 //! the 8 encoder K/V stay constant). Output IPA is remapped into Kokoro's
 //! phoneme inventory (see [`remap`]). IO contract from #185 §3.
 //!
-// The decode engine is complete and fully exercised by the gated lib test
-// (`CHARSIU_ONNX`). The CLI `say`/g2p caller lands in the next Track-B task, so
-// the public surface reads as dead code to the `bin` target until then; allow it
-// module-wide rather than scattering per-item suppressions.
-#![allow(dead_code)]
-
 use std::path::Path;
 
 use anyhow::Result;

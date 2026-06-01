@@ -3,9 +3,6 @@
 //! Supports es (Spanish), fr (French), it (Italian), pt (Portuguese).
 //! For any other language (including en) the text is returned unchanged —
 //! English normalization is handled upstream in `tts::en`.
-// The CLI g2p caller lands in a later task; allow dead code until then.
-#![allow(dead_code)]
-
 pub(crate) mod acronyms;
 pub(crate) mod numbers;
 

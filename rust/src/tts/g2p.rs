@@ -1,16 +1,17 @@
 //! Grapheme-to-phoneme dispatch.
 //!
-//! Post #213: only English uses our G2P (misaki-rs embedded lexicon + POS).
-//! Russian routes through Vosk's internal G2P inside `tts::vosk`. Other
-//! languages are not supported by the on-disk engines we ship today.
-//! CharsiuG2P (ONNX ByT5-tiny) and espeak-ng (subprocess) were both removed
-//! in PR #213 — see the spec for the migration trail.
+//! Post #213: English uses our G2P (misaki-rs embedded lexicon + POS).
+//! Russian routes through Vosk's internal G2P inside `tts::vosk`.
+//! Romance languages (es/fr/it/pt) route through CharsiuG2P (ONNX ByT5-tiny)
+//! after text normalisation (#212).
 
 use anyhow::Result;
 
 /// Convert `text` to IPA for the given espeak-style language code.
-/// Only English is supported; everything else errors with a pointer to the
-/// engine-specific G2P (Russian → use a `ru-vosk-*` voice; others → not yet).
+///
+/// - `en`/`en-us`/`en-gb`/`en-uk` → misaki-rs
+/// - `es`/`fr`/`it`/`pt` → normalize → CharsiuG2P (byt5-tiny ONNX)
+/// - `ru` and others → error with a pointer to the engine-specific G2P
 pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
     let text_chars = text.chars().count();
     if text.trim().is_empty() {
@@ -18,6 +19,28 @@ pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
         return Ok(String::new());
     }
     let lower = lang.to_ascii_lowercase();
+
+    // Romance languages: normalize then CharsiuG2P (ONNX ByT5-tiny, #212).
+    if matches!(lower.as_str(), "es" | "fr" | "it" | "pt") {
+        crate::dtrace!("g2p::route lang={lang} backend=charsiu text_chars={text_chars}");
+        let normalized = crate::tts::normalize::normalize(text, &lower);
+        let dir = crate::models::cache_dir().join("models/g2p/byt5-tiny");
+        let required = [
+            "encoder_model.onnx",
+            "decoder_model.onnx",
+            "decoder_with_past_model.onnx",
+        ];
+        for file in &required {
+            if !dir.join(file).exists() {
+                anyhow::bail!("G2P model not installed. Run `kesha install --tts` to download.");
+            }
+        }
+        let mut g = crate::tts::charsiu::Charsiu::load(&dir)?;
+        let ipa = g.to_ipa(&normalized, &lower)?;
+        crate::dtrace!("g2p::result ipa_chars={}", ipa.chars().count());
+        return Ok(ipa);
+    }
+
     let misaki_lang = match lower.as_str() {
         "en" | "en-us" => misaki_rs::Language::EnglishUS,
         "en-gb" | "en-uk" => misaki_rs::Language::EnglishGB,
@@ -95,13 +118,24 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_language_errors_with_pointer() {
-        let err = text_to_ipa("bonjour", "fr").unwrap_err().to_string();
-        assert!(err.contains("fr"), "msg: {err}");
-        assert!(
-            err.contains("212") || err.contains("supported"),
-            "msg: {err}"
-        );
+    fn romance_langs_route_to_charsiu_not_212_bail() {
+        for lang in ["es", "fr", "it", "pt"] {
+            match text_to_ipa("hola", lang) {
+                Ok(ipa) => assert!(!ipa.is_empty(), "{lang}: empty IPA"), // model present (dev)
+                Err(e) => {
+                    // model absent (CI)
+                    let m = e.to_string();
+                    assert!(
+                        m.contains("install") || m.contains("G2P"),
+                        "{lang}: unexpected err: {m}"
+                    );
+                    assert!(
+                        !m.contains("not supported in this build") && !m.contains("212"),
+                        "{lang}: still bails to #212: {m}"
+                    );
+                }
+            }
+        }
     }
 
     /// Locks the letter-spell fallback behavior we ship in v1.4.x — without
