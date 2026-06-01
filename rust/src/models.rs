@@ -119,6 +119,31 @@ const LANG_ID_FILES: &[ModelFile] = &[
     },
 ];
 
+/// TTS languages installable on THIS build, in maintainer-curated order.
+/// Source of truth for `kesha-engine install --tts <lang>` validation and the
+/// `tts.languages` capabilities rows. `es/fr/it/pt` exist on both the ONNX
+/// (CharsiuG2P) and darwin ANE builds; `hi/ja/zh` exist only on the ANE build.
+/// `macos-*` AVSpeech is NOT listed — it needs no install.
+#[cfg(feature = "tts")]
+pub fn tts_languages() -> Vec<&'static str> {
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    {
+        vec!["en", "es", "fr", "hi", "it", "ja", "pt", "zh", "ru"]
+    }
+    #[cfg(not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )))]
+    {
+        vec!["en", "es", "fr", "it", "pt", "ru"]
+    }
+}
+
 #[cfg(feature = "tts")]
 pub fn kokoro_manifest() -> Vec<ModelFile> {
     #[cfg(all(
@@ -1039,6 +1064,44 @@ mod tts_tests {
                     std::env::remove_var(self.key);
                 },
             }
+        }
+    }
+
+    #[test]
+    fn tts_languages_includes_en_and_ru_everywhere() {
+        let langs = tts_languages();
+        assert!(langs.contains(&"en"), "en missing: {langs:?}");
+        assert!(langs.contains(&"ru"), "ru missing: {langs:?}");
+        for l in ["es", "fr", "it", "pt"] {
+            assert!(langs.contains(&l), "{l} missing: {langs:?}");
+        }
+    }
+
+    #[test]
+    fn tts_languages_gates_ane_only_langs() {
+        let langs = tts_languages();
+        let ane_only = ["hi", "ja", "zh"];
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        for l in ane_only {
+            assert!(
+                langs.contains(&l),
+                "{l} should be present on system_kokoro build"
+            );
+        }
+        #[cfg(not(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        )))]
+        for l in ane_only {
+            assert!(
+                !langs.contains(&l),
+                "{l} must NOT be present on the ONNX build"
+            );
         }
     }
 }
