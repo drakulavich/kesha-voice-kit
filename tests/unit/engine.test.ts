@@ -11,6 +11,7 @@ import {
   transcribeEngine,
   transcribeEngineWithSegments,
 } from "../../src/engine";
+import type { EngineCapabilities } from "../../src/engine";
 
 function fakeEngine(features: string[]): string {
   const dir = mkdtempSync(join(tmpdir(), "kesha-engine-test-"));
@@ -250,5 +251,14 @@ describe("spawnStdioWithDebugFd", () => {
     // padding array. Legitimate users never have an fd this high.
     process.env.KESHA_DEBUG_FD = "1000000";
     expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
+  });
+});
+
+describe("EngineCapabilities tts field", () => {
+  test("typed tts.languages round-trips from JSON", () => {
+    const json = `{"protocolVersion":3,"backend":"onnx","features":["tts"],"tts":{"languages":[{"code":"en","engines":["kokoro"]},{"code":"ru","engines":["vosk"]}]}}`;
+    const caps = JSON.parse(json) as EngineCapabilities;
+    expect(caps.tts?.languages.map((l) => l.code)).toEqual(["en", "ru"]);
+    expect(caps.tts?.languages[0].engines).toEqual(["kokoro"]);
   });
 });

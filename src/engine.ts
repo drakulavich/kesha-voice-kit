@@ -340,10 +340,16 @@ export async function detectTextLanguageEngine(
   return parseLangResult(stdout);
 }
 
+export interface TtsLanguageCapability {
+  code: string;
+  engines: string[];
+}
+
 export interface EngineCapabilities {
   protocolVersion: number;
   backend: string;
   features: string[];
+  tts?: { languages: TtsLanguageCapability[] };
 }
 
 let cachedEngineCapabilities:
