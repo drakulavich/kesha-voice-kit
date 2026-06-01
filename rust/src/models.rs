@@ -990,6 +990,12 @@ mod tts_tests {
             // af_heart: FluidAudio auto-provides it into the English ANE dir.
             // zh-*: the Mandarin KokoroAne variant fetches its own ANE-zh bundle
             // (nested voices/) on first synth, so kesha does not stage it (#492).
+            // Both are first-synth FluidAudio-owned downloads — the SAME class as
+            // the English Kokoro model graph + af_heart, which `download_tts`
+            // deliberately leaves to FluidAudio (see the `kokoro_manifest()` is
+            // empty note in `download_tts`). Pre-staging zh here is impossible
+            // (FluidAudio owns the nested ANE-zh layout) and would be inconsistent
+            // with how the en model graph already loads.
             if bare == "af_heart" || v.starts_with("zh-") {
                 continue;
             }

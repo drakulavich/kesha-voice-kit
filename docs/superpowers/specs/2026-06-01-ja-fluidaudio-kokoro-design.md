@@ -151,3 +151,16 @@ in-engine — the part that was hard on the ONNX CharsiuG2P path (tone letters w
   clean, hi 1 remap rule) — they are not reachable via FluidAudio 0.14.8.
 
 Linkage stays `Refs #492` (ships zh; ja/hi remain).
+
+## Correction (2026-06-01): zh model staging — first-synth download is the norm
+
+The B5 "Model assets" item above aspired to pre-fetch under `kesha install --tts` and
+"never a surprise download at synth time." Implementation reality: the FluidAudio
+`system_kokoro` path **already** leaves its model graph + `af_heart` to a first-synth,
+FluidAudio-owned download (`models.rs::download_tts` notes `kokoro_manifest()` is empty for
+this path). The Mandarin `.mandarin` variant fetches its **nested** `ANE-zh/` bundle the same
+way; kesha cannot pre-stage it (FluidAudio owns that layout), and pre-fetching a large
+Mandarin bundle at install for users who never use zh would be worse. So zh is **consistent
+with the existing first-synth model download** for this path, not a new rule violation
+(Greptile #516 P1). A general "warm all TTS models at install" is a separate possible
+enhancement (would also pre-fetch the en model graph), out of scope here.
