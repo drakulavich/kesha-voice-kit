@@ -123,9 +123,8 @@ export async function performInstall(
   diarize = false,
   plan = false,
 ) {
-  const tts = ttsLangs.length > 0;
   if (plan) {
-    log.info(await renderInstallPlan({ noCache, backend, tts, ttsLangs, vad, diarize }));
+    log.info(await renderInstallPlan({ noCache, backend, ttsLangs, vad, diarize }));
     return;
   }
 
@@ -138,7 +137,7 @@ export async function performInstall(
       command: "install",
       backend: backend ?? "auto",
       noCache,
-      tts,
+      tts: ttsLangs.length > 0,
       vad,
       diarize,
     });

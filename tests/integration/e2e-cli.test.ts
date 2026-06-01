@@ -169,7 +169,7 @@ describe("e2e-cli", () => {
     expect(stdout).toContain("Kesha init");
     expect(stdout).toContain("Text-to-speech");
     expect(stdout).toContain("Kesha install plan");
-    expect(stdout).toContain("Run: kesha install --tts --vad");
+    expect(stdout).toContain("Run: kesha install --tts en --vad");
     expect(stderr).not.toContain("fake engine should not have been invoked");
   });
 

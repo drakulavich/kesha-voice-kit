@@ -782,7 +782,7 @@ describe("CLI contracts", () => {
       stdoutContains: [
         "Kesha install plan",
         "Expected Kesha-managed network for this run:",
-        "Run: kesha install --tts",
+        "Run: kesha install --tts en",
       ],
       stderrNotContains: ["fake engine should not have been invoked"],
     });
@@ -793,7 +793,7 @@ describe("CLI contracts", () => {
         "Kesha init",
         "Nothing downloads until you confirm",
         "Kesha install plan",
-        "Run: kesha install --tts --vad",
+        "Run: kesha install --tts en --vad",
       ],
       stderrNotContains: ["fake engine should not have been invoked"],
     });

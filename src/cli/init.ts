@@ -193,7 +193,6 @@ async function printPlan(selection: InitSelection): Promise<void> {
     await renderInstallPlan({
       noCache: selection.noCache,
       backend: selection.backend,
-      tts: selection.ttsLangs.length > 0,
       ttsLangs: selection.ttsLangs,
       vad: selection.vad,
       diarize: selection.diarize,

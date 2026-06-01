@@ -27,7 +27,7 @@ describe("renderInstallPlan", () => {
       process.env.KESHA_CACHE_DIR = join(dir, "cache");
       process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
 
-      const output = await renderInstallPlan({ tts: true });
+      const output = await renderInstallPlan({ ttsLangs: ["en", "ru"] });
 
       expect(output).toContain("Kesha install plan");
       expect(output).toContain("ASR Parakeet TDT v3");
@@ -36,13 +36,13 @@ describe("renderInstallPlan", () => {
       expect(output).toContain("Cold-cache Kesha-managed download:");
       expect(output).toContain("Expected Kesha-managed network for this run:");
       expect(output).toContain("No files are downloaded or changed by --plan.");
-      expect(output).toContain("Run: kesha install --tts");
+      expect(output).toContain("Run: kesha install --tts en ru");
       if (process.platform === "darwin" && process.arch === "arm64") {
         expect(output).toContain("Warm-ups:");
-        expect(output).toContain("TTS Kokoro EN: FluidAudio CoreML in-engine");
+        expect(output).toContain("TTS Kokoro (ANE): FluidAudio CoreML in-engine");
         expect(output).toContain(".cache/fluidaudio/Models/kokoro");
         expect(output).toContain("outside Kesha's pinned model cache");
-        expect(output).not.toContain("TTS Kokoro EN: 0 B");
+        expect(output).not.toContain("TTS Kokoro (ANE): 0 B");
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -77,15 +77,47 @@ describe("renderInstallPlan", () => {
       process.env.KESHA_CACHE_DIR = join(dir, "cache");
       process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
 
-      const output = await renderInstallPlan({ tts: true });
+      const output = await renderInstallPlan({ ttsLangs: ["en", "es", "fr", "it", "pt"] });
 
       // G2P CharsiuG2P component present in plan
       expect(output).toContain("G2P CharsiuG2P byt5-tiny");
-      expect(output).toContain("multilingual grapheme-to-phoneme for es/fr/it/pt");
+      expect(output).toContain("multilingual G2P for es/fr/it/pt");
 
       // Kokoro component covers multilingual voices
-      expect(output).toContain("TTS Kokoro EN/ES/FR/IT/PT");
-      expect(output).toContain("multilingual es-*/fr-*/it-*/pt-*");
+      expect(output).toContain("TTS Kokoro graph + voices");
+      expect(output).toContain("voices for en, es, fr, it, pt");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("plan with --tts en omits Vosk RU", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-tts-en-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+
+      const out = await renderInstallPlan({ ttsLangs: ["en"] });
+      expect(out).toContain("Kokoro");
+      expect(out).not.toContain("Vosk RU");
+      expect(out).toContain("--tts en");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("plan with --tts ru omits Kokoro graph component", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-tts-ru-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+
+      const out = await renderInstallPlan({ ttsLangs: ["ru"] });
+      expect(out).toContain("Vosk RU");
+      expect(out).not.toContain("Kokoro");
+      expect(out).toContain("--tts ru");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
