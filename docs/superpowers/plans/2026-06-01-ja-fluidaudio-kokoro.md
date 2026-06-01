@@ -386,3 +386,34 @@ Use `Refs #492` (NOT `Closes` — hi/zh remain). Add the `WIP` label on start; a
 - **Spec coverage:** fork bump (A1) ✓, variant-by-language (A2) ✓, FFI thread (A3) ✓, `--rate` preserved (A2/A4 Step 2) ✓, rev bump (B1) ✓, lang→init (B2) ✓, relax gate keep hi/zh (B3) ✓, male ja default (B4) ✓, assets via install (B5 Step 1 note) ✓, tests/docs (B5) ✓, Refs-not-Closes (B6) ✓.
 - **Build-discovery steps** (A1 Step 3, A2 Step 3) are explicitly "build → read errors → adapt" because the exact 0.14.8 `KokoroAneManager` API can only be confirmed against the compiler; the variant case names (`.english`/`.spanish`/`.japanese`) were observed in the 0.14.8 source but must compile.
 - **hi/zh** intentionally untouched (still fail-fast) — out of scope per spec.
+
+---
+
+## REVISION (2026-06-01): pivoted ja → zh (spike misread corrected)
+
+FluidAudio 0.14.8 `KokoroAneVariant` is **`english` + `mandarin` only** (verified in the
+resolved checkout) — there is no `japanese`/`spanish` variant. This effort therefore ships
+**Chinese (zh)**, not Japanese. The task structure below is unchanged; the *specifics* change:
+
+- **A1** — done (0.14.8 bump committed; builds clean, API-compatible — no bridge break).
+- **A2 (corrected)** — bridge variant map is simply:
+  ```swift
+  private static func kokoroVariant(for lang: String) -> KokoroAneVariant {
+      switch lang.lowercased().split(separator: "-").first.map(String.init) ?? "" {
+      case "zh": return .mandarin
+      default:   return .english   // en + Latin-script es/fr/it/pt (already work)
+      }
+  }
+  ```
+  (No `.spanish`/`.japanese` — they don't exist in 0.14.8.)
+- **A3** — unchanged (thread `lang` through `init_kokoro` FFI).
+- **A4** — smoke-test **Mandarin** (你好) with a zh voice + `lang="zh"`, not Japanese.
+- **B2** — unchanged (pass voice lang to `init_kokoro`).
+- **B3 (corrected)** — drop the **`zh`** arm from `unsupported_native_script`; **keep `hi`
+  AND `ja`** fail-fast (neither has a 0.14.8 variant).
+- **B4 (corrected)** — zh default voice **`zh-zm_yunjian`** (male; the `.mandarin` variant's
+  own default `zf_001` is female — override per brand rule). Verify `zm_yunjian` ships in the
+  `ANE-zh/` pack.
+- **B5/B6** — Mandarin round-trip + audio QC; docs say zh supported, hi/ja still fail-fast.
+
+`ja`/`hi` are deferred to a separate ONNX CharsiuG2P effort. Linkage `Refs #492`.
