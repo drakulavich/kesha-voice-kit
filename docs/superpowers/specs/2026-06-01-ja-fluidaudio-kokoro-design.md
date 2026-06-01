@@ -124,3 +124,30 @@ Two PRs:
 - Whether multiple per-variant `KokoroAneManager` instances coexist cleanly (memory/ANE), or a
   single manager must be re-initialized on variant switch.
 - Japanese asset download size/source and how it fits `kesha install --tts`.
+
+---
+
+## REVISION (2026-06-01): pivoted ja → zh
+
+**Correction:** the brainstorm spike misread the FluidAudio source — it conflated
+`KokoroAneVariant` with unrelated ASR/G2P language enums. The **resolved FluidAudio
+0.14.8** `KokoroAneVariant` has exactly two cases: **`english` and `mandarin` (zh)** —
+**no `japanese`, no `spanish`**. Verified against `.build/checkouts/FluidAudio/.../KokoroAne/KokoroAneConstants.swift`.
+
+**Impact:** this FluidAudio-0.14.8 effort ships **Chinese (zh)**, not Japanese. The
+`.mandarin` variant is fully functional (jieba + g2pw + bopomofo + erhua + tone sandhi +
+pinyin dict; `ANE-zh/` bundle; default voice `zf_001`). FluidAudio handles Mandarin tones
+in-engine — the part that was hard on the ONNX CharsiuG2P path (tone letters were OOV).
+
+**Corrected design (supersedes the ja-specific details above):**
+- Bridge variant map: **`zh → .mandarin`, everything else → `.english`** (en plus the
+  Latin-script es/fr/it/pt, which already synthesize acceptably through the English G2P).
+  No spanish/japanese variant exists to select.
+- kesha script gate: **drop the `zh` (Han) arm**; **keep `hi` (Devanagari) AND `ja`
+  (kana/kanji) fail-fast** — neither has a FluidAudio 0.14.8 KokoroAne variant.
+- zh default voice: **`zh-zm_yunjian`** (male, per brand rule) — overrides the variant's
+  `zf_001` (female) default. Verify `zm_yunjian` ships in the `ANE-zh/` pack during impl.
+- `ja` and `hi` are deferred to a separate **ONNX CharsiuG2P** effort (spike: ja OOV=0
+  clean, hi 1 remap rule) — they are not reachable via FluidAudio 0.14.8.
+
+Linkage stays `Refs #492` (ships zh; ja/hi remain).
