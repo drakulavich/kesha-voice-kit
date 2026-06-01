@@ -215,7 +215,7 @@ export const installCommand = defineCommand({
     const backend = resolveBackendFlag(args.coreml, args.onnx);
     const positionals = (args._ ?? []).map(String);
     const caps = await getEngineCapabilities();
-    const supported = caps?.tts?.languages.map((l) => l.code) ?? undefined;
+    const supported = caps?.tts?.languages.map((l) => l.code);
     let ttsLangs: string[];
     try {
       ttsLangs = resolveTtsLangs({ tts: args.tts === true, positionals }, supported);

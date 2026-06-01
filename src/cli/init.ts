@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { multiselect, isCancel } from "@clack/prompts";
+import { multiselect, isCancel, cancel } from "@clack/prompts";
 import { renderInstallPlan } from "../install-plan";
 import { log } from "../log";
 import { getEngineCapabilities } from "../engine";
@@ -37,7 +37,10 @@ async function promptTtsLangs(preselect: string[]): Promise<string[]> {
     initialValues: preselect.filter((l) => supported.includes(l)),
     required: false,
   });
-  if (isCancel(selected)) return [];
+  if (isCancel(selected)) {
+    cancel("Init cancelled.");
+    process.exit(0);
+  }
   return selected as string[];
 }
 
