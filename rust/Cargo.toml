@@ -76,7 +76,7 @@ ndarray = { version = "0.17" }
 # G2P), else `.english` (#492). Retains the `--rate` model-native speed (#475).
 # Cargo forbids `branch` + `rev` together, so we pin by `rev`; re-point to
 # `branch = "forked-main"` once fork PR #3 merges to the fork's main.
-fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "1a20fb37e5f402f6809986b727475a89bf896da2", optional = true }
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "dd9387f1ae79ad355e5197ee1bb880e7dc782409", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
