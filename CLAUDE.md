@@ -411,9 +411,13 @@ const text = await transcribe("audio.ogg");
 
 Text-to-speech via three engines selected by voice id prefix:
 `en-*` → Kokoro-82M (24 kHz), `ru-*` → Vosk-TTS (22.05 kHz), `macos-*` → AVSpeech Swift sidecar.
-Install Kokoro + Vosk explicitly with `kesha install --tts` (~990 MB); `macos-*` voices need no
-model download. Models are NEVER auto-downloaded — `kesha say` fails loudly with a
-`kesha install --tts` hint when models are missing. Default voices MUST be male (see DEFAULT TTS
+Install TTS models explicitly with `kesha install --tts [<langs>...]` — bare `--tts` installs
+English only (~326 MB); `kesha install --tts en ru` adds Russian (~937 MB); `es/fr/it/pt` are
+available on all platforms, `hi/ja/zh` are darwin-arm64 only (FluidAudio ANE). `macos-*` voices
+need no model download. Re-running is additive (never prunes). `kesha init` presents a
+multi-select of available TTS languages with English pre-checked. Models are NEVER
+auto-downloaded — `kesha say` fails loudly with a `kesha install --tts` hint when models are
+missing. Default voices MUST be male (see DEFAULT TTS
 VOICES MUST BE MALE above). `kesha say` writes WAV mono f32 to stdout unless `--out` is given;
 stderr is progress/errors only. Auto-routing for an omitted `--voice` is in `src/cli/say.ts::pickVoiceForLang`.
 

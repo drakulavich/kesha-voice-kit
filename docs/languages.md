@@ -40,6 +40,16 @@ NVIDIA Parakeet TDT 0.6B v3. Language is auto-detected; `--lang <code>` warns if
 
 Voice auto-picks from the text's language; pass `--voice <id>` to choose. Run `kesha say --list-voices` to see what's installed. Full voice catalogue and SSML details: [tts.md](tts.md).
 
+TTS models are installed per-language via `kesha install --tts <codes>`. Bare `--tts` defaults to English only. Re-running is additive. `kesha init` presents a multi-select of available languages.
+
+```bash
+kesha install --tts              # English only (~326 MB)
+kesha install --tts en ru        # add Russian (~937 MB)
+kesha install --tts es fr it pt  # Romance languages (all platforms)
+```
+
+Languages marked **darwin-arm64** below require a darwin-arm64 engine build (FluidAudio ANE); requesting them on other platforms is a hard error.
+
 | # | Language | Code | | Engine (voice prefix) | Platform | Notes |
 |---:|----------|------|---|------------------------|----------|-------|
 | 1 | English | `en` | 🇬🇧 | Kokoro (`en-*`) | all | default `en-am_michael` |
@@ -53,7 +63,7 @@ Voice auto-picks from the text's language; pass `--voice <id>` to choose. Run `k
 | 9 | Chinese | `zh` | 🇨🇳 | Kokoro (`zh-*`) | darwin-arm64 | **pinyin (Latin) input only** — native Han is rejected ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
 | — | *(system voices)* | — | 🍎 | AVSpeech (`macos-*`) | macOS | any of the 180+ voices already installed on your Mac; zero model download |
 
-On Linux/Windows, text-to-speech covers English (Kokoro ONNX) and Russian (Vosk-TTS); the FluidAudio Kokoro multilingual voices above are darwin-arm64 only.
+On Linux/Windows, text-to-speech covers English (Kokoro ONNX), Russian (Vosk-TTS), and the Romance languages es/fr/it/pt (CharsiuG2P ONNX). The FluidAudio Kokoro voices for hi/ja/zh are darwin-arm64 only. `macos-*` AVSpeech voices need no install.
 
 ## Audio language detection (107)
 

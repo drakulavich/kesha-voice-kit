@@ -3,7 +3,9 @@
 Kesha speaks back via Kokoro-82M (English plus selected multilingual voices on Apple Silicon) and Vosk-TTS (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Vosk. Pass `--voice` to override. On darwin-arm64 release builds, Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path. FluidAudio keeps its CoreML Kokoro cache at `~/.cache/fluidaudio/Models/kokoro`; those files are managed by FluidAudio, not Kesha's pinned model downloader.
 
 ```bash
-kesha install --tts                 # TTS models, opt-in (Darwin Kokoro uses FluidAudio cache)
+kesha install --tts                 # English only (~326 MB); Darwin Kokoro uses FluidAudio cache
+kesha install --tts en ru           # English + Russian (~326 MB + ~937 MB)
+kesha install --tts es fr it pt     # Romance languages (all platforms)
 kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav    # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
 echo "long text" | kesha say > reply.wav
@@ -16,6 +18,36 @@ kesha say --list-voices
 Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → engine default (`en-am_michael`). A `--lang` whose language has no mapped male voice (e.g. French) falls to the engine default rather than re-detecting.
 
 Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Vosk). OGG/Opus and MP3 are tracked in follow-up issues.
+
+## Installing TTS languages
+
+`kesha install --tts [<lang>...]` installs TTS model packs for the requested languages. Bare `--tts` defaults to English only. Re-running is additive — already-cached packs are skipped, nothing is pruned.
+
+```bash
+kesha install --tts              # English only (~326 MB)
+kesha install --tts en ru        # English + Russian (~326 MB + ~937 MB)
+kesha install --tts es fr it pt  # Romance languages (shared ~30 MB CharsiuG2P ONNX pack + voice files)
+```
+
+**Platform availability:**
+
+| Language | Code | All builds | darwin-arm64 only |
+|----------|------|:----------:|:-----------------:|
+| English | `en` | ✅ | |
+| Spanish | `es` | ✅ | |
+| French | `fr` | ✅ | |
+| Italian | `it` | ✅ | |
+| Portuguese | `pt` | ✅ | |
+| Russian | `ru` | ✅ | |
+| Hindi | `hi` | | ✅ |
+| Japanese | `ja` | | ✅ |
+| Chinese | `zh` | | ✅ |
+
+`macos-*` AVSpeech voices require no install and are not listed here — they use voices already on your Mac.
+
+Requesting a language unavailable on the current platform (e.g. `hi` on Linux) is a hard error — nothing is downloaded.
+
+`kesha init` presents a multi-select checkbox of the languages available on your platform, with English pre-checked. Selecting none skips TTS entirely; Ctrl-C aborts init.
 
 Grapheme-to-phoneme:
 - **Kokoro on darwin-arm64** uses FluidAudio CoreML/ANE for English, Spanish, Hindi, Italian, Japanese, Mandarin Chinese, Brazilian Portuguese, and the single native French Kokoro voice.
