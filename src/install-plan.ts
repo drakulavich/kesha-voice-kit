@@ -62,9 +62,24 @@ const VAD_FILES: PlanFile[] = [
   { relPath: "models/silero-vad/silero_vad.onnx", sizeBytes: 2_327_524 },
 ];
 
+// klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0 — see NOTICES.md).
+// 3 files enabling multilingual G2P for es/fr/it/pt Kokoro voices (#212).
+const G2P_CHARSIU_FILES: PlanFile[] = [
+  { relPath: "models/g2p/byt5-tiny/encoder_model.onnx", sizeBytes: 12_478_704 },
+  { relPath: "models/g2p/byt5-tiny/decoder_model.onnx", sizeBytes: 11_983_268 },
+  { relPath: "models/g2p/byt5-tiny/decoder_with_past_model.onnx", sizeBytes: 5_427_260 },
+];
+
 const KOKORO_FILES: PlanFile[] = [
   { relPath: "models/kokoro-82m/model.onnx", sizeBytes: 325_532_387 },
   { relPath: "models/kokoro-82m/voices/am_michael.bin", sizeBytes: 522_240 },
+  // Multilingual voice packs for es/fr/it/pt (#212).
+  // em_alex (es, male), ff_siwis (fr, female — only French voice in Kokoro v1.0),
+  // im_nicola (it, male), pm_alex (pt, male).
+  { relPath: "models/kokoro-82m/voices/em_alex.bin", sizeBytes: 522_240 },
+  { relPath: "models/kokoro-82m/voices/ff_siwis.bin", sizeBytes: 522_240 },
+  { relPath: "models/kokoro-82m/voices/im_nicola.bin", sizeBytes: 522_240 },
+  { relPath: "models/kokoro-82m/voices/pm_alex.bin", sizeBytes: 522_240 },
 ];
 
 const VOSK_RU_FILES: PlanFile[] = [
@@ -245,11 +260,21 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
       components.push(
         bundleComponent(
           cacheRoot,
-          "TTS Kokoro EN",
+          "TTS Kokoro EN/ES/FR/IT/PT",
           "model cache",
           KOKORO_FILES,
           noCache,
-          "English en-* voices",
+          "English en-* voices + multilingual es-*/fr-*/it-*/pt-* voices",
+        ),
+      );
+      components.push(
+        bundleComponent(
+          cacheRoot,
+          "G2P CharsiuG2P byt5-tiny",
+          "model cache",
+          G2P_CHARSIU_FILES,
+          noCache,
+          "multilingual grapheme-to-phoneme for es/fr/it/pt Kokoro voices (CC-BY 4.0)",
         ),
       );
       components.push(

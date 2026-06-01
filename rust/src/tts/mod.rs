@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+pub mod charsiu;
 pub mod en;
 pub mod encode;
 #[cfg(all(
@@ -18,6 +19,7 @@ pub mod encode;
 pub mod fluid_kokoro;
 pub mod g2p;
 pub mod kokoro;
+pub mod normalize;
 pub mod ru;
 pub mod say;
 pub mod sessions;
