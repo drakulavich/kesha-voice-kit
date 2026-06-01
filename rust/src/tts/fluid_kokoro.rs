@@ -166,8 +166,8 @@ const VOICES: &[VoiceSpec] = &[
         lang: "pt-br",
     },
     VoiceSpec {
-        public_id: "zh-zm_yunjian",
-        fluid_id: "zm_yunjian",
+        public_id: "zh-zm_050",
+        fluid_id: "zm_050",
         lang: "zh",
     },
     VoiceSpec {
@@ -204,20 +204,20 @@ fn is_han(c: char) -> bool {
     )
 }
 
-/// FluidAudio's Kokoro G2P only phonemizes **Latin** input; for the non-Latin
-/// languages it ships voices for (hi/ja/zh) native-script text is not converted
-/// to phonemes and synthesizes as noise rather than speech (#492). Returns the
-/// human-facing script name when `text` actually contains characters of the
-/// script `fluid_id`'s language is written in — romanized (Latin) input for the
-/// same voice returns `None` because it works. Latin-script Kokoro languages
-/// (en/es/fr/it/pt) always return `None`.
+/// FluidAudio's Kokoro G2P handles Latin (en/es/fr/it/pt) and, since the
+/// FluidAudio 0.14.8 `.mandarin` KokoroAne variant, Chinese (Han). For the other
+/// non-Latin languages it ships voices for (hi/ja) native-script text is not
+/// converted to phonemes and synthesizes as noise rather than speech (#492).
+/// Returns the human-facing script name when `text` actually contains characters
+/// of the script `fluid_id`'s language is written in — romanized (Latin) input
+/// for the same voice returns `None` because it works.
 fn unsupported_native_script(text: &str, fluid_id: &str) -> Option<&'static str> {
     let any = |f: fn(char) -> bool| text.chars().any(f);
     match lang_for_fluid_id(fluid_id)? {
         "hi" => any(|c| ('\u{0900}'..='\u{097F}').contains(&c)).then_some("Devanagari"),
         "ja" => any(|c| matches!(c, '\u{3040}'..='\u{30FF}') || is_han(c))
             .then_some("Japanese (kana/kanji)"),
-        "zh" => any(is_han).then_some("Chinese (Han)"),
+        // zh (Han) is supported via FluidAudio 0.14.8's Mandarin KokoroAne variant.
         _ => None,
     }
 }
@@ -247,10 +247,13 @@ fn ensure_script_supported(fluid_id: &str, text: &str) -> Result<()> {
 /// would corrupt `kesha say`'s WAV byte stream; the oneshot guard restores fd 1
 /// on return (#259, mirrors the diarize/ASR guard).
 fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> Result<R> {
+    // The voice's language selects the KokoroAne variant in the bridge
+    // (`zh` → Mandarin, else English). Unknown voices default to English.
+    let lang = lang_for_fluid_id(voice_id).unwrap_or("en-us");
     crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
         let audio = FluidAudio::new().context("init FluidAudio bridge")?;
         audio
-            .init_kokoro(voice_id)
+            .init_kokoro(voice_id, lang)
             .context("init FluidAudio Kokoro (downloads the model on first run)")?;
         f(&audio)
     })
@@ -340,7 +343,7 @@ mod tests {
         assert!(voices.contains(&"en-af_heart".to_string()));
         assert!(voices.contains(&"es-em_alex".to_string()));
         assert!(voices.contains(&"ja-jm_kumo".to_string()));
-        assert!(voices.contains(&"zh-zm_yunjian".to_string()));
+        assert!(voices.contains(&"zh-zm_050".to_string()));
     }
 
     #[test]
@@ -374,15 +377,10 @@ mod tests {
             unsupported_native_script("日本語", "jm_kumo"),
             Some("Japanese (kana/kanji)")
         );
-        assert_eq!(
-            unsupported_native_script("你好我叫凯沙", "zm_yunjian"),
-            Some("Chinese (Han)")
-        );
-        // Supplementary-plane CJK (Extension B, U+20000) must also be detected.
-        assert_eq!(
-            unsupported_native_script("\u{20000}", "zm_yunjian"),
-            Some("Chinese (Han)")
-        );
+        // zh (Han) is now SUPPORTED via FluidAudio 0.14.8's Mandarin KokoroAne
+        // variant (#492) — native-script Chinese must NOT be flagged.
+        assert_eq!(unsupported_native_script("你好我叫凯沙", "zm_050"), None);
+        assert_eq!(unsupported_native_script("\u{20000}", "zm_050"), None);
     }
 
     #[test]
@@ -397,7 +395,7 @@ mod tests {
             None
         );
         assert_eq!(
-            unsupported_native_script("Ni hao! Wo jiao Kesha.", "zm_yunjian"),
+            unsupported_native_script("Ni hao! Wo jiao Kesha.", "zm_050"),
             None
         );
     }
@@ -421,11 +419,8 @@ mod tests {
 
     #[test]
     fn ensure_script_supported_bails_with_code_on_native_script() {
-        for (text, voice) in [
-            ("नमस्ते", "hm_omega"),
-            ("こんにちは", "jm_kumo"),
-            ("你好", "zm_yunjian"),
-        ] {
+        // hi/ja native script still bails (no FluidAudio 0.14.8 KokoroAne variant).
+        for (text, voice) in [("नमस्ते", "hm_omega"), ("こんにちは", "jm_kumo")] {
             let err =
                 ensure_script_supported(voice, text).expect_err("should reject native script");
             assert_eq!(
@@ -434,6 +429,8 @@ mod tests {
                 "voice {voice} text {text:?} -> {err}"
             );
         }
+        // zh (Han) now passes — supported via the Mandarin KokoroAne variant (#492).
+        ensure_script_supported("zm_050", "你好").expect("zh native ok");
         // Romanized + Latin-script voices pass.
         ensure_script_supported("hm_omega", "Namaste").expect("romanized hi ok");
         ensure_script_supported("em_alex", "¡Hola!").expect("latin es ok");

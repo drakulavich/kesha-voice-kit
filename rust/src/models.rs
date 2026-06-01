@@ -355,11 +355,13 @@ const ANE_KOKORO_VOICES: &[ModelFile] = &[
         url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/pm_alex.bin",
         sha256: "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
     },
-    ModelFile {
-        rel_path: "zm_yunjian.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/zm_yunjian.bin",
-        sha256: "de48a00bdbf3649f07162269a2b6e0513604389bfac8a2e6c75cb34b323ad6fa",
-    },
+    // re-pinned (#492): removed the flat `zm_yunjian.bin`
+    // (was sha de48a00bdbf3649f07162269a2b6e0513604389bfac8a2e6c75cb34b323ad6fa).
+    // zh (Mandarin) voices are NOT staged here — the FluidAudio 0.14.8 `.mandarin`
+    // KokoroAne variant fetches its own `ANE-zh/` bundle (nested `voices/<id>.bin`)
+    // on first synth, and those ids are numbered (e.g. zm_050), not the
+    // onnx-community names. A flat kesha-staged pack would be unused. See
+    // `tts::fluid_kokoro` zh-* voices.
 ];
 
 /// FluidAudio's Kokoro ANE voice-pack cache directory. NOT under
@@ -985,7 +987,16 @@ mod tts_tests {
                 .split_once('-')
                 .map(|(_, bare)| bare)
                 .unwrap_or(v.as_str());
-            if bare == "af_heart" {
+            // af_heart: FluidAudio auto-provides it into the English ANE dir.
+            // zh-*: the Mandarin KokoroAne variant fetches its own ANE-zh bundle
+            // (nested voices/) on first synth, so kesha does not stage it (#492).
+            // Both are first-synth FluidAudio-owned downloads — the SAME class as
+            // the English Kokoro model graph + af_heart, which `download_tts`
+            // deliberately leaves to FluidAudio (see the `kokoro_manifest()` is
+            // empty note in `download_tts`). Pre-staging zh here is impossible
+            // (FluidAudio owns the nested ANE-zh layout) and would be inconsistent
+            // with how the en model graph already loads.
+            if bare == "af_heart" || v.starts_with("zh-") {
                 continue;
             }
             assert!(

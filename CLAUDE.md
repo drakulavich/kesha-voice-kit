@@ -421,8 +421,15 @@ stderr is progress/errors only. Auto-routing for an omitted `--voice` is in `src
 Spanish, French, Italian, and Portuguese are supported via CharsiuG2P (klebster ONNX export, CC-BY 4.0)
 + a per-language numbers/acronym normalizer (#212). Default voices: `es-em_alex` (LatAm Spanish, male),
 `it-im_nicola` (male), `pt-pm_alex` (male), `fr-ff_siwis` (female — **documented brand-rule exception**:
-Kokoro v1.0 ships no male French voice; revisit when one exists). macOS CoreML (`system_kokoro`/FluidAudio)
-multilingual is a follow-up — those voices currently route through the English G2P.
+Kokoro v1.0 ships no male French voice; revisit when one exists).
+
+**macOS CoreML (`system_kokoro`/FluidAudio) multilingual:** `init_kokoro` selects the
+KokoroAne variant by language (FluidAudio 0.14.8 ships `.english` + `.mandarin`). **Chinese
+(`zh`) is supported natively** (`zh-zm_050`, male; tone-aware Mandarin G2P) — #492. The
+Latin-script langs (es/fr/it/pt) route through the English G2P, which is adequate for them.
+**Hindi (`hi`) and Japanese (`ja`) still fail fast** with `E_SCRIPT_UNSUPPORTED` (no FluidAudio
+KokoroAne variant yet; ja/hi are a future ONNX-CharsiuG2P effort). zh voices are fetched by
+FluidAudio's own `ANE-zh/` bundle, not staged in `models.rs`.
 
 **Castilian Spanish:** select with `--lang es-ES`; `es` / `es-419` / `es-MX` use
 Latin-American (*seseo*). The upstream CharsiuG2P export has no Castilian θ tag (#511

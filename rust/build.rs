@@ -1,10 +1,17 @@
 fn main() {
-    // The `coreml` feature pulls in fluidaudio-rs, which links against the
-    // macOS Swift runtime (libswift_Concurrency.dylib and friends). Without
-    // an explicit rpath the dynamic linker fails at startup with
-    // `Library not loaded: @rpath/libswift_Concurrency.dylib`. /usr/lib/swift
-    // is the standard location on macOS 13+.
-    #[cfg(feature = "coreml")]
+    // The `coreml`, `system_kokoro`, and `system_diarize` features all pull in
+    // fluidaudio-rs, which links against the macOS Swift runtime
+    // (libswift_Concurrency.dylib and friends). Without an explicit rpath the
+    // dynamic linker fails at startup with
+    // `Library not loaded: @rpath/libswift_Concurrency.dylib`. /usr/lib/swift is
+    // the standard location on macOS 13+. CI also sets MACOSX_DEPLOYMENT_TARGET=14.0
+    // to elide the dep, but this rpath keeps local `system_kokoro`/`system_diarize`
+    // builds runnable without that env var.
+    #[cfg(any(
+        feature = "coreml",
+        feature = "system_kokoro",
+        feature = "system_diarize"
+    ))]
     {
         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     }
