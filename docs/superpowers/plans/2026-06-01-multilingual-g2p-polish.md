@@ -61,9 +61,23 @@ Expected θ-bearing IPA for Castilian (e.g. `zapato → θaˈpato`, `cielo → �
 
 Fill in **one** of the two outcomes below, commit this plan edit, then `rm -rf /tmp/castilian-spike /tmp/castilian-spike-venv`.
 
-> **SPIKE FINDING (2026-06-01): _[FILL IN]_**
-> - **Outcome A — native Castilian tag exists:** record the exact tag string (e.g. `<spa-es>`) and a sample θ output. Task 4 uses `CASTILIAN: Castilian = Castilian::Tag("<…>")`.
-> - **Outcome B — no native tag (only `<spa>` → seseo):** record the candidate tags tried and that all produced `s`. Task 4 uses `CASTILIAN: Castilian = Castilian::Degrade`.
+> **SPIKE FINDING (2026-06-01): Outcome B — no native Castilian tag.**
+> Probed `zapato / cielo / gracias / zorro / cinco` through the cached klebster export
+> (reusing the real `decode::greedy` path) under candidate tags `<spa>`, `<spa-es>`,
+> `<spa-me>`, `<spa-latin>`, `<spa-castilian>`, `<spa-ib>`:
+> - `<spa>` / `<spa-es>` / `<spa-me>` → **seseo /s/** (`zapato→sapato`, `cielo→sjelo`,
+>   `zorro→soro`) — identical to LatAm, no θ.
+> - `<spa-latin>` → /s/ with trailing-char hallucination.
+> - `<spa-castilian>` → garbage (`cielo→silian`) — tag unrecognized.
+> - `<spa-ib>` → literal /z/ + French-like ʁ (`zorro→zoʁo`) — also garbage, not θ.
+>
+> **No tag yields θ.** Decision: **`CASTILIAN: Castilian = Castilian::Degrade`** — `es-ES`
+> synthesizes LatAm `<spa>` with a one-time stderr note. Castilian θ deferred (would need
+> a grapheme-driven θ-injection layer — out of scope here, see spec Non-goals). Probe was a
+> throwaway gated unit test, reverted (not committed).
+>
+> _(For reference if a future tag appears — Outcome A would have used
+> `CASTILIAN: Castilian = Castilian::Tag("<…>")`.)_
 
 **Decision gate:** Tasks 4–6 reference `CASTILIAN`. Implement the matching branch; both branches are fully specified in Task 4 so the engineer codes only the one the spike selected, but the other compiles too (no dead code — see Task 4 Step 6).
 
