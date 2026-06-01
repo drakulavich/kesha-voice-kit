@@ -10,22 +10,22 @@ Arguments: `$ARGUMENTS` → optional PR number (defaults to the current branch's
 
 ## Steps
 
-1. Resolve the PR and its current head SHA:
+1. Resolve the PR and its current head SHA (`<PR_N>` is the PR number from `$ARGUMENTS`):
    ```bash
-   gh pr view <N> -R drakulavich/kesha-voice-kit --json number,headRefOid,mergeStateStatus,body,headRefName,closingIssuesReferences
+   gh pr view <PR_N> -R drakulavich/kesha-voice-kit --json number,headRefOid,mergeStateStatus,body,headRefName,closingIssuesReferences
    ```
 
 2. **Gate — refuse to merge if not satisfied:**
-   - CI checks all passing/skipped on the head SHA (`gh pr checks <N>`).
+   - CI checks all passing/skipped on the head SHA (`gh pr checks <PR_N>`).
    - Greptile review `conclusion` is success **on that head SHA** (not a stale pass — see `/await-review`). If P1/P2 findings are open, stop and list them.
    - `mergeStateStatus` is `CLEAN`.
    If any fails, report what's blocking and stop.
 
 3. **Issue linkage:** confirm the PR body/commits contain a `Closes #N` / `Fixes #N` / `Resolves #N` keyword so the issue auto-closes. If the work fully addresses an issue but the keyword is missing, tell the user (don't silently merge a partial link). `Refs #N` is correct for partial work — in that case the issue should stay open.
 
-4. **Merge** (match the repo's convention — squash unless told otherwise):
+4. **Merge** (match the repo's convention — squash unless told otherwise). `--delete-branch` removes the remote feature branch regardless of the repo's auto-delete setting:
    ```bash
-   gh pr merge <N> -R drakulavich/kesha-voice-kit --squash
+   gh pr merge <PR_N> -R drakulavich/kesha-voice-kit --squash --delete-branch
    ```
 
 5. **Clean up the worktree** for the merged branch (from the root checkout):
@@ -33,10 +33,10 @@ Arguments: `$ARGUMENTS` → optional PR number (defaults to the current branch's
    git worktree remove .worktrees/<slug> && git worktree prune
    ```
 
-6. **Verify the issue actually closed** (auto-close can lag for partial links). If it should be closed but isn't:
+6. **Verify the issue actually closed** (auto-close can lag for partial links). If it should be closed but isn't (`<ISSUE_N>` is the issue, `<PR_N>` is the PR that landed it):
    ```bash
-   gh issue view <N> -R drakulavich/kesha-voice-kit --json state
-   gh issue close <N> -R drakulavich/kesha-voice-kit --comment "Landed in #<N>."
+   gh issue view <ISSUE_N> -R drakulavich/kesha-voice-kit --json state
+   gh issue close <ISSUE_N> -R drakulavich/kesha-voice-kit --comment "Landed in #<PR_N>."
    ```
    The `WIP` label is removed automatically on merge; if it lingers, remove it.
 

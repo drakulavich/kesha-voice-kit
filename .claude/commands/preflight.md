@@ -1,7 +1,7 @@
 ---
 description: Run the full pre-push verification gate (bun + rust) per CLAUDE.md's VERIFY BEFORE PUSHING rules.
 argument-hint: "[--all] (force the rust gate even if no rust changed)"
-allowed-tools: Bash(bun test:*), Bash(bunx tsc:*), Bash(make:*), Bash(cd rust && cargo fmt:*), Bash(cd rust && cargo clippy:*), Bash(cd rust && cargo nextest:*), Bash(cd rust && cargo check:*), Bash(git status:*), Bash(git diff:*)
+allowed-tools: Bash(bun test:*), Bash(bunx tsc:*), Bash(make:*), Bash(cd:*), Bash(cargo fmt:*), Bash(cargo clippy:*), Bash(cargo nextest:*), Bash(cargo check:*), Bash(git status:*), Bash(git diff:*)
 ---
 
 Run this repo's mandatory pre-push verification gate and report pass/fail with the actual command output. Do **not** claim success on any failure — surface the failing output verbatim and stop.
