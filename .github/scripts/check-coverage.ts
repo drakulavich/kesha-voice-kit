@@ -126,11 +126,18 @@ function renderSummary(title: string, total: FileCoverage, checked: Array<FileCo
     "",
     `Total line coverage: **${pct(total.linePct)}%** (${total.linesHit}/${total.linesFound})`,
     "",
-    "| File | Lines | Minimum |",
-    "| --- | ---: | ---: |",
-    ...checked.map((file) => `| \`${file.path}\` | ${pct(file.linePct)}% | ${file.min}% |`),
-    "",
   ];
+  // Only render the per-file table when floors are configured; with an empty
+  // minFileLines map `checked` is empty, so skip the header to avoid an
+  // orphaned table in the CI summary.
+  if (checked.length > 0) {
+    rows.push(
+      "| File | Lines | Minimum |",
+      "| --- | ---: | ---: |",
+      ...checked.map((file) => `| \`${file.path}\` | ${pct(file.linePct)}% | ${file.min}% |`),
+      "",
+    );
+  }
   return rows.join("\n");
 }
 
