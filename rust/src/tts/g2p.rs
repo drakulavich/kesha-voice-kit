@@ -23,20 +23,10 @@ pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
     // Romance languages: normalize then CharsiuG2P (ONNX ByT5-tiny, #212).
     if matches!(lower.as_str(), "es" | "fr" | "it" | "pt") {
         crate::dtrace!("g2p::route lang={lang} backend=charsiu text_chars={text_chars}");
-        let normalized = crate::tts::normalize::normalize(text, &lower);
         let dir = crate::models::cache_dir().join("models/g2p/byt5-tiny");
-        let required = [
-            "encoder_model.onnx",
-            "decoder_model.onnx",
-            "decoder_with_past_model.onnx",
-        ];
-        for file in &required {
-            if !dir.join(file).exists() {
-                anyhow::bail!("G2P model not installed. Run `kesha install --tts` to download.");
-            }
-        }
+        check_charsiu_files(&dir)?;
         let mut g = crate::tts::charsiu::Charsiu::load(&dir)?;
-        let ipa = g.to_ipa(&normalized, &lower)?;
+        let ipa = charsiu_ipa(&mut g, text, &lower)?;
         crate::dtrace!("g2p::result ipa_chars={}", ipa.chars().count());
         return Ok(ipa);
     }
@@ -57,6 +47,34 @@ pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
     let ipa = misaki_to_ipa(text, misaki_lang)?;
     crate::dtrace!("g2p::result ipa_chars={}", ipa.chars().count());
     Ok(ipa)
+}
+
+/// Check that the three required Charsiu ONNX files exist in `dir`.
+/// Returns a user-facing error pointing at `kesha install --tts` if any are missing.
+pub(crate) fn check_charsiu_files(dir: &std::path::Path) -> Result<()> {
+    let required = [
+        "encoder_model.onnx",
+        "decoder_model.onnx",
+        "decoder_with_past_model.onnx",
+    ];
+    for file in &required {
+        if !dir.join(file).exists() {
+            anyhow::bail!("G2P model not installed. Run `kesha install --tts` to download.");
+        }
+    }
+    Ok(())
+}
+
+/// Normalize `text` for `lang` then run CharsiuG2P on the already-loaded session.
+/// Shared by the one-shot path (`text_to_ipa`) and the cached loop path
+/// (`CharsiuCache::to_ipa`).
+pub(crate) fn charsiu_ipa(
+    g: &mut crate::tts::charsiu::Charsiu,
+    text: &str,
+    lang: &str,
+) -> Result<String> {
+    let normalized = crate::tts::normalize::normalize(text, lang);
+    g.to_ipa(&normalized, lang)
 }
 
 /// Run misaki-rs and strip the U+200D zero-width joiners it inserts for

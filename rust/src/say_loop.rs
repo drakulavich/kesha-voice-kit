@@ -108,6 +108,11 @@ struct LoopState {
     /// Vosk cache by model directory. The Russian path uses one model dir
     /// today, but keep it map-shaped so adding more languages is a no-op.
     vosk: tts::sessions::VoskCache,
+    /// Cached CharsiuG2P session (three ONNX sessions, ~100 MB). Loaded once
+    /// on the first Romance-language (es/fr/it/pt) request and reused for all
+    /// subsequent ones. Fixes Greptile P1 (#509): previously `text_to_ipa`
+    /// reloaded the three sessions from disk on every request.
+    charsiu: tts::sessions::CharsiuCache,
 }
 
 /// Drive the loop. Returns 0 on clean stdin EOF, 4 on read error.
@@ -119,6 +124,7 @@ pub fn run() -> i32 {
     let mut state = LoopState {
         kokoro: None,
         vosk: tts::sessions::VoskCache::new(),
+        charsiu: tts::sessions::CharsiuCache::new(),
     };
 
     let mut buf: Vec<u8> = Vec::with_capacity(4096);
@@ -257,9 +263,24 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 )
                 .map_err(|e| e.to_string())
             } else {
-                // Non-English Kokoro: legacy G2P + infer_ipa path.
-                let ipa = tts::g2p::text_to_ipa(&req.text, espeak_lang)
-                    .map_err(|e| format!("g2p: {e}"))?;
+                // Non-English Kokoro: G2P + infer_ipa path.
+                // Romance languages (es/fr/it/pt) use the cached CharsiuG2P
+                // session to avoid reloading ~100 MB of ONNX models per request.
+                // All other languages fall through to the one-shot text_to_ipa
+                // path (which will error with a lang-specific hint for ru etc.).
+                let ipa = if matches!(espeak_lang, "es" | "fr" | "it" | "pt") {
+                    state
+                        .charsiu
+                        .to_ipa(
+                            &models::cache_dir().join("models/g2p/byt5-tiny"),
+                            &req.text,
+                            espeak_lang,
+                        )
+                        .map_err(|e| format!("g2p: {e}"))?
+                } else {
+                    tts::g2p::text_to_ipa(&req.text, espeak_lang)
+                        .map_err(|e| format!("g2p: {e}"))?
+                };
                 if ipa.trim().is_empty() {
                     return Err("no phonemes produced for input (empty after G2P)".into());
                 }
@@ -619,6 +640,7 @@ mod tests {
         let mut state = LoopState {
             kokoro: None,
             vosk: tts::sessions::VoskCache::new(),
+            charsiu: tts::sessions::CharsiuCache::new(),
         };
 
         let err = handle(&req, &mut state).unwrap_err();

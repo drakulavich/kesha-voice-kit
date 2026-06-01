@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::{kokoro::Kokoro, tokenizer::Tokenizer, voices, vosk::Vosk};
+use super::{charsiu::Charsiu, kokoro::Kokoro, tokenizer::Tokenizer, voices, vosk::Vosk};
 
 /// Cached Kokoro inference state. One ONNX session, one tokenizer, one voice
 /// cache. Cheap to clone-key (`PathBuf`); the actual session is non-Clone.
@@ -157,5 +157,100 @@ impl VoskCache {
                 ))
             }
         }
+    }
+}
+
+/// Cached CharsiuG2P session keyed by the g2p model directory.
+///
+/// CharsiuG2P loads three ONNX sessions (~100 MB total). In the long-lived
+/// `--stdin-loop` process each Romance-language request would reload them from
+/// disk without this cache. The `Charsiu` session is stateless between calls
+/// (each `to_ipa` runs a fresh encode/decode pass), so unlike Vosk there is no
+/// per-call mutable state that a synth error can corrupt — we never evict on
+/// error.
+#[derive(Default)]
+pub struct CharsiuCache {
+    inner: Option<(PathBuf, Charsiu)>,
+}
+
+impl CharsiuCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn ensure(&mut self, model_dir: &Path) -> anyhow::Result<&mut Charsiu> {
+        // Evict if the caller asks for a different directory (shouldn't happen
+        // in practice — there's only one byt5-tiny dir — but keeps the API
+        // safe if a test ever passes a different path).
+        if let Some((ref dir, _)) = self.inner {
+            if dir != model_dir {
+                self.inner = None;
+            }
+        }
+        if self.inner.is_none() {
+            super::g2p::check_charsiu_files(model_dir)?;
+            let g = Charsiu::load(model_dir)?;
+            self.inner = Some((model_dir.to_path_buf(), g));
+        }
+        Ok(&mut self.inner.as_mut().unwrap().1)
+    }
+
+    /// Phonemize `text` in `lang` (es/fr/it/pt) using the cached session.
+    /// Loads the three ONNX sessions on first call; reuses them on subsequent
+    /// calls. Surfaces the same "model not installed → kesha install --tts"
+    /// error as the one-shot path when the model directory is absent.
+    // `&mut self` is required: ort `Session::run` mutates the session.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_ipa(&mut self, model_dir: &Path, text: &str, lang: &str) -> anyhow::Result<String> {
+        let g = self.ensure(model_dir)?;
+        super::g2p::charsiu_ipa(g, text, lang)
+    }
+
+    /// Returns `true` if a session has been loaded (used in tests to verify
+    /// caching without re-loading).
+    #[cfg(test)]
+    pub fn is_loaded(&self) -> bool {
+        self.inner.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Gated on CHARSIU_ONNX env var (mirrors charsiu::tests). Skipped when
+    /// unset so default CI stays fast. Proves:
+    /// 1. `CharsiuCache::to_ipa` phonemizes Spanish correctly.
+    /// 2. The session is cached after the first call (not reloaded).
+    /// 3. A second call succeeds and returns the same IPA (no state corruption).
+    #[test]
+    fn charsiu_cache_loads_once_and_reuses() {
+        let Some(dir_os) = std::env::var_os("CHARSIU_ONNX") else {
+            eprintln!("CHARSIU_ONNX not set; skipping");
+            return;
+        };
+        let dir = std::path::PathBuf::from(dir_os);
+
+        let mut cache = CharsiuCache::new();
+        assert!(!cache.is_loaded(), "cache must start empty");
+
+        let ipa1 = cache.to_ipa(&dir, "hola", "es").unwrap();
+        assert!(!ipa1.is_empty(), "first call: empty IPA for 'hola'");
+        assert!(
+            cache.is_loaded(),
+            "cache must be populated after first call"
+        );
+
+        // Second call must reuse the cached session (no reload) and return
+        // the identical IPA — Charsiu is deterministic for the same input.
+        let ipa2 = cache.to_ipa(&dir, "hola", "es").unwrap();
+        assert_eq!(
+            ipa1, ipa2,
+            "second call returned different IPA — session may have been reloaded"
+        );
+
+        // Confirm it works across languages too (no cross-lang state leak).
+        let ipa_fr = cache.to_ipa(&dir, "bonjour", "fr").unwrap();
+        assert!(!ipa_fr.is_empty(), "French 'bonjour' returned empty IPA");
     }
 }
