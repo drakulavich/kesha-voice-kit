@@ -140,7 +140,9 @@ pub fn greedy(
         // Loop exhausted the cap without an EOS — the IPA is truncated, which
         // surfaces as a clipped/mispronounced tail rather than an error. One
         // boundary trace (lazy, #313) so it's diagnosable; not per-token.
-        crate::dtrace!("charsiu::decode hit MAX_STEPS={MAX_STEPS} without EOS; IPA may be truncated");
+        crate::dtrace!(
+            "charsiu::decode hit MAX_STEPS={MAX_STEPS} without EOS; IPA may be truncated"
+        );
     }
     Ok(generated)
 }

@@ -68,8 +68,11 @@ describe("pickVoiceForLang (auto-routing)", () => {
   });
 
   it("returns undefined for unsupported languages", () => {
-    expect(pickVoiceForLang("fr", 0.95)).toBeUndefined();
-    expect(pickVoiceForLang("de", 0.95)).toBeUndefined();
+    // de/ko have no Kokoro voice on either the ONNX or the darwin path.
+    expect(pickVoiceForLang("de", 0.95, "linux", "x64")).toBeUndefined();
+    expect(pickVoiceForLang("ko", 0.95, "darwin", "arm64")).toBeUndefined();
+    // fr maps on the ONNX path (ff_siwis) but NOT on darwin/FluidAudio — no fr voice there.
+    expect(pickVoiceForLang("fr", 0.95, "darwin", "arm64")).toBeUndefined();
   });
 
   it("returns undefined when code is missing", () => {

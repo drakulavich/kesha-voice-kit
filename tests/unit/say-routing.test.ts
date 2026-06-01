@@ -18,8 +18,8 @@ describe("resolveSayVoice precedence", () => {
   });
 
   test("--lang with no mapped voice → undefined (engine default), no re-detection", async () => {
-    // French has no male Kokoro voice → unmapped on every platform.
-    expect(await resolveSayVoice(undefined, "fr", "Bonjour")).toBeUndefined();
+    // German has no Kokoro voice on any platform → unmapped everywhere.
+    expect(await resolveSayVoice(undefined, "de", "Hallo Welt")).toBeUndefined();
     // Unknown language code → unmapped.
     expect(await resolveSayVoice(undefined, "xx", "whatever")).toBeUndefined();
   });
