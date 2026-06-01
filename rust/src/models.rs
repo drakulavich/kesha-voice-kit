@@ -155,6 +155,144 @@ pub fn tts_engine_for(lang: &str) -> &'static str {
     }
 }
 
+// ── ONNX-path Kokoro shared consts ──────────────────────────────────────────
+// These are gated to the ONNX (non-ANE) build. Each literal appears exactly
+// once; both `kokoro_manifest()` and `kokoro_manifest_for(langs)` build their
+// outputs by cloning from these consts.
+
+/// The Kokoro-82M ONNX graph (~326 MB). Single copy regardless of how many
+/// Kokoro languages are installed — all voices share this graph.
+///
+/// The HF onnx-community variant produces unintelligible audio with
+/// `af_heart` — confirmed by audio bisection, see #207. Use the
+/// official kokoro-onnx project release, which uses different IO
+/// tensor names (`tokens`/`audio` vs `input_ids`/`waveform`) but
+/// same dtypes/shapes — handled in `kokoro::Kokoro::infer`.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
+const KOKORO_GRAPH: ModelFile = ModelFile {
+    rel_path: "models/kokoro-82m/model.onnx",
+    url: "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
+    sha256: "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
+};
+
+/// Default English male voice pack (Кеша is a male name — CLAUDE.md brand rule).
+/// Switched from `af_heart` (female) in #210.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
+const KOKORO_EN_VOICE: ModelFile = ModelFile {
+    rel_path: "models/kokoro-82m/voices/am_michael.bin",
+    url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
+    sha256: "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
+};
+
+/// klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0).
+/// Pinned hashes from #185 (see NOTICES.md for attribution).
+/// These 3 files enable multilingual G2P for es/fr/it/pt voices.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
+const G2P_CHARSIU_FILES: &[ModelFile] = &[
+    ModelFile {
+        rel_path: "models/g2p/byt5-tiny/encoder_model.onnx",
+        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/encoder_model.onnx",
+        sha256: "1ac7aca11845527873f9e0e870fbe1e3c3ac2cb009d8852230332d10541aab04",
+    },
+    ModelFile {
+        rel_path: "models/g2p/byt5-tiny/decoder_model.onnx",
+        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/decoder_model.onnx",
+        sha256: "de32477aae14e254d4a7dee4b2c324fb39f93a0dc254181c5bfdd8fc67492919",
+    },
+    ModelFile {
+        rel_path: "models/g2p/byt5-tiny/decoder_with_past_model.onnx",
+        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/decoder_with_past_model.onnx",
+        sha256: "fae30b9f3a8d935be01b32af851bae6d54f330813167073e84caf6d0a1890fcb",
+    },
+];
+
+/// Multilingual Kokoro voice packs (es/fr/it/pt). All from
+/// onnx-community/Kokoro-82M-v1.0-ONNX on HuggingFace.
+/// em_alex (es, male), im_nicola (it, male), pm_alex (pt, male)
+/// satisfy the brand male-default rule. ff_siwis (fr, female) is
+/// the sole French voice Kokoro v1.0 ships — see voices.rs comment.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
+fn multilang_voice(lang: &str) -> Option<ModelFile> {
+    let (rel, url, sha) = match lang {
+        "es" => (
+            "models/kokoro-82m/voices/em_alex.bin",
+            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/em_alex.bin",
+            "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95",
+        ),
+        "fr" => (
+            "models/kokoro-82m/voices/ff_siwis.bin",
+            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/ff_siwis.bin",
+            "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861",
+        ),
+        "it" => (
+            "models/kokoro-82m/voices/im_nicola.bin",
+            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/im_nicola.bin",
+            "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0",
+        ),
+        "pt" => (
+            "models/kokoro-82m/voices/pm_alex.bin",
+            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/pm_alex.bin",
+            "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
+        ),
+        _ => return None,
+    };
+    Some(ModelFile {
+        rel_path: rel,
+        url,
+        sha256: sha,
+    })
+}
+
+/// ONNX-path Kokoro files needed for `langs`. Graph included if any Kokoro
+/// language is selected; G2P only if a multilingual lang (es/fr/it/pt) is
+/// selected; per-language voices added individually.
+///
+/// Groundwork for `download_tts(langs)` so an English-only install skips the
+/// ~30 MB CharsiuG2P pack and a Russian-only install skips Kokoro entirely.
+/// Wired to the install handler in the next task; `#[allow(dead_code)]` until then.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
+#[allow(dead_code)]
+fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
+    const KOKORO_LANGS: [&str; 5] = ["en", "es", "fr", "it", "pt"];
+    const MULTILANG: [&str; 4] = ["es", "fr", "it", "pt"];
+    let mut out = Vec::new();
+    if langs.iter().any(|l| KOKORO_LANGS.contains(l)) {
+        out.push(KOKORO_GRAPH.clone());
+    }
+    if langs.contains(&"en") {
+        out.push(KOKORO_EN_VOICE.clone());
+    }
+    if langs.iter().any(|l| MULTILANG.contains(l)) {
+        out.extend(G2P_CHARSIU_FILES.iter().cloned());
+    }
+    for l in langs {
+        if let Some(v) = multilang_voice(l) {
+            out.push(v);
+        }
+    }
+    out
+}
+
 #[cfg(feature = "tts")]
 pub fn kokoro_manifest() -> Vec<ModelFile> {
     #[cfg(all(
@@ -167,70 +305,12 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
     }
     #[allow(unreachable_code)]
     {
-        vec![
-        ModelFile {
-            // The HF onnx-community variant produces unintelligible audio with
-            // `af_heart` — confirmed by audio bisection, see #207. Use the
-            // official kokoro-onnx project release, which uses different IO
-            // tensor names (`tokens`/`audio` vs `input_ids`/`waveform`) but
-            // same dtypes/shapes — handled in `kokoro::Kokoro::infer`.
-            rel_path: "models/kokoro-82m/model.onnx",
-            url: "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
-            sha256: "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
-        },
-        ModelFile {
-            // Kesha (Кеша) is a male name — default to a male voice.
-            // Switched from `af_heart` (female) in #210; per-CLAUDE.md
-            // "DEFAULT TTS VOICES MUST BE MALE". Other voices download on
-            // demand via explicit `--voice` after `kesha install --tts`.
-            rel_path: "models/kokoro-82m/voices/am_michael.bin",
-            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
-            sha256: "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
-        },
-        // klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0).
-        // Pinned hashes from #185 (see NOTICES.md for attribution).
-        // These 3 files enable multilingual G2P for es/fr/it/pt voices.
-        ModelFile {
-            rel_path: "models/g2p/byt5-tiny/encoder_model.onnx",
-            url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/encoder_model.onnx",
-            sha256: "1ac7aca11845527873f9e0e870fbe1e3c3ac2cb009d8852230332d10541aab04",
-        },
-        ModelFile {
-            rel_path: "models/g2p/byt5-tiny/decoder_model.onnx",
-            url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/decoder_model.onnx",
-            sha256: "de32477aae14e254d4a7dee4b2c324fb39f93a0dc254181c5bfdd8fc67492919",
-        },
-        ModelFile {
-            rel_path: "models/g2p/byt5-tiny/decoder_with_past_model.onnx",
-            url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/decoder_with_past_model.onnx",
-            sha256: "fae30b9f3a8d935be01b32af851bae6d54f330813167073e84caf6d0a1890fcb",
-        },
-        // Multilingual Kokoro voice packs (es/fr/it/pt). All from
-        // onnx-community/Kokoro-82M-v1.0-ONNX on HuggingFace.
-        // em_alex (es, male), im_nicola (it, male), pm_alex (pt, male)
-        // satisfy the brand male-default rule. ff_siwis (fr, female) is
-        // the sole French voice Kokoro v1.0 ships — see voices.rs comment.
-        ModelFile {
-            rel_path: "models/kokoro-82m/voices/em_alex.bin",
-            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/em_alex.bin",
-            sha256: "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95",
-        },
-        ModelFile {
-            rel_path: "models/kokoro-82m/voices/ff_siwis.bin",
-            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/ff_siwis.bin",
-            sha256: "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861",
-        },
-        ModelFile {
-            rel_path: "models/kokoro-82m/voices/im_nicola.bin",
-            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/im_nicola.bin",
-            sha256: "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0",
-        },
-        ModelFile {
-            rel_path: "models/kokoro-82m/voices/pm_alex.bin",
-            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/pm_alex.bin",
-            sha256: "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
-        },
-    ]
+        let mut v = vec![KOKORO_GRAPH.clone(), KOKORO_EN_VOICE.clone()];
+        v.extend(G2P_CHARSIU_FILES.iter().cloned());
+        for l in ["es", "fr", "it", "pt"] {
+            v.push(multilang_voice(l).expect("multilang voice"));
+        }
+        v
     }
 }
 
@@ -1114,6 +1194,45 @@ mod tts_tests {
                 "{l} must NOT be present on the ONNX build"
             );
         }
+    }
+
+    #[cfg(not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )))]
+    #[test]
+    fn kokoro_manifest_for_selects_per_language() {
+        let ends = |m: &[ModelFile], suffix: &str| m.iter().any(|f| f.rel_path.ends_with(suffix));
+
+        let en = kokoro_manifest_for(&["en"]);
+        assert!(ends(&en, "model.onnx"));
+        assert!(ends(&en, "am_michael.bin"));
+        assert!(
+            !en.iter().any(|f| f.rel_path.contains("g2p")),
+            "en must not pull g2p"
+        );
+
+        let es = kokoro_manifest_for(&["es"]);
+        assert!(ends(&es, "model.onnx"));
+        assert!(ends(&es, "em_alex.bin"));
+        assert!(
+            es.iter().any(|f| f.rel_path.contains("g2p")),
+            "es needs g2p"
+        );
+        assert!(!ends(&es, "am_michael.bin"));
+
+        let both = kokoro_manifest_for(&["en", "es"]);
+        assert_eq!(
+            both.iter()
+                .filter(|f| f.rel_path.ends_with("kokoro-82m/model.onnx"))
+                .count(),
+            1,
+            "Kokoro graph must appear exactly once even when both en and es are selected"
+        );
+        assert!(ends(&both, "am_michael.bin") && ends(&both, "em_alex.bin"));
+
+        assert!(kokoro_manifest_for(&["ru"]).is_empty());
     }
 }
 
