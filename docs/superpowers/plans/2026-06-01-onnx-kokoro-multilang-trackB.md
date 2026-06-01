@@ -647,13 +647,22 @@ git add rust/src/tts/g2p.rs
 git commit -m "feat(tts): route es/fr/it/pt G2P through normalize+charsiu (refs #212)"
 ```
 
-### Task 3.2: kokoro.rs — f32 clamp + style-row index fix
+### Task 3.2: kokoro.rs — f32 clamp fix (style-row VERIFIED already-correct)
 
 **Files:**
 - Modify: `rust/src/tts/kokoro.rs`
 - Test: inline
 
-- [ ] **Step 1: Write failing tests**
+> **Correction (post-implementation):** The plan originally listed a
+> `style_row = phonemeCount-1` fix alongside the f32 clamp. That was
+> **WRONG**. `voices::select_style` already uses `voice[token_count]`
+> (clamped to `VOICE_ROWS-1`), which matches the `kokoro-onnx` upstream
+> exactly — the `token_count-1` form was the off-by-one fixed in #207.
+> Phase 3 correctly applied ONLY the f32 clamp; `select_style` was not
+> changed. The `style_row_uses_phoneme_count_minus_one` test step below
+> was NOT implemented (there is no `style_row` helper in the shipped code).
+
+- [x] **Step 1: Write failing test**
 
 ```rust
 #[test]
@@ -662,20 +671,11 @@ fn clamp_keeps_samples_in_range() {
     assert!(out.iter().all(|s| (-1.0..=1.0).contains(s)), "{out:?}");
     assert_eq!(out[1], -0.2); // in-range untouched
 }
-#[test]
-fn style_row_uses_phoneme_count_minus_one() {
-    assert_eq!(style_row(8), 7);
-    assert_eq!(style_row(0), 0);     // saturating
-    assert_eq!(style_row(10_000), 509);
-}
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail** — DONE
 
-Run: `cd rust && cargo nextest run --features tts kokoro:: 2>&1 | tail`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 /// Clamp synthesized audio to [-1.0, 1.0]; Kokoro can emit out-of-range
@@ -686,25 +686,16 @@ pub fn clamp_audio(mut samples: Vec<f32>) -> Vec<f32> {
     }
     samples
 }
-
-/// Voice-pack style row index = min(max(phonemeCount-1, 0), 509)
-/// (FluidAudio KokoroAne docs; spike used the padded length).
-pub fn style_row(phoneme_count: usize) -> usize {
-    phoneme_count.saturating_sub(1).min(509)
-}
 ```
-Wire `clamp_audio` into the synth path before WAV encode, and use `style_row` where the style slice is selected.
+Wired `clamp_audio` into `Kokoro::infer` before returning. `select_style` unchanged.
 
-- [ ] **Step 4: Run to verify pass**
+- [x] **Step 4: Run to verify pass** — DONE
 
-Run: `cd rust && cargo nextest run --features tts kokoro:: 2>&1 | tail`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rust/src/tts/kokoro.rs
-git commit -m "fix(tts): clamp Kokoro audio pre-encode + phonemeCount-1 style row (refs #212)"
+git commit -m "fix(tts): clamp Kokoro audio pre-encode (refs #212)"
 ```
 
 ---

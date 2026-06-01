@@ -36,6 +36,30 @@ Install Kokoro + Vosk-TTS explicitly with `kesha install --tts` (~990 MB). `maco
 - macOS dev runtime: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`. Release binaries fix up via `install_name_tool`.
 - macOS build env: `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`, `RUSTFLAGS="-L /opt/homebrew/lib"`.
 
+## CharsiuG2P engine (es/fr/it/pt on ONNX builds)
+
+Romance-language G2P uses the **klebster 3-file KV-cache ONNX export** of CharsiuG2P
+(Zhu et al. 2022). Three `ort` sessions implement an autoregressive byte-level seq2seq decode:
+`encoder_model.onnx` (run once), `decoder_model.onnx` (step 0, seeds all 16 KV presents),
+`decoder_with_past_model.onnx` (steps 1..N, 8 rolling decoder KV + 8 constant encoder KV).
+License: CC-BY 4.0 (attribution in `NOTICES`).
+
+**Tokenizer:** ByT5 byte-level — input format `"<tag>: word"` where tag is one of
+`<spa>` (es), `<fra>` (fr), `<ita>` (it), `<por-bz>` (pt). Each byte maps to
+`byte_value + 3` (special-token offset), followed by EOS id 1.
+
+**OOV remap:** Charsiu can emit IPA symbols outside Kokoro's phoneme vocabulary
+(tie-bar affricates `t͡s/t͡ʃ/d͡ʒ`, Latin `g` U+0067, pre-composed nasals `õ/ũ/ẽ`).
+`tts::charsiu::remap` normalizes these to Kokoro-vocab equivalents (`ʦ/ʧ/ʤ`,
+script-g U+0261, NFD base+combining-tilde); locked by a zero-residual-OOV regression test.
+
+**Normalize pass:** numbers and acronyms are expanded before G2P (`512` → `quinientos doce`
+in es, etc.) via `tts::normalize::{numbers,acronyms}`. CharsiuG2P collapses raw digits;
+the normalizer runs first so digit sentences produce longer, correctly-paced audio.
+
+**IO contract and latency reference:** `docs/superpowers/specs/2026-04-22-onnx-g2p-spike.md`
+(PR #185) — verified ~36 ms/word on M2, byte-identical Rust↔Python IPA for es/fr/it/pt.
+
 ## History
 
 Original spec assumed Silero TTS; pivoted to Piper during M3 spike (Silero ships PyTorch-only, no public ONNX). See `docs/superpowers/specs/2026-04-16-bidirectional-voice-design.md`.

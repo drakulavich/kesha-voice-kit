@@ -417,5 +417,12 @@ model download. Models are NEVER auto-downloaded — `kesha say` fails loudly wi
 VOICES MUST BE MALE above). `kesha say` writes WAV mono f32 to stdout unless `--out` is given;
 stderr is progress/errors only. Auto-routing for an omitted `--voice` is in `src/cli/say.ts::pickVoiceForLang`.
 
+**Multilingual (es/fr/it/pt):** on the **ONNX build** (Linux/Windows and macOS without `system_kokoro`),
+Spanish, French, Italian, and Portuguese are supported via CharsiuG2P (klebster ONNX export, CC-BY 4.0)
++ a per-language numbers/acronym normalizer (#212). Default voices: `es-em_alex` (LatAm Spanish, male),
+`it-im_nicola` (male), `pt-pm_alex` (male), `fr-ff_siwis` (female — **documented brand-rule exception**:
+Kokoro v1.0 ships no male French voice; revisit when one exists). macOS CoreML (`system_kokoro`/FluidAudio)
+multilingual is a follow-up — those voices currently route through the English G2P.
+
 **Engine internals, Kokoro/Vosk ONNX I/O shapes, G2P split, SSML handling, `KESHA_*` env vars,
 macOS dev/build env:** `docs/runbooks/tts-internals.md`.

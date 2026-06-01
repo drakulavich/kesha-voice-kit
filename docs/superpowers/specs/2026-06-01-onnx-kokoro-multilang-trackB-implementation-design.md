@@ -41,7 +41,7 @@ rust/src/tts/
 │   ├── decode.rs          # greedy autoregressive decode loop (EOS stop, max-len cap)
 │   └── remap.rs           # OOV-symbol → Kokoro-vocab table (ported from spike, tested)
 ├── tokenizer.rs           # unchanged (IPA → Kokoro token ids)
-└── kokoro.rs              # FIX: clamp f32 to [-1,1] before encode; style row = phonemeCount-1
+└── kokoro.rs              # FIX: clamp f32 to [-1,1] before encode; select_style VERIFIED already-correct (see below)
 ```
 
 **Data flow (ONNX path, non-English):**
@@ -70,9 +70,10 @@ CharsiuG2P collapses digits and acronyms, so normalize first:
 - `voices.rs`: route `es-*`/`fr-*`/`it-*`/`pt-*` on the ONNX path to `charsiu` (today they bail). Defaults: `es-em_alex`, `it-im_nicola`, `pt-pm_alex` (male), `fr-ff_siwis` (female, documented exception — comment in code + PR body, flagged "revisit when a male fr voice exists").
 - `models.rs`: pin the CharsiuG2P ONNX files (SHA-256) and the four voice `.bin` packs from onnx-community via the existing `download_verified` mechanism; add to `kesha install --tts`. **No new cargo feature** — this is part of the existing `tts`/`onnx` build, so `build-engine.yml`'s matrix is unaffected (verify with the matrix-vs-defaults diff before any release).
 
-### `kokoro.rs` — two correctness fixes surfaced by the spike
+### `kokoro.rs` — one correctness fix surfaced by the spike
 1. **Clamp** synthesized f32 to `[-1, 1]` before WAV encode — Kokoro can emit samples >1.0 (the spike's `fr_0` clipped); locked by the audio-regression "no clipping" check.
-2. Style-row index = `min(max(phonemeCount-1, 0), 509)` (the spike render used the padded length; FluidAudio's docs confirm `phonemeCount-1`).
+
+`voices::select_style` was **VERIFIED already-correct** per #207: it uses `voice[token_count]` (clamped to `VOICE_ROWS-1`), which matches the `kokoro-onnx` upstream exactly. The earlier `token_count-1` form was the off-by-one fixed in #207. Phase 3 correctly did NOT change `select_style`; only the f32 clamp was applied.
 
 ## Feasibility — already established (no spike gate)
 
