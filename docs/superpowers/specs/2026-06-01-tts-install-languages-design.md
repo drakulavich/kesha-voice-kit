@@ -79,10 +79,12 @@ The registry is **many-to-many (language ↔ engine)**, even though every langua
 engine list is currently a singleton:
 
 ```jsonc
+// example on the ONNX build (Linux/Windows/macOS-without-system_kokoro)
 "tts": { "languages": [
   { "code": "en", "engines": ["kokoro"] },
-  { "code": "ru", "engines": ["vosk"] },
-  { "code": "es", "engines": ["kokoro"] }   // darwin-arm64 only
+  { "code": "es", "engines": ["kokoro"] },  // also fr, it, pt
+  { "code": "ru", "engines": ["vosk"] }
+  // hi, ja, zh appear only on the darwin-arm64 system_kokoro build
 ]}
 ```
 
@@ -96,11 +98,29 @@ engine list is currently a singleton:
 
 ### Language → pack table (today)
 
-| code | engine | packs downloaded | platform | approx |
+Availability differs by build. The **ONNX build** (Linux, Windows, macOS without
+`system_kokoro`) covers `en es fr it pt ru`. The **`system_kokoro` build**
+(darwin-arm64) covers `en es fr hi it ja pt zh ru`. `hi ja zh` exist **only** on the
+darwin ANE path; `es fr it pt` exist on **both** (via CharsiuG2P on ONNX, ANE on darwin).
+
+| code | engine | packs downloaded | available on | approx |
 |---|---|---|---|---|
-| `en` | Kokoro | shared graph + EN voice(s) | all | ~326 MB |
-| `ru` | Vosk-TTS | model + dictionary + BERT + vocab | all | ~937 MB |
-| `es fr hi it ja pt zh` | FluidKokoro (ANE) | shared graph (auto) + that language's voice `.bin` | **darwin-arm64 only** | small per-language |
+| `en` | Kokoro | shared graph + `am_michael` | all builds | ~326 MB |
+| `es fr it pt` | Kokoro (ONNX) / FluidKokoro (ANE) | shared graph + that language's voice `.bin`; **+ CharsiuG2P (3 files, ~30 MB, shared) on the ONNX path** | all builds | ~30 MB (G2P, once) + tiny per-voice; graph shared |
+| `hi ja zh` | FluidKokoro (ANE) | shared graph (auto) + that language's ANE voice `.bin` | **darwin-arm64 only** | tiny per-language |
+| `ru` | Vosk-TTS | model + dictionary + BERT + vocab | all builds | ~937 MB |
+
+Pack dependencies on the **ONNX build** (`kokoro_manifest()`):
+- The Kokoro graph `model.onnx` (~326 MB) is shared by `en es fr it pt` — download once
+  if *any* of them is selected.
+- `en` needs no G2P (English uses the embedded `misaki-rs` lexicon).
+- `es fr it pt` each need their voice `.bin` **and** the shared CharsiuG2P byt5-tiny pack
+  (3 files). Download G2P once if any of `es fr it pt` is selected.
+
+Pack dependencies on the **`system_kokoro` build** (darwin-arm64):
+- `kokoro_manifest()` is empty — the graph auto-downloads into FluidAudio's cache on
+  first synth. Each Kokoro language stages only its own voice `.bin`(s) from
+  `ANE_KOKORO_VOICES` (today `stage_ane_kokoro_voices` stages the entire catalog).
 
 ## Architecture
 
@@ -116,8 +136,10 @@ rule).
 - Add a structured `tts` field carrying the language rows shown above
   (`{ code, engines }` per language), populated by `#[cfg]`:
   - `en`, `ru` whenever `feature = "tts"`.
-  - `es`, `fr`, `hi`, `it`, `ja`, `pt`, `zh` added under
-    `system_kokoro + macos + aarch64`.
+  - `es`, `fr`, `it`, `pt` added on **both** TTS builds — under
+    `not(all(system_kokoro, macos, aarch64))` (ONNX/CharsiuG2P) **and** under
+    `all(system_kokoro, macos, aarch64)` (ANE).
+  - `hi`, `ja`, `zh` added **only** under `all(system_kokoro, macos, aarch64)`.
 - Bump `protocolVersion` `2 → 3`.
 - `EngineCapabilities` (TS, `src/engine.ts`) mirrors the new field.
 
@@ -133,13 +155,17 @@ back-compat; the new structured field is additive.
 - Validate each requested code against `get_capabilities()` TTS languages. Unknown or
   platform-unavailable code → hard error listing the supported codes, **download
   nothing**.
-- `models::download_tts(no_cache)` → `download_tts(langs, no_cache)`:
-  - Refactor the flat `ANE_KOKORO_VOICES` const into a language-prefix lookup
-    (`a`/`b` → en, `e` → es, `f` → fr, `h` → hi, `i` → it, `j` → ja, `p` → pt,
-    `z` → zh) so each language stages only its own voices.
-  - If any Kokoro language is selected: download the shared graph once on the ONNX
-    path (rely on FluidAudio auto-download on the darwin `system_kokoro` path), and
-    stage only the selected languages' voices.
+- `models::download_tts(no_cache)` → `download_tts(langs, no_cache)`. Build the
+  manifest from the selected languages:
+  - **ONNX path** (`kokoro_manifest()` non-empty): split `kokoro_manifest()` into
+    addressable pieces — the shared graph, `en`'s `am_michael`, the shared CharsiuG2P
+    pack, and each multilingual voice (`es`→`em_alex`, `fr`→`ff_siwis`, `it`→`im_nicola`,
+    `pt`→`pm_alex`). Include the graph if any of `en es fr it pt` is selected; include
+    G2P if any of `es fr it pt` is selected; include each selected language's voice.
+  - **`system_kokoro` path** (darwin-arm64): refactor the flat `ANE_KOKORO_VOICES` const
+    into a language-prefix lookup (`a`/`b` → en, `e` → es, `f` → fr, `h` → hi, `i` → it,
+    `j` → ja, `p` → pt, `z` → zh) so `stage_ane_kokoro_voices` stages only the selected
+    languages' voices. (`af_heart` stays excluded.)
   - If `ru` is selected: `vosk_ru_manifest()`.
 - **Additive** is free: `download_verified` already short-circuits cached files that
   match their pinned SHA, so re-runs fetch only missing packs. No pruning logic.
