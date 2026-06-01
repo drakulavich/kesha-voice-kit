@@ -151,6 +151,49 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
             url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
             sha256: "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
         },
+        // klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0).
+        // Pinned hashes from #185 (see NOTICES.md for attribution).
+        // These 3 files enable multilingual G2P for es/fr/it/pt voices.
+        ModelFile {
+            rel_path: "models/g2p/byt5-tiny/encoder_model.onnx",
+            url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/encoder_model.onnx",
+            sha256: "1ac7aca11845527873f9e0e870fbe1e3c3ac2cb009d8852230332d10541aab04",
+        },
+        ModelFile {
+            rel_path: "models/g2p/byt5-tiny/decoder_model.onnx",
+            url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/decoder_model.onnx",
+            sha256: "de32477aae14e254d4a7dee4b2c324fb39f93a0dc254181c5bfdd8fc67492919",
+        },
+        ModelFile {
+            rel_path: "models/g2p/byt5-tiny/decoder_with_past_model.onnx",
+            url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/decoder_with_past_model.onnx",
+            sha256: "fae30b9f3a8d935be01b32af851bae6d54f330813167073e84caf6d0a1890fcb",
+        },
+        // Multilingual Kokoro voice packs (es/fr/it/pt). All from
+        // onnx-community/Kokoro-82M-v1.0-ONNX on HuggingFace.
+        // em_alex (es, male), im_nicola (it, male), pm_alex (pt, male)
+        // satisfy the brand male-default rule. ff_siwis (fr, female) is
+        // the sole French voice Kokoro v1.0 ships — see voices.rs comment.
+        ModelFile {
+            rel_path: "models/kokoro-82m/voices/em_alex.bin",
+            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/em_alex.bin",
+            sha256: "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95",
+        },
+        ModelFile {
+            rel_path: "models/kokoro-82m/voices/ff_siwis.bin",
+            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/ff_siwis.bin",
+            sha256: "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861",
+        },
+        ModelFile {
+            rel_path: "models/kokoro-82m/voices/im_nicola.bin",
+            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/im_nicola.bin",
+            sha256: "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0",
+        },
+        ModelFile {
+            rel_path: "models/kokoro-82m/voices/pm_alex.bin",
+            url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/pm_alex.bin",
+            sha256: "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
+        },
     ]
     }
 }

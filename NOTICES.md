@@ -33,6 +33,16 @@ Text-to-speech (Russian, 5 baked-in speakers). Apache 2.0. Model: [alphacep/vosk
 
 **Runtime code:** Originally pulled from `crates.io` as `vosk-tts-rs 0.1.0`. As of #216 the runtime subset is **vendored** under `rust/vendor/vosk-tts/` (Apache 2.0; copied from [`andreytkachenko/vosk-tts-rs`](https://github.com/andreytkachenko/vosk-tts-rs) — see `rust/vendor/vosk-tts/LICENSE` and `rust/vendor/vosk-tts/NOTICE`). The vendored copy drops the upstream gRPC server/CLI/HTTP-model-fetch modules and replaces the `tokenizers` crate with a small inline BERT WordPiece tokenizer, eliminating the `prost`, `tonic`, `tokio`, `axum`, `hyper`, `reqwest`, `tokenizers`, `onig_sys`, `esaxx-rs`, `bzip2-sys`, `lzma-sys`, and `zstd-sys` transitive dependencies that broke Windows MSVC linkage.
 
+### klebster — CharsiuG2P byt5-tiny ONNX (multilingual G2P)
+
+Grapheme-to-phoneme for es/fr/it/pt Kokoro voices (`kesha install --tts`, #212).
+CC-BY 4.0. ONNX export by [klebster](https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx)
+from the original CharsiuG2P model.
+
+**Original model:** Zhu et al. 2022, "Multilingual Grapheme-to-Phoneme Conversion
+with Language Neutral and Language Specific Representations",
+[arXiv:2204.03067](https://arxiv.org/abs/2204.03067).
+
 ### misaki-rs (English G2P)
 
 Embedded grapheme-to-phoneme for English (Kokoro pipeline, #207). MIT. Source: [`misaki-rs`](https://github.com/MicheleYin/misaki-rs).
