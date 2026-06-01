@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-01
 **Status:** Approved (brainstorm) — ready for implementation plan
-**Issue:** TBD (open before implementation)
+**Issue:** [#517](https://github.com/drakulavich/kesha-voice-kit/issues/517)
 
 ## Problem
 
@@ -220,7 +220,7 @@ back-compat; the new structured field is additive.
 
 ## Open items before implementation
 
-- Open a GitHub issue and tag it `WIP`; fill the issue number into the header and use
-  `Closes #N` in the PR.
+- Issue [#517](https://github.com/drakulavich/kesha-voice-kit/issues/517) opened and
+  tagged `WIP`; use `Closes #517` in the PR.
 - `@clack/prompts` is the only new runtime dependency; verify it installs cleanly under
   Bun during the first implementation step.
