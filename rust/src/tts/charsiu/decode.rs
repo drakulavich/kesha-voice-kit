@@ -94,6 +94,7 @@ pub fn greedy(
 
     // --- Steps 1..MAX: decoder_with_past_model ---
     let mut last_token = next;
+    let mut hit_eos = false;
     for _ in 1..MAX_STEPS {
         let mut inputs = ort::inputs![
             "input_ids" => Value::from_array(Array2::<i64>::from_shape_vec((1, 1), vec![last_token])?)?,
@@ -122,6 +123,7 @@ pub fn greedy(
         let out = decoder_past.run(inputs)?;
         let next = argmax_last_logit(&out["logits"])?;
         if next == EOS_ID {
+            hit_eos = true;
             break;
         }
         generated.push(next);
@@ -134,6 +136,12 @@ pub fn greedy(
         }
     }
 
+    if !hit_eos {
+        // Loop exhausted the cap without an EOS — the IPA is truncated, which
+        // surfaces as a clipped/mispronounced tail rather than an error. One
+        // boundary trace (lazy, #313) so it's diagnosable; not per-token.
+        crate::dtrace!("charsiu::decode hit MAX_STEPS={MAX_STEPS} without EOS; IPA may be truncated");
+    }
     Ok(generated)
 }
 
