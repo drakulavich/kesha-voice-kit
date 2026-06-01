@@ -237,7 +237,8 @@ mod tests {
         assert_eq!(spell("SIDA", "pt"), "SIDA");
         // True initialisms still spell letter-by-letter.
         assert_eq!(spell("DNI", "es"), "de ene i");
-        // Cross-language isolation: "OEA" is es/pt-list only; under "it" it letter-spells.
+        // Cross-language isolation: "OEA" is in ES_STOP_LIST only; under "it"
+        // (not in IT_STOP_LIST) it letter-spells.
         assert_eq!(spell("OEA", "it"), "o e a");
     }
 
