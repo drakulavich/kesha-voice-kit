@@ -160,8 +160,8 @@ pub fn tts_engine_for(lang: &str) -> &'static str {
 #[cfg(feature = "tts")]
 pub fn validate_tts_langs(langs: &[&str]) -> Result<()> {
     let supported = tts_languages();
-    for l in langs {
-        if !supported.contains(l) {
+    for &l in langs {
+        if !supported.contains(&l) {
             coded_bail!(
                 ErrorCode::VoiceUnknown,
                 "TTS language '{l}' is not available on this build (supported: {})",
@@ -1279,7 +1279,8 @@ mod tts_tests {
             .all(|n| n.starts_with("am_") || n.starts_with("af_") || n.starts_with("bm_")));
         let es = names(&["es"]);
         assert!(!es.is_empty() && es.iter().all(|n| n.starts_with("e")));
-        assert!(!names(&["en"]).iter().any(|n| n == "af_heart.bin"));
+        // af_alloy IS in ANE_KOKORO_VOICES and is en-prefixed — the filter must return it for "en".
+        assert!(names(&["en"]).iter().any(|n| n == "af_alloy.bin"));
     }
 
     #[test]
@@ -1420,6 +1421,8 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
     {
         if langs.contains(&"ru") {
             let cache = cache_dir();
+            // `manifest` must outlive `refs` (the borrows point into it), so it
+            // stays a named binding rather than an inlined temporary.
             let manifest = vosk_ru_manifest();
             let refs: Vec<&ModelFile> = manifest.iter().collect();
             parallel_download(&cache, &refs, no_cache)?;
