@@ -257,9 +257,11 @@ function roff(value: string): string {
 }
 
 function manpageDate(): string {
-  const now = new Date();
-  const month = now.toLocaleString("en-US", { month: "long" });
-  return `${month} ${now.getFullYear()}`;
+  // Year only — the man `.TH` date drove a monthly drift failure in the
+  // shell-artifacts test (committed "May 2026" vs regenerated "June 2026").
+  // Year granularity is plenty for a manpage revision date and stays stable
+  // across the year.
+  return `${new Date().getFullYear()}`;
 }
 
 function renderManpage(model: ArtifactModel): string {
