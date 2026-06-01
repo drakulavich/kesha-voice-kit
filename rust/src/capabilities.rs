@@ -77,7 +77,7 @@ pub fn get_capabilities() -> Capabilities {
             .into_iter()
             .map(|code| TtsLanguage {
                 code,
-                engines: vec![if code == "ru" { "vosk" } else { "kokoro" }],
+                engines: vec![crate::models::tts_engine_for(code)],
             })
             .collect(),
     });
@@ -117,6 +117,10 @@ mod tts_caps_tests {
         for lang in &tts.languages {
             assert!(!lang.engines.is_empty(), "{} has no engines", lang.code);
         }
+        let ru = tts.languages.iter().find(|l| l.code == "ru").unwrap();
+        assert_eq!(ru.engines, vec!["vosk"]);
+        let en = tts.languages.iter().find(|l| l.code == "en").unwrap();
+        assert_eq!(en.engines, vec!["kokoro"]);
     }
 
     #[test]

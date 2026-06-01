@@ -122,7 +122,8 @@ const LANG_ID_FILES: &[ModelFile] = &[
 /// TTS languages installable on THIS build, in maintainer-curated order.
 /// Source of truth for `kesha-engine install --tts <lang>` validation and the
 /// `tts.languages` capabilities rows. `es/fr/it/pt` exist on both the ONNX
-/// (CharsiuG2P) and darwin ANE builds; `hi/ja/zh` exist only on the ANE build.
+/// (CharsiuG2P) and darwin ANE builds; `hi/ja/zh` exist only on the
+/// `system_kokoro` feature (darwin arm64 ANE).
 /// `macos-*` AVSpeech is NOT listed — it needs no install.
 #[cfg(feature = "tts")]
 pub fn tts_languages() -> Vec<&'static str> {
@@ -141,6 +142,16 @@ pub fn tts_languages() -> Vec<&'static str> {
     )))]
     {
         vec!["en", "es", "fr", "it", "pt", "ru"]
+    }
+}
+
+/// Default downloadable engine for a TTS language code. One engine per
+/// language today; the capabilities `engines` list is a Vec to allow more later.
+#[cfg(feature = "tts")]
+pub fn tts_engine_for(lang: &str) -> &'static str {
+    match lang {
+        "ru" => "vosk",
+        _ => "kokoro",
     }
 }
 
