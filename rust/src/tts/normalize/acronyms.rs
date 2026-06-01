@@ -1,6 +1,4 @@
 //! Per-language letter-name spelling for all-caps acronym tokens.
-// The CLI g2p caller lands in a later task; allow dead code until then.
-#![allow(dead_code)]
 
 // ── Letter-name tables ────────────────────────────────────────────────────────
 

@@ -2,8 +2,6 @@
 //!
 //! Covers es (Spanish), fr (French), it (Italian), pt (Portuguese).
 //! Unknown languages return the digit string unchanged.
-// The CLI g2p caller lands in a later task; allow dead code until then.
-#![allow(dead_code)]
 
 // ── Spanish ──────────────────────────────────────────────────────────────────
 
