@@ -325,9 +325,25 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
   }
 }
 
+/** Build the `kesha-engine install` argv from options. Exported for testing. */
+export function buildEngineInstallArgs(opts: {
+  noCache: boolean;
+  ttsLangs?: string[];
+  vad?: boolean;
+  diarize?: boolean;
+}): string[] {
+  return [
+    "install",
+    ...(opts.noCache ? ["--no-cache"] : []),
+    ...(opts.ttsLangs && opts.ttsLangs.length > 0 ? ["--tts", ...opts.ttsLangs] : []),
+    ...(opts.vad ? ["--vad"] : []),
+    ...(opts.diarize ? ["--diarize"] : []),
+  ];
+}
+
 export interface InstallOptions {
-  /** Also install Kokoro + Vosk-TTS models. */
-  tts?: boolean;
+  /** TTS languages to install (empty/undefined = no TTS). */
+  ttsLangs?: string[];
   /** Also install Silero VAD model for long-audio preprocessing. */
   vad?: boolean;
   /** Also install the Sortformer streaming-diarization model (~245MB,
@@ -498,13 +514,12 @@ export async function downloadEngine(
   }
 
   log.progress("Installing models...");
-  const installArgs = [
-    "install",
-    ...(noCache ? ["--no-cache"] : []),
-    ...(options.tts ? ["--tts"] : []),
-    ...(options.vad ? ["--vad"] : []),
-    ...(options.diarize ? ["--diarize"] : []),
-  ];
+  const installArgs = buildEngineInstallArgs({
+    noCache,
+    ttsLangs: options.ttsLangs,
+    vad: options.vad,
+    diarize: options.diarize,
+  });
   const proc = Bun.spawnSync([binPath, ...installArgs], {
     stdout: "pipe",
     stderr: "pipe",
@@ -520,7 +535,11 @@ export async function downloadEngine(
     throw new Error(detail ? `Failed to install models: ${detail}` : "Failed to install models");
   }
 
-  if (options.tts) {
+  // Warm the FluidAudio Kokoro CoreML cache only when a Kokoro language is
+  // requested. Russian (`ru`) routes through Vosk-TTS, not Kokoro, so a
+  // Russian-only install has nothing to warm.
+  const wantsKokoro = (options.ttsLangs ?? []).some((l) => l !== "ru");
+  if (wantsKokoro) {
     await warmDarwinKokoro(binPath);
   }
 

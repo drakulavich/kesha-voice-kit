@@ -29,9 +29,9 @@ export type {
   TranscribeResult,
 } from "./types";
 
-/** Install Kokoro TTS models. Shorthand for `downloadModel({ tts: true })`. */
+/** Install Kokoro (EN) + Vosk-TTS (RU) models. Shorthand for the default TTS set. */
 export async function downloadTts(noCache = false): Promise<void> {
-  await downloadEngine(noCache, undefined, { tts: true });
+  await downloadEngine(noCache, undefined, { ttsLangs: ["en", "ru"] });
 }
 
 /** @deprecated Use `downloadModel` instead. */

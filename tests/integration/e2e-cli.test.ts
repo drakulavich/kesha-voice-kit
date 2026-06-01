@@ -210,7 +210,7 @@ describe("e2e-cli", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("kesha install --no-cache --coreml");
     expect(stdout).toContain("kesha install --no-cache --coreml --vad");
-    expect(stdout).toContain("kesha install --no-cache --coreml --tts --vad");
+    expect(stdout).toContain("kesha install --no-cache --coreml --tts en --vad");
     expect(stderr).not.toContain("fake engine should not have been invoked");
   });
 

@@ -1,9 +1,45 @@
 import { defineCommand } from "citty";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { multiselect, isCancel } from "@clack/prompts";
 import { renderInstallPlan } from "../install-plan";
 import { log } from "../log";
-import { performInstall, resolveBackendFlag, resolveNoCacheFlag } from "./install";
+import { getEngineCapabilities } from "../engine";
+import {
+  performInstall,
+  resolveBackendFlag,
+  resolveNoCacheFlag,
+  TTS_LANG_FALLBACK,
+} from "./install";
+
+const TTS_LANG_LABELS: Record<string, string> = {
+  en: "English (Kokoro)",
+  es: "Spanish (Kokoro)",
+  fr: "French (Kokoro)",
+  hi: "Hindi (Kokoro ANE)",
+  it: "Italian (Kokoro)",
+  ja: "Japanese (Kokoro ANE)",
+  pt: "Portuguese (Kokoro)",
+  zh: "Chinese (Kokoro ANE)",
+  ru: "Russian (Vosk-TTS)",
+};
+
+/** Signature of the interactive TTS-language picker (injectable for tests). */
+export type TtsLangPrompt = (preselect: string[]) => Promise<string[]>;
+
+async function promptTtsLangs(preselect: string[]): Promise<string[]> {
+  const caps = await getEngineCapabilities();
+  const supported = caps?.tts?.languages.map((l) => l.code) ?? TTS_LANG_FALLBACK;
+  const selected = await multiselect({
+    message:
+      "Select TTS languages to install (space to toggle, enter to confirm; none = skip TTS):",
+    options: supported.map((code) => ({ value: code, label: TTS_LANG_LABELS[code] ?? code })),
+    initialValues: preselect.filter((l) => supported.includes(l)),
+    required: false,
+  });
+  if (isCancel(selected)) return [];
+  return selected as string[];
+}
 
 export interface InitCommandArgs {
   coreml: boolean;
@@ -21,7 +57,7 @@ export interface InitCommandArgs {
 export interface InitSelection {
   noCache: boolean;
   backend?: string;
-  tts: boolean;
+  ttsLangs: string[];
   vad: boolean;
   diarize: boolean;
 }
@@ -45,7 +81,7 @@ export function resolveInitSelection(
   return {
     noCache,
     backend,
-    tts: args.tts,
+    ttsLangs: args.tts ? ["en"] : [],
     vad: args.vad,
     diarize: args.diarize,
   };
@@ -58,7 +94,7 @@ export function initInstallArgs(selection: InitSelection): string[] {
     selection.noCache ? "--no-cache" : "",
     selection.backend === "coreml" ? "--coreml" : "",
     selection.backend === "onnx" ? "--onnx" : "",
-    selection.tts ? "--tts" : "",
+    ...(selection.ttsLangs.length > 0 ? ["--tts", ...selection.ttsLangs] : []),
     selection.vad ? "--vad" : "",
     selection.diarize ? "--diarize" : "",
   ].filter(Boolean);
@@ -70,12 +106,12 @@ export function initSuggestionCommands(
 ): string[][] {
   const variants: InitSelection[] = [
     selection,
-    { ...selection, tts: false, vad: true, diarize: false },
-    { ...selection, tts: true, vad: true, diarize: false },
+    { ...selection, ttsLangs: [], vad: true, diarize: false },
+    { ...selection, ttsLangs: ["en"], vad: true, diarize: false },
   ];
 
   if (canDiarize) {
-    variants.push({ ...selection, tts: false, vad: true, diarize: true });
+    variants.push({ ...selection, ttsLangs: [], vad: true, diarize: true });
   }
 
   const seen = new Set<string>();
@@ -118,8 +154,9 @@ export async function promptInitSelection(
   backend = resolveBackendFlag(args.coreml, args.onnx),
   canDiarize = canInstallDiarizeOnPlatform(),
   noCache = resolveNoCacheFlag(args),
+  promptTts: TtsLangPrompt = promptTtsLangs,
 ): Promise<InitSelection> {
-  const tts = await askYesNo(prompt, "Install text-to-speech models for `kesha say`?", args.tts);
+  const ttsLangs = await promptTts(args.tts ? ["en"] : []);
   const vad = await askYesNo(prompt, "Install VAD for long or silence-heavy audio?", args.vad);
   let diarize = false;
   if (canDiarize) {
@@ -131,7 +168,7 @@ export async function promptInitSelection(
   return {
     noCache,
     backend,
-    tts,
+    ttsLangs,
     vad,
     diarize,
   };
@@ -153,7 +190,8 @@ async function printPlan(selection: InitSelection): Promise<void> {
     await renderInstallPlan({
       noCache: selection.noCache,
       backend: selection.backend,
-      tts: selection.tts,
+      tts: selection.ttsLangs.length > 0,
+      ttsLangs: selection.ttsLangs,
       vad: selection.vad,
       diarize: selection.diarize,
     }),
@@ -240,7 +278,7 @@ export const initCommand = defineCommand({
       await performInstall(
         installSelection.noCache,
         installSelection.backend,
-        installSelection.tts,
+        installSelection.ttsLangs,
         installSelection.vad,
         installSelection.diarize,
       );
@@ -265,7 +303,13 @@ export const initCommand = defineCommand({
         log.info(`Skipped install. Run later: ${initInstallArgs(prompted).join(" ")}`);
         return;
       }
-      await performInstall(prompted.noCache, prompted.backend, prompted.tts, prompted.vad, prompted.diarize);
+      await performInstall(
+        prompted.noCache,
+        prompted.backend,
+        prompted.ttsLangs,
+        prompted.vad,
+        prompted.diarize,
+      );
     } finally {
       rl.close();
     }

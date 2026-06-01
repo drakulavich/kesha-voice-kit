@@ -14,6 +14,8 @@ export interface InstallPlanOptions {
   noCache?: boolean;
   backend?: string;
   tts?: boolean;
+  /** Resolved TTS language codes (consumed by per-language plan in #517 Task 10). */
+  ttsLangs?: string[];
   vad?: boolean;
   diarize?: boolean;
 }
