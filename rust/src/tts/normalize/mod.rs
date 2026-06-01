@@ -110,6 +110,20 @@ mod tests {
     }
 
     #[test]
+    fn normalize_via_base_lang_handles_region_tagged_es() {
+        // The region subtag (es-ES) is reduced to the base lang upstream before
+        // `normalize` is called; this locks that numbers/acronyms still expand
+        // identically to bare "es" (i.e. the region tag never silently disables
+        // expansion). Passing the raw "es-ES" tag would NOT match and skip it.
+        let base = crate::tts::charsiu::base_lang("es-ES");
+        assert_eq!(base, "es");
+        assert_eq!(normalize("27 OTAN", base), normalize("27 OTAN", "es"));
+        assert!(normalize("27 OTAN", base).contains("veintisiete"));
+        // The raw region tag is intentionally inert in `normalize` itself.
+        assert_eq!(normalize("27 OTAN", "es-ES"), "27 OTAN");
+    }
+
+    #[test]
     fn normalize_large_number_does_not_panic() {
         // Numbers >= 1_000_000 are outside the word-table range; they must pass
         // through verbatim rather than panicking.

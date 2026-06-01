@@ -25,8 +25,20 @@ pub(crate) fn is_castilian_region(lang: &str) -> bool {
 /// Reduce a (possibly region-tagged) code to the base lang Charsiu understands:
 /// "es-ES"/"es-419"/"es-MX" → "es"; "pt-br" → "pt"; passthrough otherwise.
 pub(crate) fn base_lang(lang: &str) -> &str {
-    match lang.split('-').next() {
-        Some(b) if matches!(b.to_ascii_lowercase().as_str(), "es" | "fr" | "it" | "pt") => b,
+    // Return a canonical lowercase literal for the four supported bases so the
+    // result matches case-insensitively at every call site (routing guards) and
+    // feeds `normalize` (which only matches bare lowercase codes) correctly even
+    // for an uppercase region tag like "ES-ES". Unsupported codes pass through.
+    match lang
+        .split('-')
+        .next()
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("es") => "es",
+        Some("fr") => "fr",
+        Some("it") => "it",
+        Some("pt") => "pt",
         _ => lang,
     }
 }
@@ -131,6 +143,21 @@ mod tests {
         assert!(!is_castilian_region("es-419"));
         assert!(!is_castilian_region("es-MX"));
         assert!(!is_castilian_region("fr"));
+    }
+
+    #[test]
+    fn base_lang_canonicalizes_case_and_region() {
+        // Region tags reduce to the bare base; the base is canonical lowercase
+        // even when the input lang subtag is uppercase (so routing guards and
+        // `normalize` see "es", not "ES").
+        assert_eq!(base_lang("es-ES"), "es");
+        assert_eq!(base_lang("ES-ES"), "es");
+        assert_eq!(base_lang("es-419"), "es");
+        assert_eq!(base_lang("pt-BR"), "pt");
+        assert_eq!(base_lang("FR"), "fr");
+        // Unsupported codes pass through unchanged.
+        assert_eq!(base_lang("de"), "de");
+        assert_eq!(base_lang("en-us"), "en-us");
     }
 
     /// Gated on CHARSIU_ONNX env var. Skipped when unset so default CI stays fast.

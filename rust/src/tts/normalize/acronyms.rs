@@ -134,16 +134,15 @@ const PT_LETTERS: [(&str, &str); 26] = [
 // Hand-curated seeds, ALL-CAPS keys. NOT exhaustive — extend by ear. Mirrors
 // `tts/en/acronym.rs::STOP_LIST`. Initialisms that SHOULD spell (DNI, ADN, RAI,
 // EUA) are deliberately absent.
-pub(crate) const ES_STOP_LIST: &[&str] = &[
-    "OTAN", "OVNI", "SIDA", "OPEP", "OEA", "ONU", "UNESCO", "FIFA", "OMS",
-];
-pub(crate) const FR_STOP_LIST: &[&str] = &[
-    "OTAN", "OVNI", "SIDA", "UNESCO", "FIFA", "OPEP", "ONU", "OMS",
-];
-pub(crate) const IT_STOP_LIST: &[&str] = &["FIAT", "NATO", "FIFA", "AIDS", "UNESCO", "ONU"];
-pub(crate) const PT_STOP_LIST: &[&str] = &[
-    "OTAN", "OVNI", "SIDA", "AIDS", "FIFA", "UNESCO", "ONU", "OMS",
-];
+//
+// Entries must be 2..=5 chars: `normalize` only routes a token through `spell`
+// when `is_acronym_token` (length 2..=5) matches, so a 6+-char all-caps word
+// (e.g. "UNESCO") already passes through verbatim and needs no entry here.
+pub(crate) const ES_STOP_LIST: &[&str] =
+    &["OTAN", "OVNI", "SIDA", "OPEP", "OEA", "ONU", "FIFA", "OMS"];
+pub(crate) const FR_STOP_LIST: &[&str] = &["OTAN", "OVNI", "SIDA", "FIFA", "OPEP", "ONU", "OMS"];
+pub(crate) const IT_STOP_LIST: &[&str] = &["FIAT", "NATO", "FIFA", "AIDS", "ONU"];
+pub(crate) const PT_STOP_LIST: &[&str] = &["OTAN", "OVNI", "SIDA", "AIDS", "FIFA", "ONU", "OMS"];
 
 /// True if `token` is in `lang`'s stop-list (read as a word, not letter-spelled).
 fn is_stop_listed(token: &str, lang: &str) -> bool {
