@@ -6,7 +6,7 @@
     <title>Kesha Voice Kit — Open-source voice toolkit for macOS, Linux, Windows</title>
     <meta
       name="description"
-      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Multilingual TTS (English, Russian, Spanish, French, Italian, Portuguese, Hindi, Japanese, Chinese), speaker diarization, OGG/Opus + FLAC output, SSML prosody. A single Rust binary for macOS, Linux, and Windows. No Python, no ffmpeg."
+      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Multilingual TTS — English, Russian, Spanish, French, Italian, Portuguese on every platform; Mandarin Chinese natively on Apple Silicon. Speaker diarization, OGG/Opus + FLAC output, SSML prosody. A single Rust binary for macOS, Linux, and Windows. No Python, no ffmpeg."
     />
     <meta name="theme-color" content="#0b1014" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="Kesha Voice Kit" />
     <meta
       property="og:description"
-      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon, ~2.5× on Linux/Windows CPU. STT in 25 languages, multilingual TTS (EN, RU, ES, FR, IT, PT, HI, JA, ZH), speaker diarization, OGG/Opus + FLAC output — all from a single Rust binary."
+      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon, ~2.5× on Linux/Windows CPU. STT in 25 languages, multilingual TTS (en, ru, es, fr, it, pt cross-platform; native zh on macOS), speaker diarization, OGG/Opus + FLAC output — all from a single Rust binary."
     />
     <meta property="og:image" content="assets/logo.png" />
 
@@ -112,7 +112,7 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.22 · MIT licensed · macOS · Linux · Windows</span>
+            <span>v1.23 · MIT licensed · macOS · Linux · Windows</span>
           </div>
 
           <h1 class="hero__title">
@@ -423,20 +423,20 @@
                   <path d="M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18" />
                 </svg>
               </div>
-              <span class="badge-new">v1.22</span>
+              <span class="badge-new">v1.23</span>
               <h3>Multilingual TTS</h3>
               <p>
-                Spanish, French, Italian, Portuguese, Hindi, Japanese, Chinese — plus English
-                (Kokoro) and Russian (Vosk-TTS) — via FluidAudio Kokoro voices running on the
-                Apple Neural Engine. <code>kesha say --list-voices</code> shows the full catalogue.
-                Non-Latin scripts targeting English-G2P voices fail fast with
-                <code>E_SCRIPT_UNSUPPORTED</code> instead of emitting noise.
+                English + Spanish, French, Italian, and Portuguese on every platform via
+                CharsiuG2P (ByT5-tiny ONNX, CC-BY 4.0) with per-language number and acronym
+                normalizers — OTAN, OVNI, FIFA read as words. <strong>Mandarin Chinese</strong>
+                runs natively on Apple Silicon via FluidAudio 0.14.8’s tone-aware ANE variant.
+                Russian stays on Vosk-TTS. <code>--lang es-ES</code> for Castilian Spanish.
               </p>
               <ul class="chip-row" role="list">
-                <li>en · ru · es · fr</li>
-                <li>it · pt · hi</li>
-                <li>ja · zh</li>
-                <li>darwin-arm64</li>
+                <li>en · es · fr · it · pt</li>
+                <li>ru (Vosk)</li>
+                <li>zh (macOS ANE)</li>
+                <li>es-ES · es-419</li>
               </ul>
             </article>
 
@@ -923,7 +923,7 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
             </div>
             <div class="models-table__row" role="row">
               <span class="model-name">FluidAudio Kokoro — multilingual <em>(opt-in, darwin-arm64)</em></span>
-              <span class="model-task">Text-to-speech (CoreML) · en, es, fr, it, pt, hi, ja, zh</span>
+              <span class="model-task">Text-to-speech (CoreML) · en + native zh; es/fr/it/pt via Eng G2P</span>
               <span class="model-size">~990 MB</span>
               <span>
                 <a
