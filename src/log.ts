@@ -58,6 +58,14 @@ export const log = {
   // and `CI=true` produce genuinely plain output. (#531)
   warn: (msg: string) => void process.stderr.write(colors.yellow(msg) + "\n"),
   error: (msg: string) => void process.stderr.write(colors.red(msg) + "\n"),
+  // Status/progress line on STDERR (e.g. `say --out`, where stdout may carry
+  // raw audio bytes). Suppressed under `--quiet` and colored via the swappable
+  // colorizer so `--no-color` applies; process.stderr.write (not console.error)
+  // avoids Bun's startup-frozen TTY auto-red. (#526/#531)
+  status: (msg: string) => {
+    if (log.quietEnabled) return;
+    process.stderr.write(colors.cyan(msg) + "\n");
+  },
 
   quietEnabled: false,
   debugEnabled: false,

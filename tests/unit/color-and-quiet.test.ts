@@ -119,4 +119,24 @@ describe("--quiet gating (#526)", () => {
       log.quietEnabled = false;
     }
   });
+
+  test("log.status (stderr) is suppressed under --quiet", () => {
+    const chunks: string[] = [];
+    const originalWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      log.quietEnabled = true;
+      log.status("hidden-status");
+      expect(chunks.join("")).not.toContain("hidden-status");
+      log.quietEnabled = false;
+      log.status("shown-status");
+      expect(chunks.join("")).toContain("shown-status");
+    } finally {
+      process.stderr.write = originalWrite;
+      log.quietEnabled = false;
+    }
+  });
 });

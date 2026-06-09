@@ -239,16 +239,16 @@ export const sayCommand = defineCommand({
       const startedAt = performance.now();
       if (opts.out) {
         const voiceLabel = opts.voice ?? "default voice";
-        console.error(`Synthesizing ${voiceLabel} -> ${opts.out}...`);
+        log.status(`Synthesizing ${voiceLabel} -> ${opts.out}...`);
       }
       const audio = await stats.timeStage("tts", () => say(opts));
       const ttsTimeMs = Math.round(performance.now() - startedAt);
       if (opts.out) {
-        console.error(`Saved ${opts.out} (${ttsTimeMs}ms)`);
+        log.status(`Saved ${opts.out} (${ttsTimeMs}ms)`);
       }
       if (args.verbose && !opts.out) {
         // stderr — stdout may carry raw audio bytes when --out is omitted.
-        console.error(`TTS time: ${ttsTimeMs}ms`);
+        log.status(`TTS time: ${ttsTimeMs}ms`);
       }
       let outputFormat: string = opts.format ?? "wav";
       let outputSizeBytes: number | null | undefined = audio.byteLength;
