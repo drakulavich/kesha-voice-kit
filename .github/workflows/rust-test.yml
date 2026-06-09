@@ -1,13 +1,12 @@
 name: "🧪 Rust Tests"
 
 on:
+  # Run on EVERY PR (no top-level path filter). A path-filtered workflow is
+  # skipped on unrelated PRs, so its required status check never reports and
+  # permanently blocks the PR (e.g. a docs-only change). Instead a cheap
+  # `changes` job always runs and the expensive rust jobs gate on its output —
+  # skipped jobs report success, satisfying branch protection.
   pull_request:
-    paths:
-      - "rust/**"
-      - ".github/workflows/rust-test.yml"
-      - ".github/scripts/check-coverage.ts"
-      - "package.json"
-      - "bun.lock"
   push:
     branches: [main]
     paths:
@@ -18,8 +17,28 @@ permissions:
   contents: read
 
 jobs:
+  # Always runs (even on docs PRs) so the workflow concludes successfully and
+  # its required check reports; outputs gate the heavy rust jobs below.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'rust/**'
+              - '.github/workflows/rust-test.yml'
+              - '.github/scripts/check-coverage.ts'
+              - 'package.json'
+              - 'bun.lock'
+
   lint-ubuntu:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -40,7 +59,8 @@ jobs:
         run: bash rust/ci/run-clippy.sh Linux
 
   test:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
     permissions:
       contents: read
       # Flakiness.io CLI authenticates via GitHub OIDC; scope the
@@ -184,7 +204,8 @@ jobs:
             --category rust --flakiness-project Laputa/kesha-voice-kit
 
   coverage:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
     permissions:
       contents: read
       id-token: write
