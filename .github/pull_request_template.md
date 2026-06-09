@@ -8,8 +8,6 @@
 
 <!-- Motivation / linked issue. Use "Closes #123" to auto-close. -->
 
-Closes #
-
 ## Testing
 
 <!-- How did you verify this? Commands run, manual checks, new tests. -->
