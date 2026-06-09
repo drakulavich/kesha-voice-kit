@@ -117,3 +117,16 @@ jobs:
         run: |
           echo "::warning::bun audit reported findings (non-blocking until promotion PR)"
           exit 1
+
+  # Aggregator gate = the single required status check for branch protection.
+  # Always runs so the context reports on every PR (the audits skip on PRs that
+  # don't touch dependencies → success); fails only if a real job failed.
+  security-audit:
+    name: 🛡️ Security Audit
+    if: always()
+    needs: [changes, cargo-deny, bun-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

@@ -332,3 +332,16 @@ jobs:
         run: bash rust/ci/run-clippy.sh Linux
       - name: Tests
         run: cd rust && cargo nextest run --features tts
+
+  # Aggregator gate = the single required status check for branch protection.
+  # Always runs so the context reports on every PR (the heavy jobs above skip on
+  # non-rust PRs → success); the step fails the gate only if a real job failed.
+  rust-tests:
+    name: 🧪 Rust Tests
+    if: always()
+    needs: [changes, lint-ubuntu, test, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
