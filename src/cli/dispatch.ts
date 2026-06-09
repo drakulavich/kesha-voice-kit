@@ -46,6 +46,12 @@ function isFalsey(v: string): boolean {
   return FALSEY_VALUES.has(v.trim().toLowerCase());
 }
 
+// Whether the process was launched with NO_COLOR already forced on. Captured
+// once at import (before any runCli) so re-enabling colors never clobbers an
+// externally-set NO_COLOR — we only clear the var on re-enable when WE set it.
+const USER_FORCED_NO_COLOR =
+  process.env.NO_COLOR !== undefined && !isFalsey(process.env.NO_COLOR);
+
 /**
  * Decide whether ANSI colors should be disabled (#531) and return rawArgs with
  * any `--no-color[=value]` token stripped so citty never sees it.
@@ -104,7 +110,14 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
   // in-process calls (unit tests, `kesha mcp`). picocolors already honors
   // NO_COLOR at startup; setting the env var also propagates to the engine.
   setColorEnabled(!color.disableColor);
-  if (color.disableColor) process.env.NO_COLOR = "1";
+  // Keep NO_COLOR symmetric so it doesn't leak to engine subprocesses spawned
+  // by a later in-process call: set it when WE disable, clear it on re-enable —
+  // but never clear a NO_COLOR the user exported themselves.
+  if (color.disableColor) {
+    process.env.NO_COLOR = "1";
+  } else if (!USER_FORCED_NO_COLOR) {
+    delete process.env.NO_COLOR;
+  }
 
   const quiet = resolveQuietMode(color.rawArgs);
   log.quietEnabled = quiet.quiet;
