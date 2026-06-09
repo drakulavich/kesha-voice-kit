@@ -42,6 +42,7 @@
   },
   "scripts": {
     "test": "bun test",
+    "test:watch": "bun test --watch",
     "test:unit": "bun test tests/unit/",
     "test:cli-fast": "bun test tests/unit/ tests/integration/cli-contracts.test.ts tests/integration/e2e-cli.test.ts tests/integration/say.test.ts",
     "test:integration": "bun test tests/integration/",
