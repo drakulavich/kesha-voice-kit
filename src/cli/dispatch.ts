@@ -1,6 +1,6 @@
 import { runMain, type CommandDef } from "citty";
 import { existsSync } from "fs";
-import { log } from "../log";
+import { log, setColorEnabled } from "../log";
 import { suggestCommand } from "../suggest-command";
 import { completionsCommand } from "./completions";
 import { doctorCommand } from "./doctor";
@@ -39,7 +39,31 @@ function isPathLike(arg: string): boolean {
   return arg.includes(".") || arg.includes("/") || existsSync(arg);
 }
 
+// CI is "on" when the var is set to anything other than an explicit falsey
+// value. Mirrors the KESHA_DEBUG grammar so `CI=false`/`CI=0` opt back in to
+// colors. Most providers (GitHub Actions, GitLab, CircleCI, …) export CI=true.
+const CI_OFF_VALUES = new Set(["", "0", "false", "no", "off"]);
+function isCi(): boolean {
+  const v = process.env.CI;
+  if (v === undefined) return false;
+  return !CI_OFF_VALUES.has(v.trim().toLowerCase());
+}
+
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
+  // Color suppression (#531), handled before citty so it applies to every
+  // command (and help output) and never reaches a subcommand's arg schema.
+  // Disable colors when: (a) --no-color is passed, or (b) running under CI
+  // (CI is set to a truthy value — most CI providers export CI=true). picocolors
+  // already honors NO_COLOR at startup; this covers the runtime flag + CI cases
+  // and propagates to the engine subprocess via the NO_COLOR env var.
+  const hasNoColorFlag = rawArgs.includes("--no-color");
+  if (hasNoColorFlag || isCi()) {
+    process.env.NO_COLOR = "1";
+    setColorEnabled(false);
+  }
+  if (hasNoColorFlag) {
+    rawArgs = rawArgs.filter((a) => a !== "--no-color");
+  }
   const [firstArg, ...restArgs] = rawArgs;
 
   if (firstArg && Object.hasOwn(SUBCOMMANDS, firstArg)) {

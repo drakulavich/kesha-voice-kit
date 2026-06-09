@@ -37,6 +37,8 @@ interface MainCommandArgs {
   "include-errors": boolean;
   format?: string;
   lang?: string;
+  quiet: boolean;
+  "no-color": boolean;
 }
 
 export function detectLanguage(text: string): string {
@@ -116,7 +118,9 @@ export function shouldReportTranscribeProgress(input: {
   stderrIsTty: boolean;
   stdoutIsTty: boolean;
   debugEnabled: boolean;
+  quiet?: boolean;
 }): boolean {
+  if (input.quiet) return false;
   if (input.debugEnabled) return false;
   return input.stderrIsTty || !input.stdoutIsTty;
 }
@@ -146,6 +150,12 @@ export const mainCommand = defineCommand({
     version: packageVersion,
     description:
       "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
+      "\n" +
+      "Examples:\n" +
+      "  kesha audio.ogg          Transcribe an audio file.\n" +
+      "  kesha --json audio.ogg   Transcribe with machine-readable output.\n" +
+      "  kesha say \"hello\"        Speak text (text-to-speech).\n" +
+      "  kesha init               Guided first-time setup.\n" +
       "\n" +
       "Commands:\n" +
       "  completions  Print shell completion script.\n" +
@@ -178,7 +188,7 @@ export const mainCommand = defineCommand({
     },
     speakers: {
       type: "boolean",
-      description: "Include speaker labels in transcript segments. Requires --json / --toon / --format json. Implies --timestamps. Currently darwin-arm64 only (#199).",
+      description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first. Implies --timestamps.",
       default: false,
     },
     "include-errors": {
@@ -197,7 +207,7 @@ export const mainCommand = defineCommand({
     },
     lang: {
       type: "string",
-      description: "Expected language code (ISO 639-1), warn if mismatch",
+      description: "Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch",
     },
     debug: {
       type: "boolean",
@@ -214,9 +224,23 @@ export const mainCommand = defineCommand({
       description: "Force full-file ASR for short/medium files; long audio fails early",
       default: false,
     },
+    quiet: {
+      type: "boolean",
+      alias: "q",
+      description: "Suppress progress output; print only results and errors",
+      default: false,
+    },
+    // Handled before citty in dispatch.ts (applies to every command + help);
+    // declared here only so it appears in `kesha --help`.
+    "no-color": {
+      type: "boolean",
+      description: "Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)",
+      default: false,
+    },
   },
   async run({ args, rawArgs }: { args: MainCommandArgs; rawArgs: string[] }) {
     if (args.debug) log.debugEnabled = true;
+    if (args.quiet) log.quietEnabled = true;
     const files = args._;
 
     // Validate `--format <value>` and normalize into the boolean flags
@@ -297,6 +321,7 @@ export const mainCommand = defineCommand({
       stderrIsTty: process.stderr.isTTY === true,
       stdoutIsTty: process.stdout.isTTY === true,
       debugEnabled: log.isDebugEnabled(),
+      quiet: Boolean(args.quiet),
     });
 
     for (const file of files) {

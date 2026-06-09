@@ -53,3 +53,21 @@ needs sanitizing.
 Codes are part of the public contract. A code's meaning will not change; new
 codes may be added. The human-readable message after the code is **not**
 contractual and may be reworded — match on the code, not the message.
+
+## Process exit codes
+
+In addition to the stable `error [CODE]` line above, the process exits with a
+status that lets scripts branch without parsing stderr:
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Success. |
+| `1` | Operational error — engine/model not installed, a download or install failed, an unknown command, or no input was given. |
+| `2` | Invalid arguments or usage (mutually-exclusive flags, a bad `--format`, empty `say` text, …). |
+| `4` | Unexpected/uncoded internal failure. |
+| `5` | `kesha say` text exceeds the length limit. |
+
+`kesha say` and other engine-backed commands may also exit with the **engine's
+own** non-zero status when the engine itself fails. For fine-grained handling,
+match on the stable `error [CODE]` line — it is the reliable signal; the numeric
+exit status only distinguishes the broad categories above.

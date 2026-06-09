@@ -111,7 +111,7 @@ export const sayCommand = defineCommand({
     lang: {
       type: "string",
       description:
-        "BCP 47 language code (default en-us). With no --voice, routes to that language's default voice and skips text-language detection.",
+        "Language code, e.g. en-us (default en-us; see docs/languages.md). With no --voice, routes to that language's default voice and skips text-language detection.",
     },
     out: { type: "string", description: "Write audio to file instead of stdout" },
     rate: { type: "string", description: "Speaking rate 0.5–2.0", default: "1.0" },

@@ -10,7 +10,7 @@ _kesha_completion() {
 
   if [[ "$COMP_CWORD" -eq 1 ]]; then
     if [[ "$cur" == -* ]]; then
-      COMPREPLY=( $(compgen -W "--help -h --version -v --json --toon --timestamps --speakers --include-errors --verbose --format --lang --debug --vad --no-vad" -- "$cur") )
+      COMPREPLY=( $(compgen -W "--help -h --version -v --json --toon --timestamps --speakers --include-errors --verbose --format --lang --debug --vad --no-vad --quiet --no-color" -- "$cur") )
     else
       COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
     fi
@@ -30,7 +30,7 @@ _kesha_completion() {
     stats) opts="--help -h --format" ;;
     status) opts="--help -h --disk" ;;
     support-bundle) opts="--help -h --output --include-logs" ;;
-    *) opts="--help -h --version -v --json --toon --timestamps --speakers --include-errors --verbose --format --lang --debug --vad --no-vad" ;;
+    *) opts="--help -h --version -v --json --toon --timestamps --speakers --include-errors --verbose --format --lang --debug --vad --no-vad --quiet --no-color" ;;
   esac
 
   if [[ "$cur" == -* ]]; then
