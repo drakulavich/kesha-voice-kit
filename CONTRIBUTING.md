@@ -155,6 +155,12 @@ kesha-voice-kit/
 - `audio-quality-check` agent runs after every commit touching
   `rust/src/tts/**` (see `.claude/agents/audio-quality-check.md`).
 
+Handy loops:
+
+- `bun run test:watch` — re-run tests on save during development.
+- `bun test -t "<pattern>"` — run only tests whose name matches `<pattern>`
+  (e.g. `bun test -t "say"`).
+
 ## CI workflows
 
 - `ci.yml` — runs on PRs: `changes` filter → unit-tests (3 OSes) +
