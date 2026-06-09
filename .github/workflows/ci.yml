@@ -686,3 +686,28 @@ jobs:
 
       - name: 🚬 Smoke
         run: ./result/bin/kesha-engine --version
+
+  # Aggregator gate = the single required status check for branch protection.
+  # Always runs so 🧪 CI reports on every PR; the path-gated jobs above skip on
+  # unrelated PRs (→ success). The step fails the gate only if a real job failed.
+  ci:
+    name: 🧪 CI
+    if: always()
+    needs:
+      - changes
+      - workflow-lint
+      - homebrew-formula
+      - unit-tests
+      - ts-coverage
+      - integration-tests
+      - integration-tests-full
+      - published-engine-smoke
+      - release-branch-engine-smoke
+      - tts-e2e
+      - raycast-lint
+      - nix-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
