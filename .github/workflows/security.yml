@@ -1,14 +1,12 @@
 name: "🛡️ Security Audit"
 
 on:
+  # Run on EVERY PR (no top-level path filter). A path-filtered workflow is
+  # skipped on unrelated PRs, so its required status checks never report and
+  # permanently block the PR. A cheap `changes` job always runs; the audit jobs
+  # gate on its output (skipped jobs report success, satisfying branch
+  # protection) so docs-only PRs aren't blocked.
   pull_request:
-    paths:
-      - "rust/Cargo.toml"
-      - "rust/Cargo.lock"
-      - "rust/deny.toml"
-      - "package.json"
-      - "bun.lock"
-      - ".github/workflows/security.yml"
   schedule:
     # Weekly advisory-DB re-check against unchanged deps (RUSTSEC/npm
     # advisories update independently of our code). Offset from the
@@ -24,7 +22,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Always runs so the required checks always report; outputs gate the audits.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      deps: ${{ steps.filter.outputs.deps }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            deps:
+              - 'rust/Cargo.toml'
+              - 'rust/Cargo.lock'
+              - 'rust/deny.toml'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/security.yml'
+
   cargo-deny:
+    needs: changes
+    # Run for scheduled/manual audits, or on PRs that touch dependencies. On a
+    # PR that doesn't, this skips → reports success → satisfies branch protection.
+    if: github.event_name != 'pull_request' || needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,6 +80,8 @@ jobs:
           exit 1
 
   bun-audit:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
