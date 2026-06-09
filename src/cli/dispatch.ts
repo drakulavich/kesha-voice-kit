@@ -39,31 +39,52 @@ function isPathLike(arg: string): boolean {
   return arg.includes(".") || arg.includes("/") || existsSync(arg);
 }
 
-// CI is "on" when the var is set to anything other than an explicit falsey
-// value. Mirrors the KESHA_DEBUG grammar so `CI=false`/`CI=0` opt back in to
-// colors. Most providers (GitHub Actions, GitLab, CircleCI, …) export CI=true.
-const CI_OFF_VALUES = new Set(["", "0", "false", "no", "off"]);
-function isCi(): boolean {
-  const v = process.env.CI;
-  if (v === undefined) return false;
-  return !CI_OFF_VALUES.has(v.trim().toLowerCase());
+// Falsey grammar shared by --no-color and CI. Mirrors KESHA_DEBUG so
+// `CI=false`/`CI=0` and `--no-color=false` opt back in to colors.
+const FALSEY_VALUES = new Set(["", "0", "false", "no", "off"]);
+function isFalsey(v: string): boolean {
+  return FALSEY_VALUES.has(v.trim().toLowerCase());
+}
+
+/**
+ * Decide whether ANSI colors should be disabled (#531) and return rawArgs with
+ * any `--no-color[=value]` token stripped so citty never sees it.
+ *
+ * Colors are disabled when `--no-color` (bare) or `--no-color=<truthy>` is
+ * passed, or when the environment looks like CI (`CI` set to a non-falsey value
+ * — GitHub Actions, GitLab, CircleCI, … export `CI=true`). `--no-color=false`
+ * and `CI=false`/`CI=0` explicitly opt back in.
+ */
+export function resolveColorMode(
+  rawArgs: string[],
+  env: { CI?: string } = process.env as { CI?: string },
+): { disableColor: boolean; rawArgs: string[] } {
+  let flag = false;
+  const cleaned: string[] = [];
+  for (const arg of rawArgs) {
+    if (arg === "--no-color") {
+      flag = true;
+    } else if (arg.startsWith("--no-color=")) {
+      flag = !isFalsey(arg.slice("--no-color=".length));
+    } else {
+      cleaned.push(arg);
+    }
+  }
+  const ci = env.CI !== undefined && !isFalsey(env.CI);
+  return { disableColor: flag || ci, rawArgs: cleaned };
 }
 
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
-  // Color suppression (#531), handled before citty so it applies to every
+  // Color suppression (#531), resolved before citty so it applies to every
   // command (and help output) and never reaches a subcommand's arg schema.
-  // Disable colors when: (a) --no-color is passed, or (b) running under CI
-  // (CI is set to a truthy value — most CI providers export CI=true). picocolors
-  // already honors NO_COLOR at startup; this covers the runtime flag + CI cases
-  // and propagates to the engine subprocess via the NO_COLOR env var.
-  const hasNoColorFlag = rawArgs.includes("--no-color");
-  if (hasNoColorFlag || isCi()) {
+  // picocolors already honors NO_COLOR at startup; this covers the runtime
+  // --no-color flag + CI, and propagates to the engine via the NO_COLOR env var.
+  const color = resolveColorMode(rawArgs);
+  if (color.disableColor) {
     process.env.NO_COLOR = "1";
     setColorEnabled(false);
   }
-  if (hasNoColorFlag) {
-    rawArgs = rawArgs.filter((a) => a !== "--no-color");
-  }
+  rawArgs = color.rawArgs;
   const [firstArg, ...restArgs] = rawArgs;
 
   if (firstArg && Object.hasOwn(SUBCOMMANDS, firstArg)) {

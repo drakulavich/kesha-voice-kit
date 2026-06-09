@@ -240,7 +240,9 @@ export const mainCommand = defineCommand({
   },
   async run({ args, rawArgs }: { args: MainCommandArgs; rawArgs: string[] }) {
     if (args.debug) log.debugEnabled = true;
-    if (args.quiet) log.quietEnabled = true;
+    // Assign (don't OR-in) so the module-level flag can't bleed across
+    // invocations — notably between unit tests that call run() directly.
+    log.quietEnabled = Boolean(args.quiet);
     const files = args._;
 
     // Validate `--format <value>` and normalize into the boolean flags
