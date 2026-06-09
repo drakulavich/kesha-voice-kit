@@ -111,7 +111,7 @@ export const sayCommand = defineCommand({
     lang: {
       type: "string",
       description:
-        "BCP 47 language code (default en-us). With no --voice, routes to that language's default voice and skips text-language detection.",
+        "Language code, e.g. en-us (default en-us; see docs/languages.md). With no --voice, routes to that language's default voice and skips text-language detection.",
     },
     out: { type: "string", description: "Write audio to file instead of stdout" },
     rate: { type: "string", description: "Speaking rate 0.5–2.0", default: "1.0" },
@@ -239,16 +239,16 @@ export const sayCommand = defineCommand({
       const startedAt = performance.now();
       if (opts.out) {
         const voiceLabel = opts.voice ?? "default voice";
-        console.error(`Synthesizing ${voiceLabel} -> ${opts.out}...`);
+        log.status(`Synthesizing ${voiceLabel} -> ${opts.out}...`);
       }
       const audio = await stats.timeStage("tts", () => say(opts));
       const ttsTimeMs = Math.round(performance.now() - startedAt);
       if (opts.out) {
-        console.error(`Saved ${opts.out} (${ttsTimeMs}ms)`);
+        log.status(`Saved ${opts.out} (${ttsTimeMs}ms)`);
       }
       if (args.verbose && !opts.out) {
         // stderr — stdout may carry raw audio bytes when --out is omitted.
-        console.error(`TTS time: ${ttsTimeMs}ms`);
+        log.status(`TTS time: ${ttsTimeMs}ms`);
       }
       let outputFormat: string = opts.format ?? "wav";
       let outputSizeBytes: number | null | undefined = audio.byteLength;

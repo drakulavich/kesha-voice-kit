@@ -58,7 +58,7 @@ Output results as TOON (compact, LLM\-friendly encoding of the same data as \-\-
 Include timestamped transcript segments in JSON/TOON output
 .TP
 .B \-\-speakers
-Include speaker labels in transcript segments. Requires \-\-json / \-\-toon / \-\-format json. Implies \-\-timestamps. Currently darwin\-arm64 only (#199).
+Include speaker labels in segments. Needs \-\-json/\-\-toon and darwin\-arm64; run `kesha install \-\-diarize` first. Implies \-\-timestamps.
 .TP
 .B \-\-include\-errors
 With \-\-json, output { results, errors } so scripts can read per\-file failures without parsing stderr
@@ -70,7 +70,7 @@ Show language detection details
 Output format: transcript | json | toon (long\-form alias for \-\-json / \-\-toon)
 .TP
 .B \-\-lang
-Expected language code (ISO 639\-1), warn if mismatch
+Expected language code, e.g. en or en\-us (see docs/languages.md); warn if mismatch
 .TP
 .B \-\-debug
 Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)
@@ -80,6 +80,12 @@ Force Silero VAD preprocessing (kesha install \-\-vad first). Without this, VAD 
 .TP
 .B \-\-no\-vad
 Force full\-file ASR for short/medium files; long audio fails early
+.TP
+.B \-\-quiet
+Suppress progress output; print only results and errors
+.TP
+.B \-\-no\-color
+Disable ANSI colors (also via NO_COLOR=1; auto\-off when CI=true)
 .SH SUBCOMMAND OPTIONS
 .SS doctor
 .TP
@@ -155,7 +161,7 @@ Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)
 Voice id, e.g. en\-am_michael
 .TP
 .B \-\-lang
-BCP 47 language code (default en\-us). With no \-\-voice, routes to that language's default voice and skips text\-language detection.
+Language code, e.g. en\-us (default en\-us; see docs/languages.md). With no \-\-voice, routes to that language's default voice and skips text\-language detection.
 .TP
 .B \-\-out
 Write audio to file instead of stdout

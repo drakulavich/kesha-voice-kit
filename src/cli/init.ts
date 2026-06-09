@@ -312,6 +312,14 @@ export const initCommand = defineCommand({
         prompted.vad,
         prompted.diarize,
       );
+      // Next-steps hint (#523): leave the user with something runnable rather
+      // than ending on the install log.
+      log.info("");
+      log.success("Kesha is ready. Try:");
+      log.info("  kesha path/to/audio.ogg     Transcribe a file.");
+      if (prompted.ttsLangs.length > 0) {
+        log.info('  kesha say "hello"           Speak text (TTS).');
+      }
     } finally {
       rl.close();
     }

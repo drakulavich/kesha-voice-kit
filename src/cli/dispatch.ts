@@ -1,6 +1,6 @@
 import { runMain, type CommandDef } from "citty";
 import { existsSync } from "fs";
-import { log } from "../log";
+import { log, setColorEnabled } from "../log";
 import { suggestCommand } from "../suggest-command";
 import { completionsCommand } from "./completions";
 import { doctorCommand } from "./doctor";
@@ -39,7 +39,90 @@ function isPathLike(arg: string): boolean {
   return arg.includes(".") || arg.includes("/") || existsSync(arg);
 }
 
+// Falsey grammar shared by --no-color and CI. Mirrors KESHA_DEBUG so
+// `CI=false`/`CI=0` and `--no-color=false` opt back in to colors.
+const FALSEY_VALUES = new Set(["", "0", "false", "no", "off"]);
+function isFalsey(v: string): boolean {
+  return FALSEY_VALUES.has(v.trim().toLowerCase());
+}
+
+// Whether the process was launched with NO_COLOR already forced on. Captured
+// once at import (before any runCli) so re-enabling colors never clobbers an
+// externally-set NO_COLOR — we only clear the var on re-enable when WE set it.
+const USER_FORCED_NO_COLOR =
+  process.env.NO_COLOR !== undefined && !isFalsey(process.env.NO_COLOR);
+
+/**
+ * Decide whether ANSI colors should be disabled (#531) and return rawArgs with
+ * any `--no-color[=value]` token stripped so citty never sees it.
+ *
+ * Colors are disabled when `--no-color` (bare) or `--no-color=<truthy>` is
+ * passed, or when the environment looks like CI (`CI` set to a non-falsey value
+ * — GitHub Actions, GitLab, CircleCI, … export `CI=true`). `--no-color=false`
+ * and `CI=false`/`CI=0` explicitly opt back in.
+ */
+export function resolveColorMode(
+  rawArgs: string[],
+  env: { CI?: string } = process.env as { CI?: string },
+): { disableColor: boolean; rawArgs: string[] } {
+  let flag = false;
+  const cleaned: string[] = [];
+  for (const arg of rawArgs) {
+    if (arg === "--no-color") {
+      flag = true;
+    } else if (arg.startsWith("--no-color=")) {
+      flag = !isFalsey(arg.slice("--no-color=".length));
+    } else {
+      cleaned.push(arg);
+    }
+  }
+  const ci = env.CI !== undefined && !isFalsey(env.CI);
+  return { disableColor: flag || ci, rawArgs: cleaned };
+}
+
+/**
+ * Detect `--quiet`/`-q` (and `--quiet=<value>`) and return rawArgs with the
+ * token stripped (#526). Resolved before citty — like `--no-color` — so quiet
+ * is global: it works for every command, not just the transcribe path, and a
+ * subcommand that doesn't declare it never sees the flag.
+ */
+export function resolveQuietMode(rawArgs: string[]): { quiet: boolean; rawArgs: string[] } {
+  let flag = false;
+  const cleaned: string[] = [];
+  for (const arg of rawArgs) {
+    if (arg === "--quiet" || arg === "-q") {
+      flag = true;
+    } else if (arg.startsWith("--quiet=")) {
+      flag = !isFalsey(arg.slice("--quiet=".length));
+    } else {
+      cleaned.push(arg);
+    }
+  }
+  return { quiet: flag, rawArgs: cleaned };
+}
+
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
+  // Global flags resolved before citty so they apply to every command (and help
+  // output) and never reach a subcommand's arg schema.
+  const color = resolveColorMode(rawArgs);
+  // Reset on EVERY invocation (not just the disable path): an earlier
+  // --no-color / CI call must not leave colors permanently off for later
+  // in-process calls (unit tests, `kesha mcp`). picocolors already honors
+  // NO_COLOR at startup; setting the env var also propagates to the engine.
+  setColorEnabled(!color.disableColor);
+  // Keep NO_COLOR symmetric so it doesn't leak to engine subprocesses spawned
+  // by a later in-process call: set it when WE disable, clear it on re-enable —
+  // but never clear a NO_COLOR the user exported themselves.
+  if (color.disableColor) {
+    process.env.NO_COLOR = "1";
+  } else if (!USER_FORCED_NO_COLOR) {
+    delete process.env.NO_COLOR;
+  }
+
+  const quiet = resolveQuietMode(color.rawArgs);
+  log.quietEnabled = quiet.quiet;
+
+  rawArgs = quiet.rawArgs;
   const [firstArg, ...restArgs] = rawArgs;
 
   if (firstArg && Object.hasOwn(SUBCOMMANDS, firstArg)) {

@@ -319,6 +319,12 @@ describe("CLI help golden contracts (#324 P1)", () => {
   test("main help matches the normalized golden output", async () => {
     expect(normalizeUsage(await renderUsage(mainCommand))).toBe(`Kesha Voice Kit — open-source voice toolkit for Apple Silicon.
 
+Examples:
+  kesha audio.ogg          Transcribe an audio file.
+  kesha --json audio.ogg   Transcribe with machine-readable output.
+  kesha say "hello"        Speak text (text-to-speech).
+  kesha init               Guided first-time setup.
+
 Commands:
   completions  Print shell completion script.
   doctor     Collect support diagnostics.
@@ -339,14 +345,16 @@ OPTIONS
              --json    Output results as JSON (Default: false)
              --toon    Output results as TOON (compact, LLM-friendly encoding of the same data as --json) (Default: false)
        --timestamps    Include timestamped transcript segments in JSON/TOON output (Default: false)
-         --speakers    Include speaker labels in transcript segments. Requires --json / --toon / --format json. Implies --timestamps. Currently darwin-arm64 only (#199). (Default: false)
+         --speakers    Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run \`kesha install --diarize\` first. Implies --timestamps. (Default: false)
    --include-errors    With --json, output { results, errors } so scripts can read per-file failures without parsing stderr (Default: false)
           --verbose    Show language detection details (Default: false)
   --format=<format>    Output format: transcript | json | toon (long-form alias for --json / --toon)
-      --lang=<lang>    Expected language code (ISO 639-1), warn if mismatch
+      --lang=<lang>    Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch
             --debug    Trace engine subprocess calls on stderr (or KESHA_DEBUG=1) (Default: false)
               --vad    Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s. (Default: false)
-           --no-vad    Force full-file ASR for short/medium files; long audio fails early (Default: false)`);
+           --no-vad    Force full-file ASR for short/medium files; long audio fails early (Default: false)
+        -q, --quiet    Suppress progress output; print only results and errors (Default: false)
+         --no-color    Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true) (Default: false)`);
   });
 
   test("install help matches the normalized golden output", async () => {
@@ -387,7 +395,7 @@ ARGUMENTS
 OPTIONS
 
               --voice=<voice>    Voice id, e.g. en-am_michael
-                --lang=<lang>    BCP 47 language code (default en-us). With no --voice, routes to that language's default voice and skips text-language detection.
+                --lang=<lang>    Language code, e.g. en-us (default en-us; see docs/languages.md). With no --voice, routes to that language's default voice and skips text-language detection.
                   --out=<out>    Write audio to file instead of stdout
                 --rate=<rate>    Speaking rate 0.5–2.0 (Default: 1.0)
                 --list-voices    List installed voices and exit
