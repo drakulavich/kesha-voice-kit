@@ -384,8 +384,6 @@ jobs:
 
       - name: Setup Bun workspace
         uses: ./.github/actions/setup-bun
-        with:
-          bun-version: "1.3.13"
 
       - name: Setup Go
         if: steps.release_kind.outputs.prerelease != 'true'
