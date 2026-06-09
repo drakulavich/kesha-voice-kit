@@ -74,17 +74,42 @@ export function resolveColorMode(
   return { disableColor: flag || ci, rawArgs: cleaned };
 }
 
-export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
-  // Color suppression (#531), resolved before citty so it applies to every
-  // command (and help output) and never reaches a subcommand's arg schema.
-  // picocolors already honors NO_COLOR at startup; this covers the runtime
-  // --no-color flag + CI, and propagates to the engine via the NO_COLOR env var.
-  const color = resolveColorMode(rawArgs);
-  if (color.disableColor) {
-    process.env.NO_COLOR = "1";
-    setColorEnabled(false);
+/**
+ * Detect `--quiet`/`-q` (and `--quiet=<value>`) and return rawArgs with the
+ * token stripped (#526). Resolved before citty — like `--no-color` — so quiet
+ * is global: it works for every command, not just the transcribe path, and a
+ * subcommand that doesn't declare it never sees the flag.
+ */
+export function resolveQuietMode(rawArgs: string[]): { quiet: boolean; rawArgs: string[] } {
+  let flag = false;
+  const cleaned: string[] = [];
+  for (const arg of rawArgs) {
+    if (arg === "--quiet" || arg === "-q") {
+      flag = true;
+    } else if (arg.startsWith("--quiet=")) {
+      flag = !isFalsey(arg.slice("--quiet=".length));
+    } else {
+      cleaned.push(arg);
+    }
   }
-  rawArgs = color.rawArgs;
+  return { quiet: flag, rawArgs: cleaned };
+}
+
+export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
+  // Global flags resolved before citty so they apply to every command (and help
+  // output) and never reach a subcommand's arg schema.
+  const color = resolveColorMode(rawArgs);
+  // Reset on EVERY invocation (not just the disable path): an earlier
+  // --no-color / CI call must not leave colors permanently off for later
+  // in-process calls (unit tests, `kesha mcp`). picocolors already honors
+  // NO_COLOR at startup; setting the env var also propagates to the engine.
+  setColorEnabled(!color.disableColor);
+  if (color.disableColor) process.env.NO_COLOR = "1";
+
+  const quiet = resolveQuietMode(color.rawArgs);
+  log.quietEnabled = quiet.quiet;
+
+  rawArgs = quiet.rawArgs;
   const [firstArg, ...restArgs] = rawArgs;
 
   if (firstArg && Object.hasOwn(SUBCOMMANDS, firstArg)) {

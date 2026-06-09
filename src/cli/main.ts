@@ -224,14 +224,15 @@ export const mainCommand = defineCommand({
       description: "Force full-file ASR for short/medium files; long audio fails early",
       default: false,
     },
+    // quiet and no-color are resolved before citty in dispatch.ts (so they
+    // apply to every command, not just transcribe); declared here only so they
+    // appear in `kesha --help`.
     quiet: {
       type: "boolean",
       alias: "q",
       description: "Suppress progress output; print only results and errors",
       default: false,
     },
-    // Handled before citty in dispatch.ts (applies to every command + help);
-    // declared here only so it appears in `kesha --help`.
     "no-color": {
       type: "boolean",
       description: "Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)",
@@ -240,9 +241,8 @@ export const mainCommand = defineCommand({
   },
   async run({ args, rawArgs }: { args: MainCommandArgs; rawArgs: string[] }) {
     if (args.debug) log.debugEnabled = true;
-    // Assign (don't OR-in) so the module-level flag can't bleed across
-    // invocations — notably between unit tests that call run() directly.
-    log.quietEnabled = Boolean(args.quiet);
+    // `log.quietEnabled` is set globally in dispatch.ts (where --quiet/-q is
+    // resolved and stripped before citty), so it already reflects --quiet here.
     const files = args._;
 
     // Validate `--format <value>` and normalize into the boolean flags
@@ -323,7 +323,7 @@ export const mainCommand = defineCommand({
       stderrIsTty: process.stderr.isTTY === true,
       stdoutIsTty: process.stdout.isTTY === true,
       debugEnabled: log.isDebugEnabled(),
-      quiet: Boolean(args.quiet),
+      quiet: log.quietEnabled,
     });
 
     for (const file of files) {

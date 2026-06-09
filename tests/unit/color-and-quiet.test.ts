@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { resolveColorMode } from "../../src/cli/dispatch";
+import { resolveColorMode, resolveQuietMode } from "../../src/cli/dispatch";
 import { log, setColorEnabled } from "../../src/log";
 import { shouldReportTranscribeProgress } from "../../src/cli";
 
@@ -35,6 +35,26 @@ describe("resolveColorMode (#531)", () => {
 
   test("no color tokens leaves rawArgs untouched", () => {
     expect(resolveColorMode(["a.ogg", "--json"], {}).rawArgs).toEqual(["a.ogg", "--json"]);
+  });
+});
+
+describe("resolveQuietMode (#526)", () => {
+  test("--quiet / -q / --quiet=true enable and are stripped", () => {
+    expect(resolveQuietMode(["--quiet", "a.ogg"])).toEqual({ quiet: true, rawArgs: ["a.ogg"] });
+    expect(resolveQuietMode(["-q", "a.ogg"])).toEqual({ quiet: true, rawArgs: ["a.ogg"] });
+    expect(resolveQuietMode(["--quiet=1"])).toEqual({ quiet: true, rawArgs: [] });
+  });
+
+  test("--quiet=false opts out but is still stripped", () => {
+    expect(resolveQuietMode(["--quiet=false", "a.ogg"])).toEqual({ quiet: false, rawArgs: ["a.ogg"] });
+  });
+
+  test("strips the flag even when it precedes a subcommand", () => {
+    expect(resolveQuietMode(["-q", "say", "hello"])).toEqual({ quiet: true, rawArgs: ["say", "hello"] });
+  });
+
+  test("no quiet token leaves rawArgs untouched", () => {
+    expect(resolveQuietMode(["say", "hello"])).toEqual({ quiet: false, rawArgs: ["say", "hello"] });
   });
 });
 
