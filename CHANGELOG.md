@@ -10,6 +10,34 @@ binary.
 
 ## [Unreleased]
 
+## [1.24.0] — 2026-06-09
+
+CLI-only release. Engine binary unchanged at v1.23.0. Marker tag `v1.24.0-cli` (the `-cli` suffix excludes it from `build-engine.yml`'s tag filter — no Rust rebuild fires).
+
+### Added
+- **`--quiet` / `-q`** — global flag that silences progress/status output for scripting and CI; results and errors still print. Resolved before the arg parser so it applies to every command ([#526](https://github.com/drakulavich/kesha-voice-kit/issues/526)).
+- **`--no-color`** — global flag to disable ANSI colors; the standard `NO_COLOR=1` env var is honored too, and colors switch off automatically when `CI=true` (opt back in with `CI=false` or `--no-color=false`). Propagates to the engine subprocess via `NO_COLOR` ([#531](https://github.com/drakulavich/kesha-voice-kit/issues/531)).
+- **Examples block in `kesha --help`** — the top-level help now opens with copy-pasteable invocations ([#522](https://github.com/drakulavich/kesha-voice-kit/issues/522)).
+- **Next-steps hint after `kesha init`** — a successful install now ends with runnable follow-ups instead of silence ([#523](https://github.com/drakulavich/kesha-voice-kit/issues/523)).
+- **Process exit codes documented** — `docs/errors.md` gains an exit-code table (0/1/2/4/5 + engine-propagated statuses) and the README links it ([#527](https://github.com/drakulavich/kesha-voice-kit/issues/527)).
+- **DX:** `.editorconfig`, a pull-request template, and a `test:watch` script (`bun test -t "<pattern>"` documented in CONTRIBUTING) ([#528](https://github.com/drakulavich/kesha-voice-kit/issues/528), [#529](https://github.com/drakulavich/kesha-voice-kit/issues/529), [#530](https://github.com/drakulavich/kesha-voice-kit/issues/530)).
+
+### Changed
+- **Language-code help unified** — transcribe and `say` `--lang` descriptions now use the same wording with examples and point to `docs/languages.md` ([#524](https://github.com/drakulavich/kesha-voice-kit/issues/524)).
+- **`--speakers` help** drops the raw issue reference and states the `kesha install --diarize` prerequisite in plain language ([#525](https://github.com/drakulavich/kesha-voice-kit/issues/525)).
+- **`say --out` status lines** ("Synthesizing…", "Saved…", "TTS time:") now respect `--quiet` and `--no-color`.
+- **CI:** the Bun toolchain version is pinned once in a repo-root `.bun-version` file instead of six hardcoded copies across workflows ([#534](https://github.com/drakulavich/kesha-voice-kit/pull/534)).
+
+### Fixed
+- **CI: required status checks no longer block unrelated PRs.** `rust-test.yml` and `security.yml` run on every PR with an internal path filter (skipped jobs report success instead of the whole workflow staying pending), and always-running aggregator gate jobs (`🧪 CI`, `🧪 Rust Tests`, `🛡️ Security Audit`) are the branch-protection contexts — docs-only PRs merge without admin override ([#535](https://github.com/drakulavich/kesha-voice-kit/pull/535), [#536](https://github.com/drakulavich/kesha-voice-kit/pull/536)).
+
+### Shipped PRs
+- [#532](https://github.com/drakulavich/kesha-voice-kit/pull/532) — chore(dx): .editorconfig, PR template, test:watch
+- [#533](https://github.com/drakulavich/kesha-voice-kit/pull/533) — feat(cli): UX polish — help examples, clearer flags, --quiet, --no-color (+CI)
+- [#534](https://github.com/drakulavich/kesha-voice-kit/pull/534) — ci: pin Bun version via a .bun-version file
+- [#535](https://github.com/drakulavich/kesha-voice-kit/pull/535) — ci: run rust-test + security on every PR, gate work internally
+- [#536](https://github.com/drakulavich/kesha-voice-kit/pull/536) — ci: add aggregator gate jobs as the single required status checks
+
 ## [1.13.0] (unreleased)
 
 Engine release. Adds SSML `<prosody rate>` support for Vosk + Kokoro voices.
