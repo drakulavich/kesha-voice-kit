@@ -1,3 +1,4 @@
+import { errorMessage } from "./error-utils";
 import {
   closeSync,
   existsSync,
@@ -232,7 +233,7 @@ export function createDiagnosticLogSession(): DiagnosticLogSession {
         appendDiagnosticLogLine(line, status);
         return true;
       } catch (err) {
-        log.debug(`diagnostic log event dropped: ${err instanceof Error ? err.message : String(err)}`);
+        log.debug(`diagnostic log event dropped: ${errorMessage(err)}`);
         return false;
       }
     },

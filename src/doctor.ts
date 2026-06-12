@@ -1,4 +1,6 @@
 import { existsSync, statSync } from "fs";
+import { errorMessage } from "./error-utils";
+import { humanBytes } from "./format";
 import { dirname, join, sep } from "path";
 import {
   getEngineBinPath,
@@ -80,18 +82,6 @@ export interface DoctorReport {
   stats: StatsStatus | (Partial<StatsStatus> & { error: string });
   diagnosticLogs: DoctorDiagnosticLogStatus;
   env: Record<string, string | null>;
-}
-
-function humanBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let n = bytes / 1024;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
 }
 
 function pathSummary(path: string): PathSummary {
@@ -194,7 +184,7 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
       capabilities = await getEngineCapabilities();
       if (!capabilities) probeError = "capabilities probe returned no data";
     } catch (err) {
-      probeError = err instanceof Error ? err.message : String(err);
+      probeError = errorMessage(err);
     }
   }
 
@@ -305,7 +295,7 @@ function collectStats(redact: boolean): DoctorReport["stats"] {
       : status;
   } catch (err) {
     return {
-      error: redactString("statsError", err instanceof Error ? err.message : String(err), redact) ?? "unknown",
+      error: redactString("statsError", errorMessage(err), redact) ?? "unknown",
     };
   }
 }
@@ -337,7 +327,7 @@ function collectDiagnosticLogs(redact: boolean): DoctorReport["diagnosticLogs"] 
       maxBytes: 10 * 1024 * 1024,
       retain: 5,
       error:
-        redactString("diagnosticLogsError", err instanceof Error ? err.message : String(err), redact) ??
+        redactString("diagnosticLogsError", errorMessage(err), redact) ??
         "unknown",
     };
   }

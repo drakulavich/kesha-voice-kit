@@ -40,6 +40,17 @@ pub mod avspeech;
 /// spend minutes on synthesis with poor quality.
 pub const MAX_TEXT_CHARS: usize = 5000;
 
+/// Strip SSML `<emphasis>` `+` stress markers from segment content. Only
+/// ru-vosk-* voices honor `+`; every other synth path strips it before
+/// synthesis (the per-engine callers decide whether to warn first).
+pub(crate) fn strip_emphasis_markers(content: String) -> String {
+    if content.contains('+') {
+        content.replace('+', "")
+    } else {
+        content
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TtsError {
     #[error("text is empty")]

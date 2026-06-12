@@ -53,6 +53,30 @@ const USER_FORCED_NO_COLOR =
   process.env.NO_COLOR !== undefined && !isFalsey(process.env.NO_COLOR);
 
 /**
+ * Strip a boolean global flag out of rawArgs so citty never sees it. Matches
+ * any of `names` bare (sets the flag) and the `--name=<value>` form for the
+ * long names (`<falsey>` explicitly turns the flag back off).
+ */
+function stripBooleanFlag(
+  rawArgs: string[],
+  names: string[],
+): { value: boolean; rawArgs: string[] } {
+  const valuedPrefixes = names.filter((n) => n.startsWith("--")).map((n) => `${n}=`);
+  let value = false;
+  const cleaned: string[] = [];
+  for (const arg of rawArgs) {
+    if (names.includes(arg)) {
+      value = true;
+    } else if (valuedPrefixes.some((prefix) => arg.startsWith(prefix))) {
+      value = !isFalsey(arg.slice(arg.indexOf("=") + 1));
+    } else {
+      cleaned.push(arg);
+    }
+  }
+  return { value, rawArgs: cleaned };
+}
+
+/**
  * Decide whether ANSI colors should be disabled (#531) and return rawArgs with
  * any `--no-color[=value]` token stripped so citty never sees it.
  *
@@ -65,19 +89,9 @@ export function resolveColorMode(
   rawArgs: string[],
   env: { CI?: string } = process.env as { CI?: string },
 ): { disableColor: boolean; rawArgs: string[] } {
-  let flag = false;
-  const cleaned: string[] = [];
-  for (const arg of rawArgs) {
-    if (arg === "--no-color") {
-      flag = true;
-    } else if (arg.startsWith("--no-color=")) {
-      flag = !isFalsey(arg.slice("--no-color=".length));
-    } else {
-      cleaned.push(arg);
-    }
-  }
+  const { value, rawArgs: cleaned } = stripBooleanFlag(rawArgs, ["--no-color"]);
   const ci = env.CI !== undefined && !isFalsey(env.CI);
-  return { disableColor: flag || ci, rawArgs: cleaned };
+  return { disableColor: value || ci, rawArgs: cleaned };
 }
 
 /**
@@ -87,18 +101,8 @@ export function resolveColorMode(
  * subcommand that doesn't declare it never sees the flag.
  */
 export function resolveQuietMode(rawArgs: string[]): { quiet: boolean; rawArgs: string[] } {
-  let flag = false;
-  const cleaned: string[] = [];
-  for (const arg of rawArgs) {
-    if (arg === "--quiet" || arg === "-q") {
-      flag = true;
-    } else if (arg.startsWith("--quiet=")) {
-      flag = !isFalsey(arg.slice("--quiet=".length));
-    } else {
-      cleaned.push(arg);
-    }
-  }
-  return { quiet: flag, rawArgs: cleaned };
+  const { value, rawArgs: cleaned } = stripBooleanFlag(rawArgs, ["--quiet", "-q"]);
+  return { quiet: value, rawArgs: cleaned };
 }
 
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {

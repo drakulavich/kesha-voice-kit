@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import { errorMessage } from "../error-utils";
 import { existsSync } from "fs";
 import { detect } from "tinyld";
 import { preflightTranscribeWithSegments, transcribeWithSegments } from "../transcribe";
@@ -435,7 +436,7 @@ export const mainCommand = defineCommand({
       } catch (err: unknown) {
         progress?.stop();
         hasError = true;
-        const stderrText = err instanceof Error ? err.message : String(err);
+        const stderrText = errorMessage(err);
         const code = extractEngineErrorCode(stderrText) ?? ENGINE_CODES.TRANSCRIBE_FAILED;
         stats.recordError("transcribe", err, code);
         diagnosticLog.event("engine.exit", {

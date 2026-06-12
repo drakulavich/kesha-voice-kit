@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import { errorMessage } from "../error-utils";
 import { createSupportBundle } from "../support-bundle";
 import { log } from "../log";
 
@@ -33,7 +34,7 @@ export const supportBundleCommand = defineCommand({
       log.info(`Entries: ${bundle.entries.length}`);
       log.info(`Size: ${bundle.sizeBytes} bytes`);
     } catch (err) {
-      log.error(err instanceof Error ? err.message : String(err));
+      log.error(errorMessage(err));
       process.exit(1);
     }
   },

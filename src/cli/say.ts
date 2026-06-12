@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import { errorMessage } from "../error-utils";
 import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
 import { log } from "../log";
 import { say, SayError, type SayFormat } from "../synth";
@@ -289,7 +290,7 @@ export const sayCommand = defineCommand({
         log.error(err.stderr.trim() || err.message);
         process.exit(err.exitCode);
       }
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       log.error(message);
       process.exit(4);
     }

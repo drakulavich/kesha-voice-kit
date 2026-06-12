@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import { errorMessage } from "../error-utils";
 import { downloadEngine } from "../engine-install";
 import { getEngineBinPath, getEngineCapabilities } from "../engine";
 import { renderInstallPlan } from "../install-plan";
@@ -111,7 +112,7 @@ function finishInstallDiagnostic(
     });
     diagnosticLog.finish(status);
   } catch (err) {
-    log.debug(`install diagnostic log finish dropped: ${err instanceof Error ? err.message : String(err)}`);
+    log.debug(`install diagnostic log finish dropped: ${errorMessage(err)}`);
   }
 }
 
@@ -161,7 +162,7 @@ export async function performInstall(
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);
     finishInstallDiagnostic(diagnosticLog, startedAt, "success");
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     finishInstallDiagnostic(diagnosticLog, startedAt, "failed", errorKind);
     log.error(message);
     process.exit(1);
@@ -219,7 +220,7 @@ export const installCommand = defineCommand({
     try {
       ttsLangs = resolveTtsLangs({ tts: args.tts === true, positionals }, supported);
     } catch (err) {
-      log.error(err instanceof Error ? err.message : String(err));
+      log.error(errorMessage(err));
       process.exit(1);
     }
     await performInstall(

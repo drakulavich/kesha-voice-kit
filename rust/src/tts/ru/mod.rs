@@ -43,11 +43,7 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
             Segment::Spell(t) => Segment::Text(letter_table::expand_chars(&t)),
             Segment::Emphasis { content, suppress } => {
                 if suppress {
-                    let stripped = if content.contains('+') {
-                        content.replace('+', "")
-                    } else {
-                        content
-                    };
+                    let stripped = crate::tts::strip_emphasis_markers(content);
                     Segment::Text(stripped)
                 } else {
                     if !content.contains('+') {
