@@ -11,7 +11,7 @@ const DARWIN_KOKORO_DEFAULTS: Record<string, string> = {
   it: "it-im_nicola",
   ja: "ja-jm_kumo",
   pt: "pt-pm_alex",
-  zh: "zh-zm_yunjian",
+  zh: "zh-zm_050",
 };
 
 /**

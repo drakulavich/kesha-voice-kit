@@ -24,7 +24,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("it", 0.95, "darwin", "arm64")).toBe("it-im_nicola");
     expect(pickVoiceForLang("ja", 0.95, "darwin", "arm64")).toBe("ja-jm_kumo");
     expect(pickVoiceForLang("pt-BR", 0.95, "darwin", "arm64")).toBe("pt-pm_alex");
-    expect(pickVoiceForLang("zh-Hans", 0.95, "darwin", "arm64")).toBe("zh-zm_yunjian");
+    expect(pickVoiceForLang("zh-Hans", 0.95, "darwin", "arm64")).toBe("zh-zm_050");
   });
 
   it("does not auto-route languages without an ONNX voice pack on non-darwin", () => {

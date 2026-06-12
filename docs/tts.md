@@ -59,7 +59,7 @@ Default voices are **male** per CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE": `am
 
 **Supported voices:**
 - English: `en-am_michael` (default). Darwin FluidAudio builds expose the supported FluidAudio Kokoro English voices via `kesha say --list-voices`; ONNX builds also see any `.bin` voice you add under `~/.cache/kesha/models/kokoro-82m/voices/`.
-- Apple Silicon Kokoro multilingual voices: `es-em_alex`, `hi-hm_omega`, `it-im_nicola`, `ja-jm_kumo`, `pt-pm_alex`, `zh-zm_yunjian`, and `fr-ff_siwis`. The Spanish, Hindi, Italian, Japanese, Portuguese, and Chinese defaults are male; upstream Kokoro currently has no native male French voice, so French remains explicit-only.
+- Apple Silicon Kokoro multilingual voices: `es-em_alex`, `hi-hm_omega`, `it-im_nicola`, `ja-jm_kumo`, `pt-pm_alex`, `zh-zm_050`, and `fr-ff_siwis`. The Spanish, Hindi, Italian, Japanese, Portuguese, and Chinese defaults are male; upstream Kokoro currently has no native male French voice, so French remains explicit-only.
 - Russian: 5 Vosk-TTS speakers baked into the multi-speaker model — `ru-vosk-m02` (default, male), `ru-vosk-m01` (male), `ru-vosk-f01`/`f02`/`f03` (female).
 - macOS system voices: `macos-<identifier-or-language>` routes to `AVSpeechSynthesizer`. Zero install, any of the 180+ voices already on your Mac.
 
