@@ -1,0 +1,21 @@
+schema: spec-driven
+
+context: |
+  Kesha Voice Kit: local-only multilingual voice toolkit. CLI `kesha` (Bun/TypeScript)
+  wraps a Rust binary `kesha-engine` (subprocess, never linked in-process).
+  Capabilities: speech-to-text (Parakeet TDT 0.6B; CoreML on Apple Silicon, ONNX elsewhere),
+  audio/text language detection, TTS (Kokoro / Vosk-TTS / AVSpeech), MCP server, OpenClaw plugin.
+  Conventions: conventional commits; engine and models are NEVER auto-downloaded
+  (explicit `kesha install` only); default TTS voices must be male (brand rule);
+  stdout stays pipe-friendly (progress/errors on stderr); user-facing install
+  instructions use bun, never npm.
+  Baseline specs live in openspec/specs/ — one capability per directory; see
+  openspec/specs/README.md for personas and reading order, GLOSSARY.md for canonical terms.
+
+rules:
+  proposal:
+    - Always include a "Non-goals" section
+  specs:
+    - Use glossary terms from openspec/specs/GLOSSARY.md verbatim
+    - Every requirement needs at least one happy-path and one error/edge scenario
+    - State outcomes, not implementation mechanisms, in requirement text
