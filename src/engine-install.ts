@@ -7,6 +7,7 @@ import {
   getEngineCapabilities,
   TRANSCRIBE_DIARIZE_FEATURE,
 } from "./engine";
+import { isDarwinArm64 } from "./fluid-kokoro-cache";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
 import { streamResponseToFile } from "./progress";
@@ -62,7 +63,7 @@ interface SidecarSpec {
   unavailableHint: string;
 }
 
-const SIDECARS: SidecarSpec[] = [
+export const SIDECARS: SidecarSpec[] = [
   {
     fileBasename: "say-avspeech",
     assetName: "say-avspeech-darwin-arm64",
@@ -213,7 +214,7 @@ async function downloadSidecar(
   binPath: string,
   engineVersion: string,
 ): Promise<void> {
-  if (process.platform !== "darwin" || process.arch !== "arm64") return;
+  if (!isDarwinArm64()) return;
 
   const sidecarPath = join(dirname(binPath), spec.fileBasename);
   const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/${spec.assetName}`;
@@ -255,7 +256,7 @@ async function downloadSidecar(
 }
 
 async function warmDarwinKokoro(binPath: string): Promise<void> {
-  if (process.platform !== "darwin" || process.arch !== "arm64") return;
+  if (!isDarwinArm64()) return;
   // Kokoro now runs in-engine (FluidAudio CoreML, system_kokoro) — warm it by
   // exercising the engine's own `say`, not a sidecar. The first synthesis
   // compiles/fetches FluidAudio's CoreML Kokoro cache.

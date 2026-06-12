@@ -2,6 +2,7 @@ import { existsSync, statSync } from "fs";
 import { humanBytes } from "./format";
 import { dirname, join } from "path";
 import { getEngineBinPath } from "./engine";
+import { SIDECARS } from "./engine-install";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { engineVersion, packageVersion } from "./package-info";
@@ -120,12 +121,19 @@ const DIARIZE_FILES: PlanFile[] = [
   },
 ];
 
-// Kokoro (#207) and diarization (#199) are in-engine now (native fluidaudio-rs),
-// so only AVSpeech and text-lang ship as separate Swift-sidecar assets.
-const DARWIN_SIDECARS: ReleaseAssetSpec[] = [
-  { assetName: "say-avspeech-darwin-arm64", sizeBytes: 63_056 },
-  { assetName: "kesha-textlang-darwin-arm64", sizeBytes: 57_648 },
-];
+// The sidecar list (and the asset-name → installed-filename mapping) lives in
+// SIDECARS in engine-install.ts; only the release-asset sizes are pinned here,
+// like the model tables above.
+const SIDECAR_ASSET_SIZES: Record<string, number> = {
+  "say-avspeech-darwin-arm64": 63_056,
+  "kesha-textlang-darwin-arm64": 57_648,
+};
+
+const DARWIN_SIDECARS = SIDECARS.map((s) => ({
+  assetName: s.assetName,
+  fileBasename: s.fileBasename,
+  sizeBytes: SIDECAR_ASSET_SIZES[s.assetName] ?? 0,
+}));
 
 function sumFiles(files: PlanFile[]): number {
   return files.reduce((sum, file) => sum + file.sizeBytes, 0);
@@ -142,12 +150,6 @@ function engineAssetForPlatform(): ReleaseAssetSpec | null {
     return { assetName: "kesha-engine-windows-x64.exe", sizeBytes: 63_126_528 };
   }
   return null;
-}
-
-function sidecarFilename(assetName: string): string {
-  if (assetName === "say-avspeech-darwin-arm64") return "say-avspeech";
-  if (assetName === "kesha-textlang-darwin-arm64") return "kesha-textlang";
-  return assetName;
 }
 
 function filesCached(cacheRoot: string, files: PlanFile[]): boolean {
@@ -215,7 +217,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
         name: `Sidecar ${sidecar.assetName}`,
         source: `GitHub release v${engineVersion}`,
         sizeBytes: sidecar.sizeBytes,
-        cached: existsSync(join(engineDir, sidecarFilename(sidecar.assetName))),
+        cached: existsSync(join(engineDir, sidecar.fileBasename)),
         refresh: noCache,
       });
     }
