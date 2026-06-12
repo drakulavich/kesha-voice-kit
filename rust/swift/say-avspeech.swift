@@ -50,7 +50,10 @@ if remainingArgs.first == "--rate" {
     FileHandle.standardError.write("--rate requires a numeric value\n".data(using: .utf8)!)
     exit(2)
   }
-  userRate = parsed
+  // Clamp to the documented 0.5..=2.0 range (Rust validates this before
+  // calling the sidecar, but guard here so the binary's standalone contract
+  // is safe if invoked directly).
+  userRate = min(max(parsed, 0.5), 2.0)
   remainingArgs = remainingArgs.dropFirst()
 }
 
