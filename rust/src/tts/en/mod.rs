@@ -54,11 +54,7 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
                          stripping `+` from content for non-Vosk path",
                     );
                 }
-                let stripped = if content.contains('+') {
-                    content.replace('+', "")
-                } else {
-                    content
-                };
+                let stripped = crate::tts::strip_emphasis_markers(content);
                 vec![Segment::Text(stripped)]
             }
             Segment::Text(t) => acronym::expand_to_segments(&t, auto_expand),

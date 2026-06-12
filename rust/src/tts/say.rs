@@ -297,11 +297,7 @@ fn synth_one_kokoro(
                      stripping `+` from content for non-Vosk path",
                 );
             }
-            let stripped = if content.contains('+') {
-                content.replace('+', "")
-            } else {
-                content.clone()
-            };
+            let stripped = super::strip_emphasis_markers(content.clone());
             let ipa = g2p::text_to_ipa(&stripped, lang)
                 .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
             sess.infer_ipa(&ipa, voice_path, speed)
@@ -433,11 +429,7 @@ fn synth_one_fluid_kokoro(
                      stripping `+` from content for FluidAudio Kokoro",
                 );
             }
-            let stripped = if content.contains('+') {
-                content.replace('+', "")
-            } else {
-                content.clone()
-            };
+            let stripped = super::strip_emphasis_markers(content.clone());
             out.extend(synth(&stripped, speed)?);
         }
         ssml::Segment::ProsodyRate { rate, content } => {
@@ -577,11 +569,7 @@ fn synth_one_vosk(
                      preprocessing; stripping `+` markers as a fallback",
                 );
             }
-            let stripped = if content.contains('+') {
-                content.replace('+', "")
-            } else {
-                content.clone()
-            };
+            let stripped = super::strip_emphasis_markers(content.clone());
             let (audio, _sr) = cache
                 .infer(model_dir, &stripped, speaker_id, speed)
                 .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
