@@ -10,6 +10,23 @@ binary.
 
 ## [Unreleased]
 
+## [1.24.2] — 2026-06-12
+
+Engine release. Ships the [#539](https://github.com/drakulavich/kesha-voice-kit/pull/539) Rust refactors in isolation — binaries are intended to be functionally identical to v1.23.0, so any future regression bisects cleanly to this refactor set. CLI and engine versions move together to 1.24.2.
+
+### Changed
+- **Internal (engine):** TTS dispatch in `say()` flattened to one exhaustive engine match (no more `unreachable!()` arms); `--stdin-loop` handler chunked into per-engine helpers with a shared SSML parse guard; SSML `<emphasis>` `+`-stripping deduplicated into one helper; the Vosk-RU model manifest normalized to a `const` plus a shared `download_manifest()` ([#539](https://github.com/drakulavich/kesha-voice-kit/pull/539), refs [#538](https://github.com/drakulavich/kesha-voice-kit/issues/538)). No behavior change intended.
+
+## [1.24.1] — 2026-06-12
+
+CLI-only release. Engine binary unchanged at v1.23.0. Marker tag `v1.24.1-cli`.
+
+### Changed
+- **Internal (CLI):** ten Tidy First refactors — shared `errorMessage()` / `humanBytes()` helpers, `downloadEngine` split into cached/cold-path helpers, stats-DB open/close scaffolding deduplicated, the install-plan sidecar table derived from the canonical `SIDECARS` spec (with a fail-fast guard for missing asset sizes), and generic global boolean-flag parsing ([#539](https://github.com/drakulavich/kesha-voice-kit/pull/539), closes [#538](https://github.com/drakulavich/kesha-voice-kit/issues/538)). No behavior change intended.
+
+### Fixed
+- **Flaky diagnostics contract test** — the doctor/support-bundle test now has a 15 s per-spawn / 30 s per-test budget instead of flaking with SIGTERM under CPU contention; assertions unchanged ([#540](https://github.com/drakulavich/kesha-voice-kit/pull/540)).
+
 ## [1.24.0] — 2026-06-09
 
 CLI-only release. Engine binary unchanged at v1.23.0. Marker tag `v1.24.0-cli` (the `-cli` suffix excludes it from `build-engine.yml`'s tag filter — no Rust rebuild fires).
