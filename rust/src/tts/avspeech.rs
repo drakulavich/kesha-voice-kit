@@ -48,20 +48,33 @@ pub fn helper_path() -> PathBuf {
 /// either a full identifier (`com.apple.voice.compact.en-US.Samantha`) or a
 /// language code (`en-US`, `ru-RU`).
 ///
+/// `speed` is the user-facing speaking rate multiplier (0.5–2.0, where 1.0 is the
+/// engine default). Forwarded to the sidecar as `--rate <value>`; the sidecar maps
+/// it onto the `AVSpeechUtterance.rate` 0.0–1.0 scale (#546).
+///
 /// Returns complete WAV bytes. `helper` defaults to [`helper_path()`] when `None`
 /// — tests inject a fake helper to verify the subprocess contract without needing
 /// the real Swift binary.
-pub fn synthesize(text: &str, voice_id: &str, helper: Option<&Path>) -> anyhow::Result<Vec<u8>> {
+pub fn synthesize(
+    text: &str,
+    voice_id: &str,
+    speed: f32,
+    helper: Option<&Path>,
+) -> anyhow::Result<Vec<u8>> {
     if text.is_empty() {
         anyhow::bail!("avspeech: text is empty");
     }
     let bin = helper.map(PathBuf::from).unwrap_or_else(helper_path);
 
-    let child = Command::new(&bin)
-        .arg(voice_id)
+    let mut cmd = Command::new(&bin);
+    cmd.arg(voice_id)
+        .arg("--rate")
+        .arg(speed.to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let child = cmd
         .spawn()
         .map_err(|e| anyhow::anyhow!("spawn {}: {e}", bin.display()))
         .coded(ErrorCode::SidecarMissing)?;
@@ -139,7 +152,7 @@ mod tests {
 
     #[test]
     fn empty_text_errors() {
-        let err = synthesize("", "en-US", Some(Path::new("/bin/true")))
+        let err = synthesize("", "en-US", 1.0, Some(Path::new("/bin/true")))
             .unwrap_err()
             .to_string();
         assert!(err.contains("empty"), "msg: {err}");
@@ -149,7 +162,7 @@ mod tests {
     fn helper_stdout_is_returned_verbatim() {
         let tmp = TempDir::new().unwrap();
         let helper = fake_helper(&tmp, r#"cat >/dev/null; printf 'RIFFmock'"#);
-        let bytes = synthesize("hello", "en-US", Some(&helper)).unwrap();
+        let bytes = synthesize("hello", "en-US", 1.0, Some(&helper)).unwrap();
         assert_eq!(&bytes, b"RIFFmock");
     }
 
@@ -157,7 +170,7 @@ mod tests {
     fn helper_nonzero_exit_surfaces_stderr() {
         let tmp = TempDir::new().unwrap();
         let helper = fake_helper(&tmp, r#"echo 'voice not found: xyz' >&2; exit 2"#);
-        let err = synthesize("hello", "xyz", Some(&helper))
+        let err = synthesize("hello", "xyz", 1.0, Some(&helper))
             .unwrap_err()
             .to_string();
         assert!(err.contains("voice not found"), "msg: {err}");
@@ -169,8 +182,28 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         // `cat` echoes stdin to stdout, so the result should be exactly the input text.
         let helper = fake_helper(&tmp, "cat");
-        let bytes = synthesize("Hello, kesha!", "en-US", Some(&helper)).unwrap();
+        let bytes = synthesize("Hello, kesha!", "en-US", 1.0, Some(&helper)).unwrap();
         assert_eq!(String::from_utf8(bytes).unwrap(), "Hello, kesha!");
+    }
+
+    /// The sidecar must receive `--rate <value>` as argv[2] and argv[3].
+    /// A fake helper that echoes all arguments to stdout lets us assert the
+    /// exact contract without requiring the real Swift binary (#546).
+    #[test]
+    fn rate_is_forwarded_as_cli_arg() {
+        let tmp = TempDir::new().unwrap();
+        // Print all args (space-joined) to stdout so we can inspect them.
+        let helper = fake_helper(&tmp, r#"cat >/dev/null; echo "$*""#);
+        let out = synthesize("hello", "en-US", 1.5, Some(&helper)).unwrap();
+        let args_line = String::from_utf8(out).unwrap();
+        assert!(
+            args_line.contains("--rate"),
+            "sidecar must receive --rate flag; got: {args_line:?}"
+        );
+        assert!(
+            args_line.contains("1.5"),
+            "sidecar must receive the rate value; got: {args_line:?}"
+        );
     }
 
     #[test]

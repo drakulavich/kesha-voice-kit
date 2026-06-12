@@ -99,8 +99,10 @@ pub enum EngineChoice<'a> {
     FluidKokoro { voice_id: &'a str, speed: f32 },
     /// macOS AVSpeechSynthesizer via the Swift sidecar (#141).
     /// `voice_id` is forwarded verbatim (an Apple identifier or a language code).
+    /// `speed` is the user-facing multiplier (0.5–2.0); mapped onto the AVSpeech
+    /// 0.0–1.0 rate scale inside the sidecar (#546).
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
-    AVSpeech { voice_id: &'a str },
+    AVSpeech { voice_id: &'a str, speed: f32 },
     /// Vosk-TTS Russian: model dir + speaker id (G2P happens inside vosk).
     Vosk {
         model_dir: &'a Path,

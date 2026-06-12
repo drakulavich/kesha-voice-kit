@@ -130,7 +130,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         }
         // AVSpeech does its own G2P + synthesis inside Swift; skip espeak G2P entirely.
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
-        EngineChoice::AVSpeech { voice_id } => {
+        EngineChoice::AVSpeech { voice_id, speed } => {
             if opts.ssml {
                 return Err(TtsError::Coded {
                     code: crate::errors::ErrorCode::SsmlUnsupported,
@@ -138,7 +138,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
                         .into(),
                 });
             }
-            let wav_bytes = avspeech::synthesize(opts.text, voice_id, None)
+            let wav_bytes = avspeech::synthesize(opts.text, voice_id, *speed, None)
                 .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")))?;
             // The Swift sidecar always returns WAV. For non-WAV `--format`, decode
             // back to PCM and re-encode — cheap (a few hundred ms of audio) and
