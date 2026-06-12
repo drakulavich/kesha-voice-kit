@@ -129,11 +129,17 @@ const SIDECAR_ASSET_SIZES: Record<string, number> = {
   "kesha-textlang-darwin-arm64": 57_648,
 };
 
-const DARWIN_SIDECARS = SIDECARS.map((s) => ({
-  assetName: s.assetName,
-  fileBasename: s.fileBasename,
-  sizeBytes: SIDECAR_ASSET_SIZES[s.assetName] ?? 0,
-}));
+const DARWIN_SIDECARS = SIDECARS.map((s) => {
+  const sizeBytes = SIDECAR_ASSET_SIZES[s.assetName];
+  if (sizeBytes === undefined) {
+    // Fail fast at module load: a sidecar added to SIDECARS without a size
+    // entry here would otherwise silently render as "0 B" in the plan.
+    throw new Error(
+      `install-plan: missing release-asset size for sidecar "${s.assetName}"; add it to SIDECAR_ASSET_SIZES`,
+    );
+  }
+  return { assetName: s.assetName, fileBasename: s.fileBasename, sizeBytes };
+});
 
 function sumFiles(files: PlanFile[]): number {
   return files.reduce((sum, file) => sum + file.sizeBytes, 0);
