@@ -1,4 +1,5 @@
 import { existsSync, statSync } from "fs";
+import { errorMessage } from "./error-utils";
 import { join } from "path";
 import { installHint } from "./install-hint";
 import { log } from "./log";
@@ -280,7 +281,7 @@ export async function transcribeEngineWithSegments(
   try {
     return parseTranscriptionOutput(stdout);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     throw new Error(`${message}: ${stdout}`);
   }
 }

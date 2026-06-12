@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { errorMessage } from "./error-utils";
 import { existsSync, mkdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { dirname, extname, join } from "path";
@@ -148,7 +149,7 @@ function warnStatsWriteFailed(err: unknown): void {
     log.warn("warning: failed to write Kesha Stats; continuing without stats for this event");
     warnedStatsWriteFailed = true;
   }
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   log.debug(`stats write failed: ${message}`);
 }
 

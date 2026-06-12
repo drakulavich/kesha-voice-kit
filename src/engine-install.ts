@@ -1,4 +1,5 @@
 import { dirname, join } from "path";
+import { errorMessage } from "./error-utils";
 import { tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
 import {
@@ -110,7 +111,7 @@ export function cleanupRetiredSidecars(engineDir: string): string[] {
       removed.push(filename);
     } catch (e) {
       log.warn(
-        `Could not remove retired sidecar ${filename} (${e instanceof Error ? e.message : e}); continuing.`,
+        `Could not remove retired sidecar ${filename} (${errorMessage(e)}); continuing.`,
       );
     }
   }
@@ -163,7 +164,7 @@ function darwinTrustBinary(path: string, displayName: string): void {
     }
   } catch (e) {
     log.debug(
-      `codesign on ${displayName} threw: ${e instanceof Error ? e.message : e}`,
+      `codesign on ${displayName} threw: ${errorMessage(e)}`,
     );
   }
   try {
@@ -184,7 +185,7 @@ function darwinTrustBinary(path: string, displayName: string): void {
     }
   } catch (e) {
     log.debug(
-      `xattr -d on ${displayName} threw: ${e instanceof Error ? e.message : e}`,
+      `xattr -d on ${displayName} threw: ${errorMessage(e)}`,
     );
   }
   if (!codesignOk && !xattrOk) {
@@ -222,7 +223,7 @@ async function downloadSidecar(
     res = await fetch(url, { redirect: "follow" });
   } catch (e) {
     log.warn(
-      `Could not fetch ${spec.displayName} (${e instanceof Error ? e.message : e}); ${spec.unavailableHint}.`,
+      `Could not fetch ${spec.displayName} (${errorMessage(e)}); ${spec.unavailableHint}.`,
     );
     return;
   }
@@ -248,7 +249,7 @@ async function downloadSidecar(
     log.success(`${spec.displayName} installed (${spec.availableHint}).`);
   } catch (e) {
     log.warn(
-      `${spec.displayName} install failed (${e instanceof Error ? e.message : e}); ${spec.unavailableHint}.`,
+      `${spec.displayName} install failed (${errorMessage(e)}); ${spec.unavailableHint}.`,
     );
   }
 }
@@ -312,7 +313,7 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
     );
   } catch (e) {
     log.warn(
-      `FluidAudio Kokoro warmup failed (${e instanceof Error ? e.message : e}); ` +
+      `FluidAudio Kokoro warmup failed (${errorMessage(e)}); ` +
         "first `kesha say en-*` may still be slow.",
     );
   } finally {
@@ -462,7 +463,7 @@ export async function downloadEngine(
     } catch (e) {
       muteSidecarRejections();
       throw new Error(
-        `Failed to fetch engine binary: ${e instanceof Error ? e.message : e}\n  Fix: Check your network connection and try again`,
+        `Failed to fetch engine binary: ${errorMessage(e)}\n  Fix: Check your network connection and try again`,
       );
     }
 

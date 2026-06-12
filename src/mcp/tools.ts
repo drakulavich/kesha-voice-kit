@@ -1,4 +1,5 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { errorMessage } from "../error-utils";
 import { z } from "zod";
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
 import { basename, join } from "path";
@@ -78,7 +79,7 @@ export function registerTools(server: McpServer): void {
           structuredContent: { uri, path: outPath, format: fmt, voice: resolvedVoice, bytes },
         };
       } catch (err) {
-        return { isError: true, content: [{ type: "text" as const, text: toToolError(err) }] };
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(err) }] };
       }
     },
   );
@@ -126,7 +127,7 @@ export function registerTools(server: McpServer): void {
           structuredContent: { text, segments: [] },
         };
       } catch (err) {
-        return { isError: true, content: [{ type: "text" as const, text: toToolError(err) }] };
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(err) }] };
       }
     },
   );
@@ -159,7 +160,7 @@ export function registerTools(server: McpServer): void {
           structuredContent: { voices },
         };
       } catch (err) {
-        return { isError: true, content: [{ type: "text" as const, text: `list_voices failed: ${toToolError(err)}` }] };
+        return { isError: true, content: [{ type: "text" as const, text: `list_voices failed: ${errorMessage(err)}` }] };
       }
     },
   );
@@ -189,12 +190,8 @@ export function registerTools(server: McpServer): void {
           structuredContent: { languages },
         };
       } catch (err) {
-        return { isError: true, content: [{ type: "text" as const, text: `list_languages failed: ${toToolError(err)}` }] };
+        return { isError: true, content: [{ type: "text" as const, text: `list_languages failed: ${errorMessage(err)}` }] };
       }
     },
   );
-}
-
-function toToolError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

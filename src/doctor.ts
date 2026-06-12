@@ -1,4 +1,5 @@
 import { existsSync, statSync } from "fs";
+import { errorMessage } from "./error-utils";
 import { dirname, join, sep } from "path";
 import {
   getEngineBinPath,
@@ -194,7 +195,7 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
       capabilities = await getEngineCapabilities();
       if (!capabilities) probeError = "capabilities probe returned no data";
     } catch (err) {
-      probeError = err instanceof Error ? err.message : String(err);
+      probeError = errorMessage(err);
     }
   }
 
@@ -305,7 +306,7 @@ function collectStats(redact: boolean): DoctorReport["stats"] {
       : status;
   } catch (err) {
     return {
-      error: redactString("statsError", err instanceof Error ? err.message : String(err), redact) ?? "unknown",
+      error: redactString("statsError", errorMessage(err), redact) ?? "unknown",
     };
   }
 }
@@ -337,7 +338,7 @@ function collectDiagnosticLogs(redact: boolean): DoctorReport["diagnosticLogs"] 
       maxBytes: 10 * 1024 * 1024,
       retain: 5,
       error:
-        redactString("diagnosticLogsError", err instanceof Error ? err.message : String(err), redact) ??
+        redactString("diagnosticLogsError", errorMessage(err), redact) ??
         "unknown",
     };
   }
