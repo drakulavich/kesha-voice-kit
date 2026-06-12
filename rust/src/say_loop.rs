@@ -43,6 +43,7 @@
 //!   ~934 MB Vosk session is a separate follow-up issue.
 
 use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 
 use crate::{models, tts};
 
@@ -209,94 +210,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
             model_path,
             voice_path,
             ..
-        } => {
-            let sess = match state.kokoro.as_mut() {
-                Some(s) => {
-                    s.ensure_model(&model_path)
-                        .map_err(|e| format!("kokoro reload: {e}"))?;
-                    s
-                }
-                None => state.kokoro.insert(
-                    tts::sessions::KokoroSession::load(&model_path)
-                        .map_err(|e| format!("kokoro load: {e}"))?,
-                ),
-            };
-
-            if req.ssml {
-                let segments = tts::ssml::parse(&req.text).map_err(|e| format!("ssml: {e}"))?;
-                if segments.is_empty() {
-                    return Err("SSML had no speakable content".into());
-                }
-                // Apply English acronym normalization (Spell→letter names,
-                // Text→expand when expand_abbrev) for en-* voices. Mirrors
-                // the one-shot path in tts::synth_segments_kokoro (#244).
-                let segments = if tts::en::is_en(espeak_lang) {
-                    tts::en::normalize_segments(segments, req.expand_abbrev)
-                } else {
-                    segments
-                };
-                tts::synth_segments_kokoro_with(
-                    sess,
-                    &segments,
-                    espeak_lang,
-                    &voice_path,
-                    req.rate,
-                    format,
-                )
-                .map_err(|e| e.to_string())
-            } else if tts::en::is_en(espeak_lang) {
-                // English on Kokoro: route plain text through the segment
-                // pipeline so IPA_LEXICON overrides (EPAM, JSON, Anthropic, …)
-                // emit `Segment::Ipa` and bypass G2P. Mirrors tts::say()'s
-                // English plain-text path. Closes #244.
-                let segments = tts::en::normalize_segments(
-                    vec![tts::ssml::Segment::Text(req.text.clone())],
-                    req.expand_abbrev,
-                );
-                tts::synth_segments_kokoro_with(
-                    sess,
-                    &segments,
-                    espeak_lang,
-                    &voice_path,
-                    req.rate,
-                    format,
-                )
-                .map_err(|e| e.to_string())
-            } else {
-                // Non-English Kokoro: G2P + infer_ipa path.
-                // Romance languages (es/fr/it/pt) use the cached CharsiuG2P
-                // session to avoid reloading ~100 MB of ONNX models per request.
-                // All other languages fall through to the one-shot text_to_ipa
-                // path (which will error with a lang-specific hint for ru etc.).
-                let ipa = if matches!(
-                    crate::tts::charsiu::base_lang(espeak_lang),
-                    "es" | "fr" | "it" | "pt"
-                ) {
-                    state
-                        .charsiu
-                        .to_ipa(
-                            &models::cache_dir().join("models/g2p/byt5-tiny"),
-                            &req.text,
-                            espeak_lang,
-                        )
-                        .map_err(|e| format!("g2p: {e}"))?
-                } else {
-                    tts::g2p::text_to_ipa(&req.text, espeak_lang)
-                        .map_err(|e| format!("g2p: {e}"))?
-                };
-                if ipa.trim().is_empty() {
-                    return Err("no phonemes produced for input (empty after G2P)".into());
-                }
-                let audio = sess
-                    .infer_ipa(&ipa, &voice_path, req.rate)
-                    .map_err(|e| format!("infer: {e}"))?;
-                if audio.is_empty() {
-                    return Err("no recognizable phonemes in input".into());
-                }
-                tts::encode::encode(&audio, tts::kokoro::SAMPLE_RATE, format)
-                    .map_err(|e| format!("encode: {e}"))
-            }
-        }
+        } => handle_kokoro(req, state, &model_path, &voice_path, espeak_lang, format),
         #[cfg(all(
             feature = "system_kokoro",
             target_os = "macos",
@@ -322,35 +236,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
         tts::voices::ResolvedVoice::Vosk {
             model_dir,
             speaker_id,
-        } => {
-            if req.ssml {
-                let segments = tts::ssml::parse(&req.text).map_err(|e| format!("ssml: {e}"))?;
-                if segments.is_empty() {
-                    return Err("SSML had no speakable content".into());
-                }
-                let segments = tts::ru::normalize_segments(segments, req.expand_abbrev);
-                tts::synth_segments_vosk_with(
-                    &mut state.vosk,
-                    &segments,
-                    &model_dir,
-                    speaker_id,
-                    req.rate,
-                    format,
-                )
-                .map_err(|e| e.to_string())
-            } else {
-                let text: std::borrow::Cow<'_, str> = if req.expand_abbrev {
-                    std::borrow::Cow::Owned(tts::ru::expand_text(&req.text))
-                } else {
-                    std::borrow::Cow::Borrowed(&req.text)
-                };
-                let (audio, sample_rate) = state
-                    .vosk
-                    .infer(&model_dir, &text, speaker_id, req.rate)
-                    .map_err(|e| format!("vosk: {e}"))?;
-                tts::encode::encode(&audio, sample_rate, format).map_err(|e| format!("encode: {e}"))
-            }
-        }
+        } => handle_vosk(req, state, &model_dir, speaker_id, format),
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         tts::voices::ResolvedVoice::AVSpeech { voice_id } => {
             // AVSpeech is a Swift sidecar — no in-process state to cache.
@@ -369,6 +255,130 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
             })
             .map_err(|e| e.to_string())
         }
+    }
+}
+
+/// Parse SSML for the loop path; an empty parse is the same client error on
+/// every engine.
+fn parse_ssml_or_err(text: &str) -> Result<Vec<tts::ssml::Segment>, String> {
+    let segments = tts::ssml::parse(text).map_err(|e| format!("ssml: {e}"))?;
+    if segments.is_empty() {
+        return Err("SSML had no speakable content".into());
+    }
+    Ok(segments)
+}
+
+/// Kokoro arm of [`handle`]: session reuse + the ssml / English-segment /
+/// G2P-IPA request shapes.
+fn handle_kokoro(
+    req: &LoopRequest,
+    state: &mut LoopState,
+    model_path: &Path,
+    voice_path: &Path,
+    espeak_lang: &str,
+    format: tts::encode::OutputFormat,
+) -> Result<Vec<u8>, String> {
+    let sess = match state.kokoro.as_mut() {
+        Some(s) => {
+            s.ensure_model(model_path)
+                .map_err(|e| format!("kokoro reload: {e}"))?;
+            s
+        }
+        None => state.kokoro.insert(
+            tts::sessions::KokoroSession::load(model_path)
+                .map_err(|e| format!("kokoro load: {e}"))?,
+        ),
+    };
+
+    if req.ssml {
+        let segments = parse_ssml_or_err(&req.text)?;
+        // Apply English acronym normalization (Spell→letter names,
+        // Text→expand when expand_abbrev) for en-* voices. Mirrors
+        // the one-shot path in tts::synth_segments_kokoro (#244).
+        let segments = if tts::en::is_en(espeak_lang) {
+            tts::en::normalize_segments(segments, req.expand_abbrev)
+        } else {
+            segments
+        };
+        tts::synth_segments_kokoro_with(sess, &segments, espeak_lang, voice_path, req.rate, format)
+            .map_err(|e| e.to_string())
+    } else if tts::en::is_en(espeak_lang) {
+        // English on Kokoro: route plain text through the segment
+        // pipeline so IPA_LEXICON overrides (EPAM, JSON, Anthropic, …)
+        // emit `Segment::Ipa` and bypass G2P. Mirrors tts::say()'s
+        // English plain-text path. Closes #244.
+        let segments = tts::en::normalize_segments(
+            vec![tts::ssml::Segment::Text(req.text.clone())],
+            req.expand_abbrev,
+        );
+        tts::synth_segments_kokoro_with(sess, &segments, espeak_lang, voice_path, req.rate, format)
+            .map_err(|e| e.to_string())
+    } else {
+        // Non-English Kokoro: G2P + infer_ipa path.
+        // Romance languages (es/fr/it/pt) use the cached CharsiuG2P
+        // session to avoid reloading ~100 MB of ONNX models per request.
+        // All other languages fall through to the one-shot text_to_ipa
+        // path (which will error with a lang-specific hint for ru etc.).
+        let ipa = if matches!(
+            crate::tts::charsiu::base_lang(espeak_lang),
+            "es" | "fr" | "it" | "pt"
+        ) {
+            state
+                .charsiu
+                .to_ipa(
+                    &models::cache_dir().join("models/g2p/byt5-tiny"),
+                    &req.text,
+                    espeak_lang,
+                )
+                .map_err(|e| format!("g2p: {e}"))?
+        } else {
+            tts::g2p::text_to_ipa(&req.text, espeak_lang).map_err(|e| format!("g2p: {e}"))?
+        };
+        if ipa.trim().is_empty() {
+            return Err("no phonemes produced for input (empty after G2P)".into());
+        }
+        let audio = sess
+            .infer_ipa(&ipa, voice_path, req.rate)
+            .map_err(|e| format!("infer: {e}"))?;
+        if audio.is_empty() {
+            return Err("no recognizable phonemes in input".into());
+        }
+        tts::encode::encode(&audio, tts::kokoro::SAMPLE_RATE, format)
+            .map_err(|e| format!("encode: {e}"))
+    }
+}
+
+/// Vosk arm of [`handle`]: cached-session synth for the ssml and plain paths.
+fn handle_vosk(
+    req: &LoopRequest,
+    state: &mut LoopState,
+    model_dir: &Path,
+    speaker_id: u32,
+    format: tts::encode::OutputFormat,
+) -> Result<Vec<u8>, String> {
+    if req.ssml {
+        let segments = parse_ssml_or_err(&req.text)?;
+        let segments = tts::ru::normalize_segments(segments, req.expand_abbrev);
+        tts::synth_segments_vosk_with(
+            &mut state.vosk,
+            &segments,
+            model_dir,
+            speaker_id,
+            req.rate,
+            format,
+        )
+        .map_err(|e| e.to_string())
+    } else {
+        let text: std::borrow::Cow<'_, str> = if req.expand_abbrev {
+            std::borrow::Cow::Owned(tts::ru::expand_text(&req.text))
+        } else {
+            std::borrow::Cow::Borrowed(&req.text)
+        };
+        let (audio, sample_rate) = state
+            .vosk
+            .infer(model_dir, &text, speaker_id, req.rate)
+            .map_err(|e| format!("vosk: {e}"))?;
+        tts::encode::encode(&audio, sample_rate, format).map_err(|e| format!("encode: {e}"))
     }
 }
 
