@@ -171,23 +171,33 @@ export function createStatsRecorder(command: StatsCommandName): StatsRecorder {
   }
 }
 
-export function enableStats(): void {
+/** Open the stats DB (creating it if needed), run fn, always close. */
+function withStatsDb<T>(fn: (db: Database) => T): T {
   const db = openStatsDatabase(resolveStatsDbPath());
   try {
-    setSetting(db, "enabled", "1");
-    applyStatsRetention(db);
+    return fn(db);
   } finally {
     db.close();
   }
 }
 
+/** Like withStatsDb, but returns fallback() without creating the DB when none exists. */
+function withExistingStatsDb<T>(fallback: () => T, fn: (db: Database) => T): T {
+  if (!existsSync(resolveStatsDbPath())) return fallback();
+  return withStatsDb(fn);
+}
+
+export function enableStats(): void {
+  withStatsDb((db) => {
+    setSetting(db, "enabled", "1");
+    applyStatsRetention(db);
+  });
+}
+
 export function disableStats(): void {
-  const db = openStatsDatabase(resolveStatsDbPath());
-  try {
+  withStatsDb((db) => {
     setSetting(db, "enabled", "0");
-  } finally {
-    db.close();
-  }
+  });
 }
 
 export interface StatsStatus {
@@ -200,27 +210,22 @@ export interface StatsStatus {
 
 export function getStatsStatus(): StatsStatus {
   const dbPath = resolveStatsDbPath();
-  if (!existsSync(dbPath)) {
-    return {
+  return withExistingStatsDb<StatsStatus>(
+    () => ({
       enabled: false,
       dbPath,
       runCount: 0,
       exists: false,
       retentionDays: defaultRetentionDays(),
-    };
-  }
-  const db = openStatsDatabase(dbPath);
-  try {
-    return {
+    }),
+    (db) => ({
       enabled: getStatsEnabled(db),
       dbPath,
       runCount: Number((db.query("select count(*) as n from runs").get() as { n: number }).n),
       exists: true,
       retentionDays: getStatsRetentionDays(db),
-    };
-  } finally {
-    db.close();
-  }
+    }),
+  );
 }
 
 export interface StatsResetResult {
@@ -231,31 +236,27 @@ export interface StatsResetResult {
 }
 
 export function resetStats(): StatsResetResult {
-  const dbPath = resolveStatsDbPath();
-  if (!existsSync(dbPath)) {
-    return { runs: 0, artifacts: 0, stageTimings: 0, errors: 0 };
-  }
-  const db = openStatsDatabase(dbPath);
-  try {
-    let artifacts = 0;
-    let stageTimings = 0;
-    let errors = 0;
-    let runs = 0;
-    db.exec("begin");
-    try {
-      artifacts = runChanges(db, "delete from artifacts");
-      stageTimings = runChanges(db, "delete from stage_timings");
-      errors = runChanges(db, "delete from errors");
-      runs = runChanges(db, "delete from runs");
-      db.exec("commit");
-    } catch (err) {
-      db.exec("rollback");
-      throw err;
-    }
-    return { runs, artifacts, stageTimings, errors };
-  } finally {
-    db.close();
-  }
+  return withExistingStatsDb(
+    () => ({ runs: 0, artifacts: 0, stageTimings: 0, errors: 0 }),
+    (db) => {
+      let artifacts = 0;
+      let stageTimings = 0;
+      let errors = 0;
+      let runs = 0;
+      db.exec("begin");
+      try {
+        artifacts = runChanges(db, "delete from artifacts");
+        stageTimings = runChanges(db, "delete from stage_timings");
+        errors = runChanges(db, "delete from errors");
+        runs = runChanges(db, "delete from runs");
+        db.exec("commit");
+      } catch (err) {
+        db.exec("rollback");
+        throw err;
+      }
+      return { runs, artifacts, stageTimings, errors };
+    },
+  );
 }
 
 export interface StatsVacuumResult {
@@ -274,13 +275,10 @@ export function vacuumStats(): StatsVacuumResult {
       afterBytes: 0,
     };
   }
-  const db = openStatsDatabase(dbPath);
-  try {
+  withStatsDb((db) => {
     db.exec("pragma wal_checkpoint(TRUNCATE)");
     db.exec("vacuum");
-  } finally {
-    db.close();
-  }
+  });
   return {
     dbPath,
     beforeBytes,
@@ -292,13 +290,10 @@ export function setStatsRetentionDays(days: number | null): void {
   if (days !== null && (!Number.isInteger(days) || days < 1)) {
     throw new Error("Stats retention must be a positive whole number of days, or 'off'");
   }
-  const db = openStatsDatabase(resolveStatsDbPath());
-  try {
+  withStatsDb((db) => {
     setSetting(db, "retention_days", days === null ? "off" : String(days));
     applyStatsRetention(db);
-  } finally {
-    db.close();
-  }
+  });
 }
 
 export function exportStats(format: StatsExportFormat): string {
@@ -380,11 +375,8 @@ interface StatsRunTimingRow {
 }
 
 export function getWeekSummary(now = new Date()): StatsWeekSummary {
-  const dbPath = resolveStatsDbPath();
-  if (!existsSync(dbPath)) return emptyWeekSummary();
   const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const db = openStatsDatabase(dbPath);
-  try {
+  return withExistingStatsDb(emptyWeekSummary, (db) => {
     const stageRows = db.query(
       `select
         run_id as runId,
@@ -433,9 +425,7 @@ export function getWeekSummary(now = new Date()): StatsWeekSummary {
       hasInputDurationData: inputArtifacts.some((row) => typeof row.durationMs === "number"),
       slowestRuns: summarizeSlowestRuns(runRows, stageRows),
     };
-  } finally {
-    db.close();
-  }
+  });
 }
 
 export interface StatsRunExportRow {
@@ -492,11 +482,10 @@ export interface StatsErrorRow {
 }
 
 export function getRecentErrors(limit = 20): StatsErrorRow[] {
-  const dbPath = resolveStatsDbPath();
-  if (!existsSync(dbPath)) return [];
-  const db = openStatsDatabase(dbPath);
-  try {
-    const rows = db.query(
+  return withExistingStatsDb(
+    () => [],
+    (db) => {
+      const rows = db.query(
       `select
         e.occurred_at as occurredAt,
         r.command as command,
@@ -508,11 +497,10 @@ export function getRecentErrors(limit = 20): StatsErrorRow[] {
        left join runs r on r.id = e.run_id
        order by e.occurred_at desc
        limit ?`,
-    ).all(limit) as StatsErrorRow[];
-    return rows;
-  } finally {
-    db.close();
-  }
+      ).all(limit) as StatsErrorRow[];
+      return rows;
+    },
+  );
 }
 
 export function renderWeekSummary(summary: StatsWeekSummary): string {
@@ -780,15 +768,11 @@ function insertRun(db: Database, command: StatsCommandName): number {
 }
 
 function readStatsExport(): StatsExportData {
-  const dbPath = resolveStatsDbPath();
-  if (!existsSync(dbPath)) {
-    return emptyStatsExport(defaultRetentionDays());
-  }
-
-  const db = openStatsDatabase(dbPath);
-  try {
-    applyStatsRetention(db);
-    return {
+  return withExistingStatsDb(
+    () => emptyStatsExport(defaultRetentionDays()),
+    (db) => {
+      applyStatsRetention(db);
+      return {
       schemaVersion: SCHEMA_VERSION,
       exportedAt: new Date().toISOString(),
       retentionDays: getStatsRetentionDays(db),
@@ -840,11 +824,10 @@ function readStatsExport(): StatsExportData {
          from errors e
          left join runs r on r.id = e.run_id
          order by e.occurred_at asc, e.id asc`,
-      ).all() as StatsErrorRow[],
-    };
-  } finally {
-    db.close();
-  }
+        ).all() as StatsErrorRow[],
+      };
+    },
+  );
 }
 
 function emptyStatsExport(retentionDays: number | null): StatsExportData {
