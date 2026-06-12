@@ -577,39 +577,38 @@ pub fn stage_ane_kokoro_voices(langs: &[&str], no_cache: bool) -> Result<()> {
 /// SHA-256 pins computed from the HF mirror — see CLAUDE.md MODEL HASHES
 /// ARE PINNED rule.
 #[cfg(feature = "tts")]
-pub fn vosk_ru_manifest() -> Vec<ModelFile> {
-    vec![
-        ModelFile {
-            rel_path: "models/vosk-ru/model.onnx",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/model.onnx",
-            sha256: "0fa5a36b22a8bf7fe7179a3882c6371d2c01e5317019e717516f892d329c24b9",
-        },
-        ModelFile {
-            rel_path: "models/vosk-ru/dictionary",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/dictionary",
-            sha256: "2939e72c170bb41ac8e256828cca1c5fac4db1e36717f9f53fde843b00a220ba",
-        },
-        ModelFile {
-            rel_path: "models/vosk-ru/config.json",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/config.json",
-            sha256: "e155fb266a730e1858a2420442b465acf08a3236dffad7d1a507bf155b213d50",
-        },
-        ModelFile {
-            rel_path: "models/vosk-ru/bert/model.onnx",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/model.onnx",
-            sha256: "2e2f1740eaae5e29c2b4844625cbb01ff644b2b5fb0560bd34374c35d8a092c1",
-        },
-        ModelFile {
-            rel_path: "models/vosk-ru/bert/vocab.txt",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/vocab.txt",
-            sha256: "bbe5063cc3d7a314effd90e9c5099cf493b81f2b9552c155264e16eeab074237",
-        },
-        // removed: README.md (drakulavich/vosk-tts-ru-0.9-multi) — not opened at
-        // runtime; pinning its SHA forced a manifest bump on every upstream
-        // doc copy-edit. CharsiuG2P entries (3 byt5-tiny ONNX) were also
-        // removed in PR #213 — Russian uses vosk-tts internal G2P now.
-    ]
-}
+pub const VOSK_RU_FILES: &[ModelFile] = &[
+    ModelFile {
+        rel_path: "models/vosk-ru/model.onnx",
+        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/model.onnx",
+        sha256: "0fa5a36b22a8bf7fe7179a3882c6371d2c01e5317019e717516f892d329c24b9",
+    },
+    ModelFile {
+        rel_path: "models/vosk-ru/dictionary",
+        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/dictionary",
+        sha256: "2939e72c170bb41ac8e256828cca1c5fac4db1e36717f9f53fde843b00a220ba",
+    },
+    ModelFile {
+        rel_path: "models/vosk-ru/config.json",
+        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/config.json",
+        sha256: "e155fb266a730e1858a2420442b465acf08a3236dffad7d1a507bf155b213d50",
+    },
+    ModelFile {
+        rel_path: "models/vosk-ru/bert/model.onnx",
+        url:
+            "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/model.onnx",
+        sha256: "2e2f1740eaae5e29c2b4844625cbb01ff644b2b5fb0560bd34374c35d8a092c1",
+    },
+    ModelFile {
+        rel_path: "models/vosk-ru/bert/vocab.txt",
+        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/vocab.txt",
+        sha256: "bbe5063cc3d7a314effd90e9c5099cf493b81f2b9552c155264e16eeab074237",
+    },
+    // removed: README.md (drakulavich/vosk-tts-ru-0.9-multi) — not opened at
+    // runtime; pinning its SHA forced a manifest bump on every upstream
+    // doc copy-edit. CharsiuG2P entries (3 byt5-tiny ONNX) were also
+    // removed in PR #213 — Russian uses vosk-tts internal G2P now.
+];
 
 pub fn cache_dir() -> PathBuf {
     if let Ok(p) = std::env::var("KESHA_CACHE_DIR") {
@@ -1069,7 +1068,7 @@ mod tts_tests {
 
     #[test]
     fn vosk_ru_manifest_has_expected_files() {
-        let m = vosk_ru_manifest();
+        let m = VOSK_RU_FILES;
         assert_eq!(m.len(), 5);
         let names: std::collections::HashSet<&str> = m.iter().map(|f| f.rel_path).collect();
         for f in [
@@ -1081,7 +1080,7 @@ mod tts_tests {
         ] {
             assert!(names.contains(f), "missing {f}");
         }
-        for f in &m {
+        for f in m {
             assert!(f.sha256.len() == 64, "sha256 must be 64 hex chars");
             assert!(f.url.starts_with(
                 "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/"
@@ -1314,8 +1313,13 @@ mod tts_tests {
 /// same hash-verify + retry path as the rest.
 #[cfg(feature = "system_diarize")]
 pub fn download_diarize(no_cache: bool) -> Result<()> {
+    download_manifest(DIARIZE_FILES, no_cache)
+}
+
+/// Hash-verified parallel download of a static manifest into the cache dir.
+fn download_manifest(files: &[ModelFile], no_cache: bool) -> Result<()> {
     let cache = cache_dir();
-    let refs: Vec<&ModelFile> = DIARIZE_FILES.iter().collect();
+    let refs: Vec<&ModelFile> = files.iter().collect();
     parallel_download(&cache, &refs, no_cache)
 }
 
@@ -1377,9 +1381,7 @@ fn is_compiled_mlpackage_sidecar(path: &Path) -> bool {
 /// Single-file manifest, so `parallel_download` reduces to one HTTP round
 /// trip — keeps the uniform hash-verify + retry path.
 pub fn download_vad(no_cache: bool) -> Result<()> {
-    let cache = cache_dir();
-    let refs: Vec<&ModelFile> = VAD_FILES.iter().collect();
-    parallel_download(&cache, &refs, no_cache)
+    download_manifest(VAD_FILES, no_cache)
 }
 
 /// Download the TTS model files needed for `langs` only. Each file is streamed
@@ -1401,7 +1403,7 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
         let cache = cache_dir();
         let mut manifest = kokoro_manifest_for(langs);
         if langs.contains(&"ru") {
-            manifest.extend(vosk_ru_manifest());
+            manifest.extend_from_slice(VOSK_RU_FILES);
         }
         let refs: Vec<&ModelFile> = manifest.iter().collect();
         parallel_download(&cache, &refs, no_cache)?;
@@ -1420,12 +1422,7 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
     ))]
     {
         if langs.contains(&"ru") {
-            let cache = cache_dir();
-            // `manifest` must outlive `refs` (the borrows point into it), so it
-            // stays a named binding rather than an inlined temporary.
-            let manifest = vosk_ru_manifest();
-            let refs: Vec<&ModelFile> = manifest.iter().collect();
-            parallel_download(&cache, &refs, no_cache)?;
+            download_manifest(VOSK_RU_FILES, no_cache)?;
         }
         stage_ane_kokoro_voices(langs, no_cache)?;
     }

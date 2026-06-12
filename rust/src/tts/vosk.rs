@@ -22,7 +22,7 @@ pub struct Vosk {
 
 impl Vosk {
     /// Load the model bundle from `model_dir`. Expects the directory layout
-    /// produced by `vosk_ru_manifest()` (model.onnx, dictionary, config.json,
+    /// produced by `models::VOSK_RU_FILES` (model.onnx, dictionary, config.json,
     /// bert/model.onnx, bert/vocab.txt).
     pub fn load(model_dir: &Path) -> Result<Self> {
         let dir_str = model_dir
