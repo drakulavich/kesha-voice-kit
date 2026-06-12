@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { errorMessage } from "./error-utils";
+import { humanBytes } from "./format";
 import { existsSync, mkdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { dirname, extname, join } from "path";
@@ -1182,18 +1183,6 @@ function orderBuckets(buckets: Map<string, number>, order: string[]): StatsCount
   return order
     .filter((label) => buckets.has(label))
     .map((label) => ({ label, count: buckets.get(label) ?? 0 }));
-}
-
-function humanBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let n = bytes / 1024;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
 }
 
 function humanDuration(ms: number): string {

@@ -1,4 +1,5 @@
 import { existsSync, statSync } from "fs";
+import { humanBytes } from "./format";
 import { dirname, join } from "path";
 import { getEngineBinPath } from "./engine";
 import { readInstalledEngineVersion } from "./engine-version-marker";
@@ -128,18 +129,6 @@ const DARWIN_SIDECARS: ReleaseAssetSpec[] = [
 
 function sumFiles(files: PlanFile[]): number {
   return files.reduce((sum, file) => sum + file.sizeBytes, 0);
-}
-
-function humanBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let n = bytes / 1024;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
 }
 
 function engineAssetForPlatform(): ReleaseAssetSpec | null {
