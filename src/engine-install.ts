@@ -352,6 +352,120 @@ export interface InstallOptions {
   diarize?: boolean;
 }
 
+/**
+ * Cache-valid path: the binary at binPath already matches engineVersion.
+ * Re-trusts it and tops up any sidecars the cached install is missing.
+ */
+async function refreshCachedEngine(
+  binPath: string,
+  canWriteEngineDir: boolean,
+  noCache: boolean,
+): Promise<void> {
+  const engineDir = dirname(binPath);
+  if (noCache && !canWriteEngineDir) {
+    log.info(
+      `Engine binary at v${engineVersion} is on a read-only filesystem; --no-cache skipped for engine (still forwarded to model installs).`,
+    );
+  } else {
+    log.success(`Engine binary already installed (v${engineVersion}).`);
+  }
+  // Re-run the macOS trust step against the cached binary too. Reason:
+  // a user who upgraded to macOS 15+ Sequoia AFTER installing kesha
+  // would have a v<X> binary on disk with `com.apple.provenance` still
+  // attached, and `kesha install` would normally bail at "already
+  // installed" without healing the SIGKILL. Idempotent — re-signing
+  // an already-correctly-signed binary is a ~10 ms no-op; `xattr -d`
+  // on an absent attr is handled (exit 1 + "No such xattr" treated
+  // as success in `darwinTrustBinary`). Skipped on read-only
+  // filesystems (Nix-store installs) — no write access anyway.
+  if (canWriteEngineDir && existsSync(binPath)) {
+    darwinTrustBinary(binPath, "kesha-engine binary");
+  }
+  // Top up any sidecars missing from this cached install. Pre-#141 / pre-#199
+  // engines never shipped them, so a cache-valid binary may still need
+  // fetching. Run independent fetches concurrently — same shape as the
+  // cold path in fetchEngineBinary.
+  //
+  // Skip the top-up entirely when the engine sits in a read-only
+  // filesystem (e.g., a Nix-store install). Those installs stage the
+  // supported sidecars at build time; writing more is impossible, and
+  // attempting it would emit a confusing "install failed" warning for
+  // a feature the Nix README explicitly documents as unsupported
+  // (diarize on Nix needs network access at build time, which the
+  // sandbox forbids).
+  if (canWriteEngineDir) {
+    const missing = SIDECARS.filter(
+      (s) => !existsSync(join(engineDir, s.fileBasename)),
+    );
+    await Promise.all(missing.map((s) => downloadSidecar(s, binPath, engineVersion)));
+    // The cache-valid branch also re-trusts any sidecars that already
+    // exist alongside the engine — same upgrade-to-Sequoia scenario as
+    // above. The `missing.map` above only handles NEW sidecars; this
+    // loop handles ALREADY-PRESENT ones.
+    for (const s of SIDECARS) {
+      const p = join(engineDir, s.fileBasename);
+      if (existsSync(p)) darwinTrustBinary(p, s.displayName);
+    }
+  }
+}
+
+/** Cold path: download the engine binary (and sidecars, concurrently). */
+async function fetchEngineBinary(
+  binPath: string,
+  installedVersion: string | null,
+): Promise<void> {
+  // Log why we're downloading — helps diagnose surprising re-downloads.
+  if (existsSync(binPath) && installedVersion && installedVersion !== engineVersion) {
+    log.progress(
+      `Upgrading engine v${installedVersion} → v${engineVersion}...`,
+    );
+  }
+  const binaryName = getEngineBinaryName();
+  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/${binaryName}`;
+
+  mkdirSync(dirname(binPath), { recursive: true });
+
+  // Kick off all sidecar fetches concurrently with the engine fetch. They
+  // target independent github.com release assets, so overlapping the HTTP
+  // round-trips saves ~15-30s on a cold install. Each sidecar is
+  // best-effort (404 on older engines, warn + continue) so a failure
+  // doesn't cascade into the engine path.
+  const sidecarPromises = SIDECARS.map((s) =>
+    downloadSidecar(s, binPath, engineVersion),
+  );
+  // Defense-in-depth: if the engine fetch throws below, attach no-op
+  // rejection handlers so we don't surface unhandledRejection errors
+  // from sidecar paths whose internal try/catch ever drifts. Logs from
+  // sidecars whose own work is still in flight will print when they
+  // complete; the engine error is what the user needs to see now.
+  const muteSidecarRejections = () =>
+    sidecarPromises.forEach((p) => p.catch(() => {}));
+
+  let res: Response;
+  try {
+    res = await fetch(url, { redirect: "follow" });
+  } catch (e) {
+    muteSidecarRejections();
+    throw new Error(
+      `Failed to fetch engine binary: ${errorMessage(e)}\n  Fix: Check your network connection and try again`,
+    );
+  }
+
+  if (!res.ok) {
+    muteSidecarRejections();
+    throw new Error(
+      `Failed to download engine binary (HTTP ${res.status})\n  Fix: Check https://github.com/${GITHUB_REPO}/releases for available versions`,
+    );
+  }
+
+  await streamResponseToFile(res, binPath, "kesha-engine binary");
+  chmodSync(binPath, 0o755);
+  darwinTrustBinary(binPath, "kesha-engine binary");
+  writeInstalledEngineVersion(binPath, engineVersion);
+  log.success(`Engine binary downloaded (v${engineVersion}).`);
+  await Promise.all(sidecarPromises);
+}
+
 export async function downloadEngine(
   noCache = false,
   backend?: string,
@@ -384,102 +498,9 @@ export async function downloadEngine(
   const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 
   if (cacheValid) {
-    if (noCache && !canWriteEngineDir) {
-      log.info(
-        `Engine binary at v${engineVersion} is on a read-only filesystem; --no-cache skipped for engine (still forwarded to model installs).`,
-      );
-    } else {
-      log.success(`Engine binary already installed (v${engineVersion}).`);
-    }
-    // Re-run the macOS trust step against the cached binary too. Reason:
-    // a user who upgraded to macOS 15+ Sequoia AFTER installing kesha
-    // would have a v<X> binary on disk with `com.apple.provenance` still
-    // attached, and `kesha install` would normally bail at "already
-    // installed" without healing the SIGKILL. Idempotent — re-signing
-    // an already-correctly-signed binary is a ~10 ms no-op; `xattr -d`
-    // on an absent attr is handled (exit 1 + "No such xattr" treated
-    // as success in `darwinTrustBinary`). Skipped on read-only
-    // filesystems (Nix-store installs) — no write access anyway.
-    if (canWriteEngineDir && existsSync(binPath)) {
-      darwinTrustBinary(binPath, "kesha-engine binary");
-    }
-    // Top up any sidecars missing from this cached install. Pre-#141 / pre-#199
-    // engines never shipped them, so a cache-valid binary may still need
-    // fetching. Run independent fetches concurrently — same shape as the
-    // cold path below.
-    //
-    // Skip the top-up entirely when the engine sits in a read-only
-    // filesystem (e.g., a Nix-store install). Those installs stage the
-    // supported sidecars at build time; writing more is impossible, and
-    // attempting it would emit a confusing "install failed" warning for
-    // a feature the Nix README explicitly documents as unsupported
-    // (diarize on Nix needs network access at build time, which the
-    // sandbox forbids).
-    if (canWriteEngineDir) {
-      const missing = SIDECARS.filter(
-        (s) => !existsSync(join(engineDir, s.fileBasename)),
-      );
-      await Promise.all(missing.map((s) => downloadSidecar(s, binPath, engineVersion)));
-      // The cache-valid branch also re-trusts any sidecars that already
-      // exist alongside the engine — same upgrade-to-Sequoia scenario as
-      // above. The `missing.map` above only handles NEW sidecars; this
-      // loop handles ALREADY-PRESENT ones.
-      for (const s of SIDECARS) {
-        const p = join(engineDir, s.fileBasename);
-        if (existsSync(p)) darwinTrustBinary(p, s.displayName);
-      }
-    }
+    await refreshCachedEngine(binPath, canWriteEngineDir, noCache);
   } else {
-    // Log why we're downloading — helps diagnose surprising re-downloads.
-    if (existsSync(binPath) && installedVersion && installedVersion !== engineVersion) {
-      log.progress(
-        `Upgrading engine v${installedVersion} → v${engineVersion}...`,
-      );
-    }
-    const binaryName = getEngineBinaryName();
-    const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/${binaryName}`;
-
-    mkdirSync(dirname(binPath), { recursive: true });
-
-    // Kick off all sidecar fetches concurrently with the engine fetch. They
-    // target independent github.com release assets, so overlapping the HTTP
-    // round-trips saves ~15-30s on a cold install. Each sidecar is
-    // best-effort (404 on older engines, warn + continue) so a failure
-    // doesn't cascade into the engine path.
-    const sidecarPromises = SIDECARS.map((s) =>
-      downloadSidecar(s, binPath, engineVersion),
-    );
-    // Defense-in-depth: if the engine fetch throws below, attach no-op
-    // rejection handlers so we don't surface unhandledRejection errors
-    // from sidecar paths whose internal try/catch ever drifts. Logs from
-    // sidecars whose own work is still in flight will print when they
-    // complete; the engine error is what the user needs to see now.
-    const muteSidecarRejections = () =>
-      sidecarPromises.forEach((p) => p.catch(() => {}));
-
-    let res: Response;
-    try {
-      res = await fetch(url, { redirect: "follow" });
-    } catch (e) {
-      muteSidecarRejections();
-      throw new Error(
-        `Failed to fetch engine binary: ${errorMessage(e)}\n  Fix: Check your network connection and try again`,
-      );
-    }
-
-    if (!res.ok) {
-      muteSidecarRejections();
-      throw new Error(
-        `Failed to download engine binary (HTTP ${res.status})\n  Fix: Check https://github.com/${GITHUB_REPO}/releases for available versions`,
-      );
-    }
-
-    await streamResponseToFile(res, binPath, "kesha-engine binary");
-    chmodSync(binPath, 0o755);
-    darwinTrustBinary(binPath, "kesha-engine binary");
-    writeInstalledEngineVersion(binPath, engineVersion);
-    log.success(`Engine binary downloaded (v${engineVersion}).`);
-    await Promise.all(sidecarPromises);
+    await fetchEngineBinary(binPath, installedVersion);
   }
 
   if (backend) {
