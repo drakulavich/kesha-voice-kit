@@ -711,6 +711,9 @@ describe("CLI contracts", () => {
     expect(existsSync(langPidPath)).toBe(false);
   });
 
+  // Two cold `bun bin/kesha.js` spawns (full TS transpile each) — the default
+  // 4s per-spawn budget flakes under CPU contention, so both calls get a wide
+  // budget. The assertions themselves are deterministic.
   test("diagnostic and support commands return parseable/readable contracts without leaking temp home", async () => {
     const dir = makeTempDir("kesha-cli-contract-diagnostics-");
     const enginePath = createFakeEngine(dir);
@@ -719,7 +722,7 @@ describe("CLI contracts", () => {
       KESHA_ENGINE_BIN: enginePath,
     };
 
-    const doctor = await runCli(["doctor", "--json", "--redact"], { env });
+    const doctor = await runCli(["doctor", "--json", "--redact"], { env, timeoutMs: 15_000 });
     expectContract(doctor, {
       exitCode: 0,
       stderrEmpty: true,
@@ -738,6 +741,7 @@ describe("CLI contracts", () => {
     const bundlePath = join(dir, "bundle.tar.gz");
     const bundle = await runCli(["support-bundle", "--output", bundlePath], {
       env,
+      timeoutMs: 15_000,
       artifacts: [bundlePath],
     });
     expectContract(bundle, {
@@ -751,7 +755,7 @@ describe("CLI contracts", () => {
       exists: true,
     });
     expect(bundle.artifacts[0]?.sizeBytes).toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   test("read-only planning and stats commands keep user data on stdout", async () => {
     const dir = makeTempDir("kesha-cli-contract-readonly-");
