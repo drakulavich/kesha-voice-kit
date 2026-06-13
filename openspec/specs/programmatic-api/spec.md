@@ -143,8 +143,10 @@ dropped and a `log.warn` message is emitted (not a thrown error).
 
 - GIVEN `kesha install` has not been run
 - WHEN Sona calls `await say({ text: "hello" })`
-- THEN the promise rejects with a `SayError` whose message contains
-  `kesha install --tts`
+- THEN the promise rejects with a `SayError` (`err.code === "E_ENGINE_SPAWN"`,
+  `err.exitCode === 1`)
+- AND its message carries an actionable setup hint ending in `--tts` — the verb
+  is `kesha init` on an interactive TTY and `kesha install` when stderr is piped
 
 #### Scenario: Writing to a file
 
@@ -156,7 +158,10 @@ dropped and a `log.warn` message is emitted (not a thrown error).
 > `src/synth.ts:22`. `SayError` at `src/synth.ts:96` carries `exitCode`,
 > `stderr`, `code`. `E_TEXT_EMPTY` exit code 2 at `src/synth.ts:115`;
 > `E_TEXT_TOO_LONG` exit code 5 at `src/synth.ts:118`. Engine-not-installed
-> uses `TS_NATIVE_CODES.ENGINE_SPAWN` at `src/synth.ts:131`. The `noExpandAbbrev`
+> throws `TS_NATIVE_CODES.ENGINE_SPAWN` (`"E_ENGINE_SPAWN"`) with exit code 1 at
+> `src/synth.ts:127-134`; its message embeds `installHint("--tts")`
+> (`src/install-hint.ts:9`) — `kesha init --tts` when `process.stderr.isTTY`,
+> `kesha install --tts` otherwise. The `noExpandAbbrev`
 > capability check is in `buildSayArgs` at `src/synth.ts:66`.*
 
 ### Requirement: `downloadModel` / `downloadEngine` installs the Engine binary
