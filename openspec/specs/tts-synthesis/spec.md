@@ -133,17 +133,23 @@ Voice id SHALL fail with `E_VOICE_UNKNOWN` and exit 1.
 > mapping: `src/voice-routing.ts:31-53` (`pickVoiceForLang`). The full map
 > (confidence < 0.5 → none; base code is lowercased and split on `-`/`_`):*
 >
-> | Detected/stated lang | darwin (any arch) | darwin-arm64 extra | Linux/Windows/Intel macOS |
+> | Detected/stated lang | darwin-arm64 | darwin-x64 (Intel macOS) | Linux / Windows |
 > |---|---|---|---|
-> | `en` | `en-am_michael` | — | `en-am_michael` |
-> | `ru` | `macos-com.apple.voice.compact.ru-RU.Milena` | — | `ru-vosk-m02` |
-> | `es` | — | `es-em_alex` | `es-em_alex` |
-> | `fr` | — | *(unmapped → engine default)* | `fr-ff_siwis` |
-> | `hi` | — | `hi-hm_omega` | *(unmapped)* |
-> | `it` | — | `it-im_nicola` | `it-im_nicola` |
-> | `ja` | — | `ja-jm_kumo` | *(unmapped)* |
-> | `pt` | — | `pt-pm_alex` | `pt-pm_alex` |
-> | `zh` | — | `zh-zm_yunjian` (see Open Issues — engine ships `zh-zm_050`) | *(unmapped)* |
+> | `en` | `en-am_michael` | `en-am_michael` | `en-am_michael` |
+> | `ru` | `macos-com.apple.voice.compact.ru-RU.Milena` | `macos-com.apple.voice.compact.ru-RU.Milena` | `ru-vosk-m02` |
+> | `es` | `es-em_alex` | `es-em_alex` | `es-em_alex` |
+> | `fr` | *(unmapped → engine default)* | `fr-ff_siwis` | `fr-ff_siwis` |
+> | `hi` | `hi-hm_omega` | *(unmapped)* | *(unmapped)* |
+> | `it` | `it-im_nicola` | `it-im_nicola` | `it-im_nicola` |
+> | `ja` | `ja-jm_kumo` | *(unmapped)* | *(unmapped)* |
+> | `pt` | `pt-pm_alex` | `pt-pm_alex` | `pt-pm_alex` |
+> | `zh` | `zh-zm_050` | *(unmapped)* | *(unmapped)* |
+>
+> *The platform split differs by row: `ru` routes on `platform === "darwin"`
+> (so Intel macOS gets AVSpeech Milena, not Vosk), while the multilingual rows
+> route on `platform === "darwin" && arch === "arm64"` (so Intel macOS follows
+> the Linux/Windows ONNX column). `*(unmapped)*` means `pickVoiceForLang`
+> returns `undefined` and the Engine default applies.*
 >
 > *Engine-side routing (`rust/src/tts/voices.rs:99-148`): `en-*` → Kokoro;
 > `es/fr/hi/it/ja/pt/zh-*` → FluidAudio Kokoro on the darwin-arm64
@@ -547,11 +553,6 @@ unchanged (`SayError.exitCode`); CLI-side pre-checks use the same map.
 - **Hindi/Japanese native scripts** fail fast with `E_SCRIPT_UNSUPPORTED` on
   the darwin-arm64 FluidAudio build and have no voices at all on ONNX
   platforms; ja/hi are a future ONNX-CharsiuG2P effort.
-- **zh auto-routing drift** — `src/voice-routing.ts:14` maps detected `zh` to
-  `zh-zm_yunjian`, but the Engine's FluidAudio catalog ships only `zh-zm_050`
-  (`rust/src/tts/fluid_kokoro.rs:169`), so auto-routed Chinese fails with
-  `E_VOICE_UNKNOWN` until the map is fixed; explicit `--voice zh-zm_050`
-  works.
 - **`--rate` is silently ignored for `macos-*` AVSpeech voices** — the
   `EngineChoice::AVSpeech` variant carries no speed field
   (`rust/src/tts/mod.rs:103`); the documented 0.5–2.0 contract only holds for
