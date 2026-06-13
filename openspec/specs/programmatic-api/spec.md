@@ -45,7 +45,7 @@ API.
 object. It SHALL:
 1. Throw `Error("File not found: <path>")` when the file does not exist (checked
    before spawning the Engine).
-2. Spawn the Engine with `silent: true` (no progress output to stderr).
+2. Not surface the Engine's progress output on the caller's stderr.
 3. Return a `Promise<string>` resolving to the transcript text.
 4. Throw when the Engine fails (non-zero exit).
 
@@ -54,16 +54,19 @@ object. It SHALL:
 - GIVEN the Engine and ASR models are installed and `note.ogg` exists
 - WHEN Sona calls `await transcribe("note.ogg")`
 - THEN the function resolves to the transcript string
-- AND no output appears on stderr
+- AND no Engine progress output appears on the caller's stderr
 
 #### Scenario: File does not exist
 
 - WHEN Sona calls `await transcribe("ghost.ogg")`
 - THEN the promise rejects with an Error whose message contains `"File not found: ghost.ogg"`
 
-> *Technical Note — `transcribe` in `src/lib.ts:44`. `existsSync` check at
-> `src/lib.ts:46`. Calls `internalTranscribe` with `{ ...options, silent: true }`.
-> The `silent` flag suppresses the Engine's stderr progress output.*
+> *Technical Note — `transcribe` in `src/lib.ts:44`; `existsSync` check at
+> `src/lib.ts:46`. The Engine's stderr never reaches the caller's stderr because
+> `runEngine` (`src/engine.ts:106`) spawns it with `stdio: ["ignore", "pipe",
+> "pipe"]` — stderr is captured into a string, surfaced only inside the thrown
+> Error on failure and discarded on success. `lib.ts` also passes `silent: true`,
+> but that option is currently never read downstream — see Open Issues.*
 
 ### Requirement: `transcribeWithTimestamps(path, opts?)` returns text and segments
 
@@ -262,3 +265,8 @@ message naming the `kesha install` command needed to fix the situation.
   surfaced in the type; it is documented only in the JSDoc comment.
 - `downloadTts` does not expose a progress callback; callers cannot observe
   download progress except via stderr parsing.
+- **`silent` is a dead option** — `lib.ts` passes `silent: true` to
+  `internalTranscribe`/`internalTranscribeWithSegments` (`src/lib.ts:52,66`), but
+  `TranscribeOptions.silent` (`src/transcribe.ts:15`) is never read; stderr
+  suppression for the Core API comes solely from `runEngine`'s piped stdio. The
+  flag should either be wired up or removed.
