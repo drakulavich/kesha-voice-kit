@@ -295,8 +295,10 @@ exit 2 for values outside that range or non-numeric values.
 > *Technical Note — validation: `src/cli/say.ts:72-80`. The CLI omits `--rate`
 > from the Engine argv when it equals 1.0 (`src/synth.ts:71`). An SSML
 > whole-utterance `<prosody rate>` multiplies with `--rate`; the product is
-> clamped to 0.5–2.0 (`rust/src/tts/ssml/rate.rs`). `--rate` is silently
-> ignored for `macos-*` AVSpeech voices — see Open Issues.*
+> clamped to 0.5–2.0 (`rust/src/tts/ssml/rate.rs`). For `macos-*` AVSpeech voices
+> the multiplier is forwarded to the sidecar as `--rate <value>`
+> (`rust/src/tts/avspeech.rs:71-72`) and mapped piecewise-linearly onto
+> `AVSpeechUtterance.rate` (user 0.5/1.0/2.0 → AVSpeech 0.0/0.5/1.0), #546.*
 
 ### Requirement: SSML subset with strict root and graceful tag degradation
 
@@ -553,7 +555,3 @@ unchanged (`SayError.exitCode`); CLI-side pre-checks use the same map.
 - **Hindi/Japanese native scripts** fail fast with `E_SCRIPT_UNSUPPORTED` on
   the darwin-arm64 FluidAudio build and have no voices at all on ONNX
   platforms; ja/hi are a future ONNX-CharsiuG2P effort.
-- **`--rate` is silently ignored for `macos-*` AVSpeech voices** — the
-  `EngineChoice::AVSpeech` variant carries no speed field
-  (`rust/src/tts/mod.rs:103`); the documented 0.5–2.0 contract only holds for
-  Kokoro and Vosk voices.
