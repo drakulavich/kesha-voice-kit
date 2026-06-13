@@ -56,7 +56,9 @@ timestamps when `--speakers` is set.
 The Engine SHALL reject `--speakers` at runtime on non-darwin-arm64 targets
 with an `E_UNSUPPORTED_PLATFORM` error. On darwin-arm64, the Engine SHALL
 check that the diarize model exists before running ASR, and SHALL fail with an
-actionable `kesha install --diarize` hint if the model is missing.
+actionable setup hint naming `--diarize` (`kesha init --diarize` on an
+interactive TTY, `kesha install --diarize` when stderr is piped) if the model is
+missing.
 
 #### Scenario: Linux CI runs with --speakers
 
@@ -70,7 +72,9 @@ actionable `kesha install --diarize` hint if the model is missing.
 - GIVEN the Engine has the `system_diarize` feature but
   `~/.cache/kesha/models/diarize/SortformerNvidiaLow_v2.mlpackage` is absent
 - WHEN Maks runs `kesha --json --speakers meeting.ogg`
-- THEN the Engine reports the missing model and suggests `kesha install --diarize`
+- THEN the missing model is reported with an actionable setup hint naming
+  `--diarize` — `kesha init --diarize` on a TTY, `kesha install --diarize` when
+  stderr is piped (`installHint("--diarize")`, `src/engine.ts:224`)
 - AND the diarize preflight error fires before ASR model lookup
 - AND the process exits 1
 

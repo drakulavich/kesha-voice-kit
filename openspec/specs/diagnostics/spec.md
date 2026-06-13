@@ -89,7 +89,8 @@ Language ID, VAD, TTS Kokoro, TTS Vosk) and the grand total. The FluidAudio Koko
 external cache is reported separately when it exists, because it lives outside
 Kesha's Model cache.
 
-When the Engine is not installed, `kesha status` prints a `kesha install` hint and
+When the Engine is not installed, `kesha status` prints an actionable setup hint
+(`kesha init` on an interactive TTY, `kesha install` when stderr is piped) and
 exits 0.
 
 #### Scenario: Ira checks install state in a script
@@ -111,7 +112,8 @@ exits 0.
 - GIVEN no Engine is installed
 - WHEN Ira runs `kesha status`
 - THEN the output shows a red cross for the Engine binary
-- AND a hint to run `kesha install` is printed
+- AND an actionable setup hint is printed — `kesha init` on an interactive TTY,
+  `kesha install` when stderr is piped (`installHint()`, `src/status.ts:86`)
 - AND the process exits 0
 
 > *Technical Note — sources: `src/status.ts::showStatus`, `src/status.ts::showDiskUsage`,

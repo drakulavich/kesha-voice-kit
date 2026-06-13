@@ -244,12 +244,15 @@ message naming the `kesha install` command needed to fix the situation.
 
 - GIVEN the Engine binary has never been downloaded
 - WHEN Sona calls `await transcribe("note.ogg")`
-- THEN the promise rejects with an error containing `kesha install`
+- THEN the promise rejects with an error carrying an actionable setup hint —
+  `kesha init` on an interactive TTY, `kesha install` when stderr is piped
 
 > *Technical Note — `isEngineInstalled()` in `src/engine.ts:50` gates
 > Engine-dependent calls. `preflightTranscribeWithSegments` in
-> `src/transcribe.ts:32` checks `isEngineInstalled()` and throws with a
-> `bun add -g` + `kesha install` hint when false.*
+> `src/transcribe.ts:32` checks `isEngineInstalled()` and throws a `bun add -g`
+> + `installHint()` block when false (`src/transcribe.ts:34-39`); `installHint()`
+> (`src/install-hint.ts:9`) yields `kesha init` on a TTY, `kesha install`
+> otherwise.*
 
 ## Open Issues
 
