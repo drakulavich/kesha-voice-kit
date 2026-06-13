@@ -5,8 +5,16 @@
 // (22050 Hz on every macOS voice we've tested). Stderr carries progress + errors.
 //
 // Usage:
-//   say-avspeech <voiceId> [text]   # synthesize (stdin if text is omitted)
-//   say-avspeech --list-voices      # print installed voices, one per line
+//   say-avspeech <voiceId> [--rate <speed>] [text]   # synthesize (stdin if text is omitted)
+//   say-avspeech --list-voices                        # print installed voices, one per line
+//
+// --rate <speed>: user-facing multiplier in 0.5..=2.0 (1.0 = engine default).
+//   Mapped onto AVSpeechUtterance.rate (0.0..=1.0):
+//     user 1.0  → AVSpeechUtteranceDefaultSpeechRate (0.5)
+//     user 0.5  → AVSpeechUtteranceMinimumSpeechRate (0.0)  [slowest]
+//     user 2.0  → AVSpeechUtteranceMaximumSpeechRate (1.0)  [fastest]
+//   Linear interpolation in each half: slow half (0.5–1.0) maps to (min–default),
+//   fast half (1.0–2.0) maps to (default–max). (#546)
 //
 // Key gotcha: AVSpeechSynthesizer.write(_:toBufferCallback:) delivers buffers
 // on the main dispatch queue, so the CLI MUST pump the run loop. Semaphores
@@ -17,7 +25,7 @@ import Foundation
 
 let args = CommandLine.arguments
 guard args.count >= 2 else {
-  FileHandle.standardError.write("usage: say-avspeech <voiceID> [text — else stdin] | --list-voices\n".data(using: .utf8)!)
+  FileHandle.standardError.write("usage: say-avspeech <voiceID> [--rate <speed>] [text — else stdin] | --list-voices\n".data(using: .utf8)!)
   exit(2)
 }
 
@@ -31,10 +39,41 @@ if args[1] == "--list-voices" {
   exit(0)
 }
 
+// Parse argv: <voiceId> [--rate <speed>] [text]
 let voiceId = args[1]
+var userRate: Float = 1.0
+var remainingArgs = args.dropFirst(2)  // everything after voiceId
+
+if remainingArgs.first == "--rate" {
+  remainingArgs = remainingArgs.dropFirst()
+  guard let rateStr = remainingArgs.first, let parsed = Float(rateStr) else {
+    FileHandle.standardError.write("--rate requires a numeric value\n".data(using: .utf8)!)
+    exit(2)
+  }
+  // Clamp to the documented 0.5..=2.0 range (Rust validates this before
+  // calling the sidecar, but guard here so the binary's standalone contract
+  // is safe if invoked directly).
+  userRate = min(max(parsed, 0.5), 2.0)
+  remainingArgs = remainingArgs.dropFirst()
+}
+
+// Map user-facing 0.5..=2.0 onto AVSpeech 0.0..=1.0.
+// user 1.0 → AVSpeechUtteranceDefaultSpeechRate; linear in each half.
+let avMin = AVSpeechUtteranceMinimumSpeechRate    // 0.0
+let avDef = AVSpeechUtteranceDefaultSpeechRate    // 0.5
+let avMax = AVSpeechUtteranceMaximumSpeechRate    // 1.0
+let avRate: Float
+if userRate <= 1.0 {
+  let t = (userRate - 0.5) / (1.0 - 0.5)
+  avRate = avMin + t * (avDef - avMin)
+} else {
+  let t = (userRate - 1.0) / (2.0 - 1.0)
+  avRate = avDef + t * (avMax - avDef)
+}
+
 let text: String
-if args.count >= 3 {
-  text = args[2]
+if let inline = remainingArgs.first {
+  text = inline
 } else {
   let data = FileHandle.standardInput.readDataToEndOfFile()
   text = String(data: data, encoding: .utf8) ?? ""
@@ -51,6 +90,7 @@ if utt.voice == nil {
   FileHandle.standardError.write("voice not found: \(voiceId)\n".data(using: .utf8)!)
   exit(2)
 }
+utt.rate = avRate
 
 var samples: [Float] = []
 var sampleRate: Double = 0

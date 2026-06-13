@@ -248,6 +248,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 lang: espeak_lang,
                 engine: tts::EngineChoice::AVSpeech {
                     voice_id: &voice_id,
+                    speed: req.rate,
                 },
                 ssml: false,
                 format,

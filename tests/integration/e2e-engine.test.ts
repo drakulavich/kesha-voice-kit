@@ -70,7 +70,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     const { stdout, exitCode } = await runEngine(["--capabilities-json"]);
     expect(exitCode).toBe(0);
     const caps = JSON.parse(stdout);
-    expect(caps.protocolVersion).toBe(2);
+    expect(caps.protocolVersion).toBe(3);
     expect(caps.backend).toBeDefined();
     expect(caps.features).toContain("transcribe");
     expect(caps.features).toContain("detect-lang");

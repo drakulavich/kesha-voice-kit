@@ -270,9 +270,10 @@ pub fn run(a: SayArgs) -> i32 {
             speed: a.rate,
         },
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
-        tts::voices::ResolvedVoice::AVSpeech { voice_id } => {
-            tts::EngineChoice::AVSpeech { voice_id }
-        }
+        tts::voices::ResolvedVoice::AVSpeech { voice_id } => tts::EngineChoice::AVSpeech {
+            voice_id,
+            speed: a.rate,
+        },
     };
 
     let bytes = match tts::say(tts::SayOptions {
