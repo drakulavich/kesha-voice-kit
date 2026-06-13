@@ -19,3 +19,6 @@ rules:
     - Use glossary terms from openspec/specs/GLOSSARY.md verbatim
     - Every requirement needs at least one happy-path and one error/edge scenario
     - State outcomes, not implementation mechanisms, in requirement text
+    - Reference named personas (Ira/Maks/Sona), never a generic "user"
+    - Record anything uncertain or where spec and code disagree under "Open Issues" — never invent a resolution
+    - Trace each requirement to code with file:line refs in a Technical Note
