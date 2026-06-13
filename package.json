@@ -1,6 +1,6 @@
 {
   "name": "@drakulavich/kesha-voice-kit",
-  "version": "1.24.2",
+  "version": "1.24.3",
   "description": "Give your tools a voice — speech to text and back, 25 languages, up to ~19× faster than Whisper. On your machine.",
   "type": "module",
   "bin": {
@@ -38,7 +38,7 @@
     }
   },
   "keshaEngine": {
-    "version": "1.24.2"
+    "version": "1.24.3"
   },
   "scripts": {
     "test": "bun test",
