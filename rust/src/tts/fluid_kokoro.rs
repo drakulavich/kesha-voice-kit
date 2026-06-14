@@ -279,15 +279,25 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<Vec<u8>> {
 ///
 /// Used by the SSML segment walker (`tts::say::synth_segments_fluid_kokoro`),
 /// which decodes/concatenates per-segment audio and interleaves `<break>`
-/// silence before encoding once. Empty/whitespace-only text returns an empty
-/// buffer (the walker skips it) rather than erroring the whole utterance.
+/// silence before encoding once. Text with no alphanumeric content
+/// (whitespace- or punctuation-only) returns an empty buffer (the walker skips
+/// it) rather than erroring the whole utterance.
 ///
 /// Each call re-inits the FluidAudio bridge: the dominant SSML case is a single
 /// `<prosody>`-wrapped utterance (one call), and the `.mlmodelc` is disk-cached
 /// after the first compile so multi-segment re-inits load the compiled model
 /// rather than recompiling.
 pub fn synthesize_pcm(text: &str, voice_id: &str, speed: f32) -> Result<Vec<f32>> {
-    if text.trim().is_empty() {
+    // A segment with no alphanumeric content (whitespace, or bare punctuation
+    // like the trailing "." in `<speak>Loop <emphasis>ssml</emphasis>.</speak>`)
+    // has nothing to phonemize. FluidAudio's internal G2P *errors* on such input
+    // ("G2P produced no phonemes for input '.'", #543), which would fail the whole
+    // SSML utterance; the ONNX path instead yields empty audio (misaki returns an
+    // empty IPA string → `sessions::infer_ipa` early-returns on empty token ids).
+    // Mirror that tolerance so a punctuation-only segment contributes silence and
+    // the walker's final "no audio produced" guard still catches a fully-empty
+    // utterance.
+    if !text.chars().any(char::is_alphanumeric) {
         return Ok(Vec::new());
     }
     ensure_script_supported(voice_id, text)?;
@@ -444,6 +454,25 @@ mod tests {
         let err = synthesize("नमस्ते मेरा नाम केशा है", "hm_omega", 1.0)
             .expect_err("native-script synth must fail fast");
         assert_eq!(crate::errors::code_of(&err), ErrorCode::ScriptUnsupported);
+    }
+
+    #[test]
+    fn synthesize_pcm_skips_no_phoneme_text_before_model_init() {
+        // Bare-punctuation / whitespace-only segments (e.g. the trailing "." in
+        // `<speak>Loop <emphasis>ssml</emphasis>.</speak>`, #543) have nothing to
+        // phonemize. They must short-circuit to an empty buffer *before* model init:
+        // FluidAudio's internal G2P otherwise errors ("G2P produced no phonemes for
+        // input '.'") and fails the whole SSML utterance, whereas the ONNX path yields
+        // empty audio. No model download needed — the guard returns first.
+        for text in [".", "   ", "...", "—", "?!", "“”", ", ."] {
+            let pcm = synthesize_pcm(text, "am_michael", 1.0)
+                .unwrap_or_else(|e| panic!("no-phoneme synth must not error for {text:?}: {e}"));
+            assert!(
+                pcm.is_empty(),
+                "expected empty PCM for no-phoneme text {text:?}, got {} samples",
+                pcm.len()
+            );
+        }
     }
 
     #[test]
