@@ -41,7 +41,17 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
                 // uses a separate buffer, so framed output is unaffected.
                 // SAFETY: fflush(NULL) flushes all open C output streams; it takes no
                 // borrows and is safe to call from a Drop impl.
-                unsafe { libc::fflush(std::ptr::null_mut()) };
+                if unsafe { libc::fflush(std::ptr::null_mut()) } != 0 {
+                    // Flush failed — residual Swift-bridge output may still flush onto
+                    // the restored stdout below, recreating the #543 corruption. Writing
+                    // to /dev/null should never fail, so this is a very low-probability
+                    // path; warn on stderr to match the dup2 handling below.
+                    let errno = std::io::Error::last_os_error();
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "warning: failed to flush stdout before restore after FluidAudio call: {errno}"
+                    );
+                }
                 // SAFETY: saved is a dup'd stdout fd we own. as_raw_fd
                 // borrows it for the dup2 call (atomic in the kernel);
                 // `saved` is then dropped at end of this block, closing
@@ -87,7 +97,15 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
             // Flush the C stdio buffer to the *real* stdout before redirecting, so
             // any legitimately pre-buffered output isn't swallowed by /dev/null.
             // SAFETY: fflush(NULL) flushes all open C output streams; no borrows.
-            unsafe { libc::fflush(std::ptr::null_mut()) };
+            if unsafe { libc::fflush(std::ptr::null_mut()) } != 0 {
+                // Flush failed before the redirect — pre-buffered output may be lost to
+                // /dev/null on the next flush. Warn on stderr to match the dup2 handling.
+                let errno = std::io::Error::last_os_error();
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "warning: failed to flush stdout before silencing for FluidAudio call: {errno}"
+                );
+            }
             // SAFETY: devnull is owned by the caller; dup2 atomically replaces
             // fd 1 with a duplicate of devnull, and the caller's fd stays valid.
             let rc = unsafe { libc::dup2(devnull.as_raw_fd(), libc::STDOUT_FILENO) };
