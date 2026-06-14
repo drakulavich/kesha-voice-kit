@@ -31,6 +31,17 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
     impl Drop for StdoutGuard {
         fn drop(&mut self) {
             if let Some(saved) = self.saved.take() {
+                // Drain the C stdio buffer to /dev/null *before* restoring fd 1.
+                // When stdout is a pipe/file (e.g. `say --stdin-loop`), libc makes
+                // the FILE* fully buffered, so a synchronous Swift `print` from the
+                // FluidAudio bridge sits in that buffer during the guarded scope and
+                // would otherwise flush onto the *restored* real stdout afterwards —
+                // corrupting the binary frame stream (#543). Flushing here, while fd 1
+                // still points at /dev/null, discards that noise. Rust's own stdout
+                // uses a separate buffer, so framed output is unaffected.
+                // SAFETY: fflush(NULL) flushes all open C output streams; it takes no
+                // borrows and is safe to call from a Drop impl.
+                unsafe { libc::fflush(std::ptr::null_mut()) };
                 // SAFETY: saved is a dup'd stdout fd we own. as_raw_fd
                 // borrows it for the dup2 call (atomic in the kernel);
                 // `saved` is then dropped at end of this block, closing
@@ -73,6 +84,10 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
     // swallowing the engine's final JSON for the rest of the process.
     if have_save {
         if let Some(devnull) = devnull {
+            // Flush the C stdio buffer to the *real* stdout before redirecting, so
+            // any legitimately pre-buffered output isn't swallowed by /dev/null.
+            // SAFETY: fflush(NULL) flushes all open C output streams; no borrows.
+            unsafe { libc::fflush(std::ptr::null_mut()) };
             // SAFETY: devnull is owned by the caller; dup2 atomically replaces
             // fd 1 with a duplicate of devnull, and the caller's fd stays valid.
             let rc = unsafe { libc::dup2(devnull.as_raw_fd(), libc::STDOUT_FILENO) };
