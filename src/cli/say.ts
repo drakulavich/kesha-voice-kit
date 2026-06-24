@@ -121,7 +121,7 @@ function assertOpusOnlyFlags(
   outArg: string | undefined,
 ): void {
   if (bitrate === undefined && sampleRate === undefined) return;
-  const outExt = typeof outArg === "string" ? outArg.split(".").pop()?.toLowerCase() : undefined;
+  const outExt = outArg?.split(".").pop()?.toLowerCase();
   const impliesOpus = outExt && ["ogg", "opus", "oga"].includes(outExt);
   // --bitrate / --sample-rate are Opus-only. Reject for wav and flac
   // (both lossless / no encoder knobs) and for any non-Opus extension.
