@@ -1,7 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection } from "../../src/cli";
+import { mainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
+import type { ResolvedOutputFormat } from "../../src/cli";
 
 type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
 
@@ -797,5 +798,97 @@ describe("resolveOutputFormat (#300 regression)", () => {
       expect(r.ok).toBe(true);
       if (r.ok) expect(r.wantsToon).toBe(true);
     });
+  });
+});
+
+// Helper: build a ResolvedOutputFormat { ok: true } for a given json/toon/transcript combo.
+function okFmt(json = false, toon = false, transcript = false): ResolvedOutputFormat & { ok: true } {
+  return { ok: true, wantsJson: json, wantsToon: toon, wantsTranscript: transcript };
+}
+
+describe("validateTranscribeArgs guards", () => {
+  // Suppress log.error side-effects. log.error writes via process.stderr.write
+  // (src/log.ts), NOT console.error, so we stub the former. process.exit is
+  // intercepted directly here for these synchronous validation calls.
+  function expectValidateExit(
+    argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
+    rawArgs: string[],
+    fmt: ResolvedOutputFormat & { ok: true },
+  ): number {
+    const savedExit = process.exit;
+    const savedWrite = process.stderr.write;
+    try {
+      process.stderr.write = (() => true) as typeof process.stderr.write;
+      process.exit = ((code?: string | number | null | undefined) => {
+        throw new Error(`exit:${code ?? 0}`);
+      }) as typeof process.exit;
+      validateTranscribeArgs(defaultMainArgs(argsOverrides) as never, rawArgs, fmt);
+      throw new Error("validateTranscribeArgs did not exit");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message.startsWith("exit:")).toBe(true);
+      return Number(message.slice("exit:".length));
+    } finally {
+      process.exit = savedExit;
+      process.stderr.write = savedWrite;
+    }
+  }
+
+  test("--timestamps without machine-readable output exits 2", () => {
+    expect(expectValidateExit({ timestamps: true }, ["--timestamps"], okFmt())).toBe(2);
+  });
+
+  test("--timestamps with --json does not exit", () => {
+    const result = validateTranscribeArgs(
+      defaultMainArgs({ timestamps: true, json: true }) as never,
+      ["--timestamps", "--json"],
+      okFmt(true),
+    );
+    expect(result.outputFormat).toBe("json");
+  });
+
+  test("--speakers without machine-readable output exits 2", () => {
+    expect(expectValidateExit({ speakers: true }, ["--speakers"], okFmt())).toBe(2);
+  });
+
+  test("--speakers with --toon does not exit", () => {
+    const result = validateTranscribeArgs(
+      defaultMainArgs({ speakers: true, toon: true }) as never,
+      ["--speakers", "--toon"],
+      okFmt(false, true),
+    );
+    expect(result.outputFormat).toBe("toon");
+  });
+
+  test("--include-errors without --json exits 2", () => {
+    expect(
+      expectValidateExit({ "include-errors": true }, ["--include-errors"], okFmt()),
+    ).toBe(2);
+  });
+
+  test("--include-errors with --json does not exit", () => {
+    const result = validateTranscribeArgs(
+      defaultMainArgs({ "include-errors": true, json: true }) as never,
+      ["--include-errors", "--json"],
+      okFmt(true),
+    );
+    expect(result.outputFormat).toBe("json");
+  });
+
+  test("--vad and --no-vad mutually exclusive exits 2", () => {
+    expect(
+      expectValidateExit({ vad: true }, ["--vad", "--no-vad"], okFmt()),
+    ).toBe(2);
+  });
+
+  test("vadMode derives correctly from rawArgs", () => {
+    const auto = validateTranscribeArgs(defaultMainArgs() as never, [], okFmt());
+    expect(auto.vadMode).toBe("auto");
+
+    const on = validateTranscribeArgs(defaultMainArgs({ vad: true }) as never, ["--vad"], okFmt());
+    expect(on.vadMode).toBe("on");
+
+    const off = validateTranscribeArgs(defaultMainArgs() as never, ["--no-vad"], okFmt());
+    expect(off.vadMode).toBe("off");
   });
 });

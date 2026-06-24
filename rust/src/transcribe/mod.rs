@@ -288,17 +288,34 @@ pub fn transcribe_with_options(
     Ok(output)
 }
 
+/// Load the ASR backend, logging the load time. Shared by the plain and chunked
+/// paths, which contain identical timing+logging+create_backend blocks.
+fn create_timed_backend(model_dir: &str) -> Result<Box<dyn backend::TranscribeBackend>> {
+    let t0 = Instant::now();
+    let be = backend::create_backend(model_dir)?;
+    let dt_ms = t0.elapsed().as_millis() as u64;
+    dtrace!("asr::backend_loaded dt={dt_ms}ms");
+    dtrace_json!("asr.backend_loaded", { "dt_ms": dt_ms });
+    Ok(be)
+}
+
+/// Join segment texts with a single space separator. Used on both the VAD and
+/// chunked paths to stitch per-span transcripts into a single string.
+fn join_segment_texts(segments: &[TranscriptionSegment]) -> String {
+    segments
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn transcribe_plain(
     audio_path: &str,
     model_dir: &str,
     duration: Option<f32>,
     timestamps_required: bool,
 ) -> Result<TranscriptionOutput> {
-    let t0 = Instant::now();
-    let mut be = backend::create_backend(model_dir)?;
-    let dt_ms = t0.elapsed().as_millis() as u64;
-    dtrace!("asr::backend_loaded dt={dt_ms}ms");
-    dtrace_json!("asr.backend_loaded", { "dt_ms": dt_ms });
+    let mut be = create_timed_backend(model_dir)?;
     let t1 = Instant::now();
     let text = be.transcribe(audio_path)?;
     dtrace!(
@@ -333,11 +350,7 @@ fn transcribe_chunked(
         samples.len()
     );
 
-    let t0 = Instant::now();
-    let mut be = backend::create_backend(model_dir)?;
-    let dt_ms = t0.elapsed().as_millis() as u64;
-    dtrace!("asr::backend_loaded dt={dt_ms}ms");
-    dtrace_json!("asr.backend_loaded", { "dt_ms": dt_ms });
+    let mut be = create_timed_backend(model_dir)?;
 
     transcribe_chunked_samples(&samples, &mut |slice| be.transcribe_samples(slice)).map(
         |mut output| {
@@ -430,11 +443,7 @@ fn transcribe_via_vad(
             be.transcribe_samples(slice)
         });
 
-    let text = output_segments
-        .iter()
-        .map(|s| s.text.as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let text = join_segment_texts(&output_segments);
 
     Ok(TranscriptionOutput {
         text,
@@ -510,11 +519,7 @@ where
         FIXED_CHUNK_OVERLAP_SECONDS,
         transcribe_chunk,
     )?;
-    let text = segments
-        .iter()
-        .map(|s| s.text.as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let text = join_segment_texts(&segments);
     Ok(TranscriptionOutput { text, segments })
 }
 
@@ -1309,5 +1314,168 @@ mod tests {
                 },
             }
         }
+    }
+
+    // ── trim_repeated_prefix characterization tests ─────────────────────────
+
+    #[test]
+    fn trim_repeated_prefix_empty_prev_returns_current_unchanged() {
+        assert_eq!(trim_repeated_prefix("", "hello world"), "hello world");
+    }
+
+    #[test]
+    fn trim_repeated_prefix_overlap_below_min_chars_not_stripped() {
+        // CHUNK_DEDUP_MIN_CHARS = 8; a 7-char overlap must NOT be stripped.
+        let prev = "abcdefg";
+        let curr = "abcdefg extra";
+        assert_eq!(trim_repeated_prefix(prev, curr), "abcdefg extra");
+    }
+
+    #[test]
+    fn trim_repeated_prefix_exactly_min_chars_is_stripped() {
+        // CHUNK_DEDUP_MIN_CHARS = 8; an exactly-8-char overlap must be stripped.
+        let prev = "abcdefgh";
+        let curr = "abcdefgh more";
+        assert_eq!(trim_repeated_prefix(prev, curr), "more");
+    }
+
+    #[test]
+    fn trim_repeated_prefix_case_insensitive() {
+        let prev = "Hello World";
+        let curr = "hello world continuation";
+        assert_eq!(trim_repeated_prefix(prev, curr), "continuation");
+    }
+
+    #[test]
+    fn trim_repeated_prefix_multi_byte_boundary_no_panic() {
+        // Cyrillic: each character is 2 bytes. The function must not panic when
+        // scanning char boundaries through a multibyte string.
+        let prev = "привет мир"; // 10 chars, 19 bytes
+        let curr = "привет мир продолжение";
+        // overlap "привет мир" is 10 chars = 19 bytes ≥ CHUNK_DEDUP_MIN_CHARS (8) → stripped
+        let result = trim_repeated_prefix(prev, curr);
+        assert!(
+            !result.contains("привет мир"),
+            "overlap should be stripped: {result}"
+        );
+    }
+
+    // ── fixed_chunk_windows guard tests ─────────────────────────────────────
+
+    #[test]
+    fn fixed_chunk_windows_total_zero_returns_empty() {
+        assert!(fixed_chunk_windows(
+            0,
+            16_000.0,
+            FIXED_CHUNK_SECONDS,
+            FIXED_CHUNK_OVERLAP_SECONDS
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn fixed_chunk_windows_sr_zero_returns_empty() {
+        assert!(fixed_chunk_windows(
+            16_000,
+            0.0,
+            FIXED_CHUNK_SECONDS,
+            FIXED_CHUNK_OVERLAP_SECONDS
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn fixed_chunk_windows_chunk_zero_returns_empty() {
+        assert!(fixed_chunk_windows(16_000, 16_000.0, 0.0, FIXED_CHUNK_OVERLAP_SECONDS).is_empty());
+    }
+
+    #[test]
+    fn fixed_chunk_windows_overlap_ge_chunk_clamped_no_infinite_loop() {
+        // overlap ≥ chunk → step clamped to 1; must terminate and cover all samples.
+        let windows = fixed_chunk_windows(100, 10.0, 1.0, 5.0);
+        assert!(!windows.is_empty(), "should produce at least one window");
+        // last window must reach the end
+        assert_eq!(windows.last().unwrap().input_end, 100);
+    }
+
+    #[test]
+    fn fixed_chunk_windows_single_chunk_when_total_le_chunk_samples() {
+        // 5 samples, chunk = 1.0 s × 10 Hz = 10 samples → only one window needed.
+        let windows = fixed_chunk_windows(5, 10.0, 1.0, 0.0);
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].input_start, 0);
+        assert_eq!(windows[0].input_end, 5);
+    }
+
+    // ── validate_plain_transcribe_safety exact boundary test ─────────────────
+
+    #[test]
+    fn validate_plain_transcribe_safety_exact_boundary_off() {
+        // At exactly FULL_FILE_SINGLE_PASS_MAX_SECONDS with VadMode::Off, must reject.
+        let err = validate_plain_transcribe_safety(
+            VadMode::Off,
+            Some(FULL_FILE_SINGLE_PASS_MAX_SECONDS),
+            false,
+        )
+        .expect_err("exact boundary must be rejected");
+        assert!(err.to_string().contains("refusing --no-vad"), "{err}");
+    }
+
+    // ── decide at exactly AUTO_VAD_MIN_SECONDS without VAD ───────────────────
+
+    #[test]
+    fn decide_at_exactly_auto_vad_min_seconds_without_vad_gives_plain_with_hint() {
+        // At exactly AUTO_VAD_MIN_SECONDS with vad_installed=false → PlainWithHint.
+        assert_eq!(
+            decide(VadMode::Auto, Some(AUTO_VAD_MIN_SECONDS), false),
+            VadDecision::PlainWithHint
+        );
+    }
+
+    // ── TranscriptionOutput JSON round-trip ──────────────────────────────────
+
+    #[test]
+    fn transcription_output_json_round_trip() {
+        let original = TranscriptionOutput {
+            text: "hello world".to_string(),
+            segments: vec![TranscriptionSegment {
+                start: 0.0,
+                end: 1.5,
+                text: "hello world".to_string(),
+                speaker: Some(1),
+            }],
+        };
+        let json = serde_json::to_string(&original).expect("serialise");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(parsed["text"], "hello world");
+        assert_eq!(parsed["segments"][0]["start"], 0.0);
+        assert_eq!(parsed["segments"][0]["end"], 1.5);
+        assert_eq!(parsed["segments"][0]["speaker"], 1);
+    }
+
+    // ── join_segment_texts ───────────────────────────────────────────────────
+
+    #[test]
+    fn join_segment_texts_empty_slice() {
+        assert_eq!(join_segment_texts(&[]), "");
+    }
+
+    #[test]
+    fn join_segment_texts_joins_with_space() {
+        let segs = vec![
+            TranscriptionSegment {
+                start: 0.0,
+                end: 1.0,
+                text: "foo".to_string(),
+                speaker: None,
+            },
+            TranscriptionSegment {
+                start: 1.0,
+                end: 2.0,
+                text: "bar".to_string(),
+                speaker: None,
+            },
+        ];
+        assert_eq!(join_segment_texts(&segs), "foo bar");
     }
 }
