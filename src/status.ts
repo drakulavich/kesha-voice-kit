@@ -35,6 +35,27 @@ export interface ShowStatusOptions {
   disk?: boolean;
 }
 
+async function logEngineCapabilities(): Promise<void> {
+  const caps = await getEngineCapabilities().catch(() => null);
+  if (caps) {
+    log.info(formatStatusLine("Backend", caps.backend, true));
+    log.info(formatStatusLine("Protocol", `v${caps.protocolVersion}`, true));
+    log.info(formatStatusLine("Features", caps.features.join(", "), true));
+  } else {
+    log.info(formatStatusLine("Capabilities", null, false, "probe failed"));
+  }
+}
+
+function logInstalledVoices(): void {
+  const voices = listInstalledVoices();
+  if (voices.length === 0) return;
+  log.info("TTS voices:");
+  for (const v of voices) {
+    log.info(`  ${v}`);
+  }
+  log.info("");
+}
+
 export async function showStatus(options: ShowStatusOptions = {}): Promise<void> {
   const binPath = getEngineBinPath();
   const installed = isEngineInstalled();
@@ -43,19 +64,7 @@ export async function showStatus(options: ShowStatusOptions = {}): Promise<void>
   log.info(formatStatusLine("Binary", installed ? binPath : null, installed));
 
   if (installed) {
-    let caps: Awaited<ReturnType<typeof getEngineCapabilities>> = null;
-    try {
-      caps = await getEngineCapabilities();
-    } catch {
-      caps = null;
-    }
-    if (caps) {
-      log.info(formatStatusLine("Backend", caps.backend, true));
-      log.info(formatStatusLine("Protocol", `v${caps.protocolVersion}`, true));
-      log.info(formatStatusLine("Features", caps.features.join(", "), true));
-    } else {
-      log.info(formatStatusLine("Capabilities", null, false, "probe failed"));
-    }
+    await logEngineCapabilities();
   }
   log.info("");
 
@@ -68,14 +77,7 @@ export async function showStatus(options: ShowStatusOptions = {}): Promise<void>
   log.info("");
 
   if (installed) {
-    const voices = listInstalledVoices();
-    if (voices.length > 0) {
-      log.info("TTS voices:");
-      for (const v of voices) {
-        log.info(`  ${v}`);
-      }
-      log.info("");
-    }
+    logInstalledVoices();
 
     if (options.disk) {
       showDiskUsage(binPath);
@@ -88,6 +90,39 @@ export async function showStatus(options: ShowStatusOptions = {}): Promise<void>
   }
 }
 
+function buildDiskComponents(cache: string, engineDir: string): Array<{ label: string; path: string }> {
+  return [
+    { label: "Engine", path: engineDir },
+    { label: "ASR (Parakeet)", path: join(cache, "models/parakeet-tdt-v3") },
+    { label: "Language ID", path: join(cache, "models/lang-id-ecapa") },
+    { label: "VAD (Silero)", path: join(cache, "models/silero-vad") },
+    { label: "TTS (Kokoro)", path: join(cache, "models/kokoro-82m") },
+    { label: "TTS (Vosk)", path: join(cache, "models/vosk-ru") },
+  ];
+}
+
+function logDiskRows(rows: Array<{ label: string; size: number }>, total: number, componentTotal: number): void {
+  const labelWidth = Math.max(...rows.map((r) => r.label.length), "Total".length);
+  for (const r of rows) {
+    const pad = " ".repeat(labelWidth - r.label.length + 2);
+    log.info(`  ${r.label}:${pad}${humanBytes(r.size)}`);
+  }
+  const totalPad = " ".repeat(labelWidth - "Total".length + 2);
+  log.info(`  ${pc.bold("Total")}:${totalPad}${pc.bold(humanBytes(total))}`);
+  if (total > componentTotal) {
+    const other = total - componentTotal;
+    log.info(pc.dim(`  (includes ${humanBytes(other)} of other cache files)`));
+  }
+}
+
+function logFluidKokoroCache(): void {
+  const fluidKokoro = fluidKokoroCacheInfo();
+  if (!fluidKokoro.exists || fluidKokoro.sizeBytes <= 0) return;
+  log.info("");
+  log.info(`External caches (not included in Kesha total):`);
+  log.info(`  FluidAudio Kokoro: ${humanBytes(fluidKokoro.sizeBytes)} (${fluidKokoro.path})`);
+}
+
 function showDiskUsage(binPath: string): void {
   const cache = keshaCacheDir();
   // Engine binary lives under `<cache>/engine/bin/` (managed by the TS CLI's
@@ -97,14 +132,7 @@ function showDiskUsage(binPath: string): void {
   // counted too.
   const engineDir = join(binPath, "..", "..");
 
-  const components: Array<{ label: string; path: string }> = [
-    { label: "Engine", path: engineDir },
-    { label: "ASR (Parakeet)", path: join(cache, "models/parakeet-tdt-v3") },
-    { label: "Language ID", path: join(cache, "models/lang-id-ecapa") },
-    { label: "VAD (Silero)", path: join(cache, "models/silero-vad") },
-    { label: "TTS (Kokoro)", path: join(cache, "models/kokoro-82m") },
-    { label: "TTS (Vosk)", path: join(cache, "models/vosk-ru") },
-  ];
+  const components = buildDiskComponents(cache, engineDir);
 
   const rows: Array<{ label: string; size: number }> = [];
   for (const c of components) {
@@ -127,23 +155,8 @@ function showDiskUsage(binPath: string): void {
   const total = cacheTotal + engineOutsideCache;
 
   log.info(`Disk usage (${cache}):`);
-  const labelWidth = Math.max(...rows.map((r) => r.label.length), "Total".length);
-  for (const r of rows) {
-    const pad = " ".repeat(labelWidth - r.label.length + 2);
-    log.info(`  ${r.label}:${pad}${humanBytes(r.size)}`);
-  }
-  const totalPad = " ".repeat(labelWidth - "Total".length + 2);
-  log.info(`  ${pc.bold("Total")}:${totalPad}${pc.bold(humanBytes(total))}`);
-  if (total > componentTotal) {
-    const other = total - componentTotal;
-    log.info(pc.dim(`  (includes ${humanBytes(other)} of other cache files)`));
-  }
-  const fluidKokoro = fluidKokoroCacheInfo();
-  if (fluidKokoro.exists && fluidKokoro.sizeBytes > 0) {
-    log.info("");
-    log.info(`External caches (not included in Kesha total):`);
-    log.info(`  FluidAudio Kokoro: ${humanBytes(fluidKokoro.sizeBytes)} (${fluidKokoro.path})`);
-  }
+  logDiskRows(rows, total, componentTotal);
+  logFluidKokoroCache();
   log.info("");
   log.info(pc.dim(`  To reset cache: rm -rf ${cache} — next \`kesha install\` re-downloads.`));
   log.info("");

@@ -183,19 +183,16 @@ function bundleComponent(
   };
 }
 
-export async function renderInstallPlan(options: InstallPlanOptions = {}): Promise<string> {
-  const cacheRoot = keshaCacheDir();
-  const binPath = getEngineBinPath();
-  const engineDir = dirname(binPath);
-  const noCache = options.noCache === true;
-  const components: PlanComponent[] = [];
-  const warmups: PlanWarmup[] = [];
+// ---------------------------------------------------------------------------
+// Private helpers — build plan sections
+// ---------------------------------------------------------------------------
 
+function buildEngineComponent(binPath: string, noCache: boolean): PlanComponent {
   const engineAsset = engineAssetForPlatform();
   if (engineAsset) {
     const engineCached =
       existsSync(binPath) && readInstalledEngineVersion(binPath) === engineVersion;
-    components.push({
+    return {
       name: `Engine ${engineAsset.assetName}`,
       source: `GitHub release v${engineVersion}`,
       sizeBytes: engineAsset.sizeBytes,
@@ -205,52 +202,36 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
         process.platform === "win32"
           ? "Windows x64 is currently blocked by the install path; see issue #216."
           : undefined,
-    });
-  } else {
-    components.push({
-      name: `Engine for ${process.platform} ${process.arch}`,
-      source: "GitHub release",
-      sizeBytes: 0,
-      cached: false,
-      refresh: false,
-      note: "unsupported platform",
-    });
+    };
   }
+  return {
+    name: `Engine for ${process.platform} ${process.arch}`,
+    source: "GitHub release",
+    sizeBytes: 0,
+    cached: false,
+    refresh: false,
+    note: "unsupported platform",
+  };
+}
 
-  if (isDarwinArm64()) {
-    for (const sidecar of DARWIN_SIDECARS) {
-      components.push({
-        name: `Sidecar ${sidecar.assetName}`,
-        source: `GitHub release v${engineVersion}`,
-        sizeBytes: sidecar.sizeBytes,
-        cached: existsSync(join(engineDir, sidecar.fileBasename)),
-        refresh: noCache,
-      });
-    }
-  }
+function buildSidecarComponents(engineDir: string, noCache: boolean): PlanComponent[] {
+  if (!isDarwinArm64()) return [];
+  return DARWIN_SIDECARS.map((sidecar) => ({
+    name: `Sidecar ${sidecar.assetName}`,
+    source: `GitHub release v${engineVersion}`,
+    sizeBytes: sidecar.sizeBytes,
+    cached: existsSync(join(engineDir, sidecar.fileBasename)),
+    refresh: noCache,
+  }));
+}
 
-  components.push(
-    bundleComponent(
-      cacheRoot,
-      "ASR Parakeet TDT v3",
-      "model cache",
-      ASR_FILES,
-      noCache,
-      "required for speech-to-text",
-    ),
-  );
-  components.push(
-    bundleComponent(
-      cacheRoot,
-      "Audio language ID ECAPA",
-      "model cache",
-      LANG_ID_FILES,
-      noCache,
-      "required for --json, --toon, --format transcript, --lang, and --verbose language metadata",
-    ),
-  );
+function buildTtsComponents(
+  cacheRoot: string,
+  ttsLangs: string[],
+  noCache: boolean,
+): { components: PlanComponent[]; warmups: PlanWarmup[]; wantsAnyKokoro: boolean } {
+  if (ttsLangs.length === 0) return { components: [], warmups: [], wantsAnyKokoro: false };
 
-  const ttsLangs = options.ttsLangs ?? [];
   // Darwin ANE serves every non-ru language through Kokoro (en/es/fr/it/pt + the
   // ANE-only hi/ja/zh), so the warm-up gate mirrors engine-install.ts's
   // `some((l) => l !== "ru")`. The ONNX component, by contrast, only covers the
@@ -260,51 +241,88 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
   const wantsG2p = ttsLangs.some((l) => ["es", "fr", "it", "pt"].includes(l));
   const wantsRu = ttsLangs.includes("ru");
 
-  if (ttsLangs.length > 0) {
-    if (isDarwinArm64()) {
-      if (wantsAnyKokoro) {
-        warmups.push({
-          name: "TTS Kokoro (ANE)",
-          note: `${FLUID_KOKORO_CACHE_NOTE} (${fluidKokoroCachePath()})`,
-        });
-      }
-      if (wantsRu) {
-        components.push(
-          bundleComponent(cacheRoot, "TTS Vosk RU", "model cache", VOSK_RU_FILES, noCache, "Russian ru-vosk-* voices"),
-        );
-      }
-    } else {
-      if (wantsOnnxKokoro) {
-        components.push(
-          bundleComponent(
-            cacheRoot,
-            "TTS Kokoro graph + voices",
-            "model cache",
-            kokoroPlanFiles(ttsLangs),
-            noCache,
-            `voices for ${ttsLangs.filter((l) => l !== "ru").join(", ")}`,
-          ),
-        );
-      }
-      if (wantsG2p) {
-        components.push(
-          bundleComponent(
-            cacheRoot,
-            "G2P CharsiuG2P byt5-tiny",
-            "model cache",
-            G2P_CHARSIU_FILES,
-            noCache,
-            "multilingual G2P for es/fr/it/pt (CC-BY 4.0)",
-          ),
-        );
-      }
-      if (wantsRu) {
-        components.push(
-          bundleComponent(cacheRoot, "TTS Vosk RU", "model cache", VOSK_RU_FILES, noCache, "Russian ru-vosk-* voices"),
-        );
-      }
+  const components: PlanComponent[] = [];
+  const warmups: PlanWarmup[] = [];
+
+  if (isDarwinArm64()) {
+    if (wantsAnyKokoro) {
+      warmups.push({
+        name: "TTS Kokoro (ANE)",
+        note: `${FLUID_KOKORO_CACHE_NOTE} (${fluidKokoroCachePath()})`,
+      });
+    }
+  } else {
+    if (wantsOnnxKokoro) {
+      components.push(
+        bundleComponent(
+          cacheRoot,
+          "TTS Kokoro graph + voices",
+          "model cache",
+          kokoroPlanFiles(ttsLangs),
+          noCache,
+          `voices for ${ttsLangs.filter((l) => l !== "ru").join(", ")}`,
+        ),
+      );
+    }
+    if (wantsG2p) {
+      components.push(
+        bundleComponent(
+          cacheRoot,
+          "G2P CharsiuG2P byt5-tiny",
+          "model cache",
+          G2P_CHARSIU_FILES,
+          noCache,
+          "multilingual G2P for es/fr/it/pt (CC-BY 4.0)",
+        ),
+      );
     }
   }
+
+  // Vosk RU is needed on both darwin and non-darwin builds.
+  if (wantsRu) {
+    components.push(
+      bundleComponent(cacheRoot, "TTS Vosk RU", "model cache", VOSK_RU_FILES, noCache, "Russian ru-vosk-* voices"),
+    );
+  }
+
+  return { components, warmups, wantsAnyKokoro };
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+export async function renderInstallPlan(options: InstallPlanOptions = {}): Promise<string> {
+  const cacheRoot = keshaCacheDir();
+  const binPath = getEngineBinPath();
+  const engineDir = dirname(binPath);
+  const noCache = options.noCache === true;
+
+  const ttsLangs = options.ttsLangs ?? [];
+  const tts = buildTtsComponents(cacheRoot, ttsLangs, noCache);
+
+  const components: PlanComponent[] = [
+    buildEngineComponent(binPath, noCache),
+    ...buildSidecarComponents(engineDir, noCache),
+    bundleComponent(
+      cacheRoot,
+      "ASR Parakeet TDT v3",
+      "model cache",
+      ASR_FILES,
+      noCache,
+      "required for speech-to-text",
+    ),
+    bundleComponent(
+      cacheRoot,
+      "Audio language ID ECAPA",
+      "model cache",
+      LANG_ID_FILES,
+      noCache,
+      "required for --json, --toon, --format transcript, --lang, and --verbose language metadata",
+    ),
+    ...tts.components,
+  ];
+  const warmups: PlanWarmup[] = [...tts.warmups];
 
   if (options.vad) {
     components.push(
@@ -386,7 +404,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     "  - install warms the ASR backend after downloads; CoreML warm-up is typically 20-30 s, ONNX warm-up is about 500 ms.",
   );
 
-  if (ttsLangs.length > 0 && wantsAnyKokoro && isDarwinArm64()) {
+  if (ttsLangs.length > 0 && tts.wantsAnyKokoro && isDarwinArm64()) {
     lines.push(
       "  - --tts also warms FluidAudio Kokoro CoreML; FluidAudio may download/compile its own Kokoro cache on first use.",
     );

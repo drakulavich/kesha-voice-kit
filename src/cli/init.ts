@@ -5,12 +5,8 @@ import { multiselect, isCancel, cancel } from "@clack/prompts";
 import { renderInstallPlan } from "../install-plan";
 import { log } from "../log";
 import { getEngineCapabilities } from "../engine";
-import {
-  performInstall,
-  resolveBackendFlag,
-  resolveNoCacheFlag,
-  TTS_LANG_FALLBACK,
-} from "./install";
+import { performInstall, resolveBackendFlag, resolveNoCacheFlag, TTS_LANG_FALLBACK } from "./install";
+import type { SharedInstallArgs } from "./types";
 
 const TTS_LANG_LABELS: Record<string, string> = {
   en: "English (Kokoro)",
@@ -44,16 +40,7 @@ async function promptTtsLangs(preselect: string[]): Promise<string[]> {
   return selected as string[];
 }
 
-export interface InitCommandArgs {
-  coreml: boolean;
-  onnx: boolean;
-  "no-cache": boolean;
-  noCache?: boolean;
-  no_cache?: boolean;
-  tts: boolean;
-  vad: boolean;
-  diarize: boolean;
-  plan: boolean;
+export interface InitCommandArgs extends SharedInstallArgs {
   yes: boolean;
 }
 

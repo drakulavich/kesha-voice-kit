@@ -368,6 +368,63 @@ function formatInstalled(installed: boolean): string {
   return installed ? "installed" : "missing";
 }
 
+function formatCapabilities(engine: DoctorReport["engine"]): string {
+  if (!engine.capabilities) return engine.probeError ?? "not available";
+  const { backend, protocolVersion, features } = engine.capabilities;
+  return `${backend}, protocol v${protocolVersion}, ${features.join(", ")}`;
+}
+
+function formatCacheSection(cache: DoctorReport["cache"]): string[] {
+  const header = `Cache: ${cache.path} (${cache.exists ? humanBytes(cache.totalBytes) : "missing"})`;
+  const rows = cache.components.map(
+    (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}`,
+  );
+  return [header, ...rows];
+}
+
+function formatOptionalSection(components: DoctorReport["optionalComponents"]): string[] {
+  const lines = ["", "Optional components:"];
+  for (const c of components) {
+    const note = c.note ? ` - ${c.note}` : "";
+    lines.push(`  ${c.name}: ${formatInstalled(c.exists)}${note}`);
+  }
+  return lines;
+}
+
+function formatStatsSection(stats: DoctorReport["stats"]): string[] {
+  const lines = ["", "Stats:"];
+  if ("error" in stats) {
+    lines.push(`  Error: ${stats.error}`);
+  } else {
+    lines.push(`  Enabled: ${stats.enabled ? "yes" : "no"}`);
+    lines.push(`  Database: ${stats.dbPath}`);
+    lines.push(`  Runs: ${stats.runCount}`);
+  }
+  return lines;
+}
+
+function formatDiagnosticLogsSection(logs: DoctorReport["diagnosticLogs"]): string[] {
+  const lines = [
+    "",
+    "Diagnostic logs:",
+    `  Mode: ${logs.mode}`,
+    `  Path: ${logs.activePath}`,
+    `  Size: ${humanBytes(logs.totalSizeBytes)}`,
+    `  Rotated files: ${logs.rotatedFiles.length}`,
+    `  Rotation: ${humanBytes(logs.maxBytes)}, keep ${logs.retain}`,
+  ];
+  if (logs.error) lines.push(`  Error: ${logs.error}`);
+  return lines;
+}
+
+function formatEnvSection(env: DoctorReport["env"]): string[] {
+  const lines = ["", "Environment:"];
+  for (const [key, value] of Object.entries(env)) {
+    lines.push(`  ${key}: ${value ?? "unset"}`);
+  }
+  return lines;
+}
+
 export function formatDoctorReport(report: DoctorReport): string {
   const lines = [
     "Kesha Doctor",
@@ -380,46 +437,14 @@ export function formatDoctorReport(report: DoctorReport): string {
     "Engine:",
     `  Binary: ${report.engine.path} (${formatInstalled(report.engine.installed)})`,
     `  Version marker: ${report.engine.versionMarker ?? "missing"}`,
-    `  Capabilities: ${
-      report.engine.capabilities
-        ? `${report.engine.capabilities.backend}, protocol v${report.engine.capabilities.protocolVersion}, ${report.engine.capabilities.features.join(", ")}`
-        : report.engine.probeError ?? "not available"
-    }`,
+    `  Capabilities: ${formatCapabilities(report.engine)}`,
     "",
-    `Cache: ${report.cache.path} (${report.cache.exists ? humanBytes(report.cache.totalBytes) : "missing"})`,
+    ...formatCacheSection(report.cache),
+    ...formatOptionalSection(report.optionalComponents),
+    ...formatStatsSection(report.stats),
+    ...formatDiagnosticLogsSection(report.diagnosticLogs),
+    ...formatEnvSection(report.env),
   ];
-
-  for (const component of report.cache.components) {
-    lines.push(`  ${component.label}: ${component.exists ? humanBytes(component.sizeBytes) : "missing"}`);
-  }
-
-  lines.push("", "Optional components:");
-  for (const component of report.optionalComponents) {
-    const note = component.note ? ` - ${component.note}` : "";
-    lines.push(`  ${component.name}: ${formatInstalled(component.exists)}${note}`);
-  }
-
-  lines.push("", "Stats:");
-  if ("error" in report.stats) {
-    lines.push(`  Error: ${report.stats.error}`);
-  } else {
-    lines.push(`  Enabled: ${report.stats.enabled ? "yes" : "no"}`);
-    lines.push(`  Database: ${report.stats.dbPath}`);
-    lines.push(`  Runs: ${report.stats.runCount}`);
-  }
-
-  lines.push("", "Diagnostic logs:");
-  lines.push(`  Mode: ${report.diagnosticLogs.mode}`);
-  lines.push(`  Path: ${report.diagnosticLogs.activePath}`);
-  lines.push(`  Size: ${humanBytes(report.diagnosticLogs.totalSizeBytes)}`);
-  lines.push(`  Rotated files: ${report.diagnosticLogs.rotatedFiles.length}`);
-  lines.push(`  Rotation: ${humanBytes(report.diagnosticLogs.maxBytes)}, keep ${report.diagnosticLogs.retain}`);
-  if (report.diagnosticLogs.error) lines.push(`  Error: ${report.diagnosticLogs.error}`);
-
-  lines.push("", "Environment:");
-  for (const [key, value] of Object.entries(report.env)) {
-    lines.push(`  ${key}: ${value ?? "unset"}`);
-  }
 
   return `${lines.join("\n")}\n`;
 }

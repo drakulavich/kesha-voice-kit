@@ -7,19 +7,11 @@ import { maybeAskForStar } from "../star";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
+import type { SharedInstallArgs } from "./types";
 
-export interface InstallCommandArgs {
+export interface InstallCommandArgs extends SharedInstallArgs {
   /** Positional args after `install` — candidate TTS language codes. */
   _?: string[];
-  coreml: boolean;
-  onnx: boolean;
-  "no-cache": boolean;
-  noCache?: boolean;
-  no_cache?: boolean;
-  tts: boolean;
-  vad: boolean;
-  diarize: boolean;
-  plan: boolean;
 }
 
 /**

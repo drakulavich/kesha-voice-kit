@@ -62,6 +62,28 @@ export interface SayOptions {
   noExpandAbbrev?: boolean;
 }
 
+/**
+ * Appends `--no-expand-abbrev` to `args` when the engine supports it, or
+ * emits a warning and skips the flag on older engines.
+ */
+function applyNoExpandAbbrev(args: string[], capabilities: EngineCapabilities | null | undefined): void {
+  const supportsAcronymExpansion =
+    capabilities?.features?.some(
+      (f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion",
+    ) ?? false;
+  if (supportsAcronymExpansion) {
+    args.push("--no-expand-abbrev");
+  } else {
+    // CLAUDE.md "NEVER SWALLOW ERRORS": the user explicitly passed the flag.
+    // Silent drop with only `log.debug` made the flag look effective on old
+    // engines (#275 D3). Surface it as a warning so a CI script or human
+    // user sees the mismatch on every invocation, not only with --debug.
+    log.warn(
+      "--no-expand-abbrev requires kesha-engine ≥ 1.10.0 (advertises no tts.ru_acronym_expansion / tts.en_acronym_expansion capability); flag ignored",
+    );
+  }
+}
+
 /** Build the argv passed to `kesha-engine say` (pure, unit-testable). */
 export function buildSayArgs(o: SayOptions, capabilities?: EngineCapabilities | null): string[] {
   const args: string[] = ["say"];
@@ -73,22 +95,7 @@ export function buildSayArgs(o: SayOptions, capabilities?: EngineCapabilities | 
   if (o.format) args.push("--format", o.format);
   if (o.bitrate !== undefined) args.push("--bitrate", String(o.bitrate));
   if (o.sampleRate !== undefined) args.push("--sample-rate", String(o.sampleRate));
-  if (o.noExpandAbbrev) {
-    const supportsExpand = capabilities?.features?.some(
-      (f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion",
-    ) ?? false;
-    if (supportsExpand) {
-      args.push("--no-expand-abbrev");
-    } else {
-      // CLAUDE.md "NEVER SWALLOW ERRORS": the user explicitly passed the flag.
-      // Silent drop with only `log.debug` made the flag look effective on old
-      // engines (#275 D3). Surface it as a warning so a CI script or human
-      // user sees the mismatch on every invocation, not only with --debug.
-      log.warn(
-        "--no-expand-abbrev requires kesha-engine ≥ 1.10.0 (advertises no tts.ru_acronym_expansion / tts.en_acronym_expansion capability); flag ignored",
-      );
-    }
-  }
+  if (o.noExpandAbbrev) applyNoExpandAbbrev(args, capabilities);
   if (o.text !== undefined && o.text.length > 0) args.push(o.text);
   return args;
 }
@@ -150,12 +157,8 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   const stdout = proc.stdout as ReadableStream<Uint8Array>;
   const stderr = proc.stderr as ReadableStream<Uint8Array>;
 
-  if (opts.text !== undefined && opts.text.length > 0) {
-    stdin.write(opts.text);
-    await stdin.end();
-  } else {
-    await stdin.end();
-  }
+  if (opts.text !== undefined && opts.text.length > 0) stdin.write(opts.text);
+  await stdin.end();
 
   let stdoutBuf: ArrayBuffer;
   let stderrText: string;

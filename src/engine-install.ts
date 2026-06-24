@@ -6,6 +6,7 @@ import {
   getEngineBinPath,
   getEngineCapabilities,
   TRANSCRIBE_DIARIZE_FEATURE,
+  type EngineCapabilities,
 } from "./engine";
 import { isDarwinArm64 } from "./fluid-kokoro-cache";
 import { log } from "./log";
@@ -467,75 +468,69 @@ async function fetchEngineBinary(
   await Promise.all(sidecarPromises);
 }
 
-export async function downloadEngine(
-  noCache = false,
-  backend?: string,
-  options: InstallOptions = {},
-): Promise<string> {
-  const binPath = getEngineBinPath();
-  const installedVersion = readInstalledEngineVersion(binPath);
-  const engineDir = dirname(binPath);
-
-  // Detect a read-only engine directory (e.g., a Nix-store install —
-  // `KESHA_ENGINE_BIN` points into `/nix/store/.../bin/`). Used twice
-  // below: to honor `--no-cache` only when the engine is writable, and
-  // to skip the sidecar top-up that would otherwise emit confusing
-  // "install failed" warnings for paths we physically can't write to.
-  let canWriteEngineDir = true;
-  if (existsSync(engineDir)) {
-    try {
-      accessSync(engineDir, constants.W_OK);
-    } catch {
-      canWriteEngineDir = false;
-    }
+/**
+ * Returns true when the engine directory is writable by the current process.
+ *
+ * A false result indicates a read-only install (e.g. Nix store) — callers
+ * should skip download/sidecar steps rather than emitting confusing errors.
+ */
+function checkEngineWritable(engineDir: string): boolean {
+  if (!existsSync(engineDir)) return true; // dir will be created on cold install
+  try {
+    accessSync(engineDir, constants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
+}
 
-  const versionMatches =
-    existsSync(binPath) && installedVersion === engineVersion;
-  // When the engine sits on a read-only filesystem at the matching
-  // version, `--no-cache` can't re-download it without an EROFS crash
-  // and there's nothing to refresh anyway — treat as cache-valid and
-  // forward `--no-cache` to the model install step below.
-  const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
-
-  if (cacheValid) {
-    await refreshCachedEngine(binPath, canWriteEngineDir, noCache);
-  } else {
-    await fetchEngineBinary(binPath, installedVersion);
+/**
+ * Validates that the installed engine matches the requested backend.
+ * Throws if the engine advertises a different backend.
+ */
+function validateBackend(backend: string, caps: EngineCapabilities | null): void {
+  if (caps && caps.backend !== backend) {
+    throw new Error(
+      `Requested backend "${backend}" is not available: the installed engine for this platform uses "${caps.backend}".\n  Fix: omit --${backend} to use the auto-detected backend, or run on a platform that ships the "${backend}" build.`,
+    );
   }
+}
 
-  if (backend) {
-    const caps = await getEngineCapabilities();
-    if (caps && caps.backend !== backend) {
-      throw new Error(
-        `Requested backend "${backend}" is not available: the installed engine for this platform uses "${caps.backend}".\n  Fix: omit --${backend} to use the auto-detected backend, or run on a platform that ships the "${backend}" build.`,
-      );
-    }
+/**
+ * Guards against forwarding `--diarize` to an engine built without it.
+ *
+ * Catches the case where the platform check passed (darwin-arm64) but the
+ * engine itself was built without `system_diarize` — e.g., the Nix build,
+ * which compiles `coreml,tts,system_tts` and intentionally omits diarize
+ * because the FluidAudio CoreML weights need network at build time and the
+ * Nix sandbox forbids it. Without this guard, `kesha-engine install
+ * --diarize` would fail with clap's generic "unexpected argument" error.
+ */
+function validateDiarize(caps: EngineCapabilities | null): void {
+  // Treat null (pre-capabilities-JSON engine, or capability probe failed)
+  // the same as an engine that advertised features but omitted ours —
+  // forwarding `--diarize` to a binary that doesn't understand it would
+  // surface as clap's generic "unexpected argument" error.
+  if (!caps || !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
+    throw new Error(
+      "--diarize is not supported by the installed engine: it was built " +
+        "without the 'system_diarize' feature (the Nix build is one such " +
+        "case — see docs/nix-install.md).\n" +
+        "  Fix: install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, " +
+        "which ships the diarize-enabled engine on darwin-arm64.",
+    );
   }
+}
 
-  // Catch the case where the platform check passed (darwin-arm64) but the
-  // engine itself was built without `system_diarize` — e.g., the Nix build,
-  // which compiles `coreml,tts,system_tts` and intentionally omits diarize
-  // because the FluidAudio CoreML weights need network at build time and the
-  // Nix sandbox forbids it. Without this guard, `kesha-engine install
-  // --diarize` would fail with clap's generic "unexpected argument" error.
-  if (options.diarize) {
-    const caps = await getEngineCapabilities();
-    // Treat null (pre-capabilities-JSON engine, or capability probe failed)
-    // the same as an engine that advertised features but omitted ours —
-    // forwarding `--diarize` to a binary that doesn't understand it would
-    // surface as clap's generic "unexpected argument" error.
-    if (!caps || !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
-      throw new Error(
-        "--diarize is not supported by the installed engine: it was built " +
-          "without the 'system_diarize' feature (the Nix build is one such " +
-          "case — see docs/nix-install.md).\n" +
-          "  Fix: install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, " +
-          "which ships the diarize-enabled engine on darwin-arm64.",
-      );
-    }
-  }
-
+/**
+ * Runs `kesha-engine install` to download/verify models.
+ * Streams stderr to the process and throws on non-zero exit.
+ */
+function runEngineModelInstall(
+  binPath: string,
+  noCache: boolean,
+  options: InstallOptions,
+): void {
   log.progress("Installing models...");
   const installArgs = buildEngineInstallArgs({
     noCache,
@@ -557,6 +552,48 @@ export async function downloadEngine(
     const detail = stderr.trim();
     throw new Error(detail ? `Failed to install models: ${detail}` : "Failed to install models");
   }
+}
+
+export async function downloadEngine(
+  noCache = false,
+  backend?: string,
+  options: InstallOptions = {},
+): Promise<string> {
+  const binPath = getEngineBinPath();
+  const installedVersion = readInstalledEngineVersion(binPath);
+  const engineDir = dirname(binPath);
+
+  // Detect a read-only engine directory (e.g., a Nix-store install —
+  // `KESHA_ENGINE_BIN` points into `/nix/store/.../bin/`). Used twice
+  // below: to honor `--no-cache` only when the engine is writable, and
+  // to skip the sidecar top-up that would otherwise emit confusing
+  // "install failed" warnings for paths we physically can't write to.
+  const canWriteEngineDir = checkEngineWritable(engineDir);
+
+  const versionMatches =
+    existsSync(binPath) && installedVersion === engineVersion;
+  // When the engine sits on a read-only filesystem at the matching
+  // version, `--no-cache` can't re-download it without an EROFS crash
+  // and there's nothing to refresh anyway — treat as cache-valid and
+  // forward `--no-cache` to the model install step below.
+  const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
+
+  if (cacheValid) {
+    await refreshCachedEngine(binPath, canWriteEngineDir, noCache);
+  } else {
+    await fetchEngineBinary(binPath, installedVersion);
+  }
+
+  if (backend || options.diarize) {
+    // One capabilities probe shared by both validators (getEngineCapabilities
+    // is cached, but a single explicit gate reads clearer than two helpers
+    // each fetching independently).
+    const caps = await getEngineCapabilities();
+    if (backend) validateBackend(backend, caps);
+    if (options.diarize) validateDiarize(caps);
+  }
+
+  runEngineModelInstall(binPath, noCache, options);
 
   // Warm the FluidAudio Kokoro CoreML cache only when a Kokoro language is
   // requested. Russian (`ru`) routes through Vosk-TTS, not Kokoro, so a
