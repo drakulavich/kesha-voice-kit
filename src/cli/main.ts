@@ -209,7 +209,7 @@ export function validateTranscribeArgs(
  * Returns `{ audioLanguage, textLanguage, lang }` — the caller owns building
  * the final `TranscribeResult`.
  */
-export async function detectLanguages(
+async function detectLanguages(
   file: string,
   text: string,
   options: {
@@ -296,7 +296,7 @@ type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord };
  * diagnostic events. Returns a discriminated union so the caller can push to
  * the appropriate bucket without catching.
  */
-export async function processFile(
+async function processFile(
   file: string,
   options: ProcessFileOptions,
   recorders: ProcessFileRecorders,
@@ -390,7 +390,7 @@ export async function processFile(
  * Writes the final output to stdout in the requested format.
  * The `verbose` flag is only consulted for the plain-text fallback path.
  */
-export function writeOutput(
+function writeOutput(
   results: TranscribeResult[],
   errors: TranscribeErrorRecord[],
   format: ValidatedTranscribeArgs["outputFormat"],
@@ -560,7 +560,7 @@ export const mainCommand = defineCommand({
       hasExpectedLang: Boolean(args.lang),
     });
 
-    const wantsLangId = !!(args.lang || args.verbose || fmt.wantsJson || fmt.wantsToon || fmt.wantsTranscript);
+    const wantsLangId = !!(args.lang || args.verbose || outputFormat !== "text");
     const reportProgress = shouldReportTranscribeProgress({
       stderrIsTty: process.stderr.isTTY === true,
       stdoutIsTty: process.stdout.isTTY === true,

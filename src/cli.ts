@@ -35,9 +35,6 @@ export {
   shouldRunAudioLanguageDetection,
   shouldReportTranscribeProgress,
   validateTranscribeArgs,
-  detectLanguages,
-  processFile,
-  writeOutput,
 } from "./cli/main";
 export type { ResolvedOutputFormat, ValidatedTranscribeArgs } from "./cli/main";
 export { runCli } from "./cli/dispatch";
