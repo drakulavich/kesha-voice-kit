@@ -5,7 +5,7 @@ runs:
   using: composite
   steps:
     - name: 🍞 Setup Bun
-      uses: oven-sh/setup-bun@v2
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         # Single source of truth for the Bun version: the repo-root .bun-version
         # file. The repo is always checked out before this composite runs (it

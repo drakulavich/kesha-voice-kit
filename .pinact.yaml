@@ -1,0 +1,23 @@
+# https://github.com/suzuki-shunsuke/pinact — pin third-party Actions to commit SHAs.
+# actions/*, github/*, docker/* are trusted first-party owners (GitHub, Docker) and are
+# kept on readable version tags; everything else is pinned to an immutable SHA to defend
+# against tag-hijack supply-chain attacks.
+version: 3
+files:
+  - pattern: .github/workflows/*.yml
+  - pattern: .github/workflows/*.yaml
+  - pattern: .github/actions/*/action.yml
+  - pattern: .github/actions/*/action.yaml
+rules:
+  - ignore: true
+    conditions:
+      - expr: |
+          ActionRepoOwner in ["actions", "github", "docker"]
+  # dtolnay/rust-toolchain selects the toolchain from its ref, and its channel
+  # refs (stable/nightly/1.xx) are branches — pinact can't pin a branch, and the
+  # only tag (v1) is stale. It's pinned manually to a master-history commit SHA
+  # (with `toolchain: stable`); Dependabot keeps the `# master` SHA current.
+  - ignore: true
+    conditions:
+      - expr: |
+          ActionRepoFullName == "dtolnay/rust-toolchain"
