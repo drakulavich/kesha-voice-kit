@@ -568,6 +568,12 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: rust
+          # Flush caches poisoned before #554, when this lane ran on
+          # macos-latest/Xcode 16.4: their build-script `rustc-link-search`
+          # hardcoded that Xcode's clang resource dir, so the link step failed
+          # with `clang_rt.osx not found` even after the Xcode 16.2 pin. Bump
+          # this discriminator if the stale path ever resurfaces.
+          key: xcode-16.2
 
       - name: 💾 Cache Kokoro models
         uses: actions/cache@v5
