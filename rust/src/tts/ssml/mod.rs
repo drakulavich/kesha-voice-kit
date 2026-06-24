@@ -20,7 +20,7 @@ mod segment;
 mod walker;
 mod warnings;
 
-use ssml_parser::elements::{EmphasisLevel, ParsedElement, PhonemeAlphabet};
+use ssml_parser::elements::ParsedElement;
 use ssml_parser::parse_ssml;
 
 use crate::coded_bail;
@@ -30,8 +30,7 @@ pub use segment::Segment;
 
 use super::warn::warn_once;
 use rate::{find_relative_rate, has_structural_source_siblings, parse_rate_value};
-use segment::DEFAULT_BREAK;
-use walker::{parse_inner_spans, push_text_slice, span_priority};
+use walker::{emit_span, parse_inner_spans, push_text_slice, span_priority};
 use warnings::{WARN_PROSODY_MID_UTTERANCE, WARN_PROSODY_NO_SUPPORTED_ATTR};
 
 /// Parse an SSML string into a linear segment list.
@@ -113,90 +112,6 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
         match &span.element {
             // `<speak>` covers the whole document; nothing to emit for the wrapper itself.
             ParsedElement::Speak(_) => {}
-            ParsedElement::Break(attrs) => {
-                push_text_slice(&mut segments, &text, cursor, span.start);
-                let dur = attrs
-                    .time
-                    .as_ref()
-                    .map(|t| t.duration())
-                    .unwrap_or(DEFAULT_BREAK);
-                segments.push(Segment::Break(dur));
-                cursor = span.end;
-            }
-            ParsedElement::Phoneme(attrs) => {
-                // IPA override bypasses G2P. Alphabets other than `ipa`
-                // warn-strip (contained text still flows as a Text segment),
-                // so we only consume the span when the alphabet is IPA or
-                // absent (the spec's implementation-defined default, which
-                // we choose to be IPA since that's the only alphabet both
-                // Kokoro's tokenizer and Piper's phoneme-id map speak).
-                let is_ipa = matches!(&attrs.alphabet, None | Some(PhonemeAlphabet::Ipa));
-                if is_ipa {
-                    push_text_slice(&mut segments, &text, cursor, span.start);
-                    if !attrs.ph.is_empty() {
-                        segments.push(Segment::Ipa(attrs.ph.clone()));
-                    }
-                    cursor = span.end;
-                } else {
-                    // `is_ipa` above already filtered `None` and `Some(Ipa)`,
-                    // so the only remaining variant today is `Other(s)`. Future
-                    // `ssml-parser` enum growth falls into the wildcard with a
-                    // synthesized name — warn + strip, never panic on user input.
-                    let alpha = match &attrs.alphabet {
-                        Some(PhonemeAlphabet::Other(s)) => s.clone(),
-                        other => format!("{other:?}"),
-                    };
-                    warn_once(
-                        &format!("phoneme[alphabet={alpha}]"),
-                        &format!(
-                            "SSML <phoneme alphabet=\"{alpha}\"> not supported — only \"ipa\" is recognised; falling back to G2P on contained text"
-                        ),
-                    );
-                }
-            }
-            ParsedElement::SayAs(attrs) => {
-                if attrs.interpret_as == "characters" {
-                    // Emit any pending text up to the tag, then a Spell segment for
-                    // the inner text. Cursor advances past the closing tag so we
-                    // don't double-emit the inner content as a Text fall-through.
-                    push_text_slice(&mut segments, &text, cursor, span.start);
-                    if let Some(inner) = extract_inner_text(&text, span.start, span.end) {
-                        segments.push(Segment::Spell(inner));
-                    }
-                    cursor = span.end;
-                } else {
-                    // Other interpret-as values (cardinal, ordinal, date, telephone, …)
-                    // are out of scope for #232. Keep the established warn+strip
-                    // behavior; the inner text falls through as a Text segment.
-                    warn_once(
-                        &format!("say-as[interpret-as={}]", attrs.interpret_as),
-                        &format!(
-                            "SSML <say-as interpret-as=\"{}\"> is not supported — only \"characters\" is recognised; falling back to plain text",
-                            attrs.interpret_as
-                        ),
-                    );
-                }
-            }
-            ParsedElement::Emphasis(attrs) => {
-                push_text_slice(&mut segments, &text, cursor, span.start);
-                if let Some(content) = extract_inner_text(&text, span.start, span.end) {
-                    // SSML 1.1: missing/empty level == "moderate" (default). Only
-                    // `level="none"` triggers suppression — all other variants
-                    // (Strong, Moderate, Reduced) collapse to "honor `+` markers".
-                    let suppress = matches!(attrs.level, Some(EmphasisLevel::None));
-                    segments.push(Segment::Emphasis { content, suppress });
-                }
-                // Cursor advances past the entire emphasis span. Any structural child
-                // (e.g. <break/>, <say-as>, <phoneme>) whose `start` falls within
-                // [span.start, span.end) will be skipped by the loop-top
-                // `if span.start < cursor { continue; }` guard. For <say-as> /
-                // <phoneme> this is the desired "inner tag wins" behavior (the inner
-                // arm runs first via span_priority sort and consumes its own range);
-                // for <break/> the silence is silently absorbed into the emphasis
-                // content. Out of scope per the #233 spec; tracked separately if a
-                // real user hits it.
-                cursor = span.end;
-            }
             ParsedElement::Prosody(attrs) => {
                 // Whole-utterance detection: the prosody is whole-utterance when
                 // (a) the text outside [span.start, span.end) within the <speak>
@@ -250,13 +165,10 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     // Leave cursor unchanged; inner text falls through as Text.
                 }
             }
-            other => {
-                let name = tag_name(other);
-                warn_once(
-                    &format!("unknown-tag-{name}"),
-                    &format!("SSML tag <{name}> is not supported — stripping"),
-                );
-                // Preserve the text content; don't touch cursor.
+            _ => {
+                if let Some(new_cursor) = emit_span(span, &text, &mut segments, cursor) {
+                    cursor = new_cursor;
+                }
             }
         }
     }
