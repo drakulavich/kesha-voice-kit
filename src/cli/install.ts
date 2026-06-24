@@ -8,9 +8,12 @@ import { log } from "../log";
 import { packageVersion } from "../package-info";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
 
-export interface InstallCommandArgs {
-  /** Positional args after `install` — candidate TTS language codes. */
-  _?: string[];
+/**
+ * Fields shared between `install` and `init` command args. Both commands
+ * accept the same backend/cache/model flags; extracting them here avoids
+ * duplicating the declarations in `init.ts`.
+ */
+export interface SharedInstallArgs {
   coreml: boolean;
   onnx: boolean;
   "no-cache": boolean;
@@ -20,6 +23,11 @@ export interface InstallCommandArgs {
   vad: boolean;
   diarize: boolean;
   plan: boolean;
+}
+
+export interface InstallCommandArgs extends SharedInstallArgs {
+  /** Positional args after `install` — candidate TTS language codes. */
+  _?: string[];
 }
 
 /**

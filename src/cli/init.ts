@@ -10,6 +10,7 @@ import {
   resolveBackendFlag,
   resolveNoCacheFlag,
   TTS_LANG_FALLBACK,
+  type SharedInstallArgs,
 } from "./install";
 
 const TTS_LANG_LABELS: Record<string, string> = {
@@ -44,16 +45,7 @@ async function promptTtsLangs(preselect: string[]): Promise<string[]> {
   return selected as string[];
 }
 
-export interface InitCommandArgs {
-  coreml: boolean;
-  onnx: boolean;
-  "no-cache": boolean;
-  noCache?: boolean;
-  no_cache?: boolean;
-  tts: boolean;
-  vad: boolean;
-  diarize: boolean;
-  plan: boolean;
+export interface InitCommandArgs extends SharedInstallArgs {
   yes: boolean;
 }
 

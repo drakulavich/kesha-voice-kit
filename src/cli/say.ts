@@ -100,6 +100,69 @@ function parseSampleRateFlag(value: unknown): number | undefined {
   return sampleRate;
 }
 
+/** Parse and validate --format; exits with code 2 on unknown value. */
+function parseFormatFlag(raw: string | undefined): SayFormat | undefined {
+  if (!raw) return undefined;
+  const lower = raw.toLowerCase();
+  if (lower === "wav" || lower === "ogg-opus" || lower === "flac") return lower;
+  if (lower === "opus" || lower === "ogg") return "ogg-opus";
+  log.error(`unknown --format '${raw}'. supported: wav, ogg-opus, flac`);
+  process.exit(2);
+}
+
+/**
+ * Validate that --bitrate / --sample-rate are only used with ogg-opus output.
+ * Exits with code 2 when the resolved format is not ogg-opus.
+ */
+function assertOpusOnlyFlags(
+  bitrate: number | undefined,
+  sampleRate: number | undefined,
+  format: SayFormat | undefined,
+  outArg: string | undefined,
+): void {
+  if (bitrate === undefined && sampleRate === undefined) return;
+  const outExt = typeof outArg === "string" ? outArg.split(".").pop()?.toLowerCase() : undefined;
+  const impliesOpus = outExt && ["ogg", "opus", "oga"].includes(outExt);
+  // --bitrate / --sample-rate are Opus-only. Reject for wav and flac
+  // (both lossless / no encoder knobs) and for any non-Opus extension.
+  const resolvesToOpus = format === "ogg-opus" || (format === undefined && impliesOpus);
+  if (!resolvesToOpus) {
+    log.error("--bitrate and --sample-rate are only valid with --format ogg-opus");
+    process.exit(2);
+  }
+}
+
+type SayOpts = {
+  text: string;
+  voice: string | undefined;
+  lang: string | undefined;
+  out: string | undefined;
+  rate: number | undefined;
+  ssml: boolean;
+  format: SayFormat | undefined;
+  bitrate: number | undefined;
+  sampleRate: number | undefined;
+  noExpandAbbrev: boolean;
+};
+
+/** Record output artifact stats; returns resolved format and size for diagnostics. */
+function recordOutputArtifact(
+  stats: ReturnType<typeof createStatsRecorder>,
+  audio: Uint8Array,
+  opts: SayOpts,
+): { outputFormat: string; outputSizeBytes: number | null | undefined } {
+  if (opts.out) {
+    const outputArtifact = artifactFromFile(opts.out, "output_audio");
+    if (outputArtifact) stats.recordArtifact(outputArtifact);
+    return {
+      outputFormat: outputArtifact?.format || opts.format || "auto",
+      outputSizeBytes: outputArtifact?.sizeBytes,
+    };
+  }
+  stats.recordArtifact(artifactFromBytes(audio.byteLength, "output_audio", opts.format ?? "wav"));
+  return { outputFormat: opts.format ?? "wav", outputSizeBytes: audio.byteLength };
+}
+
 export const sayCommand = defineCommand({
   meta: {
     name: "say",
@@ -166,38 +229,14 @@ export const sayCommand = defineCommand({
     // Validate --format up front so we surface a clear error before spawning
     // the engine subprocess. The engine repeats the check authoritatively, but
     // catching it here gives the user a faster failure mode in scripts.
-    const fmtArg = typeof args.format === "string" ? args.format.toLowerCase() : undefined;
-    let format: SayFormat | undefined;
-    if (fmtArg) {
-      if (fmtArg === "wav" || fmtArg === "ogg-opus" || fmtArg === "flac") {
-        format = fmtArg;
-      } else if (fmtArg === "opus" || fmtArg === "ogg") {
-        format = "ogg-opus";
-      } else {
-        log.error(`unknown --format '${args.format}'. supported: wav, ogg-opus, flac`);
-        process.exit(2);
-      }
-    }
+    const format = parseFormatFlag(typeof args.format === "string" ? args.format : undefined);
 
     const rate = parseRateFlag(args.rate);
     const bitrate = parseBitrateFlag(args.bitrate);
     const sampleRate = parseSampleRateFlag(args["sample-rate"]);
 
     // Reject --bitrate / --sample-rate with WAV up front to surface the error fast.
-    const hasOpusOnlyFlag = bitrate !== undefined || sampleRate !== undefined;
-    if (hasOpusOnlyFlag) {
-      const outExt = typeof args.out === "string"
-        ? args.out.split(".").pop()?.toLowerCase()
-        : undefined;
-      const impliesOpus = outExt && ["ogg", "opus", "oga"].includes(outExt);
-      // --bitrate / --sample-rate are Opus-only. Reject for wav and flac
-      // (both lossless / no encoder knobs) and for any non-Opus extension.
-      const resolvesToOpus = format === "ogg-opus" || (format === undefined && impliesOpus);
-      if (!resolvesToOpus) {
-        log.error("--bitrate and --sample-rate are only valid with --format ogg-opus");
-        process.exit(2);
-      }
-    }
+    assertOpusOnlyFlags(bitrate, sampleRate, format, typeof args.out === "string" ? args.out : undefined);
 
     const inlineText = typeof args.text === "string" ? args.text : undefined;
     const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;
@@ -210,7 +249,7 @@ export const sayCommand = defineCommand({
     const langHint = typeof args.lang === "string" ? args.lang : undefined;
     const voice = await resolveSayVoice(explicitVoice, langHint, text);
 
-    const opts = {
+    const opts: SayOpts = {
       text,
       voice,
       lang: langHint,
@@ -251,16 +290,7 @@ export const sayCommand = defineCommand({
         // stderr — stdout may carry raw audio bytes when --out is omitted.
         log.status(`TTS time: ${ttsTimeMs}ms`);
       }
-      let outputFormat: string = opts.format ?? "wav";
-      let outputSizeBytes: number | null | undefined = audio.byteLength;
-      if (opts.out) {
-        const outputArtifact = artifactFromFile(opts.out, "output_audio");
-        if (outputArtifact) stats.recordArtifact(outputArtifact);
-        outputFormat = outputArtifact?.format || opts.format || "auto";
-        outputSizeBytes = outputArtifact?.sizeBytes;
-      } else {
-        stats.recordArtifact(artifactFromBytes(audio.byteLength, "output_audio", opts.format ?? "wav"));
-      }
+      const { outputFormat, outputSizeBytes } = recordOutputArtifact(stats, audio, opts);
       diagnosticLog.event("command.finish", {
         command: "say",
         status: "success",
