@@ -150,11 +150,10 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
 /// Shared Kokoro path-construction + existence-check used by both the English
 /// (`resolve_kokoro`) and the multilingual (`resolve_multilang_kokoro`) paths.
 /// Keeps error messages identical between the two callers.
-#[cfg(not(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-)))]
+///
+/// Unconditional (no cfg gate): `resolve_kokoro` references it even on
+/// `system_kokoro` builds, inside its `#[allow(unreachable_code)]` ONNX
+/// fallback (which still compiles), so gating it out breaks that build.
 fn build_kokoro_voice(
     cache_dir: &Path,
     voice_id: &str,

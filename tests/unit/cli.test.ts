@@ -807,17 +807,18 @@ function okFmt(json = false, toon = false, transcript = false): ResolvedOutputFo
 }
 
 describe("validateTranscribeArgs guards", () => {
-  // Suppress log.error side-effects; process.exit is already overridden via expectMainExit
-  // in the existing helper. Here we intercept process.exit directly for synchronous calls.
+  // Suppress log.error side-effects. log.error writes via process.stderr.write
+  // (src/log.ts), NOT console.error, so we stub the former. process.exit is
+  // intercepted directly here for these synchronous validation calls.
   function expectValidateExit(
     argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
     rawArgs: string[],
     fmt: ResolvedOutputFormat & { ok: true },
   ): number {
     const savedExit = process.exit;
-    const savedError = console.error;
+    const savedWrite = process.stderr.write;
     try {
-      console.error = () => {};
+      process.stderr.write = (() => true) as typeof process.stderr.write;
       process.exit = ((code?: string | number | null | undefined) => {
         throw new Error(`exit:${code ?? 0}`);
       }) as typeof process.exit;
@@ -829,7 +830,7 @@ describe("validateTranscribeArgs guards", () => {
       return Number(message.slice("exit:".length));
     } finally {
       process.exit = savedExit;
-      console.error = savedError;
+      process.stderr.write = savedWrite;
     }
   }
 
