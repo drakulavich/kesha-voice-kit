@@ -50,7 +50,7 @@ export function detectLanguage(text: string): string {
 /**
  * Pure validation + normalization of the output-format selection. Pulled
  * out of the citty `run` handler so the contract is unit-testable without
- * spawning the CLI binary; the handler just owns the side effects
+ * spawning the CLI binary; the handler just owns the side-effect arms
  * (log.error + process.exit) when this returns `{ ok: false }`.
  *
  * Inputs accept the three knobs the user can flip:
@@ -143,6 +143,270 @@ export function shouldRunAudioLanguageDetection(input: {
   if (!input.wantsLangId) return false;
   if (input.transcriptDurationSeconds === null) return true;
   return input.transcriptDurationSeconds <= AUDIO_LANG_ID_LONG_AUDIO_THRESHOLD_SECONDS;
+}
+
+export type ValidatedTranscribeArgs = {
+  vadMode: "on" | "off" | "auto";
+  outputFormat: "json" | "toon" | "transcript" | "text";
+};
+
+/**
+ * Validates the transcribe-specific flags that require cross-flag consistency
+ * checks beyond what citty can express. Calls `log.error` + `process.exit(2)`
+ * on any violation — matching the original inline behavior byte-for-byte.
+ *
+ * Owns:
+ * - --vad / --no-vad mutex (requires rawArgs to detect the explicit --no-vad)
+ * - --timestamps / --speakers guards (require machine-readable output)
+ * - --include-errors guard (requires --json)
+ * - derivation of `vadMode` and `outputFormat`
+ */
+export function validateTranscribeArgs(
+  args: MainCommandArgs,
+  rawArgs: string[],
+  fmt: ResolvedOutputFormat & { ok: true },
+): ValidatedTranscribeArgs {
+  const { wantsJson, wantsToon, wantsTranscript } = fmt;
+
+  // citty treats --no-vad as the negated form of --vad, so read rawArgs
+  // to distinguish "off" from the default auto mode and to catch both flags.
+  const vad = rawArgs.includes("--vad") || Boolean(args.vad);
+  const noVad = rawArgs.includes("--no-vad") || Boolean(args["no-vad"] ?? args.noVad ?? args.no_vad);
+
+  if (vad && noVad) {
+    log.error("--vad and --no-vad are mutually exclusive.");
+    process.exit(2);
+  }
+  if (args.timestamps && !(wantsJson || wantsToon)) {
+    log.error("--timestamps requires --json, --toon, or --format {json,toon}.");
+    process.exit(2);
+  }
+  if (args.speakers && !(wantsJson || wantsToon)) {
+    log.error("--speakers requires --json, --toon, or --format {json,toon}.");
+    process.exit(2);
+  }
+  if (args["include-errors"] && !wantsJson) {
+    log.error("--include-errors requires --json or --format json.");
+    process.exit(2);
+  }
+
+  const vadMode: ValidatedTranscribeArgs["vadMode"] = vad ? "on" : noVad ? "off" : "auto";
+  const outputFormat: ValidatedTranscribeArgs["outputFormat"] = wantsJson
+    ? "json"
+    : wantsToon
+      ? "toon"
+      : wantsTranscript
+        ? "transcript"
+        : "text";
+
+  return { vadMode, outputFormat };
+}
+
+/**
+ * Runs audio + text language detection for a single transcript, applying the
+ * long-audio skip guard and both checkLanguageMismatch calls.
+ *
+ * Returns `{ audioLanguage, textLanguage, lang }` — the caller owns building
+ * the final `TranscribeResult`.
+ */
+export async function detectLanguages(
+  file: string,
+  text: string,
+  options: {
+    wantsLangId: boolean;
+    expectedLang?: string;
+    progress: ReturnType<typeof createPercentProgress> | null;
+    stats: ReturnType<typeof createStatsRecorder>;
+    transcriptDurationSeconds: number | null;
+  },
+): Promise<{
+  audioLanguage: LangDetectResult | undefined;
+  textLanguage: LangDetectResult | undefined;
+  lang: string;
+  ranAudioLangId: boolean;
+}> {
+  const { wantsLangId, expectedLang, progress, stats, transcriptDurationSeconds } = options;
+
+  let audioResult: LangDetectResult | null = null;
+  if (shouldRunAudioLanguageDetection({ wantsLangId, transcriptDurationSeconds })) {
+    audioResult = await stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file));
+  } else if (wantsLangId) {
+    log.debug(
+      `skip lang_id_audio for ${file}: transcript duration ${transcriptDurationSeconds?.toFixed(1)}s exceeds ` +
+        `${AUDIO_LANG_ID_LONG_AUDIO_THRESHOLD_SECONDS}s`,
+    );
+  }
+
+  let audioLanguage: LangDetectResult | undefined;
+  if (audioResult && audioResult.code) {
+    audioLanguage = audioResult;
+  }
+
+  if (audioLanguage && expectedLang && audioLanguage.confidence > 0.8) {
+    const mismatch = checkLanguageMismatch(expectedLang, audioLanguage.code);
+    if (mismatch) {
+      progress?.interrupt(() => log.warn(`${file}: ${mismatch} (from audio)`));
+    }
+  }
+
+  const tinyldLang = wantsLangId ? detectLanguage(text) : "";
+  let textLanguage: LangDetectResult | undefined;
+
+  if (wantsLangId) {
+    const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text));
+    if (engineTextResult && engineTextResult.code) {
+      textLanguage = engineTextResult;
+    }
+  }
+
+  const lang = textLanguage?.code || tinyldLang;
+
+  const mismatchWarning = checkLanguageMismatch(expectedLang, lang);
+  if (mismatchWarning) {
+    progress?.interrupt(() => log.warn(`${file}: ${mismatchWarning}`));
+  }
+
+  return {
+    audioLanguage,
+    textLanguage: textLanguage ?? (tinyldLang ? { code: tinyldLang, confidence: 0 } : undefined),
+    lang,
+    ranAudioLangId: audioResult !== null,
+  };
+}
+
+type ProcessFileOptions = {
+  vadMode: "on" | "off" | "auto";
+  timestamps: boolean;
+  speakers: boolean;
+  wantsLangId: boolean;
+  expectedLang?: string;
+  reportProgress: boolean;
+};
+
+type ProcessFileRecorders = {
+  stats: ReturnType<typeof createStatsRecorder>;
+  diagnosticLog: ReturnType<typeof createDiagnosticLogSession>;
+};
+
+type ProcessFileSuccess = { ok: true; result: TranscribeResult };
+type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord };
+
+/**
+ * Processes a single audio file: existence check, engine call, lang detection,
+ * diagnostic events. Returns a discriminated union so the caller can push to
+ * the appropriate bucket without catching.
+ */
+export async function processFile(
+  file: string,
+  options: ProcessFileOptions,
+  recorders: ProcessFileRecorders,
+): Promise<ProcessFileSuccess | ProcessFileFailure> {
+  const { vadMode, timestamps, speakers, wantsLangId, expectedLang, reportProgress } = options;
+  const { stats, diagnosticLog } = recorders;
+
+  if (!existsSync(file)) {
+    stats.recordError("input", new Error("File not found"), TS_NATIVE_CODES.INPUT_NOT_FOUND);
+    diagnosticLog.event("input.missing", {
+      command: "transcribe",
+      error_code: TS_NATIVE_CODES.INPUT_NOT_FOUND,
+    });
+    log.error(`${file}: File not found`);
+    return { ok: false, error: { file, code: TS_NATIVE_CODES.INPUT_NOT_FOUND, message: "File not found" } };
+  }
+
+  const inputArtifact = artifactFromFile(file, "input_audio");
+  if (inputArtifact) {
+    stats.recordArtifact(inputArtifact);
+    diagnosticLog.event("input.audio", {
+      command: "transcribe",
+      format: inputArtifact.format || null,
+      sizeBucket: diagnosticSizeBucket(inputArtifact.sizeBytes),
+    });
+  }
+
+  const startedAt = performance.now();
+  let progress: ReturnType<typeof createPercentProgress> | null = null;
+  try {
+    await preflightTranscribeWithSegments({ vad: vadMode, timestamps, speakers });
+    progress = reportProgress
+      ? createPercentProgress(`Transcribing ${file}`, {
+          estimatedTotalMs: speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
+        })
+      : null;
+    const transcript = await stats.timeStage("transcribe", () =>
+      transcribeWithSegments(file, { vad: vadMode, timestamps, speakers }),
+    );
+    const { text, segments } = transcript;
+    const transcriptDurationSeconds = estimateTranscriptDurationSeconds(segments);
+
+    const { audioLanguage, textLanguage, lang, ranAudioLangId } = await detectLanguages(file, text, {
+      wantsLangId,
+      expectedLang,
+      progress,
+      stats,
+      transcriptDurationSeconds,
+    });
+
+    const sttTimeMs = Math.round(performance.now() - startedAt);
+    const result: TranscribeResult = {
+      file,
+      text,
+      lang,
+      audioLanguage,
+      textLanguage,
+      sttTimeMs,
+    };
+    if (timestamps || speakers) {
+      result.segments = segments;
+    }
+
+    diagnosticLog.event("engine.exit", {
+      command: "transcribe",
+      status: "success",
+      durationMs: sttTimeMs,
+      segmentCount: segments.length,
+      ranAudioLangId,
+      ranTxtLangId: textLanguage !== undefined,
+    });
+    progress?.finish(`Transcribed ${file}`);
+    return { ok: true, result };
+  } catch (err: unknown) {
+    progress?.stop();
+    const stderrText = errorMessage(err);
+    const code = extractEngineErrorCode(stderrText) ?? ENGINE_CODES.TRANSCRIBE_FAILED;
+    stats.recordError("transcribe", err, code);
+    diagnosticLog.event("engine.exit", {
+      command: "transcribe",
+      status: "failed",
+      errorKind: "transcribe_failed",
+      error_code: code,
+    });
+    log.error(`${file}: ${stderrText}`);
+    return { ok: false, error: { file, code, message: stderrText } };
+  }
+}
+
+/**
+ * Writes the final output to stdout in the requested format.
+ * The `verbose` flag is only consulted for the plain-text fallback path.
+ */
+export function writeOutput(
+  results: TranscribeResult[],
+  errors: TranscribeErrorRecord[],
+  format: ValidatedTranscribeArgs["outputFormat"],
+  opts: { includeErrors: boolean; verbose: boolean },
+): void {
+  if (format === "json") {
+    process.stdout.write(formatJsonOutput(results, opts.includeErrors ? errors : undefined));
+  } else if (format === "toon") {
+    process.stdout.write(formatToonOutput(results));
+  } else if (format === "transcript") {
+    process.stdout.write(formatTranscriptOutput(results));
+  } else if (opts.verbose) {
+    process.stdout.write(formatVerboseOutput(results));
+  } else {
+    process.stdout.write(formatTextOutput(results));
+  }
 }
 
 export const mainCommand = defineCommand({
@@ -260,31 +524,8 @@ export const mainCommand = defineCommand({
       log.error(fmt.error);
       process.exit(2);
     }
-    const { wantsJson, wantsToon, wantsTranscript } = fmt;
 
-    // citty treats --no-vad as the negated form of --vad, so read rawArgs
-    // to distinguish "off" from the default auto mode and to catch both flags.
-    const vad = rawArgs.includes("--vad") || Boolean(args.vad);
-    const noVad = rawArgs.includes("--no-vad") || Boolean(args["no-vad"] ?? args.noVad ?? args.no_vad);
-
-    if (vad && noVad) {
-      log.error("--vad and --no-vad are mutually exclusive.");
-      process.exit(2);
-    }
-    if (args.timestamps && !(wantsJson || wantsToon)) {
-      log.error("--timestamps requires --json, --toon, or --format {json,toon}.");
-      process.exit(2);
-    }
-    if (args.speakers && !(wantsJson || wantsToon)) {
-      log.error("--speakers requires --json, --toon, or --format {json,toon}.");
-      process.exit(2);
-    }
-    if (args["include-errors"] && !wantsJson) {
-      log.error("--include-errors requires --json or --format json.");
-      process.exit(2);
-    }
-    const vadMode = vad ? "on" : noVad ? "off" : "auto";
-    const outputFormat = wantsJson ? "json" : wantsToon ? "toon" : wantsTranscript ? "transcript" : "text";
+    const { vadMode, outputFormat } = validateTranscribeArgs(args, rawArgs, fmt);
 
     if (files.length === 0) {
       log.info(
@@ -319,7 +560,7 @@ export const mainCommand = defineCommand({
       hasExpectedLang: Boolean(args.lang),
     });
 
-    const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
+    const wantsLangId = !!(args.lang || args.verbose || fmt.wantsJson || fmt.wantsToon || fmt.wantsTranscript);
     const reportProgress = shouldReportTranscribeProgress({
       stderrIsTty: process.stderr.isTTY === true,
       stdoutIsTty: process.stdout.isTTY === true,
@@ -328,140 +569,30 @@ export const mainCommand = defineCommand({
     });
 
     for (const file of files) {
-      if (!existsSync(file)) {
-        hasError = true;
-        stats.recordError("input", new Error("File not found"), TS_NATIVE_CODES.INPUT_NOT_FOUND);
-        diagnosticLog.event("input.missing", {
-          command: "transcribe",
-          error_code: TS_NATIVE_CODES.INPUT_NOT_FOUND,
-        });
-        errors.push({ file, code: TS_NATIVE_CODES.INPUT_NOT_FOUND, message: "File not found" });
-        log.error(`${file}: File not found`);
-        continue;
-      }
-      const inputArtifact = artifactFromFile(file, "input_audio");
-      if (inputArtifact) {
-        stats.recordArtifact(inputArtifact);
-        diagnosticLog.event("input.audio", {
-          command: "transcribe",
-          format: inputArtifact.format || null,
-          sizeBucket: diagnosticSizeBucket(inputArtifact.sizeBytes),
-        });
-      }
-
-      const startedAt = performance.now();
-      let progress: ReturnType<typeof createPercentProgress> | null = null;
-      try {
-        await preflightTranscribeWithSegments({
-          vad: vadMode,
+      const outcome = await processFile(
+        file,
+        {
+          vadMode,
           timestamps: args.timestamps,
           speakers: args.speakers,
-        });
-        progress = reportProgress
-          ? createPercentProgress(`Transcribing ${file}`, {
-              estimatedTotalMs: args.speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
-            })
-          : null;
-        const transcript = await stats.timeStage("transcribe", () =>
-          transcribeWithSegments(file, {
-            vad: vadMode,
-            timestamps: args.timestamps,
-            speakers: args.speakers,
-          })
-        );
-        const { text, segments } = transcript;
-        const transcriptDurationSeconds = estimateTranscriptDurationSeconds(segments);
-
-        let audioResult: LangDetectResult | null = null;
-        if (shouldRunAudioLanguageDetection({ wantsLangId, transcriptDurationSeconds })) {
-          audioResult = await stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file));
-        } else if (wantsLangId) {
-          log.debug(
-            `skip lang_id_audio for ${file}: transcript duration ${transcriptDurationSeconds?.toFixed(1)}s exceeds ` +
-              `${AUDIO_LANG_ID_LONG_AUDIO_THRESHOLD_SECONDS}s`,
-          );
-        }
-
-        let audioLanguage: LangDetectResult | undefined;
-        if (audioResult && audioResult.code) {
-          audioLanguage = audioResult;
-        }
-
-        if (audioLanguage && args.lang && audioLanguage.confidence > 0.8) {
-          const mismatch = checkLanguageMismatch(args.lang, audioLanguage.code);
-          if (mismatch) {
-            progress?.interrupt(() => log.warn(`${file}: ${mismatch} (from audio)`));
-          }
-        }
-
-        const tinyldLang = wantsLangId ? detectLanguage(text) : "";
-        let textLanguage: LangDetectResult | undefined;
-
-        if (wantsLangId) {
-          const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text));
-          if (engineTextResult && engineTextResult.code) {
-            textLanguage = engineTextResult;
-          }
-        }
-
-        const lang = textLanguage?.code || tinyldLang;
-
-        const mismatchWarning = checkLanguageMismatch(args.lang, lang);
-        if (mismatchWarning) {
-          progress?.interrupt(() => log.warn(`${file}: ${mismatchWarning}`));
-        }
-
-        const sttTimeMs = Math.round(performance.now() - startedAt);
-        const result: TranscribeResult = {
-          file,
-          text,
-          lang,
-          audioLanguage,
-          textLanguage: textLanguage ?? (tinyldLang ? { code: tinyldLang, confidence: 0 } : undefined),
-          sttTimeMs,
-        };
-        if (args.timestamps || args.speakers) {
-          result.segments = segments;
-        }
-        results.push(result);
-        diagnosticLog.event("engine.exit", {
-          command: "transcribe",
-          status: "success",
-          durationMs: sttTimeMs,
-          segmentCount: segments.length,
-          ranAudioLangId: audioResult !== null,
-          ranTxtLangId: textLanguage !== undefined,
-        });
-        progress?.finish(`Transcribed ${file}`);
-      } catch (err: unknown) {
-        progress?.stop();
+          wantsLangId,
+          expectedLang: args.lang,
+          reportProgress,
+        },
+        { stats, diagnosticLog },
+      );
+      if (outcome.ok) {
+        results.push(outcome.result);
+      } else {
         hasError = true;
-        const stderrText = errorMessage(err);
-        const code = extractEngineErrorCode(stderrText) ?? ENGINE_CODES.TRANSCRIBE_FAILED;
-        stats.recordError("transcribe", err, code);
-        diagnosticLog.event("engine.exit", {
-          command: "transcribe",
-          status: "failed",
-          errorKind: "transcribe_failed",
-          error_code: code,
-        });
-        const message = stderrText;
-        errors.push({ file, code, message });
-        log.error(`${file}: ${message}`);
+        errors.push(outcome.error);
       }
     }
 
-    if (wantsJson) {
-      process.stdout.write(formatJsonOutput(results, args["include-errors"] ? errors : undefined));
-    } else if (wantsToon) {
-      process.stdout.write(formatToonOutput(results));
-    } else if (wantsTranscript) {
-      process.stdout.write(formatTranscriptOutput(results));
-    } else if (args.verbose) {
-      process.stdout.write(formatVerboseOutput(results));
-    } else {
-      process.stdout.write(formatTextOutput(results));
-    }
+    writeOutput(results, errors, outputFormat, {
+      includeErrors: args["include-errors"],
+      verbose: args.verbose,
+    });
 
     stats.finish(hasError ? "failed" : "success", files.length);
     diagnosticLog.event("command.finish", {

@@ -1512,3 +1512,175 @@ fn cleanup_legacy() {
         let _ = fs::remove_file(&old_swift);
     }
 }
+
+#[cfg(test)]
+mod characterization_tests {
+    use super::*;
+
+    // ── ModelKind::subdir table test ─────────────────────────────────────────
+
+    #[test]
+    fn model_kind_subdir_table() {
+        assert_eq!(ModelKind::Asr.subdir(), "models/parakeet-tdt-v3");
+        assert_eq!(ModelKind::LangId.subdir(), "models/lang-id-ecapa");
+        assert_eq!(ModelKind::Vad.subdir(), "models/silero-vad");
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn model_kind_subdir_vosk_ru() {
+        assert_eq!(ModelKind::VoskRu.subdir(), "models/vosk-ru");
+    }
+
+    // ── model_dir_at with a fake root ────────────────────────────────────────
+
+    #[test]
+    fn model_dir_at_joins_subdir_to_root() {
+        let root = std::path::Path::new("/fake/cache");
+        assert_eq!(
+            model_dir_at(ModelKind::Asr, root),
+            std::path::PathBuf::from("/fake/cache/models/parakeet-tdt-v3")
+        );
+        assert_eq!(
+            model_dir_at(ModelKind::Vad, root),
+            std::path::PathBuf::from("/fake/cache/models/silero-vad")
+        );
+    }
+
+    // ── is_cached_in with a tempdir ──────────────────────────────────────────
+
+    #[test]
+    fn is_cached_in_asr_true_when_all_files_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/parakeet-tdt-v3");
+        fs::create_dir_all(&dir).unwrap();
+        for f in ASR_FILES {
+            let name = std::path::Path::new(f.rel_path).file_name().unwrap();
+            fs::write(dir.join(name), b"dummy").unwrap();
+        }
+        assert!(is_cached_in(ModelKind::Asr, &dir));
+    }
+
+    #[test]
+    fn is_cached_in_asr_false_when_one_file_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/parakeet-tdt-v3");
+        fs::create_dir_all(&dir).unwrap();
+        // Write all but the last file.
+        for f in &ASR_FILES[..ASR_FILES.len() - 1] {
+            let name = std::path::Path::new(f.rel_path).file_name().unwrap();
+            fs::write(dir.join(name), b"dummy").unwrap();
+        }
+        assert!(!is_cached_in(ModelKind::Asr, &dir));
+    }
+
+    #[test]
+    fn is_cached_in_lang_id_true_when_all_files_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/lang-id-ecapa");
+        fs::create_dir_all(&dir).unwrap();
+        for f in LANG_ID_FILES {
+            let name = std::path::Path::new(f.rel_path).file_name().unwrap();
+            fs::write(dir.join(name), b"dummy").unwrap();
+        }
+        assert!(is_cached_in(ModelKind::LangId, &dir));
+    }
+
+    #[test]
+    fn is_cached_in_vad_true_when_file_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/silero-vad");
+        fs::create_dir_all(&dir).unwrap();
+        for f in VAD_FILES {
+            let name = std::path::Path::new(f.rel_path).file_name().unwrap();
+            fs::write(dir.join(name), b"dummy").unwrap();
+        }
+        assert!(is_cached_in(ModelKind::Vad, &dir));
+    }
+
+    #[test]
+    fn is_cached_in_vad_false_when_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/silero-vad");
+        fs::create_dir_all(&dir).unwrap();
+        assert!(!is_cached_in(ModelKind::Vad, &dir));
+    }
+
+    // ── has_vosk_ru_layout via is_cached_in ──────────────────────────────────
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn is_cached_in_vosk_ru_true_when_layout_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/vosk-ru");
+        fs::create_dir_all(dir.join("bert")).unwrap();
+        fs::write(dir.join("model.onnx"), b"dummy").unwrap();
+        fs::write(dir.join("dictionary"), b"dummy").unwrap();
+        fs::write(dir.join("bert/model.onnx"), b"dummy").unwrap();
+        assert!(is_cached_in(ModelKind::VoskRu, &dir));
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn is_cached_in_vosk_ru_false_when_bert_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/vosk-ru");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("model.onnx"), b"dummy").unwrap();
+        fs::write(dir.join("dictionary"), b"dummy").unwrap();
+        // bert/model.onnx absent
+        assert!(!is_cached_in(ModelKind::VoskRu, &dir));
+    }
+
+    // ── multilang_voice direct ────────────────────────────────────────────────
+
+    #[cfg(all(
+        feature = "tts",
+        not(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))
+    ))]
+    #[test]
+    fn multilang_voice_returns_expected_packs() {
+        // es → em_alex.bin (male ✓)
+        let es = multilang_voice("es").unwrap();
+        assert!(es.rel_path.ends_with("em_alex.bin"), "{}", es.rel_path);
+        // fr → ff_siwis.bin (female, brand-rule exception)
+        let fr = multilang_voice("fr").unwrap();
+        assert!(fr.rel_path.ends_with("ff_siwis.bin"), "{}", fr.rel_path);
+        // it → im_nicola.bin (male ✓)
+        let it = multilang_voice("it").unwrap();
+        assert!(it.rel_path.ends_with("im_nicola.bin"), "{}", it.rel_path);
+        // pt → pm_alex.bin (male ✓)
+        let pt = multilang_voice("pt").unwrap();
+        assert!(pt.rel_path.ends_with("pm_alex.bin"), "{}", pt.rel_path);
+        // ru and de → None (not in multilang Kokoro)
+        assert!(multilang_voice("ru").is_none());
+        assert!(multilang_voice("de").is_none());
+    }
+
+    // ── ane_voice_lang direct ─────────────────────────────────────────────────
+
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn ane_voice_lang_maps_prefixes_correctly() {
+        assert_eq!(ane_voice_lang("am_michael.bin"), Some("en"));
+        assert_eq!(ane_voice_lang("bm_george.bin"), Some("en"));
+        assert_eq!(ane_voice_lang("em_alex.bin"), Some("es"));
+        assert_eq!(ane_voice_lang("ff_siwis.bin"), Some("fr"));
+        assert_eq!(ane_voice_lang("hm_test.bin"), Some("hi"));
+        assert_eq!(ane_voice_lang("im_nicola.bin"), Some("it"));
+        assert_eq!(ane_voice_lang("jm_test.bin"), Some("ja"));
+        assert_eq!(ane_voice_lang("pm_alex.bin"), Some("pt"));
+        assert_eq!(ane_voice_lang("zm_050.bin"), Some("zh"));
+        // Unknown prefix → None
+        assert_eq!(ane_voice_lang("xm_unknown.bin"), None);
+        assert_eq!(ane_voice_lang(""), None);
+    }
+}
