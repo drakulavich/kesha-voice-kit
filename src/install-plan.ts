@@ -229,8 +229,8 @@ function buildTtsComponents(
   cacheRoot: string,
   ttsLangs: string[],
   noCache: boolean,
-): { components: PlanComponent[]; warmups: PlanWarmup[] } {
-  if (ttsLangs.length === 0) return { components: [], warmups: [] };
+): { components: PlanComponent[]; warmups: PlanWarmup[]; wantsAnyKokoro: boolean } {
+  if (ttsLangs.length === 0) return { components: [], warmups: [], wantsAnyKokoro: false };
 
   // Darwin ANE serves every non-ru language through Kokoro (en/es/fr/it/pt + the
   // ANE-only hi/ja/zh), so the warm-up gate mirrors engine-install.ts's
@@ -285,7 +285,7 @@ function buildTtsComponents(
     );
   }
 
-  return { components, warmups };
+  return { components, warmups, wantsAnyKokoro };
 }
 
 // ---------------------------------------------------------------------------
@@ -352,8 +352,6 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     );
   }
 
-  const wantsAnyKokoro = ttsLangs.some((l) => l !== "ru");
-
   const coldBytes = components.reduce((sum, component) => sum + component.sizeBytes, 0);
   const expectedNetworkBytes = components.reduce((sum, component) => {
     if (component.cached && !component.refresh) return sum;
@@ -406,7 +404,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     "  - install warms the ASR backend after downloads; CoreML warm-up is typically 20-30 s, ONNX warm-up is about 500 ms.",
   );
 
-  if (ttsLangs.length > 0 && wantsAnyKokoro && isDarwinArm64()) {
+  if (ttsLangs.length > 0 && tts.wantsAnyKokoro && isDarwinArm64()) {
     lines.push(
       "  - --tts also warms FluidAudio Kokoro CoreML; FluidAudio may download/compile its own Kokoro cache on first use.",
     );

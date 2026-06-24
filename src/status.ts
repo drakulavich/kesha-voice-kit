@@ -36,12 +36,7 @@ export interface ShowStatusOptions {
 }
 
 async function logEngineCapabilities(): Promise<void> {
-  let caps: Awaited<ReturnType<typeof getEngineCapabilities>> = null;
-  try {
-    caps = await getEngineCapabilities();
-  } catch {
-    caps = null;
-  }
+  const caps = await getEngineCapabilities().catch(() => null);
   if (caps) {
     log.info(formatStatusLine("Backend", caps.backend, true));
     log.info(formatStatusLine("Protocol", `v${caps.protocolVersion}`, true));

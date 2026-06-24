@@ -6,6 +6,7 @@ import {
   getEngineBinPath,
   getEngineCapabilities,
   TRANSCRIBE_DIARIZE_FEATURE,
+  type EngineCapabilities,
 } from "./engine";
 import { isDarwinArm64 } from "./fluid-kokoro-cache";
 import { log } from "./log";
@@ -487,8 +488,7 @@ function checkEngineWritable(engineDir: string): boolean {
  * Validates that the installed engine matches the requested backend.
  * Throws if the engine advertises a different backend.
  */
-async function validateBackend(backend: string): Promise<void> {
-  const caps = await getEngineCapabilities();
+function validateBackend(backend: string, caps: EngineCapabilities | null): void {
   if (caps && caps.backend !== backend) {
     throw new Error(
       `Requested backend "${backend}" is not available: the installed engine for this platform uses "${caps.backend}".\n  Fix: omit --${backend} to use the auto-detected backend, or run on a platform that ships the "${backend}" build.`,
@@ -506,8 +506,7 @@ async function validateBackend(backend: string): Promise<void> {
  * Nix sandbox forbids it. Without this guard, `kesha-engine install
  * --diarize` would fail with clap's generic "unexpected argument" error.
  */
-async function validateDiarize(): Promise<void> {
-  const caps = await getEngineCapabilities();
+function validateDiarize(caps: EngineCapabilities | null): void {
   // Treat null (pre-capabilities-JSON engine, or capability probe failed)
   // the same as an engine that advertised features but omitted ours —
   // forwarding `--diarize` to a binary that doesn't understand it would
@@ -585,12 +584,13 @@ export async function downloadEngine(
     await fetchEngineBinary(binPath, installedVersion);
   }
 
-  if (backend) {
-    await validateBackend(backend);
-  }
-
-  if (options.diarize) {
-    await validateDiarize();
+  if (backend || options.diarize) {
+    // One capabilities probe shared by both validators (getEngineCapabilities
+    // is cached, but a single explicit gate reads clearer than two helpers
+    // each fetching independently).
+    const caps = await getEngineCapabilities();
+    if (backend) validateBackend(backend, caps);
+    if (options.diarize) validateDiarize(caps);
   }
 
   runEngineModelInstall(binPath, noCache, options);

@@ -5,13 +5,8 @@ import { multiselect, isCancel, cancel } from "@clack/prompts";
 import { renderInstallPlan } from "../install-plan";
 import { log } from "../log";
 import { getEngineCapabilities } from "../engine";
-import {
-  performInstall,
-  resolveBackendFlag,
-  resolveNoCacheFlag,
-  TTS_LANG_FALLBACK,
-  type SharedInstallArgs,
-} from "./install";
+import { performInstall, resolveBackendFlag, resolveNoCacheFlag, TTS_LANG_FALLBACK } from "./install";
+import type { SharedInstallArgs } from "./types";
 
 const TTS_LANG_LABELS: Record<string, string> = {
   en: "English (Kokoro)",

@@ -62,21 +62,16 @@ export interface SayOptions {
   noExpandAbbrev?: boolean;
 }
 
-/** Returns true when the engine capabilities include acronym expansion support. */
-function supportsAcronymExpansion(capabilities: EngineCapabilities | null | undefined): boolean {
-  return (
-    capabilities?.features?.some(
-      (f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion",
-    ) ?? false
-  );
-}
-
 /**
  * Appends `--no-expand-abbrev` to `args` when the engine supports it, or
  * emits a warning and skips the flag on older engines.
  */
 function applyNoExpandAbbrev(args: string[], capabilities: EngineCapabilities | null | undefined): void {
-  if (supportsAcronymExpansion(capabilities)) {
+  const supportsAcronymExpansion =
+    capabilities?.features?.some(
+      (f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion",
+    ) ?? false;
+  if (supportsAcronymExpansion) {
     args.push("--no-expand-abbrev");
   } else {
     // CLAUDE.md "NEVER SWALLOW ERRORS": the user explicitly passed the flag.
