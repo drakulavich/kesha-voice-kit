@@ -386,21 +386,26 @@ mod tests {
             .collect::<Vec<_>>()
             .join("|");
         assert!(
-            all_text.contains("before") || all_text.contains("after"),
+            all_text.contains("before") && all_text.contains("after"),
             "text lost: {all_text:?} from {content:?}"
         );
     }
 
-    // T7: two adjacent <break> with only whitespace between inside a whole-utterance
-    // <prosody>. The break spans share the same start position as the prosody span.
+    // KNOWN QUIRK (BUG, tracked in issue #560): a <break> at the start of a
+    // <prosody> is emitted TWICE — once flat, once again inside ProsodyRate.
+    // This is PRE-EXISTING behavior; this test pins the current output so the
+    // eventual fix is a deliberate, visible change — it is NOT asserting that
+    // double-emission is the desired result.
+    //
+    // Mechanism: the two <break> spans share the prosody span's start position.
     // Break (priority 1) sorts before Prosody (priority 2) and emits flat Break
     // segments; cursor does NOT advance past the prosody range (each break only
-    // advances to its own end), so the Prosody arm still fires afterward and emits
-    // a ProsodyRate wrapping the same breaks again. Actual output:
+    // advances to its own end), so the Prosody arm still fires afterward and
+    // emits a ProsodyRate wrapping the same breaks again. Actual output:
     // [Break(100ms), Break(200ms), ProsodyRate { content: [Break(100ms), Break(200ms)] }].
-    // No Text segments (whitespace-only chunks are dropped by push_text_slice).
+    // Also exercises push_text_slice dropping whitespace-only chunks (no Text).
     #[test]
-    fn two_adjacent_breaks_inside_prosody_emit_exactly_two_breaks() {
+    fn known_quirk_prosody_leading_break_double_emitted() {
         let segs = parse(
             r#"<speak><prosody rate="fast"><break time="100ms"/> <break time="200ms"/></prosody></speak>"#,
         )
