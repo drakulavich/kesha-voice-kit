@@ -282,26 +282,18 @@ function buildTtsComponents(
   return { components, warmups, wantsAnyKokoro };
 }
 
-export async function renderInstallPlan(options: InstallPlanOptions = {}): Promise<string> {
-  const cacheRoot = keshaCacheDir();
-  const binPath = getEngineBinPath();
-  const engineDir = dirname(binPath);
-  const noCache = options.noCache === true;
-
-  const ttsLangs = options.ttsLangs ?? [];
-  const tts = buildTtsComponents(cacheRoot, ttsLangs, noCache);
-
+function assembleComponents(
+  cacheRoot: string,
+  binPath: string,
+  engineDir: string,
+  noCache: boolean,
+  options: InstallPlanOptions,
+  tts: ReturnType<typeof buildTtsComponents>,
+): PlanComponent[] {
   const components: PlanComponent[] = [
     buildEngineComponent(binPath, noCache),
     ...buildSidecarComponents(engineDir, noCache),
-    bundleComponent(
-      cacheRoot,
-      "ASR Parakeet TDT v3",
-      "model cache",
-      ASR_FILES,
-      noCache,
-      "required for speech-to-text",
-    ),
+    bundleComponent(cacheRoot, "ASR Parakeet TDT v3", "model cache", ASR_FILES, noCache, "required for speech-to-text"),
     bundleComponent(
       cacheRoot,
       "Audio language ID ECAPA",
@@ -312,21 +304,11 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     ),
     ...tts.components,
   ];
-  const warmups: PlanWarmup[] = [...tts.warmups];
-
   if (options.vad) {
     components.push(
-      bundleComponent(
-        cacheRoot,
-        "VAD Silero v5",
-        "model cache",
-        VAD_FILES,
-        noCache,
-        "long-audio preprocessing",
-      ),
+      bundleComponent(cacheRoot, "VAD Silero v5", "model cache", VAD_FILES, noCache, "long-audio preprocessing"),
     );
   }
-
   if (options.diarize) {
     components.push(
       bundleComponent(
@@ -341,18 +323,11 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
       ),
     );
   }
+  return components;
+}
 
-  const coldBytes = components.reduce((sum, component) => sum + component.sizeBytes, 0);
-  const expectedNetworkBytes = components.reduce((sum, component) => {
-    if (component.cached && !component.refresh) return sum;
-    return sum + component.sizeBytes;
-  }, 0);
-  const status = (component: PlanComponent) => {
-    if (component.refresh) return "refresh";
-    return component.cached ? "cached" : "needed";
-  };
-
-  const lines = [
+function renderHeader(cacheRoot: string, binPath: string, backend: string | undefined): string[] {
+  return [
     "Kesha install plan",
     "",
     `Package: @drakulavich/kesha-voice-kit ${packageVersion}`,
@@ -360,23 +335,37 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     `Platform: ${process.platform} ${process.arch}`,
     `Cache: ${cacheRoot}`,
     `Engine binary: ${binPath}`,
-    options.backend ? `Requested backend: ${options.backend}` : "Requested backend: auto",
+    backend ? `Requested backend: ${backend}` : "Requested backend: auto",
     "",
     "Components:",
   ];
+}
 
-  for (const component of components) {
-    lines.push(
-      `  - ${component.name}: ${humanBytes(component.sizeBytes)} (${component.sizeBytes} bytes, ${status(component)}, ${component.source})`,
-    );
-    if (component.note) lines.push(`    ${component.note}`);
+function renderComponentLines(components: PlanComponent[]): string[] {
+  const status = (c: PlanComponent) => (c.refresh ? "refresh" : c.cached ? "cached" : "needed");
+  const lines: string[] = [];
+  for (const c of components) {
+    lines.push(`  - ${c.name}: ${humanBytes(c.sizeBytes)} (${c.sizeBytes} bytes, ${status(c)}, ${c.source})`);
+    if (c.note) lines.push(`    ${c.note}`);
   }
+  return lines;
+}
+
+function renderFooter(
+  components: PlanComponent[],
+  warmups: PlanWarmup[],
+  ttsLangs: string[],
+  wantsAnyKokoro: boolean,
+  options: InstallPlanOptions,
+): string[] {
+  const coldBytes = components.reduce((sum, c) => sum + c.sizeBytes, 0);
+  const expectedNetworkBytes = components.reduce((sum, c) => (c.cached && !c.refresh ? sum : sum + c.sizeBytes), 0);
+
+  const lines: string[] = [];
 
   if (warmups.length > 0) {
     lines.push("", "Warm-ups:");
-    for (const warmup of warmups) {
-      lines.push(`  - ${warmup.name}: ${warmup.note}`);
-    }
+    for (const w of warmups) lines.push(`  - ${w.name}: ${w.note}`);
   }
 
   lines.push(
@@ -394,7 +383,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     "  - install warms the ASR backend after downloads; CoreML warm-up is typically 20-30 s, ONNX warm-up is about 500 ms.",
   );
 
-  if (ttsLangs.length > 0 && tts.wantsAnyKokoro && isDarwinArm64()) {
+  if (ttsLangs.length > 0 && wantsAnyKokoro && isDarwinArm64()) {
     lines.push(
       "  - --tts also warms FluidAudio Kokoro CoreML; FluidAudio may download/compile its own Kokoro cache on first use.",
     );
@@ -411,6 +400,25 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     options.diarize ? "--diarize" : "",
   ].filter(Boolean);
   lines.push("", `Run: ${command.join(" ")}`, "");
+
+  return lines;
+}
+
+export async function renderInstallPlan(options: InstallPlanOptions = {}): Promise<string> {
+  const cacheRoot = keshaCacheDir();
+  const binPath = getEngineBinPath();
+  const engineDir = dirname(binPath);
+  const noCache = options.noCache === true;
+  const ttsLangs = options.ttsLangs ?? [];
+
+  const tts = buildTtsComponents(cacheRoot, ttsLangs, noCache);
+  const components = assembleComponents(cacheRoot, binPath, engineDir, noCache, options, tts);
+
+  const lines = [
+    ...renderHeader(cacheRoot, binPath, options.backend),
+    ...renderComponentLines(components),
+    ...renderFooter(components, tts.warmups, ttsLangs, tts.wantsAnyKokoro, options),
+  ];
 
   return `${lines.join("\n")}\n`;
 }
