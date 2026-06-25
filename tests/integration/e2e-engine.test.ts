@@ -82,10 +82,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     const caps = JSON.parse(stdout);
     const isDarwinArm64 = process.platform === "darwin" && process.arch === "arm64";
     if (isDarwinArm64) {
-      // Default install on darwin-arm64 ships the system_diarize feature.
-      // KESHA_ENGINE_BIN may point at a feature-stripped dev build; allow that.
-      // (The capability matrix test in build-engine.yml is the source of
-      //  truth for release artifacts.)
+      // KESHA_ENGINE_BIN may point at a feature-stripped dev build; capability matrix in build-engine.yml is the release source of truth.
       const advertises = caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE);
       if (!advertises) {
         console.warn(
@@ -106,9 +103,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       return;
     }
 
-    // VAD is required for the round-trip to exercise multiple segments;
-    // a missing VAD model surfaces as a non-zero exit below and skips
-    // (covered by the prereq-skip block).
+    // --vad exercises multiple segments; missing VAD model surfaces as non-zero exit and is skipped below.
     const { stdout, stderr, exitCode } = await runEngine(
       ["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN],
       {
@@ -117,8 +112,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       },
     );
     if (exitCode !== 0) {
-      // Treat missing prerequisites (sidecar / model / VAD) as skip rather
-      // than fail; their installer flows are exercised separately.
+      // Missing prerequisites are skip, not fail; installer flows are tested separately.
       if (
         stderr.includes("diarization model not found") ||
         stderr.includes("kesha-diarize sidecar not found") ||
@@ -134,8 +128,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     const parsed = JSON.parse(stdout);
     expect(Array.isArray(parsed.segments)).toBe(true);
     if (parsed.segments.length > 0) {
-      // Single-speaker fixture → speaker field present and numeric on every
-      // segment (one cluster ID is fine; we're locking the wire shape).
+      // One cluster ID is fine; locking that speaker field is numeric on every segment (wire shape).
       expect(parsed.segments.every((s: { speaker?: unknown }) => typeof s.speaker === "number")).toBe(true);
     }
   }, 120_000);
@@ -174,9 +167,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(result.confidence).toBeGreaterThan(0);
   }, 60_000);
 
-  // Cold-start of macOS NLLanguageRecognizer can exceed Bun's 5s default
-  // test timeout on the CI runner; give it the same 60s budget as the
-  // audio-based tests above.
+  // NLLanguageRecognizer cold-start can exceed Bun's 5s default on CI.
   test("engine detect-text-lang identifies Russian text", async () => {
     const { stdout, exitCode } = await runEngine(["detect-text-lang", "Привет мир как дела"]);
     expect(exitCode).toBe(0);
@@ -289,9 +280,7 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(toonRun.exitCode).toBe(0);
     const fromJson = JSON.parse(jsonRun.stdout);
     const fromToon = decodeToon(toonRun.stdout);
-    // Transcriptions are deterministic across consecutive runs of the same
-    // fixture, so the decoded arrays should match exactly (file, text, lang,
-    // audioLanguage, textLanguage). sttTimeMs varies; strip it before compare.
+    // Deterministic fixture → decoded arrays must match exactly; sttTimeMs varies so strip it.
     const stripTiming = (arr: unknown[]) =>
       arr.map((r) => { const { sttTimeMs: _, ...rest } = r as Record<string, unknown>; return rest; });
     expect(stripTiming(fromToon as unknown[])).toEqual(stripTiming(fromJson));

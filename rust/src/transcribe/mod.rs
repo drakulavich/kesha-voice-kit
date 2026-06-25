@@ -238,7 +238,6 @@ pub fn transcribe_with_options(
         duration
     );
 
-    // `mut` is only consumed by the diarization post-step below.
     #[cfg_attr(
         not(all(feature = "system_diarize", target_os = "macos")),
         allow(unused_mut)
@@ -270,7 +269,6 @@ pub fn transcribe_with_options(
         }
     }?;
 
-    // --- Speaker diarization post-step ---
     #[cfg(all(feature = "system_diarize", target_os = "macos"))]
     {
         if let Some(model_path) = diarize_model_path {
@@ -288,8 +286,7 @@ pub fn transcribe_with_options(
     Ok(output)
 }
 
-/// Load the ASR backend, logging the load time. Shared by the plain and chunked
-/// paths, which contain identical timing+logging+create_backend blocks.
+/// Shared by plain and chunked paths to avoid duplicate timing+logging+create_backend blocks.
 fn create_timed_backend(model_dir: &str) -> Result<Box<dyn backend::TranscribeBackend>> {
     let t0 = Instant::now();
     let be = backend::create_backend(model_dir)?;
@@ -299,8 +296,6 @@ fn create_timed_backend(model_dir: &str) -> Result<Box<dyn backend::TranscribeBa
     Ok(be)
 }
 
-/// Join segment texts with a single space separator. Used on both the VAD and
-/// chunked paths to stitch per-span transcripts into a single string.
 fn join_segment_texts(segments: &[TranscriptionSegment]) -> String {
     segments
         .iter()
@@ -662,11 +657,8 @@ fn trim_repeated_prefix<'a>(previous: &str, current: &'a str) -> &'a str {
     current
 }
 
-/// Honor a caller-supplied audio duration if present; otherwise probe the
-/// file. Re-uses the duration already computed during the `Auto` mode
-/// probe-and-decide step (#248) so the plain path doesn't re-open the file.
-/// Split from `transcribe_plain` so the probe-vs-hint contract can be
-/// unit-tested without spinning up an ASR backend.
+/// Re-uses duration from the `Auto` probe-and-decide step (#248) to avoid re-opening the file.
+/// Split from `transcribe_plain` for testability without an ASR backend.
 fn resolve_segment_duration(audio_path: &str, hint: Option<f32>) -> Result<f32> {
     if let Some(d) = hint {
         return Ok(d);
@@ -680,9 +672,6 @@ fn resolve_segment_duration(audio_path: &str, hint: Option<f32>) -> Result<f32> 
         })
 }
 
-/// Construct a one-element `Vec<TranscriptionSegment>` (or empty if `text` is
-/// blank after trimming). Shared by the plain-path's whole-file segment and
-/// the VAD-fallback path in [`transcribe_via_vad`].
 fn single_segment(start: f32, end: f32, text: &str) -> Vec<TranscriptionSegment> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -823,8 +812,6 @@ mod tests {
 
     #[test]
     fn auto_mode_long_wav_routes_to_vad_when_installed() {
-        // End-to-end test of the auto-trigger: 121-second WAV → probe reads
-        // duration → `decide()` picks VAD (when installed) or hint path.
         let tmp = tempfile::Builder::new()
             .prefix("kesha-auto-vad-long-")
             .suffix(".wav")
@@ -848,9 +835,7 @@ mod tests {
 
     #[test]
     fn probe_skipped_for_files_below_size_guard() {
-        // 1 s of 16 kHz mono 16-bit PCM = ~32 KB, well below the 200 KB guard.
-        // The probe should short-circuit and return None without touching
-        // symphonia at all.
+        // 1 s of 16 kHz PCM = ~32 KB, well below the 200 KB guard → probe skips symphonia entirely.
         let tmp = tempfile::Builder::new()
             .prefix("kesha-auto-vad-tiny-")
             .suffix(".wav")
@@ -866,8 +851,6 @@ mod tests {
 
     #[test]
     fn probe_returns_none_for_missing_or_invalid_file() {
-        // Missing file → metadata fails, probe fails, returns None (decide
-        // then treats as Auto/short → Plain).
         assert_eq!(
             probe_duration_if_plausible("/nonexistent/path/to/audio.wav"),
             None
@@ -876,10 +859,7 @@ mod tests {
 
     #[test]
     fn resolve_segment_duration_returns_hint_without_probing() {
-        // When the caller already probed (Auto mode), the helper must NOT
-        // re-open the file (#248). Pass a deliberately-unparseable file
-        // alongside the hint — if the probe runs, it errors; if not, the
-        // hint is returned verbatim.
+        // #248: hint must be returned without re-opening the file; unparseable path errors if probe runs.
         let tmp = tempfile::Builder::new()
             .prefix("kesha-no-probe-")
             .suffix(".raw")
@@ -1215,10 +1195,7 @@ mod tests {
 
     #[test]
     fn transcribe_options_default_is_text_only_auto() {
-        // The struct's default must match the legacy `transcribe(_, mode)`
-        // text-only path: Auto VAD, no segments, no speakers. Anyone
-        // building options inline can rely on `..Default::default()` for
-        // the unmentioned fields without surprise.
+        // Must match the legacy `transcribe(_, mode)` text-only path: Auto VAD, no segments, no speakers.
         let o = TranscribeOptions::default();
         assert_eq!(o.mode, VadMode::Auto);
         assert!(!o.with_segments);

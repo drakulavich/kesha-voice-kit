@@ -1,11 +1,6 @@
 use serde::Serialize;
 
-// `transcribe::diarize` is the runtime module gated on
-// `all(feature = "system_diarize", target_os = "macos")` (see
-// transcribe/mod.rs). Mirror that gate here so the advertised
-// capability matches the runtime: building `--features system_diarize`
-// on Linux otherwise pushes the flag without an executable code path,
-// and `--speakers` would advertise OK then bail out at request time.
+// Mirror runtime gate: system_diarize on Linux has no code path; advertising without it would lie.
 #[cfg(all(feature = "system_diarize", target_os = "macos"))]
 use crate::transcribe::TRANSCRIBE_DIARIZE_FEATURE;
 use crate::transcribe::TRANSCRIBE_SEGMENTS_FEATURE;
@@ -14,7 +9,7 @@ use crate::transcribe::TRANSCRIBE_SEGMENTS_FEATURE;
 #[serde(rename_all = "camelCase")]
 pub struct TtsLanguage {
     pub code: &'static str,
-    /// Downloadable engines for this language, default first. One entry today.
+    /// Downloadable engines for this language, default first.
     pub engines: Vec<&'static str>,
 }
 
@@ -54,17 +49,7 @@ pub fn get_capabilities() -> Capabilities {
     features.push("tts.en_acronym_expansion");
     #[cfg(feature = "tts")]
     features.push("tts.ru_emphasis_marker");
-    // `tts.prosody_rate` applies to the Vosk (`ru-vosk-*`) and Kokoro
-    // (`en-*`) engines — including the darwin-arm64 FluidAudio Kokoro path,
-    // which threads `<prosody rate>` into its model-native speed input as of
-    // #481 (earlier builds rejected SSML wholesale and made this flag a lie).
-    // AVSpeech (`macos-*`) is unaffected: it rejects SSML
-    // wholesale at `tts::say` before any prosody dispatch runs (see
-    // `rust/src/tts/mod.rs:120-124`), so callers sending
-    // `<prosody rate>` to a `macos-*` voice get the existing
-    // "SSML is not yet supported with macos-* voices" error rather than a
-    // surprise success. AVSpeech-native rate is tracked as a v2 follow-up
-    // in #236.
+    // Applies to Vosk + Kokoro (incl. FluidAudio, fixed in #481); AVSpeech rejects SSML upstream so callers get a clear error (#236).
     #[cfg(feature = "tts")]
     features.push("tts.prosody_rate");
 

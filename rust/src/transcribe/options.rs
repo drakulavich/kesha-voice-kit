@@ -16,9 +16,7 @@ use std::marker::PhantomData;
 use super::{TranscribeOptions, VadMode};
 
 pub(crate) mod marker {
-    /// Builder state: segments not yet enabled. `with_speakers()` is unavailable.
     pub struct NoSegments;
-    /// Builder state: segments enabled. `with_speakers()` is available.
     pub struct WithSegments;
 }
 
@@ -50,7 +48,6 @@ impl TranscribeOptionsBuilder<marker::NoSegments> {
         }
     }
 
-    /// Override the VAD preprocessing mode.
     pub fn vad(mut self, mode: VadMode) -> Self {
         self.mode = mode;
         self
@@ -77,16 +74,8 @@ impl TranscribeOptionsBuilder<marker::NoSegments> {
 }
 
 impl TranscribeOptionsBuilder<marker::WithSegments> {
-    /// Override the VAD preprocessing mode. Mirrors the same method on
-    /// the `NoSegments` state so call-site ordering doesn't matter:
-    /// `Builder::new().with_segments().vad(VadMode::On)` produces the
-    /// same options as `Builder::new().vad(VadMode::On).with_segments()`.
-    /// Greptile P2 on #318.
-    ///
-    /// `#[allow(dead_code)]` because today's only call site
-    /// (`cli/transcribe.rs::run`) chains `vad()` BEFORE `with_segments()`
-    /// — the method exists for ergonomics + symmetry with the
-    /// `NoSegments` impl, not for an existing consumer.
+    /// Mirrors `NoSegments::vad` so call-site ordering doesn't matter (#318 Greptile P2).
+    // No current consumer chains vad() after with_segments(); exists for symmetry.
     #[allow(dead_code)]
     pub fn vad(mut self, mode: VadMode) -> Self {
         self.mode = mode;

@@ -1,9 +1,6 @@
 //! Per-language letter-name spelling for all-caps acronym tokens.
 
-// ── Letter-name tables ────────────────────────────────────────────────────────
-
-/// Spanish letter names (a-z).
-/// Source: Real Academia Española standard names.
+/// Spanish letter names (a-z). Source: Real Academia Española.
 const ES_LETTERS: [(&str, &str); 27] = [
     ("A", "a"),
     ("B", "be"),
@@ -36,7 +33,6 @@ const ES_LETTERS: [(&str, &str); 27] = [
 ];
 
 /// French letter names (a-z).
-/// Source: standard French alphabet letter names.
 const FR_LETTERS: [(&str, &str); 26] = [
     ("A", "a"),
     ("B", "bé"),
@@ -67,9 +63,7 @@ const FR_LETTERS: [(&str, &str); 26] = [
 ];
 
 /// Italian letter names (a-z).
-/// Source: standard Italian alphabet letter names.
-// Includes J/K/W/X/Y (not in the traditional 21-letter alphabet but common in
-// modern Italian acronyms — WC, OK, etc.); standard letter names. Greptile #509 P2.
+// Includes J/K/W/X/Y (not in the traditional 21-letter Italian alphabet but used in modern acronyms — WC, OK, etc.). Greptile #509 P2.
 const IT_LETTERS: [(&str, &str); 26] = [
     ("A", "a"),
     ("B", "bi"),
@@ -100,7 +94,6 @@ const IT_LETTERS: [(&str, &str); 26] = [
 ];
 
 /// Portuguese letter names (a-z).
-/// Source: standard Portuguese alphabet letter names.
 const PT_LETTERS: [(&str, &str); 26] = [
     ("A", "á"),
     ("B", "bê"),
@@ -130,21 +123,14 @@ const PT_LETTERS: [(&str, &str); 26] = [
     ("Z", "zê"),
 ];
 
-// ── Stop-lists: all-caps tokens read as WORDS, not spelled out ───────────────
-// Hand-curated seeds, ALL-CAPS keys. NOT exhaustive — extend by ear. Mirrors
-// `tts/en/acronym.rs::STOP_LIST`. Initialisms that SHOULD spell (DNI, ADN, RAI,
-// EUA) are deliberately absent.
-//
-// Entries must be 2..=5 chars: `normalize` only routes a token through `spell`
-// when `is_acronym_token` (length 2..=5) matches, so a 6+-char all-caps word
-// (e.g. "UNESCO") already passes through verbatim and needs no entry here.
+// Hand-curated seeds (ALL-CAPS, 2..=5 chars only — 6+ already pass through verbatim).
+// NOT exhaustive — extend by ear. Mirrors `tts/en/acronym.rs::STOP_LIST`.
 pub(crate) const ES_STOP_LIST: &[&str] =
     &["OTAN", "OVNI", "SIDA", "OPEP", "OEA", "ONU", "FIFA", "OMS"];
 pub(crate) const FR_STOP_LIST: &[&str] = &["OTAN", "OVNI", "SIDA", "FIFA", "OPEP", "ONU", "OMS"];
 pub(crate) const IT_STOP_LIST: &[&str] = &["FIAT", "NATO", "FIFA", "AIDS", "ONU"];
 pub(crate) const PT_STOP_LIST: &[&str] = &["OTAN", "OVNI", "SIDA", "AIDS", "FIFA", "ONU", "OMS"];
 
-/// True if `token` is in `lang`'s stop-list (read as a word, not letter-spelled).
 fn is_stop_listed(token: &str, lang: &str) -> bool {
     let list: &[&str] = match lang {
         "es" => ES_STOP_LIST,
@@ -165,7 +151,6 @@ fn lookup_letter(ch: char, table: &[(&str, &str)]) -> String {
         .unwrap_or_else(|| ch.to_lowercase().to_string())
 }
 
-/// Returns true if `token` is a candidate for letter-by-letter spelling.
 /// Mirrors `en/acronym.rs::is_acronym_token`: all-caps, length 2..=5.
 pub fn is_acronym_token(token: &str) -> bool {
     let len = token.chars().count();
@@ -175,13 +160,9 @@ pub fn is_acronym_token(token: &str) -> bool {
     token.chars().all(|c| c.is_ascii_uppercase())
 }
 
-/// Spell `token` letter-by-letter using the language's standard letter names.
-///
-/// `token` should be the punct-stripped core (all ASCII uppercase, 2..=5 chars).
-/// Letter names are joined with spaces. Unknown languages fall back to lowercased
-/// individual characters joined with spaces.
+/// Spell `token` letter-by-letter. `token` must be the punct-stripped core (all ASCII
+/// uppercase, 2..=5 chars). Unknown languages fall back to lowercased chars joined with spaces.
 pub fn spell(token: &str, lang: &str) -> String {
-    // Word-acronyms (read as words) pass through unspelled.
     if is_stop_listed(token, lang) {
         return token.to_string();
     }

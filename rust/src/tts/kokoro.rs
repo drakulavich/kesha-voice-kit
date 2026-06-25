@@ -13,7 +13,6 @@ use ndarray::{Array1, Array2};
 use ort::session::Session;
 use ort::value::Value;
 
-/// Kokoro output sample rate.
 pub const SAMPLE_RATE: u32 = 24_000;
 
 pub struct Kokoro {
@@ -26,8 +25,7 @@ impl Kokoro {
         Ok(Self { session })
     }
 
-    /// Run inference. `input_ids` is the padded/truncated token vector (any positive length),
-    /// `style` must be exactly 256 floats. Returns mono f32 audio at [`SAMPLE_RATE`].
+    /// `style` must be exactly 256 floats; returns mono f32 audio at [`SAMPLE_RATE`].
     pub fn infer(
         &mut self,
         input_ids: &[i64],
@@ -57,13 +55,7 @@ impl Kokoro {
     }
 }
 
-/// Clamp each sample to `[-1.0, 1.0]`.
-///
-/// Kokoro can produce |sample| > 1.0 on multilingual voices (observed on
-/// French voices in the Track-B spike). WAV float files technically allow
-/// any value, but downstream re-encoders (Opus, FLAC) and players clip
-/// at ±1.0, producing hard distortion. Clamping here is the single
-/// choke-point that protects every downstream format.
+/// Clamp to `[-1.0, 1.0]`; Kokoro multilingual voices can exceed this, causing hard distortion in downstream encoders.
 pub fn clamp_audio(mut samples: Vec<f32>) -> Vec<f32> {
     for s in &mut samples {
         *s = s.clamp(-1.0, 1.0);

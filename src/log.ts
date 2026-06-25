@@ -58,10 +58,7 @@ export const log = {
   // and `CI=true` produce genuinely plain output. (#531)
   warn: (msg: string) => void process.stderr.write(colors.yellow(msg) + "\n"),
   error: (msg: string) => void process.stderr.write(colors.red(msg) + "\n"),
-  // Status/progress line on STDERR (e.g. `say --out`, where stdout may carry
-  // raw audio bytes). Suppressed under `--quiet` and colored via the swappable
-  // colorizer so `--no-color` applies; process.stderr.write (not console.error)
-  // avoids Bun's startup-frozen TTY auto-red. (#526/#531)
+  // STDERR, not stdout: `say --out` streams raw audio bytes to stdout. (#526/#531)
   status: (msg: string) => {
     if (log.quietEnabled) return;
     process.stderr.write(colors.cyan(msg) + "\n");
@@ -74,13 +71,7 @@ export const log = {
   },
   debug(msg: string): void {
     if (this.isDebugEnabled()) {
-      // `[debug +Nms]` prefix sits on the CLI process's own timeline so
-      // the reader can see when each line fired. The Rust engine emits
-      // the same `+Nms` shape from `rust/src/debug.rs::trace_fmt`, but
-      // anchored to its own process start — the two axes are
-      // independent. For "duration between two events on the same
-      // process", read the prefix difference; for cross-process spans,
-      // the spawn→exit `dt=Nms` inside the message remains authoritative.
+      // CLI-process timeline; Rust engine has its own independent origin (rust/src/debug.rs::trace_fmt).
       const t = Math.round(performance.now() - PROCESS_T0_MS);
       process.stderr.write(colors.dim(`[debug +${t}ms] ${msg}`) + "\n");
     }

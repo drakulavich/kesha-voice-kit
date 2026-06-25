@@ -14,8 +14,6 @@ const CLI = "kesha";
 const VENV_DIR = resolve(homedir(), ".cache", "kesha", "benchmark-venv");
 const RESULTS_FILE = "benchmark-results.json";
 
-// --- Types ---
-
 interface EngineResult {
   time: number;
   text: string;
@@ -42,8 +40,6 @@ interface BenchmarkReport {
   whisperModel: string;
   groups: GroupResult[];
 }
-
-// --- System detection ---
 
 function getSystemInfo(): BenchmarkReport["platform"] {
   const os = process.platform === "darwin" ? "Darwin" : process.platform === "linux" ? "Linux" : "Windows";
@@ -73,14 +69,11 @@ function getKeshaBackend(): string {
   return "unknown";
 }
 
-// --- Python venv management ---
-
 function ensureVenv(): string {
   const python = resolve(VENV_DIR, "bin", "python3");
   const pip = resolve(VENV_DIR, "bin", "pip");
 
   if (existsSync(python)) {
-    // Check if packages are installed
     const check = Bun.spawnSync([python, "-c", "import whisper; import faster_whisper"], {
       stdout: "pipe", stderr: "pipe",
     });
@@ -107,14 +100,10 @@ function ensureVenv(): string {
   return python;
 }
 
-// --- Fixture scanning ---
-
 function scanFixtures(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return [...new Glob("*.ogg").scanSync(dir)].sort().map((f) => resolve(dir, f));
 }
-
-// --- Engine runners ---
 
 function runOpenAIWhisper(python: string, files: string[]): EngineResult[] {
   console.error(`Running openai-whisper (large-v3-turbo) on ${files.length} files...`);
@@ -236,8 +225,6 @@ function runKeshaCoreml(files: string[]): EngineResult[] {
   return results;
 }
 
-// --- Report rendering ---
-
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
@@ -302,8 +289,6 @@ function renderMarkdown(report: BenchmarkReport): string {
 
   return lines.join("\n");
 }
-
-// --- Main ---
 
 async function main(): Promise<void> {
   const repoDir = resolve(import.meta.dir, "..");

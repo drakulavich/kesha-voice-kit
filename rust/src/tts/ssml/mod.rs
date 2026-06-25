@@ -51,24 +51,16 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
             &trimmed.chars().take(20).collect::<String>()
         );
     }
-    // Reject DOCTYPE declarations anywhere in the document — defense in depth
-    // against billion-laughs / XXE, even though ssml-parser doesn't currently
-    // expand external entities. Input length is already bounded upstream
-    // (`MAX_TEXT_CHARS`), so a full scan is cheap.
+    // Defense in depth against XXE/billion-laughs; ssml-parser doesn't expand entities
+    // but we reject DOCTYPE regardless. Input is bounded upstream so a full scan is cheap.
     if contains_doctype(trimmed) {
         coded_bail!(
             ErrorCode::SsmlInvalid,
             "SSML DOCTYPE declarations are not supported"
         );
     }
-    // Reject relative-percent rate values (`+N%` / `-N%`) before handing off
-    // to `ssml-parser`. The upstream crate strips the `+` sign during parse
-    // — Display of `RateRange::Percentage(25)` is `"25%"` regardless of the
-    // original `+25%` source — so the rest of our code path would silently
-    // misinterpret `+25%` as the absolute 25% (0.25×) instead of relative
-    // 1.25×. `-N%` would otherwise surface upstream's cryptic "Negative
-    // percentage not allowed for rate" message. Tracked as a v2 follow-up
-    // on #236.
+    // ssml-parser strips the `+` in `+25%` (Display gives `"25%"`), so we'd
+    // silently treat relative `+25%` as absolute 0.25×. Reject early. (#236)
     if let Some(rel) = find_relative_rate(trimmed) {
         coded_bail!(
             ErrorCode::SsmlInvalid,
@@ -82,12 +74,9 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     let ssml = parse_ssml(input)?;
     let text: Vec<char> = ssml.get_text().chars().collect();
 
-    // Collect all spans + sort by start. The iterator order isn't guaranteed to be textual.
-    // Secondary sort: when spans share the same `start` (nested tags all map to the same
-    // character range), more-specific structural tags (Phoneme, SayAs) must sort BEFORE
-    // Emphasis, which must sort before Speak. This ensures that when an <emphasis> wraps
-    // a <say-as> or <phoneme>, the inner tag runs first, advances `cursor`, and the outer
-    // Emphasis arm is then skipped by the cursor-guard below ("inner tag wins" spec rule).
+    // Secondary sort by priority so that when spans share the same `start`, inner
+    // structural tags (Phoneme, SayAs) run before Emphasis and advance cursor first
+    // — the cursor-guard below then skips the outer tag ("inner tag wins" spec rule).
     let mut spans: Vec<_> = ssml.tags().collect();
     spans.sort_by(|a, b| {
         a.start
@@ -119,13 +108,7 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     let mut cursor: usize = 0;
 
     for span in &spans {
-        // If a higher-priority sibling span (sorted via span_priority) already
-        // consumed this region — i.e. its arm advanced cursor past the current
-        // span.start — skip the current span. This implements the spec's
-        // "inner structural tag wins" rule: SayAs / Phoneme have priority 0 and
-        // run before the enclosing Emphasis (priority 2) when they share the
-        // same character range, so the outer Emphasis is silently absorbed.
-        // See #233.
+        // Inner structural tag (priority 0) already consumed this region; skip outer. (#233)
         if span.start < cursor {
             continue;
         }
@@ -140,29 +123,12 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
             continue;
         }
         match &span.element {
-            // `<speak>` covers the whole document; nothing to emit for the wrapper itself.
             ParsedElement::Speak(_) => {}
             ParsedElement::Prosody(attrs) => {
-                // Whole-utterance detection: the prosody is whole-utterance when
-                // (a) the text outside [span.start, span.end) within the <speak>
-                // root is entirely whitespace, AND (b) the source between the
-                // `<speak ...>` open tag and the `<prosody ...>` open tag, and
-                // between `</prosody>` and `</speak>`, is whitespace-only. Check
-                // (b) is needed because zero-width tags like `<break/>` have a
-                // collapsed text offset (start == end) that coincides with the
-                // prosody boundary in the linearised text, so a check over
-                // ssml-parser's text-position spans alone cannot distinguish
-                // `<speak><break/><prosody>x</prosody></speak>` (mid-utterance)
-                // from `<speak><prosody><break/>x</prosody></speak>` (inside).
                 if prosody_is_whole_utterance(span, &text, input) {
-                    // Attempt to parse the rate attribute.
                     let rate_str = attrs.rate.as_ref().map(|r| r.to_string());
                     let parsed_rate = rate_str.as_deref().and_then(parse_rate_value);
                     if let Some(rate) = parsed_rate {
-                        // Emit ProsodyRate with the inner content parsed recursively.
-                        // The inner text of the prosody span is text[span.start..span.end].
-                        // Recurse: collect the sub-spans that fall within this prosody's
-                        // range and parse them as a nested segment list.
                         push_text_slice(&mut segments, &text, cursor, span.start);
                         let inner_segs = parse_inner_spans(&spans, &text, span.start, span.end);
                         segments.push(Segment::ProsodyRate {
@@ -171,22 +137,18 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                         });
                         cursor = span.end;
                     } else {
-                        // Whole-utterance but unparseable rate attribute — warn+strip.
                         warn_once(
                             WARN_PROSODY_NO_SUPPORTED_ATTR,
                             "SSML <prosody> without a parseable rate= attribute \
                              is not supported (pitch/volume scoped to a follow-up); stripping",
                         );
-                        // Leave cursor unchanged; inner text flows through as Text.
                     }
                 } else {
-                    // Mid-utterance prosody — warn+strip.
                     warn_once(
                         WARN_PROSODY_MID_UTTERANCE,
                         "SSML <prosody> mid-utterance is not yet supported \
                          (whole-utterance only); stripping rate, pitch, and volume",
                     );
-                    // Leave cursor unchanged; inner text falls through as Text.
                 }
             }
             _ => {
@@ -196,14 +158,13 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
             }
         }
     }
-    // Trailing text after the last span.
     push_text_slice(&mut segments, &text, cursor, text.len());
     Ok(segments)
 }
 
-/// True when a `<prosody>` covers the whole utterance (surrounding text + source
-/// both whitespace-only). The source-sibling check disambiguates zero-width tags
-/// that collapse to the prosody's offset. Shared by the Prosody arm and #560 precompute.
+/// True when `<prosody>` is the sole meaningful child of `<speak>`. Source-sibling
+/// check needed because zero-width tags (`<break/>`) collapse to the same text offset
+/// and can't be distinguished from inside-prosody via text spans alone. (#560)
 fn prosody_is_whole_utterance(
     span: &ssml_parser::parser::Span,
     text: &[char],
@@ -214,9 +175,7 @@ fn prosody_is_whole_utterance(
     prefix.trim().is_empty() && suffix.trim().is_empty() && !has_structural_source_siblings(input)
 }
 
-/// Collect the inner text of a structural span and trim whitespace.
-/// Returns `None` for empty/whitespace-only content. Used by tags that
-/// emit a single segment carrying their inner content (SayAs, Emphasis).
+/// Returns trimmed inner text, or `None` if empty/whitespace-only.
 pub(super) fn extract_inner_text(text: &[char], start: usize, end: usize) -> Option<String> {
     let raw: String = text[start..end].iter().collect();
     let trimmed = raw.trim();
@@ -258,7 +217,6 @@ pub(super) fn tag_name(el: &ParsedElement) -> String {
     name.to_string()
 }
 
-/// Case-insensitive search for `<!DOCTYPE` anywhere in the input.
 fn contains_doctype(input: &str) -> bool {
     const NEEDLE: &[u8] = b"<!DOCTYPE";
     let bytes = input.as_bytes();
@@ -274,11 +232,8 @@ fn contains_doctype(input: &str) -> bool {
 mod tests {
     use super::*;
 
-    // Integration scenarios for the public `parse()` API (full <speak>…</speak>
-    // blobs → `Vec<Segment>` assertions) live in `rust/tests/ssml_integration.rs`
-    // post-#267 F8. This in-crate test block keeps only unit tests for items
-    // that are `pub(super)` and therefore unreachable from an external
-    // integration test — currently just `tag_name`.
+    // Full parse() integration tests live in rust/tests/ssml_integration.rs (#267 F8).
+    // This block covers only pub(super) items unreachable from there — currently tag_name.
 
     #[test]
     fn say_as_tag_warning_uses_hyphenated_name() {

@@ -1,10 +1,4 @@
 //! Text-to-speech façade.
-//!
-//! Per-engine pipelines live in sibling submodules (`kokoro`, `vosk`,
-//! `avspeech`); shared text-processing helpers are split out by language
-//! (`en`, `ru`, `g2p`, `tokenizer`). The dispatcher that routes a
-//! [`SayOptions`] request across them lives in [`say`], re-exported here
-//! so external callers continue to reach it as `crate::tts::say`.
 
 use std::path::Path;
 
@@ -40,9 +34,7 @@ pub mod avspeech;
 /// spend minutes on synthesis with poor quality.
 pub const MAX_TEXT_CHARS: usize = 5000;
 
-/// Strip SSML `<emphasis>` `+` stress markers from segment content. Only
-/// ru-vosk-* voices honor `+`; every other synth path strips it before
-/// synthesis (the per-engine callers decide whether to warn first).
+/// Only ru-vosk-* voices honor `+`; every other synth path strips it (callers decide whether to warn first).
 pub(crate) fn strip_emphasis_markers(content: String) -> String {
     if content.contains('+') {
         content.replace('+', "")
@@ -84,7 +76,6 @@ impl TtsError {
 
 /// Which TTS engine to run. Voice ids determine this via `voices::resolve_voice`.
 pub enum EngineChoice<'a> {
-    /// Kokoro-82M: separate model + per-voice style embedding + rate.
     Kokoro {
         model_path: &'a Path,
         voice_path: &'a Path,
@@ -98,12 +89,10 @@ pub enum EngineChoice<'a> {
     ))]
     FluidKokoro { voice_id: &'a str, speed: f32 },
     /// macOS AVSpeechSynthesizer via the Swift sidecar (#141).
-    /// `voice_id` is forwarded verbatim (an Apple identifier or a language code).
-    /// `speed` is the user-facing multiplier (0.5–2.0); mapped onto the AVSpeech
-    /// 0.0–1.0 rate scale inside the sidecar (#546).
+    /// `speed` is the user-facing multiplier (0.5–2.0); mapped onto AVSpeech 0.0–1.0 inside the sidecar (#546).
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
     AVSpeech { voice_id: &'a str, speed: f32 },
-    /// Vosk-TTS Russian: model dir + speaker id (G2P happens inside vosk).
+    /// Vosk-TTS Russian: G2P happens inside vosk, not in the caller.
     Vosk {
         model_dir: &'a Path,
         speaker_id: u32,
@@ -120,13 +109,10 @@ pub struct SayOptions<'a> {
     /// When true, `text` is parsed as SSML (issue #122). `<break>` tags yield
     /// silence of the declared duration; unknown tags are stripped with a warning.
     pub ssml: bool,
-    /// Wire format for the returned bytes. Defaults to `Wav` so existing
-    /// callers (and the historical `kesha say > out.wav` flow) stay
-    /// bit-exact. See #223.
+    /// Wire format for returned bytes; defaults to `Wav` for back-compat (#223).
     pub format: OutputFormat,
-    /// Auto-expand all-uppercase acronyms before synth: Cyrillic on `ru-vosk-*`
-    /// (#232), Latin on `en-*` (#244). Default `true`. `<say-as interpret-as="characters">`
-    /// is always honored regardless of this flag. No effect for `macos-*` voices.
+    /// Auto-expand all-uppercase acronyms before synth: Cyrillic on `ru-vosk-*` (#232), Latin on `en-*` (#244).
+    /// `<say-as interpret-as="characters">` is always honored regardless of this flag. No effect for `macos-*`.
     pub expand_abbrev: bool,
 }
 

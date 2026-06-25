@@ -41,8 +41,6 @@ fn is_vowel(c: char) -> bool {
 
 /// Returns true if `core` is a candidate acronym worth expanding.
 /// Pure structural check — does not consult the stop-list.
-/// Single-pass: collects chars once, validates range + soft/hard sign,
-/// then inlines the former `should_spell` check via `windows(2)`.
 fn is_acronym_token(core: &str) -> bool {
     let chars: Vec<char> = core.chars().collect();
     let len = chars.len();
@@ -50,7 +48,6 @@ fn is_acronym_token(core: &str) -> bool {
         return false;
     }
     for &c in &chars {
-        // Reject anything outside [А-ЯЁ] and any soft/hard sign.
         let in_range = ('А'..='Я').contains(&c) || c == 'Ё';
         if !in_range {
             return false;
@@ -65,8 +62,7 @@ fn is_acronym_token(core: &str) -> bool {
     len <= 2 || chars.windows(2).any(|w| is_vowel(w[0]) == is_vowel(w[1]))
 }
 
-/// Auto-expand all-uppercase Cyrillic acronyms in `input`. Whitespace and
-/// non-acronym tokens are preserved verbatim.
+/// Auto-expand all-uppercase Cyrillic acronyms in `input`.
 pub(super) fn expand_acronyms(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut buf = String::new();
@@ -101,9 +97,7 @@ fn expand_token(token: &str) -> Cow<'_, str> {
     Cow::Owned(s)
 }
 
-/// Split `token` into (leading_punct, core, trailing_punct).
-/// Leading and trailing punctuation runs are peeled off so that tokens like
-/// `«ВОЗ»` or `ФСБ.` are correctly identified and expanded.
+/// Peels leading/trailing punctuation so `«ВОЗ»` and `ФСБ.` are correctly matched.
 fn split_punct(token: &str) -> (&str, &str, &str) {
     let start = token
         .char_indices()

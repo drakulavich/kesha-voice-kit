@@ -14,7 +14,6 @@ const TRAILING_PUNCT: &[char] = &[
 ];
 const LEADING_PUNCT: &[char] = &['«', '(', '"', '„'];
 
-/// Split a token into (leading_punct, core, trailing_punct).
 fn split_punct(token: &str) -> (&str, &str, &str) {
     let start = token
         .char_indices()
@@ -40,9 +39,7 @@ fn split_punct(token: &str) -> (&str, &str, &str) {
 fn normalize_token(token: &str, lang: &str) -> String {
     let (head, core, tail) = split_punct(token);
 
-    // Integer token? Only expand numbers in the 0..=999_999 band that the
-    // per-language word tables cover. Larger numbers (≥ 1_000_000) are left
-    // verbatim so the G2P / synth still receives *something* and never crashes.
+    // Only expand 0..=999_999; larger numbers pass through verbatim so G2P never crashes.
     if let Ok(n) = core.parse::<u32>() {
         if n <= 999_999 {
             return format!("{head}{}{tail}", to_words(n, lang));
@@ -50,12 +47,10 @@ fn normalize_token(token: &str, lang: &str) -> String {
         return token.to_string();
     }
 
-    // Acronym token?
     if is_acronym_token(core) {
         return format!("{head}{}{tail}", spell(core, lang));
     }
 
-    // Pass through verbatim.
     token.to_string()
 }
 
@@ -132,7 +127,6 @@ mod tests {
             out.contains("1000000"),
             "large number should be verbatim, got: {out}"
         );
-        // Surrounding words and punctuation are still handled normally.
         assert!(out.contains("Año"), "got: {out}");
         // u32::MAX must also be safe.
         let max = normalize("4294967295", "es");

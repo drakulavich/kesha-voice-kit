@@ -5,9 +5,6 @@
 //! stdin, passes the voice identifier as argv\[1\], and reads a complete WAV
 //! (mono IEEE-float @ 22050 Hz) from stdout. Stderr is surfaced in the error
 //! message when synthesis fails.
-//!
-//! Wired into `tts::say()` dispatch via `EngineChoice::AVSpeech` and selected
-//! by the `macos-*` voice-id prefix in `tts::voices::resolve_voice`.
 
 #![cfg(all(feature = "system_tts", target_os = "macos"))]
 
@@ -21,14 +18,9 @@ use crate::process_tree::ChildGuard;
 
 /// Path to the sidecar `say-avspeech` binary.
 ///
-/// Resolution order:
-/// 1. A sibling `say-avspeech` file next to the currently-running executable.
-///    This is the release-distribution path — `kesha install` downloads both
-///    `kesha-engine-darwin-arm64` and `say-avspeech-darwin-arm64` into the
-///    same cache directory.
-/// 2. The build-time `$OUT_DIR/say-avspeech` baked in by `build.rs`. Used by
-///    `cargo run` / `cargo test`, where the sidecar lives in the target dir
-///    but not next to the engine executable.
+/// Prefers a sibling next to the running executable (release layout, where
+/// `kesha install` co-locates both binaries); falls back to the build-time
+/// `$OUT_DIR/say-avspeech` baked in by `build.rs` for `cargo run`/`cargo test`.
 pub fn helper_path() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
@@ -43,18 +35,14 @@ pub fn helper_path() -> PathBuf {
 
 /// Synthesize `text` with the macOS voice identified by `voice_id`.
 ///
-/// `voice_id` is forwarded verbatim to `AVSpeechSynthesisVoice(identifier:)` and
-/// falls back to `AVSpeechSynthesisVoice(language:)` inside the helper. Accepts
-/// either a full identifier (`com.apple.voice.compact.en-US.Samantha`) or a
-/// language code (`en-US`, `ru-RU`).
+/// `voice_id` is forwarded to `AVSpeechSynthesisVoice(identifier:)` with a
+/// fallback to `AVSpeechSynthesisVoice(language:)` inside the helper — accepts
+/// a full identifier or a language code (`en-US`, `ru-RU`).
 ///
-/// `speed` is the user-facing speaking rate multiplier (0.5–2.0, where 1.0 is the
-/// engine default). Forwarded to the sidecar as `--rate <value>`; the sidecar maps
+/// `speed` (0.5–2.0, 1.0 = default) is forwarded as `--rate`; the sidecar maps
 /// it onto the `AVSpeechUtterance.rate` 0.0–1.0 scale (#546).
 ///
-/// Returns complete WAV bytes. `helper` defaults to [`helper_path()`] when `None`
-/// — tests inject a fake helper to verify the subprocess contract without needing
-/// the real Swift binary.
+/// `helper` defaults to [`helper_path()`] when `None`; tests inject a fake helper.
 pub fn synthesize(
     text: &str,
     voice_id: &str,
@@ -98,12 +86,9 @@ pub fn synthesize(
     Ok(output.stdout)
 }
 
-/// Enumerate the installed macOS voices via the sidecar's `--list-voices` mode.
-///
-/// Returns prefixed voice IDs (`macos-<identifier>`) ready to merge into the
-/// `say --list-voices` output. Returns an empty Vec on any failure — callers
-/// treat macos-* as a best-effort extension: if the helper is missing or the
-/// enumeration fails, they should still show Kokoro/Piper voices.
+/// Returns `macos-<identifier>` voice IDs for `say --list-voices`.
+/// Returns an empty Vec on any failure — macos-* voices are best-effort; missing
+/// helper must not suppress Kokoro/Piper voices.
 pub fn list_voices(helper: Option<&Path>) -> Vec<String> {
     let bin = helper.map(PathBuf::from).unwrap_or_else(helper_path);
 
@@ -123,8 +108,6 @@ pub fn list_voices(helper: Option<&Path>) -> Vec<String> {
     String::from_utf8_lossy(&output.stdout)
         .lines()
         // Lines are `identifier|language|name` (see swift/say-avspeech.swift).
-        // We only surface the identifier; callers can look up language/name
-        // via AVSpeechSynthesisVoice if they want richer metadata.
         .filter_map(|line| line.split('|').next())
         .filter(|id| !id.is_empty())
         .map(|id| format!("macos-{id}"))
@@ -142,7 +125,6 @@ mod tests {
         writeln!(f, "#!/bin/sh").unwrap();
         writeln!(f, "{script}").unwrap();
         drop(f);
-        // chmod +x
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&path).unwrap().permissions();
         perms.set_mode(0o755);
@@ -192,7 +174,6 @@ mod tests {
     #[test]
     fn rate_is_forwarded_as_cli_arg() {
         let tmp = TempDir::new().unwrap();
-        // Print all args (space-joined) to stdout so we can inspect them.
         let helper = fake_helper(&tmp, r#"cat >/dev/null; echo "$*""#);
         let out = synthesize("hello", "en-US", 1.5, Some(&helper)).unwrap();
         let args_line = String::from_utf8(out).unwrap();

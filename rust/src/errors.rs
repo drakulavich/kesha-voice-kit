@@ -195,8 +195,7 @@ pub fn code_of(err: &anyhow::Error) -> ErrorCode {
         .unwrap_or(ErrorCode::Internal)
 }
 
-/// Print `error [CODE]: <message>` to stderr and return the process exit code.
-/// Exit code stays 1 (runtime failure) — unchanged from prior behavior.
+/// Print `error [CODE]: <message>` to stderr; always returns 1.
 pub fn report(err: &anyhow::Error) -> i32 {
     let code = code_of(err);
     eprintln!("error [{}]: {:#}", code.as_str(), err);
@@ -245,12 +244,8 @@ mod tests {
 
     #[test]
     fn category_and_retryable_are_total_and_consistent() {
-        // Exercises category() / retryable() (and the Category enum) for every
-        // code so the metadata surface stays total. Only download/timeout codes
-        // are retryable.
         for c in ErrorCode::ALL {
-            // category() is total — a missing arm would not compile, but assert
-            // the serde rename round-trips to a non-empty lowercase tag.
+            // category() totality is compile-time; assert serde rename round-trips to a non-empty lowercase tag.
             let tag = serde_json::to_string(&c.category()).expect("category serializes");
             assert!(tag.len() > 2, "{} category serialized empty", c.as_str());
             let expected_retryable =
@@ -296,8 +291,6 @@ mod tests {
 
     #[test]
     fn report_returns_runtime_exit_code() {
-        // report() prints `error [CODE]: <msg>` to stderr and returns the
-        // process exit code, which stays 1 for any runtime failure.
         let coded: anyhow::Result<()> =
             Err(anyhow::anyhow!("boom")).coded(ErrorCode::TranscribeFailed);
         assert_eq!(report(&coded.unwrap_err()), 1);

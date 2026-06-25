@@ -1,7 +1,5 @@
 #!/usr/bin/env bun
 /**
- * Smoke test: verify the installed package works end-to-end.
- * Checks that the `kesha` command is linked and functional.
  * Detailed transcription/lang-id tests live in tests/integration/.
  *
  * Usage: bun scripts/smoke-test.ts
@@ -34,23 +32,20 @@ function check(name: string, ok: boolean, detail = "") {
   }
 }
 
-// 1. The command is available and returns version
 const versionProc = Bun.spawnSync(["kesha", "--version"], { stdout: "pipe", stderr: "pipe" });
 const version = versionProc.stdout.toString().trim();
 check(`"kesha" command works (${version})`, versionProc.exitCode === 0 && version.length > 0);
 
-// 2. kesha install completes (models already cached = fast)
+// models already cached = fast
 const installProc = Bun.spawnSync(["kesha", "install"], { stdout: "pipe", stderr: "pipe" });
 const installOut = installProc.stdout.toString() + installProc.stderr.toString();
 check("kesha install completes", installOut.includes("installed") || installOut.includes("already") || installOut.includes("models"));
 
-// 3. Transcription produces non-empty output
 const testFile = resolve(fixturesDir, files[0]);
 const transcribeProc = Bun.spawnSync(["kesha", testFile], { stdout: "pipe", stderr: "pipe" });
 const transcript = transcribeProc.stdout.toString().trim();
 check("transcription produces output", transcribeProc.exitCode === 0 && transcript.length > 10, transcript.slice(0, 60));
 
-// 4. --json output is valid JSON with expected fields
 const jsonProc = Bun.spawnSync(["kesha", "--json", testFile], { stdout: "pipe", stderr: "pipe" });
 try {
   const parsed = JSON.parse(jsonProc.stdout.toString().trim());
@@ -59,11 +54,10 @@ try {
   check("--json output is valid", false, "not valid JSON");
 }
 
-// 5. Command suggestion works
 const typoProc = Bun.spawnSync(["kesha", "instal"], { stdout: "pipe", stderr: "pipe" });
 check("typo suggestion works", typoProc.exitCode === 1 && typoProc.stderr.toString().includes("Did you mean"));
 
-// 6. TTS smoke (opt-in via --tts flag; requires `kesha install --tts`)
+// opt-in via --tts flag; requires `kesha install --tts`
 if (process.argv.includes("--tts")) {
   for (const [label, text] of [
     ["en (Kokoro)", "Hello, world"],

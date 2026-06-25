@@ -18,12 +18,8 @@ const MIN_SAMPLES: usize = 16_000 + 16_000 / 2; // 1.5 s @ 16 kHz
 
 pub struct FluidAudioBackend {
     audio: FluidAudio,
-    /// Pre-opened /dev/null reused across `transcribe_samples` calls so
-    /// the per-segment hot path skips the open syscall (~10K saved on a
-    /// 1 h meeting). `None` when the open at construction time failed,
-    /// in which case `with_silenced_stdout` falls back to running the
-    /// closure with stdout untouched — never worse than the pre-#259
-    /// behaviour, just with the residual print risk back on the table.
+    /// Pre-opened /dev/null reused across `transcribe_samples` calls to skip
+    /// the open syscall on the per-segment hot path (~10K saved on a 1 h meeting).
     devnull: Option<OwnedFd>,
 }
 
@@ -51,16 +47,8 @@ impl TranscribeBackend for FluidAudioBackend {
         Ok(result.text)
     }
 
-    /// Transcribe a raw 16 kHz mono f32 slice via FluidAudio's native
-    /// `transcribe_samples` (published since `fluidaudio-rs` 0.14 — this
-    /// replaced an earlier temp-WAV + `transcribe_file` shim).
-    ///
-    /// Sub-second VAD segments are padded to MIN_SAMPLES with trailing
-    /// silence (#259); FluidAudio otherwise emits `Transcribe error:
-    /// invalidAudioData` to stdout and returns an Err. stdout is silenced
-    /// for the duration of the call as belt-and-braces — even with padding,
-    /// residual upstream prints would corrupt the engine's `--json` output
-    /// by interleaving with our JSON write.
+    /// stdout is silenced for the call: even with padding, upstream prints
+    /// would corrupt `--json` output (#259).
     fn transcribe_samples(&mut self, samples: &[f32]) -> Result<String> {
         let padded = pad_to_min(samples, MIN_SAMPLES);
         let result = with_silenced_stdout(self.devnull.as_ref(), || {
@@ -71,7 +59,6 @@ impl TranscribeBackend for FluidAudioBackend {
     }
 }
 
-/// Pad `samples` to at least `min_len` with trailing zeros (silence).
 /// Returns a borrowed `Cow` so already-long-enough inputs don't allocate.
 fn pad_to_min(samples: &[f32], min_len: usize) -> std::borrow::Cow<'_, [f32]> {
     if samples.len() >= min_len {
@@ -101,7 +88,6 @@ mod tests {
         let original = vec![0.5_f32; 6_400]; // 0.4 s @ 16 kHz — the failing case from #259
         let out = pad_to_min(&original, MIN_SAMPLES);
         assert_eq!(out.len(), MIN_SAMPLES);
-        // Original samples preserved at the head, silence at the tail.
         assert_eq!(&out[..6_400], original.as_slice());
         assert!(out[6_400..].iter().all(|&v| v == 0.0));
     }

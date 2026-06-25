@@ -415,10 +415,7 @@ describe("CLI contracts", () => {
     const enginePath = createFakeEngine(dir);
     const mediaPath = join(dir, "workshop.mp4");
     writeFileSync(mediaPath, "fake media");
-    // Engine stderr carries a real `error [CODE]:` line; the CLI must surface
-    // that exact code in errors[].code rather than flattening it to
-    // E_TRANSCRIBE_FAILED. E_DIARIZE_TIMEOUT is retryable — losing it would
-    // discard real signal from the one user-facing structured output.
+    // E_DIARIZE_TIMEOUT is retryable — the CLI must not collapse it to E_TRANSCRIBE_FAILED.
     const codedError =
       "error [E_DIARIZE_TIMEOUT]: speaker diarization timed out after 30s for 4s of audio";
     const env: Record<string, string> = {
@@ -711,9 +708,7 @@ describe("CLI contracts", () => {
     expect(existsSync(langPidPath)).toBe(false);
   });
 
-  // Two cold `bun bin/kesha.js` spawns (full TS transpile each) — the default
-  // 4s per-spawn budget flakes under CPU contention, so both calls get a wide
-  // budget. The assertions themselves are deterministic.
+  // Two cold TS-transpile spawns; wide budget needed under CPU contention.
   test("diagnostic and support commands return parseable/readable contracts without leaking temp home", async () => {
     const dir = makeTempDir("kesha-cli-contract-diagnostics-");
     const enginePath = createFakeEngine(dir);
@@ -765,12 +760,8 @@ describe("CLI contracts", () => {
       KESHA_ENGINE_BIN: enginePath,
     };
 
-    // These six commands are read-only and observe the pristine initial state
-    // (no stats run recorded yet; diagnostic logs at defaults). They don't
-    // mutate state or depend on each other, so run them concurrently to keep
-    // this spawn-heavy contract test well under its timeout even when the
-    // sibling model-download e2e tests saturate the runner. Everything from
-    // `logs enable` onward mutates state and stays sequential.
+    // Run read-only commands concurrently — they don't mutate state and the
+    // parallelism keeps this spawn-heavy test under budget on a loaded runner.
     const [plan, initPlan, status, logsStatus, logsStatusJson, logsEnableJson] = await Promise.all([
       runCli(["install", "--plan", "--tts"], { env }),
       runCli(["init", "--plan", "--tts", "--vad"], { env }),
@@ -942,7 +933,6 @@ describe("CLI contracts", () => {
       stdoutContains: ["Kesha Stats reset:", "run(s)"],
       stderrEmpty: true,
     });
-    // ~20 sequential CLI spawns; the default 5s bun timeout is too tight when
-    // this runs alongside the model-download e2e tests in the same job.
+    // ~20 sequential spawns; 30s needed alongside model-download e2e tests.
   }, 30000);
 });

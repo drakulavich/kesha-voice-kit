@@ -39,12 +39,10 @@ pub fn encode_wav(samples: &[f32], sample_rate: u32) -> anyhow::Result<Vec<u8>> 
 
     let mut buf: Vec<u8> = Vec::with_capacity((total_size + 8) as usize);
 
-    // RIFF chunk header.
     buf.extend_from_slice(b"RIFF");
     buf.extend_from_slice(&total_size.to_le_bytes());
     buf.extend_from_slice(b"WAVE");
 
-    // fmt chunk: 18 bytes (16 base + 2 cbSize).
     buf.extend_from_slice(b"fmt ");
     buf.extend_from_slice(&FMT_CHUNK_SIZE.to_le_bytes());
     buf.extend_from_slice(&FORMAT_IEEE_FLOAT.to_le_bytes());
@@ -64,7 +62,6 @@ pub fn encode_wav(samples: &[f32], sample_rate: u32) -> anyhow::Result<Vec<u8>> 
     buf.extend_from_slice(&FACT_CHUNK_SIZE.to_le_bytes());
     buf.extend_from_slice(&(samples.len() as u32).to_le_bytes());
 
-    // data chunk header + payload (f32 LE).
     buf.extend_from_slice(b"data");
     buf.extend_from_slice(&data_size.to_le_bytes());
     for s in samples {
@@ -103,11 +100,7 @@ mod tests {
 
     #[test]
     fn writes_plain_ieee_float_not_extensible() {
-        // #245: hound's float branch wrote WAVE_FORMAT_EXTENSIBLE (0xFFFE)
-        // with dwChannelMask = 0x4, which Apple CoreAudio interprets as
-        // Front Left for mono streams (audio plays in left ear only).
-        // The hand-rolled writer must emit format tag 0x0003 (IEEE_FLOAT)
-        // with no EXTENSIBLE extension and no channel-mask field.
+        // #245: hound wrote WAVE_FORMAT_EXTENSIBLE (0xFFFE) with dwChannelMask=0x4 → CoreAudio left-ear-only bug.
         let samples = vec![0.0_f32; 256];
         let wav = encode_wav(&samples, 24_000).unwrap();
         let fmt_chunk_offset = (0..wav.len() - 8)

@@ -25,17 +25,12 @@ pub struct TextLangResult {
     pub confidence: f64,
 }
 
-// ─── Sidecar path (fast, feature-gated) ──────────────────────────────────
-
 #[cfg(all(feature = "system_text_lang", target_os = "macos"))]
 pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
     use std::path::PathBuf;
 
-    /// Sibling-of-current-exe first, then build-time fallback. Matches the
-    /// resolution strategy in `tts::avspeech::helper_path` so the remaining
-    /// Swift sidecars are discoverable identically —
-    /// `~/.cache/kesha/engine/bin/kesha-textlang` in the release layout,
-    /// `$OUT_DIR/kesha-textlang` for `cargo run`.
+    /// Sibling-of-current-exe first, then build-time fallback. Matches
+    /// `tts::avspeech::helper_path` so all Swift sidecars resolve identically.
     fn helper_path() -> PathBuf {
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
@@ -54,8 +49,7 @@ pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
 /// Sidecar invocation extracted from `detect_text_language` so tests can
 /// inject a fake helper binary without touching the production path. Pipes
 /// `text` on stdin (UTF-8, no escaping required — Swift reads bytes verbatim
-/// via `readDataToEndOfFile`), reads JSON from stdout, surfaces stderr as the
-/// error context on non-zero exit.
+/// via `readDataToEndOfFile`), reads JSON from stdout.
 #[cfg(all(feature = "system_text_lang", target_os = "macos"))]
 pub(crate) fn detect_with_helper(
     text: &str,
@@ -98,13 +92,10 @@ pub(crate) fn detect_with_helper(
     })
 }
 
-// ─── Legacy `swift -e` path (slow, no feature) ───────────────────────────
-
 #[cfg(all(not(feature = "system_text_lang"), target_os = "macos"))]
 pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
     use std::process::Command;
 
-    // Escape text for Swift string literal.
     let escaped = text
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -126,14 +117,10 @@ pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
     Ok(result)
 }
 
-// ─── Non-macOS ────────────────────────────────────────────────────────────
-
 #[cfg(not(target_os = "macos"))]
 pub fn detect_text_language(_text: &str) -> anyhow::Result<TextLangResult> {
     anyhow::bail!("detect-text-lang is only available on macOS");
 }
-
-// ─── Tests (sidecar path only — `swift -e` is the same code as v1.15.0) ──
 
 #[cfg(all(test, feature = "system_text_lang", target_os = "macos"))]
 mod tests {
@@ -141,9 +128,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 
-    /// Write a one-shot shell script that fakes the kesha-textlang contract
-    /// (reads stdin, prints supplied JSON, exits with supplied code) and
-    /// return its path. Same pattern as `tts::avspeech::tests::fake_helper`.
+    /// Same pattern as `tts::avspeech::tests::fake_helper`.
     fn fake_helper(script: &str) -> (tempfile::NamedTempFile, PathBuf) {
         let tmp = tempfile::Builder::new()
             .prefix("kesha-textlang-test-")
@@ -184,7 +169,6 @@ mod tests {
     #[test]
     fn nonzero_exit_surfaces_stderr() {
         // Real sidecar exits 1 on empty stdin (see swift/kesha-textlang.swift).
-        // The error chain should preserve stderr so the user can debug.
         let (_keep, helper) = fake_helper(
             "#!/bin/sh\ncat >/dev/null\nprintf 'kesha-textlang: empty stdin\\n' >&2\nexit 1\n",
         );

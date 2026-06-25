@@ -13,34 +13,21 @@
 //! [debug +365ms] exit=0 dt=352ms args=["transcribe","audio.ogg"]
 //! ```
 //!
-//! The `+Nms` prefix is relative to the LOGGER's own start (TS process
-//! start vs Rust process start) — the two axes are independent. Useful
-//! to see WHEN each line fired on its own process timeline; for the
-//! span between two events on the same side, the inline `dt=Nms` token
-//! inside the message remains the right number.
+//! The `+Nms` prefix is relative to the LOGGER's own start (TS vs Rust
+//! process start) — the two axes are independent; use inline `dt=Nms`
+//! tokens for spans within the same side.
 //!
 //! # Structured NDJSON sink (`KESHA_DEBUG_FD`, F19)
 //!
-//! `[debug/engine ...]` lines on stderr are great for humans but mix
-//! with `eprintln!("hint: ...")` / `eprintln!("warning: ...")` progress
-//! that the CLI surfaces to the user. For machine consumers (tooling,
-//! CI logs, perf dashboards) we want a clean stream of structured
-//! events on a dedicated channel.
-//!
-//! Set `KESHA_DEBUG_FD=N` to a valid file-descriptor integer that the
-//! parent process opened before exec — e.g. `kesha-engine ... 3>trace.ndjson`
-//! makes fd=3 a writable pipe. Each [`dtrace_json!`] call then emits one
-//! JSON line:
+//! `KESHA_DEBUG_FD=N` routes structured events to fd N (opened by the
+//! parent before exec, e.g. `3>trace.ndjson`), keeping them off stderr:
 //!
 //! ```text
 //! {"t_ms": 12, "event": "asr.backend_loaded", "dt_ms": 8}
 //! {"t_ms": 354, "event": "asr.transcribe.end", "dt_ms": 340, "chars": 42}
 //! ```
 //!
-//! Independent of `KESHA_DEBUG`: both can be on simultaneously (text
-//! to stderr AND JSON to fd=3), or just one, or neither. The text
-//! path is preserved for back-compat with `KESHA_DEBUG=1 kesha ...`
-//! workflows; the JSON path is opt-in via the env var.
+//! Independent of `KESHA_DEBUG` — both paths can be active simultaneously.
 
 use std::fs::File;
 use std::io::Write;
@@ -49,15 +36,11 @@ use std::os::fd::FromRawFd;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-/// Values that turn `KESHA_DEBUG` OFF — empty, `"0"`, `"false"`, `"no"`,
-/// `"off"`, all matched **case-insensitively** after trimming. Any other
-/// non-empty value turns debug ON. Mirrored verbatim in `src/log.ts`
-/// (post-#275 D9) so `KESHA_DEBUG=False` flips both sides the same
-/// direction.
+/// Off-values for `KESHA_DEBUG`, matched case-insensitively after trim.
+/// Mirrored in `src/log.ts` (#275 D9) so `KESHA_DEBUG=False` flips both sides.
 const KESHA_DEBUG_OFF_VALUES: &[&str] = &["", "0", "false", "no", "off"];
 
-/// Parse a raw env-var value into the boolean debug state. Pure helper so
-/// production `enabled()` and the test below stay aligned by construction.
+/// Pure helper so `enabled()` and its test share the same parsing logic.
 fn debug_on_for(value: Option<&str>) -> bool {
     match value {
         None => false,
@@ -68,13 +51,10 @@ fn debug_on_for(value: Option<&str>) -> bool {
     }
 }
 
-/// Whether `KESHA_DEBUG` was truthy at process start. Cached via
-/// `OnceLock` so call sites can probe it cheaply (one atomic load).
+/// Whether `KESHA_DEBUG` was truthy at process start.
 ///
-/// Exposed `pub` so [`dtrace!`] (this module) and library consumers
-/// can guard the call site BEFORE evaluating the format-args
-/// expression — the macro relies on this to skip work like
-/// `ipa.chars().count()` when debug is off (#313 F22).
+/// `pub` so the [`dtrace!`] macro can guard the call site before building
+/// format-args, skipping eager work like `ipa.chars().count()` (#313 F22).
 pub fn enabled() -> bool {
     static CACHE: OnceLock<bool> = OnceLock::new();
     *CACHE.get_or_init(|| debug_on_for(std::env::var("KESHA_DEBUG").ok().as_deref()))
@@ -82,34 +62,23 @@ pub fn enabled() -> bool {
 
 static T0: OnceLock<Instant> = OnceLock::new();
 
-/// Engine-side process-start timestamp for the relative-ms prefix on
-/// debug lines. Anchored by [`init`] at the top of `main()` so early
-/// startup work (clap parsing, model-cache stat, env probes) shows up
-/// in the `+Nms` prefix instead of being collapsed into "+0ms" on the
-/// first `dtrace!` call (Greptile P2 on #293). NOT the same axis as
-/// the TS side's `PROCESS_T0_MS` — each process logs against its own
-/// start.
+/// Engine-side T0 for the `+Nms` prefix. Anchored by [`init`] before clap
+/// parsing so early startup isn't collapsed into "+0ms" (Greptile P2 #293).
+/// Independent of the TS side's `PROCESS_T0_MS` — each process logs against
+/// its own start.
 fn engine_t0() -> Instant {
     *T0.get_or_init(Instant::now)
 }
 
-/// Anchor the relative-ms timeline as early as possible in process life.
-/// Idempotent — first call wins; later calls are a no-op (the
-/// `OnceLock::get_or_init` semantic). Safe to call even when
-/// `KESHA_DEBUG` is off; the only cost is one atomic `OnceLock` load.
-///
-/// Call this AS THE FIRST line of `main()` so the timeline starts before
-/// `Cli::parse()` and any pre-dispatch work. Without it, the first
-/// `dtrace!` call anchors T0 and earlier work is invisible.
+/// Anchor T0 before `Cli::parse()` so startup work appears in `+Nms` rather
+/// than being invisible. No-op if called again (OnceLock). Safe when debug off.
 pub fn init() {
     let _ = engine_t0();
 }
 
-/// Emit a stderr trace line when `KESHA_DEBUG` is on. The internal
-/// `enabled()` check stays as defence-in-depth for direct callers that
-/// bypass [`dtrace!`] (none today, but the function is `pub`).
-///
-/// The fast path is the macro-level guard — see [`dtrace!`].
+/// Emit a stderr trace line when `KESHA_DEBUG` is on.
+/// Defence-in-depth guard for direct callers that bypass [`dtrace!`]; fast
+/// path is the macro-level `enabled()` check.
 pub fn trace_fmt(args: std::fmt::Arguments<'_>) {
     if enabled() {
         let t = engine_t0().elapsed().as_millis();
@@ -118,16 +87,9 @@ pub fn trace_fmt(args: std::fmt::Arguments<'_>) {
 }
 
 /// Emit a relative-ms-prefixed stderr line when `KESHA_DEBUG` is on.
-/// **No-op when off, INCLUDING the format-args expression.** The
-/// `enabled()` guard fires at the call site BEFORE `format_args!`,
-/// so eager work like `ipa.chars().count()` or `path.to_string()`
-/// inside the `dtrace!` argument list is skipped entirely under
-/// production load. Locked by a Display-counting test in
-/// [`tests::dtrace_skips_arg_evaluation_when_debug_is_off`].
-///
-/// Cost when off: one atomic OnceLock load (the cached `enabled()`).
-/// Cost when on: format_args build + `Instant::now()` elapsed + one
-/// eprintln! syscall.
+/// **No-op when off, INCLUDING the format-args expression** — the
+/// `enabled()` guard fires before `format_args!` so eager work like
+/// `ipa.chars().count()` is skipped in production (#313 F22).
 #[macro_export]
 macro_rules! dtrace {
     ($($arg:tt)*) => {
@@ -137,19 +99,11 @@ macro_rules! dtrace {
     };
 }
 
-// ---------------------------------------------------------------------------
-// Structured NDJSON sink — F19
-// ---------------------------------------------------------------------------
-
-/// Resolved JSON sink. `None` means `KESHA_DEBUG_FD` was unset / invalid
-/// at process start; further calls to [`trace_json`] are no-ops without
-/// even formatting the JSON payload.
+/// Resolved JSON sink (`KESHA_DEBUG_FD`, F19). `None` when unset/invalid.
 ///
-/// `Mutex<File>` — not `BufWriter` — because each NDJSON line MUST hit
-/// the kernel as one `write(2)` so concurrent threads can't interleave
-/// half-lines into the consumer's pipe. Lines stay well under
-/// `PIPE_BUF` (4096 on Linux), so a single `write_all` is one syscall
-/// in practice.
+/// `Mutex<File>` not `BufWriter`: each NDJSON line must hit the kernel as
+/// one `write(2)` so concurrent threads can't interleave half-lines.
+/// Lines stay under `PIPE_BUF` (4096 on Linux), so `write_all` is atomic.
 static JSON_SINK: OnceLock<Option<Mutex<File>>> = OnceLock::new();
 
 #[cfg(unix)]
@@ -158,19 +112,14 @@ fn json_sink() -> Option<&'static Mutex<File>> {
         .get_or_init(|| {
             let raw = std::env::var("KESHA_DEBUG_FD").ok()?;
             let fd: i32 = raw.trim().parse().ok()?;
-            // stdin/stdout/stderr are off-limits — they belong to the
-            // text-CLI contract. Refuse them so a stray `KESHA_DEBUG_FD=2`
-            // can't poison stderr with NDJSON.
+            // Refuse 0/1/2 — they belong to the text-CLI contract; a stray
+            // `KESHA_DEBUG_FD=2` would poison stderr with NDJSON.
             if fd < 3 {
                 return None;
             }
-            // SAFETY: `fd` is an integer the parent process passed via env.
-            // The contract is: the parent opened `fd` before exec (e.g. via
-            // shell `3>file` redirection or a `posix_spawn`-style FD action)
-            // and won't close it for the engine's lifetime. If the parent
-            // lied, the first `write(2)` returns EBADF and we silently drop
-            // the line — no panic, no abort. The fd is owned by us from
-            // here on; std drops the underlying close on `File` Drop.
+            // SAFETY: caller contract — parent opened `fd` before exec and
+            // keeps it alive for the engine's lifetime. EBADF on the first
+            // `write(2)` silently drops the line; no panic, no abort.
             let file = unsafe { File::from_raw_fd(fd) };
             Some(Mutex::new(file))
         })
@@ -179,36 +128,23 @@ fn json_sink() -> Option<&'static Mutex<File>> {
 
 #[cfg(not(unix))]
 fn json_sink() -> Option<&'static Mutex<File>> {
-    // The fd-from-int trick is POSIX-specific. On Windows, `KESHA_DEBUG_FD`
-    // is a no-op for now; users can keep relying on the stderr text path
-    // via `KESHA_DEBUG=1`. Future Windows support would parse a HANDLE
-    // instead — out of scope until there's a concrete user request.
+    // fd-from-int is POSIX-only; Windows would need a HANDLE instead.
+    // Fall back to the stderr text path (`KESHA_DEBUG=1`) on Windows for now.
     None
 }
 
-/// Returns `true` when [`trace_json`] would write to a configured sink.
-///
-/// Public so the [`dtrace_json!`] macro can short-circuit the
-/// `serde_json::json!` allocation when the sink is inactive — matching
-/// the zero-heap-allocation contract of the text-path [`dtrace!`]
-/// macro (Greptile P2 on #321).
+/// `pub` so [`dtrace_json!`] can skip the `serde_json::json!` allocation
+/// when the sink is inactive — same zero-cost contract as [`dtrace!`] (#321).
 pub fn json_sink_is_active() -> bool {
     json_sink().is_some()
 }
 
-/// Emit one structured NDJSON event to the JSON sink, if configured.
+/// Emit one NDJSON event to the JSON sink, if configured.
 ///
-/// `event` is the dotted event name (e.g. `"asr.backend_loaded"`).
-/// `fields` MUST be a [`serde_json::Value::Object`] — a non-object
-/// payload trips a `debug_assert!` in dev/test builds and is coerced
-/// to an empty map in release. Two reserved keys are added by the
-/// writer and override any caller-provided values of the same name:
-/// `t_ms` (process-relative timestamp from [`engine_t0`]) and `event`.
-///
-/// No-op when `KESHA_DEBUG_FD` is unset or invalid. Call sites should
-/// use the [`dtrace_json!`] macro instead — it gates `serde_json::json!`
-/// construction on [`json_sink_is_active`] so disabled events pay
-/// nothing.
+/// `fields` must be a `serde_json::Value::Object`; non-object payloads
+/// trip a `debug_assert!` and degrade to empty map in release.
+/// Reserved keys `t_ms` and `event` are always injected by the writer.
+/// Prefer the [`dtrace_json!`] macro — it gates allocation on [`json_sink_is_active`].
 pub fn trace_json(event: &str, fields: serde_json::Value) {
     let Some(sink) = json_sink() else {
         return;
@@ -216,10 +152,8 @@ pub fn trace_json(event: &str, fields: serde_json::Value) {
     let mut payload = match fields {
         serde_json::Value::Object(map) => map,
         other => {
-            // Non-object payloads are call-site bugs (the macro grammar
-            // accepts them today but the writer can't merge them with
-            // `t_ms` / `event`). Catch in dev/test; degrade to empty
-            // map in release so production stays panic-free.
+            // Call-site bug: can't merge non-object payload with `t_ms`/`event`.
+            // Catch in dev/test; degrade to empty map in release.
             debug_assert!(
                 false,
                 "dtrace_json! expects a JSON object payload, got: {other:?}"
@@ -234,10 +168,8 @@ pub fn trace_json(event: &str, fields: serde_json::Value) {
     );
     payload.insert("event".into(), serde_json::Value::String(event.into()));
     let mut line = serde_json::to_vec(&payload).unwrap_or_else(|_| {
-        // Serialisation of a JSON `Map<String, Value>` is infallible in
-        // practice (no float NaN/Inf paths possible from this side); the
-        // fallback here keeps `trace_json` panic-free if upstream
-        // serde_json ever returns Err.
+        // Infallible in practice (no NaN/Inf floats here), but keeps
+        // `trace_json` panic-free against future serde_json changes.
         Vec::new()
     });
     if line.is_empty() {
@@ -245,24 +177,20 @@ pub fn trace_json(event: &str, fields: serde_json::Value) {
     }
     line.push(b'\n');
     if let Ok(mut guard) = sink.lock() {
-        // Best-effort: write failures (EBADF, broken pipe, full disk)
-        // silently drop the line. The structured trace is observability,
-        // not a contract — surfacing IO errors here would just spam stderr.
+        // Best-effort: trace is observability, not a contract — IO errors
+        // silently drop the line rather than spamming stderr.
         let _ = guard.write_all(&line);
     }
 }
 
 /// Emit a structured NDJSON event when [`json_sink_is_active`].
 ///
-/// Usage:
 /// ```ignore
 /// dtrace_json!("asr.backend_loaded", { "dt_ms": elapsed.as_millis() });
-/// dtrace_json!("vad.detect", { "dt_ms": dt, "segments": spans.len() });
 /// ```
 ///
-/// Zero-cost when the sink is unset: the `if json_sink_is_active()`
-/// gate sits in front of `serde_json::json!`, so disabled events skip
-/// the heap allocation that the eager form (Greptile P2 on #321) had.
+/// Zero-cost when sink is unset: gate sits before `serde_json::json!`,
+/// skipping the heap allocation the eager form had (Greptile P2 #321).
 #[macro_export]
 macro_rules! dtrace_json {
     ($event:expr, $fields:tt) => {
@@ -274,9 +202,8 @@ macro_rules! dtrace_json {
 
 #[cfg(test)]
 mod tests {
-    // `enabled()` caches via OnceLock, so it can only be probed once per
-    // process. Call the pure helper directly instead — it covers the same
-    // parsing rule that production uses.
+    // `enabled()` caches via OnceLock (once per process); call the pure
+    // helper directly so tests cover the same parsing rule without racing.
     use super::debug_on_for;
 
     #[test]
@@ -293,16 +220,14 @@ mod tests {
 
     #[test]
     fn off_for_no_and_off() {
-        // Expanded grammar (#275 D9): `no` and `off` join the off-set.
+        // `no` and `off` added in #275 D9.
         assert!(!debug_on_for(Some("no")));
         assert!(!debug_on_for(Some("off")));
     }
 
     #[test]
     fn off_case_insensitive() {
-        // The pre-D9 Rust pattern was exact-case `"false"`, which let
-        // `"False"` slip through and flipped only the engine ON. Lock
-        // the case-insensitive contract in.
+        // Pre-D9 used exact-case `"false"`, letting `"False"` flip only the engine ON (#275).
         assert!(!debug_on_for(Some("False")));
         assert!(!debug_on_for(Some("FALSE")));
         assert!(!debug_on_for(Some("No")));
@@ -311,8 +236,6 @@ mod tests {
 
     #[test]
     fn off_with_surrounding_whitespace() {
-        // `KESHA_DEBUG=" false "` is functionally the same intent as
-        // `=false`; trim before comparing.
         assert!(!debug_on_for(Some("  false  ")));
         assert!(!debug_on_for(Some("\t0\n")));
     }
@@ -324,25 +247,13 @@ mod tests {
         assert!(debug_on_for(Some("anything")));
     }
 
-    /// Locks the F22 contract (#313 P2): when `KESHA_DEBUG` is off, the
-    /// `dtrace!` macro must NOT evaluate its format-args expression at
-    /// the call site. Without the call-site guard, work like
-    /// `ipa.chars().count()` at `tts/g2p.rs:35` (an O(n) char walk)
-    /// would run on every release-build invocation.
+    /// Locks the F22 contract (#313 P2): `dtrace!` must NOT evaluate its
+    /// format-args expression when `KESHA_DEBUG` is off.
     ///
-    /// Earlier draft of this test (Greptile P2 on #326) used a `Display`
-    /// impl with a side-effecting `fmt`. That test passed under the
-    /// pre-fix macro too because `Display::fmt` only runs when the
-    /// `Arguments<'_>` is actually written — which `trace_fmt`'s own
-    /// internal guard already blocked. To genuinely detect a regression
-    /// to eager-arg-eval we have to use an expression Rust evaluates
-    /// EAGERLY as part of building the `Arguments` — i.e. a function
-    /// call whose return value becomes the format argument.
-    ///
-    /// The test relies on the default test-process state: `cargo test`
-    /// and nextest don't set `KESHA_DEBUG`, so the cached `enabled()`
-    /// resolves to false. Skips harmlessly when on so a deliberate
-    /// `KESHA_DEBUG=1 cargo test` doesn't produce an ambiguous failure.
+    /// Uses a function-call arg (eagerly evaluated by Rust before `Arguments`
+    /// is built) rather than a `Display` impl (lazy — `Display::fmt` only
+    /// runs on write, so the internal guard in `trace_fmt` would mask a
+    /// regression; Greptile P2 on #326).
     #[test]
     fn dtrace_skips_arg_evaluation_when_debug_is_off() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -359,13 +270,9 @@ mod tests {
             42
         }
 
-        // `format_args!("{}", side_effecting_arg())` requires the call
-        // to be evaluated BEFORE the `Arguments<'_>` value is built —
-        // its return is captured as the format argument. So if the
-        // macro short-circuits at the call site (new behaviour), the
-        // function never runs; if it eagerly expands `format_args!`
-        // and only guards the eprintln (old behaviour), the function
-        // DOES run and COUNT increments.
+        // Function-call arg is evaluated eagerly before `Arguments<'_>` is built.
+        // Call-site guard (new) → fn never runs; guard only inside trace_fmt
+        // (old) → fn runs and COUNT increments, detecting the regression.
         crate::dtrace!("f22-test {}", side_effecting_arg());
 
         assert_eq!(

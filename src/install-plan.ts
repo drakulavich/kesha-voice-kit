@@ -65,8 +65,7 @@ const VAD_FILES: PlanFile[] = [
   { relPath: "models/silero-vad/silero_vad.onnx", sizeBytes: 2_327_524 },
 ];
 
-// klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0 — see NOTICES.md).
-// 3 files enabling multilingual G2P for es/fr/it/pt Kokoro voices (#212).
+// klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0 — see NOTICES.md). Multilingual G2P for es/fr/it/pt (#212).
 const G2P_CHARSIU_FILES: PlanFile[] = [
   { relPath: "models/g2p/byt5-tiny/encoder_model.onnx", sizeBytes: 12_478_704 },
   { relPath: "models/g2p/byt5-tiny/decoder_model.onnx", sizeBytes: 11_983_268 },
@@ -76,7 +75,6 @@ const G2P_CHARSIU_FILES: PlanFile[] = [
 // Kokoro ONNX graph (shared by all Kokoro languages on non-darwin builds).
 const KOKORO_GRAPH_FILE: PlanFile = { relPath: "models/kokoro-82m/model.onnx", sizeBytes: 325_532_387 };
 
-// Per-language default voice files.
 // Multilingual voice packs for es/fr/it/pt (#212).
 // em_alex (es, male), ff_siwis (fr, female — only French voice in Kokoro v1.0),
 // im_nicola (it, male), pm_alex (pt, male).
@@ -183,10 +181,6 @@ function bundleComponent(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Private helpers — build plan sections
-// ---------------------------------------------------------------------------
-
 function buildEngineComponent(binPath: string, noCache: boolean): PlanComponent {
   const engineAsset = engineAssetForPlatform();
   if (engineAsset) {
@@ -287,10 +281,6 @@ function buildTtsComponents(
 
   return { components, warmups, wantsAnyKokoro };
 }
-
-// ---------------------------------------------------------------------------
-// Public entry point
-// ---------------------------------------------------------------------------
 
 export async function renderInstallPlan(options: InstallPlanOptions = {}): Promise<string> {
   const cacheRoot = keshaCacheDir();

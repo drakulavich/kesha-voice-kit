@@ -20,13 +20,7 @@ use super::TranscriptionSegment;
 const MIN_DIARIZE_SEGMENT_COVERAGE: f32 = 0.95;
 const MAX_DIARIZE_TAIL_GAP_SECONDS: f32 = 30.0;
 
-// Adaptive diarization timeout: the in-process `diarize_file_with_models` call is
-// blocking and un-interruptible, so `run_with_timeout` runs it on a worker thread
-// and bails if it overruns. Default 150 s, scaled up by audio length / ASR
-// segment count, capped at 30 min, overridable via `KESHA_DIARIZE_TIMEOUT_SECS`.
-// The floor intentionally covers a cold Apple e5rt/ANE compile after the OS
-// evicts its cache, turning the next `--speakers` call into "slow once" instead
-// of a deterministic timeout. (#443)
+// Floor covers a cold Apple e5rt/ANE compile after OS cache eviction ("slow once" not deterministic timeout). (#443)
 const DEFAULT_DIARIZE_TIMEOUT_SECS: u64 = 150;
 const MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS: u64 = 1_800;
 const DIARIZE_TIMEOUT_SECONDS_PER_AUDIO_SECOND: f32 = 0.05;
@@ -41,10 +35,8 @@ pub(crate) struct DiarizeSpan {
     pub speaker: u32,
 }
 
-/// Diarize `audio_path` using the pre-staged model at `model_path` via the
-/// native FluidAudio binding (`diarize_file_with_models` — no download). The
-/// span list is validated against the ASR timeline before merge, so callers
-/// never receive silently partial speaker labels (#397).
+/// Diarize `audio_path` with the pre-staged model; validates span coverage against
+/// the ASR timeline so callers never receive silently partial speaker labels (#397).
 pub(crate) fn run(
     audio_path: &Path,
     model_path: &Path,
@@ -96,9 +88,6 @@ pub(crate) fn run(
     Ok(spans)
 }
 
-/// Adaptive deadline for one diarization call. `KESHA_DIARIZE_TIMEOUT_SECS`
-/// overrides everything; otherwise scale up from a 150 s floor by audio length and
-/// ASR-segment count, capped at 30 min.
 fn diarize_timeout(asr_segments: &[TranscriptionSegment], duration: Option<f32>) -> Duration {
     if let Some(secs) = std::env::var("KESHA_DIARIZE_TIMEOUT_SECS")
         .ok()
@@ -135,11 +124,8 @@ fn run_with_timeout(
     let audio_path = audio_path.to_path_buf();
     let model_path = model_path.to_path_buf();
     std::thread::spawn(move || {
-        // FluidAudio is created inside the thread (it never crosses the boundary).
-        // The oneshot guard silences synchronous CoreML stdout noise during the
-        // call; the *asynchronous* `E5RT` teardown print (fired on a background
-        // queue after the call returns) is silenced by `StdoutShield` at the CLI
-        // layer, which keeps fd 1 redirected past process exit. (#259/#397/#434)
+        // Oneshot guard silences sync CoreML stdout; async E5RT teardown print is
+        // handled by `StdoutShield` at the CLI layer (fd 1 stays redirected past exit). (#259/#397/#434)
         let result =
             crate::fluid_stdout::with_silenced_stdout_oneshot(|| -> Result<Vec<DiarizeSpan>> {
                 let audio = FluidAudio::new().context("failed to initialize FluidAudio bridge")?;
@@ -268,10 +254,6 @@ fn max_asr_end(asr_segments: &[TranscriptionSegment]) -> Option<f32> {
     asr_segments.iter().map(|seg| seg.end).reduce(f32::max)
 }
 
-/// Project each ASR segment onto the diarization timeline by midpoint
-/// overlap. For each ASR segment, find the diarize span whose
-/// `[start, end)` covers the ASR segment's midpoint; assign that span's
-/// speaker. If no diarize span covers the midpoint, leave `speaker = None`.
 pub(crate) fn merge_into(
     asr_segs: Vec<TranscriptionSegment>,
     diarize_spans: &[DiarizeSpan],

@@ -82,9 +82,6 @@ impl VadDetector {
         Ok(post_process(&probs, audio.len(), cfg, SAMPLE_RATE))
     }
 
-    /// Run the ONNX session per 512-sample frame (with a 64-sample rolling
-    /// context prepended — see `CONTEXT_SAMPLES`) and collect the speech
-    /// probability for each. The final partial frame is zero-padded.
     fn frame_probs(&mut self, audio: &[f32]) -> Result<Vec<f32>> {
         // Rolling 64-sample context starts as zeros and is updated to the
         // last 64 samples of each processed chunk (matches upstream's
@@ -94,8 +91,6 @@ impl VadDetector {
         let mut probs: Vec<f32> = Vec::with_capacity(audio.len().div_ceil(FRAME_SAMPLES));
 
         for chunk in audio.chunks(FRAME_SAMPLES) {
-            // Shift the previous chunk's tail into the leading context slot,
-            // then stage the new chunk (zero-padding the last partial one).
             let tail_start = INPUT_SAMPLES - CONTEXT_SAMPLES;
             input_buf.copy_within(tail_start..INPUT_SAMPLES, 0);
             let dst = &mut input_buf[CONTEXT_SAMPLES..];
@@ -137,8 +132,7 @@ impl VadDetector {
     }
 }
 
-/// Frame probs → smoothed speech segments. Pure function, no ONNX — easy
-/// to unit-test without the model file.
+/// Frame probs → smoothed speech segments. Pure function, no ONNX.
 fn post_process(
     probs: &[f32],
     total_samples: usize,
@@ -149,7 +143,6 @@ fn post_process(
         return vec![];
     }
 
-    // Step 1 — threshold each frame, collect raw speech spans (in samples).
     let mut spans: Vec<(usize, usize)> = Vec::new();
     let mut in_speech = false;
     let mut span_start = 0usize;
@@ -174,8 +167,7 @@ fn post_process(
         return vec![];
     }
 
-    // Step 2 — merge spans separated by < min_silence. Operates in sample
-    // space so we don't accumulate rounding error converting back and forth.
+    // Merge spans separated by < min_silence in sample space to avoid rounding drift.
     let min_silence = ms_to_samples(cfg.min_silence_ms, sample_rate);
     let mut merged: Vec<(usize, usize)> = Vec::with_capacity(spans.len());
     for (s, e) in spans {
@@ -185,11 +177,9 @@ fn post_process(
         }
     }
 
-    // Step 3 — drop spans shorter than min_speech.
     let min_speech = ms_to_samples(cfg.min_speech_ms, sample_rate);
     merged.retain(|(s, e)| e.saturating_sub(*s) >= min_speech);
 
-    // Step 4 — pad each span, clamp to [0, total_samples], convert to seconds.
     let pad = ms_to_samples(cfg.speech_pad_ms, sample_rate);
     let sr = sample_rate as f32;
     merged
@@ -247,7 +237,6 @@ mod tests {
         let segs = post_process(&probs, total, cfg(), SAMPLE_RATE);
         assert_eq!(segs.len(), 1);
         let (s, e) = segs[0];
-        // Speech pad clamps to [0, total]; full-speech input should span the file.
         assert!(s <= 0.001, "start should be ~0s, got {s}");
         let total_s = total as f32 / SAMPLE_RATE as f32;
         assert!((e - total_s).abs() < 0.01, "end {e} should ~ {total_s}");

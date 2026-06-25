@@ -14,7 +14,6 @@ export function getVersionMarkerPath(binPath: string): string {
   return `${binPath}.version`;
 }
 
-/** Read the recorded version for the installed binary, or null if missing / empty. */
 export function readInstalledEngineVersion(binPath: string): string | null {
   try {
     const v = readFileSync(getVersionMarkerPath(binPath), "utf-8").trim();

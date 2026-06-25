@@ -6,18 +6,13 @@
 /// absolute `N%`, and relative `+N%` / `-N%`. Returns `None` on malformed
 /// input, zero/negative results, or non-finite values (`NaN`, `±inf`).
 ///
-/// Note: relative `+N%` / `-N%` is parsed correctly here but is *unreachable
-/// from the production path* via `parse()` — `ssml-parser` 0.1.4 strips the
-/// sign before our code sees it (Display of `RateRange::Percentage(25)` is
-/// `"25%"` regardless of original `+25%` source). `parse()` rejects relative
-/// percent at the input pre-scan to avoid silent miscoercion. The function
-/// arms remain for direct-call clarity and to document the SSML 1.1 mapping.
+/// Relative `+N%`/`-N%` arms are unreachable from `parse()` — `ssml-parser` 0.1.4
+/// strips the sign before we see it; `parse()` pre-scans and rejects them to avoid
+/// silent miscoercion. Arms remain for direct-call correctness and SSML 1.1 mapping.
 ///
-/// The dispatcher composes this with the CLI `--rate` and clamps the
-/// product to 0.5..=2.0 — clamping here too would break the documented
-/// "compose multiplicatively, then clamp" contract for cases like
-/// `--rate 0.6` × `<prosody rate="400%">` (should saturate at 2.0×, not
-/// land at 1.2× because the SSML side was pre-clamped to 2.0×).
+/// Does not clamp: the dispatcher composes with `--rate` then clamps once, so
+/// `--rate 0.6` × `<prosody rate="400%">` saturates at 2.0× rather than landing
+/// at 1.2× from a pre-clamped SSML multiplier.
 pub(super) fn parse_rate_value(s: &str) -> Option<f32> {
     let s = s.trim();
     let mult = match s {
@@ -48,16 +43,11 @@ pub(super) fn parse_rate_value(s: &str) -> Option<f32> {
             }
         }
     };
-    // Reject NaN / ±inf — `f32::from_str` accepts the literals "NaN"/"inf"/etc.
-    // and `f32::clamp` propagates NaN. A NaN multiplier would reach the ONNX
-    // speed tensor / vosk speech_rate and produce undefined audio.
+    // NaN/±inf from `f32::from_str` would propagate through `.clamp` to the ONNX speed tensor.
     if !mult.is_finite() {
         return None;
     }
-    // Reject zero/negative multipliers — `rate="0%"` or `rate="-100%"` would
-    // be silently clamped up to 0.5× by the dispatcher, producing surprising
-    // half-speed audio for a value that semantically means "stop". Treat as
-    // malformed so the warn+strip path runs.
+    // Zero/negative means "stop" semantically; clamping it to 0.5× silently is surprising.
     if mult <= 0.0 {
         return None;
     }
@@ -134,10 +124,7 @@ pub(super) fn has_structural_source_siblings(input: &str) -> bool {
         },
         None => return false,
     };
-    // First `<prosody` opens the outermost. Its matching close is the LAST
-    // `</prosody>` in the document (handles nested prosody correctly: the
-    // outer span is still whole-utterance, the inner one's warn-strip is
-    // handled later by `parse_inner_spans`).
+    // Use the LAST `</prosody>` so nested prosody doesn't break the outer whole-utterance check.
     let prosody_open = match input.find("<prosody") {
         Some(p) => p,
         None => return false,
@@ -188,14 +175,9 @@ mod tests {
 
     #[test]
     fn parse_rate_returns_raw_multiplier_clamping_happens_at_synth() {
-        // Parser returns the raw multiplier; the synth dispatcher composes
-        // with `--rate` and clamps once at `(cli_rate * ssml_rate).clamp(0.5, 2.0)`.
-        // Pre-clamping here would break "compose then clamp" for cases like
-        // `--rate 0.6` × `<prosody rate="400%">` (intent: saturate at 2.0×).
         assert_eq!(parse_rate_value("10%"), Some(0.1));
         assert_eq!(parse_rate_value("400%"), Some(4.0));
         assert_eq!(parse_rate_value("+500%"), Some(6.0));
-        // Out-of-range relative percents stay raw too.
         let neg = parse_rate_value("-90%").unwrap();
         assert!((neg - 0.1).abs() < 1e-6, "got {neg}");
     }
@@ -212,11 +194,8 @@ mod tests {
 
     #[test]
     fn parse_rate_rejects_zero_and_negative_results() {
-        // `0%` is finite and parses cleanly, but semantically means "stop";
-        // a 0.0 multiplier would compose to 0.0 and clamp UP to 0.5×, which
-        // is surprising. Treat as malformed.
+        // `0%` parses cleanly but means "stop"; 0.0 would clamp UP to 0.5×.
         assert_eq!(parse_rate_value("0%"), None);
-        // Relative form that resolves to <=0 is also rejected.
         assert_eq!(parse_rate_value("-100%"), None);
         assert_eq!(parse_rate_value("-150%"), None);
     }
@@ -230,9 +209,7 @@ mod tests {
 
     #[test]
     fn parse_rate_rejects_non_finite_values() {
-        // f32::from_str accepts "NaN", "inf", "Infinity" (case-insensitive),
-        // and a NaN multiplier would propagate through `.clamp(0.5, 2.0)` to
-        // the ONNX speed tensor. Reject explicitly so the synth never sees it.
+        // `f32::from_str` accepts "NaN"/"inf"/"Infinity"; NaN propagates through `.clamp` to the ONNX tensor.
         assert_eq!(parse_rate_value("NaN%"), None);
         assert_eq!(parse_rate_value("nan%"), None);
         assert_eq!(parse_rate_value("inf%"), None);

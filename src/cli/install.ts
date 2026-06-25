@@ -22,9 +22,7 @@ export interface InstallCommandArgs extends SharedInstallArgs {
 export const TTS_LANG_FALLBACK = ["en", "es", "fr", "it", "pt", "ru"];
 
 export interface TtsArgInput {
-  /** Whether --tts was passed. */
   tts: boolean;
-  /** Positional args after the install command (candidate language codes). */
   positionals: string[];
 }
 

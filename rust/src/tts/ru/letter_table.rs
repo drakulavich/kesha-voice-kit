@@ -12,9 +12,6 @@
 //! Some tokens use whole-acronym forms because Vosk pronounces those chunks
 //! more naturally than naive per-character expansion (АЭС, ЦСКА).
 
-// Russian letter-name table for acronym spell-out. Forms chosen to match
-// what Vosk-TTS BERT-prosody pronounces naturally — see #232 user-listening
-// feedback. Position-dependent rule for С (handled in expand_chars below).
 const LETTERS: &[(char, &str)] = &[
     ('а', "а"),
     ('б', "бэ"),
@@ -63,20 +60,11 @@ pub(super) fn expand_chars(input: &str) -> String {
     }
 
     let mut out = String::with_capacity(input.len() * 3);
-    // `last_was_cyrillic` tracks whether the previous emitted token was a
-    // Cyrillic letter-name. Spaces are inserted only between tokens that
-    // involve at least one Cyrillic side, so pure non-Cyrillic runs pass
-    // through without inserted spaces (e.g. "---" → "---") while mixed
-    // runs still get spaces (e.g. "AБ1" → "A бэ 1").
+    // Spaces only between tokens with at least one Cyrillic side ("AБ1" → "A бэ 1", "---" → "---").
     let mut last_was_cyrillic = false;
     for (i, c) in input.chars().enumerate() {
-        // Cyrillic uppercase always lowercases to a single char; unwrap_or(c)
-        // handles non-Cyrillic passthrough.
         let lc = c.to_lowercase().next().unwrap_or(c);
 
-        // Position-dependent: С at the start of the token uses "сэ" form
-        // (e.g. США → "сэ шэ а"), but in middle/end uses "эс" (ФСБ → "эф эс бэ",
-        // ЕС → "е эс"). User-specified per #232.
         let name = if i == 0 && lc == 'с' {
             Some("сэ")
         } else {
@@ -118,8 +106,6 @@ mod tests {
 
     #[test]
     fn voz_expands_to_three_letter_names() {
-        // expand_chars exercises the unconditional spelling path (not the
-        // auto-detect path). ВОЗ starts with В, so no С-at-start override applies.
         assert_eq!(expand_chars("ВОЗ"), "вэ о зэ");
     }
 
@@ -152,7 +138,6 @@ mod tests {
 
     #[test]
     fn full_alphabet_round_trip() {
-        // Each cyrillic letter must produce a non-empty token unless it's Ъ/Ь.
         let alphabet = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
         let result = expand_chars(alphabet);
         let pieces: Vec<&str> = result.split(' ').collect();
@@ -180,7 +165,6 @@ mod tests {
 
     #[test]
     fn s_at_start_uses_se_form() {
-        // С at index 0 → "сэ" (user-confirmed: США → "сэ шэ а").
         assert_eq!(expand_chars("США"), "сэ шэ а");
         assert_eq!(expand_chars("СНГ"), "сэ эн гэ");
     }

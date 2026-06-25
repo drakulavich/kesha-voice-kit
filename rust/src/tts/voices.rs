@@ -94,8 +94,6 @@ impl ResolvedVoice {
 }
 
 /// Parse a voice id like `en-am_michael` or `ru-ruslan` into engine + paths.
-/// Voice id is `<lang>-<name>`; lang picks the engine and espeak language code.
-/// The special `macos-*` prefix routes to AVSpeechSynthesizer on supported builds.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
     let Some((lang, name)) = voice_id.split_once('-') else {
         coded_bail!(
@@ -147,13 +145,9 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
     }
 }
 
-/// Shared Kokoro path-construction + existence-check used by both the English
-/// (`resolve_kokoro`) and the multilingual (`resolve_multilang_kokoro`) paths.
-/// Keeps error messages identical between the two callers.
-///
-/// Unconditional (no cfg gate): `resolve_kokoro` references it even on
-/// `system_kokoro` builds, inside its `#[allow(unreachable_code)]` ONNX
-/// fallback (which still compiles), so gating it out breaks that build.
+/// Shared Kokoro path-construction + existence-check for both English and multilingual paths.
+/// Unconditional (no cfg gate): `resolve_kokoro` references it on `system_kokoro` builds
+/// inside its `#[allow(unreachable_code)]` ONNX fallback, so gating it out breaks that build.
 fn build_kokoro_voice(
     cache_dir: &Path,
     voice_id: &str,
@@ -184,12 +178,8 @@ fn build_kokoro_voice(
     })
 }
 
-/// ONNX Kokoro path for es/fr/it/pt voices. Uses the same model graph as
-/// `resolve_kokoro` but picks the language-appropriate voice pack and passes
-/// the correct espeak language code so CharsiuG2P receives the right language.
-///
-/// Only compiled on non-`system_kokoro` builds; on darwin-arm64 `system_kokoro`
-/// these languages route through `resolve_fluid_kokoro` instead.
+/// ONNX Kokoro path for es/fr/it/pt voices.
+/// Only compiled on non-`system_kokoro` builds; on darwin-arm64 these route through `resolve_fluid_kokoro`.
 #[cfg(not(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -201,8 +191,6 @@ fn resolve_multilang_kokoro(
     lang: &str,
     name: &str,
 ) -> anyhow::Result<ResolvedVoice> {
-    // Resolve the bare voice name: if the user passed only the language prefix
-    // (e.g. "es") there is no name part after the dash, so apply the default.
     let resolved_name = if name.is_empty() {
         default_voice_for_lang(lang)
     } else {
@@ -224,9 +212,7 @@ fn resolve_multilang_kokoro(
     build_kokoro_voice(cache_dir, voice_id, resolved_name, espeak_lang)
 }
 
-/// Default voice pack name (without `.bin`) for each supported non-English
-/// Kokoro language. Must satisfy CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE"
-/// for all languages where a male voice exists in Kokoro v1.0.
+/// Default voice pack name (without `.bin`) for each supported non-English Kokoro language.
 #[cfg(not(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -234,14 +220,10 @@ fn resolve_multilang_kokoro(
 )))]
 fn default_voice_for_lang(lang: &str) -> &'static str {
     match lang {
-        "es" => "em_alex", // male ✓
-        // BRAND-RULE EXCEPTION (CLAUDE.md "default voices must be male"):
-        // Kokoro v1.0 ships NO male French voice — only ff_siwis (female). fr
-        // therefore defaults to ff_siwis until a male fr voice exists. es/it/pt
-        // default to male (em_alex/im_nicola/pm_alex). Revisit on a male fr voice.
-        "fr" => "ff_siwis",  // female — sole French voice in Kokoro v1.0
+        "es" => "em_alex",   // male ✓
+        "fr" => "ff_siwis", // female — sole French voice in Kokoro v1.0; see BRAND-RULE EXCEPTION above
         "it" => "im_nicola", // male ✓
-        "pt" => "pm_alex",   // male ✓
+        "pt" => "pm_alex",  // male ✓
         _ => unreachable!("default_voice_for_lang called with unexpected lang '{lang}'"),
     }
 }
@@ -320,7 +302,6 @@ mod tests {
         tmp
     }
 
-    /// Extract Kokoro fields from a ResolvedVoice, panicking if it's not Kokoro.
     #[cfg(not(all(
         feature = "system_kokoro",
         target_os = "macos",
@@ -337,7 +318,6 @@ mod tests {
         }
     }
 
-    /// Extract Vosk fields from a ResolvedVoice, panicking if it's not Vosk.
     fn unwrap_vosk(r: ResolvedVoice) -> (PathBuf, u32) {
         match r {
             ResolvedVoice::Vosk {
@@ -378,7 +358,6 @@ mod tests {
 
     #[test]
     fn select_style_picks_correct_row() {
-        // Row i contains value = i as f32
         let mut voice = Vec::with_capacity(VOICE_ROWS * VOICE_COLS);
         for row in 0..VOICE_ROWS {
             for _ in 0..VOICE_COLS {
@@ -581,7 +560,6 @@ mod tests {
     #[test]
     fn resolve_vosk_ru_missing_model_errors_with_install_hint() {
         let tmp = tempfile::tempdir().unwrap();
-        // No model on disk
         let err = resolve_voice(tmp.path(), "ru-vosk-m02")
             .unwrap_err()
             .to_string();
@@ -605,8 +583,6 @@ mod tests {
         assert!(err.to_string().contains("install --tts"), "msg: {err}");
     }
 
-    // ONNX-only path (see resolve_missing_voice_errors_with_hint): not
-    // applicable on darwin-arm64 `system_kokoro` where en routes via FluidAudio.
     #[cfg(not(all(
         feature = "system_kokoro",
         target_os = "macos",
@@ -615,7 +591,6 @@ mod tests {
     #[test]
     fn resolve_missing_model_errors() {
         let tmp = tempfile::tempdir().unwrap();
-        // Voice present but model missing
         let voices = tmp.path().join("models/kokoro-82m/voices");
         std::fs::create_dir_all(&voices).unwrap();
         std::fs::write(voices.join("am_michael.bin"), vec![0u8; VOICE_FILE_BYTES]).unwrap();
@@ -645,9 +620,6 @@ mod tests {
         );
     }
 
-    // ONNX-only multilang path: es/fr/it/pt route to resolve_multilang_kokoro
-    // on non-`system_kokoro` builds. Not applicable on darwin-arm64
-    // `system_kokoro` where these route through FluidAudio.
     #[cfg(not(all(
         feature = "system_kokoro",
         target_os = "macos",
@@ -705,26 +677,18 @@ mod tests {
     )))]
     #[test]
     fn multilang_default_voices_resolve_correctly() {
-        // Verify each language default (lang-only prefix, no explicit name)
-        // resolves to the expected pack. Note: the voice_id format requires
-        // split_once('-') to succeed — supply a minimal name here by using the
-        // explicit pack names; default resolution is tested via resolve_multilang_kokoro.
         let tmp = tempfile::tempdir().unwrap();
         populate_multilang_cache(tmp.path());
 
-        // es default → em_alex (male ✓)
         let r = resolve_voice(tmp.path(), "es-em_alex").unwrap();
         let (_, _, espeak_lang) = unwrap_kokoro(r);
         assert_eq!(espeak_lang, "es");
-        // fr default → ff_siwis (female, brand-rule exception documented)
         let r = resolve_voice(tmp.path(), "fr-ff_siwis").unwrap();
         let (_, _, espeak_lang) = unwrap_kokoro(r);
         assert_eq!(espeak_lang, "fr");
-        // it default → im_nicola (male ✓)
         let r = resolve_voice(tmp.path(), "it-im_nicola").unwrap();
         let (_, _, espeak_lang) = unwrap_kokoro(r);
         assert_eq!(espeak_lang, "it");
-        // pt default → pm_alex (male ✓)
         let r = resolve_voice(tmp.path(), "pt-pm_alex").unwrap();
         let (_, _, espeak_lang) = unwrap_kokoro(r);
         assert_eq!(espeak_lang, "pt");
@@ -738,15 +702,12 @@ mod tests {
     #[test]
     fn multilang_missing_voice_errors_with_install_hint() {
         let tmp = tempfile::tempdir().unwrap();
-        // No models on disk — should prompt `kesha install --tts`
         let err = resolve_voice(tmp.path(), "es-em_alex").unwrap_err();
         assert!(err.to_string().contains("install --tts"), "msg: {err}");
         assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
     }
 
-    // Test that each language defaults to the expected voice when name is empty.
-    // Voice id "es-" splits to lang="es", name="" — triggers default_voice_for_lang.
-    // Also verifies that the resolved espeak_lang matches the language prefix (gap test).
+    // "es-" splits to lang="es", name="" — triggers default_voice_for_lang; verifies espeak_lang matches.
     #[cfg(not(all(
         feature = "system_kokoro",
         target_os = "macos",
@@ -754,15 +715,10 @@ mod tests {
     )))]
     #[test]
     fn multilang_default_voice_for_lang() {
-        // (lang_prefix, expected_pack, expected_espeak)
         let cases: &[(&str, &str, &str)] = &[
-            // em_alex (es, male ✓); espeak "es"
             ("es", "em_alex", "es"),
-            // ff_siwis (fr, female — brand-rule exception, sole Kokoro v1.0 French voice)
-            ("fr", "ff_siwis", "fr"),
-            // im_nicola (it, male ✓); espeak "it"
+            ("fr", "ff_siwis", "fr"), // female — sole French voice in Kokoro v1.0
             ("it", "im_nicola", "it"),
-            // pm_alex (pt, male ✓); espeak "pt"
             ("pt", "pm_alex", "pt"),
         ];
         let tmp = tempfile::tempdir().unwrap();
@@ -790,7 +746,6 @@ mod tests {
     #[test]
     fn multilang_missing_model_errors_with_install_hint() {
         let tmp = tempfile::tempdir().unwrap();
-        // Write only the voice file; leave model.onnx absent.
         let voices = tmp.path().join("models/kokoro-82m/voices");
         std::fs::create_dir_all(&voices).unwrap();
         std::fs::write(voices.join("em_alex.bin"), vec![0u8; VOICE_FILE_BYTES]).unwrap();

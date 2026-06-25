@@ -38,11 +38,7 @@ export interface TranscriptionOutput {
   segments: TranscriptionSegment[];
 }
 
-/**
- * Path to the `kesha-engine` binary. Defaults to the install location under
- * the Kesha cache directory. The `KESHA_ENGINE_BIN` env var overrides — useful
- * for running against a freshly-built engine during development or in e2e tests.
- */
+/** `KESHA_ENGINE_BIN` overrides the default install path — used in dev and e2e tests. */
 export function getEngineBinPath(): string {
   return process.env.KESHA_ENGINE_BIN ?? defaultEngineBinPath();
 }
@@ -54,37 +50,15 @@ export function isEngineInstalled(): boolean {
 /** A Bun.spawn `stdio` array entry: per-fd action or inherit-by-number. */
 type SpawnStdioEntry = "inherit" | "pipe" | "ignore" | number;
 
-/**
- * Upper bound on the fd number we'll forward (#323 Greptile P2).
- *
- * The `stdio` array is index-addressed, so `KESHA_DEBUG_FD=1000000` would
- * allocate a million-entry array of `"ignore"` strings before the spawn.
- * 1024 is the conservative POSIX `RLIMIT_NOFILE` default — anything
- * above it can't be open in the parent anyway, so capping is a no-op
- * for legitimate users and a DoS guard for bogus input.
- */
+/** #323 Greptile P2: index-addressed stdio array — cap to POSIX RLIMIT_NOFILE default to guard against DoS via huge fd values. */
 const MAX_FORWARDED_FD = 1024;
 
 /**
  * Build a `stdio` array for `Bun.spawn`, forwarding `KESHA_DEBUG_FD` (#321 F19).
  *
- * The engine's NDJSON debug sink looks for `KESHA_DEBUG_FD=N` and writes
- * structured events to fd `N`. Bun.spawn closes all non-stdio fds in the
- * child by default, so a bare `KESHA_DEBUG_FD=3 kesha ...` would propagate
- * the env var but the kernel-level fd 3 wouldn't reach the engine — the
- * sink would silently no-op.
- *
- * This helper forwards the parent's fd N to the same number in the child
- * by extending the stdio array with `"ignore"` padding up to index N and
- * setting `stdio[N] = N` (Bun's "inherit parent fd identity" form).
- *
- * Returns `base` unchanged when:
- *   - `KESHA_DEBUG_FD` is unset / empty.
- *   - The value isn't a non-negative integer.
- *   - The value is 0/1/2 (covered by base stdin/stdout/stderr entries).
- *
- * Exported so `synth.ts` (the `kesha say` spawn site) can share the
- * forwarding logic without duplicating the env-parse code.
+ * Bun.spawn closes non-stdio fds in the child by default, so the env var alone
+ * isn't enough — we must pass fd N explicitly via `stdio[N] = N`.
+ * Exported so `synth.ts` can share this without duplicating the env-parse.
  */
 export function spawnStdioWithDebugFd(
   base: [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry],
@@ -151,11 +125,8 @@ async function runEngine(
     throw engineAbortError();
   }
 
-  // #275 D4: surface engine stderr on the success path so warnings like
-  // `hint: audio is 180s`, `Model mirror active:`, and the dtrace lines
-  // emitted under KESHA_DEBUG=1 reach the user. On non-zero exit we leave
-  // the buffer for callers to fold into a thrown Error — otherwise the
-  // user would see the warning AND a duplicate inside the error message.
+  // #275 D4: forward engine warnings (hints, mirror notices, KESHA_DEBUG lines) on success;
+  // on failure, leave stderr for callers to fold into the thrown Error (avoids duplicate output).
   if (exitCode === 0 && stderr.length > 0) {
     process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
   }
@@ -359,11 +330,8 @@ let cachedEngineCapabilities:
 
 export async function getEngineCapabilities(): Promise<EngineCapabilities | null> {
   const binPath = getEngineBinPath();
-  // Cache key includes `mtimeMs` so the cache invalidates when `kesha
-  // install` overwrites the binary in-place within a single long-lived
-  // process (#248). `statSync` throws on missing-file; the catch returns
-  // `null` — same effect as the previous explicit `isEngineInstalled()`
-  // pre-flight, one fewer redundant fs call.
+  // #248: include mtimeMs so an in-place `kesha install` overwite invalidates the cache.
+  // statSync throws on missing file — catch returns null, no separate isEngineInstalled() needed.
   let mtime: number;
   try {
     mtime = statSync(binPath).mtimeMs;
