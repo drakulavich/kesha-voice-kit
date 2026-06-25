@@ -224,6 +224,7 @@ impl OnnxBackend {
         }];
 
         let max_steps = encoder_length * MAX_TOKENS_PER_STEP;
+        let vocab_size = self.vocab.len();
 
         for _step in 0..max_steps {
             let active: Vec<usize> = beams
@@ -246,7 +247,6 @@ impl OnnxBackend {
                 let (output, new_state1, new_state2) =
                     self.decode_step(&frame, beam.last_token, &beam.state1, &beam.state2)?;
 
-                let vocab_size = self.vocab.len();
                 let token_logits = &output[..vocab_size];
                 let duration_logits = &output[vocab_size..];
                 let duration = argmax(duration_logits);
