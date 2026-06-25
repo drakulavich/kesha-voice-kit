@@ -2,37 +2,27 @@ import { runMain, type CommandDef } from "citty";
 import { existsSync } from "fs";
 import { log, setColorEnabled } from "../log";
 import { suggestCommand } from "../suggest-command";
-import { completionsCommand } from "./completions";
-import { doctorCommand } from "./doctor";
-import { initCommand } from "./init";
-import { installCommand } from "./install";
-import { logsCommand } from "./logs";
-import { manpageCommand } from "./manpage";
-import { recordCommand } from "./record";
-import { sayCommand } from "./say";
-import { statsCommand } from "./stats";
-import { statusCommand } from "./status";
-import { supportBundleCommand } from "./support-bundle";
-import { mainCommand } from "./main";
-import { mcpCommand } from "./mcp";
 
-// Single source of truth: keyed lookup also feeds the `did you mean` suggester.
-// `CommandDef<any>` is intentional — citty's generic is invariant in the args
-// shape, and each subcommand has its own arg schema; the value here is only
-// passed back to `runMain`, which re-reads the schema from the def itself.
-const SUBCOMMANDS: Record<string, CommandDef<any>> = {
-  doctor: doctorCommand,
-  init: initCommand,
-  install: installCommand,
-  logs: logsCommand,
-  status: statusCommand,
-  record: recordCommand,
-  say: sayCommand,
-  stats: statsCommand,
-  "support-bundle": supportBundleCommand,
-  completions: completionsCommand,
-  manpage: manpageCommand,
-  mcp: mcpCommand,
+// Lazy loaders, not eager imports: a cold `bun run src/cli.ts` spawn transpiles
+// only the command actually invoked instead of the whole CLI graph (`say` pulls
+// in the entire TTS/Kokoro/Vosk/normalize/SSML tree). Keyed names also feed the
+// `did you mean` suggester. `CommandDef<any>` is intentional — citty's generic is
+// invariant in the args shape, and each subcommand has its own arg schema; the
+// value is only passed back to `runMain`, which re-reads the schema from the def.
+type CommandLoader = () => Promise<CommandDef<any>>;
+const SUBCOMMANDS: Record<string, CommandLoader> = {
+  doctor: async () => (await import("./doctor")).doctorCommand,
+  init: async () => (await import("./init")).initCommand,
+  install: async () => (await import("./install")).installCommand,
+  logs: async () => (await import("./logs")).logsCommand,
+  status: async () => (await import("./status")).statusCommand,
+  record: async () => (await import("./record")).recordCommand,
+  say: async () => (await import("./say")).sayCommand,
+  stats: async () => (await import("./stats")).statsCommand,
+  "support-bundle": async () => (await import("./support-bundle")).supportBundleCommand,
+  completions: async () => (await import("./completions")).completionsCommand,
+  manpage: async () => (await import("./manpage")).manpageCommand,
+  mcp: async () => (await import("./mcp")).mcpCommand,
 };
 
 function isPathLike(arg: string): boolean {
@@ -153,7 +143,7 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
 
   switch (classifyFirstArg(firstArg, subcommandKeys)) {
     case "subcommand":
-      await runMain(SUBCOMMANDS[firstArg!], { rawArgs: restArgs });
+      await runMain(await SUBCOMMANDS[firstArg!]!(), { rawArgs: restArgs });
       return;
 
     case "unknown": {
@@ -169,6 +159,6 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
     }
 
     default:
-      await runMain(mainCommand, { rawArgs });
+      await runMain((await import("./main")).mainCommand, { rawArgs });
   }
 }
