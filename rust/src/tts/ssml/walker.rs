@@ -391,37 +391,36 @@ mod tests {
         );
     }
 
-    // KNOWN QUIRK (BUG, tracked in issue #560): a <break> at the start of a
-    // <prosody> is emitted TWICE — once flat, once again inside ProsodyRate.
-    // This is PRE-EXISTING behavior; this test pins the current output so the
-    // eventual fix is a deliberate, visible change — it is NOT asserting that
-    // double-emission is the desired result.
-    //
-    // Mechanism: the two <break> spans share the prosody span's start position.
-    // Break (priority 1) sorts before Prosody (priority 2) and emits flat Break
-    // segments; cursor does NOT advance past the prosody range (each break only
-    // advances to its own end), so the Prosody arm still fires afterward and
-    // emits a ProsodyRate wrapping the same breaks again. Actual output:
-    // [Break(100ms), Break(200ms), ProsodyRate { content: [Break(100ms), Break(200ms)] }].
-    // Also exercises push_text_slice dropping whitespace-only chunks (no Text).
+    // #560: boundary <break/> spans must be emitted once (inside the ProsodyRate),
+    // not also flat — they previously double-emitted via the cursor-guard gap.
     #[test]
-    fn known_quirk_prosody_leading_break_double_emitted() {
+    fn prosody_boundary_breaks_emitted_once_inside_prosody() {
         let segs = parse(
             r#"<speak><prosody rate="fast"><break time="100ms"/> <break time="200ms"/></prosody></speak>"#,
         )
         .unwrap();
-        // Both flat breaks appear at the top level.
+        // No flat breaks at the top level — they belong inside the ProsodyRate.
         let flat_break_count = segs
             .iter()
             .filter(|s| matches!(s, Segment::Break(_)))
             .count();
-        assert_eq!(flat_break_count, 2, "expected 2 flat breaks, got: {segs:?}");
-        // The ProsodyRate wrapper also fires and contains the same breaks.
-        let prosody = segs.iter().find_map(|s| match s {
-            Segment::ProsodyRate { rate, content } => Some((rate, content)),
-            _ => None,
-        });
-        let (rate, content) = prosody.expect("expected ProsodyRate segment in output");
+        assert_eq!(
+            flat_break_count, 0,
+            "breaks must not be emitted flat (double-emit #560), got: {segs:?}"
+        );
+        // Exactly one ProsodyRate, carrying both breaks.
+        let prosody_count = segs
+            .iter()
+            .filter(|s| matches!(s, Segment::ProsodyRate { .. }))
+            .count();
+        assert_eq!(prosody_count, 1, "expected one ProsodyRate, got: {segs:?}");
+        let (rate, content) = segs
+            .iter()
+            .find_map(|s| match s {
+                Segment::ProsodyRate { rate, content } => Some((rate, content)),
+                _ => None,
+            })
+            .expect("expected ProsodyRate segment in output");
         assert!((*rate - 1.25).abs() < 1e-6, "rate: {rate}");
         let inner_break_count = content
             .iter()
