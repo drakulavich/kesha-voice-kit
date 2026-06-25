@@ -4,16 +4,6 @@
 //! Discord render as native voice messages) and FLAC (lossless, royalty-free,
 //! browser-universal incl. Safari) alongside the original WAV. Keeps the door
 //! open for `mp3` / `raw-pcm` later.
-//!
-//! ## Design
-//! - One enum [`OutputFormat`] selects the wire format.
-//! - [`encode`] takes mono f32 samples + their native sample rate and produces
-//!   an in-memory byte buffer. The CLI hands those bytes straight to stdout or
-//!   `--out`, so this stays allocation-honest and side-effect-free.
-//! - Resampling for Opus (libopus only accepts 8/12/16/24/48 kHz) reuses the
-//!   same `rubato` async sinc resampler that `crate::audio` uses for STT.
-//! - WAV stays bit-exact with the previous `wav::encode_wav` output to keep
-//!   existing e2e tests and `kesha say > out.wav` callers green.
 
 use std::str::FromStr;
 
@@ -121,10 +111,6 @@ pub fn encode(samples: &[f32], src_rate: u32, fmt: OutputFormat) -> anyhow::Resu
     }
 }
 
-// =============================================================================
-// FLAC encoding (lossless, royalty-free, browser-universal incl. Safari)
-// =============================================================================
-
 /// Encode mono f32 PCM to FLAC bytes via the pure-Rust `flacenc` crate.
 ///
 /// No resample (FLAC accepts the engine's native rate) and no bitrate (lossless).
@@ -175,10 +161,6 @@ fn encode_flac(samples: &[f32], src_rate: u32) -> anyhow::Result<Vec<u8>> {
     Ok(sink.as_slice().to_vec())
 }
 
-// =============================================================================
-// OGG/Opus muxing
-// =============================================================================
-
 /// libopus only accepts these input sample rates.
 #[cfg(feature = "tts")]
 const OPUS_VALID_SR: &[u32] = &[8_000, 12_000, 16_000, 24_000, 48_000];
@@ -219,9 +201,7 @@ fn encode_ogg_opus(
         anyhow::bail!("ogg-opus: --bitrate must be 6000..=510000 bps, got {bitrate}");
     }
 
-    // Resample to `target_sr` if the engine's native rate doesn't match. We
-    // re-use the rubato sinc machinery from `crate::audio` rather than pulling
-    // in a third resampler dep.
+    // Reuse rubato from `crate::audio` rather than pulling in a third resampler dep.
     use std::borrow::Cow;
     let resampled: Cow<[f32]> = if src_rate == target_sr {
         Cow::Borrowed(samples)
@@ -229,8 +209,7 @@ fn encode_ogg_opus(
         Cow::Owned(resample_mono(samples, src_rate, target_sr)?)
     };
 
-    // Build the encoder. `Application::Voip` matches what the issue wants:
-    // best perceptual quality at low bitrates for speech.
+    // `Application::Voip`: best perceptual quality at low bitrates for speech.
     let mut enc = Encoder::new(target_sr, Channels::Mono, Application::Voip)
         .map_err(|e| anyhow::anyhow!("opus encoder: {e}"))?;
     enc.set_bitrate(opus::Bitrate::Bits(bitrate))
@@ -241,11 +220,6 @@ fn encode_ogg_opus(
 
     let frame_size = (target_sr * FRAME_DURATION_MS / 1_000) as usize;
 
-    // Build the OggOpus stream:
-    //   page 0: OpusHead (BOS, sequence 0, granule 0)
-    //   page 1: OpusTags (sequence 1, granule 0)
-    //   page 2..: audio packets, with EOS on the last
-    // Rough upper bound for compressed bytes: bitrate × duration + header pages.
     let cap = (samples.len() as u64 * bitrate as u64 / (8 * src_rate as u64)) as usize + 4 * 1024;
     let mut buf: Vec<u8> = Vec::with_capacity(cap);
     let cursor = std::io::Cursor::new(&mut buf);
@@ -256,19 +230,18 @@ fn encode_ogg_opus(
     // single-stream Opus file the value is irrelevant to decoders.
     let serial: u32 = 0x4b_45_53_48; // 'KESH'
 
-    // ---- OpusHead (RFC 7845 §5.1) -------------------------------------------
+    // OpusHead (RFC 7845 §5.1)
     let opus_head = build_opus_head(src_rate);
     writer
         .write_packet(opus_head, serial, ogg::PacketWriteEndInfo::EndPage, 0)
         .map_err(|e| anyhow::anyhow!("ogg write OpusHead: {e}"))?;
 
-    // ---- OpusTags (RFC 7845 §5.2) -------------------------------------------
+    // OpusTags (RFC 7845 §5.2)
     let opus_tags = build_opus_tags();
     writer
         .write_packet(opus_tags, serial, ogg::PacketWriteEndInfo::EndPage, 0)
         .map_err(|e| anyhow::anyhow!("ogg write OpusTags: {e}"))?;
 
-    // ---- Audio packets ------------------------------------------------------
     // Granule position = number of decoded samples produced *so far* at 48 kHz.
     // It includes the pre-skip, which players subtract before playback. We
     // accumulate sample count in target_sr and convert once per page boundary.
@@ -472,10 +445,6 @@ fn resample_mono(samples: &[f32], src_rate: u32, dst_rate: u32) -> anyhow::Resul
     Ok(out)
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,7 +461,6 @@ mod tests {
             OutputFormat::from_str("ogg-opus").unwrap(),
             OutputFormat::ogg_opus_default()
         );
-        // Aliases that users will reach for naturally.
         assert!(matches!(
             OutputFormat::from_str("opus").unwrap(),
             OutputFormat::OggOpus { .. }
@@ -551,9 +519,7 @@ mod tests {
         assert_eq!(&head[..8], b"OpusHead");
         assert_eq!(head[8], 1, "version");
         assert_eq!(head[9], 1, "channels (mono)");
-        // pre-skip
         assert_eq!(u16::from_le_bytes([head[10], head[11]]), PRE_SKIP_48K);
-        // input sample rate
         assert_eq!(
             u32::from_le_bytes([head[12], head[13], head[14], head[15]]),
             24_000
@@ -565,11 +531,9 @@ mod tests {
     fn opus_tags_layout() {
         let tags = build_opus_tags();
         assert_eq!(&tags[..8], b"OpusTags");
-        // vendor length is u32 LE at offset 8
         let vlen = u32::from_le_bytes([tags[8], tags[9], tags[10], tags[11]]) as usize;
         let vendor = std::str::from_utf8(&tags[12..12 + vlen]).unwrap();
         assert!(vendor.starts_with("kesha-voice-kit "));
-        // Trailing user-comment count = 0
         let cnt = u32::from_le_bytes(tags[12 + vlen..12 + vlen + 4].try_into().unwrap());
         assert_eq!(cnt, 0);
     }
@@ -667,7 +631,6 @@ mod tests {
             .collect();
         let bytes = encode(&samples, sr, OutputFormat::Flac).unwrap();
 
-        // Native FLAC streams begin with the 4-byte stream marker "fLaC".
         assert_eq!(&bytes[..4], b"fLaC", "missing FLAC stream marker");
         // Lossless, but still smaller than the raw 16-bit WAV it came from.
         let wav_bytes = encode(&samples, sr, OutputFormat::Wav).unwrap();

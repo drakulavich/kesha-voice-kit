@@ -7,30 +7,10 @@
  *                                            downloads from GitHub Releases
  *   - `rust/Cargo.toml#version`           — engine crate version
  *
- * The release runbook in CLAUDE.md bumps all three by hand and reviewers
- * verify they agree. A silent drift between (b) and (c) means `kesha install`
- * downloads a release that doesn't match the source the engine was built
- * from — exactly the v1.1.0 incident where TTS shipped without being in the
+ * A silent drift between (b) and (c) means `kesha install` downloads a
+ * release that doesn't match the source the engine was built from —
+ * exactly the v1.1.0 incident where TTS shipped without being in the
  * build matrix.
- *
- * Rules enforced:
- *
- *   1. `keshaEngine.version === Cargo.toml#version`. These two are the
- *      "engine version" — the npm CLI uses (b) to pick the release tag,
- *      and (c) is the source-of-truth on what `cargo build` produces. They
- *      MUST match.
- *
- *   2. `package.json#version >= keshaEngine.version`. CLI-only patches
- *      (docs, TS fix, plugin tweak) bump (a) ahead of (b) per the
- *      "CLI AND ENGINE ARE VERSIONED INDEPENDENTLY" rule in CLAUDE.md.
- *      Engine releases bump (a) in lockstep. Either way (a) is >= (b).
- *
- * Exit 0 on success (no output). Exit 1 on any rule violation, printing
- * the offending values and the rule that was broken. Designed to be the
- * cheapest possible pre-push / CI guard — no deps beyond the bun runtime.
- *
- * Run: `bun .github/scripts/check-versions.ts` (or `bun run check:versions`
- * via package.json + `make versions`).
  */
 import { readFileSync } from "node:fs";
 
@@ -94,10 +74,7 @@ function fmt(v: SemVer): string {
 const pkgRaw = JSON.parse(readFileSync("package.json", "utf8"));
 const cargoToml = readFileSync("rust/Cargo.toml", "utf8");
 
-// `version = "..."` inside the [package] table is the first `version = ` in
-// the file. Anchor the regex to the literal column-zero `version` so we
-// don't accidentally pick up a workspace-member's version or a dependency
-// version specifier inside a `[dependencies]` table.
+// Anchor to column-zero `version` to avoid matching workspace-member or dependency version fields.
 const cargoVersionMatch = cargoToml.match(/^version\s*=\s*"([^"]+)"$/m);
 if (!cargoVersionMatch) {
   console.error("rust/Cargo.toml: missing top-level `version = \"x.y.z\"`");
@@ -113,7 +90,6 @@ const cargo = parseSemver(cargoVersionMatch[1], "rust/Cargo.toml#version");
 
 let failed = false;
 
-// Rule 1: engine.version === cargo#version
 if (cmp(engine, cargo) !== 0) {
   console.error(
     `rule 1 violated: package.json#keshaEngine.version (${fmt(engine)}) ` +
@@ -125,7 +101,6 @@ if (cmp(engine, cargo) !== 0) {
   failed = true;
 }
 
-// Rule 2: cli.version >= engine.version
 if (cmp(cli, engine) < 0) {
   console.error(
     `rule 2 violated: package.json#version (${fmt(cli)}) must be >= ` +

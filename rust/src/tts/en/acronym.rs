@@ -1,20 +1,14 @@
 //! Tokenize English plain text and emit a segment list with two kinds of
 //! pronunciation overrides:
 //!
-//! - **`IPA_LEXICON`** — case-sensitive token → IPA-phoneme map. Hits emit
-//!   `Segment::Ipa(...)` which `synth_segments_kokoro_with` routes directly
-//!   to `infer_ipa`, bypassing G2P. Covers all-caps acronyms with
-//!   industry pronunciations (EPAM, JSON, JPEG, …) AND mixed-case proper
-//!   nouns Kokoro mispronounces (Anthropic, Microsoft, Claude, …).
+//! - **`IPA_LEXICON`** — case-sensitive token → IPA-phoneme map. Covers
+//!   all-caps acronyms with industry pronunciations AND mixed-case proper
+//!   nouns Kokoro mispronounces. IPA hits fire even when `auto_expand=false`
+//!   (intent-explicit, parallel to `<say-as>`).
 //! - **Letter-spell rule** — uppercase 2..=5 tokens NOT on `STOP_LIST` and
-//!   NOT in `IPA_LEXICON` get expanded letter-by-letter via
-//!   `letter_table::expand_chars` (still grapheme-level — Kokoro reads
-//!   "ef bee eye" naturally). Gated by `auto_expand`.
-//! - **`STOP_LIST` (30 entries)** — natural-English caps words that Kokoro
-//!   handles via its training; passed through unchanged.
-//!
-//! IPA hits are intent-explicit (parallel to `<say-as>`); they fire even
-//! when `auto_expand=false`. Letter-spelling is gated by `auto_expand`.
+//!   NOT in `IPA_LEXICON` get expanded letter-by-letter; gated by `auto_expand`.
+//! - **`STOP_LIST`** — natural-English caps words Kokoro handles via training;
+//!   passed through unchanged.
 //!
 //! Spec: `docs/superpowers/specs/2026-05-07-kokoro-en-acronym-expansion-design.md`.
 
@@ -29,11 +23,9 @@ const STOP_LIST: &[&str] = &[
 ];
 
 /// Token → IPA phoneme map. Keys are case-sensitive. Values use IPA without
-/// syllable separators (`.`) — the slash notation `/…/` and dot separators
-/// in user-supplied IPA are presentation-only; Kokoro's `infer_ipa` accepts
-/// stress marks (`ˈ` `ˌ`) and length marks (`ː`) but not separators.
+/// syllable separators — `infer_ipa` accepts stress (`ˈ` `ˌ`) and length (`ː`)
+/// marks but not `.` separators.
 const IPA_LEXICON: &[(&str, &str)] = &[
-    // All-caps acronyms with industry pronunciations
     ("EPAM", "ˈiːpæm"),
     ("JSON", "ˈdʒeɪsən"),
     ("JPEG", "ˈdʒeɪpɛɡ"),
@@ -42,7 +34,6 @@ const IPA_LEXICON: &[(&str, &str)] = &[
     ("ASAP", "ˈeɪsæp"),
     ("CRUD", "krʌd"),
     ("JWT", "ˌdʒeɪdʌbəljuːˈtiː"),
-    // Mixed-case proper nouns
     ("OAuth", "ˈoʊɔːθ"),
     ("Microsoft", "ˈmaɪkroʊsɔːft"),
     ("Anthropic", "ænˈθrɒpɪk"),
@@ -108,7 +99,6 @@ pub fn expand_to_segments(text: &str, auto_expand: bool) -> Vec<Segment> {
     out
 }
 
-/// Drain `buf` into `out` as a `Segment::Text` if non-empty. No-op otherwise.
 fn flush_buf(buf: &mut String, out: &mut Vec<Segment>) {
     if !buf.is_empty() {
         out.push(Segment::Text(std::mem::take(buf)));
@@ -119,7 +109,6 @@ fn process_token(token: &str, auto_expand: bool, buf: &mut String, out: &mut Vec
     let (head, mid, tail) = split_punct(token);
 
     if let Some(ipa) = IPA_LEXICON.iter().find(|(k, _)| *k == mid).map(|(_, v)| *v) {
-        // Flush accumulated text + leading punct, emit Ipa, start new buf with tail.
         buf.push_str(head);
         flush_buf(buf, out);
         out.push(Segment::Ipa(ipa.to_string()));
@@ -137,7 +126,6 @@ fn process_token(token: &str, auto_expand: bool, buf: &mut String, out: &mut Vec
     buf.push_str(token);
 }
 
-/// Split `token` into (leading_punct, core, trailing_punct).
 fn split_punct(token: &str) -> (&str, &str, &str) {
     let start = token
         .char_indices()
@@ -163,8 +151,7 @@ fn split_punct(token: &str) -> (&str, &str, &str) {
 mod tests {
     use super::*;
 
-    /// Helper: collapse a segment list into a "[ipa]"-tagged string for
-    /// readable test assertions. Unrelated to the production flow.
+    /// Collapse segments into a `[ipa]`-tagged string for assertions. Unrelated to the production flow.
     fn flatten(segs: &[Segment]) -> String {
         let mut s = String::new();
         for seg in segs {
@@ -180,8 +167,6 @@ mod tests {
         }
         s
     }
-
-    // --- Letter-spell cases (no IPA hit) ---
 
     #[test]
     fn fbi_letter_spells_when_auto_expand() {
@@ -201,8 +186,6 @@ mod tests {
         let segs = expand_to_segments("HTTP and JSON", true);
         assert_eq!(flatten(&segs), "aitch tee tee pee and [ˈdʒeɪsən]");
     }
-
-    // --- IPA lexicon hits ---
 
     #[test]
     fn epam_emits_ipa_segment() {
@@ -241,8 +224,6 @@ mod tests {
         assert_eq!(flatten(&segs), "deploy on [ˌkuːbərˈnɛtiːz]");
     }
 
-    // --- Punctuation handling ---
-
     #[test]
     fn epam_with_trailing_punct() {
         let segs = expand_to_segments("EPAM.", true);
@@ -266,8 +247,6 @@ mod tests {
         let segs = expand_to_segments("Anthropic builds Claude", true);
         assert_eq!(flatten(&segs), "[ænˈθrɒpɪk] builds [klɔːd]");
     }
-
-    // --- Stop-list / non-acronym pass-through ---
 
     #[test]
     fn nasa_stop_list_passes_through() {
@@ -307,11 +286,7 @@ mod tests {
         }
     }
 
-    /// Sanity check that every IPA_LEXICON value contains only characters
-    /// from the IPA / stress-mark / length-mark / separator alphabet that
-    /// Kokoro's `infer_ipa` accepts. Catches typos like a Latin "e" in place
-    /// of an IPA "ɛ" or a smart-quote sneaking in. A failure here points to
-    /// a maintainer-side data error, not a code bug.
+    /// A failure here is a maintainer-side data error (typo/wrong char), not a code bug.
     #[test]
     fn ipa_lexicon_values_are_well_formed() {
         for (key, ipa) in IPA_LEXICON {

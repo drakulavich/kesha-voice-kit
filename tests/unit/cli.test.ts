@@ -492,9 +492,7 @@ describe("TOON output (#138)", () => {
       { file: "a.ogg", text: "Hello", lang: "en" },
       { file: "b.ogg", text: "World", lang: "en" },
     ]);
-    // The tabular form emits the schema exactly once (`{file,text,lang}`);
-    // if the encoder ever fell back to per-object mode the field list would
-    // appear on every row — this guards that regression.
+    // Guards against per-object fallback where the schema would repeat on every row.
     const schemaRows = output.match(/\{file,text,lang\}/g) ?? [];
     expect(schemaRows).toHaveLength(1);
   });
@@ -657,11 +655,7 @@ describe("JSON output with lang-id fields", () => {
 });
 
 describe("resolveOutputFormat (#300 regression)", () => {
-  // Pre-#300 bug: `--format toon` set args.format to the string but the
-  // dispatch only checked the boolean args.toon flag, so output silently
-  // fell through to plain text. Same class hit unknown --format values
-  // and any cross-form mutex (e.g. --json --format toon). These tests
-  // lock in the contract behind `resolveOutputFormat`.
+  // #300: `--format toon` silently fell through to plain text; these lock in the contract.
 
   describe("boolean flags route to their format", () => {
     test("--json sets wantsJson", () => {
@@ -743,9 +737,7 @@ describe("resolveOutputFormat (#300 regression)", () => {
     });
 
     test("--format transcript + --json → error (Greptile P2 on #300)", () => {
-      // Pre-fix: wantsTranscript was set but the dispatch checked
-      // wantsJson first → silent JSON output. Now rejected with a
-      // symmetric mutex message.
+      // Pre-#300: wantsTranscript set but wantsJson checked first → silent JSON.
       const r = resolveOutputFormat({ json: true, format: "transcript" });
       expect(r.ok).toBe(false);
       if (!r.ok) {
@@ -778,8 +770,6 @@ describe("resolveOutputFormat (#300 regression)", () => {
     });
 
     test("unknown format wins over mutex (clearer error first)", () => {
-      // --json + --format gibberish: report the unknown format,
-      // not the mutex — the user can't fix mutex until format is valid.
       const r = resolveOutputFormat({ json: true, format: "gibberish" });
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error).toContain("unknown --format");
@@ -801,15 +791,12 @@ describe("resolveOutputFormat (#300 regression)", () => {
   });
 });
 
-// Helper: build a ResolvedOutputFormat { ok: true } for a given json/toon/transcript combo.
 function okFmt(json = false, toon = false, transcript = false): ResolvedOutputFormat & { ok: true } {
   return { ok: true, wantsJson: json, wantsToon: toon, wantsTranscript: transcript };
 }
 
 describe("validateTranscribeArgs guards", () => {
-  // Suppress log.error side-effects. log.error writes via process.stderr.write
-  // (src/log.ts), NOT console.error, so we stub the former. process.exit is
-  // intercepted directly here for these synchronous validation calls.
+  // log.error uses process.stderr.write (src/log.ts), not console.error — stub the former.
   function expectValidateExit(
     argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
     rawArgs: string[],

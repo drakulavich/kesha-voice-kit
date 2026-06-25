@@ -43,24 +43,14 @@ function getEngineBinaryName(): string {
   throw new Error(`Unsupported platform: ${platform} ${arch}`);
 }
 
-/**
- * One sidecar's identity. Each shipped Swift sidecar is described by an
- * entry in `SIDECARS`; the helper below loops over them. Centralising the
- * spec keeps the AVSpeech (#141) and diarize (#199) install paths in
- * lockstep — adding a third sidecar is one entry, not a new function.
- */
+/** Sidecar spec — centralises AVSpeech (#141) and future sidecars so each is one entry. */
 interface SidecarSpec {
-  /** Filename written next to the engine binary. The Rust runtime probes
-   * this exact name (sometimes a list — see diarize::sidecar_path). */
+  /** Written next to the engine binary; Rust probes this exact name. */
   fileBasename: string;
-  /** Release asset name. Often equals fileBasename, but AVSpeech writes
-   * `say-avspeech` while the asset is `say-avspeech-darwin-arm64`. */
+  /** Release asset name — may differ from fileBasename (e.g. `say-avspeech-darwin-arm64` vs `say-avspeech`). */
   assetName: string;
-  /** Human-readable name in log messages. */
   displayName: string;
-  /** Trailing hint on success: "AVSpeech sidecar installed (<hint>)." */
   availableHint: string;
-  /** Trailing hint on any failure path: "...; <hint>." */
   unavailableHint: string;
 }
 
@@ -191,10 +181,7 @@ function darwinTrustBinary(path: string, displayName: string): void {
     );
   }
   if (!codesignOk && !xattrOk) {
-    // Single-quote the path in the manual-fix hint so spaces / shell
-    // metachars in `~/.cache/.../bin/...` don't break paste-into-shell.
-    // POSIX single-quote escape: close the quote, insert escaped `'`,
-    // re-open. Cheap and correct on bash/zsh.
+    // POSIX single-quote escape so spaces/metachars in the path don't break paste-into-shell.
     const q = (p: string) => `'${p.replace(/'/g, `'\\''`)}'`;
     log.warn(
       `Could not unblock ${displayName} for macOS Gatekeeper (both codesign ` +
@@ -237,13 +224,7 @@ async function downloadSidecar(
     return;
   }
 
-  // Keep the best-effort contract: streamResponseToFile throws on an empty
-  // body and can fail mid-stream, and chmodSync can throw EPERM. Without
-  // this catch a stream/chmod failure would propagate through the tail
-  // `await Promise.all(sidecarPromises)` in downloadEngine — converting a
-  // successful engine install into a thrown exception after log.success
-  // already announced it, which is exactly the regression the fetch/404
-  // branches above protect against.
+  // Catch stream/chmod failures so a sidecar error can't poison the engine install.
   try {
     await streamResponseToFile(res, sidecarPath, spec.displayName);
     chmodSync(sidecarPath, 0o755);
@@ -371,39 +352,19 @@ async function refreshCachedEngine(
   } else {
     log.success(`Engine binary already installed (v${engineVersion}).`);
   }
-  // Re-run the macOS trust step against the cached binary too. Reason:
-  // a user who upgraded to macOS 15+ Sequoia AFTER installing kesha
-  // would have a v<X> binary on disk with `com.apple.provenance` still
-  // attached, and `kesha install` would normally bail at "already
-  // installed" without healing the SIGKILL. Idempotent — re-signing
-  // an already-correctly-signed binary is a ~10 ms no-op; `xattr -d`
-  // on an absent attr is handled (exit 1 + "No such xattr" treated
-  // as success in `darwinTrustBinary`). Skipped on read-only
-  // filesystems (Nix-store installs) — no write access anyway.
+  // Re-trust on cache hit: a user who upgraded to Sequoia after install would still have
+  // com.apple.provenance attached; idempotent (~10ms no-op if already correct).
   if (canWriteEngineDir && existsSync(binPath)) {
     darwinTrustBinary(binPath, "kesha-engine binary");
   }
-  // Top up any sidecars missing from this cached install. Pre-#141 / pre-#199
-  // engines never shipped them, so a cache-valid binary may still need
-  // fetching. Run independent fetches concurrently — same shape as the
-  // cold path in fetchEngineBinary.
-  //
-  // Skip the top-up entirely when the engine sits in a read-only
-  // filesystem (e.g., a Nix-store install). Those installs stage the
-  // supported sidecars at build time; writing more is impossible, and
-  // attempting it would emit a confusing "install failed" warning for
-  // a feature the Nix README explicitly documents as unsupported
-  // (diarize on Nix needs network access at build time, which the
-  // sandbox forbids).
+  // Top up missing sidecars (pre-#141/#199 cached binaries never had them);
+  // skip on read-only fs (Nix-store) to avoid confusing "install failed" warnings.
   if (canWriteEngineDir) {
     const missing = SIDECARS.filter(
       (s) => !existsSync(join(engineDir, s.fileBasename)),
     );
     await Promise.all(missing.map((s) => downloadSidecar(s, binPath, engineVersion)));
-    // The cache-valid branch also re-trusts any sidecars that already
-    // exist alongside the engine — same upgrade-to-Sequoia scenario as
-    // above. The `missing.map` above only handles NEW sidecars; this
-    // loop handles ALREADY-PRESENT ones.
+    // Also re-trust already-present sidecars for the Sequoia upgrade scenario.
     for (const s of SIDECARS) {
       const p = join(engineDir, s.fileBasename);
       if (existsSync(p)) darwinTrustBinary(p, s.displayName);
@@ -427,19 +388,11 @@ async function fetchEngineBinary(
 
   mkdirSync(dirname(binPath), { recursive: true });
 
-  // Kick off all sidecar fetches concurrently with the engine fetch. They
-  // target independent github.com release assets, so overlapping the HTTP
-  // round-trips saves ~15-30s on a cold install. Each sidecar is
-  // best-effort (404 on older engines, warn + continue) so a failure
-  // doesn't cascade into the engine path.
+  // Overlap sidecar fetches with the engine fetch (~15-30s saved on cold install).
   const sidecarPromises = SIDECARS.map((s) =>
     downloadSidecar(s, binPath, engineVersion),
   );
-  // Defense-in-depth: if the engine fetch throws below, attach no-op
-  // rejection handlers so we don't surface unhandledRejection errors
-  // from sidecar paths whose internal try/catch ever drifts. Logs from
-  // sidecars whose own work is still in flight will print when they
-  // complete; the engine error is what the user needs to see now.
+  // If the engine fetch throws, silence in-flight sidecar rejections so unhandledRejection doesn't obscure the engine error.
   const muteSidecarRejections = () =>
     sidecarPromises.forEach((p) => p.catch(() => {}));
 
@@ -507,10 +460,7 @@ function validateBackend(backend: string, caps: EngineCapabilities | null): void
  * --diarize` would fail with clap's generic "unexpected argument" error.
  */
 function validateDiarize(caps: EngineCapabilities | null): void {
-  // Treat null (pre-capabilities-JSON engine, or capability probe failed)
-  // the same as an engine that advertised features but omitted ours —
-  // forwarding `--diarize` to a binary that doesn't understand it would
-  // surface as clap's generic "unexpected argument" error.
+  // null = pre-capabilities-JSON engine; forwarding --diarize would surface as clap's "unexpected argument".
   if (!caps || !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
     throw new Error(
       "--diarize is not supported by the installed engine: it was built " +
@@ -563,19 +513,12 @@ export async function downloadEngine(
   const installedVersion = readInstalledEngineVersion(binPath);
   const engineDir = dirname(binPath);
 
-  // Detect a read-only engine directory (e.g., a Nix-store install —
-  // `KESHA_ENGINE_BIN` points into `/nix/store/.../bin/`). Used twice
-  // below: to honor `--no-cache` only when the engine is writable, and
-  // to skip the sidecar top-up that would otherwise emit confusing
-  // "install failed" warnings for paths we physically can't write to.
+  // Read-only engine dir = Nix-store install; skip download/sidecar writes to avoid EROFS errors.
   const canWriteEngineDir = checkEngineWritable(engineDir);
 
   const versionMatches =
     existsSync(binPath) && installedVersion === engineVersion;
-  // When the engine sits on a read-only filesystem at the matching
-  // version, `--no-cache` can't re-download it without an EROFS crash
-  // and there's nothing to refresh anyway — treat as cache-valid and
-  // forward `--no-cache` to the model install step below.
+  // On read-only fs, --no-cache can't re-download; treat as cache-valid and forward flag to model install.
   const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 
   if (cacheValid) {
@@ -585,9 +528,6 @@ export async function downloadEngine(
   }
 
   if (backend || options.diarize) {
-    // One capabilities probe shared by both validators (getEngineCapabilities
-    // is cached, but a single explicit gate reads clearer than two helpers
-    // each fetching independently).
     const caps = await getEngineCapabilities();
     if (backend) validateBackend(backend, caps);
     if (options.diarize) validateDiarize(caps);

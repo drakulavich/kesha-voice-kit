@@ -48,20 +48,9 @@ export function detectLanguage(text: string): string {
 }
 
 /**
- * Pure validation + normalization of the output-format selection. Pulled
- * out of the citty `run` handler so the contract is unit-testable without
- * spawning the CLI binary; the handler just owns the side-effect arms
- * (log.error + process.exit) when this returns `{ ok: false }`.
- *
- * Inputs accept the three knobs the user can flip:
- * - `--json` (boolean) — long-form alias for `--format json`
- * - `--toon` (boolean) — long-form alias for `--format toon`
- * - `--format <value>` — must be one of `transcript`, `json`, `toon`
- *
- * Mutex: `--json` and `--toon` cannot both be requested. Either via the
- * booleans or `--format` cross-pollination (`--json --format toon` →
- * error). The mutex check happens AFTER format validation, so unknown
- * `--format` still surfaces with its own clearer error first.
+ * Pulled out of the citty `run` handler so the contract is unit-testable.
+ * Mutex check happens AFTER format validation so unknown `--format` surfaces
+ * with its own clearer error first.
  */
 export type ResolvedOutputFormat =
   | {
@@ -151,15 +140,7 @@ export type ValidatedTranscribeArgs = {
 };
 
 /**
- * Validates the transcribe-specific flags that require cross-flag consistency
- * checks beyond what citty can express. Calls `log.error` + `process.exit(2)`
- * on any violation — matching the original inline behavior byte-for-byte.
- *
- * Owns:
- * - --vad / --no-vad mutex (requires rawArgs to detect the explicit --no-vad)
- * - --timestamps / --speakers guards (require machine-readable output)
- * - --include-errors guard (requires --json)
- * - derivation of `vadMode` and `outputFormat`
+ * Validates cross-flag consistency that citty can't express; exits 2 on violation.
  */
 export function validateTranscribeArgs(
   args: MainCommandArgs,
@@ -202,13 +183,6 @@ export function validateTranscribeArgs(
   return { vadMode, outputFormat };
 }
 
-/**
- * Runs audio + text language detection for a single transcript, applying the
- * long-audio skip guard and both checkLanguageMismatch calls.
- *
- * Returns `{ audioLanguage, textLanguage, lang }` — the caller owns building
- * the final `TranscribeResult`.
- */
 async function detectLanguages(
   file: string,
   text: string,
@@ -291,11 +265,6 @@ type ProcessFileRecorders = {
 type ProcessFileSuccess = { ok: true; result: TranscribeResult };
 type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord };
 
-/**
- * Processes a single audio file: existence check, engine call, lang detection,
- * diagnostic events. Returns a discriminated union so the caller can push to
- * the appropriate bucket without catching.
- */
 async function processFile(
   file: string,
   options: ProcessFileOptions,
@@ -386,10 +355,7 @@ async function processFile(
   }
 }
 
-/**
- * Writes the final output to stdout in the requested format.
- * The `verbose` flag is only consulted for the plain-text fallback path.
- */
+/** `verbose` is only consulted for the plain-text fallback path. */
 function writeOutput(
   results: TranscribeResult[],
   errors: TranscribeErrorRecord[],
@@ -510,11 +476,6 @@ export const mainCommand = defineCommand({
     // resolved and stripped before citty), so it already reflects --quiet here.
     const files = args._;
 
-    // Validate `--format <value>` and normalize into the boolean flags
-    // that the rest of this handler consults. Routing happens in
-    // `resolveOutputFormat` so the contract is unit-testable without
-    // spawning the CLI; the handler just owns the side-effect arms
-    // (log.error + process.exit).
     const fmt = resolveOutputFormat({
       json: args.json,
       toon: args.toon,

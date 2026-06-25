@@ -38,12 +38,10 @@ impl Vosk {
         })
     }
 
-    /// Sample rate reported by the loaded model config.
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
-    /// Synthesize `text` with the given speaker id (0..SPEAKER_COUNT).
     /// `rate` maps to vosk's `speech_rate` (1.0 = model default).
     pub fn infer(&mut self, text: &str, speaker_id: u32, rate: f32) -> Result<Vec<f32>> {
         if speaker_id >= SPEAKER_COUNT {
@@ -100,8 +98,6 @@ mod tests {
         assert!(err.to_string().contains("speaker_id"), "msg: {err}");
     }
 
-    /// End-to-end synth (gated on cached model). Verifies a real ru phrase
-    /// produces non-trivial PCM and uses the model-reported sample rate.
     #[test]
     fn synth_short_phrase_produces_audio() {
         if !ci_true_or_skip("synth_short_phrase_produces_audio") {
@@ -120,7 +116,6 @@ mod tests {
         let pcm = v.infer("Привет, мир.", 4, 1.0).expect("synth");
         // ~0.5s at 22.05kHz = 11025 samples lower bound; allow loose floor.
         assert!(pcm.len() > 5000, "got only {} samples", pcm.len());
-        // f32 PCM should be in [-1, 1].
         for &s in pcm.iter().take(10000) {
             assert!((-1.5..=1.5).contains(&s), "sample out of range: {s}");
         }

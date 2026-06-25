@@ -37,9 +37,6 @@ fn warned() -> &'static Mutex<HashSet<String>> {
     W.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-/// Emit `msg` to stderr if `key` has not been warned in this process.
-/// Subsequent calls with the same `key` are silent. See module docs for
-/// the constant-vs-dynamic key contract.
 pub fn warn_once(key: &str, msg: &str) {
     let mut set = warned().lock().expect("warn_once: mutex poisoned");
     if !set.contains(key) {
@@ -48,10 +45,6 @@ pub fn warn_once(key: &str, msg: &str) {
     }
 }
 
-/// Probe whether `warn_once` has already recorded `key` in this process.
-/// Test-only — the production warn_once path itself doesn't need this.
-/// Honors the test-isolation caveat in the module doc-comment: order
-/// matters across `#[test]` blocks in the same `cargo test --lib` process.
 #[cfg(test)]
 pub(crate) fn was_warned(key: &str) -> bool {
     warned()
@@ -60,16 +53,7 @@ pub(crate) fn was_warned(key: &str) -> bool {
         .contains(key)
 }
 
-/// Clear the warn-once scope. Subsequent `warn_once(key, msg)` calls for
-/// any previously-seen key will fire again. Called by `say_loop::handle`
-/// at the top of every request so each `--stdin-loop` invocation gets a
-/// fresh dedup scope (#267 F15 / #311). Safe to call concurrently with
-/// `warn_once` — the same Mutex serializes both.
-///
-/// `dead_code` is silenced because `say_loop` only links into the
-/// `kesha-engine` bin target, not into `lib.rs`'s library facade. The
-/// library target's only consumer is the test block above (`reset` is
-/// exercised by `reset_clears_the_scope_so_subsequent_warns_fire_again`).
+/// `dead_code`: `say_loop` links only into the bin target, not `lib.rs`; exercised by tests.
 #[allow(dead_code)]
 pub(crate) fn reset() {
     warned().lock().expect("reset: mutex poisoned").clear();
@@ -81,31 +65,21 @@ mod tests {
 
     #[test]
     fn warn_once_dedups_by_key() {
-        // Public-API exercise: first call inserts the key (and prints to stderr);
-        // second call with the same key is a silent no-op. We can't capture
-        // stderr deterministically across the global `eprintln!`, so we assert
-        // dedup via the keyed set state — but, unlike the bypass form, we go
-        // through the public function so a regression that drops the eprintln
-        // (or the insert) would be observable as a behavior change.
         let key = "test-warn-once-key-1";
         warn_once(key, "first call — should print once and remember the key");
         assert!(
             warned().lock().unwrap().contains(key),
             "warn_once must record the key it warned for"
         );
-        // Second call: dedup means the key is already present, so insert returns
-        // false. We can verify by attempting another insert manually.
         warn_once(key, "second call — should be a silent no-op");
         let still_present = warned().lock().unwrap().contains(key);
         assert!(still_present, "key remains in the set across calls");
-        // Manual probe: try inserting the key fresh — should report already-there.
         let probe = warned().lock().unwrap().insert(key.to_string());
         assert!(!probe, "key already present after warn_once recorded it");
     }
 
     #[test]
     fn warn_once_different_keys_each_fire() {
-        // Public-API exercise: each unique key should be recorded independently.
         warn_once("test-warn-once-key-2a", "first key");
         warn_once("test-warn-once-key-2b", "second key");
         let set = warned().lock().unwrap();
@@ -127,8 +101,6 @@ mod tests {
             "reset() should clear the scope, but key is still present"
         );
 
-        // After reset, a second warn_once with the same key fires again
-        // (inserts into the cleared set).
         warn_once(key, "second fire — should re-record after reset");
         assert!(was_warned(key), "key should be recorded after second warn");
     }

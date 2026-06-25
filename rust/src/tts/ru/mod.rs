@@ -1,13 +1,10 @@
 //! Russian-specific text normalization for the Vosk-TTS path.
 //!
 //! Two responsibilities — both pure text-in / text-out:
-//! - `letter_table::expand_chars` — letter-by-letter spelling
-//!   for `<say-as interpret-as="characters">`.
-//! - `acronym::expand_acronyms` — auto-detect all-uppercase
-//!   Cyrillic acronyms in plain text (added in T4).
+//! - `letter_table::expand_chars` — letter-by-letter spelling for `<say-as interpret-as="characters">`.
+//! - `acronym::expand_acronyms` — auto-detect all-uppercase Cyrillic acronyms in plain text.
 //!
-//! `normalize_segments` (added in T5) routes [`crate::tts::ssml::Segment`]
-//! values through the appropriate primitive.
+//! `normalize_segments` routes [`crate::tts::ssml::Segment`] values through the appropriate primitive.
 
 pub(super) mod acronym;
 pub(super) mod letter_table;
@@ -21,22 +18,15 @@ pub fn expand_text(text: &str) -> String {
     acronym::expand_acronyms(text)
 }
 
-/// Normalize a segment list for the Russian Vosk path:
-/// - `Spell(t)` → `Text(letter_table::expand_chars(t))`
-/// - `Emphasis(_)` is converted to `Text` here: `suppress=true` strips `+`
-///   markers; `suppress=false` passes content through verbatim and emits a
-///   once-per-process warning when no `+` marker is present (caller has not
-///   provided a usable stress hint).
-/// - `Text(t)`  → `Text(acronym::expand_acronyms(t))` if `auto_expand`
-/// - `ProsodyRate { rate, content }` → same shape with `content` recursively
-///   normalized. Without this recursion, `<prosody rate>` would silently
-///   disable Cyrillic acronym expansion, `<say-as characters>`, and
-///   `<emphasis>` processing for any content nested inside it.
-/// - `Ipa(_)`, `Break(_)` → unchanged
+/// Normalize a segment list for the Russian Vosk path.
 ///
-/// `<say-as interpret-as="characters">` always wins (its content is the
-/// inner text of a `Spell` segment by the time we get here, so the
-/// `auto_expand` flag does not gate it).
+/// `ProsodyRate` recurses into its `content` so that `<prosody rate>` does not
+/// silently disable acronym expansion, `<say-as characters>`, or `<emphasis>`
+/// for nested segments.
+///
+/// `<say-as interpret-as="characters">` (`Spell`) always wins regardless of
+/// `auto_expand` — its content is already extracted into a `Spell` segment by
+/// the time we get here.
 pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment> {
     segs.into_iter()
         .map(|s| match s {
@@ -93,7 +83,6 @@ mod tests {
 
     #[test]
     fn spell_wins_even_when_auto_expand_is_false() {
-        // Confirms <say-as> isn't silenced by --no-expand-abbrev.
         let out = normalize_segments(vec![Segment::Spell("ОН".to_string())], false);
         assert_eq!(out, vec![Segment::Text("о эн".to_string())]);
     }

@@ -125,11 +125,7 @@ function logFluidKokoroCache(): void {
 
 function showDiskUsage(binPath: string): void {
   const cache = keshaCacheDir();
-  // Engine binary lives under `<cache>/engine/bin/` (managed by the TS CLI's
-  // engine-install) while all models live under `<cache>/models/` (managed by
-  // the Rust engine). Point at `engine/` (two levels up from the binary) so
-  // any future sibling files under that root (metadata, hooks, etc.) are
-  // counted too.
+  // Two levels up from the binary (`<cache>/engine/bin/`) so future engine-root siblings are counted.
   const engineDir = join(binPath, "..", "..");
 
   const components = buildDiskComponents(cache, engineDir);
@@ -142,11 +138,7 @@ function showDiskUsage(binPath: string): void {
 
   if (rows.length === 0) return;
 
-  // Total counts everything under both the model cache root AND the engine
-  // dir (which may live outside the cache when `KESHA_ENGINE_BIN` overrides
-  // the default layout). That way the number matches what the `rm -rf` hint
-  // below would actually free, including any temp downloads or future
-  // components not in the per-row list.
+  // Sum cache root + engine dir separately so `KESHA_ENGINE_BIN` overrides outside the cache are still counted.
   const componentTotal = rows.reduce((n, r) => n + r.size, 0);
   const cacheTotal = dirSizeBytes(cache);
   const engineOutsideCache = engineDir.startsWith(cache)
@@ -162,12 +154,7 @@ function showDiskUsage(binPath: string): void {
   log.info("");
 }
 
-/**
- * Read the effective `KESHA_MODEL_MIRROR` base URL (#121). Returns null when
- * unset, empty, or whitespace. Matches the Rust side's `model_mirror()` in
- * `rust/src/models.rs` — keeping them in lockstep lets `kesha status`
- * surface the exact URL the engine will hit on the next `kesha install`.
- */
+/** Returns the effective `KESHA_MODEL_MIRROR` URL (#121), trimmed; null when unset. Mirrors `model_mirror()` in `rust/src/models.rs`. */
 export function activeModelMirror(): string | null {
   const raw = process.env.KESHA_MODEL_MIRROR ?? "";
   const trimmed = raw.trim().replace(/\/+$/, "");
@@ -186,9 +173,7 @@ function listInstalledVoices(): string[] {
     /* Kokoro not installed */
   }
   try {
-    // Vosk-TTS Russian is a single multi-speaker model. Mirror the Rust-side
-    // gate (models::is_vosk_ru_cached) — checking model.onnx + bert/model.onnx
-    // avoids advertising voices that would fail to load on a partial install.
+    // Mirror models::is_vosk_ru_cached — both files required to avoid advertising a partial install.
     statSync(join(cache, "models", "vosk-ru", "model.onnx"));
     statSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"));
     for (const id of ["f01", "f02", "f03", "m01", "m02"]) {

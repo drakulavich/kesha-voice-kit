@@ -9,15 +9,10 @@
 //! one-shot path in `tts::say()` constructs them fresh per call (preserving
 //! existing behaviour bit-for-bit); the loop path holds them across requests.
 //!
-//! Eviction policy:
-//!
-//! - `KokoroSession::ensure_model` swaps in a different Kokoro checkpoint when
-//!   asked, dropping the previous session's resources.
-//! - `KokoroSession::voice` caches voice embedding files (510 × 256 f32 ≈
-//!   0.5 MB each). Unbounded today; a bounded LRU is a follow-up if anyone
-//!   ever ships an installation with more than a few dozen voices.
-//! - `VoskCache::infer` *evicts* the cached `Vosk` instance on synth error so
-//!   a corrupted internal state can't poison subsequent calls.
+//! Voice embeddings (510 × 256 f32 ≈ 0.5 MB each) are cached unbounded; a
+//! bounded LRU is a follow-up if anyone ships more than a few dozen voices.
+//! `VoskCache::infer` evicts on synth error so half-corrupted state can't
+//! poison subsequent calls.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -100,13 +95,9 @@ impl KokoroSession {
 
 /// Map of `Vosk` instances keyed by model directory. Eviction on infer error.
 ///
-/// Eviction asymmetry vs [`KokoroSession`]: Vosk-tts holds mutable
-/// per-instance state (BERT prosody buffers, dictionary) that a synth error
-/// may leave inconsistent — the next call could fail in surprising ways
-/// against a half-broken `Synth`. Kokoro inference is a stateless ONNX
-/// `Session::run` per call (each call constructs fresh tensors and reads
-/// the result without retaining state), so a failed `Kokoro::infer` doesn't
-/// poison the session — keeping it cached is safe.
+/// Vosk holds mutable BERT prosody / dictionary state; a synth error may leave
+/// it inconsistent, so we evict rather than risk poisoning the next call.
+/// Kokoro's `Session::run` is stateless per call, so no eviction needed there.
 #[derive(Default)]
 pub struct VoskCache {
     inner: HashMap<PathBuf, Vosk>,
@@ -162,12 +153,9 @@ impl VoskCache {
 
 /// Cached CharsiuG2P session keyed by the g2p model directory.
 ///
-/// CharsiuG2P loads three ONNX sessions (~100 MB total). In the long-lived
-/// `--stdin-loop` process each Romance-language request would reload them from
-/// disk without this cache. The `Charsiu` session is stateless between calls
-/// (each `to_ipa` runs a fresh encode/decode pass), so unlike Vosk there is no
-/// per-call mutable state that a synth error can corrupt — we never evict on
-/// error.
+/// CharsiuG2P loads three ONNX sessions (~100 MB total); without this cache
+/// each `--stdin-loop` Romance-language request would reload them from disk.
+/// `to_ipa` is stateless per call, so unlike Vosk we never evict on error.
 #[derive(Default)]
 pub struct CharsiuCache {
     inner: Option<(PathBuf, Charsiu)>,
@@ -196,9 +184,8 @@ impl CharsiuCache {
     }
 
     /// Phonemize `text` in `lang` (es/fr/it/pt) using the cached session.
-    /// Loads the three ONNX sessions on first call; reuses them on subsequent
-    /// calls. Surfaces the same "model not installed → kesha install --tts"
-    /// error as the one-shot path when the model directory is absent.
+    /// Surfaces the same "model not installed → kesha install --tts" error as
+    /// the one-shot path when the model directory is absent.
     // `&mut self` is required: ort `Session::run` mutates the session.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_ipa(&mut self, model_dir: &Path, text: &str, lang: &str) -> anyhow::Result<String> {
@@ -218,11 +205,7 @@ impl CharsiuCache {
 mod tests {
     use super::*;
 
-    /// Gated on CHARSIU_ONNX env var (mirrors charsiu::tests). Skipped when
-    /// unset so default CI stays fast. Proves:
-    /// 1. `CharsiuCache::to_ipa` phonemizes Spanish correctly.
-    /// 2. The session is cached after the first call (not reloaded).
-    /// 3. A second call succeeds and returns the same IPA (no state corruption).
+    /// Gated on CHARSIU_ONNX env var (mirrors charsiu::tests); skipped in CI.
     #[test]
     fn charsiu_cache_loads_once_and_reuses() {
         let Some(dir_os) = std::env::var_os("CHARSIU_ONNX") else {
@@ -241,15 +224,13 @@ mod tests {
             "cache must be populated after first call"
         );
 
-        // Second call must reuse the cached session (no reload) and return
-        // the identical IPA — Charsiu is deterministic for the same input.
+        // Charsiu is deterministic; same input must return identical IPA and not reload.
         let ipa2 = cache.to_ipa(&dir, "hola", "es").unwrap();
         assert_eq!(
             ipa1, ipa2,
             "second call returned different IPA — session may have been reloaded"
         );
 
-        // Confirm it works across languages too (no cross-lang state leak).
         let ipa_fr = cache.to_ipa(&dir, "bonjour", "fr").unwrap();
         assert!(!ipa_fr.is_empty(), "French 'bonjour' returned empty IPA");
     }

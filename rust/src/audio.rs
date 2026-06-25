@@ -16,12 +16,9 @@ use crate::errors::{CodedContext, ErrorCode};
 
 const TARGET_SAMPLE_RATE: u32 = 16000;
 
-/// Build a codec registry that includes the default codecs plus libopus.
 fn get_codec_registry() -> CodecRegistry {
     let mut registry = CodecRegistry::new();
-    // Register all default symphonia codecs
     symphonia::default::register_enabled_codecs(&mut registry);
-    // Register libopus adapter for Opus decoding
     registry.register_all::<symphonia_adapter_libopus::OpusDecoder>();
     registry
 }
@@ -92,8 +89,6 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
     Ok((probed.format, track_id, codec_params))
 }
 
-/// Decode audio file to raw f32 mono samples at the native sample rate.
-/// Returns (samples, sample_rate, channels).
 fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
     let (mut format, track_id, codec_params) = open_format(path)?;
 
@@ -123,7 +118,6 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
             }
         };
 
-        // Drain stale metadata
         while !format.metadata().is_latest() {
             format.metadata().pop();
         }
@@ -142,7 +136,6 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
             }
         };
 
-        // Initialise the sample buffer on first decoded frame
         let buf = sample_buf.get_or_insert_with(|| {
             SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec())
         });
@@ -154,7 +147,6 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
     Ok((all_samples, sample_rate, channels))
 }
 
-/// Mix interleaved multi-channel samples to mono by averaging channels.
 fn mix_to_mono(samples: &[f32], channels: usize) -> Vec<f32> {
     if channels == 1 {
         return samples.to_vec();
@@ -165,8 +157,6 @@ fn mix_to_mono(samples: &[f32], channels: usize) -> Vec<f32> {
         .collect()
 }
 
-/// Resample mono f32 samples from `src_rate` to `TARGET_SAMPLE_RATE` using
-/// rubato's asynchronous sinc resampler.
 fn resample(samples: Vec<f32>, src_rate: u32) -> Result<Vec<f32>> {
     if src_rate == TARGET_SAMPLE_RATE {
         return Ok(samples);
@@ -254,14 +244,12 @@ fn resample(samples: Vec<f32>, src_rate: u32) -> Result<Vec<f32>> {
     Ok(output_mono)
 }
 
-/// Load an audio file and return 16 kHz mono f32 samples.
 pub fn load_audio(path: &str) -> Result<Vec<f32>> {
     let (interleaved, sample_rate, channels) = decode_audio(path)?;
     let mono = mix_to_mono(&interleaved, channels);
     resample(mono, sample_rate)
 }
 
-/// Load an audio file, return 16 kHz mono f32 samples truncated to `max_seconds`.
 pub fn load_audio_truncated(path: &str, max_seconds: f32) -> Result<Vec<f32>> {
     let samples = load_audio(path)?;
     let max_samples = (max_seconds * TARGET_SAMPLE_RATE as f32) as usize;

@@ -28,27 +28,19 @@ export interface SayOptions {
    * arg) handles stdin separately before invoking `say()`.
    */
   text?: string;
-  /** Voice id, e.g. `en-am_michael`. Defaults to engine default. */
   voice?: string;
-  /** Override the voice's default BCP 47 language code (e.g. `en-us`, `ru`). */
   lang?: string;
-  /** Write audio to this path instead of returning bytes. */
   out?: string;
-  /** Speaking rate 0.5–2.0. */
   rate?: number;
   /** Parse `text` as SSML (`<speak>…<break time="500ms"/>…</speak>`). See issue #122. */
   ssml?: boolean;
   /**
-   * Output audio format. Defaults to `wav` (or inferred from the `out`
-   * extension when omitted: `.wav` → wav, `.ogg`/`.opus` → ogg-opus).
+   * Defaults to `wav`, or inferred from the `out` extension: `.wav` → wav, `.ogg`/`.opus` → ogg-opus.
    */
   format?: SayFormat;
-  /** Opus bitrate in bits/second. Only valid with `format: "ogg-opus"`. Default 32000. */
+  /** Only valid with `format: "ogg-opus"`. Default 32000. */
   bitrate?: number;
-  /**
-   * Encoder sample rate in Hz. Only valid with `format: "ogg-opus"`.
-   * Must be one of 8000, 12000, 16000, 24000, 48000. Default 24000.
-   */
+  /** Only valid with `format: "ogg-opus"`. Must be one of 8000, 12000, 16000, 24000, 48000. Default 24000. */
   sampleRate?: number;
   /**
    * Disable acronym auto-expansion for `ru-vosk-*` and `en-*` voices.
@@ -62,10 +54,6 @@ export interface SayOptions {
   noExpandAbbrev?: boolean;
 }
 
-/**
- * Appends `--no-expand-abbrev` to `args` when the engine supports it, or
- * emits a warning and skips the flag on older engines.
- */
 function applyNoExpandAbbrev(args: string[], capabilities: EngineCapabilities | null | undefined): void {
   const supportsAcronymExpansion =
     capabilities?.features?.some(
@@ -112,10 +100,6 @@ export class SayError extends Error {
   }
 }
 
-/**
- * Synthesize speech. Returns raw WAV bytes. If `out` is provided in options,
- * the engine writes to the file and this function returns an empty buffer.
- */
 export async function say(opts: SayOptions): Promise<Uint8Array> {
   const text = opts.text ?? "";
   if (text.length === 0) {
@@ -148,11 +132,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     stdio: spawnStdioWithDebugFd(["pipe", "pipe", "pipe"]),
   });
   const tree = registerProcessTree(proc);
-  // The `stdio: [...]` form widens stdin/stdout/stderr into a union
-  // (Bun.spawn can't infer that indices 0/1/2 are always "pipe" given
-  // the helper's return type). All three are guaranteed `FileSink` /
-  // `ReadableStream` here because the helper preserves index 0/1/2
-  // from the base tuple. Narrow back via cast.
+  // spawnStdioWithDebugFd widens the tuple to a union; cast back to the known "pipe" types.
   const stdin = proc.stdin as Bun.FileSink;
   const stdout = proc.stdout as ReadableStream<Uint8Array>;
   const stderr = proc.stderr as ReadableStream<Uint8Array>;

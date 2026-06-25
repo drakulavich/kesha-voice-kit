@@ -20,19 +20,9 @@ pub struct SayArgs {
     pub no_expand_abbrev: bool,
 }
 
-/// Resolve the user-supplied `--format` / `--bitrate` / `--sample-rate` /
-/// `--out` combination into a single [`tts::OutputFormat`]. Mirrors the UX
-/// table from #223:
-///
-/// 1. If `--format` is given, parse it (`wav` | `ogg-opus`).
-/// 2. Otherwise, sniff the `--out` extension (`.wav` → wav, `.ogg`/`.opus`
-///    → ogg-opus).
-/// 3. Otherwise default to `Wav` — preserves the historical `kesha say > x`
-///    behaviour where stdout was always RIFF.
-///
-/// `--bitrate` / `--sample-rate` only matter for opus and override the
-/// defaults. When the user picked WAV but supplied either flag, we surface a
-/// clear error rather than silently dropping them.
+/// Resolve `--format` / `--bitrate` / `--sample-rate` / `--out` into a
+/// [`tts::OutputFormat`]. Priority: explicit flag > `--out` extension > Wav
+/// default (preserves historical stdout-RIFF behaviour). See #223.
 pub(crate) fn resolve_output_format(
     format: Option<&str>,
     bitrate: Option<i32>,
@@ -41,11 +31,7 @@ pub(crate) fn resolve_output_format(
 ) -> Result<tts::OutputFormat, String> {
     use std::str::FromStr;
 
-    // #275 D10: track which arm of the resolver fired so the dtrace at
-    // the bottom can surface `chosen=… source=…`. Three possible sources:
-    //   "--format"  — explicit flag wins.
-    //   "out-ext"   — sniffed from the `--out` extension.
-    //   "default"   — fallthrough (no flag, no `--out`, or unknown ext).
+    // #275 D10: source label fed to the dtrace probe at the bottom.
     let (mut chosen, source): (tts::OutputFormat, &'static str) = match (format, out) {
         (Some(f), _) => (tts::OutputFormat::from_str(f)?, "--format"),
         (None, Some(p)) => {
@@ -73,7 +59,6 @@ pub(crate) fn resolve_output_format(
             *sr = r;
         }
     } else if bitrate.is_some() || sample_rate.is_some() {
-        // Non-Opus formats (Wav, Flac) have no encoder bitrate/sample-rate knob.
         return Err("--bitrate / --sample-rate only apply to --format ogg-opus".to_string());
     }
 
@@ -209,8 +194,7 @@ pub fn run(a: SayArgs) -> i32 {
         return exit_code_for_tts_err(&err);
     }
 
-    // `--model` + `--voice-file` are Kokoro-specific testing overrides.
-    // Pinned model/voice paths bypass the cache lookup.
+    // `--model` + `--voice-file` are Kokoro-specific testing overrides (bypass cache).
     let resolved = match (a.model, a.voice_file) {
         (Some(model_path), Some(voice_path)) => tts::voices::ResolvedVoice::Kokoro {
             model_path,

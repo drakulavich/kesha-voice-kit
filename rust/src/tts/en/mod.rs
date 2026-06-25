@@ -1,18 +1,7 @@
 //! English-specific text normalization for the Kokoro path.
 //!
-//! Two-table mechanism:
-//! - `letter_table::expand_chars` — letter-by-letter spelling for
-//!   `<say-as interpret-as="characters">` and the auto-expand rule.
-//! - `acronym::IPA_LEXICON` — case-sensitive token → IPA-phoneme override.
-//!   Hits emit `Segment::Ipa` which `synth_segments_kokoro_with` routes
-//!   directly to `infer_ipa`, bypassing G2P.
-//! - `acronym::STOP_LIST` — natural-English caps words that pass through
-//!   to Kokoro's training-derived pronunciation.
-//!
-//! `normalize_segments` is the single entry point — both the SSML pipeline
-//! (`synth_segments_kokoro`) and the plain-text Kokoro path
-//! (`tts::say()` and `say_loop.rs`) wrap their input in a `Segment::Text`
-//! and call this function.
+//! Two tables: `letter_table::expand_chars` (letter-spelling) and
+//! `acronym::IPA_LEXICON` / `acronym::STOP_LIST` (IPA overrides / pass-throughs).
 //!
 //! Closes #244.
 
@@ -21,27 +10,16 @@ pub(super) mod letter_table;
 
 use crate::tts::ssml::Segment;
 
-/// Returns true when `lang` is an English variant (`en`, `en-us`, `en-gb`, …).
-/// Centralized here so plain/SSML/stdin-loop call sites all agree on the gate.
+/// True for any English variant (`en`, `en-us`, `en-gb`, …).
+/// Centralized so all call sites (plain/SSML/stdin-loop) agree on the gate.
 pub fn is_en(lang: &str) -> bool {
     lang.starts_with("en")
 }
 
-/// Normalize a segment list for the Kokoro path. Each input segment becomes
-/// zero or more output segments:
-/// - `Spell(t)` → `Text(letter_table::expand_chars(t))` — always (not gated
-///   by `auto_expand`).
-/// - `Emphasis { content, suppress }` → `Text(content_stripped_of_plus)`. If
-///   `!suppress`, emit a once-per-process warning that `<emphasis>` stress
-///   markers are honored only on `ru-vosk-*` voices.
-/// - `Text(t)` → tokenized via `expand_to_segments`, producing a mix of
-///   `Text` and `Ipa` segments. `auto_expand` controls letter-spelling;
-///   `IPA_LEXICON` hits fire regardless (intent-explicit).
-/// - `ProsodyRate { rate, content }` → same shape with `content` recursively
-///   normalized. Without this recursion, `<prosody rate>` would silently
-///   disable `IPA_LEXICON` overrides, `<say-as characters>`, and `<emphasis>`
-///   warnings for any content nested inside it.
-/// - `Ipa(_)`, `Break(_)` → unchanged.
+/// Normalize a segment list for the Kokoro path.
+/// `ProsodyRate` content is recursively normalized so that IPA_LEXICON
+/// overrides, `<say-as characters>`, and `<emphasis>` warnings remain active
+/// for nested segments.
 pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment> {
     segs.into_iter()
         .flat_map(|s| match s {

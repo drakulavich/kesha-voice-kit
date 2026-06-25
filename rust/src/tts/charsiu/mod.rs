@@ -25,10 +25,7 @@ pub(crate) fn is_castilian_region(lang: &str) -> bool {
 /// Reduce a (possibly region-tagged) code to the base lang Charsiu understands:
 /// "es-ES"/"es-419"/"es-MX" → "es"; "pt-br" → "pt"; passthrough otherwise.
 pub(crate) fn base_lang(lang: &str) -> &str {
-    // Return a canonical lowercase literal for the four supported bases so the
-    // result matches case-insensitively at every call site (routing guards) and
-    // feeds `normalize` (which only matches bare lowercase codes) correctly even
-    // for an uppercase region tag like "ES-ES". Unsupported codes pass through.
+    // Canonical lowercase so routing guards and `normalize` (bare lowercase only) work even for "ES-ES".
     match lang
         .split('-')
         .next()
@@ -87,8 +84,7 @@ impl Charsiu {
     /// the byte ids, remaps to Kokoro's inventory, and rejoins with spaces.
     /// Supported langs map to CharsiuG2P tags: `es`→`<spa>`, `fr`→`<fra>`,
     /// `it`→`<ita>`, `pt`→`<por-bz>`. Other langs bail.
-    // `&mut self` is required: ort `Session::run` mutates the session. The `to_`
-    // name reflects the conversion semantics, so silence wrong_self_convention.
+    // `&mut self`: ort `Session::run` mutates; `to_` name is correct semantics.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_ipa(&mut self, text: &str, lang: &str) -> Result<String> {
         let castilian = is_castilian_region(lang);
@@ -147,15 +143,11 @@ mod tests {
 
     #[test]
     fn base_lang_canonicalizes_case_and_region() {
-        // Region tags reduce to the bare base; the base is canonical lowercase
-        // even when the input lang subtag is uppercase (so routing guards and
-        // `normalize` see "es", not "ES").
         assert_eq!(base_lang("es-ES"), "es");
         assert_eq!(base_lang("ES-ES"), "es");
         assert_eq!(base_lang("es-419"), "es");
         assert_eq!(base_lang("pt-BR"), "pt");
         assert_eq!(base_lang("FR"), "fr");
-        // Unsupported codes pass through unchanged.
         assert_eq!(base_lang("de"), "de");
         assert_eq!(base_lang("en-us"), "en-us");
     }

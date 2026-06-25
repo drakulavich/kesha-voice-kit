@@ -64,7 +64,6 @@ impl OnnxBackend {
         })
     }
 
-    /// Run the preprocessor (nemo128.onnx) to get mel-spectrogram features.
     fn preprocess(&mut self, audio_samples: &[f32]) -> Result<(Vec<f32>, Vec<usize>)> {
         let num_samples = audio_samples.len();
 
@@ -85,14 +84,13 @@ impl OnnxBackend {
             ])
             .context("Preprocessor inference failed")?;
 
-        // Extract features [1, 128, T]
+        // features shape: [1, 128, T]
         let (features_shape, features_data) = outputs[0]
             .try_extract_tensor::<f32>()
             .context("Failed to extract features tensor")?;
         let features_shape: Vec<usize> = features_shape.iter().map(|&x| x as usize).collect();
         let features_data: Vec<f32> = features_data.to_vec();
 
-        // Extract features_lens [1]
         let (_lens_shape, lens_data) = outputs[1]
             .try_extract_tensor::<i64>()
             .context("Failed to extract features_lens tensor")?;
@@ -102,7 +100,6 @@ impl OnnxBackend {
         Ok((features_data, lens))
     }
 
-    /// Run the encoder (encoder-model.onnx) on mel features.
     fn encode(
         &mut self,
         features_data: &[f32],
@@ -143,11 +140,6 @@ impl OnnxBackend {
         Ok((logits_data, logits_shape, enc_lens))
     }
 
-    /// Run the decoder joint model for one step.
-    /// encoder_frame: [D] — single frame from encoder output
-    /// target: last emitted token ID
-    /// state1, state2: RNN hidden states [DECODER_LAYERS * DECODER_HIDDEN]
-    /// Returns: (output logits, new_state1, new_state2)
     fn decode_step(
         &mut self,
         encoder_frame: &[f32],
@@ -194,9 +186,7 @@ impl OnnxBackend {
             ])
             .context("Decoder inference failed")?;
 
-        // Decoder outputs may be in different order — find by trying types
-        // Expected: outputs (f32), output_states_1 (f32), output_states_2 (f32)
-        // But some models have different ordering or extra outputs
+        // Output order varies by model version; disambiguate by tensor rank
         let mut output_data: Option<Vec<f32>> = None;
         let mut new_s1: Option<Vec<f32>> = None;
         let mut new_s2: Option<Vec<f32>> = None;
@@ -231,10 +221,6 @@ impl OnnxBackend {
         ))
     }
 
-    /// RNN-T TDT beam search decoder.
-    /// encoder_data: raw encoder output [1, D, T'] stored as flat [D*T'] in row-major
-    /// encoder_dim: D (feature dimension)
-    /// encoder_length: T' (number of frames)
     fn beam_decode(
         &mut self,
         encoder_data: &[f32],
@@ -285,8 +271,7 @@ impl OnnxBackend {
             for &beam_idx in &active {
                 let beam = &beams[beam_idx];
 
-                // Extract encoder frame at position beam.t
-                // encoder_data layout: [1, D, T'] row-major → element [0, d, t] = d * T' + t
+                // encoder_data: [1, D, T'] row-major → element [0, d, t] = d * T' + t
                 let frame: Vec<f32> = (0..encoder_dim)
                     .map(|d| encoder_data[d * encoder_length + beam.t])
                     .collect();
@@ -297,7 +282,6 @@ impl OnnxBackend {
                 let token_logits = &output[..vocab_size];
                 let duration_logits = &output[vocab_size..];
 
-                // Duration: argmax of duration logits
                 let duration = argmax(duration_logits);
 
                 // Blank option: advance one frame, keep same tokens
@@ -347,7 +331,6 @@ impl OnnxBackend {
             .unwrap_or_default())
     }
 
-    /// Detokenize: map token IDs to strings, replace ▁ with space, trim.
     fn detokenize(&self, token_ids: &[usize]) -> String {
         let text: String = token_ids
             .iter()
@@ -415,7 +398,6 @@ fn load_vocab<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
             let token = &line[..last_space];
             let id_str = &line[last_space + 1..];
             if let Ok(id) = id_str.parse::<usize>() {
-                // Ensure vocab is large enough
                 if id >= vocab.len() {
                     vocab.resize(id + 1, String::new());
                 }

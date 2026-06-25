@@ -172,11 +172,6 @@ pub fn validate_tts_langs(langs: &[&str]) -> Result<()> {
     Ok(())
 }
 
-// ── ONNX-path Kokoro shared consts ──────────────────────────────────────────
-// These are gated to the ONNX (non-ANE) build. Each literal appears exactly
-// once; `kokoro_manifest_for(langs)` builds its output by cloning from these
-// consts.
-
 /// The Kokoro-82M ONNX graph (~326 MB). Single copy regardless of how many
 /// Kokoro languages are installed — all voices share this graph.
 ///
@@ -531,8 +526,7 @@ fn ane_voices_for(langs: &[&str]) -> Vec<&'static ModelFile> {
 /// `KESHA_CACHE_DIR` — FluidAudio 0.14.7 owns this path and reads voice packs
 /// from here local-first. We pre-stage onnx-community packs here so the full
 /// advertised Kokoro catalog (and the male `am_michael` default) resolve
-/// without a 404 against the ANE bundle. Mirrors the existing CLAUDE.md note
-/// that darwin Kokoro uses the fluidaudio cache rather than `KESHA_CACHE_DIR`.
+/// without a 404 against the ANE bundle.
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -560,7 +554,6 @@ pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
     target_arch = "aarch64"
 ))]
 pub fn stage_ane_kokoro_voices(langs: &[&str], no_cache: bool) -> Result<()> {
-    // `rel_path = "<voice>.bin"` + `cache = ane_dir` → flat ANE dir.
     let manifest = ane_voices_for(langs);
     if manifest.is_empty() {
         return Ok(());
@@ -785,16 +778,8 @@ fn has_all_files(dir: &Path, files: &[ModelFile]) -> bool {
 pub fn install(no_cache: bool) -> Result<()> {
     let cache = cache_dir();
 
-    // Always run through download_verified so a silently-corrupted cached
-    // file gets caught on the next `kesha install` (hash mismatch → fall
-    // through and re-download). The per-file "OK (cached)" / "GET" log is
-    // emitted by download_verified itself — intentionally no summary line
-    // so the verbose-per-file output is the single source of truth.
-    //
-    // ASR + lang-id downloads run concurrently through a bounded 4-worker
-    // pool (#178) so the HF round-trips overlap on a cold install. 8 files
-    // total (5 ASR + 3 lang-id); 4 workers keeps us inside HF's
-    // per-IP tolerance while filling the pipe on typical home bandwidth.
+    // Always hash-verify even on cache hits — catches silent corruption (#174).
+    // 4-worker pool (#178) overlaps ASR + lang-id round-trips within HF's per-IP tolerance.
     let manifest: Vec<&ModelFile> = ASR_FILES.iter().chain(LANG_ID_FILES.iter()).collect();
     parallel_download(&cache, &manifest, no_cache)?;
 
@@ -802,10 +787,7 @@ pub fn install(no_cache: bool) -> Result<()> {
     Ok(())
 }
 
-/// Process-wide 4-worker pool reused across `install()` and
-/// `download_tts()` — building a fresh pool per call spawns 4
-/// `pthread_create`s and tears them down again for no reason. 4 workers
-/// keeps us inside HF's per-IP tolerance while filling the pipe.
+/// Static singleton avoids repeated `pthread_create`/teardown per install call.
 fn download_pool() -> &'static rayon::ThreadPool {
     use std::sync::OnceLock;
     static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
@@ -818,10 +800,7 @@ fn download_pool() -> &'static rayon::ThreadPool {
     })
 }
 
-/// Kick off up to 4 concurrent `download_verified` calls against the
-/// manifest. A single hash-mismatch (or any other error) bails the whole
-/// install via `try_for_each` — matches the sequential contract from
-/// before, just faster on a cold network.
+/// 4 concurrent downloads; first error bails the whole install (same contract as sequential).
 fn parallel_download(cache: &Path, manifest: &[&ModelFile], no_cache: bool) -> Result<()> {
     use rayon::prelude::*;
     download_pool().install(|| {
@@ -1378,8 +1357,6 @@ fn is_compiled_mlpackage_sidecar(path: &Path) -> bool {
 }
 
 /// Download the Silero VAD ONNX. Opt-in via `kesha install --vad` (#128).
-/// Single-file manifest, so `parallel_download` reduces to one HTTP round
-/// trip — keeps the uniform hash-verify + retry path.
 pub fn download_vad(no_cache: bool) -> Result<()> {
     download_manifest(VAD_FILES, no_cache)
 }
@@ -1430,11 +1407,8 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
     Ok(())
 }
 
-/// Streams a manifest entry to its `cache/<rel_path>` destination, then
-/// SHA-256-verifies. Runs for ASR, lang-id, and TTS (uniform integrity
-/// check — see #174). A cached file that already matches the pinned hash
-/// short-circuits the network round-trip. A mismatch after download
-/// bails out hard so the bad file never loads at inference time.
+/// Hash-verify on every path — cached hits short-circuit network; mismatch bails before
+/// the bad file can reach inference (#174).
 fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> {
     let target = cache.join(f.rel_path);
     if !no_cache && target.exists() && verify_sha256(&target, f.sha256)? {
@@ -1485,11 +1459,8 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
     Ok(compute_sha256(path)?.eq_ignore_ascii_case(expected))
 }
 
-/// SHA-256 of `path`'s contents, lowercase hex. Split out from
-/// [`verify_sha256`] so the mismatch bail in `download_verified` can embed
-/// the actual hash next to the expected one (#275 D5). 64 KiB BufReader
-/// keeps `io::copy` off its 8 KiB default so hashing a 2.4 GB model file
-/// stays IO-bound rather than syscall-bound.
+/// SHA-256 of `path`'s contents, lowercase hex (#275 D5).
+/// 64 KiB BufReader avoids syscall-bound hashing on large model files.
 fn compute_sha256(path: &Path) -> Result<String> {
     use sha2::{Digest, Sha256};
     let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
@@ -1517,8 +1488,6 @@ fn cleanup_legacy() {
 mod characterization_tests {
     use super::*;
 
-    // ── ModelKind::subdir table test ─────────────────────────────────────────
-
     #[test]
     fn model_kind_subdir_table() {
         assert_eq!(ModelKind::Asr.subdir(), "models/parakeet-tdt-v3");
@@ -1532,8 +1501,6 @@ mod characterization_tests {
         assert_eq!(ModelKind::VoskRu.subdir(), "models/vosk-ru");
     }
 
-    // ── model_dir_at with a fake root ────────────────────────────────────────
-
     #[test]
     fn model_dir_at_joins_subdir_to_root() {
         let root = std::path::Path::new("/fake/cache");
@@ -1546,8 +1513,6 @@ mod characterization_tests {
             std::path::PathBuf::from("/fake/cache/models/silero-vad")
         );
     }
-
-    // ── is_cached_in with a tempdir ──────────────────────────────────────────
 
     #[test]
     fn is_cached_in_asr_true_when_all_files_present() {
@@ -1566,7 +1531,6 @@ mod characterization_tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("models/parakeet-tdt-v3");
         fs::create_dir_all(&dir).unwrap();
-        // Write all but the last file.
         for f in &ASR_FILES[..ASR_FILES.len() - 1] {
             let name = std::path::Path::new(f.rel_path).file_name().unwrap();
             fs::write(dir.join(name), b"dummy").unwrap();
@@ -1606,8 +1570,6 @@ mod characterization_tests {
         assert!(!is_cached_in(ModelKind::Vad, &dir));
     }
 
-    // ── has_vosk_ru_layout via is_cached_in ──────────────────────────────────
-
     #[cfg(feature = "tts")]
     #[test]
     fn is_cached_in_vosk_ru_true_when_layout_present() {
@@ -1628,11 +1590,8 @@ mod characterization_tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("model.onnx"), b"dummy").unwrap();
         fs::write(dir.join("dictionary"), b"dummy").unwrap();
-        // bert/model.onnx absent
         assert!(!is_cached_in(ModelKind::VoskRu, &dir));
     }
-
-    // ── multilang_voice direct ────────────────────────────────────────────────
 
     #[cfg(all(
         feature = "tts",
@@ -1661,8 +1620,6 @@ mod characterization_tests {
         assert!(multilang_voice("de").is_none());
     }
 
-    // ── ane_voice_lang direct ─────────────────────────────────────────────────
-
     #[cfg(all(
         feature = "system_kokoro",
         target_os = "macos",
@@ -1679,7 +1636,6 @@ mod characterization_tests {
         assert_eq!(ane_voice_lang("jm_test.bin"), Some("ja"));
         assert_eq!(ane_voice_lang("pm_alex.bin"), Some("pt"));
         assert_eq!(ane_voice_lang("zm_050.bin"), Some("zh"));
-        // Unknown prefix → None
         assert_eq!(ane_voice_lang("xm_unknown.bin"), None);
         assert_eq!(ane_voice_lang(""), None);
     }

@@ -55,10 +55,6 @@ fn emit_phoneme(
 ) -> Option<usize> {
     let is_ipa = matches!(&attrs.alphabet, None | Some(PhonemeAlphabet::Ipa));
     if !is_ipa {
-        // `is_ipa` above already filtered `None` and `Some(Ipa)`,
-        // so the only remaining variant today is `Other(s)`. Future
-        // `ssml-parser` enum growth falls into the wildcard with a
-        // synthesized name — warn + strip, never panic on user input.
         let alpha = match &attrs.alphabet {
             Some(PhonemeAlphabet::Other(s)) => s.clone(),
             other => format!("{other:?}"),
@@ -108,9 +104,6 @@ pub(super) fn emit_span(
         }
         ParsedElement::SayAs(attrs) => {
             if attrs.interpret_as == "characters" {
-                // Emit any pending text up to the tag, then a Spell segment for
-                // the inner text. Cursor advances past the closing tag so we
-                // don't double-emit the inner content as a Text fall-through.
                 push_text_slice(segments, text, cursor, span.start);
                 if let Some(inner) = extract_inner_text(text, span.start, span.end) {
                     segments.push(Segment::Spell(inner));
@@ -139,15 +132,7 @@ pub(super) fn emit_span(
                 let suppress = matches!(attrs.level, Some(EmphasisLevel::None));
                 segments.push(Segment::Emphasis { content, suppress });
             }
-            // Cursor advances past the entire emphasis span. Any structural child
-            // (e.g. <break/>, <say-as>, <phoneme>) whose `start` falls within
-            // [span.start, span.end) will be skipped by the loop-top
-            // `if span.start < cursor { continue; }` guard. For <say-as> /
-            // <phoneme> this is the desired "inner tag wins" behavior (the inner
-            // arm runs first via span_priority sort and consumes its own range);
-            // for <break/> the silence is silently absorbed into the emphasis
-            // content. Out of scope per the #233 spec; tracked separately if a
-            // real user hits it.
+            // <break/> inside <emphasis> is silently absorbed — out of scope per #233.
             Some(span.end)
         }
         other => {
@@ -156,7 +141,6 @@ pub(super) fn emit_span(
                 &format!("unknown-tag-{name}"),
                 &format!("SSML tag <{name}> is not supported — stripping"),
             );
-            // Preserve the text content; don't touch cursor.
             None
         }
     }
@@ -177,9 +161,6 @@ pub(super) fn parse_inner_spans(
     let mut segments: Vec<Segment> = Vec::new();
     let mut cursor = prosody_start;
 
-    // Filter to spans that are strictly children of the prosody span
-    // (start >= prosody_start, end <= prosody_end) and are not the prosody
-    // span itself (we skip the Prosody element and the Speak wrapper).
     for span in all_spans {
         if span.start < prosody_start || span.end > prosody_end {
             continue;
@@ -198,13 +179,9 @@ pub(super) fn parse_inner_spans(
             continue;
         }
         match &span.element {
-            ParsedElement::Speak(_) => {
-                // Skip the speak wrapper — we're already inside it.
-            }
+            ParsedElement::Speak(_) => {}
             ParsedElement::Prosody(_) => {
-                // Nested <prosody> inside another <prosody>: not supported in v1.
-                // Inner attributes are dropped; inner content flows at the outer
-                // rate via the trailing push_text_slice plus any leaf spans below.
+                // Nested <prosody>: inner rate/pitch/volume dropped; content flows at outer rate.
                 warn_once(
                     WARN_PROSODY_NESTED,
                     "SSML <prosody> nested inside another <prosody> is not \
@@ -218,7 +195,6 @@ pub(super) fn parse_inner_spans(
             }
         }
     }
-    // Trailing text inside the prosody span.
     push_text_slice(&mut segments, text, cursor, prosody_end);
     segments
 }
@@ -263,11 +239,7 @@ mod tests {
         );
     }
 
-    // T2: IPA <phoneme> inside a whole-utterance <prosody> — the phoneme span
-    // has priority 0 and the prosody has priority 2 in the top-level sort, so
-    // the phoneme arm runs first, advances cursor past the whole prosody range,
-    // and the prosody span is skipped by the cursor guard. Actual output: a
-    // flat [Ipa(...)] with no ProsodyRate wrapper.
+    // T2: IPA <phoneme> inside <prosody> — inner leaf wins (priority 0 < 2); flat [Ipa(...)], no ProsodyRate.
     #[test]
     fn ipa_phoneme_inside_prosody_emits_ipa_segment() {
         let segs = parse(
@@ -307,7 +279,6 @@ mod tests {
             Segment::ProsodyRate { content, .. } => content,
             other => panic!("expected ProsodyRate, got {other:?}"),
         };
-        // No Ipa segment.
         assert!(
             !content.iter().any(|s| matches!(s, Segment::Ipa(_))),
             "unexpected Ipa in: {content:?}"
@@ -321,10 +292,7 @@ mod tests {
         );
     }
 
-    // T4: <say-as interpret-as="characters"> inside a whole-utterance <prosody>
-    // — SayAs has priority 0 and prosody priority 2; the say-as arm runs first,
-    // advances cursor past the whole prosody range, and prosody is skipped.
-    // Actual output: flat [Spell("ВОЗ")] with no ProsodyRate wrapper.
+    // T4: <say-as interpret-as="characters"> inside <prosody> — inner leaf wins (priority 0 < 2); flat [Spell(...)], no ProsodyRate.
     #[test]
     fn say_as_characters_inside_prosody_emits_spell() {
         let segs = parse(
@@ -375,8 +343,6 @@ mod tests {
             Segment::ProsodyRate { content, .. } => content,
             other => panic!("expected ProsodyRate, got {other:?}"),
         };
-        // Text should flow through; the <audio> tag is stripped but
-        // surrounding text is preserved.
         let all_text: String = content
             .iter()
             .filter_map(|s| match s {
@@ -408,7 +374,6 @@ mod tests {
             flat_break_count, 0,
             "breaks must not be emitted flat (double-emit #560), got: {segs:?}"
         );
-        // Exactly one ProsodyRate, carrying both breaks.
         let prosody_count = segs
             .iter()
             .filter(|s| matches!(s, Segment::ProsodyRate { .. }))

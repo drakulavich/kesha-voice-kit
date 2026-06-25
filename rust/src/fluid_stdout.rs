@@ -94,12 +94,9 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
     // swallowing the engine's final JSON for the rest of the process.
     if have_save {
         if let Some(devnull) = devnull {
-            // Flush the C stdio buffer to the *real* stdout before redirecting, so
-            // any legitimately pre-buffered output isn't swallowed by /dev/null.
+            // Flush real stdout before redirect so pre-buffered output isn't swallowed by /dev/null.
             // SAFETY: fflush(NULL) flushes all open C output streams; no borrows.
             if unsafe { libc::fflush(std::ptr::null_mut()) } != 0 {
-                // Flush failed before the redirect — pre-buffered output may be lost to
-                // /dev/null on the next flush. Warn on stderr to match the dup2 handling.
                 let errno = std::io::Error::last_os_error();
                 let _ = writeln!(
                     std::io::stderr(),

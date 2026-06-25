@@ -24,8 +24,6 @@ use super::avspeech;
 /// silence. 30s × 24 kHz × 4 B ≈ 2.9 MB max per tag, easily affordable.
 const MAX_BREAK_SECS: f64 = 30.0;
 
-/// Build a zero-PCM silence buffer for an SSML `<break>`, capped at
-/// [`MAX_BREAK_SECS`] regardless of declared duration.
 fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
     let secs = dur.as_secs_f64().min(MAX_BREAK_SECS);
     let n = (secs * sample_rate as f64).round() as usize;
@@ -72,9 +70,8 @@ fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
 
 /// Synthesize speech and return WAV bytes (mono float32; sample rate depends on engine).
 ///
-/// Loads the ONNX session fresh on each call (~100-800ms). Fine for one-shot CLI
-/// usage; callers that synthesize in a loop should hold a [`kokoro::Kokoro`] or
-/// [`vosk::Vosk`] instance and drive it via its `infer` method.
+/// Loads the ONNX session fresh on each call (~100-800ms); callers that synthesize
+/// in a loop should hold an engine handle and drive it via `infer` directly.
 pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     if opts.text.is_empty() {
         return Err(TtsError::EmptyText);
@@ -104,8 +101,6 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         opts.ssml
     );
 
-    // One exhaustive dispatch: each engine arm owns its SSML handling, so no
-    // arm depends on an early return elsewhere and none is unreachable.
     match &opts.engine {
         #[cfg(all(
             feature = "system_kokoro",
@@ -140,9 +135,6 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             }
             let wav_bytes = avspeech::synthesize(opts.text, voice_id, *speed, None)
                 .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")))?;
-            // The Swift sidecar always returns WAV. For non-WAV `--format`, decode
-            // back to PCM and re-encode — cheap (a few hundred ms of audio) and
-            // keeps the encoder pipeline single-pathed.
             transcode_to(&wav_bytes, opts.format)
         }
         // Vosk-tts owns its own G2P + text normalisation; bypass our espeak/misaki path.
@@ -178,10 +170,8 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             if opts.ssml {
                 return say_ssml(&opts, model_path, voice_path, *speed);
             }
-            // English on Kokoro: route plain text through the segment pipeline so
-            // IPA_LEXICON overrides (EPAM, JSON, Anthropic, Microsoft, …) emit
-            // `Segment::Ipa` and bypass G2P. Letter-spell rule + STOP_LIST run inside
-            // `en::normalize_segments`. Closes #244.
+            // English: segment pipeline so IPA_LEXICON overrides bypass G2P;
+            // letter-spell + STOP_LIST run inside en::normalize_segments (#244).
             if en::is_en(opts.lang) {
                 return synth_segments_kokoro(
                     vec![ssml::Segment::Text(opts.text.to_string())],
@@ -193,7 +183,6 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
                     opts.expand_abbrev,
                 );
             }
-            // Non-English Kokoro: legacy G2P + say_with_kokoro path.
             let ipa = g2p::text_to_ipa(opts.text, opts.lang)
                 .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
             if ipa.trim().is_empty() {
@@ -206,10 +195,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     }
 }
 
-/// Kokoro SSML path: parse, then synthesize each text segment through the engine
-/// (loaded once), interleaving silence for `<break>` segments. Concatenate the
-/// f32 samples and wrap as WAV. The other engines handle SSML in their own
-/// `say()` arms (Vosk via `synth_segments_vosk`, AVSpeech rejects it).
+/// Kokoro SSML path. Vosk handles SSML in its own arm; AVSpeech rejects it.
 fn say_ssml(
     opts: &SayOptions,
     model_path: &Path,
@@ -246,10 +232,8 @@ fn synth_segments_kokoro(
     format: OutputFormat,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
-    // Run en::normalize_segments for en-* voices: maps Spell→Text via the
-    // letter table, Text→acronym-expanded (when expand_abbrev), Emphasis→Text
-    // with `+`-strip + warn-once. Mirror of synth_segments_vosk's call to
-    // ru::normalize_segments. Closes #244.
+    // en::normalize_segments maps Spell→Text, expands acronyms, strips Emphasis.
+    // Mirror of synth_segments_vosk's ru::normalize_segments call (#244).
     let segments = if en::is_en(lang) {
         en::normalize_segments(segments, expand_abbrev)
     } else {
@@ -260,9 +244,8 @@ fn synth_segments_kokoro(
     synth_segments_kokoro_with(&mut sess, &segments, lang, voice_path, speed, format)
 }
 
-/// Synthesize a single SSML segment through Kokoro and return raw f32 samples.
-/// `ProsodyRate` recursively calls this for each inner segment with the
-/// multiplied+clamped rate; all other arms are leaf productions.
+/// Synthesize a single SSML segment through Kokoro; `ProsodyRate` recurses with
+/// the composed rate.
 fn synth_one_kokoro(
     sess: &mut sessions::KokoroSession,
     seg: &ssml::Segment,
@@ -284,12 +267,8 @@ fn synth_one_kokoro(
             .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}"))),
         ssml::Segment::Break(dur) => Ok(silence_samples(*dur, sample_rate)),
         ssml::Segment::Emphasis { content, suppress } => {
-            // Defensive fallback: en::normalize_segments converts Emphasis→Text
-            // upstream of synth_segments_kokoro_with's say_ssml caller
-            // (synth_segments_kokoro). The arm remains for `--stdin-loop`
-            // callers (#213) that bypass that wrapper and feed segments
-            // directly. Mirrors synth_segments_vosk_with's Emphasis fallback.
-            // Closes #238 (preserved); closes #244.
+            // Defensive fallback for --stdin-loop callers (#213) that bypass
+            // synth_segments_kokoro. Mirrors synth_segments_vosk_with (#238, #244).
             if !suppress {
                 crate::tts::warn::warn_once(
                     "emphasis-non-ru-vosk",
@@ -315,9 +294,7 @@ fn synth_one_kokoro(
 }
 
 /// Drive an SSML segment list against an already-constructed Kokoro session.
-/// Used by both the one-shot `tts::say()` SSML path and the long-lived
-/// `--stdin-loop` (#213). Concatenates audio for `<break>` and text/IPA
-/// segments, encodes once at the engine's native sample rate.
+/// Used by both the one-shot SSML path and the long-lived `--stdin-loop` (#213).
 pub fn synth_segments_kokoro_with(
     sess: &mut sessions::KokoroSession,
     segments: &[ssml::Segment],
@@ -537,9 +514,8 @@ fn synth_segments_vosk(
     synth_segments_vosk_with(&mut cache, &segments, model_dir, speaker_id, speed, format)
 }
 
-/// Synthesize a single SSML segment through Vosk and return raw f32 samples.
-/// `ProsodyRate` recursively calls this for each inner segment with the
-/// multiplied+clamped rate; all other arms are leaf productions.
+/// Synthesize a single SSML segment through Vosk; `ProsodyRate` recurses with
+/// the composed rate.
 fn synth_one_vosk(
     cache: &mut sessions::VoskCache,
     seg: &ssml::Segment,
@@ -594,9 +570,7 @@ fn synth_one_vosk(
 }
 
 /// Drive an SSML segment list against a Vosk cache. Mirrors
-/// [`synth_segments_kokoro_with`]. The model is loaded once via
-/// `cache.sample_rate()` so a leading `<break>` can size its silence buffer
-/// correctly.
+/// [`synth_segments_kokoro_with`].
 pub fn synth_segments_vosk_with(
     cache: &mut sessions::VoskCache,
     segments: &[ssml::Segment],
@@ -638,9 +612,8 @@ fn encode_or_fail(
         .map_err(|e| TtsError::SynthesisFailed(format!("encode: {e}")))
 }
 
-/// Decode WAV bytes a Swift sidecar handed back to PCM, then re-encode in the
-/// caller's chosen format. WAV → WAV is a no-op short-circuit so we don't pay a
-/// hound round-trip for the historical default path.
+/// Re-encode WAV bytes from a Swift sidecar into the caller's chosen format.
+/// WAV → WAV short-circuits to avoid a hound round-trip.
 #[cfg(any(
     all(feature = "system_tts", target_os = "macos"),
     all(
@@ -661,9 +634,8 @@ fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsEr
     encode_or_fail(&samples, spec.sample_rate, format)
 }
 
-/// Read all samples from a WAV reader, mixing stereo to mono and converting
-/// integer PCM to f32. AVSpeech emits 22.05 kHz 16-bit mono on macOS today,
-/// but we keep this generic so a future sidecar change doesn't break us.
+/// Mix WAV samples to mono f32. Generic so a future sidecar format change
+/// doesn't break us (AVSpeech currently emits 22.05 kHz 16-bit mono).
 #[cfg(any(
     all(feature = "system_tts", target_os = "macos"),
     all(

@@ -79,8 +79,7 @@ mod tests {
 
     #[test]
     fn http_uses_double_yoo_for_w_via_lowercase_mixin() {
-        // Sanity: "double yoo" is one entry, not split. Spot-check W only here;
-        // dedicated W test below.
+        // "double yoo" is one entry, not two tokens.
         assert_eq!(expand_chars("HTTP"), "aitch tee tee pee");
     }
 
@@ -110,8 +109,7 @@ mod tests {
 
     #[test]
     fn non_latin_passes_through() {
-        // The matcher won't pass non-Latin to us; this is a sanity guard for
-        // explicit <say-as> with mixed input.
+        // sanity guard for explicit <say-as> with mixed input; upstream matcher filters non-Latin.
         assert_eq!(expand_chars("AB1"), "ay bee 1");
     }
 

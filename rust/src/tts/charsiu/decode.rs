@@ -28,7 +28,6 @@ const NUM_LAYERS: usize = 4;
 /// Hard cap on generated tokens. IPA words are short; this guards a runaway decode.
 const MAX_STEPS: usize = 128;
 
-/// One layer's cached key/value pair, shape [B, num_heads, seq, d_kv].
 struct LayerKv {
     key: Array4<f32>,
     value: Array4<f32>,
@@ -44,7 +43,6 @@ pub fn greedy(
     anyhow::ensure!(!input_ids.is_empty(), "input_ids must be non-empty");
     let s_enc = input_ids.len();
 
-    // --- Encode once ---
     let enc_ids = Value::from_array(Array2::<i64>::from_shape_vec(
         (1, s_enc),
         input_ids.to_vec(),
@@ -62,7 +60,6 @@ pub fn greedy(
     let d_model = eh_shape[2] as usize;
     let encoder_hidden = Array3::<f32>::from_shape_vec((1, s_enc, d_model), eh_data.to_vec())?;
 
-    // --- Step 0: decoder_model, seeds all 16 presents ---
     let start = Array2::<i64>::from_shape_vec((1, 1), vec![DECODER_START_TOKEN_ID])?;
     let step0_out = decoder.run(ort::inputs![
         "input_ids" => Value::from_array(start)?,
@@ -77,7 +74,6 @@ pub fn greedy(
     }
     generated.push(next);
 
-    // Seed constant encoder K/V and rolling decoder K/V from step 0's presents.
     let mut encoder_kv: Vec<LayerKv> = Vec::with_capacity(NUM_LAYERS);
     let mut decoder_kv: Vec<LayerKv> = Vec::with_capacity(NUM_LAYERS);
     for layer in 0..NUM_LAYERS {
@@ -92,7 +88,6 @@ pub fn greedy(
     }
     drop(step0_out);
 
-    // --- Steps 1..MAX: decoder_with_past_model ---
     let mut last_token = next;
     let mut hit_eos = false;
     for _ in 1..MAX_STEPS {
@@ -129,7 +124,6 @@ pub fn greedy(
         generated.push(next);
         last_token = next;
 
-        // Adopt the 8 decoder presents as the next step's decoder past.
         for (layer, kv) in decoder_kv.iter_mut().enumerate() {
             kv.key = extract_kv(&out, &format!("present.{layer}.decoder.key"))?;
             kv.value = extract_kv(&out, &format!("present.{layer}.decoder.value"))?;
@@ -157,7 +151,6 @@ fn argmax_last_logit(logits: &Value) -> Result<i64> {
     let s = shape[1] as usize;
     let v = shape[2] as usize;
     anyhow::ensure!(s >= 1 && v >= 1, "empty logits, shape {shape:?}");
-    // Last position's row of length v.
     let row = &data[(s - 1) * v..s * v];
     let mut best = 0_usize;
     let mut best_val = row[0];

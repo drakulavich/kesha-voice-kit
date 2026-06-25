@@ -3,8 +3,6 @@
 //! Covers es (Spanish), fr (French), it (Italian), pt (Portuguese).
 //! Unknown languages return the digit string unchanged.
 
-// ── Spanish ──────────────────────────────────────────────────────────────────
-
 const ES_UNITS: [&str; 20] = [
     "cero",
     "uno",
@@ -69,7 +67,6 @@ fn es_under_1000(n: u32) -> String {
             parts.push(ES_UNITS[r as usize].into());
         }
     } else if r < 30 {
-        // 21-29: veinti + unit (no space)
         parts.push(format!("veinti{}", ES_UNITS[(r - 20) as usize]));
     } else {
         let (t, u) = (r / 10, r % 10);
@@ -100,8 +97,6 @@ fn es_words(n: u32) -> String {
     parts.join(" ")
 }
 
-// ── French ────────────────────────────────────────────────────────────────────
-
 const FR_UNITS: [&str; 20] = [
     "zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze",
     "douze", "treize", "quatorze", "quinze", "seize", "dix-sept", "dix-huit", "dix-neuf",
@@ -127,22 +122,18 @@ fn fr_under_100(n: u32) -> String {
         return FR_UNITS[n as usize].into();
     }
     match n {
-        // 80 = quatre-vingts (with trailing s when standalone)
+        // quatre-vingts takes a trailing s only when standalone (no following unit)
         80 => "quatre-vingts".into(),
-        // 81-89 = quatre-vingt-X (no trailing s)
         81..=89 => format!("quatre-vingt-{}", FR_UNITS[(n - 80) as usize]),
-        // 70-79 = soixante + 10..19
         70..=79 => {
             let sub = FR_UNITS[(n - 60) as usize];
-            // 71 takes the "et" connector (soixante-et-onze), mirroring
-            // vingt-et-un/.../soixante-et-un. 72-79 stay plain-hyphenated.
+            // 71 = soixante-et-onze; 72-79 stay plain-hyphenated
             if n == 71 {
                 "soixante-et-onze".to_string()
             } else {
                 format!("soixante-{sub}")
             }
         }
-        // 90-99 = quatre-vingt + 10..19
         90..=99 => {
             let sub = FR_UNITS[(n - 80) as usize];
             format!("quatre-vingt-{sub}")
@@ -176,7 +167,6 @@ fn fr_under_1000(n: u32) -> String {
     let cent = if h == 1 {
         "cent".to_string()
     } else {
-        // plural cent only when no remainder
         if r == 0 {
             format!("{} cents", FR_UNITS[h as usize])
         } else {
@@ -209,8 +199,6 @@ fn fr_words(n: u32) -> String {
     parts.join(" ")
 }
 
-// ── Italian ───────────────────────────────────────────────────────────────────
-
 const IT_UNITS: [&str; 20] = [
     "zero",
     "uno",
@@ -234,7 +222,6 @@ const IT_UNITS: [&str; 20] = [
     "diciannove",
 ];
 
-// Italian tens (20, 30, ..., 90)
 const IT_TENS: [&str; 10] = [
     "",
     "",
@@ -276,7 +263,6 @@ fn it_under_100(n: u32) -> String {
         // Elision: drop trailing vowel of tens before uno (1) or otto (8)
         let unit_str = IT_UNITS[u as usize];
         if u == 1 || u == 8 {
-            // Strip trailing vowel from tens word
             let trimmed = tens_str.trim_end_matches(['a', 'i', 'o']);
             format!("{trimmed}{unit_str}")
         } else {
@@ -300,8 +286,6 @@ fn it_under_1000(n: u32) -> String {
     if r == 0 {
         hundreds.into()
     } else {
-        // hundreds and remainder are separated by a space in Italian
-        // (e.g. "cinquecento dodici", "trecento ventuno")
         format!("{hundreds} {}", it_under_100(r))
     }
 }
@@ -324,8 +308,6 @@ fn it_words(n: u32) -> String {
     }
     parts.join("")
 }
-
-// ── Portuguese ────────────────────────────────────────────────────────────────
 
 const PT_UNITS: [&str; 20] = [
     "zero",
@@ -439,12 +421,7 @@ fn pt_words(n: u32) -> String {
     if rem > 0 {
         parts.push(pt_under_1000(rem));
     }
-    // Portuguese inserts "e" between the thousands group and the remainder only
-    // when the remainder is < 100 OR an exact multiple of 100; otherwise the
-    // groups are joined with a plain space.
-    //   1024 -> "mil e vinte e quatro"             (rem 24, < 100)
-    //   1500 -> "mil e quinhentos"                 (rem 500, multiple of 100)
-    //   1524 -> "mil quinhentos e vinte e quatro"  (rem 524, non-round hundreds)
+    // "e" joins thousands↔remainder only when remainder < 100 or a multiple of 100
     if parts.len() == 2 {
         let connector = if rem < 100 || rem % 100 == 0 {
             " e "
@@ -456,8 +433,6 @@ fn pt_words(n: u32) -> String {
         parts.join(" ")
     }
 }
-
-// ── Public entry point ────────────────────────────────────────────────────────
 
 /// Convert an integer `n` to its spoken-word form in the given language.
 ///

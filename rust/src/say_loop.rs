@@ -65,8 +65,7 @@ const STATUS_ERR: u8 = 1;
 
 #[derive(serde::Deserialize)]
 struct LoopRequest {
-    /// Optional client-supplied id; echoed back on the response frame so a
-    /// pipelined client can correlate responses to requests. Defaults to 0.
+    /// Echoed back on the response frame so a pipelined client can correlate responses to requests.
     #[serde(default)]
     id: u32,
     text: String,
@@ -81,7 +80,6 @@ struct LoopRequest {
     lang: Option<String>,
     #[serde(default = "default_rate")]
     rate: f32,
-    /// When true, `text` is parsed as SSML. Mirrors the CLI `--ssml` flag.
     #[serde(default)]
     ssml: bool,
     /// Auto-expand all-uppercase acronyms before synth: Cyrillic on `ru-vosk-*`
@@ -101,10 +99,7 @@ fn default_expand_abbrev() -> bool {
 }
 
 struct LoopState {
-    /// One Kokoro session, reused across requests. The session itself
-    /// supports model swaps (e.g. en-* vs a hypothetical multi-model setup),
-    /// so this stays `Option` only to defer the load until the first Kokoro
-    /// request arrives.
+    /// `Option` to defer load until the first Kokoro request; `ensure_model` handles swaps.
     kokoro: Option<tts::sessions::KokoroSession>,
     /// Vosk cache by model directory. The Russian path uses one model dir
     /// today, but keep it map-shaped so adding more languages is a no-op.
@@ -180,7 +175,6 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
     // had already fired earlier in its lifetime (#267 F15 / #311).
     tts::warn::reset();
 
-    // Apply the same input guards as one-shot tts::say(): empty + length cap.
     if req.text.is_empty() {
         return Err("text is empty".into());
     }
@@ -259,8 +253,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Parse SSML for the loop path; an empty parse is the same client error on
-/// every engine.
+/// Empty-segment check centralised here so every engine arm gets the same error.
 fn parse_ssml_or_err(text: &str) -> Result<Vec<tts::ssml::Segment>, String> {
     let segments = tts::ssml::parse(text).map_err(|e| format!("ssml: {e}"))?;
     if segments.is_empty() {
@@ -269,8 +262,7 @@ fn parse_ssml_or_err(text: &str) -> Result<Vec<tts::ssml::Segment>, String> {
     Ok(segments)
 }
 
-/// Kokoro arm of [`handle`]: session reuse + the ssml / English-segment /
-/// G2P-IPA request shapes.
+/// Kokoro arm of [`handle`]: session reuse across ssml / English-segment / G2P-IPA paths.
 fn handle_kokoro(
     req: &LoopRequest,
     state: &mut LoopState,
@@ -304,10 +296,7 @@ fn handle_kokoro(
         tts::synth_segments_kokoro_with(sess, &segments, espeak_lang, voice_path, req.rate, format)
             .map_err(|e| e.to_string())
     } else if tts::en::is_en(espeak_lang) {
-        // English on Kokoro: route plain text through the segment
-        // pipeline so IPA_LEXICON overrides (EPAM, JSON, Anthropic, …)
-        // emit `Segment::Ipa` and bypass G2P. Mirrors tts::say()'s
-        // English plain-text path. Closes #244.
+        // Route through segment pipeline so IPA_LEXICON overrides bypass G2P (#244).
         let segments = tts::en::normalize_segments(
             vec![tts::ssml::Segment::Text(req.text.clone())],
             req.expand_abbrev,
@@ -315,11 +304,7 @@ fn handle_kokoro(
         tts::synth_segments_kokoro_with(sess, &segments, espeak_lang, voice_path, req.rate, format)
             .map_err(|e| e.to_string())
     } else {
-        // Non-English Kokoro: G2P + infer_ipa path.
-        // Romance languages (es/fr/it/pt) use the cached CharsiuG2P
-        // session to avoid reloading ~100 MB of ONNX models per request.
-        // All other languages fall through to the one-shot text_to_ipa
-        // path (which will error with a lang-specific hint for ru etc.).
+        // es/fr/it/pt use the cached CharsiuG2P session to avoid reloading ~100 MB per request.
         let ipa = if matches!(
             crate::tts::charsiu::base_lang(espeak_lang),
             "es" | "fr" | "it" | "pt"
@@ -349,7 +334,7 @@ fn handle_kokoro(
     }
 }
 
-/// Vosk arm of [`handle`]: cached-session synth for the ssml and plain paths.
+/// Vosk arm of [`handle`]: cached-session synth.
 fn handle_vosk(
     req: &LoopRequest,
     state: &mut LoopState,
@@ -382,10 +367,6 @@ fn handle_vosk(
         tts::encode::encode(&audio, sample_rate, format).map_err(|e| format!("encode: {e}"))
     }
 }
-
-// ---------------------------------------------------------------------------
-// Framing
-// ---------------------------------------------------------------------------
 
 fn write_ok<W: Write>(w: &mut W, id: u32, payload: &[u8]) -> std::io::Result<()> {
     write_ok_capped(w, id, payload, MAX_PAYLOAD_BYTES)
@@ -433,10 +414,6 @@ fn write_frame<W: Write>(w: &mut W, status: u8, id: u32, payload: &[u8]) -> std:
     w.flush()
 }
 
-// ---------------------------------------------------------------------------
-// Bounded line read
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, PartialEq, Eq)]
 enum LineRead {
     Line,
@@ -446,14 +423,8 @@ enum LineRead {
 
 /// Read until a `\n` or `max` bytes, whichever comes first. On overflow,
 /// drains the rest of the over-long line so the next read stays aligned to
-/// a request boundary.
-///
-/// Implementation note: byte-by-byte reads through `BufRead`. `BufRead::read_until`
-/// would be faster per-byte but doesn't accept a max-bytes cap and would happily
-/// allocate a multi-GB Vec if a client never sent `\n`. Our request lines are
-/// small (~JSON of `tts::MAX_TEXT_CHARS`-bounded text, in practice < 32 KB),
-/// so the byte-loop's overhead is negligible against the synth cost (hundreds
-/// of ms). Trading microoptimisation for the safety guarantee.
+/// a request boundary. Byte-by-byte rather than `read_until` to cap allocation
+/// (a client that never sends `\n` would cause a multi-GB Vec with the stdlib call).
 fn read_line_bounded<R: BufRead>(
     r: &mut R,
     buf: &mut Vec<u8>,
@@ -463,7 +434,6 @@ fn read_line_bounded<R: BufRead>(
     loop {
         if buf.len() >= max {
             // Consume to next newline so subsequent calls land on a fresh line.
-            // Both EOF-during-drain and a found newline yield TooLong.
             loop {
                 if r.read(&mut byte)? == 0 || byte[0] == b'\n' {
                     return Ok(LineRead::TooLong);
@@ -484,10 +454,6 @@ fn read_line_bounded<R: BufRead>(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,7 +463,6 @@ mod tests {
     fn frame_layout_ok() {
         let mut out: Vec<u8> = Vec::new();
         write_ok(&mut out, 0xCAFEBABE, b"hello").unwrap();
-        // status (1) + id (4) + len (4) + payload (5) = 14 bytes
         assert_eq!(out.len(), 14);
         assert_eq!(out[0], STATUS_OK);
         assert_eq!(
@@ -623,7 +588,6 @@ mod tests {
 
     #[test]
     fn loop_request_expand_abbrev_false_honored() {
-        // A client that explicitly opts out must get expand_abbrev = false.
         let json = r#"{"text":"ФСБ","voice":"ru-vosk-m02","expand_abbrev":false}"#;
         let req: LoopRequest = serde_json::from_str(json).unwrap();
         assert!(!req.expand_abbrev, "expand_abbrev:false must be honored");

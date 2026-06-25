@@ -46,9 +46,7 @@ function isFalsey(v: string): boolean {
   return FALSEY_VALUES.has(v.trim().toLowerCase());
 }
 
-// Whether the process was launched with NO_COLOR already forced on. Captured
-// once at import (before any runCli) so re-enabling colors never clobbers an
-// externally-set NO_COLOR — we only clear the var on re-enable when WE set it.
+// Captured at import so re-enabling colors never clobbers a user-exported NO_COLOR.
 const USER_FORCED_NO_COLOR =
   process.env.NO_COLOR !== undefined && !isFalsey(process.env.NO_COLOR);
 
@@ -106,17 +104,11 @@ export function resolveQuietMode(rawArgs: string[]): { quiet: boolean; rawArgs: 
 }
 
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
-  // Global flags resolved before citty so they apply to every command (and help
-  // output) and never reach a subcommand's arg schema.
+  // Global flags resolved before citty so they apply to every command and never reach a subcommand's arg schema.
   const color = resolveColorMode(rawArgs);
-  // Reset on EVERY invocation (not just the disable path): an earlier
-  // --no-color / CI call must not leave colors permanently off for later
-  // in-process calls (unit tests, `kesha mcp`). picocolors already honors
-  // NO_COLOR at startup; setting the env var also propagates to the engine.
+  // Reset on every invocation so an earlier --no-color/CI call doesn't leave colors off for later in-process calls (unit tests, `kesha mcp`).
   setColorEnabled(!color.disableColor);
-  // Keep NO_COLOR symmetric so it doesn't leak to engine subprocesses spawned
-  // by a later in-process call: set it when WE disable, clear it on re-enable —
-  // but never clear a NO_COLOR the user exported themselves.
+  // Sync NO_COLOR for engine subprocesses; never clear a value the user exported themselves.
   if (color.disableColor) {
     process.env.NO_COLOR = "1";
   } else if (!USER_FORCED_NO_COLOR) {
@@ -134,9 +126,7 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
     return;
   }
 
-  // Check for unknown subcommands (non-flag, non-file-path args).
-  // Extensionless existing files remain valid transcription inputs; missing
-  // bare tokens are more likely command typos and should not start the engine.
+  // Extensionless existing files are valid transcription inputs; bare non-path tokens are likely command typos.
   if (firstArg && !firstArg.startsWith("-") && !isPathLike(firstArg)) {
     const suggestion = suggestCommand(firstArg, Object.keys(SUBCOMMANDS));
     log.error(`unknown command '${firstArg}'`);

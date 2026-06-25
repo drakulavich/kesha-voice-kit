@@ -35,11 +35,8 @@ function parseMajorMinor(v: string): [number, number] | null {
 }
 
 /**
- * Returns true iff `current` represents a major-or-minor bump over `seen`.
- * - `seen === null` → true (first install, always prompt once).
- * - Same or downgraded version → false.
- * - Patch-only bump → false (annoying on every install).
- * - Unparseable either side → false (don't nag when we can't reason).
+ * Returns true iff `current` is a major-or-minor bump over `seen`.
+ * Patch-only bumps return false to avoid nagging on every install.
  */
 export function shouldShowStarPrompt(current: string, seen: string | null): boolean {
   if (seen === null) return true;
@@ -51,30 +48,15 @@ export function shouldShowStarPrompt(current: string, seen: string | null): bool
   return false;
 }
 
-/** True when a star-seen marker already exists for this install. */
 export function hasStarMarker(binPath: string): boolean {
   return existsSync(starSeenPath(binPath));
 }
 
 /**
- * Prompt the user to star the repo during `kesha install` if and only if
- * `shouldShowStarPrompt` agrees (first install + major-or-minor bumps,
- * never on patch). Records
- * the prompt against the current version up front so a single run never
- * prompts twice — failures from the gh subprocess below don't reopen the
- * gate. Install variants (`--tts`, `--diarize`) reuse the same marker; status
- * stays diagnostic-only and does not consume this slot.
- *
- * No-ops when the gate says skip, when `currentVersion` is null, or when
- * the user has already starred. When `gh` is missing or unauthenticated,
- * a basic prompt is still printed (so the marker write isn't a silent
- * slot consumption).
- *
- * `shims` lets tests inject deterministic `which` / `spawn` implementations.
- * Production callers leave it undefined; the defaults route through Bun's
- * built-ins. Bun.which() caches PATH at process start so swapping
- * process.env.PATH in tests doesn't work — the shim is the supported way
- * to fake gh's presence and authentication state from a unit test.
+ * Prompt the user to star the repo on first install and major/minor bumps.
+ * Marker is written before printing so a single run never prompts twice.
+ * `shims` injects deterministic `which`/`spawn` for tests — Bun.which()
+ * caches PATH at process start, so env-swapping in tests doesn't work.
  */
 export async function maybeAskForStar(
   binPath: string,
@@ -101,11 +83,7 @@ export async function maybeAskForStar(
     /* Non-fatal — falling through to the prompt is still OK. */
   }
 
-  // The marker has been recorded — every path from here that reaches
-  // a `return` without printing would silently consume the user's
-  // once-per-major.minor slot. Only the "already starred" path is
-  // allowed to skip the print, since the consumption is the verification
-  // that they're already supporting the project.
+  // Marker recorded — every return below must print, except "already starred".
   const printBasicPrompt = () => {
     log.info("\nIf you enjoy Kesha Voice Kit, consider starring the repo:");
     log.info("  https://github.com/drakulavich/kesha-voice-kit");
@@ -118,9 +96,7 @@ export async function maybeAskForStar(
   }
   const authCheck = spawn([gh, "auth", "status"]);
   if (authCheck.exitCode !== 0) {
-    // gh installed but unauthenticated — we can't check star status, but
-    // we can still nudge with the same basic prompt the no-gh path uses.
-    // Without this, the marker write above silently consumes the slot.
+    // Unauthenticated — can't check star status; still print so the slot isn't silently consumed.
     printBasicPrompt();
     return;
   }

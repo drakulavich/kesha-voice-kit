@@ -8,7 +8,6 @@ import { pickVoiceForLang } from "../voice-routing";
 import { createDiagnosticLogSession } from "../diagnostic-log";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
 
-/** Run NLLanguageRecognizer (via engine) on the text and pick a default voice. */
 async function autoRouteVoice(text: string): Promise<string | undefined> {
   if (!text) return undefined;
   const detected = await detectTextLanguageEngine(text);
@@ -34,7 +33,6 @@ export async function resolveSayVoice(
   return autoRouteVoice(text);
 }
 
-/** Resolve the text to synthesize: inline positional, else read from stdin. */
 async function resolveText(inline: string | undefined): Promise<string> {
   if (inline !== undefined && inline.length > 0) return inline;
   const chunks: Uint8Array[] = [];
@@ -100,7 +98,6 @@ function parseSampleRateFlag(value: unknown): number | undefined {
   return sampleRate;
 }
 
-/** Parse and validate --format; exits with code 2 on unknown value. */
 function parseFormatFlag(raw: string | undefined): SayFormat | undefined {
   if (!raw) return undefined;
   const lower = raw.toLowerCase();
@@ -110,10 +107,6 @@ function parseFormatFlag(raw: string | undefined): SayFormat | undefined {
   process.exit(2);
 }
 
-/**
- * Validate that --bitrate / --sample-rate are only used with ogg-opus output.
- * Exits with code 2 when the resolved format is not ogg-opus.
- */
 function assertOpusOnlyFlags(
   bitrate: number | undefined,
   sampleRate: number | undefined,
@@ -123,8 +116,7 @@ function assertOpusOnlyFlags(
   if (bitrate === undefined && sampleRate === undefined) return;
   const outExt = outArg?.split(".").pop()?.toLowerCase();
   const impliesOpus = outExt && ["ogg", "opus", "oga"].includes(outExt);
-  // --bitrate / --sample-rate are Opus-only. Reject for wav and flac
-  // (both lossless / no encoder knobs) and for any non-Opus extension.
+  // --bitrate / --sample-rate are Opus-only (wav/flac are lossless, no encoder knobs).
   const resolvesToOpus = format === "ogg-opus" || (format === undefined && impliesOpus);
   if (!resolvesToOpus) {
     log.error("--bitrate and --sample-rate are only valid with --format ogg-opus");
@@ -145,7 +137,6 @@ type SayOpts = {
   noExpandAbbrev: boolean;
 };
 
-/** Record output artifact stats; returns resolved format and size for diagnostics. */
 function recordOutputArtifact(
   stats: ReturnType<typeof createStatsRecorder>,
   audio: Uint8Array,
@@ -226,9 +217,7 @@ export const sayCommand = defineCommand({
       process.exit(await proc.exited);
     }
 
-    // Validate --format up front so we surface a clear error before spawning
-    // the engine subprocess. The engine repeats the check authoritatively, but
-    // catching it here gives the user a faster failure mode in scripts.
+    // Validate --format before spawning the engine: faster failure in scripts (engine repeats authoritatively).
     const format = parseFormatFlag(typeof args.format === "string" ? args.format : undefined);
 
     const rate = parseRateFlag(args.rate);

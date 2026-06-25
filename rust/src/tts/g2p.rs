@@ -20,7 +20,6 @@ pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
     }
     let lower = lang.to_ascii_lowercase();
 
-    // Romance languages: normalize then CharsiuG2P (ONNX ByT5-tiny, #212).
     let base = crate::tts::charsiu::base_lang(&lower);
     if matches!(base, "es" | "fr" | "it" | "pt") {
         crate::dtrace!("g2p::route lang={lang} backend=charsiu text_chars={text_chars}");
@@ -41,9 +40,7 @@ pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
              Other languages: tracked in #212."
         ),
     };
-    // #275 D6: log the dispatch branch + char counts so a downstream
-    // `"empty after G2P"` bail has the routing context attached. One
-    // boundary trace, never per-token.
+    // #275 D6: one boundary trace so downstream "empty after G2P" failures carry routing context.
     crate::dtrace!("g2p::route lang={lang} backend=misaki text_chars={text_chars}");
     let ipa = misaki_to_ipa(text, misaki_lang)?;
     crate::dtrace!("g2p::result ipa_chars={}", ipa.chars().count());
@@ -66,9 +63,7 @@ pub(crate) fn check_charsiu_files(dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Normalize `text` for `lang` then run CharsiuG2P on the already-loaded session.
-/// Shared by the one-shot path (`text_to_ipa`) and the cached loop path
-/// (`CharsiuCache::to_ipa`).
+/// Shared by the one-shot path (`text_to_ipa`) and the cached loop path (`CharsiuCache::to_ipa`).
 pub(crate) fn charsiu_ipa(
     g: &mut crate::tts::charsiu::Charsiu,
     text: &str,
@@ -127,7 +122,6 @@ mod tests {
         assert!(ipa.contains('h'), "missing /h/ in: {ipa}");
         assert!(ipa.contains('w'), "missing /w/ in: {ipa}");
         assert!(ipa.contains('ˈ'), "missing primary stress in: {ipa}");
-        // No zero-width joiner — we strip it before returning.
         assert!(!ipa.contains('\u{200d}'), "ZWJ leaked into IPA: {ipa:?}");
     }
 
@@ -183,8 +177,7 @@ mod tests {
     #[test]
     fn english_oov_letter_spells_without_espeak_fallback() {
         let ipa = text_to_ipa("Kubernetes", "en-us").unwrap();
-        // A single phonemized word is short; letter-spelling expands to one
-        // emphasized chunk per letter (K-U-B-E-R-N-E-T-E-S = 10 chunks).
+        // Letter-spelling expands to one stressed chunk per letter (≥10 for "Kubernetes").
         let chunks = ipa.split_whitespace().count();
         assert!(
             chunks >= 5,
