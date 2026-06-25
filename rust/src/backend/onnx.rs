@@ -186,39 +186,11 @@ impl OnnxBackend {
             ])
             .context("Decoder inference failed")?;
 
-        // Output order varies by model version; disambiguate by tensor rank
-        let mut output_data: Option<Vec<f32>> = None;
-        let mut new_s1: Option<Vec<f32>> = None;
-        let mut new_s2: Option<Vec<f32>> = None;
+        // Output order varies by model version; disambiguate by tensor rank.
+        // Rank-2 → joint logits; rank-3 with dim-0 == DECODER_LAYERS → recurrent state.
+        let (output_data, new_s1, new_s2) = classify_decoder_outputs(&outputs)?;
 
-        for (_name, out) in outputs.iter() {
-            if let Ok((shape, data)) = out.try_extract_tensor::<f32>() {
-                let shape_vec: Vec<usize> = shape.iter().map(|&x| x as usize).collect();
-                let data_vec: Vec<f32> = data.to_vec();
-
-                if shape_vec.len() == 2 && output_data.is_none() {
-                    output_data = Some(data_vec);
-                } else if shape_vec.len() == 3 && shape_vec[0] == DECODER_LAYERS {
-                    if new_s1.is_none() {
-                        new_s1 = Some(data_vec);
-                    } else if new_s2.is_none() {
-                        new_s2 = Some(data_vec);
-                    }
-                } else if output_data.is_none() {
-                    output_data = Some(data_vec);
-                }
-            }
-        }
-
-        let output_data = output_data.context("No decoder output tensor found")?;
-        let new_state1 = new_s1.context("No output_states_1 tensor found")?;
-        let new_state2 = new_s2.context("No output_states_2 tensor found")?;
-
-        Ok((
-            output_data.to_vec(),
-            new_state1.to_vec(),
-            new_state2.to_vec(),
-        ))
+        Ok((output_data, new_s1, new_s2))
     }
 
     fn beam_decode(
@@ -232,7 +204,6 @@ impl OnnxBackend {
         }
 
         let state_size = DECODER_LAYERS * DECODER_HIDDEN;
-        let vocab_size = self.vocab.len();
 
         struct Beam {
             tokens: Vec<usize>,
@@ -270,21 +241,17 @@ impl OnnxBackend {
 
             for &beam_idx in &active {
                 let beam = &beams[beam_idx];
-
-                // encoder_data: [1, D, T'] row-major → element [0, d, t] = d * T' + t
-                let frame: Vec<f32> = (0..encoder_dim)
-                    .map(|d| encoder_data[d * encoder_length + beam.t])
-                    .collect();
-
+                let frame =
+                    extract_encoder_frame(encoder_data, encoder_dim, encoder_length, beam.t);
                 let (output, new_state1, new_state2) =
                     self.decode_step(&frame, beam.last_token, &beam.state1, &beam.state2)?;
 
+                let vocab_size = self.vocab.len();
                 let token_logits = &output[..vocab_size];
                 let duration_logits = &output[vocab_size..];
-
                 let duration = argmax(duration_logits);
 
-                // Blank option: advance one frame, keep same tokens
+                // Blank: advance one frame, no new token
                 candidates.push(Beam {
                     tokens: beam.tokens.clone(),
                     score: beam.score + token_logits[self.blank_id],
@@ -294,19 +261,17 @@ impl OnnxBackend {
                     t: beam.t + 1,
                 });
 
-                // Top-K non-blank token options
-                let top_k = top_k_indices(token_logits, DEFAULT_BEAM_WIDTH, self.blank_id);
-                for token_id in top_k {
+                // Top-K non-blank tokens
+                for token_id in top_k_indices(token_logits, DEFAULT_BEAM_WIDTH, self.blank_id) {
+                    let mut tokens = beam.tokens.clone();
+                    tokens.push(token_id);
                     candidates.push(Beam {
-                        tokens: {
-                            let mut t = beam.tokens.clone();
-                            t.push(token_id);
-                            t
-                        },
+                        tokens,
                         score: beam.score + token_logits[token_id],
                         last_token: token_id as i32,
                         state1: new_state1.clone(),
                         state2: new_state2.clone(),
+                        // duration == 0 means stay on this frame (emit another token)
                         t: if duration > 0 {
                             beam.t + duration
                         } else {
@@ -371,6 +336,58 @@ impl TranscribeBackend for OnnxBackend {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Pure helpers (no Session access)
+// ---------------------------------------------------------------------------
+
+/// Extracts one encoder frame: encoder_data is row-major [1, D, T'], so
+/// element [0, d, t] = d * T' + t.
+fn extract_encoder_frame(
+    encoder_data: &[f32],
+    encoder_dim: usize,
+    encoder_length: usize,
+    t: usize,
+) -> Vec<f32> {
+    (0..encoder_dim)
+        .map(|d| encoder_data[d * encoder_length + t])
+        .collect()
+}
+
+/// Classifies raw decoder outputs by tensor rank/shape and returns
+/// (joint_logits, state1, state2).  Output order varies by model version.
+fn classify_decoder_outputs(
+    outputs: &ort::session::SessionOutputs,
+) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+    let mut output_data: Option<Vec<f32>> = None;
+    let mut new_s1: Option<Vec<f32>> = None;
+    let mut new_s2: Option<Vec<f32>> = None;
+
+    for (_name, out) in outputs.iter() {
+        let Ok((shape, data)) = out.try_extract_tensor::<f32>() else {
+            continue;
+        };
+        let shape_vec: Vec<usize> = shape.iter().map(|&x| x as usize).collect();
+        let data_vec: Vec<f32> = data.to_vec();
+
+        if shape_vec.len() == 2 && output_data.is_none() {
+            output_data = Some(data_vec);
+        } else if shape_vec.len() == 3 && shape_vec[0] == DECODER_LAYERS {
+            if new_s1.is_none() {
+                new_s1 = Some(data_vec);
+            } else if new_s2.is_none() {
+                new_s2 = Some(data_vec);
+            }
+        } else if output_data.is_none() {
+            output_data = Some(data_vec);
+        }
+    }
+
+    let output_data = output_data.context("No decoder output tensor found")?;
+    let new_state1 = new_s1.context("No output_states_1 tensor found")?;
+    let new_state2 = new_s2.context("No output_states_2 tensor found")?;
+    Ok((output_data, new_state1, new_state2))
+}
+
 fn top_k_indices(arr: &[f32], k: usize, exclude: usize) -> Vec<usize> {
     let mut indexed: Vec<(f32, usize)> = arr
         .iter()
@@ -414,4 +431,94 @@ fn load_vocab<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
     }
 
     Ok(vocab)
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for pure helpers
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // detokenize is an &self method on OnnxBackend, but its logic is purely a
+    // function of vocab + token_ids. Exercise it via a minimal stub vocab.
+    fn detokenize_with_vocab(vocab: &[&str], token_ids: &[usize]) -> String {
+        let text: String = token_ids
+            .iter()
+            .filter_map(|&id| vocab.get(id))
+            .map(|t| t.replace('\u{2581}', " "))
+            .collect();
+        text.trim().to_string()
+    }
+
+    #[test]
+    fn detokenize_sentencepiece_underscore() {
+        // U+2581 marks a leading space in SentencePiece tokens
+        let vocab = ["h", "e", "l", "l", "o", "\u{2581}w", "o", "r", "l", "d"];
+        assert_eq!(
+            detokenize_with_vocab(&vocab, &[0, 1, 2, 2, 4, 5, 6, 7, 2, 9]),
+            "hello world"
+        );
+    }
+
+    #[test]
+    fn detokenize_trims_leading_space() {
+        let vocab = ["\u{2581}hi"];
+        assert_eq!(detokenize_with_vocab(&vocab, &[0]), "hi");
+    }
+
+    #[test]
+    fn detokenize_out_of_range_ids_skipped() {
+        let vocab = ["a", "b"];
+        // id 99 is out of range → filtered out
+        assert_eq!(detokenize_with_vocab(&vocab, &[0, 99, 1]), "ab");
+    }
+
+    #[test]
+    fn top_k_basic() {
+        let arr = [0.1f32, 0.5, 0.3, 0.9, 0.2];
+        // exclude index 3 (highest); next top-2 are idx 1 and idx 2
+        let result = top_k_indices(&arr, 2, 3);
+        assert_eq!(result, vec![1, 2]);
+    }
+
+    #[test]
+    fn top_k_excludes_blank() {
+        let arr = [0.9f32, 0.8, 0.7]; // blank_id = 0
+        let result = top_k_indices(&arr, 2, 0);
+        assert_eq!(result, vec![1, 2]);
+    }
+
+    #[test]
+    fn top_k_fewer_than_k_available() {
+        let arr = [0.5f32, 0.1, 0.9]; // exclude 2 → only indices 0,1 remain
+        let result = top_k_indices(&arr, 5, 2);
+        assert_eq!(result, vec![0, 1]);
+    }
+
+    #[test]
+    fn extract_encoder_frame_layout() {
+        // encoder_data is row-major [1, D=2, T'=3]:
+        // d=0: [10, 11, 12], d=1: [20, 21, 22]
+        let encoder_data = vec![10.0f32, 11.0, 12.0, 20.0, 21.0, 22.0];
+        assert_eq!(
+            extract_encoder_frame(&encoder_data, 2, 3, 0),
+            vec![10.0, 20.0]
+        );
+        assert_eq!(
+            extract_encoder_frame(&encoder_data, 2, 3, 1),
+            vec![11.0, 21.0]
+        );
+        assert_eq!(
+            extract_encoder_frame(&encoder_data, 2, 3, 2),
+            vec![12.0, 22.0]
+        );
+    }
+
+    #[test]
+    fn extract_encoder_frame_single_dim() {
+        let encoder_data = vec![7.0f32, 8.0, 9.0]; // D=1, T'=3
+        assert_eq!(extract_encoder_frame(&encoder_data, 1, 3, 2), vec![9.0]);
+    }
 }

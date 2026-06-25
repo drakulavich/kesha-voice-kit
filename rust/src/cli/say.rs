@@ -122,9 +122,122 @@ fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
     }
 }
 
-pub fn run(a: SayArgs) -> i32 {
-    use std::io::{Read, Write};
+/// Read text from stdin, trimming surrounding whitespace.
+fn read_stdin() -> Result<String, i32> {
+    use std::io::Read;
+    let mut buf = String::new();
+    if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+        eprintln!("error [E_INTERNAL]: failed to read stdin: {e}");
+        return Err(4);
+    }
+    Ok(buf.trim().to_string())
+}
 
+/// Validate text length against TTS limits; returns the validated string or an
+/// exit code on failure.
+fn validate_text(text: String) -> Result<String, i32> {
+    if text.is_empty() {
+        let err = tts::TtsError::EmptyText;
+        eprintln!("error [{}]: {err}", err.code().as_str());
+        return Err(exit_code_for_tts_err(&err));
+    }
+    let len = text.chars().count();
+    if len > tts::MAX_TEXT_CHARS {
+        let err = tts::TtsError::TextTooLong {
+            max: tts::MAX_TEXT_CHARS,
+            actual: len,
+        };
+        eprintln!("error [{}]: {err}", err.code().as_str());
+        return Err(exit_code_for_tts_err(&err));
+    }
+    Ok(text)
+}
+
+/// Resolve `--model` + `--voice-file` overrides or look up the voice by id.
+/// Returns `(ResolvedVoice, exit_code_on_err)`.
+fn resolve_voice(
+    model: Option<PathBuf>,
+    voice_file: Option<PathBuf>,
+    voice_id: Option<&str>,
+) -> Result<tts::voices::ResolvedVoice, i32> {
+    match (model, voice_file) {
+        (Some(model_path), Some(voice_path)) => Ok(tts::voices::ResolvedVoice::Kokoro {
+            model_path,
+            voice_path,
+            espeak_lang: "en-us",
+        }),
+        (Some(_), None) | (None, Some(_)) => {
+            eprintln!(
+                "error [{}]: pass both --model and --voice-file or neither",
+                crate::errors::ErrorCode::InvalidArg.as_str()
+            );
+            Err(2)
+        }
+        (None, None) => {
+            let id = voice_id.unwrap_or(tts::voices::DEFAULT_VOICE_ID);
+            tts::voices::resolve_voice(&models::cache_dir(), id).map_err(|err| {
+                eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
+                1
+            })
+        }
+    }
+}
+
+/// Build the [`tts::EngineChoice`] from the resolved voice and playback rate.
+fn engine_choice<'a>(resolved: &'a tts::voices::ResolvedVoice, rate: f32) -> tts::EngineChoice<'a> {
+    match resolved {
+        tts::voices::ResolvedVoice::Kokoro {
+            model_path,
+            voice_path,
+            ..
+        } => tts::EngineChoice::Kokoro {
+            model_path,
+            voice_path,
+            speed: rate,
+        },
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        tts::voices::ResolvedVoice::FluidKokoro { voice_id, .. } => {
+            tts::EngineChoice::FluidKokoro {
+                voice_id,
+                speed: rate,
+            }
+        }
+        tts::voices::ResolvedVoice::Vosk {
+            model_dir,
+            speaker_id,
+        } => tts::EngineChoice::Vosk {
+            model_dir,
+            speaker_id: *speaker_id,
+            speed: rate,
+        },
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        tts::voices::ResolvedVoice::AVSpeech { voice_id } => tts::EngineChoice::AVSpeech {
+            voice_id,
+            speed: rate,
+        },
+    }
+}
+
+/// Write synthesized bytes to `--out` file or stdout.
+fn write_output(out: Option<&std::path::Path>, bytes: &[u8]) -> Result<(), i32> {
+    use std::io::Write;
+    let result = match out {
+        Some(p) => std::fs::write(p, bytes).map_err(|e| e.to_string()),
+        None => std::io::stdout()
+            .write_all(bytes)
+            .map_err(|e| e.to_string()),
+    };
+    result.map_err(|msg| {
+        eprintln!("error [E_INTERNAL]: write failed: {msg}");
+        4
+    })
+}
+
+pub fn run(a: SayArgs) -> i32 {
     if a.list_voices {
         let cache = models::cache_dir();
         let mut voice_ids: Vec<String> = list_kokoro_voices(&cache)
@@ -167,101 +280,32 @@ pub fn run(a: SayArgs) -> i32 {
         }
     };
 
-    let text_joined = match a.text {
+    let raw_text = match a.text {
         Some(s) => s,
-        None => {
-            let mut buf = String::new();
-            if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
-                eprintln!("error [E_INTERNAL]: failed to read stdin: {e}");
-                return 4;
-            }
-            buf.trim().to_string()
-        }
+        None => match read_stdin() {
+            Ok(s) => s,
+            Err(code) => return code,
+        },
     };
 
-    if text_joined.is_empty() {
-        let err = tts::TtsError::EmptyText;
-        eprintln!("error [{}]: {err}", err.code().as_str());
-        return exit_code_for_tts_err(&err);
-    }
-    let len = text_joined.chars().count();
-    if len > tts::MAX_TEXT_CHARS {
-        let err = tts::TtsError::TextTooLong {
-            max: tts::MAX_TEXT_CHARS,
-            actual: len,
-        };
-        eprintln!("error [{}]: {err}", err.code().as_str());
-        return exit_code_for_tts_err(&err);
-    }
+    let text = match validate_text(raw_text) {
+        Ok(t) => t,
+        Err(code) => return code,
+    };
 
-    // `--model` + `--voice-file` are Kokoro-specific testing overrides (bypass cache).
-    let resolved = match (a.model, a.voice_file) {
-        (Some(model_path), Some(voice_path)) => tts::voices::ResolvedVoice::Kokoro {
-            model_path,
-            voice_path,
-            espeak_lang: "en-us",
-        },
-        (Some(_), None) | (None, Some(_)) => {
-            eprintln!(
-                "error [{}]: pass both --model and --voice-file or neither",
-                crate::errors::ErrorCode::InvalidArg.as_str()
-            );
-            return 2;
-        }
-        (None, None) => {
-            let id = a.voice.as_deref().unwrap_or(tts::voices::DEFAULT_VOICE_ID);
-            match tts::voices::resolve_voice(&models::cache_dir(), id) {
-                Ok(r) => r,
-                Err(err) => {
-                    eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
-                    return 1;
-                }
-            }
-        }
+    let resolved = match resolve_voice(a.model, a.voice_file, a.voice.as_deref()) {
+        Ok(r) => r,
+        Err(code) => return code,
     };
 
     let espeak_lang = a
         .lang
         .clone()
         .unwrap_or_else(|| resolved.espeak_lang().to_string());
-    let engine = match &resolved {
-        tts::voices::ResolvedVoice::Kokoro {
-            model_path,
-            voice_path,
-            ..
-        } => tts::EngineChoice::Kokoro {
-            model_path,
-            voice_path,
-            speed: a.rate,
-        },
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
-        tts::voices::ResolvedVoice::FluidKokoro { voice_id, .. } => {
-            tts::EngineChoice::FluidKokoro {
-                voice_id,
-                speed: a.rate,
-            }
-        }
-        tts::voices::ResolvedVoice::Vosk {
-            model_dir,
-            speaker_id,
-        } => tts::EngineChoice::Vosk {
-            model_dir,
-            speaker_id: *speaker_id,
-            speed: a.rate,
-        },
-        #[cfg(all(feature = "system_tts", target_os = "macos"))]
-        tts::voices::ResolvedVoice::AVSpeech { voice_id } => tts::EngineChoice::AVSpeech {
-            voice_id,
-            speed: a.rate,
-        },
-    };
+    let engine = engine_choice(&resolved, a.rate);
 
     let bytes = match tts::say(tts::SayOptions {
-        text: &text_joined,
+        text: &text,
         lang: &espeak_lang,
         engine,
         ssml: a.ssml,
@@ -275,15 +319,8 @@ pub fn run(a: SayArgs) -> i32 {
         }
     };
 
-    let write_result = match a.out {
-        Some(p) => std::fs::write(&p, &bytes).map_err(|e| e.to_string()),
-        None => std::io::stdout()
-            .write_all(&bytes)
-            .map_err(|e| e.to_string()),
-    };
-    if let Err(msg) = write_result {
-        eprintln!("error [E_INTERNAL]: write failed: {msg}");
-        return 4;
+    match write_output(a.out.as_deref(), &bytes) {
+        Ok(()) => 0,
+        Err(code) => code,
     }
-    0
 }

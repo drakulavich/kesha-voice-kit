@@ -83,7 +83,58 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             actual: len,
         });
     }
-    let engine_label: &str = match &opts.engine {
+    let engine_label = engine_label(&opts.engine);
+    crate::dtrace!(
+        "tts::say engine={engine_label} lang={} ssml={} chars={len}",
+        opts.lang,
+        opts.ssml
+    );
+
+    match opts.engine {
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        EngineChoice::FluidKokoro { voice_id, speed } => {
+            say_fluid_kokoro(opts.text, voice_id, speed, opts.format, opts.ssml)
+        }
+        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        EngineChoice::AVSpeech { voice_id, speed } => {
+            say_avspeech(opts.text, voice_id, speed, opts.format, opts.ssml)
+        }
+        EngineChoice::Vosk {
+            model_dir,
+            speaker_id,
+            speed,
+        } => say_vosk(
+            opts.text,
+            model_dir,
+            speaker_id,
+            speed,
+            opts.format,
+            opts.ssml,
+            opts.expand_abbrev,
+        ),
+        EngineChoice::Kokoro {
+            model_path,
+            voice_path,
+            speed,
+        } => say_kokoro(
+            opts.text,
+            opts.lang,
+            model_path,
+            voice_path,
+            speed,
+            opts.format,
+            opts.ssml,
+            opts.expand_abbrev,
+        ),
+    }
+}
+
+fn engine_label(engine: &EngineChoice) -> &'static str {
+    match engine {
         EngineChoice::Kokoro { .. } => "kokoro",
         #[cfg(all(
             feature = "system_kokoro",
@@ -94,133 +145,124 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         EngineChoice::Vosk { .. } => "vosk",
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => "avspeech",
-    };
-    crate::dtrace!(
-        "tts::say engine={engine_label} lang={} ssml={} chars={len}",
-        opts.lang,
-        opts.ssml
-    );
-
-    match &opts.engine {
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
-        EngineChoice::FluidKokoro { voice_id, speed } => {
-            if opts.ssml {
-                return synth_segments_fluid_kokoro(opts.text, voice_id, *speed, opts.format);
-            }
-            let wav_bytes =
-                super::fluid_kokoro::synthesize(opts.text, voice_id, *speed).map_err(|e| {
-                    TtsError::Coded {
-                        // Preserve a precise code from the engine chain (e.g.
-                        // ScriptUnsupported for native-script input); plain synthesis
-                        // failures carry no CodedError, so code_of falls back to Internal.
-                        code: crate::errors::code_of(&e),
-                        message: format!("fluid-kokoro: {e}"),
-                    }
-                })?;
-            transcode_to(&wav_bytes, opts.format)
-        }
-        // AVSpeech does its own G2P + synthesis inside Swift; skip espeak G2P entirely.
-        #[cfg(all(feature = "system_tts", target_os = "macos"))]
-        EngineChoice::AVSpeech { voice_id, speed } => {
-            if opts.ssml {
-                return Err(TtsError::Coded {
-                    code: crate::errors::ErrorCode::SsmlUnsupported,
-                    message: "SSML is not yet supported with macos-* voices (#141 follow-up)"
-                        .into(),
-                });
-            }
-            let wav_bytes = avspeech::synthesize(opts.text, voice_id, *speed, None)
-                .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")))?;
-            transcode_to(&wav_bytes, opts.format)
-        }
-        // Vosk-tts owns its own G2P + text normalisation; bypass our espeak/misaki path.
-        EngineChoice::Vosk {
-            model_dir,
-            speaker_id,
-            speed,
-        } => {
-            if opts.ssml {
-                return synth_segments_vosk(
-                    opts.text,
-                    model_dir,
-                    *speaker_id,
-                    *speed,
-                    opts.format,
-                    opts.expand_abbrev,
-                );
-            }
-            say_with_vosk(
-                opts.text,
-                model_dir,
-                *speaker_id,
-                *speed,
-                opts.format,
-                opts.expand_abbrev,
-            )
-        }
-        EngineChoice::Kokoro {
-            model_path,
-            voice_path,
-            speed,
-        } => {
-            if opts.ssml {
-                return say_ssml(&opts, model_path, voice_path, *speed);
-            }
-            // English: segment pipeline so IPA_LEXICON overrides bypass G2P;
-            // letter-spell + STOP_LIST run inside en::normalize_segments (#244).
-            if en::is_en(opts.lang) {
-                return synth_segments_kokoro(
-                    vec![ssml::Segment::Text(opts.text.to_string())],
-                    opts.lang,
-                    model_path,
-                    voice_path,
-                    *speed,
-                    opts.format,
-                    opts.expand_abbrev,
-                );
-            }
-            let ipa = g2p::text_to_ipa(opts.text, opts.lang)
-                .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
-            if ipa.trim().is_empty() {
-                return Err(TtsError::SynthesisFailed(
-                    "no phonemes produced for input (empty after G2P)".into(),
-                ));
-            }
-            say_with_kokoro(&ipa, model_path, voice_path, *speed, opts.format)
-        }
     }
 }
 
-/// Kokoro SSML path. Vosk handles SSML in its own arm; AVSpeech rejects it.
-fn say_ssml(
-    opts: &SayOptions,
+/// FluidAudio Kokoro arm: SSML → segment walker; plain text → synthesize directly.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn say_fluid_kokoro(
+    text: &str,
+    voice_id: &str,
+    speed: f32,
+    format: OutputFormat,
+    ssml: bool,
+) -> Result<Vec<u8>, TtsError> {
+    if ssml {
+        return synth_segments_fluid_kokoro(text, voice_id, speed, format);
+    }
+    let wav_bytes =
+        super::fluid_kokoro::synthesize(text, voice_id, speed).map_err(|e| TtsError::Coded {
+            // Preserve a precise code from the engine chain (e.g.
+            // ScriptUnsupported for native-script input).
+            code: crate::errors::code_of(&e),
+            message: format!("fluid-kokoro: {e}"),
+        })?;
+    transcode_to(&wav_bytes, format)
+}
+
+/// AVSpeech arm: does its own G2P + synthesis inside Swift; rejects SSML (#141).
+#[cfg(all(feature = "system_tts", target_os = "macos"))]
+fn say_avspeech(
+    text: &str,
+    voice_id: &str,
+    speed: f32,
+    format: OutputFormat,
+    ssml: bool,
+) -> Result<Vec<u8>, TtsError> {
+    if ssml {
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::SsmlUnsupported,
+            message: "SSML is not yet supported with macos-* voices (#141 follow-up)".into(),
+        });
+    }
+    let wav_bytes = avspeech::synthesize(text, voice_id, speed, None)
+        .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")))?;
+    transcode_to(&wav_bytes, format)
+}
+
+/// Vosk arm: owns its own G2P + text normalisation; bypasses our espeak/misaki path.
+fn say_vosk(
+    text: &str,
+    model_dir: &Path,
+    speaker_id: u32,
+    speed: f32,
+    format: OutputFormat,
+    ssml: bool,
+    expand_abbrev: bool,
+) -> Result<Vec<u8>, TtsError> {
+    if ssml {
+        return synth_segments_vosk(text, model_dir, speaker_id, speed, format, expand_abbrev);
+    }
+    say_with_vosk(text, model_dir, speaker_id, speed, format, expand_abbrev)
+}
+
+/// Kokoro arm: SSML, English segment pipeline, and non-English G2P paths.
+#[allow(clippy::too_many_arguments)]
+fn say_kokoro(
+    text: &str,
+    lang: &str,
     model_path: &Path,
     voice_path: &Path,
     speed: f32,
+    format: OutputFormat,
+    ssml: bool,
+    expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
-    let segments = ssml::parse(opts.text).map_err(|e| TtsError::Coded {
-        code: crate::errors::code_of(&e),
-        message: format!("ssml: {e:#}"),
-    })?;
-    if segments.is_empty() {
+    if ssml {
+        let segments = ssml::parse(text).map_err(|e| TtsError::Coded {
+            code: crate::errors::code_of(&e),
+            message: format!("ssml: {e:#}"),
+        })?;
+        if segments.is_empty() {
+            return Err(TtsError::SynthesisFailed(
+                "SSML had no speakable content".into(),
+            ));
+        }
+        return synth_segments_kokoro(
+            segments,
+            lang,
+            model_path,
+            voice_path,
+            speed,
+            format,
+            expand_abbrev,
+        );
+    }
+    // English: segment pipeline so IPA_LEXICON overrides bypass G2P;
+    // letter-spell + STOP_LIST run inside en::normalize_segments (#244).
+    if en::is_en(lang) {
+        return synth_segments_kokoro(
+            vec![ssml::Segment::Text(text.to_string())],
+            lang,
+            model_path,
+            voice_path,
+            speed,
+            format,
+            expand_abbrev,
+        );
+    }
+    let ipa =
+        g2p::text_to_ipa(text, lang).map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
+    if ipa.trim().is_empty() {
         return Err(TtsError::SynthesisFailed(
-            "SSML had no speakable content".into(),
+            "no phonemes produced for input (empty after G2P)".into(),
         ));
     }
-
-    synth_segments_kokoro(
-        segments,
-        opts.lang,
-        model_path,
-        voice_path,
-        speed,
-        opts.format,
-        opts.expand_abbrev,
-    )
+    say_with_kokoro(&ipa, model_path, voice_path, speed, format)
 }
 
 fn synth_segments_kokoro(

@@ -421,6 +421,17 @@ enum LineRead {
     TooLong,
 }
 
+/// Drain bytes until `\n` or EOF. Called after the buffer hits `max` to keep
+/// the reader aligned to the next request boundary.
+fn drain_line<R: BufRead>(r: &mut R) -> std::io::Result<()> {
+    let mut byte = [0u8; 1];
+    loop {
+        if r.read(&mut byte)? == 0 || byte[0] == b'\n' {
+            return Ok(());
+        }
+    }
+}
+
 /// Read until a `\n` or `max` bytes, whichever comes first. On overflow,
 /// drains the rest of the over-long line so the next read stays aligned to
 /// a request boundary. Byte-by-byte rather than `read_until` to cap allocation
@@ -433,12 +444,8 @@ fn read_line_bounded<R: BufRead>(
     let mut byte = [0u8; 1];
     loop {
         if buf.len() >= max {
-            // Consume to next newline so subsequent calls land on a fresh line.
-            loop {
-                if r.read(&mut byte)? == 0 || byte[0] == b'\n' {
-                    return Ok(LineRead::TooLong);
-                }
-            }
+            drain_line(r)?;
+            return Ok(LineRead::TooLong);
         }
         if r.read(&mut byte)? == 0 {
             return Ok(if buf.is_empty() {
@@ -646,5 +653,25 @@ mod tests {
             read_line_bounded(&mut br, &mut buf, 50).unwrap(),
             LineRead::Eof
         );
+    }
+
+    #[test]
+    fn drain_line_stops_at_newline() {
+        // Bytes after the \n must remain readable after drain.
+        let mut br = BufReader::new(Cursor::new(b"junk\nnext".to_vec()));
+        drain_line(&mut br).unwrap();
+        let mut rest = Vec::new();
+        br.read_until(b'\n', &mut rest).unwrap();
+        assert_eq!(rest, b"next");
+    }
+
+    #[test]
+    fn drain_line_stops_at_eof() {
+        // No newline — drain must return Ok(()) without looping forever.
+        let mut br = BufReader::new(Cursor::new(b"junk".to_vec()));
+        drain_line(&mut br).unwrap();
+        let mut rest = Vec::new();
+        br.read_until(b'\n', &mut rest).unwrap();
+        assert!(rest.is_empty());
     }
 }
