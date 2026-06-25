@@ -390,6 +390,7 @@ const text = await transcribe("audio.ogg");
 - **Imports**: Relative paths (`./engine`, not `src/engine`)
 - **Output**: `console.error()` for progress/errors, `console.log()` for success (stdout stays pipe-friendly)
 - **Rust**: `cargo fmt` + `cargo clippy --all-targets -- -D warnings`
+- **Comments**: explain WHY, not WHAT. Prefer no comment over one that restates the code. No multi-line narration of mechanics. If a comment earns its place (a gotcha, a spec quirk, an issue/PR ref), make it one terse line. Match the comment density of the surrounding code. This applies to agent-generated code too.
 
 ## CI/CD
 
