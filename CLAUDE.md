@@ -390,7 +390,7 @@ const text = await transcribe("audio.ogg");
 - **Imports**: Relative paths (`./engine`, not `src/engine`)
 - **Output**: `console.error()` for progress/errors, `console.log()` for success (stdout stays pipe-friendly)
 - **Rust**: `cargo fmt` + `cargo clippy --all-targets -- -D warnings`
-- **Comments**: explain WHY, not WHAT. Prefer no comment over one that restates the code. No multi-line narration of mechanics. If a comment earns its place (a gotcha, a spec quirk, an issue/PR ref), make it one terse line. Match the comment density of the surrounding code. This applies to agent-generated code too.
+- **Comments**: default to NONE — a comment must justify why it exists, and if it only restates what the code says it must be deleted. NEVER narrate mechanics step-by-step, restate a function/field/type name, or add section-banner / separator comments. A comment is allowed ONLY when it carries information the code cannot, and only these kinds qualify: (1) non-obvious WHY / rationale, (2) a gotcha or footgun ("looks wrong but…"), (3) an issue/PR reference, (4) a spec/standard citation, (5) `// SAFETY:` / unsafe-block rationale, (6) a public-API doc contract (`///`, `//!`, JSDoc) — state the contract, not the implementation, (7) `TODO`/`FIXME` with context. Keep it to one line; multi-line is allowed only for SAFETY blocks and public-API doc contracts. Match — and bias below — the comment density of the surrounding code. This applies equally to agent-generated code; in review, delete any comment that doesn't clear this bar rather than letting it land.
 
 ## CI/CD
 
