@@ -269,7 +269,7 @@
             ln -s ${keshaNodeModules} $out/lib/kesha/node_modules
 
             # bin/kesha.js has a `#!/usr/bin/env bun` shebang and imports
-            # ../src/cli.ts directly — Bun resolves the TS at runtime.
+            # ../src/cli/dispatch.ts directly — Bun resolves the TS at runtime.
             # makeWrapper sets PATH so the shebang's `env bun` resolves to
             # the Nix-built Bun, and pins KESHA_ENGINE_BIN to the flake's
             # engine output so the CLI never falls back to the
