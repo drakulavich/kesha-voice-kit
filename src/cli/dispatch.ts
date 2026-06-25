@@ -3,12 +3,8 @@ import { existsSync } from "fs";
 import { log, setColorEnabled } from "../log";
 import { suggestCommand } from "../suggest-command";
 
-// Lazy loaders, not eager imports: a cold `bun run src/cli.ts` spawn transpiles
-// only the command actually invoked instead of the whole CLI graph (`say` pulls
-// in the entire TTS/Kokoro/Vosk/normalize/SSML tree). Keyed names also feed the
-// `did you mean` suggester. `CommandDef<any>` is intentional — citty's generic is
-// invariant in the args shape, and each subcommand has its own arg schema; the
-// value is only passed back to `runMain`, which re-reads the schema from the def.
+// Lazy loaders so a cold CLI spawn transpiles only the invoked command, not the whole graph (#568).
+// `CommandDef<any>`: citty's generic is invariant in the arg shape and each command has its own schema.
 type CommandLoader = () => Promise<CommandDef<any>>;
 const SUBCOMMANDS: Record<string, CommandLoader> = {
   doctor: async () => (await import("./doctor")).doctorCommand,

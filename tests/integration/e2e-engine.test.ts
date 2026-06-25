@@ -13,7 +13,7 @@ const FIXTURE_EN = "tests/fixtures/benchmark-en/01-check-email.ogg";
 const engineInstalled = isEngineInstalled();
 
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([process.execPath, "run", "src/cli.ts", ...args], {
+  const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", ...args], {
     stdout: "pipe",
     stderr: "pipe",
     cwd: CWD,

@@ -661,7 +661,7 @@ describe("CLI contracts", () => {
     const mediaPath = join(dir, "workshop.mp4");
     writeFileSync(mediaPath, "fake media");
 
-    const proc = Bun.spawn([process.execPath, "run", "src/cli.ts", mediaPath], {
+    const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", mediaPath], {
       cwd: DEFAULT_CWD,
       stdout: "pipe",
       stderr: "pipe",
