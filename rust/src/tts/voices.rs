@@ -221,7 +221,7 @@ fn resolve_multilang_kokoro(
 fn default_voice_for_lang(lang: &str) -> &'static str {
     match lang {
         "es" => "em_alex",   // male ✓
-        "fr" => "ff_siwis", // female — sole French voice in Kokoro v1.0; see BRAND-RULE EXCEPTION above
+        "fr" => "ff_siwis", // female — Kokoro v1.0 has no male fr voice (CLAUDE.md brand-rule exception)
         "it" => "im_nicola", // male ✓
         "pt" => "pm_alex",  // male ✓
         _ => unreachable!("default_voice_for_lang called with unexpected lang '{lang}'"),
