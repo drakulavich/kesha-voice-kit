@@ -242,6 +242,13 @@ mod tests {
         }
     }
 
+    // ALL must stay in sync with the enum — catches a variant added without updating ALL.
+    #[test]
+    fn all_length_matches_variant_count() {
+        // 19 variants; update this number when adding a new ErrorCode variant.
+        assert_eq!(ErrorCode::ALL.len(), 19);
+    }
+
     #[test]
     fn category_and_retryable_are_total_and_consistent() {
         for c in ErrorCode::ALL {
@@ -259,6 +266,45 @@ mod tests {
         }
     }
 
+    // Spot-check that each variant lands in the right category bucket.
+    #[test]
+    fn category_mapping_spot_checks() {
+        assert_eq!(ErrorCode::InputNotFound.category(), Category::Input);
+        assert_eq!(ErrorCode::BadAudio.category(), Category::Input);
+        assert_eq!(ErrorCode::InvalidArg.category(), Category::Input);
+        assert_eq!(ErrorCode::ModelMissing.category(), Category::Model);
+        assert_eq!(ErrorCode::ModelDownload.category(), Category::Model);
+        assert_eq!(ErrorCode::CacheCorrupt.category(), Category::Model);
+        assert_eq!(ErrorCode::ModelLoad.category(), Category::Model);
+        assert_eq!(
+            ErrorCode::UnsupportedPlatform.category(),
+            Category::Platform
+        );
+        assert_eq!(ErrorCode::SidecarMissing.category(), Category::Platform);
+        assert_eq!(ErrorCode::NoBackend.category(), Category::Platform);
+        assert_eq!(ErrorCode::TextEmpty.category(), Category::Tts);
+        assert_eq!(ErrorCode::TextTooLong.category(), Category::Tts);
+        assert_eq!(ErrorCode::VoiceUnknown.category(), Category::Tts);
+        assert_eq!(ErrorCode::SsmlInvalid.category(), Category::Tts);
+        assert_eq!(ErrorCode::SsmlUnsupported.category(), Category::Tts);
+        assert_eq!(ErrorCode::ScriptUnsupported.category(), Category::Tts);
+        assert_eq!(ErrorCode::TranscribeFailed.category(), Category::Transcribe);
+        assert_eq!(ErrorCode::DiarizeTimeout.category(), Category::Transcribe);
+        assert_eq!(ErrorCode::Internal.category(), Category::Internal);
+    }
+
+    // Display delegates to the message field, not the code string.
+    #[test]
+    fn coded_error_display_uses_message_not_code() {
+        let e = CodedError {
+            code: ErrorCode::VoiceUnknown,
+            message: "voice 'xx_yy' not recognised".into(),
+        };
+        let rendered = format!("{e}");
+        assert_eq!(rendered, "voice 'xx_yy' not recognised");
+        assert!(!rendered.contains("E_VOICE_UNKNOWN"));
+    }
+
     #[test]
     fn coded_bail_attaches_code_findable_in_chain() {
         fn leaf() -> anyhow::Result<()> {
@@ -272,6 +318,20 @@ mod tests {
         assert_eq!(code_of(&err), ErrorCode::ModelMissing);
     }
 
+    // code_of must find the code even when buried under multiple context layers.
+    #[test]
+    fn code_of_finds_code_through_deep_chain() {
+        fn leaf() -> anyhow::Result<()> {
+            coded_bail!(ErrorCode::CacheCorrupt, "hash mismatch");
+        }
+        let err = leaf()
+            .unwrap_err()
+            .context("while verifying model")
+            .context("while initialising backend")
+            .context("during startup");
+        assert_eq!(code_of(&err), ErrorCode::CacheCorrupt);
+    }
+
     #[test]
     fn coded_extension_snapshots_message_and_code() {
         let res: anyhow::Result<()> = Err(anyhow::anyhow!("boom"))
@@ -281,6 +341,20 @@ mod tests {
         assert_eq!(code_of(&err), ErrorCode::BadAudio);
         let coded = err.downcast_ref::<CodedError>().expect("is CodedError");
         assert!(coded.message.contains("decode error"));
+    }
+
+    // coded() must include the original cause text in its snapshot.
+    #[test]
+    fn coded_extension_preserves_original_cause_in_message() {
+        let res: anyhow::Result<()> =
+            Err(anyhow::anyhow!("underlying io error")).coded(ErrorCode::ModelLoad);
+        let err = res.unwrap_err();
+        let coded = err.downcast_ref::<CodedError>().expect("is CodedError");
+        assert!(
+            coded.message.contains("underlying io error"),
+            "message was: {}",
+            coded.message
+        );
     }
 
     #[test]

@@ -103,39 +103,72 @@ export function resolveQuietMode(rawArgs: string[]): { quiet: boolean; rawArgs: 
   return { quiet: value, rawArgs: cleaned };
 }
 
+/**
+ * Sync NO_COLOR with the resolved color decision so engine subprocesses inherit
+ * the right value. Separated from setColorEnabled so it can be tested without
+ * picocolors side-effects.
+ *
+ * Never clears a NO_COLOR the user exported before this process started
+ * (USER_FORCED_NO_COLOR guard).
+ */
+export function applyColorEnv(disableColor: boolean): void {
+  if (disableColor) {
+    process.env.NO_COLOR = "1";
+  } else if (!USER_FORCED_NO_COLOR) {
+    delete process.env.NO_COLOR;
+  }
+}
+
+/**
+ * Classify the first positional arg for routing.
+ *
+ * - `"subcommand"` — exact match in the known subcommand set
+ * - `"unknown"`    — bare token that looks like a typo (not a flag, not path-like)
+ * - `"main"`       — flags, path-like args, or no arg (→ transcribe / help)
+ */
+export function classifyFirstArg(
+  firstArg: string | undefined,
+  subcommandKeys: string[],
+): "subcommand" | "unknown" | "main" {
+  if (!firstArg) return "main";
+  if (subcommandKeys.includes(firstArg)) return "subcommand";
+  // Flags and path-like tokens fall through to the main transcribe command.
+  if (firstArg.startsWith("-") || isPathLike(firstArg)) return "main";
+  return "unknown";
+}
+
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
   // Global flags resolved before citty so they apply to every command and never reach a subcommand's arg schema.
   const color = resolveColorMode(rawArgs);
   // Reset on every invocation so an earlier --no-color/CI call doesn't leave colors off for later in-process calls (unit tests, `kesha mcp`).
   setColorEnabled(!color.disableColor);
-  // Sync NO_COLOR for engine subprocesses; never clear a value the user exported themselves.
-  if (color.disableColor) {
-    process.env.NO_COLOR = "1";
-  } else if (!USER_FORCED_NO_COLOR) {
-    delete process.env.NO_COLOR;
-  }
+  applyColorEnv(color.disableColor);
 
   const quiet = resolveQuietMode(color.rawArgs);
   log.quietEnabled = quiet.quiet;
 
   rawArgs = quiet.rawArgs;
   const [firstArg, ...restArgs] = rawArgs;
+  const subcommandKeys = Object.keys(SUBCOMMANDS);
 
-  if (firstArg && Object.hasOwn(SUBCOMMANDS, firstArg)) {
-    await runMain(SUBCOMMANDS[firstArg], { rawArgs: restArgs });
-    return;
-  }
+  switch (classifyFirstArg(firstArg, subcommandKeys)) {
+    case "subcommand":
+      await runMain(SUBCOMMANDS[firstArg!], { rawArgs: restArgs });
+      return;
 
-  // Extensionless existing files are valid transcription inputs; bare non-path tokens are likely command typos.
-  if (firstArg && !firstArg.startsWith("-") && !isPathLike(firstArg)) {
-    const suggestion = suggestCommand(firstArg, Object.keys(SUBCOMMANDS));
-    log.error(`unknown command '${firstArg}'`);
-    if (suggestion && suggestion !== firstArg) {
-      log.warn(`(Did you mean ${suggestion}?)`);
+    case "unknown": {
+      // Extensionless existing files are valid transcription inputs; bare non-path tokens are likely command typos.
+      const suggestion = suggestCommand(firstArg!, subcommandKeys);
+      log.error(`unknown command '${firstArg}'`);
+      if (suggestion && suggestion !== firstArg) {
+        log.warn(`(Did you mean ${suggestion}?)`);
+      }
+      log.warn(`If this is an audio file, pass a path like './${firstArg}'.`);
+      process.exit(1);
+      break;
     }
-    log.warn(`If this is an audio file, pass a path like './${firstArg}'.`);
-    process.exit(1);
-  }
 
-  await runMain(mainCommand, { rawArgs });
+    default:
+      await runMain(mainCommand, { rawArgs });
+  }
 }
