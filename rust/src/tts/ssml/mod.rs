@@ -95,6 +95,26 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
             .then_with(|| span_priority(&a.element).cmp(&span_priority(&b.element)))
     });
 
+    // #560: ranges of whole-utterance <prosody rate> that recurse into parse_inner_spans.
+    let recursed_prosody: Vec<(usize, usize)> = spans
+        .iter()
+        .filter_map(|s| match &s.element {
+            ParsedElement::Prosody(attrs)
+                if prosody_is_whole_utterance(s, &text, input)
+                    && attrs
+                        .rate
+                        .as_ref()
+                        .map(|r| r.to_string())
+                        .as_deref()
+                        .and_then(parse_rate_value)
+                        .is_some() =>
+            {
+                Some((s.start, s.end))
+            }
+            _ => None,
+        })
+        .collect();
+
     let mut segments: Vec<Segment> = Vec::new();
     let mut cursor: usize = 0;
 
@@ -107,6 +127,16 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
         // same character range, so the outer Emphasis is silently absorbed.
         // See #233.
         if span.start < cursor {
+            continue;
+        }
+        // #560: a zero-width <break/> at a recursing-prosody boundary escapes the
+        // cursor guard above (start == end) and would emit flat here AND inside the
+        // ProsodyRate; skip it (Break only — non-zero-width children don't double-emit).
+        if matches!(&span.element, ParsedElement::Break(_))
+            && recursed_prosody
+                .iter()
+                .any(|&(s, e)| span.start >= s && span.end <= e)
+        {
             continue;
         }
         match &span.element {
@@ -124,13 +154,7 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                 // ssml-parser's text-position spans alone cannot distinguish
                 // `<speak><break/><prosody>x</prosody></speak>` (mid-utterance)
                 // from `<speak><prosody><break/>x</prosody></speak>` (inside).
-                let prefix: String = text[..span.start].iter().collect();
-                let suffix: String = text[span.end..].iter().collect();
-                let is_whole_utterance = prefix.trim().is_empty()
-                    && suffix.trim().is_empty()
-                    && !has_structural_source_siblings(input);
-
-                if is_whole_utterance {
+                if prosody_is_whole_utterance(span, &text, input) {
                     // Attempt to parse the rate attribute.
                     let rate_str = attrs.rate.as_ref().map(|r| r.to_string());
                     let parsed_rate = rate_str.as_deref().and_then(parse_rate_value);
@@ -175,6 +199,19 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     // Trailing text after the last span.
     push_text_slice(&mut segments, &text, cursor, text.len());
     Ok(segments)
+}
+
+/// True when a `<prosody>` covers the whole utterance (surrounding text + source
+/// both whitespace-only). The source-sibling check disambiguates zero-width tags
+/// that collapse to the prosody's offset. Shared by the Prosody arm and #560 precompute.
+fn prosody_is_whole_utterance(
+    span: &ssml_parser::parser::Span,
+    text: &[char],
+    input: &str,
+) -> bool {
+    let prefix: String = text[..span.start].iter().collect();
+    let suffix: String = text[span.end..].iter().collect();
+    prefix.trim().is_empty() && suffix.trim().is_empty() && !has_structural_source_siblings(input)
 }
 
 /// Collect the inner text of a structural span and trim whitespace.
