@@ -154,6 +154,58 @@ function recordOutputArtifact(
   return { outputFormat: opts.format ?? "wav", outputSizeBytes: audio.byteLength };
 }
 
+async function synthesizeAndEmit(
+  opts: SayOpts,
+  verbose: boolean,
+  stats: ReturnType<typeof createStatsRecorder>,
+  diagnosticLog: ReturnType<typeof createDiagnosticLogSession>,
+): Promise<void> {
+  try {
+    const startedAt = performance.now();
+    if (opts.out) {
+      const voiceLabel = opts.voice ?? "default voice";
+      log.status(`Synthesizing ${voiceLabel} -> ${opts.out}...`);
+    }
+    const audio = await stats.timeStage("tts", () => say(opts));
+    const ttsTimeMs = Math.round(performance.now() - startedAt);
+    if (opts.out) {
+      log.status(`Saved ${opts.out} (${ttsTimeMs}ms)`);
+    }
+    // stderr — stdout may carry raw audio bytes when --out is omitted.
+    if (verbose && !opts.out) log.status(`TTS time: ${ttsTimeMs}ms`);
+    const { outputFormat, outputSizeBytes } = recordOutputArtifact(stats, audio, opts);
+    diagnosticLog.event("command.finish", {
+      command: "say",
+      status: "success",
+      durationMs: ttsTimeMs,
+      hasOut: Boolean(opts.out),
+      outputFormat,
+      outputSizeBucket: diagnosticSizeBucket(outputSizeBytes),
+    });
+    if (!opts.out) process.stdout.write(audio);
+    stats.finish("success", 1);
+    diagnosticLog.finish("success");
+  } catch (err) {
+    const code = err instanceof SayError ? err.code : "E_INTERNAL";
+    stats.recordError("tts", err, code);
+    stats.finish("failed", 1);
+    diagnosticLog.event("command.finish", {
+      command: "say",
+      status: "failed",
+      errorKind: err instanceof SayError ? "say_error" : "error",
+      exitCode: err instanceof SayError ? err.exitCode : 4,
+      error_code: code,
+    });
+    diagnosticLog.finish("failed");
+    if (err instanceof SayError) {
+      log.error(err.stderr.trim() || err.message);
+      process.exit(err.exitCode);
+    }
+    log.error(errorMessage(err));
+    process.exit(4);
+  }
+}
+
 export const sayCommand = defineCommand({
   meta: {
     name: "say",
@@ -219,7 +271,6 @@ export const sayCommand = defineCommand({
 
     // Validate --format before spawning the engine: faster failure in scripts (engine repeats authoritatively).
     const format = parseFormatFlag(typeof args.format === "string" ? args.format : undefined);
-
     const rate = parseRateFlag(args.rate);
     const bitrate = parseBitrateFlag(args.bitrate);
     const sampleRate = parseSampleRateFlag(args["sample-rate"]);
@@ -264,54 +315,6 @@ export const sayCommand = defineCommand({
       noExpandAbbrev: opts.noExpandAbbrev,
     });
 
-    try {
-      const startedAt = performance.now();
-      if (opts.out) {
-        const voiceLabel = opts.voice ?? "default voice";
-        log.status(`Synthesizing ${voiceLabel} -> ${opts.out}...`);
-      }
-      const audio = await stats.timeStage("tts", () => say(opts));
-      const ttsTimeMs = Math.round(performance.now() - startedAt);
-      if (opts.out) {
-        log.status(`Saved ${opts.out} (${ttsTimeMs}ms)`);
-      }
-      if (args.verbose && !opts.out) {
-        // stderr — stdout may carry raw audio bytes when --out is omitted.
-        log.status(`TTS time: ${ttsTimeMs}ms`);
-      }
-      const { outputFormat, outputSizeBytes } = recordOutputArtifact(stats, audio, opts);
-      diagnosticLog.event("command.finish", {
-        command: "say",
-        status: "success",
-        durationMs: ttsTimeMs,
-        hasOut: Boolean(opts.out),
-        outputFormat,
-        outputSizeBucket: diagnosticSizeBucket(outputSizeBytes),
-      });
-      if (!opts.out) {
-        process.stdout.write(audio);
-      }
-      stats.finish("success", 1);
-      diagnosticLog.finish("success");
-    } catch (err) {
-      const code = err instanceof SayError ? err.code : "E_INTERNAL";
-      stats.recordError("tts", err, code);
-      stats.finish("failed", 1);
-      diagnosticLog.event("command.finish", {
-        command: "say",
-        status: "failed",
-        errorKind: err instanceof SayError ? "say_error" : "error",
-        exitCode: err instanceof SayError ? err.exitCode : 4,
-        error_code: code,
-      });
-      diagnosticLog.finish("failed");
-      if (err instanceof SayError) {
-        log.error(err.stderr.trim() || err.message);
-        process.exit(err.exitCode);
-      }
-      const message = errorMessage(err);
-      log.error(message);
-      process.exit(4);
-    }
+    await synthesizeAndEmit(opts, Boolean(args.verbose), stats, diagnosticLog);
   },
 });

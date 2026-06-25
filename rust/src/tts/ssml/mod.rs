@@ -108,48 +108,14 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     let mut cursor: usize = 0;
 
     for span in &spans {
-        // Inner structural tag (priority 0) already consumed this region; skip outer. (#233)
-        if span.start < cursor {
-            continue;
-        }
-        // #560: a zero-width <break/> at a recursing-prosody boundary escapes the
-        // cursor guard above (start == end) and would emit flat here AND inside the
-        // ProsodyRate; skip it (Break only — non-zero-width children don't double-emit).
-        if matches!(&span.element, ParsedElement::Break(_))
-            && recursed_prosody
-                .iter()
-                .any(|&(s, e)| span.start >= s && span.end <= e)
-        {
+        if should_skip_span(span, cursor, &recursed_prosody) {
             continue;
         }
         match &span.element {
             ParsedElement::Speak(_) => {}
             ParsedElement::Prosody(attrs) => {
-                if prosody_is_whole_utterance(span, &text, input) {
-                    let rate_str = attrs.rate.as_ref().map(|r| r.to_string());
-                    let parsed_rate = rate_str.as_deref().and_then(parse_rate_value);
-                    if let Some(rate) = parsed_rate {
-                        push_text_slice(&mut segments, &text, cursor, span.start);
-                        let inner_segs = parse_inner_spans(&spans, &text, span.start, span.end);
-                        segments.push(Segment::ProsodyRate {
-                            rate,
-                            content: inner_segs,
-                        });
-                        cursor = span.end;
-                    } else {
-                        warn_once(
-                            WARN_PROSODY_NO_SUPPORTED_ATTR,
-                            "SSML <prosody> without a parseable rate= attribute \
-                             is not supported (pitch/volume scoped to a follow-up); stripping",
-                        );
-                    }
-                } else {
-                    warn_once(
-                        WARN_PROSODY_MID_UTTERANCE,
-                        "SSML <prosody> mid-utterance is not yet supported \
-                         (whole-utterance only); stripping rate, pitch, and volume",
-                    );
-                }
+                cursor =
+                    handle_prosody_span(span, attrs, &text, input, &spans, &mut segments, cursor);
             }
             _ => {
                 if let Some(new_cursor) = emit_span(span, &text, &mut segments, cursor) {
@@ -160,6 +126,64 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     }
     push_text_slice(&mut segments, &text, cursor, text.len());
     Ok(segments)
+}
+
+/// Returns true when the span should be skipped in the top-level walk.
+///
+/// Covers two cases:
+/// - cursor guard: an inner structural tag already consumed this region (#233)
+/// - #560: a zero-width Break at a recursing-prosody boundary would double-emit
+///   (once flat here, once inside the ProsodyRate via `parse_inner_spans`)
+fn should_skip_span(
+    span: &ssml_parser::parser::Span,
+    cursor: usize,
+    recursed_prosody: &[(usize, usize)],
+) -> bool {
+    if span.start < cursor {
+        return true;
+    }
+    matches!(&span.element, ParsedElement::Break(_))
+        && recursed_prosody
+            .iter()
+            .any(|&(s, e)| span.start >= s && span.end <= e)
+}
+
+/// Processes one `<prosody>` span: emits a `ProsodyRate` segment for whole-utterance
+/// prosody with a parseable rate, or warns and strips otherwise.
+/// Returns the updated cursor position.
+fn handle_prosody_span(
+    span: &ssml_parser::parser::Span,
+    attrs: &ssml_parser::elements::ProsodyAttributes,
+    text: &[char],
+    input: &str,
+    spans: &[&ssml_parser::parser::Span],
+    segments: &mut Vec<Segment>,
+    cursor: usize,
+) -> usize {
+    if !prosody_is_whole_utterance(span, text, input) {
+        warn_once(
+            WARN_PROSODY_MID_UTTERANCE,
+            "SSML <prosody> mid-utterance is not yet supported \
+             (whole-utterance only); stripping rate, pitch, and volume",
+        );
+        return cursor;
+    }
+    let rate_str = attrs.rate.as_ref().map(|r| r.to_string());
+    let Some(rate) = rate_str.as_deref().and_then(parse_rate_value) else {
+        warn_once(
+            WARN_PROSODY_NO_SUPPORTED_ATTR,
+            "SSML <prosody> without a parseable rate= attribute \
+             is not supported (pitch/volume scoped to a follow-up); stripping",
+        );
+        return cursor;
+    };
+    push_text_slice(segments, text, cursor, span.start);
+    let inner_segs = parse_inner_spans(spans, text, span.start, span.end);
+    segments.push(Segment::ProsodyRate {
+        rate,
+        content: inner_segs,
+    });
+    span.end
 }
 
 /// True when `<prosody>` is the sole meaningful child of `<speak>`. Source-sibling
