@@ -58,7 +58,7 @@ jobs:
       # short-lived publish credential when the package is configured as a
       # Trusted Publisher on npmjs.com.
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "lts/*"
           registry-url: "https://registry.npmjs.org"
