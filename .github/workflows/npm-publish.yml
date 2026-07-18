@@ -52,14 +52,19 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
-      # npm provenance requires npm CLI ≥ 9.5. Node 22 (LTS) ships with
-      # npm 10.x. `registry-url` configures the auth token line that
-      # `NODE_AUTH_TOKEN` consumes via `npm publish`.
+      # Trusted Publishing (tokenless OIDC) requires Node >=22.14.0 and
+      # npm >=11.5.1. `registry-url` keeps the publish target; no
+      # NODE_AUTH_TOKEN is set — npm exchanges the GitHub OIDC token for a
+      # short-lived publish credential when the package is configured as a
+      # Trusted Publisher on npmjs.com.
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "lts/*"
           registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest && npm --version
 
       # Guard: refuse to publish if `package.json#version` doesn't match
       # the release tag. Catches an accidental release of a tag that
@@ -112,4 +117,3 @@ jobs:
         run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"
         env:
           NPM_DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
