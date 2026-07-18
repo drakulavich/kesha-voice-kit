@@ -79,28 +79,25 @@ pub(super) fn find_relative_rate(input: &str) -> Option<String> {
                 continue;
             }
         };
-        if let Some(close_rel) = bytes[value_start..].iter().position(|&b| b == quote) {
-            let value_bytes = &bytes[value_start..value_start + close_rel];
-            // Skip leading whitespace per SSML/XML normalization.
-            let trimmed_start = value_bytes
-                .iter()
-                .position(|b| !b.is_ascii_whitespace())
-                .unwrap_or(value_bytes.len());
-            let trimmed = &value_bytes[trimmed_start..];
-            if let Some(&first) = trimmed.first() {
-                if (first == b'+' || first == b'-')
-                    && trimmed.get(1).is_some_and(|c| c.is_ascii_digit())
-                {
-                    if let Ok(s) = std::str::from_utf8(value_bytes) {
-                        return Some(s.to_string());
-                    }
+        // Unclosed quote → None (let ssml-parser surface the real error).
+        let close_rel = bytes[value_start..].iter().position(|&b| b == quote)?;
+        let value_bytes = &bytes[value_start..value_start + close_rel];
+        // Skip leading whitespace per SSML/XML normalization.
+        let trimmed_start = value_bytes
+            .iter()
+            .position(|b| !b.is_ascii_whitespace())
+            .unwrap_or(value_bytes.len());
+        let trimmed = &value_bytes[trimmed_start..];
+        if let Some(&first) = trimmed.first() {
+            if (first == b'+' || first == b'-')
+                && trimmed.get(1).is_some_and(|c| c.is_ascii_digit())
+            {
+                if let Ok(s) = std::str::from_utf8(value_bytes) {
+                    return Some(s.to_string());
                 }
             }
-            i = value_start + close_rel + 1;
-        } else {
-            // Unclosed quote — let ssml-parser surface the real error.
-            return None;
         }
+        i = value_start + close_rel + 1;
     }
     None
 }
