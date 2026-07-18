@@ -18,7 +18,7 @@ class KeshaVoiceKit < Formula
 
     (bin/"kesha").write <<~EOS
       #!/bin/bash
-      exec "#{Formula["oven-sh/bun/bun"].opt_bin}/bun" "#{libexec}/bin/kesha.js" "$@"
+      exec "#{formula_opt_bin("oven-sh/bun/bun")}/bun" "#{libexec}/bin/kesha.js" "$@"
     EOS
   end
 
