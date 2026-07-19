@@ -32,15 +32,18 @@ fn kokoro_hello_world_produces_wav() {
     .unwrap();
     let samples = common::assert_kokoro_speech(&wav, "hello_world");
 
-    // Plausible duration: [0.3, 1.5] × (graphemes / 12), a loose band that only
-    // catches near-zero or catastrophically long output (mirrors tts_multilang_audio).
+    // Plausible duration: [0.3, 3.0] × (graphemes / 12). Wider upper bound than
+    // the longer-sentence tts_multilang_audio corpus — a short phrase pays a
+    // fixed onset/offset overhead, so its per-grapheme rate runs slower
+    // (Kokoro synthesises "Hello, world" in ~1.75s). The band only exists to
+    // catch near-zero or catastrophically long output.
     let duration = samples.len() as f32 / 24_000.0;
     let reference = text.chars().count() as f32 / 12.0;
     assert!(
-        duration >= reference * 0.3 && duration <= reference * 1.5,
+        duration >= reference * 0.3 && duration <= reference * 3.0,
         "duration {duration:.2}s outside [{:.2}, {:.2}]s for {:?}",
         reference * 0.3,
-        reference * 1.5,
+        reference * 3.0,
         text
     );
 }
