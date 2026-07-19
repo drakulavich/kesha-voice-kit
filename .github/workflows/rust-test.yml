@@ -168,11 +168,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v5-${{ runner.os }}
+          key: kokoro-spike-ml-v1-${{ runner.os }}
 
       - name: Download Kokoro model (if cache miss)
         shell: bash
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE" multilang
 
       - name: Run tests (with real Kokoro)
         shell: bash
@@ -251,11 +251,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v5-${{ runner.os }}
+          key: kokoro-spike-ml-v1-${{ runner.os }}
 
       - name: Download Kokoro model (if cache miss)
         shell: bash
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE" multilang
 
       - name: 📈 Rust coverage
         shell: bash
@@ -269,6 +269,10 @@ jobs:
           if [[ -f "$KOKORO_CACHE/models/vosk-ru/model.onnx" && -f "$KOKORO_CACHE/models/vosk-ru/bert/model.onnx" ]]; then
             export KESHA_CACHE_DIR="$KOKORO_CACHE"
             echo "KESHA_CACHE_DIR=$KOKORO_CACHE" >> "$GITHUB_ENV"
+          fi
+          if [[ -f "$KOKORO_CACHE/models/g2p/byt5-tiny/encoder_model.onnx" ]]; then
+            export CHARSIU_ONNX="$KOKORO_CACHE/models/g2p/byt5-tiny"
+            echo "CHARSIU_ONNX=$KOKORO_CACHE/models/g2p/byt5-tiny" >> "$GITHUB_ENV"
           fi
           bun run coverage:rust
 

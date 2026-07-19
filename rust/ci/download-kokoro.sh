@@ -9,7 +9,12 @@
 # test runner.
 set -euo pipefail
 
-DEST="${1:?usage: download-kokoro.sh <dest_dir>}"
+DEST="${1:?usage: download-kokoro.sh <dest_dir> [multilang]}"
+# Pass "multilang" as $2 to also stage the runtime cache layout + es/fr/it/pt
+# voices + CharsiuG2P for tts_multilang_audio. Only rust-test.yml opts in; the
+# ci.yml TTS-e2e cache stays lean so its say-e2e SPIKE_AVAILABLE gate is
+# unaffected (that suite skips without a staged g2p dir).
+STAGE_MULTILANG="${2:-}"
 mkdir -p "$DEST"
 
 if [[ ! -f "$DEST/model.onnx" ]]; then
@@ -51,3 +56,47 @@ wait
 ls -lh "$DEST"
 ls -lh "$VOSK_DIR"
 ls -lh "$VOSK_DIR/bert"
+
+if [[ "$STAGE_MULTILANG" == "multilang" ]]; then
+  # Runtime cache layout (models/kokoro-82m/...) for tests that resolve Kokoro
+  # via KESHA_CACHE_DIR instead of the flat KOKORO_MODEL env — tts_multilang_audio.
+  # Hardlink the 310 MB model rather than copy (same filesystem; `ln` falls back
+  # to a copy on Windows git-bash).
+  KOKORO_DIR="$DEST/models/kokoro-82m"
+  mkdir -p "$KOKORO_DIR/voices"
+  if [[ ! -f "$KOKORO_DIR/model.onnx" ]]; then
+    ln -f "$DEST/model.onnx" "$KOKORO_DIR/model.onnx" 2>/dev/null \
+      || cp "$DEST/model.onnx" "$KOKORO_DIR/model.onnx"
+  fi
+  if [[ ! -f "$KOKORO_DIR/voices/am_michael.bin" ]]; then
+    ln -f "$DEST/am_michael.bin" "$KOKORO_DIR/voices/am_michael.bin" 2>/dev/null \
+      || cp "$DEST/am_michael.bin" "$KOKORO_DIR/voices/am_michael.bin"
+  fi
+
+  # Multilingual voices (es/fr/it/pt) — URLs mirror rust/src/models.rs multilang
+  # voice manifest. em_alex/im_nicola/pm_alex are male; ff_siwis is the documented
+  # French brand-rule exception (Kokoro v1.0 ships no male French voice).
+  VOICE_BASE="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices"
+  for v in em_alex ff_siwis im_nicola pm_alex; do
+    if [[ ! -f "$KOKORO_DIR/voices/$v.bin" ]]; then
+      echo "Downloading Kokoro voice $v.bin..."
+      curl -fL -o "$KOKORO_DIR/voices/$v.bin" "$VOICE_BASE/$v.bin"
+    fi
+  done
+
+  # CharsiuG2P byt5-tiny ONNX (es/fr/it/pt phonemisation). URLs mirror
+  # rust/src/models.rs; the loader (charsiu::load) opens exactly these three.
+  # run-cargo-test.sh exports CHARSIU_ONNX pointing at this dir.
+  G2P_DIR="$DEST/models/g2p/byt5-tiny"
+  mkdir -p "$G2P_DIR"
+  G2P_BASE="https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main"
+  for f in encoder_model decoder_model decoder_with_past_model; do
+    if [[ ! -f "$G2P_DIR/$f.onnx" ]]; then
+      echo "Downloading CharsiuG2P $f.onnx..."
+      curl -fL -o "$G2P_DIR/$f.onnx" "$G2P_BASE/$f.onnx"
+    fi
+  done
+
+  ls -lh "$KOKORO_DIR/voices"
+  ls -lh "$G2P_DIR"
+fi
