@@ -16,8 +16,9 @@ fn kokoro_hello_world_produces_wav() {
         eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
         return;
     };
+    let text = "Hello, world";
     let wav = tts::say(SayOptions {
-        text: "Hello, world",
+        text,
         lang: "en-us",
         engine: EngineChoice::Kokoro {
             model_path: Path::new(&model),
@@ -29,11 +30,18 @@ fn kokoro_hello_world_produces_wav() {
         expand_abbrev: true,
     })
     .unwrap();
-    assert_eq!(&wav[..4], b"RIFF", "not a WAV");
+    let samples = common::assert_kokoro_speech(&wav, "hello_world");
+
+    // Plausible duration: [0.3, 1.5] × (graphemes / 12), a loose band that only
+    // catches near-zero or catastrophically long output (mirrors tts_multilang_audio).
+    let duration = samples.len() as f32 / 24_000.0;
+    let reference = text.chars().count() as f32 / 12.0;
     assert!(
-        wav.len() > 44 + 1000 * 4,
-        "audio too short: {} bytes",
-        wav.len()
+        duration >= reference * 0.3 && duration <= reference * 1.5,
+        "duration {duration:.2}s outside [{:.2}, {:.2}]s for {:?}",
+        reference * 0.3,
+        reference * 1.5,
+        text
     );
 }
 
@@ -78,26 +86,38 @@ fn kokoro_ssml_with_break_produces_wav() {
         eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
         return;
     };
-    let wav = tts::say(SayOptions {
-        text: r#"<speak>Hello <break time="300ms"/> world</speak>"#,
-        lang: "en-us",
-        engine: EngineChoice::Kokoro {
-            model_path: Path::new(&model),
-            voice_path: Path::new(&voice),
-            speed: 1.0,
-        },
-        ssml: true,
-        format: OutputFormat::Wav,
-        expand_abbrev: true,
-    })
-    .unwrap();
-    assert_eq!(&wav[..4], b"RIFF");
-    // Must be at least the audio for "Hello" + 300ms of silence + "world".
-    // ~300ms @ 24kHz mono f32 = 28.8 KB just in silence.
+    let synth = |text: &str, ssml: bool| {
+        tts::say(SayOptions {
+            text,
+            lang: "en-us",
+            engine: EngineChoice::Kokoro {
+                model_path: Path::new(&model),
+                voice_path: Path::new(&voice),
+                speed: 1.0,
+            },
+            ssml,
+            format: OutputFormat::Wav,
+            expand_abbrev: true,
+        })
+        .unwrap()
+    };
+
+    // Compare the same words with and without the break: the 300ms pause must
+    // add a real span of silence. Byte-length alone (the old oracle) passes even
+    // if the break is silently dropped and the words just run long.
+    let with_break = synth(r#"<speak>Hello <break time="300ms"/> world</speak>"#, true);
+    let no_break = synth(r#"<speak>Hello world</speak>"#, true);
+
+    let with_break_samples = common::assert_kokoro_speech(&with_break, "ssml_break");
+    let no_break_samples = common::assert_kokoro_speech(&no_break, "ssml_no_break");
+
+    // 300ms @ 24kHz = 7200 samples; require ≥150ms extra to allow for prosody
+    // variance between the two syntheses while still proving the break inserted silence.
+    let extra = with_break_samples.len() as i64 - no_break_samples.len() as i64;
     assert!(
-        wav.len() > 44 + 24_000,
-        "audio too short: {} bytes",
-        wav.len()
+        extra >= 3_600,
+        "300ms break added only {extra} samples (~{}ms); expected ≥150ms of silence",
+        extra * 1000 / 24_000
     );
 }
 

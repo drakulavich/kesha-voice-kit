@@ -195,14 +195,15 @@ fn loop_synthesises_kokoro_and_caches_session() {
     };
     assert_eq!(f1.status, STATUS_OK, "first request failed: {f1_msg}");
     assert_eq!(f1.id, 1);
-    assert_eq!(&f1.payload[..4], b"RIFF", "first response not a WAV");
+    common::assert_kokoro_speech(&f1.payload, "loop_frame_1");
 
     assert_eq!(f2.status, STATUS_OK, "second request failed: {f2_msg}");
     assert_eq!(f2.id, 2);
-    assert_eq!(&f2.payload[..4], b"RIFF", "second response not a WAV");
+    common::assert_kokoro_speech(&f2.payload, "loop_frame_2");
 
     // No timing assertion: CI noise + small input ("Hello"/"World") makes
-    // warm-vs-cold ratios unreliable. Two successful frames from one process
-    // is enough to verify the cached-session code path doesn't crash.
+    // warm-vs-cold ratios unreliable. Two real (non-silent, 24kHz mono) speech
+    // frames from one process prove the reused-session path synthesises audibly,
+    // not just that it returns a WAV header.
     c.close();
 }

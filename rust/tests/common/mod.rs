@@ -13,11 +13,71 @@
 
 use std::path::PathBuf;
 
+use hound::SampleFormat;
+
 /// Path to the freshly-built `kesha-engine` binary as embedded by cargo via
 /// `env!("CARGO_BIN_EXE_kesha-engine")`. Use directly with
 /// [`std::process::Command::new`] — `Command::new` accepts `&str`.
 pub fn engine_bin() -> &'static str {
     env!("CARGO_BIN_EXE_kesha-engine")
+}
+
+/// Parse a WAV buffer with `hound`: returns `(sample_rate, channels, f32_samples)`.
+/// Panics on malformed input so failures surface as assertion errors.
+pub fn parse_wav(wav: &[u8]) -> (u32, u16, Vec<f32>) {
+    let cursor = std::io::Cursor::new(wav);
+    let mut reader = hound::WavReader::new(cursor).expect("WAV bytes must be parseable by hound");
+    let spec = reader.spec();
+    let samples: Vec<f32> = match spec.sample_format {
+        SampleFormat::Float => reader
+            .samples::<f32>()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("f32 sample read"),
+        SampleFormat::Int => {
+            let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|s| s.map(|v| v as f32 / max))
+                .collect::<Result<Vec<_>, _>>()
+                .expect("int→f32 sample conversion")
+        }
+    };
+    (spec.sample_rate, spec.channels, samples)
+}
+
+/// RMS amplitude of a sample slice (0.0 for empty).
+pub fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
+    (sum_sq / samples.len() as f32).sqrt()
+}
+
+/// Assert `wav` is a real 24 kHz mono Kokoro speech buffer — correct header,
+/// no clipping, and non-silent RMS — then return the decoded samples so callers
+/// can add per-test assertions (duration, silence gaps). `ctx` labels failures.
+///
+/// A header-plus-length check (the historical oracle) passes on a well-formed
+/// but silent/garbage WAV; this asserts the bytes are actual audible speech.
+pub fn assert_kokoro_speech(wav: &[u8], ctx: &str) -> Vec<f32> {
+    assert!(wav.len() >= 4 && &wav[..4] == b"RIFF", "{ctx}: not a WAV");
+    let (sample_rate, channels, samples) = parse_wav(wav);
+    assert_eq!(
+        sample_rate, 24_000,
+        "{ctx}: expected 24000 Hz, got {sample_rate}"
+    );
+    assert_eq!(channels, 1, "{ctx}: expected mono, got {channels} channels");
+    assert!(!samples.is_empty(), "{ctx}: no samples");
+    for (i, &s) in samples.iter().enumerate() {
+        assert!(
+            (-1.0..=1.0).contains(&s),
+            "{ctx}: clipping at sample {i}: {s}"
+        );
+    }
+    let r = rms(&samples);
+    assert!(r > 0.01, "{ctx}: near-silent (RMS={r:.4})");
+    samples
 }
 
 /// `KOKORO_MODEL` + `KOKORO_VOICE` env-var skip gate.

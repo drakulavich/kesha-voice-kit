@@ -19,7 +19,6 @@ mod common;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use hound::SampleFormat;
 use kesha_engine::tts::{self, EngineChoice, OutputFormat, SayOptions};
 
 /// Default ONNX voice for each language (mirrors `voices::default_voice_for_lang`).
@@ -55,38 +54,6 @@ fn multilang_paths_or_skip(lang: &str) -> Option<(PathBuf, PathBuf)> {
     Some((model, voice))
 }
 
-/// Parse a WAV buffer with `hound` and return `(sample_rate, channel_count, f32_samples)`.
-/// Panics on malformed input so failures surface as assertion errors.
-fn parse_wav(wav: &[u8]) -> (u32, u16, Vec<f32>) {
-    let cursor = std::io::Cursor::new(wav);
-    let mut reader = hound::WavReader::new(cursor).expect("WAV bytes must be parseable by hound");
-    let spec = reader.spec();
-    let samples: Vec<f32> = match spec.sample_format {
-        SampleFormat::Float => reader
-            .samples::<f32>()
-            .collect::<Result<Vec<_>, _>>()
-            .expect("f32 sample read"),
-        SampleFormat::Int => {
-            let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
-            reader
-                .samples::<i32>()
-                .map(|s| s.map(|v| v as f32 / max))
-                .collect::<Result<Vec<_>, _>>()
-                .expect("int→f32 sample conversion")
-        }
-    };
-    (spec.sample_rate, spec.channels, samples)
-}
-
-/// RMS of a sample slice.
-fn rms(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
-    (sum_sq / samples.len() as f32).sqrt()
-}
-
 fn run_corpus_for_lang(lang: &str, sentences: &[String]) {
     let Some((model_path, voice_path)) = multilang_paths_or_skip(lang) else {
         return;
@@ -109,49 +76,13 @@ fn run_corpus_for_lang(lang: &str, sentences: &[String]) {
         })
         .unwrap_or_else(|e| panic!("[{lang}] synthesis failed for {:?}: {e}", sentence));
 
-        // 1. Non-empty bytes.
-        assert!(!wav.is_empty(), "[{lang}] WAV is empty for {:?}", sentence);
+        // Header (24kHz mono), no clipping (locks `kokoro::clamp_audio`, Phase 3),
+        // and non-silent RMS.
+        let samples = common::assert_kokoro_speech(&wav, &format!("{lang} {sentence:?}"));
 
-        // Parse WAV properly via hound (handles variable fmt chunk sizes).
-        let (sample_rate, channels, samples) = parse_wav(&wav);
-
-        // 2. 24000 Hz mono.
-        assert_eq!(
-            sample_rate, 24_000,
-            "[{lang}] expected 24000 Hz, got {sample_rate}"
-        );
-        assert_eq!(
-            channels, 1,
-            "[{lang}] expected mono (1 channel), got {channels}"
-        );
-
-        assert!(
-            !samples.is_empty(),
-            "[{lang}] audio is empty for {:?}",
-            sentence
-        );
-
-        // 3. No clipping — locks `kokoro::clamp_audio` (Phase 3).
-        for (i, &s) in samples.iter().enumerate() {
-            assert!(
-                (-1.0..=1.0).contains(&s),
-                "[{lang}] clipping at sample {i}: {s} (sentence: {:?})",
-                sentence
-            );
-        }
-
-        // 4. Non-silent: RMS > 0.01.
-        let r = rms(&samples);
-        assert!(
-            r > 0.01,
-            "[{lang}] audio is near-silent (RMS={r:.4}) for {:?}",
-            sentence
-        );
-
-        // 5. Plausible length: duration in [0.3, 1.5] × (grapheme_count / 12).
-        //    Loose band — catches near-zero or catastrophically long output only.
-        let sample_count = samples.len();
-        let duration_secs = sample_count as f32 / sample_rate as f32;
+        // Plausible length: duration in [0.3, 1.5] × (grapheme_count / 12).
+        // Loose band — catches near-zero or catastrophically long output only.
+        let duration_secs = samples.len() as f32 / 24_000.0;
         let reference = grapheme_count / 12.0; // ~12 graphemes/sec as baseline
         let lo = reference * 0.3;
         let hi = reference * 1.5;
