@@ -1,4 +1,4 @@
-.PHONY: dev-setup install check cli-fast coverage-ts coverage-rust test unit integration rust-test lint lint-tsgo versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
+.PHONY: dev-setup install check cli-fast coverage-ts coverage-rust test unit integration rust-test lint versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -35,9 +35,6 @@ rust-test: ## Run Rust tests via nextest (matches CI — rust-test.yml)
 
 lint: ## Type-check with tsc
 	bunx tsc --noEmit
-
-lint-tsgo: ## Type-check with tsgo (TypeScript 7 native preview, advisory)
-	bunx tsgo --noEmit
 
 versions: ## Check version drift between package.json + Cargo.toml (#267 F16)
 	bun .github/scripts/check-versions.ts
