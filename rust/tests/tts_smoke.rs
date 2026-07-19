@@ -73,12 +73,7 @@ fn say_with_explicit_paths_produces_wav() {
         out.status,
         String::from_utf8_lossy(&out.stderr)
     );
-    assert_eq!(&out.stdout[..4], b"RIFF", "stdout is not a WAV");
-    assert!(
-        out.stdout.len() > 10_000,
-        "stdout too small: {} bytes",
-        out.stdout.len()
-    );
+    common::assert_kokoro_speech(&out.stdout, "say_cli");
 }
 
 #[test]
