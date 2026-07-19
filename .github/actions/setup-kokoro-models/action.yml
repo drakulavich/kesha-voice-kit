@@ -1,0 +1,24 @@
+name: Setup Kokoro TTS models
+description: >
+  Restore-or-download the shared Kokoro + Vosk-RU + multilingual CharsiuG2P model
+  cache used by every TTS test lane (rust-test nextest + ci.yml say-e2e). One cache
+  key per OS so the macOS lanes share a single ~1.3 GB cache instead of duplicating it.
+
+inputs:
+  cache-dir:
+    description: Model cache directory (also used as KOKORO_CACHE by callers).
+    required: false
+    default: ${{ github.workspace }}/.kokoro-spike
+
+runs:
+  using: composite
+  steps:
+    - name: Cache TTS models
+      uses: actions/cache@v6
+      with:
+        path: ${{ inputs.cache-dir }}
+        key: kokoro-models-v1-${{ runner.os }}
+
+    - name: Download TTS models (if cache miss)
+      shell: bash
+      run: bash rust/ci/download-kokoro.sh "${{ inputs.cache-dir }}"
