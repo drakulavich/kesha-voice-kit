@@ -52,7 +52,6 @@
     "coverage:check:rust": "bun .github/scripts/check-coverage.ts --preset=rust --lcov=coverage/rust/lcov.info --summary=coverage/rust/summary.md",
     "generate:shell-artifacts": "bun scripts/generate-shell-artifacts.ts",
     "lint": "bunx tsc --noEmit",
-    "lint:tsgo": "bunx tsgo --noEmit",
     "check": "bun run lint && bun run check:versions && bun run test:cli-fast",
     "check:workflows": "bun .github/scripts/check-workflows.ts",
     "check:release-manifest": "bun .github/scripts/release-manifest.mjs --check",
@@ -85,7 +84,6 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@typescript/native-preview": "^7.0.0-dev.20260423.1",
     "fast-xml-parser": "^5.8.0",
     "typescript": "^7.0.2",
     "yaml": "^2.9.0"
