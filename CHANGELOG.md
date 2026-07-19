@@ -10,6 +10,13 @@ binary.
 
 ## [Unreleased]
 
+## [1.24.5] — 2026-07-19
+
+Engine release. Fixes corrupted multi-segment transcription on the CoreML (Apple Silicon) backend by picking up the FluidAudio TDT stateless-reset fix in `fluidaudio-rs`.
+
+### Fixed
+- **ASR (CoreML / Apple Silicon):** one-shot `transcribe_samples` calls no longer leak decoder state across calls. The VAD and long-audio chunked paths transcribe each speech segment on a single backend instance; before this fix the shared `TdtDecoderState` primed every segment after the first with the previous utterance's terminal token, prepending a spurious `.` — and collapsing short segments to just `.`. Picks up `fluidaudio-rs` `forked-main` (merged upstream [FluidInference/fluidaudio-rs#15](https://github.com/FluidInference/fluidaudio-rs/pull/15)) and adds an on-device (`#[ignore]`) regression test that runs `transcribe_samples` twice and asserts the second call is byte-identical to the first.
+
 ## [1.24.2] — 2026-06-12
 
 Engine release. Ships the [#539](https://github.com/drakulavich/kesha-voice-kit/pull/539) Rust refactors in isolation — binaries are intended to be functionally identical to v1.23.0, so any future regression bisects cleanly to this refactor set. CLI and engine versions move together to 1.24.2.

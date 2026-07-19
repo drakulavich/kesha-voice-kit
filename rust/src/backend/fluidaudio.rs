@@ -98,4 +98,49 @@ mod tests {
         assert_eq!(out.len(), MIN_SAMPLES);
         assert!(out.iter().all(|&v| v == 0.0));
     }
+
+    // Regression: the VAD/chunked paths call `transcribe_samples` once per
+    // segment on a single backend instance. Before fluidaudio-rs carried the
+    // upstream TDT stateless-reset fix (FluidInference/fluidaudio-rs#15), the
+    // shared TdtDecoderState leaked the previous utterance's terminal token, so
+    // the 2nd+ one-shot call collapsed to a degenerate prefix (usually "."). A
+    // one-shot call must be independent of prior calls.
+    #[test]
+    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    fn transcribe_samples_is_stateless_across_calls() {
+        let wav = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/benchmark-en/03-review-pull-request.ogg"
+        );
+        // The fixture is a Git LFS asset; on a checkout without LFS materialized
+        // the path is a ~130-byte pointer, not audio. Fail with an actionable
+        // message instead of a cryptic decode panic.
+        let bytes = std::fs::read(wav).expect("read sentence fixture");
+        assert!(
+            !bytes.starts_with(b"version https://git-lfs"),
+            "fixture is an unmaterialized Git LFS pointer — run `git lfs pull` before this test"
+        );
+        let samples = crate::audio::load_audio(wav).expect("decode sentence fixture");
+
+        let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
+        let first = be
+            .transcribe_samples(&samples)
+            .expect("first transcribe_samples");
+        let second = be
+            .transcribe_samples(&samples)
+            .expect("second transcribe_samples");
+
+        assert!(
+            !first.trim().is_empty(),
+            "sanity: first call should transcribe speech, got {first:?}"
+        );
+        assert_eq!(
+            first, second,
+            "second one-shot call diverged — decoder state leaked across calls (got {second:?})"
+        );
+        assert!(
+            !second.trim().trim_matches('.').trim().is_empty(),
+            "second call collapsed to a degenerate prefix: {second:?}"
+        );
+    }
 }
