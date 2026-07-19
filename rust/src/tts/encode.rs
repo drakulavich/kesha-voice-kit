@@ -550,6 +550,11 @@ mod tests {
     }
 
     #[test]
+    // libopus's SIMD intrinsics intermittently fault with 0xc0000005 (access
+    // violation) on the MSVC target, aborting the test process — #585. Skip on
+    // Windows until the native crash is fixed; the encode path itself is
+    // exercised on macOS/Linux.
+    #[cfg_attr(windows, ignore = "libopus SIMD 0xc0000005 on MSVC — #585")]
     fn ogg_opus_produces_valid_oggs_magic() {
         // 1 second of a 440 Hz tone at 24 kHz mono.
         let sr = 24_000u32;
@@ -611,6 +616,9 @@ mod tests {
     }
 
     #[test]
+    // Same libopus MSVC access violation as ogg_opus_produces_valid_oggs_magic
+    // (this test resamples then encodes, hitting the same native path) — #585.
+    #[cfg_attr(windows, ignore = "libopus SIMD 0xc0000005 on MSVC — #585")]
     fn ogg_opus_resamples_when_engine_sr_mismatches() {
         // Vosk-RU runs at 22.05 kHz natively. We can't feed that to libopus
         // directly, so the encoder must resample to a supported rate first.
