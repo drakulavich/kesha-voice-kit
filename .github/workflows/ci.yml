@@ -575,14 +575,8 @@ jobs:
           # this discriminator if the stale path ever resurfaces.
           key: xcode-16.2
 
-      - name: 💾 Cache Kokoro models
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v5-${{ runner.os }}
-
-      - name: 📥 Download Kokoro models (if cache miss)
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+      - name: 🎚️ Setup Kokoro TTS models
+        uses: ./.github/actions/setup-kokoro-models
 
       - name: 🎧 Install system Opus
         # audiopus_sys / opusic-sys fall back to a cmake build of vendored

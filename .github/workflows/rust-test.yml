@@ -164,15 +164,8 @@ jobs:
             --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
             --no-default-features -- -D warnings
 
-      - name: Cache Kokoro spike models
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-ml-v1-${{ runner.os }}
-
-      - name: Download Kokoro model (if cache miss)
-        shell: bash
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE" multilang
+      - name: 🎚️ Setup Kokoro TTS models
+        uses: ./.github/actions/setup-kokoro-models
 
       - name: Run tests (with real Kokoro)
         shell: bash
@@ -247,15 +240,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
 
-      - name: Cache Kokoro spike models
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-ml-v1-${{ runner.os }}
-
-      - name: Download Kokoro model (if cache miss)
-        shell: bash
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE" multilang
+      - name: 🎚️ Setup Kokoro TTS models
+        uses: ./.github/actions/setup-kokoro-models
 
       - name: 📈 Rust coverage
         shell: bash
