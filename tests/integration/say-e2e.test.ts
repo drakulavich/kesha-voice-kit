@@ -82,7 +82,9 @@ describe("kesha say e2e", () => {
       const proc = spawnCli(["say", "Hi", "--out", outPath], { KESHA_DEBUG: "1" });
       expect(await proc.exited).toBe(0);
       const stderr = await new Response(proc.stderr).text();
-      expect(stderr).toContain("[debug]");
+      // Markers are `[debug +Nms]` / `[debug/engine …]` — match the prefix,
+      // not a literal `[debug]` (the trailing-bracket form drifted away).
+      expect(stderr).toContain("[debug");
     },
     60_000,
   );
@@ -94,7 +96,7 @@ describe("kesha say e2e", () => {
       const proc = spawnCli(["say", "Hi", "--out", outPath], { KESHA_DEBUG: "" });
       expect(await proc.exited).toBe(0);
       const stderr = await new Response(proc.stderr).text();
-      expect(stderr).not.toContain("[debug]");
+      expect(stderr).not.toContain("[debug");
     },
     60_000,
   );
