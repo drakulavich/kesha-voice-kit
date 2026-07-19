@@ -5,7 +5,11 @@
 //! ogg-opus | sendVoice`) lives in the manual QA loop documented in #223 and
 //! the smoke-test scripts under `scripts/`.
 
-#![cfg(feature = "tts")]
+// Every test here encodes OggOpus, which intermittently faults with 0xc0000005
+// in libopus's SIMD path on the MSVC target (#585). Compile the whole file out
+// on Windows until the native crash is fixed; encoding stays covered on
+// macOS/Linux.
+#![cfg(all(feature = "tts", not(windows)))]
 
 use kesha_engine::tts::encode::{self, OutputFormat};
 
