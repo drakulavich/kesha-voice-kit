@@ -579,7 +579,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v5-${{ runner.os }}
+          key: kokoro-spike-v6-${{ runner.os }}
 
       - name: 📥 Download Kokoro models (if cache miss)
         run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"

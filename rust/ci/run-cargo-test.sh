@@ -32,4 +32,13 @@ if [[ -f "$KOKORO_CACHE/models/vosk-ru/model.onnx" && -f "$KOKORO_CACHE/models/v
   echo "KESHA_CACHE_DIR=$KESHA_CACHE_DIR (Vosk gated tests enabled)"
 fi
 
+# CharsiuG2P for tts_multilang_audio (es/fr/it/pt). The runtime-layout Kokoro
+# model + multilang voices are staged by download-kokoro.sh; the test also gates
+# on CHARSIU_ONNX pointing at the byt5-tiny dir (KESHA_CACHE_DIR set above lets
+# kokoro_cache_dir_or_skip resolve the voices).
+if [[ -f "$KOKORO_CACHE/models/g2p/byt5-tiny/encoder_model.onnx" ]]; then
+  export CHARSIU_ONNX="$KOKORO_CACHE/models/g2p/byt5-tiny"
+  echo "CHARSIU_ONNX=$CHARSIU_ONNX (multilingual TTS gated tests enabled)"
+fi
+
 cargo nextest run --profile ci
