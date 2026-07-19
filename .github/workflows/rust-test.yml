@@ -168,11 +168,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v6-${{ runner.os }}
+          key: kokoro-spike-ml-v1-${{ runner.os }}
 
       - name: Download Kokoro model (if cache miss)
         shell: bash
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE" multilang
 
       - name: Run tests (with real Kokoro)
         shell: bash
@@ -251,11 +251,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-spike-v6-${{ runner.os }}
+          key: kokoro-spike-ml-v1-${{ runner.os }}
 
       - name: Download Kokoro model (if cache miss)
         shell: bash
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE" multilang
 
       - name: 📈 Rust coverage
         shell: bash
