@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
+      coreml: ${{ steps.filter.outputs.coreml }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
@@ -35,6 +36,17 @@ jobs:
               - '.github/scripts/check-coverage.ts'
               - 'package.json'
               - 'bun.lock'
+            # Narrow surface for the ANE decoder-state guard (#592): the
+            # FluidAudio backend + its regression test, the coreml feature
+            # wiring in Cargo.toml, and Cargo.lock — which pins the exact
+            # fluidaudio-rs commit, so a bump (the regression vector) always
+            # lands here even though it's a git-branch dep.
+            coreml:
+              - 'rust/src/backend/fluidaudio.rs'
+              - 'rust/build.rs'
+              - 'rust/Cargo.toml'
+              - 'rust/Cargo.lock'
+              - '.github/workflows/rust-test.yml'
 
   lint-ubuntu:
     needs: changes
@@ -330,13 +342,95 @@ jobs:
       - name: Tests
         run: cd rust && cargo nextest run --features tts
 
+  # Provisioned macOS arm64 lane for the FluidAudio TDT decoder-state guard
+  # (#592). `transcribe_samples_is_stateless_across_calls` is `#[ignore]` +
+  # `coreml`-only because it needs a real Apple Neural Engine AND the cached
+  # Parakeet CoreML bundle — the per-PR macos-14 lane above only *compiles*
+  # `coreml` (`cargo check`), so a fluidaudio-rs bump that dropped the upstream
+  # stateless-reset fix (FluidInference/fluidaudio-rs#15) would ship the
+  # multi-segment "." corruption with no automated failure.
+  #
+  # Runs only when the regression surface changes (the `coreml` paths-filter:
+  # the FluidAudio backend, the coreml feature wiring, or the fluidaudio-rs pin
+  # in Cargo.lock) — not on every PR and not nightly. The CoreML Parakeet
+  # bundle is large but cached, so the fetch is a once-per-key seed. macos-14 is
+  # GitHub-hosted Apple Silicon with a real ANE, so no self-hosted runner is
+  # required.
+  coreml-regression:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.coreml == 'true'
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      NEXTEST_PROFILE: ci
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          # The regression fixture (03-review-pull-request.ogg) is a Git LFS
+          # asset; the test fails fast on an unmaterialized pointer.
+          lfs: true
+      - name: Select Xcode 16 (Swift 6)
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "16.2"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: rust
+      - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: nextest
+
+      - name: Install system audio deps (Opus)
+        run: brew install opus pkg-config
+
+      # Restore the compiled Parakeet CoreML bundle. On a cache miss the models
+      # are fetched from HuggingFace once, during the test's `init_asr()`, and
+      # saved back under this key — the fetch is bounded to the seed run and
+      # named plainly here, honoring the no-silent-download contract.
+      - name: 🎧 Cache Parakeet CoreML models
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Application Support/FluidAudio/Models
+          # Key on the fluidaudio-rs pin (Cargo.lock). actions/cache never
+          # saves on an exact-key hit, so a static key would let a model-set
+          # change after a bump silently re-download every run without ever
+          # persisting. The prefix restore-key warm-starts from the prior
+          # bundle on a bump, and the job re-saves under the new exact key.
+          key: parakeet-coreml-models-v1-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            parakeet-coreml-models-v1-${{ runner.os }}-
+
+      - name: 🧪 CoreML decoder-state regression (ANE)
+        run: |
+          cd rust
+          cargo nextest run \
+            --no-default-features --features coreml \
+            --run-ignored all \
+            -E 'test(transcribe_samples_is_stateless_across_calls)'
+
+      - name: 📤 Upload JUnit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-junit-coreml-regression
+          path: rust/target/nextest/ci/junit.xml
+          retention-days: 7
+
   # Aggregator gate = the single required status check for branch protection.
   # Always runs so the context reports on every PR (the heavy jobs above skip on
   # non-rust PRs → success); the step fails the gate only if a real job failed.
+  # `coreml-regression` is included so a red decoder-state guard blocks a PR
+  # that touches the regression surface (it reports 'skipped' — not 'failure' —
+  # on PRs that don't, so it never blocks unrelated work).
   rust-tests:
     name: 🧪 Rust Tests
     if: always()
-    needs: [changes, lint-ubuntu, test, coverage]
+    needs: [changes, lint-ubuntu, test, coverage, coreml-regression]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job failed
