@@ -46,6 +46,7 @@ jobs:
               - 'rust/build.rs'
               - 'rust/Cargo.toml'
               - 'rust/Cargo.lock'
+              - 'tests/fixtures/benchmark-en/03-review-pull-request.ogg'
               - '.github/workflows/rust-test.yml'
 
   lint-ubuntu:
