@@ -182,6 +182,87 @@ const MAX_OPUS_PACKET: usize = 4_000;
 #[cfg(feature = "tts")]
 const PRE_SKIP_48K: u16 = 3_840;
 
+/// RAII wrapper over libopus' encoder FFI (`opusic-sys`).
+///
+/// We bind encode here instead of pulling the safe `opus` crate: that crate's
+/// `audiopus_sys` static-linked a SECOND copy of libopus, whose C symbols
+/// collided with the copy `symphonia-adapter-libopus` (`opusic-sys`) links for
+/// decode. The MSVC linker bound all calls to one copy — an ODR violation that
+/// crashed Windows CI with `0xc0000005` (#585). Driving encode through the same
+/// `opusic-sys` keeps exactly one libopus in the binary.
+#[cfg(feature = "tts")]
+struct OpusEncoder {
+    raw: *mut opusic_sys::OpusEncoder,
+}
+
+#[cfg(feature = "tts")]
+impl OpusEncoder {
+    fn new(sample_rate: u32, bitrate: i32) -> anyhow::Result<Self> {
+        use opusic_sys::{
+            opus_encoder_create, OPUS_APPLICATION_VOIP, OPUS_OK, OPUS_SET_BITRATE_REQUEST,
+            OPUS_SET_SIGNAL_REQUEST, OPUS_SIGNAL_VOICE,
+        };
+        let mut err: core::ffi::c_int = OPUS_OK;
+        // SAFETY: FFI call; on failure `raw` is null and/or `err` is non-OK, both checked below.
+        let raw =
+            unsafe { opus_encoder_create(sample_rate as i32, 1, OPUS_APPLICATION_VOIP, &mut err) };
+        if raw.is_null() || err != OPUS_OK {
+            anyhow::bail!("opus encoder create: {}", opus_err_str(err));
+        }
+        let enc = Self { raw };
+        enc.set_ctl(OPUS_SET_BITRATE_REQUEST, bitrate)
+            .map_err(|e| anyhow::anyhow!("opus set_bitrate: {e}"))?;
+        // Tell libopus this is voice — affects internal mode selection.
+        enc.set_ctl(OPUS_SET_SIGNAL_REQUEST, OPUS_SIGNAL_VOICE)
+            .map_err(|e| anyhow::anyhow!("opus set_signal: {e}"))?;
+        Ok(enc)
+    }
+
+    fn set_ctl(&self, request: core::ffi::c_int, value: i32) -> anyhow::Result<()> {
+        use opusic_sys::{opus_encoder_ctl, OPUS_OK};
+        // SAFETY: variadic ctl setter; every request we issue takes a single opus_int32 argument.
+        let rc = unsafe { opus_encoder_ctl(self.raw, request, value) };
+        if rc != OPUS_OK {
+            anyhow::bail!("{}", opus_err_str(rc));
+        }
+        Ok(())
+    }
+
+    fn encode_float(&mut self, pcm: &[f32], out: &mut [u8]) -> anyhow::Result<usize> {
+        // SAFETY: `pcm`/`out` are valid slices for their lengths; mono, so frame_size == pcm.len().
+        let n = unsafe {
+            opusic_sys::opus_encode_float(
+                self.raw,
+                pcm.as_ptr(),
+                pcm.len() as i32,
+                out.as_mut_ptr(),
+                out.len() as i32,
+            )
+        };
+        if n < 0 {
+            anyhow::bail!("{}", opus_err_str(n));
+        }
+        Ok(n as usize)
+    }
+}
+
+#[cfg(feature = "tts")]
+impl Drop for OpusEncoder {
+    fn drop(&mut self) {
+        // SAFETY: `raw` came from opus_encoder_create and is destroyed exactly once here.
+        unsafe { opusic_sys::opus_encoder_destroy(self.raw) };
+    }
+}
+
+/// Resolve a libopus error code to its static message string.
+#[cfg(feature = "tts")]
+fn opus_err_str(code: core::ffi::c_int) -> String {
+    // SAFETY: opus_strerror returns a non-null static NUL-terminated C string for any code.
+    unsafe { core::ffi::CStr::from_ptr(opusic_sys::opus_strerror(code)) }
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[cfg(feature = "tts")]
 fn encode_ogg_opus(
     samples: &[f32],
@@ -189,8 +270,6 @@ fn encode_ogg_opus(
     target_sr: u32,
     bitrate: i32,
 ) -> anyhow::Result<Vec<u8>> {
-    use opus::{Application, Channels, Encoder};
-
     if !OPUS_VALID_SR.contains(&target_sr) {
         anyhow::bail!(
             "ogg-opus: --sample-rate must be one of {:?}, got {target_sr}",
@@ -209,14 +288,9 @@ fn encode_ogg_opus(
         Cow::Owned(resample_mono(samples, src_rate, target_sr)?)
     };
 
-    // `Application::Voip`: best perceptual quality at low bitrates for speech.
-    let mut enc = Encoder::new(target_sr, Channels::Mono, Application::Voip)
-        .map_err(|e| anyhow::anyhow!("opus encoder: {e}"))?;
-    enc.set_bitrate(opus::Bitrate::Bits(bitrate))
-        .map_err(|e| anyhow::anyhow!("opus set_bitrate: {e}"))?;
-    // Tell libopus this is voice — affects internal mode selection.
-    enc.set_signal(opus::Signal::Voice)
-        .map_err(|e| anyhow::anyhow!("opus set_signal: {e}"))?;
+    // `OPUS_APPLICATION_VOIP` + voice signal: best perceptual quality at low
+    // bitrates for speech.
+    let mut enc = OpusEncoder::new(target_sr, bitrate)?;
 
     let frame_size = (target_sr * FRAME_DURATION_MS / 1_000) as usize;
 
@@ -550,11 +624,6 @@ mod tests {
     }
 
     #[test]
-    // libopus's SIMD intrinsics intermittently fault with 0xc0000005 (access
-    // violation) on the MSVC target, aborting the test process — #585. Skip on
-    // Windows until the native crash is fixed; the encode path itself is
-    // exercised on macOS/Linux.
-    #[cfg_attr(windows, ignore = "libopus SIMD 0xc0000005 on MSVC — #585")]
     fn ogg_opus_produces_valid_oggs_magic() {
         // 1 second of a 440 Hz tone at 24 kHz mono.
         let sr = 24_000u32;
@@ -616,9 +685,6 @@ mod tests {
     }
 
     #[test]
-    // Same libopus MSVC access violation as ogg_opus_produces_valid_oggs_magic
-    // (this test resamples then encodes, hitting the same native path) — #585.
-    #[cfg_attr(windows, ignore = "libopus SIMD 0xc0000005 on MSVC — #585")]
     fn ogg_opus_resamples_when_engine_sr_mismatches() {
         // Vosk-RU runs at 22.05 kHz natively. We can't feed that to libopus
         // directly, so the encoder must resample to a supported rate first.
