@@ -7,10 +7,6 @@
 # revisit on every cargo update.
 yanked = "deny"
 ignore = [
-  # audiopus_sys (via opus, for Opus encode/decode) is implicitly unmaintained;
-  # upstream advisory states "No safe upgrade is available!" — transitive, no fix.
-  # https://rustsec.org/advisories/RUSTSEC-2026-0150 — revisit 2026-08-25.
-  "RUSTSEC-2026-0150",
   # quick-xml 0.27.1 (via ssml-parser 0.1.4, the only published version, which
   # pins quick-xml ^0.27). Both advisories are fixed only in quick-xml >=0.41.0,
   # so this is unfixable transitively until ssml-parser ships a release on the

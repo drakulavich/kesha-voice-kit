@@ -57,14 +57,15 @@ else
   missing_system=1
 fi
 
-# libopus + pkg-config: audiopus_sys / opusic-sys (OGG/Opus output).
-if have pkg-config && pkg-config --exists opus 2>/dev/null; then
-  ok "libopus (via pkg-config)"
+# cmake: opusic-sys builds a vendored libopus from source via cmake for the
+# `tts` feature's OGG/Opus output — no system libopus is used (#585).
+if have cmake; then
+  ok "cmake ($(cmake --version | head -1 | awk '{print $3}'))"
 else
   case "$OS" in
-    macos) todo "libopus/pkg-config missing — brew install opus pkg-config" ;;
-    linux) todo "libopus/pkg-config missing — sudo apt-get install -y libopus-dev pkg-config" ;;
-    *)     todo "libopus + pkg-config missing — install them for your OS" ;;
+    macos) todo "cmake missing — brew install cmake" ;;
+    linux) todo "cmake missing — sudo apt-get install -y cmake" ;;
+    *)     todo "cmake missing — install it for your OS" ;;
   esac
   missing_system=1
 fi
