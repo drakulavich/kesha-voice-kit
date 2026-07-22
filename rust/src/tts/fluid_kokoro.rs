@@ -1,6 +1,6 @@
 //! FluidAudio Kokoro backend — macOS arm64, behind `system_kokoro`.
 //!
-//! Uses the forked `fluidaudio-rs` crate's native Kokoro binding (in-process),
+//! Uses the `fluidaudio-rs` crate's native Kokoro binding (in-process),
 //! replacing the previous Swift sidecar. Non-Darwin builds stay on the existing
 //! ONNX Kokoro implementation.
 
@@ -31,9 +31,9 @@ pub struct VoiceSpec {
     pub lang: &'static str,
 }
 
-// FluidAudio 0.14.5 voice snapshot plus the multilingual Kokoro voice packs
+// FluidAudio 0.14.8 voice snapshot plus the multilingual Kokoro voice packs
 // validated against the ANE cache. Keep this list in sync with the FluidAudio
-// pin in the fluidaudio-rs fork whenever it changes.
+// pin in the fluidaudio-rs git rev (rust/Cargo.toml) whenever it changes.
 const VOICES: &[VoiceSpec] = &[
     VoiceSpec {
         public_id: "en-af_alloy",

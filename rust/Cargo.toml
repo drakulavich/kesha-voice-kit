@@ -68,13 +68,13 @@ ort = { version = "2.0.0-rc.12" }
 ndarray = { version = "0.17" }
 
 # FluidAudio (macOS): ASR (CoreML/ANE), native Kokoro TTS, and model-path
-# diarization. Forked to add the Kokoro binding + `diarize_file_with_models`
-# (upstream PR pending; retire the fork once merged).
-# Tracks `forked-main`, which carries FluidAudio 0.14.8 + per-language KokoroAne
-# variant selection (fork PRs #2 + #3, both merged): `init_kokoro` takes a `lang`
-# arg → `zh` selects the `.mandarin` variant (tone-aware Mandarin G2P), else
-# `.english` (#492). Retains the `--rate` model-native speed (#475).
-fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", branch = "forked-main", optional = true }
+# diarization. Now on upstream `FluidInference/fluidaudio-rs` — the Kokoro
+# binding (upstream PR #19) and `diarize_file_with_models` both landed there, so
+# the fork is retired. Pinned to a rev for reproducible builds. API is unchanged
+# from the fork: `init_kokoro` takes a `lang` arg → `zh` selects the `.mandarin`
+# variant (tone-aware Mandarin G2P), else `.english` (#492); retains the `--rate`
+# model-native speed (#475).
+fluidaudio-rs = { git = "https://github.com/FluidInference/fluidaudio-rs", rev = "2d8e6b6891ccaf0807f8b6562893b24e5e1ec0f4", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
