@@ -68,14 +68,26 @@ export function resolveNoCacheFlag(
   );
 }
 
-export function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
+export type BackendSelection =
+  | { ok: true; backend: string | undefined }
+  | { ok: false; error: string };
+
+export function selectBackend(coreml: boolean, onnx: boolean): BackendSelection {
   if (coreml && onnx) {
-    log.error('Choose only one backend: "--coreml" or "--onnx".');
+    return { ok: false, error: 'Choose only one backend: "--coreml" or "--onnx".' };
+  }
+  if (coreml) return { ok: true, backend: "coreml" };
+  if (onnx) return { ok: true, backend: "onnx" };
+  return { ok: true, backend: undefined };
+}
+
+export function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
+  const selection = selectBackend(coreml, onnx);
+  if (!selection.ok) {
+    log.error(selection.error);
     process.exit(1);
   }
-  if (coreml) return "coreml";
-  if (onnx) return "onnx";
-  return undefined;
+  return selection.backend;
 }
 
 function defaultBackendForPlatform(): string | undefined {

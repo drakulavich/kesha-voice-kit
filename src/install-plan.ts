@@ -163,21 +163,21 @@ function filesCached(cacheRoot: string, files: PlanFile[]): boolean {
   });
 }
 
-function bundleComponent(
-  cacheRoot: string,
-  name: string,
-  source: string,
-  files: PlanFile[],
-  refresh: boolean,
-  note?: string,
-): PlanComponent {
+function bundleComponent(input: {
+  cacheRoot: string;
+  name: string;
+  source: string;
+  files: PlanFile[];
+  refresh: boolean;
+  note?: string;
+}): PlanComponent {
   return {
-    name,
-    source,
-    sizeBytes: sumFiles(files),
-    cached: filesCached(cacheRoot, files),
-    refresh,
-    note,
+    name: input.name,
+    source: input.source,
+    sizeBytes: sumFiles(input.files),
+    cached: filesCached(input.cacheRoot, input.files),
+    refresh: input.refresh,
+    note: input.note,
   };
 }
 
@@ -248,26 +248,26 @@ function buildTtsComponents(
   } else {
     if (wantsOnnxKokoro) {
       components.push(
-        bundleComponent(
+        bundleComponent({
           cacheRoot,
-          "TTS Kokoro graph + voices",
-          "model cache",
-          kokoroPlanFiles(ttsLangs),
-          noCache,
-          `voices for ${ttsLangs.filter((l) => l !== "ru").join(", ")}`,
-        ),
+          name: "TTS Kokoro graph + voices",
+          source: "model cache",
+          files: kokoroPlanFiles(ttsLangs),
+          refresh: noCache,
+          note: `voices for ${ttsLangs.filter((l) => l !== "ru").join(", ")}`,
+        }),
       );
     }
     if (wantsG2p) {
       components.push(
-        bundleComponent(
+        bundleComponent({
           cacheRoot,
-          "G2P CharsiuG2P byt5-tiny",
-          "model cache",
-          G2P_CHARSIU_FILES,
-          noCache,
-          "multilingual G2P for es/fr/it/pt (CC-BY 4.0)",
-        ),
+          name: "G2P CharsiuG2P byt5-tiny",
+          source: "model cache",
+          files: G2P_CHARSIU_FILES,
+          refresh: noCache,
+          note: "multilingual G2P for es/fr/it/pt (CC-BY 4.0)",
+        }),
       );
     }
   }
@@ -275,48 +275,51 @@ function buildTtsComponents(
   // Vosk RU is needed on both darwin and non-darwin builds.
   if (wantsRu) {
     components.push(
-      bundleComponent(cacheRoot, "TTS Vosk RU", "model cache", VOSK_RU_FILES, noCache, "Russian ru-vosk-* voices"),
+      bundleComponent({
+        cacheRoot,
+        name: "TTS Vosk RU",
+        source: "model cache",
+        files: VOSK_RU_FILES,
+        refresh: noCache,
+        note: "Russian ru-vosk-* voices",
+      }),
     );
   }
 
   return { components, warmups, wantsAnyKokoro };
 }
 
-function assembleComponents(
-  cacheRoot: string,
-  binPath: string,
-  engineDir: string,
-  noCache: boolean,
-  options: InstallPlanOptions,
-  tts: ReturnType<typeof buildTtsComponents>,
-): PlanComponent[] {
+function assembleComponents(input: {
+  cacheRoot: string;
+  binPath: string;
+  engineDir: string;
+  noCache: boolean;
+  options: InstallPlanOptions;
+  tts: ReturnType<typeof buildTtsComponents>;
+}): PlanComponent[] {
+  const { cacheRoot, noCache, options } = input;
+  const modelBundle = (name: string, files: PlanFile[], note: string) =>
+    bundleComponent({ cacheRoot, name, source: "model cache", files, refresh: noCache, note });
+
   const components: PlanComponent[] = [
-    buildEngineComponent(binPath, noCache),
-    ...buildSidecarComponents(engineDir, noCache),
-    bundleComponent(cacheRoot, "ASR Parakeet TDT v3", "model cache", ASR_FILES, noCache, "required for speech-to-text"),
-    bundleComponent(
-      cacheRoot,
+    buildEngineComponent(input.binPath, noCache),
+    ...buildSidecarComponents(input.engineDir, noCache),
+    modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
+    modelBundle(
       "Audio language ID ECAPA",
-      "model cache",
       LANG_ID_FILES,
-      noCache,
       "required for --json, --toon, --format transcript, --lang, and --verbose language metadata",
     ),
-    ...tts.components,
+    ...input.tts.components,
   ];
   if (options.vad) {
-    components.push(
-      bundleComponent(cacheRoot, "VAD Silero v5", "model cache", VAD_FILES, noCache, "long-audio preprocessing"),
-    );
+    components.push(modelBundle("VAD Silero v5", VAD_FILES, "long-audio preprocessing"));
   }
   if (options.diarize) {
     components.push(
-      bundleComponent(
-        cacheRoot,
+      modelBundle(
         "Diarization Sortformer",
-        "model cache",
         DIARIZE_FILES,
-        noCache,
         isDarwinArm64()
           ? "speaker labels for --speakers"
           : "darwin-arm64 only; install will reject this flag on the current platform",
@@ -351,28 +354,24 @@ function renderComponentLines(components: PlanComponent[]): string[] {
   return lines;
 }
 
-function renderFooter(
-  components: PlanComponent[],
-  warmups: PlanWarmup[],
-  ttsLangs: string[],
-  wantsAnyKokoro: boolean,
-  options: InstallPlanOptions,
-): string[] {
+function renderWarmupLines(warmups: PlanWarmup[]): string[] {
+  if (warmups.length === 0) return [];
+  return ["", "Warm-ups:", ...warmups.map((w) => `  - ${w.name}: ${w.note}`)];
+}
+
+function renderTotalLines(components: PlanComponent[]): string[] {
   const coldBytes = components.reduce((sum, c) => sum + c.sizeBytes, 0);
   const expectedNetworkBytes = components.reduce((sum, c) => (c.cached && !c.refresh ? sum : sum + c.sizeBytes), 0);
-
-  const lines: string[] = [];
-
-  if (warmups.length > 0) {
-    lines.push("", "Warm-ups:");
-    for (const w of warmups) lines.push(`  - ${w.name}: ${w.note}`);
-  }
-
-  lines.push(
+  return [
     "",
     "Totals:",
     `  Cold-cache Kesha-managed download: ${humanBytes(coldBytes)}`,
     `  Expected Kesha-managed network for this run: ${humanBytes(expectedNetworkBytes)}`,
+  ];
+}
+
+function renderBehaviorLines(ttsLangs: string[], wantsAnyKokoro: boolean): string[] {
+  const lines = [
     "",
     "Install behavior:",
     "  - No files are downloaded or changed by --plan.",
@@ -381,15 +380,18 @@ function renderFooter(
       ? "  - macOS install signs/unquarantines downloaded binaries for Gatekeeper."
       : "  - No macOS Gatekeeper signing step on this platform.",
     "  - install warms the ASR backend after downloads; CoreML warm-up is typically 20-30 s, ONNX warm-up is about 500 ms.",
-  );
-
+  ];
   if (ttsLangs.length > 0 && wantsAnyKokoro && isDarwinArm64()) {
     lines.push(
       "  - --tts also warms FluidAudio Kokoro CoreML; FluidAudio may download/compile its own Kokoro cache on first use.",
     );
   }
+  return lines;
+}
 
-  const command = [
+/** Reconstructs the `kesha install` invocation this plan describes, so users can copy it verbatim. */
+export function buildInstallCommand(options: InstallPlanOptions, ttsLangs: string[]): string {
+  return [
     "kesha",
     "install",
     options.noCache ? "--no-cache" : "",
@@ -398,10 +400,26 @@ function renderFooter(
     ...(ttsLangs.length > 0 ? ["--tts", ...ttsLangs] : []),
     options.vad ? "--vad" : "",
     options.diarize ? "--diarize" : "",
-  ].filter(Boolean);
-  lines.push("", `Run: ${command.join(" ")}`, "");
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
-  return lines;
+function renderFooter(input: {
+  components: PlanComponent[];
+  warmups: PlanWarmup[];
+  ttsLangs: string[];
+  wantsAnyKokoro: boolean;
+  options: InstallPlanOptions;
+}): string[] {
+  return [
+    ...renderWarmupLines(input.warmups),
+    ...renderTotalLines(input.components),
+    ...renderBehaviorLines(input.ttsLangs, input.wantsAnyKokoro),
+    "",
+    `Run: ${buildInstallCommand(input.options, input.ttsLangs)}`,
+    "",
+  ];
 }
 
 export async function renderInstallPlan(options: InstallPlanOptions = {}): Promise<string> {
@@ -412,12 +430,18 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
   const ttsLangs = options.ttsLangs ?? [];
 
   const tts = buildTtsComponents(cacheRoot, ttsLangs, noCache);
-  const components = assembleComponents(cacheRoot, binPath, engineDir, noCache, options, tts);
+  const components = assembleComponents({ cacheRoot, binPath, engineDir, noCache, options, tts });
 
   const lines = [
     ...renderHeader(cacheRoot, binPath, options.backend),
     ...renderComponentLines(components),
-    ...renderFooter(components, tts.warmups, ttsLangs, tts.wantsAnyKokoro, options),
+    ...renderFooter({
+      components,
+      warmups: tts.warmups,
+      ttsLangs,
+      wantsAnyKokoro: tts.wantsAnyKokoro,
+      options,
+    }),
   ];
 
   return `${lines.join("\n")}\n`;
