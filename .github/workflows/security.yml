@@ -18,7 +18,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}
+  # Must include the ref: a workflow-wide group serialises every PR into one
+  # queue, and GitHub evicts the pending run when a third arrives — the evicted
+  # run reports nothing, so the required "🛡️ Security Audit" check never lands
+  # and the PR is BLOCKED forever (#597, evicted by #596/#598 in the same second).
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
