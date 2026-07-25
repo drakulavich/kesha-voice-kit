@@ -1,5 +1,4 @@
 import { defineCommand } from "citty";
-import { log } from "../log";
 import {
   disableStats,
   enableStats,
@@ -14,11 +13,105 @@ import {
   vacuumStats,
   type StatsExportFormat,
 } from "../stats";
+import { emitActionResult, type ActionMessage, type ActionResult } from "./action-result";
 
-interface StatsCommandArgs {
+export interface StatsCommandArgs {
   action?: string;
   value?: string;
   format?: string;
+}
+
+const SUPPORTED_ACTIONS = "enable, disable, status, week, errors, export, reset, vacuum, retention";
+
+/** Runs one `kesha stats` action and reports what to print; all output happens in the caller. */
+export function runStatsAction(args: StatsCommandArgs): ActionResult {
+  const action = args.action ?? "status";
+  switch (action) {
+    case "enable": {
+      enableStats();
+      return {
+        ok: true,
+        messages: [
+          { level: "success", text: "Kesha Stats enabled" },
+          { level: "info", text: `Database: ${getStatsStatus().dbPath}` },
+        ],
+      };
+    }
+    case "disable": {
+      disableStats();
+      return {
+        ok: true,
+        messages: [
+          { level: "info", text: "Kesha Stats disabled" },
+          { level: "info", text: `Database: ${getStatsStatus().dbPath}` },
+        ],
+      };
+    }
+    case "status": {
+      const status = getStatsStatus();
+      return {
+        ok: true,
+        messages: info(
+          `Kesha Stats: ${status.enabled ? "enabled" : "disabled"}`,
+          `Database: ${status.dbPath}`,
+          `Runs: ${status.runCount}`,
+          `Retention: ${formatRetention(status.retentionDays)}`,
+        ),
+      };
+    }
+    case "week":
+      return { ok: true, messages: info(renderWeekSummary(getWeekSummary())) };
+    case "errors":
+      return { ok: true, messages: info(renderErrors(getRecentErrors())) };
+    case "export": {
+      const format = parseExportFormat(args.format ?? args.value ?? "json");
+      if (!format) return { ok: false, error: "usage: kesha stats export --format json|csv" };
+      return { ok: true, messages: [], stdout: exportStats(format) };
+    }
+    case "reset": {
+      const result = resetStats();
+      return {
+        ok: true,
+        messages: info(
+          `Kesha Stats reset: ${result.runs} run(s), ${result.stageTimings} stage timing(s), ` +
+            `${result.artifacts} artifact(s), ${result.errors} error(s) deleted`,
+        ),
+      };
+    }
+    case "vacuum": {
+      const result = vacuumStats();
+      return {
+        ok: true,
+        messages: info(
+          `Kesha Stats vacuumed: ${result.beforeBytes} -> ${result.afterBytes} bytes`,
+          `Database: ${result.dbPath}`,
+        ),
+      };
+    }
+    case "retention":
+      return runRetentionAction(args.value);
+    default:
+      return {
+        ok: false,
+        error: `unknown stats action '${action}'`,
+        hint: `supported: ${SUPPORTED_ACTIONS}`,
+      };
+  }
+}
+
+function runRetentionAction(value: string | undefined): ActionResult {
+  if (!value) {
+    const status = getStatsStatus();
+    return { ok: true, messages: info(`Kesha Stats retention: ${formatRetention(status.retentionDays)}`) };
+  }
+  const retention = parseRetention(value);
+  if (retention === undefined) return { ok: false, error: "usage: kesha stats retention <days|off>" };
+  setStatsRetentionDays(retention);
+  return { ok: true, messages: info(`Kesha Stats retention set to ${formatRetention(retention)}`) };
+}
+
+function info(...texts: string[]): ActionMessage[] {
+  return texts.map((text) => ({ level: "info", text }));
 }
 
 export const statsCommand = defineCommand({
@@ -43,81 +136,7 @@ export const statsCommand = defineCommand({
     },
   },
   run({ args }: { args: StatsCommandArgs }) {
-    const action = args.action ?? "status";
-    switch (action) {
-      case "enable": {
-        enableStats();
-        const status = getStatsStatus();
-        log.success("Kesha Stats enabled");
-        log.info(`Database: ${status.dbPath}`);
-        return;
-      }
-      case "disable": {
-        disableStats();
-        const status = getStatsStatus();
-        log.info("Kesha Stats disabled");
-        log.info(`Database: ${status.dbPath}`);
-        return;
-      }
-      case "status": {
-        const status = getStatsStatus();
-        log.info(`Kesha Stats: ${status.enabled ? "enabled" : "disabled"}`);
-        log.info(`Database: ${status.dbPath}`);
-        log.info(`Runs: ${status.runCount}`);
-        log.info(`Retention: ${formatRetention(status.retentionDays)}`);
-        return;
-      }
-      case "week": {
-        log.info(renderWeekSummary(getWeekSummary()));
-        return;
-      }
-      case "errors": {
-        log.info(renderErrors(getRecentErrors()));
-        return;
-      }
-      case "export": {
-        const format = parseExportFormat(args.format ?? args.value ?? "json");
-        if (!format) {
-          log.error("usage: kesha stats export --format json|csv");
-          process.exit(2);
-        }
-        process.stdout.write(exportStats(format));
-        return;
-      }
-      case "reset": {
-        const result = resetStats();
-        log.info(
-          `Kesha Stats reset: ${result.runs} run(s), ${result.stageTimings} stage timing(s), ` +
-            `${result.artifacts} artifact(s), ${result.errors} error(s) deleted`,
-        );
-        return;
-      }
-      case "vacuum": {
-        const result = vacuumStats();
-        log.info(`Kesha Stats vacuumed: ${result.beforeBytes} -> ${result.afterBytes} bytes`);
-        log.info(`Database: ${result.dbPath}`);
-        return;
-      }
-      case "retention": {
-        if (!args.value) {
-          const status = getStatsStatus();
-          log.info(`Kesha Stats retention: ${formatRetention(status.retentionDays)}`);
-          return;
-        }
-        const retention = parseRetention(args.value);
-        if (retention === undefined) {
-          log.error("usage: kesha stats retention <days|off>");
-          process.exit(2);
-        }
-        setStatsRetentionDays(retention);
-        log.info(`Kesha Stats retention set to ${formatRetention(retention)}`);
-        return;
-      }
-      default:
-        log.error(`unknown stats action '${action}'`);
-        log.warn("supported: enable, disable, status, week, errors, export, reset, vacuum, retention");
-        process.exit(2);
-    }
+    emitActionResult(runStatsAction(args));
   },
 });
 

@@ -7,12 +7,102 @@ import {
   resolveDiagnosticLogPath,
   setDiagnosticLogMode,
 } from "../diagnostic-log";
-import { log } from "../log";
+import { emitActionResult, type ActionMessage, type ActionResult } from "./action-result";
 
-interface LogsCommandArgs {
+export interface LogsCommandArgs {
   action?: string;
   value?: string;
   json?: boolean;
+}
+
+const SUPPORTED_ACTIONS = "enable, disable, mode, status, path, reset";
+
+/** Runs one `kesha logs` action and reports what to print; all output happens in the caller. */
+export function runLogsAction(args: LogsCommandArgs): ActionResult {
+  const action = args.action ?? "status";
+  if (args.json && action !== "status") {
+    return { ok: false, error: "usage: kesha logs status --json" };
+  }
+  switch (action) {
+    case "enable": {
+      const status = setDiagnosticLogMode("on");
+      return {
+        ok: true,
+        messages: [
+          { level: "success", text: "Kesha diagnostic logs enabled" },
+          ...info(
+            `Mode: ${status.mode}`,
+            `Path: ${status.activePath}`,
+            `Rotation: ${humanBytes(status.maxBytes)}, keep ${status.retain}`,
+          ),
+        ],
+      };
+    }
+    case "disable": {
+      const status = setDiagnosticLogMode("off");
+      return {
+        ok: true,
+        messages: info(
+          "Kesha diagnostic logs disabled",
+          `Mode: ${status.mode}`,
+          `Path: ${status.activePath}`,
+        ),
+      };
+    }
+    case "status": {
+      const status = getDiagnosticLogStatus();
+      if (args.json) {
+        return { ok: true, messages: [], stdout: `${JSON.stringify(status, null, 2)}\n` };
+      }
+      return {
+        ok: true,
+        messages: info(
+          `Kesha diagnostic logs: ${status.mode === "off" ? "disabled" : "enabled"}`,
+          `Mode: ${status.mode}`,
+          `Path: ${status.activePath}`,
+          `Size: ${humanBytes(status.totalSizeBytes)}`,
+          `Rotated files: ${status.rotatedFiles.length}`,
+          `Rotation: ${humanBytes(status.maxBytes)}, keep ${status.retain}`,
+        ),
+      };
+    }
+    case "mode":
+      return runModeAction(args.value);
+    case "path":
+      return { ok: true, messages: info(resolveDiagnosticLogPath()) };
+    case "reset": {
+      const result = resetDiagnosticLogs();
+      return {
+        ok: true,
+        messages: info(
+          `Kesha diagnostic logs reset: ${result.deleted} file(s), ${humanBytes(result.bytes)} deleted`,
+        ),
+      };
+    }
+    default:
+      return {
+        ok: false,
+        error: `unknown logs action '${action}'`,
+        hint: `supported: ${SUPPORTED_ACTIONS}`,
+      };
+  }
+}
+
+function runModeAction(value: string | undefined): ActionResult {
+  if (!value) {
+    return { ok: true, messages: info(`Kesha diagnostic log mode: ${getDiagnosticLogStatus().mode}`) };
+  }
+  const mode = parseDiagnosticLogMode(value);
+  if (!mode) return { ok: false, error: "usage: kesha logs mode <off|on|retain-on-failure>" };
+  const status = setDiagnosticLogMode(mode);
+  return {
+    ok: true,
+    messages: info(`Kesha diagnostic log mode set to ${status.mode}`, `Path: ${status.activePath}`),
+  };
+}
+
+function info(...texts: string[]): ActionMessage[] {
+  return texts.map((text) => ({ level: "info", text }));
 }
 
 export const logsCommand = defineCommand({
@@ -38,70 +128,6 @@ export const logsCommand = defineCommand({
     },
   },
   run({ args }: { args: LogsCommandArgs }) {
-    const action = args.action ?? "status";
-    if (args.json && action !== "status") {
-      log.error("usage: kesha logs status --json");
-      process.exit(2);
-    }
-    switch (action) {
-      case "enable": {
-        const status = setDiagnosticLogMode("on");
-        log.success("Kesha diagnostic logs enabled");
-        log.info(`Mode: ${status.mode}`);
-        log.info(`Path: ${status.activePath}`);
-        log.info(`Rotation: ${humanBytes(status.maxBytes)}, keep ${status.retain}`);
-        return;
-      }
-      case "disable": {
-        const status = setDiagnosticLogMode("off");
-        log.info("Kesha diagnostic logs disabled");
-        log.info(`Mode: ${status.mode}`);
-        log.info(`Path: ${status.activePath}`);
-        return;
-      }
-      case "status": {
-        const status = getDiagnosticLogStatus();
-        if (args.json) {
-          console.log(JSON.stringify(status, null, 2));
-          return;
-        }
-        log.info(`Kesha diagnostic logs: ${status.mode === "off" ? "disabled" : "enabled"}`);
-        log.info(`Mode: ${status.mode}`);
-        log.info(`Path: ${status.activePath}`);
-        log.info(`Size: ${humanBytes(status.totalSizeBytes)}`);
-        log.info(`Rotated files: ${status.rotatedFiles.length}`);
-        log.info(`Rotation: ${humanBytes(status.maxBytes)}, keep ${status.retain}`);
-        return;
-      }
-      case "mode": {
-        if (!args.value) {
-          const status = getDiagnosticLogStatus();
-          log.info(`Kesha diagnostic log mode: ${status.mode}`);
-          return;
-        }
-        const mode = parseDiagnosticLogMode(args.value);
-        if (!mode) {
-          log.error("usage: kesha logs mode <off|on|retain-on-failure>");
-          process.exit(2);
-        }
-        const status = setDiagnosticLogMode(mode);
-        log.info(`Kesha diagnostic log mode set to ${status.mode}`);
-        log.info(`Path: ${status.activePath}`);
-        return;
-      }
-      case "path": {
-        log.info(resolveDiagnosticLogPath());
-        return;
-      }
-      case "reset": {
-        const result = resetDiagnosticLogs();
-        log.info(`Kesha diagnostic logs reset: ${result.deleted} file(s), ${humanBytes(result.bytes)} deleted`);
-        return;
-      }
-      default:
-        log.error(`unknown logs action '${action}'`);
-        log.warn("supported: enable, disable, mode, status, path, reset");
-        process.exit(2);
-    }
+    emitActionResult(runLogsAction(args));
   },
 });
