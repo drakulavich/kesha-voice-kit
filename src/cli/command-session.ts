@@ -1,4 +1,6 @@
 import { createDiagnosticLogSession } from "../diagnostic-log";
+import { errorMessage } from "../error-utils";
+import { log } from "../log";
 import type {
   DiagnosticLogFields,
   DiagnosticLogSession,
@@ -53,7 +55,13 @@ export async function runCommandSession(
   try {
     outcome = await body(session);
   } catch (err) {
-    closeSession(session, command, { status: "failed", itemCount: 0 });
+    // A failing retain-on-failure flush must not replace the command error the
+    // user actually needs to see (Greptile P2 on #607).
+    try {
+      closeSession(session, command, { status: "failed", itemCount: 0 });
+    } catch (cleanupErr) {
+      log.debug(`command session cleanup failed: ${errorMessage(cleanupErr)}`);
+    }
     throw err;
   }
 

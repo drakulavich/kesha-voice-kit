@@ -128,6 +128,28 @@ describe("runCommandSession", () => {
     expect(f.events.map((e) => e.event)).toEqual(["command.start", "engine.exit", "command.finish"]);
   });
 
+  test("a failing diagnostic flush does not mask the command error (Greptile P2 on #607)", async () => {
+    const f = fakeSession();
+    const factories: CommandSessionFactories = {
+      createStats: f.factories.createStats,
+      createDiagnosticLog: () => {
+        const session = f.factories.createDiagnosticLog();
+        return {
+          event: session.event,
+          finish: () => {
+            throw new Error("disk full");
+          },
+        };
+      },
+    };
+
+    await expect(
+      runCommandSession("say", {}, async () => {
+        throw new Error("engine crashed");
+      }, factories),
+    ).rejects.toThrow("engine crashed");
+  });
+
   test("a throwing body still closes the session as failed, then rethrows", async () => {
     const f = fakeSession();
     const boom = new Error("boom");
