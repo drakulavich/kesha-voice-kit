@@ -3,10 +3,10 @@ import { errorMessage } from "../error-utils";
 import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
 import { log } from "../log";
 import { say, SayError, type SayFormat } from "../synth";
-import { artifactFromBytes, artifactFromFile, createStatsRecorder } from "../stats";
+import { artifactFromBytes, artifactFromFile, type StatsRecorder } from "../stats";
 import { pickVoiceForLang } from "../voice-routing";
-import { createDiagnosticLogSession } from "../diagnostic-log";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
+import { runCommandSession, type CommandOutcome, type CommandSession } from "./command-session";
 
 async function autoRouteVoice(text: string): Promise<string | undefined> {
   if (!text) return undefined;
@@ -56,72 +56,116 @@ export function shouldRejectMissingSayText(
   return (inlineText === undefined || inlineText.length === 0) && stdinIsTty === true;
 }
 
-function parseFiniteNumberFlag(name: string, value: unknown): number | undefined {
-  if (value === undefined || value === null || value === false) return undefined;
+type Parsed<T> = { ok: true; value: T | undefined } | { ok: false; error: string };
+
+function parseFiniteNumberFlag(name: string, value: unknown): Parsed<number> {
+  if (value === undefined || value === null || value === false) return { ok: true, value: undefined };
   const raw = String(value).trim();
   const parsed = Number(raw);
   if (raw === "" || !Number.isFinite(parsed)) {
-    log.error(`${name} must be a finite number.`);
-    process.exit(2);
+    return { ok: false, error: `${name} must be a finite number.` };
   }
-  return parsed;
+  return { ok: true, value: parsed };
 }
 
-function parseRateFlag(value: unknown): number | undefined {
+function parseRateFlag(value: unknown): Parsed<number> {
   const rate = parseFiniteNumberFlag("--rate", value);
-  if (rate === undefined) return undefined;
-  if (rate < 0.5 || rate > 2.0) {
-    log.error("--rate must be between 0.5 and 2.0.");
-    process.exit(2);
+  if (!rate.ok || rate.value === undefined) return rate;
+  if (rate.value < 0.5 || rate.value > 2.0) {
+    return { ok: false, error: "--rate must be between 0.5 and 2.0." };
   }
   return rate;
 }
 
-function parseBitrateFlag(value: unknown): number | undefined {
+function parseBitrateFlag(value: unknown): Parsed<number> {
   const bitrate = parseFiniteNumberFlag("--bitrate", value);
-  if (bitrate === undefined) return undefined;
-  if (!Number.isInteger(bitrate) || bitrate <= 0) {
-    log.error("--bitrate must be a positive integer.");
-    process.exit(2);
+  if (!bitrate.ok || bitrate.value === undefined) return bitrate;
+  if (!Number.isInteger(bitrate.value) || bitrate.value <= 0) {
+    return { ok: false, error: "--bitrate must be a positive integer." };
   }
   return bitrate;
 }
 
-function parseSampleRateFlag(value: unknown): number | undefined {
+const SUPPORTED_SAMPLE_RATES = [8000, 12000, 16000, 24000, 48000];
+
+function parseSampleRateFlag(value: unknown): Parsed<number> {
   const sampleRate = parseFiniteNumberFlag("--sample-rate", value);
-  if (sampleRate === undefined) return undefined;
-  const supported = [8000, 12000, 16000, 24000, 48000];
-  if (!Number.isInteger(sampleRate) || !supported.includes(sampleRate)) {
-    log.error("--sample-rate must be one of 8000, 12000, 16000, 24000, 48000.");
-    process.exit(2);
+  if (!sampleRate.ok || sampleRate.value === undefined) return sampleRate;
+  if (!Number.isInteger(sampleRate.value) || !SUPPORTED_SAMPLE_RATES.includes(sampleRate.value)) {
+    return {
+      ok: false,
+      error: `--sample-rate must be one of ${SUPPORTED_SAMPLE_RATES.join(", ")}.`,
+    };
   }
   return sampleRate;
 }
 
-function parseFormatFlag(raw: string | undefined): SayFormat | undefined {
-  if (!raw) return undefined;
+function parseFormatFlag(raw: unknown): Parsed<SayFormat> {
+  if (typeof raw !== "string" || raw === "") return { ok: true, value: undefined };
   const lower = raw.toLowerCase();
-  if (lower === "wav" || lower === "ogg-opus" || lower === "flac") return lower;
-  if (lower === "opus" || lower === "ogg") return "ogg-opus";
-  log.error(`unknown --format '${raw}'. supported: wav, ogg-opus, flac`);
-  process.exit(2);
+  if (lower === "wav" || lower === "ogg-opus" || lower === "flac") return { ok: true, value: lower };
+  if (lower === "opus" || lower === "ogg") return { ok: true, value: "ogg-opus" };
+  return { ok: false, error: `unknown --format '${raw}'. supported: wav, ogg-opus, flac` };
 }
 
-function assertOpusOnlyFlags(
+function checkOpusOnlyFlags(
   bitrate: number | undefined,
   sampleRate: number | undefined,
   format: SayFormat | undefined,
   outArg: string | undefined,
-): void {
-  if (bitrate === undefined && sampleRate === undefined) return;
+): string | null {
+  if (bitrate === undefined && sampleRate === undefined) return null;
   const outExt = outArg?.split(".").pop()?.toLowerCase();
-  const impliesOpus = outExt && ["ogg", "opus", "oga"].includes(outExt);
+  const impliesOpus = outExt !== undefined && ["ogg", "opus", "oga"].includes(outExt);
   // --bitrate / --sample-rate are Opus-only (wav/flac are lossless, no encoder knobs).
   const resolvesToOpus = format === "ogg-opus" || (format === undefined && impliesOpus);
-  if (!resolvesToOpus) {
-    log.error("--bitrate and --sample-rate are only valid with --format ogg-opus");
-    process.exit(2);
-  }
+  if (resolvesToOpus) return null;
+  return "--bitrate and --sample-rate are only valid with --format ogg-opus";
+}
+
+export type SayFlagArgs = {
+  format?: unknown;
+  rate?: unknown;
+  bitrate?: unknown;
+  "sample-rate"?: unknown;
+  out?: unknown;
+};
+
+export type ResolvedSayFlags =
+  | {
+      ok: true;
+      format: SayFormat | undefined;
+      rate: number | undefined;
+      bitrate: number | undefined;
+      sampleRate: number | undefined;
+    }
+  | { ok: false; error: string };
+
+/**
+ * Validates the encoder-related `kesha say` flags up front — before the engine is
+ * spawned — so scripts fail fast. The engine repeats these checks authoritatively.
+ */
+export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
+  const format = parseFormatFlag(args.format);
+  if (!format.ok) return format;
+  const rate = parseRateFlag(args.rate);
+  if (!rate.ok) return rate;
+  const bitrate = parseBitrateFlag(args.bitrate);
+  if (!bitrate.ok) return bitrate;
+  const sampleRate = parseSampleRateFlag(args["sample-rate"]);
+  if (!sampleRate.ok) return sampleRate;
+
+  const out = typeof args.out === "string" ? args.out : undefined;
+  const opusOnlyError = checkOpusOnlyFlags(bitrate.value, sampleRate.value, format.value, out);
+  if (opusOnlyError) return { ok: false, error: opusOnlyError };
+
+  return {
+    ok: true,
+    format: format.value,
+    rate: rate.value,
+    bitrate: bitrate.value,
+    sampleRate: sampleRate.value,
+  };
 }
 
 type SayOpts = {
@@ -138,7 +182,7 @@ type SayOpts = {
 };
 
 function recordOutputArtifact(
-  stats: ReturnType<typeof createStatsRecorder>,
+  stats: StatsRecorder,
   audio: Uint8Array,
   opts: SayOpts,
 ): { outputFormat: string; outputSizeBytes: number | null | undefined } {
@@ -157,9 +201,9 @@ function recordOutputArtifact(
 async function synthesizeAndEmit(
   opts: SayOpts,
   verbose: boolean,
-  stats: ReturnType<typeof createStatsRecorder>,
-  diagnosticLog: ReturnType<typeof createDiagnosticLogSession>,
-): Promise<void> {
+  session: CommandSession,
+): Promise<CommandOutcome> {
+  const { stats } = session;
   try {
     const startedAt = performance.now();
     if (opts.out) {
@@ -174,35 +218,32 @@ async function synthesizeAndEmit(
     // stderr — stdout may carry raw audio bytes when --out is omitted.
     if (verbose && !opts.out) log.status(`TTS time: ${ttsTimeMs}ms`);
     const { outputFormat, outputSizeBytes } = recordOutputArtifact(stats, audio, opts);
-    diagnosticLog.event("command.finish", {
-      command: "say",
-      status: "success",
-      durationMs: ttsTimeMs,
-      hasOut: Boolean(opts.out),
-      outputFormat,
-      outputSizeBucket: diagnosticSizeBucket(outputSizeBytes),
-    });
     if (!opts.out) process.stdout.write(audio);
-    stats.finish("success", 1);
-    diagnosticLog.finish("success");
+    return {
+      status: "success",
+      itemCount: 1,
+      finishFields: {
+        durationMs: ttsTimeMs,
+        hasOut: Boolean(opts.out),
+        outputFormat,
+        outputSizeBucket: diagnosticSizeBucket(outputSizeBytes),
+      },
+    };
   } catch (err) {
     const code = err instanceof SayError ? err.code : "E_INTERNAL";
+    const exitCode = err instanceof SayError ? err.exitCode : 4;
     stats.recordError("tts", err, code);
-    stats.finish("failed", 1);
-    diagnosticLog.event("command.finish", {
-      command: "say",
+    log.error(err instanceof SayError ? err.stderr.trim() || err.message : errorMessage(err));
+    return {
       status: "failed",
-      errorKind: err instanceof SayError ? "say_error" : "error",
-      exitCode: err instanceof SayError ? err.exitCode : 4,
-      error_code: code,
-    });
-    diagnosticLog.finish("failed");
-    if (err instanceof SayError) {
-      log.error(err.stderr.trim() || err.message);
-      process.exit(err.exitCode);
-    }
-    log.error(errorMessage(err));
-    process.exit(4);
+      itemCount: 1,
+      exitCode,
+      finishFields: {
+        errorKind: err instanceof SayError ? "say_error" : "error",
+        exitCode,
+        error_code: code,
+      },
+    };
   }
 }
 
@@ -269,14 +310,11 @@ export const sayCommand = defineCommand({
       process.exit(await proc.exited);
     }
 
-    // Validate --format before spawning the engine: faster failure in scripts (engine repeats authoritatively).
-    const format = parseFormatFlag(typeof args.format === "string" ? args.format : undefined);
-    const rate = parseRateFlag(args.rate);
-    const bitrate = parseBitrateFlag(args.bitrate);
-    const sampleRate = parseSampleRateFlag(args["sample-rate"]);
-
-    // Reject --bitrate / --sample-rate with WAV up front to surface the error fast.
-    assertOpusOnlyFlags(bitrate, sampleRate, format, typeof args.out === "string" ? args.out : undefined);
+    const flags = resolveSayFlags(args);
+    if (!flags.ok) {
+      log.error(flags.error);
+      process.exit(2);
+    }
 
     const inlineText = typeof args.text === "string" ? args.text : undefined;
     const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;
@@ -294,27 +332,29 @@ export const sayCommand = defineCommand({
       voice,
       lang: langHint,
       out: typeof args.out === "string" ? args.out : undefined,
-      rate,
+      rate: flags.rate,
       ssml: Boolean(args.ssml),
-      format,
-      bitrate,
-      sampleRate,
+      format: flags.format,
+      bitrate: flags.bitrate,
+      sampleRate: flags.sampleRate,
       noExpandAbbrev: Boolean(args["no-expand-abbrev"]),
     };
-    const stats = createStatsRecorder("say");
-    const diagnosticLog = createDiagnosticLogSession();
-    diagnosticLog.event("command.start", {
-      command: "say",
-      charBucket: diagnosticCharBucket(Array.from(text).length),
-      hasInlineInput: inlineText !== undefined,
-      hasVoice: explicitVoice !== undefined,
-      autoVoice: explicitVoice === undefined && voice !== undefined,
-      hasOut: typeof opts.out === "string",
-      outputFormat: opts.format ?? "auto",
-      ssml: opts.ssml,
-      noExpandAbbrev: opts.noExpandAbbrev,
-    });
 
-    await synthesizeAndEmit(opts, Boolean(args.verbose), stats, diagnosticLog);
+    const outcome = await runCommandSession(
+      "say",
+      {
+        charBucket: diagnosticCharBucket(Array.from(text).length),
+        hasInlineInput: inlineText !== undefined,
+        hasVoice: explicitVoice !== undefined,
+        autoVoice: explicitVoice === undefined && voice !== undefined,
+        hasOut: typeof opts.out === "string",
+        outputFormat: opts.format ?? "auto",
+        ssml: opts.ssml,
+        noExpandAbbrev: opts.noExpandAbbrev,
+      },
+      (session) => synthesizeAndEmit(opts, Boolean(args.verbose), session),
+    );
+
+    if (outcome.exitCode !== undefined) process.exit(outcome.exitCode);
   },
 });

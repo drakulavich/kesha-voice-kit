@@ -796,86 +796,84 @@ function okFmt(json = false, toon = false, transcript = false): ResolvedOutputFo
 }
 
 describe("validateTranscribeArgs guards", () => {
-  // log.error uses process.stderr.write (src/log.ts), not console.error — stub the former.
-  function expectValidateExit(
+  function validate(
     argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
     rawArgs: string[],
     fmt: ResolvedOutputFormat & { ok: true },
-  ): number {
-    const savedExit = process.exit;
-    const savedWrite = process.stderr.write;
-    try {
-      process.stderr.write = (() => true) as typeof process.stderr.write;
-      process.exit = ((code?: string | number | null | undefined) => {
-        throw new Error(`exit:${code ?? 0}`);
-      }) as typeof process.exit;
-      validateTranscribeArgs(defaultMainArgs(argsOverrides) as never, rawArgs, fmt);
-      throw new Error("validateTranscribeArgs did not exit");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message.startsWith("exit:")).toBe(true);
-      return Number(message.slice("exit:".length));
-    } finally {
-      process.exit = savedExit;
-      process.stderr.write = savedWrite;
-    }
+  ) {
+    return validateTranscribeArgs(defaultMainArgs(argsOverrides) as never, rawArgs, fmt);
   }
 
-  test("--timestamps without machine-readable output exits 2", () => {
-    expect(expectValidateExit({ timestamps: true }, ["--timestamps"], okFmt())).toBe(2);
-  });
+  function expectRejected(
+    argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
+    rawArgs: string[],
+    fmt: ResolvedOutputFormat & { ok: true },
+  ): string {
+    const result = validate(argsOverrides, rawArgs, fmt);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected validateTranscribeArgs to reject");
+    return result.error;
+  }
 
-  test("--timestamps with --json does not exit", () => {
-    const result = validateTranscribeArgs(
-      defaultMainArgs({ timestamps: true, json: true }) as never,
-      ["--timestamps", "--json"],
-      okFmt(true),
+  function expectAccepted(
+    argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
+    rawArgs: string[],
+    fmt: ResolvedOutputFormat & { ok: true },
+  ) {
+    const result = validate(argsOverrides, rawArgs, fmt);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(`expected acceptance, got: ${result.error}`);
+    return result;
+  }
+
+  test("--timestamps without machine-readable output is rejected", () => {
+    expect(expectRejected({ timestamps: true }, ["--timestamps"], okFmt())).toContain(
+      "--timestamps requires --json",
     );
-    expect(result.outputFormat).toBe("json");
   });
 
-  test("--speakers without machine-readable output exits 2", () => {
-    expect(expectValidateExit({ speakers: true }, ["--speakers"], okFmt())).toBe(2);
-  });
-
-  test("--speakers with --toon does not exit", () => {
-    const result = validateTranscribeArgs(
-      defaultMainArgs({ speakers: true, toon: true }) as never,
-      ["--speakers", "--toon"],
-      okFmt(false, true),
-    );
-    expect(result.outputFormat).toBe("toon");
-  });
-
-  test("--include-errors without --json exits 2", () => {
+  test("--timestamps with --json is accepted", () => {
     expect(
-      expectValidateExit({ "include-errors": true }, ["--include-errors"], okFmt()),
-    ).toBe(2);
+      expectAccepted({ timestamps: true, json: true }, ["--timestamps", "--json"], okFmt(true))
+        .outputFormat,
+    ).toBe("json");
   });
 
-  test("--include-errors with --json does not exit", () => {
-    const result = validateTranscribeArgs(
-      defaultMainArgs({ "include-errors": true, json: true }) as never,
-      ["--include-errors", "--json"],
-      okFmt(true),
+  test("--speakers without machine-readable output is rejected", () => {
+    expect(expectRejected({ speakers: true }, ["--speakers"], okFmt())).toContain(
+      "--speakers requires --json",
     );
-    expect(result.outputFormat).toBe("json");
   });
 
-  test("--vad and --no-vad mutually exclusive exits 2", () => {
+  test("--speakers with --toon is accepted", () => {
     expect(
-      expectValidateExit({ vad: true }, ["--vad", "--no-vad"], okFmt()),
-    ).toBe(2);
+      expectAccepted({ speakers: true, toon: true }, ["--speakers", "--toon"], okFmt(false, true))
+        .outputFormat,
+    ).toBe("toon");
+  });
+
+  test("--include-errors without --json is rejected", () => {
+    expect(
+      expectRejected({ "include-errors": true }, ["--include-errors"], okFmt()),
+    ).toContain("--include-errors requires --json");
+  });
+
+  test("--include-errors with --json is accepted", () => {
+    expect(
+      expectAccepted({ "include-errors": true, json: true }, ["--include-errors", "--json"], okFmt(true))
+        .outputFormat,
+    ).toBe("json");
+  });
+
+  test("--vad and --no-vad are mutually exclusive", () => {
+    expect(expectRejected({ vad: true }, ["--vad", "--no-vad"], okFmt())).toContain(
+      "mutually exclusive",
+    );
   });
 
   test("vadMode derives correctly from rawArgs", () => {
-    const auto = validateTranscribeArgs(defaultMainArgs() as never, [], okFmt());
-    expect(auto.vadMode).toBe("auto");
-
-    const on = validateTranscribeArgs(defaultMainArgs({ vad: true }) as never, ["--vad"], okFmt());
-    expect(on.vadMode).toBe("on");
-
-    const off = validateTranscribeArgs(defaultMainArgs() as never, ["--no-vad"], okFmt());
-    expect(off.vadMode).toBe("off");
+    expect(expectAccepted({}, [], okFmt()).vadMode).toBe("auto");
+    expect(expectAccepted({ vad: true }, ["--vad"], okFmt()).vadMode).toBe("on");
+    expect(expectAccepted({}, ["--no-vad"], okFmt()).vadMode).toBe("off");
   });
 });

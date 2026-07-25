@@ -15,12 +15,12 @@ import {
 } from "../format";
 import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
-import { artifactFromFile, createStatsRecorder } from "../stats";
+import { artifactFromFile, type StatsRecorder } from "../stats";
 import { createPercentProgress } from "../progress";
 import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 import type { TranscriptionSegment } from "../types";
-import { createDiagnosticLogSession } from "../diagnostic-log";
 import { diagnosticSizeBucket } from "../diagnostic-events";
+import { runCommandSession, type CommandSession } from "./command-session";
 import { ENGINE_CODES, extractEngineErrorCode, TS_NATIVE_CODES } from "../error-codes";
 
 interface MainCommandArgs {
@@ -139,14 +139,16 @@ export type ValidatedTranscribeArgs = {
   outputFormat: "json" | "toon" | "transcript" | "text";
 };
 
-/**
- * Validates cross-flag consistency that citty can't express; exits 2 on violation.
- */
+export type TranscribeArgsValidation =
+  | ({ ok: true } & ValidatedTranscribeArgs)
+  | { ok: false; error: string };
+
+/** Validates cross-flag consistency that citty can't express. */
 export function validateTranscribeArgs(
   args: MainCommandArgs,
   rawArgs: string[],
   fmt: ResolvedOutputFormat & { ok: true },
-): ValidatedTranscribeArgs {
+): TranscribeArgsValidation {
   const { wantsJson, wantsToon, wantsTranscript } = fmt;
 
   // citty treats --no-vad as the negated form of --vad, so read rawArgs
@@ -155,20 +157,16 @@ export function validateTranscribeArgs(
   const noVad = rawArgs.includes("--no-vad") || Boolean(args["no-vad"] ?? args.noVad ?? args.no_vad);
 
   if (vad && noVad) {
-    log.error("--vad and --no-vad are mutually exclusive.");
-    process.exit(2);
+    return { ok: false, error: "--vad and --no-vad are mutually exclusive." };
   }
   if (args.timestamps && !(wantsJson || wantsToon)) {
-    log.error("--timestamps requires --json, --toon, or --format {json,toon}.");
-    process.exit(2);
+    return { ok: false, error: "--timestamps requires --json, --toon, or --format {json,toon}." };
   }
   if (args.speakers && !(wantsJson || wantsToon)) {
-    log.error("--speakers requires --json, --toon, or --format {json,toon}.");
-    process.exit(2);
+    return { ok: false, error: "--speakers requires --json, --toon, or --format {json,toon}." };
   }
   if (args["include-errors"] && !wantsJson) {
-    log.error("--include-errors requires --json or --format json.");
-    process.exit(2);
+    return { ok: false, error: "--include-errors requires --json or --format json." };
   }
 
   const vadMode: ValidatedTranscribeArgs["vadMode"] = vad ? "on" : noVad ? "off" : "auto";
@@ -180,7 +178,7 @@ export function validateTranscribeArgs(
         ? "transcript"
         : "text";
 
-  return { vadMode, outputFormat };
+  return { ok: true, vadMode, outputFormat };
 }
 
 async function detectLanguages(
@@ -190,7 +188,7 @@ async function detectLanguages(
     wantsLangId: boolean;
     expectedLang?: string;
     progress: ReturnType<typeof createPercentProgress> | null;
-    stats: ReturnType<typeof createStatsRecorder>;
+    stats: StatsRecorder;
     transcriptDurationSeconds: number | null;
   },
 ): Promise<{
@@ -257,18 +255,13 @@ type ProcessFileOptions = {
   reportProgress: boolean;
 };
 
-type ProcessFileRecorders = {
-  stats: ReturnType<typeof createStatsRecorder>;
-  diagnosticLog: ReturnType<typeof createDiagnosticLogSession>;
-};
-
 type ProcessFileSuccess = { ok: true; result: TranscribeResult };
 type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord };
 
 async function processFile(
   file: string,
   options: ProcessFileOptions,
-  recorders: ProcessFileRecorders,
+  recorders: CommandSession,
 ): Promise<ProcessFileSuccess | ProcessFileFailure> {
   const { vadMode, timestamps, speakers, wantsLangId, expectedLang, reportProgress } = options;
   const { stats, diagnosticLog } = recorders;
@@ -486,7 +479,12 @@ export const mainCommand = defineCommand({
       process.exit(2);
     }
 
-    const { vadMode, outputFormat } = validateTranscribeArgs(args, rawArgs, fmt);
+    const validated = validateTranscribeArgs(args, rawArgs, fmt);
+    if (!validated.ok) {
+      log.error(validated.error);
+      process.exit(2);
+    }
+    const { vadMode, outputFormat } = validated;
 
     if (files.length === 0) {
       log.info(
@@ -505,22 +503,6 @@ export const mainCommand = defineCommand({
       process.exit(1);
     }
 
-    let hasError = false;
-    const results: TranscribeResult[] = [];
-    const errors: TranscribeErrorRecord[] = [];
-    const stats = createStatsRecorder("transcribe");
-    const diagnosticLog = createDiagnosticLogSession();
-    diagnosticLog.event("command.start", {
-      command: "transcribe",
-      itemCount: files.length,
-      outputFormat,
-      vadMode,
-      timestamps: args.timestamps,
-      speakers: args.speakers,
-      includeErrors: args["include-errors"],
-      hasExpectedLang: Boolean(args.lang),
-    });
-
     const wantsLangId = !!(args.lang || args.verbose || outputFormat !== "text");
     const reportProgress = shouldReportTranscribeProgress({
       stderrIsTty: process.stderr.isTTY === true,
@@ -529,43 +511,59 @@ export const mainCommand = defineCommand({
       quiet: log.quietEnabled,
     });
 
-    for (const file of files) {
-      const outcome = await processFile(
-        file,
-        {
-          vadMode,
-          timestamps: args.timestamps,
-          speakers: args.speakers,
-          wantsLangId,
-          expectedLang: args.lang,
-          reportProgress,
-        },
-        { stats, diagnosticLog },
-      );
-      if (outcome.ok) {
-        results.push(outcome.result);
-      } else {
-        hasError = true;
-        errors.push(outcome.error);
-      }
-    }
+    const { status } = await runCommandSession(
+      "transcribe",
+      {
+        itemCount: files.length,
+        outputFormat,
+        vadMode,
+        timestamps: args.timestamps,
+        speakers: args.speakers,
+        includeErrors: args["include-errors"],
+        hasExpectedLang: Boolean(args.lang),
+      },
+      async (session) => {
+        const results: TranscribeResult[] = [];
+        const errors: TranscribeErrorRecord[] = [];
 
-    writeOutput(results, errors, outputFormat, {
-      includeErrors: args["include-errors"],
-      verbose: args.verbose,
-    });
+        for (const file of files) {
+          const outcome = await processFile(
+            file,
+            {
+              vadMode,
+              timestamps: args.timestamps,
+              speakers: args.speakers,
+              wantsLangId,
+              expectedLang: args.lang,
+              reportProgress,
+            },
+            session,
+          );
+          if (outcome.ok) {
+            results.push(outcome.result);
+          } else {
+            errors.push(outcome.error);
+          }
+        }
 
-    stats.finish(hasError ? "failed" : "success", files.length);
-    diagnosticLog.event("command.finish", {
-      command: "transcribe",
-      status: hasError ? "failed" : "success",
-      itemCount: files.length,
-      resultCount: results.length,
-      errorCount: errors.length,
-    });
-    diagnosticLog.finish(hasError ? "failed" : "success");
+        writeOutput(results, errors, outputFormat, {
+          includeErrors: args["include-errors"],
+          verbose: args.verbose,
+        });
 
-    if (hasError) {
+        return {
+          status: errors.length > 0 ? "failed" : "success",
+          itemCount: files.length,
+          finishFields: {
+            itemCount: files.length,
+            resultCount: results.length,
+            errorCount: errors.length,
+          },
+        };
+      },
+    );
+
+    if (status === "failed") {
       const signalExitCode = getPendingSignalExitCode();
       if (signalExitCode !== null) {
         await waitForPendingSignalCleanup();
