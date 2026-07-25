@@ -28,6 +28,7 @@ export { statsCommand } from "./cli/stats";
 export { supportBundleCommand } from "./cli/support-bundle";
 export {
   createMainCommand,
+  mainCommand,
   detectLanguage,
   checkLanguageMismatch,
   estimateTranscriptDurationSeconds,

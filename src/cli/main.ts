@@ -575,3 +575,6 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
     },
   });
 }
+
+/** Package-root export kept for consumers importing `mainCommand`; the default-context binding. */
+export const mainCommand = createMainCommand();
