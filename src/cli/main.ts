@@ -21,6 +21,7 @@ import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../proces
 import type { TranscriptionSegment } from "../types";
 import { diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandSession } from "./command-session";
+import type { CliContext } from "./context";
 import { ENGINE_CODES, extractEngineErrorCode, TS_NATIVE_CODES } from "../error-codes";
 
 interface MainCommandArgs {
@@ -368,208 +369,209 @@ function writeOutput(
   }
 }
 
-export const mainCommand = defineCommand({
-  meta: {
-    name: "kesha",
-    version: packageVersion,
-    description:
-      "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
-      "\n" +
-      "Examples:\n" +
-      "  kesha audio.ogg          Transcribe an audio file.\n" +
-      "  kesha --json audio.ogg   Transcribe with machine-readable output.\n" +
-      "  kesha say \"hello\"        Speak text (text-to-speech).\n" +
-      "  kesha init               Guided first-time setup.\n" +
-      "\n" +
-      "Commands:\n" +
-      "  completions  Print shell completion script.\n" +
-      "  doctor     Collect support diagnostics.\n" +
-      "  init       Interactive setup guide for Kesha features.\n" +
-      "  install    Download engine and models.\n" +
-      "  logs       Manage local privacy-safe diagnostic logs.\n" +
-      "  manpage    Print the kesha(1) manpage.\n" +
-      "  record     Record microphone audio to a WAV file.\n" +
-      "  status     Inspect installed backend.\n" +
-      "  say        Synthesize speech from text.\n" +
-      "  stats      Manage local anonymous performance stats.\n" +
-      "  support-bundle  Create a redacted diagnostics archive.",
-  },
-  args: {
-    json: {
-      type: "boolean",
-      description: "Output results as JSON",
-      default: false,
+/** The transcribe command, bound to the global flags dispatch resolved before citty. */
+export function createMainCommand(context: CliContext = { quiet: false, disableColor: false }) {
+  return defineCommand({
+    meta: {
+      name: "kesha",
+      version: packageVersion,
+      description:
+        "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
+        "\n" +
+        "Examples:\n" +
+        "  kesha audio.ogg          Transcribe an audio file.\n" +
+        "  kesha --json audio.ogg   Transcribe with machine-readable output.\n" +
+        "  kesha say \"hello\"        Speak text (text-to-speech).\n" +
+        "  kesha init               Guided first-time setup.\n" +
+        "\n" +
+        "Commands:\n" +
+        "  completions  Print shell completion script.\n" +
+        "  doctor     Collect support diagnostics.\n" +
+        "  init       Interactive setup guide for Kesha features.\n" +
+        "  install    Download engine and models.\n" +
+        "  logs       Manage local privacy-safe diagnostic logs.\n" +
+        "  manpage    Print the kesha(1) manpage.\n" +
+        "  record     Record microphone audio to a WAV file.\n" +
+        "  status     Inspect installed backend.\n" +
+        "  say        Synthesize speech from text.\n" +
+        "  stats      Manage local anonymous performance stats.\n" +
+        "  support-bundle  Create a redacted diagnostics archive.",
     },
-    toon: {
-      type: "boolean",
-      description: "Output results as TOON (compact, LLM-friendly encoding of the same data as --json)",
-      default: false,
-    },
-    timestamps: {
-      type: "boolean",
-      description: "Include timestamped transcript segments in JSON/TOON output",
-      default: false,
-    },
-    speakers: {
-      type: "boolean",
-      description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first. Implies --timestamps.",
-      default: false,
-    },
-    "include-errors": {
-      type: "boolean",
-      description: "With --json, output { results, errors } so scripts can read per-file failures without parsing stderr",
-      default: false,
-    },
-    verbose: {
-      type: "boolean",
-      description: "Show language detection details",
-      default: false,
-    },
-    format: {
-      type: "string",
-      description: "Output format: transcript | json | toon (long-form alias for --json / --toon)",
-    },
-    lang: {
-      type: "string",
-      description: "Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch",
-    },
-    debug: {
-      type: "boolean",
-      description: "Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)",
-      default: false,
-    },
-    vad: {
-      type: "boolean",
-      description: "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
-      default: false,
-    },
-    "no-vad": {
-      type: "boolean",
-      description: "Force full-file ASR for short/medium files; long audio fails early",
-      default: false,
-    },
-    // quiet and no-color are resolved before citty in dispatch.ts (so they
-    // apply to every command, not just transcribe); declared here only so they
-    // appear in `kesha --help`.
-    quiet: {
-      type: "boolean",
-      alias: "q",
-      description: "Suppress progress output; print only results and errors",
-      default: false,
-    },
-    "no-color": {
-      type: "boolean",
-      description: "Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)",
-      default: false,
-    },
-  },
-  async run({ args, rawArgs }: { args: MainCommandArgs; rawArgs: string[] }) {
-    if (args.debug) log.debugEnabled = true;
-    // `log.quietEnabled` is set globally in dispatch.ts (where --quiet/-q is
-    // resolved and stripped before citty), so it already reflects --quiet here.
-    const files = args._;
-
-    const fmt = resolveOutputFormat({
-      json: args.json,
-      toon: args.toon,
-      format: args.format,
-    });
-    if (!fmt.ok) {
-      log.error(fmt.error);
-      process.exit(2);
-    }
-
-    const validated = validateTranscribeArgs(args, rawArgs, fmt);
-    if (!validated.ok) {
-      log.error(validated.error);
-      process.exit(2);
-    }
-    const { vadMode, outputFormat } = validated;
-
-    if (files.length === 0) {
-      log.info(
-        "Usage: kesha <audio_file> [audio_file ...]\n" +
-          "       kesha completions <bash|zsh|fish>\n" +
-          "       kesha doctor [--json] [--redact]\n" +
-          "       kesha install [--no-cache]\n" +
-          "       kesha logs [enable|disable|mode|status|path|reset]\n" +
-          "       kesha manpage\n" +
-          "       kesha record --out path.wav [--max-seconds 120]\n" +
-          "       kesha status\n" +
-          "       kesha say <text>\n" +
-          "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +
-          "       kesha support-bundle [--output path.tar.gz]",
-      );
-      process.exit(1);
-    }
-
-    const wantsLangId = !!(args.lang || args.verbose || outputFormat !== "text");
-    const reportProgress = shouldReportTranscribeProgress({
-      stderrIsTty: process.stderr.isTTY === true,
-      stdoutIsTty: process.stdout.isTTY === true,
-      debugEnabled: log.isDebugEnabled(),
-      quiet: log.quietEnabled,
-    });
-
-    const { status } = await runCommandSession(
-      "transcribe",
-      {
-        itemCount: files.length,
-        outputFormat,
-        vadMode,
-        timestamps: args.timestamps,
-        speakers: args.speakers,
-        includeErrors: args["include-errors"],
-        hasExpectedLang: Boolean(args.lang),
+    args: {
+      json: {
+        type: "boolean",
+        description: "Output results as JSON",
+        default: false,
       },
-      async (session) => {
-        const results: TranscribeResult[] = [];
-        const errors: TranscribeErrorRecord[] = [];
-
-        for (const file of files) {
-          const outcome = await processFile(
-            file,
-            {
-              vadMode,
-              timestamps: args.timestamps,
-              speakers: args.speakers,
-              wantsLangId,
-              expectedLang: args.lang,
-              reportProgress,
-            },
-            session,
-          );
-          if (outcome.ok) {
-            results.push(outcome.result);
-          } else {
-            errors.push(outcome.error);
-          }
-        }
-
-        writeOutput(results, errors, outputFormat, {
-          includeErrors: args["include-errors"],
-          verbose: args.verbose,
-        });
-
-        return {
-          status: errors.length > 0 ? "failed" : "success",
-          itemCount: files.length,
-          finishFields: {
-            itemCount: files.length,
-            resultCount: results.length,
-            errorCount: errors.length,
-          },
-        };
+      toon: {
+        type: "boolean",
+        description: "Output results as TOON (compact, LLM-friendly encoding of the same data as --json)",
+        default: false,
       },
-    );
+      timestamps: {
+        type: "boolean",
+        description: "Include timestamped transcript segments in JSON/TOON output",
+        default: false,
+      },
+      speakers: {
+        type: "boolean",
+        description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first. Implies --timestamps.",
+        default: false,
+      },
+      "include-errors": {
+        type: "boolean",
+        description: "With --json, output { results, errors } so scripts can read per-file failures without parsing stderr",
+        default: false,
+      },
+      verbose: {
+        type: "boolean",
+        description: "Show language detection details",
+        default: false,
+      },
+      format: {
+        type: "string",
+        description: "Output format: transcript | json | toon (long-form alias for --json / --toon)",
+      },
+      lang: {
+        type: "string",
+        description: "Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch",
+      },
+      debug: {
+        type: "boolean",
+        description: "Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)",
+        default: false,
+      },
+      vad: {
+        type: "boolean",
+        description: "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
+        default: false,
+      },
+      "no-vad": {
+        type: "boolean",
+        description: "Force full-file ASR for short/medium files; long audio fails early",
+        default: false,
+      },
+      // quiet and no-color are resolved before citty in dispatch.ts (so they
+      // apply to every command, not just transcribe); declared here only so they
+      // appear in `kesha --help`.
+      quiet: {
+        type: "boolean",
+        alias: "q",
+        description: "Suppress progress output; print only results and errors",
+        default: false,
+      },
+      "no-color": {
+        type: "boolean",
+        description: "Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)",
+        default: false,
+      },
+    },
+    async run({ args, rawArgs }: { args: MainCommandArgs; rawArgs: string[] }) {
+      if (args.debug) log.debugEnabled = true;
+      const files = args._;
 
-    if (status === "failed") {
-      const signalExitCode = getPendingSignalExitCode();
-      if (signalExitCode !== null) {
-        await waitForPendingSignalCleanup();
-        process.exit(signalExitCode);
+      const fmt = resolveOutputFormat({
+        json: args.json,
+        toon: args.toon,
+        format: args.format,
+      });
+      if (!fmt.ok) {
+        log.error(fmt.error);
+        process.exit(2);
       }
-      process.exit(1);
-    }
-  },
-});
+
+      const validated = validateTranscribeArgs(args, rawArgs, fmt);
+      if (!validated.ok) {
+        log.error(validated.error);
+        process.exit(2);
+      }
+      const { vadMode, outputFormat } = validated;
+
+      if (files.length === 0) {
+        log.info(
+          "Usage: kesha <audio_file> [audio_file ...]\n" +
+            "       kesha completions <bash|zsh|fish>\n" +
+            "       kesha doctor [--json] [--redact]\n" +
+            "       kesha install [--no-cache]\n" +
+            "       kesha logs [enable|disable|mode|status|path|reset]\n" +
+            "       kesha manpage\n" +
+            "       kesha record --out path.wav [--max-seconds 120]\n" +
+            "       kesha status\n" +
+            "       kesha say <text>\n" +
+            "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +
+            "       kesha support-bundle [--output path.tar.gz]",
+        );
+        process.exit(1);
+      }
+
+      const wantsLangId = !!(args.lang || args.verbose || outputFormat !== "text");
+      const reportProgress = shouldReportTranscribeProgress({
+        stderrIsTty: process.stderr.isTTY === true,
+        stdoutIsTty: process.stdout.isTTY === true,
+        debugEnabled: log.isDebugEnabled(),
+        quiet: context.quiet,
+      });
+
+      const { status } = await runCommandSession(
+        "transcribe",
+        {
+          itemCount: files.length,
+          outputFormat,
+          vadMode,
+          timestamps: args.timestamps,
+          speakers: args.speakers,
+          includeErrors: args["include-errors"],
+          hasExpectedLang: Boolean(args.lang),
+        },
+        async (session) => {
+          const results: TranscribeResult[] = [];
+          const errors: TranscribeErrorRecord[] = [];
+
+          for (const file of files) {
+            const outcome = await processFile(
+              file,
+              {
+                vadMode,
+                timestamps: args.timestamps,
+                speakers: args.speakers,
+                wantsLangId,
+                expectedLang: args.lang,
+                reportProgress,
+              },
+              session,
+            );
+            if (outcome.ok) {
+              results.push(outcome.result);
+            } else {
+              errors.push(outcome.error);
+            }
+          }
+
+          writeOutput(results, errors, outputFormat, {
+            includeErrors: args["include-errors"],
+            verbose: args.verbose,
+          });
+
+          return {
+            status: errors.length > 0 ? "failed" : "success",
+            itemCount: files.length,
+            finishFields: {
+              itemCount: files.length,
+              resultCount: results.length,
+              errorCount: errors.length,
+            },
+          };
+        },
+      );
+
+      if (status === "failed") {
+        const signalExitCode = getPendingSignalExitCode();
+        if (signalExitCode !== null) {
+          await waitForPendingSignalCleanup();
+          process.exit(signalExitCode);
+        }
+        process.exit(1);
+      }
+    },
+  });
+}

@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
+import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat } from "../../src/cli";
 
 type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
@@ -50,7 +50,7 @@ async function expectMainExit(
     process.exit = ((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
     }) as typeof process.exit;
-    await (mainCommand.run as MainRun)({ args, rawArgs });
+    await (createMainCommand().run as MainRun)({ args, rawArgs });
     throw new Error("main command did not exit");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -65,13 +65,13 @@ async function expectMainExit(
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("USAGE");
     expect(usage).toContain("install");
   });
 
   test("main help shows subcommand inventory (#324)", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("Commands:");
     expect(usage).toContain("completions");
     expect(usage).toContain("doctor     Collect support diagnostics.");
@@ -138,38 +138,38 @@ describe("CLI help", () => {
   });
 
   test("main help contains --json flag", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("--json");
   });
 
   test("main help contains --include-errors flag (#324 P1)", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("--include-errors");
   });
 
   test("main help contains --toon flag (#138)", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("--toon");
     expect(usage).toMatch(/TOON|LLM/i);
   });
 
   test("main help contains --timestamps flag", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("--timestamps");
   });
 
   test("main help contains --lang flag", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("--lang");
   });
 
   test("main help contains --verbose flag", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("--verbose");
   });
 
   test("main help contains --debug flag (#148)", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("--debug");
     expect(usage).toMatch(/KESHA_DEBUG|trace/i);
   });
@@ -318,7 +318,7 @@ describe("CLI help golden contracts (#324 P1)", () => {
   });
 
   test("main help matches the normalized golden output", async () => {
-    expect(normalizeUsage(await renderUsage(mainCommand))).toBe(`Kesha Voice Kit — open-source voice toolkit for Apple Silicon.
+    expect(normalizeUsage(await renderUsage(createMainCommand()))).toBe(`Kesha Voice Kit — open-source voice toolkit for Apple Silicon.
 
 Examples:
   kesha audio.ogg          Transcribe an audio file.
@@ -588,17 +588,17 @@ describe("language detection", () => {
 
 describe("CLI help with status", () => {
   test("main description mentions install command", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("install");
   });
 
   test("main help includes status command", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("status");
   });
 
   test("main description mentions stats command", async () => {
-    const usage = await renderUsage(mainCommand);
+    const usage = await renderUsage(createMainCommand());
     expect(usage).toContain("stats");
   });
 });

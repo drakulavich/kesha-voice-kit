@@ -27,7 +27,7 @@ export { statusCommand } from "./cli/status";
 export { statsCommand } from "./cli/stats";
 export { supportBundleCommand } from "./cli/support-bundle";
 export {
-  mainCommand,
+  createMainCommand,
   detectLanguage,
   checkLanguageMismatch,
   estimateTranscriptDurationSeconds,
