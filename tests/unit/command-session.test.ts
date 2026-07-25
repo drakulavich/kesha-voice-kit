@@ -128,12 +128,11 @@ describe("runCommandSession", () => {
     expect(f.events.map((e) => e.event)).toEqual(["command.start", "engine.exit", "command.finish"]);
   });
 
-  test("a failing diagnostic flush does not mask the command error (Greptile P2 on #607)", async () => {
-    const f = fakeSession();
-    const factories: CommandSessionFactories = {
-      createStats: f.factories.createStats,
+  function withFailingFlush(base: CommandSessionFactories): CommandSessionFactories {
+    return {
+      createStats: base.createStats,
       createDiagnosticLog: () => {
-        const session = f.factories.createDiagnosticLog();
+        const session = base.createDiagnosticLog();
         return {
           event: session.event,
           finish: () => {
@@ -142,12 +141,42 @@ describe("runCommandSession", () => {
         };
       },
     };
+  }
+
+  test("a failing diagnostic flush does not mask a thrown command error (Greptile P2 on #607)", async () => {
+    const f = fakeSession();
 
     await expect(
       runCommandSession("say", {}, async () => {
         throw new Error("engine crashed");
-      }, factories),
+      }, withFailingFlush(f.factories)),
     ).rejects.toThrow("engine crashed");
+  });
+
+  test("a failing diagnostic flush does not swallow a failed outcome's exit code (Greptile P1 on #607)", async () => {
+    const f = fakeSession();
+
+    const outcome = await runCommandSession(
+      "say",
+      {},
+      async () => ({ status: "failed", itemCount: 1, exitCode: 4 }),
+      withFailingFlush(f.factories),
+    );
+
+    expect(outcome.exitCode).toBe(4);
+  });
+
+  test("a cleanup failure on the success path still surfaces", async () => {
+    const f = fakeSession();
+
+    await expect(
+      runCommandSession(
+        "say",
+        {},
+        async () => ({ status: "success", itemCount: 1 }),
+        withFailingFlush(f.factories),
+      ),
+    ).rejects.toThrow("disk full");
   });
 
   test("a throwing body still closes the session as failed, then rethrows", async () => {

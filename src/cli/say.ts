@@ -141,10 +141,7 @@ export type ResolvedSayFlags =
     }
   | { ok: false; error: string };
 
-/**
- * Validates the encoder-related `kesha say` flags up front — before the engine is
- * spawned — so scripts fail fast. The engine repeats these checks authoritatively.
- */
+/** Validates the encoder flags before the engine is spawned: faster failure in scripts (the engine repeats them authoritatively). */
 export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
   const format = parseFormatFlag(args.format);
   if (!format.ok) return format;

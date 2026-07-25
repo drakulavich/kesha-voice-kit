@@ -1,11 +1,11 @@
 import { createDiagnosticLogSession } from "../diagnostic-log";
-import { errorMessage } from "../error-utils";
-import { log } from "../log";
 import type {
   DiagnosticLogFields,
   DiagnosticLogSession,
   DiagnosticSessionStatus,
 } from "../diagnostic-log";
+import { errorMessage } from "../error-utils";
+import { log } from "../log";
 import { createStatsRecorder } from "../stats";
 import type { StatsCommandName, StatsRecorder } from "../stats";
 
@@ -33,12 +33,7 @@ const defaultFactories: CommandSessionFactories = {
   createDiagnosticLog: createDiagnosticLogSession,
 };
 
-/**
- * Owns the stats + diagnostic-log lifecycle for one CLI command: opens both
- * recorders, brackets `body` with `command.start` / `command.finish`, and closes
- * them exactly once. `body` reports what happened by returning a
- * {@link CommandOutcome} instead of calling `process.exit` itself.
- */
+/** Runs one CLI command's body between `command.start` / `command.finish`, closing both recorders exactly once; `body` reports failure by returning a {@link CommandOutcome}, never by exiting. */
 export async function runCommandSession(
   command: StatsCommandName,
   startFields: DiagnosticLogFields,
@@ -55,18 +50,29 @@ export async function runCommandSession(
   try {
     outcome = await body(session);
   } catch (err) {
-    // A failing retain-on-failure flush must not replace the command error the
-    // user actually needs to see (Greptile P2 on #607).
-    try {
-      closeSession(session, command, { status: "failed", itemCount: 0 });
-    } catch (cleanupErr) {
-      log.debug(`command session cleanup failed: ${errorMessage(cleanupErr)}`);
-    }
+    closeSessionQuietly(session, command, { status: "failed", itemCount: 0 });
     throw err;
   }
 
-  closeSession(session, command, outcome);
+  // A flush error must not displace a failure the command already has to report (Greptile P1/P2 on #607).
+  if (outcome.status === "failed") {
+    closeSessionQuietly(session, command, outcome);
+  } else {
+    closeSession(session, command, outcome);
+  }
   return outcome;
+}
+
+function closeSessionQuietly(
+  session: CommandSession,
+  command: StatsCommandName,
+  outcome: CommandOutcome,
+): void {
+  try {
+    closeSession(session, command, outcome);
+  } catch (err) {
+    log.debug(`command session cleanup failed: ${errorMessage(err)}`);
+  }
 }
 
 function closeSession(session: CommandSession, command: StatsCommandName, outcome: CommandOutcome): void {
