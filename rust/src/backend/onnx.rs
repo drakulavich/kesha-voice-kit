@@ -212,12 +212,7 @@ impl OnnxBackend {
     }
 
     fn detokenize(&self, token_ids: &[usize]) -> String {
-        let text: String = token_ids
-            .iter()
-            .filter_map(|&id| self.vocab.get(id))
-            .map(|t| t.replace('\u{2581}', " "))
-            .collect();
-        text.trim().to_string()
+        detokenize(&self.vocab, token_ids)
     }
 }
 
@@ -254,6 +249,15 @@ impl TranscribeBackend for OnnxBackend {
 // ---------------------------------------------------------------------------
 // Pure helpers (no Session access)
 // ---------------------------------------------------------------------------
+
+fn detokenize(vocab: &[String], token_ids: &[usize]) -> String {
+    let text: String = token_ids
+        .iter()
+        .filter_map(|&id| vocab.get(id))
+        .map(|t| t.replace('\u{2581}', " "))
+        .collect();
+    text.trim().to_string()
+}
 
 /// Extracts one encoder frame: encoder_data is row-major [1, D, T'], so
 /// element [0, d, t] = d * T' + t.
@@ -474,38 +478,31 @@ fn load_vocab<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
 mod tests {
     use super::*;
 
-    // detokenize is an &self method on OnnxBackend, but its logic is purely a
-    // function of vocab + token_ids. Exercise it via a minimal stub vocab.
-    fn detokenize_with_vocab(vocab: &[&str], token_ids: &[usize]) -> String {
-        let text: String = token_ids
-            .iter()
-            .filter_map(|&id| vocab.get(id))
-            .map(|t| t.replace('\u{2581}', " "))
-            .collect();
-        text.trim().to_string()
+    fn vocab_of(tokens: &[&str]) -> Vec<String> {
+        tokens.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
     fn detokenize_sentencepiece_underscore() {
         // U+2581 marks a leading space in SentencePiece tokens
-        let vocab = ["h", "e", "l", "l", "o", "\u{2581}w", "o", "r", "l", "d"];
+        let vocab = vocab_of(&["h", "e", "l", "l", "o", "\u{2581}w", "o", "r", "l", "d"]);
         assert_eq!(
-            detokenize_with_vocab(&vocab, &[0, 1, 2, 2, 4, 5, 6, 7, 2, 9]),
+            detokenize(&vocab, &[0, 1, 2, 2, 4, 5, 6, 7, 2, 9]),
             "hello world"
         );
     }
 
     #[test]
     fn detokenize_trims_leading_space() {
-        let vocab = ["\u{2581}hi"];
-        assert_eq!(detokenize_with_vocab(&vocab, &[0]), "hi");
+        let vocab = vocab_of(&["\u{2581}hi"]);
+        assert_eq!(detokenize(&vocab, &[0]), "hi");
     }
 
     #[test]
     fn detokenize_out_of_range_ids_skipped() {
-        let vocab = ["a", "b"];
+        let vocab = vocab_of(&["a", "b"]);
         // id 99 is out of range → filtered out
-        assert_eq!(detokenize_with_vocab(&vocab, &[0, 99, 1]), "ab");
+        assert_eq!(detokenize(&vocab, &[0, 99, 1]), "ab");
     }
 
     #[test]

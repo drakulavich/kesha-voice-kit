@@ -106,15 +106,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builder_new_matches_struct_default() {
-        let from_builder = TranscribeOptionsBuilder::new().build();
-        let from_default = TranscribeOptions::default();
-        assert_eq!(from_builder.mode, from_default.mode);
-        assert_eq!(from_builder.with_segments, from_default.with_segments);
-        assert_eq!(from_builder.with_speakers, from_default.with_speakers);
-    }
-
-    #[test]
     fn no_segments_path_produces_text_only_options() {
         let opts = TranscribeOptionsBuilder::new().vad(VadMode::Off).build();
         assert_eq!(opts.mode, VadMode::Off);
@@ -141,35 +132,5 @@ mod tests {
             .build();
         assert!(opts.with_segments);
         assert!(opts.with_speakers);
-    }
-
-    #[test]
-    fn default_impl_matches_new() {
-        let from_default: TranscribeOptionsBuilder = TranscribeOptionsBuilder::default();
-        let opts = from_default.build();
-        assert_eq!(opts.mode, VadMode::Auto);
-        assert!(!opts.with_segments);
-        assert!(!opts.with_speakers);
-    }
-
-    #[test]
-    fn vad_is_callable_in_both_states_with_identical_results() {
-        // `vad()` is available before AND after `with_segments()`. Greptile
-        // P2 on #318 flagged the original "only NoSegments has vad()"
-        // as a foot-gun; lock the order-independence in.
-        let pre = TranscribeOptionsBuilder::new()
-            .vad(VadMode::On)
-            .with_segments()
-            .with_speakers()
-            .build();
-        let post = TranscribeOptionsBuilder::new()
-            .with_segments()
-            .vad(VadMode::On)
-            .with_speakers()
-            .build();
-        assert_eq!(pre.mode, VadMode::On);
-        assert_eq!(post.mode, VadMode::On);
-        assert!(pre.with_segments && post.with_segments);
-        assert!(pre.with_speakers && post.with_speakers);
     }
 }

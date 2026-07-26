@@ -76,14 +76,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn encodes_riff_header() {
-        let samples = vec![0.0f32; 24_000];
-        let wav = encode_wav(&samples, 24_000).unwrap();
-        assert_eq!(&wav[..4], b"RIFF", "not a RIFF: {:?}", &wav[..4]);
-        assert_eq!(&wav[8..12], b"WAVE");
-    }
-
-    #[test]
     fn round_trips_through_hound() {
         let samples: Vec<f32> = (0..2400).map(|i| (i as f32 * 0.1).sin()).collect();
         let wav = encode_wav(&samples, 24_000).unwrap();

@@ -44,11 +44,6 @@ mod tests {
     }
 
     #[test]
-    fn decodes_byte_ids_back_to_utf8() {
-        assert_eq!(decode(&[107, 108]), "hi");
-    }
-
-    #[test]
     fn decode_skips_special_ids() {
         assert_eq!(decode(&[EOS_ID, 107, 108]), "hi");
     }

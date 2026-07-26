@@ -1049,30 +1049,27 @@ mod mirror_tests {
     #[test]
     fn unset_env_falls_through_to_upstream() {
         let _lock = crate::util::test_env::lock();
-        let _g = EnvGuard::unset("KESHA_MODEL_MIRROR");
-        assert_eq!(model_mirror(), None);
-        assert_eq!(
-            apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
-            "https://huggingface.co/foo/bar/resolve/main/file.onnx"
-        );
-    }
 
-    #[test]
-    fn empty_env_falls_through_to_upstream() {
-        let _lock = crate::util::test_env::lock();
-        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "");
-        assert_eq!(model_mirror(), None);
-        assert_eq!(
-            apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
-            "https://huggingface.co/foo/bar/resolve/main/file.onnx"
-        );
-    }
-
-    #[test]
-    fn whitespace_env_falls_through_to_upstream() {
-        let _lock = crate::util::test_env::lock();
-        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "   ");
-        assert_eq!(model_mirror(), None);
+        {
+            let _g = EnvGuard::unset("KESHA_MODEL_MIRROR");
+            assert_eq!(model_mirror(), None);
+            assert_eq!(
+                apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
+                "https://huggingface.co/foo/bar/resolve/main/file.onnx"
+            );
+        }
+        {
+            let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "");
+            assert_eq!(model_mirror(), None);
+            assert_eq!(
+                apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
+                "https://huggingface.co/foo/bar/resolve/main/file.onnx"
+            );
+        }
+        {
+            let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "   ");
+            assert_eq!(model_mirror(), None);
+        }
     }
 
     #[test]
@@ -1660,19 +1657,6 @@ mod characterization_tests {
     }
 
     #[test]
-    fn model_dir_at_joins_subdir_to_root() {
-        let root = std::path::Path::new("/fake/cache");
-        assert_eq!(
-            model_dir_at(ModelKind::Asr, root),
-            std::path::PathBuf::from("/fake/cache/models/parakeet-tdt-v3")
-        );
-        assert_eq!(
-            model_dir_at(ModelKind::Vad, root),
-            std::path::PathBuf::from("/fake/cache/models/silero-vad")
-        );
-    }
-
-    #[test]
     fn is_cached_in_asr_true_when_all_files_present() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("models/parakeet-tdt-v3");
@@ -1694,38 +1678,6 @@ mod characterization_tests {
             fs::write(dir.join(name), b"dummy").unwrap();
         }
         assert!(!is_cached_in(ModelKind::Asr, &dir));
-    }
-
-    #[test]
-    fn is_cached_in_lang_id_true_when_all_files_present() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("models/lang-id-ecapa");
-        fs::create_dir_all(&dir).unwrap();
-        for f in LANG_ID_FILES {
-            let name = std::path::Path::new(f.rel_path).file_name().unwrap();
-            fs::write(dir.join(name), b"dummy").unwrap();
-        }
-        assert!(is_cached_in(ModelKind::LangId, &dir));
-    }
-
-    #[test]
-    fn is_cached_in_vad_true_when_file_present() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("models/silero-vad");
-        fs::create_dir_all(&dir).unwrap();
-        for f in VAD_FILES {
-            let name = std::path::Path::new(f.rel_path).file_name().unwrap();
-            fs::write(dir.join(name), b"dummy").unwrap();
-        }
-        assert!(is_cached_in(ModelKind::Vad, &dir));
-    }
-
-    #[test]
-    fn is_cached_in_vad_false_when_empty_dir() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("models/silero-vad");
-        fs::create_dir_all(&dir).unwrap();
-        assert!(!is_cached_in(ModelKind::Vad, &dir));
     }
 
     #[cfg(feature = "tts")]

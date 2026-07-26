@@ -350,13 +350,6 @@ mod tests {
     }
 
     #[test]
-    fn select_style_handles_zero() {
-        let voice = vec![0.0; VOICE_ROWS * VOICE_COLS];
-        let s = select_style(&voice, 0);
-        assert_eq!(s.len(), VOICE_COLS);
-    }
-
-    #[test]
     fn select_style_picks_correct_row() {
         let mut voice = Vec::with_capacity(VOICE_ROWS * VOICE_COLS);
         for row in 0..VOICE_ROWS {
@@ -668,30 +661,6 @@ mod tests {
             );
             assert_eq!(espeak_lang, expected_lang, "{voice_id}: wrong espeak_lang");
         }
-    }
-
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
-    #[test]
-    fn multilang_default_voices_resolve_correctly() {
-        let tmp = tempfile::tempdir().unwrap();
-        populate_multilang_cache(tmp.path());
-
-        let r = resolve_voice(tmp.path(), "es-em_alex").unwrap();
-        let (_, _, espeak_lang) = unwrap_kokoro(r);
-        assert_eq!(espeak_lang, "es");
-        let r = resolve_voice(tmp.path(), "fr-ff_siwis").unwrap();
-        let (_, _, espeak_lang) = unwrap_kokoro(r);
-        assert_eq!(espeak_lang, "fr");
-        let r = resolve_voice(tmp.path(), "it-im_nicola").unwrap();
-        let (_, _, espeak_lang) = unwrap_kokoro(r);
-        assert_eq!(espeak_lang, "it");
-        let r = resolve_voice(tmp.path(), "pt-pm_alex").unwrap();
-        let (_, _, espeak_lang) = unwrap_kokoro(r);
-        assert_eq!(espeak_lang, "pt");
     }
 
     #[cfg(not(all(

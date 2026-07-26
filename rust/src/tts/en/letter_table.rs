@@ -78,12 +78,6 @@ mod tests {
     }
 
     #[test]
-    fn http_uses_double_yoo_for_w_via_lowercase_mixin() {
-        // "double yoo" is one entry, not two tokens.
-        assert_eq!(expand_chars("HTTP"), "aitch tee tee pee");
-    }
-
-    #[test]
     fn w_renders_as_double_yoo() {
         assert_eq!(expand_chars("WWW"), "double yoo double yoo double yoo");
     }

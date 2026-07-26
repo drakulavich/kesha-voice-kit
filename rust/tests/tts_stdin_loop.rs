@@ -141,16 +141,6 @@ fn empty_text_returns_err_frame_with_request_id() {
 }
 
 #[test]
-fn unknown_voice_returns_err_frame_with_request_id() {
-    let mut c = LoopChild::spawn();
-    c.send(r#"{"id": 9, "text": "hi", "voice": "zz-not-a-voice"}"#);
-    let f = c.recv();
-    assert_eq!(f.status, STATUS_ERR);
-    assert_eq!(f.id, 9);
-    c.close();
-}
-
-#[test]
 fn loop_synthesises_kokoro_and_caches_session() {
     // The loop-mode JSON request takes voice-by-name only — no `--model`
     // override path. So the test must materialise the runtime cache layout

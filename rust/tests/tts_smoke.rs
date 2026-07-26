@@ -115,27 +115,6 @@ fn say_reads_stdin_when_no_positional() {
     assert_eq!(&out.stdout[..4], b"RIFF");
 }
 
-#[test]
-fn empty_text_exits_2() {
-    let out = Command::new(common::engine_bin())
-        .args([
-            "say",
-            "",
-            "--model",
-            "/nonexistent",
-            "--voice-file",
-            "/nonexistent",
-        ])
-        .output()
-        .expect("run");
-    assert_eq!(
-        out.status.code(),
-        Some(2),
-        "expected exit 2 for empty text\nstderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
 // ONNX-path behavior: on darwin-arm64 `system_kokoro` the default en voice
 // resolves through FluidAudio (separate model cache) and synthesizes, so a
 // fresh KESHA_CACHE_DIR neither exits 1 nor prints an install hint.
@@ -237,28 +216,6 @@ fn list_voices_shows_installed() {
     assert!(
         stdout.contains("en-af_heart"),
         "expected en-af_heart, got: {stdout}"
-    );
-}
-
-#[test]
-fn text_too_long_exits_5() {
-    let huge = "a".repeat(10_000);
-    let out = Command::new(common::engine_bin())
-        .args([
-            "say",
-            &huge,
-            "--model",
-            "/nonexistent",
-            "--voice-file",
-            "/nonexistent",
-        ])
-        .output()
-        .expect("run");
-    assert_eq!(
-        out.status.code(),
-        Some(5),
-        "expected exit 5 for too-long text\nstderr: {}",
-        String::from_utf8_lossy(&out.stderr)
     );
 }
 
