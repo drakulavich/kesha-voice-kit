@@ -60,6 +60,11 @@ describe("resolveKeshaBin", () => {
     expect(await resolveKeshaBin("/missing/kesha", deps)).toBeNull();
   });
 
+  it("returns null when every fallback candidate is non-executable", async () => {
+    const deps = fakeDeps({}, { candidates: ["/a/kesha", "/b/kesha"] });
+    expect(await resolveKeshaBin(undefined, deps)).toBeNull();
+  });
+
   it("picks the first executable fallback candidate", async () => {
     const deps = fakeDeps(
       { "/second/kesha": {}, "/third/kesha": {} },

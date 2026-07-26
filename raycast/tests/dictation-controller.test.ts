@@ -264,6 +264,40 @@ describe("dictation controller", () => {
     expect(deps.cleanupTempDir).toHaveBeenCalledWith("/tmp/session");
   });
 
+  it("clears the idle state through the session when speech resumes", async () => {
+    let clock = 0;
+    let emit!: (patch: RecordingPatch) => void;
+    const recorder = deferred<void>();
+    const deps = createDeps({
+      now: () => clock,
+      startRecorder: vi.fn(() => ({ done: recorder.promise, stop: vi.fn() })),
+      startRecordingMonitor: vi.fn((onPatch) => {
+        emit = onPatch;
+        return vi.fn();
+      }),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+
+    emit({ signal: emptySignal("listening") });
+    clock = 30_000;
+    emit({ signal: emptySignal("listening") });
+    expect(deps.current()).toMatchObject({ idle: true });
+
+    clock = 31_000;
+    emit({ signal: signalTick() });
+    expect(deps.current()).toMatchObject({
+      status: "recording",
+      idle: false,
+      silentForMs: 0,
+    });
+
+    session.cancel();
+    recorder.resolve();
+    await session.done;
+  });
+
   it("auto-stops and transcribes after continuous silence", async () => {
     let clock = 0;
     let emit!: (patch: RecordingPatch) => void;
