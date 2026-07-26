@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -871,6 +872,97 @@ mod manifest_tests {
         let _ = fs::remove_file(&tmp);
         Ok(())
     }
+
+    // `echo -n 'hello world' | shasum -a 256`
+    const HELLO_SHA: &str = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+
+    struct FailingReader {
+        served: bool,
+    }
+
+    impl io::Read for FailingReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.served {
+                Err(io::Error::other("connection reset mid-stream"))
+            } else {
+                self.served = true;
+                buf[..5].copy_from_slice(b"hello");
+                Ok(5)
+            }
+        }
+    }
+
+    fn write_verified_target(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "kesha-write-verified-{name}-{}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn write_verified_places_good_bytes_at_target() -> Result<()> {
+        let target = write_verified_target("ok.bin");
+        write_verified(&mut &b"hello world"[..], &target, "ok.bin", HELLO_SHA)?;
+        assert_eq!(fs::read(&target)?, b"hello world");
+        let _ = fs::remove_file(&target);
+        Ok(())
+    }
+
+    // Runs on the windows-latest CI leg too, pinning that the final rename
+    // replaces an existing destination there (MOVEFILE_REPLACE_EXISTING).
+    #[test]
+    fn write_verified_replaces_existing_target() -> Result<()> {
+        let target = write_verified_target("replace.bin");
+        fs::write(&target, b"previous verified weights")?;
+        write_verified(&mut &b"hello world"[..], &target, "replace.bin", HELLO_SHA)?;
+        assert_eq!(fs::read(&target)?, b"hello world");
+        assert!(!staging_path(&target).exists());
+        let _ = fs::remove_file(&target);
+        Ok(())
+    }
+
+    fn staging_path(target: &std::path::Path) -> PathBuf {
+        let mut name = target.file_name().map(std::ffi::OsString::from).unwrap();
+        name.push(format!(".part.{}", std::process::id()));
+        target.with_file_name(name)
+    }
+
+    #[test]
+    fn write_verified_leaves_nothing_on_hash_mismatch() {
+        let target = write_verified_target("mismatch.bin");
+        let err = write_verified(
+            &mut &b"tampered bytes"[..],
+            &target,
+            "mismatch.bin",
+            HELLO_SHA,
+        )
+        .expect_err("wrong hash must fail");
+        assert!(err.to_string().contains("sha256 mismatch"), "{err}");
+        assert!(!target.exists());
+        assert!(!staging_path(&target).exists());
+    }
+
+    #[test]
+    fn write_verified_failure_leaves_existing_target_untouched() -> Result<()> {
+        let target = write_verified_target("refresh.bin");
+        fs::write(&target, b"previously verified weights")?;
+        let err = write_verified(
+            &mut FailingReader { served: false },
+            &target,
+            "refresh.bin",
+            HELLO_SHA,
+        )
+        .expect_err("mid-stream read error must fail");
+        assert!(err.to_string().contains("refresh.bin"), "{err}");
+        assert_eq!(
+            fs::read(&target)?,
+            b"previously verified weights",
+            "a failed refresh must not lose the working install"
+        );
+        assert!(!staging_path(&target).exists());
+        let _ = fs::remove_file(&target);
+        Ok(())
+    }
 }
 
 #[cfg(all(test, feature = "system_diarize"))]
@@ -1411,9 +1503,20 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
 /// the bad file can reach inference (#174).
 fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> {
     let target = cache.join(f.rel_path);
-    if !no_cache && target.exists() && verify_sha256(&target, f.sha256)? {
-        eprintln!("OK  {} (cached)", f.rel_path);
-        return Ok(());
+    if target.exists() {
+        if verify_sha256(&target, f.sha256)? {
+            if !no_cache {
+                eprintln!("OK  {} (cached)", f.rel_path);
+                return Ok(());
+            }
+            // no_cache over a valid file: keep it in place until a verified
+            // replacement lands, so a failed refresh can't lose a working
+            // install (Greptile P1 on #619).
+        } else {
+            // Corrupt/stale bytes: clear now so the existence-only cache
+            // probes can't resurrect them even if this download fails (#174).
+            let _ = fs::remove_file(&target);
+        }
     }
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
@@ -1429,30 +1532,62 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         .with_context(|| format!("GET {url} ({})", f.rel_path))
         .coded(ErrorCode::ModelDownload)?;
     let mut reader = response.into_body().into_reader();
-    let mut out =
-        fs::File::create(&target).with_context(|| format!("create {}", target.display()))?;
-    io::copy(&mut reader, &mut out)?;
-    drop(out);
-    if !verify_sha256(&target, f.sha256)? {
-        // Recompute to embed the actual hash in the bail (#275 D5). One
-        // extra hash pass on a freshly-downloaded file is cheap relative
-        // to the failure-mode value: the user can now tell stale-mirror
-        // vs corrupt-download vs upstream-rehost from one line of stderr.
-        let actual = compute_sha256(&target).unwrap_or_else(|_| "<unreadable>".to_string());
-        // Remove so the existence-only cache probes don't later resurrect
-        // unverified weights (#174). Best-effort — errors here are masked
-        // by the bail below which surfaces the real problem.
-        let _ = fs::remove_file(&target);
-        coded_bail!(
-            ErrorCode::CacheCorrupt,
-            "sha256 mismatch for {}: expected {} got {}",
-            f.rel_path,
-            f.sha256.get(..12).unwrap_or(f.sha256),
-            actual.get(..12).unwrap_or(&actual)
-        );
-    }
+    write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
     eprintln!("OK  {}", f.rel_path);
     Ok(())
+}
+
+/// Stream `reader` into `target` atomically: bytes land in a per-process
+/// `.part.<pid>` sibling, the hash is checked there, and only a verified file
+/// is renamed into place. An interrupted or corrupt download therefore never
+/// leaves bytes at `target` for the existence-only cache probes to resurrect
+/// later (#174), and a failure never disturbs an existing `target` (a
+/// concurrent installer's verified rename, or the pre-refresh copy under
+/// `--no-cache`). The pid suffix keeps two concurrent installers off each
+/// other's staging file; whichever verified rename lands last wins.
+fn write_verified<R: io::Read>(
+    reader: &mut R,
+    target: &Path,
+    rel_path: &str,
+    expected_sha: &str,
+) -> Result<()> {
+    let mut part_name = target.file_name().map(OsString::from).unwrap_or_default();
+    part_name.push(format!(".part.{}", std::process::id()));
+    let part = target.with_file_name(part_name);
+
+    let result = (|| -> Result<()> {
+        let mut out =
+            fs::File::create(&part).with_context(|| format!("create {}", part.display()))?;
+        io::copy(reader, &mut out)
+            .with_context(|| format!("download {rel_path}"))
+            .coded(ErrorCode::ModelDownload)?;
+        drop(out);
+        if !verify_sha256(&part, expected_sha)? {
+            // Recompute to embed the actual hash in the bail (#275 D5). One
+            // extra hash pass on a freshly-downloaded file is cheap relative
+            // to the failure-mode value: the user can now tell stale-mirror
+            // vs corrupt-download vs upstream-rehost from one line of stderr.
+            let actual = compute_sha256(&part).unwrap_or_else(|_| "<unreadable>".to_string());
+            coded_bail!(
+                ErrorCode::CacheCorrupt,
+                "sha256 mismatch for {}: expected {} got {}",
+                rel_path,
+                expected_sha.get(..12).unwrap_or(expected_sha),
+                actual.get(..12).unwrap_or(&actual)
+            );
+        }
+        // `fs::rename` replaces an existing destination on every supported
+        // platform (POSIX rename; MoveFileExW + MOVEFILE_REPLACE_EXISTING on
+        // Windows), so the pre-refresh copy survives until this single call.
+        fs::rename(&part, target).with_context(|| format!("rename {}", target.display()))
+    })();
+
+    if result.is_err() {
+        // Best-effort: drop this process's staging file only — `target` is
+        // either absent or a file another writer legitimately owns.
+        let _ = fs::remove_file(&part);
+    }
+    result
 }
 
 fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
