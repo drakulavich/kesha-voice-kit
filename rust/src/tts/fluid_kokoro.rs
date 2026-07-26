@@ -31,150 +31,50 @@ pub struct VoiceSpec {
     pub lang: &'static str,
 }
 
+/// One FluidAudio voice: the public id is always `<prefix>-<fluid_id>`, so
+/// deriving it in the macro keeps the two from drifting.
+macro_rules! fluid_voice {
+    ($prefix:literal, $fluid_id:literal, $lang:literal) => {
+        VoiceSpec {
+            public_id: concat!($prefix, "-", $fluid_id),
+            fluid_id: $fluid_id,
+            lang: $lang,
+        }
+    };
+}
+
 // FluidAudio 0.14.8 voice snapshot plus the multilingual Kokoro voice packs
 // validated against the ANE cache. Keep this list in sync with the FluidAudio
 // pin in the fluidaudio-rs git rev (rust/Cargo.toml) whenever it changes.
 const VOICES: &[VoiceSpec] = &[
-    VoiceSpec {
-        public_id: "en-af_alloy",
-        fluid_id: "af_alloy",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_aoede",
-        fluid_id: "af_aoede",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_bella",
-        fluid_id: "af_bella",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_heart",
-        fluid_id: "af_heart",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_jessica",
-        fluid_id: "af_jessica",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_kore",
-        fluid_id: "af_kore",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_nicole",
-        fluid_id: "af_nicole",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_nova",
-        fluid_id: "af_nova",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_river",
-        fluid_id: "af_river",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_sarah",
-        fluid_id: "af_sarah",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-af_sky",
-        fluid_id: "af_sky",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_adam",
-        fluid_id: "am_adam",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_echo",
-        fluid_id: "am_echo",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_eric",
-        fluid_id: "am_eric",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_fenrir",
-        fluid_id: "am_fenrir",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_liam",
-        fluid_id: "am_liam",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_michael",
-        fluid_id: "am_michael",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_onyx",
-        fluid_id: "am_onyx",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_puck",
-        fluid_id: "am_puck",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-am_santa",
-        fluid_id: "am_santa",
-        lang: "en-us",
-    },
-    VoiceSpec {
-        public_id: "en-bm_lewis",
-        fluid_id: "bm_lewis",
-        lang: "en-gb",
-    },
-    VoiceSpec {
-        public_id: "es-em_alex",
-        fluid_id: "em_alex",
-        lang: "es",
-    },
-    VoiceSpec {
-        public_id: "hi-hm_omega",
-        fluid_id: "hm_omega",
-        lang: "hi",
-    },
-    VoiceSpec {
-        public_id: "it-im_nicola",
-        fluid_id: "im_nicola",
-        lang: "it",
-    },
-    VoiceSpec {
-        public_id: "ja-jm_kumo",
-        fluid_id: "jm_kumo",
-        lang: "ja",
-    },
-    VoiceSpec {
-        public_id: "pt-pm_alex",
-        fluid_id: "pm_alex",
-        lang: "pt-br",
-    },
-    VoiceSpec {
-        public_id: "zh-zm_050",
-        fluid_id: "zm_050",
-        lang: "zh",
-    },
-    VoiceSpec {
-        public_id: "fr-ff_siwis",
-        fluid_id: "ff_siwis",
-        lang: "fr-fr",
-    },
+    fluid_voice!("en", "af_alloy", "en-us"),
+    fluid_voice!("en", "af_aoede", "en-us"),
+    fluid_voice!("en", "af_bella", "en-us"),
+    fluid_voice!("en", "af_heart", "en-us"),
+    fluid_voice!("en", "af_jessica", "en-us"),
+    fluid_voice!("en", "af_kore", "en-us"),
+    fluid_voice!("en", "af_nicole", "en-us"),
+    fluid_voice!("en", "af_nova", "en-us"),
+    fluid_voice!("en", "af_river", "en-us"),
+    fluid_voice!("en", "af_sarah", "en-us"),
+    fluid_voice!("en", "af_sky", "en-us"),
+    fluid_voice!("en", "am_adam", "en-us"),
+    fluid_voice!("en", "am_echo", "en-us"),
+    fluid_voice!("en", "am_eric", "en-us"),
+    fluid_voice!("en", "am_fenrir", "en-us"),
+    fluid_voice!("en", "am_liam", "en-us"),
+    fluid_voice!("en", "am_michael", "en-us"),
+    fluid_voice!("en", "am_onyx", "en-us"),
+    fluid_voice!("en", "am_puck", "en-us"),
+    fluid_voice!("en", "am_santa", "en-us"),
+    fluid_voice!("en", "bm_lewis", "en-gb"),
+    fluid_voice!("es", "em_alex", "es"),
+    fluid_voice!("hi", "hm_omega", "hi"),
+    fluid_voice!("it", "im_nicola", "it"),
+    fluid_voice!("ja", "jm_kumo", "ja"),
+    fluid_voice!("pt", "pm_alex", "pt-br"),
+    fluid_voice!("zh", "zm_050", "zh"),
+    fluid_voice!("fr", "ff_siwis", "fr-fr"),
 ];
 
 pub fn available_voice_ids() -> Vec<String> {

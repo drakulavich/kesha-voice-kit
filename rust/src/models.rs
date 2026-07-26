@@ -197,6 +197,8 @@ const KOKORO_GRAPH: ModelFile = ModelFile {
 
 /// Default English male voice pack (Кеша is a male name — CLAUDE.md brand rule).
 /// Switched from `af_heart` (female) in #210.
+/// One pinned ONNX-path Kokoro voice under `models/kokoro-82m/voices/`;
+/// same drift-proofing as `ane_kokoro_voice!`.
 #[cfg(all(
     feature = "tts",
     not(all(
@@ -205,11 +207,32 @@ const KOKORO_GRAPH: ModelFile = ModelFile {
         target_arch = "aarch64"
     ))
 ))]
-const KOKORO_EN_VOICE: ModelFile = ModelFile {
-    rel_path: "models/kokoro-82m/voices/am_michael.bin",
-    url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
-    sha256: "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
-};
+macro_rules! kokoro_voice {
+    ($name:literal, $sha:literal) => {
+        ModelFile {
+            rel_path: concat!("models/kokoro-82m/voices/", $name, ".bin"),
+            url: concat!(
+                "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/",
+                $name,
+                ".bin"
+            ),
+            sha256: $sha,
+        }
+    };
+}
+
+#[cfg(all(
+    feature = "tts",
+    not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))
+))]
+const KOKORO_EN_VOICE: ModelFile = kokoro_voice!(
+    "am_michael",
+    "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1"
+);
 
 /// klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0).
 /// Pinned hashes from #185 (see NOTICES.md for attribution).
@@ -254,33 +277,24 @@ const G2P_CHARSIU_FILES: &[ModelFile] = &[
     ))
 ))]
 fn multilang_voice(lang: &str) -> Option<ModelFile> {
-    let (rel, url, sha) = match lang {
-        "es" => (
-            "models/kokoro-82m/voices/em_alex.bin",
-            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/em_alex.bin",
-            "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95",
+    Some(match lang {
+        "es" => kokoro_voice!(
+            "em_alex",
+            "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95"
         ),
-        "fr" => (
-            "models/kokoro-82m/voices/ff_siwis.bin",
-            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/ff_siwis.bin",
-            "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861",
+        "fr" => kokoro_voice!(
+            "ff_siwis",
+            "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861"
         ),
-        "it" => (
-            "models/kokoro-82m/voices/im_nicola.bin",
-            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/im_nicola.bin",
-            "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0",
+        "it" => kokoro_voice!(
+            "im_nicola",
+            "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0"
         ),
-        "pt" => (
-            "models/kokoro-82m/voices/pm_alex.bin",
-            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/pm_alex.bin",
-            "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
+        "pt" => kokoro_voice!(
+            "pm_alex",
+            "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a"
         ),
         _ => return None,
-    };
-    Some(ModelFile {
-        rel_path: rel,
-        url,
-        sha256: sha,
     })
 }
 
@@ -336,146 +350,141 @@ fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
 ///
 /// SHA-256 pins computed from `onnx-community/Kokoro-82M-v1.0-ONNX` — an
 /// upstream rehost becomes a deliberate PR to bump (CLAUDE.md MODEL HASHES).
+/// One pinned ANE Kokoro voice: rel_path and URL derive from the basename,
+/// so name/path/URL cannot drift — the SHA-256 stays the only per-entry fact.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+macro_rules! ane_kokoro_voice {
+    ($name:literal, $sha:literal) => {
+        ModelFile {
+            rel_path: concat!($name, ".bin"),
+            url: concat!(
+                "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/",
+                $name,
+                ".bin"
+            ),
+            sha256: $sha,
+        }
+    };
+}
+
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
     target_arch = "aarch64"
 ))]
 const ANE_KOKORO_VOICES: &[ModelFile] = &[
-    ModelFile {
-        rel_path: "af_alloy.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_alloy.bin",
-        sha256: "c4a6b876047fd7fb472edf4ebd63cfac7c3b958a7cae7c106e8f038ca6308c45",
-    },
-    ModelFile {
-        rel_path: "af_aoede.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_aoede.bin",
-        sha256: "4a004c33430762e2461eedb2013fad808ef4ab3121f5300f554476caf58d8361",
-    },
-    ModelFile {
-        rel_path: "af_bella.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_bella.bin",
-        sha256: "f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b",
-    },
+    ane_kokoro_voice!(
+        "af_alloy",
+        "c4a6b876047fd7fb472edf4ebd63cfac7c3b958a7cae7c106e8f038ca6308c45"
+    ),
+    ane_kokoro_voice!(
+        "af_aoede",
+        "4a004c33430762e2461eedb2013fad808ef4ab3121f5300f554476caf58d8361"
+    ),
+    ane_kokoro_voice!(
+        "af_bella",
+        "f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b"
+    ),
     // `af_heart` intentionally excluded: FluidAudio 0.14.7 ships/auto-downloads
     // its own `af_heart.bin` into this ANE dir. Staging our own copy would risk
     // overwriting FluidAudio's authoritative pack if the upstream hash ever
     // drifted.
-    ModelFile {
-        rel_path: "af_jessica.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_jessica.bin",
-        sha256: "a240a5e3c15b43563d6e923bdca8ef5613a23471d9b77653694012435df23bd8",
-    },
-    ModelFile {
-        rel_path: "af_kore.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_kore.bin",
-        sha256: "9be5221b6a941c04b561959b8ff0b06e809444dcc4ab7e75a7b23606f691819e",
-    },
-    ModelFile {
-        rel_path: "af_nicole.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_nicole.bin",
-        sha256: "cd2191ab31b914ed7b318416b0e4440fdf392ddad9106a060819aa600a64f59a",
-    },
-    ModelFile {
-        rel_path: "af_nova.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_nova.bin",
-        sha256: "18778272caa0d0eebaea251c35fd635f038434f9eee5e691d02a174bd328414f",
-    },
-    ModelFile {
-        rel_path: "af_river.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_river.bin",
-        sha256: "00a2bcf82b1d86e8f19902ede58c65ccf6c0e43b44b7d74fad54e5d8933c9c30",
-    },
-    ModelFile {
-        rel_path: "af_sarah.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_sarah.bin",
-        sha256: "4409fbc125afabacc615d94db5398d847006a737b0247d6892b7a9a0007a2f0a",
-    },
-    ModelFile {
-        rel_path: "af_sky.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_sky.bin",
-        sha256: "4435255c9744f3f31659e0d714ab7689bf65d9e77ec1cce060f083912614f0b9",
-    },
-    ModelFile {
-        rel_path: "am_adam.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_adam.bin",
-        sha256: "162b035ed91cfc48b6046982184c645f72edcdd1b82843347f605d7bf7b15716",
-    },
-    ModelFile {
-        rel_path: "am_echo.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_echo.bin",
-        sha256: "3968b92c3c4cd1c4416dbded36c13eaa388a90d5788d02a13e4d781f5f8cf3c3",
-    },
-    ModelFile {
-        rel_path: "am_eric.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_eric.bin",
-        sha256: "e8b5be17edd1e3636901ce7598baafe2dc8dd8ff707a0c23bf9e461add7e2832",
-    },
-    ModelFile {
-        rel_path: "am_fenrir.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_fenrir.bin",
-        sha256: "c27989f741f7ee34d273a39d8a595cc0837d35f5ced9a29b7cc162614616df43",
-    },
-    ModelFile {
-        rel_path: "am_liam.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_liam.bin",
-        sha256: "52403be32fd047c6a44517cb0bcd6b134f2a18baa73e70ef41651e0eab921ade",
-    },
-    ModelFile {
-        rel_path: "am_michael.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
-        sha256: "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
-    },
-    ModelFile {
-        rel_path: "am_onyx.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_onyx.bin",
-        sha256: "da5d135b424164916d75a68ffb4c2abce3d7d5ccc82dd1ee6cf447ce286145e6",
-    },
-    ModelFile {
-        rel_path: "am_puck.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_puck.bin",
-        sha256: "fcf73c989033e9233e0b98713eca600c8c74dcc1614b37009d5450ff4a2274a0",
-    },
-    ModelFile {
-        rel_path: "am_santa.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_santa.bin",
-        sha256: "61150cf726ab6c5ed7a99f90a304f91f5a72c00c592e89ec94e5df11c319227a",
-    },
-    ModelFile {
-        rel_path: "bm_lewis.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/bm_lewis.bin",
-        sha256: "b8f671cef828c30e66fdf0b0756a76bba58f6bb3398cbbf27058642acbcedb97",
-    },
-    ModelFile {
-        rel_path: "em_alex.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/em_alex.bin",
-        sha256: "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95",
-    },
-    ModelFile {
-        rel_path: "ff_siwis.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/ff_siwis.bin",
-        sha256: "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861",
-    },
-    ModelFile {
-        rel_path: "hm_omega.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/hm_omega.bin",
-        sha256: "b02d9222d9ed00ce26b302173a862c2c93f96cc40b5c422b8d14910b9ff34137",
-    },
-    ModelFile {
-        rel_path: "im_nicola.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/im_nicola.bin",
-        sha256: "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0",
-    },
-    ModelFile {
-        rel_path: "jm_kumo.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/jm_kumo.bin",
-        sha256: "09e959d239724c734d65661f06f14cdabcddfd476bfaaad905a937099ae9e64f",
-    },
-    ModelFile {
-        rel_path: "pm_alex.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/pm_alex.bin",
-        sha256: "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
-    },
+    ane_kokoro_voice!(
+        "af_jessica",
+        "a240a5e3c15b43563d6e923bdca8ef5613a23471d9b77653694012435df23bd8"
+    ),
+    ane_kokoro_voice!(
+        "af_kore",
+        "9be5221b6a941c04b561959b8ff0b06e809444dcc4ab7e75a7b23606f691819e"
+    ),
+    ane_kokoro_voice!(
+        "af_nicole",
+        "cd2191ab31b914ed7b318416b0e4440fdf392ddad9106a060819aa600a64f59a"
+    ),
+    ane_kokoro_voice!(
+        "af_nova",
+        "18778272caa0d0eebaea251c35fd635f038434f9eee5e691d02a174bd328414f"
+    ),
+    ane_kokoro_voice!(
+        "af_river",
+        "00a2bcf82b1d86e8f19902ede58c65ccf6c0e43b44b7d74fad54e5d8933c9c30"
+    ),
+    ane_kokoro_voice!(
+        "af_sarah",
+        "4409fbc125afabacc615d94db5398d847006a737b0247d6892b7a9a0007a2f0a"
+    ),
+    ane_kokoro_voice!(
+        "af_sky",
+        "4435255c9744f3f31659e0d714ab7689bf65d9e77ec1cce060f083912614f0b9"
+    ),
+    ane_kokoro_voice!(
+        "am_adam",
+        "162b035ed91cfc48b6046982184c645f72edcdd1b82843347f605d7bf7b15716"
+    ),
+    ane_kokoro_voice!(
+        "am_echo",
+        "3968b92c3c4cd1c4416dbded36c13eaa388a90d5788d02a13e4d781f5f8cf3c3"
+    ),
+    ane_kokoro_voice!(
+        "am_eric",
+        "e8b5be17edd1e3636901ce7598baafe2dc8dd8ff707a0c23bf9e461add7e2832"
+    ),
+    ane_kokoro_voice!(
+        "am_fenrir",
+        "c27989f741f7ee34d273a39d8a595cc0837d35f5ced9a29b7cc162614616df43"
+    ),
+    ane_kokoro_voice!(
+        "am_liam",
+        "52403be32fd047c6a44517cb0bcd6b134f2a18baa73e70ef41651e0eab921ade"
+    ),
+    ane_kokoro_voice!(
+        "am_michael",
+        "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1"
+    ),
+    ane_kokoro_voice!(
+        "am_onyx",
+        "da5d135b424164916d75a68ffb4c2abce3d7d5ccc82dd1ee6cf447ce286145e6"
+    ),
+    ane_kokoro_voice!(
+        "am_puck",
+        "fcf73c989033e9233e0b98713eca600c8c74dcc1614b37009d5450ff4a2274a0"
+    ),
+    ane_kokoro_voice!(
+        "am_santa",
+        "61150cf726ab6c5ed7a99f90a304f91f5a72c00c592e89ec94e5df11c319227a"
+    ),
+    ane_kokoro_voice!(
+        "bm_lewis",
+        "b8f671cef828c30e66fdf0b0756a76bba58f6bb3398cbbf27058642acbcedb97"
+    ),
+    ane_kokoro_voice!(
+        "em_alex",
+        "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95"
+    ),
+    ane_kokoro_voice!(
+        "ff_siwis",
+        "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861"
+    ),
+    ane_kokoro_voice!(
+        "hm_omega",
+        "b02d9222d9ed00ce26b302173a862c2c93f96cc40b5c422b8d14910b9ff34137"
+    ),
+    ane_kokoro_voice!(
+        "im_nicola",
+        "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0"
+    ),
+    ane_kokoro_voice!(
+        "jm_kumo",
+        "09e959d239724c734d65661f06f14cdabcddfd476bfaaad905a937099ae9e64f"
+    ),
+    ane_kokoro_voice!(
+        "pm_alex",
+        "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a"
+    ),
     // re-pinned (#492): removed the flat `zm_yunjian.bin`
     // (was sha de48a00bdbf3649f07162269a2b6e0513604389bfac8a2e6c75cb34b323ad6fa).
     // zh (Mandarin) voices are NOT staged here — the FluidAudio 0.14.8 `.mandarin`
