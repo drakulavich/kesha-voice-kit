@@ -551,8 +551,11 @@ where
                 // is both wasteful and increases false-positive risk from
                 // repeated phrases appearing elsewhere in the recording.
                 let overlap_chars = (FIXED_CHUNK_OVERLAP_SECONDS * 20.0).ceil() as usize;
-                let acc_tail =
-                    &accumulated_text[accumulated_text.len().saturating_sub(overlap_chars * 4)..];
+                let mut tail_start = accumulated_text.len().saturating_sub(overlap_chars * 4);
+                while !accumulated_text.is_char_boundary(tail_start) {
+                    tail_start -= 1;
+                }
+                let acc_tail = &accumulated_text[tail_start..];
                 let trimmed = trim_repeated_prefix(acc_tail, text.trim());
                 if trimmed.is_empty() {
                     continue;
@@ -1029,6 +1032,27 @@ mod tests {
         .unwrap();
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].text, "spoken tail");
+    }
+
+    #[test]
+    fn chunked_segments_clamp_overlap_tail_to_char_boundary() {
+        let samples = vec![0.0_f32; 30];
+        let long_ru = "я".repeat(300);
+        let mut call = 0usize;
+        let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
+            call += 1;
+            Ok(match call {
+                1 => long_ru.clone(),
+                2 => "привет".to_string(),
+                3 => "мир".to_string(),
+                _ => "конец".to_string(),
+            })
+        })
+        .expect("cyrillic transcripts must not panic while trimming overlap");
+
+        assert_eq!(segs.len(), 4);
+        assert_eq!(segs[0].text, long_ru);
+        assert_eq!(segs[3].text, "конец");
     }
 
     #[test]
