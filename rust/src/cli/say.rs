@@ -324,3 +324,97 @@ pub fn run(a: SayArgs) -> i32 {
         Err(code) => code,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn explicit_format_wins_over_out_extension() {
+        let fmt = resolve_output_format(Some("wav"), None, None, Some(Path::new("x.flac")))
+            .expect("wav with flac out path");
+        assert_eq!(fmt, tts::OutputFormat::Wav);
+    }
+
+    #[test]
+    fn out_extension_selects_format() {
+        for (path, expected) in [
+            ("a.oga", tts::OutputFormat::ogg_opus_default()),
+            ("a.ogg", tts::OutputFormat::ogg_opus_default()),
+            ("a.flac", tts::OutputFormat::Flac),
+            ("a.wav", tts::OutputFormat::Wav),
+            ("a.txt", tts::OutputFormat::Wav),
+        ] {
+            let fmt = resolve_output_format(None, None, None, Some(Path::new(path)))
+                .unwrap_or_else(|e| panic!("{path}: {e}"));
+            assert_eq!(fmt, expected, "{path}");
+        }
+    }
+
+    #[test]
+    fn defaults_to_wav_without_hints() {
+        assert_eq!(
+            resolve_output_format(None, None, None, None).unwrap(),
+            tts::OutputFormat::Wav
+        );
+    }
+
+    #[test]
+    fn opus_knobs_apply_to_ogg_opus() {
+        let fmt = resolve_output_format(Some("ogg-opus"), Some(64_000), Some(48_000), None)
+            .expect("explicit opus with knobs");
+        assert_eq!(
+            fmt,
+            tts::OutputFormat::OggOpus {
+                bitrate: 64_000,
+                sample_rate: 48_000
+            }
+        );
+    }
+
+    #[test]
+    fn opus_knobs_rejected_for_other_formats() {
+        for (format, out) in [
+            (Some("wav"), None),
+            (Some("flac"), None),
+            (None, Some(Path::new("a.flac"))),
+        ] {
+            let err = resolve_output_format(format, Some(32_000), None, out)
+                .expect_err("bitrate must be rejected off the opus path");
+            assert!(err.contains("only apply to --format ogg-opus"), "{err}");
+        }
+        let err = resolve_output_format(Some("wav"), None, Some(24_000), None)
+            .expect_err("sample-rate must be rejected off the opus path");
+        assert!(err.contains("only apply to --format ogg-opus"), "{err}");
+    }
+
+    #[test]
+    fn unknown_format_lists_supported_values() {
+        let err = resolve_output_format(Some("mp3"), None, None, None).unwrap_err();
+        assert!(err.contains("supported: wav, ogg-opus, flac"), "{err}");
+    }
+
+    #[test]
+    fn tts_exit_codes_match_documented_contract() {
+        assert_eq!(exit_code_for_tts_err(&tts::TtsError::EmptyText), 2);
+        assert_eq!(
+            exit_code_for_tts_err(&tts::TtsError::TextTooLong {
+                max: 5000,
+                actual: 5001
+            }),
+            5
+        );
+        assert_eq!(
+            exit_code_for_tts_err(&tts::TtsError::SynthesisFailed("boom".into())),
+            4
+        );
+        assert_eq!(
+            exit_code_for_tts_err(&tts::TtsError::Coded {
+                code: crate::errors::ErrorCode::SsmlInvalid,
+                message: "bad ssml".into()
+            }),
+            4
+        );
+    }
+}
