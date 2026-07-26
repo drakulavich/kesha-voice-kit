@@ -140,6 +140,21 @@ describe("dictation controller", () => {
     });
   });
 
+  it("does not start recording when cancelled during preflight", async () => {
+    const preflight = deferred<{ ok: boolean }>();
+    const deps = createDeps({
+      preflight: vi.fn(() => preflight.promise),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    session.cancel();
+    preflight.resolve({ ok: true });
+    await session.done;
+
+    expect(deps.createTempDir).not.toHaveBeenCalled();
+    expect(deps.startRecorder).not.toHaveBeenCalled();
+  });
+
   it("proceeds to recording once preflight passes", async () => {
     const deps = createDeps();
     const session = startDictationSession({}, deps.setState, deps);
@@ -387,7 +402,7 @@ describe("dictation controller", () => {
     });
   });
 
-  it("surfaces the mic-permission message early when the meter never reports usable signal", async () => {
+  it("warns about mic permission early when the meter never reports a sample, without stopping", async () => {
     let clock = 0;
     let emit!: (patch: RecordingPatch) => void;
     const recorder = deferred<void>();
@@ -407,27 +422,37 @@ describe("dictation controller", () => {
     const session = startDictationSession({}, deps.setState, deps);
     await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
 
+    const warning = expect.objectContaining({
+      style: "failure",
+      title: "No signal from the microphone",
+    });
+
     emit({ signal: emptySignal("unavailable") });
     clock = 7_999;
     emit({ signal: emptySignal("unavailable") });
-    expect(deps.current().status).toBe("recording");
-    expect(recorderStop).not.toHaveBeenCalled();
+    expect(deps.toasts).not.toContainEqual(warning);
 
     clock = 8_000;
     emit({ signal: emptySignal("unavailable") });
-    expect(recorderStop).toHaveBeenCalledTimes(1);
-    expect(deps.current()).toMatchObject({
-      status: "error",
-      message:
-        "Recorded audio is silent. Check macOS Microphone permission for Raycast and the selected input device.",
-    });
+    expect(deps.toasts).toContainEqual(warning);
+    expect(deps.current().status).toBe("recording");
+    expect(recorderStop).not.toHaveBeenCalled();
+
+    clock = 9_000;
+    emit({ signal: emptySignal("unavailable") });
+    expect(
+      deps.toasts.filter(
+        (t) =>
+          (t as { title?: string }).title === "No signal from the microphone",
+      ),
+    ).toHaveLength(1);
 
     recorder.resolve();
     await session.done;
-    expect(deps.startTranscriber).not.toHaveBeenCalled();
+    expect(deps.startTranscriber).toHaveBeenCalled();
   });
 
-  it("does not fire the no-signal timeout once real signal has been seen", async () => {
+  it("does not warn about no signal once a meter sample has been seen", async () => {
     let clock = 0;
     let emit!: (patch: RecordingPatch) => void;
     const recorder = deferred<void>();
@@ -452,6 +477,9 @@ describe("dictation controller", () => {
     emit({ signal: emptySignal("unavailable") });
 
     expect(recorderStop).not.toHaveBeenCalled();
+    expect(deps.toasts).not.toContainEqual(
+      expect.objectContaining({ title: "No signal from the microphone" }),
+    );
     expect(deps.current().status).toBe("recording");
 
     session.cancel();

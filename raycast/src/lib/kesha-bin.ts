@@ -167,29 +167,31 @@ export async function probeKeshaVersion(
   }
 }
 
-// `kesha status` warns on stderr with the exact remaining setup command
-// (`installHint()`, non-TTY → "kesha install") only when the engine isn't
-// installed; a clean run leaves stderr empty. Reusing that text avoids a
-// second, possibly-drifting copy of the install hint.
+// `kesha status` marks a missing engine as "not installed" on stdout and warns
+// on stderr with the exact remaining setup command (`installHint()`). Keying
+// off the stdout marker keeps unrelated stderr (KESHA_DEBUG traces, warnings)
+// from failing a healthy install; a probe that cannot run at all fails open —
+// the CLI's own guards report the real problem with a better message.
 export async function probeEngineAvailability(
   spawn: KeshaSpawn,
   deps: ProbeDeps = {},
 ): Promise<EnginePreflightResult> {
   const run = deps.execFile ?? execFileAsync;
   try {
-    const { stderr } = await run(
+    const { stdout, stderr } = await run(
       spawn.command,
       [...spawn.prefixArgs, "status"],
       { timeout: 5000 },
     );
-    const hint = stderr.trim();
-    return hint ? { ok: false, hint } : { ok: true };
+    if (!stdout.includes("not installed")) return { ok: true };
+    return { ok: false, hint: stderr.trim() || undefined };
   } catch (err) {
     const stderr =
       err && typeof err === "object" && "stderr" in err
         ? String((err as { stderr?: unknown }).stderr ?? "").trim()
         : "";
-    return { ok: false, hint: stderr || undefined };
+    if (stderr.includes("kesha install")) return { ok: false, hint: stderr };
+    return { ok: true };
   }
 }
 

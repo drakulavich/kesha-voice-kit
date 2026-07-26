@@ -219,6 +219,16 @@ describe("probeEngineAvailability", () => {
     });
   });
 
+  it("ignores unrelated stderr noise when stdout shows the engine installed", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => ({
+      stdout: "Engine:\n  ✓ Binary: /opt/homebrew/bin/kesha-engine\n",
+      stderr: "[debug +3ms] spawn kesha-engine --capabilities-json\n",
+    }));
+    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
+      ok: true,
+    });
+  });
+
   it("surfaces the exact remaining command from kesha status's stderr warning", async () => {
     const execFile: ProbeDeps["execFile"] = vi.fn(async () => ({
       stdout: "Engine:\n  ✗ Binary: not installed\n",
@@ -230,13 +240,12 @@ describe("probeEngineAvailability", () => {
     });
   });
 
-  it("reports not ok when the CLI cannot run at all", async () => {
+  it("fails open when the status probe cannot run at all", async () => {
     const execFile: ProbeDeps["execFile"] = vi.fn(async () => {
       throw new Error("ENOENT");
     });
     expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
-      ok: false,
-      hint: undefined,
+      ok: true,
     });
   });
 

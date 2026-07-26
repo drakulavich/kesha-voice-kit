@@ -93,6 +93,7 @@ export function startDictationSession(
         });
         return;
       }
+      if (cancelled) return;
 
       tempDir = await deps.createTempDir();
       const audioPath = join(tempDir, "dictation.wav");
@@ -148,26 +149,28 @@ export function startDictationSession(
     });
     const now = deps.now ?? Date.now;
     const recordingStartedAt = now();
-    let sawUsableSignal = false;
-    let noSignalTriggered = false;
+    let sawMeterSample = false;
+    let warnedNoSignal = false;
     stopMonitoring = deps.startRecordingMonitor((patch) => {
       const state = patch.signal?.state;
       if (state === "listening" || state === "signal") {
-        sawUsableSignal = true;
+        sawMeterSample = true;
       }
+      // A dead meter must not abort a session that may still be capturing
+      // audio (the spec's meter-unavailable contract) — warn and keep going;
+      // the silence auto-stop and the silent-WAV check catch a truly dead mic.
       if (
-        !sawUsableSignal &&
-        !noSignalTriggered &&
+        !sawMeterSample &&
+        !warnedNoSignal &&
         now() - recordingStartedAt >= NO_SIGNAL_TIMEOUT_MS
       ) {
-        noSignalTriggered = true;
-        setState({
-          status: "error",
+        warnedNoSignal = true;
+        void deps.showToast({
+          style: "failure",
+          title: "No signal from the microphone",
           message:
-            "Recorded audio is silent. Check macOS Microphone permission for Raycast and the selected input device.",
+            "Check macOS Microphone permission for Raycast. Recording continues.",
         });
-        recorder?.stop();
-        return;
       }
       patchRecordingState(setState, silenceTracker.track(patch));
     });
@@ -188,14 +191,12 @@ export function startDictationSession(
     recorder = deps.startRecorder(kesha, audioPath, maxSeconds);
     try {
       await recorder.done;
-    } catch (err) {
-      if (!noSignalTriggered) throw err;
     } finally {
       recorder = null;
       stopMonitoring?.();
       stopMonitoring = null;
     }
-    return !cancelled && !noSignalTriggered;
+    return !cancelled;
   }
 
   async function transcribePhase(
@@ -252,11 +253,17 @@ export function startDictationSession(
 async function defaultPreflight(
   kesha: KeshaSpawn,
 ): Promise<EnginePreflightResult> {
-  const version = await probeKeshaVersion(kesha);
+  const [version, engine] = await Promise.all([
+    probeKeshaVersion(kesha),
+    probeEngineAvailability(kesha),
+  ]);
   if (!version) {
-    return { ok: false, hint: notFoundMessage() };
+    return {
+      ok: false,
+      hint: "The kesha CLI was found but `kesha --version` failed. Reinstall it: `brew install drakulavich/tap/kesha-voice-kit` (or `bun add -g @drakulavich/kesha-voice-kit`).",
+    };
   }
-  return probeEngineAvailability(kesha);
+  return engine;
 }
 
 export function createDefaultDictationDeps(
