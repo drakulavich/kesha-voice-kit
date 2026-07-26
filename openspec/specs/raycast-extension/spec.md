@@ -53,7 +53,9 @@ Raycast Store never offers it on an unsupported client.
 
 > *Technical Note — manifest: `raycast/package.json` — `platforms: ["macOS"]`,
 > single `commands[]` entry `dictate-to-clipboard` with `"mode": "view"`.
-> Command entry point: `raycast/src/dictate-to-clipboard.tsx` lines 34–56.*
+> Command entry point: `raycast/src/dictate-to-clipboard.tsx` lines 34–59
+> (session start in the effect at 39–55, the `Preparing microphone...` view at
+> 57–59).*
 
 ### Requirement: The CLI is located by preference, then by a fixed probe list
 
@@ -253,8 +255,8 @@ so the Engine's Error code and hint reach Maks unedited.
 
 On success the extension SHALL copy the trimmed transcript to the clipboard,
 confirm that it did, and show the text with a copy action for a second copy. A
-transcript that is empty after trimming SHALL be reported as no speech detected
-rather than silently copying an empty string.
+transcript that is empty after trimming SHALL be surfaced as a failed Dictation
+session rather than silently copying an empty string.
 
 #### Scenario: Transcript reaches the clipboard
 
@@ -268,13 +270,17 @@ rather than silently copying an empty string.
 
 - GIVEN Transcription succeeded but returned only whitespace
 - WHEN the Dictation session completes
-- THEN the view shows `No speech was detected in the recording.`
+- THEN the view shows `No transcript returned.`
 - AND the clipboard is left untouched
 
-> *Technical Note — trim, empty guard, copy and success state:
-> `raycast/src/lib/dictation-controller.ts` lines 157–169. A blank stdout is
-> rejected earlier still by `normalizeTranscribeResult` lines 253–262. Clipboard
-> write is Raycast's own `Clipboard.copy`, injected at
+> *Technical Note — the empty case is rejected by `normalizeTranscribeResult`
+> (`raycast/src/lib/dictation-controller.ts` lines 253–262), which trims stdout
+> and throws before the session sees a result; that is why the user-visible text
+> is `No transcript returned.` and not the friendlier
+> `No speech was detected in the recording.` at lines 158–160, which is
+> unreachable for exactly that reason (see Open Issues). Trim, copy and success
+> state: lines 157–169. Clipboard write is Raycast's own `Clipboard.copy`,
+> injected at
 > `raycast/src/dictate-to-clipboard.tsx` lines 43–46; the result view's copy
 > action is at lines 115–118.*
 
@@ -330,10 +336,14 @@ wrapper cannot leave the CLI behind.
 > *Technical Note — escalation ladders: `stopProcessWithWatchdog`
 > (stdin EOF → SIGTERM at 1500 ms → SIGKILL at 5000 ms) and
 > `terminateProcessWithWatchdog` (SIGTERM now → SIGKILL at 3000 ms) in
-> `raycast/src/lib/process-tasks.ts` lines 39–74. Group targeting:
-> `killProcessGroup` lines 27–37, paired with `detached: true` at spawn (lines
-> 93 and 124). Session-scoped teardown regardless of outcome:
-> `raycast/src/lib/dictation-controller.ts` lines 177–185.*
+> `raycast/src/lib/process-tasks.ts` lines 39–74. The Signal meter helper has
+> its own shorter ladder — SIGTERM, then SIGKILL after 1 s —
+> `raycast/src/lib/signal-meter.ts` lines 134–139. Group targeting:
+> `killProcessGroup` lines 27–37, paired with `detached: true` at spawn
+> (`raycast/src/lib/process-tasks.ts` lines 93 and 124,
+> `raycast/src/lib/signal-meter.ts` line 111). Session-scoped teardown
+> regardless of outcome: `raycast/src/lib/dictation-controller.ts` lines
+> 177–185.*
 
 ### Requirement: Recorded audio is written to a private temp directory and deleted
 
@@ -372,6 +382,20 @@ user-visible location and SHALL never leave the machine.
   Xcode or the Command Line Tools. On a machine without them the meter reports
   itself unavailable — correct behaviour, but the message does not say why, so
   Maks cannot tell it apart from a permission problem.
+- Idle auto-stop is driven entirely by the Signal meter: the silence timer only
+  advances while the meter reports **listening**, so on a machine where the
+  meter never starts there is no idle auto-stop at all and recording runs to
+  `--max-seconds`. That coupling is not obvious from the requirement text.
+  (`createSilenceTracker` returns early for any non-`listening` state,
+  `raycast/src/lib/dictation-controller.ts` lines 223–228.)
+- The friendlier empty-transcript message `No speech was detected in the
+  recording.` (`raycast/src/lib/dictation-controller.ts` lines 158–160) is
+  unreachable: `normalizeTranscribeResult` (lines 253–262) already trims and
+  throws `No transcript returned.` for the same input, so that is what Maks
+  actually sees. Either the outer guard should go or `normalizeTranscribeResult`
+  should carry the friendlier wording — changing it means diverging from the
+  version currently in the Raycast Store, so it is recorded here rather than
+  fixed in the sync.
 - Microphone permission is observed only indirectly, as digital silence. The
   extension cannot distinguish "permission denied" from "the wrong input device
   is selected" or "the mic is muted in hardware", so the error names all of

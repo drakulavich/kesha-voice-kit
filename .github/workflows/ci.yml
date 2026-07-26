@@ -748,6 +748,7 @@ jobs:
       - release-branch-engine-smoke
       - tts-e2e
       - raycast-lint
+      - openspec-validate
       - nix-build
     runs-on: ubuntu-latest
     steps:
