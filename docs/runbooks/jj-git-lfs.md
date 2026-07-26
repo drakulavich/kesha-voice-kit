@@ -25,3 +25,14 @@ Operational lessons from the 2026-05-16 setup:
 - A JJ workspace may lack `.git`; inspect with `jj status` / `jj diff` / `jj log`, and use `gh -R drakulavich/kesha-voice-kit ...` for GitHub operations.
 - Before calling files "external changes", distinguish dirty edits from a stale checked-out feature branch: check `jj status` + `jj workspace list` everywhere; in the colocated checkout also `git status --short --branch` + `git log --oneline --decorate -5`. After a PR merges and the remote branch is deleted, fetch, move back to `main`, then start the next task.
 - If JJ looks suspicious, trust Git as the source of truth: `git status --short --branch` must be clean before release/PR decisions.
+
+## WORKSPACE CLEANUP AFTER MERGE
+
+The git worktree flow ends in `git worktree remove … && git worktree prune`; the jj
+equivalent is a separate command plus a manual directory removal — `forget` only detaches
+the workspace, it does not delete the files:
+
+```bash
+jj workspace forget <slug>
+rm -rf .worktrees/<slug>
+```

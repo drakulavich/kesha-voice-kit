@@ -49,7 +49,7 @@ gh pr create --base main --head <branch>
 git worktree remove .worktrees/<slug> && git worktree prune   # after merge
 ```
 
-Using jj? Same rule — the shared workspace stays on `main@origin`; use `jj workspace add --revision main@origin .worktrees/<slug>`. See `docs/runbooks/jj-git-lfs.md` (this repo needs the LFS fork of jj).
+Using jj? Same rule — the shared workspace stays on `main@origin`; use `jj workspace add --revision main@origin .worktrees/<slug>`. Cleanup and the LFS fork this repo needs: `docs/runbooks/jj-git-lfs.md`.
 
 ### VERIFY BEFORE PUSHING
 
@@ -165,9 +165,9 @@ kesha audio.ogg
 
 ## TTS
 
-Engine is picked by voice-id prefix: `en-*` → Kokoro-82M (24 kHz), `ru-*` → Vosk-TTS (22.05 kHz), `macos-*` → AVSpeech Swift sidecar (no download). `es/fr/it/pt` work everywhere via CharsiuG2P; `hi/ja/zh` are darwin-arm64 only (`zh` is supported, `hi`/`ja` fail fast with `E_SCRIPT_UNSUPPORTED`).
+Engine is picked by voice-id prefix: `en-*` → Kokoro-82M (24 kHz), `ru-*` → Vosk-TTS (22.05 kHz), `macos-*` → AVSpeech Swift sidecar (no download). `es/fr/it/pt` work everywhere via CharsiuG2P; `hi/ja/zh` are darwin-arm64 only. `zh` is supported natively; `hi`/`ja` reject native-script input (Devanagari, kana/kanji) with `E_SCRIPT_UNSUPPORTED` because FluidAudio's Kokoro G2P is Latin-only — romanized text for those voices still synthesizes (#492).
 
-`kesha install --tts [<langs>…]` installs explicitly and additively (bare `--tts` = English only). `kesha say` writes audio to stdout unless `--out` is given, so **stderr carries all progress and errors**; auto-routing for an omitted `--voice` lives in `src/cli/say.ts::pickVoiceForLang`.
+`kesha install --tts [<langs>…]` installs explicitly and additively (bare `--tts` = English only). `kesha say` writes audio to stdout unless `--out` is given, so **stderr carries all progress and errors**; auto-routing for an omitted `--voice` lives in `src/voice-routing.ts::pickVoiceForLang`.
 
 Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: **`docs/runbooks/tts-internals.md`**.
 
