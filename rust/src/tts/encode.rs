@@ -315,28 +315,26 @@ fn encode_ogg_opus(
     // It includes the pre-skip, which players subtract before playback. We
     // accumulate sample count in target_sr and convert once per page boundary.
     let total_samples = resampled.len();
-    let n_full_packets = total_samples / frame_size;
-    let mut sample_pos_48k: u64 = u64::from(PRE_SKIP_48K);
+    let (packet_granules, tail_granule) = granule_plan(total_samples, frame_size, target_sr);
+    let n_full_packets = packet_granules.len();
 
     let mut pcm_buf = vec![0.0f32; frame_size];
     let mut packet = vec![0u8; MAX_OPUS_PACKET];
 
-    for i in 0..n_full_packets {
+    for (i, &granule) in packet_granules.iter().enumerate() {
         let start = i * frame_size;
         let nbytes = enc
             .encode_float(&resampled[start..start + frame_size], &mut packet)
             .map_err(|e| anyhow::anyhow!("opus encode (frame {i}): {e}"))?;
 
-        sample_pos_48k += target_to_48k(frame_size as u32, target_sr);
-
-        let is_last = i + 1 == n_full_packets && total_samples.is_multiple_of(frame_size);
+        let is_last = i + 1 == n_full_packets && tail_granule.is_none();
         let info = if is_last {
             ogg::PacketWriteEndInfo::EndStream
         } else {
             ogg::PacketWriteEndInfo::NormalPacket
         };
         writer
-            .write_packet(packet[..nbytes].to_vec(), serial, info, sample_pos_48k)
+            .write_packet(packet[..nbytes].to_vec(), serial, info, granule)
             .map_err(|e| anyhow::anyhow!("ogg write audio (frame {i}): {e}"))?;
     }
 
@@ -344,7 +342,7 @@ fn encode_ogg_opus(
     // The granule position records *real* samples only — pad samples don't
     // increment absgp, so players truncate cleanly at the original duration.
     let leftover = total_samples - n_full_packets * frame_size;
-    if leftover > 0 {
+    if let Some(granule) = tail_granule {
         for (slot, src) in pcm_buf
             .iter_mut()
             .zip(&resampled[n_full_packets * frame_size..])
@@ -357,13 +355,12 @@ fn encode_ogg_opus(
         let nbytes = enc
             .encode_float(&pcm_buf, &mut packet)
             .map_err(|e| anyhow::anyhow!("opus encode (tail): {e}"))?;
-        sample_pos_48k += target_to_48k(leftover as u32, target_sr);
         writer
             .write_packet(
                 packet[..nbytes].to_vec(),
                 serial,
                 ogg::PacketWriteEndInfo::EndStream,
-                sample_pos_48k,
+                granule,
             )
             .map_err(|e| anyhow::anyhow!("ogg write audio (tail): {e}"))?;
     } else if n_full_packets == 0 {
@@ -380,13 +377,36 @@ fn encode_ogg_opus(
                 packet[..nbytes].to_vec(),
                 serial,
                 ogg::PacketWriteEndInfo::EndStream,
-                sample_pos_48k,
+                u64::from(PRE_SKIP_48K),
             )
             .map_err(|e| anyhow::anyhow!("ogg write audio (empty): {e}"))?;
     }
 
     drop(writer);
     Ok(buf)
+}
+
+/// Absolute granule positions (RFC 7845 §4) for an OggOpus stream: one entry
+/// per full 20 ms frame, plus the final position of the zero-padded tail when
+/// the input isn't an exact frame multiple. Positions start from the pre-skip
+/// and count *real* samples only, so the final value fixes the duration
+/// players display.
+#[cfg(feature = "tts")]
+fn granule_plan(
+    total_samples: usize,
+    frame_size: usize,
+    target_sr: u32,
+) -> (Vec<u64>, Option<u64>) {
+    let n_full = total_samples / frame_size;
+    let mut pos = u64::from(PRE_SKIP_48K);
+    let mut packets = Vec::with_capacity(n_full);
+    for _ in 0..n_full {
+        pos += target_to_48k(frame_size as u32, target_sr);
+        packets.push(pos);
+    }
+    let leftover = (total_samples - n_full * frame_size) as u32;
+    let tail = (leftover > 0).then(|| pos + target_to_48k(leftover, target_sr));
+    (packets, tail)
 }
 
 /// Convert a sample count at `target_sr` to its equivalent at 48 kHz, used for
@@ -441,6 +461,77 @@ fn build_opus_tags() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn target_to_48k_scales_supported_rates() {
+        // Opus-supported rates divide 48k exactly (RFC 7845): no truncation.
+        for (sr, frame) in [
+            (8_000u32, 160u32),
+            (12_000, 240),
+            (16_000, 320),
+            (24_000, 480),
+        ] {
+            assert_eq!(target_to_48k(frame, sr), 960, "{sr} Hz frame");
+        }
+        assert_eq!(target_to_48k(960, 48_000), 960);
+        // Non-Opus rates truncate: 100 samples @ 22 050 Hz = 217.68… → 217.
+        assert_eq!(target_to_48k(100, 22_050), 217);
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn granule_plan_exact_multiple_has_no_tail() {
+        let frame = 480; // 20 ms @ 24 kHz
+        let (packets, tail) = granule_plan(3 * frame, frame, 24_000);
+        assert_eq!(tail, None);
+        let base = u64::from(PRE_SKIP_48K);
+        assert_eq!(packets, vec![base + 960, base + 1920, base + 2880]);
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn granule_plan_tail_counts_real_samples_only() {
+        let frame = 480;
+        let total = frame + 123; // one full frame + partial tail
+        let (packets, tail) = granule_plan(total, frame, 24_000);
+        let base = u64::from(PRE_SKIP_48K);
+        assert_eq!(packets, vec![base + 960]);
+        // Tail granule advances by the 123 real samples (246 @ 48k), not by
+        // the zero-padded frame — this is the value players read as duration.
+        assert_eq!(tail, Some(base + 960 + 246));
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn granule_plan_sub_frame_input_is_tail_only() {
+        let (packets, tail) = granule_plan(5, 480, 24_000);
+        assert!(packets.is_empty());
+        assert_eq!(tail, Some(u64::from(PRE_SKIP_48K) + 10));
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn granule_plan_empty_input_has_neither() {
+        assert_eq!(granule_plan(0, 480, 24_000), (Vec::new(), None));
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn granule_plan_final_position_matches_total_duration() {
+        // The whole point of the plan: last absgp - pre-skip == total samples
+        // at 48 kHz, for exact-rate inputs of any length.
+        let frame = 480;
+        for total in [1usize, 479, 480, 481, 999, 4800, 12_345] {
+            let (packets, tail) = granule_plan(total, frame, 24_000);
+            let last = tail.or_else(|| packets.last().copied()).unwrap();
+            assert_eq!(
+                last - u64::from(PRE_SKIP_48K),
+                (total as u64) * 2,
+                "total={total}"
+            );
+        }
+    }
 
     #[test]
     fn parse_format_strings() {
