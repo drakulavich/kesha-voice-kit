@@ -10,15 +10,11 @@ use anyhow::Result;
 /// Convert `text` to IPA for the given espeak-style language code.
 ///
 /// - `en`/`en-us`/`en-gb`/`en-uk` → misaki-rs
-/// - `es`/`fr`/`it`/`pt` → normalize → CharsiuG2P (byt5-tiny ONNX)
+/// - `es`/`fr`/`it`/`pt` → normalize → CharsiuG2P (byt5-tiny ONNX) via the
+///   caller's [`CharsiuCache`], so long-lived callers (`--stdin-loop`) don't
+///   reload the ~100 MB ByT5 sessions per request (#509); one-shot callers
+///   pass a fresh `CharsiuCache::default()`
 /// - `ru` and others → error with a pointer to the engine-specific G2P
-pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
-    text_to_ipa_cached(&mut crate::tts::sessions::CharsiuCache::new(), text, lang)
-}
-
-/// Same routing as [`text_to_ipa`], but Romance languages go through the
-/// caller's [`CharsiuCache`] so long-lived callers (`--stdin-loop`) don't
-/// reload the ~100 MB ByT5 sessions per request (#509).
 pub fn text_to_ipa_cached(
     charsiu: &mut crate::tts::sessions::CharsiuCache,
     text: &str,
@@ -73,7 +69,7 @@ pub(crate) fn check_charsiu_files(dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Shared by the one-shot path (`text_to_ipa`) and the cached loop path (`CharsiuCache::to_ipa`).
+/// Shared by `text_to_ipa_cached` and `CharsiuCache::to_ipa`.
 pub(crate) fn charsiu_ipa(
     g: &mut crate::tts::charsiu::Charsiu,
     text: &str,
@@ -105,6 +101,14 @@ fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
+        text_to_ipa_cached(
+            &mut crate::tts::sessions::CharsiuCache::default(),
+            text,
+            lang,
+        )
+    }
 
     #[test]
     fn empty_text_returns_empty() {

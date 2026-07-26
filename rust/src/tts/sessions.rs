@@ -195,10 +195,6 @@ pub struct CharsiuCache {
 }
 
 impl CharsiuCache {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     fn ensure(&mut self, model_dir: &Path) -> anyhow::Result<&mut Charsiu> {
         // Evict if the caller asks for a different directory (shouldn't happen
         // in practice — there's only one byt5-tiny dir — but keeps the API
@@ -247,7 +243,7 @@ mod tests {
         };
         let dir = std::path::PathBuf::from(dir_os);
 
-        let mut cache = CharsiuCache::new();
+        let mut cache = CharsiuCache::default();
         assert!(!cache.is_loaded(), "cache must start empty");
 
         let ipa1 = cache.to_ipa(&dir, "hola", "es").unwrap();
