@@ -33,6 +33,7 @@ export type TsNativeCode = (typeof TS_NATIVE_CODES)[keyof typeof TS_NATIVE_CODES
  */
 export const ENGINE_CODES = {
   TRANSCRIBE_FAILED: "E_TRANSCRIBE_FAILED",
+  BAD_AUDIO: "E_BAD_AUDIO",
 } as const;
 
 /** The full set of TS-native codes, for the drift test. */

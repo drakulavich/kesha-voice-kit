@@ -1,8 +1,13 @@
 import { describe, test, expect } from "bun:test";
+import { chmodSync, mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { listVoices } from "../../src/mcp/voices";
+
+const skipOnWin32 = process.platform === "win32" ? test.skip : test;
 
 async function call(name: string, args: Record<string, unknown> = {}) {
   const server = createKeshaMcpServer();
@@ -31,7 +36,7 @@ async function withMissingEngine<T>(fn: () => Promise<T>): Promise<T> {
 describe("list_voices / list_languages guard when the engine is missing", () => {
   test("listVoices() throws an install-hint error, not a raw spawn exception", async () => {
     await withMissingEngine(async () => {
-      await expect(listVoices()).rejects.toThrow(/kesha-engine not installed. run: (kesha install|kesha init) --tts/);
+      await expect(listVoices()).rejects.toThrow(/kesha-engine not installed. run: (kesha install|kesha init)$/);
     });
   });
 
@@ -49,6 +54,28 @@ describe("list_voices / list_languages guard when the engine is missing", () => 
       expect(res.isError).toBe(true);
       expect((res.content as Array<{ text: string }>)[0].text).toContain("kesha-engine not installed");
     });
+  });
+});
+
+describe("list_voices guard when the engine is present but not executable", () => {
+  skipOnWin32("list_voices tool returns isError with E_ENGINE_SPAWN, not a raw spawn exception", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-not-exec-"));
+    const notExecutable = join(dir, "kesha-engine");
+    writeFileSync(notExecutable, "not a binary");
+    chmodSync(notExecutable, 0o644);
+
+    const prevBin = process.env.KESHA_ENGINE_BIN;
+    process.env.KESHA_ENGINE_BIN = notExecutable;
+    try {
+      const res = await call("list_voices");
+      expect(res.isError).toBe(true);
+      const text = (res.content as Array<{ text: string }>)[0].text;
+      expect(text).toContain("E_ENGINE_SPAWN");
+      expect(text).toContain(notExecutable);
+    } finally {
+      if (prevBin === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = prevBin;
+    }
   });
 });
 

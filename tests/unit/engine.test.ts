@@ -102,6 +102,21 @@ describe("engine", () => {
     }
   });
 
+  test("getEngineBinPath treats an empty KESHA_ENGINE_BIN as unset", () => {
+    const savedCacheDir = process.env.KESHA_CACHE_DIR;
+    const savedEngineBin = process.env.KESHA_ENGINE_BIN;
+    try {
+      process.env.KESHA_CACHE_DIR = "/tmp/kesha-cache";
+      process.env.KESHA_ENGINE_BIN = "";
+      expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", "kesha-engine"));
+    } finally {
+      if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
+      else process.env.KESHA_CACHE_DIR = savedCacheDir;
+      if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = savedEngineBin;
+    }
+  });
+
   test("parseLangResult parses valid JSON", () => {
     expect(parseLangResult('{"code":"ru","confidence":0.94}')).toEqual({ code: "ru", confidence: 0.94 });
   });

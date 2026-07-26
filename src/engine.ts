@@ -39,9 +39,9 @@ export interface TranscriptionOutput {
   segments: TranscriptionSegment[];
 }
 
-/** `KESHA_ENGINE_BIN` overrides the default install path — used in dev and e2e tests. */
+/** `KESHA_ENGINE_BIN` overrides the default install path — used in dev and e2e tests. An empty string is treated as unset, not as "use ''". */
 export function getEngineBinPath(): string {
-  return process.env.KESHA_ENGINE_BIN ?? defaultEngineBinPath();
+  return process.env.KESHA_ENGINE_BIN || defaultEngineBinPath();
 }
 
 export function isEngineInstalled(): boolean {
@@ -79,12 +79,13 @@ export interface RunEngineOptions {
 }
 
 /**
- * `Bun.spawn` throws synchronously (ENOENT/EACCES) instead of failing async,
- * so a missing/non-executable binary would otherwise surface as a raw
- * runtime stack trace. Re-throw through the same `E_ENGINE_SPAWN` code
- * `src/synth.ts` uses (docs/errors.md).
+ * `Bun.spawn` throws synchronously on any spawn failure (ENOENT, EACCES, …)
+ * instead of failing async, so a missing/non-executable binary would
+ * otherwise surface as a raw runtime stack trace. Re-throw every such
+ * failure through the same `E_ENGINE_SPAWN` code `src/synth.ts` uses
+ * (docs/errors.md).
  */
-function spawnEngineProcess(
+export function spawnEngineProcess(
   binPath: string,
   args: string[],
   stdio: ReturnType<typeof spawnStdioWithDebugFd>,

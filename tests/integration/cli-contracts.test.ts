@@ -345,6 +345,7 @@ describe("CLI contracts", () => {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
     };
+    enableDiagnosticLogs(env.KESHA_LOG_DIR);
 
     const target = makeTempDir("kesha-cli-contract-dir-target-");
     const run = await runCli([target], { env });
@@ -354,6 +355,16 @@ describe("CLI contracts", () => {
       stderrContains: [`${target}: is a directory (expected an audio file)`],
       stderrNotContains: ["fake engine should not have been invoked", "Transcribing", "%"],
     });
+
+    const { events } = readDiagnosticLog(env.KESHA_LOG_DIR);
+    expect(events.map((event) => event.event)).toEqual(["command.start", "input.invalid", "command.finish"]);
+    expect(events[1]).toMatchObject({ command: "transcribe", error_code: "E_BAD_AUDIO" });
+
+    const jsonRun = await runCli(["--json", "--include-errors", target], { env });
+    const parsed = JSON.parse(jsonRun.stdout);
+    expect(parsed.errors).toEqual([
+      { file: target, code: "E_BAD_AUDIO", message: "is a directory (expected an audio file)" },
+    ]);
   });
 
   test("kesha record without an installed engine fails with an install hint, not a stack trace", async () => {
@@ -367,6 +378,36 @@ describe("CLI contracts", () => {
       stderrNotContains: ["at ", "posix_spawn", "ENOENT"],
     });
     expect(existsSync(outPath)).toBe(false);
+  });
+
+  test("kesha record with a present but non-executable engine surfaces E_ENGINE_SPAWN, not a stack trace", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-record-eacces-");
+    const notExecutable = join(dir, "kesha-engine-not-exec");
+    writeFileSync(notExecutable, "not a binary");
+    chmodSync(notExecutable, 0o644);
+    const outPath = join(dir, "hello.wav");
+    const run = await runCli(["record", "--out", outPath], {
+      env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: notExecutable },
+    });
+    expectContract(run, {
+      exitCode: 1,
+      stdoutEmpty: true,
+      stderrContains: [`error [E_ENGINE_SPAWN]: failed to launch kesha-engine at ${notExecutable}`],
+    });
+    expect(run.stderr).not.toMatch(/^\s+at /m);
+    expect(existsSync(outPath)).toBe(false);
+  });
+
+  test("kesha say --list-voices without an installed engine prints the install hint, not a raw ENOENT", async () => {
+    const run = await runCli(["say", "--list-voices"], { env: isolatedEnv() });
+    expectContract(run, {
+      exitCode: 1,
+      stdoutEmpty: true,
+      stderrContains: ["kesha-engine not installed. run:"],
+      stderrNotContains: ["ENOENT", "posix_spawn"],
+    });
+    expect(run.stderr).not.toMatch(/^\s+at /m);
   });
 
   test("machine-readable missing-file failures keep JSON on stdout and diagnostics on stderr", async () => {

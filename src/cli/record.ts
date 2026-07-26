@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import { errorMessage } from "../error-utils";
 import { isEngineInstalled, recordEngine } from "../engine";
 import { installHint } from "../install-hint";
 import { log } from "../log";
@@ -81,6 +82,11 @@ export const recordCommand = defineCommand({
       log.error(noRecordingBackendMessage());
       process.exit(1);
     }
-    await recordEngine(resolved.out, resolved.maxSeconds);
+    try {
+      await recordEngine(resolved.out, resolved.maxSeconds);
+    } catch (err) {
+      log.error(errorMessage(err));
+      process.exit(1);
+    }
   },
 });

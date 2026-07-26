@@ -1,4 +1,4 @@
-import { getEngineBinPath, isEngineInstalled } from "../engine";
+import { getEngineBinPath, isEngineInstalled, spawnEngineProcess, spawnStdioWithDebugFd } from "../engine";
 import { installHint } from "../install-hint";
 
 export interface VoiceInfo {
@@ -110,15 +110,16 @@ export function parseVoiceLines(text: string): VoiceInfo[] {
 
 export async function listVoices(): Promise<VoiceInfo[]> {
   if (!isEngineInstalled()) {
-    throw new Error(`kesha-engine not installed. run: ${installHint("--tts")}`);
+    throw new Error(`kesha-engine not installed. run: ${installHint()}`);
   }
-  const proc = Bun.spawn([getEngineBinPath(), "say", "--list-voices"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const proc = spawnEngineProcess(
+    getEngineBinPath(),
+    ["say", "--list-voices"],
+    spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
+  );
   const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
+    new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
+    new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
     proc.exited,
   ]);
   if (code !== 0) {

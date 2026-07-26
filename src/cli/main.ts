@@ -287,15 +287,15 @@ async function processFile(
   }
 
   if (isDirectoryPath(file)) {
-    stats.recordError("input", new Error("is a directory"), TS_NATIVE_CODES.INVALID_ARG);
-    diagnosticLog.event("input.missing", {
+    stats.recordError("input", new Error("is a directory"), ENGINE_CODES.BAD_AUDIO);
+    diagnosticLog.event("input.invalid", {
       command: "transcribe",
-      error_code: TS_NATIVE_CODES.INVALID_ARG,
+      error_code: ENGINE_CODES.BAD_AUDIO,
     });
     log.error(`${file}: is a directory (expected an audio file)`);
     return {
       ok: false,
-      error: { file, code: TS_NATIVE_CODES.INVALID_ARG, message: "is a directory (expected an audio file)" },
+      error: { file, code: ENGINE_CODES.BAD_AUDIO, message: "is a directory (expected an audio file)" },
     };
   }
 

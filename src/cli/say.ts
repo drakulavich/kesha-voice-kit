@@ -1,6 +1,13 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
+import {
+  detectTextLanguageEngine,
+  getEngineBinPath,
+  isEngineInstalled,
+  spawnEngineProcess,
+  spawnStdioWithDebugFd,
+} from "../engine";
+import { installHint } from "../install-hint";
 import { log } from "../log";
 import { say, SayError, type SayFormat } from "../synth";
 import { artifactFromBytes, artifactFromFile, type StatsRecorder } from "../stats";
@@ -299,11 +306,16 @@ export const sayCommand = defineCommand({
   async run({ args }) {
     if (args.debug) log.debugEnabled = true;
     if (args["list-voices"]) {
+      if (!isEngineInstalled()) {
+        log.error(`kesha-engine not installed. run: ${installHint()}`);
+        process.exit(1);
+      }
       // The engine prints the list directly — just relay its stdout + exit code.
-      const proc = Bun.spawn([getEngineBinPath(), "say", "--list-voices"], {
-        stdout: "inherit",
-        stderr: "inherit",
-      });
+      const proc = spawnEngineProcess(
+        getEngineBinPath(),
+        ["say", "--list-voices"],
+        spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
+      );
       process.exit(await proc.exited);
     }
 
