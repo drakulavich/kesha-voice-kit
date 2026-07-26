@@ -3,20 +3,56 @@ use std::path::PathBuf;
 
 use crate::{models, say_loop, tts};
 
+#[derive(clap::Args)]
 pub struct SayArgs {
+    /// Text to synthesize (omit to read from stdin)
     pub text: Option<String>,
+    /// Voice id, e.g. `en-am_michael`
+    #[arg(long)]
     pub voice: Option<String>,
+    /// Override the voice's default BCP 47 language code, e.g. `en-gb`
+    #[arg(long)]
     pub lang: Option<String>,
+    /// Output file (default: stdout)
+    #[arg(long)]
     pub out: Option<PathBuf>,
+    /// Speaking rate (0.5–2.0)
+    #[arg(long, default_value_t = 1.0)]
     pub rate: f32,
+    /// List installed voices and exit
+    #[arg(long)]
     pub list_voices: bool,
+    /// Parse the input as SSML (supports <speak>, <break>; strips unknown tags).
+    /// See issue #122 for the v1 tag matrix.
+    #[arg(long)]
     pub ssml: bool,
+    /// Output audio format. Defaults to `wav` (or inferred from `--out`
+    /// extension when omitted). Supported: `wav`, `ogg-opus`. See #223.
+    #[arg(long, value_name = "FORMAT")]
     pub format: Option<String>,
+    /// Opus bitrate in bits/second (e.g. 16000, 32000, 64000). Only valid
+    /// with `--format ogg-opus`. Default 32000 (Telegram-grade).
+    #[arg(long, value_name = "BPS")]
     pub bitrate: Option<i32>,
+    /// Encoder sample rate. Only valid with `--format ogg-opus`. Must be
+    /// one of 8000/12000/16000/24000/48000. Default 24000.
+    #[arg(long = "sample-rate", value_name = "HZ")]
     pub sample_rate: Option<u32>,
+    /// Explicit model path (testing override)
+    #[arg(long, hide = true)]
     pub model: Option<PathBuf>,
+    /// Explicit voice embedding file (testing override)
+    #[arg(long = "voice-file", hide = true)]
     pub voice_file: Option<PathBuf>,
+    /// Long-lived loop: read newline-delimited JSON requests on stdin,
+    /// reuse loaded engines across calls, write framed binary responses
+    /// on stdout. See `docs/tts-stdin-loop.md`. Issue #213.
+    #[arg(long = "stdin-loop", hide = true)]
     pub stdin_loop: bool,
+    /// Disable auto-expansion of Russian acronyms (e.g. ВОЗ → "вэ о зэ").
+    /// `<say-as interpret-as="characters">` in SSML remains honored.
+    /// No effect for non-`ru-vosk-*` voices.
+    #[arg(long = "no-expand-abbrev", default_value_t = false)]
     pub no_expand_abbrev: bool,
 }
 

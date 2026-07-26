@@ -2,13 +2,47 @@ use anyhow::Result;
 
 use crate::{backend, models};
 
-pub fn run(
-    no_cache: bool,
-    #[cfg(feature = "tts")] tts_langs: Vec<String>,
-    vad: bool,
-    #[cfg(feature = "system_diarize")] diarize: bool,
-    no_warmup: bool,
-) -> Result<()> {
+#[derive(clap::Args)]
+pub struct InstallArgs {
+    /// Re-download even if cached
+    #[arg(long)]
+    pub no_cache: bool,
+    /// Install TTS models for these languages (space-separated, e.g.
+    /// `--tts en ru`). Bare `--tts` installs English only. Codes are
+    /// validated against this build's supported set.
+    #[cfg(feature = "tts")]
+    #[arg(long, num_args = 0.., value_name = "LANG", default_missing_value = "en")]
+    pub tts: Vec<String>,
+    /// Also install Silero VAD (~2.3MB) for long-audio preprocessing.
+    #[arg(long)]
+    pub vad: bool,
+    /// Also install the Sortformer streaming-diarization model (~245MB,
+    /// darwin-arm64 only, #199).
+    #[cfg(feature = "system_diarize")]
+    #[arg(long)]
+    pub diarize: bool,
+    /// Skip the ASR-backend warm-up step at the end of install. On macOS
+    /// (CoreML) the warm-up triggers the ~20-30 s Apple Neural Engine
+    /// model-compile so the first `kesha audio.ogg` invocation is fast.
+    /// On the ONNX path (Linux/Windows) warm-up is ~500 ms — still worth
+    /// running since it surfaces missing-dep crashes at install time.
+    /// Use this flag in scripted installs where the cold-start cost
+    /// belongs on the first real run, or to debug install-time issues
+    /// without the backend in the loop.
+    #[arg(long = "no-warmup")]
+    pub no_warmup: bool,
+}
+
+pub fn run(args: InstallArgs) -> Result<()> {
+    let InstallArgs {
+        no_cache,
+        #[cfg(feature = "tts")]
+            tts: tts_langs,
+        vad,
+        #[cfg(feature = "system_diarize")]
+        diarize,
+        no_warmup,
+    } = args;
     // Emit once at the top; push-down to each download_* would hide a stderr write behind Ok(()).
     models::init_mirror_logging();
     models::install(no_cache)?;
