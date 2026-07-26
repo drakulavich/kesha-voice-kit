@@ -6,34 +6,9 @@
 pub(crate) mod acronyms;
 pub(crate) mod numbers;
 
-use acronyms::{is_acronym_token, spell};
+use crate::tts::token::{for_each_token, is_ascii_acronym, split_punct, TokenEvent};
+use acronyms::spell;
 use numbers::to_words;
-
-const TRAILING_PUNCT: &[char] = &[
-    '.', ',', ':', ';', '!', '?', '»', ')', '„', '"', '…', '—', '–', '-',
-];
-const LEADING_PUNCT: &[char] = &['«', '(', '"', '„'];
-
-fn split_punct(token: &str) -> (&str, &str, &str) {
-    let start = token
-        .char_indices()
-        .find(|(_, c)| !LEADING_PUNCT.contains(c))
-        .map(|(i, _)| i)
-        .unwrap_or(token.len());
-    let rest = &token[start..];
-    let mut end = rest.len();
-    for (idx, c) in rest.char_indices().rev() {
-        if TRAILING_PUNCT.contains(&c) {
-            end = idx;
-        } else {
-            break;
-        }
-    }
-    let head = &token[..start];
-    let core = &rest[..end];
-    let tail = &rest[end..];
-    (head, core, tail)
-}
 
 /// Normalize one whitespace-separated token for lang ∈ {es, fr, it, pt}.
 fn normalize_token(token: &str, lang: &str) -> String {
@@ -47,7 +22,7 @@ fn normalize_token(token: &str, lang: &str) -> String {
         return token.to_string();
     }
 
-    if is_acronym_token(core) {
+    if is_ascii_acronym(core) {
         return format!("{head}{}{tail}", spell(core, lang));
     }
 
@@ -67,23 +42,10 @@ pub fn normalize(text: &str, lang: &str) -> String {
     }
 
     let mut result = String::with_capacity(text.len() + 32);
-    let mut tok_buf = String::new();
-
-    for c in text.chars() {
-        if c.is_whitespace() {
-            if !tok_buf.is_empty() {
-                result.push_str(&normalize_token(&tok_buf, lang));
-                tok_buf.clear();
-            }
-            result.push(c);
-        } else {
-            tok_buf.push(c);
-        }
-    }
-    if !tok_buf.is_empty() {
-        result.push_str(&normalize_token(&tok_buf, lang));
-    }
-
+    for_each_token(text, |ev| match ev {
+        TokenEvent::Token(tok) => result.push_str(&normalize_token(tok, lang)),
+        TokenEvent::Gap(c) => result.push(c),
+    });
     result
 }
 

@@ -14,6 +14,7 @@
 //!    NOT expanded. Closes #232.
 //! 6. Otherwise, replace the token with `head + expand_chars(core) + tail`.
 
+use crate::tts::token::{for_each_token, split_punct, TokenEvent};
 use std::borrow::Cow;
 
 use super::letter_table::expand_chars;
@@ -26,12 +27,6 @@ const STOP_LIST: &[&str] = &[
     "ВСЁ", "ВЫ", "ДА", "ДЛЯ", "ЕЁ", "ЕМУ", "ЕЩЁ", "ИЛИ", "ИМ", "ИХ", "КАК", "КТО", "МНЕ", "МЫ",
     "НЕ", "НЕТ", "НИ", "ОН", "ОНА", "ОНИ", "ОНО", "ТОТ", "ТЫ", "УЖ", "ЧТО",
 ];
-
-const TRAILING_PUNCT: &[char] = &[
-    '.', ',', ':', ';', '!', '?', '»', ')', '„', '"', '…', '—', '–', '-',
-];
-
-const LEADING_PUNCT: &[char] = &['«', '(', '"', '„'];
 
 const VOWELS: &[char] = &['А', 'Е', 'Ё', 'И', 'О', 'У', 'Ы', 'Э', 'Ю', 'Я'];
 
@@ -65,21 +60,10 @@ fn is_acronym_token(core: &str) -> bool {
 /// Auto-expand all-uppercase Cyrillic acronyms in `input`.
 pub(super) fn expand_acronyms(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    let mut buf = String::new();
-    for c in input.chars() {
-        if c.is_whitespace() {
-            if !buf.is_empty() {
-                out.push_str(expand_token(&buf).as_ref());
-                buf.clear();
-            }
-            out.push(c);
-        } else {
-            buf.push(c);
-        }
-    }
-    if !buf.is_empty() {
-        out.push_str(expand_token(&buf).as_ref());
-    }
+    for_each_token(input, |ev| match ev {
+        TokenEvent::Token(tok) => out.push_str(expand_token(tok).as_ref()),
+        TokenEvent::Gap(c) => out.push(c),
+    });
     out
 }
 
@@ -95,31 +79,6 @@ fn expand_token(token: &str) -> Cow<'_, str> {
     s.push_str(&expand_chars(mid));
     s.push_str(tail);
     Cow::Owned(s)
-}
-
-/// Peels leading/trailing punctuation so `«ВОЗ»` and `ФСБ.` are correctly matched.
-fn split_punct(token: &str) -> (&str, &str, &str) {
-    let start = token
-        .char_indices()
-        .find(|(_, c)| !LEADING_PUNCT.contains(c))
-        .map(|(i, _)| i)
-        .unwrap_or(token.len());
-
-    let rest = &token[start..];
-
-    let mut end = rest.len();
-    for (idx, c) in rest.char_indices().rev() {
-        if TRAILING_PUNCT.contains(&c) {
-            end = idx;
-        } else {
-            break;
-        }
-    }
-
-    let head = &token[..start];
-    let core = &rest[..end];
-    let tail = &rest[end..];
-    (head, core, tail)
 }
 
 #[cfg(test)]

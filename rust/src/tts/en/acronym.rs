@@ -14,6 +14,7 @@
 
 use super::letter_table::expand_chars;
 use crate::tts::ssml::Segment;
+use crate::tts::token::{for_each_token, is_ascii_acronym, split_punct, TokenEvent};
 
 const STOP_LIST: &[&str] = &[
     // Emphatic length-2 caps
@@ -50,22 +51,6 @@ const IPA_LEXICON: &[(&str, &str)] = &[
     ("Granola", "ɡrəˈnoʊlə"),
 ];
 
-const TRAILING_PUNCT: &[char] = &[
-    '.', ',', ':', ';', '!', '?', '»', ')', '„', '"', '…', '—', '–', '-',
-];
-
-const LEADING_PUNCT: &[char] = &['«', '(', '"', '„'];
-
-/// Returns true if `core` is a candidate for letter-by-letter spelling.
-/// Pure structural check — does not consult the stop-list or lexicon.
-fn is_acronym_token(core: &str) -> bool {
-    let len = core.chars().count();
-    if !(2..=5).contains(&len) {
-        return false;
-    }
-    core.chars().all(|c| c.is_ascii_uppercase())
-}
-
 /// Tokenize `text` and emit a segment list:
 /// - Tokens hit by `IPA_LEXICON` (case-sensitive on the punct-stripped core)
 ///   become `Segment::Ipa(...)`; surrounding head/tail punct rejoin the
@@ -79,22 +64,11 @@ fn is_acronym_token(core: &str) -> bool {
 pub fn expand_to_segments(text: &str, auto_expand: bool) -> Vec<Segment> {
     let mut out: Vec<Segment> = Vec::new();
     let mut buf = String::new();
-    let mut tok = String::new();
 
-    for c in text.chars() {
-        if c.is_whitespace() {
-            if !tok.is_empty() {
-                process_token(&tok, auto_expand, &mut buf, &mut out);
-                tok.clear();
-            }
-            buf.push(c);
-        } else {
-            tok.push(c);
-        }
-    }
-    if !tok.is_empty() {
-        process_token(&tok, auto_expand, &mut buf, &mut out);
-    }
+    for_each_token(text, |ev| match ev {
+        TokenEvent::Token(tok) => process_token(tok, auto_expand, &mut buf, &mut out),
+        TokenEvent::Gap(c) => buf.push(c),
+    });
     flush_buf(&mut buf, &mut out);
     out
 }
@@ -116,7 +90,7 @@ fn process_token(token: &str, auto_expand: bool, buf: &mut String, out: &mut Vec
         return;
     }
 
-    if auto_expand && is_acronym_token(mid) && !STOP_LIST.contains(&mid) {
+    if auto_expand && is_ascii_acronym(mid) && !STOP_LIST.contains(&mid) {
         buf.push_str(head);
         buf.push_str(&expand_chars(mid));
         buf.push_str(tail);
@@ -124,27 +98,6 @@ fn process_token(token: &str, auto_expand: bool, buf: &mut String, out: &mut Vec
     }
 
     buf.push_str(token);
-}
-
-fn split_punct(token: &str) -> (&str, &str, &str) {
-    let start = token
-        .char_indices()
-        .find(|(_, c)| !LEADING_PUNCT.contains(c))
-        .map(|(i, _)| i)
-        .unwrap_or(token.len());
-    let rest = &token[start..];
-    let mut end = rest.len();
-    for (idx, c) in rest.char_indices().rev() {
-        if TRAILING_PUNCT.contains(&c) {
-            end = idx;
-        } else {
-            break;
-        }
-    }
-    let head = &token[..start];
-    let core = &rest[..end];
-    let tail = &rest[end..];
-    (head, core, tail)
 }
 
 #[cfg(test)]
@@ -202,7 +155,7 @@ mod tests {
     #[test]
     fn microsoft_mixed_case_lexicon_hit() {
         let segs = expand_to_segments("IBM and Microsoft are competitors", true);
-        // IBM letter-spells (no IPA, is_acronym_token=true, not stop-listed).
+        // IBM letter-spells (no IPA, is_ascii_acronym=true, not stop-listed).
         // Microsoft IPA hit — separates Text segments around it.
         assert_eq!(
             flatten(&segs),
