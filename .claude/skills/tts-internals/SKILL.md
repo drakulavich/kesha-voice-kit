@@ -1,8 +1,9 @@
-# TTS Internals Runbook
+---
+name: tts-internals
+description: Use when working on kesha TTS internals — voice routing and which engine serves which voice-id prefix, Kokoro/Vosk ONNX I/O shapes, the CharsiuG2P vs FluidAudio G2P split, SSML handling, multilingual behaviour (es/fr/it/pt on ONNX, hi/ja/zh on darwin-arm64), or the KESHA_* TTS environment variables. Explains why darwin-arm64 routes differently from every other build.
+---
 
-> Extracted from CLAUDE.md (chore/slim-claudemd, 2026-05-31) to keep the always-loaded
-> instructions under Claude Code's 40k-char performance threshold. Read this when changing
-> TTS synthesis, voices, G2P, or SSML.
+# TTS internals
 
 ## Engines
 
