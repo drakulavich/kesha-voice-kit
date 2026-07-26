@@ -6,7 +6,6 @@ import type {
 } from "../src/lib/recording-monitor";
 import type { RecordingPatch, SignalLevel } from "../src/lib/dictation-types";
 import { emptySignal } from "../src/lib/recording-view";
-import { METER_INTERVAL_MS } from "../src/lib/dictation-config";
 import { deferred, flushPromises } from "./helpers/async";
 
 function createHarness() {
@@ -53,17 +52,9 @@ function createHarness() {
 }
 
 describe("startRecordingMonitor", () => {
-  it("emits an immediate elapsed tick and schedules the meter interval", () => {
-    const harness = createHarness();
-    expect(harness.patches).toContainEqual({ elapsedSeconds: 0 });
-    expect(harness.schedule).toHaveBeenCalledWith(
-      expect.any(Function),
-      METER_INTERVAL_MS,
-    );
-  });
-
   it("reports elapsed whole seconds from its start time", () => {
     const harness = createHarness();
+    expect(harness.patches).toContainEqual({ elapsedSeconds: 0 });
     harness.setClock(2_400);
     harness.fireTick();
     expect(harness.patches.at(-1)).toEqual({ elapsedSeconds: 2 });

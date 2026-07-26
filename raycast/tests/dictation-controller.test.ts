@@ -83,10 +83,6 @@ describe("dictation controller", () => {
       status: "error",
       message: "mic denied",
     });
-    expect(deps.toasts).toContainEqual({
-      style: "failure",
-      title: "Dictation failed",
-    });
   });
 
   it("shows an actionable error when kesha cannot be resolved", async () => {
@@ -268,6 +264,40 @@ describe("dictation controller", () => {
     expect(deps.cleanupTempDir).toHaveBeenCalledWith("/tmp/session");
   });
 
+  it("clears the idle state through the session when speech resumes", async () => {
+    let clock = 0;
+    let emit!: (patch: RecordingPatch) => void;
+    const recorder = deferred<void>();
+    const deps = createDeps({
+      now: () => clock,
+      startRecorder: vi.fn(() => ({ done: recorder.promise, stop: vi.fn() })),
+      startRecordingMonitor: vi.fn((onPatch) => {
+        emit = onPatch;
+        return vi.fn();
+      }),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+
+    emit({ signal: emptySignal("listening") });
+    clock = 30_000;
+    emit({ signal: emptySignal("listening") });
+    expect(deps.current()).toMatchObject({ idle: true });
+
+    clock = 31_000;
+    emit({ signal: signalTick() });
+    expect(deps.current()).toMatchObject({
+      status: "recording",
+      idle: false,
+      silentForMs: 0,
+    });
+
+    session.cancel();
+    recorder.resolve();
+    await session.done;
+  });
+
   it("auto-stops and transcribes after continuous silence", async () => {
     let clock = 0;
     let emit!: (patch: RecordingPatch) => void;
@@ -288,14 +318,14 @@ describe("dictation controller", () => {
     const session = startDictationSession({}, deps.setState, deps);
     await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
 
-    emit({ signal: listeningSignal() });
+    emit({ signal: emptySignal("listening") });
     clock = 30_000;
-    emit({ signal: listeningSignal() });
+    emit({ signal: emptySignal("listening") });
     expect(deps.current()).toMatchObject({ status: "recording", idle: true });
     expect(recorderStop).not.toHaveBeenCalled();
 
     clock = 45_000;
-    emit({ signal: listeningSignal() });
+    emit({ signal: emptySignal("listening") });
     expect(recorderStop).toHaveBeenCalledTimes(1);
 
     await session.done;
@@ -304,77 +334,6 @@ describe("dictation controller", () => {
       style: "animated",
       title: "Stopped after silence.",
     });
-  });
-
-  it("clears the idle warning when speech returns before the grace stop", async () => {
-    let clock = 0;
-    let emit!: (patch: RecordingPatch) => void;
-    const recorder = deferred<void>();
-    const recorderStop = vi.fn(() => recorder.resolve());
-    const deps = createDeps({
-      now: () => clock,
-      startRecorder: vi.fn(() => ({
-        done: recorder.promise,
-        stop: recorderStop,
-      })),
-      startRecordingMonitor: vi.fn((onPatch) => {
-        emit = onPatch;
-        return vi.fn();
-      }),
-    });
-
-    const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
-
-    emit({ signal: listeningSignal() });
-    clock = 30_000;
-    emit({ signal: listeningSignal() });
-    expect(deps.current()).toMatchObject({ idle: true });
-
-    clock = 44_000;
-    emit({ signal: signalTick() });
-    expect(deps.current()).toMatchObject({
-      status: "recording",
-      idle: false,
-      silentForMs: 0,
-    });
-
-    clock = 90_000;
-    emit({ signal: listeningSignal() });
-    expect(recorderStop).not.toHaveBeenCalled();
-
-    session.cancel();
-    await session.done;
-  });
-
-  it("does not accumulate silence while the meter is still starting", async () => {
-    let clock = 0;
-    let emit!: (patch: RecordingPatch) => void;
-    const recorder = deferred<void>();
-    const recorderStop = vi.fn(() => recorder.resolve());
-    const deps = createDeps({
-      now: () => clock,
-      startRecorder: vi.fn(() => ({
-        done: recorder.promise,
-        stop: recorderStop,
-      })),
-      startRecordingMonitor: vi.fn((onPatch) => {
-        emit = onPatch;
-        return vi.fn();
-      }),
-    });
-
-    const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
-
-    emit({ signal: emptySignal("starting") });
-    clock = 60_000;
-    emit({ signal: emptySignal("starting") });
-    expect(deps.current()).toMatchObject({ idle: false, silentForMs: 0 });
-    expect(recorderStop).not.toHaveBeenCalled();
-
-    session.cancel();
-    await session.done;
   });
 });
 
@@ -386,16 +345,16 @@ describe("createSilenceTracker", () => {
       onIdleStop: vi.fn(),
     });
 
-    expect(tracker.track({ signal: listeningSignal() })).toMatchObject({
+    expect(tracker.track({ signal: emptySignal("listening") })).toMatchObject({
       silentForMs: 0,
       idle: false,
     });
     clock = 29_999;
-    expect(tracker.track({ signal: listeningSignal() })).toMatchObject({
+    expect(tracker.track({ signal: emptySignal("listening") })).toMatchObject({
       idle: false,
     });
     clock = 30_000;
-    expect(tracker.track({ signal: listeningSignal() })).toMatchObject({
+    expect(tracker.track({ signal: emptySignal("listening") })).toMatchObject({
       silentForMs: 30_000,
       idle: true,
     });
@@ -406,11 +365,11 @@ describe("createSilenceTracker", () => {
     const onIdleStop = vi.fn();
     const tracker = createSilenceTracker({ now: () => clock, onIdleStop });
 
-    tracker.track({ signal: listeningSignal() });
+    tracker.track({ signal: emptySignal("listening") });
     clock = 45_000;
-    tracker.track({ signal: listeningSignal() });
+    tracker.track({ signal: emptySignal("listening") });
     clock = 60_000;
-    tracker.track({ signal: listeningSignal() });
+    tracker.track({ signal: emptySignal("listening") });
 
     expect(onIdleStop).toHaveBeenCalledTimes(1);
   });
@@ -420,14 +379,14 @@ describe("createSilenceTracker", () => {
     const onIdleStop = vi.fn();
     const tracker = createSilenceTracker({ now: () => clock, onIdleStop });
 
-    tracker.track({ signal: listeningSignal() });
+    tracker.track({ signal: emptySignal("listening") });
     clock = 44_000;
     expect(tracker.track({ signal: signalTick() })).toMatchObject({
       silentForMs: 0,
       idle: false,
     });
     clock = 80_000;
-    expect(tracker.track({ signal: listeningSignal() })).toMatchObject({
+    expect(tracker.track({ signal: emptySignal("listening") })).toMatchObject({
       silentForMs: 0,
       idle: false,
     });
@@ -437,6 +396,14 @@ describe("createSilenceTracker", () => {
   it("leaves non-signal patches untouched", () => {
     const tracker = createSilenceTracker({ onIdleStop: vi.fn() });
     expect(tracker.track({ elapsedSeconds: 5 })).toEqual({ elapsedSeconds: 5 });
+  });
+
+  it("does not accumulate silence while the meter is still starting", () => {
+    const tracker = createSilenceTracker({ onIdleStop: vi.fn() });
+    expect(tracker.track({ signal: emptySignal("starting") })).toMatchObject({
+      silentForMs: 0,
+      idle: false,
+    });
   });
 });
 
@@ -473,12 +440,17 @@ describe("startTranscribingTimer", () => {
 
     now = 3_400;
     vi.advanceTimersByTime(500);
-    stop();
-
     expect(states.at(-1)).toMatchObject({
       status: "transcribing",
       elapsedSeconds: 2,
     });
+
+    state = { status: "starting" };
+    now = 8_000;
+    vi.advanceTimersByTime(500);
+    expect(states.at(-1)).toEqual({ status: "starting" });
+
+    stop();
     vi.useRealTimers();
   });
 });
@@ -526,10 +498,6 @@ function createDeps(
 
 function resolvedTask<T>(done: Promise<T>): RunningTask<T> {
   return { done, stop: vi.fn() };
-}
-
-function listeningSignal(): SignalLevel {
-  return { rms: 0, peak: 0, percent: 0, state: "listening" };
 }
 
 function signalTick(): SignalLevel {

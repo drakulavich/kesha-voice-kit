@@ -8,13 +8,7 @@ describe("parseShebang", () => {
       "/usr/bin/env bun",
     );
     expect(parseShebang(Buffer.from("#!/bin/sh -e\n"))).toBe("/bin/sh -e");
-  });
-
-  it("handles a header without a newline in the first bytes", () => {
     expect(parseShebang(Buffer.from("#!/bin/sh"))).toBe("/bin/sh");
-  });
-
-  it("trims whitespace including CRLF line endings", () => {
     expect(parseShebang(Buffer.from("#!/usr/bin/env bun\r\nrest"))).toBe(
       "/usr/bin/env bun",
     );
@@ -66,6 +60,11 @@ describe("resolveKeshaBin", () => {
     expect(await resolveKeshaBin("/missing/kesha", deps)).toBeNull();
   });
 
+  it("returns null when every fallback candidate is non-executable", async () => {
+    const deps = fakeDeps({}, { candidates: ["/a/kesha", "/b/kesha"] });
+    expect(await resolveKeshaBin(undefined, deps)).toBeNull();
+  });
+
   it("picks the first executable fallback candidate", async () => {
     const deps = fakeDeps(
       { "/second/kesha": {}, "/third/kesha": {} },
@@ -75,11 +74,6 @@ describe("resolveKeshaBin", () => {
       command: "/second/kesha",
       prefixArgs: [],
     });
-  });
-
-  it("returns null when nothing is executable", async () => {
-    const deps = fakeDeps({}, { candidates: ["/a/kesha", "/b/kesha"] });
-    expect(await resolveKeshaBin("", deps)).toBeNull();
   });
 
   it("runs an env-shebang script through a matching interpreter", async () => {
