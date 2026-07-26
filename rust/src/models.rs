@@ -1617,11 +1617,79 @@ fn cleanup_legacy() {
         eprintln!("Cleaning up legacy CoreML binary...");
         let _ = fs::remove_file(&old_swift);
     }
+    cleanup_orphan_staging(&cache);
+}
+
+/// Age threshold for orphaned download staging. A SIGKILLed download leaves
+/// its `<name>.part.<pid>` behind forever (#619); a live concurrent
+/// installer's staging keeps a fresh mtime while `io::copy` streams into it,
+/// so anything untouched for an hour is safe to sweep.
+const STALE_STAGING_SECS: u64 = 60 * 60;
+
+fn cleanup_orphan_staging(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            cleanup_orphan_staging(&path);
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.contains(".part.") {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age.as_secs() > STALE_STAGING_SECS);
+        if stale {
+            eprintln!("Cleaning up orphaned download staging: {name}");
+            let _ = fs::remove_file(&path);
+        }
+    }
 }
 
 #[cfg(test)]
 mod characterization_tests {
     use super::*;
+
+    #[test]
+    fn orphan_staging_sweep_removes_stale_keeps_fresh_and_finished() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "kesha-part-gc-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        fs::create_dir_all(dir.join("models"))?;
+        let stale = dir.join("models/encoder.onnx.part.12345");
+        let fresh = dir.join("models/decoder.onnx.part.999");
+        let finished = dir.join("models/encoder.onnx");
+        for p in [&stale, &fresh, &finished] {
+            fs::write(p, b"bytes")?;
+        }
+        let old =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(STALE_STAGING_SECS + 60);
+        fs::File::options()
+            .write(true)
+            .open(&stale)?
+            .set_times(fs::FileTimes::new().set_modified(old))?;
+
+        cleanup_orphan_staging(&dir);
+
+        assert!(!stale.exists(), "stale staging must be swept");
+        assert!(fresh.exists(), "a live installer's fresh staging survives");
+        assert!(finished.exists(), "real model files are never touched");
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
 
     #[test]
     fn model_kind_subdir_table() {
