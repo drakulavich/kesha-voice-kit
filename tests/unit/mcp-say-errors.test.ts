@@ -13,15 +13,13 @@ async function call(args: Record<string, unknown>) {
 }
 
 describe("synthesize_speech errors", () => {
-  test("rate out of range is isError", async () => {
-    const res = await call({ text: "hi", rate: 9 });
-    expect(res.isError).toBe(true);
-    expect((res.content as Array<{ text: string }>)[0].text).toMatch(/rate/i);
-  });
+  test("rate out of range or NaN is isError", async () => {
+    const outOfRange = await call({ text: "hi", rate: 9 });
+    expect(outOfRange.isError).toBe(true);
+    expect((outOfRange.content as Array<{ text: string }>)[0].text).toMatch(/rate/i);
 
-  test("NaN rate is isError", async () => {
-    const res = await call({ text: "hi", rate: NaN });
-    expect(res.isError).toBe(true);
+    const nanRate = await call({ text: "hi", rate: NaN });
+    expect(nanRate.isError).toBe(true);
   });
 
   test("missing models fails loud with install hint and no download", async () => {

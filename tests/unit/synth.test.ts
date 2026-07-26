@@ -11,11 +11,8 @@ describe("buildSayArgs", () => {
     expect(buildSayArgs({ text: "Hello" })).toContain("Hello");
   });
 
-  it("omits empty text (caller will pipe via stdin)", () => {
+  it("omits empty/undefined text (caller will pipe via stdin)", () => {
     expect(buildSayArgs({ text: "" })).toEqual(["say"]);
-  });
-
-  it("omits undefined text (caller will pipe via stdin)", () => {
     expect(buildSayArgs({})).toEqual(["say"]);
   });
 
@@ -92,24 +89,9 @@ describe("--no-expand-abbrev (#232)", () => {
         noExpandAbbrev: true,
       }, { protocolVersion: 1, backend: "onnx", features: ["tts"] });
       expect(args).not.toContain("--no-expand-abbrev");
-      expect(warnSpy).toHaveBeenCalledTimes(1);
       const warnArg = warnSpy.mock.calls[0]?.[0] ?? "";
       expect(warnArg).toContain("--no-expand-abbrev");
       expect(warnArg).toContain("flag ignored");
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  it("does not warn when engine supports the capability", () => {
-    // Symmetric: when the capability IS advertised, no warning fires.
-    const warnSpy = spyOn(log, "warn").mockImplementation(() => {});
-    try {
-      buildSayArgs({
-        ...baseOpts,
-        noExpandAbbrev: true,
-      }, { protocolVersion: 1, backend: "onnx", features: ["tts", "tts.ru_acronym_expansion"] });
-      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
     }

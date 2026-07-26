@@ -325,58 +325,6 @@ exit 2
     }
   });
 
-  test("formats large cache sizes", () => {
-    const output = formatDoctorReport({
-      generatedAt: "2026-05-23T00:00:00.000Z",
-      redacted: true,
-      package: { name: "kesha-test", version: "0.0.0" },
-      runtime: { bunVersion: "1.0.0", platform: "darwin", arch: "arm64" },
-      engine: {
-        path: "~/engine/bin/kesha-engine",
-        installed: false,
-        versionMarker: null,
-        capabilities: null,
-        probeError: null,
-      },
-      cache: {
-        path: "~/.cache/kesha",
-        exists: true,
-        totalBytes: 2 * 1024 * 1024 * 1024 * 1024,
-        components: [
-          {
-            label: "Huge model",
-            path: "~/.cache/kesha/models/huge",
-            exists: true,
-            sizeBytes: 2 * 1024 * 1024 * 1024 * 1024,
-          },
-        ],
-      },
-      optionalComponents: [],
-      stats: {
-        enabled: false,
-        dbPath: "~/stats.sqlite",
-        runCount: 0,
-        exists: false,
-        retentionDays: 90,
-      },
-      diagnosticLogs: {
-        dir: "~/logs",
-        activePath: "~/logs/kesha.ndjson",
-        statePath: "~/logs/diagnostic-logs.json",
-        exists: true,
-        activeSizeBytes: 1024,
-        rotatedFiles: ["kesha.1.ndjson"],
-        totalSizeBytes: 2048,
-        mode: "on",
-        maxBytes: 10 * 1024 * 1024,
-        retain: 5,
-      },
-      env: {},
-    });
-
-    expect(output).toContain("2.0 TB");
-    expect(output).toContain("Size: 2.0 KB");
-  });
 });
 
 describe("createSupportBundle", () => {

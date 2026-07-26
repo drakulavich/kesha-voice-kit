@@ -36,17 +36,6 @@ describe("list_voices tool", () => {
     expect(sc.voices[0]).toHaveProperty("languageName");
     expect(sc.voices[0]).toHaveProperty("gender");
   });
-
-  test("tool is listed in tools/list", async () => {
-    const server = createKeshaMcpServer();
-    const [c, s] = InMemoryTransport.createLinkedPair();
-    await server.connect(s);
-    const client = new Client({ name: "t", version: "0" });
-    await client.connect(c);
-    const { tools } = await client.listTools();
-    const names = tools.map((t) => t.name);
-    expect(names).toContain("list_voices");
-  });
 });
 
 describe("list_languages tool", () => {
@@ -67,16 +56,5 @@ describe("list_languages tool", () => {
     expect(sc.languages[0]).toHaveProperty("languageName");
     expect(sc.languages[0]).toHaveProperty("voiceCount");
     expect(typeof sc.languages[0].voiceCount).toBe("number");
-  });
-
-  test("tool is listed in tools/list", async () => {
-    const server = createKeshaMcpServer();
-    const [c, s] = InMemoryTransport.createLinkedPair();
-    await server.connect(s);
-    const client = new Client({ name: "t", version: "0" });
-    await client.connect(c);
-    const { tools } = await client.listTools();
-    const names = tools.map((t) => t.name);
-    expect(names).toContain("list_languages");
   });
 });

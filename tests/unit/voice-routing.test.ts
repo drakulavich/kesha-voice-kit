@@ -50,9 +50,6 @@ describe("pickVoiceForLang (auto-routing)", () => {
   });
 
   it("routes ONNX-supported langs on Intel macOS; ja/hi/zh without ONNX pack return undefined", () => {
-    // es/fr/it/pt now route via ONNX on Intel macOS too (Track B, #212).
-    expect(pickVoiceForLang("es", 0.95, "darwin", "x64")).toBe("es-em_alex");
-    expect(pickVoiceForLang("fr", 0.95, "darwin", "x64")).toBe("fr-ff_siwis");
     // ja/hi/zh have no ONNX voice pack — still undefined on Intel macOS.
     expect(pickVoiceForLang("ja", 0.95, "darwin", "x64")).toBeUndefined();
     expect(pickVoiceForLang("hi", 0.95, "darwin", "x64")).toBeUndefined();

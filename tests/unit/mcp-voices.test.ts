@@ -4,7 +4,7 @@ import { parseVoiceLines, aggregateLanguages } from "../../src/mcp/voices";
 describe("parseVoiceLines", () => {
   test("maps ids to new VoiceInfo shape", () => {
     const out = parseVoiceLines(
-      "en-am_michael\nen-bf_emma\nru-vosk-m02\nmacos-com.apple.eloquence.de-DE.Eddy\n",
+      "en-am_michael\nen-bf_emma\nru-vosk-m02\nru-vosk-f01\nmacos-com.apple.eloquence.de-DE.Eddy\n",
     );
     expect(out).toEqual([
       {
@@ -30,6 +30,14 @@ describe("parseVoiceLines", () => {
         languageCode: "ru",
         languageName: "Russian",
         gender: "male",
+      },
+      {
+        voiceId: "ru-vosk-f01",
+        modelId: "vosk",
+        modelName: "Vosk-TTS",
+        languageCode: "ru",
+        languageName: "Russian",
+        gender: "female",
       },
       {
         voiceId: "macos-com.apple.eloquence.de-DE.Eddy",
@@ -94,18 +102,6 @@ describe("parseVoiceLines", () => {
     ]);
   });
 
-  test("vosk female voice has gender female", () => {
-    const [v] = parseVoiceLines("ru-vosk-f01");
-    expect(v.gender).toBe("female");
-    expect(v.languageCode).toBe("ru");
-  });
-
-  test("macos voice has gender null", () => {
-    const [v] = parseVoiceLines("macos-com.apple.voice.compact.ru-RU.Milena");
-    expect(v.gender).toBeNull();
-    expect(v.modelId).toBe("avspeech");
-    expect(v.languageCode).toBe("ru-RU");
-  });
 });
 
 describe("aggregateLanguages", () => {
