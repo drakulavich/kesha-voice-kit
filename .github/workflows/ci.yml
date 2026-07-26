@@ -37,6 +37,7 @@ jobs:
       integration: ${{ steps.filter.outputs.integration }}
       heavy_e2e: ${{ steps.filter.outputs.heavy_e2e }}
       raycast: ${{ steps.filter.outputs.raycast }}
+      openspec: ${{ steps.filter.outputs.openspec }}
       nix: ${{ steps.filter.outputs.nix }}
       workflows: ${{ steps.filter.outputs.workflows }}
       homebrew: ${{ steps.filter.outputs.homebrew }}
@@ -99,6 +100,10 @@ jobs:
               - '.github/actions/**'
             raycast:
               - 'raycast/**'
+              - '.github/workflows/ci.yml'
+            openspec:
+              - 'openspec/**'
+              - 'package.json'
               - '.github/workflows/ci.yml'
             nix:
               - 'flake.nix'
@@ -656,6 +661,25 @@ jobs:
 
       - name: 🧪 Test
         run: npm test
+
+  openspec-validate:
+    needs: changes
+    if: needs.changes.outputs.openspec == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 📐 Validate spec corpus
+        env:
+          # OpenSpec already disables its PostHog telemetry when CI=true; the
+          # explicit opt-out keeps the lane offline if that heuristic changes.
+          OPENSPEC_TELEMETRY: '0'
+        run: bun run check:specs
 
   # Supplementary post-merge check: verify the Nix flake still evaluates and
   # the engine derivation builds after relevant changes land on main. Does NOT

@@ -54,6 +54,7 @@
     "lint": "bunx tsc --noEmit",
     "check": "bun run lint && bun run check:versions && bun run test:cli-fast",
     "check:workflows": "bun .github/scripts/check-workflows.ts",
+    "check:specs": "bunx @fission-ai/openspec@1.4.1 validate --specs --strict",
     "check:release-manifest": "bun .github/scripts/release-manifest.mjs --check",
     "check:versions": "bun .github/scripts/check-versions.ts"
   },
