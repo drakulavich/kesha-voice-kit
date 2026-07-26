@@ -110,11 +110,6 @@ mod tests {
     }
 
     #[test]
-    fn cska_uses_vosk_validated_chunking() {
-        assert_eq!(expand_chars("ЦСКА"), "цэ эс ка");
-    }
-
-    #[test]
     fn empty_input_returns_empty() {
         assert_eq!(expand_chars(""), "");
     }

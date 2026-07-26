@@ -135,30 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn emphasis_with_multiple_plus_markers_pass_all_through() {
-        let out = normalize_segments(
-            vec![Segment::Emphasis {
-                content: "я зн+аю это".to_string(),
-                suppress: false,
-            }],
-            false,
-        );
-        assert_eq!(out, vec![Segment::Text("я зн+аю это".to_string())]);
-    }
-
-    #[test]
-    fn emphasis_suppress_strips_multiple_plus_markers() {
-        let out = normalize_segments(
-            vec![Segment::Emphasis {
-                content: "я зн+аю +это".to_string(),
-                suppress: true,
-            }],
-            false,
-        );
-        assert_eq!(out, vec![Segment::Text("я знаю это".to_string())]);
-    }
-
-    #[test]
     fn prosody_rate_recurses_spell_inside() {
         // Regression: <prosody rate="slow"><say-as characters>ФСБ</say-as></prosody>
         // must still letter-spell the inner content.

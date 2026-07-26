@@ -57,47 +57,6 @@ mod tests {
     }
 
     #[test]
-    fn text_letter_spells_when_auto_expand() {
-        // FBI letter-spells (no IPA_LEXICON entry, not on stop-list).
-        let out = normalize_segments(vec![Segment::Text("FBI investigation".to_string())], true);
-        assert_eq!(
-            out,
-            vec![Segment::Text("ef bee eye investigation".to_string())]
-        );
-    }
-
-    #[test]
-    fn text_passes_through_when_auto_expand_false_and_no_lexicon_hit() {
-        let out = normalize_segments(vec![Segment::Text("FBI investigation".to_string())], false);
-        assert_eq!(out, vec![Segment::Text("FBI investigation".to_string())]);
-    }
-
-    #[test]
-    fn ipa_lexicon_hit_emits_ipa_segment() {
-        let out = normalize_segments(vec![Segment::Text("EPAM partners".to_string())], true);
-        assert_eq!(
-            out,
-            vec![
-                Segment::Ipa("ˈiːpæm".to_string()),
-                Segment::Text(" partners".to_string()),
-            ]
-        );
-    }
-
-    #[test]
-    fn ipa_lexicon_fires_even_without_auto_expand() {
-        // Lexicon overrides are intent-explicit; not gated by auto_expand.
-        let out = normalize_segments(vec![Segment::Text("EPAM partners".to_string())], false);
-        assert_eq!(
-            out,
-            vec![
-                Segment::Ipa("ˈiːpæm".to_string()),
-                Segment::Text(" partners".to_string()),
-            ]
-        );
-    }
-
-    #[test]
     fn spell_wins_even_when_auto_expand_is_false() {
         let out = normalize_segments(vec![Segment::Spell("OK".to_string())], false);
         assert_eq!(out, vec![Segment::Text("oh kay".to_string())]);

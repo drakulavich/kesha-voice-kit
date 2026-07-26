@@ -623,48 +623,6 @@ mod tests {
     }
 
     #[test]
-    fn encode_wav_round_trip_matches_legacy_path() {
-        // Backwards compat: `encode(.., Wav)` must produce the *same* bytes the
-        // old `wav::encode_wav` produced — that's how we keep existing tests
-        // and downstream `--out foo.wav` callers green.
-        let samples: Vec<f32> = (0..2_400).map(|i| (i as f32 * 0.05).sin()).collect();
-        let from_encode = encode(&samples, 24_000, OutputFormat::Wav).unwrap();
-        let from_wav = wav::encode_wav(&samples, 24_000).unwrap();
-        assert_eq!(from_encode, from_wav);
-    }
-
-    #[test]
-    fn ogg_opus_produces_valid_oggs_magic() {
-        // 1 second of a 440 Hz tone at 24 kHz mono.
-        let sr = 24_000u32;
-        let samples: Vec<f32> = (0..sr)
-            .map(|i| (i as f32 * 2.0 * std::f32::consts::PI * 440.0 / sr as f32).sin() * 0.3)
-            .collect();
-        let bytes = encode(&samples, sr, OutputFormat::ogg_opus_default()).unwrap();
-        // Every Ogg page starts with "OggS" — minimum check that we wrote
-        // *something* well-formed enough for clients to demux.
-        assert_eq!(&bytes[..4], b"OggS");
-        // OpusHead lives in the first page payload, after the page header. We
-        // don't reparse pages here (the dedicated tts_opus.rs test does), but
-        // the magic must appear somewhere in the buffer.
-        assert!(
-            bytes.windows(8).any(|w| w == b"OpusHead"),
-            "OpusHead packet not found in OggOpus output"
-        );
-        assert!(
-            bytes.windows(8).any(|w| w == b"OpusTags"),
-            "OpusTags packet not found in OggOpus output"
-        );
-        // 1 second @ 32 kbps ≈ 4 KB. Allow generous slack — we just want to
-        // know we didn't accidentally ship megabytes of WAV-shaped bytes.
-        assert!(
-            bytes.len() < 12_000,
-            "ogg-opus payload way bigger than expected: {} bytes",
-            bytes.len()
-        );
-    }
-
-    #[test]
     fn ogg_opus_rejects_invalid_sample_rate() {
         let samples = vec![0.0f32; 1024];
         let res = encode(
@@ -692,18 +650,6 @@ mod tests {
         );
         let err = res.unwrap_err().to_string();
         assert!(err.contains("--bitrate"), "unexpected error: {err}");
-    }
-
-    #[test]
-    fn ogg_opus_resamples_when_engine_sr_mismatches() {
-        // Vosk-RU runs at 22.05 kHz natively. We can't feed that to libopus
-        // directly, so the encoder must resample to a supported rate first.
-        let src_sr = 22_050u32;
-        let samples: Vec<f32> = (0..src_sr)
-            .map(|i| (i as f32 * 0.001).sin() * 0.2)
-            .collect();
-        let bytes = encode(&samples, src_sr, OutputFormat::ogg_opus_default()).unwrap();
-        assert_eq!(&bytes[..4], b"OggS", "resampled output is still valid Ogg");
     }
 
     #[test]

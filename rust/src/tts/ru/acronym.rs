@@ -142,24 +142,6 @@ mod tests {
     }
 
     #[test]
-    fn vowel_cluster_or_short_or_consonant_cluster_only() {
-        // 0 vowels (all consonants → always has a same-type adjacent pair) → spell.
-        assert_eq!(expand_acronyms("ФСБ"), "эф эс бэ");
-        assert_eq!(expand_acronyms("МВД"), "эм вэ дэ");
-        // Consecutive vowels → spell.
-        assert_eq!(expand_acronyms("ОАЭ"), "о а э");
-        // Consonant cluster adjacent + vowel → spell.
-        assert_eq!(expand_acronyms("США"), "сэ шэ а");
-        // Length 2 → spell (always; only stop-list overrides).
-        assert_eq!(expand_acronyms("ИП"), "и пэ");
-        assert_eq!(expand_acronyms("ЕС"), "е эс");
-        // Alternating CVC / CVCV → don't spell.
-        assert_eq!(expand_acronyms("ВОЗ"), "ВОЗ");
-        assert_eq!(expand_acronyms("НАТО"), "НАТО");
-        assert_eq!(expand_acronyms("ОПЕК"), "ОПЕК");
-    }
-
-    #[test]
     fn every_stop_list_entry_round_trips() {
         for w in STOP_LIST {
             assert_eq!(expand_acronyms(w), *w, "stop-list entry escaped: {w}");

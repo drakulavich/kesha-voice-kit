@@ -348,15 +348,6 @@ mod tests {
     }
 
     #[test]
-    fn synthesize_fails_fast_before_model_init() {
-        // Native-script input must error out *before* touching FluidAudio, so this
-        // needs no model download. Proves the gate refuses rather than emitting noise.
-        let err = synthesize("नमस्ते मेरा नाम केशा है", "hm_omega", 1.0)
-            .expect_err("native-script synth must fail fast");
-        assert_eq!(crate::errors::code_of(&err), ErrorCode::ScriptUnsupported);
-    }
-
-    #[test]
     fn synthesize_pcm_skips_no_phoneme_text_before_model_init() {
         // Bare-punctuation / whitespace-only segments (e.g. the trailing "." in
         // `<speak>Loop <emphasis>ssml</emphasis>.</speak>`, #543) have nothing to

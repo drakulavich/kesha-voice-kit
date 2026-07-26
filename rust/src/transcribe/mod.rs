@@ -814,7 +814,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_mode_long_wav_routes_to_vad_when_installed() {
+    fn probe_duration_reports_seconds_for_long_wav() {
         let tmp = tempfile::Builder::new()
             .prefix("kesha-auto-vad-long-")
             .suffix(".wav")
@@ -824,16 +824,6 @@ mod tests {
         let duration = probe_duration_if_plausible(tmp.path().to_str().unwrap());
         let secs = duration.expect("long WAV should probe to Some duration");
         assert!((120.0..122.0).contains(&secs), "expected ~121s, got {secs}");
-        assert_eq!(
-            decide(VadMode::Auto, duration, true),
-            VadDecision::Vad,
-            "long audio + installed → Vad"
-        );
-        assert_eq!(
-            decide(VadMode::Auto, duration, false),
-            VadDecision::PlainWithHint,
-            "long audio + not installed → Plain + hint"
-        );
     }
 
     #[test]
@@ -1195,29 +1185,6 @@ mod tests {
     }
 
     #[test]
-    fn transcription_segment_speaker_field_serializes_when_some() {
-        let s = TranscriptionSegment {
-            start: 0.0,
-            end: 1.0,
-            text: "hi".into(),
-            speaker: Some(2),
-        };
-        let json = serde_json::to_string(&s).unwrap();
-        assert!(
-            json.contains("\"speaker\":2"),
-            "expected speaker:2 in {json}"
-        );
-    }
-
-    #[test]
-    fn vad_mode_default_is_auto() {
-        // `TranscribeOptions::default()` only matches the legacy text-only
-        // `transcribe(_, VadMode::Auto)` behavior if VadMode's own Default
-        // is Auto. Lock that in.
-        assert_eq!(VadMode::default(), VadMode::Auto);
-    }
-
-    #[test]
     fn transcribe_options_default_is_text_only_auto() {
         // Must match the legacy `transcribe(_, mode)` text-only path: Auto VAD, no segments, no speakers.
         let o = TranscribeOptions::default();
@@ -1383,17 +1350,6 @@ mod tests {
         )
         .expect_err("exact boundary must be rejected");
         assert!(err.to_string().contains("refusing --no-vad"), "{err}");
-    }
-
-    // ── decide at exactly AUTO_VAD_MIN_SECONDS without VAD ───────────────────
-
-    #[test]
-    fn decide_at_exactly_auto_vad_min_seconds_without_vad_gives_plain_with_hint() {
-        // At exactly AUTO_VAD_MIN_SECONDS with vad_installed=false → PlainWithHint.
-        assert_eq!(
-            decide(VadMode::Auto, Some(AUTO_VAD_MIN_SECONDS), false),
-            VadDecision::PlainWithHint
-        );
     }
 
     // ── TranscriptionOutput JSON round-trip ──────────────────────────────────

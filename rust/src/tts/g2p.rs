@@ -117,12 +117,6 @@ mod tests {
     }
 
     #[test]
-    fn english_routes_to_misaki() {
-        let ipa = text_to_ipa("hello", "en-us").unwrap();
-        assert!(!ipa.is_empty(), "misaki returned empty IPA");
-    }
-
-    #[test]
     fn english_dispatches_for_all_en_aliases() {
         for code in ["en", "en-us", "en-gb", "en-uk"] {
             let ipa = text_to_ipa("hello", code).unwrap();

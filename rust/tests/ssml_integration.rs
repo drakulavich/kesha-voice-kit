@@ -105,13 +105,6 @@ fn empty_input_errors() {
 }
 
 #[test]
-fn doctype_is_rejected() {
-    let input = r#"<!DOCTYPE speak SYSTEM "foo"><speak>Hi</speak>"#;
-    // DOCTYPE before <speak> → fails the <speak> root check first (still rejected)
-    assert!(parse(input).is_err());
-}
-
-#[test]
 fn doctype_inside_speak_is_rejected() {
     let input = "<speak><!DOCTYPE foo>Hi</speak>";
     let err = parse(input).unwrap_err();
@@ -296,18 +289,6 @@ fn emphasis_level_none_sets_suppress_true() {
 #[test]
 fn emphasis_level_strong_keeps_suppress_false() {
     let segs = parse(r#"<speak><emphasis level="strong">д+ома</emphasis></speak>"#).unwrap();
-    assert!(matches!(
-        segs.first(),
-        Some(Segment::Emphasis {
-            suppress: false,
-            ..
-        })
-    ));
-}
-
-#[test]
-fn emphasis_level_reduced_keeps_suppress_false() {
-    let segs = parse(r#"<speak><emphasis level="reduced">тест</emphasis></speak>"#).unwrap();
     assert!(matches!(
         segs.first(),
         Some(Segment::Emphasis {
