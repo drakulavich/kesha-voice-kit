@@ -241,6 +241,33 @@ describe("dictation controller", () => {
     await session.done;
   });
 
+  it("does not start the transcriber when cancelled during the transcribing toast", async () => {
+    const transcribingToast = deferred<void>();
+    const deps = createDeps({
+      showToast: vi.fn(async (toast) => {
+        deps.toasts.push(toast);
+        if (toast.title === "Transcribing") {
+          await transcribingToast.promise;
+        }
+      }),
+    });
+    const { states } = deps;
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe("transcribing"));
+
+    session.cancelTranscription();
+    transcribingToast.resolve();
+    await session.done;
+
+    expect(deps.startTranscriber).not.toHaveBeenCalled();
+    expect(states.at(-1)).toEqual({
+      status: "error",
+      message: "Transcription cancelled.",
+    });
+    expect(deps.cleanupTempDir).toHaveBeenCalledWith("/tmp/session");
+  });
+
   it("auto-stops and transcribes after continuous silence", async () => {
     let clock = 0;
     let emit!: (patch: RecordingPatch) => void;
