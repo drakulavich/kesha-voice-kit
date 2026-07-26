@@ -4,11 +4,17 @@ import { tmpdir } from "node:os";
 import {
   IDLE_STOP_GRACE_MS,
   IDLE_WARN_MS,
+  NO_SIGNAL_TIMEOUT_MS,
   parseMaxSeconds,
   TRANSCRIBE_TIMEOUT_SECONDS,
 } from "./dictation-config";
-import { notFoundMessage, resolveKeshaBin } from "./kesha-bin";
-import type { KeshaSpawn } from "./kesha-bin";
+import {
+  notFoundMessage,
+  probeEngineAvailability,
+  probeKeshaVersion,
+  resolveKeshaBin,
+} from "./kesha-bin";
+import type { EnginePreflightResult, KeshaSpawn } from "./kesha-bin";
 import { startKeshaRecorder, startKeshaTranscriber } from "./process-tasks";
 import { startRecordingMonitor } from "./recording-monitor";
 import { emptySignal } from "./recording-view";
@@ -78,6 +84,16 @@ export function startDictationSession(
         return;
       }
 
+      const preflight = await deps.preflight(kesha);
+      if (!preflight.ok) {
+        setState({
+          status: "error",
+          message: "Kesha setup isn't finished yet.",
+          hint: preflight.hint ?? notFoundMessage(),
+        });
+        return;
+      }
+
       tempDir = await deps.createTempDir();
       const audioPath = join(tempDir, "dictation.wav");
 
@@ -130,9 +146,31 @@ export function startDictationSession(
         recorder?.stop();
       },
     });
-    stopMonitoring = deps.startRecordingMonitor((patch) =>
-      patchRecordingState(setState, silenceTracker.track(patch)),
-    );
+    const now = deps.now ?? Date.now;
+    const recordingStartedAt = now();
+    let sawUsableSignal = false;
+    let noSignalTriggered = false;
+    stopMonitoring = deps.startRecordingMonitor((patch) => {
+      const state = patch.signal?.state;
+      if (state === "listening" || state === "signal") {
+        sawUsableSignal = true;
+      }
+      if (
+        !sawUsableSignal &&
+        !noSignalTriggered &&
+        now() - recordingStartedAt >= NO_SIGNAL_TIMEOUT_MS
+      ) {
+        noSignalTriggered = true;
+        setState({
+          status: "error",
+          message:
+            "Recorded audio is silent. Check macOS Microphone permission for Raycast and the selected input device.",
+        });
+        recorder?.stop();
+        return;
+      }
+      patchRecordingState(setState, silenceTracker.track(patch));
+    });
     await deps.showToast({
       style: "animated",
       title: "Recording",
@@ -150,12 +188,14 @@ export function startDictationSession(
     recorder = deps.startRecorder(kesha, audioPath, maxSeconds);
     try {
       await recorder.done;
+    } catch (err) {
+      if (!noSignalTriggered) throw err;
     } finally {
       recorder = null;
       stopMonitoring?.();
       stopMonitoring = null;
     }
-    return !cancelled;
+    return !cancelled && !noSignalTriggered;
   }
 
   async function transcribePhase(
@@ -209,12 +249,23 @@ export function startDictationSession(
   }
 }
 
+async function defaultPreflight(
+  kesha: KeshaSpawn,
+): Promise<EnginePreflightResult> {
+  const version = await probeKeshaVersion(kesha);
+  if (!version) {
+    return { ok: false, hint: notFoundMessage() };
+  }
+  return probeEngineAvailability(kesha);
+}
+
 export function createDefaultDictationDeps(
   adapter: Pick<DictationControllerDeps, "copyToClipboard" | "showToast">,
 ): DictationControllerDeps {
   return {
     ...adapter,
     resolveKesha: resolveKeshaBin,
+    preflight: defaultPreflight,
     createTempDir: () => mkdtemp(join(tmpdir(), "raycast-kesha-dictate-")),
     cleanupTempDir: (dir) => rm(dir, { recursive: true, force: true }),
     startRecordingMonitor,
@@ -242,10 +293,12 @@ export function createSilenceTracker(deps: SilenceTrackerDeps): {
     track: (patch) => {
       const state = patch.signal?.state;
       if (!state) return patch;
-      if (state !== "listening") {
+      if (state === "starting" || state === "signal") {
         silenceStartedAt = null;
         return { ...patch, silentForMs: 0, idle: false };
       }
+      // "listening" and "unavailable" both mean no confirmed speech — an
+      // unavailable meter must not disarm the silence auto-stop.
       if (silenceStartedAt === null) silenceStartedAt = now();
       const silentForMs = Math.max(0, now() - silenceStartedAt);
       if (

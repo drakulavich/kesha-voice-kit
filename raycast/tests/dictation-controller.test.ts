@@ -102,6 +102,57 @@ describe("dictation controller", () => {
     });
   });
 
+  it("shows a finish-setup error naming kesha install when the engine is missing", async () => {
+    const deps = createDeps({
+      preflight: vi.fn(async () => ({
+        ok: false,
+        hint: "Run `kesha install` to download the engine and models.",
+      })),
+    });
+    const { states } = deps;
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.createTempDir).not.toHaveBeenCalled();
+    expect(deps.startRecorder).not.toHaveBeenCalled();
+    expect(states.at(-1)).toEqual({
+      status: "error",
+      message: "Kesha setup isn't finished yet.",
+      hint: "Run `kesha install` to download the engine and models.",
+    });
+  });
+
+  it("falls back to the not-found hint when preflight fails without one", async () => {
+    const deps = createDeps({
+      preflight: vi.fn(async () => ({ ok: false })),
+    });
+    const { states } = deps;
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.startRecorder).not.toHaveBeenCalled();
+    expect(states.at(-1)).toMatchObject({
+      status: "error",
+      message: "Kesha setup isn't finished yet.",
+      hint: expect.stringContaining("kesha install"),
+    });
+  });
+
+  it("proceeds to recording once preflight passes", async () => {
+    const deps = createDeps();
+    const session = startDictationSession({}, deps.setState, deps);
+
+    await session.done;
+
+    expect(deps.preflight).toHaveBeenCalledWith({
+      command: "kesha",
+      prefixArgs: [],
+    });
+    expect(deps.startRecorder).toHaveBeenCalled();
+  });
+
   it("lets the user stop recording and cancels running work on unmount", async () => {
     const recorder = deferred<void>();
     const recorderStop = vi.fn();
@@ -119,7 +170,7 @@ describe("dictation controller", () => {
     const { states } = deps;
 
     const session = startDictationSession({}, deps.setState, deps);
-    await flushPromises();
+    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
     session.stopRecording();
     session.cancel();
     recorder.resolve();
@@ -335,9 +386,100 @@ describe("dictation controller", () => {
       title: "Stopped after silence.",
     });
   });
+
+  it("surfaces the mic-permission message early when the meter never reports usable signal", async () => {
+    let clock = 0;
+    let emit!: (patch: RecordingPatch) => void;
+    const recorder = deferred<void>();
+    const recorderStop = vi.fn();
+    const deps = createDeps({
+      now: () => clock,
+      startRecorder: vi.fn(() => ({
+        done: recorder.promise,
+        stop: recorderStop,
+      })),
+      startRecordingMonitor: vi.fn((onPatch) => {
+        emit = onPatch;
+        return vi.fn();
+      }),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+
+    emit({ signal: emptySignal("unavailable") });
+    clock = 7_999;
+    emit({ signal: emptySignal("unavailable") });
+    expect(deps.current().status).toBe("recording");
+    expect(recorderStop).not.toHaveBeenCalled();
+
+    clock = 8_000;
+    emit({ signal: emptySignal("unavailable") });
+    expect(recorderStop).toHaveBeenCalledTimes(1);
+    expect(deps.current()).toMatchObject({
+      status: "error",
+      message:
+        "Recorded audio is silent. Check macOS Microphone permission for Raycast and the selected input device.",
+    });
+
+    recorder.resolve();
+    await session.done;
+    expect(deps.startTranscriber).not.toHaveBeenCalled();
+  });
+
+  it("does not fire the no-signal timeout once real signal has been seen", async () => {
+    let clock = 0;
+    let emit!: (patch: RecordingPatch) => void;
+    const recorder = deferred<void>();
+    const recorderStop = vi.fn();
+    const deps = createDeps({
+      now: () => clock,
+      startRecorder: vi.fn(() => ({
+        done: recorder.promise,
+        stop: recorderStop,
+      })),
+      startRecordingMonitor: vi.fn((onPatch) => {
+        emit = onPatch;
+        return vi.fn();
+      }),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+
+    emit({ signal: signalTick() });
+    clock = 9_000;
+    emit({ signal: emptySignal("unavailable") });
+
+    expect(recorderStop).not.toHaveBeenCalled();
+    expect(deps.current().status).toBe("recording");
+
+    session.cancel();
+    recorder.resolve();
+    await session.done;
+  });
 });
 
 describe("createSilenceTracker", () => {
+  it("treats an unavailable meter as continued silence rather than a reset", () => {
+    let clock = 0;
+    const onIdleStop = vi.fn();
+    const tracker = createSilenceTracker({ now: () => clock, onIdleStop });
+
+    tracker.track({ signal: emptySignal("listening") });
+    clock = 20_000;
+    expect(
+      tracker.track({ signal: emptySignal("unavailable") }),
+    ).toMatchObject({
+      silentForMs: 20_000,
+      idle: false,
+    });
+
+    clock = 45_000;
+    tracker.track({ signal: emptySignal("unavailable") });
+    expect(onIdleStop).toHaveBeenCalledTimes(1);
+  });
+
   it("accumulates silence across listening ticks and warns at 30s", () => {
     let clock = 0;
     const tracker = createSilenceTracker({
@@ -470,6 +612,7 @@ function createDeps(
   const toasts: unknown[] = [];
   const deps: DictationControllerDeps = {
     resolveKesha: vi.fn(async () => ({ command: "kesha", prefixArgs: [] })),
+    preflight: vi.fn(async () => ({ ok: true })),
     createTempDir: vi.fn(async () => "/tmp/session"),
     cleanupTempDir: vi.fn(async () => undefined),
     startRecordingMonitor: vi.fn(() => vi.fn()),

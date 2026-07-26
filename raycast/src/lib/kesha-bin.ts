@@ -1,6 +1,10 @@
 import { access, constants, open, realpath } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const FALLBACK_CANDIDATES: ReadonlyArray<string> = [
   join(homedir(), ".bun", "bin", "kesha"),
@@ -133,10 +137,67 @@ export async function resolveKeshaBin(
   return null;
 }
 
+export interface ProbeDeps {
+  execFile?: (
+    command: string,
+    args: string[],
+    options: { timeout: number },
+  ) => Promise<{ stdout: string; stderr: string }>;
+}
+
+export interface EnginePreflightResult {
+  ok: boolean;
+  hint?: string;
+}
+
+export async function probeKeshaVersion(
+  spawn: KeshaSpawn,
+  deps: ProbeDeps = {},
+): Promise<string | null> {
+  const run = deps.execFile ?? execFileAsync;
+  try {
+    const { stdout } = await run(
+      spawn.command,
+      [...spawn.prefixArgs, "--version"],
+      { timeout: 5000 },
+    );
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+// `kesha status` warns on stderr with the exact remaining setup command
+// (`installHint()`, non-TTY → "kesha install") only when the engine isn't
+// installed; a clean run leaves stderr empty. Reusing that text avoids a
+// second, possibly-drifting copy of the install hint.
+export async function probeEngineAvailability(
+  spawn: KeshaSpawn,
+  deps: ProbeDeps = {},
+): Promise<EnginePreflightResult> {
+  const run = deps.execFile ?? execFileAsync;
+  try {
+    const { stderr } = await run(
+      spawn.command,
+      [...spawn.prefixArgs, "status"],
+      { timeout: 5000 },
+    );
+    const hint = stderr.trim();
+    return hint ? { ok: false, hint } : { ok: true };
+  } catch (err) {
+    const stderr =
+      err && typeof err === "object" && "stderr" in err
+        ? String((err as { stderr?: unknown }).stderr ?? "").trim()
+        : "";
+    return { ok: false, hint: stderr || undefined };
+  }
+}
+
 export function notFoundMessage(): string {
   return [
-    "kesha CLI not found. Set the `kesha` binary path preference to an absolute path,",
-    "or install it with `bun add -g @drakulavich/kesha-voice-kit`.",
-    `Probed: ${FALLBACK_CANDIDATES.join(", ")}`,
-  ].join(" ");
+    "kesha CLI not found. Finish setup:",
+    "1. Install the CLI — `brew install drakulavich/tap/kesha-voice-kit` (or `bun add -g @drakulavich/kesha-voice-kit`).",
+    "2. Run `kesha install` to download the engine and models.",
+    `Already installed? Set the "Kesha Binary Path" preference to an absolute path. Probed: ${FALLBACK_CANDIDATES.join(", ")}`,
+  ].join("\n");
 }
