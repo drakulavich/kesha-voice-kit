@@ -2,11 +2,10 @@
 //! pipeline (Kokoro / Vosk / AVSpeech), thread SSML segmentation through it,
 //! and encode the result into the caller's chosen wire format.
 //!
-//! Public entry points re-exported from `tts/mod.rs`:
-//! - [`say`] — one-shot synth-and-encode
-//! - [`synth_segments_kokoro_with`] / [`synth_segments_vosk_with`] —
-//!   drive an existing engine handle from a segment list (used by the
-//!   `--stdin-loop` long-lived path, #213)
+//! Public entry points:
+//! - [`say`] — one-shot synth-and-encode (re-exported from `tts/mod.rs`)
+//! - [`say_kokoro`] / [`say_vosk`] — the same per-engine dispatch with the
+//!   caller's cached sessions injected (the `--stdin-loop` path, #213)
 
 use std::borrow::Cow;
 use std::path::Path;
@@ -108,6 +107,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             speaker_id,
             speed,
         } => say_vosk(
+            &mut sessions::VoskCache::new(),
             opts.text,
             model_dir,
             speaker_id,
@@ -121,6 +121,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             voice_path,
             speed,
         } => say_kokoro(
+            &mut sessions::TtsSessions::default(),
             opts.text,
             opts.lang,
             model_path,
@@ -195,7 +196,9 @@ fn say_avspeech(
 }
 
 /// Vosk arm: owns its own G2P + text normalisation; bypasses our espeak/misaki path.
-fn say_vosk(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn say_vosk(
+    vosk: &mut sessions::VoskCache,
     text: &str,
     model_dir: &Path,
     speaker_id: u32,
@@ -205,14 +208,33 @@ fn say_vosk(
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
     if ssml {
-        return synth_segments_vosk(text, model_dir, speaker_id, speed, format, expand_abbrev);
+        return synth_segments_vosk(
+            vosk,
+            text,
+            model_dir,
+            speaker_id,
+            speed,
+            format,
+            expand_abbrev,
+        );
     }
-    say_with_vosk(text, model_dir, speaker_id, speed, format, expand_abbrev)
+    say_with_vosk(
+        vosk,
+        text,
+        model_dir,
+        speaker_id,
+        speed,
+        format,
+        expand_abbrev,
+    )
 }
 
 /// Kokoro arm: SSML, English segment pipeline, and non-English G2P paths.
+/// Sessions are injected so `--stdin-loop` reuses them across requests while
+/// the one-shot path passes a fresh [`sessions::TtsSessions`].
 #[allow(clippy::too_many_arguments)]
-fn say_kokoro(
+pub(crate) fn say_kokoro(
+    tts_sessions: &mut sessions::TtsSessions,
     text: &str,
     lang: &str,
     model_path: &Path,
@@ -222,7 +244,7 @@ fn say_kokoro(
     ssml: bool,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
-    if ssml {
+    let segments = if ssml {
         let segments = ssml::parse(text).map_err(|e| TtsError::Coded {
             code: crate::errors::code_of(&e),
             message: format!("ssml: {e:#}"),
@@ -232,48 +254,22 @@ fn say_kokoro(
                 "SSML had no speakable content".into(),
             ));
         }
-        return synth_segments_kokoro(
-            segments,
-            lang,
-            model_path,
-            voice_path,
-            speed,
-            format,
-            expand_abbrev,
-        );
-    }
-    // English: segment pipeline so IPA_LEXICON overrides bypass G2P;
-    // letter-spell + STOP_LIST run inside en::normalize_segments (#244).
-    if en::is_en(lang) {
-        return synth_segments_kokoro(
-            vec![ssml::Segment::Text(text.to_string())],
-            lang,
-            model_path,
-            voice_path,
-            speed,
-            format,
-            expand_abbrev,
-        );
-    }
-    let ipa =
-        g2p::text_to_ipa(text, lang).map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
-    if ipa.trim().is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "no phonemes produced for input (empty after G2P)".into(),
-        ));
-    }
-    say_with_kokoro(&ipa, model_path, voice_path, speed, format)
-}
-
-fn synth_segments_kokoro(
-    segments: Vec<ssml::Segment>,
-    lang: &str,
-    model_path: &Path,
-    voice_path: &Path,
-    speed: f32,
-    format: OutputFormat,
-    expand_abbrev: bool,
-) -> Result<Vec<u8>, TtsError> {
+        segments
+    } else if en::is_en(lang) {
+        // English: segment pipeline so IPA_LEXICON overrides bypass G2P;
+        // letter-spell + STOP_LIST run inside en::normalize_segments (#244).
+        vec![ssml::Segment::Text(text.to_string())]
+    } else {
+        let ipa = g2p::text_to_ipa_cached(&mut tts_sessions.charsiu, text, lang)
+            .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
+        if ipa.trim().is_empty() {
+            return Err(TtsError::SynthesisFailed(
+                "no phonemes produced for input (empty after G2P)".into(),
+            ));
+        }
+        let sess = kokoro_session(&mut tts_sessions.kokoro, model_path)?;
+        return say_with_kokoro(sess, &ipa, voice_path, speed, format);
+    };
     // en::normalize_segments maps Spell→Text, expands acronyms, strips Emphasis.
     // Mirror of synth_segments_vosk's ru::normalize_segments call (#244).
     let segments = if en::is_en(lang) {
@@ -281,9 +277,16 @@ fn synth_segments_kokoro(
     } else {
         segments
     };
-    let mut sess = sessions::KokoroSession::load(model_path)
-        .map_err(|e| TtsError::SynthesisFailed(e.to_string()))?;
-    synth_segments_kokoro_with(&mut sess, &segments, lang, voice_path, speed, format)
+    let sess = kokoro_session(&mut tts_sessions.kokoro, model_path)?;
+    synth_segments_kokoro_with(sess, &segments, lang, voice_path, speed, format)
+}
+
+fn kokoro_session<'s>(
+    slot: &'s mut sessions::KokoroSlot,
+    model_path: &Path,
+) -> Result<&'s mut sessions::KokoroSession, TtsError> {
+    slot.get(model_path)
+        .map_err(|e| TtsError::SynthesisFailed(format!("{e:#}")))
 }
 
 /// Synthesize a single SSML segment through Kokoro; `ProsodyRate` recurses with
@@ -337,7 +340,7 @@ fn synth_one_kokoro(
 
 /// Drive an SSML segment list against an already-constructed Kokoro session.
 /// Used by both the one-shot SSML path and the long-lived `--stdin-loop` (#213).
-pub fn synth_segments_kokoro_with(
+pub(crate) fn synth_segments_kokoro_with(
     sess: &mut sessions::KokoroSession,
     segments: &[ssml::Segment],
     lang: &str,
@@ -477,14 +480,12 @@ fn synth_one_fluid_kokoro(
 }
 
 fn say_with_kokoro(
+    sess: &mut sessions::KokoroSession,
     ipa: &str,
-    model_path: &Path,
     voice_path: &Path,
     speed: f32,
     format: OutputFormat,
 ) -> Result<Vec<u8>, TtsError> {
-    let mut sess = sessions::KokoroSession::load(model_path)
-        .map_err(|e| TtsError::SynthesisFailed(e.to_string()))?;
     // #275 D1: boundary trace so a "no recognizable phonemes in input"
     // bail carries inputs (IPA length + voice file) and outputs (sample
     // count + wall time) instead of pointing at nothing.
@@ -515,6 +516,7 @@ fn say_with_kokoro(
 }
 
 fn say_with_vosk(
+    vosk: &mut sessions::VoskCache,
     text: &str,
     model_dir: &Path,
     speaker_id: u32,
@@ -527,14 +529,15 @@ fn say_with_vosk(
     } else {
         Cow::Borrowed(text)
     };
-    let mut cache = sessions::VoskCache::new();
-    let (audio, sample_rate) = cache
+    let (audio, sample_rate) = vosk
         .infer(model_dir, normalized.as_ref(), speaker_id, speed)
         .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     encode_or_fail(&audio, sample_rate, format)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn synth_segments_vosk(
+    vosk: &mut sessions::VoskCache,
     text: &str,
     model_dir: &Path,
     speaker_id: u32,
@@ -552,8 +555,7 @@ fn synth_segments_vosk(
         ));
     }
     let segments = ru::normalize_segments(segments, expand_abbrev);
-    let mut cache = sessions::VoskCache::new();
-    synth_segments_vosk_with(&mut cache, &segments, model_dir, speaker_id, speed, format)
+    synth_segments_vosk_with(vosk, &segments, model_dir, speaker_id, speed, format)
 }
 
 /// Synthesize a single SSML segment through Vosk; `ProsodyRate` recurses with
@@ -613,7 +615,7 @@ fn synth_one_vosk(
 
 /// Drive an SSML segment list against a Vosk cache. Mirrors
 /// [`synth_segments_kokoro_with`].
-pub fn synth_segments_vosk_with(
+pub(crate) fn synth_segments_vosk_with(
     cache: &mut sessions::VoskCache,
     segments: &[ssml::Segment],
     model_dir: &Path,

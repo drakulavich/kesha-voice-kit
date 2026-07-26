@@ -25,7 +25,7 @@ pub mod warn;
 pub mod wav;
 
 pub use encode::OutputFormat;
-pub use say::{say, synth_segments_kokoro_with, synth_segments_vosk_with};
+pub use say::say;
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]
 pub mod avspeech;

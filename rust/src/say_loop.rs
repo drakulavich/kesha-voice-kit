@@ -99,16 +99,9 @@ fn default_expand_abbrev() -> bool {
 }
 
 struct LoopState {
-    /// `Option` to defer load until the first Kokoro request; `ensure_model` handles swaps.
-    kokoro: Option<tts::sessions::KokoroSession>,
-    /// Vosk cache by model directory. The Russian path uses one model dir
-    /// today, but keep it map-shaped so adding more languages is a no-op.
-    vosk: tts::sessions::VoskCache,
-    /// Cached CharsiuG2P session (three ONNX sessions, ~100 MB). Loaded once
-    /// on the first Romance-language (es/fr/it/pt) request and reused for all
-    /// subsequent ones. Fixes Greptile P1 (#509): previously `text_to_ipa`
-    /// reloaded the three sessions from disk on every request.
-    charsiu: tts::sessions::CharsiuCache,
+    /// Kokoro loads on the first request; CharsiuG2P (three ONNX sessions,
+    /// ~100 MB) is cached per #509; Vosk stays map-shaped per model dir.
+    sessions: tts::sessions::TtsSessions,
 }
 
 /// Drive the loop. Returns 0 on clean stdin EOF, 4 on read error.
@@ -118,9 +111,7 @@ pub fn run() -> i32 {
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
     let mut state = LoopState {
-        kokoro: None,
-        vosk: tts::sessions::VoskCache::new(),
-        charsiu: tts::sessions::CharsiuCache::new(),
+        sessions: tts::sessions::TtsSessions::default(),
     };
 
     let mut buf: Vec<u8> = Vec::with_capacity(4096);
@@ -253,16 +244,8 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Empty-segment check centralised here so every engine arm gets the same error.
-fn parse_ssml_or_err(text: &str) -> Result<Vec<tts::ssml::Segment>, String> {
-    let segments = tts::ssml::parse(text).map_err(|e| format!("ssml: {e}"))?;
-    if segments.is_empty() {
-        return Err("SSML had no speakable content".into());
-    }
-    Ok(segments)
-}
-
-/// Kokoro arm of [`handle`]: session reuse across ssml / English-segment / G2P-IPA paths.
+/// Kokoro arm of [`handle`]: shared dispatch in `tts::say::say_kokoro`, with
+/// this process's cached sessions injected.
 fn handle_kokoro(
     req: &LoopRequest,
     state: &mut LoopState,
@@ -271,70 +254,21 @@ fn handle_kokoro(
     espeak_lang: &str,
     format: tts::encode::OutputFormat,
 ) -> Result<Vec<u8>, String> {
-    let sess = match state.kokoro.as_mut() {
-        Some(s) => {
-            s.ensure_model(model_path)
-                .map_err(|e| format!("kokoro reload: {e}"))?;
-            s
-        }
-        None => state.kokoro.insert(
-            tts::sessions::KokoroSession::load(model_path)
-                .map_err(|e| format!("kokoro load: {e}"))?,
-        ),
-    };
-
-    if req.ssml {
-        let segments = parse_ssml_or_err(&req.text)?;
-        // Apply English acronym normalization (Spell→letter names,
-        // Text→expand when expand_abbrev) for en-* voices. Mirrors
-        // the one-shot path in tts::synth_segments_kokoro (#244).
-        let segments = if tts::en::is_en(espeak_lang) {
-            tts::en::normalize_segments(segments, req.expand_abbrev)
-        } else {
-            segments
-        };
-        tts::synth_segments_kokoro_with(sess, &segments, espeak_lang, voice_path, req.rate, format)
-            .map_err(|e| e.to_string())
-    } else if tts::en::is_en(espeak_lang) {
-        // Route through segment pipeline so IPA_LEXICON overrides bypass G2P (#244).
-        let segments = tts::en::normalize_segments(
-            vec![tts::ssml::Segment::Text(req.text.clone())],
-            req.expand_abbrev,
-        );
-        tts::synth_segments_kokoro_with(sess, &segments, espeak_lang, voice_path, req.rate, format)
-            .map_err(|e| e.to_string())
-    } else {
-        // es/fr/it/pt use the cached CharsiuG2P session to avoid reloading ~100 MB per request.
-        let ipa = if matches!(
-            crate::tts::charsiu::base_lang(espeak_lang),
-            "es" | "fr" | "it" | "pt"
-        ) {
-            state
-                .charsiu
-                .to_ipa(
-                    &models::cache_dir().join("models/g2p/byt5-tiny"),
-                    &req.text,
-                    espeak_lang,
-                )
-                .map_err(|e| format!("g2p: {e}"))?
-        } else {
-            tts::g2p::text_to_ipa(&req.text, espeak_lang).map_err(|e| format!("g2p: {e}"))?
-        };
-        if ipa.trim().is_empty() {
-            return Err("no phonemes produced for input (empty after G2P)".into());
-        }
-        let audio = sess
-            .infer_ipa(&ipa, voice_path, req.rate)
-            .map_err(|e| format!("infer: {e}"))?;
-        if audio.is_empty() {
-            return Err("no recognizable phonemes in input".into());
-        }
-        tts::encode::encode(&audio, tts::kokoro::SAMPLE_RATE, format)
-            .map_err(|e| format!("encode: {e}"))
-    }
+    tts::say::say_kokoro(
+        &mut state.sessions,
+        &req.text,
+        espeak_lang,
+        model_path,
+        voice_path,
+        req.rate,
+        format,
+        req.ssml,
+        req.expand_abbrev,
+    )
+    .map_err(loop_error_text)
 }
 
-/// Vosk arm of [`handle`]: cached-session synth.
+/// Vosk arm of [`handle`]: cached-session synth via the shared dispatch.
 fn handle_vosk(
     req: &LoopRequest,
     state: &mut LoopState,
@@ -342,29 +276,27 @@ fn handle_vosk(
     speaker_id: u32,
     format: tts::encode::OutputFormat,
 ) -> Result<Vec<u8>, String> {
-    if req.ssml {
-        let segments = parse_ssml_or_err(&req.text)?;
-        let segments = tts::ru::normalize_segments(segments, req.expand_abbrev);
-        tts::synth_segments_vosk_with(
-            &mut state.vosk,
-            &segments,
-            model_dir,
-            speaker_id,
-            req.rate,
-            format,
-        )
-        .map_err(|e| e.to_string())
-    } else {
-        let text: std::borrow::Cow<'_, str> = if req.expand_abbrev {
-            std::borrow::Cow::Owned(tts::ru::expand_text(&req.text))
-        } else {
-            std::borrow::Cow::Borrowed(&req.text)
-        };
-        let (audio, sample_rate) = state
-            .vosk
-            .infer(model_dir, &text, speaker_id, req.rate)
-            .map_err(|e| format!("vosk: {e}"))?;
-        tts::encode::encode(&audio, sample_rate, format).map_err(|e| format!("encode: {e}"))
+    tts::say::say_vosk(
+        &mut state.sessions.vosk,
+        &req.text,
+        model_dir,
+        speaker_id,
+        req.rate,
+        format,
+        req.ssml,
+        req.expand_abbrev,
+    )
+    .map_err(loop_error_text)
+}
+
+/// ERR frames carry a bare message; unwrap the `TtsError` display prefixes so
+/// loop clients keep seeing the same strings as before the shared dispatch
+/// ("g2p: ...", "vosk: ...", not "synthesis failed: g2p: ...").
+fn loop_error_text(e: tts::TtsError) -> String {
+    match e {
+        tts::TtsError::SynthesisFailed(message) => message,
+        tts::TtsError::Coded { message, .. } => message,
+        other => other.to_string(),
     }
 }
 
@@ -623,9 +555,7 @@ mod tests {
             expand_abbrev: true,
         };
         let mut state = LoopState {
-            kokoro: None,
-            vosk: tts::sessions::VoskCache::new(),
-            charsiu: tts::sessions::CharsiuCache::new(),
+            sessions: tts::sessions::TtsSessions::default(),
         };
 
         let err = handle(&req, &mut state).unwrap_err();
