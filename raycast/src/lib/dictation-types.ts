@@ -18,7 +18,6 @@ export interface SignalLevel {
   peak: number;
   percent: number;
   state: SignalState;
-  status: string;
 }
 
 export type DictationState =

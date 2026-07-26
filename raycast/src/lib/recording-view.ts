@@ -4,11 +4,8 @@ import type {
   SignalState,
 } from "./dictation-types";
 
-export function emptySignal(
-  status: string,
-  state: SignalLevel["state"],
-): SignalLevel {
-  return { rms: 0, peak: 0, percent: 0, status, state };
+export function emptySignal(state: SignalLevel["state"]): SignalLevel {
+  return { rms: 0, peak: 0, percent: 0, state };
 }
 
 export function buildRecordingMarkdown(

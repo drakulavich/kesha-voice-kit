@@ -87,7 +87,7 @@ export function startDictationSession(
         silentForMs: 0,
         idle: false,
         mic: { name: "Default input device" },
-        signal: emptySignal("Starting microphone meter...", "starting"),
+        signal: emptySignal("starting"),
       });
       const silenceTracker = createSilenceTracker({
         now: deps.now,
