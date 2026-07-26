@@ -46,7 +46,8 @@ git fetch origin main
 git worktree add .worktrees/<slug> -b <branch> origin/main
 cd .worktrees/<slug>          # edit, test, commit here
 gh pr create --base main --head <branch>
-git worktree remove .worktrees/<slug> && git worktree prune   # after merge
+cd -                          # cleanup runs from the root checkout, not the worktree
+git worktree remove .worktrees/<slug> && git worktree prune
 ```
 
 Using jj? Same rule — the shared workspace stays on `main@origin`; use `jj workspace add --revision main@origin .worktrees/<slug>`. Cleanup and the LFS fork this repo needs: `docs/runbooks/jj-git-lfs.md`.

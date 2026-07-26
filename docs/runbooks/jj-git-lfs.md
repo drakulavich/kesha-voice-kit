@@ -32,11 +32,14 @@ The git worktree flow ends in `git worktree remove … && git worktree prune`; t
 equivalent is a separate command plus a manual directory removal — `forget` only detaches
 the workspace, it does not delete the files:
 
-Run both from the repo root — the paths are relative, so `rm -rf .worktrees/<slug>`
-issued from inside the workspace resolves beneath it and silently removes nothing:
+Run both from the **main checkout**, never from inside the workspace: the paths are
+relative, so `rm -rf .worktrees/<slug>` issued from within it resolves to a nonexistent
+nested path and silently removes nothing. Don't try to derive the root with
+`git rev-parse --show-toplevel` either — in a workspace that resolves to the workspace
+itself, and a non-colocated one has no `.git` at all.
 
 ```bash
-cd "$(git rev-parse --show-toplevel)"
+cd /path/to/kesha-voice-kit    # the main checkout
 jj workspace forget <slug>
 rm -rf .worktrees/<slug>
 ```
