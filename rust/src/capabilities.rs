@@ -88,6 +88,30 @@ fn backend_name() -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod caps_tests {
+    use super::*;
+
+    /// Ungated: every build shape must expose the core features exactly once —
+    /// the vector is a wire contract for the TS CLI and the Raycast extension.
+    #[test]
+    fn feature_list_core_invariants() {
+        let caps = get_capabilities();
+        for must in ["transcribe", "detect-lang", "vad"] {
+            assert!(
+                caps.features.contains(&must),
+                "{must} missing: {:?}",
+                caps.features
+            );
+        }
+        let mut seen = std::collections::HashSet::new();
+        for f in &caps.features {
+            assert!(seen.insert(f), "duplicate feature entry {f:?}");
+        }
+        assert!(!caps.backend.is_empty(), "backend name must be reported");
+    }
+}
+
 #[cfg(all(test, feature = "tts"))]
 mod tts_caps_tests {
     use super::*;
