@@ -7,6 +7,7 @@ any MCP client. Models are never auto-downloaded — tools fail with a
 
 ## Prerequisites
 
+- Install [Bun](https://bun.sh) if you don't have it (the CLI's runtime)
 - Install the CLI: `bun add -g @drakulavich/kesha-voice-kit`
 - `kesha install` — downloads the ASR engine + models
 - `kesha install --tts` — downloads TTS models, needed for `synthesize_speech`
@@ -80,7 +81,7 @@ Add to `.cursor/mcp.json`:
 
 GUI-launched clients (Claude Desktop, Cursor) don't inherit your shell's `PATH`,
 so `"command": "kesha"` can fail to start the server. If it does, replace it
-with the absolute path from `which kesha`:
+with the absolute path from `which kesha` (PowerShell: `Get-Command kesha`):
 
 ```json
 { "mcpServers": { "kesha": { "command": "/Users/you/.bun/bin/kesha", "args": ["mcp"] } } }
