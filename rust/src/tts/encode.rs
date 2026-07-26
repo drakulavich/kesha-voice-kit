@@ -364,7 +364,7 @@ fn encode_ogg_opus(
             )
             .map_err(|e| anyhow::anyhow!("ogg write audio (tail): {e}"))?;
     } else if n_full_packets == 0 {
-        // Edge case: empty / sub-frame input. Emit a single silent EOS packet
+        // Edge case: empty input (sub-frame audio takes the tail path). Emit a silent EOS packet
         // so we still produce a well-formed OggOpus file.
         for slot in pcm_buf.iter_mut() {
             *slot = 0.0;
