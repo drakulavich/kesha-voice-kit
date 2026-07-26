@@ -151,15 +151,6 @@ fn lookup_letter(ch: char, table: &[(&str, &str)]) -> String {
         .unwrap_or_else(|| ch.to_lowercase().to_string())
 }
 
-/// Mirrors `en/acronym.rs::is_acronym_token`: all-caps, length 2..=5.
-pub fn is_acronym_token(token: &str) -> bool {
-    let len = token.chars().count();
-    if !(2..=5).contains(&len) {
-        return false;
-    }
-    token.chars().all(|c| c.is_ascii_uppercase())
-}
-
 /// Spell `token` letter-by-letter. `token` must be the punct-stripped core (all ASCII
 /// uppercase, 2..=5 chars). Unknown languages fall back to lowercased chars joined with spaces.
 pub fn spell(token: &str, lang: &str) -> String {
