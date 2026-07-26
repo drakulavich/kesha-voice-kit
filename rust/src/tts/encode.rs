@@ -8,12 +8,7 @@
 use std::str::FromStr;
 
 #[cfg(feature = "tts")]
-use audioadapter_buffers::direct::SequentialSliceOfVecs;
-#[cfg(feature = "tts")]
-use rubato::{
-    calculate_cutoff, Async, FixedAsync, Resampler, SincInterpolationParameters,
-    SincInterpolationType, WindowFunction,
-};
+use crate::audio::resample_mono;
 
 use super::wav;
 
@@ -441,82 +436,6 @@ fn build_opus_tags() -> Vec<u8> {
     tags.extend_from_slice(vendor_bytes);
     tags.extend_from_slice(&0u32.to_le_bytes()); // user comment count
     tags
-}
-
-/// Mono f32 resampler. Mirrors the design in `crate::audio::resample` (same
-/// rubato params; we don't share the function because that one targets the
-/// transcribe pipeline's hard-coded 16 kHz).
-#[cfg(feature = "tts")]
-fn resample_mono(samples: &[f32], src_rate: u32, dst_rate: u32) -> anyhow::Result<Vec<f32>> {
-    if src_rate == dst_rate {
-        return Ok(samples.to_vec());
-    }
-    let ratio = f64::from(dst_rate) / f64::from(src_rate);
-
-    let sinc_len = 128;
-    let window = WindowFunction::BlackmanHarris2;
-    let params = SincInterpolationParameters {
-        sinc_len,
-        f_cutoff: calculate_cutoff(sinc_len, window),
-        interpolation: SincInterpolationType::Cubic,
-        oversampling_factor: 256,
-        window,
-    };
-
-    let chunk_size = 1024usize;
-    let channels = 1usize;
-    let mut resampler =
-        Async::<f32>::new_sinc(ratio, 1.1, &params, chunk_size, channels, FixedAsync::Input)
-            .map_err(|e| anyhow::anyhow!("resampler init: {e}"))?;
-
-    let total_frames = samples.len();
-    let mut out: Vec<f32> = Vec::with_capacity((total_frames as f64 * ratio * 1.1) as usize);
-    let mut frame_offset = 0usize;
-
-    while frame_offset + chunk_size <= total_frames {
-        let frames_needed = resampler.input_frames_next();
-        if frame_offset + frames_needed > total_frames {
-            break;
-        }
-        let chunk: Vec<Vec<f32>> =
-            vec![samples[frame_offset..frame_offset + frames_needed].to_vec()];
-        let in_adapter = SequentialSliceOfVecs::new(&chunk, channels, frames_needed)
-            .map_err(|e| anyhow::anyhow!("resample input: {e}"))?;
-
-        let out_max = resampler.output_frames_max();
-        let mut out_data: Vec<Vec<f32>> = vec![vec![0.0f32; out_max]; channels];
-        let mut out_adapter = SequentialSliceOfVecs::new_mut(&mut out_data, channels, out_max)
-            .map_err(|e| anyhow::anyhow!("resample output: {e}"))?;
-
-        let (_in, n_out) = resampler
-            .process_into_buffer(&in_adapter, &mut out_adapter, None)
-            .map_err(|e| anyhow::anyhow!("resample step: {e}"))?;
-        out.extend_from_slice(&out_data[0][..n_out]);
-        frame_offset += frames_needed;
-    }
-
-    if frame_offset < total_frames {
-        let remaining = total_frames - frame_offset;
-        let frames_needed = resampler.input_frames_next();
-        let mut last_chunk: Vec<f32> = samples[frame_offset..].to_vec();
-        last_chunk.resize(frames_needed, 0.0);
-        let chunk: Vec<Vec<f32>> = vec![last_chunk];
-        let in_adapter = SequentialSliceOfVecs::new(&chunk, channels, frames_needed)
-            .map_err(|e| anyhow::anyhow!("resample tail input: {e}"))?;
-
-        let out_max = resampler.output_frames_max();
-        let mut out_data: Vec<Vec<f32>> = vec![vec![0.0f32; out_max]; channels];
-        let mut out_adapter = SequentialSliceOfVecs::new_mut(&mut out_data, channels, out_max)
-            .map_err(|e| anyhow::anyhow!("resample tail output: {e}"))?;
-
-        let (_in, n_out) = resampler
-            .process_into_buffer(&in_adapter, &mut out_adapter, None)
-            .map_err(|e| anyhow::anyhow!("resample tail: {e}"))?;
-        let real_out = ((remaining as f64 * ratio) as usize).min(n_out);
-        out.extend_from_slice(&out_data[0][..real_out]);
-    }
-
-    Ok(out)
 }
 
 #[cfg(test)]

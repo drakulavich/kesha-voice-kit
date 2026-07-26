@@ -148,7 +148,7 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
 }
 
 fn mix_to_mono(samples: &[f32], channels: usize) -> Vec<f32> {
-    if channels == 1 {
+    if channels <= 1 {
         return samples.to_vec();
     }
     samples
@@ -157,12 +157,12 @@ fn mix_to_mono(samples: &[f32], channels: usize) -> Vec<f32> {
         .collect()
 }
 
-fn resample(samples: Vec<f32>, src_rate: u32) -> Result<Vec<f32>> {
-    if src_rate == TARGET_SAMPLE_RATE {
-        return Ok(samples);
+pub(crate) fn resample_mono(samples: &[f32], src_rate: u32, dst_rate: u32) -> Result<Vec<f32>> {
+    if src_rate == dst_rate {
+        return Ok(samples.to_vec());
     }
 
-    let ratio = TARGET_SAMPLE_RATE as f64 / src_rate as f64;
+    let ratio = dst_rate as f64 / src_rate as f64;
 
     let sinc_len = 128;
     let window = WindowFunction::BlackmanHarris2;
@@ -181,7 +181,7 @@ fn resample(samples: Vec<f32>, src_rate: u32) -> Result<Vec<f32>> {
         Async::<f32>::new_sinc(ratio, 1.1, &params, chunk_size, channels, FixedAsync::Input)
             .context("failed to create resampler")?;
 
-    let input_data = [samples];
+    let input_data = [samples.to_vec()];
     let total_frames = input_data[0].len();
 
     let mut output_mono: Vec<f32> =
@@ -247,7 +247,7 @@ fn resample(samples: Vec<f32>, src_rate: u32) -> Result<Vec<f32>> {
 pub fn load_audio(path: &str) -> Result<Vec<f32>> {
     let (interleaved, sample_rate, channels) = decode_audio(path)?;
     let mono = mix_to_mono(&interleaved, channels);
-    resample(mono, sample_rate)
+    resample_mono(&mono, sample_rate, TARGET_SAMPLE_RATE)
 }
 
 pub fn load_audio_truncated(path: &str, max_seconds: f32) -> Result<Vec<f32>> {
@@ -286,4 +286,60 @@ pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
 /// the ASR cold-load on a file we knew at the top was unusable).
 pub fn ensure_audio_track(path: &str) -> Result<()> {
     open_format(path).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mix_to_mono_passes_mono_through() {
+        let samples = vec![0.1, -0.2, 0.3];
+        assert_eq!(mix_to_mono(&samples, 1), samples);
+    }
+
+    #[test]
+    fn mix_to_mono_averages_interleaved_frames() {
+        let stereo = vec![1.0, 0.0, 0.0, 1.0, -1.0, -1.0];
+        assert_eq!(mix_to_mono(&stereo, 2), vec![0.5, 0.5, -1.0]);
+
+        let six = vec![0.6; 6];
+        let mixed = mix_to_mono(&six, 6);
+        assert_eq!(mixed.len(), 1);
+        assert!((mixed[0] - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mix_to_mono_does_not_panic_on_zero_channels() {
+        let samples = vec![0.1, 0.2];
+        assert_eq!(mix_to_mono(&samples, 0), samples);
+    }
+
+    #[test]
+    fn resample_mono_same_rate_is_identity() {
+        let samples = vec![0.25; 480];
+        assert_eq!(resample_mono(&samples, 16000, 16000).unwrap(), samples);
+    }
+
+    #[test]
+    fn resample_mono_output_length_tracks_ratio() {
+        for src in [8000u32, 22050, 44100, 48000] {
+            let one_second = vec![0.0f32; src as usize];
+            let out = resample_mono(&one_second, src, 16000).unwrap();
+            let expected = 16000f64;
+            let delta = (out.len() as f64 - expected).abs();
+            assert!(
+                delta <= 16.0,
+                "{src} Hz -> 16 kHz produced {} frames, expected ~{expected}",
+                out.len()
+            );
+        }
+    }
+
+    #[test]
+    fn resample_mono_upsamples_short_input() {
+        let out = resample_mono(&vec![0.0f32; 800], 8000, 16000).unwrap();
+        let delta = (out.len() as i64 - 1600).abs();
+        assert!(delta <= 16, "expected ~1600 frames, got {}", out.len());
+    }
 }
