@@ -13,6 +13,7 @@ import type {
   SignalLevel,
 } from "../src/lib/dictation-types";
 import { emptySignal } from "../src/lib/recording-view";
+import { deferred, flushPromises } from "./helpers/async";
 
 describe("dictation controller", () => {
   it("runs the happy path and copies the trimmed transcript", async () => {
@@ -498,21 +499,6 @@ function createDeps(
 
 function resolvedTask<T>(done: Promise<T>): RunningTask<T> {
   return { done, stop: vi.fn() };
-}
-
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
-async function flushPromises() {
-  await Promise.resolve();
-  await Promise.resolve();
 }
 
 function listeningSignal(): SignalLevel {

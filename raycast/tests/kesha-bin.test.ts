@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { parseShebang, resolveKeshaBin } from "../src/lib/kesha-bin";
 import type { KeshaBinDeps } from "../src/lib/kesha-bin";
 
@@ -29,24 +29,19 @@ describe("parseShebang", () => {
 });
 
 interface FakeFile {
-  shebang?: string | null;
+  shebang?: string;
   realpath?: string;
 }
 
 function fakeDeps(
   files: Record<string, FakeFile>,
-  overrides: Partial<KeshaBinDeps> = {},
+  overrides: KeshaBinDeps = {},
 ): KeshaBinDeps {
   return {
-    candidates: [],
     interpreterCandidates: [],
     isExecutable: async (path) => path in files,
     readShebang: async (path) => files[path]?.shebang ?? null,
-    realpath: async (path) => {
-      const target = files[path]?.realpath;
-      if (!target) throw new Error(`ENOENT: ${path}`);
-      return target;
-    },
+    realpath: async (path) => files[path]?.realpath ?? path,
     ...overrides,
   };
 }
@@ -109,9 +104,7 @@ describe("resolveKeshaBin", () => {
   it("falls back to direct execution when no interpreter matches", async () => {
     const deps = fakeDeps(
       {
-        "/global/kesha": {
-          realpath: "/pkg/cli.ts",
-        },
+        "/global/kesha": { realpath: "/pkg/cli.ts" },
         "/pkg/cli.ts": { shebang: "/usr/bin/env bun" },
         "/opt/bin/node": {},
       },
@@ -126,17 +119,24 @@ describe("resolveKeshaBin", () => {
     });
   });
 
-  it("keeps the original path when realpath fails", async () => {
-    const readShebang = vi.fn(async () => null);
+  it("reads the shebang from the original path when realpath fails", async () => {
     const deps = fakeDeps(
-      { "/global/kesha": {} },
-      { candidates: ["/global/kesha"], readShebang },
+      {
+        "/global/kesha": { shebang: "/usr/bin/env bun" },
+        "/opt/bin/bun": {},
+      },
+      {
+        candidates: ["/global/kesha"],
+        interpreterCandidates: ["/opt/bin/bun"],
+        realpath: async (path) => {
+          throw new Error(`ENOENT: ${path}`);
+        },
+      },
     );
     expect(await resolveKeshaBin(undefined, deps)).toEqual({
-      command: "/global/kesha",
-      prefixArgs: [],
+      command: "/opt/bin/bun",
+      prefixArgs: ["/global/kesha"],
     });
-    expect(readShebang).toHaveBeenCalledWith("/global/kesha");
   });
 
   it("executes non-env shebangs directly", async () => {

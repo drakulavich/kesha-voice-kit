@@ -65,13 +65,23 @@ async function defaultReadShebang(path: string): Promise<string | null> {
   }
 }
 
+function withDefaults(deps: KeshaBinDeps): Required<KeshaBinDeps> {
+  return {
+    candidates: FALLBACK_CANDIDATES,
+    interpreterCandidates: INTERPRETER_CANDIDATES,
+    isExecutable: defaultIsExecutable,
+    readShebang: defaultReadShebang,
+    realpath,
+    ...deps,
+  };
+}
+
 async function findInterpreter(
   name: string,
-  deps: KeshaBinDeps,
+  deps: Required<KeshaBinDeps>,
 ): Promise<string | null> {
-  const isExecutable = deps.isExecutable ?? defaultIsExecutable;
-  for (const path of deps.interpreterCandidates ?? INTERPRETER_CANDIDATES) {
-    if (path.endsWith(`/${name}`) && (await isExecutable(path))) {
+  for (const path of deps.interpreterCandidates) {
+    if (path.endsWith(`/${name}`) && (await deps.isExecutable(path))) {
       return path;
     }
   }
@@ -80,21 +90,18 @@ async function findInterpreter(
 
 async function buildSpawn(
   path: string,
-  deps: KeshaBinDeps,
+  deps: Required<KeshaBinDeps>,
 ): Promise<KeshaSpawn | null> {
-  const isExecutable = deps.isExecutable ?? defaultIsExecutable;
-  const readShebang = deps.readShebang ?? defaultReadShebang;
-  const resolvePath = deps.realpath ?? realpath;
-  if (!(await isExecutable(path))) {
+  if (!(await deps.isExecutable(path))) {
     return null;
   }
   let resolved = path;
   try {
-    resolved = await resolvePath(path);
+    resolved = await deps.realpath(path);
   } catch {
     // Keep original path if the symlink target cannot be resolved.
   }
-  const shebang = await readShebang(resolved);
+  const shebang = await deps.readShebang(resolved);
   if (!shebang) {
     return { command: path, prefixArgs: [] };
   }
@@ -112,12 +119,13 @@ export async function resolveKeshaBin(
   preference: string | undefined,
   deps: KeshaBinDeps = {},
 ): Promise<KeshaSpawn | null> {
+  const resolved = withDefaults(deps);
   const trimmed = preference?.trim();
   if (trimmed) {
-    return buildSpawn(trimmed, deps);
+    return buildSpawn(trimmed, resolved);
   }
-  for (const candidate of deps.candidates ?? FALLBACK_CANDIDATES) {
-    const spawn = await buildSpawn(candidate, deps);
+  for (const candidate of resolved.candidates) {
+    const spawn = await buildSpawn(candidate, resolved);
     if (spawn) {
       return spawn;
     }

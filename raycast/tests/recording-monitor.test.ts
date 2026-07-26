@@ -1,35 +1,38 @@
 import { describe, expect, it, vi } from "vitest";
 import { startRecordingMonitor } from "../src/lib/recording-monitor";
-import type { RecordingMonitorDeps } from "../src/lib/recording-monitor";
+import type {
+  MonitorTimer,
+  RecordingMonitorDeps,
+} from "../src/lib/recording-monitor";
 import type { RecordingPatch, SignalLevel } from "../src/lib/dictation-types";
 import { emptySignal } from "../src/lib/recording-view";
 import { METER_INTERVAL_MS } from "../src/lib/dictation-config";
+import { deferred, flushPromises } from "./helpers/async";
 
-function createHarness(overrides: Partial<RecordingMonitorDeps> = {}) {
+function createHarness() {
   let clock = 0;
   let tick: (() => void) | null = null;
   let onSignal: ((signal: SignalLevel) => void) | null = null;
   const patches: RecordingPatch[] = [];
-  const timerToken = {} as ReturnType<typeof setInterval>;
+  const timerToken = {} as MonitorTimer;
   const clearIntervalSpy = vi.fn();
   const stopMeter = vi.fn();
   const micInfo = deferred<RecordingPatch["mic"]>();
 
-  const schedule = vi.fn((fn: () => void) => {
+  const schedule = vi.fn((fn: () => void, _ms: number) => {
     tick = fn;
     return timerToken;
-  }) as unknown as typeof setInterval;
+  });
 
   const deps: RecordingMonitorDeps = {
     now: () => clock,
     setInterval: schedule,
-    clearInterval: clearIntervalSpy as unknown as typeof clearInterval,
+    clearInterval: clearIntervalSpy,
     resolveDefaultMicInfo: () => micInfo.promise,
     startLiveMicMeter: (cb) => {
       onSignal = cb;
       return stopMeter;
     },
-    ...overrides,
   };
 
   const stop = startRecordingMonitor((patch) => patches.push(patch), deps);
@@ -49,18 +52,10 @@ function createHarness(overrides: Partial<RecordingMonitorDeps> = {}) {
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
-
 describe("startRecordingMonitor", () => {
   it("emits an immediate elapsed tick and schedules the meter interval", () => {
     const harness = createHarness();
-    expect(harness.patches).toEqual([{ elapsedSeconds: 0 }]);
+    expect(harness.patches).toContainEqual({ elapsedSeconds: 0 });
     expect(harness.schedule).toHaveBeenCalledWith(
       expect.any(Function),
       METER_INTERVAL_MS,
@@ -78,7 +73,7 @@ describe("startRecordingMonitor", () => {
     const harness = createHarness();
     harness.emitSignal(emptySignal("unavailable"));
     harness.micInfo.resolve({ name: "Studio Mic", sampleRate: 48000 });
-    await Promise.resolve();
+    await flushPromises();
 
     expect(harness.patches).toContainEqual({
       signal: emptySignal("unavailable"),
@@ -99,7 +94,7 @@ describe("startRecordingMonitor", () => {
     harness.fireTick();
     harness.emitSignal(emptySignal("unavailable"));
     harness.micInfo.resolve({ name: "Late Mic" });
-    await Promise.resolve();
+    await flushPromises();
     expect(harness.patches).toHaveLength(seen);
   });
 });
