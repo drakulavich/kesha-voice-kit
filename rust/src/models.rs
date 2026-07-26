@@ -1623,12 +1623,14 @@ fn cleanup_legacy() {
 
 /// Age threshold for orphaned download staging. A SIGKILLed download leaves
 /// its `<name>.part.<pid>` behind forever (#619); a live concurrent
-/// installer's staging keeps a fresh mtime while `io::copy` streams into it,
-/// so anything untouched for an hour is safe to sweep. Unix-only: Windows
+/// installer's staging keeps a fresh mtime while `io::copy` streams into it.
+/// The 24 h threshold makes a stalled-but-alive download (no bytes for a full
+/// day, process still up) practically impossible to misclassify while still
+/// clearing true orphans on the next install. Unix-only: Windows
 /// keeps last-write time stale while a handle is open and permits unlinking
 /// open files, so an in-flight multi-hour download could be swept there.
 #[cfg(unix)]
-const STALE_STAGING_SECS: u64 = 60 * 60;
+const STALE_STAGING_SECS: u64 = 24 * 60 * 60;
 
 #[cfg(unix)]
 fn cleanup_orphan_staging(dir: &Path) {
