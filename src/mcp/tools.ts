@@ -2,7 +2,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { errorMessage } from "../error-utils";
 import { z } from "zod";
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
-import { basename, join } from "path";
+import { basename, isAbsolute, join } from "path";
 import { transcribe, transcribeWithTimestamps } from "../lib";
 import { listVoices, aggregateLanguages } from "./voices";
 import { say, type SayFormat } from "../synth";
@@ -90,7 +90,11 @@ export function registerTools(server: McpServer): void {
       title: "Transcribe audio",
       description: "Transcribe a local audio file to text. Set timestamps for segment timings.",
       inputSchema: {
-        path: z.string().describe("Absolute or relative path to a local audio file"),
+        path: z
+          .string()
+          .describe(
+            "Absolute path to a local audio file. Relative paths resolve against the MCP server's own working directory, not the client's — pass an absolute path.",
+          ),
         timestamps: z.boolean().optional().describe("Return per-segment start/end times"),
       },
       outputSchema: {
@@ -111,7 +115,10 @@ export function registerTools(server: McpServer): void {
         return { isError: true, content: [{ type: "text" as const, text: "request cancelled" }] };
       }
       if (!existsSync(path)) {
-        return { isError: true, content: [{ type: "text" as const, text: `File not found: ${path}` }] };
+        const hint = isAbsolute(path)
+          ? ""
+          : ` (relative paths resolve against the MCP server's working directory, ${process.cwd()} — pass an absolute path instead)`;
+        return { isError: true, content: [{ type: "text" as const, text: `File not found: ${path}${hint}` }] };
       }
       try {
         if (timestamps) {
