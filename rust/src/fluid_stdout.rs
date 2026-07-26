@@ -228,9 +228,24 @@ mod tests {
     /// nextest runs each test in its own process, so rewiring fd 1 is safe.
     #[test]
     fn silenced_scope_discards_buffered_c_stdio_before_restore() {
+        /// Restores the test's original fd 1 even when an assert panics —
+        /// under a single-process `cargo test --lib` run a leaked redirect
+        /// would misdirect other tests' output.
+        struct RestoreStdout(std::os::fd::RawFd);
+        impl Drop for RestoreStdout {
+            fn drop(&mut self) {
+                // SAFETY: self.0 is the dup of the original fd 1 we own.
+                unsafe {
+                    libc::dup2(self.0, libc::STDOUT_FILENO);
+                    libc::close(self.0);
+                }
+            }
+        }
+
         let mut capture = tempfile::tempfile().expect("capture tempfile");
         let saved_real = unsafe { libc::dup(libc::STDOUT_FILENO) };
         assert!(saved_real >= 0, "dup stdout failed");
+        let _restore = RestoreStdout(saved_real);
         assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
 
         let devnull = std::fs::OpenOptions::new()
@@ -248,10 +263,7 @@ mod tests {
             libc::printf(c"after guard\n".as_ptr());
             libc::fflush(std::ptr::null_mut());
         }
-        unsafe {
-            libc::dup2(saved_real, libc::STDOUT_FILENO);
-            libc::close(saved_real);
-        }
+        drop(_restore);
 
         let mut contents = String::new();
         capture.rewind().unwrap();
