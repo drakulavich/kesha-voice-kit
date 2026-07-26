@@ -93,6 +93,39 @@ impl KokoroSession {
     }
 }
 
+/// Lazily-loaded [`KokoroSession`] that survives model swaps. `get` loads on
+/// first use and delegates to `ensure_model` afterwards, so callers share one
+/// code path whether they are one-shot (fresh slot per call) or long-lived
+/// (`--stdin-loop` holds the slot across requests).
+#[derive(Default)]
+pub struct KokoroSlot {
+    inner: Option<KokoroSession>,
+}
+
+impl KokoroSlot {
+    pub fn get(&mut self, model_path: &Path) -> anyhow::Result<&mut KokoroSession> {
+        use anyhow::Context;
+        match self.inner.as_mut() {
+            Some(sess) => sess.ensure_model(model_path).context("kokoro reload")?,
+            None => {
+                self.inner = Some(KokoroSession::load(model_path).context("kokoro load")?);
+            }
+        }
+        Ok(self.inner.as_mut().expect("kokoro session just ensured"))
+    }
+}
+
+/// The full set of cacheable TTS sessions. The one-shot `tts::say()` path
+/// constructs this fresh per call; `--stdin-loop` holds one across requests
+/// so Kokoro (~1 s), Vosk RU (~21 s cold), and CharsiuG2P (~100 MB, #509)
+/// load at most once per process.
+#[derive(Default)]
+pub struct TtsSessions {
+    pub kokoro: KokoroSlot,
+    pub vosk: VoskCache,
+    pub charsiu: CharsiuCache,
+}
+
 /// Map of `Vosk` instances keyed by model directory. Eviction on infer error.
 ///
 /// Vosk holds mutable BERT prosody / dictionary state; a synth error may leave

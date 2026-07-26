@@ -13,6 +13,17 @@ use anyhow::Result;
 /// - `es`/`fr`/`it`/`pt` → normalize → CharsiuG2P (byt5-tiny ONNX)
 /// - `ru` and others → error with a pointer to the engine-specific G2P
 pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
+    text_to_ipa_cached(&mut crate::tts::sessions::CharsiuCache::new(), text, lang)
+}
+
+/// Same routing as [`text_to_ipa`], but Romance languages go through the
+/// caller's [`CharsiuCache`] so long-lived callers (`--stdin-loop`) don't
+/// reload the ~100 MB ByT5 sessions per request (#509).
+pub fn text_to_ipa_cached(
+    charsiu: &mut crate::tts::sessions::CharsiuCache,
+    text: &str,
+    lang: &str,
+) -> Result<String> {
     let text_chars = text.chars().count();
     if text.trim().is_empty() {
         crate::dtrace!("g2p::route lang={lang} backend=empty text_chars={text_chars}");
@@ -25,8 +36,7 @@ pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
         crate::dtrace!("g2p::route lang={lang} backend=charsiu text_chars={text_chars}");
         let dir = crate::models::cache_dir().join("models/g2p/byt5-tiny");
         check_charsiu_files(&dir)?;
-        let mut g = crate::tts::charsiu::Charsiu::load(&dir)?;
-        let ipa = charsiu_ipa(&mut g, text, &lower)?;
+        let ipa = charsiu.to_ipa(&dir, text, &lower)?;
         crate::dtrace!("g2p::result ipa_chars={}", ipa.chars().count());
         return Ok(ipa);
     }
