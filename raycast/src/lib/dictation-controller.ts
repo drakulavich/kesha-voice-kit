@@ -90,7 +90,7 @@ export function startDictationSession(
       }
 
       const result = await transcribePhase(kesha, audioPath);
-      if (cancelled) return;
+      if (!result || cancelled) return;
 
       await deliverTranscript(result);
     } catch (err: unknown) {
@@ -161,7 +161,7 @@ export function startDictationSession(
   async function transcribePhase(
     kesha: KeshaSpawn,
     audioPath: string,
-  ): Promise<TranscribeResult> {
+  ): Promise<TranscribeResult | null> {
     setState({
       status: "transcribing",
       elapsedSeconds: 0,
@@ -172,6 +172,7 @@ export function startDictationSession(
       title: "Transcribing",
       message: basename(audioPath),
     });
+    if (cancelled) return null;
 
     stopTranscribeTimer = startTranscribingTimer(setState);
     transcriber = deps.startTranscriber(kesha, audioPath);
