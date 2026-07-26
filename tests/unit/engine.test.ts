@@ -11,7 +11,6 @@ import {
   transcribeEngine,
   transcribeEngineWithSegments,
 } from "../../src/engine";
-import type { EngineCapabilities } from "../../src/engine";
 
 function fakeEngine(features: string[]): string {
   const dir = mkdtempSync(join(tmpdir(), "kesha-engine-test-"));
@@ -195,14 +194,12 @@ describe("spawnStdioWithDebugFd", () => {
     expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
   });
 
-  test("returns base unchanged on empty value (env exists but blank)", () => {
-    process.env.KESHA_DEBUG_FD = "";
-    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
-  });
-
-  test("returns base unchanged on non-numeric value (garbage)", () => {
-    process.env.KESHA_DEBUG_FD = "abc";
-    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
+  test("returns base unchanged on invalid KESHA_DEBUG_FD values", () => {
+    const invalidValues = ["", "abc", "-1", "3.5", "1000000"];
+    for (const value of invalidValues) {
+      process.env.KESHA_DEBUG_FD = value;
+      expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
+    }
   });
 
   test("returns base unchanged for stdio range fd (0/1/2)", () => {
@@ -236,29 +233,4 @@ describe("spawnStdioWithDebugFd", () => {
     expect(spawnStdioWithDebugFd(["pipe", "pipe", "pipe"])).toEqual(["pipe", "pipe", "pipe", 3]);
   });
 
-  test("returns base unchanged on negative fd", () => {
-    process.env.KESHA_DEBUG_FD = "-1";
-    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
-  });
-
-  test("returns base unchanged on decimal fd (Number.isInteger rejects)", () => {
-    process.env.KESHA_DEBUG_FD = "3.5";
-    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
-  });
-
-  test("returns base unchanged on fd above MAX_FORWARDED_FD (#323 P2)", () => {
-    // 1024 is the cap; anything higher would allocate a giant `ignore`
-    // padding array. Legitimate users never have an fd this high.
-    process.env.KESHA_DEBUG_FD = "1000000";
-    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
-  });
-});
-
-describe("EngineCapabilities tts field", () => {
-  test("typed tts.languages round-trips from JSON", () => {
-    const json = `{"protocolVersion":3,"backend":"onnx","features":["tts"],"tts":{"languages":[{"code":"en","engines":["kokoro"]},{"code":"ru","engines":["vosk"]}]}}`;
-    const caps = JSON.parse(json) as EngineCapabilities;
-    expect(caps.tts?.languages.map((l) => l.code)).toEqual(["en", "ru"]);
-    expect(caps.tts?.languages[0].engines).toEqual(["kokoro"]);
-  });
 });

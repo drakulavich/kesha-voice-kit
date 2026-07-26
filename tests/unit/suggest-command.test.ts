@@ -8,12 +8,16 @@ describe("suggestCommand", () => {
     expect(suggestCommand("hlep", commands)).toBe("help");
   });
 
-  test("suggests 'test' for 'tset'", () => {
-    expect(suggestCommand("tset", commands)).toBe("test");
-  });
-
-  test("suggests 'run' for 'ru'", () => {
-    expect(suggestCommand("ru", commands)).toBe("run");
+  test("suggests the closest match for common typos/prefixes", () => {
+    const cases: Array<[string, string]> = [
+      ["tset", "test"],
+      ["ru", "run"],
+      ["tes", "test"],
+      ["runx", "run"],
+    ];
+    for (const [input, expected] of cases) {
+      expect(suggestCommand(input, commands)).toBe(expected);
+    }
   });
 
   test("returns null for 'xyzabc'", () => {
@@ -30,14 +34,6 @@ describe("suggestCommand", () => {
 
   test("case-insensitive: 'Help' matches 'help'", () => {
     expect(suggestCommand("Help", commands)).toBe("help");
-  });
-
-  test("suggests 'test' for 'tes'", () => {
-    expect(suggestCommand("tes", commands)).toBe("test");
-  });
-
-  test("suggests 'run' for 'runx'", () => {
-    expect(suggestCommand("runx", commands)).toBe("run");
   });
 
   test("returns null for empty commands list", () => {

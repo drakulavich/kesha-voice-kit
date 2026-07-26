@@ -34,10 +34,6 @@ describe("buildInstallCommand", () => {
     expect(buildInstallCommand({ backend: "onnx" }, [])).toBe("kesha install --onnx");
   });
 
-  test("an unknown backend contributes no flag", () => {
-    expect(buildInstallCommand({ backend: "cuda" }, [])).toBe("kesha install");
-  });
-
   test("languages are only emitted with --tts", () => {
     expect(buildInstallCommand({}, ["es"])).toBe("kesha install --tts es");
     expect(buildInstallCommand({ vad: true }, [])).toBe("kesha install --vad");

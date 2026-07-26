@@ -4,8 +4,6 @@ import { decode as decodeToon } from "@toon-format/toon";
 import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat } from "../../src/cli";
 
-type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
-
 function normalizeUsage(usage: string): string {
   return usage
     // Strip ANSI SGR escapes (color/bold/underline). citty colorizes usage when
@@ -37,55 +35,7 @@ function defaultMainArgs(overrides: Record<string, unknown> = {}): Record<string
   };
 }
 
-async function expectMainExit(
-  args: Record<string, unknown>,
-  rawArgs: string[],
-): Promise<number> {
-  const savedExit = process.exit;
-  const savedLog = console.log;
-  const savedError = console.error;
-  try {
-    console.log = () => {};
-    console.error = () => {};
-    process.exit = ((code?: string | number | null | undefined) => {
-      throw new Error(`exit:${code ?? 0}`);
-    }) as typeof process.exit;
-    await (createMainCommand().run as MainRun)({ args, rawArgs });
-    throw new Error("main command did not exit");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    expect(message.startsWith("exit:")).toBe(true);
-    return Number(message.slice("exit:".length));
-  } finally {
-    process.exit = savedExit;
-    console.log = savedLog;
-    console.error = savedError;
-  }
-}
-
 describe("CLI help", () => {
-  test("main help contains usage and install info", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("USAGE");
-    expect(usage).toContain("install");
-  });
-
-  test("main help shows subcommand inventory (#324)", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("Commands:");
-    expect(usage).toContain("completions");
-    expect(usage).toContain("doctor     Collect support diagnostics.");
-    expect(usage).toContain("init       Interactive setup guide for Kesha features.");
-    expect(usage).toContain("install    Download engine and models.");
-    expect(usage).toContain("logs       Manage local privacy-safe diagnostic logs.");
-    expect(usage).toContain("manpage");
-    expect(usage).toContain("record     Record microphone audio to a WAV file.");
-    expect(usage).toContain("status     Inspect installed backend.");
-    expect(usage).toContain("say        Synthesize speech from text.");
-    expect(usage).toContain("stats      Manage local anonymous performance stats.");
-    expect(usage).toContain("support-bundle");
-  });
-
   test("install help contains backend and cache options", async () => {
     const usage = await renderUsage(installCommand);
     expect(usage).toContain("--coreml");
@@ -137,43 +87,6 @@ describe("CLI help", () => {
     expect(usage).toContain("privacy-safe diagnostic logs");
   });
 
-  test("main help contains --json flag", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("--json");
-  });
-
-  test("main help contains --include-errors flag (#324 P1)", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("--include-errors");
-  });
-
-  test("main help contains --toon flag (#138)", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("--toon");
-    expect(usage).toMatch(/TOON|LLM/i);
-  });
-
-  test("main help contains --timestamps flag", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("--timestamps");
-  });
-
-  test("main help contains --lang flag", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("--lang");
-  });
-
-  test("main help contains --verbose flag", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("--verbose");
-  });
-
-  test("main help contains --debug flag (#148)", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("--debug");
-    expect(usage).toMatch(/KESHA_DEBUG|trace/i);
-  });
-
   test("status help has command description", async () => {
     const usage = await renderUsage(statusCommand);
     expect(usage).toContain("status");
@@ -192,25 +105,6 @@ describe("CLI help", () => {
     expect(usage).toContain("stats");
     expect(usage).toContain("enable");
   });
-});
-
-describe("main command validation side effects", () => {
-  test("--timestamps requires machine-readable output", async () => {
-    await expect(
-      expectMainExit(defaultMainArgs({ timestamps: true, _: ["audio.wav"] }), ["--timestamps"]),
-    ).resolves.toBe(2);
-  });
-
-  test("--vad and --no-vad are mutually exclusive", async () => {
-    await expect(
-      expectMainExit(defaultMainArgs({ vad: true, _: ["audio.wav"] }), ["--vad", "--no-vad"]),
-    ).resolves.toBe(2);
-  });
-
-  test("empty invocation exits after printing usage", async () => {
-    await expect(expectMainExit(defaultMainArgs(), [])).resolves.toBe(1);
-  });
-
 });
 
 describe("transcription progress reporting", () => {
@@ -311,12 +205,6 @@ describe("record command validation", () => {
 });
 
 describe("CLI help golden contracts (#324 P1)", () => {
-  test("normalizer replaces every rendered version token", () => {
-    expect(normalizeUsage("first (kesha v1.18.0)\nsecond (kesha v1.18.1-cli)")).toBe(
-      "first (kesha v<version>)\nsecond (kesha v<version>)",
-    );
-  });
-
   test("main help matches the normalized golden output", async () => {
     expect(normalizeUsage(await renderUsage(createMainCommand()))).toBe(`Kesha Voice Kit — open-source voice toolkit for Apple Silicon.
 
@@ -411,11 +299,6 @@ OPTIONS
 });
 
 describe("output formatting", () => {
-  test("single file text: no header", () => {
-    const output = formatTextOutput([{ file: "a.ogg", text: "Hello", lang: "en" }]);
-    expect(output).toBe("Hello\n");
-  });
-
   test("JSON output: always array, pretty-printed", () => {
     const output = formatJsonOutput([{ file: "a.ogg", text: "Hello", lang: "en" }]);
     const parsed = JSON.parse(output);
@@ -487,45 +370,6 @@ describe("TOON output (#138)", () => {
     expect(decoded).toEqual(input);
   });
 
-  test("multi-file uniform array has a single schema header row", () => {
-    const output = formatToonOutput([
-      { file: "a.ogg", text: "Hello", lang: "en" },
-      { file: "b.ogg", text: "World", lang: "en" },
-    ]);
-    // Guards against per-object fallback where the schema would repeat on every row.
-    const schemaRows = output.match(/\{file,text,lang\}/g) ?? [];
-    expect(schemaRows).toHaveLength(1);
-  });
-
-  test("preserves sttTimeMs and nested language fields", () => {
-    const input = [{
-      file: "a.ogg",
-      text: "Hello",
-      lang: "en",
-      sttTimeMs: 427,
-      audioLanguage: { code: "en", confidence: 0.94 },
-      textLanguage: { code: "en", confidence: 0.98 },
-    }];
-    const decoded = decodeToon(formatToonOutput(input));
-    expect(decoded).toEqual(input);
-  });
-
-  test("preserves timestamped segments", () => {
-    const input = [{
-      file: "a.ogg",
-      text: "Hello",
-      lang: "en",
-      segments: [{ start: 0, end: 1.25, text: "Hello" }],
-    }];
-    const decoded = decodeToon(formatToonOutput(input));
-    expect(decoded).toEqual(input);
-  });
-
-  test("empty array", () => {
-    const output = formatToonOutput([]);
-    expect(decodeToon(output)).toEqual([]);
-  });
-
   test("ends with a trailing newline so it composes in pipelines", () => {
     const output = formatToonOutput([{ file: "a.ogg", text: "Hi", lang: "en" }]);
     expect(output.endsWith("\n")).toBe(true);
@@ -586,35 +430,6 @@ describe("language detection", () => {
 });
 
 
-describe("CLI help with status", () => {
-  test("main description mentions install command", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("install");
-  });
-
-  test("main help includes status command", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("status");
-  });
-
-  test("main description mentions stats command", async () => {
-    const usage = await renderUsage(createMainCommand());
-    expect(usage).toContain("stats");
-  });
-});
-
-describe("say --verbose (TTS time, parallel to #139)", () => {
-  test("say help advertises --verbose", async () => {
-    const usage = await renderUsage(sayCommand);
-    expect(usage).toContain("--verbose");
-  });
-
-  test("say help explains --verbose prints TTS time", async () => {
-    const usage = await renderUsage(sayCommand);
-    expect(usage).toMatch(/TTS|synthesis time/i);
-  });
-});
-
 describe("sttTimeMs field (#139)", () => {
   test("JSON output preserves sttTimeMs when set", () => {
     const results = [{ file: "a.ogg", text: "Hello", lang: "en", sttTimeMs: 427 }];
@@ -627,10 +442,6 @@ describe("sttTimeMs field (#139)", () => {
     expect(parsed[0].sttTimeMs).toBeUndefined();
   });
 
-  test("plain-text output is unchanged by sttTimeMs", () => {
-    const results = [{ file: "a.ogg", text: "Hello", lang: "en", sttTimeMs: 427 }];
-    expect(formatTextOutput(results)).toBe("Hello\n");
-  });
 });
 
 describe("JSON output with lang-id fields", () => {

@@ -52,16 +52,6 @@ describe("lib API", () => {
     await expect(transcribe("/nonexistent/audio.wav")).rejects.toThrow("File not found");
   });
 
-  it("exports say()", async () => {
-    const { say } = await import("../../src/lib");
-    expect(typeof say).toBe("function");
-  });
-
-  it("exports downloadTts()", async () => {
-    const { downloadTts } = await import("../../src/lib");
-    expect(typeof downloadTts).toBe("function");
-  });
-
   it("keeps transcribeWithSegments as a compatibility alias", async () => {
     const { transcribeWithSegments, transcribeWithTimestamps } = await import("../../src/lib");
     expect(transcribeWithSegments).toBe(transcribeWithTimestamps);

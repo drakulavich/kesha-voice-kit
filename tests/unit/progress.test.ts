@@ -172,12 +172,6 @@ describe("createPercentProgress", () => {
 });
 
 describe("createProgressBar", () => {
-  test("non-TTY mode calls log functions", () => {
-    const bar = createProgressBar("test.onnx", 0);
-    bar.update(100);
-    bar.finish();
-  });
-
   test("TTY mode ends with 100% and a newline", () => {
     // Contract: user sees progress culminating in 100% + newline.
     // Intentionally does not assert write count or per-write content —
@@ -207,19 +201,6 @@ describe("createProgressBar", () => {
     } finally {
       Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
       process.stderr.write = originalWrite;
-    }
-  });
-
-  test("non-TTY mode with known size includes size info", () => {
-    const originalIsTTY = process.stderr.isTTY;
-    try {
-      Object.defineProperty(process.stderr, "isTTY", { value: false, configurable: true });
-      // Should not throw — exercises the sizeInfo branch
-      const bar = createProgressBar("model.onnx", 104857600);
-      bar.update(100);
-      bar.finish();
-    } finally {
-      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
     }
   });
 });

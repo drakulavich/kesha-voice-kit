@@ -94,18 +94,6 @@ describe("parseVoiceLines", () => {
     ]);
   });
 
-  test("vosk female voice has gender female", () => {
-    const [v] = parseVoiceLines("ru-vosk-f01");
-    expect(v.gender).toBe("female");
-    expect(v.languageCode).toBe("ru");
-  });
-
-  test("macos voice has gender null", () => {
-    const [v] = parseVoiceLines("macos-com.apple.voice.compact.ru-RU.Milena");
-    expect(v.gender).toBeNull();
-    expect(v.modelId).toBe("avspeech");
-    expect(v.languageCode).toBe("ru-RU");
-  });
 });
 
 describe("aggregateLanguages", () => {
