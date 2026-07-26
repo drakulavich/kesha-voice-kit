@@ -39,6 +39,8 @@ When spiking against an upstream Python reference, always create a venv under `/
 
 The root checkout stays on `main`: shared coordination state, not an edit surface. **Never** switch it to a feature branch, and never check out `main` inside a worktree. In the root checkout only `git fetch`, inspection, and `git worktree list|add|remove|prune` are allowed.
 
+Fixtures, benchmark audio, and `docs/assets/` are **Git LFS**-tracked (`.gitattributes`). Run `git lfs pull` in a fresh checkout — without it those files are pointer stubs, not audio, and tests fail in confusing ways.
+
 Branch off fresh `origin/main` (local `main` may be stale):
 
 ```bash
@@ -53,7 +55,7 @@ git worktree remove .worktrees/<slug> && git worktree prune
 ### VERIFY BEFORE PUSHING
 
 - `bun test && bunx tsc --noEmit` before every push.
-- Rust changes: `make rust-test` (wraps `cargo nextest run --features tts`) plus `cargo fmt` and `cargo clippy --all-targets -- -D warnings`. Always nextest — `cargo test --doc` is the only acceptable `cargo test` call; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
+- Rust changes: `make rust-test` (wraps `cargo nextest run --features tts`) plus `cargo fmt` and `cargo clippy --all-targets -- -D warnings`. Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest_tests`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
 - Backend module changes: also `cargo check --features coreml --no-default-features`.
 - Do NOT push broken code.
 
@@ -87,7 +89,7 @@ Any plan naming a specific upstream artifact must be validated by a throwaway sp
 
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
-Validate flags against `kesha-engine --capabilities-json` instead of forwarding them — the engine's subcommands take their own narrow flag sets (`install` accepts `--no-cache`, `--tts`, `--vad`, `--diarize`, `--no-warmup`, and nothing else).
+Validate flags against `kesha-engine --capabilities-json` instead of forwarding them — the engine's subcommands take their own narrow flag sets (`install` accepts `--no-cache`, `--vad`, `--no-warmup`, plus `--tts` and `--diarize` where the `tts` / `system_diarize` features are compiled in — `--diarize` does not exist on the linux/windows ONNX binaries).
 
 ### COREML BUILD TRIPLE
 
@@ -108,7 +110,7 @@ grep -E '^\s+features:' .github/workflows/build-engine.yml   # every matrix row
 grep '^default =' rust/Cargo.toml                            # cargo's default set
 ```
 
-Every default feature must appear in every row.
+Every **additive** default (today `tts`) must appear in every row. The ASR backends are mutually exclusive on purpose: `onnx` is a default yet must never appear on the CoreML row, and vice versa.
 
 ### WORKFLOW `run:` SHELL INJECTION — USE ENV PASSTHROUGH
 
@@ -132,7 +134,7 @@ Three invariants worth knowing before you touch a release:
 
 - **Tag names are one-use.** GitHub reserves them permanently — a broken release means a new patch tag, never a "test" tag.
 - **Un-drafting fires npm publish and is effectively permanent.** Validate the draft binary first with authenticated `gh release download` (draft asset URLs 404 for anonymous clients, so `curl` / `make smoke-test` can false-green through an old global shim) and exercise it end-to-end.
-- **`integration-tests` skips on `release/*`** via the `!startsWith(github.head_ref, 'release/')` filter, because the pinned engine tag doesn't exist yet. Don't remove it; reuse it for new release-artifact jobs.
+- **`integration-tests-full` skips on `release/*`** via `!startsWith(github.head_ref, 'release/')` — that is the job which downloads the *published* engine, whose tag doesn't exist yet on a release PR. The lighter `integration-tests` job carries no such guard and is safe there. Don't remove the filter; reuse it for new engine-downloading jobs.
 
 Full procedure, `bun link` gotchas, and re-review mechanics: **`docs/runbooks/release.md`**.
 
@@ -144,8 +146,7 @@ make test                      # Bun unit + integration tests
 make rust-test                 # Rust tests via nextest (matches CI)
 make lint                      # Type check
 make smoke-test                # Link + install + run against fixtures
-make release                   # lint + test + smoke-test
-make publish                   # release + npm publish
+make release                   # alias for release-preflight: lint + versions + test + smoke-test
 ```
 
 A Nix flake is an alternate reproducible build path (`nix run .#kesha`, `nix build .#kesha-engine`) on `aarch64-darwin` / `x86_64-linux`. It is not a CI gate.
@@ -163,11 +164,11 @@ kesha audio.ogg
 
 - Cargo features: `default = ["onnx", "tts"]`; `ort`/`ndarray` are unconditional (lang_id always needs them), so the `onnx` feature only gates `backend/onnx.rs`. `coreml = ["dep:fluidaudio-rs", "dep:libc"]` is mutually exclusive with it at module level.
 - Prefer `--toon` over `--json` when piping multi-file results into an LLM (30-60% fewer tokens, round-trips to the same `TranscribeResult[]`). The two are mutually exclusive (exit 2).
-- Public API: `import { transcribe, downloadEngine, getEngineCapabilities } from "@drakulavich/kesha-voice-kit/core"`.
+- Public API (`src/lib.ts`): `transcribe`, `transcribeWithTimestamps`/`transcribeWithSegments`, `say`, `downloadModel` (the exported name for `downloadEngine`), `downloadTts`, `toToon`, `SayError`. `getEngineCapabilities` is **not** exported from `./core`.
 
 ## TTS
 
-Engine is picked by voice-id prefix: `en-*` → Kokoro-82M (24 kHz), `ru-*` → Vosk-TTS (22.05 kHz), `macos-*` → AVSpeech Swift sidecar (no download). `es/fr/it/pt` work everywhere via CharsiuG2P; `hi/ja/zh` are darwin-arm64 only. `zh` is supported natively; `hi`/`ja` reject native-script input (Devanagari, kana/kanji) with `E_SCRIPT_UNSUPPORTED` because FluidAudio's Kokoro G2P is Latin-only — romanized text for those voices still synthesizes (#492).
+Engine is picked by voice-id prefix: `en-*` → Kokoro-82M (24 kHz), `ru-*` → Vosk-TTS (22.05 kHz), `macos-*` → AVSpeech Swift sidecar (no download). `es/fr/it/pt` work everywhere, but by different paths: CharsiuG2P on ONNX builds, FluidAudio's own G2P on darwin-arm64 `system_kokoro`. `hi/ja/zh` are darwin-arm64 only. `zh` is supported natively; `hi`/`ja` reject native-script input (Devanagari, kana/kanji) with `E_SCRIPT_UNSUPPORTED` because FluidAudio's Kokoro G2P is Latin-only — romanized text for those voices still synthesizes (#492).
 
 `kesha install --tts [<langs>…]` installs explicitly and additively (bare `--tts` = English only). `kesha say` writes audio to stdout unless `--out` is given, so **stderr carries all progress and errors**; auto-routing for an omitted `--voice` lives in `src/voice-routing.ts::pickVoiceForLang`.
 

@@ -108,9 +108,9 @@ Post-#291 happy path: publishing a GitHub release runs `.github/workflows/npm-pu
 
 GitHub's immutable-releases permanently reserves tag names after publish. **Broken release → bump patch version, cut new tag.** Never tag "just to test" — use `gh workflow run "🔨 Build Engine" --ref main` instead. Skipping tags is fine (we skipped `v1.0.1`).
 
-## RELEASE CHICKEN-AND-EGG — `integration-tests` SKIPS ON `release/*`
+## RELEASE CHICKEN-AND-EGG — `integration-tests-full` SKIPS ON `release/*`
 
-`integration-tests` in `.github/workflows/ci.yml` downloads the RELEASED `kesha-engine` binary at the version pinned in `package.json#keshaEngine.version`. On a version-bump PR (branch `release/X.Y.Z`) that tag doesn't exist yet — HTTP 404, CI red. The job is filtered via `if: needs.changes.outputs.integration == 'true' && !startsWith(github.head_ref, 'release/')`. Don't remove that filter. If you add a new job that downloads release artifacts, use the same branch guard.
+`integration-tests-full` in `.github/workflows/ci.yml` downloads the RELEASED `kesha-engine` binary at the version pinned in `package.json#keshaEngine.version`. On a version-bump PR (branch `release/X.Y.Z`) that tag doesn't exist yet — HTTP 404, CI red. The job is filtered via `if: needs.changes.outputs.integration == 'true' && !startsWith(github.head_ref, 'release/')`. Don't remove that filter. If you add a new job that downloads release artifacts, use the same branch guard.
 
 ## DRAFT RELEASE ASSET URLS ARE 404 TO ANONYMOUS CLIENTS — USE `gh release download`
 
