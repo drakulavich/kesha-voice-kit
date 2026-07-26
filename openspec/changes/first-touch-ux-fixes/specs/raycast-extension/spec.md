@@ -22,8 +22,8 @@ Before entering the recording state, the extension SHALL probe the resolved CLI 
 - **THEN** a finish-setup view names `kesha install` before any recording toast appears
 
 ### Requirement: Missing microphone input is reported early
-When the signal meter delivers no usable signal state within a short window (~8 s) of recording start, the extension SHALL surface the microphone-permission guidance immediately rather than after the maximum recording duration; an unavailable meter MUST NOT disarm the silence auto-stop.
+When the signal meter delivers no sample within a short window (~8 s) of recording start, the extension SHALL surface microphone-permission guidance as a non-blocking warning while recording continues — a meter failure alone MUST NOT abort a session that may still be capturing audio. An unavailable meter MUST NOT disarm the silence auto-stop, so a session without input ends at the idle stop instead of the maximum duration.
 
 #### Scenario: mic permission denied
 - **WHEN** macOS denies microphone access and the meter reports unavailable
-- **THEN** within ~8 s the user sees guidance to grant Raycast microphone access, and the session does not silently run to the max duration
+- **THEN** within ~8 s the user sees guidance to grant Raycast microphone access, recording continues, and the session ends at the silence auto-stop with the silent-recording error instead of running to the max duration
