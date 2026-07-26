@@ -64,3 +64,13 @@ The method exists on upstream `main` but isn't in the published 0.1.0 crate. The
 ## TESTS THAT STAGE A TEMPDIR CACHE MUST STAGE G2P TOO
 
 Post-#123 (v1.4.0), Kokoro + Piper synthesis flows through the ONNX G2P at `$KESHA_CACHE_DIR/models/g2p/byt5-tiny/`. Any test that creates a fresh `KESHA_CACHE_DIR` tempdir and copies in only Kokoro / Piper will fail with `SynthesisFailed("g2p: G2P model not installed")`. Use `models::is_g2p_cached(dir)` + `models::g2p_model_dir()` to gate + copy the ONNX files. Examples: `rust/tests/tts_smoke.rs::resolves_from_cache_when_installed`, `tests/integration/say-e2e.test.ts::beforeAll`.
+
+## VERIFICATION TOOLING — `cargo nextest`, CLIPPY, RUSTFMT, `protoc`
+
+Moved out of CLAUDE.md (2026-07-26) with the rest of the Rust detail.
+
+- Always `cargo nextest run`, never plain `cargo test`. CI uses nextest (`ci` profile, JUnit → Flakiness.io); it isolates tests in fresh processes, runs integration binaries in parallel, and streams `SLOW [>60.000s]` markers for Vosk/Kokoro. Install once: `cargo install cargo-nextest --locked`. The only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `cargo test models::manifest_tests`.
+- Keep `--all-targets` on clippy. Without it, local clippy misses `#[cfg(test)]` dead code that ubuntu CI catches (#125 M1).
+- CI rustc may be newer than local (no `rust-toolchain.toml`). If CI-only clippy fails, read `gh run view <id> --log-failed`; common fixes are `#[derive(Default)]` + `#[default]`, removing redundant `.map_err(Into::into)` / `u64::from(u64_value)`, and `x.is_multiple_of(n)` (#224).
+- CI `rustfmt --check` wins over local formatting. If it rejects line wrapping, re-run `cargo fmt` and push the whitespace-only diff (#309).
+- Fresh cargo builds need `protoc` for `vosk-tts-rs`/`prost-build`; macOS: `brew install protobuf`, then expose the protobuf bin dir or set `PROTOC`.
