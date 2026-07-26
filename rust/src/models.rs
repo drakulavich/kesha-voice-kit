@@ -1035,53 +1035,12 @@ mod diarize_sidecar_tests {
 #[cfg(test)]
 mod mirror_tests {
     use super::*;
-    use std::sync::Mutex;
-
-    // env-var tests race if parallelized — serialize them here.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    struct MirrorEnv {
-        _guard: std::sync::MutexGuard<'static, ()>,
-        original: Option<String>,
-    }
-
-    impl MirrorEnv {
-        fn set(val: &str) -> Self {
-            let guard = ENV_LOCK.lock().unwrap();
-            let original = std::env::var("KESHA_MODEL_MIRROR").ok();
-            unsafe {
-                std::env::set_var("KESHA_MODEL_MIRROR", val);
-            }
-            Self {
-                _guard: guard,
-                original,
-            }
-        }
-        fn unset() -> Self {
-            let guard = ENV_LOCK.lock().unwrap();
-            let original = std::env::var("KESHA_MODEL_MIRROR").ok();
-            unsafe {
-                std::env::remove_var("KESHA_MODEL_MIRROR");
-            }
-            Self {
-                _guard: guard,
-                original,
-            }
-        }
-    }
-
-    impl Drop for MirrorEnv {
-        fn drop(&mut self) {
-            match &self.original {
-                Some(v) => unsafe { std::env::set_var("KESHA_MODEL_MIRROR", v) },
-                None => unsafe { std::env::remove_var("KESHA_MODEL_MIRROR") },
-            }
-        }
-    }
+    use crate::util::test_env::EnvGuard;
 
     #[test]
     fn unset_env_falls_through_to_upstream() {
-        let _g = MirrorEnv::unset();
+        let _lock = crate::util::test_env::lock();
+        let _g = EnvGuard::unset("KESHA_MODEL_MIRROR");
         assert_eq!(model_mirror(), None);
         assert_eq!(
             apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
@@ -1091,7 +1050,8 @@ mod mirror_tests {
 
     #[test]
     fn empty_env_falls_through_to_upstream() {
-        let _g = MirrorEnv::set("");
+        let _lock = crate::util::test_env::lock();
+        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "");
         assert_eq!(model_mirror(), None);
         assert_eq!(
             apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
@@ -1101,13 +1061,15 @@ mod mirror_tests {
 
     #[test]
     fn whitespace_env_falls_through_to_upstream() {
-        let _g = MirrorEnv::set("   ");
+        let _lock = crate::util::test_env::lock();
+        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "   ");
         assert_eq!(model_mirror(), None);
     }
 
     #[test]
     fn rewrites_hf_url_onto_mirror_base_preserving_path() {
-        let _g = MirrorEnv::set("https://mirror.example.com/kesha");
+        let _lock = crate::util::test_env::lock();
+        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "https://mirror.example.com/kesha");
         assert_eq!(
             apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
             "https://mirror.example.com/kesha/foo/bar/resolve/main/file.onnx"
@@ -1116,7 +1078,8 @@ mod mirror_tests {
 
     #[test]
     fn strips_trailing_slash_from_mirror_base() {
-        let _g = MirrorEnv::set("https://mirror.example.com/kesha/");
+        let _lock = crate::util::test_env::lock();
+        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "https://mirror.example.com/kesha/");
         assert_eq!(
             apply_mirror("https://huggingface.co/x/y/resolve/main/z.bin"),
             "https://mirror.example.com/kesha/x/y/resolve/main/z.bin"
@@ -1127,7 +1090,8 @@ mod mirror_tests {
     fn non_hf_urls_pass_through_unchanged() {
         // github.com release assets (engine binary + avspeech sidecar) must
         // NOT be redirected — KESHA_MODEL_MIRROR only covers model files.
-        let _g = MirrorEnv::set("https://mirror.example.com");
+        let _lock = crate::util::test_env::lock();
+        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "https://mirror.example.com");
         let url = "https://github.com/drakulavich/kesha-voice-kit/releases/download/v1.3.0/kesha-engine-darwin-arm64";
         assert_eq!(apply_mirror(url), url);
     }
@@ -1218,39 +1182,13 @@ mod tts_tests {
 
     #[test]
     fn cache_dir_honors_env_var() {
+        let _lock = crate::util::test_env::lock();
         let guard = EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-test-xyz");
         assert_eq!(cache_dir(), PathBuf::from("/tmp/kesha-test-xyz"));
         drop(guard);
     }
 
-    /// Restores the env var to its original value on drop.
-    struct EnvGuard {
-        key: &'static str,
-        original: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, val: &str) -> Self {
-            let original = std::env::var(key).ok();
-            unsafe {
-                std::env::set_var(key, val);
-            }
-            Self { key, original }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            match &self.original {
-                Some(v) => unsafe {
-                    std::env::set_var(self.key, v);
-                },
-                None => unsafe {
-                    std::env::remove_var(self.key);
-                },
-            }
-        }
-    }
+    use crate::util::test_env::EnvGuard;
 
     #[test]
     fn tts_languages_includes_en_and_ru_everywhere() {

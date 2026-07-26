@@ -1249,11 +1249,12 @@ mod tests {
     #[cfg(all(feature = "system_diarize", target_os = "macos"))]
     #[test]
     fn transcribe_with_speakers_checks_diarize_model_before_asr_install() {
-        let _env_lock = env_lock().lock().unwrap();
+        let _env_lock = crate::util::test_env::lock();
         let cache = tempfile::tempdir().unwrap();
         let missing_diarize_model = cache.path().join("missing-diarize.mlpackage");
-        let _cache_guard = EnvGuard::set("KESHA_CACHE_DIR", cache.path().to_str().unwrap());
-        let _diarize_guard = EnvGuard::set(
+        let _cache_guard =
+            crate::util::test_env::EnvGuard::set("KESHA_CACHE_DIR", cache.path().to_str().unwrap());
+        let _diarize_guard = crate::util::test_env::EnvGuard::set(
             "KESHA_DIARIZE_MODEL_PATH",
             missing_diarize_model.to_str().unwrap(),
         );
@@ -1281,44 +1282,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "system_diarize", target_os = "macos"))]
-    fn env_lock() -> &'static std::sync::Mutex<()> {
-        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-        LOCK.get_or_init(|| std::sync::Mutex::new(()))
-    }
-
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
-    struct EnvGuard {
-        key: &'static str,
-        original: Option<String>,
-    }
-
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
-    impl EnvGuard {
-        fn set(key: &'static str, val: &str) -> Self {
-            let original = std::env::var(key).ok();
-            unsafe {
-                std::env::set_var(key, val);
-            }
-            Self { key, original }
-        }
-    }
-
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            match &self.original {
-                Some(v) => unsafe {
-                    std::env::set_var(self.key, v);
-                },
-                None => unsafe {
-                    std::env::remove_var(self.key);
-                },
-            }
-        }
-    }
-
     // ── trim_repeated_prefix characterization tests ─────────────────────────
-
     #[test]
     fn trim_repeated_prefix_empty_prev_returns_current_unchanged() {
         assert_eq!(trim_repeated_prefix("", "hello world"), "hello world");
