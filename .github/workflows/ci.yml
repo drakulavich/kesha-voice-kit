@@ -640,7 +640,11 @@ jobs:
       - name: 📦 Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # 26 is what the extension is developed and verified against.
+          # Not 20: `@raycast/api` >= 1.104 declares `node >=22.22.2`, so
+          # the old pin sat below the supported floor. (26 is Current, not
+          # LTS until Oct 2026 — 24 / Krypton is the conservative fallback.)
+          node-version: 26
           cache: npm
           cache-dependency-path: raycast/package-lock.json
 
@@ -649,6 +653,9 @@ jobs:
 
       - name: 🔍 Lint (ray lint includes tsc --noEmit)
         run: npm run lint
+
+      - name: 🧪 Test
+        run: npm test
 
   # Supplementary post-merge check: verify the Nix flake still evaluates and
   # the engine derivation builds after relevant changes land on main. Does NOT
