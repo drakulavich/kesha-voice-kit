@@ -69,7 +69,7 @@ Rust toolchain quirks (CI rustc drift, rustfmt, `protoc`) and language gotchas: 
 
 ### GREPTILE PR REVIEW IS A GATE
 
-Greptile reviews on open and on every new commit. **P1/P2 findings are merge blockers.** Do not stop at the PR URL: wait for CI and Greptile to cover the latest head SHA, then report whether it is green. Clear false positives may be dismissed with a PR comment explaining why — rare in practice. Re-review and auto-merge mechanics: `docs/runbooks/release.md`.
+Greptile reviews on open and on every new commit. **P1/P2 findings are merge blockers.** Do not stop at the PR URL: wait for CI and Greptile to cover the latest head SHA, then report whether it is green. Clear false positives may be dismissed with a PR comment explaining why — rare in practice. Re-review and auto-merge mechanics: the `release-mechanics` skill.
 
 ### ERROR HANDLING
 
@@ -136,7 +136,7 @@ Three invariants worth knowing before you touch a release:
 - **Un-drafting fires npm publish and is effectively permanent.** Validate the draft binary first with authenticated `gh release download` (draft asset URLs 404 for anonymous clients, so `curl` / `make smoke-test` can false-green through an old global shim) and exercise it end-to-end.
 - **`integration-tests-full` skips on `release/*`** via `!startsWith(github.head_ref, 'release/')` — that is the job which downloads the *published* engine, whose tag doesn't exist yet on a release PR. The lighter `integration-tests` job carries no such guard and is safe there. Don't remove the filter; reuse it for new engine-downloading jobs.
 
-Full procedure, `bun link` gotchas, and re-review mechanics: **`docs/runbooks/release.md`**.
+Full procedure, `bun link` gotchas, and re-review mechanics: the **`release-mechanics`** skill (loads on demand). To cut a release, invoke **`release-engine`**.
 
 ## Build Commands
 
@@ -172,7 +172,7 @@ Engine is picked by voice-id prefix: `en-*` → Kokoro-82M (24 kHz), `ru-*` → 
 
 `kesha install --tts [<langs>…]` installs explicitly and additively (bare `--tts` = English only). `kesha say` writes audio to stdout unless `--out` is given, so **stderr carries all progress and errors**; auto-routing for an omitted `--voice` lives in `src/voice-routing.ts::pickVoiceForLang`.
 
-Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: **`docs/runbooks/tts-internals.md`**.
+Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: the **`tts-internals`** skill (loads on demand).
 
 ## Code Style
 
@@ -182,8 +182,10 @@ Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: **`docs/
 - **No inline CI scripts over 3 lines** — extract to `.github/scripts/`.
 - **Comments: default to NONE.** Delete any comment that only restates the code. Never narrate mechanics, restate a name, or add section banners. A comment is allowed only when it carries what the code cannot: non-obvious *why*, a gotcha, an issue reference, a spec citation, `// SAFETY:`, a public-API doc contract (state the contract, not the implementation), or a `TODO` with context. One line, except SAFETY blocks and doc contracts. Bias below the surrounding density — and hold agent-generated code to the same bar in review.
 
-## Runbooks
+## Deeper references
 
-`docs/runbooks/` — [release](docs/runbooks/release.md) · [rust-gotchas](docs/runbooks/rust-gotchas.md) · [tts-internals](docs/runbooks/tts-internals.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md)
+Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-engine` (cuts a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches).
+
+Still plain runbooks: [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).
 
 The OpenClaw plugin (`openclaw.plugin.json` + `openclaw-plugin.cjs`) routes audio through the `type: "cli"` path in `tools.media.audio.models`, and its `dangerous-exec` scanner is a naive regex that also reads comments — never name a forbidden module substring anywhere in that file.
