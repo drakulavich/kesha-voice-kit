@@ -117,6 +117,21 @@ Published ONNX path:
 - Patched ONNX SHA-256:
   `fae6e3e7a1152138214bbc314db68443d2ff2ed8c84588328f8d054f3fae2a37`.
 
+Which hash to pin: `models.rs` must pin the **patched** artifact
+(`fae6e3e7…`) — that is the file the mirror serves and `download_verified`
+checks. The upstream `model.onnx` hash (`e3dbd52d…`) is recorded above for
+provenance only, so the patch can be re-derived and audited against the
+original.
+
+PyTorch vs patched-ONNX divergence: the two paths produce similar but
+non-identical audio (RMS 0.0756 vs 0.0752, peak 0.4796 vs 0.4520). The root
+cause was not isolated in this spike — expected contributors are the export
+itself plus the Transpose patch, but that is unverified. Treat it as an open
+question for the first code PR: a listen test on a Ukrainian corpus is part of
+the acceptance criteria below, and if audible degradation shows up, bisect by
+comparing the unpatched graph on an ORT build that tolerates the perm before
+blaming the patch.
+
 ## Implementation Shape
 
 Do not cache or distribute upstream `style.pt` directly. Convert it once into a
