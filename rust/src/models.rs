@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -871,6 +872,75 @@ mod manifest_tests {
         let _ = fs::remove_file(&tmp);
         Ok(())
     }
+
+    // `echo -n 'hello world' | shasum -a 256`
+    const HELLO_SHA: &str = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+
+    struct FailingReader {
+        served: bool,
+    }
+
+    impl io::Read for FailingReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.served {
+                Err(io::Error::other("connection reset mid-stream"))
+            } else {
+                self.served = true;
+                buf[..5].copy_from_slice(b"hello");
+                Ok(5)
+            }
+        }
+    }
+
+    fn write_verified_target(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "kesha-write-verified-{name}-{}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn write_verified_places_good_bytes_at_target() -> Result<()> {
+        let target = write_verified_target("ok.bin");
+        write_verified(&mut &b"hello world"[..], &target, "ok.bin", HELLO_SHA)?;
+        assert_eq!(fs::read(&target)?, b"hello world");
+        let _ = fs::remove_file(&target);
+        Ok(())
+    }
+
+    #[test]
+    fn write_verified_leaves_nothing_on_hash_mismatch() {
+        let target = write_verified_target("mismatch.bin");
+        let err = write_verified(
+            &mut &b"tampered bytes"[..],
+            &target,
+            "mismatch.bin",
+            HELLO_SHA,
+        )
+        .expect_err("wrong hash must fail");
+        assert!(err.to_string().contains("sha256 mismatch"), "{err}");
+        assert!(!target.exists());
+        assert!(!target.with_file_name("mismatch.bin.part").exists());
+    }
+
+    #[test]
+    fn write_verified_cleans_stale_target_on_mid_stream_error() -> Result<()> {
+        let target = write_verified_target("truncated.bin");
+        fs::write(&target, b"previous corrupt weights")?;
+        let err = write_verified(
+            &mut FailingReader { served: false },
+            &target,
+            "truncated.bin",
+            HELLO_SHA,
+        )
+        .expect_err("mid-stream read error must fail");
+        assert!(err.to_string().contains("truncated.bin"), "{err}");
+        assert!(
+            !target.exists(),
+            "interrupted download must not leave bytes for existence-only cache probes"
+        );
+        Ok(())
+    }
 }
 
 #[cfg(all(test, feature = "system_diarize"))]
@@ -1429,30 +1499,56 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         .with_context(|| format!("GET {url} ({})", f.rel_path))
         .coded(ErrorCode::ModelDownload)?;
     let mut reader = response.into_body().into_reader();
-    let mut out =
-        fs::File::create(&target).with_context(|| format!("create {}", target.display()))?;
-    io::copy(&mut reader, &mut out)?;
-    drop(out);
-    if !verify_sha256(&target, f.sha256)? {
-        // Recompute to embed the actual hash in the bail (#275 D5). One
-        // extra hash pass on a freshly-downloaded file is cheap relative
-        // to the failure-mode value: the user can now tell stale-mirror
-        // vs corrupt-download vs upstream-rehost from one line of stderr.
-        let actual = compute_sha256(&target).unwrap_or_else(|_| "<unreadable>".to_string());
-        // Remove so the existence-only cache probes don't later resurrect
-        // unverified weights (#174). Best-effort — errors here are masked
-        // by the bail below which surfaces the real problem.
-        let _ = fs::remove_file(&target);
-        coded_bail!(
-            ErrorCode::CacheCorrupt,
-            "sha256 mismatch for {}: expected {} got {}",
-            f.rel_path,
-            f.sha256.get(..12).unwrap_or(f.sha256),
-            actual.get(..12).unwrap_or(&actual)
-        );
-    }
+    write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
     eprintln!("OK  {}", f.rel_path);
     Ok(())
+}
+
+/// Stream `reader` into `target` atomically: bytes land in a `.part` sibling,
+/// the hash is checked there, and only a verified file is renamed into place.
+/// An interrupted or corrupt download therefore never leaves bytes at `target`
+/// for the existence-only cache probes to resurrect later (#174).
+fn write_verified<R: io::Read>(
+    reader: &mut R,
+    target: &Path,
+    rel_path: &str,
+    expected_sha: &str,
+) -> Result<()> {
+    let mut part_name = target.file_name().map(OsString::from).unwrap_or_default();
+    part_name.push(".part");
+    let part = target.with_file_name(part_name);
+
+    let result = (|| -> Result<()> {
+        let mut out =
+            fs::File::create(&part).with_context(|| format!("create {}", part.display()))?;
+        io::copy(reader, &mut out)
+            .with_context(|| format!("download {rel_path}"))
+            .coded(ErrorCode::ModelDownload)?;
+        drop(out);
+        if !verify_sha256(&part, expected_sha)? {
+            // Recompute to embed the actual hash in the bail (#275 D5). One
+            // extra hash pass on a freshly-downloaded file is cheap relative
+            // to the failure-mode value: the user can now tell stale-mirror
+            // vs corrupt-download vs upstream-rehost from one line of stderr.
+            let actual = compute_sha256(&part).unwrap_or_else(|_| "<unreadable>".to_string());
+            coded_bail!(
+                ErrorCode::CacheCorrupt,
+                "sha256 mismatch for {}: expected {} got {}",
+                rel_path,
+                expected_sha.get(..12).unwrap_or(expected_sha),
+                actual.get(..12).unwrap_or(&actual)
+            );
+        }
+        fs::rename(&part, target).with_context(|| format!("rename {}", target.display()))
+    })();
+
+    if result.is_err() {
+        // Best-effort: drop the partial download and any stale target the
+        // caller was replacing — errors here are masked by the bail below.
+        let _ = fs::remove_file(&part);
+        let _ = fs::remove_file(target);
+    }
+    result
 }
 
 fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
