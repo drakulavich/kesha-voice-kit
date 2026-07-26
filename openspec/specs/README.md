@@ -55,10 +55,17 @@ Specs reference these named personas instead of a generic "user":
 | [mcp-server](mcp-server/spec.md) | `kesha mcp`: MCP tools and audio resources |
 | [programmatic-api](programmatic-api/spec.md) | `@drakulavich/kesha-voice-kit/core` exports |
 | [engine-contract](engine-contract/spec.md) | CLI ↔ `kesha-engine` boundary: capabilities, error codes, env vars |
+| [raycast-extension](raycast-extension/spec.md) | Raycast **Dictate to Clipboard**: recording lifecycle, idle auto-stop, clipboard |
 
 ## Validation
 
 ```bash
 openspec spec list                    # enumerate capabilities
-openspec validate --specs --strict    # structural validation — must exit 0
+bun run check:specs                   # structural validation — must exit 0
 ```
+
+`check:specs` is the same `openspec validate --specs --strict` call, with the
+tool version pinned. CI runs it in the `openspec-validate` lane whenever
+`openspec/**` changes. It is a *structural* gate — headings, one scenario per
+requirement, `SHALL`/`MUST` in the requirement text — and knows nothing about
+whether a spec still matches the code.

@@ -37,6 +37,7 @@ jobs:
       integration: ${{ steps.filter.outputs.integration }}
       heavy_e2e: ${{ steps.filter.outputs.heavy_e2e }}
       raycast: ${{ steps.filter.outputs.raycast }}
+      openspec: ${{ steps.filter.outputs.openspec }}
       nix: ${{ steps.filter.outputs.nix }}
       workflows: ${{ steps.filter.outputs.workflows }}
       homebrew: ${{ steps.filter.outputs.homebrew }}
@@ -99,6 +100,10 @@ jobs:
               - '.github/actions/**'
             raycast:
               - 'raycast/**'
+              - '.github/workflows/ci.yml'
+            openspec:
+              - 'openspec/**'
+              - 'package.json'
               - '.github/workflows/ci.yml'
             nix:
               - 'flake.nix'
@@ -640,7 +645,11 @@ jobs:
       - name: 📦 Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # 26 is what the extension is developed and verified against.
+          # Not 20: `@raycast/api` >= 1.104 declares `node >=22.22.2`, so
+          # the old pin sat below the supported floor. (26 is Current, not
+          # LTS until Oct 2026 — 24 / Krypton is the conservative fallback.)
+          node-version: 26
           cache: npm
           cache-dependency-path: raycast/package-lock.json
 
@@ -649,6 +658,28 @@ jobs:
 
       - name: 🔍 Lint (ray lint includes tsc --noEmit)
         run: npm run lint
+
+      - name: 🧪 Test
+        run: npm test
+
+  openspec-validate:
+    needs: changes
+    if: needs.changes.outputs.openspec == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 📐 Validate spec corpus
+        env:
+          # OpenSpec already disables its PostHog telemetry when CI=true; the
+          # explicit opt-out keeps the lane offline if that heuristic changes.
+          OPENSPEC_TELEMETRY: '0'
+        run: bun run check:specs
 
   # Supplementary post-merge check: verify the Nix flake still evaluates and
   # the engine derivation builds after relevant changes land on main. Does NOT
@@ -717,6 +748,7 @@ jobs:
       - release-branch-engine-smoke
       - tts-e2e
       - raycast-lint
+      - openspec-validate
       - nix-build
     runs-on: ubuntu-latest
     steps:
