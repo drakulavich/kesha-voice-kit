@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { resolveColorMode, resolveQuietMode } from "../../src/cli/dispatch";
+import { resolveColorMode, resolveQuietMode } from "../../src/cli/context";
 import { log, setColorEnabled } from "../../src/log";
 import { shouldReportTranscribeProgress } from "../../src/cli";
 

@@ -4,7 +4,7 @@ import { doctorCommand } from "./cli/doctor";
 import { initCommand } from "./cli/init";
 import { installCommand } from "./cli/install";
 import { logsCommand } from "./cli/logs";
-import { mainCommand } from "./cli/main";
+import { createMainCommand } from "./cli/main";
 import { manpageCommand } from "./cli/manpage";
 import { mcpCommand } from "./cli/mcp";
 import { recordCommand } from "./cli/record";
@@ -115,7 +115,7 @@ async function commandToArtifact(name: string, command: CommandDef<any>): Promis
 
 async function buildModel(): Promise<ArtifactModel> {
   return {
-    root: await commandToArtifact("kesha", mainCommand),
+    root: await commandToArtifact("kesha", createMainCommand()),
     commands: await Promise.all(CLI_COMMANDS.map((entry) => commandToArtifact(entry.name, entry.command))),
   };
 }
