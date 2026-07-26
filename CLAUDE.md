@@ -50,8 +50,6 @@ cd -                          # cleanup runs from the root checkout, not the wor
 git worktree remove .worktrees/<slug> && git worktree prune
 ```
 
-Using jj? Same rule — the shared workspace stays on `main@origin`; use `jj workspace add --revision main@origin .worktrees/<slug>`. Cleanup and the LFS fork this repo needs: `docs/runbooks/jj-git-lfs.md`.
-
 ### VERIFY BEFORE PUSHING
 
 - `bun test && bunx tsc --noEmit` before every push.
@@ -182,6 +180,6 @@ Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: **`docs/
 
 ## Runbooks
 
-`docs/runbooks/` — [release](docs/runbooks/release.md) · [rust-gotchas](docs/runbooks/rust-gotchas.md) · [tts-internals](docs/runbooks/tts-internals.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md) · [jj-git-lfs](docs/runbooks/jj-git-lfs.md)
+`docs/runbooks/` — [release](docs/runbooks/release.md) · [rust-gotchas](docs/runbooks/rust-gotchas.md) · [tts-internals](docs/runbooks/tts-internals.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md)
 
 The OpenClaw plugin (`openclaw.plugin.json` + `openclaw-plugin.cjs`) routes audio through the `type: "cli"` path in `tools.media.audio.models`, and its `dangerous-exec` scanner is a naive regex that also reads comments — never name a forbidden module substring anywhere in that file.
