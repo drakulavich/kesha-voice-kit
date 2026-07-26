@@ -680,6 +680,8 @@ fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow:
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn prosody_rate_multiplies_and_clamps() {
         let cases = [
@@ -712,6 +714,124 @@ mod tests {
         // Idempotent: a second clamp doesn't change set membership.
         let _ = super::compose_rate(0.1, 0.1); // 0.01 → 0.5 (clamp low)
         assert!(crate::tts::warn::was_warned("compose-rate-clamped"));
+    }
+
+    /// Records every leaf call; each leaf returns one sentinel sample per
+    /// char so concatenation order and silence sizing are assertable.
+    struct RecordingSink {
+        calls: Vec<(&'static str, String, f32)>,
+        fail_on_text: bool,
+    }
+
+    impl RecordingSink {
+        fn new() -> Self {
+            Self {
+                calls: Vec::new(),
+                fail_on_text: false,
+            }
+        }
+        fn samples(&mut self, kind: &'static str, text: &str, speed: f32) -> Vec<f32> {
+            self.calls.push((kind, text.to_string(), speed));
+            vec![0.5_f32; text.chars().count()]
+        }
+    }
+
+    impl SegmentSink for RecordingSink {
+        fn sample_rate(&mut self) -> Result<u32, TtsError> {
+            Ok(1_000)
+        }
+        fn text(&mut self, text: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
+            if self.fail_on_text {
+                return Err(TtsError::SynthesisFailed("boom".into()));
+            }
+            Ok(self.samples("text", text, speed))
+        }
+        fn spell(&mut self, text: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
+            Ok(self.samples("spell", text, speed))
+        }
+        fn ipa(&mut self, ipa: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
+            Ok(self.samples("ipa", ipa, speed))
+        }
+        fn emphasis_warning(&self) -> &'static str {
+            "recording-sink emphasis fallback"
+        }
+    }
+
+    #[test]
+    fn walker_routes_each_variant_to_its_leaf_and_sizes_breaks() {
+        use std::time::Duration;
+        let mut sink = RecordingSink::new();
+        let mut out = Vec::new();
+        let segs = [
+            ssml::Segment::Text("ab".into()),
+            ssml::Segment::Break(Duration::from_millis(500)), // 1 kHz → 500 samples
+            ssml::Segment::Spell("cde".into()),
+            ssml::Segment::Ipa("fg".into()),
+        ];
+        walk_segments(&mut sink, &segs, 1.0, 1_000, &mut out).unwrap();
+        assert_eq!(out.len(), 2 + 500 + 3 + 2);
+        assert_eq!(
+            sink.calls,
+            vec![
+                ("text", "ab".to_string(), 1.0),
+                ("spell", "cde".to_string(), 1.0),
+                ("ipa", "fg".to_string(), 1.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn walker_composes_nested_prosody_rates_with_clamp() {
+        let seg = ssml::Segment::ProsodyRate {
+            rate: 1.5,
+            content: vec![
+                ssml::Segment::Text("outer".into()),
+                ssml::Segment::ProsodyRate {
+                    rate: 2.0,
+                    content: vec![ssml::Segment::Text("inner".into())],
+                },
+            ],
+        };
+        let mut sink = RecordingSink::new();
+        let mut out = Vec::new();
+        walk_segments(&mut sink, std::slice::from_ref(&seg), 1.0, 1_000, &mut out).unwrap();
+        assert!((sink.calls[0].2 - 1.5).abs() < 1e-6, "{:?}", sink.calls);
+        // 1.5 × 2.0 = 3.0 → clamped to the engine-safe ceiling 2.0.
+        assert!((sink.calls[1].2 - 2.0).abs() < 1e-6, "{:?}", sink.calls);
+    }
+
+    #[test]
+    fn walker_strips_emphasis_markers_and_routes_to_text() {
+        let seg = ssml::Segment::Emphasis {
+            content: "д+ома".into(),
+            suppress: true,
+        };
+        let mut sink = RecordingSink::new();
+        let mut out = Vec::new();
+        walk_segments(&mut sink, std::slice::from_ref(&seg), 1.0, 1_000, &mut out).unwrap();
+        assert_eq!(sink.calls, vec![("text", "дома".to_string(), 1.0)]);
+    }
+
+    #[test]
+    fn synth_segments_rejects_empty_output_and_propagates_leaf_errors() {
+        let mut sink = RecordingSink::new();
+        let err = synth_segments(&mut sink, &[], 1.0, OutputFormat::Wav).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("no audio produced from SSML input"),
+            "{err}"
+        );
+
+        let mut failing = RecordingSink::new();
+        failing.fail_on_text = true;
+        let err = synth_segments(
+            &mut failing,
+            &[ssml::Segment::Text("x".into())],
+            1.0,
+            OutputFormat::Wav,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("boom"), "{err}");
     }
 
     #[test]
