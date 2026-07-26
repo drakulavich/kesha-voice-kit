@@ -738,7 +738,9 @@ mod tests {
 
     impl SegmentSink for RecordingSink {
         fn sample_rate(&mut self) -> Result<u32, TtsError> {
-            Ok(1_000)
+            // Deliberately not 1 kHz: durations in ms must NOT equal sample
+            // counts, or a walker that ignores the rate would pass.
+            Ok(8_000)
         }
         fn text(&mut self, text: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
             if self.fail_on_text {
@@ -764,12 +766,12 @@ mod tests {
         let mut out = Vec::new();
         let segs = [
             ssml::Segment::Text("ab".into()),
-            ssml::Segment::Break(Duration::from_millis(500)), // 1 kHz → 500 samples
+            ssml::Segment::Break(Duration::from_millis(250)), // 8 kHz → 2000 samples
             ssml::Segment::Spell("cde".into()),
             ssml::Segment::Ipa("fg".into()),
         ];
-        walk_segments(&mut sink, &segs, 1.0, 1_000, &mut out).unwrap();
-        assert_eq!(out.len(), 2 + 500 + 3 + 2);
+        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        assert_eq!(out.len(), 2 + 2_000 + 3 + 2);
         assert_eq!(
             sink.calls,
             vec![
@@ -782,22 +784,65 @@ mod tests {
 
     #[test]
     fn walker_composes_nested_prosody_rates_with_clamp() {
+        // In-range factors whose product differs from either factor alone:
+        // only true multiplicative composition yields 0.8 × 0.9 = 0.72.
         let seg = ssml::Segment::ProsodyRate {
-            rate: 1.5,
+            rate: 0.8,
             content: vec![
                 ssml::Segment::Text("outer".into()),
                 ssml::Segment::ProsodyRate {
-                    rate: 2.0,
+                    rate: 0.9,
                     content: vec![ssml::Segment::Text("inner".into())],
                 },
             ],
         };
         let mut sink = RecordingSink::new();
         let mut out = Vec::new();
-        walk_segments(&mut sink, std::slice::from_ref(&seg), 1.0, 1_000, &mut out).unwrap();
-        assert!((sink.calls[0].2 - 1.5).abs() < 1e-6, "{:?}", sink.calls);
-        // 1.5 × 2.0 = 3.0 → clamped to the engine-safe ceiling 2.0.
-        assert!((sink.calls[1].2 - 2.0).abs() < 1e-6, "{:?}", sink.calls);
+        walk_segments(&mut sink, std::slice::from_ref(&seg), 1.0, 8_000, &mut out).unwrap();
+        assert!((sink.calls[0].2 - 0.8).abs() < 1e-6, "{:?}", sink.calls);
+        assert!((sink.calls[1].2 - 0.72).abs() < 1e-6, "{:?}", sink.calls);
+
+        // And the ceiling: 1.5 × 2.0 = 3.0 clamps to the engine-safe 2.0.
+        let clamped = ssml::Segment::ProsodyRate {
+            rate: 1.5,
+            content: vec![ssml::Segment::ProsodyRate {
+                rate: 2.0,
+                content: vec![ssml::Segment::Text("x".into())],
+            }],
+        };
+        let mut sink = RecordingSink::new();
+        let mut out = Vec::new();
+        walk_segments(
+            &mut sink,
+            std::slice::from_ref(&clamped),
+            1.0,
+            8_000,
+            &mut out,
+        )
+        .unwrap();
+        assert!((sink.calls[0].2 - 2.0).abs() < 1e-6, "{:?}", sink.calls);
+    }
+
+    #[test]
+    fn synth_segments_sizes_breaks_from_the_sink_rate() {
+        use std::time::Duration;
+        // Break-only SSML: the walker gets its sample rate from
+        // sink.sample_rate() (8 kHz) — 250 ms must yield 2000 f32 samples in
+        // the encoded WAV, not a millisecond-scaled or constant-rate count.
+        let mut sink = RecordingSink::new();
+        let bytes = synth_segments(
+            &mut sink,
+            &[ssml::Segment::Break(Duration::from_millis(250))],
+            1.0,
+            OutputFormat::Wav,
+        )
+        .unwrap();
+        let pcm_bytes = 2_000 * 4;
+        assert!(
+            bytes.len() > pcm_bytes && bytes.len() <= pcm_bytes + 128,
+            "expected ~{pcm_bytes} PCM bytes plus a small header, got {}",
+            bytes.len()
+        );
     }
 
     #[test]
