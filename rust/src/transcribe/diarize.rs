@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn adaptive_timeout_floor_covers_cold_e5rt_compile() {
-        let _guard = EnvLockGuard::new();
+        let _guard = crate::util::test_env::lock();
         let segs = vec![seg(0.0, 1.0, "a")];
 
         unsafe {
@@ -463,7 +463,7 @@ mod tests {
 
     #[test]
     fn adaptive_timeout_scales_for_long_audio() {
-        let _guard = EnvLockGuard::new();
+        let _guard = crate::util::test_env::lock();
         let segs: Vec<_> = (0..6_000)
             .map(|i| {
                 let start = i as f32;
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn adaptive_timeout_is_capped() {
-        let _guard = EnvLockGuard::new();
+        let _guard = crate::util::test_env::lock();
         let segs: Vec<_> = (0..100_000)
             .map(|i| {
                 let start = i as f32;
@@ -503,57 +503,13 @@ mod tests {
 
     #[test]
     fn adaptive_timeout_env_override_wins() {
-        let _guard = EnvLockGuard::new();
+        let _guard = crate::util::test_env::lock();
         let segs = vec![seg(0.0, 1.0, "a")];
-        let _env = EnvGuard::set("KESHA_DIARIZE_TIMEOUT_SECS", "3600");
+        let _env = crate::util::test_env::EnvGuard::set("KESHA_DIARIZE_TIMEOUT_SECS", "3600");
 
         assert_eq!(
             diarize_timeout(&segs, Some(1.0)),
             Duration::from_secs(3_600)
         );
-    }
-
-    struct EnvLockGuard {
-        _guard: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl EnvLockGuard {
-        fn new() -> Self {
-            static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-            Self {
-                _guard: LOCK
-                    .get_or_init(|| std::sync::Mutex::new(()))
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner()),
-            }
-        }
-    }
-
-    struct EnvGuard {
-        key: &'static str,
-        original: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, val: &str) -> Self {
-            let original = std::env::var(key).ok();
-            unsafe {
-                std::env::set_var(key, val);
-            }
-            Self { key, original }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            match &self.original {
-                Some(v) => unsafe {
-                    std::env::set_var(self.key, v);
-                },
-                None => unsafe {
-                    std::env::remove_var(self.key);
-                },
-            }
-        }
     }
 }
