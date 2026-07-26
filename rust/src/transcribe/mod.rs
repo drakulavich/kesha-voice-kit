@@ -1281,7 +1281,6 @@ mod tests {
         );
     }
 
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
     // ── trim_repeated_prefix characterization tests ─────────────────────────
     #[test]
     fn trim_repeated_prefix_empty_prev_returns_current_unchanged() {
