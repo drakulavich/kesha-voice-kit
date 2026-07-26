@@ -1,33 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-mod audio;
-mod backend;
-mod capabilities;
-mod cli;
-mod debug;
-mod errors;
-#[cfg(all(
-    target_os = "macos",
-    any(
-        feature = "coreml",
-        feature = "system_diarize",
-        feature = "system_kokoro"
-    )
-))]
-mod fluid_stdout;
-mod lang_id;
-mod models;
-mod process_tree;
-mod record;
-#[cfg(feature = "tts")]
-mod say_loop;
-mod text_lang;
-mod transcribe;
-#[cfg(feature = "tts")]
-mod tts;
-mod util;
-mod vad;
+use kesha_engine::{capabilities, cli, debug, errors};
 
 #[derive(Parser)]
 #[command(name = "kesha-engine", version)]
