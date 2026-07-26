@@ -61,88 +61,10 @@ enum Commands {
         max_seconds: u64,
     },
     /// Download models
-    Install {
-        /// Re-download even if cached
-        #[arg(long)]
-        no_cache: bool,
-        /// Install TTS models for these languages (space-separated, e.g.
-        /// `--tts en ru`). Bare `--tts` installs English only. Codes are
-        /// validated against this build's supported set.
-        #[cfg(feature = "tts")]
-        #[arg(long, num_args = 0.., value_name = "LANG", default_missing_value = "en")]
-        tts: Vec<String>,
-        /// Also install Silero VAD (~2.3MB) for long-audio preprocessing.
-        #[arg(long)]
-        vad: bool,
-        /// Also install the Sortformer streaming-diarization model (~245MB,
-        /// darwin-arm64 only, #199).
-        #[cfg(feature = "system_diarize")]
-        #[arg(long)]
-        diarize: bool,
-        /// Skip the ASR-backend warm-up step at the end of install. On macOS
-        /// (CoreML) the warm-up triggers the ~20-30 s Apple Neural Engine
-        /// model-compile so the first `kesha audio.ogg` invocation is fast.
-        /// On the ONNX path (Linux/Windows) warm-up is ~500 ms — still worth
-        /// running since it surfaces missing-dep crashes at install time.
-        /// Use this flag in scripted installs where the cold-start cost
-        /// belongs on the first real run, or to debug install-time issues
-        /// without the backend in the loop.
-        #[arg(long = "no-warmup")]
-        no_warmup: bool,
-    },
+    Install(cli::install::InstallArgs),
     /// Synthesize speech from text (TTS)
     #[cfg(feature = "tts")]
-    Say {
-        /// Text to synthesize (omit to read from stdin)
-        text: Option<String>,
-        /// Voice id, e.g. `en-am_michael`
-        #[arg(long)]
-        voice: Option<String>,
-        /// Override the voice's default BCP 47 language code, e.g. `en-gb`
-        #[arg(long)]
-        lang: Option<String>,
-        /// Output file (default: stdout)
-        #[arg(long)]
-        out: Option<std::path::PathBuf>,
-        /// Speaking rate (0.5–2.0)
-        #[arg(long, default_value_t = 1.0)]
-        rate: f32,
-        /// List installed voices and exit
-        #[arg(long)]
-        list_voices: bool,
-        /// Parse the input as SSML (supports <speak>, <break>; strips unknown tags).
-        /// See issue #122 for the v1 tag matrix.
-        #[arg(long)]
-        ssml: bool,
-        /// Output audio format. Defaults to `wav` (or inferred from `--out`
-        /// extension when omitted). Supported: `wav`, `ogg-opus`. See #223.
-        #[arg(long, value_name = "FORMAT")]
-        format: Option<String>,
-        /// Opus bitrate in bits/second (e.g. 16000, 32000, 64000). Only valid
-        /// with `--format ogg-opus`. Default 32000 (Telegram-grade).
-        #[arg(long, value_name = "BPS")]
-        bitrate: Option<i32>,
-        /// Encoder sample rate. Only valid with `--format ogg-opus`. Must be
-        /// one of 8000/12000/16000/24000/48000. Default 24000.
-        #[arg(long = "sample-rate", value_name = "HZ")]
-        sample_rate: Option<u32>,
-        /// Explicit model path (testing override)
-        #[arg(long, hide = true)]
-        model: Option<std::path::PathBuf>,
-        /// Explicit voice embedding file (testing override)
-        #[arg(long = "voice-file", hide = true)]
-        voice_file: Option<std::path::PathBuf>,
-        /// Long-lived loop: read newline-delimited JSON requests on stdin,
-        /// reuse loaded engines across calls, write framed binary responses
-        /// on stdout. See `docs/tts-stdin-loop.md`. Issue #213.
-        #[arg(long = "stdin-loop", hide = true)]
-        stdin_loop: bool,
-        /// Disable auto-expansion of Russian acronyms (e.g. ВОЗ → "вэ о зэ").
-        /// `<say-as interpret-as="characters">` in SSML remains honored.
-        /// No effect for non-`ru-vosk-*` voices.
-        #[arg(long = "no-expand-abbrev", default_value_t = false)]
-        no_expand_abbrev: bool,
-    },
+    Say(cli::say::SayArgs),
 }
 
 fn main() {
@@ -183,56 +105,10 @@ fn run_command(command: Option<Commands>) -> Result<()> {
         Some(Commands::DetectLang { audio_path }) => cli::detect_lang::run(audio_path)?,
         Some(Commands::DetectTextLang { text }) => cli::detect_text_lang::run(text)?,
         Some(Commands::Record { out, max_seconds }) => cli::record::run(out, max_seconds)?,
-        Some(Commands::Install {
-            no_cache,
-            #[cfg(feature = "tts")]
-            tts,
-            vad,
-            #[cfg(feature = "system_diarize")]
-            diarize,
-            no_warmup,
-        }) => cli::install::run(
-            no_cache,
-            #[cfg(feature = "tts")]
-            tts,
-            vad,
-            #[cfg(feature = "system_diarize")]
-            diarize,
-            no_warmup,
-        )?,
+        Some(Commands::Install(args)) => cli::install::run(args)?,
         #[cfg(feature = "tts")]
-        Some(Commands::Say {
-            text,
-            voice,
-            lang,
-            out,
-            rate,
-            list_voices,
-            ssml,
-            format,
-            bitrate,
-            sample_rate,
-            model,
-            voice_file,
-            stdin_loop,
-            no_expand_abbrev,
-        }) => {
-            std::process::exit(cli::say::run(cli::say::SayArgs {
-                text,
-                voice,
-                lang,
-                out,
-                rate,
-                list_voices,
-                ssml,
-                format,
-                bitrate,
-                sample_rate,
-                model,
-                voice_file,
-                stdin_loop,
-                no_expand_abbrev,
-            }));
+        Some(Commands::Say(args)) => {
+            std::process::exit(cli::say::run(args));
         }
         None => {
             eprintln!("Usage: kesha-engine <command>");
