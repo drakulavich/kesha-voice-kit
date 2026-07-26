@@ -366,11 +366,12 @@ user-visible location and SHALL never leave the machine.
 - THEN the temporary directory is still removed
 - AND no partial recording remains on disk
 
-> *Technical Note — creation and path: `createTempDir` /
-> `audioPathForTempDir` in `raycast/src/lib/dictation-controller.ts` lines
-> 196–198 (`mkdtemp` under the OS temp dir, prefix `raycast-kesha-dictate-`,
-> file `dictation.wav`). Removal in the session's `finally`: line 184, with
-> `rm(dir, { recursive: true, force: true })` at line 197.*
+> *Technical Note — creation and path: `createTempDir` in
+> `raycast/src/lib/dictation-controller.ts` (`createDefaultDictationDeps`:
+> `mkdtemp` under the OS temp dir, prefix `raycast-kesha-dictate-`); the WAV
+> path is `join(tempDir, "dictation.wav")` inside `run()`. Removal in the
+> session's `finally` via `cleanupTempDir`
+> (`rm(dir, { recursive: true, force: true })`).*
 
 ## Open Issues
 

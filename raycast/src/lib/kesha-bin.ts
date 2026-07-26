@@ -1,10 +1,6 @@
 import { access, constants, open, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 
 const FALLBACK_CANDIDATES: ReadonlyArray<string> = [
   join(homedir(), ".bun", "bin", "kesha"),
@@ -104,23 +100,6 @@ export async function resolveKeshaBin(
     }
   }
   return null;
-}
-
-export async function probeKeshaVersion(
-  spawn: KeshaSpawn,
-): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync(
-      spawn.command,
-      [...spawn.prefixArgs, "--version"],
-      {
-        timeout: 5000,
-      },
-    );
-    return stdout.trim() || null;
-  } catch {
-    return null;
-  }
 }
 
 export function notFoundMessage(): string {

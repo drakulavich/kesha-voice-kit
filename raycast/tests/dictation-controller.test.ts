@@ -93,7 +93,7 @@ describe("dictation controller", () => {
     expect(states.at(-1)).toEqual({
       status: "error",
       message: "kesha CLI not found.",
-      hint: "install kesha",
+      hint: expect.stringContaining("bun add -g @drakulavich/kesha-voice-kit"),
     });
   });
 
@@ -182,7 +182,7 @@ describe("dictation controller", () => {
     const deps = createDeps({
       startRecorder: vi.fn(() => resolvedTask(recorder.promise)),
       startRecordingMonitor: vi.fn((onPatch) => {
-        onPatch({ signal: emptySignal("Meter unavailable", "unavailable") });
+        onPatch({ signal: emptySignal("unavailable") });
         return vi.fn();
       }),
     });
@@ -193,10 +193,7 @@ describe("dictation controller", () => {
 
     expect(current()).toMatchObject({
       status: "recording",
-      signal: {
-        state: "unavailable",
-        status: "Meter unavailable",
-      },
+      signal: { state: "unavailable" },
     });
 
     recorder.resolve();
@@ -334,9 +331,9 @@ describe("dictation controller", () => {
     const session = startDictationSession({}, deps.setState, deps);
     await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
 
-    emit({ signal: emptySignal("Starting microphone meter...", "starting") });
+    emit({ signal: emptySignal("starting") });
     clock = 60_000;
-    emit({ signal: emptySignal("Starting microphone meter...", "starting") });
+    emit({ signal: emptySignal("starting") });
     expect(deps.current()).toMatchObject({ idle: false, silentForMs: 0 });
     expect(recorderStop).not.toHaveBeenCalled();
 
@@ -465,11 +462,8 @@ function createDeps(
   const toasts: unknown[] = [];
   const deps: DictationControllerDeps = {
     resolveKesha: vi.fn(async () => ({ command: "kesha", prefixArgs: [] })),
-    notFoundMessage: () => "install kesha",
     createTempDir: vi.fn(async () => "/tmp/session"),
     cleanupTempDir: vi.fn(async () => undefined),
-    audioPathForTempDir: (dir) => `${dir}/dictation.wav`,
-    audioBasename: (path) => path.split("/").at(-1) ?? path,
     startRecordingMonitor: vi.fn(() => vi.fn()),
     startRecorder: vi.fn(() => resolvedTask(Promise.resolve())),
     startTranscriber: vi.fn(() =>
@@ -514,21 +508,9 @@ async function flushPromises() {
 }
 
 function listeningSignal(): SignalLevel {
-  return {
-    rms: 0,
-    peak: 0,
-    percent: 0,
-    state: "listening",
-    status: "Listening...",
-  };
+  return { rms: 0, peak: 0, percent: 0, state: "listening" };
 }
 
 function signalTick(): SignalLevel {
-  return {
-    rms: 0.02,
-    peak: 0.05,
-    percent: 24,
-    state: "signal",
-    status: "Signal detected",
-  };
+  return { rms: 0.02, peak: 0.05, percent: 24, state: "signal" };
 }

@@ -17,14 +17,12 @@ describe("signal parsing", () => {
   it("parses valid meter JSON into listening and signal states", () => {
     expect(parseMeterLine('{"rms":0,"peak":0,"percent":0}')).toMatchObject({
       state: "listening",
-      status: "Listening...",
       percent: 0,
     });
     expect(
       parseMeterLine('{"rms":0.01,"peak":0.04,"percent":20}'),
     ).toMatchObject({
       state: "signal",
-      status: "Signal detected",
       percent: 20,
     });
   });
@@ -66,13 +64,7 @@ describe("recording markdown", () => {
       silentForMs: 0,
       idle: false,
       mic: { name: "Studio Mic", sampleRate: 48000, channels: 1 },
-      signal: {
-        rms: 0.01,
-        peak: 0.05,
-        percent: 24,
-        state: "signal",
-        status: "Signal detected",
-      },
+      signal: { rms: 0.01, peak: 0.05, percent: 24, state: "signal" },
     };
 
     expect(buildRecordingMarkdown(state)).toBe(
@@ -102,13 +94,7 @@ describe("recording markdown", () => {
       silentForMs: 32_000,
       idle: true,
       mic: { name: "Studio Mic" },
-      signal: {
-        rms: 0,
-        peak: 0,
-        percent: 0,
-        state: "listening",
-        status: "Listening...",
-      },
+      signal: { rms: 0, peak: 0, percent: 0, state: "listening" },
     };
 
     expect(buildRecordingMarkdown(state)).toBe(
@@ -135,7 +121,7 @@ describe("recording markdown", () => {
       timeoutSeconds: 60,
     };
 
-    expect(buildTranscribingMarkdown(state)).toBe(
+    expect(buildTranscribingMarkdown()).toBe(
       "# Transcribing\n\nProcessing locally with Kesha Voice Kit.",
     );
     expect(formatDuration(state.elapsedSeconds)).toBe("0:12");

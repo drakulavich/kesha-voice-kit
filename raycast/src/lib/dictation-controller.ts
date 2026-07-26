@@ -8,6 +8,7 @@ import {
   TRANSCRIBE_TIMEOUT_SECONDS,
 } from "./dictation-config";
 import { notFoundMessage, resolveKeshaBin } from "./kesha-bin";
+import type { KeshaSpawn } from "./kesha-bin";
 import { startKeshaRecorder, startKeshaTranscriber } from "./process-tasks";
 import { startRecordingMonitor } from "./recording-monitor";
 import { emptySignal } from "./recording-view";
@@ -72,59 +73,15 @@ export function startDictationSession(
         setState({
           status: "error",
           message: "kesha CLI not found.",
-          hint: deps.notFoundMessage(),
+          hint: notFoundMessage(),
         });
         return;
       }
 
       tempDir = await deps.createTempDir();
-      const audioPath = deps.audioPathForTempDir(tempDir);
+      const audioPath = join(tempDir, "dictation.wav");
 
-      setState({
-        status: "recording",
-        maxSeconds,
-        elapsedSeconds: 0,
-        silentForMs: 0,
-        idle: false,
-        mic: { name: "Default input device" },
-        signal: emptySignal("Starting microphone meter...", "starting"),
-      });
-      const silenceTracker = createSilenceTracker({
-        now: deps.now,
-        onIdleStop: () => {
-          void deps.showToast({
-            style: "animated",
-            title: "Stopped after silence.",
-          });
-          recorder?.stop();
-        },
-      });
-      stopMonitoring = deps.startRecordingMonitor((patch) =>
-        patchRecordingState(setState, silenceTracker.track(patch)),
-      );
-      await deps.showToast({
-        style: "animated",
-        title: "Recording",
-        message: "Stops automatically when you pause",
-      });
-      if (cancelled) return;
-      if (stopRequested) {
-        setState({
-          status: "error",
-          message: "Recording stopped before any audio was captured.",
-        });
-        return;
-      }
-
-      recorder = deps.startRecorder(kesha, audioPath, maxSeconds);
-      try {
-        await recorder.done;
-      } finally {
-        recorder = null;
-        stopMonitoring?.();
-        stopMonitoring = null;
-      }
-      if (cancelled) return;
+      if (!(await recordPhase(kesha, audioPath, maxSeconds))) return;
 
       if (await deps.isSilentAudio(audioPath)) {
         throw new Error(
@@ -132,41 +89,10 @@ export function startDictationSession(
         );
       }
 
-      setState({
-        status: "transcribing",
-        elapsedSeconds: 0,
-        timeoutSeconds: TRANSCRIBE_TIMEOUT_SECONDS,
-      });
-      await deps.showToast({
-        style: "animated",
-        title: "Transcribing",
-        message: deps.audioBasename(audioPath),
-      });
-
-      stopTranscribeTimer = startTranscribingTimer(setState);
-      transcriber = deps.startTranscriber(kesha, audioPath);
-      const result = normalizeTranscribeResult(
-        audioPath,
-        await transcriber.done,
-      );
-      stopTranscribeTimer?.();
-      stopTranscribeTimer = null;
-      transcriber = null;
+      const result = await transcribePhase(kesha, audioPath);
       if (cancelled) return;
 
-      const transcript = result.text.trim();
-      if (!transcript) {
-        throw new Error("No speech was detected in the recording.");
-      }
-      await deps.copyToClipboard(transcript);
-      await deps.showToast({
-        style: "success",
-        title: "Copied transcript",
-      });
-      setState({
-        status: "ok",
-        result: { ...result, text: transcript },
-      });
+      await deliverTranscript(result);
     } catch (err: unknown) {
       if (cancelled) return;
       await deps.showToast({ style: "failure", title: "Dictation failed" });
@@ -175,14 +101,110 @@ export function startDictationSession(
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      recorder = null;
-      transcriber = null;
-      stopMonitoring?.();
-      stopMonitoring = null;
-      stopTranscribeTimer?.();
-      stopTranscribeTimer = null;
+      releaseResources();
       if (tempDir) await deps.cleanupTempDir(tempDir);
     }
+  }
+
+  async function recordPhase(
+    kesha: KeshaSpawn,
+    audioPath: string,
+    maxSeconds: number,
+  ): Promise<boolean> {
+    setState({
+      status: "recording",
+      maxSeconds,
+      elapsedSeconds: 0,
+      silentForMs: 0,
+      idle: false,
+      mic: { name: "Default input device" },
+      signal: emptySignal("starting"),
+    });
+    const silenceTracker = createSilenceTracker({
+      now: deps.now,
+      onIdleStop: () => {
+        void deps.showToast({
+          style: "animated",
+          title: "Stopped after silence.",
+        });
+        recorder?.stop();
+      },
+    });
+    stopMonitoring = deps.startRecordingMonitor((patch) =>
+      patchRecordingState(setState, silenceTracker.track(patch)),
+    );
+    await deps.showToast({
+      style: "animated",
+      title: "Recording",
+      message: "Stops automatically when you pause",
+    });
+    if (cancelled) return false;
+    if (stopRequested) {
+      setState({
+        status: "error",
+        message: "Recording stopped before any audio was captured.",
+      });
+      return false;
+    }
+
+    recorder = deps.startRecorder(kesha, audioPath, maxSeconds);
+    try {
+      await recorder.done;
+    } finally {
+      recorder = null;
+      stopMonitoring?.();
+      stopMonitoring = null;
+    }
+    return !cancelled;
+  }
+
+  async function transcribePhase(
+    kesha: KeshaSpawn,
+    audioPath: string,
+  ): Promise<TranscribeResult> {
+    setState({
+      status: "transcribing",
+      elapsedSeconds: 0,
+      timeoutSeconds: TRANSCRIBE_TIMEOUT_SECONDS,
+    });
+    await deps.showToast({
+      style: "animated",
+      title: "Transcribing",
+      message: basename(audioPath),
+    });
+
+    stopTranscribeTimer = startTranscribingTimer(setState);
+    transcriber = deps.startTranscriber(kesha, audioPath);
+    const result = normalizeTranscribeResult(audioPath, await transcriber.done);
+    stopTranscribeTimer?.();
+    stopTranscribeTimer = null;
+    transcriber = null;
+    return result;
+  }
+
+  async function deliverTranscript(result: TranscribeResult) {
+    const transcript = result.text.trim();
+    if (!transcript) {
+      throw new Error("No speech was detected in the recording.");
+    }
+    await deps.copyToClipboard(transcript);
+    await deps.showToast({
+      style: "success",
+      title: "Copied transcript",
+    });
+    setState({
+      status: "ok",
+      result: { ...result, text: transcript },
+    });
+  }
+
+  function releaseResources() {
+    recorder = null;
+    transcriber = null;
+    stopMonitoring?.();
+    stopMonitoring = null;
+    stopTranscribeTimer?.();
+    stopTranscribeTimer = null;
   }
 }
 
@@ -192,11 +214,8 @@ export function createDefaultDictationDeps(
   return {
     ...adapter,
     resolveKesha: resolveKeshaBin,
-    notFoundMessage,
     createTempDir: () => mkdtemp(join(tmpdir(), "raycast-kesha-dictate-")),
     cleanupTempDir: (dir) => rm(dir, { recursive: true, force: true }),
-    audioPathForTempDir: (dir) => join(dir, "dictation.wav"),
-    audioBasename: basename,
     startRecordingMonitor,
     startRecorder: (kesha, audioPath, maxSeconds) =>
       startKeshaRecorder(kesha, audioPath, maxSeconds),

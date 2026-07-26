@@ -18,7 +18,6 @@ export interface SignalLevel {
   peak: number;
   percent: number;
   state: SignalState;
-  status: string;
 }
 
 export type DictationState =
@@ -60,11 +59,8 @@ export interface DictationSession {
 
 export interface DictationControllerDeps {
   resolveKesha: (preference: string | undefined) => Promise<KeshaSpawn | null>;
-  notFoundMessage: () => string;
   createTempDir: () => Promise<string>;
   cleanupTempDir: (tempDir: string) => Promise<void>;
-  audioPathForTempDir: (tempDir: string) => string;
-  audioBasename: (audioPath: string) => string;
   startRecordingMonitor: (
     onPatch: (patch: RecordingPatch) => void,
   ) => () => void;
