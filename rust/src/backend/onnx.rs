@@ -364,10 +364,10 @@ where
             let (output, new_state1, new_state2) =
                 step(&frame, beam.last_token, &beam.state1, &beam.state2)?;
 
-            if output.len() < vocab_size {
+            if output.len() <= vocab_size {
                 anyhow::bail!(
-                    "joint output has {} logits, expected at least the vocab size {} — \
-                     wrong or truncated decoder checkpoint?",
+                    "joint output has {} logits, expected token logits ({}) plus TDT \
+                     duration logits — wrong or truncated decoder checkpoint?",
                     output.len(),
                     vocab_size
                 );
@@ -555,11 +555,13 @@ mod tests {
         assert_eq!(extract_encoder_frame(&encoder_data, 1, 3, 2), vec![9.0]);
     }
 
+    type StepOutput = Result<(Vec<f32>, Vec<f32>, Vec<f32>)>;
+
     /// Fake decoder step: fixed token logits + duration logits, empty states.
     fn fixed_step(
         token_logits: Vec<f32>,
         duration_logits: Vec<f32>,
-    ) -> impl FnMut(&[f32], i32, &[f32], &[f32]) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+    ) -> impl FnMut(&[f32], i32, &[f32], &[f32]) -> StepOutput {
         move |_frame, _last, _s1, _s2| {
             let mut out = token_logits.clone();
             out.extend_from_slice(&duration_logits);
@@ -616,12 +618,16 @@ mod tests {
     }
 
     #[test]
-    fn beam_search_bails_on_short_joint_output() {
+    fn beam_search_bails_on_missing_duration_logits() {
         let encoder = vec![0.0f32; 1];
-        let err = beam_search(&encoder, 1, 1, 0, 8, |_, _, _, _| {
-            Ok((vec![0.0; 3], Vec::new(), Vec::new()))
-        })
-        .unwrap_err();
-        assert!(err.to_string().contains("joint output"), "{err}");
+        // Shorter than the vocab, and exactly the vocab with no duration head:
+        // both mean a non-TDT or truncated decoder and must fail loudly.
+        for len in [3usize, 8] {
+            let err = beam_search(&encoder, 1, 1, 0, 8, |_, _, _, _| {
+                Ok((vec![0.0; len], Vec::new(), Vec::new()))
+            })
+            .unwrap_err();
+            assert!(err.to_string().contains("joint output"), "len={len}: {err}");
+        }
     }
 }
