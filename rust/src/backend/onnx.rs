@@ -199,101 +199,16 @@ impl OnnxBackend {
         encoder_dim: usize,
         encoder_length: usize,
     ) -> Result<Vec<usize>> {
-        if encoder_length == 0 {
-            return Ok(vec![]);
-        }
-
-        let state_size = DECODER_LAYERS * DECODER_HIDDEN;
-
-        struct Beam {
-            tokens: Vec<usize>,
-            score: f32,
-            last_token: i32,
-            state1: Vec<f32>,
-            state2: Vec<f32>,
-            t: usize,
-        }
-
-        let mut beams = vec![Beam {
-            tokens: vec![],
-            score: 0.0,
-            last_token: self.blank_id as i32,
-            state1: vec![0.0; state_size],
-            state2: vec![0.0; state_size],
-            t: 0,
-        }];
-
-        let max_steps = encoder_length * MAX_TOKENS_PER_STEP;
+        let blank_id = self.blank_id;
         let vocab_size = self.vocab.len();
-
-        for _step in 0..max_steps {
-            let active: Vec<usize> = beams
-                .iter()
-                .enumerate()
-                .filter(|(_, b)| b.t < encoder_length)
-                .map(|(i, _)| i)
-                .collect();
-
-            if active.is_empty() {
-                break;
-            }
-
-            let mut candidates: Vec<Beam> = Vec::new();
-
-            for &beam_idx in &active {
-                let beam = &beams[beam_idx];
-                let frame =
-                    extract_encoder_frame(encoder_data, encoder_dim, encoder_length, beam.t);
-                let (output, new_state1, new_state2) =
-                    self.decode_step(&frame, beam.last_token, &beam.state1, &beam.state2)?;
-
-                let token_logits = &output[..vocab_size];
-                let duration_logits = &output[vocab_size..];
-                let duration = argmax(duration_logits);
-
-                // Blank: advance one frame, no new token
-                candidates.push(Beam {
-                    tokens: beam.tokens.clone(),
-                    score: beam.score + token_logits[self.blank_id],
-                    last_token: beam.last_token,
-                    state1: new_state1.clone(),
-                    state2: new_state2.clone(),
-                    t: beam.t + 1,
-                });
-
-                // Top-K non-blank tokens
-                for token_id in top_k_indices(token_logits, DEFAULT_BEAM_WIDTH, self.blank_id) {
-                    let mut tokens = beam.tokens.clone();
-                    tokens.push(token_id);
-                    candidates.push(Beam {
-                        tokens,
-                        score: beam.score + token_logits[token_id],
-                        last_token: token_id as i32,
-                        state1: new_state1.clone(),
-                        state2: new_state2.clone(),
-                        // duration == 0 means stay on this frame (emit another token)
-                        t: if duration > 0 {
-                            beam.t + duration
-                        } else {
-                            beam.t
-                        },
-                    });
-                }
-            }
-
-            candidates.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            beams = candidates.into_iter().take(DEFAULT_BEAM_WIDTH).collect();
-        }
-
-        Ok(beams
-            .into_iter()
-            .next()
-            .map(|b| b.tokens)
-            .unwrap_or_default())
+        beam_search(
+            encoder_data,
+            encoder_dim,
+            encoder_length,
+            blank_id,
+            vocab_size,
+            |frame, last_token, state1, state2| self.decode_step(frame, last_token, state1, state2),
+        )
     }
 
     fn detokenize(&self, token_ids: &[usize]) -> String {
@@ -386,6 +301,124 @@ fn classify_decoder_outputs(
     let new_state1 = new_s1.context("No output_states_1 tensor found")?;
     let new_state2 = new_s2.context("No output_states_2 tensor found")?;
     Ok((output_data, new_state1, new_state2))
+}
+
+/// TDT beam search over pre-computed encoder frames. `step` runs one decoder
+/// inference (`(frame, last_token, state1, state2)` → `(joint_output, new_state1,
+/// new_state2)`); injecting it keeps the search testable without an ONNX
+/// session, mirroring `transcribe::build_chunked_output_segments`.
+fn beam_search<F>(
+    encoder_data: &[f32],
+    encoder_dim: usize,
+    encoder_length: usize,
+    blank_id: usize,
+    vocab_size: usize,
+    mut step: F,
+) -> Result<Vec<usize>>
+where
+    F: FnMut(&[f32], i32, &[f32], &[f32]) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)>,
+{
+    if encoder_length == 0 {
+        return Ok(vec![]);
+    }
+
+    let state_size = DECODER_LAYERS * DECODER_HIDDEN;
+
+    struct Beam {
+        tokens: Vec<usize>,
+        score: f32,
+        last_token: i32,
+        state1: Vec<f32>,
+        state2: Vec<f32>,
+        t: usize,
+    }
+
+    let mut beams = vec![Beam {
+        tokens: vec![],
+        score: 0.0,
+        last_token: blank_id as i32,
+        state1: vec![0.0; state_size],
+        state2: vec![0.0; state_size],
+        t: 0,
+    }];
+
+    let max_steps = encoder_length * MAX_TOKENS_PER_STEP;
+
+    for _step in 0..max_steps {
+        let active: Vec<usize> = beams
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.t < encoder_length)
+            .map(|(i, _)| i)
+            .collect();
+
+        if active.is_empty() {
+            break;
+        }
+
+        let mut candidates: Vec<Beam> = Vec::new();
+
+        for &beam_idx in &active {
+            let beam = &beams[beam_idx];
+            let frame = extract_encoder_frame(encoder_data, encoder_dim, encoder_length, beam.t);
+            let (output, new_state1, new_state2) =
+                step(&frame, beam.last_token, &beam.state1, &beam.state2)?;
+
+            if output.len() <= vocab_size {
+                anyhow::bail!(
+                    "joint output has {} logits, expected token logits ({}) plus TDT \
+                     duration logits — wrong or truncated decoder checkpoint?",
+                    output.len(),
+                    vocab_size
+                );
+            }
+            let token_logits = &output[..vocab_size];
+            let duration_logits = &output[vocab_size..];
+            let duration = argmax(duration_logits);
+
+            // Blank: advance one frame, no new token
+            candidates.push(Beam {
+                tokens: beam.tokens.clone(),
+                score: beam.score + token_logits[blank_id],
+                last_token: beam.last_token,
+                state1: new_state1.clone(),
+                state2: new_state2.clone(),
+                t: beam.t + 1,
+            });
+
+            // Top-K non-blank tokens
+            for token_id in top_k_indices(token_logits, DEFAULT_BEAM_WIDTH, blank_id) {
+                let mut tokens = beam.tokens.clone();
+                tokens.push(token_id);
+                candidates.push(Beam {
+                    tokens,
+                    score: beam.score + token_logits[token_id],
+                    last_token: token_id as i32,
+                    state1: new_state1.clone(),
+                    state2: new_state2.clone(),
+                    // duration == 0 means stay on this frame (emit another token)
+                    t: if duration > 0 {
+                        beam.t + duration
+                    } else {
+                        beam.t
+                    },
+                });
+            }
+        }
+
+        candidates.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        beams = candidates.into_iter().take(DEFAULT_BEAM_WIDTH).collect();
+    }
+
+    Ok(beams
+        .into_iter()
+        .next()
+        .map(|b| b.tokens)
+        .unwrap_or_default())
 }
 
 fn top_k_indices(arr: &[f32], k: usize, exclude: usize) -> Vec<usize> {
@@ -520,5 +553,81 @@ mod tests {
     fn extract_encoder_frame_single_dim() {
         let encoder_data = vec![7.0f32, 8.0, 9.0]; // D=1, T'=3
         assert_eq!(extract_encoder_frame(&encoder_data, 1, 3, 2), vec![9.0]);
+    }
+
+    type StepOutput = Result<(Vec<f32>, Vec<f32>, Vec<f32>)>;
+
+    /// Fake decoder step: fixed token logits + duration logits, empty states.
+    fn fixed_step(
+        token_logits: Vec<f32>,
+        duration_logits: Vec<f32>,
+    ) -> impl FnMut(&[f32], i32, &[f32], &[f32]) -> StepOutput {
+        move |_frame, _last, _s1, _s2| {
+            let mut out = token_logits.clone();
+            out.extend_from_slice(&duration_logits);
+            Ok((out, Vec::new(), Vec::new()))
+        }
+    }
+
+    #[test]
+    fn beam_search_empty_encoder_returns_empty() {
+        let out = beam_search(&[], 1, 0, 0, 4, |_, _, _, _| {
+            panic!("step must not run for empty input")
+        })
+        .unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn beam_search_blank_dominant_yields_no_tokens() {
+        // blank (id 0) always wins; every step advances one frame.
+        let encoder = vec![0.0f32; 3];
+        let step = fixed_step(vec![10.0, 0.0, 0.0, 0.0], vec![0.0, 10.0]);
+        let out = beam_search(&encoder, 1, 3, 0, 4, step).unwrap();
+        assert!(out.is_empty(), "blank-dominant logits produced {out:?}");
+    }
+
+    #[test]
+    fn beam_search_emits_best_token_per_frame() {
+        // Token 2 wins each frame with duration argmax 1 → one token per frame.
+        let encoder = vec![0.0f32; 2];
+        let step = fixed_step(vec![0.0, 1.0, 10.0, 0.0], vec![0.0, 10.0]);
+        let out = beam_search(&encoder, 1, 2, 0, 4, step).unwrap();
+        assert_eq!(out, vec![2, 2]);
+    }
+
+    #[test]
+    fn beam_search_duration_zero_exhausts_step_budget_but_terminates() {
+        // Non-blank token with duration argmax 0 never advances `t`; the
+        // search must stop at encoder_length * MAX_TOKENS_PER_STEP instead
+        // of looping forever, emitting at most one token per step.
+        let encoder = vec![0.0f32; 2];
+        let mut calls = 0usize;
+        let out = beam_search(&encoder, 1, 2, 0, 4, |_, _, _, _| {
+            calls += 1;
+            Ok((vec![0.0, 10.0, 0.0, 0.0, 10.0, 0.0], Vec::new(), Vec::new()))
+        })
+        .unwrap();
+        let max_steps = 2 * MAX_TOKENS_PER_STEP;
+        assert_eq!(out.len(), max_steps, "one token per budgeted step");
+        assert!(out.iter().all(|&t| t == 1), "{out:?}");
+        assert!(
+            calls <= max_steps * DEFAULT_BEAM_WIDTH,
+            "step ran {calls} times"
+        );
+    }
+
+    #[test]
+    fn beam_search_bails_on_missing_duration_logits() {
+        let encoder = vec![0.0f32; 1];
+        // Shorter than the vocab, and exactly the vocab with no duration head:
+        // both mean a non-TDT or truncated decoder and must fail loudly.
+        for len in [3usize, 8] {
+            let err = beam_search(&encoder, 1, 1, 0, 8, |_, _, _, _| {
+                Ok((vec![0.0; len], Vec::new(), Vec::new()))
+            })
+            .unwrap_err();
+            assert!(err.to_string().contains("joint output"), "len={len}: {err}");
+        }
     }
 }
