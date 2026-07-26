@@ -1617,15 +1617,20 @@ fn cleanup_legacy() {
         eprintln!("Cleaning up legacy CoreML binary...");
         let _ = fs::remove_file(&old_swift);
     }
+    #[cfg(unix)]
     cleanup_orphan_staging(&cache);
 }
 
 /// Age threshold for orphaned download staging. A SIGKILLed download leaves
 /// its `<name>.part.<pid>` behind forever (#619); a live concurrent
 /// installer's staging keeps a fresh mtime while `io::copy` streams into it,
-/// so anything untouched for an hour is safe to sweep.
+/// so anything untouched for an hour is safe to sweep. Unix-only: Windows
+/// keeps last-write time stale while a handle is open and permits unlinking
+/// open files, so an in-flight multi-hour download could be swept there.
+#[cfg(unix)]
 const STALE_STAGING_SECS: u64 = 60 * 60;
 
+#[cfg(unix)]
 fn cleanup_orphan_staging(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -1659,6 +1664,7 @@ fn cleanup_orphan_staging(dir: &Path) {
 mod characterization_tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn orphan_staging_sweep_removes_stale_keeps_fresh_and_finished() -> Result<()> {
         let dir = std::env::temp_dir().join(format!(
