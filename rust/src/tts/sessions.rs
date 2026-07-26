@@ -93,10 +93,6 @@ impl KokoroSession {
     }
 }
 
-/// Map of `Vosk` instances keyed by model directory. Eviction on infer error.
-///
-/// Vosk holds mutable BERT prosody / dictionary state; a synth error may leave
-/// it inconsistent, so we evict rather than risk poisoning the next call.
 /// Lazily-loaded [`KokoroSession`] that survives model swaps. `get` loads on
 /// first use and delegates to `ensure_model` afterwards, so callers share one
 /// code path whether they are one-shot (fresh slot per call) or long-lived
@@ -130,6 +126,10 @@ pub struct TtsSessions {
     pub charsiu: CharsiuCache,
 }
 
+/// Map of `Vosk` instances keyed by model directory. Eviction on infer error.
+///
+/// Vosk holds mutable BERT prosody / dictionary state; a synth error may leave
+/// it inconsistent, so we evict rather than risk poisoning the next call.
 /// Kokoro's `Session::run` is stateless per call, so no eviction needed there.
 #[derive(Default)]
 pub struct VoskCache {
