@@ -117,7 +117,7 @@ All of these install the Bun CLI wrapper; engine + models still download explici
 - **MCP server** — `kesha mcp` exposes transcribe/synthesize/list tools to any MCP client (Claude, Cursor, Codex, Gemini). Setup: [docs/mcp.md](docs/mcp.md).
 - **OpenClaw** — give your LLM agent ears. Install & config: [docs/openclaw.md](docs/openclaw.md).
 - **Hermes Agent** — local STT/TTS through Hermes command providers. Setup: [docs/hermes.md](docs/hermes.md).
-- **Raycast** (macOS) — transcribe selected audio & speak the clipboard from the launcher. Source + install: [`raycast/`](raycast/).
+- **Raycast** (macOS) — offline microphone dictation from the launcher: *Dictate to Clipboard* records with a live signal meter, auto-stops on silence, transcribes locally, and copies the text. [Install from the Raycast Store](https://www.raycast.com/drakulavich/kesha-voice-kit) · source: [`raycast/`](raycast/).
 - **Programmatic API** — `@drakulavich/kesha-voice-kit/core` for use inside a Bun program. See [docs/api.md](docs/api.md).
 
 ## More
