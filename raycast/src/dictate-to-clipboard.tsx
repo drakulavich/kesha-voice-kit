@@ -84,7 +84,7 @@ export default function Command() {
     return (
       <Detail
         isLoading
-        markdown={buildTranscribingMarkdown(state)}
+        markdown={buildTranscribingMarkdown()}
         metadata={<TranscribingMetadata state={state} />}
         actions={
           <ActionPanel>

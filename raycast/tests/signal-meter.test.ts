@@ -121,7 +121,7 @@ describe("recording markdown", () => {
       timeoutSeconds: 60,
     };
 
-    expect(buildTranscribingMarkdown(state)).toBe(
+    expect(buildTranscribingMarkdown()).toBe(
       "# Transcribing\n\nProcessing locally with Kesha Voice Kit.",
     );
     expect(formatDuration(state.elapsedSeconds)).toBe("0:12");

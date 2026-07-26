@@ -21,10 +21,7 @@ export function buildResultMarkdown(text: string): string {
   return ["# Dictation", "", text].join("\n");
 }
 
-export function buildTranscribingMarkdown(
-  state: Extract<DictationState, { status: "transcribing" }>,
-): string {
-  void state;
+export function buildTranscribingMarkdown(): string {
   return ["# Transcribing", "Processing locally with Kesha Voice Kit."].join(
     "\n\n",
   );
