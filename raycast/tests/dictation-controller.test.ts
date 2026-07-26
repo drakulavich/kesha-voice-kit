@@ -59,6 +59,10 @@ describe("dictation controller", () => {
       message:
         "Recorded audio is silent. Check macOS Microphone permission for Raycast and the selected input device.",
     });
+    expect(deps.toasts).toContainEqual({
+      style: "failure",
+      title: "Dictation failed",
+    });
     expect(deps.cleanupTempDir).toHaveBeenCalledWith("/tmp/session");
   });
 
@@ -77,6 +81,10 @@ describe("dictation controller", () => {
     expect(states.at(-1)).toMatchObject({
       status: "error",
       message: "mic denied",
+    });
+    expect(deps.toasts).toContainEqual({
+      style: "failure",
+      title: "Dictation failed",
     });
   });
 
