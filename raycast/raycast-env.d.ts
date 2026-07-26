@@ -8,7 +8,7 @@
 /* eslint-disable @typescript-eslint/ban-types */
 
 type ExtensionPreferences = {
-  /** `kesha` Binary Path - Absolute path to the `kesha` CLI. Leave blank to auto-detect common global install locations. */
+  /** Kesha Binary Path - Absolute path to the `kesha` CLI. Leave blank to auto-detect common global install locations. */
   "keshaBinPath": string,
   /** Max Recording Seconds - Maximum microphone recording duration before the command stops automatically. */
   "maxRecordingSeconds": string
