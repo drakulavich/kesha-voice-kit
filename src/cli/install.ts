@@ -199,7 +199,7 @@ export const installCommand = defineCommand({
     },
     tts: {
       type: "boolean",
-      description: "Also install TTS models (Kokoro EN + Vosk-TTS RU, ~990MB)",
+      description: "Also install TTS models (English only, ~326MB; add codes for more, e.g. --tts en ru)",
       default: false,
     },
     vad: {

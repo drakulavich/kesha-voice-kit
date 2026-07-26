@@ -16,7 +16,7 @@
 - **Transcribe locally** — [25 languages](docs/languages.md#speech-to-text-25), up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Speak back** — text-to-speech in [9 languages](docs/languages.md#text-to-speech)
 - **Plug into agents** — ship voice workflows as CLI commands, an MCP server, an <a href="docs/openclaw.md">OpenClaw</a> skill, or a <a href="docs/hermes.md">Hermes</a> agent
-- **Small Rust engine** — single ~20MB binary, no ffmpeg, no Python, no native Node addons
+- **Small Rust engine** — single ~60MB binary, no ffmpeg, no Python, no native Node addons
 
 <p align="center">
   <img src="https://github.com/drakulavich/kesha-voice-kit/raw/main/demo.gif" alt="kesha demo — English + Russian transcription with automatic language detection" width="800">
@@ -24,16 +24,21 @@
 
 ## Quick Start
 
-Runtime: **[Bun](https://bun.sh)** >= 1.3.0 · Platforms: macOS arm64, Linux x64, Windows x64.
+Runtime: **[Bun](https://bun.sh)** >= 1.3.0 · Platforms: macOS arm64, Linux x64. Windows x64 is currently blocked at install ([#216](https://github.com/drakulavich/kesha-voice-kit/issues/216)).
 
 ```bash
 # 1. Install Bun (skip if you have it) — Linux & macOS:
 curl -fsSL https://bun.sh/install | bash        # or: brew install oven-sh/bun/bun
 # Windows: powershell -c "irm bun.sh/install.ps1 | iex"
+exec $SHELL -l                                  # reload PATH — skip if `bun --version` already works
 
 # 2. Install Kesha:
 bun add -g @drakulavich/kesha-voice-kit
-kesha install        # downloads engine + models (explicit — never automatic)
+kesha --version                                 # confirms `kesha` resolved on PATH
+kesha install --plan                            # preview exact download/disk sizes first — downloads nothing
+kesha install        # ~2.7 GB (engine + speech-to-text models), explicit — never automatic.
+                      # No progress bar during the model step; can take several minutes.
+                      # Prefer a guided wizard? `kesha init` walks through the same choices interactively.
 
 # 3. Transcribe:
 kesha audio.ogg      # transcript to stdout
@@ -51,6 +56,7 @@ kesha --format json audio.ogg              # full JSON with lang fields
 kesha --json --timestamps audio.ogg        # JSON with timestamped segments
 kesha --toon audio.ogg                     # compact LLM-friendly TOON
 kesha status                               # show installed backend info
+kesha status --disk                        # + recursive cache disk usage
 ```
 
 Multiple files get `head`-style headers; stdout is the transcript, stderr is errors — pipe-friendly:
@@ -64,6 +70,7 @@ $ kesha freedom.ogg tahiti.ogg
 Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
 ```
 
+- **Record from the mic:** `kesha record --out hello.wav` writes microphone audio to a WAV file (`kesha hello.wav` transcribes it). macOS prompts for microphone access on first use — grant it under System Settings → Privacy & Security → Microphone if it was denied. No mic, or a headless box? Skip `record` and pass any existing audio file straight to `kesha`.
 - **Long / silence-heavy audio:** install VAD (`kesha install --vad`); Kesha auto-uses it past 120 s. Without VAD, long audio falls back to fixed ASR chunks. See [docs/vad.md](docs/vad.md).
 - **Speaker diarization** (darwin-arm64): `kesha install --diarize`, then `kesha --json --vad --speakers meeting.m4a` stamps each segment with a `speaker` id. Linux/Windows return a clear "darwin-arm64 only" error ([#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
 
@@ -72,7 +79,8 @@ $ kesha freedom.ogg tahiti.ogg
 Kesha speaks back in [9 languages](docs/languages.md#text-to-speech), auto-picking the voice from the text's language. Override with `--lang <code>` or `--voice <id>`.
 
 ```bash
-kesha install --tts                              # opt-in models (~990MB)
+kesha install --tts                              # English only (~326 MB)
+kesha install --tts en ru                        # + Russian (~937 MB more)
 kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav             # auto-routes by language
 kesha say --voice ru-vosk-m02 "Голос в текст." > ru.wav

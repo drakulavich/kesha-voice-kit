@@ -60,18 +60,24 @@ The product promise is not "one model for every audio problem." The promise is a
 
 | Capability | macOS arm64 | macOS x64 | Linux x64 | Windows x64 | Nix path |
 |---|---|---|---|---|---|
-| STT | Supported, CoreML path | Not shipped | Supported, ONNX CPU path | Supported, ONNX CPU path | `aarch64-darwin`, `x86_64-linux` |
-| Audio language detection | Supported | Not shipped | Supported | Supported | Supported where the flake builds |
-| VAD | Supported with `kesha install --vad` | Not shipped | Supported with `kesha install --vad` | Supported with `kesha install --vad` | Supported where the engine path includes VAD assets |
-| TTS: English Kokoro | Supported, FluidAudio/CoreML in release builds | Not shipped | Supported, ONNX path | Supported, ONNX path | Supported except where noted in `docs/nix-install.md` |
-| TTS: Russian Vosk-TTS | Supported | Not shipped | Supported | Supported | Supported except where noted in `docs/nix-install.md` |
+| STT | Supported, CoreML path | Not shipped | Supported, ONNX CPU path | Blocked at install (#216) | `aarch64-darwin`, `x86_64-linux` |
+| Audio language detection | Supported | Not shipped | Supported | Blocked at install (#216) | Supported where the flake builds |
+| VAD | Supported with `kesha install --vad` | Not shipped | Supported with `kesha install --vad` | Blocked at install (#216) | Supported where the engine path includes VAD assets |
+| TTS: English Kokoro | Supported, FluidAudio/CoreML in release builds | Not shipped | Supported, ONNX path | Blocked at install (#216) | Supported except where noted in `docs/nix-install.md` |
+| TTS: Russian Vosk-TTS | Supported | Not shipped | Supported | Blocked at install (#216) | Supported except where noted in `docs/nix-install.md` |
 | macOS system voices | Supported | Not shipped | Not applicable | Not applicable | Supported on `aarch64-darwin` |
 | Speaker diarization | Preview, darwin-arm64 only | Not supported | Not supported | Not supported | Not wired into the Nix build yet |
 | Raycast extension | Supported | Not shipped | Not applicable | Not applicable | Not applicable |
-| OpenClaw integration | Supported through CLI route | Not shipped | Supported through CLI route | Supported through CLI route | Use the installed `kesha` command from the chosen path |
-| Hermes Agent integration | Supported through command providers | Not shipped | Supported through command providers | Supported through command providers | Use the installed `kesha` command from the chosen path |
+| OpenClaw integration | Supported through CLI route | Not shipped | Supported through CLI route | Blocked at install (#216) | Use the installed `kesha` command from the chosen path |
+| Hermes Agent integration | Supported through command providers | Not shipped | Supported through command providers | Blocked at install (#216) | Use the installed `kesha` command from the chosen path |
 
 `macOS x64` means Intel Macs. Kesha does not currently publish a `darwin-x64` engine binary, so Intel Macs are intentionally marked as not shipped rather than implied to use the ONNX fallback.
+
+`Windows x64` shows "Blocked at install" because the engine download itself
+refuses to run — the Vosk-TTS native dependency trips MSVC at link time, so no
+Windows x64 engine binary is published for the current release line. See
+[issue #216](https://github.com/drakulavich/kesha-voice-kit/issues/216) for
+the underlying failure and the v1.4.x workaround.
 
 ## When to choose something else
 

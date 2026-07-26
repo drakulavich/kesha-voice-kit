@@ -73,7 +73,7 @@ _kesha() {
         '--onnx[Force ONNX backend]' \
         '--no-cache[Re-download even if cached]' \
         '--plan[Show download, disk, and warm-up plan without changing local state]' \
-        '--tts[Also install TTS models (Kokoro EN + Vosk-TTS RU, ~990MB)]' \
+        '--tts[Also install TTS models (English only, ~326MB; add codes for more, e.g. --tts en ru)]' \
         '--vad[Also install Silero VAD (~2.3MB) for long-audio preprocessing]' \
         '--diarize[Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)]'
       ;;
