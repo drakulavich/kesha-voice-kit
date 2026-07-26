@@ -17,9 +17,9 @@ Two interfaces: the CLI, and a programmatic API exported from `@drakulavich/kesh
 
 ### DEFAULT TTS VOICES MUST BE MALE
 
-Kesha (Кеша) is a male name — this is the brand voice. Current defaults: `am_michael` (Kokoro EN), `ru-vosk-m02` (Vosk RU), `es-em_alex`, `it-im_nicola`, `pt-pm_alex`, `zh-zm_050`. Never default to a female voice without an explicit, documented reason; auto-routing fallbacks (`pickVoiceForLang`) must prefer a male voice too. Female voices stay selectable via explicit `--voice`.
+Kesha (Кеша) is a male name — this is the brand voice. Current defaults: `en-am_michael`, `ru-vosk-m02`, `es-em_alex`, `it-im_nicola`, `pt-pm_alex`, `zh-zm_050`. Never default to a female voice without an explicit, documented reason; auto-routing fallbacks (`pickVoiceForLang`) must prefer a male voice too. Female voices stay selectable via explicit `--voice`.
 
-Documented exception: `fr-ff_siwis` is female because Kokoro v1.0 ships no male French voice.
+Two documented exceptions — do **not** "fix" either: `fr-ff_siwis` is female because Kokoro v1.0 ships no male French voice, and darwin `ru` auto-routes to AVSpeech Milena (female) because it is the zero-install path; `--voice ru-vosk-m02` opts into Vosk. When adding a default, list the `m_*` candidates (`kesha say --list-voices`) and pick by ear, not alphabetically.
 
 ### NEVER AUTO-DOWNLOAD THE ENGINE OR MODELS
 
@@ -53,7 +53,7 @@ git worktree remove .worktrees/<slug> && git worktree prune
 ### VERIFY BEFORE PUSHING
 
 - `bun test && bunx tsc --noEmit` before every push.
-- Rust changes: `make rust-test` (wraps `cargo nextest run --features tts`) plus `cargo fmt` and `cargo clippy --all-targets -- -D warnings`. Always nextest, never plain `cargo test`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
+- Rust changes: `make rust-test` (wraps `cargo nextest run --features tts`) plus `cargo fmt` and `cargo clippy --all-targets -- -D warnings`. Always nextest — `cargo test --doc` is the only acceptable `cargo test` call; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
 - Backend module changes: also `cargo check --features coreml --no-default-features`.
 - Do NOT push broken code.
 
@@ -62,8 +62,8 @@ Rust toolchain quirks (CI rustc drift, rustfmt, `protoc`) and language gotchas: 
 ### PR ETIQUETTE
 
 - `main` is protected; every change goes through a PR and CI must pass.
-- Label the issue `WIP` when you pick it up (`gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP`), remove it when the PR merges.
-- Put `Closes #N` in the PR **body or commit message**, not only the title, so it auto-closes. Use `Refs #N` for partial work and close manually once the acceptance criteria land.
+- Label the issue `WIP` when you pick it up (`gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP`), remove it when the PR merges or the work is abandoned.
+- Put `Closes #N` in the PR **body or commit message**, not only the title, so it auto-closes. Each issue needs its own keyword (`Closes #N, closes #M`) — a bare list closes only the first. Use `Refs #N` for partial work, then verify with `gh issue view <N> --json state` and close manually.
 
 ### GREPTILE PR REVIEW IS A GATE
 
@@ -87,7 +87,7 @@ Any plan naming a specific upstream artifact must be validated by a throwaway sp
 
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
-Validate flags against `kesha-engine --capabilities-json` instead of forwarding them. `kesha-engine install` only accepts `--no-cache`.
+Validate flags against `kesha-engine --capabilities-json` instead of forwarding them — the engine's subcommands take their own narrow flag sets (`install` accepts `--no-cache`, `--tts`, `--vad`, `--diarize`, `--no-warmup`, and nothing else).
 
 ### COREML BUILD TRIPLE
 
@@ -95,7 +95,7 @@ The `coreml` feature links the macOS Swift runtime via `fluidaudio-rs`. All thre
 
 1. `macos-14` runner + `maxim-lobanov/setup-xcode@v1` pinned to `16.2`
 2. `MACOSX_DEPLOYMENT_TARGET=14.0`, so the linker elides `@rpath/libswift_Concurrency.dylib`
-3. `rust/build.rs` emits `-Wl,-rpath,/usr/lib/swift` under `#[cfg(feature = "coreml")]`
+3. `rust/build.rs` emits `-Wl,-rpath,/usr/lib/swift` under `cfg(any(coreml, system_kokoro, system_diarize))` — narrowing that to `coreml` alone breaks local `system_kokoro`/`system_diarize` builds
 
 `build-engine.yml` smoke-tests every binary with `--capabilities-json` before upload. **Never remove that step.**
 
@@ -104,8 +104,11 @@ The `coreml` feature links the macOS Swift runtime via `fluidaudio-rs`. All thre
 `build-engine.yml` passes `--features <matrix> --no-default-features` per platform. Adding a feature to cargo's default set **also requires adding it to every matrix row**, or released binaries silently ship without it (v1.1.0 shipped without `tts`). Check before a release:
 
 ```bash
-diff <(grep 'features = ' .github/workflows/build-engine.yml) <(grep default rust/Cargo.toml)
+grep -E '^\s+features:' .github/workflows/build-engine.yml   # every matrix row
+grep '^default =' rust/Cargo.toml                            # cargo's default set
 ```
+
+Every default feature must appear in every row.
 
 ### WORKFLOW `run:` SHELL INJECTION — USE ENV PASSTHROUGH
 
@@ -158,7 +161,7 @@ kesha audio.ogg
   → stdout: transcript; stderr: progress/errors
 ```
 
-- Cargo features: `default = ["onnx"]`; `ort`/`ndarray` are unconditional (lang_id always needs them), so the `onnx` feature only gates `backend/onnx.rs`. `coreml = ["dep:fluidaudio-rs"]` is mutually exclusive with it at module level.
+- Cargo features: `default = ["onnx", "tts"]`; `ort`/`ndarray` are unconditional (lang_id always needs them), so the `onnx` feature only gates `backend/onnx.rs`. `coreml = ["dep:fluidaudio-rs", "dep:libc"]` is mutually exclusive with it at module level.
 - Prefer `--toon` over `--json` when piping multi-file results into an LLM (30-60% fewer tokens, round-trips to the same `TranscribeResult[]`). The two are mutually exclusive (exit 2).
 - Public API: `import { transcribe, downloadEngine, getEngineCapabilities } from "@drakulavich/kesha-voice-kit/core"`.
 
