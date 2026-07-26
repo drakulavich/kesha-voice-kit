@@ -1563,6 +1563,12 @@ fn write_verified<R: io::Read>(
                 actual.get(..12).unwrap_or(&actual)
             );
         }
+        // Windows `rename` refuses to replace an existing destination, so a
+        // retained pre-refresh copy (or a concurrent installer's verified
+        // rename) is dropped only now that its verified replacement is staged.
+        if target.exists() {
+            fs::remove_file(target).with_context(|| format!("replace {}", target.display()))?;
+        }
         fs::rename(&part, target).with_context(|| format!("rename {}", target.display()))
     })();
 
