@@ -4,6 +4,54 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { listVoices } from "../../src/mcp/voices";
 
+async function call(name: string, args: Record<string, unknown> = {}) {
+  const server = createKeshaMcpServer();
+  const [c, s] = InMemoryTransport.createLinkedPair();
+  await server.connect(s);
+  const client = new Client({ name: "t", version: "0" });
+  await client.connect(c);
+  return client.callTool({ name, arguments: args });
+}
+
+async function withMissingEngine<T>(fn: () => Promise<T>): Promise<T> {
+  const prevBin = process.env.KESHA_ENGINE_BIN;
+  const prevCache = process.env.KESHA_CACHE_DIR;
+  delete process.env.KESHA_ENGINE_BIN;
+  process.env.KESHA_CACHE_DIR = `/tmp/kesha-mcp-empty-${Date.now()}-${Math.random()}`;
+  try {
+    return await fn();
+  } finally {
+    if (prevBin === undefined) delete process.env.KESHA_ENGINE_BIN;
+    else process.env.KESHA_ENGINE_BIN = prevBin;
+    if (prevCache === undefined) delete process.env.KESHA_CACHE_DIR;
+    else process.env.KESHA_CACHE_DIR = prevCache;
+  }
+}
+
+describe("list_voices / list_languages guard when the engine is missing", () => {
+  test("listVoices() throws an install-hint error, not a raw spawn exception", async () => {
+    await withMissingEngine(async () => {
+      await expect(listVoices()).rejects.toThrow(/kesha-engine not installed. run: (kesha install|kesha init) --tts/);
+    });
+  });
+
+  test("list_voices tool returns isError with the install hint", async () => {
+    await withMissingEngine(async () => {
+      const res = await call("list_voices");
+      expect(res.isError).toBe(true);
+      expect((res.content as Array<{ text: string }>)[0].text).toContain("kesha-engine not installed");
+    });
+  });
+
+  test("list_languages tool returns isError with the install hint", async () => {
+    await withMissingEngine(async () => {
+      const res = await call("list_languages");
+      expect(res.isError).toBe(true);
+      expect((res.content as Array<{ text: string }>)[0].text).toContain("kesha-engine not installed");
+    });
+  });
+});
+
 // Skip the full tool test if the engine is not installed (unit environment).
 // The integration path (tests/integration/) covers the full round-trip with a
 // real engine binary.

@@ -1,4 +1,5 @@
-import { getEngineBinPath } from "../engine";
+import { getEngineBinPath, isEngineInstalled } from "../engine";
+import { installHint } from "../install-hint";
 
 export interface VoiceInfo {
   voiceId: string;
@@ -108,6 +109,9 @@ export function parseVoiceLines(text: string): VoiceInfo[] {
 }
 
 export async function listVoices(): Promise<VoiceInfo[]> {
+  if (!isEngineInstalled()) {
+    throw new Error(`kesha-engine not installed. run: ${installHint("--tts")}`);
+  }
   const proc = Bun.spawn([getEngineBinPath(), "say", "--list-voices"], {
     stdout: "pipe",
     stderr: "pipe",

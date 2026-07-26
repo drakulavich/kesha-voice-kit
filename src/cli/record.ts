@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
-import { recordEngine } from "../engine";
+import { isEngineInstalled, recordEngine } from "../engine";
+import { installHint } from "../install-hint";
 import { log } from "../log";
 
 export interface RecordArgs {
@@ -37,6 +38,16 @@ export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
   return { ok: true, out, maxSeconds };
 }
 
+/** Mirrors `src/transcribe.ts`'s "no transcription backend" guard message, worded for recording. */
+export function noRecordingBackendMessage(): string {
+  return (
+    "Error: No recording backend is installed.\n\n" +
+    "Run the following to get started:\n\n" +
+    "    bun add -g @drakulavich/kesha-voice-kit\n" +
+    `    ${installHint()}`
+  );
+}
+
 export const recordCommand = defineCommand({
   meta: {
     name: "record",
@@ -65,6 +76,10 @@ export const recordCommand = defineCommand({
     if (!resolved.ok) {
       log.error(resolved.error);
       process.exit(2);
+    }
+    if (!isEngineInstalled()) {
+      log.error(noRecordingBackendMessage());
+      process.exit(1);
     }
     await recordEngine(resolved.out, resolved.maxSeconds);
   },
