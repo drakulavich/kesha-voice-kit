@@ -908,6 +908,19 @@ mod manifest_tests {
         Ok(())
     }
 
+    // Runs on the windows-latest CI leg too, pinning that the final rename
+    // replaces an existing destination there (MOVEFILE_REPLACE_EXISTING).
+    #[test]
+    fn write_verified_replaces_existing_target() -> Result<()> {
+        let target = write_verified_target("replace.bin");
+        fs::write(&target, b"previous verified weights")?;
+        write_verified(&mut &b"hello world"[..], &target, "replace.bin", HELLO_SHA)?;
+        assert_eq!(fs::read(&target)?, b"hello world");
+        assert!(!staging_path(&target).exists());
+        let _ = fs::remove_file(&target);
+        Ok(())
+    }
+
     fn staging_path(target: &std::path::Path) -> PathBuf {
         let mut name = target.file_name().map(std::ffi::OsString::from).unwrap();
         name.push(format!(".part.{}", std::process::id()));
@@ -1563,12 +1576,9 @@ fn write_verified<R: io::Read>(
                 actual.get(..12).unwrap_or(&actual)
             );
         }
-        // Windows `rename` refuses to replace an existing destination, so a
-        // retained pre-refresh copy (or a concurrent installer's verified
-        // rename) is dropped only now that its verified replacement is staged.
-        if target.exists() {
-            fs::remove_file(target).with_context(|| format!("replace {}", target.display()))?;
-        }
+        // `fs::rename` replaces an existing destination on every supported
+        // platform (POSIX rename; MoveFileExW + MOVEFILE_REPLACE_EXISTING on
+        // Windows), so the pre-refresh copy survives until this single call.
         fs::rename(&part, target).with_context(|| format!("rename {}", target.display()))
     })();
 
