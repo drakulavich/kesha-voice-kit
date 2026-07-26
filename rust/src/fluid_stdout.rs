@@ -214,3 +214,67 @@ impl StdoutShield {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Seek};
+    use std::os::fd::{AsRawFd, OwnedFd};
+
+    /// #543: a C-stdio write buffered inside the guarded scope (a Swift
+    /// `print` from the FluidAudio bridge) must be flushed to /dev/null
+    /// *before* fd 1 is restored — reordering the flush after the restore
+    /// leaks it onto the real stdout and corrupts the frame stream.
+    /// nextest runs each test in its own process, so rewiring fd 1 is safe.
+    #[test]
+    fn silenced_scope_discards_buffered_c_stdio_before_restore() {
+        /// Restores the test's original fd 1 even when an assert panics —
+        /// under a single-process `cargo test --lib` run a leaked redirect
+        /// would misdirect other tests' output.
+        struct RestoreStdout(std::os::fd::RawFd);
+        impl Drop for RestoreStdout {
+            fn drop(&mut self) {
+                // SAFETY: self.0 is the dup of the original fd 1 we own.
+                unsafe {
+                    libc::dup2(self.0, libc::STDOUT_FILENO);
+                    libc::close(self.0);
+                }
+            }
+        }
+
+        let mut capture = tempfile::tempfile().expect("capture tempfile");
+        let saved_real = unsafe { libc::dup(libc::STDOUT_FILENO) };
+        assert!(saved_real >= 0, "dup stdout failed");
+        let _restore = RestoreStdout(saved_real);
+        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
+
+        let devnull = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/null")
+            .ok()
+            .map(OwnedFd::from);
+        with_silenced_stdout(devnull.as_ref(), || {
+            // SAFETY: NUL-terminated literal; printf buffers via C stdio,
+            // exactly like the Swift bridge's print.
+            unsafe { libc::printf(c"leaky diagnostics\n".as_ptr()) };
+        });
+        // SAFETY: same as above; the post-guard write must reach real stdout.
+        unsafe {
+            libc::printf(c"after guard\n".as_ptr());
+            libc::fflush(std::ptr::null_mut());
+        }
+        drop(_restore);
+
+        let mut contents = String::new();
+        capture.rewind().unwrap();
+        capture.read_to_string(&mut contents).unwrap();
+        assert!(
+            !contents.contains("leaky"),
+            "buffered print leaked onto restored stdout: {contents:?}"
+        );
+        assert!(
+            contents.contains("after guard"),
+            "post-guard output must reach the restored stdout: {contents:?}"
+        );
+    }
+}
