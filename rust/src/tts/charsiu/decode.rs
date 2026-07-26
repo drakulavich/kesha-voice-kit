@@ -78,12 +78,12 @@ pub fn greedy(
     let mut decoder_kv: Vec<LayerKv> = Vec::with_capacity(NUM_LAYERS);
     for layer in 0..NUM_LAYERS {
         encoder_kv.push(LayerKv {
-            key: extract_kv(&step0_out, &format!("present.{layer}.encoder.key"))?,
-            value: extract_kv(&step0_out, &format!("present.{layer}.encoder.value"))?,
+            key: extract_kv(&step0_out, &kv_name("present", layer, "encoder", "key"))?,
+            value: extract_kv(&step0_out, &kv_name("present", layer, "encoder", "value"))?,
         });
         decoder_kv.push(LayerKv {
-            key: extract_kv(&step0_out, &format!("present.{layer}.decoder.key"))?,
-            value: extract_kv(&step0_out, &format!("present.{layer}.decoder.value"))?,
+            key: extract_kv(&step0_out, &kv_name("present", layer, "decoder", "key"))?,
+            value: extract_kv(&step0_out, &kv_name("present", layer, "decoder", "value"))?,
         });
     }
     drop(step0_out);
@@ -98,19 +98,19 @@ pub fn greedy(
         // 16 past_key_values: 8 constant encoder + 8 rolling decoder.
         for (layer, (dec, enc)) in decoder_kv.iter().zip(encoder_kv.iter()).enumerate() {
             inputs.push((
-                format!("past_key_values.{layer}.decoder.key").into(),
+                kv_name("past_key_values", layer, "decoder", "key").into(),
                 Value::from_array(dec.key.clone())?.into(),
             ));
             inputs.push((
-                format!("past_key_values.{layer}.decoder.value").into(),
+                kv_name("past_key_values", layer, "decoder", "value").into(),
                 Value::from_array(dec.value.clone())?.into(),
             ));
             inputs.push((
-                format!("past_key_values.{layer}.encoder.key").into(),
+                kv_name("past_key_values", layer, "encoder", "key").into(),
                 Value::from_array(enc.key.clone())?.into(),
             ));
             inputs.push((
-                format!("past_key_values.{layer}.encoder.value").into(),
+                kv_name("past_key_values", layer, "encoder", "value").into(),
                 Value::from_array(enc.value.clone())?.into(),
             ));
         }
@@ -125,8 +125,8 @@ pub fn greedy(
         last_token = next;
 
         for (layer, kv) in decoder_kv.iter_mut().enumerate() {
-            kv.key = extract_kv(&out, &format!("present.{layer}.decoder.key"))?;
-            kv.value = extract_kv(&out, &format!("present.{layer}.decoder.value"))?;
+            kv.key = extract_kv(&out, &kv_name("present", layer, "decoder", "key"))?;
+            kv.value = extract_kv(&out, &kv_name("present", layer, "decoder", "value"))?;
         }
     }
 
@@ -141,16 +141,29 @@ pub fn greedy(
     Ok(generated)
 }
 
-/// Argmax over the vocab axis of the last decode position. Logits shape [1, S, V].
-fn argmax_last_logit(logits: &Value) -> Result<i64> {
-    let (shape, data) = logits.try_extract_tensor::<f32>()?;
+// ── Pure helpers (no Session access) ────────────────────────────────────────
+
+/// `{prefix}.{layer}.{side}.{kind}` — the #185 §3 KV tensor naming contract
+/// shared by `present.*` outputs and `past_key_values.*` inputs.
+fn kv_name(prefix: &str, layer: usize, side: &str, kind: &str) -> String {
+    format!("{prefix}.{layer}.{side}.{kind}")
+}
+
+/// Argmax over the vocab axis of the last decode position. `shape` is
+/// [B, S, V]; ties pick the lowest index (mirrors `util::argmax`).
+fn argmax_last_row(shape: &[usize], data: &[f32]) -> Result<i64> {
     anyhow::ensure!(
         shape.len() == 3,
         "expected logits rank 3 [B,S,V], got shape {shape:?}"
     );
-    let s = shape[1] as usize;
-    let v = shape[2] as usize;
+    let (s, v) = (shape[1], shape[2]);
     anyhow::ensure!(s >= 1 && v >= 1, "empty logits, shape {shape:?}");
+    anyhow::ensure!(
+        data.len() >= s * v,
+        "logits data has {} values, shape {shape:?} implies at least {}",
+        data.len(),
+        s * v
+    );
     let row = &data[(s - 1) * v..s * v];
     let mut best = 0_usize;
     let mut best_val = row[0];
@@ -163,18 +176,76 @@ fn argmax_last_logit(logits: &Value) -> Result<i64> {
     Ok(best as i64)
 }
 
-/// Extract a 4-D KV tensor [B, num_heads, seq, d_kv] from a named output.
-fn extract_kv(outputs: &ort::session::SessionOutputs, name: &str) -> Result<Array4<f32>> {
-    let (shape, data) = outputs[name].try_extract_tensor::<f32>()?;
+/// Validate a KV tensor shape [B, num_heads, seq, d_kv].
+fn kv_dims(name: &str, shape: &[usize]) -> Result<(usize, usize, usize, usize)> {
     anyhow::ensure!(
         shape.len() == 4,
         "expected KV rank 4 for {name}, got shape {shape:?}"
     );
-    let dims = (
-        shape[0] as usize,
-        shape[1] as usize,
-        shape[2] as usize,
-        shape[3] as usize,
-    );
+    Ok((shape[0], shape[1], shape[2], shape[3]))
+}
+
+/// Argmax over the vocab axis of the last decode position. Logits shape [1, S, V].
+fn argmax_last_logit(logits: &Value) -> Result<i64> {
+    let (shape, data) = logits.try_extract_tensor::<f32>()?;
+    let dims: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
+    argmax_last_row(&dims, data)
+}
+
+/// Extract a 4-D KV tensor [B, num_heads, seq, d_kv] from a named output.
+fn extract_kv(outputs: &ort::session::SessionOutputs, name: &str) -> Result<Array4<f32>> {
+    let (shape, data) = outputs[name].try_extract_tensor::<f32>()?;
+    let dims_vec: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
+    let dims = kv_dims(name, &dims_vec)?;
     Ok(Array4::<f32>::from_shape_vec(dims, data.to_vec())?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kv_names_match_the_185_contract() {
+        let mut past = Vec::new();
+        let mut present = Vec::new();
+        for layer in 0..NUM_LAYERS {
+            for side in ["decoder", "encoder"] {
+                for kind in ["key", "value"] {
+                    past.push(kv_name("past_key_values", layer, side, kind));
+                    present.push(kv_name("present", layer, side, kind));
+                }
+            }
+        }
+        assert_eq!(past.len(), 16);
+        assert_eq!(past[0], "past_key_values.0.decoder.key");
+        assert_eq!(present[15], "present.3.encoder.value");
+        let unique: std::collections::HashSet<_> = past.iter().chain(present.iter()).collect();
+        assert_eq!(unique.len(), 32, "names must not collide");
+    }
+
+    #[test]
+    fn argmax_last_row_picks_last_position_and_low_tie() {
+        // Two positions; only the last row must be scanned.
+        let data = [9.0_f32, 0.0, 0.0, /* last row: */ 1.0, 5.0, 5.0];
+        assert_eq!(
+            argmax_last_row(&[1, 2, 3], &data).unwrap(),
+            1,
+            "tie → lowest index"
+        );
+    }
+
+    #[test]
+    fn argmax_last_row_rejects_bad_shapes() {
+        assert!(argmax_last_row(&[1, 2], &[0.0]).is_err(), "rank 2");
+        assert!(argmax_last_row(&[1, 0, 3], &[]).is_err(), "empty seq");
+        let err = argmax_last_row(&[1, 1, 4], &[0.0; 2]).unwrap_err();
+        assert!(err.to_string().contains("implies at least"), "{err}");
+    }
+
+    #[test]
+    fn kv_dims_requires_rank_4() {
+        assert_eq!(kv_dims("t", &[1, 6, 3, 64]).unwrap(), (1, 6, 3, 64));
+        let err = kv_dims("present.0.decoder.key", &[1, 6, 3]).unwrap_err();
+        assert!(err.to_string().contains("rank 4"), "{err}");
+    }
 }
