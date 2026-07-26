@@ -40,3 +40,7 @@ verbatim; if you need a new term, add it here first.
 | **MCP server** | The Model Context Protocol stdio server started by `kesha mcp`, exposing transcribe/synthesize/list tools to LLM clients. |
 | **Core API** | The programmatic interface exported from `@drakulavich/kesha-voice-kit/core` (`transcribe`, `say`, `downloadModel`, …). |
 | **Model mirror** | `KESHA_MODEL_MIRROR` base URL that rewrites HuggingFace download URLs (GitHub release URLs are never rewritten); safe because of Pinned hashes. |
+| **Raycast extension** | The `kesha-voice-kit` extension published to the Raycast Store; its source of record is `raycast/` in this repo. It drives the CLI as a subprocess and never links the Engine or reimplements Transcription. |
+| **Dictation session** | One run of the Raycast extension's **Dictate to Clipboard** command: record → silence check → Transcription → clipboard. |
+| **Signal meter** | The live microphone level readout shown while a Dictation session records — `{rms, peak, percent}` samples classified as **signal** or **listening**. |
+| **Idle auto-stop** | Ending a Dictation session's recording automatically after a continuous **listening** stretch: warn at 30 s, stop 15 s later. |

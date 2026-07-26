@@ -55,6 +55,7 @@ Specs reference these named personas instead of a generic "user":
 | [mcp-server](mcp-server/spec.md) | `kesha mcp`: MCP tools and audio resources |
 | [programmatic-api](programmatic-api/spec.md) | `@drakulavich/kesha-voice-kit/core` exports |
 | [engine-contract](engine-contract/spec.md) | CLI ↔ `kesha-engine` boundary: capabilities, error codes, env vars |
+| [raycast-extension](raycast-extension/spec.md) | Raycast **Dictate to Clipboard**: recording lifecycle, idle auto-stop, clipboard |
 
 ## Validation
 
