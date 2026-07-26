@@ -133,4 +133,20 @@ mod tests {
         assert!(opts.with_segments);
         assert!(opts.with_speakers);
     }
+
+    #[test]
+    fn vad_after_with_segments_matches_vad_before() {
+        // Pins the WithSegments::vad type-state method — without this row it
+        // has no callers and order-dependence could creep in unnoticed.
+        let before = TranscribeOptionsBuilder::new()
+            .vad(VadMode::On)
+            .with_segments()
+            .build();
+        let after = TranscribeOptionsBuilder::new()
+            .with_segments()
+            .vad(VadMode::On)
+            .build();
+        assert_eq!(before.mode, after.mode);
+        assert_eq!(before.with_segments, after.with_segments);
+    }
 }

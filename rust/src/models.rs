@@ -1657,6 +1657,26 @@ mod characterization_tests {
     }
 
     #[test]
+    fn is_cached_in_lang_id_and_vad_arms_check_their_own_files() {
+        // The match arms wire each kind to its own file list independently of
+        // the Asr/Vosk arms — pin present→true / empty→false per arm.
+        for (kind, files) in [
+            (ModelKind::LangId, LANG_ID_FILES),
+            (ModelKind::Vad, VAD_FILES),
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            let dir = tmp.path().join(kind.subdir());
+            fs::create_dir_all(&dir).unwrap();
+            assert!(!is_cached_in(kind, &dir), "{kind:?} empty dir");
+            for f in files {
+                let name = std::path::Path::new(f.rel_path).file_name().unwrap();
+                fs::write(dir.join(name), b"dummy").unwrap();
+            }
+            assert!(is_cached_in(kind, &dir), "{kind:?} all files present");
+        }
+    }
+
+    #[test]
     fn is_cached_in_asr_true_when_all_files_present() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("models/parakeet-tdt-v3");
