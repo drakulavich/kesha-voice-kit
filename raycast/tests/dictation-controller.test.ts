@@ -93,7 +93,7 @@ describe("dictation controller", () => {
     expect(states.at(-1)).toEqual({
       status: "error",
       message: "kesha CLI not found.",
-      hint: "install kesha",
+      hint: expect.stringContaining("bun add -g @drakulavich/kesha-voice-kit"),
     });
   });
 
@@ -462,11 +462,8 @@ function createDeps(
   const toasts: unknown[] = [];
   const deps: DictationControllerDeps = {
     resolveKesha: vi.fn(async () => ({ command: "kesha", prefixArgs: [] })),
-    notFoundMessage: () => "install kesha",
     createTempDir: vi.fn(async () => "/tmp/session"),
     cleanupTempDir: vi.fn(async () => undefined),
-    audioPathForTempDir: (dir) => `${dir}/dictation.wav`,
-    audioBasename: (path) => path.split("/").at(-1) ?? path,
     startRecordingMonitor: vi.fn(() => vi.fn()),
     startRecorder: vi.fn(() => resolvedTask(Promise.resolve())),
     startTranscriber: vi.fn(() =>

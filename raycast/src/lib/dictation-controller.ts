@@ -72,13 +72,13 @@ export function startDictationSession(
         setState({
           status: "error",
           message: "kesha CLI not found.",
-          hint: deps.notFoundMessage(),
+          hint: notFoundMessage(),
         });
         return;
       }
 
       tempDir = await deps.createTempDir();
-      const audioPath = deps.audioPathForTempDir(tempDir);
+      const audioPath = join(tempDir, "dictation.wav");
 
       setState({
         status: "recording",
@@ -140,7 +140,7 @@ export function startDictationSession(
       await deps.showToast({
         style: "animated",
         title: "Transcribing",
-        message: deps.audioBasename(audioPath),
+        message: basename(audioPath),
       });
 
       stopTranscribeTimer = startTranscribingTimer(setState);
@@ -192,11 +192,8 @@ export function createDefaultDictationDeps(
   return {
     ...adapter,
     resolveKesha: resolveKeshaBin,
-    notFoundMessage,
     createTempDir: () => mkdtemp(join(tmpdir(), "raycast-kesha-dictate-")),
     cleanupTempDir: (dir) => rm(dir, { recursive: true, force: true }),
-    audioPathForTempDir: (dir) => join(dir, "dictation.wav"),
-    audioBasename: basename,
     startRecordingMonitor,
     startRecorder: (kesha, audioPath, maxSeconds) =>
       startKeshaRecorder(kesha, audioPath, maxSeconds),
