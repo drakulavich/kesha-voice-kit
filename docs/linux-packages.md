@@ -3,7 +3,7 @@
 Kesha publishes `.deb` and `.rpm` packages for Linux x64 on stable engine
 releases. They install a standalone Bun-compiled CLI wrapper as `kesha`.
 Engine binaries and models are still downloaded explicitly with `kesha install`
-(~2.7 GB for speech-to-text; see [What Linux Gets](#what-linux-gets) below).
+(~2.5 GB for speech-to-text; see [What Linux Gets](#what-linux-gets) below).
 
 The wrapper is compiled with Bun's glibc target (`bun-linux-x64`) — it won't
 run on musl-based distros (e.g. Alpine). Use the [Docker image](docker.md)

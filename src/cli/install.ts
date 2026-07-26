@@ -199,7 +199,7 @@ export const installCommand = defineCommand({
     },
     tts: {
       type: "boolean",
-      description: "Also install TTS models (English only, ~326MB; add codes for more, e.g. --tts en ru)",
+      description: "Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan))",
       default: false,
     },
     vad: {

@@ -62,7 +62,7 @@ _kesha() {
         '--no-cache[Re-download even if cached]' \
         '--plan[Show the selected install plan without downloading]' \
         '--yes[Accept defaults and run without prompts]' \
-        '--tts[Preselect TTS models (Kokoro EN + Vosk-TTS RU, ~990MB)]' \
+        '--tts[Preselect TTS models (English; more languages via kesha install --tts <langs>)]' \
         '--vad[Preselect Silero VAD (~2.3MB) for long-audio preprocessing]' \
         '--diarize[Preselect Sortformer speaker diarization (~245MB, darwin-arm64 only)]'
       ;;
@@ -73,7 +73,7 @@ _kesha() {
         '--onnx[Force ONNX backend]' \
         '--no-cache[Re-download even if cached]' \
         '--plan[Show download, disk, and warm-up plan without changing local state]' \
-        '--tts[Also install TTS models (English only, ~326MB; add codes for more, e.g. --tts en ru)]' \
+        '--tts[Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan))]' \
         '--vad[Also install Silero VAD (~2.3MB) for long-audio preprocessing]' \
         '--diarize[Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)]'
       ;;

@@ -30,13 +30,13 @@ Runtime: **[Bun](https://bun.sh)** >= 1.3.0 · Platforms: macOS arm64, Linux x64
 # 1. Install Bun (skip if you have it) — Linux & macOS:
 curl -fsSL https://bun.sh/install | bash        # or: brew install oven-sh/bun/bun
 # Windows: powershell -c "irm bun.sh/install.ps1 | iex"
-exec $SHELL -l                                  # reload PATH — skip if `bun --version` already works
+# if `bun --version` fails, reload PATH: exec $SHELL -l
 
 # 2. Install Kesha:
 bun add -g @drakulavich/kesha-voice-kit
 kesha --version                                 # confirms `kesha` resolved on PATH
 kesha install --plan                            # preview exact download/disk sizes first — downloads nothing
-kesha install        # ~2.7 GB (engine + speech-to-text models), explicit — never automatic.
+kesha install        # ~2.5 GB (engine + speech-to-text models), explicit — never automatic.
                       # No progress bar during the model step; can take several minutes.
                       # Prefer a guided wizard? `kesha init` walks through the same choices interactively.
 
@@ -70,7 +70,7 @@ $ kesha freedom.ogg tahiti.ogg
 Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
 ```
 
-- **Record from the mic:** `kesha record --out hello.wav` writes microphone audio to a WAV file (`kesha hello.wav` transcribes it). macOS prompts for microphone access on first use — grant it under System Settings → Privacy & Security → Microphone if it was denied. No mic, or a headless box? Skip `record` and pass any existing audio file straight to `kesha`.
+- **Record from the mic (macOS):** `kesha record --out hello.wav` writes microphone audio to a WAV file (`kesha hello.wav` transcribes it). macOS prompts for microphone access on first use — grant it under System Settings → Privacy & Security → Microphone if it was denied. On Linux/Windows or headless boxes, pass any existing audio file straight to `kesha` instead.
 - **Long / silence-heavy audio:** install VAD (`kesha install --vad`); Kesha auto-uses it past 120 s. Without VAD, long audio falls back to fixed ASR chunks. See [docs/vad.md](docs/vad.md).
 - **Speaker diarization** (darwin-arm64): `kesha install --diarize`, then `kesha --json --vad --speakers meeting.m4a` stamps each segment with a `speaker` id. Linux/Windows return a clear "darwin-arm64 only" error ([#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
 
@@ -79,8 +79,8 @@ $ kesha freedom.ogg tahiti.ogg
 Kesha speaks back in [9 languages](docs/languages.md#text-to-speech), auto-picking the voice from the text's language. Override with `--lang <code>` or `--voice <id>`.
 
 ```bash
-kesha install --tts                              # English only (~326 MB)
-kesha install --tts en ru                        # + Russian (~937 MB more)
+kesha install --tts                              # English voices; sizes differ per platform — preview: kesha install --plan
+kesha install --tts en ru                        # + Russian (+~890 MB, Vosk)
 kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav             # auto-routes by language
 kesha say --voice ru-vosk-m02 "Голос в текст." > ru.wav

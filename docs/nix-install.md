@@ -15,7 +15,7 @@ nix run github:drakulavich/kesha-voice-kit -- audio.ogg    # transcribe
 ## Install to profile (persistent)
 ```bash
 nix profile install github:drakulavich/kesha-voice-kit
-kesha install       # downloads models (~2.7 GB, speech-to-text only; engine is bundled)
+kesha install       # downloads models (~2.5 GB, speech-to-text only; engine is bundled)
 kesha audio.ogg     # transcript to stdout
 ```
 

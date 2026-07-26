@@ -3,8 +3,8 @@
 Kesha speaks back via Kokoro-82M (English plus selected multilingual voices on Apple Silicon) and Vosk-TTS (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Vosk. Pass `--voice` to override. On darwin-arm64 release builds, Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path. FluidAudio keeps its CoreML Kokoro cache at `~/.cache/fluidaudio/Models/kokoro`; those files are managed by FluidAudio, not Kesha's pinned model downloader.
 
 ```bash
-kesha install --tts                 # English only (~326 MB); Darwin Kokoro uses FluidAudio cache
-kesha install --tts en ru           # English + Russian (~326 MB + ~937 MB)
+kesha install --tts                 # English only (~326 MB on Linux/Windows; on macOS FluidAudio fetches its own models during warm-up)
+kesha install --tts en ru           # English + Russian (~326 MB + ~890 MB)
 kesha install --tts es fr it pt     # Romance languages (all platforms)
 kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav    # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
@@ -24,8 +24,8 @@ Output format: WAV (default, mono float32 — 24 kHz for Kokoro, 22.05 kHz for V
 `kesha install --tts [<lang>...]` installs TTS model packs for the requested languages. Bare `--tts` defaults to English only. Re-running is additive — already-cached packs are skipped, nothing is pruned.
 
 ```bash
-kesha install --tts              # English only (~326 MB)
-kesha install --tts en ru        # English + Russian (~326 MB + ~937 MB)
+kesha install --tts              # English only (~326 MB on Linux/Windows; on macOS FluidAudio fetches its own models during warm-up)
+kesha install --tts en ru        # English + Russian (~326 MB + ~890 MB)
 kesha install --tts es fr it pt  # Romance languages (shared ~30 MB CharsiuG2P ONNX pack + voice files)
 ```
 

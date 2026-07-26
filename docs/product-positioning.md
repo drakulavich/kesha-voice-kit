@@ -73,11 +73,14 @@ The product promise is not "one model for every audio problem." The promise is a
 
 `macOS x64` means Intel Macs. Kesha does not currently publish a `darwin-x64` engine binary, so Intel Macs are intentionally marked as not shipped rather than implied to use the ONNX fallback.
 
-`Windows x64` shows "Blocked at install" because the engine download itself
-refuses to run — the Vosk-TTS native dependency trips MSVC at link time, so no
-Windows x64 engine binary is published for the current release line. See
+`Windows x64` shows "Blocked at install" because the CLI's install step
+refuses to run on Windows, not because no binary exists — `build-engine.yml`
+builds and publishes `kesha-engine-windows-x64.exe` with every release. The
+Vosk-TTS native dependency trips MSVC at link time, so the CLI blocks the
+install client-side rather than shipping a broken engine. See
 [issue #216](https://github.com/drakulavich/kesha-voice-kit/issues/216) for
-the underlying failure and the v1.4.x workaround.
+the underlying failure and the v1.4.x workaround; the toolkit is unusable on
+Windows until that lands.
 
 ## When to choose something else
 

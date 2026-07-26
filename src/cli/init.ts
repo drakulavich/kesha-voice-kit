@@ -127,7 +127,7 @@ export function renderInitOverview(canDiarize = canInstallDiarizeOnPlatform()): 
     "Kesha is a local voice toolkit. The base install downloads the engine, speech-to-text models, and language detection models.",
     "",
     "Optional features:",
-    "  - Text-to-speech: enables `kesha say` with Kokoro English and Vosk-TTS Russian voices (~990MB).",
+    "  - Text-to-speech: enables `kesha say` with Kokoro English voices (more languages via `kesha install --tts <langs>`).",
     "  - VAD: skips silence in long audio and improves meeting, lecture, and podcast transcripts (~2.3MB).",
     canDiarize
       ? "  - Speaker diarization: labels speakers in JSON/TOON transcript segments (~245MB, darwin-arm64)."
@@ -234,7 +234,7 @@ export const initCommand = defineCommand({
     },
     tts: {
       type: "boolean",
-      description: "Preselect TTS models (Kokoro EN + Vosk-TTS RU, ~990MB)",
+      description: "Preselect TTS models (English; more languages via kesha install --tts <langs>)",
       default: false,
     },
     vad: {
