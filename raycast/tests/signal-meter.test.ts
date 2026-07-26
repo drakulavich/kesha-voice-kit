@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRecordingMarkdown,
+  buildResultMarkdown,
   buildTranscribingMarkdown,
   formatDuration,
   formatInputFormat,
@@ -77,6 +78,12 @@ describe("recording markdown", () => {
     expect(signalStatusTone(state.signal.state)).toBe("green");
     expect(recordingStatusLabel(state)).toBe("Signal");
     expect(recordingStatusTone(state)).toBe("green");
+  });
+
+  it("renders the transcript under a Dictation heading", () => {
+    expect(buildResultMarkdown("hello world")).toBe(
+      "# Dictation\n\nhello world",
+    );
   });
 
   it("renders elapsed durations as m:ss and never advertises a max", () => {

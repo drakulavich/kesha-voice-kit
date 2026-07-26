@@ -24,7 +24,15 @@ export interface KeshaSpawn {
   prefixArgs: string[];
 }
 
-async function isExecutable(path: string): Promise<boolean> {
+export interface KeshaBinDeps {
+  candidates?: ReadonlyArray<string>;
+  interpreterCandidates?: ReadonlyArray<string>;
+  isExecutable?: (path: string) => Promise<boolean>;
+  readShebang?: (path: string) => Promise<string | null>;
+  realpath?: (path: string) => Promise<string>;
+}
+
+async function defaultIsExecutable(path: string): Promise<boolean> {
   try {
     await access(path, constants.X_OK);
     return true;
@@ -33,18 +41,22 @@ async function isExecutable(path: string): Promise<boolean> {
   }
 }
 
-async function readShebang(path: string): Promise<string | null> {
+export function parseShebang(head: Buffer): string | null {
+  if (head.length < 2 || head[0] !== 0x23 || head[1] !== 0x21) {
+    return null;
+  }
+  const eol = head.indexOf(0x0a);
+  const end = eol > 0 ? eol : head.length;
+  return head.subarray(2, end).toString("utf8").trim();
+}
+
+async function defaultReadShebang(path: string): Promise<string | null> {
   try {
     const fd = await open(path, "r");
     try {
       const buf = Buffer.alloc(128);
       const { bytesRead } = await fd.read(buf, 0, 128, 0);
-      if (bytesRead < 2 || buf[0] !== 0x23 || buf[1] !== 0x21) {
-        return null;
-      }
-      const eol = buf.indexOf(0x0a, 0);
-      const end = eol > 0 ? eol : bytesRead;
-      return buf.slice(2, end).toString("utf8").trim();
+      return parseShebang(buf.subarray(0, bytesRead));
     } finally {
       await fd.close();
     }
@@ -53,32 +65,49 @@ async function readShebang(path: string): Promise<string | null> {
   }
 }
 
-async function findInterpreter(name: string): Promise<string | null> {
-  for (const path of INTERPRETER_CANDIDATES) {
-    if (path.endsWith(`/${name}`) && (await isExecutable(path))) {
+function withDefaults(deps: KeshaBinDeps): Required<KeshaBinDeps> {
+  return {
+    candidates: FALLBACK_CANDIDATES,
+    interpreterCandidates: INTERPRETER_CANDIDATES,
+    isExecutable: defaultIsExecutable,
+    readShebang: defaultReadShebang,
+    realpath,
+    ...deps,
+  };
+}
+
+async function findInterpreter(
+  name: string,
+  deps: Required<KeshaBinDeps>,
+): Promise<string | null> {
+  for (const path of deps.interpreterCandidates) {
+    if (path.endsWith(`/${name}`) && (await deps.isExecutable(path))) {
       return path;
     }
   }
   return null;
 }
 
-async function buildSpawn(path: string): Promise<KeshaSpawn | null> {
-  if (!(await isExecutable(path))) {
+async function buildSpawn(
+  path: string,
+  deps: Required<KeshaBinDeps>,
+): Promise<KeshaSpawn | null> {
+  if (!(await deps.isExecutable(path))) {
     return null;
   }
   let resolved = path;
   try {
-    resolved = await realpath(path);
+    resolved = await deps.realpath(path);
   } catch {
     // Keep original path if the symlink target cannot be resolved.
   }
-  const shebang = await readShebang(resolved);
+  const shebang = await deps.readShebang(resolved);
   if (!shebang) {
     return { command: path, prefixArgs: [] };
   }
   const envMatch = shebang.match(/^\/usr\/bin\/env\s+([\w.-]+)/);
   if (envMatch) {
-    const interp = await findInterpreter(envMatch[1]);
+    const interp = await findInterpreter(envMatch[1], deps);
     if (interp) {
       return { command: interp, prefixArgs: [resolved] };
     }
@@ -88,13 +117,15 @@ async function buildSpawn(path: string): Promise<KeshaSpawn | null> {
 
 export async function resolveKeshaBin(
   preference: string | undefined,
+  deps: KeshaBinDeps = {},
 ): Promise<KeshaSpawn | null> {
+  const resolved = withDefaults(deps);
   const trimmed = preference?.trim();
   if (trimmed) {
-    return buildSpawn(trimmed);
+    return buildSpawn(trimmed, resolved);
   }
-  for (const candidate of FALLBACK_CANDIDATES) {
-    const spawn = await buildSpawn(candidate);
+  for (const candidate of resolved.candidates) {
+    const spawn = await buildSpawn(candidate, resolved);
     if (spawn) {
       return spawn;
     }
