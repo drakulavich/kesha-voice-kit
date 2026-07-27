@@ -299,14 +299,17 @@ export function createSilenceTracker(deps: SilenceTrackerDeps): {
   return {
     track: (patch) => {
       const state = patch.signal?.state;
-      if (!state) return patch;
       if (state === "starting" || state === "signal") {
         silenceStartedAt = null;
         return { ...patch, silentForMs: 0, idle: false };
       }
       // "listening" and "unavailable" both mean no confirmed speech — an
-      // unavailable meter must not disarm the silence auto-stop.
-      if (silenceStartedAt === null) silenceStartedAt = now();
+      // unavailable meter must not disarm the silence auto-stop. A meter that
+      // dies reports "unavailable" once and then goes quiet, so the elapsed
+      // ticks that follow have to keep the clock running or the deadline
+      // would never arrive.
+      if (state && silenceStartedAt === null) silenceStartedAt = now();
+      if (silenceStartedAt === null) return patch;
       const silentForMs = Math.max(0, now() - silenceStartedAt);
       if (
         silentForMs >= IDLE_WARN_MS + IDLE_STOP_GRACE_MS &&
