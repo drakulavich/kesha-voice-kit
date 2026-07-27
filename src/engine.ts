@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "fs";
 import { errorMessage } from "./error-utils";
+import { TS_NATIVE_CODES } from "./error-codes";
 import { join } from "path";
 import { installHint } from "./install-hint";
 import { log } from "./log";
@@ -38,9 +39,9 @@ export interface TranscriptionOutput {
   segments: TranscriptionSegment[];
 }
 
-/** `KESHA_ENGINE_BIN` overrides the default install path — used in dev and e2e tests. */
+/** `KESHA_ENGINE_BIN` overrides the default install path — used in dev and e2e tests. An empty string is treated as unset, not as "use ''". */
 export function getEngineBinPath(): string {
-  return process.env.KESHA_ENGINE_BIN ?? defaultEngineBinPath();
+  return process.env.KESHA_ENGINE_BIN || defaultEngineBinPath();
 }
 
 export function isEngineInstalled(): boolean {
@@ -77,6 +78,28 @@ export interface RunEngineOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * `Bun.spawn` throws synchronously on any spawn failure (ENOENT, EACCES, …)
+ * instead of failing async, so a missing/non-executable binary would
+ * otherwise surface as a raw runtime stack trace. Re-throw every such
+ * failure through the same `E_ENGINE_SPAWN` code `src/synth.ts` uses
+ * (docs/errors.md).
+ */
+export function spawnEngineProcess(
+  binPath: string,
+  args: string[],
+  stdio: ReturnType<typeof spawnStdioWithDebugFd>,
+): ReturnType<typeof Bun.spawn> {
+  try {
+    return Bun.spawn([binPath, ...args], { detached: true, stdio });
+  } catch (err) {
+    throw new Error(
+      `error [${TS_NATIVE_CODES.ENGINE_SPAWN}]: failed to launch kesha-engine at ${binPath}: ` +
+        `${errorMessage(err)}. Run \`kesha install\` (or set KESHA_ENGINE_BIN).`,
+    );
+  }
+}
+
 async function runEngine(
   args: string[],
   opts: RunEngineOptions = {},
@@ -85,10 +108,7 @@ async function runEngine(
   const binPath = getEngineBinPath();
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  const proc = Bun.spawn([binPath, ...args], {
-    detached: true,
-    stdio: spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
-  });
+  const proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]));
   const tree = registerProcessTree(proc);
   let aborted = false;
   let forceKillTimer: Timer | undefined;
@@ -262,10 +282,7 @@ export async function recordEngine(outPath: string, maxSeconds: number): Promise
   const args = ["record", "--out", outPath, "--max-seconds", String(maxSeconds)];
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  const proc = Bun.spawn([binPath, ...args], {
-    detached: true,
-    stdio: spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
-  });
+  const proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]));
   const tree = registerProcessTree(proc);
   let exitCode: number;
   try {

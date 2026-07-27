@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
+import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat } from "../../src/cli";
 
 function normalizeUsage(usage: string): string {
@@ -201,6 +201,27 @@ describe("record command validation", () => {
       ok: false,
       error: "--max-seconds must be a finite number.",
     });
+  });
+
+  test("noRecordingBackendMessage names the missing backend and an install hint", () => {
+    const message = noRecordingBackendMessage();
+    expect(message).toContain("No recording backend is installed");
+    expect(message).toContain("bun add -g @drakulavich/kesha-voice-kit");
+    expect(message).toMatch(/kesha (install|init)/);
+  });
+});
+
+describe("directory input rejection (#directory-check)", () => {
+  test("isDirectoryPath is true for a directory", () => {
+    expect(isDirectoryPath(import.meta.dir)).toBe(true);
+  });
+
+  test("isDirectoryPath is false for a regular file", () => {
+    expect(isDirectoryPath(import.meta.path)).toBe(false);
+  });
+
+  test("isDirectoryPath is false for a nonexistent path", () => {
+    expect(isDirectoryPath("/nonexistent/path/does-not-exist")).toBe(false);
   });
 });
 

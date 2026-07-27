@@ -7,6 +7,7 @@ import {
   parseLangResult,
   getEngineBinPath,
   preflightTranscribeEngineWithSegments,
+  recordEngine,
   spawnStdioWithDebugFd,
   transcribeEngine,
   transcribeEngineWithSegments,
@@ -101,6 +102,21 @@ describe("engine", () => {
     }
   });
 
+  test("getEngineBinPath treats an empty KESHA_ENGINE_BIN as unset", () => {
+    const savedCacheDir = process.env.KESHA_CACHE_DIR;
+    const savedEngineBin = process.env.KESHA_ENGINE_BIN;
+    try {
+      process.env.KESHA_CACHE_DIR = "/tmp/kesha-cache";
+      process.env.KESHA_ENGINE_BIN = "";
+      expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", "kesha-engine"));
+    } finally {
+      if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
+      else process.env.KESHA_CACHE_DIR = savedCacheDir;
+      if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = savedEngineBin;
+    }
+  });
+
   test("parseLangResult parses valid JSON", () => {
     expect(parseLangResult('{"code":"ru","confidence":0.94}')).toEqual({ code: "ru", confidence: 0.94 });
   });
@@ -157,6 +173,30 @@ describe("engine", () => {
       },
       { KESHA_DIARIZE_MODEL_PATH: modelPath },
     );
+  });
+
+  fakeEngineTest("transcribeEngine surfaces E_ENGINE_SPAWN instead of a raw spawn exception", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-not-exec-"));
+    const notExecutable = join(dir, "kesha-engine");
+    writeFileSync(notExecutable, "not a binary");
+    chmodSync(notExecutable, 0o644);
+    await withEngineEnv(notExecutable, async () => {
+      await expect(transcribeEngine("audio.wav")).rejects.toThrow(
+        new RegExp(`error \\[E_ENGINE_SPAWN\\]: failed to launch kesha-engine at ${notExecutable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+      );
+    });
+  });
+
+  fakeEngineTest("recordEngine surfaces E_ENGINE_SPAWN instead of a raw spawn exception", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-not-exec-record-"));
+    const notExecutable = join(dir, "kesha-engine");
+    writeFileSync(notExecutable, "not a binary");
+    chmodSync(notExecutable, 0o644);
+    await withEngineEnv(notExecutable, async () => {
+      const out = join(dir, "out.wav");
+      await expect(recordEngine(out, 10)).rejects.toThrow(/error \[E_ENGINE_SPAWN\]: failed to launch kesha-engine at/);
+      await expect(recordEngine(out, 10)).rejects.toThrow(/Run `kesha install` \(or set KESHA_ENGINE_BIN\)/);
+    });
   });
 
   fakeEngineTest("abort terminates the spawned engine process tree", async () => {

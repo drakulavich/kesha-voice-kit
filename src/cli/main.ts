@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { detect } from "tinyld";
 import { preflightTranscribeWithSegments, transcribeWithSegments } from "../transcribe";
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
@@ -46,6 +46,15 @@ interface MainCommandArgs {
 export function detectLanguage(text: string): string {
   if (!text) return "";
   return detect(text);
+}
+
+/** True when `path` exists and is a directory. Used to reject directory positionals before any progress/engine spawn. */
+export function isDirectoryPath(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -275,6 +284,19 @@ async function processFile(
     });
     log.error(`${file}: File not found`);
     return { ok: false, error: { file, code: TS_NATIVE_CODES.INPUT_NOT_FOUND, message: "File not found" } };
+  }
+
+  if (isDirectoryPath(file)) {
+    stats.recordError("input", new Error("is a directory"), ENGINE_CODES.BAD_AUDIO);
+    diagnosticLog.event("input.invalid", {
+      command: "transcribe",
+      error_code: ENGINE_CODES.BAD_AUDIO,
+    });
+    log.error(`${file}: is a directory (expected an audio file)`);
+    return {
+      ok: false,
+      error: { file, code: ENGINE_CODES.BAD_AUDIO, message: "is a directory (expected an audio file)" },
+    };
   }
 
   const inputArtifact = artifactFromFile(file, "input_audio");

@@ -44,6 +44,30 @@ export function classifyFirstArg(
   return "unknown";
 }
 
+export interface UnknownCommandMessages {
+  errorLine: string;
+  warnLines: string[];
+}
+
+/**
+ * Pure message builder for the unknown-token path (testable without
+ * `process.exit`). `transcribe` isn't a real subcommand — bare `kesha
+ * <audio-file>` is the invocation — so a near-miss of that word gets its own
+ * extra hint alongside the generic "pass a path" one.
+ */
+export function unknownCommandMessages(token: string, subcommandKeys: string[]): UnknownCommandMessages {
+  const suggestion = suggestCommand(token, subcommandKeys);
+  const warnLines: string[] = [];
+  if (suggestion && suggestion !== token) {
+    warnLines.push(`(Did you mean ${suggestion}?)`);
+  }
+  warnLines.push(`If this is an audio file, pass a path like './${token}'.`);
+  if (suggestCommand(token, ["transcribe"]) === "transcribe") {
+    warnLines.push("To transcribe, pass the audio path directly: kesha ./recording.ogg");
+  }
+  return { errorLine: `unknown command '${token}'`, warnLines };
+}
+
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const context = resolveCliContext(argv);
   applyCliContext(context);
@@ -58,12 +82,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
     case "unknown": {
       // Extensionless existing files are valid transcription inputs; bare non-path tokens are likely command typos.
-      const suggestion = suggestCommand(firstArg!, subcommandKeys);
-      log.error(`unknown command '${firstArg}'`);
-      if (suggestion && suggestion !== firstArg) {
-        log.warn(`(Did you mean ${suggestion}?)`);
-      }
-      log.warn(`If this is an audio file, pass a path like './${firstArg}'.`);
+      const { errorLine, warnLines } = unknownCommandMessages(firstArg!, subcommandKeys);
+      log.error(errorLine);
+      for (const line of warnLines) log.warn(line);
       process.exit(1);
       break;
     }

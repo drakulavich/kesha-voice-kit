@@ -19,7 +19,7 @@ export type { InitCommandArgs, InitSelection } from "./cli/init";
 export { installCommand } from "./cli/install";
 export { logsCommand } from "./cli/logs";
 export { manpageCommand } from "./cli/manpage";
-export { recordCommand, resolveRecordArgs } from "./cli/record";
+export { noRecordingBackendMessage, recordCommand, resolveRecordArgs } from "./cli/record";
 export type { ResolvedRecordArgs } from "./cli/record";
 export { sayCommand } from "./cli/say";
 export { pickVoiceForLang } from "./voice-routing";
@@ -32,6 +32,7 @@ export {
   detectLanguage,
   checkLanguageMismatch,
   estimateTranscriptDurationSeconds,
+  isDirectoryPath,
   resolveOutputFormat,
   shouldRunAudioLanguageDetection,
   shouldReportTranscribeProgress,
