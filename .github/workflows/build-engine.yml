@@ -31,17 +31,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Create + push the annotated tag from a workflow_dispatch with `inputs.tag`
-  # set. Pushing the tag fires this workflow again via `on.push.tags` (the
-  # "two-run" pattern, fix #306) — that second run executes the build matrix +
-  # release job below. Lets sandboxed automation cut a release without holding
-  # tag-push permission on the local git remote (the case that motivated #306
-  # after v1.16.0).
+  # Lets sandboxed automation cut a release without local tag-push rights (#306).
   tag:
     if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write # for the self-dispatch below (#651)
     steps:
       - uses: actions/checkout@v7
         with:
@@ -74,6 +70,7 @@ jobs:
       # mirrors `.github/workflows/npm-publish.yml::Resolve tag` (post-#291).
       # `git tag -F -` reads the message from stdin so newlines/shell metachars
       # in INPUT_NOTES survive untouched (argv via `-m` would be a re-exposure).
+      # Default cleanup would strip the `#` heading lines the release body needs (#651).
       - name: Create and push annotated tag
         env:
           INPUT_TAG: ${{ inputs.tag }}
@@ -81,19 +78,20 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          printf '%s' "$INPUT_NOTES" | git tag -a "$INPUT_TAG" -F -
+          printf '%s' "$INPUT_NOTES" | git tag -a "$INPUT_TAG" --cleanup=verbatim -F -
           git push origin "refs/tags/$INPUT_TAG"
-          echo "Pushed $INPUT_TAG. on.push.tags will now fire a second workflow run for build + release."
+
+      # A GITHUB_TOKEN push never fires `on.push.tags`; workflow_dispatch is the exception (#651).
+      - name: Trigger build + release for the new tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run build-engine.yml --ref "$INPUT_TAG"
+          echo "Dispatched build + release against $INPUT_TAG."
 
   build:
-    # Skip the matrix when the dispatch run is creating a tag (fix #306) —
-    # the push of that tag fires a second workflow run via `on.push.tags`
-    # which runs build + release with `github.ref` set to the new tag.
-    # Running the matrix twice wastes ~12 min and the dispatch-run build
-    # would have no `release` job to consume its artifacts anyway
-    # (release.if: startsWith(github.ref, 'refs/tags/v') would be false).
-    # When `inputs.tag` is empty, the dispatch is in build-only mode (today's
-    # behavior) — matrix runs from `inputs.ref`.
+    # The tag-creating run has no `release` job to consume a build (#306).
     if: github.event_name != 'workflow_dispatch' || inputs.tag == ''
     strategy:
       fail-fast: false
