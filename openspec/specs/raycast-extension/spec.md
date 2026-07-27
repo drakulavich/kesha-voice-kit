@@ -28,9 +28,7 @@ Engine underneath it.
   Raycast itself is macOS-only.
 - Device selection is not offered; the OS default input device is used, matching
   `kesha record`.
-
 ## Requirements
-
 ### Requirement: One view command, macOS-only
 
 The extension SHALL publish exactly one command, **Dictate to Clipboard**, in
@@ -373,6 +371,34 @@ user-visible location and SHALL never leave the machine.
 > session's `finally` via `cleanupTempDir`
 > (`rm(dir, { recursive: true, force: true })`).*
 
+### Requirement: Not-found guidance works for users without bun
+When the kesha CLI cannot be resolved, the extension's guidance SHALL present a Homebrew-first install path, mention the bun alternative, include the mandatory `kesha install` follow-up step, and demote the probed-paths listing to a secondary troubleshooting line.
+
+#### Scenario: Store user without the CLI
+- **WHEN** the extension cannot find the kesha binary
+- **THEN** the error view shows numbered setup steps (install CLI, run `kesha install`) understandable without prior knowledge of bun
+
+### Requirement: Error views are actionable
+Every error state SHALL render an ActionPanel with at least: copy the error text, open extension preferences, and open the setup guide.
+
+#### Scenario: any error state
+- **WHEN** the extension shows an error Detail
+- **THEN** the user can copy the error, open preferences, or open the setup guide without leaving Raycast
+
+### Requirement: Setup problems surface before recording
+Before entering the recording state, the extension SHALL probe the resolved CLI (version/engine availability) and, on failure, render a dedicated finish-setup view naming the exact remaining command instead of starting a recording that cannot succeed.
+
+#### Scenario: CLI present but engine not installed
+- **WHEN** the user starts dictation with the CLI installed but `kesha install` never run
+- **THEN** a finish-setup view names `kesha install` before any recording toast appears
+
+### Requirement: Missing microphone input is reported early
+When the signal meter delivers no sample within a short window (~8 s) of recording start, the extension SHALL surface microphone-permission guidance as a non-blocking warning while recording continues — a meter failure alone MUST NOT abort a session that may still be capturing audio. An unavailable meter MUST NOT disarm the silence auto-stop, so a session without input ends at the idle stop instead of the maximum duration.
+
+#### Scenario: mic permission denied
+- **WHEN** macOS denies microphone access and the meter reports unavailable
+- **THEN** within ~8 s the user sees guidance to grant Raycast microphone access, recording continues, and the session ends at the silence auto-stop with the silent-recording error instead of running to the max duration
+
 ## Open Issues
 
 - Recording is capped by `--max-seconds` but Transcription is capped at a fixed
@@ -383,12 +409,12 @@ user-visible location and SHALL never leave the machine.
   Xcode or the Command Line Tools. On a machine without them the meter reports
   itself unavailable — correct behaviour, but the message does not say why, so
   Maks cannot tell it apart from a permission problem.
-- Idle auto-stop is driven entirely by the Signal meter: the silence timer only
-  advances while the meter reports **listening**, so on a machine where the
-  meter never starts there is no idle auto-stop at all and recording runs to
-  `--max-seconds`. That coupling is not obvious from the requirement text.
-  (`createSilenceTracker` returns early for any non-`listening` state,
-  `raycast/src/lib/dictation-controller.ts` lines 223–228.)
+- Idle auto-stop is driven entirely by the Signal meter: the silence timer
+  advances on **listening** and **unavailable** alike, so a session whose meter
+  never starts still stops at the idle deadline rather than running to
+  `--max-seconds` — but it stops on meter silence, not on audio silence, so a
+  monologue recorded while the meter is dead is cut at 45 s. That coupling is
+  not obvious from the requirement text.
 - The friendlier empty-transcript message `No speech was detected in the
   recording.` (`raycast/src/lib/dictation-controller.ts` lines 158–160) is
   unreachable: `normalizeTranscribeResult` (lines 253–262) already trims and
