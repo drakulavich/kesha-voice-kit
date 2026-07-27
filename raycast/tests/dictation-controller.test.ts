@@ -496,12 +496,12 @@ describe("createSilenceTracker", () => {
 
     tracker.track({ signal: emptySignal("listening") });
     clock = 20_000;
-    expect(
-      tracker.track({ signal: emptySignal("unavailable") }),
-    ).toMatchObject({
-      silentForMs: 20_000,
-      idle: false,
-    });
+    expect(tracker.track({ signal: emptySignal("unavailable") })).toMatchObject(
+      {
+        silentForMs: 20_000,
+        idle: false,
+      },
+    );
 
     clock = 45_000;
     tracker.track({ signal: emptySignal("unavailable") });
