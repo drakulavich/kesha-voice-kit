@@ -409,12 +409,12 @@ When the signal meter delivers no sample within a short window (~8 s) of recordi
   Xcode or the Command Line Tools. On a machine without them the meter reports
   itself unavailable — correct behaviour, but the message does not say why, so
   Maks cannot tell it apart from a permission problem.
-- Idle auto-stop is driven entirely by the Signal meter: the silence timer only
-  advances while the meter reports **listening**, so on a machine where the
-  meter never starts there is no idle auto-stop at all and recording runs to
-  `--max-seconds`. That coupling is not obvious from the requirement text.
-  (`createSilenceTracker` returns early for any non-`listening` state,
-  `raycast/src/lib/dictation-controller.ts` lines 223–228.)
+- Idle auto-stop is driven entirely by the Signal meter: the silence timer
+  advances on **listening** and **unavailable** alike, so a session whose meter
+  never starts still stops at the idle deadline rather than running to
+  `--max-seconds` — but it stops on meter silence, not on audio silence, so a
+  monologue recorded while the meter is dead is cut at 45 s. That coupling is
+  not obvious from the requirement text.
 - The friendlier empty-transcript message `No speech was detected in the
   recording.` (`raycast/src/lib/dictation-controller.ts` lines 158–160) is
   unreachable: `normalizeTranscribeResult` (lines 253–262) already trims and
