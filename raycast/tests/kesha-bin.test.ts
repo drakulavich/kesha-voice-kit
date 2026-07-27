@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { parseShebang, resolveKeshaBin } from "../src/lib/kesha-bin";
-import type { KeshaBinDeps } from "../src/lib/kesha-bin";
+import { describe, expect, it, vi } from "vitest";
+import {
+  notFoundMessage,
+  parseShebang,
+  probeEngineAvailability,
+  probeKeshaVersion,
+  resolveKeshaBin,
+} from "../src/lib/kesha-bin";
+import type { KeshaBinDeps, ProbeDeps } from "../src/lib/kesha-bin";
 
 describe("parseShebang", () => {
   it("extracts the interpreter line from a shebang header", () => {
@@ -144,6 +150,114 @@ describe("resolveKeshaBin", () => {
     expect(await resolveKeshaBin(undefined, deps)).toEqual({
       command: "/global/kesha",
       prefixArgs: [],
+    });
+  });
+});
+
+describe("notFoundMessage", () => {
+  it("leads with a brew-first numbered setup guide, not bun", () => {
+    const message = notFoundMessage();
+    const brewLineIndex = message.indexOf("brew install");
+    const bunLineIndex = message.indexOf("bun add -g");
+    expect(brewLineIndex).toBeGreaterThanOrEqual(0);
+    expect(bunLineIndex).toBeGreaterThan(brewLineIndex);
+    expect(message).toContain("1.");
+    expect(message).toContain("2.");
+    expect(message).toContain("kesha install");
+  });
+
+  it("demotes the probed-paths listing to a trailing troubleshooting line", () => {
+    const message = notFoundMessage();
+    const lines = message.split("\n");
+    const probedIndex = lines.findIndex((line) => line.includes("Probed:"));
+    expect(probedIndex).toBe(lines.length - 1);
+  });
+});
+
+describe("probeKeshaVersion", () => {
+  const kesha = { command: "/opt/homebrew/bin/kesha", prefixArgs: [] };
+
+  it("returns the trimmed stdout on success", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => ({
+      stdout: "kesha 1.2.3\n",
+      stderr: "",
+    }));
+    expect(await probeKeshaVersion(kesha, { execFile })).toBe("kesha 1.2.3");
+    expect(execFile).toHaveBeenCalledWith(
+      kesha.command,
+      [...kesha.prefixArgs, "--version"],
+      { timeout: 5000 },
+    );
+  });
+
+  it("returns null when the binary cannot be executed", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => {
+      throw new Error("ENOENT");
+    });
+    expect(await probeKeshaVersion(kesha, { execFile })).toBeNull();
+  });
+
+  it("returns null when stdout is empty", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => ({
+      stdout: "  ",
+      stderr: "",
+    }));
+    expect(await probeKeshaVersion(kesha, { execFile })).toBeNull();
+  });
+});
+
+describe("probeEngineAvailability", () => {
+  const kesha = { command: "/opt/homebrew/bin/kesha", prefixArgs: [] };
+
+  it("reports ok when kesha status prints no warning", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => ({
+      stdout: "Engine:\n  ✓ Binary: /opt/homebrew/bin/kesha-engine\n",
+      stderr: "",
+    }));
+    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
+      ok: true,
+    });
+  });
+
+  it("ignores unrelated stderr noise when stdout shows the engine installed", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => ({
+      stdout: "Engine:\n  ✓ Binary: /opt/homebrew/bin/kesha-engine\n",
+      stderr: "[debug +3ms] spawn kesha-engine --capabilities-json\n",
+    }));
+    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
+      ok: true,
+    });
+  });
+
+  it("surfaces the exact remaining command from kesha status's stderr warning", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => ({
+      stdout: "Engine:\n  ✗ Binary: not installed\n",
+      stderr: "Run `kesha install` to download the engine and models.\n",
+    }));
+    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
+      ok: false,
+      hint: "Run `kesha install` to download the engine and models.",
+    });
+  });
+
+  it("fails open when the status probe cannot run at all", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => {
+      throw new Error("ENOENT");
+    });
+    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
+      ok: true,
+    });
+  });
+
+  it("recovers the hint from an error carrying stderr (non-zero exit)", async () => {
+    const execFile: ProbeDeps["execFile"] = vi.fn(async () => {
+      const err = new Error("Command failed") as Error & { stderr?: string };
+      err.stderr = "Run `kesha install` to download the engine and models.";
+      throw err;
+    });
+    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
+      ok: false,
+      hint: "Run `kesha install` to download the engine and models.",
     });
   });
 });

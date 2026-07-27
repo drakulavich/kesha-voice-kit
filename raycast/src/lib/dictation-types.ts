@@ -1,4 +1,4 @@
-import type { KeshaSpawn } from "./kesha-bin";
+import type { EnginePreflightResult, KeshaSpawn } from "./kesha-bin";
 
 export interface TranscribeResult {
   file: string;
@@ -59,6 +59,7 @@ export interface DictationSession {
 
 export interface DictationControllerDeps {
   resolveKesha: (preference: string | undefined) => Promise<KeshaSpawn | null>;
+  preflight: (kesha: KeshaSpawn) => Promise<EnginePreflightResult>;
   createTempDir: () => Promise<string>;
   cleanupTempDir: (tempDir: string) => Promise<void>;
   startRecordingMonitor: (
