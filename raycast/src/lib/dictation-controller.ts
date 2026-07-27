@@ -11,7 +11,6 @@ import {
 import {
   notFoundMessage,
   probeEngineAvailability,
-  probeKeshaVersion,
   resolveKeshaBin,
 } from "./kesha-bin";
 import type { EnginePreflightResult, KeshaSpawn } from "./kesha-bin";
@@ -156,9 +155,8 @@ export function startDictationSession(
       if (state === "listening" || state === "signal") {
         sawMeterSample = true;
       }
-      // A dead meter must not abort a session that may still be capturing
-      // audio (the spec's meter-unavailable contract) — warn and keep going;
-      // the silence auto-stop and the silent-WAV check catch a truly dead mic.
+      // Warn but keep going: a dead meter must not abort a session that may
+      // still be capturing audio (the meter-unavailable contract).
       if (
         !sawMeterSample &&
         !warnedNoSignal &&
@@ -250,20 +248,8 @@ export function startDictationSession(
   }
 }
 
-async function defaultPreflight(
-  kesha: KeshaSpawn,
-): Promise<EnginePreflightResult> {
-  const [version, engine] = await Promise.all([
-    probeKeshaVersion(kesha),
-    probeEngineAvailability(kesha),
-  ]);
-  if (!version) {
-    return {
-      ok: false,
-      hint: "The kesha CLI was found but `kesha --version` failed. Reinstall it: `brew install drakulavich/tap/kesha-voice-kit` (or `bun add -g @drakulavich/kesha-voice-kit`).",
-    };
-  }
-  return engine;
+function defaultPreflight(kesha: KeshaSpawn): Promise<EnginePreflightResult> {
+  return probeEngineAvailability(kesha);
 }
 
 export function createDefaultDictationDeps(
@@ -293,21 +279,20 @@ export function createSilenceTracker(deps: SilenceTrackerDeps): {
   track: (patch: RecordingPatch) => RecordingPatch;
 } {
   const now = deps.now ?? Date.now;
-  let silenceStartedAt: number | null = null;
+  // Time since the last confirmed speech, seeded at recording start: only a
+  // meter that reports speech may push the deadline out, so a meter that dies,
+  // hangs, or never starts still lands on the idle stop instead of the cap.
+  let lastSignalAt = now();
   let idleStopTriggered = false;
 
   return {
     track: (patch) => {
       const state = patch.signal?.state;
-      if (!state) return patch;
       if (state === "starting" || state === "signal") {
-        silenceStartedAt = null;
+        lastSignalAt = now();
         return { ...patch, silentForMs: 0, idle: false };
       }
-      // "listening" and "unavailable" both mean no confirmed speech — an
-      // unavailable meter must not disarm the silence auto-stop.
-      if (silenceStartedAt === null) silenceStartedAt = now();
-      const silentForMs = Math.max(0, now() - silenceStartedAt);
+      const silentForMs = Math.max(0, now() - lastSignalAt);
       if (
         silentForMs >= IDLE_WARN_MS + IDLE_STOP_GRACE_MS &&
         !idleStopTriggered
