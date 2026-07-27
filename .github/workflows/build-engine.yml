@@ -31,20 +31,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Create + push the annotated tag from a workflow_dispatch with `inputs.tag`
-  # set, then self-dispatch against it (the "two-run" pattern, fix #306) — that
-  # second run executes the build matrix + release job below. Lets sandboxed
-  # automation cut a release without holding tag-push permission on the local
-  # git remote (the case that motivated #306 after v1.16.0). The hop is an
-  # explicit dispatch, not `on.push.tags`, which cannot fire here (#651).
+  # Lets sandboxed automation cut a release without local tag-push rights (#306).
   tag:
     if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      # Needed by the self-dispatch below; a GITHUB_TOKEN tag push cannot
-      # start the build on its own.
-      actions: write
+      actions: write # for the self-dispatch below (#651)
     steps:
       - uses: actions/checkout@v7
         with:
@@ -77,9 +70,7 @@ jobs:
       # mirrors `.github/workflows/npm-publish.yml::Resolve tag` (post-#291).
       # `git tag -F -` reads the message from stdin so newlines/shell metachars
       # in INPUT_NOTES survive untouched (argv via `-m` would be a re-exposure).
-      # `--cleanup=verbatim` keeps Markdown headings: the default `whitespace`
-      # cleanup strips `#`-prefixed lines as comments, and the release job
-      # rebuilds the release body from this annotation (#651).
+      # Default cleanup would strip the `#` heading lines the release body needs (#651).
       - name: Create and push annotated tag
         env:
           INPUT_TAG: ${{ inputs.tag }}
@@ -90,12 +81,7 @@ jobs:
           printf '%s' "$INPUT_NOTES" | git tag -a "$INPUT_TAG" --cleanup=verbatim -F -
           git push origin "refs/tags/$INPUT_TAG"
 
-      # GitHub suppresses workflow triggers for pushes made with GITHUB_TOKEN,
-      # so `on.push.tags` never fires here and build + release would silently
-      # skip (#651). `workflow_dispatch` via the API is an explicit exception
-      # to that rule, so re-enter this workflow against the new tag: `tag` then
-      # skips (empty inputs.tag), `build` runs, and `release` sees a refs/tags
-      # ref. Cannot be a `needs:`-style local hop — `release` keys off github.ref.
+      # A GITHUB_TOKEN push never fires `on.push.tags`; workflow_dispatch is the exception (#651).
       - name: Trigger build + release for the new tag
         env:
           INPUT_TAG: ${{ inputs.tag }}
@@ -105,13 +91,7 @@ jobs:
           echo "Dispatched build + release against $INPUT_TAG."
 
   build:
-    # Skip the matrix when the dispatch run is creating a tag (fix #306) — that
-    # run self-dispatches a second one against the new tag, which is where build
-    # + release actually happen. Building here too would waste ~12 min and leave
-    # no `release` job to consume the artifacts (release.if: startsWith(
-    # github.ref, 'refs/tags/v') is false on the tag-creating run).
-    # Checkout below is ref-less, so the matrix builds github.ref — the new tag
-    # on the self-dispatched run, or `inputs.ref` when dispatched build-only.
+    # The tag-creating run has no `release` job to consume a build (#306).
     if: github.event_name != 'workflow_dispatch' || inputs.tag == ''
     strategy:
       fail-fast: false
