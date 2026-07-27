@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs
 import { delimiter, dirname, join } from "path";
 
 const DEFAULT_CWD = import.meta.dir + "/../..";
-const DEFAULT_TIMEOUT_MS = 4_000;
+// macOS scans every freshly-written executable on first exec, and these scenarios
+// mint a new fake engine per test: 2-9 s observed locally, ~0.4 s once warm.
+const DEFAULT_TIMEOUT_MS = 15_000;
 const FORCE_KILL_GRACE_MS = 1_000;
 
 export interface CliScenarioArtifactRequest {

@@ -776,7 +776,7 @@ describe("CLI contracts", () => {
       KESHA_ENGINE_BIN: enginePath,
     };
 
-    const run = await runCli(["--json", mediaPath], { env, timeoutMs: 4_000 });
+    const run = await runCli(["--json", mediaPath], { env });
 
     expectContract(run, {
       exitCode: 1,
