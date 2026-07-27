@@ -8,9 +8,9 @@ error [E_MODEL_MISSING]: voice 'ru-vosk-m02' not installed. run: kesha install -
 
 The code is stable across releases — quote it in bug reports. Engine codes are
 introspectable via `kesha-engine --error-codes-json`. Codes are recorded
-(leak-free) in [Stats](#) and [diagnostic logs](diagnostic-logs.md); the human
-message may contain a path and is sanitized before storage, but the code never
-needs sanitizing.
+(leak-free) in [Stats](local-stats.md) and [diagnostic logs](diagnostic-logs.md);
+the human message may contain a path and is sanitized before storage, but the
+code never needs sanitizing.
 
 | Code | Category | Retryable | When it fires | How to fix |
 |------|----------|-----------|---------------|------------|
@@ -20,7 +20,7 @@ needs sanitizing.
 | `E_MODEL_DOWNLOAD` | model | yes | A model download failed (network or mirror error). | Retry; check connectivity and `KESHA_MODEL_MIRROR`. |
 | `E_CACHE_CORRUPT` | model | no | A cached model file failed SHA-256 verification. | `kesha install --no-cache` to re-fetch. |
 | `E_MODEL_LOAD` | model | no | A model file exists but failed to load. | Reinstall the model; check disk space. |
-| `E_UNSUPPORTED_PLATFORM` | platform | no | The feature isn't supported on this OS/arch (e.g. microphone recording off macOS). | Use a supported platform (see the README platform matrix). |
+| `E_UNSUPPORTED_PLATFORM` | platform | no | The feature isn't supported on this OS/arch (e.g. microphone recording off macOS). | Use a supported platform (see the [platform matrix](product-positioning.md#platform-matrix)). |
 | `E_SIDECAR_MISSING` | platform | no | A helper sidecar is missing or exited nonzero (e.g. `say-avspeech`). | Reinstall; ensure the sidecar sits beside the engine (macOS). |
 | `E_NO_BACKEND` | platform | no | The binary was built without an ASR backend. | Use an official release build. |
 | `E_TEXT_EMPTY` | tts | no | Synthesis text was empty. | Pass non-empty text. |

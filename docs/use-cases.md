@@ -2,7 +2,7 @@
 
 Ready-to-use CLI commands and shell snippets for transcription, speech synthesis, language detection — all local, all offline.
 
-To get set up, see the [install guide](https://github.com/drakulavich/kesha-voice-kit#install).
+To get set up, see the [install guide](https://github.com/drakulavich/kesha-voice-kit#quick-start).
 
 ## Table of Contents
 
