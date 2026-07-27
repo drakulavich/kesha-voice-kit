@@ -19,9 +19,7 @@ depends on the Engine being available and well-behaved on his Apple Silicon Mac.
 - The Engine's audio decode pipeline (symphonia + rubato) is not specified here.
 - Model hash pinning and download mechanics are covered in the installation
   spec.
-
 ## Requirements
-
 ### Requirement: The Engine is always a subprocess, never linked in-process
 
 The CLI SHALL spawn `kesha-engine` as a child process via `Bun.spawn`. It SHALL
@@ -320,6 +318,13 @@ stale feature flags after an upgrade.
 > `{ binPath, mtime }`. `statSync(binPath).mtimeMs` at `src/engine.ts:368`;
 > `statSync` throwing (missing binary) causes `getEngineCapabilities` to
 > return `null`.*
+
+### Requirement: Engine spawn failures surface as E_ENGINE_SPAWN
+Any failure to launch the `kesha-engine` binary (missing file, permission denied) SHALL surface to the user as `error [E_ENGINE_SPAWN]` including the attempted binary path, the underlying cause, and a recovery hint (`kesha install`, or `KESHA_ENGINE_BIN` when set). Raw `posix_spawn`/ENOENT exceptions MUST NOT escape to the user.
+
+#### Scenario: engine binary path does not exist
+- **WHEN** any CLI or MCP code path spawns the engine and the binary path does not exist
+- **THEN** the surfaced error carries code `E_ENGINE_SPAWN`, names the path, and includes an actionable hint
 
 ## Open Issues
 

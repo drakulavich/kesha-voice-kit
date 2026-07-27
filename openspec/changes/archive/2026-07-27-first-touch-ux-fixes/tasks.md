@@ -2,12 +2,12 @@
 
 ## 1. CLI guards (PR lane 1 — `fix-ux-cli`)
 
-- [ ] 1.1 Add installed-engine guard to `src/cli/record.ts` (mirror `src/transcribe.ts` guard + `installHint()`), exit 1, unit test
-- [ ] 1.2 Wrap engine spawn in `src/engine.ts::recordEngine` (and sibling bare spawns) as `E_ENGINE_SPAWN` with path/cause/hint, unit test
-- [ ] 1.3 Add `isEngineInstalled()` guard to `src/mcp/voices.ts::listVoices` with synth-style hint, unit test
-- [ ] 1.4 Reject directory positionals before progress output (`<path>: is a directory (expected an audio file)`), unit test
-- [ ] 1.5 Wire `src/suggest-command.ts` into the unknown-token path with the full subcommand list + transcribe special case, unit tests
-- [ ] 1.6 Gate `bun test && bunx tsc --noEmit`, commit
+- [x] 1.1 Add installed-engine guard to `src/cli/record.ts` (mirror `src/transcribe.ts` guard + `installHint()`), exit 1, unit test
+- [x] 1.2 Wrap engine spawn in `src/engine.ts::recordEngine` (and sibling bare spawns) as `E_ENGINE_SPAWN` with path/cause/hint, unit test
+- [x] 1.3 Add `isEngineInstalled()` guard to `src/mcp/voices.ts::listVoices` with synth-style hint, unit test
+- [x] 1.4 Reject directory positionals before progress output (`<path>: is a directory (expected an audio file)`), unit test
+- [x] 1.5 Wire `src/suggest-command.ts` into the unknown-token path with the full subcommand list + transcribe special case, unit tests
+- [x] 1.6 Gate `bun test && bunx tsc --noEmit`, commit
 
 ## 2. Onboarding docs (PR lane 2 — `fix-ux-docs`)
 
@@ -36,5 +36,5 @@
 
 ## 5. Land
 
-- [ ] 5.1 Push four branches, open PRs, pass CI + Greptile + grok review per lane
-- [ ] 5.2 Include this OpenSpec change dir in the docs-lane PR; sync/archive after merge
+- [x] 5.1 Push four branches, open PRs, pass CI + Greptile + grok review per lane
+- [x] 5.2 Include this OpenSpec change dir in the docs-lane PR; sync/archive after merge
