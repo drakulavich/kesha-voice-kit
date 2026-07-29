@@ -24,17 +24,20 @@ type FileCoverage = {
   linePct: number;
 };
 
-// Coverage policy: a single total-lines gate per language, no per-file floors.
-// The per-file map was an auto-ratchet pinned just below each file's current
-// coverage (with brittle 98%/100% outliers) — high friction (every feature that
-// touched a high-floor file had to add coverage-padding tests), low signal
-// (concentrated regressions are caught by review + the total gate). Dropped in
-// favour of one honest total floor.
+// Coverage policy: a total-lines gate plus a few risk-based floors at the TS
+// boundaries that invoke, install, or route the native engine. These are not
+// per-file ratchets: the floors keep critical paths from silently regressing
+// while allowing ordinary modules to evolve without coverage-padding tests.
 const presets: Record<PresetName, CoveragePreset> = {
   ts: {
     title: "TypeScript Coverage",
     minTotalLines: 70,
-    minFileLines: {},
+    minFileLines: {
+      "src/cli/main.ts": 35,
+      "src/cli/say.ts": 50,
+      "src/engine-install.ts": 15,
+      "src/engine.ts": 80,
+    },
   },
   rust: {
     title: "Rust Coverage",
