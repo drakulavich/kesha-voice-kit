@@ -41,13 +41,13 @@ jobs:
 
       - name: Checkout workflow source
         if: steps.tag.outputs.skip != 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Setup Node.js
         if: steps.tag.outputs.skip != 'true'
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
 
@@ -71,7 +71,9 @@ jobs:
 
       - name: Update formula
         if: steps.tag.outputs.skip != 'true'
-        run: node .github/scripts/update-homebrew-tap.mjs --tag "${{ steps.tag.outputs.tag }}" --tap-dir tap
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: node .github/scripts/update-homebrew-tap.mjs --tag "$TAG" --tap-dir tap
 
       - name: Validate updated formula
         if: steps.tag.outputs.skip != 'true'
@@ -88,6 +90,8 @@ jobs:
 
       - name: Commit and push tap update
         if: steps.tag.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           cd tap
           tap_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's#^origin/##')"
@@ -96,11 +100,11 @@ jobs:
             exit 1
           }
           if git diff --quiet -- Formula/kesha-voice-kit.rb; then
-            echo "Homebrew formula already matches ${{ steps.tag.outputs.tag }}"
+            echo "Homebrew formula already matches $TAG"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/kesha-voice-kit.rb
-          git commit -m "Update Kesha Voice Kit to ${{ steps.tag.outputs.tag }}"
+          git commit -m "Update Kesha Voice Kit to $TAG"
           git push origin "HEAD:$tap_branch"
