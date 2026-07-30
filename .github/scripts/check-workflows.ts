@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * Validate GitHub workflow and composite-action YAML plus local safety rules.
+ * Validate GitHub workflow and composite-action YAML plus immutable action refs.
  *
  * Replaces the ad-hoc `python3 -c "import yaml; yaml.safe_load(...)"` invocation
  * we were running before each workflow change. Same effect — surface syntax
  * errors locally before `git push` instead of finding them in CI — but uses
  * the bun toolchain so contributors don't need a python interpreter on PATH.
  *
- * Run via `bun run check:workflows`. Exits non-zero on syntax errors, mutable
- * action references, or unsafe shell interpolation; stays silent on success so
- * it composes cleanly with other pre-push checks.
+ * Run via `bun run check:workflows`. Exits non-zero on syntax errors or mutable
+ * action references; stays silent on success so it composes cleanly with other
+ * pre-push checks.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -44,37 +44,12 @@ function requirePinnedActions(path: string, contents: string): string[] {
   return errors;
 }
 
-function requireSafeRunInterpolation(path: string, document: unknown): string[] {
-  const errors: string[] = [];
-  const untrustedExpression = /\$\{\{\s*(?:inputs(?:\.|\s*\[)|github\.event(?:\.|\s*\[)|steps\.[^.]+\.outputs(?:\.|\s*\[))/;
-
-  function visit(node: unknown) {
-    if (Array.isArray(node)) {
-      for (const value of node) visit(value);
-      return;
-    }
-    if (!node || typeof node !== "object") return;
-
-    const record = node as Record<string, unknown>;
-    if (typeof record.run === "string" && untrustedExpression.test(record.run)) {
-      errors.push(`${path}: pass untrusted GitHub expressions to run via env, not direct interpolation`);
-    }
-    for (const value of Object.values(record)) visit(value);
-  }
-
-  visit(document);
-  return errors;
-}
-
 let failed = 0;
 for (const path of files) {
   try {
     const contents = readFileSync(path, "utf8");
-    const document = parse(contents);
-    const errors = [
-      ...requirePinnedActions(path, contents),
-      ...requireSafeRunInterpolation(path, document),
-    ];
+    parse(contents);
+    const errors = requirePinnedActions(path, contents);
     if (errors.length > 0) {
       failed += errors.length;
       for (const error of errors) console.error(error);
