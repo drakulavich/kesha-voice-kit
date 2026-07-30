@@ -35,7 +35,8 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       integration: ${{ steps.filter.outputs.integration }}
-      heavy_e2e: ${{ steps.filter.outputs.heavy_e2e }}
+      real_engine_e2e: ${{ steps.filter.outputs.real_engine_e2e }}
+      tts_e2e: ${{ steps.filter.outputs.tts_e2e }}
       raycast: ${{ steps.filter.outputs.raycast }}
       openspec: ${{ steps.filter.outputs.openspec }}
       nix: ${{ steps.filter.outputs.nix }}
@@ -56,14 +57,12 @@ jobs:
           #   — the `needs: unit-tests` gate then evaluates predictably without
           #   the skip-propagation hazard that #274 + the pre-rewrite of #280
           #   silently fell into.
-          # - `heavy_e2e` gates the model-DOWNLOADING lanes (integration-tests-full,
-          #   published-engine-smoke, tts-e2e): engine/model paths only (rust/**,
-          #   model pins, the real-engine e2e test files) — deliberately NOT
-          #   `src/**`, so TS-only PRs skip the 2.4GB download (the fake/stub
-          #   suites cover the TS contract in the fast lane). It is NOT a subset
-          #   of `code` (it includes `rust/**`), so those lanes use an
-          #   `always() && unit-tests != failure` gate to survive a legitimately
-          #   skipped `unit-tests` on a rust-only PR (the #274 skip hazard).
+          # - `real_engine_e2e` and `tts_e2e` gate model-downloading lanes.
+          #   The filters include their narrow TS adapters as well as engine/model
+          #   paths: fake/stub tests cannot prove that a changed adapter still
+          #   works with a released binary. Both include `rust/**`, so they are
+          #   not subsets of `code`; their jobs use an `always()` gate to survive
+          #   a legitimately skipped `unit-tests` on rust-only PRs (#274).
           filters: |
             code:
               - 'src/**'
@@ -88,14 +87,36 @@ jobs:
               - 'bun.lock'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
-            heavy_e2e:
+            real_engine_e2e:
               - 'rust/**'
               - 'package.json'
               - 'bun.lock'
               - 'tests/fixtures/**'
               - 'tests/integration/e2e-engine.test.ts'
               - 'tests/integration/mcp-e2e.test.ts'
+              - 'src/engine-install.ts'
+              - 'src/engine.ts'
+              - 'src/lib.ts'
+              - 'src/paths.ts'
+              - 'src/transcribe.ts'
+              - 'src/cli/dispatch.ts'
+              - 'src/cli/main.ts'
+              - 'src/cli/mcp.ts'
+              - 'src/mcp/**'
               - 'tests/integration/say-e2e.test.ts'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
+            tts_e2e:
+              - 'rust/**'
+              - 'package.json'
+              - 'bun.lock'
+              - 'tests/fixtures/**'
+              - 'tests/integration/say-e2e.test.ts'
+              - 'src/engine.ts'
+              - 'src/synth.ts'
+              - 'src/voice-routing.ts'
+              - 'src/cli/main.ts'
+              - 'src/cli/say.ts'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
             raycast:
@@ -325,14 +346,14 @@ jobs:
   integration-tests-full:
     # Real-engine integration: installs the ~2.4GB model bundle and runs the
     # model-dependent e2e suites (which self-skip in the fast lane). Gated to
-    # engine/model changes, push-to-main of those paths, and the nightly cron —
-    # so doc/TS-only PRs never download models. Nightly run on main also seeds
-    # the default-branch-scoped model cache. Keep the release/* + chore(release)
+    # engine/model changes, narrow TS engine adapters, push-to-main of those
+    # paths, and the nightly cron. Nightly run on main also seeds the
+    # default-branch-scoped model cache. Keep the release/* + chore(release)
     # guards: this lane downloads the PUBLISHED engine, which doesn't exist yet
     # during the release version-bump window.
     needs: [changes, unit-tests]
     # `always()` so a SKIPPED `unit-tests` (rust-only PRs have `code == 'false'`)
-    # doesn't skip-propagate and drop the heavy lane — `heavy_e2e` includes
+    # doesn't skip-propagate and drop the heavy lane — `real_engine_e2e` includes
     # `rust/**` but `code` does not, so unit-tests is legitimately skipped on a
     # rust-only PR yet the real-engine e2e must still run (#274 regression class).
     # Still fail-fast if unit-tests actively FAILED/cancelled.
@@ -344,7 +365,7 @@ jobs:
       (
         github.event_name == 'schedule' ||
         (
-          needs.changes.outputs.heavy_e2e == 'true' &&
+          needs.changes.outputs.real_engine_e2e == 'true' &&
           !startsWith(github.head_ref, 'release/') &&
           !startsWith(github.event.head_commit.message, 'chore(release):')
         )
@@ -396,7 +417,7 @@ jobs:
     # Linux x64 lane covers the currently supported non-Darwin release asset.
     needs: [changes, unit-tests]
     # `always()` so a SKIPPED `unit-tests` (rust-only PRs have `code == 'false'`)
-    # doesn't skip-propagate and drop the heavy lane — `heavy_e2e` includes
+    # doesn't skip-propagate and drop the heavy lane — `real_engine_e2e` includes
     # `rust/**` but `code` does not, so unit-tests is legitimately skipped on a
     # rust-only PR yet the real-engine e2e must still run (#274 regression class).
     # Still fail-fast if unit-tests actively FAILED/cancelled.
@@ -408,7 +429,7 @@ jobs:
       (
         github.event_name == 'schedule' ||
         (
-          needs.changes.outputs.heavy_e2e == 'true' &&
+          needs.changes.outputs.real_engine_e2e == 'true' &&
           !startsWith(github.head_ref, 'release/') &&
           !startsWith(github.event.head_commit.message, 'chore(release):')
         )
@@ -539,7 +560,7 @@ jobs:
       (
         github.event_name == 'schedule' ||
         (
-          needs.changes.outputs.heavy_e2e == 'true' &&
+          needs.changes.outputs.tts_e2e == 'true' &&
           !startsWith(github.head_ref, 'release/') &&
           !startsWith(github.event.head_commit.message, 'chore(release):')
         )
