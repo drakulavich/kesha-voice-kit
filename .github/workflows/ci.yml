@@ -96,6 +96,7 @@ jobs:
               - 'tests/integration/mcp-e2e.test.ts'
               - 'src/engine-install.ts'
               - 'src/engine.ts'
+              - 'src/lib.ts'
               - 'src/paths.ts'
               - 'src/transcribe.ts'
               - 'src/cli/dispatch.ts'
