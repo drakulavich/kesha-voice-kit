@@ -13,9 +13,24 @@ import type {
   SignalLevel,
 } from "../src/lib/dictation-types";
 import { emptySignal } from "../src/lib/recording-view";
-import { deferred, flushPromises } from "./helpers/async";
+import { deferred, flushPromises, waitFor } from "./helpers/async";
 
 describe("dictation controller", () => {
+  it("waits for queued setup before asserting controller state", async () => {
+    let ready = false;
+    let attempts = 0;
+    queueMicrotask(() => {
+      ready = true;
+    });
+
+    await waitFor(() => {
+      attempts++;
+      expect(ready).toBe(true);
+    });
+
+    expect(attempts).toBeGreaterThan(1);
+  });
+
   it("runs the happy path and copies the trimmed transcript", async () => {
     const deps = createDeps();
     const { states, toasts } = deps;
@@ -185,7 +200,7 @@ describe("dictation controller", () => {
     const { states } = deps;
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+    await waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
     session.stopRecording();
     session.cancel();
     recorder.resolve();
@@ -208,7 +223,7 @@ describe("dictation controller", () => {
     });
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.current().status).toBe("recording"));
+    await waitFor(() => expect(deps.current().status).toBe("recording"));
 
     session.stopRecording();
     expect(deps.startRecorder).not.toHaveBeenCalled();
@@ -238,7 +253,7 @@ describe("dictation controller", () => {
     });
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.current().status).toBe("recording"));
+    await waitFor(() => expect(deps.current().status).toBe("recording"));
 
     session.cancel();
     recordingToast.resolve();
@@ -284,7 +299,7 @@ describe("dictation controller", () => {
     const { states } = deps;
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(states.at(-1)?.status).toBe("transcribing"));
+    await waitFor(() => expect(states.at(-1)?.status).toBe("transcribing"));
 
     expect(states.at(-1)).toMatchObject({
       status: "transcribing",
@@ -316,7 +331,7 @@ describe("dictation controller", () => {
     const { states } = deps;
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(states.at(-1)?.status).toBe("transcribing"));
+    await waitFor(() => expect(states.at(-1)?.status).toBe("transcribing"));
 
     session.cancelTranscription();
     transcribingToast.resolve();
@@ -344,7 +359,7 @@ describe("dictation controller", () => {
     });
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+    await waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
 
     emit({ signal: emptySignal("listening") });
     clock = 30_000;
@@ -382,7 +397,7 @@ describe("dictation controller", () => {
     });
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+    await waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
 
     emit({ signal: emptySignal("listening") });
     clock = 30_000;
@@ -420,7 +435,7 @@ describe("dictation controller", () => {
     });
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+    await waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
 
     const warning = expect.objectContaining({
       style: "failure",
@@ -470,7 +485,7 @@ describe("dictation controller", () => {
     });
 
     const session = startDictationSession({}, deps.setState, deps);
-    await vi.waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+    await waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
 
     emit({ signal: signalTick() });
     clock = 9_000;
