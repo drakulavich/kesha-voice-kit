@@ -11,6 +11,7 @@ import {
   fluidKokoroCachePath,
   isDarwinArm64,
 } from "./fluid-kokoro-cache";
+import modelPlan from "../model-plan.json" with { type: "json" };
 
 export interface InstallPlanOptions {
   noCache?: boolean;
@@ -24,6 +25,17 @@ export interface InstallPlanOptions {
 interface PlanFile {
   relPath: string;
   sizeBytes: number;
+}
+
+interface ModelPlan {
+  asr: PlanFile[];
+  langId: PlanFile[];
+  vad: PlanFile[];
+  g2pCharsiu: PlanFile[];
+  kokoroGraph: PlanFile;
+  kokoroVoices: Record<string, PlanFile>;
+  voskRu: PlanFile[];
+  diarize: PlanFile[];
 }
 
 interface PlanComponent {
@@ -45,46 +57,19 @@ interface ReleaseAssetSpec {
   sizeBytes: number;
 }
 
-// Mirrors the pinned runtime manifests so `kesha install --plan` works before
-// the engine exists. Keep in sync with rust/src/models.rs and release assets.
-const ASR_FILES: PlanFile[] = [
-  { relPath: "models/parakeet-tdt-v3/encoder-model.onnx", sizeBytes: 41_770_866 },
-  { relPath: "models/parakeet-tdt-v3/encoder-model.onnx.data", sizeBytes: 2_435_420_160 },
-  { relPath: "models/parakeet-tdt-v3/decoder_joint-model.onnx", sizeBytes: 72_520_893 },
-  { relPath: "models/parakeet-tdt-v3/nemo128.onnx", sizeBytes: 139_764 },
-  { relPath: "models/parakeet-tdt-v3/vocab.txt", sizeBytes: 93_939 },
-];
-
-const LANG_ID_FILES: PlanFile[] = [
-  { relPath: "models/lang-id-ecapa/lang-id-ecapa.onnx", sizeBytes: 759_814 },
-  { relPath: "models/lang-id-ecapa/lang-id-ecapa.onnx.data", sizeBytes: 85_327_872 },
-  { relPath: "models/lang-id-ecapa/labels.json", sizeBytes: 646 },
-];
-
-const VAD_FILES: PlanFile[] = [
-  { relPath: "models/silero-vad/silero_vad.onnx", sizeBytes: 2_327_524 },
-];
-
-// klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0 — see NOTICES.md). Multilingual G2P for es/fr/it/pt (#212).
-const G2P_CHARSIU_FILES: PlanFile[] = [
-  { relPath: "models/g2p/byt5-tiny/encoder_model.onnx", sizeBytes: 12_478_704 },
-  { relPath: "models/g2p/byt5-tiny/decoder_model.onnx", sizeBytes: 11_983_268 },
-  { relPath: "models/g2p/byt5-tiny/decoder_with_past_model.onnx", sizeBytes: 5_427_260 },
-];
-
-// Kokoro ONNX graph (shared by all Kokoro languages on non-darwin builds).
-const KOKORO_GRAPH_FILE: PlanFile = { relPath: "models/kokoro-82m/model.onnx", sizeBytes: 325_532_387 };
-
-// Multilingual voice packs for es/fr/it/pt (#212).
-// em_alex (es, male), ff_siwis (fr, female — only French voice in Kokoro v1.0),
-// im_nicola (it, male), pm_alex (pt, male).
-const KOKORO_VOICE_FILES: Record<string, PlanFile> = {
-  en: { relPath: "models/kokoro-82m/voices/am_michael.bin", sizeBytes: 522_240 },
-  es: { relPath: "models/kokoro-82m/voices/em_alex.bin", sizeBytes: 522_240 },
-  fr: { relPath: "models/kokoro-82m/voices/ff_siwis.bin", sizeBytes: 522_240 },
-  it: { relPath: "models/kokoro-82m/voices/im_nicola.bin", sizeBytes: 522_240 },
-  pt: { relPath: "models/kokoro-82m/voices/pm_alex.bin", sizeBytes: 522_240 },
-};
+// Shared plan metadata keeps `kesha install --plan` usable before the engine
+// exists. Rust tests guard these cache paths against its pinned manifests.
+const plan: ModelPlan = modelPlan;
+const {
+  asr: ASR_FILES,
+  langId: LANG_ID_FILES,
+  vad: VAD_FILES,
+  g2pCharsiu: G2P_CHARSIU_FILES,
+  kokoroGraph: KOKORO_GRAPH_FILE,
+  kokoroVoices: KOKORO_VOICE_FILES,
+  voskRu: VOSK_RU_FILES,
+  diarize: DIARIZE_FILES,
+} = plan;
 
 function kokoroPlanFiles(langs: string[]): PlanFile[] {
   const files: PlanFile[] = [KOKORO_GRAPH_FILE];
@@ -94,30 +79,6 @@ function kokoroPlanFiles(langs: string[]): PlanFile[] {
   }
   return files;
 }
-
-const VOSK_RU_FILES: PlanFile[] = [
-  { relPath: "models/vosk-ru/model.onnx", sizeBytes: 179_314_533 },
-  { relPath: "models/vosk-ru/dictionary", sizeBytes: 101_431_118 },
-  { relPath: "models/vosk-ru/config.json", sizeBytes: 1_518 },
-  { relPath: "models/vosk-ru/bert/model.onnx", sizeBytes: 654_361_598 },
-  { relPath: "models/vosk-ru/bert/vocab.txt", sizeBytes: 1_780_720 },
-];
-
-const DIARIZE_FILES: PlanFile[] = [
-  { relPath: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Manifest.json", sizeBytes: 617 },
-  {
-    relPath: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel",
-    sizeBytes: 7_080_357,
-  },
-  {
-    relPath: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
-    sizeBytes: 5_930_400,
-  },
-  {
-    relPath: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin",
-    sizeBytes: 232_161_600,
-  },
-];
 
 // The sidecar list (and the asset-name → installed-filename mapping) lives in
 // SIDECARS in engine-install.ts; only the release-asset sizes are pinned here,

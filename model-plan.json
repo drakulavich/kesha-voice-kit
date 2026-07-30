@@ -1,0 +1,43 @@
+{
+  "asr": [
+    { "relPath": "models/parakeet-tdt-v3/encoder-model.onnx", "sizeBytes": 41770866 },
+    { "relPath": "models/parakeet-tdt-v3/encoder-model.onnx.data", "sizeBytes": 2435420160 },
+    { "relPath": "models/parakeet-tdt-v3/decoder_joint-model.onnx", "sizeBytes": 72520893 },
+    { "relPath": "models/parakeet-tdt-v3/nemo128.onnx", "sizeBytes": 139764 },
+    { "relPath": "models/parakeet-tdt-v3/vocab.txt", "sizeBytes": 93939 }
+  ],
+  "langId": [
+    { "relPath": "models/lang-id-ecapa/lang-id-ecapa.onnx", "sizeBytes": 759814 },
+    { "relPath": "models/lang-id-ecapa/lang-id-ecapa.onnx.data", "sizeBytes": 85327872 },
+    { "relPath": "models/lang-id-ecapa/labels.json", "sizeBytes": 646 }
+  ],
+  "vad": [
+    { "relPath": "models/silero-vad/silero_vad.onnx", "sizeBytes": 2327524 }
+  ],
+  "g2pCharsiu": [
+    { "relPath": "models/g2p/byt5-tiny/encoder_model.onnx", "sizeBytes": 12478704 },
+    { "relPath": "models/g2p/byt5-tiny/decoder_model.onnx", "sizeBytes": 11983268 },
+    { "relPath": "models/g2p/byt5-tiny/decoder_with_past_model.onnx", "sizeBytes": 5427260 }
+  ],
+  "kokoroGraph": { "relPath": "models/kokoro-82m/model.onnx", "sizeBytes": 325532387 },
+  "kokoroVoices": {
+    "en": { "relPath": "models/kokoro-82m/voices/am_michael.bin", "sizeBytes": 522240 },
+    "es": { "relPath": "models/kokoro-82m/voices/em_alex.bin", "sizeBytes": 522240 },
+    "fr": { "relPath": "models/kokoro-82m/voices/ff_siwis.bin", "sizeBytes": 522240 },
+    "it": { "relPath": "models/kokoro-82m/voices/im_nicola.bin", "sizeBytes": 522240 },
+    "pt": { "relPath": "models/kokoro-82m/voices/pm_alex.bin", "sizeBytes": 522240 }
+  },
+  "voskRu": [
+    { "relPath": "models/vosk-ru/model.onnx", "sizeBytes": 179314533 },
+    { "relPath": "models/vosk-ru/dictionary", "sizeBytes": 101431118 },
+    { "relPath": "models/vosk-ru/config.json", "sizeBytes": 1518 },
+    { "relPath": "models/vosk-ru/bert/model.onnx", "sizeBytes": 654361598 },
+    { "relPath": "models/vosk-ru/bert/vocab.txt", "sizeBytes": 1780720 }
+  ],
+  "diarize": [
+    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Manifest.json", "sizeBytes": 617 },
+    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel", "sizeBytes": 7080357 },
+    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin", "sizeBytes": 5930400 },
+    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin", "sizeBytes": 232161600 }
+  ]
+}
