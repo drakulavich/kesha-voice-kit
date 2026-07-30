@@ -46,7 +46,7 @@ function requirePinnedActions(path: string, contents: string): string[] {
 
 function requireSafeRunInterpolation(path: string, document: unknown): string[] {
   const errors: string[] = [];
-  const untrustedExpression = /\$\{\{\s*(?:inputs\.|github\.event\.|steps\.[^.]+\.outputs\.)/;
+  const untrustedExpression = /\$\{\{\s*(?:inputs(?:\.|\s*\[)|github\.event(?:\.|\s*\[)|steps\.[^.]+\.outputs(?:\.|\s*\[))/;
 
   function visit(node: unknown) {
     if (Array.isArray(node)) {
