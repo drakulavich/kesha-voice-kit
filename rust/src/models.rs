@@ -824,6 +824,79 @@ fn parallel_download(cache: &Path, manifest: &[&ModelFile], no_cache: bool) -> R
 mod manifest_tests {
     use super::*;
 
+    fn assert_plan_paths(plan: &serde_json::Value, key: &str, files: &[ModelFile]) {
+        let plan_paths = plan[key]
+            .as_array()
+            .unwrap_or_else(|| panic!("install plan {key} must be an array"))
+            .iter()
+            .map(|file| {
+                file["relPath"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("install plan {key} entry needs relPath"))
+            })
+            .collect::<Vec<_>>();
+        let runtime_paths = files.iter().map(|file| file.rel_path).collect::<Vec<_>>();
+        assert_eq!(
+            plan_paths, runtime_paths,
+            "install plan {key} drifted from runtime manifest"
+        );
+    }
+
+    #[cfg(all(
+        feature = "tts",
+        not(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))
+    ))]
+    fn assert_plan_path(plan: &serde_json::Value, key: &str, file: &ModelFile) {
+        let plan_path = plan[key]["relPath"]
+            .as_str()
+            .unwrap_or_else(|| panic!("install plan {key} needs relPath"));
+        assert_eq!(
+            plan_path, file.rel_path,
+            "install plan {key} drifted from runtime manifest"
+        );
+    }
+
+    #[test]
+    fn install_plan_model_paths_match_runtime_manifests() {
+        let plan: serde_json::Value = serde_json::from_str(include_str!("../../model-plan.json"))
+            .expect("model plan JSON must parse");
+
+        assert_plan_paths(&plan, "asr", ASR_FILES);
+        assert_plan_paths(&plan, "langId", LANG_ID_FILES);
+        assert_plan_paths(&plan, "vad", VAD_FILES);
+
+        #[cfg(feature = "system_diarize")]
+        assert_plan_paths(&plan, "diarize", DIARIZE_FILES);
+
+        #[cfg(feature = "tts")]
+        assert_plan_paths(&plan, "voskRu", VOSK_RU_FILES);
+
+        #[cfg(all(
+            feature = "tts",
+            not(all(
+                feature = "system_kokoro",
+                target_os = "macos",
+                target_arch = "aarch64"
+            ))
+        ))]
+        {
+            assert_plan_paths(&plan, "g2pCharsiu", G2P_CHARSIU_FILES);
+            assert_plan_path(&plan, "kokoroGraph", &KOKORO_GRAPH);
+            assert_plan_path(&plan["kokoroVoices"], "en", &KOKORO_EN_VOICE);
+            for lang in ["es", "fr", "it", "pt"] {
+                assert_plan_path(
+                    &plan["kokoroVoices"],
+                    lang,
+                    &multilang_voice(lang).expect("known Kokoro language"),
+                );
+            }
+        }
+    }
+
     #[test]
     fn asr_manifest_has_expected_files_and_hashes() {
         assert_eq!(ASR_FILES.len(), 5);
