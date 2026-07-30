@@ -76,7 +76,7 @@ const VAD_FILES: &[ModelFile] = &[ModelFile {
 /// (Manifest.json + model.mlmodel + 2 weight blobs) rather than the
 /// alternative pre-compiled `.mlmodelc` form, since the upstream HF tree
 /// ships both and the .mlpackage is roughly half the bytes.
-#[cfg(feature = "system_diarize")]
+#[cfg(any(feature = "system_diarize", test))]
 const DIARIZE_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Manifest.json",
@@ -869,7 +869,6 @@ mod manifest_tests {
         assert_plan_paths(&plan, "langId", LANG_ID_FILES);
         assert_plan_paths(&plan, "vad", VAD_FILES);
 
-        #[cfg(feature = "system_diarize")]
         assert_plan_paths(&plan, "diarize", DIARIZE_FILES);
 
         #[cfg(feature = "tts")]

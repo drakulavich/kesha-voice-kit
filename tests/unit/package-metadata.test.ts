@@ -8,6 +8,13 @@ interface PackageJson {
 }
 
 describe("package metadata", () => {
+  test("publishes install-plan model metadata", () => {
+    const pkgPath = fileURLToPath(new URL("../../package.json", import.meta.url));
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as PackageJson;
+
+    expect(pkg.files).toContain("model-plan.json");
+  });
+
   test("does not publish lifecycle scripts", () => {
     const pkgPath = fileURLToPath(new URL("../../package.json", import.meta.url));
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as PackageJson;
