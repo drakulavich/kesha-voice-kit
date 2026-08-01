@@ -4,14 +4,8 @@ export const METER_INTERVAL_MS = 500;
 // -80 dBFS: a test for digital silence in a recorded file, never for speech (#648).
 export const SILENCE_PEAK_THRESHOLD = 0.0001;
 
-// No constant works: a noisy room's floor is louder than quiet speech (#648).
-export const FLOOR_WINDOW_MS = 3_000;
-export const FLOOR_PERCENTILE = 0.1;
-export const SIGNAL_ENTER_RATIO = 3;
-export const SIGNAL_LEAVE_RATIO = 1.8;
-// rms reads exactly 0 sometimes, so a purely relative rule would call dither speech.
-export const SIGNAL_ENTER_MIN_RMS = 0.01;
-export const SIGNAL_LEAVE_MIN_RMS = 0.006;
+// Sits between a quiet room's rms p90 (0.0075) and speech p50 (0.0097) (#648).
+export const SPEECH_RMS_THRESHOLD = 0.01;
 export const IDLE_WARN_MS = 30_000;
 export const IDLE_STOP_GRACE_MS = 15_000;
 export const NO_SIGNAL_TIMEOUT_MS = 8_000;

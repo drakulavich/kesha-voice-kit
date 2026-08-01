@@ -12,7 +12,6 @@ import {
   signalStatusTone,
 } from "../src/lib/recording-view";
 import {
-  createSignalClassifier,
   parseMeterChunk,
   parseMeterLine,
   percentFromPeak,
@@ -23,16 +22,17 @@ import type { spawn } from "node:child_process";
 import { FakeProcess } from "./helpers/fake-process";
 
 describe("signal parsing", () => {
-  it("parses meter JSON into a sample without deciding state", () => {
-    expect(parseMeterLine('{"rms":0,"peak":0}')).toEqual({
-      rms: 0,
-      peak: 0,
-      percent: 0,
-    });
-    const loud = parseMeterLine('{"rms":0.035,"peak":0.09}');
-    expect(loud).not.toBeNull();
-    expect(loud).not.toHaveProperty("state");
-    expect(loud!.rms).toBe(0.035);
+  // Thresholds are the rms percentiles measured on a built-in mic (#648).
+  it("separates a quiet room from speech", () => {
+    expect(parseMeterLine('{"rms":0.0075,"peak":0.02}')?.state).toBe("listening");
+    expect(parseMeterLine('{"rms":0.0021,"peak":0.0085}')?.state).toBe("listening");
+    expect(parseMeterLine('{"rms":0.0352,"peak":0.09}')?.state).toBe("signal");
+    expect(parseMeterLine('{"rms":0.012,"peak":0.03}')?.state).toBe("signal");
+  });
+
+  it("keeps a noisy room audible rather than cutting the speaker off", () => {
+    // Auto-stop then never fires there — today's behaviour, and the safe way to be wrong.
+    expect(parseMeterLine('{"rms":0.027,"peak":0.078}')?.state).toBe("signal");
   });
 
   it("ignores invalid lines", () => {
@@ -48,14 +48,14 @@ describe("signal parsing", () => {
     expect(percentFromPeak(1)).toBe(100);
   });
 
-  it("handles partial chunks without losing complete samples", () => {
+  it("handles partial chunks without losing complete signals", () => {
     const first = parseMeterChunk("", '{"rms":0,"peak":0}\n{"rms":');
-    expect(first.samples).toHaveLength(1);
+    expect(first.signals).toHaveLength(1);
     expect(first.remainder).toBe('{"rms":');
 
     const second = parseMeterChunk(first.remainder, '0.02,"peak":0.1}\n');
-    expect(second.samples).toHaveLength(1);
-    expect(second.samples[0].rms).toBe(0.02);
+    expect(second.signals).toHaveLength(1);
+    expect(second.signals[0]).toMatchObject({ rms: 0.02, state: "signal" });
     expect(second.remainder).toBe("");
   });
 });
@@ -129,70 +129,6 @@ describe("recording markdown", () => {
   });
 });
 
-// Fixtures are the rms percentiles measured on a MacBook Air built-in mic (#648).
-describe("createSignalClassifier", () => {
-  function feed(rmsValues: number[], startAt = 0, stepMs = 25) {
-    let t = startAt;
-    const classifier = createSignalClassifier({ now: () => (t += stepMs) });
-    return rmsValues.map((rms) => classifier.classify({ rms, peak: rms * 2, percent: 0 }).state);
-  }
-
-  it("calls a quiet room listening, not signal", () => {
-    const quietRoom = Array(40).fill(0.0021);
-    expect(feed(quietRoom).every((s) => s === "listening")).toBe(true);
-  });
-
-  it("calls normal speech signal", () => {
-    const states = feed([...Array(40).fill(0.0021), ...Array(20).fill(0.035)]);
-    expect(states.at(-1)).toBe("signal");
-  });
-
-  it("does not call an environmentally noisy room speech", () => {
-    // The floor that broke a fixed threshold: 0.027 rms, louder than quiet speech.
-    const noisyRoom = Array(60).fill(0.027);
-    expect(feed(noisyRoom).slice(20).every((s) => s === "listening")).toBe(true);
-  });
-
-  it("still hears louder speech over a noisy floor", () => {
-    const states = feed([...Array(40).fill(0.027), ...Array(20).fill(0.12)]);
-    expect(states.at(-1)).toBe("signal");
-  });
-
-  it("holds through the pauses inside speech instead of chattering", () => {
-    const speechWithPauses = [
-      ...Array(40).fill(0.002),
-      ...Array(10).fill(0.035),
-      ...Array(3).fill(0.008),
-      ...Array(10).fill(0.035),
-    ];
-    const states = feed(speechWithPauses);
-    const duringSpeech = states.slice(40);
-    const flips = duringSpeech.filter((s, i) => i > 0 && s !== duringSpeech[i - 1]).length;
-    expect(flips).toBeLessThanOrEqual(1);
-  });
-
-  it("treats digital silence as listening even when the floor is zero", () => {
-    expect(feed(Array(40).fill(0)).every((s) => s === "listening")).toBe(true);
-  });
-
-  it("forgets a floor that has left the window", () => {
-    // A loud stretch must not keep the threshold raised once the room goes quiet.
-    let t = 0;
-    const classifier = createSignalClassifier({ now: () => t });
-    for (let i = 0; i < 40; i++) {
-      t += 25;
-      classifier.classify({ rms: 0.03, peak: 0.06, percent: 0 });
-    }
-    t += 10_000;
-    for (let i = 0; i < 40; i++) {
-      t += 25;
-      classifier.classify({ rms: 0.002, peak: 0.004, percent: 0 });
-    }
-    t += 25;
-    expect(classifier.classify({ rms: 0.02, peak: 0.04, percent: 0 }).state).toBe("signal");
-  });
-});
-
 describe("startLiveMicMeter", () => {
   function startWithFakeProcess() {
     const proc = new FakeProcess();
@@ -207,13 +143,10 @@ describe("startLiveMicMeter", () => {
     return { proc, signals, stop };
   }
 
-  // Needed because the first sample is its own floor and so can never be speech.
-  const warmUp = `${'{"rms":0.002,"peak":0.004}\n'.repeat(10)}`;
-
   it("reports unavailable when the meter dies after delivering samples", () => {
     const { proc, signals } = startWithFakeProcess();
 
-    proc.emitStdout(`${warmUp}{"rms":0.05,"peak":0.1}\n`);
+    proc.emitStdout('{"rms":0.05,"peak":0.1}\n');
     proc.emit("exit", 1, null);
 
     expect(signals.at(-2)?.state).toBe("signal");
@@ -223,19 +156,11 @@ describe("startLiveMicMeter", () => {
   it("stays quiet when the session stops the meter itself", () => {
     const { proc, signals, stop } = startWithFakeProcess();
 
-    proc.emitStdout(`${warmUp}{"rms":0.05,"peak":0.1}\n`);
+    proc.emitStdout('{"rms":0.05,"peak":0.1}\n');
     stop();
     proc.emit("exit", 0, "SIGTERM");
 
     expect(signals.map((s) => s.state)).not.toContain("unavailable");
     expect(signals.at(-1)?.state).toBe("signal");
-  });
-
-  it("cannot call the first sample speech, since it is its own floor", () => {
-    const { proc, signals } = startWithFakeProcess();
-
-    proc.emitStdout('{"rms":0.05,"peak":0.1}\n');
-
-    expect(signals.at(-1)?.state).toBe("listening");
   });
 });
