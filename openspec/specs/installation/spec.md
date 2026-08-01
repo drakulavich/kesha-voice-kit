@@ -56,8 +56,8 @@ backend. Passing both SHALL fail immediately with exit 1. Requesting a backend t
 does not match the platform's release Engine (e.g. `--coreml` on Linux) SHALL also
 fail with exit 1.
 
-Auto-detection defaults: darwin-arm64 → CoreML; linux-x64 → ONNX. Any other
-platform is unsupported and fails.
+Auto-detection defaults: darwin-arm64 → CoreML; linux-x64 → ONNX; win32-x64 → ONNX. Any
+other platform is unsupported and fails.
 
 #### Scenario: Both flags given
 
@@ -79,11 +79,115 @@ platform is unsupported and fails.
 - THEN the CoreML Engine binary is downloaded
 - AND no backend error is emitted
 
+#### Scenario: Auto-detection on win32-x64
+
+- GIVEN the machine is win32-x64 and `--coreml`/`--onnx` are not passed
+- WHEN Ira runs `kesha install` on a Windows build agent
+- THEN the ONNX Engine binary is downloaded
+- AND no backend error is emitted
+
+#### Scenario: CoreML requested on Windows
+
+- GIVEN the machine is win32-x64
+- WHEN Ira runs `kesha install --coreml`
+- THEN the CLI prints an error explaining the platform uses the ONNX backend
+- AND the process exits 1
+
 > *Technical Note — sources: `src/cli/install.ts::resolveBackendFlag`,
-> `src/cli/install.ts::defaultBackendForPlatform`,
-> `src/engine-install.ts::downloadEngine` (post-download backend mismatch check via
-> Capabilities JSON). Windows x64 is temporarily unsupported in the current release
-> (issue #216).*
+> `src/cli/install.ts::defaultBackendForPlatform` (darwin-arm64 → `coreml`, linux-x64 and
+> win32-x64 → `onnx`), `src/engine-install.ts::validateBackend` (post-download backend
+> mismatch check via Capabilities JSON). The pre-flight in `performInstall` only engages
+> when the platform backend is defined, so an unshipped platform defers to the
+> post-download check.*
+
+### Requirement: Windows x64 installs the released ONNX Engine
+
+`kesha install` on win32-x64 SHALL download the published Windows Engine asset and
+complete the same install flow as linux-x64, with no platform-specific refusal. The
+Install plan SHALL describe that platform in the same terms it uses for the platforms
+it installs on, so a reader is never told a platform is blocked while the same output
+lists its Engine asset and size.
+
+The capability set Windows receives is the ONNX one: Transcription, Language detection
+(audio), VAD, and TTS through the Kokoro, Vosk, and CharsiuG2P TTS engines. Capabilities
+that require Apple frameworks — CoreML, `macos-*` Voice ids, Diarization, and Language
+detection (text) — remain unavailable there and SHALL keep failing with their existing
+platform errors.
+
+The Engine SHALL be installed at a path the CLI can spawn on Windows. The release asset
+is a PE, so the installed binary keeps its `.exe` suffix rather than the extensionless
+name used on POSIX platforms.
+
+#### Scenario: Installing on a Windows build agent
+
+- GIVEN the machine is win32-x64 with no Engine in the Model cache
+- AND `KESHA_ENGINE_BIN` is not set, so the download path is the one under test
+- WHEN Ira runs `kesha install --tts en`
+- THEN the Windows Engine binary and the requested TTS models are downloaded
+- AND the installed binary is spawnable at the path the CLI resolves
+- AND `kesha say "hello"` writes a playable WAV
+
+#### Scenario: Requesting a macOS-only capability on Windows
+
+- GIVEN the machine is win32-x64 with the Engine installed
+- WHEN Ira runs `kesha install --diarize`
+- THEN the CLI prints an error stating Diarization requires darwin-arm64
+- AND the process exits 1
+
+#### Scenario: Previewing the install before downloading
+
+- GIVEN the machine is win32-x64
+- WHEN Ira runs `kesha install --plan`
+- THEN the plan lists the Windows Engine asset with its size and cache status
+- AND the plan contains no statement that the platform is blocked
+
+> *Technical Note — sources: `src/engine-install.ts::getEngineBinaryName`,
+> `src/engine-install.ts::fetchEngineBinary` (its only caller — reached from
+> `downloadEngine` only when the cached-version check fails), `src/paths.ts::defaultEngineBinPath`
+> (`.exe` on win32), `src/install-plan.ts::engineAssetForPlatform`. Built by
+> `.github/workflows/build-engine.yml` with `--features onnx,tts`; issue #216's MSVC link
+> failure was resolved by vendoring the Vosk-TTS runtime under `rust/vendor/vosk-tts/`.*
+
+### Requirement: Every shipped platform is verified end to end before release
+
+For each platform whose Engine is published, the release pipeline SHALL verify that the
+shipped binary performs real synthesis and real Transcription — not only that it builds
+and passes unit tests. A platform whose Engine ships without that verification SHALL be
+documented as unverified rather than presented as supported.
+
+Verification SHALL cover both the asset a user downloads today and the artifact a release is
+about to publish. These are different binaries reached by different means: a release branch
+cannot download its own Engine, because its tag does not exist until the release is un-drafted.
+
+Because the install-time ASR warm-up is non-fatal by design, a successful `kesha install`
+SHALL NOT by itself be treated as evidence that the Engine initialises on that platform.
+
+#### Scenario: Smoke on the published asset
+
+- GIVEN release v`<engineVersion>` publishes an Engine asset for a platform
+- WHEN the published-asset smoke lane runs on that platform
+- THEN it performs a cold `kesha install`, synthesises through `kesha say`, and
+  transcribes the result back
+- AND the lane does not run on `release/*` branches, whose tag is not yet published
+
+#### Scenario: Warm-up fails but install reports success
+
+- GIVEN the Engine installs and the CLI exits 0
+- AND the install log carries an ASR backend warm-up failure
+- WHEN the smoke lane inspects that log
+- THEN the lane fails rather than reporting the platform verified
+
+#### Scenario: Engine builds but cannot synthesise
+
+- GIVEN a platform's Engine compiles and its unit tests pass
+- AND its synthesis smoke fails
+- WHEN Ira consults the platform matrix
+- THEN that platform is not presented as supported
+
+> *Technical Note — sources: `.github/workflows/ci.yml` (`published-engine-smoke` on
+> ubuntu-latest, `windows-engine-smoke` on windows-latest — both run a cold install and
+> `.github/scripts/smoke-synthesis.ts`), `.github/scripts/assert-install-warmup.ts`, and
+> `rust/src/cli/install.rs` (warm-up warns and continues, #298).*
 
 ### Requirement: TTS install is opt-in and requires `--tts`
 
@@ -399,5 +503,5 @@ Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL m
   falls back to `TTS_LANG_FALLBACK` (which excludes `zh`) and rejects the request;
   the error message says "unsupported" rather than "install the engine first to
   unlock platform-specific languages" — see the `resolveTtsLangs` fallback path.
-- Windows x64 is temporarily unsupported in the current release (issue #216) due to
-  native Vosk-TTS link-time issues; `kesha install` fails with an explanatory error.
+- `kesha record` has no Windows or Linux microphone capture; `record.rs` gates capture on
+  macOS and the README directs other platforms to pass an existing audio file.

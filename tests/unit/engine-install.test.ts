@@ -3,12 +3,16 @@ import {
   buildEngineInstallArgs,
   cleanupRetiredSidecars,
   getVersionMarkerPath,
+  getEngineBinaryName,
+  isTransientSpawnLock,
+  waitUntilSpawnable,
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
 } from "../../src/engine-install";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { defaultEngineBinPath } from "../../src/paths";
 
 function mkTmpBinPath(): string {
   const dir = mkdtempSync(join(tmpdir(), "kesha-install-test-"));
@@ -128,6 +132,79 @@ describe("engine-install retired sidecar cleanup (#438)", () => {
 
     try {
       expect(cleanupRetiredSidecars(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("getEngineBinaryName platform mapping (#216)", () => {
+  test("win32-x64 returns the published Windows asset", () => {
+    expect(getEngineBinaryName("win32", "x64")).toBe("kesha-engine-windows-x64.exe");
+  });
+  test("darwin-arm64 and linux-x64 are unchanged", () => {
+    expect(getEngineBinaryName("darwin", "arm64")).toBe("kesha-engine-darwin-arm64");
+    expect(getEngineBinaryName("linux", "x64")).toBe("kesha-engine-linux-x64");
+  });
+  test("platforms without a published engine still throw", () => {
+    expect(() => getEngineBinaryName("win32", "arm64")).toThrow(/Unsupported platform/);
+    expect(() => getEngineBinaryName("darwin", "x64")).toThrow(/Unsupported platform/);
+    expect(() => getEngineBinaryName("linux", "arm64")).toThrow(/Unsupported platform/);
+  });
+});
+
+describe("defaultEngineBinPath extension (#216)", () => {
+  test("win32 keeps the .exe suffix so the downloaded PE is spawnable", () => {
+    expect(defaultEngineBinPath("win32")).toEndWith("kesha-engine.exe");
+  });
+  test("posix platforms stay extensionless", () => {
+    expect(defaultEngineBinPath("linux")).toEndWith("kesha-engine");
+    expect(defaultEngineBinPath("darwin")).toEndWith("kesha-engine");
+  });
+  test("the version marker follows the binary name on win32", () => {
+    expect(getVersionMarkerPath(defaultEngineBinPath("win32"))).toMatch(
+      /kesha-engine\.exe\.version$/,
+    );
+  });
+});
+
+describe("waitUntilSpawnable (#216)", () => {
+  test("classifies lock errors as transient, everything else as fatal", () => {
+    expect(isTransientSpawnLock("EBUSY: resource busy or locked, uv_spawn")).toBe(true);
+    expect(isTransientSpawnLock("ETXTBSY: text file is busy, uv_spawn")).toBe(true);
+    expect(isTransientSpawnLock("ENOENT: no such file or directory")).toBe(false);
+    expect(isTransientSpawnLock("ENOEXEC: exec format error")).toBe(false);
+    // Policy, not a scanner: waiting these out would stall an install that can never succeed.
+    expect(isTransientSpawnLock("EACCES: permission denied")).toBe(false);
+    expect(isTransientSpawnLock("EPERM: operation not permitted")).toBe(false);
+  });
+
+  // The fixture is a shell script, which Windows cannot spawn — the lock-clearing
+  // behaviour itself is what `windows-engine-smoke` exercises against a real PE.
+  const spawnFixtureTest = process.platform === "win32" ? test.skip : test;
+
+  spawnFixtureTest("returns once the binary spawns", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-"));
+    try {
+      const binPath = join(dir, "engine");
+      writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
+      chmodSync(binPath, 0o755);
+      await waitUntilSpawnable(binPath);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A missing binary never becomes spawnable, so retrying it would just stall the
+  // install for the full deadline before failing anyway.
+  test("fails fast on a non-transient error instead of waiting out the deadline", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-missing-"));
+    try {
+      const startedAt = Date.now();
+      await expect(
+        waitUntilSpawnable(join(dir, "does-not-exist"), 60_000),
+      ).rejects.toThrow(/could not be started/);
+      expect(Date.now() - startedAt).toBeLessThan(5_000);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

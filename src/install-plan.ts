@@ -112,7 +112,7 @@ function engineAssetForPlatform(): ReleaseAssetSpec | null {
     return { assetName: "kesha-engine-linux-x64", sizeBytes: 62_897_808 };
   }
   if (process.platform === "win32" && process.arch === "x64") {
-    return { assetName: "kesha-engine-windows-x64.exe", sizeBytes: 63_126_528 };
+    return { assetName: "kesha-engine-windows-x64.exe", sizeBytes: 63_447_040 };
   }
   return null;
 }
@@ -153,10 +153,6 @@ function buildEngineComponent(binPath: string, noCache: boolean): PlanComponent 
       sizeBytes: engineAsset.sizeBytes,
       cached: engineCached,
       refresh: noCache,
-      note:
-        process.platform === "win32"
-          ? "Windows x64 is currently blocked by the install path; see issue #216."
-          : undefined,
     };
   }
   return {

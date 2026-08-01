@@ -128,7 +128,8 @@ export async function streamResponseToFile(
       progress.update(chunk.length);
     }
   } finally {
-    writer.end();
+    // Must await: an open write handle makes the freshly-downloaded engine unspawnable — EBUSY on Windows, ETXTBSY on Linux.
+    await writer.end();
   }
 
   progress.finish();

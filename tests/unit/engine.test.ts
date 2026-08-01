@@ -80,6 +80,8 @@ async function withEngineEnv<T>(
   }
 }
 
+const engineBasename = process.platform === "win32" ? "kesha-engine.exe" : "kesha-engine";
+
 describe("engine", () => {
   test("getEngineBinPath returns path under .cache kesha", () => {
     const path = getEngineBinPath();
@@ -93,7 +95,7 @@ describe("engine", () => {
     try {
       delete process.env.KESHA_ENGINE_BIN;
       process.env.KESHA_CACHE_DIR = "/tmp/kesha-cache";
-      expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", "kesha-engine"));
+      expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", engineBasename));
     } finally {
       if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
       else process.env.KESHA_CACHE_DIR = savedCacheDir;
@@ -108,7 +110,7 @@ describe("engine", () => {
     try {
       process.env.KESHA_CACHE_DIR = "/tmp/kesha-cache";
       process.env.KESHA_ENGINE_BIN = "";
-      expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", "kesha-engine"));
+      expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", engineBasename));
     } finally {
       if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
       else process.env.KESHA_CACHE_DIR = savedCacheDir;

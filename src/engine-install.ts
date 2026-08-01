@@ -25,20 +25,13 @@ export {
 
 const GITHUB_REPO = "drakulavich/kesha-voice-kit";
 
-function getEngineBinaryName(): string {
-  const platform = process.platform;
-  const arch = process.arch;
-
+export function getEngineBinaryName(
+  platform = process.platform,
+  arch = process.arch,
+): string {
   if (platform === "darwin" && arch === "arm64") return "kesha-engine-darwin-arm64";
   if (platform === "linux" && arch === "x64") return "kesha-engine-linux-x64";
-  if (platform === "win32" && arch === "x64") {
-    throw new Error(
-      "Windows x64 is temporarily unsupported in v1.5.0 — the Vosk-TTS engine has " +
-        "native deps that trip MSVC at link time. Tracked at " +
-        "https://github.com/drakulavich/kesha-voice-kit/issues/216. " +
-        "Use v1.4.x as a workaround until the fix lands.",
-    );
-  }
+  if (platform === "win32" && arch === "x64") return "kesha-engine-windows-x64.exe";
 
   throw new Error(`Unsupported platform: ${platform} ${arch}`);
 }
@@ -372,6 +365,66 @@ async function refreshCachedEngine(
   }
 }
 
+/** EACCES/EPERM are deliberately absent: those are policy (noexec, ACL, AppLocker) and never clear. */
+export function isTransientSpawnLock(message: string): boolean {
+  return /\b(EBUSY|ETXTBSY)\b/.test(message) || /sharing violation/i.test(message);
+}
+
+/**
+ * Blocks until the freshly-downloaded engine can actually be spawned.
+ *
+ * A security scanner (Windows Defender is the one this was found on) holds a lock on a newly
+ * written 60 MB PE while it scans, so the first spawn fails with EBUSY 15 ms after the download
+ * reported success (#216). The lock is transient, so probe until it clears.
+ */
+export async function waitUntilSpawnable(
+  binPath: string,
+  deadlineMs = 60_000,
+  probeTimeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  let lastError = "";
+  let warned = false;
+  let delay = 100;
+
+  for (;;) {
+    try {
+      // Only a throw means locked; the timeout is for a scanner that detains rather than refuses.
+      const proc = Bun.spawn([binPath, "--version"], { stdout: "ignore", stderr: "ignore" });
+      const timer = setTimeout(() => proc.kill(), probeTimeoutMs);
+      try {
+        await proc.exited;
+      } finally {
+        clearTimeout(timer);
+      }
+      return;
+    } catch (e) {
+      lastError = errorMessage(e);
+      // Only a lock is worth waiting out — a missing or corrupt binary never becomes spawnable.
+      if (!isTransientSpawnLock(lastError)) {
+        throw new Error(
+          `Downloaded the engine to ${binPath} but it could not be started: ${lastError}\n` +
+            `  Fix: delete ${dirname(binPath)} and re-run \`kesha install\`.`,
+        );
+      }
+      if (Date.now() + delay > deadline) break;
+      if (!warned) {
+        warned = true;
+        log.progress("Waiting for the engine binary to be released by the system...");
+      }
+      await Bun.sleep(delay);
+      delay = Math.min(delay * 2, 2_000);
+    }
+  }
+
+  throw new Error(
+    `Downloaded the engine to ${binPath} but it is still locked after ` +
+      `${Math.round(deadlineMs / 1000)}s: ${lastError}\n` +
+      `  Fix: a security scanner is likely holding the file. Re-run \`kesha install\`, ` +
+      `or exclude ${dirname(binPath)} from real-time scanning.`,
+  );
+}
+
 /** Cold path: download the engine binary (and sidecars, concurrently). */
 async function fetchEngineBinary(
   binPath: string,
@@ -416,6 +469,8 @@ async function fetchEngineBinary(
   await streamResponseToFile(res, binPath, "kesha-engine binary");
   chmodSync(binPath, 0o755);
   darwinTrustBinary(binPath, "kesha-engine binary");
+  // Marker last: writing it first sends the retry down the cacheValid branch, which never waits.
+  await waitUntilSpawnable(binPath);
   writeInstalledEngineVersion(binPath, engineVersion);
   log.success(`Engine binary downloaded (v${engineVersion}).`);
   await Promise.all(sidecarPromises);

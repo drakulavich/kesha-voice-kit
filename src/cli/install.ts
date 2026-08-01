@@ -90,9 +90,13 @@ export function resolveBackendFlag(coreml: boolean, onnx: boolean): string | und
   return selection.backend;
 }
 
-function defaultBackendForPlatform(): string | undefined {
-  if (process.platform === "darwin" && process.arch === "arm64") return "coreml";
-  if (process.platform === "linux" && process.arch === "x64") return "onnx";
+export function defaultBackendForPlatform(
+  platform = process.platform,
+  arch = process.arch,
+): string | undefined {
+  if (platform === "darwin" && arch === "arm64") return "coreml";
+  if (platform === "linux" && arch === "x64") return "onnx";
+  if (platform === "win32" && arch === "x64") return "onnx";
   return undefined;
 }
 

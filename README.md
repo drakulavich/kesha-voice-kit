@@ -24,7 +24,7 @@
 
 ## Quick Start
 
-Runtime: **[Bun](https://bun.sh)** >= 1.3.0 · Platforms: macOS arm64, Linux x64. Windows x64 is currently blocked at install ([#216](https://github.com/drakulavich/kesha-voice-kit/issues/216)).
+Runtime: **[Bun](https://bun.sh)** >= 1.3.0 · Platforms: macOS arm64, Linux x64, Windows x64. Linux and Windows run the ONNX engine — everything except microphone capture (`kesha record`), macOS system voices, speaker diarization, and text language detection, which need Apple frameworks.
 
 ```bash
 # 1. Install Bun (skip if you have it) — Linux & macOS:

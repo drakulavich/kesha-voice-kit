@@ -98,6 +98,10 @@ jobs:
               - 'src/engine.ts'
               - 'src/lib.ts'
               - 'src/paths.ts'
+              # The download path itself: a revert of the awaited `writer.end()` must re-fire
+              # these lanes, and `install.ts` carries the backend pre-flight (#216).
+              - 'src/progress.ts'
+              - 'src/cli/install.ts'
               - 'src/transcribe.ts'
               - 'src/cli/dispatch.ts'
               - 'src/cli/main.ts'
@@ -106,6 +110,9 @@ jobs:
               - 'tests/integration/say-e2e.test.ts'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
+              - '.github/scripts/smoke-synthesis.ts'
+              - '.github/scripts/assert-transcript.ts'
+              - '.github/scripts/assert-install-warmup.ts'
             tts_e2e:
               - 'rust/**'
               - 'package.json'
@@ -411,10 +418,7 @@ jobs:
             --category bun --flakiness-project Laputa/kesha-voice-kit
 
   published-engine-smoke:
-    # P1.10: keep at least one non-Darwin lane exercising the published
-    # engine install path. Windows is intentionally omitted while
-    # `src/engine-install.ts` still reports win32 x64 as unsupported; this
-    # Linux x64 lane covers the currently supported non-Darwin release asset.
+    # P1.10: one non-Darwin lane on the published engine; `windows-engine-smoke` is the win32 half (#216).
     needs: [changes, unit-tests]
     # `always()` so a SKIPPED `unit-tests` (rust-only PRs have `code == 'false'`)
     # doesn't skip-propagate and drop the heavy lane — `real_engine_e2e` includes
@@ -450,24 +454,96 @@ jobs:
         with:
           cache-path: |
             ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-engine-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-engine-
+          cache-key: ${{ runner.os }}-kesha-models-tts-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
           ffmpeg-provider: apt
+          install-args: --tts en ru
+          engine-dir: ~/.cache/kesha/engine
+          install-log: kesha-install.log
+          cache-write: "false"
 
       - name: 🚬 Smoke published Linux engine
         shell: bash
         run: |
           kesha status
           kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-linux-smoke.json
-          bun -e '
-            const output = await Bun.file("/tmp/kesha-linux-smoke.json").json();
-            if (!Array.isArray(output) || output.length !== 1) {
-              throw new Error("expected exactly one transcription result");
-            }
-            if (!output[0].text || output[0].text.length < 5) {
-              throw new Error("expected non-empty transcription text");
-            }
-          '
+          bun .github/scripts/assert-transcript.ts /tmp/kesha-linux-smoke.json
+
+      # Synthesis was unproven on every non-Darwin platform (#464).
+      - name: 🗣️ Synthesis round-trip
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts /tmp/kesha-linux-synth
+
+  windows-engine-smoke:
+    # Cold `kesha install` on purpose: pre-seeding the engine skips `fetchEngineBinary`, where the #216 refusal lived.
+    needs: [changes, unit-tests]
+    # `always()` so a legitimately skipped `unit-tests` on a rust-only PR doesn't skip-propagate (#274).
+    if: |
+      always() &&
+      needs.changes.result == 'success' &&
+      needs.unit-tests.result != 'failure' &&
+      needs.unit-tests.result != 'cancelled' &&
+      (
+        github.event_name == 'schedule' ||
+        (
+          needs.changes.outputs.real_engine_e2e == 'true' &&
+          !startsWith(github.head_ref, 'release/') &&
+          !startsWith(github.event.head_commit.message, 'chore(release):')
+        )
+      )
+    runs-on: windows-latest
+    # Higher than the Linux lane's 12: slower model downloads, and the ru voice doubles the payload.
+    timeout-minutes: 30
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 🔊 Cold install the published Windows engine
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          cache-path: |
+            ~/.cache/kesha
+          cache-key: ${{ runner.os }}-kesha-models-tts-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          ffmpeg-provider: skip
+          install-args: --tts en ru
+          engine-dir: ~/.cache/kesha/engine
+          install-log: kesha-install.log
+          cache-write: "false"
+
+      - name: 🔥 Assert the ASR warm-up actually ran
+        shell: bash
+        run: bun .github/scripts/assert-install-warmup.ts kesha-install.log
+
+      - name: 🚬 Smoke the installed engine
+        shell: bash
+        run: |
+          kesha status
+          kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > kesha-win-smoke.json
+          bun .github/scripts/assert-transcript.ts kesha-win-smoke.json
+
+      - name: 🗣️ Synthesis round-trip
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts kesha-win-synth
+
+      # Only meaningful without KESHA_ENGINE_BIN, which makes performInstall skip the pre-flight.
+      - name: 🚫 Reject --coreml on Windows
+        shell: bash
+        run: |
+          if kesha install --coreml 2> coreml-reject.log; then
+            echo "FAIL: \`kesha install --coreml\` succeeded on Windows" >&2
+            exit 1
+          fi
+          grep -qi onnx coreml-reject.log || {
+            echo "FAIL: rejection did not name the ONNX backend" >&2
+            cat coreml-reject.log >&2
+            exit 1
+          }
 
   release-branch-engine-smoke:
     # P1.11: release branches cannot download the not-yet-published engine
@@ -483,7 +559,8 @@ jobs:
       ) &&
       needs.unit-tests.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 25 before the TTS models were added to this lane.
+    timeout-minutes: 35
     env:
       KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-release-smoke
       KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
@@ -527,22 +604,103 @@ jobs:
           cache-key: ${{ runner.os }}-kesha-release-smoke-v1
           cache-restore-keys: ${{ runner.os }}-kesha-release-smoke-
           ffmpeg-provider: apt
-          install-args: --onnx
+          install-args: --onnx --tts en ru
 
       - name: 🚬 Smoke release branch local engine
         shell: bash
         run: |
           kesha status
           kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-release-smoke.json
+          bun .github/scripts/assert-transcript.ts /tmp/kesha-release-smoke.json
+
+      # The about-to-ship artifact needs the same synthesis proof as the published one (#464).
+      - name: 🗣️ Synthesis round-trip
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts /tmp/kesha-release-synth
+
+  release-branch-windows-smoke:
+    # The win32 half of P1.11: windows-engine-smoke is guarded off release branches, whose tag is unpublished (#216, #464).
+    needs: [changes, unit-tests]
+    if: |
+      needs.changes.outputs.integration == 'true' &&
+      (
+        startsWith(github.head_ref, 'release/') ||
+        startsWith(github.event.head_commit.message, 'chore(release):')
+      ) &&
+      needs.unit-tests.result == 'success'
+    runs-on: windows-latest
+    # Higher than the Linux lane's 35: a cold MSVC build of the engine dominates this job.
+    timeout-minutes: 50
+    env:
+      KESHA_CACHE_DIR: ${{ github.workspace }}\.kesha-release-smoke
+      # Cargo emits kesha-engine.exe — the Linux lane's extensionless path does not carry over.
+      KESHA_ENGINE_BIN: ${{ github.workspace }}\rust\target\release\kesha-engine.exe
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: rust
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      - name: 🔗 Pin MSVC linker
+        shell: pwsh
+        # Git for Windows ships a GNU link.exe that shadows MSVC's under `shell: bash` (rust-test.yml).
+        run: |
+          $linkPath = (Get-Command link.exe |
+            Where-Object { $_.Source -notlike "*Git*usr*" } |
+            Select-Object -First 1).Source
+          if (-not $linkPath) { Write-Error "MSVC link.exe not found"; exit 1 }
+          Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linkPath"
+
+      - name: 🎧 Allow legacy cmake_minimum_required
+        shell: pwsh
+        # opusic-sys falls back to a cmake build of vendored libopus whose CMakeLists predates cmake 4.
+        run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
+
+      - name: 🦀 Build local Windows engine
+        shell: bash
+        run: cd rust && cargo build --release --features onnx,tts --no-default-features
+
+      - name: 🧾 Mark local engine version
+        shell: bash
+        run: |
           bun -e '
-            const output = await Bun.file("/tmp/kesha-release-smoke.json").json();
-            if (!Array.isArray(output) || output.length !== 1) {
-              throw new Error("expected exactly one transcription result");
-            }
-            if (!output[0].text || output[0].text.length < 5) {
-              throw new Error("expected non-empty transcription text");
-            }
+            const pkg = await Bun.file("package.json").json();
+            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
           '
+
+      - name: 🔊 Install models through local backend
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          cache-path: |
+            ${{ github.workspace }}\.kesha-release-smoke
+          cache-key: ${{ runner.os }}-kesha-release-smoke-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-release-smoke-
+          ffmpeg-provider: skip
+          install-args: --onnx --tts en ru
+
+      - name: 🚬 Smoke release branch local engine
+        shell: bash
+        run: |
+          kesha status
+          kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > kesha-release-smoke.json
+          bun .github/scripts/assert-transcript.ts kesha-release-smoke.json
+
+      - name: 🗣️ Synthesis round-trip
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts kesha-release-synth
 
   tts-e2e:
     # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
@@ -766,7 +924,9 @@ jobs:
       - integration-tests
       - integration-tests-full
       - published-engine-smoke
+      - windows-engine-smoke
       - release-branch-engine-smoke
+      - release-branch-windows-smoke
       - tts-e2e
       - raycast-lint
       - openspec-validate
