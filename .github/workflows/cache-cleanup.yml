@@ -1,0 +1,50 @@
+name: "🧹 Reclaim PR caches"
+
+# Drops a pull request's cache entries once it closes.
+#
+# Per GitHub's cache access rules, an entry written during a pull_request run is
+# scoped to that PR's merge ref: only re-runs of the same PR can restore it, and
+# the base branch and every other PR are locked out. That is useful while the PR
+# is open (a re-run skips the download) and pure dead weight the moment it
+# closes — it can never be read again, but it keeps occupying the repo's 10 GB
+# budget until the 7-day eviction TTL.
+#
+# The budget matters because eviction is LRU across the whole repo: leftovers
+# from closed PRs push out the shared main-scoped entries every branch reads.
+# One stale PR here held ~4 GB in Swatinem rust-cache and Parakeet model entries.
+#
+# Mirrors the cleanup workflow in GitHub's own docs:
+# https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manage-caches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  reclaim:
+    runs-on: ubuntu-latest
+    permissions:
+      # Deleting cache entries requires write on the Actions scope; nothing else
+      # in this job touches the repository, so no checkout and no other scopes.
+      actions: write
+    steps:
+      - name: Delete caches scoped to this PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          set -uo pipefail
+          keys=$(gh cache list --ref "$BRANCH" --limit 100 --json id --jq '.[].id')
+          if [ -z "$keys" ]; then
+            echo "No caches scoped to $BRANCH."
+            exit 0
+          fi
+          # Best-effort: a concurrent eviction can delete an entry between the
+          # list and the delete, and that must not fail the run.
+          for key in $keys; do
+            gh cache delete "$key" && echo "deleted $key" || echo "skipped $key (already gone)"
+          done

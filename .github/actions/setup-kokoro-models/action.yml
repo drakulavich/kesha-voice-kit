@@ -4,11 +4,15 @@ description: >
   cache used by every TTS test lane (rust-test nextest + ci.yml say-e2e). One cache
   key per OS so the macOS lanes share a single ~1.3 GB cache instead of duplicating it.
 
-  Restore-only by design: writing is the job of cache-seed.yml on main. A cache
-  saved from a PR run lives in that PR's own scope and is invisible to every other
-  PR, so letting the test lanes save meant each open PR minted its own ~1.1 GB copy
-  per OS. That is what pushed the repo past GitHub's 10 GB cache budget and evicted
-  the Parakeet CoreML bundle daily, making coreml-regression re-download it (#661).
+  Restore-only by design: writing is the job of cache-seed.yml on main. GitHub
+  scopes a cache written during a pull_request run to that PR's merge ref, so only
+  re-runs of the same PR can restore it — the base branch and every other PR are
+  locked out. Letting the test lanes save therefore bought a faster re-run of one
+  PR at the price of a ~1.1 GB copy per OS per open PR, which pushed the repo past
+  the 10 GB budget and evicted the shared Parakeet CoreML bundle daily (#661).
+
+  A main-scoped entry is strictly better here: PRs are allowed to restore from the
+  default branch, so one copy serves every PR including its first run.
 
 inputs:
   cache-dir:
