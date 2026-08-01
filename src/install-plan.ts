@@ -3,6 +3,7 @@ import { humanBytes } from "./format";
 import { dirname, join } from "path";
 import { getEngineBinPath } from "./engine";
 import { SIDECARS } from "./engine-install";
+import { engineTarget } from "./engine-targets";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { engineVersion, packageVersion } from "./package-info";
@@ -105,16 +106,8 @@ function sumFiles(files: PlanFile[]): number {
 }
 
 function engineAssetForPlatform(): ReleaseAssetSpec | null {
-  if (process.platform === "darwin" && process.arch === "arm64") {
-    return { assetName: "kesha-engine-darwin-arm64", sizeBytes: 59_621_264 };
-  }
-  if (process.platform === "linux" && process.arch === "x64") {
-    return { assetName: "kesha-engine-linux-x64", sizeBytes: 62_897_808 };
-  }
-  if (process.platform === "win32" && process.arch === "x64") {
-    return { assetName: "kesha-engine-windows-x64.exe", sizeBytes: 63_447_040 };
-  }
-  return null;
+  const target = engineTarget();
+  return target && { assetName: target.assetName, sizeBytes: target.sizeBytes };
 }
 
 function filesCached(cacheRoot: string, files: PlanFile[]): boolean {

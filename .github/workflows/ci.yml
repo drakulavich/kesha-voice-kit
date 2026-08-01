@@ -167,6 +167,11 @@ jobs:
       - name: 🧾 Check release manifest metadata
         run: bun run check:release-manifest
 
+      - name: 🎯 Check engine targets match the published release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bun run check:engine-targets
+
   homebrew-formula:
     needs: changes
     if: needs.changes.outputs.homebrew == 'true'
@@ -546,10 +551,8 @@ jobs:
           }
 
   release-branch-engine-smoke:
-    # P1.11: release branches cannot download the not-yet-published engine
-    # asset, but they still need an end-to-end CLI/backend gate. Build the
-    # Linux release-shaped engine locally, mark it as the package's engine
-    # version, install models through that binary, then smoke the wrapper.
+    # P1.11: a release branch cannot download its own engine — the tag does not exist until
+    # un-drafting — so build it locally and smoke that instead (#216, #464).
     needs: [changes, unit-tests]
     if: |
       needs.changes.outputs.integration == 'true' &&
@@ -558,12 +561,25 @@ jobs:
         startsWith(github.event.head_commit.message, 'chore(release):')
       ) &&
       needs.unit-tests.result == 'success'
-    runs-on: ubuntu-latest
-    # 25 before the TTS models were added to this lane.
-    timeout-minutes: 35
+    strategy:
+      # A network flake on one platform must not cancel the other's verification.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            ffmpeg-provider: apt
+            engine-bin: kesha-engine
+            timeout: 35
+          # Cargo emits the .exe suffix, and a cold MSVC build dominates the job.
+          - os: windows-latest
+            ffmpeg-provider: skip
+            engine-bin: kesha-engine.exe
+            timeout: 50
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
     env:
       KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-release-smoke
-      KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
+      KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/${{ matrix.engine-bin }}
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -582,14 +598,37 @@ jobs:
           workspaces: rust
 
       - name: 🎧 Install system audio deps
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
 
-      - name: 🦀 Build local Linux engine
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        if: runner.os == 'Windows'
+
+      - name: 🔗 Pin MSVC linker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # Git for Windows ships a GNU link.exe that shadows MSVC's under `shell: bash` (rust-test.yml).
+        run: |
+          $linkPath = (Get-Command link.exe |
+            Where-Object { $_.Source -notlike "*Git*usr*" } |
+            Select-Object -First 1).Source
+          if (-not $linkPath) { Write-Error "MSVC link.exe not found"; exit 1 }
+          Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linkPath"
+
+      - name: 🎧 Allow legacy cmake_minimum_required
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # opusic-sys falls back to a cmake build of vendored libopus whose CMakeLists predates cmake 4.
+        run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
+
+      - name: 🦀 Build local engine
+        shell: bash
         run: cd rust && cargo build --release --features onnx,tts --no-default-features
 
       - name: 🧾 Mark local engine version
+        shell: bash
         run: |
           bun -e '
             const pkg = await Bun.file("package.json").json();
@@ -603,93 +642,9 @@ jobs:
             ${{ github.workspace }}/.kesha-release-smoke
           cache-key: ${{ runner.os }}-kesha-release-smoke-v1
           cache-restore-keys: ${{ runner.os }}-kesha-release-smoke-
-          ffmpeg-provider: apt
+          ffmpeg-provider: ${{ matrix.ffmpeg-provider }}
           install-args: --onnx --tts en ru
-
-      - name: 🚬 Smoke release branch local engine
-        shell: bash
-        run: |
-          kesha status
-          kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-release-smoke.json
-          bun .github/scripts/assert-transcript.ts /tmp/kesha-release-smoke.json
-
-      # The about-to-ship artifact needs the same synthesis proof as the published one (#464).
-      - name: 🗣️ Synthesis round-trip
-        shell: bash
-        run: bun .github/scripts/smoke-synthesis.ts /tmp/kesha-release-synth
-
-  release-branch-windows-smoke:
-    # The win32 half of P1.11: windows-engine-smoke is guarded off release branches, whose tag is unpublished (#216, #464).
-    needs: [changes, unit-tests]
-    if: |
-      needs.changes.outputs.integration == 'true' &&
-      (
-        startsWith(github.head_ref, 'release/') ||
-        startsWith(github.event.head_commit.message, 'chore(release):')
-      ) &&
-      needs.unit-tests.result == 'success'
-    runs-on: windows-latest
-    # Higher than the Linux lane's 35: a cold MSVC build of the engine dominates this job.
-    timeout-minutes: 50
-    env:
-      KESHA_CACHE_DIR: ${{ github.workspace }}\.kesha-release-smoke
-      # Cargo emits kesha-engine.exe — the Linux lane's extensionless path does not carry over.
-      KESHA_ENGINE_BIN: ${{ github.workspace }}\rust\target\release\kesha-engine.exe
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: true
-
-      - name: 🍞 Setup Bun workspace
-        uses: ./.github/actions/setup-bun
-
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
-        with:
-          toolchain: stable
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          workspaces: rust
-
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-
-      - name: 🔗 Pin MSVC linker
-        shell: pwsh
-        # Git for Windows ships a GNU link.exe that shadows MSVC's under `shell: bash` (rust-test.yml).
-        run: |
-          $linkPath = (Get-Command link.exe |
-            Where-Object { $_.Source -notlike "*Git*usr*" } |
-            Select-Object -First 1).Source
-          if (-not $linkPath) { Write-Error "MSVC link.exe not found"; exit 1 }
-          Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linkPath"
-
-      - name: 🎧 Allow legacy cmake_minimum_required
-        shell: pwsh
-        # opusic-sys falls back to a cmake build of vendored libopus whose CMakeLists predates cmake 4.
-        run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
-
-      - name: 🦀 Build local Windows engine
-        shell: bash
-        run: cd rust && cargo build --release --features onnx,tts --no-default-features
-
-      - name: 🧾 Mark local engine version
-        shell: bash
-        run: |
-          bun -e '
-            const pkg = await Bun.file("package.json").json();
-            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
-          '
-
-      - name: 🔊 Install models through local backend
-        uses: ./.github/actions/install-kesha-backend
-        with:
-          cache-path: |
-            ${{ github.workspace }}\.kesha-release-smoke
-          cache-key: ${{ runner.os }}-kesha-release-smoke-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-release-smoke-
-          ffmpeg-provider: skip
-          install-args: --onnx --tts en ru
+          cache-write: "false"
 
       - name: 🚬 Smoke release branch local engine
         shell: bash
@@ -926,7 +881,6 @@ jobs:
       - published-engine-smoke
       - windows-engine-smoke
       - release-branch-engine-smoke
-      - release-branch-windows-smoke
       - tts-e2e
       - raycast-lint
       - openspec-validate

@@ -57,7 +57,8 @@
     "check:workflows": "bun .github/scripts/check-workflows.ts",
     "check:specs": "bunx @fission-ai/openspec@1.4.1 validate --specs --strict",
     "check:release-manifest": "bun .github/scripts/release-manifest.mjs --check",
-    "check:versions": "bun .github/scripts/check-versions.ts"
+    "check:versions": "bun .github/scripts/check-versions.ts",
+    "check:engine-targets": "bun .github/scripts/check-engine-targets.ts"
   },
   "keywords": [
     "asr",
