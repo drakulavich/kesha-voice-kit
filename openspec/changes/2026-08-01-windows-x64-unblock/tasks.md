@@ -40,7 +40,7 @@ is just enforced by CI on this PR instead of by PR ordering.
       log says it downloaded
 - [x] 1.9 `release-branch-engine-smoke` gains `--tts en ru` and the same synthesis script, so
       the about-to-ship artifact is covered too, not only the published one
-- [ ] 1.10 Record the outcome here (pass, or the exact failure)
+- [x] 1.10 Outcome recorded below
 
 ## 2. Remove the stale platform gate
 
@@ -74,3 +74,36 @@ is just enforced by CI on this PR instead of by PR ordering.
 ## 4. Archive
 
 - [ ] 4.1 Move this change to `openspec/changes/archive/` once CI is green on the Windows lane
+
+## Outcome
+
+`windows-engine-smoke` passed on 2026-08-01 (run 30707424619, 3m38s), against the published
+v1.24.7 `kesha-engine-windows-x64.exe` fetched by a cold `kesha install`:
+
+```
+Waiting for the engine binary to be released by the system...
+Engine binary downloaded (v1.24.7).
+ok: ASR backend warmed up during install
+ok: en-am_michael synthesised 355258 bytes
+ok: en-am_michael round-tripped to ", The quick brown fox jumps over the lazy dog."
+ok: ru-vosk-m02 synthesised 219194 bytes
+ok: ru-vosk-m02 round-tripped to "Проверка синтеза речи на русском языке."
+```
+
+**Issue #216's last acceptance criterion is met**: `kesha say --voice ru-vosk-m02` produces a
+valid WAV on Windows — demonstrated rather than assumed, for the first time since the vendoring
+landed on 2026-04-30. `published-engine-smoke` passed the same round-trip on Linux.
+
+The lane paid for itself before it went green. Three defects it found, none of which any
+existing test could have:
+
+1. `streamResponseToFile` never awaited `writer.end()`, so the write handle outlived the
+   download and the engine could not be spawned — `EBUSY` 15 ms later. Latent on Linux too, as
+   `ETXTBSY`.
+2. A security scanner holds a newly written 60 MB PE; the `Waiting for...` line above is that
+   lock being waited out. Without it the first `kesha install` on a stock Windows machine fails.
+3. `defaultEngineBinPath` wrote the `.exe` asset to an extensionless path.
+
+Two Open Issues from the proposal are now closed by this evidence: the Windows synthesis
+criterion, and the install-time warm-up, which is asserted rather than assumed because it is
+non-fatal by design.
