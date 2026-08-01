@@ -12,11 +12,26 @@ set -euo pipefail
 DEST="${1:?usage: download-kokoro.sh <dest_dir>}"
 mkdir -p "$DEST"
 
+# Every download in this script is guarded by a `! -f` check, which makes a
+# truncated file permanently indistinguishable from a complete one: `curl -o`
+# leaves a stump behind when a transfer dies mid-flight, and every later run then
+# treats it as "already have it". Land the bytes under a temp name and rename
+# only once curl reports success, so a failed transfer leaves nothing.
+#
+# This matters more since cache-seed.yml persists whatever this produces to a
+# main-scoped cache under an immutable key — a stump saved once is served to
+# every PR until the key rotates.
+fetch() {
+  local dest="$1" url="$2"
+  curl -fL -o "$dest.part" "$url"
+  mv "$dest.part" "$dest"
+}
+
 if [[ ! -f "$DEST/model.onnx" ]]; then
   echo "Downloading Kokoro model.onnx (kokoro-onnx official release)..."
   # Mirrors rust/src/models.rs::kokoro_manifest URL — see #207 for why we
   # switched off the HF onnx-community variant.
-  curl -fL -o "$DEST/model.onnx" \
+  fetch "$DEST/model.onnx" \
     https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
 fi
 
@@ -24,7 +39,7 @@ if [[ ! -f "$DEST/am_michael.bin" ]]; then
   # Default voice is am_michael per CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE".
   # rust-test.yml's run-cargo-test.sh gates Kokoro e2e tests on this filename.
   echo "Downloading Kokoro am_michael.bin..."
-  curl -fL -o "$DEST/am_michael.bin" \
+  fetch "$DEST/am_michael.bin" \
     https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin
 fi
 
@@ -38,15 +53,26 @@ download_if_missing() {
   local rel="$1"
   if [[ ! -f "$VOSK_DIR/$rel" ]]; then
     echo "Downloading Vosk $rel..."
-    curl -fL -o "$VOSK_DIR/$rel" "$VOSK_BASE/$rel"
+    fetch "$VOSK_DIR/$rel" "$VOSK_BASE/$rel"
   fi
 }
-download_if_missing model.onnx &
-download_if_missing dictionary &
-download_if_missing config.json &
-download_if_missing bert/model.onnx &
-download_if_missing bert/vocab.txt &
-wait
+# Bare `wait` reports success even when a background job failed, so a partial
+# bundle used to reach the caller as exit 0 — and cache-seed.yml would then
+# persist it on main under an immutable key that never self-heals. Wait on each
+# PID and propagate the first failure instead.
+vosk_pids=()
+for rel in model.onnx dictionary config.json bert/model.onnx bert/vocab.txt; do
+  download_if_missing "$rel" &
+  vosk_pids+=("$!")
+done
+vosk_failed=0
+for pid in "${vosk_pids[@]}"; do
+  wait "$pid" || vosk_failed=1
+done
+if [[ "$vosk_failed" -ne 0 ]]; then
+  echo "error: at least one Vosk download failed; refusing to report a partial bundle" >&2
+  exit 1
+fi
 
 ls -lh "$DEST"
 ls -lh "$VOSK_DIR"
@@ -74,7 +100,7 @@ VOICE_BASE="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/m
 for v in em_alex ff_siwis im_nicola pm_alex; do
   if [[ ! -f "$KOKORO_DIR/voices/$v.bin" ]]; then
     echo "Downloading Kokoro voice $v.bin..."
-    curl -fL -o "$KOKORO_DIR/voices/$v.bin" "$VOICE_BASE/$v.bin"
+    fetch "$KOKORO_DIR/voices/$v.bin" "$VOICE_BASE/$v.bin"
   fi
 done
 
@@ -87,7 +113,7 @@ G2P_BASE="https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolv
 for f in encoder_model decoder_model decoder_with_past_model; do
   if [[ ! -f "$G2P_DIR/$f.onnx" ]]; then
     echo "Downloading CharsiuG2P $f.onnx..."
-    curl -fL -o "$G2P_DIR/$f.onnx" "$G2P_BASE/$f.onnx"
+    fetch "$G2P_DIR/$f.onnx" "$G2P_BASE/$f.onnx"
   fi
 done
 

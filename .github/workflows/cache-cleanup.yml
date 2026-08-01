@@ -1,0 +1,48 @@
+name: "🧹 Reclaim PR caches"
+
+# Drops a pull request's cache entries once it closes.
+#
+# A cache written during a pull_request run is scoped to that PR's merge ref, so
+# once the PR closes nobody can ever read it again — yet it holds repo budget
+# until the 7-day TTL, and eviction is LRU across the whole repo, so the dead
+# weight pushes out the shared main-scoped entries every branch reads. See the
+# header of cache-seed.yml for the budget incident this belongs to (#661).
+#
+# Applies to every writer under that ref, not just the model bundles: Swatinem
+# rust-cache entries, bun caches, the Parakeet CoreML bundle.
+
+on:
+  # pull_request_target, not pull_request, for two reasons — both about actually
+  # reclaiming rather than appearing to:
+  #   1. A fork PR's GITHUB_TOKEN is read-only no matter what `permissions:`
+  #      asks for, so `pull_request` could never delete a fork PR's caches —
+  #      exactly the entries nobody will ever read again.
+  #   2. pull_request_target runs the workflow file from the default branch, so
+  #      PRs opened before this file existed are still cleaned up.
+  # The elevated token is safe here only because this job never checks out or
+  # executes PR-controlled code: it runs one `gh` command against a ref built
+  # from the PR number and nothing else. Do not add a checkout step.
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  reclaim:
+    runs-on: ubuntu-latest
+    permissions:
+      # Deleting cache entries needs write on the Actions scope. Nothing else in
+      # this job touches the repository, so every other scope stays unset.
+      actions: write
+    steps:
+      - name: Delete caches scoped to this PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        # --all handles listing, paging past the 100-entry cap, and deleting;
+        # --succeed-on-no-caches keeps "the PR cached nothing" from failing the
+        # job. Any other failure (auth, rate limit) still exits non-zero rather
+        # than reading as "nothing to reclaim".
+        run: |
+          gh cache delete --all --succeed-on-no-caches \
+            --ref "refs/pull/${{ github.event.pull_request.number }}/merge"
