@@ -155,9 +155,13 @@ export interface EnginePreflightResult {
 
 const MISSING_ENGINE_MARKER = "not installed";
 // A corrupt binary is not repaired by a plain `kesha install`: that hits the
-// cached-engine path and only re-trusts it. `--no-cache` forces the re-download
-// (`cacheValid = versionMatches && (!noCache || !canWriteEngineDir)`).
-const REPAIR_HINT = "Run `kesha install --no-cache` to re-download the engine.";
+// cached-engine path and only re-trusts it. `--no-cache` forces the re-download,
+// except on a read-only engine dir (Nix store), where it is deliberately a no-op
+// (`cacheValid = versionMatches && (!noCache || !canWriteEngineDir)`). The probe
+// cannot tell the two installs apart, so the hint names both rather than
+// promising a fix that would silently skip.
+const REPAIR_HINT =
+  "Run `kesha install --no-cache` to re-download the engine. On a read-only (Nix) install, repair it through your package manager instead.";
 
 function runKesha(spawn: KeshaSpawn, args: string[], deps: ProbeDeps) {
   const run = deps.execFile ?? execFileAsync;

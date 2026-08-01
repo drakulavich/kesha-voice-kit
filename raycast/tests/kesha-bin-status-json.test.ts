@@ -63,6 +63,9 @@ describe("probeEngineAvailability — structured status (#647)", () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("unusable");
     expect(result.hint).toContain("--no-cache");
+    // A read-only (Nix) install ignores --no-cache for the engine, so the hint
+    // must not promise a fix those users cannot get.
+    expect(result.hint).toContain("read-only");
   });
 
   it("fails closed on JSON that breaks the contract instead of matching prose", async () => {

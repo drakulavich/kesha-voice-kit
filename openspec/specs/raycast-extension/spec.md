@@ -400,7 +400,10 @@ will fail during Transcription. The finish-setup view SHALL distinguish this cas
 from a never-installed Engine in both its message and its hint, because the
 remedy differs: a plain `kesha install` takes the cached-engine path and only
 re-trusts an existing binary, so repairing one requires `kesha install
---no-cache`.
+--no-cache`. On a read-only engine directory (a Nix-store install) that flag is
+deliberately a no-op, and the probe cannot tell the two topologies apart, so the
+hint SHALL name both routes rather than promising a repair that would silently
+skip.
 
 When the resolved CLI is older than the machine-readable output and therefore
 does not produce it, the probe SHALL fall back to the previous prose marker
