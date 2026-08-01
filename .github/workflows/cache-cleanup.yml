@@ -2,19 +2,14 @@ name: "🧹 Reclaim PR caches"
 
 # Drops a pull request's cache entries once it closes.
 #
-# Per GitHub's cache access rules, an entry written during a pull_request run is
-# scoped to that PR's merge ref: only runs of that same PR can restore it, and
-# the base branch and every other PR are locked out. That is useful while the PR
-# is open (a later push or re-run skips the download) and pure dead weight the
-# moment it closes — it can never be read again, but it keeps occupying the
-# repo's 10 GB budget until the 7-day eviction TTL.
+# A cache written during a pull_request run is scoped to that PR's merge ref, so
+# once the PR closes nobody can ever read it again — yet it holds repo budget
+# until the 7-day TTL, and eviction is LRU across the whole repo, so the dead
+# weight pushes out the shared main-scoped entries every branch reads. See the
+# header of cache-seed.yml for the budget incident this belongs to (#661).
 #
-# The budget matters because eviction is LRU across the whole repo: leftovers
-# from closed PRs push out the shared main-scoped entries every branch reads.
-# One stale PR here held ~4 GB in Swatinem rust-cache and Parakeet model entries.
-#
-# Based on the cleanup workflow in GitHub's docs:
-# https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manage-caches
+# Applies to every writer under that ref, not just the model bundles: Swatinem
+# rust-cache entries, bun caches, the Parakeet CoreML bundle.
 
 on:
   # pull_request_target, not pull_request, for two reasons — both about actually
@@ -25,8 +20,8 @@ on:
   #   2. pull_request_target runs the workflow file from the default branch, so
   #      PRs opened before this file existed are still cleaned up.
   # The elevated token is safe here only because this job never checks out or
-  # executes PR-controlled code: it runs `gh` against a ref built from the PR
-  # number and nothing else. Do not add a checkout step.
+  # executes PR-controlled code: it runs one `gh` command against a ref built
+  # from the PR number and nothing else. Do not add a checkout step.
   pull_request_target:
     types: [closed]
 
@@ -44,44 +39,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          BRANCH: refs/pull/${{ github.event.pull_request.number }}/merge
+        # --all handles listing, paging past the 100-entry cap, and deleting;
+        # --succeed-on-no-caches keeps "the PR cached nothing" from failing the
+        # job. Any other failure (auth, rate limit) still exits non-zero rather
+        # than reading as "nothing to reclaim".
         run: |
-          set -euo pipefail
-
-          total=0
-          # `gh cache list` caps at 100 per call, so page until one comes back
-          # empty. A cache-heavy PR (one Swatinem key per job per commit, plus
-          # bun and the model bundles) can exceed a single page, and a partial
-          # reclaim keeps charging the budget it was meant to free.
-          #
-          # `set -e` plus a bare assignment means an auth or rate-limit failure
-          # fails the job instead of reading as "nothing left to delete" — the
-          # silent-success mode this workflow exists to avoid.
-          while :; do
-            ids=$(gh cache list --ref "$BRANCH" --limit 100 --json id --jq '.[].id')
-            if [ -z "$ids" ]; then
-              break
-            fi
-
-            deleted_this_page=0
-            for id in $ids; do
-              # Best-effort per entry: a concurrent eviction can remove one
-              # between the list and the delete, and losing that race is fine.
-              if gh cache delete "$id"; then
-                total=$((total + 1))
-                deleted_this_page=$((deleted_this_page + 1))
-              else
-                echo "skipped $id (already gone)"
-              fi
-            done
-
-            # Guard against spinning forever on entries that list but refuse to
-            # delete: without this, a page we cannot remove would be re-listed
-            # unchanged on every iteration.
-            if [ "$deleted_this_page" -eq 0 ]; then
-              echo "::warning::could not delete any of the $(echo "$ids" | wc -l | tr -d ' ') listed entries; giving up"
-              break
-            fi
-          done
-
-          echo "Deleted $total cache entries for $BRANCH."
+          gh cache delete --all --succeed-on-no-caches \
+            --ref "refs/pull/${{ github.event.pull_request.number }}/merge"

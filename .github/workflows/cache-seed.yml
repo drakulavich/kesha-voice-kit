@@ -12,17 +12,20 @@ name: "🌱 Seed shared caches"
 # Seeding here means one copy per OS, on main, readable by every PR. PR reads
 # refresh last-access, so the entries stay warm without anyone writing them.
 #
-# The `kokoro-models-v1-<os>-<hash>` key is duplicated in
-# .github/actions/setup-kokoro-models/action.yml (the read side); keep the two in
-# sync. The hash is over rust/ci/download-kokoro.sh, so changing the model set
-# rotates the key by itself.
+# Restore and download come from setup-kokoro-models, the same composite action
+# the PR lanes use, so the key and the download call have one definition. This
+# workflow only adds the two steps a reader must not have: the probe and the save.
 
 on:
   push:
     branches: [main]
+    # The key hashes rust/ci/download-kokoro.sh, so only a change to that file can
+    # make a re-seed necessary. Without this filter every push to main — up to 26
+    # a day here — spun three runners to probe a guaranteed hit.
+    paths: ["rust/ci/download-kokoro.sh"]
   # Eviction does not wait for pushes. Without this, a bundle evicted under budget
-  # pressure stays gone until someone happens to land on main, and every PR job in
-  # between pays a full cold download.
+  # pressure stays gone until someone happens to touch the download script, and
+  # every PR job in between pays a full cold download.
   schedule:
     - cron: "17 5 * * *"
   # Manual re-seed after a purge, without waiting for either of the above.
@@ -32,7 +35,9 @@ permissions:
   contents: read
 
 concurrency:
-  # One seeding run at a time; a queued run would only re-probe the same keys.
+  # One seeding run at a time. Deliberately not cancel-in-progress: a queued run
+  # only re-probes, while cancelling would throw away a multi-GB download already
+  # in flight.
   group: cache-seed
   cancel-in-progress: false
 
@@ -57,9 +62,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # lookup-only reports whether the exact key exists without downloading the
-      # payload, so the warm path — the overwhelmingly common one — never
-      # transfers the bundle it is protecting. cache-hit is only ever 'true' for
-      # an exact match, so a changed script always falls through to a re-seed.
+      # payload, so the warm path never transfers the bundle it is protecting.
+      # cache-hit is only ever 'true' for an exact match, so a changed script
+      # always falls through to a re-seed.
       - name: Probe cache
         id: probe
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -68,21 +73,13 @@ jobs:
           key: kokoro-models-v1-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
           lookup-only: true
 
-      # Only on a miss, and only then, pull the previous bundle so a model-set
-      # change tops up the delta instead of re-fetching everything.
-      - name: Warm-start from previous bundle
+      # Restores through the prefix key (so a model-set change tops up the delta
+      # instead of re-fetching ~1.1 GB) and downloads whatever is still missing.
+      - name: Populate models
         if: steps.probe.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/setup-kokoro-models
         with:
-          path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-models-v1-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
-          restore-keys: |
-            kokoro-models-v1-${{ runner.os }}
-
-      - name: Download TTS models
-        if: steps.probe.outputs.cache-hit != 'true'
-        shell: bash
-        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+          cache-dir: ${{ env.KOKORO_CACHE }}
 
       - name: Save TTS models
         if: steps.probe.outputs.cache-hit != 'true'
