@@ -14,7 +14,7 @@ vendoring plan it proposed. Three of its four acceptance criteria are demonstrab
 - `rust/vendor/vosk-tts/` exists and builds — the vendored crate compiles in every Rust lane.
 - `build-engine.yml` carries the `windows-latest` / `x86_64-pc-windows-msvc` row with
   `--features onnx,tts`, and release **v1.24.7 publishes `kesha-engine-windows-x64.exe`
-  (61 MB) with a sigstore attestation**.
+  (63,447,040 bytes) with a sigstore attestation**.
 - The Windows row is back in `rust-test.yml`; `test (windows-latest)` runs 393 tests green.
 
 The fourth — "`kesha say --voice ru-vosk-m02` produces a valid WAV on Windows" — was never
@@ -42,7 +42,7 @@ false negative with an unverified promise.
   `kesha say` and feeds it back through Transcription. This closes the last #216 acceptance
   criterion and the `Linux/Windows real-synth release smoke` item already tracked in ROADMAP
   under [#464](https://github.com/drakulavich/kesha-voice-kit/issues/464).
-- **Docs**: README platform line, the four "Blocked at install (#216)" rows and the
+- **Docs**: README platform line, the seven "Blocked at install (#216)" rows and the
   explanatory paragraph in `docs/product-positioning.md`, and the installation spec's Open
   Issue entry.
 

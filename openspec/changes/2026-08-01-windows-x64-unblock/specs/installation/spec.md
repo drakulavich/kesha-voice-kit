@@ -69,11 +69,17 @@ that require Apple frameworks — CoreML, `macos-*` Voice ids, Diarization, and 
 detection (text) — remain unavailable there and SHALL keep failing with their existing
 platform errors.
 
+The Engine SHALL be installed at a path the CLI can spawn on Windows. `defaultEngineBinPath`
+returns an extensionless `kesha-engine`, and the Windows release asset is a `.exe`; the install
+SHALL NOT depend on an unverified assumption that an extensionless PE is spawnable.
+
 #### Scenario: Installing on a Windows build agent
 
 - GIVEN the machine is win32-x64 with no Engine in the Model cache
+- AND `KESHA_ENGINE_BIN` is not set, so the download path is the one under test
 - WHEN Ira runs `kesha install --tts en`
 - THEN the Windows Engine binary and the requested TTS models are downloaded
+- AND the installed binary is spawnable at the path the CLI resolves
 - AND `kesha say "hello"` writes a playable WAV
 
 #### Scenario: Requesting a macOS-only capability on Windows
@@ -92,11 +98,13 @@ platform errors.
 
 > *Technical Note — sources: `src/engine-install.ts::getEngineBinaryName` (throws for
 > win32-x64 today, naming v1.5.0 while the repository is on v1.24.7),
-> `src/engine-install.ts::downloadEngine:386` (its only caller),
+> `src/engine-install.ts::fetchEngineBinary:386` (its only caller — reached from
+> `downloadEngine:527` only when the cached-version check fails, so an Engine already present
+> with a matching `.version` marker never touches the gate),
 > `src/install-plan.ts::engineAssetForPlatform` (already returns
 > `kesha-engine-windows-x64.exe`) and `src/install-plan.ts::buildEngineComponent` (attaches
 > the "blocked" note). The asset is published: release v1.24.7 carries
-> `kesha-engine-windows-x64.exe` (61 MB) plus its sigstore attestation, built by
+> `kesha-engine-windows-x64.exe` (63,447,040 bytes) plus its sigstore attestation, built by
 > `.github/workflows/build-engine.yml` with `--features onnx,tts`.*
 
 ### Requirement: Every shipped platform is verified end to end before release
@@ -152,4 +160,9 @@ cannot download its own Engine, because its tag does not exist until the release
   treat recording as macOS-only.
 - The install-time warm-up step's behavior on Windows is undocumented. `InstallArgs::no_warmup`
   describes warm-up as "~500 ms on the ONNX path (Linux/Windows)", which implies Windows was
-  considered, but no run has confirmed it.
+  considered, but no run has confirmed it. Note that warm-up runs by default yet is deliberately
+  non-fatal (`rust/src/cli/install.rs:74-84` warns and continues), so a green install on Windows
+  is not evidence the warm-up succeeded — the smoke lane has to assert on the warning line.
+- Whether an extensionless `kesha-engine` written by `fetchEngineBinary` is spawnable on Windows
+  is unverified, and no smoke lane that sets `KESHA_ENGINE_BIN` can answer it, because that
+  override points at a real `.exe`. Only the cold-install job settles it.
