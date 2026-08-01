@@ -25,7 +25,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       coreml: ${{ steps.filter.outputs.coreml }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         id: filter
         with:
@@ -54,7 +54,7 @@ jobs:
     if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
           toolchain: stable
@@ -92,7 +92,7 @@ jobs:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
       MACOSX_DEPLOYMENT_TARGET: "14.0"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
         if: matrix.os == 'macos-14'
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
@@ -186,7 +186,7 @@ jobs:
 
       - name: 📤 Upload JUnit
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rust-junit-${{ matrix.os }}
           path: rust/target/nextest/ci/junit.xml
@@ -225,7 +225,7 @@ jobs:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
       NEXTEST_PROFILE: ci
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
@@ -277,7 +277,7 @@ jobs:
 
       - name: 📤 Upload Ubuntu JUnit
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rust-junit-ubuntu-latest
           path: rust/target/nextest/ci/junit.xml
@@ -308,7 +308,7 @@ jobs:
 
       - name: 📤 Upload Rust coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-rust
           path: coverage/rust
@@ -322,7 +322,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
           toolchain: stable
@@ -367,7 +367,7 @@ jobs:
       NEXTEST_PROFILE: ci
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The regression fixture (03-review-pull-request.ogg) is a Git LFS
           # asset; the test fails fast on an unmaterialized pointer.
@@ -394,7 +394,7 @@ jobs:
       # saved back under this key — the fetch is bounded to the seed run and
       # named plainly here, honoring the no-silent-download contract.
       - name: 🎧 Cache Parakeet CoreML models
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/Library/Application Support/FluidAudio/Models
           # Key on the fluidaudio-rs pin (Cargo.lock). actions/cache never
@@ -416,7 +416,7 @@ jobs:
 
       - name: 📤 Upload JUnit
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rust-junit-coreml-regression
           path: rust/target/nextest/ci/junit.xml

@@ -1,34 +1,59 @@
 #!/usr/bin/env bun
 /**
- * Parse every `.github/workflows/*.yml` file and report syntax errors.
+ * Validate GitHub workflow and composite-action YAML plus immutable action refs.
  *
  * Replaces the ad-hoc `python3 -c "import yaml; yaml.safe_load(...)"` invocation
  * we were running before each workflow change. Same effect — surface syntax
  * errors locally before `git push` instead of finding them in CI — but uses
  * the bun toolchain so contributors don't need a python interpreter on PATH.
  *
- * Run via `bun run check:workflows`. Exits non-zero on any parse failure;
- * stays silent on success so it composes cleanly with other pre-push checks.
+ * Run via `bun run check:workflows`. Exits non-zero on syntax errors or mutable
+ * action references; stays silent on success so it composes cleanly with other
+ * pre-push checks.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse, YAMLParseError } from "yaml";
 
-const dir = ".github/workflows";
-const files = readdirSync(dir)
-  .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
-  .sort();
+const dirs = [".github/workflows", ".github/actions"];
+const files = dirs.flatMap((dir) => collectYamlFiles(dir)).sort();
 
 if (files.length === 0) {
-  console.error(`no workflow files found in ${dir}`);
+  console.error(`no workflow or action files found in ${dirs.join(", ")}`);
   process.exit(1);
 }
 
+function collectYamlFiles(dir: string): string[] {
+  return readdirSync(dir, { recursive: true })
+    .filter((entry) => typeof entry === "string" && /\.ya?ml$/.test(entry))
+    .map((entry) => join(dir, entry));
+}
+
+function requirePinnedActions(path: string, contents: string): string[] {
+  const errors: string[] = [];
+  const actionPattern = /^\s*uses:\s+([^\s#]+)(?:\s+#.*)?$/gm;
+
+  for (const match of contents.matchAll(actionPattern)) {
+    const reference = match[1];
+    if (reference.startsWith("./") || reference.startsWith("docker://")) continue;
+    if (!/@[0-9a-f]{40}$/i.test(reference)) {
+      errors.push(`${path}: external action must be pinned to a full commit SHA: ${reference}`);
+    }
+  }
+
+  return errors;
+}
+
 let failed = 0;
-for (const f of files) {
-  const path = join(dir, f);
+for (const path of files) {
   try {
-    parse(readFileSync(path, "utf8"));
+    const contents = readFileSync(path, "utf8");
+    parse(contents);
+    const errors = requirePinnedActions(path, contents);
+    if (errors.length > 0) {
+      failed += errors.length;
+      for (const error of errors) console.error(error);
+    }
   } catch (err) {
     failed += 1;
     if (err instanceof YAMLParseError) {
@@ -43,6 +68,6 @@ for (const f of files) {
 }
 
 if (failed > 0) {
-  console.error(`\n${failed} workflow file(s) failed to parse.`);
+  console.error(`\n${failed} workflow or action check(s) failed.`);
   process.exit(1);
 }

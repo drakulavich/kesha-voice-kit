@@ -14,11 +14,13 @@ runs:
   using: composite
   steps:
     - name: Cache TTS models
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.cache-dir }}
         key: kokoro-models-v1-${{ runner.os }}
 
     - name: Download TTS models (if cache miss)
       shell: bash
-      run: bash rust/ci/download-kokoro.sh "${{ inputs.cache-dir }}"
+      env:
+        KOKORO_CACHE_DIR: ${{ inputs.cache-dir }}
+      run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE_DIR"
