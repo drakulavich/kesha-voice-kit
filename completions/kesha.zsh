@@ -121,7 +121,8 @@ _kesha() {
     status)
       _arguments '--help[Show help]' \
         '-h[Show help]' \
-        '--disk[Include recursive cache disk usage]'
+        '--disk[Include recursive cache disk usage]' \
+        '--json[Output status as JSON]'
       ;;
     support-bundle)
       _arguments '--help[Show help]' \

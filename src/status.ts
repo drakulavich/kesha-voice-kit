@@ -1,8 +1,14 @@
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
-import { isEngineInstalled, getEngineBinPath, getEngineCapabilities } from "./engine";
+import {
+  isEngineInstalled,
+  getEngineBinPath,
+  getEngineCapabilities,
+  type EngineCapabilities,
+} from "./engine";
 import { installHint } from "./install-hint";
 import { log } from "./log";
+import { packageVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
 import { dirSizeBytes } from "./diagnostic-paths";
@@ -35,8 +41,60 @@ export interface ShowStatusOptions {
   disk?: boolean;
 }
 
-async function logEngineCapabilities(): Promise<void> {
-  const caps = await getEngineCapabilities().catch(() => null);
+export interface StatusDiskComponent {
+  label: string;
+  sizeBytes: number;
+}
+
+export interface StatusDiskUsage {
+  cachePath: string;
+  components: StatusDiskComponent[];
+  componentTotalBytes: number;
+  totalBytes: number;
+  fluidKokoro: { path: string; sizeBytes: number } | null;
+}
+
+/**
+ * Machine-readable `kesha status` payload (#647). Contract: every key is always
+ * present — absent values are null (or `[]` for voices), never omitted, so a
+ * consumer never distinguishes a missing key from a null value. `engine.installed`
+ * reports only that a binary exists; usability additionally requires
+ * `engine.capabilities` to be non-null.
+ */
+export interface StatusReport {
+  cliVersion: string;
+  engine: {
+    installed: boolean;
+    path: string;
+    capabilities: EngineCapabilities | null;
+  };
+  voices: string[];
+  runtime: { bun: string; platform: string; arch: string };
+  modelMirror: string | null;
+  hint: string | null;
+  disk: StatusDiskUsage | null;
+}
+
+export async function collectStatus(options: ShowStatusOptions = {}): Promise<StatusReport> {
+  const path = getEngineBinPath();
+  const installed = isEngineInstalled();
+  const capabilities = installed ? await getEngineCapabilities().catch(() => null) : null;
+
+  return {
+    cliVersion: packageVersion,
+    engine: { installed, path, capabilities },
+    voices: installed ? listInstalledVoices() : [],
+    runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
+    modelMirror: activeModelMirror(),
+    hint: installed
+      ? null
+      : `Run \`${installHint()}\` to download the engine and models.`,
+    // Absent engine means no disk walk, matching the human path (#647).
+    disk: installed && options.disk ? collectDiskUsage(path) : null,
+  };
+}
+
+function logEngineCapabilities(caps: EngineCapabilities | null): void {
   if (caps) {
     log.info(formatStatusLine("Backend", caps.backend, true));
     log.info(formatStatusLine("Protocol", `v${caps.protocolVersion}`, true));
@@ -46,8 +104,7 @@ async function logEngineCapabilities(): Promise<void> {
   }
 }
 
-function logInstalledVoices(): void {
-  const voices = listInstalledVoices();
+function logInstalledVoices(voices: string[]): void {
   if (voices.length === 0) return;
   log.info("TTS voices:");
   for (const v of voices) {
@@ -56,39 +113,36 @@ function logInstalledVoices(): void {
   log.info("");
 }
 
-export async function showStatus(options: ShowStatusOptions = {}): Promise<void> {
-  const binPath = getEngineBinPath();
-  const installed = isEngineInstalled();
+export function renderStatus(report: StatusReport): void {
+  const { installed, path, capabilities } = report.engine;
 
   log.info("Engine:");
-  log.info(formatStatusLine("Binary", installed ? binPath : null, installed));
+  log.info(formatStatusLine("Binary", installed ? path : null, installed));
 
   if (installed) {
-    await logEngineCapabilities();
+    logEngineCapabilities(capabilities);
   }
   log.info("");
 
-  log.info(formatStatusLine("Runtime", `Bun ${Bun.version}`, true));
-  log.info(formatStatusLine("Platform", `${process.platform} ${process.arch}`, true));
-  const mirror = activeModelMirror();
-  if (mirror) {
-    log.info(formatStatusLine("Mirror", mirror, true));
+  log.info(formatStatusLine("Runtime", `Bun ${report.runtime.bun}`, true));
+  log.info(
+    formatStatusLine("Platform", `${report.runtime.platform} ${report.runtime.arch}`, true),
+  );
+  if (report.modelMirror) {
+    log.info(formatStatusLine("Mirror", report.modelMirror, true));
   }
   log.info("");
 
   if (installed) {
-    logInstalledVoices();
-
-    if (options.disk) {
-      showDiskUsage(binPath);
-    }
+    logInstalledVoices(report.voices);
+    if (report.disk) showDiskUsage(report.disk);
   }
 
-  if (!installed) {
-    log.warn(`Run \`${installHint()}\` to download the engine and models.`);
-    return;
+  if (report.hint) {
+    log.warn(report.hint);
   }
 }
+
 
 function buildDiskComponents(cache: string, engineDir: string): Array<{ label: string; path: string }> {
   return [
@@ -101,11 +155,11 @@ function buildDiskComponents(cache: string, engineDir: string): Array<{ label: s
   ];
 }
 
-function logDiskRows(rows: Array<{ label: string; size: number }>, total: number, componentTotal: number): void {
+function logDiskRows(rows: StatusDiskComponent[], total: number, componentTotal: number): void {
   const labelWidth = Math.max(...rows.map((r) => r.label.length), "Total".length);
   for (const r of rows) {
     const pad = " ".repeat(labelWidth - r.label.length + 2);
-    log.info(`  ${r.label}:${pad}${humanBytes(r.size)}`);
+    log.info(`  ${r.label}:${pad}${humanBytes(r.sizeBytes)}`);
   }
   const totalPad = " ".repeat(labelWidth - "Total".length + 2);
   log.info(`  ${pc.bold("Total")}:${totalPad}${pc.bold(humanBytes(total))}`);
@@ -115,42 +169,51 @@ function logDiskRows(rows: Array<{ label: string; size: number }>, total: number
   }
 }
 
-function logFluidKokoroCache(): void {
-  const fluidKokoro = fluidKokoroCacheInfo();
-  if (!fluidKokoro.exists || fluidKokoro.sizeBytes <= 0) return;
+function logFluidKokoroCache(fluidKokoro: StatusDiskUsage["fluidKokoro"]): void {
+  if (!fluidKokoro) return;
   log.info("");
   log.info(`External caches (not included in Kesha total):`);
   log.info(`  FluidAudio Kokoro: ${humanBytes(fluidKokoro.sizeBytes)} (${fluidKokoro.path})`);
 }
 
-function showDiskUsage(binPath: string): void {
+function collectDiskUsage(binPath: string): StatusDiskUsage {
   const cache = keshaCacheDir();
   // Two levels up from the binary (`<cache>/engine/bin/`) so future engine-root siblings are counted.
   const engineDir = join(binPath, "..", "..");
 
-  const components = buildDiskComponents(cache, engineDir);
-
-  const rows: Array<{ label: string; size: number }> = [];
-  for (const c of components) {
-    const size = dirSizeBytes(c.path);
-    if (size > 0) rows.push({ label: c.label, size });
+  const components: StatusDiskComponent[] = [];
+  for (const c of buildDiskComponents(cache, engineDir)) {
+    const sizeBytes = dirSizeBytes(c.path);
+    if (sizeBytes > 0) components.push({ label: c.label, sizeBytes });
   }
 
-  if (rows.length === 0) return;
-
   // Sum cache root + engine dir separately so `KESHA_ENGINE_BIN` overrides outside the cache are still counted.
-  const componentTotal = rows.reduce((n, r) => n + r.size, 0);
   const cacheTotal = dirSizeBytes(cache);
-  const engineOutsideCache = engineDir.startsWith(cache)
-    ? 0
-    : dirSizeBytes(engineDir);
-  const total = cacheTotal + engineOutsideCache;
+  const engineOutsideCache = engineDir.startsWith(cache) ? 0 : dirSizeBytes(engineDir);
+  const fluidKokoro = fluidKokoroCacheInfo();
 
-  log.info(`Disk usage (${cache}):`);
-  logDiskRows(rows, total, componentTotal);
-  logFluidKokoroCache();
+  return {
+    cachePath: cache,
+    components,
+    componentTotalBytes: components.reduce((n, c) => n + c.sizeBytes, 0),
+    totalBytes: cacheTotal + engineOutsideCache,
+    fluidKokoro:
+      fluidKokoro.exists && fluidKokoro.sizeBytes > 0
+        ? { path: fluidKokoro.path, sizeBytes: fluidKokoro.sizeBytes }
+        : null,
+  };
+}
+
+function showDiskUsage(disk: StatusDiskUsage): void {
+  if (disk.components.length === 0) return;
+
+  log.info(`Disk usage (${disk.cachePath}):`);
+  logDiskRows(disk.components, disk.totalBytes, disk.componentTotalBytes);
+  logFluidKokoroCache(disk.fluidKokoro);
   log.info("");
-  log.info(pc.dim(`  To reset cache: rm -rf ${cache} — next \`kesha install\` re-downloads.`));
+  log.info(
+    pc.dim(`  To reset cache: rm -rf ${disk.cachePath} — next \`kesha install\` re-downloads.`),
+  );
   log.info("");
 }
 

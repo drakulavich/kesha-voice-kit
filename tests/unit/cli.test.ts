@@ -290,7 +290,8 @@ USAGE status [OPTIONS]
 
 OPTIONS
 
-  --disk    Include recursive cache disk usage (Default: false)`);
+  --disk    Include recursive cache disk usage (Default: false)
+  --json    Output status as JSON (Default: false)`);
   });
 
   test("say help matches the normalized golden output", async () => {

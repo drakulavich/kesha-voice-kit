@@ -364,10 +364,23 @@ export async function getEngineCapabilities(): Promise<EngineCapabilities | null
   const { stdout, exitCode } = await runEngine(["--capabilities-json"]);
   if (exitCode !== 0) return null;
   try {
-    const capabilities = JSON.parse(stdout) as EngineCapabilities;
+    const capabilities = parseCapabilities(JSON.parse(stdout));
+    if (!capabilities) return null;
     cachedEngineCapabilities = { binPath, mtime, capabilities };
     return capabilities;
   } catch {
     return null;
   }
+}
+
+// A non-null return has to mean "the engine described itself" — callers reach
+// straight for `.features.join()` and `.backend` (#647). Only the fields those
+// callers consume are checked, so a newer engine adding fields still validates.
+function parseCapabilities(parsed: unknown): EngineCapabilities | null {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const { protocolVersion, backend, features } = parsed as Record<string, unknown>;
+  if (typeof protocolVersion !== "number") return null;
+  if (typeof backend !== "string") return null;
+  if (!Array.isArray(features) || features.some((f) => typeof f !== "string")) return null;
+  return parsed as EngineCapabilities;
 }

@@ -57,6 +57,7 @@ kesha --json --timestamps audio.ogg        # JSON with timestamped segments
 kesha --toon audio.ogg                     # compact LLM-friendly TOON
 kesha status                               # show installed backend info
 kesha status --disk                        # + recursive cache disk usage
+kesha status --json                        # machine-readable, for scripts
 ```
 
 Multiple files get `head`-style headers; stdout is the transcript, stderr is errors — pipe-friendly:
