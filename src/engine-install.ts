@@ -365,6 +365,55 @@ async function refreshCachedEngine(
   }
 }
 
+/**
+ * Blocks until the freshly-downloaded engine can actually be spawned.
+ *
+ * A security scanner (Windows Defender is the one this was found on) holds a
+ * lock on a newly written 60 MB PE while it scans, and the first spawn fails
+ * with EBUSY — 15 ms after the download reported success (#216). The lock is
+ * transient, so probe until it clears rather than failing the install on it.
+ */
+export function isTransientSpawnLock(message: string): boolean {
+  return /\b(EBUSY|ETXTBSY|EACCES|EPERM)\b/.test(message);
+}
+
+export async function waitUntilSpawnable(
+  binPath: string,
+  deadlineMs = 60_000,
+): Promise<void> {
+  const startedAt = Date.now();
+  let lastError = "";
+
+  for (let delay = 100; ; delay = Math.min(delay * 2, 2_000)) {
+    try {
+      // A non-zero exit still proves the file spawned; only a throw means it is locked.
+      Bun.spawnSync([binPath, "--version"], { stdout: "ignore", stderr: "ignore" });
+      return;
+    } catch (e) {
+      lastError = errorMessage(e);
+      // Only a lock is worth waiting out — a missing or corrupt binary never becomes spawnable.
+      if (!isTransientSpawnLock(lastError)) {
+        throw new Error(
+          `Downloaded the engine to ${binPath} but it could not be started: ${lastError}\n` +
+            `  Fix: delete ${dirname(binPath)} and re-run \`kesha install\`.`,
+        );
+      }
+      if (Date.now() - startedAt + delay > deadlineMs) break;
+      if (delay === 100) {
+        log.progress("Waiting for the engine binary to be released by the system...");
+      }
+      await Bun.sleep(delay);
+    }
+  }
+
+  throw new Error(
+    `Downloaded the engine to ${binPath} but it is still locked after ` +
+      `${Math.round(deadlineMs / 1000)}s: ${lastError}\n` +
+      `  Fix: a security scanner is likely holding the file. Re-run \`kesha install\`, ` +
+      `or exclude ${dirname(binPath)} from real-time scanning.`,
+  );
+}
+
 /** Cold path: download the engine binary (and sidecars, concurrently). */
 async function fetchEngineBinary(
   binPath: string,
@@ -410,6 +459,7 @@ async function fetchEngineBinary(
   chmodSync(binPath, 0o755);
   darwinTrustBinary(binPath, "kesha-engine binary");
   writeInstalledEngineVersion(binPath, engineVersion);
+  await waitUntilSpawnable(binPath);
   log.success(`Engine binary downloaded (v${engineVersion}).`);
   await Promise.all(sidecarPromises);
 }

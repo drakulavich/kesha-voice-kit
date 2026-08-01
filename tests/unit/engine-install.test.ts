@@ -4,10 +4,12 @@ import {
   cleanupRetiredSidecars,
   getVersionMarkerPath,
   getEngineBinaryName,
+  isTransientSpawnLock,
+  waitUntilSpawnable,
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
 } from "../../src/engine-install";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { defaultEngineBinPath } from "../../src/paths";
@@ -172,5 +174,41 @@ describe("defaultEngineBinPath extension (#216)", () => {
     expect(getVersionMarkerPath(defaultEngineBinPath("win32"))).toMatch(
       /kesha-engine\.exe\.version$/,
     );
+  });
+});
+
+describe("waitUntilSpawnable (#216)", () => {
+  test("classifies lock errors as transient, everything else as fatal", () => {
+    expect(isTransientSpawnLock("EBUSY: resource busy or locked, uv_spawn")).toBe(true);
+    expect(isTransientSpawnLock("ETXTBSY: text file is busy, uv_spawn")).toBe(true);
+    expect(isTransientSpawnLock("ENOENT: no such file or directory")).toBe(false);
+    expect(isTransientSpawnLock("ENOEXEC: exec format error")).toBe(false);
+  });
+
+  test("returns once the binary spawns", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-"));
+    try {
+      const binPath = join(dir, "engine");
+      writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
+      chmodSync(binPath, 0o755);
+      expect(await waitUntilSpawnable(binPath)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A missing binary never becomes spawnable, so retrying it would just stall the
+  // install for the full deadline before failing anyway.
+  test("fails fast on a non-transient error instead of waiting out the deadline", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-missing-"));
+    try {
+      const startedAt = Date.now();
+      await expect(
+        waitUntilSpawnable(join(dir, "does-not-exist"), 60_000),
+      ).rejects.toThrow(/could not be started/);
+      expect(Date.now() - startedAt).toBeLessThan(5_000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
