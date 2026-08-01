@@ -152,7 +152,9 @@ jobs:
 
   workflow-lint:
     needs: changes
-    if: needs.changes.outputs.workflows == 'true'
+    # `schedule` so a release published after the last workflow change still gets its assets
+    # verified within a day, rather than waiting for someone to touch a workflow file.
+    if: needs.changes.outputs.workflows == 'true' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
@@ -170,6 +172,7 @@ jobs:
       - name: 🎯 Check engine targets match the published release
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
         run: bun run check:engine-targets
 
   homebrew-formula:

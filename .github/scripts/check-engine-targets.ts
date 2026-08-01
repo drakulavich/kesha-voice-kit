@@ -7,8 +7,9 @@
  * about disk cost and nothing fails. `install-plan.ts` carried a stale 63_126_528
  * against an actual 63_447_040 for exactly that reason (#216).
  *
- * Skips (exit 0) when the release is unreachable — offline dev and forked PRs
- * without a token must not fail on network, only on a real mismatch.
+ * A release branch bumps keshaEngine.version BEFORE the tag exists, so a 404 there is
+ * expected and skipped. Everywhere else a 404 means the pinned version was never published,
+ * which is a real problem — skipping it would make this check vacuous exactly when it matters.
  */
 import { engineTarget, engineTargetKeys } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
@@ -22,8 +23,23 @@ if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITH
 let assets: Array<{ name: string; size: number }>;
 try {
   const res = await fetch(url, { headers });
+  if (res.status === 404) {
+    const headRef = process.env.GITHUB_HEAD_REF ?? "";
+    if (headRef.startsWith("release/")) {
+      console.log(
+        `skip: v${engineVersion} is not published yet, which is expected on ${headRef}. ` +
+          `The scheduled run on main verifies the sizes once the release exists.`,
+      );
+      process.exit(0);
+    }
+    console.error(
+      `FAIL: package.json pins engine v${engineVersion}, but no such release exists.\n` +
+        `  Fix: publish it, or correct keshaEngine.version.`,
+    );
+    process.exit(1);
+  }
   if (!res.ok) {
-    console.log(`skip: release v${engineVersion} unreachable (HTTP ${res.status})`);
+    console.log(`skip: release API returned HTTP ${res.status}`);
     process.exit(0);
   }
   assets = (await res.json()).assets ?? [];
