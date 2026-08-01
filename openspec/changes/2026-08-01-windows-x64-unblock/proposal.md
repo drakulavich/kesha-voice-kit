@@ -30,7 +30,10 @@ false negative with an unverified promise.
 
 - **CLI platform gate**: `getEngineBinaryName` stops throwing for `win32`/`x64` and returns
   the released asset name. Backend auto-detection learns `win32-x64 → onnx`; today it returns
-  `undefined`, which would fail the install a second time even with the throw removed.
+  `undefined`, and the pre-flight check is written `platformBackend && backend !== platformBackend`,
+  so `undefined` *skips* validation rather than failing it. Lifting the throw alone would let
+  `kesha install --coreml` past the pre-flight on Windows and only reject it after the 63 MB
+  download, when `validateBackend` compares the Capabilities JSON.
 - **Install plan**: the Windows note claiming the platform is blocked is dropped, so
   `kesha install --plan` stops contradicting itself (it already lists the Windows asset and
   its size).

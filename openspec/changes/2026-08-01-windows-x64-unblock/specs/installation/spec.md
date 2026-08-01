@@ -45,10 +45,13 @@ other platform is unsupported and fails.
 - AND the process exits 1
 
 > *Technical Note — sources: `src/cli/install.ts::resolveBackendFlag`,
-> `src/cli/install.ts::defaultBackendForPlatform` (returns `undefined` for win32 today,
-> so Windows fails backend resolution even once the download refusal is lifted),
-> `src/engine-install.ts::downloadEngine` (post-download backend mismatch check via
-> Capabilities JSON).*
+> `src/cli/install.ts::defaultBackendForPlatform` (returns `undefined` for win32 today; the
+> caller guards on `platformBackend && backend !== platformBackend`, so `undefined` skips the
+> pre-flight rather than failing it — `--coreml` on Windows is currently caught only after the
+> Engine downloads), `src/engine-install.ts::validateBackend` (that post-download mismatch check,
+> via Capabilities JSON). The scenario above requires the pre-flight to reject, so
+> `defaultBackendForPlatform` must return `onnx` for win32-x64, not merely stop returning
+> `undefined`.*
 
 ## ADDED Requirements
 
@@ -103,12 +106,24 @@ shipped binary performs real synthesis and real Transcription — not only that 
 and passes unit tests. A platform whose Engine ships without that verification SHALL be
 documented as unverified rather than presented as supported.
 
+Verification SHALL cover both the asset a user downloads today and the artifact a release is
+about to publish. These are different binaries reached by different means: a release branch
+cannot download its own Engine, because its tag does not exist until the release is un-drafted.
+
 #### Scenario: Release smoke on a shipped platform
 
-- GIVEN the release pipeline has produced the Windows and Linux Engine binaries
-- WHEN the smoke lane runs
-- THEN each binary synthesises audio through `kesha say` and transcribes the result back
+- GIVEN the release pipeline has built the Windows and Linux Engine binaries from source
+- WHEN the smoke lane runs on the release branch
+- THEN each locally built binary synthesises audio through `kesha say` and transcribes the
+  result back
 - AND a failure in either direction fails the release
+
+#### Scenario: Smoke on the published asset
+
+- GIVEN release v`<engineVersion>` publishes an Engine asset for a platform
+- WHEN the published-asset smoke lane runs on that platform
+- THEN it downloads that asset, synthesises through `kesha say`, and transcribes the result back
+- AND the lane does not run on `release/*` branches, whose tag is not yet published
 
 #### Scenario: Engine builds but cannot synthesise
 
