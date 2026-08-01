@@ -30,10 +30,18 @@ deciding whether the Engine can actually run SHALL require presence AND non-null
 capabilities. Consumers SHALL be able to reach both conclusions from these fields
 without matching any human-readable prose.
 
+Every documented key SHALL be present in every payload: absent values are null
+(or the empty list for Voice ids), never omitted, so a consumer never has to tell
+a missing key apart from a null value. The payload SHALL also carry the CLI
+version, so a consumer that needs to distinguish payload shapes has the version
+to key off without a second invocation.
+
 Under `--json` the setup hint SHALL NOT also be written to stderr, because it is
 carried in the payload; `--json --disk` SHALL include the per-component disk
 breakdown as structured data, and plain `--json` SHALL omit it, mirroring the
-human flag's scope. Both modes SHALL derive their content from one collector, so
+human flag's scope. When the Engine is absent, `--json --disk` SHALL report the
+disk breakdown as null rather than walking the Model cache, matching the human
+path, which computes disk usage only when the Engine is installed. Both modes SHALL derive their content from one collector, so
 the two renderings can never disagree. `--json` SHALL exit 0 whether or not the
 Engine is installed, matching the human path.
 
@@ -58,6 +66,13 @@ Engine is installed, matching the human path.
 - THEN the output shows a red cross for the Engine binary
 - AND an actionable setup hint is printed — `kesha init` on an interactive TTY,
   `kesha install` when stderr is piped (`installHint()`, `src/status.ts:88`)
+- AND the process exits 0
+
+#### Scenario: Ira asks for disk usage with no Engine installed
+
+- GIVEN no Engine is installed
+- WHEN Ira runs `kesha status --json --disk`
+- THEN the disk breakdown is reported as null and the Model cache is not walked
 - AND the process exits 0
 
 #### Scenario: Ira branches on install state without parsing prose
@@ -109,10 +124,10 @@ Engine is installed, matching the human path.
   the only way to include log contents is via `kesha support-bundle --include-logs`.
 - `kesha stats` has no `--json` flag on `status`; machine-readable stats output
   requires `export --format json`.
-- The `status --json` payload has no explicit schema version field: consumers are
-  expected to tolerate additive growth and to key off the CLI version when they
-  need to distinguish shapes. Whether that holds once a second consumer beyond the
-  Raycast extension exists is unresolved.
+- The payload carries the CLI version but no separate schema version: consumers
+  are expected to tolerate additive growth and to key off the CLI version when
+  they need to distinguish shapes. Whether that holds once a second consumer
+  beyond the Raycast extension exists is unresolved.
 - `kesha doctor --json` and `kesha status --json` overlap in what they report but
   do not share a payload type; keeping them consistent is currently a convention,
   not something a test enforces.

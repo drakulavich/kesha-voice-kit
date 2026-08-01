@@ -51,19 +51,89 @@ the human path formats it; `--json` serializes it. `--disk` sets a flag on the
 collector so the disk breakdown is computed only when asked (it walks the cache
 recursively and is not free).
 
-**Probe strategy: try structured, fall back to prose.** `probeEngineAvailability`
-runs `kesha status --json`, attempts `JSON.parse` on stdout, and:
+**Probe strategy: try structured, fall back to prose — but only for non-JSON
+stdout.** The naive rule "parse fails *or* the field is absent → prose fallback"
+is unsafe. Consider stdout that is valid JSON yet lacks the contract field:
 
-- parses and the payload has the engine-presence boolean → use it;
-- parse throws, or the boolean is absent → fall back to the existing
-  `stdout.includes("not installed")` match;
-- spawn fails outright → fail open, unchanged from today.
+```json
+{"ok":true,"engine":{"path":"/x"},"hint":"Run `kesha install` …"}
+```
 
-The parse failure *is* the version detection. Alternatives considered: probing
+`JSON.parse` succeeds, the boolean is absent, the fallback runs, the string does
+not contain `"not installed"` — and the probe reports the engine as available
+when it is missing. Field-name drift between extension and CLI produces exactly
+this shape. So the acceptance rule is by *stdout kind*, not by parse outcome:
+
+| stdout | probe result |
+|---|---|
+| JSON object, `installed` is a boolean | use it (plus capabilities, below) |
+| JSON object, `installed` not a boolean | contract error → **unavailable**, never prose |
+| not JSON at all | prose fallback (`includes("not installed")`) |
+| empty / garbage | fail open, as today |
+| spawn throws | fail open, as today |
+
+Only genuinely non-JSON output means "old CLI". A malformed object means the
+contract broke, and reporting a broken contract as available is the one outcome
+worth failing closed on — an unavailable verdict costs Maks a setup view he can
+dismiss, while a false available costs him a recording.
+
+The parse outcome *is* the version detection. Alternatives considered: probing
 `kesha --version` and comparing semver (an extra spawn before every session, plus
 a version table to maintain), or a `--capabilities`-style CLI self-description
 (more surface than this problem justifies). Both lose to letting the old CLI's own
 output be the signal.
+
+**Prose fallback pins to the Binary line, not the whole stdout.** `"not
+installed"` is `formatStatusLine`'s default `missingLabel` (`src/status.ts:27`),
+so any future line rendered as missing would emit it too. Today only the Binary
+line can (`src/status.ts:64`) — the Capabilities line passes `"probe failed"`
+explicitly — but a global substring match would silently start reading unrelated
+lines. The fallback matches the marker on the Binary line.
+
+**Normative payload.** The spec states outcomes; this is the wire shape those
+outcomes assume, so implementers do not each invent one. Names mirror
+`DoctorReport` (`src/doctor.ts`) — `installed`, nested `capabilities` — so the
+codebase keeps one vocabulary even though the types stay separate. Pretty-printed
+with `JSON.stringify(payload, null, 2)`, matching `doctor` and `logs`.
+
+Healthy engine:
+
+```json
+{
+  "cliVersion": "1.24.7",
+  "engine": {
+    "installed": true,
+    "binPath": "/Users/maks/.cache/kesha/engine/bin/kesha-engine",
+    "capabilities": { "backend": "coreml", "protocolVersion": 3, "features": ["tts"] }
+  },
+  "voices": ["en-am_michael", "ru-vosk-m02"],
+  "runtime": { "bun": "1.3.13", "platform": "darwin", "arch": "arm64" },
+  "modelMirror": null,
+  "hint": null
+}
+```
+
+Engine missing — `binPath` still reports where it would live, `voices` is `[]`
+(not omitted; the human path hides the empty section, the payload does not):
+
+```json
+{
+  "cliVersion": "1.24.7",
+  "engine": { "installed": false, "binPath": "/Users/maks/.cache/…/kesha-engine", "capabilities": null },
+  "voices": [],
+  "runtime": { "bun": "1.3.13", "platform": "darwin", "arch": "arm64" },
+  "modelMirror": null,
+  "hint": "Run `kesha install` to download the engine and models."
+}
+```
+
+Present but unusable: `installed: true` with `capabilities: null`. One nested
+null, not three sibling nulls — so the consumer rule is a single check rather
+than an argument about which of three fields must be non-null.
+
+Every key is always present; absent values are `null` (or `[]` for `voices`).
+Nothing is omitted, so a consumer never has to distinguish "missing key" from
+"null value". `--disk` adds a `disk` key; without it the key is `null`.
 
 **Hint moves into the payload; stderr stays quiet under `--json`.** The human path
 writes the setup hint via `log.warn` to stderr, and the probe currently harvests

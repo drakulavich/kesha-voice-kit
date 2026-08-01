@@ -1,9 +1,9 @@
 ## 1. Split collection from rendering
 
-- [ ] 1.1 Define the status payload type in `src/status.ts` — engine presence
-      boolean, binary path, backend / protocol version / features (nullable),
-      voices, Bun runtime, platform + arch, model mirror, hint, optional disk
-      breakdown
+- [ ] 1.1 Define the status payload type in `src/status.ts` to match the
+      normative example in design.md exactly — nested `engine.capabilities`
+      (one null, not three), every key always present, `voices: []` when empty,
+      `cliVersion`, `disk: null` without `--disk`
 - [ ] 1.2 Extract `collectStatus({ disk })` from `showStatus`, returning that
       payload; move the Kokoro/Vosk enumeration, mirror resolution, and
       capabilities probe into it unchanged
@@ -11,15 +11,17 @@
       today's exact lines — same wording, colors, ordering, and stderr hint
 - [ ] 1.4 Restructure `showDiskUsage` so the sizes are collected as data and the
       table is formatted from it; keep the recursive walk behind the `disk` flag
-- [ ] 1.5 Verify byte-identical human output before/after by diffing captured
-      `kesha status` and `kesha status --disk` runs
+- [ ] 1.5 Verify the human output still carries the same information before/after;
+      assert the `"not installed"` marker on the Binary line rather than diffing
+      bytes, which colors and TTY detection make brittle
 
 ## 2. Wire the CLI flag
 
 - [ ] 2.1 Add the `json` boolean arg to `src/cli/status.ts`, mirroring
       `src/cli/doctor.ts:16-32`
-- [ ] 2.2 Serialize the payload to stdout with `console.log(JSON.stringify(...))`
-      and return before any `log.*` call, so stdout carries only the object
+- [ ] 2.2 Serialize with `JSON.stringify(payload, null, 2)` (matching `doctor`
+      and `logs`) and return before any `log.*` call — `log.info` writes to
+      stdout (`src/log.ts:46`), so a stray call corrupts the payload
 - [ ] 2.3 Suppress the stderr setup hint under `--json` (it ships in the payload)
 - [ ] 2.4 Confirm `--json --disk` includes the disk breakdown and plain `--json`
       omits it
@@ -33,9 +35,11 @@
 - [ ] 3.3 Test: capabilities probe fails while the binary exists → presence
       `true` with backend / protocol / features null, exit 0
 - [ ] 3.4 Test: stdout under `--json` parses as exactly one object and contains
-      nothing else
-- [ ] 3.5 Test: `--disk` presence/absence toggles the disk section
-- [ ] 3.6 Test: human output still contains the `"not installed"` marker, with a
+      no other bytes
+- [ ] 3.5 Test: `--json --disk` with no engine reports the disk breakdown as null
+      without walking the cache
+- [ ] 3.6 Test: `--disk` presence/absence toggles the disk section
+- [ ] 3.7 Test: human output still contains the `"not installed"` marker, with a
       comment naming the Raycast probe fallback as its consumer (design's
       mitigation for the load-bearing string)
 
@@ -43,19 +47,26 @@
 
 - [ ] 4.1 Rewrite `probeEngineAvailability` to spawn `kesha status --json`, parse
       stdout, and read the engine-presence boolean and hint
-- [ ] 4.2 Keep the `stdout.includes("not installed")` match as the fallback taken
-      when the parse throws or the boolean is absent
+- [ ] 4.2 Keep the `stdout.includes("not installed")` match as the fallback, taken
+      when stdout is not JSON at all — not when it parses but breaks the contract
+      (see 4.5)
 - [ ] 4.3 Preserve the existing fail-open behavior when the spawn itself fails
 - [ ] 4.4 Treat present-with-null-capabilities as unavailable, with finish-setup
       wording distinct from the never-installed case; establish what the repair
       command actually is first (see the spec's Open Issue — `install` has no
       documented force flag)
-- [ ] 4.5 Test: structured path (engine present, engine absent)
-- [ ] 4.6 Test: engine present but capabilities null → unavailable, repair wording,
-      no recording started
-- [ ] 4.7 Test: fallback path with human-readable stdout from an older CLI —
-      both installed and not-installed cases
-- [ ] 4.8 Test: unparseable/empty stdout still fails open
+- [ ] 4.5 Take the prose fallback only for non-JSON stdout; JSON whose `installed`
+      is not a boolean is a contract error → unavailable, never prose
+- [ ] 4.6 Anchor the prose match to the Binary line instead of whole-stdout
+- [ ] 4.7 Vary the finish-setup message, not just the hint, in
+      `raycast/src/lib/dictation-controller.ts:90` — it currently hardcodes one
+      message for every preflight failure
+- [ ] 4.8 Cover the full probe matrix with tests, one case per row of the table in
+      design.md: contract JSON installed / not installed / caps-null; non-JSON
+      with and without the marker; JSON with a wrong shape; empty and garbage
+      stdout; spawn throw with and without an install hint on stderr
+- [ ] 4.9 Tests live in `raycast/tests/kesha-bin.test.ts` and
+      `raycast/tests/dictation-controller.test.ts`
 
 ## 5. Docs and specs
 
@@ -63,9 +74,10 @@
 - [ ] 5.2 Run `/opsx:sync` to fold both delta specs into
       `openspec/specs/diagnostics/spec.md` and
       `openspec/specs/raycast-extension/spec.md`
-- [ ] 5.3 Carry the new Open Issues (no schema version field; prose marker still
-      load-bearing; `doctor`/`status` payload overlap unenforced) into the synced
-      specs
+- [ ] 5.3 Carry the new Open Issues into the synced specs: prose marker still
+      load-bearing; `doctor`/`status` payload overlap unenforced; repair command
+      unverified; controller message hardcoded; capabilities readable ≠ dictation
+      will succeed
 
 ## 6. Verification
 

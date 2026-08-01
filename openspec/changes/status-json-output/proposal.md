@@ -53,8 +53,8 @@ None. This extends an existing command and an existing consumer.
   plus a follow-up upstream sync, and the payload becomes a compatibility
   surface the extension depends on across CLI versions.
 - Tests: `test/` unit coverage for the payload shape and the `--disk`
-  interaction; `raycast/src/lib/__tests__` coverage for both probe paths
-  (structured hit, prose fallback).
+  interaction; `raycast/tests/kesha-bin.test.ts` and
+  `raycast/tests/dictation-controller.test.ts` for the probe matrix.
 - Docs: `README` status section and `openspec/specs/diagnostics/spec.md`.
 
 ## Non-goals
@@ -67,5 +67,8 @@ None. This extends an existing command and an existing consumer.
   exactly as they are.
 - No new engine-side surface. The payload composes what the CLI already knows
   plus the existing `--capabilities-json` probe; `kesha-engine` is not touched.
-- No stability guarantee beyond additive evolution — the payload is versioned by
-  the CLI's own version, not by a separate schema version field.
+- No stability guarantee beyond additive evolution — the payload carries the CLI
+  version rather than a separate schema version field.
+- No validation of the engine's own Capabilities JSON shape. "Readable
+  capabilities" means the probe returned an object, not that dictation will
+  succeed; tightening that is a separate concern.
