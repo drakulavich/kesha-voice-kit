@@ -143,9 +143,6 @@ export function renderStatus(report: StatusReport): void {
   }
 }
 
-export async function showStatus(options: ShowStatusOptions = {}): Promise<void> {
-  renderStatus(await collectStatus(options));
-}
 
 function buildDiskComponents(cache: string, engineDir: string): Array<{ label: string; path: string }> {
   return [

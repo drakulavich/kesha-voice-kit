@@ -154,8 +154,13 @@ match reads — so the guarantee holds on the structured path only. That is toda
 behaviour too, so it is a gap being narrowed rather than a regression.
 
 **Capabilities failure reports nulls, not omissions.** `getEngineCapabilities()`
-(`src/engine.ts:348`) already collapses "binary missing", "non-zero exit", and
-"unparseable JSON" into a single `null`. The payload mirrors that: engine present
+(`src/engine.ts:348`) collapses "binary missing", "non-zero exit", and
+"unparseable JSON" into a single `null` — but it used to cast the parsed value
+without checking its shape, so syntactically valid nonsense (`{}`, `[]`, an
+older engine's schema) survived as a truthy object. Callers reach straight for
+`.features.join()`, so that null was not the guarantee this design assumed. It
+now validates the three fields callers actually consume, and returns `null`
+otherwise; a newer engine adding fields still validates. The payload mirrors that: engine present
 `true`, backend/protocol/features `null`. A consumer distinguishing "no engine"
 from "broken engine" reads the boolean and the nulls separately. Adding a
 `capabilitiesProbeFailed` boolean was rejected as redundant with the nulls.

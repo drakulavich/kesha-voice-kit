@@ -200,9 +200,9 @@ function proseSaysEngineMissing(stdout: string): boolean {
   return binaryLine !== undefined && binaryLine.includes(MISSING_ENGINE_MARKER);
 }
 
-// Non-null is too weak a bar for "the engine can describe itself": the CLI
-// forwards whatever the engine's capabilities JSON parsed to, without shape
-// validation, so `false`, `[]` and `{}` would otherwise pass as healthy.
+// The CLI validates this shape too, but the extension ships through the Raycast
+// Store against whatever CLI version is on the machine — including ones that
+// predate that validation and forward `{}` or `[]` as capabilities.
 function capabilitiesAreReadable(capabilities: unknown): boolean {
   return (
     typeof capabilities === "object" &&
@@ -214,11 +214,16 @@ function capabilitiesAreReadable(capabilities: unknown): boolean {
 
 function readStructuredStatus(
   payload: Record<string, unknown>,
-): EnginePreflightResult | null {
+): EnginePreflightResult {
+  const contractError: EnginePreflightResult = {
+    ok: false,
+    reason: "contract",
+    hint: CONTRACT_HINT,
+  };
   const engine = payload.engine;
-  if (!engine || typeof engine !== "object") return null;
+  if (!engine || typeof engine !== "object") return contractError;
   const { installed, capabilities } = engine as Record<string, unknown>;
-  if (typeof installed !== "boolean") return null;
+  if (typeof installed !== "boolean") return contractError;
 
   if (!installed) {
     const hint = typeof payload.hint === "string" ? payload.hint.trim() : "";
@@ -254,15 +259,7 @@ export async function probeEngineAvailability(
       deps,
     );
     const payload = parseStatusObject(stdout);
-    if (payload) {
-      return (
-        readStructuredStatus(payload) ?? {
-          ok: false,
-          reason: "contract",
-          hint: CONTRACT_HINT,
-        }
-      );
-    }
+    if (payload) return readStructuredStatus(payload);
     if (proseSaysEngineMissing(stdout)) {
       return { ok: false, reason: "missing", hint: stderr.trim() || undefined };
     }

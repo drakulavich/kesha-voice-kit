@@ -2,8 +2,9 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { formatStatusLine, activeModelMirror, showStatus, collectStatus } from "../../src/status";
+import { formatStatusLine, activeModelMirror, collectStatus, renderStatus } from "../../src/status";
 import { starSeenPath } from "../../src/star";
+import { saveEngineEnv, writeFakeEngine } from "../helpers/fake-engine";
 
 const posixEngineTest = process.platform === "win32" ? test.skip : test;
 
@@ -73,22 +74,8 @@ describe("activeModelMirror (#121)", () => {
   });
 });
 
-describe("showStatus", () => {
-  const savedEngineBin = process.env.KESHA_ENGINE_BIN;
-  const savedCacheDir = process.env.KESHA_CACHE_DIR;
-  const savedHome = process.env.HOME;
-  const savedMirror = process.env.KESHA_MODEL_MIRROR;
-
-  function restoreEnv() {
-    if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
-    else process.env.KESHA_ENGINE_BIN = savedEngineBin;
-    if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
-    else process.env.KESHA_CACHE_DIR = savedCacheDir;
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
-    if (savedMirror === undefined) delete process.env.KESHA_MODEL_MIRROR;
-    else process.env.KESHA_MODEL_MIRROR = savedMirror;
-  }
+describe("collectStatus + renderStatus", () => {
+  const restoreEnv = saveEngineEnv();
 
   beforeEach(restoreEnv);
   afterEach(restoreEnv);
@@ -109,7 +96,7 @@ describe("showStatus", () => {
     console.log = () => {};
     console.error = () => {};
     try {
-      await showStatus();
+      renderStatus(await collectStatus());
       expect(existsSync(starSeenPath(binPath))).toBe(false);
     } finally {
       console.log = originalLog;
@@ -154,11 +141,11 @@ describe("showStatus", () => {
     };
     console.error = () => {};
     try {
-      await showStatus();
+      renderStatus(await collectStatus());
       expect(lines.join("\n")).not.toContain("Disk usage");
 
       lines.length = 0;
-      await showStatus({ disk: true });
+      renderStatus(await collectStatus({ disk: true }));
       expect(lines.join("\n")).toContain("Disk usage");
       if (process.platform === "darwin" && process.arch === "arm64") {
         expect(lines.join("\n")).toContain("External caches (not included in Kesha total):");
@@ -211,7 +198,7 @@ exit 2
     };
     console.error = () => {};
     try {
-      await showStatus();
+      renderStatus(await collectStatus());
       const output = lines.join("\n");
       expect(output).toContain("Backend: fake-coreml");
       expect(output).toContain("Protocol: v2");
@@ -230,21 +217,7 @@ exit 2
 });
 
 describe("collectStatus --json payload (#647)", () => {
-  const savedEngineBin = process.env.KESHA_ENGINE_BIN;
-  const savedCacheDir = process.env.KESHA_CACHE_DIR;
-  const savedHome = process.env.HOME;
-  const savedMirror = process.env.KESHA_MODEL_MIRROR;
-
-  function restoreEnv() {
-    if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
-    else process.env.KESHA_ENGINE_BIN = savedEngineBin;
-    if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
-    else process.env.KESHA_CACHE_DIR = savedCacheDir;
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
-    if (savedMirror === undefined) delete process.env.KESHA_MODEL_MIRROR;
-    else process.env.KESHA_MODEL_MIRROR = savedMirror;
-  }
+  const restoreEnv = saveEngineEnv();
 
   beforeEach(restoreEnv);
   afterEach(restoreEnv);
@@ -252,20 +225,7 @@ describe("collectStatus --json payload (#647)", () => {
   function healthyEngine(): { dir: string; cache: string; binPath: string } {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-"));
     const cache = join(dir, ".cache", "kesha");
-    const binDir = join(cache, "engine", "bin");
-    mkdirSync(binDir, { recursive: true });
-    const binPath = join(binDir, "kesha-engine");
-    writeFileSync(
-      binPath,
-      `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"fake-coreml","features":["tts"]}'
-  exit 0
-fi
-exit 2
-`,
-    );
-    chmodSync(binPath, 0o755);
+    const binPath = writeFakeEngine(join(cache, "engine", "bin"));
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;
     process.env.HOME = dir;
@@ -313,11 +273,7 @@ exit 2
   posixEngineTest("binary present but capabilities unreadable: installed, caps null", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-broken-"));
     const cache = join(dir, ".cache", "kesha");
-    const binDir = join(cache, "engine", "bin");
-    mkdirSync(binDir, { recursive: true });
-    const binPath = join(binDir, "kesha-engine");
-    writeFileSync(binPath, "#!/bin/sh\nexit 3\n");
-    chmodSync(binPath, 0o755);
+    const binPath = writeFakeEngine(join(cache, "engine", "bin"), null);
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;
     process.env.HOME = dir;
@@ -326,6 +282,28 @@ exit 2
       expect(report.engine.installed).toBe(true);
       expect(report.engine.capabilities).toBeNull();
       expect(report.hint).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("capabilities of the wrong shape are rejected, not forwarded", async () => {
+    // A non-null capabilities value must mean the engine described itself:
+    // `renderStatus` reaches straight for `features.join` (#647).
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-shape-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = writeFakeEngine(join(cache, "engine", "bin"), {
+      protocolVersion: "three",
+      backend: 42,
+    });
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const report = await collectStatus();
+      expect(report.engine.installed).toBe(true);
+      expect(report.engine.capabilities).toBeNull();
+      expect(() => renderStatus(report)).not.toThrow();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

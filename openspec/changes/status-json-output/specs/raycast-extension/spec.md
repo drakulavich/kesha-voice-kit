@@ -106,7 +106,7 @@ guards report the real problem with a better message than the probe could.
   Transcription. This matches today's behaviour and is not a regression, but it
   means the broken-Engine guarantee holds only on the structured path.
 - "Readable capabilities" is a weaker guarantee than "Dictation will succeed": it
-  says the Engine can describe itself, not that ASR models are present.
-  `getEngineCapabilities` (`src/engine.ts:367`) casts parsed JSON without
-  validating its shape, so a well-formed-but-wrong object counts as readable and
-  can still fail later. Closing that gap is a separate concern from this change.
+  says the Engine can describe itself, not that ASR models are present. The CLI
+  now validates the capabilities shape before reporting it, but the extension
+  keeps its own check because it meets whatever CLI version is on the machine,
+  including ones that predate that validation.
