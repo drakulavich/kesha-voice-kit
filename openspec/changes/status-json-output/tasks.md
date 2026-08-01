@@ -46,10 +46,16 @@
 - [ ] 4.2 Keep the `stdout.includes("not installed")` match as the fallback taken
       when the parse throws or the boolean is absent
 - [ ] 4.3 Preserve the existing fail-open behavior when the spawn itself fails
-- [ ] 4.4 Test: structured path (engine present, engine absent)
-- [ ] 4.5 Test: fallback path with human-readable stdout from an older CLI —
+- [ ] 4.4 Treat present-with-null-capabilities as unavailable, with finish-setup
+      wording distinct from the never-installed case; establish what the repair
+      command actually is first (see the spec's Open Issue — `install` has no
+      documented force flag)
+- [ ] 4.5 Test: structured path (engine present, engine absent)
+- [ ] 4.6 Test: engine present but capabilities null → unavailable, repair wording,
+      no recording started
+- [ ] 4.7 Test: fallback path with human-readable stdout from an older CLI —
       both installed and not-installed cases
-- [ ] 4.6 Test: unparseable/empty stdout still fails open
+- [ ] 4.8 Test: unparseable/empty stdout still fails open
 
 ## 5. Docs and specs
 

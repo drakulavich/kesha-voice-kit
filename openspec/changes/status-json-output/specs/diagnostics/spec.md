@@ -21,9 +21,14 @@ stdout and SHALL print nothing else to stdout. The object SHALL report, at minim
 Engine presence as a boolean, the resolved Engine binary path, Backend, protocol
 version, and features, the installed TTS Voice ids, the Bun runtime version, the
 platform and architecture, the active Model mirror, and — when the Engine is
-absent — the same setup hint the human path writes to stderr. Consumers SHALL be
-able to decide whether the Engine is usable from the boolean alone, without
-matching any human-readable prose.
+absent — the same setup hint the human path writes to stderr.
+
+The presence boolean SHALL report only that the Engine binary exists, not that it
+is usable. A binary that exists but whose Capabilities JSON cannot be read is
+reported as present with Backend, protocol version, and features null; consumers
+deciding whether the Engine can actually run SHALL require presence AND non-null
+capabilities. Consumers SHALL be able to reach both conclusions from these fields
+without matching any human-readable prose.
 
 Under `--json` the setup hint SHALL NOT also be written to stderr, because it is
 carried in the payload; `--json --disk` SHALL include the per-component disk
@@ -80,6 +85,8 @@ Engine is installed, matching the human path.
 - WHEN Ira runs `kesha status --json`
 - THEN Engine presence is reported as `true` while Backend, protocol version, and
   features are reported as null rather than omitted or guessed
+- AND a consumer reading presence together with the null capabilities can tell
+  this apart from both a healthy Engine and a missing one
 - AND the process exits 0, matching the human path's "probe failed" line
 
 > *Technical Note — sources: `src/status.ts::showStatus`, `src/status.ts::showDiskUsage`,

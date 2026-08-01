@@ -71,6 +71,18 @@ stderr for it. Under `--json` the hint is a payload field and is not duplicated 
 stderr, so stdout+payload is self-contained. The prose fallback path still reads
 stderr, because that is what an old CLI produces.
 
+**Presence and usability are two different questions.** The boolean answers "is
+there a binary", not "can it run" — an Engine that exists but cannot report its
+capabilities is present and unusable at the same time. The probe therefore
+requires presence AND non-null capabilities before starting a Dictation session,
+rather than branching on the boolean alone. Collapsing both into a single
+`usable` boolean was rejected: the extension needs the two apart to word the
+finish-setup view correctly, since repairing a broken install is a different
+instruction from performing a first one. Note the prose fallback cannot make this
+distinction at all — an older CLI's "probe failed" line is not what the marker
+match reads — so the guarantee holds on the structured path only. That is today's
+behaviour too, so it is a gap being narrowed rather than a regression.
+
 **Capabilities failure reports nulls, not omissions.** `getEngineCapabilities()`
 (`src/engine.ts:348`) already collapses "binary missing", "non-zero exit", and
 "unparseable JSON" into a single `null`. The payload mirrors that: engine present

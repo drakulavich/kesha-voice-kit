@@ -6,7 +6,16 @@ Before entering the recording state, the extension SHALL probe the resolved CLI 
 
 The probe SHALL decide Engine availability from the CLI's machine-readable status
 output rather than by matching human-readable prose, so that rewording the CLI's
-status text cannot break a published extension. When the resolved CLI is older
+status text cannot break a published extension.
+
+Engine availability SHALL mean present AND reporting readable capabilities. An
+Engine binary that exists but cannot report its capabilities is unusable, and the
+probe SHALL treat it as unavailable rather than starting a Dictation session that
+will fail during Transcription. The finish-setup view SHALL distinguish this case
+from a never-installed Engine, because the remedy differs — repairing a broken
+install is not the same instruction as performing a first one.
+
+When the resolved CLI is older
 than the machine-readable output and therefore does not produce it, the probe
 SHALL fall back to the previous prose marker rather than reporting a broken
 install — the extension is distributed through the Raycast Store and cannot
@@ -26,6 +35,14 @@ guards report the real problem with a better message than the probe could.
 - **WHEN** Maks starts a Dictation session
 - **THEN** the probe reports the Engine as available without inspecting any human-readable text
 - **AND** recording starts without a finish-setup view
+
+#### Scenario: Engine present but unusable
+
+- **GIVEN** the Engine binary exists but cannot report its capabilities (corrupt or incompatible)
+- **WHEN** Maks starts a Dictation session
+- **THEN** the probe reports the Engine as unavailable despite it being present
+- **AND** the finish-setup view names repairing the install, distinct from the never-installed wording
+- **AND** no recording starts
 
 #### Scenario: Older CLI without machine-readable status
 
@@ -53,3 +70,12 @@ guards report the real problem with a better message than the probe could.
   stays a load-bearing string for as long as older CLIs are in the wild. There is
   no agreed point at which the fallback can be dropped, and nothing fails loudly
   if the marker is reworded while the fallback is still relied upon.
+- The prose fallback cannot detect a present-but-unusable Engine: an older CLI's
+  human output says "probe failed" on a line the marker match does not read, so on
+  those CLIs a corrupt Engine still reaches recording and fails during
+  Transcription. This matches today's behaviour and is not a regression, but it
+  means the broken-Engine guarantee holds only on the structured path.
+- The exact remedy for a corrupt Engine is unverified: `kesha install` has no
+  documented force/repair flag, so what the finish-setup view should tell Maks to
+  run — and whether a plain re-run of `kesha install` overwrites an existing
+  binary — needs to be established during implementation.
