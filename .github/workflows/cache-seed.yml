@@ -1,0 +1,71 @@
+name: "🌱 Seed shared caches"
+
+# Populates the shared model caches on main so PR lanes only ever *read* them.
+#
+# GitHub scopes a cache to the ref that wrote it: a PR-scoped entry is invisible
+# to main and to every other PR. With the TTS lanes saving from PR runs, each open
+# PR minted its own ~1.1 GB Kokoro cache per OS. Two open PRs were enough to push
+# the repo past the 10 GB budget, and GitHub then evicted by LRU — taking out the
+# ~450 MB Parakeet CoreML bundle within a day, so coreml-regression re-downloaded
+# it on every run (#661).
+#
+# Seeding here means one copy per OS, on main, readable by every PR. PR reads
+# refresh last-access, so the entries stay warm without anyone writing them.
+#
+# The `kokoro-models-v1-<os>` key is duplicated in
+# .github/actions/setup-kokoro-models/action.yml (the read side) — bump the
+# version suffix in both when the model set in rust/ci/download-kokoro.sh
+# changes, or readers will keep restoring the old bundle.
+
+on:
+  push:
+    branches: [main]
+  # Manual re-seed after a purge, without waiting for the next push to main.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One seeding run at a time; a queued run would only re-probe the same keys.
+  group: cache-seed
+  cancel-in-progress: false
+
+jobs:
+  kokoro:
+    name: Kokoro models (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
+    steps:
+      # lookup-only reports whether the key exists without downloading the
+      # payload, so the warm path (the overwhelmingly common one) is a few
+      # seconds and never transfers the 1.1 GB it is protecting.
+      - name: Probe cache
+        id: probe
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KOKORO_CACHE }}
+          key: kokoro-models-v1-${{ runner.os }}
+          lookup-only: true
+
+      - name: 📥 Checkout
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download TTS models
+        if: steps.probe.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+
+      - name: Save TTS models
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KOKORO_CACHE }}
+          key: kokoro-models-v1-${{ runner.os }}

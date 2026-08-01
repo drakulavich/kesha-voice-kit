@@ -4,6 +4,12 @@ description: >
   cache used by every TTS test lane (rust-test nextest + ci.yml say-e2e). One cache
   key per OS so the macOS lanes share a single ~1.3 GB cache instead of duplicating it.
 
+  Restore-only by design: writing is the job of cache-seed.yml on main. A cache
+  saved from a PR run lives in that PR's own scope and is invisible to every other
+  PR, so letting the test lanes save meant each open PR minted its own ~1.1 GB copy
+  per OS. That is what pushed the repo past GitHub's 10 GB cache budget and evicted
+  the Parakeet CoreML bundle daily, making coreml-regression re-download it (#661).
+
 inputs:
   cache-dir:
     description: Model cache directory (also used as KOKORO_CACHE by callers).
@@ -13,12 +19,17 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Cache TTS models
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    # Key is duplicated in .github/workflows/cache-seed.yml (the write side) —
+    # bump the version suffix in both when download-kokoro.sh changes its model
+    # set, or this restore keeps serving the old bundle.
+    - name: Restore TTS models
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.cache-dir }}
         key: kokoro-models-v1-${{ runner.os }}
 
+    # Idempotent: downloads only the files the restore didn't provide, so a cold
+    # cache still works (just slower) and a warm one costs nothing.
     - name: Download TTS models (if cache miss)
       shell: bash
       env:
