@@ -38,15 +38,30 @@ download_if_missing() {
   local rel="$1"
   if [[ ! -f "$VOSK_DIR/$rel" ]]; then
     echo "Downloading Vosk $rel..."
-    curl -fL -o "$VOSK_DIR/$rel" "$VOSK_BASE/$rel"
+    # -o leaves a truncated file behind when the transfer dies mid-flight, and
+    # the `! -f` guard above would then treat that stump as "already have it"
+    # forever. Land the bytes under a temp name and rename only on success.
+    curl -fL -o "$VOSK_DIR/$rel.part" "$VOSK_BASE/$rel"
+    mv "$VOSK_DIR/$rel.part" "$VOSK_DIR/$rel"
   fi
 }
-download_if_missing model.onnx &
-download_if_missing dictionary &
-download_if_missing config.json &
-download_if_missing bert/model.onnx &
-download_if_missing bert/vocab.txt &
-wait
+# Bare `wait` reports success even when a background job failed, so a partial
+# bundle used to reach the caller as exit 0 — and cache-seed.yml would then
+# persist it on main under an immutable key that never self-heals. Wait on each
+# PID and propagate the first failure instead.
+vosk_pids=()
+for rel in model.onnx dictionary config.json bert/model.onnx bert/vocab.txt; do
+  download_if_missing "$rel" &
+  vosk_pids+=("$!")
+done
+vosk_failed=0
+for pid in "${vosk_pids[@]}"; do
+  wait "$pid" || vosk_failed=1
+done
+if [[ "$vosk_failed" -ne 0 ]]; then
+  echo "error: at least one Vosk download failed; refusing to report a partial bundle" >&2
+  exit 1
+fi
 
 ls -lh "$DEST"
 ls -lh "$VOSK_DIR"

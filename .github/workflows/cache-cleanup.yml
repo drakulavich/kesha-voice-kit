@@ -3,32 +3,41 @@ name: "🧹 Reclaim PR caches"
 # Drops a pull request's cache entries once it closes.
 #
 # Per GitHub's cache access rules, an entry written during a pull_request run is
-# scoped to that PR's merge ref: only re-runs of the same PR can restore it, and
+# scoped to that PR's merge ref: only runs of that same PR can restore it, and
 # the base branch and every other PR are locked out. That is useful while the PR
-# is open (a re-run skips the download) and pure dead weight the moment it
-# closes — it can never be read again, but it keeps occupying the repo's 10 GB
-# budget until the 7-day eviction TTL.
+# is open (a later push or re-run skips the download) and pure dead weight the
+# moment it closes — it can never be read again, but it keeps occupying the
+# repo's 10 GB budget until the 7-day eviction TTL.
 #
 # The budget matters because eviction is LRU across the whole repo: leftovers
 # from closed PRs push out the shared main-scoped entries every branch reads.
 # One stale PR here held ~4 GB in Swatinem rust-cache and Parakeet model entries.
 #
-# Mirrors the cleanup workflow in GitHub's own docs:
+# Based on the cleanup workflow in GitHub's docs:
 # https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manage-caches
 
 on:
-  pull_request:
+  # pull_request_target, not pull_request, for two reasons — both about actually
+  # reclaiming rather than appearing to:
+  #   1. A fork PR's GITHUB_TOKEN is read-only no matter what `permissions:`
+  #      asks for, so `pull_request` could never delete a fork PR's caches —
+  #      exactly the entries nobody will ever read again.
+  #   2. pull_request_target runs the workflow file from the default branch, so
+  #      PRs opened before this file existed are still cleaned up.
+  # The elevated token is safe here only because this job never checks out or
+  # executes PR-controlled code: it runs `gh` against a ref built from the PR
+  # number and nothing else. Do not add a checkout step.
+  pull_request_target:
     types: [closed]
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   reclaim:
     runs-on: ubuntu-latest
     permissions:
-      # Deleting cache entries requires write on the Actions scope; nothing else
-      # in this job touches the repository, so no checkout and no other scopes.
+      # Deleting cache entries needs write on the Actions scope. Nothing else in
+      # this job touches the repository, so every other scope stays unset.
       actions: write
     steps:
       - name: Delete caches scoped to this PR
@@ -37,14 +46,42 @@ jobs:
           GH_REPO: ${{ github.repository }}
           BRANCH: refs/pull/${{ github.event.pull_request.number }}/merge
         run: |
-          set -uo pipefail
-          keys=$(gh cache list --ref "$BRANCH" --limit 100 --json id --jq '.[].id')
-          if [ -z "$keys" ]; then
-            echo "No caches scoped to $BRANCH."
-            exit 0
-          fi
-          # Best-effort: a concurrent eviction can delete an entry between the
-          # list and the delete, and that must not fail the run.
-          for key in $keys; do
-            gh cache delete "$key" && echo "deleted $key" || echo "skipped $key (already gone)"
+          set -euo pipefail
+
+          total=0
+          # `gh cache list` caps at 100 per call, so page until one comes back
+          # empty. A cache-heavy PR (one Swatinem key per job per commit, plus
+          # bun and the model bundles) can exceed a single page, and a partial
+          # reclaim keeps charging the budget it was meant to free.
+          #
+          # `set -e` plus a bare assignment means an auth or rate-limit failure
+          # fails the job instead of reading as "nothing left to delete" — the
+          # silent-success mode this workflow exists to avoid.
+          while :; do
+            ids=$(gh cache list --ref "$BRANCH" --limit 100 --json id --jq '.[].id')
+            if [ -z "$ids" ]; then
+              break
+            fi
+
+            deleted_this_page=0
+            for id in $ids; do
+              # Best-effort per entry: a concurrent eviction can remove one
+              # between the list and the delete, and losing that race is fine.
+              if gh cache delete "$id"; then
+                total=$((total + 1))
+                deleted_this_page=$((deleted_this_page + 1))
+              else
+                echo "skipped $id (already gone)"
+              fi
+            done
+
+            # Guard against spinning forever on entries that list but refuse to
+            # delete: without this, a page we cannot remove would be re-listed
+            # unchanged on every iteration.
+            if [ "$deleted_this_page" -eq 0 ]; then
+              echo "::warning::could not delete any of the $(echo "$ids" | wc -l | tr -d ' ') listed entries; giving up"
+              break
+            fi
           done
+
+          echo "Deleted $total cache entries for $BRANCH."

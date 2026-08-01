@@ -23,14 +23,23 @@ inputs:
 runs:
   using: composite
   steps:
-    # Key is duplicated in .github/workflows/cache-seed.yml (the write side) —
-    # bump the version suffix in both when download-kokoro.sh changes its model
-    # set, or this restore keeps serving the old bundle.
+    # Keyed on download-kokoro.sh so editing the model set rotates the key on its
+    # own. A hand-bumped `v<n>` would be sticky in the worst way here: cache-seed
+    # probes the exact key, so a forgotten bump makes it report a hit forever, and
+    # since the script only fetches files it finds missing, every consumer would
+    # either re-download the new file on every run or keep serving stale bytes at
+    # an unchanged path — on main, for everyone.
+    #
+    # The prefix restore-key warm-starts from the previous bundle after an edit,
+    # so a model-set change tops up the delta instead of re-fetching ~1.1 GB.
+    # Keep both in sync with the write side in .github/workflows/cache-seed.yml.
     - name: Restore TTS models
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.cache-dir }}
-        key: kokoro-models-v1-${{ runner.os }}
+        key: kokoro-models-v1-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+        restore-keys: |
+          kokoro-models-v1-${{ runner.os }}
 
     # Idempotent: downloads only the files the restore didn't provide, so a cold
     # cache still works (just slower) and a warm one costs nothing.
