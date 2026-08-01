@@ -25,20 +25,13 @@ export {
 
 const GITHUB_REPO = "drakulavich/kesha-voice-kit";
 
-function getEngineBinaryName(): string {
-  const platform = process.platform;
-  const arch = process.arch;
-
+export function getEngineBinaryName(
+  platform = process.platform,
+  arch = process.arch,
+): string {
   if (platform === "darwin" && arch === "arm64") return "kesha-engine-darwin-arm64";
   if (platform === "linux" && arch === "x64") return "kesha-engine-linux-x64";
-  if (platform === "win32" && arch === "x64") {
-    throw new Error(
-      "Windows x64 is temporarily unsupported in v1.5.0 — the Vosk-TTS engine has " +
-        "native deps that trip MSVC at link time. Tracked at " +
-        "https://github.com/drakulavich/kesha-voice-kit/issues/216. " +
-        "Use v1.4.x as a workaround until the fix lands.",
-    );
-  }
+  if (platform === "win32" && arch === "x64") return "kesha-engine-windows-x64.exe";
 
   throw new Error(`Unsupported platform: ${platform} ${arch}`);
 }

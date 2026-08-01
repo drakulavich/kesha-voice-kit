@@ -148,3 +148,21 @@ describe("renderInstallPlan", () => {
     }
   });
 });
+
+describe("install plan carries no platform block (#216)", () => {
+  test("the plan never tells a reader the platform is blocked", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-block-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+
+      const output = await renderInstallPlan({ ttsLangs: ["en"] });
+
+      expect(output).not.toMatch(/blocked/i);
+      expect(output).not.toMatch(/#216/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

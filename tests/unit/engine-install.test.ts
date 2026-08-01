@@ -3,12 +3,14 @@ import {
   buildEngineInstallArgs,
   cleanupRetiredSidecars,
   getVersionMarkerPath,
+  getEngineBinaryName,
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
 } from "../../src/engine-install";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { defaultEngineBinPath } from "../../src/paths";
 
 function mkTmpBinPath(): string {
   const dir = mkdtempSync(join(tmpdir(), "kesha-install-test-"));
@@ -131,5 +133,44 @@ describe("engine-install retired sidecar cleanup (#438)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("getEngineBinaryName platform mapping (#216)", () => {
+  test("win32-x64 returns the published Windows asset", () => {
+    expect(getEngineBinaryName("win32", "x64")).toBe("kesha-engine-windows-x64.exe");
+  });
+  test("darwin-arm64 and linux-x64 are unchanged", () => {
+    expect(getEngineBinaryName("darwin", "arm64")).toBe("kesha-engine-darwin-arm64");
+    expect(getEngineBinaryName("linux", "x64")).toBe("kesha-engine-linux-x64");
+  });
+  test("no release asset mentions a version workaround", () => {
+    for (const [platform, arch] of [
+      ["win32", "x64"],
+      ["darwin", "arm64"],
+      ["linux", "x64"],
+    ] as const) {
+      expect(getEngineBinaryName(platform, arch)).not.toMatch(/v1\.[45]/);
+    }
+  });
+  test("platforms without a published engine still throw", () => {
+    expect(() => getEngineBinaryName("win32", "arm64")).toThrow(/Unsupported platform/);
+    expect(() => getEngineBinaryName("darwin", "x64")).toThrow(/Unsupported platform/);
+    expect(() => getEngineBinaryName("linux", "arm64")).toThrow(/Unsupported platform/);
+  });
+});
+
+describe("defaultEngineBinPath extension (#216)", () => {
+  test("win32 keeps the .exe suffix so the downloaded PE is spawnable", () => {
+    expect(defaultEngineBinPath("win32").endsWith("kesha-engine.exe")).toBe(true);
+  });
+  test("posix platforms stay extensionless", () => {
+    expect(defaultEngineBinPath("linux").endsWith("kesha-engine")).toBe(true);
+    expect(defaultEngineBinPath("darwin").endsWith("kesha-engine")).toBe(true);
+  });
+  test("the version marker follows the binary name on win32", () => {
+    expect(getVersionMarkerPath(defaultEngineBinPath("win32"))).toMatch(
+      /kesha-engine\.exe\.version$/,
+    );
   });
 });
