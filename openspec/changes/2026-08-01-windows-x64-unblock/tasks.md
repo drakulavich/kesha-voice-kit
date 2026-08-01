@@ -33,7 +33,14 @@ is just enforced by CI on this PR instead of by PR ordering.
       meaningful without `KESHA_ENGINE_BIN`, which makes `performInstall` skip the pre-flight
 - [x] 1.7 Carry the `release/*` guard so the lane never chases an unpublished tag, and add
       `windows-engine-smoke` to the `ci` aggregator's `needs` so a failure actually blocks
-- [ ] 1.8 Record the outcome here (pass, or the exact failure)
+- [x] 1.8 Keep the lane cold across runs: the model cache excludes `~/.cache/kesha/engine`,
+      because restoring the binary and its version marker sends `downloadEngine` down the
+      cacheValid branch and the download path stops being tested from run two onward
+      (Greptile P1). The lane asserts the engine is absent before install and that the install
+      log says it downloaded
+- [x] 1.9 `release-branch-engine-smoke` gains `--tts en ru` and the same synthesis script, so
+      the about-to-ship artifact is covered too, not only the published one
+- [ ] 1.10 Record the outcome here (pass, or the exact failure)
 
 ## 2. Remove the stale platform gate
 

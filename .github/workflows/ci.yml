@@ -445,10 +445,12 @@ jobs:
       - name: 🔊 Install published Linux backend
         uses: ./.github/actions/install-kesha-backend
         with:
+          # Models only, same reason as the Windows lane: a cached engine skips the download path.
           cache-path: |
             ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-engine-tts-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-engine-tts-
+            !~/.cache/kesha/engine
+          cache-key: ${{ runner.os }}-kesha-models-tts-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
           ffmpeg-provider: apt
           install-args: --tts en ru
 
@@ -504,9 +506,19 @@ jobs:
       - name: 💾 Cache backend
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          path: ~/.cache/kesha
-          key: ${{ runner.os }}-kesha-engine-tts-v1
-          restore-keys: ${{ runner.os }}-kesha-engine-tts-
+          # Models only: a cached engine + version marker sends downloadEngine down its cacheValid branch, skipping fetchEngineBinary (#216).
+          path: |
+            ~/.cache/kesha
+            !~/.cache/kesha/engine
+          key: ${{ runner.os }}-kesha-models-tts-v1
+          restore-keys: ${{ runner.os }}-kesha-models-tts-
+
+      # Belt-and-braces against the exclusion above silently regressing: the cold path is the point.
+      - name: 🧊 Assert no engine is present before install
+        shell: bash
+        run: |
+          rm -rf ~/.cache/kesha/engine
+          test ! -e ~/.cache/kesha/engine
 
       # Not the composite action: this lane keeps the install log to assert on warm-up.
       - name: 🔊 Cold install the published Windows engine
@@ -514,6 +526,10 @@ jobs:
         run: |
           bun link
           kesha install --tts en ru 2>&1 | tee kesha-install.log
+
+      - name: 🧊 Assert the engine really downloaded
+        shell: bash
+        run: grep -q "Engine binary downloaded" kesha-install.log
 
       - name: 🔥 Assert the ASR warm-up actually ran
         shell: bash
@@ -566,7 +582,8 @@ jobs:
       ) &&
       needs.unit-tests.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 25 before the TTS models were added to this lane.
+    timeout-minutes: 35
     env:
       KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-release-smoke
       KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
@@ -610,7 +627,7 @@ jobs:
           cache-key: ${{ runner.os }}-kesha-release-smoke-v1
           cache-restore-keys: ${{ runner.os }}-kesha-release-smoke-
           ffmpeg-provider: apt
-          install-args: --onnx
+          install-args: --onnx --tts en ru
 
       - name: 🚬 Smoke release branch local engine
         shell: bash
@@ -626,6 +643,11 @@ jobs:
               throw new Error("expected non-empty transcription text");
             }
           '
+
+      # The about-to-ship artifact needs the same synthesis proof as the published one (#464).
+      - name: 🗣️ Synthesis round-trip
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts /tmp/kesha-release-synth
 
   tts-e2e:
     # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
