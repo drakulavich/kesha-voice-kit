@@ -185,7 +185,11 @@ describe("waitUntilSpawnable (#216)", () => {
     expect(isTransientSpawnLock("ENOEXEC: exec format error")).toBe(false);
   });
 
-  test("returns once the binary spawns", async () => {
+  // The fixture is a shell script, which Windows cannot spawn — the lock-clearing
+  // behaviour itself is what `windows-engine-smoke` exercises against a real PE.
+  const spawnFixtureTest = process.platform === "win32" ? test.skip : test;
+
+  spawnFixtureTest("returns once the binary spawns", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-"));
     try {
       const binPath = join(dir, "engine");
