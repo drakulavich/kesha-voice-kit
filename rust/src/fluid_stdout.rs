@@ -25,6 +25,15 @@ use std::os::fd::OwnedFd;
 pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce() -> R) -> R {
     use std::os::fd::{AsRawFd, FromRawFd};
 
+    // TEMPORARY DEBUG — revert with this whole branch.
+    // `coreml-regression` fails inside `transcribe_samples` with an opaque
+    // "Swift bridge error: Transcription failed"; FluidAudio's real diagnostic
+    // goes to stdout and this silencer discards it. Setting this in the CI step
+    // leaves fd 1 alone so nextest captures the message on failure.
+    if std::env::var_os("KESHA_DEBUG_FLUID_STDOUT").is_some() {
+        return f();
+    }
+
     struct StdoutGuard {
         saved: Option<OwnedFd>,
     }
