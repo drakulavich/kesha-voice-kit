@@ -159,6 +159,25 @@ describe("dictation controller", () => {
     });
   });
 
+  it("does not blame the engine for a CLI/extension version skew (#647)", async () => {
+    const deps = createDeps({
+      preflight: vi.fn(async () => ({
+        ok: false,
+        reason: "contract" as const,
+        hint: "Update the kesha CLI and this extension to matching versions.",
+      })),
+    });
+    const { states } = deps;
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.startRecorder).not.toHaveBeenCalled();
+    const last = states.at(-1);
+    expect(last?.message).toBe("Kesha CLI and this extension are out of sync.");
+    expect(last?.message).not.toContain("engine");
+  });
+
   it("falls back to the not-found hint when preflight fails without one", async () => {
     const deps = createDeps({
       preflight: vi.fn(async () => ({ ok: false })),

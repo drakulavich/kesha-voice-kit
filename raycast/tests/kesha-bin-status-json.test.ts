@@ -73,12 +73,28 @@ describe("probeEngineAvailability — structured status (#647)", () => {
     const execFile = jsonStdout({ ok: true, engine: { path: "/x" }, hint: "setup" });
     const result = await probeEngineAvailability(kesha, { execFile });
     expect(result.ok).toBe(false);
-    expect(result.reason).toBe("unusable");
+    // Version skew is not a broken engine — re-downloading would fix nothing.
+    expect(result.reason).toBe("contract");
+    expect(result.hint).not.toContain("--no-cache");
   });
 
   it("fails closed when installed is present but not a boolean", async () => {
     const execFile = jsonStdout({ engine: { installed: "yes", capabilities: null } });
-    expect((await probeEngineAvailability(kesha, { execFile })).ok).toBe(false);
+    const result = await probeEngineAvailability(kesha, { execFile });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("contract");
+  });
+
+  it("does not accept junk in place of capabilities", async () => {
+    for (const capabilities of [{}, [], false, "", "coreml", 0]) {
+      const execFile = jsonStdout({
+        engine: { installed: true, path: "/x", capabilities },
+        hint: null,
+      });
+      const result = await probeEngineAvailability(kesha, { execFile });
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe("unusable");
+    }
   });
 
   it("falls back to prose for an older CLI reporting a missing engine", async () => {
@@ -108,7 +124,9 @@ describe("probeEngineAvailability — structured status (#647)", () => {
   });
 
   it("fails open on empty or garbage stdout", async () => {
-    for (const stdout of ["", "   ", " garbage", "{not json at all"]) {
+    // `{not installed` is the trap: it opens like JSON, fails to parse, and
+    // carries the marker — matching loose text would flip it closed.
+    for (const stdout of ["", "   ", " garbage", "{not json at all", "{not installed"]) {
       expect(await probeEngineAvailability(kesha, { execFile: textStdout(stdout) })).toEqual({
         ok: true,
       });

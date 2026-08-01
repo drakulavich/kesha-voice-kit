@@ -149,8 +149,12 @@ export interface ProbeDeps {
 export interface EnginePreflightResult {
   ok: boolean;
   hint?: string;
-  /** Why the engine is unusable — lets the setup view name the right remedy (#647). */
-  reason?: "missing" | "unusable";
+  /**
+   * Why the engine is unavailable — lets the setup view name the right remedy.
+   * `contract` is a CLI/extension version skew, not a broken engine: sending
+   * those users to re-download would fix nothing (#647).
+   */
+  reason?: "missing" | "unusable" | "contract";
 }
 
 const MISSING_ENGINE_MARKER = "not installed";
@@ -162,6 +166,8 @@ const MISSING_ENGINE_MARKER = "not installed";
 // promising a fix that would silently skip.
 const REPAIR_HINT =
   "Run `kesha install --no-cache` to re-download the engine. On a read-only (Nix) install, repair it through your package manager instead.";
+const CONTRACT_HINT =
+  "Update the kesha CLI and this extension to matching versions — `bun add -g @drakulavich/kesha-voice-kit@latest`.";
 
 function runKesha(spawn: KeshaSpawn, args: string[], deps: ProbeDeps) {
   const run = deps.execFile ?? execFileAsync;
@@ -185,13 +191,25 @@ function parseStatusObject(stdout: string): Record<string, unknown> | null {
 
 // Anchored to the Binary line rather than the whole output: "not installed" is
 // `formatStatusLine`'s default missing label, so a future missing line would
-// otherwise read as the engine being absent.
+// otherwise read as the engine being absent. No Binary line means this is not
+// status output at all — garbage fails open rather than matching loose text.
 function proseSaysEngineMissing(stdout: string): boolean {
   const binaryLine = stdout
     .split("\n")
     .find((line) => line.includes("Binary:"));
-  if (binaryLine) return binaryLine.includes(MISSING_ENGINE_MARKER);
-  return stdout.includes(MISSING_ENGINE_MARKER);
+  return binaryLine !== undefined && binaryLine.includes(MISSING_ENGINE_MARKER);
+}
+
+// Non-null is too weak a bar for "the engine can describe itself": the CLI
+// forwards whatever the engine's capabilities JSON parsed to, without shape
+// validation, so `false`, `[]` and `{}` would otherwise pass as healthy.
+function capabilitiesAreReadable(capabilities: unknown): boolean {
+  return (
+    typeof capabilities === "object" &&
+    capabilities !== null &&
+    !Array.isArray(capabilities) &&
+    Object.keys(capabilities).length > 0
+  );
 }
 
 function readStructuredStatus(
@@ -208,7 +226,7 @@ function readStructuredStatus(
   }
   // Present is not usable: a binary that cannot report its capabilities would
   // fail during transcription, after the recording is already gone (#647).
-  if (capabilities === null || capabilities === undefined) {
+  if (!capabilitiesAreReadable(capabilities)) {
     return { ok: false, reason: "unusable", hint: REPAIR_HINT };
   }
   return { ok: true };
@@ -240,8 +258,8 @@ export async function probeEngineAvailability(
       return (
         readStructuredStatus(payload) ?? {
           ok: false,
-          reason: "unusable",
-          hint: REPAIR_HINT,
+          reason: "contract",
+          hint: CONTRACT_HINT,
         }
       );
     }

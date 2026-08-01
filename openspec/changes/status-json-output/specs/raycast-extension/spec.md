@@ -26,11 +26,16 @@ rather than reporting a broken install — the extension is distributed through 
 assume the CLI on a given machine matches it.
 
 The prose fallback SHALL be taken only when the output is not machine-readable at
-all. Output that is machine-readable but does not satisfy the contract SHALL be
-treated as unavailable, never passed to the prose fallback: a structured response
-missing the presence field would otherwise also fail the prose match and be
-reported as a healthy Engine. Failing closed here costs Maks a dismissible setup
-view; failing open costs him a Dictation session. The prose match SHALL be
+all, and only when that output is recognisably a status report; unrecognisable
+output SHALL fail open rather than be searched for loose text. Output that is
+machine-readable but does not satisfy the contract SHALL be treated as
+unavailable, never passed to the prose fallback: a structured response missing
+the presence field would otherwise also fail the prose match and be reported as a
+healthy Engine. Failing closed here costs Maks a dismissible setup view; failing
+open costs him a Dictation session. A contract failure SHALL be reported as a
+version mismatch between CLI and extension rather than as a broken Engine, since
+re-downloading the Engine would not resolve it. Readable capabilities SHALL mean
+a non-empty structured value, not merely a non-null one. The prose match SHALL be
 anchored to the Engine binary line rather than to the whole output, so an
 unrelated line rendered with the same missing-marker cannot be misread as the
 Engine being absent.
@@ -70,6 +75,7 @@ guards report the real problem with a better message than the probe could.
 - **GIVEN** the resolved CLI emits machine-readable output without the presence field
 - **WHEN** Maks starts a Dictation session
 - **THEN** the probe reports the Engine as unavailable rather than falling back to the prose match
+- **AND** the setup view names a CLI/extension version mismatch, not a broken Engine
 - **AND** no recording starts
 
 #### Scenario: Probe cannot run
