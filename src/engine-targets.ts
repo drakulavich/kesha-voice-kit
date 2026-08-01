@@ -39,6 +39,10 @@ export function engineTarget(
   return ENGINE_TARGETS[`${platform}-${arch}`] ?? null;
 }
 
-export function engineTargetKeys(): string[] {
-  return Object.keys(ENGINE_TARGETS);
+export function engineTargetEntries(): Array<{ platform: string; arch: string; target: EngineTarget }> {
+  return Object.entries(ENGINE_TARGETS).map(([key, target]) => {
+    // Split once from the left: an arch token may itself contain a hyphen, a platform never does.
+    const sep = key.indexOf("-");
+    return { platform: key.slice(0, sep), arch: key.slice(sep + 1), target };
+  });
 }

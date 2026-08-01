@@ -145,6 +145,8 @@ jobs:
               - '.github/scripts/**'
               - 'package.json'
               - 'bun.lock'
+              # The file check:engine-targets guards; without it a size edit never runs the check.
+              - 'src/engine-targets.ts'
             homebrew:
               - 'packaging/homebrew/Formula/**'
               - 'docs/homebrew.md'
@@ -173,6 +175,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_HEAD_REF: ${{ github.head_ref }}
+          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: bun run check:engine-targets
 
   homebrew-formula:
