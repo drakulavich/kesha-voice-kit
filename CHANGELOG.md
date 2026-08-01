@@ -10,6 +10,22 @@ binary.
 
 ## [Unreleased]
 
+## [1.25.0] — 2026-08-01
+
+CLI-only release; reuses engine v1.24.7. Adds machine-readable `kesha status`
+output so consumers stop parsing human-readable text to decide whether the
+engine is installed.
+
+### Added
+- **`kesha status --json`:** prints a single JSON object to stdout and nothing else — engine presence, binary path, backend, protocol version, features, installed TTS voice ids, Bun runtime, platform, active model mirror, CLI version, and the setup hint that the human path writes to stderr. Every key is always present; absent values are `null` (or `[]`), so a consumer never has to tell a missing key from a null one. `--json --disk` adds the per-component disk breakdown, and reports `null` with no engine installed rather than walking the model cache. Exits 0 either way ([#647](https://github.com/drakulavich/kesha-voice-kit/issues/647), [#664](https://github.com/drakulavich/kesha-voice-kit/pull/664)).
+
+### Changed
+- **Raycast extension setup probe:** decides engine availability from the structured payload instead of matching `"not installed"` in `kesha status` output. Older CLIs keep working through the previous check, chosen by the *kind* of output rather than by whether parsing succeeded — output that is JSON but breaks the contract is reported as a CLI/extension version mismatch rather than being passed to the text match, which would have reported a missing engine as healthy. An engine that is installed but cannot report its capabilities is now refused before recording starts, with a repair instruction distinct from a first-time install.
+- **`showStatus` split into `collectStatus()` + `renderStatus()`** so the human and JSON renderings share one collector and cannot drift. Human output is unchanged.
+
+### Fixed
+- **`getEngineCapabilities` validated the shape of the engine's capabilities JSON.** It previously cast the parsed value unchecked, so syntactically valid but wrong-shaped output survived as a truthy object — and callers reach straight for `.features.join()`, which threw a `TypeError` instead of reporting the problem. It now returns `null` for anything that does not carry the fields callers consume; a newer engine adding fields still validates.
+
 ## [1.24.5] — 2026-07-19
 
 Engine release. Fixes corrupted multi-segment transcription on the CoreML (Apple Silicon) backend by picking up the FluidAudio TDT stateless-reset fix in `fluidaudio-rs`.
