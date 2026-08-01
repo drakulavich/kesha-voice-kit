@@ -38,8 +38,11 @@ is just enforced by CI on this PR instead of by PR ordering.
       cacheValid branch and the download path stops being tested from run two onward
       (Greptile P1). The lane asserts the engine is absent before install and that the install
       log says it downloaded
-- [x] 1.9 `release-branch-engine-smoke` gains `--tts en ru` and the same synthesis script, so
-      the about-to-ship artifact is covered too, not only the published one
+- [x] 1.9 `release-branch-engine-smoke` gains `--tts en ru` and the same synthesis script, and
+      `release-branch-windows-smoke` is its win32 counterpart — building the engine with MSVC
+      rather than downloading a tag that does not exist yet. Without it the Windows binary about
+      to ship would be the one published artifact with no synthesis proof, since
+      `windows-engine-smoke` is guarded off `release/*`
 - [x] 1.10 Outcome recorded below
 
 ## 2. Remove the stale platform gate
