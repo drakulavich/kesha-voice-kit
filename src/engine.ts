@@ -373,9 +373,7 @@ export async function getEngineCapabilities(): Promise<EngineCapabilities | null
   }
 }
 
-// A non-null return has to mean "the engine described itself" — callers reach
-// straight for `.features.join()` and `.backend` (#647). Only the fields those
-// callers consume are checked, so a newer engine adding fields still validates.
+// A non-null return must mean "it described itself" — callers reach straight for `.features.join()` (#647).
 function parseCapabilities(parsed: unknown): EngineCapabilities | null {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const { protocolVersion, backend, features } = parsed as Record<string, unknown>;
