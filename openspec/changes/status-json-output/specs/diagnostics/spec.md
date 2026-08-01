@@ -24,11 +24,12 @@ platform and architecture, the active Model mirror, and — when the Engine is
 absent — the same setup hint the human path writes to stderr.
 
 The presence boolean SHALL report only that the Engine binary exists, not that it
-is usable. A binary that exists but whose Capabilities JSON cannot be read is
-reported as present with Backend, protocol version, and features null; consumers
-deciding whether the Engine can actually run SHALL require presence AND non-null
-capabilities. Consumers SHALL be able to reach both conclusions from these fields
-without matching any human-readable prose.
+is usable. Backend, protocol version, and features SHALL be grouped under a single
+nested capabilities value so that a binary which cannot report them yields one
+null rather than three, making "can the Engine run" a single check; consumers
+deciding that SHALL require presence AND non-null capabilities. Consumers SHALL be
+able to reach both conclusions from these fields without matching any
+human-readable prose.
 
 Every documented key SHALL be present in every payload: absent values are null
 (or the empty list for Voice ids), never omitted, so a consumer never has to tell
@@ -98,8 +99,8 @@ Engine is installed, matching the human path.
 - GIVEN the Engine binary exists but `--capabilities-json` cannot be read
   (corrupt or incompatible binary)
 - WHEN Ira runs `kesha status --json`
-- THEN Engine presence is reported as `true` while Backend, protocol version, and
-  features are reported as null rather than omitted or guessed
+- THEN Engine presence is reported as `true` while the capabilities value is null
+  rather than omitted or guessed
 - AND a consumer reading presence together with the null capabilities can tell
   this apart from both a healthy Engine and a missing one
 - AND the process exits 0, matching the human path's "probe failed" line

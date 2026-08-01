@@ -87,7 +87,12 @@ export function startDictationSession(
       if (!preflight.ok) {
         setState({
           status: "error",
-          message: "Kesha setup isn't finished yet.",
+          // Repairing a broken install is a different instruction from doing a
+          // first one, so the message tracks the reason, not just the hint (#647).
+          message:
+            preflight.reason === "unusable"
+              ? "Kesha's engine is installed but not working."
+              : "Kesha setup isn't finished yet.",
           hint: preflight.hint ?? notFoundMessage(),
         });
         return;

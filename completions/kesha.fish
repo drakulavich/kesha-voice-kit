@@ -86,6 +86,7 @@ complete -c kesha -n '__fish_seen_subcommand_from stats' -l format -r -d 'Export
 complete -c kesha -n '__fish_seen_subcommand_from status' -l help -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from status' -s h -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from status' -l disk -d 'Include recursive cache disk usage'
+complete -c kesha -n '__fish_seen_subcommand_from status' -l json -d 'Output status as JSON'
 complete -c kesha -n '__fish_seen_subcommand_from support-bundle' -l help -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from support-bundle' -s h -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from support-bundle' -l output -r -d 'Write archive to this .tar.gz path'

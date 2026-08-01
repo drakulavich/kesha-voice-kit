@@ -149,34 +149,109 @@ export interface ProbeDeps {
 export interface EnginePreflightResult {
   ok: boolean;
   hint?: string;
+  /** Why the engine is unusable — lets the setup view name the right remedy (#647). */
+  reason?: "missing" | "unusable";
 }
 
-function runKesha(spawn: KeshaSpawn, verb: string, deps: ProbeDeps) {
+const MISSING_ENGINE_MARKER = "not installed";
+// A corrupt binary is not repaired by a plain `kesha install`: that hits the
+// cached-engine path and only re-trusts it. `--no-cache` forces the re-download
+// (`cacheValid = versionMatches && (!noCache || !canWriteEngineDir)`).
+const REPAIR_HINT = "Run `kesha install --no-cache` to re-download the engine.";
+
+function runKesha(spawn: KeshaSpawn, args: string[], deps: ProbeDeps) {
   const run = deps.execFile ?? execFileAsync;
-  return run(spawn.command, [...spawn.prefixArgs, verb], {
+  return run(spawn.command, [...spawn.prefixArgs, ...args], {
     timeout: PROBE_TIMEOUT_MS,
   });
 }
 
-// `kesha status` marks a missing engine as "not installed" on stdout and warns
-// on stderr with the exact remaining setup command (`installHint()`). Keying
-// off the stdout marker keeps unrelated stderr (KESHA_DEBUG traces, warnings)
-// from failing a healthy install; a probe that cannot run at all fails open —
-// the CLI's own guards report the real problem with a better message.
+function parseStatusObject(stdout: string): Record<string, unknown> | null {
+  const trimmed = stdout.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+// Anchored to the Binary line rather than the whole output: "not installed" is
+// `formatStatusLine`'s default missing label, so a future missing line would
+// otherwise read as the engine being absent.
+function proseSaysEngineMissing(stdout: string): boolean {
+  const binaryLine = stdout
+    .split("\n")
+    .find((line) => line.includes("Binary:"));
+  if (binaryLine) return binaryLine.includes(MISSING_ENGINE_MARKER);
+  return stdout.includes(MISSING_ENGINE_MARKER);
+}
+
+function readStructuredStatus(
+  payload: Record<string, unknown>,
+): EnginePreflightResult | null {
+  const engine = payload.engine;
+  if (!engine || typeof engine !== "object") return null;
+  const { installed, capabilities } = engine as Record<string, unknown>;
+  if (typeof installed !== "boolean") return null;
+
+  if (!installed) {
+    const hint = typeof payload.hint === "string" ? payload.hint.trim() : "";
+    return { ok: false, reason: "missing", hint: hint || undefined };
+  }
+  // Present is not usable: a binary that cannot report its capabilities would
+  // fail during transcription, after the recording is already gone (#647).
+  if (capabilities === null || capabilities === undefined) {
+    return { ok: false, reason: "unusable", hint: REPAIR_HINT };
+  }
+  return { ok: true };
+}
+
+/**
+ * Decides whether the engine can run before a session starts.
+ *
+ * Reads `kesha status --json` when the resolved CLI emits it. A CLI too old for
+ * that flag prints human text instead (citty ignores unknown flags), which is
+ * the signal to fall back to the prose marker — so the fallback is chosen by
+ * stdout *kind*, never by parse outcome. Output that is a JSON object but
+ * breaks the contract fails closed: it would also miss the prose marker and be
+ * reported as healthy. A probe that cannot run at all still fails open, letting
+ * the CLI's own guards report the real problem with a better message.
+ */
 export async function probeEngineAvailability(
   spawn: KeshaSpawn,
   deps: ProbeDeps = {},
 ): Promise<EnginePreflightResult> {
   try {
-    const { stdout, stderr } = await runKesha(spawn, "status", deps);
-    if (!stdout.includes("not installed")) return { ok: true };
-    return { ok: false, hint: stderr.trim() || undefined };
+    const { stdout, stderr } = await runKesha(
+      spawn,
+      ["status", "--json"],
+      deps,
+    );
+    const payload = parseStatusObject(stdout);
+    if (payload) {
+      return (
+        readStructuredStatus(payload) ?? {
+          ok: false,
+          reason: "unusable",
+          hint: REPAIR_HINT,
+        }
+      );
+    }
+    if (proseSaysEngineMissing(stdout)) {
+      return { ok: false, reason: "missing", hint: stderr.trim() || undefined };
+    }
+    return { ok: true };
   } catch (err) {
     const stderr =
       err && typeof err === "object" && "stderr" in err
         ? String((err as { stderr?: unknown }).stderr ?? "").trim()
         : "";
-    if (stderr.includes("kesha install")) return { ok: false, hint: stderr };
+    if (stderr.includes("kesha install"))
+      return { ok: false, reason: "missing", hint: stderr };
     return { ok: true };
   }
 }

@@ -92,8 +92,8 @@ lines. The fallback matches the marker on the Binary line.
 
 **Normative payload.** The spec states outcomes; this is the wire shape those
 outcomes assume, so implementers do not each invent one. Names mirror
-`DoctorReport` (`src/doctor.ts`) — `installed`, nested `capabilities` — so the
-codebase keeps one vocabulary even though the types stay separate. Pretty-printed
+`DoctorReport` (`src/doctor.ts`) — `path`, `installed`, nested `capabilities` — so
+the codebase keeps one vocabulary even though the types stay separate. Pretty-printed
 with `JSON.stringify(payload, null, 2)`, matching `doctor` and `logs`.
 
 Healthy engine:
@@ -103,7 +103,7 @@ Healthy engine:
   "cliVersion": "1.24.7",
   "engine": {
     "installed": true,
-    "binPath": "/Users/maks/.cache/kesha/engine/bin/kesha-engine",
+    "path": "/Users/maks/.cache/kesha/engine/bin/kesha-engine",
     "capabilities": { "backend": "coreml", "protocolVersion": 3, "features": ["tts"] }
   },
   "voices": ["en-am_michael", "ru-vosk-m02"],
@@ -113,13 +113,13 @@ Healthy engine:
 }
 ```
 
-Engine missing — `binPath` still reports where it would live, `voices` is `[]`
+Engine missing — `path` still reports where it would live, `voices` is `[]`
 (not omitted; the human path hides the empty section, the payload does not):
 
 ```json
 {
   "cliVersion": "1.24.7",
-  "engine": { "installed": false, "binPath": "/Users/maks/.cache/…/kesha-engine", "capabilities": null },
+  "engine": { "installed": false, "path": "/Users/maks/.cache/…/kesha-engine", "capabilities": null },
   "voices": [],
   "runtime": { "bun": "1.3.13", "platform": "darwin", "arch": "arm64" },
   "modelMirror": null,

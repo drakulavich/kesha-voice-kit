@@ -12,13 +12,14 @@ Engine availability SHALL mean present AND reporting readable capabilities. An
 Engine binary that exists but cannot report its capabilities is unusable, and the
 probe SHALL treat it as unavailable rather than starting a Dictation session that
 will fail during Transcription. The finish-setup view SHALL distinguish this case
-from a never-installed Engine, because the remedy differs — repairing a broken
-install is not the same instruction as performing a first one.
+from a never-installed Engine in both its message and its hint, because the
+remedy differs: a plain `kesha install` takes the cached-engine path and only
+re-trusts an existing binary, so repairing one requires `kesha install
+--no-cache`.
 
-When the resolved CLI is older
-than the machine-readable output and therefore does not produce it, the probe
-SHALL fall back to the previous prose marker rather than reporting a broken
-install — the extension is distributed through the Raycast Store and cannot
+When the resolved CLI is older than the machine-readable output and therefore
+does not produce it, the probe SHALL fall back to the previous prose marker
+rather than reporting a broken install — the extension is distributed through the Raycast Store and cannot
 assume the CLI on a given machine matches it.
 
 The prose fallback SHALL be taken only when the output is not machine-readable at
@@ -74,12 +75,15 @@ guards report the real problem with a better message than the probe could.
 - **THEN** the probe fails open and the Dictation session proceeds
 - **AND** any real problem is reported by the CLI's own error path
 
-> *Technical Note — sources: `raycast/src/lib/kesha-bin.ts::probeEngineAvailability`
-> (`raycast/src/lib/kesha-bin.ts:166-181`), which today spawns `kesha status` and tests
-> `stdout.includes("not installed")` (`:172`), returning the trimmed stderr as the hint.
-> The structured path reads the Engine-presence boolean and hint from `kesha status
-> --json` (see the `diagnostics` capability). `raycast/` is mirrored into
-> `raycast/extensions`, so a change here needs a follow-up upstream sync.*
+> *Technical Note — sources: `raycast/src/lib/kesha-bin.ts::probeEngineAvailability`,
+> which spawns `kesha status --json` and branches on stdout kind:
+> `parseStatusObject` accepts only a JSON object, `readStructuredStatus` requires
+> `engine.installed` to be a boolean and treats a null `engine.capabilities` as
+> unusable, and `proseSaysEngineMissing` matches the legacy marker on the Binary
+> line. The verdict reaches the setup view through `EnginePreflightResult.reason`
+> (`"missing"` / `"unusable"`), which `dictation-controller.ts` maps to distinct
+> messages. `raycast/` is mirrored into `raycast/extensions`, so a change here
+> needs a follow-up upstream sync.*
 
 ## Open Issues
 
@@ -92,13 +96,6 @@ guards report the real problem with a better message than the probe could.
   those CLIs a corrupt Engine still reaches recording and fails during
   Transcription. This matches today's behaviour and is not a regression, but it
   means the broken-Engine guarantee holds only on the structured path.
-- The exact remedy for a corrupt Engine is unverified: `kesha install` has no
-  documented force/repair flag, so what the finish-setup view should tell Maks to
-  run — and whether a plain re-run of `kesha install` overwrites an existing
-  binary — needs to be established during implementation.
-- Distinguishing the broken-install view from the never-installed one needs a
-  change beyond the probe: `dictation-controller.ts:90` hardcodes a single
-  message (`"Kesha setup isn't finished yet."`) and varies only the hint.
 - "Readable capabilities" is a weaker guarantee than "Dictation will succeed": it
   says the Engine can describe itself, not that ASR models are present.
   `getEngineCapabilities` (`src/engine.ts:367`) casts parsed JSON without
