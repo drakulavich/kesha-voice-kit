@@ -288,8 +288,7 @@ describe("collectStatus --json payload (#647)", () => {
   });
 
   posixEngineTest("capabilities of the wrong shape are rejected, not forwarded", async () => {
-    // A non-null capabilities value must mean the engine described itself:
-    // `renderStatus` reaches straight for `features.join` (#647).
+    // Non-null capabilities must mean it described itself: `renderStatus` calls `features.join` (#647).
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-shape-"));
     const cache = join(dir, ".cache", "kesha");
     const binPath = writeFakeEngine(join(cache, "engine", "bin"), {
@@ -403,10 +402,7 @@ describe("kesha status --json stdout discipline (#647)", () => {
 });
 
 describe("human status output is a load-bearing contract (#647)", () => {
-  // The Raycast extension's probe falls back to matching "not installed" on the
-  // Binary line when it meets a CLI too old to emit `--json`
-  // (raycast/src/lib/kesha-bin.ts). Rewording this line breaks Store users on
-  // those CLIs, so the marker is frozen here rather than in the extension.
+  // Frozen for the Raycast probe's fallback on CLIs too old for `--json` — rewording breaks Store users.
   test("the Binary line still carries the `not installed` marker", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-marker-"));
     const proc = Bun.spawn([process.execPath, "bin/kesha.js", "status"], {

@@ -463,6 +463,13 @@ guards report the real problem with a better message than the probe could.
 - **AND** the setup view names a CLI/extension version mismatch, not a broken Engine
 - **AND** no recording starts
 
+#### Scenario: Machine-readable output that is not a status object
+
+- **GIVEN** the resolved CLI emits valid JSON whose top-level value is an array or a scalar
+- **WHEN** Maks starts a Dictation session
+- **THEN** the probe treats it as a contract failure, not as an older CLI's output
+- **AND** no recording starts
+
 #### Scenario: Probe cannot run
 
 - **WHEN** the resolved CLI cannot be spawned or exits unexpectedly during the probe

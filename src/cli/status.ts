@@ -26,8 +26,7 @@ export const statusCommand = defineCommand({
   async run({ args }: { args: StatusCommandArgs }) {
     const report = await collectStatus({ disk: args.disk });
     if (args.json) {
-      // `log.*` writes to stdout, so the payload must be the only thing printed —
-      // the setup hint ships inside it instead of on stderr (#647).
+      // `log.*` writes to stdout, so the payload must be the only thing printed (#647).
       console.log(JSON.stringify(report, null, 2));
       return;
     }
