@@ -22,7 +22,7 @@ on:
     # The key hashes rust/ci/download-kokoro.sh, so only a change to that file can
     # make a re-seed necessary. Without this filter every push to main — up to 26
     # a day here — spun three runners to probe a guaranteed hit.
-    paths: ["rust/ci/download-kokoro.sh"]
+    paths: ["rust/ci/download-kokoro.sh", "rust/src/models.rs", ".github/workflows/cache-seed.yml"]
   # Eviction does not wait for pushes. Without this, a bundle evicted under budget
   # pressure stays gone until someone happens to touch the download script, and
   # every PR job in between pays a full cold download.
@@ -87,3 +87,43 @@ jobs:
         with:
           path: ${{ env.KOKORO_CACHE }}
           key: kokoro-models-v1-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+
+  kesha-models:
+    name: Kesha models (${{ matrix.os }})
+    # The smoke lanes read `${{ runner.os }}-kesha-models-tts-v1` restore-only, so without this
+    # seed they cold-download ~3.5 GB every run; with it, one main-scoped copy serves every PR.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Probe cache
+        id: probe
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/kesha
+          key: ${{ runner.os }}-kesha-models-tts-v1
+          lookup-only: true
+
+      - name: 🍞 Setup Bun workspace
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-bun
+
+      - name: Populate models
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          ffmpeg-provider: skip
+          install-args: --tts en ru
+
+      - name: Save models
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/kesha
+          key: ${{ runner.os }}-kesha-models-tts-v1

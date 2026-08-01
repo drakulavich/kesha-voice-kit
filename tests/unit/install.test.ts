@@ -25,6 +25,7 @@ describe("resolveTtsLangs", () => {
 });
 
 describe("defaultBackendForPlatform", () => {
+  // A defined backend is what lets performInstall reject `--coreml` before the download.
   test("win32-x64 auto-detects onnx", () => {
     expect(defaultBackendForPlatform("win32", "x64")).toBe("onnx");
   });
@@ -33,15 +34,6 @@ describe("defaultBackendForPlatform", () => {
   });
   test("linux-x64 auto-detects onnx", () => {
     expect(defaultBackendForPlatform("linux", "x64")).toBe("onnx");
-  });
-  // A defined win32 backend is what makes `--coreml` reject before downloading:
-  // performInstall guards on `platformBackend && backend !== platformBackend`,
-  // so `undefined` would skip the pre-flight and defer to validateBackend
-  // after the ~63 MB fetch.
-  test("win32-x64 disagrees with coreml, so the pre-flight can reject it", () => {
-    const platformBackend = defaultBackendForPlatform("win32", "x64");
-    expect(platformBackend).toBeDefined();
-    expect(platformBackend).not.toBe("coreml");
   });
   test("unshipped platforms stay undefined", () => {
     expect(defaultBackendForPlatform("darwin", "x64")).toBeUndefined();

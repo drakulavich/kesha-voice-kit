@@ -365,29 +365,38 @@ async function refreshCachedEngine(
   }
 }
 
+/** EACCES/EPERM are deliberately absent: those are policy (noexec, ACL, AppLocker) and never clear. */
+export function isTransientSpawnLock(message: string): boolean {
+  return /\b(EBUSY|ETXTBSY)\b/.test(message) || /sharing violation/i.test(message);
+}
+
 /**
  * Blocks until the freshly-downloaded engine can actually be spawned.
  *
- * A security scanner (Windows Defender is the one this was found on) holds a
- * lock on a newly written 60 MB PE while it scans, and the first spawn fails
- * with EBUSY — 15 ms after the download reported success (#216). The lock is
- * transient, so probe until it clears rather than failing the install on it.
+ * A security scanner (Windows Defender is the one this was found on) holds a lock on a newly
+ * written 60 MB PE while it scans, so the first spawn fails with EBUSY 15 ms after the download
+ * reported success (#216). The lock is transient, so probe until it clears.
  */
-export function isTransientSpawnLock(message: string): boolean {
-  return /\b(EBUSY|ETXTBSY|EACCES|EPERM)\b/.test(message);
-}
-
 export async function waitUntilSpawnable(
   binPath: string,
   deadlineMs = 60_000,
+  probeTimeoutMs = 5_000,
 ): Promise<void> {
-  const startedAt = Date.now();
+  const deadline = Date.now() + deadlineMs;
   let lastError = "";
+  let warned = false;
+  let delay = 100;
 
-  for (let delay = 100; ; delay = Math.min(delay * 2, 2_000)) {
+  for (;;) {
     try {
-      // A non-zero exit still proves the file spawned; only a throw means it is locked.
-      Bun.spawnSync([binPath, "--version"], { stdout: "ignore", stderr: "ignore" });
+      // Only a throw means locked; the timeout is for a scanner that detains rather than refuses.
+      const proc = Bun.spawn([binPath, "--version"], { stdout: "ignore", stderr: "ignore" });
+      const timer = setTimeout(() => proc.kill(), probeTimeoutMs);
+      try {
+        await proc.exited;
+      } finally {
+        clearTimeout(timer);
+      }
       return;
     } catch (e) {
       lastError = errorMessage(e);
@@ -398,11 +407,13 @@ export async function waitUntilSpawnable(
             `  Fix: delete ${dirname(binPath)} and re-run \`kesha install\`.`,
         );
       }
-      if (Date.now() - startedAt + delay > deadlineMs) break;
-      if (delay === 100) {
+      if (Date.now() + delay > deadline) break;
+      if (!warned) {
+        warned = true;
         log.progress("Waiting for the engine binary to be released by the system...");
       }
       await Bun.sleep(delay);
+      delay = Math.min(delay * 2, 2_000);
     }
   }
 
@@ -458,8 +469,9 @@ async function fetchEngineBinary(
   await streamResponseToFile(res, binPath, "kesha-engine binary");
   chmodSync(binPath, 0o755);
   darwinTrustBinary(binPath, "kesha-engine binary");
-  writeInstalledEngineVersion(binPath, engineVersion);
+  // Marker last: writing it first sends the retry down the cacheValid branch, which never waits.
   await waitUntilSpawnable(binPath);
+  writeInstalledEngineVersion(binPath, engineVersion);
   log.success(`Engine binary downloaded (v${engineVersion}).`);
   await Promise.all(sidecarPromises);
 }

@@ -98,6 +98,10 @@ jobs:
               - 'src/engine.ts'
               - 'src/lib.ts'
               - 'src/paths.ts'
+              # The download path itself: a revert of the awaited `writer.end()` must re-fire
+              # these lanes, and `install.ts` carries the backend pre-flight (#216).
+              - 'src/progress.ts'
+              - 'src/cli/install.ts'
               - 'src/transcribe.ts'
               - 'src/cli/dispatch.ts'
               - 'src/cli/main.ts'
@@ -106,6 +110,9 @@ jobs:
               - 'tests/integration/say-e2e.test.ts'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
+              - '.github/scripts/smoke-synthesis.ts'
+              - '.github/scripts/assert-transcript.ts'
+              - '.github/scripts/assert-install-warmup.ts'
             tts_e2e:
               - 'rust/**'
               - 'package.json'
@@ -445,29 +452,22 @@ jobs:
       - name: 🔊 Install published Linux backend
         uses: ./.github/actions/install-kesha-backend
         with:
-          # Models only, same reason as the Windows lane: a cached engine skips the download path.
           cache-path: |
             ~/.cache/kesha
-            !~/.cache/kesha/engine
           cache-key: ${{ runner.os }}-kesha-models-tts-v1
           cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
           ffmpeg-provider: apt
           install-args: --tts en ru
+          engine-dir: ~/.cache/kesha/engine
+          install-log: kesha-install.log
+          cache-write: "false"
 
       - name: 🚬 Smoke published Linux engine
         shell: bash
         run: |
           kesha status
           kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-linux-smoke.json
-          bun -e '
-            const output = await Bun.file("/tmp/kesha-linux-smoke.json").json();
-            if (!Array.isArray(output) || output.length !== 1) {
-              throw new Error("expected exactly one transcription result");
-            }
-            if (!output[0].text || output[0].text.length < 5) {
-              throw new Error("expected non-empty transcription text");
-            }
-          '
+          bun .github/scripts/assert-transcript.ts /tmp/kesha-linux-smoke.json
 
       # Synthesis was unproven on every non-Darwin platform (#464).
       - name: 🗣️ Synthesis round-trip
@@ -503,33 +503,18 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      - name: 💾 Cache backend
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          # Models only: a cached engine + version marker sends downloadEngine down its cacheValid branch, skipping fetchEngineBinary (#216).
-          path: |
-            ~/.cache/kesha
-            !~/.cache/kesha/engine
-          key: ${{ runner.os }}-kesha-models-tts-v1
-          restore-keys: ${{ runner.os }}-kesha-models-tts-
-
-      # Belt-and-braces against the exclusion above silently regressing: the cold path is the point.
-      - name: 🧊 Assert no engine is present before install
-        shell: bash
-        run: |
-          rm -rf ~/.cache/kesha/engine
-          test ! -e ~/.cache/kesha/engine
-
-      # Not the composite action: this lane keeps the install log to assert on warm-up.
       - name: 🔊 Cold install the published Windows engine
-        shell: bash
-        run: |
-          bun link
-          kesha install --tts en ru 2>&1 | tee kesha-install.log
-
-      - name: 🧊 Assert the engine really downloaded
-        shell: bash
-        run: grep -q "Engine binary downloaded" kesha-install.log
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          cache-path: |
+            ~/.cache/kesha
+          cache-key: ${{ runner.os }}-kesha-models-tts-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          ffmpeg-provider: skip
+          install-args: --tts en ru
+          engine-dir: ~/.cache/kesha/engine
+          install-log: kesha-install.log
+          cache-write: "false"
 
       - name: 🔥 Assert the ASR warm-up actually ran
         shell: bash
@@ -540,15 +525,7 @@ jobs:
         run: |
           kesha status
           kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > kesha-win-smoke.json
-          bun -e '
-            const output = await Bun.file("kesha-win-smoke.json").json();
-            if (!Array.isArray(output) || output.length !== 1) {
-              throw new Error("expected exactly one transcription result");
-            }
-            if (!output[0].text || output[0].text.length < 5) {
-              throw new Error("expected non-empty transcription text");
-            }
-          '
+          bun .github/scripts/assert-transcript.ts kesha-win-smoke.json
 
       - name: 🗣️ Synthesis round-trip
         shell: bash
@@ -634,15 +611,7 @@ jobs:
         run: |
           kesha status
           kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-release-smoke.json
-          bun -e '
-            const output = await Bun.file("/tmp/kesha-release-smoke.json").json();
-            if (!Array.isArray(output) || output.length !== 1) {
-              throw new Error("expected exactly one transcription result");
-            }
-            if (!output[0].text || output[0].text.length < 5) {
-              throw new Error("expected non-empty transcription text");
-            }
-          '
+          bun .github/scripts/assert-transcript.ts /tmp/kesha-release-smoke.json
 
       # The about-to-ship artifact needs the same synthesis proof as the published one (#464).
       - name: 🗣️ Synthesis round-trip
@@ -727,15 +696,7 @@ jobs:
         run: |
           kesha status
           kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > kesha-release-smoke.json
-          bun -e '
-            const output = await Bun.file("kesha-release-smoke.json").json();
-            if (!Array.isArray(output) || output.length !== 1) {
-              throw new Error("expected exactly one transcription result");
-            }
-            if (!output[0].text || output[0].text.length < 5) {
-              throw new Error("expected non-empty transcription text");
-            }
-          '
+          bun .github/scripts/assert-transcript.ts kesha-release-smoke.json
 
       - name: 🗣️ Synthesis round-trip
         shell: bash

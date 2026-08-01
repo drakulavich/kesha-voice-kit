@@ -13,7 +13,7 @@ function responseOf(body: string): Response {
   return new Response(bytes, { headers: { "content-length": String(bytes.length) } });
 }
 
-describe("streamResponseToFile releases the file before resolving", () => {
+describe("streamResponseToFile flushes before resolving", () => {
   test("the full payload is on disk when the promise resolves", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-stream-"));
     try {

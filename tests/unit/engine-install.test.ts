@@ -146,15 +146,6 @@ describe("getEngineBinaryName platform mapping (#216)", () => {
     expect(getEngineBinaryName("darwin", "arm64")).toBe("kesha-engine-darwin-arm64");
     expect(getEngineBinaryName("linux", "x64")).toBe("kesha-engine-linux-x64");
   });
-  test("no release asset mentions a version workaround", () => {
-    for (const [platform, arch] of [
-      ["win32", "x64"],
-      ["darwin", "arm64"],
-      ["linux", "x64"],
-    ] as const) {
-      expect(getEngineBinaryName(platform, arch)).not.toMatch(/v1\.[45]/);
-    }
-  });
   test("platforms without a published engine still throw", () => {
     expect(() => getEngineBinaryName("win32", "arm64")).toThrow(/Unsupported platform/);
     expect(() => getEngineBinaryName("darwin", "x64")).toThrow(/Unsupported platform/);
@@ -164,11 +155,11 @@ describe("getEngineBinaryName platform mapping (#216)", () => {
 
 describe("defaultEngineBinPath extension (#216)", () => {
   test("win32 keeps the .exe suffix so the downloaded PE is spawnable", () => {
-    expect(defaultEngineBinPath("win32").endsWith("kesha-engine.exe")).toBe(true);
+    expect(defaultEngineBinPath("win32")).toEndWith("kesha-engine.exe");
   });
   test("posix platforms stay extensionless", () => {
-    expect(defaultEngineBinPath("linux").endsWith("kesha-engine")).toBe(true);
-    expect(defaultEngineBinPath("darwin").endsWith("kesha-engine")).toBe(true);
+    expect(defaultEngineBinPath("linux")).toEndWith("kesha-engine");
+    expect(defaultEngineBinPath("darwin")).toEndWith("kesha-engine");
   });
   test("the version marker follows the binary name on win32", () => {
     expect(getVersionMarkerPath(defaultEngineBinPath("win32"))).toMatch(
@@ -183,6 +174,9 @@ describe("waitUntilSpawnable (#216)", () => {
     expect(isTransientSpawnLock("ETXTBSY: text file is busy, uv_spawn")).toBe(true);
     expect(isTransientSpawnLock("ENOENT: no such file or directory")).toBe(false);
     expect(isTransientSpawnLock("ENOEXEC: exec format error")).toBe(false);
+    // Policy, not a scanner: waiting these out would stall an install that can never succeed.
+    expect(isTransientSpawnLock("EACCES: permission denied")).toBe(false);
+    expect(isTransientSpawnLock("EPERM: operation not permitted")).toBe(false);
   });
 
   // The fixture is a shell script, which Windows cannot spawn — the lock-clearing
@@ -195,7 +189,7 @@ describe("waitUntilSpawnable (#216)", () => {
       const binPath = join(dir, "engine");
       writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
       chmodSync(binPath, 0o755);
-      expect(await waitUntilSpawnable(binPath)).toBeUndefined();
+      await waitUntilSpawnable(binPath);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

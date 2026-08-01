@@ -22,17 +22,49 @@ inputs:
     description: Additional arguments for `kesha install`
     required: false
     default: ""
+  engine-dir:
+    description: When set, delete this engine dir after cache restore so the install really downloads
+    required: false
+    default: ""
+  install-log:
+    description: When set, tee the install output to this file so a job can assert on it
+    required: false
+    default: ""
+  cache-write:
+    description: Set false so PR runs only read the cache; cache-seed.yml owns writing on main (#661)
+    required: false
+    default: "true"
 
 runs:
   using: composite
   steps:
     - name: 💾 Cache backend
-      if: ${{ inputs.cache-path != '' }}
+      if: ${{ inputs.cache-path != '' && inputs.cache-write == 'true' }}
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ${{ inputs.cache-path }}
         key: ${{ inputs.cache-key }}
         restore-keys: ${{ inputs.cache-restore-keys }}
+
+    - name: 💾 Restore backend cache
+      if: ${{ inputs.cache-path != '' && inputs.cache-write != 'true' }}
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.cache-path }}
+        key: ${{ inputs.cache-key }}
+        restore-keys: ${{ inputs.cache-restore-keys }}
+
+    # `!dir/sub` does NOT exclude children of an included dir (actions/toolkit#713), so purge explicitly.
+    - name: 🧊 Force a cold engine download
+      if: ${{ inputs.engine-dir != '' }}
+      shell: bash
+      env:
+        ENGINE_DIR: ${{ inputs.engine-dir }}
+      run: |
+        # A quoted "~/…" is a literal path, so the rm would no-op and the assert would still pass.
+        dir="${ENGINE_DIR/#\~/$HOME}"
+        rm -rf "$dir"
+        test ! -e "$dir"
 
     - name: 🎬 Install ffmpeg
       shell: bash
@@ -50,4 +82,19 @@ runs:
       shell: bash
       env:
         INSTALL_ARGS: ${{ inputs.install-args }}
-      run: bun link && kesha install $INSTALL_ARGS
+        INSTALL_LOG: ${{ inputs.install-log }}
+      run: |
+        bun link
+        if [ -n "$INSTALL_LOG" ]; then
+          kesha install $INSTALL_ARGS 2>&1 | tee "$INSTALL_LOG"
+        else
+          kesha install $INSTALL_ARGS
+        fi
+
+    # A cold install that silently reused a cached binary would green while testing nothing.
+    - name: 🧊 Assert the engine really downloaded
+      if: ${{ inputs.engine-dir != '' && inputs.install-log != '' }}
+      shell: bash
+      env:
+        INSTALL_LOG: ${{ inputs.install-log }}
+      run: grep -q "Engine binary downloaded" "$INSTALL_LOG"
