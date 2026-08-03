@@ -1552,12 +1552,8 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         .call()
         .with_context(|| format!("GET {url} ({})", f.rel_path))
         .coded(ErrorCode::ModelDownload)?;
-    let total = response
-        .headers()
-        .get("content-length")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
+    // Not the raw header — that one reports the compressed size when decompression is active.
+    let total = response.body().content_length().unwrap_or(0);
     let mut reader = response.into_body().into_reader();
     if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
         let mut reader = ProgressReader::new(&mut reader, total);
@@ -1575,12 +1571,26 @@ const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(
 const PROGRESS_BAR_WIDTH: usize = 20;
 
 static DOWNLOADS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
-static STDERR_LINE: Mutex<()> = Mutex::new(());
+/// `true` while a bar repaint has left the cursor mid-row. Guarded by the same lock
+/// as the writes themselves, so ownership of the row transfers atomically.
+static BAR_LINE_OPEN: Mutex<bool> = Mutex::new(false);
 
-/// Serializes install-progress writes. A bar repaint reads the in-flight count under
-/// this lock, so a worker that claimed a slot can't have its `GET` painted over.
+fn lock_stderr() -> std::sync::MutexGuard<'static, bool> {
+    BAR_LINE_OPEN.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn end_open_bar_line(open: &mut bool) {
+    if *open {
+        eprintln!();
+        *open = false;
+    }
+}
+
+/// Serializes install-progress writes and ends any open bar row first: the bar paints
+/// with `\r` and no newline, so an `eprintln!` would otherwise land inside that row.
 fn with_stderr<T>(write: impl FnOnce() -> T) -> T {
-    let _guard = STDERR_LINE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut open = lock_stderr();
+    end_open_bar_line(&mut open);
     write()
 }
 
@@ -1613,7 +1623,6 @@ struct ProgressReader<R> {
     total: u64,
     read: u64,
     last_draw: std::time::Instant,
-    line_len: usize,
 }
 
 impl<R: io::Read> ProgressReader<R> {
@@ -1623,40 +1632,28 @@ impl<R: io::Read> ProgressReader<R> {
             total,
             read: 0,
             last_draw: std::time::Instant::now(),
-            line_len: 0,
-        }
-    }
-
-    /// End the line instead of blanking it: once another worker has printed, the
-    /// cursor may have left our row, and an erase would eat that worker's output.
-    fn close_line(&mut self) {
-        if self.line_len > 0 {
-            eprintln!();
-            self.line_len = 0;
         }
     }
 
     fn draw(&mut self) {
-        with_stderr(|| {
-            if DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst) != 1 {
-                self.close_line();
-                return;
-            }
-            let pct = ((self.read.min(self.total) as f64 / self.total as f64) * 100.0) as usize;
-            let filled = pct * PROGRESS_BAR_WIDTH / 100;
-            // No file name — a deep path wraps the line, and then `\r` can't repaint it (Greptile P2 on #681).
-            let line = format!(
-                "    [{}{}] {:>3}%  {:.1}/{:.1}MB",
-                "█".repeat(filled),
-                "░".repeat(PROGRESS_BAR_WIDTH - filled),
-                pct,
-                self.read as f64 / 1_048_576.0,
-                self.total as f64 / 1_048_576.0,
-            );
-            eprint!("\r{line}");
-            let _ = io::Write::flush(&mut io::stderr());
-            self.line_len = line.chars().count();
-        });
+        let mut open = lock_stderr();
+        if DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst) != 1 {
+            end_open_bar_line(&mut open);
+            return;
+        }
+        let pct = ((self.read.min(self.total) as f64 / self.total as f64) * 100.0) as usize;
+        let filled = pct * PROGRESS_BAR_WIDTH / 100;
+        // No file name — a deep path wraps the line, and then `\r` can't repaint it (Greptile P2 on #681).
+        eprint!(
+            "\r    [{}{}] {:>3}%  {:.1}/{:.1}MB",
+            "█".repeat(filled),
+            "░".repeat(PROGRESS_BAR_WIDTH - filled),
+            pct,
+            self.read as f64 / 1_048_576.0,
+            self.total as f64 / 1_048_576.0,
+        );
+        let _ = io::Write::flush(&mut io::stderr());
+        *open = true;
     }
 }
 
@@ -1675,12 +1672,7 @@ impl<R: io::Read> io::Read for ProgressReader<R> {
 /// End the line here, not at EOF, so a mid-download bail prints its error on a fresh row.
 impl<R> Drop for ProgressReader<R> {
     fn drop(&mut self) {
-        let line_len = self.line_len;
-        with_stderr(|| {
-            if line_len > 0 {
-                eprintln!();
-            }
-        });
+        end_open_bar_line(&mut lock_stderr());
     }
 }
 
@@ -2008,14 +2000,36 @@ mod progress_tests {
         let _a = InFlight::new();
         let _b = InFlight::new();
         reader.draw();
-        assert_eq!(reader.line_len, 0, "must not draw beside another download");
+        assert!(!*lock_stderr(), "must not draw beside another download");
 
         drop(_b);
         reader.read = payload.len() as u64;
         reader.draw();
-        assert!(
-            reader.line_len > 0,
-            "must draw when it is the only download"
-        );
+        assert!(*lock_stderr(), "must draw when it is the only download");
+    }
+
+    /// A sibling's `GET`/`OK` must not land inside the bar's open `\r` row (grok review on #681).
+    #[test]
+    fn sibling_write_ends_the_open_bar_row() {
+        let payload = vec![7u8; 512];
+        let mut reader = ProgressReader::new(payload.as_slice(), payload.len() as u64);
+        let _alone = InFlight::new();
+        reader.draw();
+        assert!(*lock_stderr(), "bar row is open");
+
+        with_stderr(|| {});
+        assert!(!*lock_stderr(), "a non-bar write must close the row first");
+    }
+
+    #[test]
+    fn dropping_the_reader_ends_the_open_bar_row() {
+        let payload = vec![7u8; 512];
+        let _alone = InFlight::new();
+        {
+            let mut reader = ProgressReader::new(payload.as_slice(), payload.len() as u64);
+            reader.draw();
+            assert!(*lock_stderr(), "bar row is open");
+        }
+        assert!(!*lock_stderr(), "drop must close the row");
     }
 }
