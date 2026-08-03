@@ -76,11 +76,9 @@ describe("init onboarding", () => {
     try {
       const selection = await promptInitSelection(
         initArgs({ diarize: true }),
-        {
-          async question(prompt: string) {
-            prompts.push(prompt);
-            return "";
-          },
+        async (message, initialValue) => {
+          prompts.push(message);
+          return initialValue;
         },
         undefined,
         false,
@@ -94,8 +92,7 @@ describe("init onboarding", () => {
       expect(selection.diarize).toBe(false);
       expect(selection.ttsLangs).toEqual([]);
       expect(initInstallArgs(selection)).toEqual(["kesha", "install"]);
-      // TTS is now a multiselect handled outside the yes/no PromptApi, so only
-      // the VAD question flows through `question` (diarize skipped off darwin).
+      // TTS is a multiselect, diarize is skipped off darwin — only VAD is a yes/no here.
       expect(prompts).toHaveLength(1);
       expect(prompts.join("\n")).not.toContain("diarization");
       expect(ttsPreselects).toEqual([[]]);
@@ -110,11 +107,7 @@ describe("init onboarding", () => {
     try {
       const selection = await promptInitSelection(
         initArgs({ tts: true }),
-        {
-          async question() {
-            return "";
-          },
-        },
+        async (_message, initialValue) => initialValue,
         undefined,
         false,
         false,
@@ -125,6 +118,33 @@ describe("init onboarding", () => {
     } finally {
       console.error = savedError;
     }
+  });
+
+  test("preselect flags arrive as the confirm prompt's initial value", async () => {
+    const initialValues: boolean[] = [];
+    const selection = await promptInitSelection(
+      initArgs({ vad: true }),
+      async (_message, initialValue) => {
+        initialValues.push(initialValue);
+        return initialValue;
+      },
+      undefined,
+      false,
+      false,
+      async () => [],
+    );
+
+    expect(initialValues).toEqual([true]);
+    expect(selection.vad).toBe(true);
+  });
+
+  test("init drives every prompt through @clack/prompts", async () => {
+    // #677: a node:readline interface sharing stdin with clack deadlocks after clack closes.
+    const source = await Bun.file(new URL("../../src/cli/init.ts", import.meta.url)).text();
+    const imported = [...source.matchAll(/^import .*?from "(.+?)";$/gm)].map((m) => m[1]);
+
+    expect(imported).toContain("@clack/prompts");
+    expect(imported.filter((m) => m.startsWith("node:readline"))).toEqual([]);
   });
 
   test("non-interactive suggestions preserve backend and cache flags", () => {
