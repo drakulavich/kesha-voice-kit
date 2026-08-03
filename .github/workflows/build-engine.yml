@@ -303,8 +303,9 @@ jobs:
             await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
           '
 
-      # Also stages the SHA-pinned ANE voice packs on darwin: the upstream bundle ships only af_heart (#475).
+      # macOS is exempt: its smoke uses AVSpeech, which needs no models at all.
       - name: 🔊 Install English TTS models
+        if: matrix.os != 'macos-14'
         uses: ./.github/actions/install-kesha-backend
         with:
           cache-path: |
@@ -315,19 +316,19 @@ jobs:
           install-args: --tts en
           cache-write: "false"
 
-      # Darwin's install warm-up is non-fatal by design, so only this step proves synthesis actually ran.
       - name: 🗣️ Pre-upload synthesis smoke
+        if: matrix.os != 'macos-14'
         shell: bash
         run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
 
-      # FluidAudio fetches under the stdout guard, so a missing pack reads as an opaque Swift bridge error (#661).
-      - name: 🔎 Inventory FluidAudio models
-        if: failure() && matrix.os == 'macos-14'
+      # Not Kokoro: FluidAudio pins its vocoder stage to `.cpuAndNeuralEngine` and this runner is an ANE-less VM (#678).
+      - name: 🗣️ Pre-upload synthesis smoke (AVSpeech)
+        if: matrix.os == 'macos-14'
         shell: bash
         run: |
-          for dir in "$HOME/.cache/fluidaudio/Models" "$HOME/Library/Application Support/FluidAudio/Models"; do
-            [ -d "$dir" ] && { echo "$dir:"; find "$dir" -type f | wc -l; du -sh "$dir"; } || echo "absent: $dir"
-          done
+          voices=$("./${{ matrix.binary }}" say --list-voices | grep '^macos-')
+          voice=$(echo "$voices" | grep -m1 'en-US' || echo "$voices" | head -1)
+          bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice "$voice" synthesis-smoke
 
       - name: Inspect macOS dynamic deps
         if: matrix.os == 'macos-14'

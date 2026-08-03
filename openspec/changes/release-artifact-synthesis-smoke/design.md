@@ -37,6 +37,7 @@ new tag.
 
 - Transcribing the synthesised audio back on the release runner (needs the multi-GB ASR set).
 - Russian or any non-English voice on the linux/windows rows.
+- Covering the darwin `system_kokoro` path in CI — impossible on an ANE-less runner (#678).
 - Replacing or weakening the existing `--capabilities-json` assertions.
 - Changing the release job, the publish path, or the CLAUDE.md draft-validation step.
 
@@ -78,30 +79,33 @@ cost ~55s (linux) / ~60s (windows), so the cache stays. macOS has no `macOS-kesh
 entry, so that row downloads cold every release — a candidate for the seed workflow once #675
 frees budget, not something to fix here.
 
-### D4 — macOS installs like every other row; only the diagnostics differ
+### D4 — darwin synthesises through AVSpeech, not Kokoro
 
-Corrected after the first dispatch run: the macOS row was originally exempted from
-`kesha install`, on the reasoning that `system_kokoro` runs in-engine and needs nothing on
-disk. That is wrong, and the run proved it — `en-am_michael` failed with
-`invalidResponse(description: "am_michael voice pack", statusCode: 404)`.
+Two dispatch runs settled this empirically, and both corrections are worth keeping.
 
-The upstream FluidAudio ANE bundle ships exactly one voice pack, `af_heart`. Kesha already
-works around this (#475): `models::stage_ane_kokoro_voices` downloads the SHA-pinned packs from
-onnx-community into `~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/`, where FluidAudio
-resolves them local-first — and that staging runs during `kesha install --tts`. Skipping the
-install skipped the staging, so every voice except `af_heart` 404s, `am_michael` included.
+First, the macOS row was exempted from `kesha install` on the reasoning that an in-engine
+Kokoro needs nothing on disk. Wrong: the upstream FluidAudio ANE bundle ships exactly one voice
+pack, `af_heart`, and kesha works around that (#475) by staging SHA-pinned packs into
+`~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/` during `kesha install --tts`. Skipping the
+install produced `invalidResponse(description: "am_michael voice pack", statusCode: 404)`.
 
-So all three rows install, and the install step is the named download the no-auto-download
-contract wants. `engine-install.ts::warmDarwinKokoro` already synthesises `en-am_michael` at
-install time on darwin, but warns and continues on failure — the same non-fatal posture the
-spec already refuses to accept as evidence for ASR. The smoke step is therefore the assertion,
-not the install.
+Second — and decisive — Kokoro cannot run on the runner at all. With every asset staged, the
+next run failed at `predictionFailed(stage: "vocoder", …)`: `KokoroAneModelStore` pins
+`albert`, `postAlbert`, `alignment`, and `vocoder` to `.cpuAndNeuralEngine`, GitHub's
+`macos-14` runner is a VM on Apple's Virtualization Framework, and the ANE is not virtualised.
+Parakeet survives on the same runner because `fluidaudio-rs` sets `cfg.computeUnits = .all` for
+ASR. FluidAudio documents `KokoroAneManager(computeUnits: .cpuAndGpu)` as an escape hatch, but
+`fluidaudio-rs` never plumbs it — `init_kokoro(&self, default_voice, lang)` has no such
+parameter — so kesha cannot reach it without an upstream change (#678).
 
-Two macOS-only diagnostics remain: FluidAudio's fetch runs inside
-`with_silenced_stdout_oneshot`, so a missing pack surfaces as an opaque `Swift bridge error`
-(#661). On failure the job inventories both FluidAudio roots — `~/.cache/fluidaudio/Models`
-(kesha-staged voice packs) and `~/Library/Application Support/FluidAudio/Models` (FluidAudio's
-own model bundles).
+The same binary synthesises `en-am_michael` correctly on real Apple Silicon (M2, macOS 26.5.2):
+exit 0, 24 kHz mono, 3.55 s, RMS 2653. The artifact is fine; the runner is the constraint.
+
+So the darwin row synthesises through AVSpeech instead, picking the first `macos-*` voice the
+artifact lists (preferring `en-US`). That needs no models, no ANE, and no `kesha install` — and
+it covers the sidecar spawn path end-to-end, which today is asserted only at list level. Kokoro
+on darwin stays uncovered in CI; #678 tracks closing that, and the spec records it as a known
+gap rather than an assumed pass.
 
 ### D5 — Prove the change with a build-only `workflow_dispatch`, and guard it statically
 

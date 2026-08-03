@@ -5,11 +5,12 @@
  * no lane covered — rust-test.yml runs unit and contract tests, and the Linux
  * engine smokes transcribe a fixture but never synthesise.
  *
- * Usage: bun .github/scripts/smoke-synthesis.ts [--no-roundtrip] <work-dir>
+ * Usage: bun .github/scripts/smoke-synthesis.ts [--no-roundtrip] [--voice <id>] <work-dir>
  *
  * `--no-roundtrip` stops after synthesis and drops to English only. It exists for
  * build-engine.yml's pre-upload gate (#671), which runs on a release builder with no ASR
  * model set — transcribing back there would cost a multi-GB download per platform.
+ * `--voice` overrides the voice, for platforms whose default engine can't run in CI.
  */
 import { mkdirSync } from "fs";
 import { join } from "path";
@@ -17,20 +18,28 @@ import { assertSingleTranscript } from "./assert-transcript";
 
 const args = process.argv.slice(2);
 const noRoundtrip = args.includes("--no-roundtrip");
-const workDir = args.find((arg) => !arg.startsWith("--"));
-if (!workDir) {
-  console.error("usage: smoke-synthesis.ts [--no-roundtrip] <work-dir>");
+const voiceFlag = args.indexOf("--voice");
+const voiceOverride = voiceFlag === -1 ? undefined : args[voiceFlag + 1];
+const positional = args.filter(
+  (arg, i) => !arg.startsWith("--") && i !== voiceFlag + 1,
+);
+const workDir = positional[0];
+if (!workDir || (voiceFlag !== -1 && !voiceOverride)) {
+  console.error("usage: smoke-synthesis.ts [--no-roundtrip] [--voice <id>] <work-dir>");
   process.exit(2);
 }
 mkdirSync(workDir, { recursive: true });
 
+const ENGLISH = "The quick brown fox jumps over the lazy dog.";
 const ALL_VOICES = [
-  { voice: "en-am_michael", text: "The quick brown fox jumps over the lazy dog." },
+  { voice: "en-am_michael", text: ENGLISH },
   { voice: "ru-vosk-m02", text: "Проверка синтеза речи на русском языке." },
 ];
-const VOICES = noRoundtrip
-  ? ALL_VOICES.filter((v) => v.voice === "en-am_michael")
-  : ALL_VOICES;
+const VOICES = voiceOverride
+  ? [{ voice: voiceOverride, text: ENGLISH }]
+  : noRoundtrip
+    ? ALL_VOICES.filter((v) => v.voice === "en-am_michael")
+    : ALL_VOICES;
 
 // Without a timeout a hung `kesha say` burns the whole job budget and reports nothing useful.
 async function run(

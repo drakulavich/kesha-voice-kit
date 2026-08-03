@@ -25,9 +25,10 @@ gap the spec already asserts.
   no-auto-download rule intact: the download is an explicit, named step.
 - The existing `--capabilities-json` assertions stay exactly as they are; the synthesis
   round-trip is added after them, not in place of them.
-- Every row installs the English TTS set through `kesha install --tts en`. On darwin that
-  install is what stages the SHA-pinned ANE voice packs (#475) FluidAudio then resolves
-  local-first; without it every voice but `af_heart` 404s against the upstream bundle.
+- linux-x64 and windows-x64 synthesise `en-am_michael` after `kesha install --tts en`.
+  darwin-arm64 synthesises through AVSpeech instead: FluidAudio pins the Kokoro vocoder to the
+  Neural Engine, which GitHub's `macos-14` VM does not expose (#678). AVSpeech needs no models
+  and covers the Swift sidecar's spawn path, asserted only at list level today.
 
 ## Capabilities
 
@@ -52,6 +53,8 @@ None. This change mechanises an obligation the `installation` spec already state
   same posture as the existing round-trip script ("Not asserting on WER").
 - **No new coverage for Russian / non-English voices on linux and windows.** English only, to
   keep one model download per platform per release.
+- **No CI coverage of darwin Kokoro.** Not achievable on an ANE-less runner; tracked in #678,
+  and recorded in the spec as a known gap rather than an assumed pass.
 - **No change to the release job, the publish path, or the draft-validation step in
   CLAUDE.md.** The human end-to-end check on the draft asset stays until this gate has proven
   itself across a release or two.
