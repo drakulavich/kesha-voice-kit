@@ -105,6 +105,27 @@ export function createPercentProgress(
   };
 }
 
+type SinkWrite = ReturnType<Bun.FileSink["write"]>;
+
+/**
+ * Waits for the sink whenever a write did not complete inline.
+ *
+ * Bun's FileSink reports a pending write as a Promise and backpressure as the negative
+ * sentinel `-(bytes + 1)`; discarding either buffers the whole download in memory instead
+ * of throttling to disk speed, which for the engine is ~63 MB and for the Vosk voice ~937 MB
+ * (#669). Exported for the test — the sentinel is not reproducible on demand.
+ */
+export async function applyBackpressure(
+  writer: Pick<Bun.FileSink, "flush">,
+  written: SinkWrite,
+): Promise<void> {
+  if (typeof written !== "number") {
+    await written;
+    return;
+  }
+  if (written < 0) await writer.flush();
+}
+
 export async function streamResponseToFile(
   res: Response,
   destPath: string,
@@ -123,7 +144,7 @@ export async function streamResponseToFile(
   let bytes = 0;
   try {
     for await (const chunk of res.body) {
-      writer.write(chunk);
+      await applyBackpressure(writer, writer.write(chunk));
       bytes += chunk.length;
       progress.update(chunk.length);
     }
