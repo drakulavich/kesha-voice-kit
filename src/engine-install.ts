@@ -8,6 +8,7 @@ import {
   TRANSCRIBE_DIARIZE_FEATURE,
   type EngineCapabilities,
 } from "./engine";
+import { engineTarget } from "./engine-targets";
 import { isDarwinArm64 } from "./fluid-kokoro-cache";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
@@ -26,14 +27,12 @@ export {
 const GITHUB_REPO = "drakulavich/kesha-voice-kit";
 
 export function getEngineBinaryName(
-  platform = process.platform,
-  arch = process.arch,
+  platform: string = process.platform,
+  arch: string = process.arch,
 ): string {
-  if (platform === "darwin" && arch === "arm64") return "kesha-engine-darwin-arm64";
-  if (platform === "linux" && arch === "x64") return "kesha-engine-linux-x64";
-  if (platform === "win32" && arch === "x64") return "kesha-engine-windows-x64.exe";
-
-  throw new Error(`Unsupported platform: ${platform} ${arch}`);
+  const target = engineTarget(platform, arch);
+  if (!target) throw new Error(`Unsupported platform: ${platform} ${arch}`);
+  return target.assetName;
 }
 
 /** Sidecar spec — centralises AVSpeech (#141) and future sidecars so each is one entry. */

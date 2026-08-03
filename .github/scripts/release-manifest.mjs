@@ -29,9 +29,10 @@ const ENGINE_ASSETS = [
     id: "windows-x64",
     os: "win32",
     arch: "x64",
-    status: "release-artifact-only",
+    status: "supported",
     engineAsset: "kesha-engine-windows-x64.exe",
-    note: "Release workflow builds this artifact, but the Bun installer currently blocks Windows x64.",
+    // The installed name keeps the suffix: an extensionless PE is not reliably spawnable (#216).
+    install: { directory: "engine/bin", filename: "kesha-engine.exe" },
   },
 ];
 
@@ -175,11 +176,13 @@ function assertIncludes(source, needle, file) {
 
 function validateSourceConsistency(manifest) {
   const installer = readFileSync("src/engine-install.ts", "utf8");
+  // Asset names moved out of engine-install.ts into the one platform table (#216).
+  const targets = readFileSync("src/engine-targets.ts", "utf8");
   const workflow = readFileSync(".github/workflows/build-engine.yml", "utf8");
 
   for (const p of ENGINE_ASSETS) {
     if (p.status === "supported") {
-      assertIncludes(installer, p.engineAsset, "src/engine-install.ts");
+      assertIncludes(targets, p.engineAsset, "src/engine-targets.ts");
     }
     assertIncludes(workflow, p.engineAsset, ".github/workflows/build-engine.yml");
   }

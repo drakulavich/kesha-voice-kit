@@ -1,6 +1,7 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { downloadEngine } from "../engine-install";
+import { engineTarget } from "../engine-targets";
 import { getEngineBinPath, getEngineCapabilities } from "../engine";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
@@ -91,13 +92,10 @@ export function resolveBackendFlag(coreml: boolean, onnx: boolean): string | und
 }
 
 export function defaultBackendForPlatform(
-  platform = process.platform,
-  arch = process.arch,
+  platform: string = process.platform,
+  arch: string = process.arch,
 ): string | undefined {
-  if (platform === "darwin" && arch === "arm64") return "coreml";
-  if (platform === "linux" && arch === "x64") return "onnx";
-  if (platform === "win32" && arch === "x64") return "onnx";
-  return undefined;
+  return engineTarget(platform, arch)?.backend;
 }
 
 type InstallDiagnosticErrorKind = "validation_failed" | "install_failed";
