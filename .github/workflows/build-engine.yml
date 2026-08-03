@@ -123,6 +123,8 @@ jobs:
       # libswift_Concurrency.dylib (which no longer ships as a standalone
       # file on macOS 26+).
       MACOSX_DEPLOYMENT_TARGET: "14.0"
+      # Points the CLI at the staged artifact for the pre-upload smoke, as release-branch-engine-smoke does (#671).
+      KESHA_ENGINE_BIN: ${{ github.workspace }}/${{ matrix.binary }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
@@ -283,6 +285,55 @@ jobs:
               exit 1
             }
           fi
+
+      # The smoke above proves the artifact starts and advertises `tts`, not that it synthesises (#671, #636).
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 🔗 Link the CLI
+        shell: bash
+        run: bun link
+
+      # Load-bearing: on a version mismatch `downloadEngine` fetches the published engine, whose tag does not exist yet.
+      - name: 🧾 Mark staged engine version
+        shell: bash
+        run: |
+          bun -e '
+            const pkg = await Bun.file("package.json").json();
+            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
+          '
+
+      # Restore-only on the key published-engine-smoke already reads; a new one would evict a working entry (#675).
+      - name: 🔊 Install English TTS models
+        if: matrix.os != 'macos-14'
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          cache-path: |
+            ~/.cache/kesha
+          cache-key: ${{ runner.os }}-kesha-models-tts-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          ffmpeg-provider: skip
+          install-args: --tts en
+          cache-write: "false"
+
+      - name: 🗣️ Pre-upload synthesis smoke
+        if: matrix.os != 'macos-14'
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
+
+      # No ONNX Kokoro on this row — fluidaudio-rs fetches the weights inside this step on first `init_kokoro`.
+      - name: 🗣️ Pre-upload synthesis smoke (downloads FluidAudio Kokoro weights)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
+
+      # That fetch runs under the stdout guard, so a truncated download reads as an opaque Swift bridge error (#661).
+      - name: 🔎 Inventory FluidAudio models
+        if: failure() && matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          dir="$HOME/Library/Application Support/FluidAudio/Models"
+          [ -d "$dir" ] && { find "$dir" -type f | wc -l; du -sh "$dir"; } || echo "no FluidAudio model dir at $dir"
 
       - name: Inspect macOS dynamic deps
         if: matrix.os == 'macos-14'

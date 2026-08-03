@@ -5,23 +5,32 @@
  * no lane covered — rust-test.yml runs unit and contract tests, and the Linux
  * engine smokes transcribe a fixture but never synthesise.
  *
- * Usage: bun .github/scripts/smoke-synthesis.ts <work-dir>
+ * Usage: bun .github/scripts/smoke-synthesis.ts [--no-roundtrip] <work-dir>
+ *
+ * `--no-roundtrip` stops after synthesis and drops to English only. It exists for
+ * build-engine.yml's pre-upload gate (#671), which runs on a release builder with no ASR
+ * model set — transcribing back there would cost a multi-GB download per platform.
  */
 import { mkdirSync } from "fs";
 import { join } from "path";
 import { assertSingleTranscript } from "./assert-transcript";
 
-const workDir = process.argv[2];
+const args = process.argv.slice(2);
+const noRoundtrip = args.includes("--no-roundtrip");
+const workDir = args.find((arg) => !arg.startsWith("--"));
 if (!workDir) {
-  console.error("usage: smoke-synthesis.ts <work-dir>");
+  console.error("usage: smoke-synthesis.ts [--no-roundtrip] <work-dir>");
   process.exit(2);
 }
 mkdirSync(workDir, { recursive: true });
 
-const VOICES = [
+const ALL_VOICES = [
   { voice: "en-am_michael", text: "The quick brown fox jumps over the lazy dog." },
   { voice: "ru-vosk-m02", text: "Проверка синтеза речи на русском языке." },
 ];
+const VOICES = noRoundtrip
+  ? ALL_VOICES.filter((v) => v.voice === "en-am_michael")
+  : ALL_VOICES;
 
 // Without a timeout a hung `kesha say` burns the whole job budget and reports nothing useful.
 async function run(
@@ -63,6 +72,7 @@ for (const { voice, text } of VOICES) {
     fail(`${voice}: expected a RIFF/WAVE header, got ${JSON.stringify(header)}`);
   }
   console.log(`ok: ${voice} synthesised ${bytes.length} bytes`);
+  if (noRoundtrip) continue;
 
   const back = await run(["--json", outPath]);
   if (back.code !== 0) fail(`transcribing ${voice}.wav exited ${back.code}\n${back.stderr}`);
@@ -77,4 +87,4 @@ for (const { voice, text } of VOICES) {
   console.log(`ok: ${voice} round-tripped to "${transcript.slice(0, 60)}"`);
 }
 
-console.log("Synthesis round-trip smoke passed.");
+console.log(noRoundtrip ? "Synthesis smoke passed." : "Synthesis round-trip smoke passed.");
