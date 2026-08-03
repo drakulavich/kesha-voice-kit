@@ -327,7 +327,8 @@ jobs:
         shell: bash
         run: |
           voices=$("./${{ matrix.binary }}" say --list-voices | grep '^macos-')
-          voice=$(echo "$voices" | grep -m1 'en-US' || echo "$voices" | head -1)
+          voice=$(echo "$voices" | grep -m1 'voice.compact.en-US' || echo "$voices" | grep -m1 'en-US')
+          echo "voice: $voice"
           bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice "$voice" synthesis-smoke
 
       - name: Inspect macOS dynamic deps

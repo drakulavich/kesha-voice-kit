@@ -101,8 +101,11 @@ parameter — so kesha cannot reach it without an upstream change (#678).
 The same binary synthesises `en-am_michael` correctly on real Apple Silicon (M2, macOS 26.5.2):
 exit 0, 24 kHz mono, 3.55 s, RMS 2653. The artifact is fine; the runner is the constraint.
 
-So the darwin row synthesises through AVSpeech instead, picking the first `macos-*` voice the
-artifact lists (preferring `en-US`). That needs no models, no ANE, and no `kesha install` — and
+So the darwin row synthesises through AVSpeech instead, picking a `voice.compact.en-US` voice
+(Samantha's class) from what the artifact lists. Compact voices ship with the OS; the third
+dispatch showed that an Eloquence voice — listed but a downloadable asset — fails on the runner
+with `avspeech helper exited status 3: timeout waiting for synthesis`, the classic
+missing-asset symptom. That needs no models, no ANE, and no `kesha install` — and
 it covers the sidecar spawn path end-to-end, which today is asserted only at list level. Kokoro
 on darwin stays uncovered in CI; #678 tracks closing that, and the spec records it as a known
 gap rather than an assumed pass.
