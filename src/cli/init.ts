@@ -1,7 +1,5 @@
 import { defineCommand } from "citty";
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
-import { multiselect, isCancel, cancel } from "@clack/prompts";
+import { confirm, multiselect, isCancel, cancel } from "@clack/prompts";
 import { renderInstallPlan } from "../install-plan";
 import { log } from "../log";
 import { getEngineCapabilities } from "../engine";
@@ -23,6 +21,18 @@ const TTS_LANG_LABELS: Record<string, string> = {
 /** Signature of the interactive TTS-language picker (injectable for tests). */
 export type TtsLangPrompt = (preselect: string[]) => Promise<string[]>;
 
+/** Signature of the interactive yes/no prompt (injectable for tests). */
+export type ConfirmPrompt = (message: string, initialValue: boolean) => Promise<boolean>;
+
+/** Ctrl-C at any prompt ends init without downloading, rather than falling through with a default. */
+function exitIfCancelled<T>(answer: T | symbol): T {
+  if (isCancel(answer)) {
+    cancel("Init cancelled.");
+    process.exit(0);
+  }
+  return answer as T;
+}
+
 async function promptTtsLangs(preselect: string[]): Promise<string[]> {
   const caps = await getEngineCapabilities();
   const supported = caps?.tts?.languages.map((l) => l.code) ?? TTS_LANG_FALLBACK;
@@ -33,11 +43,12 @@ async function promptTtsLangs(preselect: string[]): Promise<string[]> {
     initialValues: preselect.filter((l) => supported.includes(l)),
     required: false,
   });
-  if (isCancel(selected)) {
-    cancel("Init cancelled.");
-    process.exit(0);
-  }
-  return selected as string[];
+  return exitIfCancelled(selected);
+}
+
+/** #677: keep every prompt on clack — its close() unpipes stdin, deadlocking any readline sharing it. */
+async function promptConfirm(message: string, initialValue: boolean): Promise<boolean> {
+  return exitIfCancelled(await confirm({ message, initialValue }));
 }
 
 export interface InitCommandArgs extends SharedInstallArgs {
@@ -50,10 +61,6 @@ export interface InitSelection {
   ttsLangs: string[];
   vad: boolean;
   diarize: boolean;
-}
-
-interface PromptApi {
-  question(prompt: string): Promise<string>;
 }
 
 export function canInstallDiarizeOnPlatform(
@@ -140,17 +147,17 @@ export function renderInitOverview(canDiarize = canInstallDiarizeOnPlatform()): 
 
 export async function promptInitSelection(
   args: InitCommandArgs,
-  prompt: PromptApi,
+  prompt: ConfirmPrompt,
   backend = resolveBackendFlag(args.coreml, args.onnx),
   canDiarize = canInstallDiarizeOnPlatform(),
   noCache = resolveNoCacheFlag(args),
   promptTts: TtsLangPrompt = promptTtsLangs,
 ): Promise<InitSelection> {
   const ttsLangs = await promptTts(args.tts ? ["en"] : []);
-  const vad = await askYesNo(prompt, "Install VAD for long or silence-heavy audio?", args.vad);
+  const vad = await prompt("Install VAD for long or silence-heavy audio?", args.vad);
   let diarize = false;
   if (canDiarize) {
-    diarize = await askYesNo(prompt, "Install speaker diarization for `--speakers`?", args.diarize);
+    diarize = await prompt("Install speaker diarization for `--speakers`?", args.diarize);
   } else if (args.diarize) {
     log.warn("--diarize is currently darwin-arm64 only; omitting it from the interactive install.");
   }
@@ -162,17 +169,6 @@ export async function promptInitSelection(
     vad,
     diarize,
   };
-}
-
-async function askYesNo(prompt: PromptApi, message: string, defaultValue: boolean): Promise<boolean> {
-  const suffix = defaultValue ? "Y/n" : "y/N";
-  for (;;) {
-    const answer = (await prompt.question(`${message} [${suffix}] `)).trim().toLowerCase();
-    if (answer === "") return defaultValue;
-    if (answer === "y" || answer === "yes") return true;
-    if (answer === "n" || answer === "no") return false;
-    log.warn("Please answer yes or no.");
-  }
 }
 
 async function printPlan(selection: InitSelection): Promise<void> {
@@ -282,33 +278,36 @@ export const initCommand = defineCommand({
     }
 
     log.info(renderInitOverview());
-    const rl = createInterface({ input, output });
-    try {
-      const prompted = await promptInitSelection(args, rl, backend, canInstallDiarizeOnPlatform(), noCache);
-      log.info("");
-      await printPlan(prompted);
-      const confirmed = await askYesNo(rl, `Run \`${initInstallArgs(prompted).join(" ")}\` now?`, true);
-      if (!confirmed) {
-        log.info(`Skipped install. Run later: ${initInstallArgs(prompted).join(" ")}`);
-        return;
-      }
-      await performInstall(
-        prompted.noCache,
-        prompted.backend,
-        prompted.ttsLangs,
-        prompted.vad,
-        prompted.diarize,
-      );
-      // Next-steps hint (#523): leave the user with something runnable rather
-      // than ending on the install log.
-      log.info("");
-      log.success("Kesha is ready. Try:");
-      log.info("  kesha path/to/audio.ogg     Transcribe a file.");
-      if (prompted.ttsLangs.length > 0) {
-        log.info('  kesha say "hello"           Speak text (TTS).');
-      }
-    } finally {
-      rl.close();
+    const prompted = await promptInitSelection(
+      args,
+      promptConfirm,
+      backend,
+      canInstallDiarizeOnPlatform(),
+      noCache,
+    );
+    log.info("");
+    await printPlan(prompted);
+    const confirmed = await promptConfirm(
+      `Run \`${initInstallArgs(prompted).join(" ")}\` now?`,
+      true,
+    );
+    if (!confirmed) {
+      log.info(`Skipped install. Run later: ${initInstallArgs(prompted).join(" ")}`);
+      return;
+    }
+    await performInstall(
+      prompted.noCache,
+      prompted.backend,
+      prompted.ttsLangs,
+      prompted.vad,
+      prompted.diarize,
+    );
+    // #523: end on something runnable, not on the install log.
+    log.info("");
+    log.success("Kesha is ready. Try:");
+    log.info("  kesha path/to/audio.ogg     Transcribe a file.");
+    if (prompted.ttsLangs.length > 0) {
+      log.info('  kesha say "hello"           Speak text (TTS).');
     }
   },
 });
