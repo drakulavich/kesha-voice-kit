@@ -82,10 +82,9 @@ SHALL NOT by itself be treated as evidence that the Engine initialises on that p
 
 ## Open Issues
 
-- Cache scope on tag-triggered runs: the model caches the pre-upload smoke would restore are
-  written on `main` (`cache-seed.yml`, #663). Whether a run triggered by `refs/tags/v*` may
-  restore a default-branch cache entry is not yet confirmed against observed behaviour. If it
-  cannot, every release build pays a cold model download and the timeout budget must absorb it.
+- Cache scope on tag-triggered runs: a branch `workflow_dispatch` restores the `main`-scoped
+  entry, observed. The `refs/tags/v*` case is inferred from the same default-branch scope, not
+  observed, and can only be observed on a real release.
 - Engine version marker: `release-branch-engine-smoke` writes `${KESHA_ENGINE_BIN}.version`
   from `package.json#keshaEngine.version`. On a release build the tag is the authority for
   that version, and whether the two can disagree mid-release is not established here.

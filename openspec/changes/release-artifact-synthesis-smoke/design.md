@@ -73,21 +73,35 @@ drift, and the assertions are the part worth sharing.
 cache entry is minted: the repo already sits at ~9.5 GiB against GitHub's 10 GB budget
 (#675), and a new key would evict something that is doing work.
 
-Open question deferred to T4: that entry is ~3.4 GB because it carries the ASR set too.
-Restoring 3.4 GB to use ~330 MB of it may be slower than a cold Kokoro-only download. Measure
-on the dry run; if the cold download wins, drop the cache step rather than adding a key.
+Measured on the first dispatch: the linux entry restored in ~44s and the whole added block
+cost ~55s (linux) / ~60s (windows), so the cache stays. macOS has no `macOS-kesha-models-tts-*`
+entry, so that row downloads cold every release — a candidate for the seed workflow once #675
+frees budget, not something to fix here.
 
-### D4 — macOS synthesises through `system_kokoro`, and its download is named
+### D4 — macOS installs like every other row; only the diagnostics differ
 
-The macOS row has no ONNX Kokoro. `fluid_kokoro::with_kokoro` calls `init_kokoro`, which
-"downloads the model on first run" into FluidAudio's own cache — outside `kesha install`, and
-inside `with_silenced_stdout_oneshot`, so a failure there surfaces as an opaque
-`Swift bridge error` (this is exactly the #661 failure mode). Two consequences:
+Corrected after the first dispatch run: the macOS row was originally exempted from
+`kesha install`, on the reasoning that `system_kokoro` runs in-engine and needs nothing on
+disk. That is wrong, and the run proved it — `en-am_michael` failed with
+`invalidResponse(description: "am_michael voice pack", statusCode: 404)`.
 
-- The workflow step is named plainly as a download, the way `coreml-regression`'s cache step
-  already is, so the no-auto-download contract is not quietly violated by CI.
-- On failure the step inventories FluidAudio's model directory, so a truncated fetch shows up
-  as evidence instead of inference.
+The upstream FluidAudio ANE bundle ships exactly one voice pack, `af_heart`. Kesha already
+works around this (#475): `models::stage_ane_kokoro_voices` downloads the SHA-pinned packs from
+onnx-community into `~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/`, where FluidAudio
+resolves them local-first — and that staging runs during `kesha install --tts`. Skipping the
+install skipped the staging, so every voice except `af_heart` 404s, `am_michael` included.
+
+So all three rows install, and the install step is the named download the no-auto-download
+contract wants. `engine-install.ts::warmDarwinKokoro` already synthesises `en-am_michael` at
+install time on darwin, but warns and continues on failure — the same non-fatal posture the
+spec already refuses to accept as evidence for ASR. The smoke step is therefore the assertion,
+not the install.
+
+Two macOS-only diagnostics remain: FluidAudio's fetch runs inside
+`with_silenced_stdout_oneshot`, so a missing pack surfaces as an opaque `Swift bridge error`
+(#661). On failure the job inventories both FluidAudio roots — `~/.cache/fluidaudio/Models`
+(kesha-staged voice packs) and `~/Library/Application Support/FluidAudio/Models` (FluidAudio's
+own model bundles).
 
 ### D5 — Prove the change with a build-only `workflow_dispatch`, and guard it statically
 
@@ -109,9 +123,9 @@ That is the part a *future* PR can regress, and it is cheap to hold.
   tag, only a new *tag name* would. Call this out in the release runbook so nobody reaches for
   a fresh tag by reflex.
 - **Cache restore may not be available on a `refs/tags/v*` run** (entries are written on
-  `main`) → The dry run reports it. Worst case is a cold download per platform per release,
-  which the build job's default 360-minute budget absorbs; if it is slow enough to hurt, D3's
-  fallback is to skip the cache entirely.
+  `main`) → Observed working on a branch dispatch; a tag ref is not a PR merge ref, so the same
+  default-branch scope should apply. Worst case is a cold download per platform per release,
+  which the build job's default 360-minute budget absorbs.
 - **The gate adds failure surface to the release path** → It only fails where a release
   *should* fail; the alternative is shipping the failure. The existing assertions are left
   untouched, and the new step sits between them and the upload.
@@ -124,7 +138,12 @@ That is the part a *future* PR can regress, and it is cheap to hold.
 ## Open Questions
 
 - Does a workflow run triggered by `refs/tags/v*` restore a cache entry written on `main`?
-  Assumed yes (default-branch scope), unconfirmed against observed behaviour. T4 settles it.
+  A `workflow_dispatch` run on a feature branch does — the first dispatch logged
+  `Cache hit for: Linux-kesha-models-tts-v1` and restored in ~44s, with the whole added block
+  costing ~55s on linux and ~60s on windows. A tag ref is not a PR merge ref, so the same
+  default-branch scope should apply, but that specific case is still inference, not
+  observation. macOS has no `macOS-kesha-models-tts-*` entry at all, so that row pays a cold
+  download every release.
 - Should the Windows row synthesise to OGG/Opus as well as WAV? #636 asks for both; the Opus
   encoder is a distinct failure surface (`opusic-sys`, vendored libopus, the cmake policy
   override). Deferred to a follow-up unless the dry run shows it is nearly free.

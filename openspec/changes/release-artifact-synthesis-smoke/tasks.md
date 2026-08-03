@@ -22,14 +22,14 @@
 ## 4. Verification
 
 - [x] 4.1 `bun test && bunx tsc --noEmit`
-- [ ] 4.2 Push the branch and confirm `workflow-lint` is green on the head SHA
+- [x] 4.2 Push the branch and confirm `workflow-lint` is green on the head SHA
 - [ ] 4.3 Dispatch `build-engine.yml` against the branch with an empty `tag` input; confirm all three rows pass the new gate and the `release` job does not run
 - [ ] 4.4 Record from that run: whether the model cache restored on each platform, and the added wall-clock per row — settles D3's open question and the cache-scope question in the spec's Open Issues
 - [ ] 4.5 If the cache did not restore or cost more than a cold Kokoro download, drop the cache step per D3's fallback and re-dispatch
 
 ## 5. Land
 
-- [ ] 5.1 Open the PR with `Closes #671, closes #636` in the body, linking the dispatch run as acceptance evidence
-- [ ] 5.2 Note in the PR that a failed release build is recovered by re-running the run, not by cutting a new tag (Risks)
+- [x] 5.1 Open the PR with `Closes #671, closes #636` in the body, linking the dispatch run as acceptance evidence
+- [x] 5.2 Note in the PR that a failed release build is recovered by re-running the run, not by cutting a new tag (Risks)
 - [ ] 5.3 Wait for CI and Greptile on the head SHA; resolve P1/P2 findings
 - [ ] 5.4 After merge, remove the `WIP` label from #671 and #636 if the auto-close did not

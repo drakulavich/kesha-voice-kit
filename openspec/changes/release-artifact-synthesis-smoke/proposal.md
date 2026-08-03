@@ -25,11 +25,9 @@ gap the spec already asserts.
   no-auto-download rule intact: the download is an explicit, named step.
 - The existing `--capabilities-json` assertions stay exactly as they are; the synthesis
   round-trip is added after them, not in place of them.
-- linux-x64 and windows-x64 install the English Kokoro set through `kesha install --tts en`.
-  The macOS row reaches Kokoro in-engine through `system_kokoro`, whose weights FluidAudio
-  fetches into its own ANE cache on first `init_kokoro` — a download outside `kesha install`,
-  so the step is named plainly in the workflow, as `coreml-regression` already does for the
-  Parakeet bundle.
+- Every row installs the English TTS set through `kesha install --tts en`. On darwin that
+  install is what stages the SHA-pinned ANE voice packs (#475) FluidAudio then resolves
+  local-first; without it every voice but `af_heart` 404s against the upstream bundle.
 
 ## Capabilities
 
