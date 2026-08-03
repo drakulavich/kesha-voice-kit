@@ -16,30 +16,33 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import { assertSingleTranscript } from "./assert-transcript";
 
-const args = process.argv.slice(2);
-const noRoundtrip = args.includes("--no-roundtrip");
-const voiceFlag = args.indexOf("--voice");
-const voiceOverride = voiceFlag === -1 ? undefined : args[voiceFlag + 1];
-const positional = args.filter(
-  (arg, i) => !arg.startsWith("--") && i !== voiceFlag + 1,
-);
-const workDir = positional[0];
-if (!workDir || (voiceFlag !== -1 && !voiceOverride)) {
-  console.error("usage: smoke-synthesis.ts [--no-roundtrip] [--voice <id>] <work-dir>");
-  process.exit(2);
-}
-mkdirSync(workDir, { recursive: true });
-
 const ENGLISH = "The quick brown fox jumps over the lazy dog.";
 const ALL_VOICES = [
   { voice: "en-am_michael", text: ENGLISH },
   { voice: "ru-vosk-m02", text: "Проверка синтеза речи на русском языке." },
 ];
-const VOICES = voiceOverride
-  ? [{ voice: voiceOverride, text: ENGLISH }]
-  : noRoundtrip
-    ? ALL_VOICES.filter((v) => v.voice === "en-am_michael")
-    : ALL_VOICES;
+
+export type SmokeArgs = { workDir: string; noRoundtrip: boolean; voices: typeof ALL_VOICES };
+
+/** Returns null when argv is unusable; the caller prints usage and exits 2. */
+export function parseArgs(argv: string[]): SmokeArgs | null {
+  const noRoundtrip = argv.includes("--no-roundtrip");
+  const voiceFlag = argv.indexOf("--voice");
+  const voiceOverride = voiceFlag === -1 ? undefined : argv[voiceFlag + 1];
+  if (voiceFlag !== -1 && (!voiceOverride || voiceOverride.startsWith("--"))) return null;
+
+  const voiceValueAt = voiceFlag === -1 ? -1 : voiceFlag + 1;
+  const workDir = argv.find((arg, i) => !arg.startsWith("--") && i !== voiceValueAt);
+  if (!workDir) return null;
+
+  const voices = voiceOverride
+    ? [{ voice: voiceOverride, text: ENGLISH }]
+    : noRoundtrip
+      ? ALL_VOICES.filter((v) => v.voice === "en-am_michael")
+      : ALL_VOICES;
+  return { workDir, noRoundtrip, voices };
+}
+
 
 // Without a timeout a hung `kesha say` burns the whole job budget and reports nothing useful.
 async function run(
@@ -64,36 +67,46 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-for (const { voice, text } of VOICES) {
-  const outPath = join(workDir, `${voice}.wav`);
-  const say = await run(["say", text, "--voice", voice, "--out", outPath]);
-  if (say.code !== 0) fail(`\`kesha say --voice ${voice}\` exited ${say.code}\n${say.stderr}`);
-
-  const wav = Bun.file(outPath);
-  if (!(await wav.exists())) fail(`${voice}: --out produced no file at ${outPath}`);
-
-  const bytes = new Uint8Array(await wav.arrayBuffer());
-  // A header-only WAV is 44 bytes; anything at or below that synthesised silence.
-  if (bytes.length <= 44) fail(`${voice}: WAV is ${bytes.length} bytes, i.e. header without audio`);
-
-  const header = new TextDecoder().decode(bytes.subarray(0, 12));
-  if (!header.startsWith("RIFF") || header.slice(8) !== "WAVE") {
-    fail(`${voice}: expected a RIFF/WAVE header, got ${JSON.stringify(header)}`);
+if (import.meta.main) {
+  const parsed = parseArgs(process.argv.slice(2));
+  if (!parsed) {
+    console.error("usage: smoke-synthesis.ts [--no-roundtrip] [--voice <id>] <work-dir>");
+    process.exit(2);
   }
-  console.log(`ok: ${voice} synthesised ${bytes.length} bytes`);
-  if (noRoundtrip) continue;
+  const { workDir, noRoundtrip, voices } = parsed;
+  mkdirSync(workDir, { recursive: true });
 
-  const back = await run(["--json", outPath]);
-  if (back.code !== 0) fail(`transcribing ${voice}.wav exited ${back.code}\n${back.stderr}`);
+  for (const { voice, text } of voices) {
+    const outPath = join(workDir, `${voice}.wav`);
+    const say = await run(["say", text, "--voice", voice, "--out", outPath]);
+    if (say.code !== 0) fail(`\`kesha say --voice ${voice}\` exited ${say.code}\n${say.stderr}`);
 
-  // Not asserting on WER: this proves the engine speaks and hears, not that it is accurate.
-  let transcript: string;
-  try {
-    transcript = assertSingleTranscript(back.stdout, `${voice}.wav`);
-  } catch (e) {
-    fail(e instanceof Error ? e.message : String(e));
+    const wav = Bun.file(outPath);
+    if (!(await wav.exists())) fail(`${voice}: --out produced no file at ${outPath}`);
+
+    const bytes = new Uint8Array(await wav.arrayBuffer());
+    // A header-only WAV is 44 bytes; anything at or below that synthesised silence.
+    if (bytes.length <= 44) fail(`${voice}: WAV is ${bytes.length} bytes, i.e. header without audio`);
+
+    const header = new TextDecoder().decode(bytes.subarray(0, 12));
+    if (!header.startsWith("RIFF") || header.slice(8) !== "WAVE") {
+      fail(`${voice}: expected a RIFF/WAVE header, got ${JSON.stringify(header)}`);
+    }
+    console.log(`ok: ${voice} synthesised ${bytes.length} bytes`);
+    if (noRoundtrip) continue;
+
+    const back = await run(["--json", outPath]);
+    if (back.code !== 0) fail(`transcribing ${voice}.wav exited ${back.code}\n${back.stderr}`);
+
+    // Not asserting on WER: this proves the engine speaks and hears, not that it is accurate.
+    let transcript: string;
+    try {
+      transcript = assertSingleTranscript(back.stdout, `${voice}.wav`);
+    } catch (e) {
+      fail(e instanceof Error ? e.message : String(e));
+    }
+    console.log(`ok: ${voice} round-tripped to "${transcript.slice(0, 60)}"`);
   }
-  console.log(`ok: ${voice} round-tripped to "${transcript.slice(0, 60)}"`);
+
+  console.log(noRoundtrip ? "Synthesis smoke passed." : "Synthesis round-trip smoke passed.");
 }
-
-console.log(noRoundtrip ? "Synthesis smoke passed." : "Synthesis round-trip smoke passed.");

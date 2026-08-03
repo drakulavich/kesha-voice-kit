@@ -48,16 +48,26 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
   const steps = (document as { jobs?: { build?: { steps?: unknown[] } } })?.jobs?.build?.steps;
   if (!Array.isArray(steps)) return [`${path}: expected a \`build\` job with steps`];
 
-  const index = (match: (step: { run?: unknown; uses?: unknown }) => boolean) =>
+  const index = (match: (step: { run?: unknown; uses?: unknown; if?: unknown }) => boolean) =>
     steps.findIndex((step) => typeof step === "object" && step !== null && match(step));
 
-  const smoke = index((step) => typeof step.run === "string" && step.run.includes("smoke-synthesis.ts"));
+  // Anchored at line start so a commented-out or echoed mention doesn't satisfy the guard.
+  const invocation = /^\s*bun\s+\S*smoke-synthesis\.ts\b/m;
+  const smoke = index(
+    (step) =>
+      typeof step.run === "string" &&
+      invocation.test(step.run) &&
+      String(step.if ?? "").trim() !== "false",
+  );
   const upload = index((step) => typeof step.uses === "string" && step.uses.startsWith("actions/upload-artifact"));
 
   if (smoke === -1) {
     return [`${path}: the build job must run smoke-synthesis.ts before uploading the artifact (#671)`];
   }
-  if (upload !== -1 && smoke > upload) {
+  if (upload === -1) {
+    return [`${path}: the build job must upload the engine artifact after smoke-synthesis.ts (#671)`];
+  }
+  if (smoke > upload) {
     return [`${path}: smoke-synthesis.ts runs after the artifact is uploaded; move it before (#671)`];
   }
   return [];
