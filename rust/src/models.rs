@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::coded_bail;
 use crate::errors::{CodedContext, ErrorCode};
@@ -1554,8 +1555,9 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
     let mut reader = response.into_body().into_reader();
+    let _in_flight = InFlight::new();
     if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
-        let mut reader = ProgressReader::new(&mut reader, f.rel_path, total);
+        let mut reader = ProgressReader::new(&mut reader, total);
         write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
     } else {
         write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
@@ -1569,44 +1571,83 @@ const PROGRESS_MIN_BYTES: u64 = 16 * 1024 * 1024;
 const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
 const PROGRESS_BAR_WIDTH: usize = 20;
 
+static DOWNLOADS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts concurrent `download_verified` network phases so the bar can tell whether it owns stderr.
+struct InFlight;
+
+impl InFlight {
+    fn new() -> Self {
+        DOWNLOADS_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        DOWNLOADS_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// Redraws a single `\r` line as bytes arrive (#680). Silent unless stderr is a
 /// terminal, so redirected installs and CI logs keep the plain `GET`/`OK` lines.
-struct ProgressReader<'a, R> {
+///
+/// Draws only while it is the sole download in flight: `parallel_download` runs
+/// 4 rayon workers over one stderr, and concurrent bars plus other workers'
+/// `GET`/`OK` lines would overwrite each other (Greptile P1 on #681). That still
+/// covers the case this exists for — the 2.4GB encoder outlives every sibling by
+/// minutes, so the long silent stretch is exactly when the bar is alone.
+struct ProgressReader<R> {
     inner: R,
-    rel_path: &'a str,
     total: u64,
     read: u64,
     last_draw: std::time::Instant,
+    line_len: usize,
 }
 
-impl<'a, R: io::Read> ProgressReader<'a, R> {
-    fn new(inner: R, rel_path: &'a str, total: u64) -> Self {
+impl<R: io::Read> ProgressReader<R> {
+    fn new(inner: R, total: u64) -> Self {
         Self {
             inner,
-            rel_path,
             total,
             read: 0,
             last_draw: std::time::Instant::now(),
+            line_len: 0,
         }
     }
 
-    fn draw(&self) {
+    /// End the line instead of blanking it: once another worker has printed, the
+    /// cursor may have left our row, and an erase would eat that worker's output.
+    fn close_line(&mut self) {
+        if self.line_len > 0 {
+            eprintln!();
+            self.line_len = 0;
+        }
+    }
+
+    fn draw(&mut self) {
+        if DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst) != 1 {
+            self.close_line();
+            return;
+        }
         let pct = ((self.read.min(self.total) as f64 / self.total as f64) * 100.0) as usize;
         let filled = pct * PROGRESS_BAR_WIDTH / 100;
-        eprint!(
-            "\r    [{}{}] {:>3}%  {:.1}/{:.1}MB  {}",
+        // No file name — a deep path wraps the line, and then `\r` can't repaint it (Greptile P2 on #681).
+        let line = format!(
+            "    [{}{}] {:>3}%  {:.1}/{:.1}MB",
             "█".repeat(filled),
             "░".repeat(PROGRESS_BAR_WIDTH - filled),
             pct,
             self.read as f64 / 1_048_576.0,
             self.total as f64 / 1_048_576.0,
-            self.rel_path
         );
+        eprint!("\r{line}");
         let _ = io::Write::flush(&mut io::stderr());
+        self.line_len = line.chars().count();
     }
 }
 
-impl<R: io::Read> io::Read for ProgressReader<'_, R> {
+impl<R: io::Read> io::Read for ProgressReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         self.read += n as u64;
@@ -1618,10 +1659,10 @@ impl<R: io::Read> io::Read for ProgressReader<'_, R> {
     }
 }
 
-/// Close the `\r` line here, not at EOF, so a mid-download bail doesn't print its error onto the bar.
-impl<R> Drop for ProgressReader<'_, R> {
+/// End the line here, not at EOF, so a mid-download bail prints its error on a fresh row.
+impl<R> Drop for ProgressReader<R> {
     fn drop(&mut self) {
-        if self.read > 0 {
+        if self.line_len > 0 {
             eprintln!();
         }
     }
@@ -1914,5 +1955,51 @@ mod characterization_tests {
         assert_eq!(ane_voice_lang("zm_050.bin"), Some("zh"));
         assert_eq!(ane_voice_lang("xm_unknown.bin"), None);
         assert_eq!(ane_voice_lang(""), None);
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn progress_reader_is_byte_transparent() {
+        let payload: Vec<u8> = (0..4096u32).map(|i| (i % 251) as u8).collect();
+        let mut out = Vec::new();
+        let mut reader = ProgressReader::new(payload.as_slice(), payload.len() as u64);
+        reader.read_to_end(&mut out).expect("read");
+        assert_eq!(out, payload);
+    }
+
+    #[test]
+    fn in_flight_guard_balances() {
+        assert_eq!(DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst), 0);
+        {
+            let _outer = InFlight::new();
+            assert_eq!(DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst), 1);
+            let _inner = InFlight::new();
+            assert_eq!(DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst), 2);
+        }
+        assert_eq!(DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst), 0);
+    }
+
+    /// The bar must stay silent unless it owns stderr — 4 rayon workers share it (#681 P1).
+    #[test]
+    fn bar_draws_only_when_alone() {
+        let payload = vec![7u8; 512];
+        let mut reader = ProgressReader::new(payload.as_slice(), payload.len() as u64);
+        let _a = InFlight::new();
+        let _b = InFlight::new();
+        reader.draw();
+        assert_eq!(reader.line_len, 0, "must not draw beside another download");
+
+        drop(_b);
+        reader.read = payload.len() as u64;
+        reader.draw();
+        assert!(
+            reader.line_len > 0,
+            "must draw when it is the only download"
+        );
     }
 }
