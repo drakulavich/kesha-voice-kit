@@ -528,7 +528,7 @@ function validateDiarize(caps: EngineCapabilities | null): void {
 
 /**
  * Runs `kesha-engine install` to download/verify models.
- * Streams stderr to the process and throws on non-zero exit.
+ * Inherits stdio so per-file progress reaches the user live, and throws on non-zero exit.
  */
 function runEngineModelInstall(
   binPath: string,
@@ -542,19 +542,17 @@ function runEngineModelInstall(
     vad: options.vad,
     diarize: options.diarize,
   });
+  // #680: piping buffers the child until exit, so multi-GB downloads looked hung.
   const proc = Bun.spawnSync([binPath, ...installArgs], {
-    stdout: "pipe",
-    stderr: "pipe",
+    stdout: "inherit",
+    stderr: "inherit",
   });
 
-  const stderr = proc.stderr.toString();
-  if (stderr) {
-    process.stderr.write(stderr);
-  }
-
   if (proc.exitCode !== 0) {
-    const detail = stderr.trim();
-    throw new Error(detail ? `Failed to install models: ${detail}` : "Failed to install models");
+    throw new Error(
+      `Failed to install models: kesha-engine install exited with code ${proc.exitCode}. ` +
+        "See the engine output above for the failing file.",
+    );
   }
 }
 

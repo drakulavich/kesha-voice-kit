@@ -1547,10 +1547,84 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         .call()
         .with_context(|| format!("GET {url} ({})", f.rel_path))
         .coded(ErrorCode::ModelDownload)?;
+    let total = response
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
     let mut reader = response.into_body().into_reader();
-    write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
+    if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
+        let mut reader = ProgressReader::new(&mut reader, f.rel_path, total);
+        write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
+    } else {
+        write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
+    }
     eprintln!("OK  {}", f.rel_path);
     Ok(())
+}
+
+/// Below this a download finishes fast enough that a bar is noise, not feedback.
+const PROGRESS_MIN_BYTES: u64 = 16 * 1024 * 1024;
+const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+const PROGRESS_BAR_WIDTH: usize = 20;
+
+/// Redraws a single `\r` line as bytes arrive (#680). Silent unless stderr is a
+/// terminal, so redirected installs and CI logs keep the plain `GET`/`OK` lines.
+struct ProgressReader<'a, R> {
+    inner: R,
+    rel_path: &'a str,
+    total: u64,
+    read: u64,
+    last_draw: std::time::Instant,
+}
+
+impl<'a, R: io::Read> ProgressReader<'a, R> {
+    fn new(inner: R, rel_path: &'a str, total: u64) -> Self {
+        Self {
+            inner,
+            rel_path,
+            total,
+            read: 0,
+            last_draw: std::time::Instant::now(),
+        }
+    }
+
+    fn draw(&self) {
+        let pct = ((self.read.min(self.total) as f64 / self.total as f64) * 100.0) as usize;
+        let filled = pct * PROGRESS_BAR_WIDTH / 100;
+        eprint!(
+            "\r    [{}{}] {:>3}%  {:.1}/{:.1}MB  {}",
+            "█".repeat(filled),
+            "░".repeat(PROGRESS_BAR_WIDTH - filled),
+            pct,
+            self.read as f64 / 1_048_576.0,
+            self.total as f64 / 1_048_576.0,
+            self.rel_path
+        );
+        let _ = io::Write::flush(&mut io::stderr());
+    }
+}
+
+impl<R: io::Read> io::Read for ProgressReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.read += n as u64;
+        if n == 0 || self.last_draw.elapsed() >= PROGRESS_INTERVAL {
+            self.draw();
+            self.last_draw = std::time::Instant::now();
+        }
+        Ok(n)
+    }
+}
+
+/// Close the `\r` line here, not at EOF, so a mid-download bail doesn't print its error onto the bar.
+impl<R> Drop for ProgressReader<'_, R> {
+    fn drop(&mut self) {
+        if self.read > 0 {
+            eprintln!();
+        }
+    }
 }
 
 /// Stream `reader` into `target` atomically: bytes land in a per-process
