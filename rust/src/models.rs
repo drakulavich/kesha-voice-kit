@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use crate::coded_bail;
 use crate::errors::{CodedContext, ErrorCode};
@@ -1523,7 +1524,7 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     if target.exists() {
         if verify_sha256(&target, f.sha256)? {
             if !no_cache {
-                eprintln!("OK  {} (cached)", f.rel_path);
+                with_stderr(|| eprintln!("OK  {} (cached)", f.rel_path));
                 return Ok(());
             }
             // no_cache over a valid file: keep it in place until a verified
@@ -1538,7 +1539,10 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
-    eprintln!("GET {}", f.rel_path);
+    // Claim in-flight before announcing: the request below blocks on headers, and a
+    // sibling's bar must stop repainting over this row first (Greptile P1 on #681).
+    let _in_flight = InFlight::new();
+    with_stderr(|| eprintln!("GET {}", f.rel_path));
     let url = apply_mirror(f.url);
     // Include the resolved URL in the error chain (#275 D11). On
     // `KESHA_MODEL_MIRROR`-redirected downloads, the user otherwise has no
@@ -1555,14 +1559,13 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
     let mut reader = response.into_body().into_reader();
-    let _in_flight = InFlight::new();
     if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
         let mut reader = ProgressReader::new(&mut reader, total);
         write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
     } else {
         write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
     }
-    eprintln!("OK  {}", f.rel_path);
+    with_stderr(|| eprintln!("OK  {}", f.rel_path));
     Ok(())
 }
 
@@ -1572,6 +1575,14 @@ const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(
 const PROGRESS_BAR_WIDTH: usize = 20;
 
 static DOWNLOADS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+static STDERR_LINE: Mutex<()> = Mutex::new(());
+
+/// Serializes install-progress writes. A bar repaint reads the in-flight count under
+/// this lock, so a worker that claimed a slot can't have its `GET` painted over.
+fn with_stderr<T>(write: impl FnOnce() -> T) -> T {
+    let _guard = STDERR_LINE.lock().unwrap_or_else(|e| e.into_inner());
+    write()
+}
 
 /// Counts concurrent `download_verified` network phases so the bar can tell whether it owns stderr.
 struct InFlight;
@@ -1626,24 +1637,26 @@ impl<R: io::Read> ProgressReader<R> {
     }
 
     fn draw(&mut self) {
-        if DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst) != 1 {
-            self.close_line();
-            return;
-        }
-        let pct = ((self.read.min(self.total) as f64 / self.total as f64) * 100.0) as usize;
-        let filled = pct * PROGRESS_BAR_WIDTH / 100;
-        // No file name — a deep path wraps the line, and then `\r` can't repaint it (Greptile P2 on #681).
-        let line = format!(
-            "    [{}{}] {:>3}%  {:.1}/{:.1}MB",
-            "█".repeat(filled),
-            "░".repeat(PROGRESS_BAR_WIDTH - filled),
-            pct,
-            self.read as f64 / 1_048_576.0,
-            self.total as f64 / 1_048_576.0,
-        );
-        eprint!("\r{line}");
-        let _ = io::Write::flush(&mut io::stderr());
-        self.line_len = line.chars().count();
+        with_stderr(|| {
+            if DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst) != 1 {
+                self.close_line();
+                return;
+            }
+            let pct = ((self.read.min(self.total) as f64 / self.total as f64) * 100.0) as usize;
+            let filled = pct * PROGRESS_BAR_WIDTH / 100;
+            // No file name — a deep path wraps the line, and then `\r` can't repaint it (Greptile P2 on #681).
+            let line = format!(
+                "    [{}{}] {:>3}%  {:.1}/{:.1}MB",
+                "█".repeat(filled),
+                "░".repeat(PROGRESS_BAR_WIDTH - filled),
+                pct,
+                self.read as f64 / 1_048_576.0,
+                self.total as f64 / 1_048_576.0,
+            );
+            eprint!("\r{line}");
+            let _ = io::Write::flush(&mut io::stderr());
+            self.line_len = line.chars().count();
+        });
     }
 }
 
@@ -1662,9 +1675,12 @@ impl<R: io::Read> io::Read for ProgressReader<R> {
 /// End the line here, not at EOF, so a mid-download bail prints its error on a fresh row.
 impl<R> Drop for ProgressReader<R> {
     fn drop(&mut self) {
-        if self.line_len > 0 {
-            eprintln!();
-        }
+        let line_len = self.line_len;
+        with_stderr(|| {
+            if line_len > 0 {
+                eprintln!();
+            }
+        });
     }
 }
 
