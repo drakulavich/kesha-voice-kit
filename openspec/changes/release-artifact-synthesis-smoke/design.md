@@ -37,7 +37,7 @@ new tag.
 
 - Transcribing the synthesised audio back on the release runner (needs the multi-GB ASR set).
 - Russian or any non-English voice on the linux/windows rows.
-- Covering the darwin `system_kokoro` path in CI — impossible on an ANE-less runner (#678).
+- Covering darwin synthesis in CI at all — neither engine runs on a hosted macOS runner (#678).
 - Replacing or weakening the existing `--capabilities-json` assertions.
 - Changing the release job, the publish path, or the CLAUDE.md draft-validation step.
 
@@ -79,36 +79,40 @@ cost ~55s (linux) / ~60s (windows), so the cache stays. macOS has no `macOS-kesh
 entry, so that row downloads cold every release — a candidate for the seed workflow once #675
 frees budget, not something to fix here.
 
-### D4 — darwin synthesises through AVSpeech, not Kokoro
+### D4 — the gate covers linux-x64 and windows-x64; darwin cannot be covered on a hosted runner
 
-Two dispatch runs settled this empirically, and both corrections are worth keeping.
+Four dispatch runs settled this. Two of my readings along the way were wrong, and both
+corrections are worth keeping because each looked right until the next run.
 
-First, the macOS row was exempted from `kesha install` on the reasoning that an in-engine
-Kokoro needs nothing on disk. Wrong: the upstream FluidAudio ANE bundle ships exactly one voice
-pack, `af_heart`, and kesha works around that (#475) by staging SHA-pinned packs into
-`~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/` during `kesha install --tts`. Skipping the
-install produced `invalidResponse(description: "am_michael voice pack", statusCode: 404)`.
+**Run 1 — `am_michael voice pack, statusCode: 404`.** The macOS row was exempted from
+`kesha install` on the reasoning that an in-engine Kokoro needs nothing on disk. Wrong: the
+upstream FluidAudio ANE bundle ships exactly one voice pack, `af_heart`, and kesha works around
+that (#475) by staging SHA-pinned packs into `~/.cache/fluidaudio/…/ANE/` during
+`kesha install --tts`. Fixed by installing on every row.
 
-Second — and decisive — Kokoro cannot run on the runner at all. With every asset staged, the
-next run failed at `predictionFailed(stage: "vocoder", …)`: `KokoroAneModelStore` pins
-`albert`, `postAlbert`, `alignment`, and `vocoder` to `.cpuAndNeuralEngine`, GitHub's
-`macos-14` runner is a VM on Apple's Virtualization Framework, and the ANE is not virtualised.
-Parakeet survives on the same runner because `fluidaudio-rs` sets `cfg.computeUnits = .all` for
-ASR. FluidAudio documents `KokoroAneManager(computeUnits: .cpuAndGpu)` as an escape hatch, but
-`fluidaudio-rs` never plumbs it — `init_kokoro(&self, default_voice, lang)` has no such
-parameter — so kesha cannot reach it without an upstream change (#678).
+**Run 2 — `predictionFailed(stage: "vocoder")`.** With every asset staged, CoreML could not
+prepare `KokoroVocoder`. `KokoroAneModelStore` pins `albert`, `postAlbert`, `alignment`, and
+`vocoder` to `.cpuAndNeuralEngine`; GitHub's `macos-14` runner is a VM on Apple's Virtualization
+Framework and the ANE is not virtualised. Parakeet survives on the same runner because
+`fluidaudio-rs` sets `cfg.computeUnits = .all` for ASR. FluidAudio documents
+`KokoroAneManager(computeUnits: .cpuAndGpu)` as an escape hatch, but `fluidaudio-rs` never
+plumbs it — `init_kokoro(&self, default_voice, lang)` has no such parameter.
 
-The same binary synthesises `en-am_michael` correctly on real Apple Silicon (M2, macOS 26.5.2):
-exit 0, 24 kHz mono, 3.55 s, RMS 2653. The artifact is fine; the runner is the constraint.
+**Runs 3 and 4 — AVSpeech instead.** A Swift sidecar needs neither ANE nor CoreML, so darwin
+was rerouted through a `macos-*` voice. It failed too, on an Eloquence voice and then on
+`voice.compact.en-US.Samantha`, with `avspeech helper exited exit status: 3: timeout waiting for
+synthesis` both times, after the same ~16s. The Eloquence reading — listed but not installed —
+was refuted by Samantha, which ships with the OS; the identical durations point at a fixed
+helper timeout, not asset-dependent behaviour. Root cause not established (#678).
 
-So the darwin row synthesises through AVSpeech instead, picking a `voice.compact.en-US` voice
-(Samantha's class) from what the artifact lists. Compact voices ship with the OS; the third
-dispatch showed that an Eloquence voice — listed but a downloadable asset — fails on the runner
-with `avspeech helper exited status 3: timeout waiting for synthesis`, the classic
-missing-asset symptom. That needs no models, no ANE, and no `kesha install` — and
-it covers the sidecar spawn path end-to-end, which today is asserted only at list level. Kokoro
-on darwin stays uncovered in CI; #678 tracks closing that, and the spec records it as a known
-gap rather than an assumed pass.
+The artifact is not at fault. On real Apple Silicon (M2, macOS 26.5.2) the same feature set
+synthesises through both engines: Kokoro `en-am_michael` at 24 kHz / 3.55 s / RMS 2653, and
+AVSpeech at 16 kHz float / 3.74 s / RMS 0.082.
+
+So the gate covers linux-x64 and windows-x64, and the darwin row keeps only its existing
+`--capabilities-json` and `say --list-voices` assertions. The spec records darwin as an
+uncovered gap rather than an assumed pass; #678 tracks closing it, and a self-hosted Apple
+Silicon runner would fix both engines at once since a real Mac has an ANE and an audio device.
 
 ### D5 — Prove the change with a build-only `workflow_dispatch`, and guard it statically
 

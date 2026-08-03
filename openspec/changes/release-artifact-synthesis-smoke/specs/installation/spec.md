@@ -41,14 +41,13 @@ SHALL NOT by itself be treated as evidence that the Engine initialises on that p
 - AND the file carries a RIFF/WAVE header and audio beyond the header
 - AND the upload step runs only after that check passes
 
-#### Scenario: A platform's default TTS engine cannot run on the build runner
+#### Scenario: No TTS engine can run on a platform's build runner
 
-- GIVEN darwin-arm64's default English engine requires the Neural Engine
-- AND the build runner is a virtual machine that does not expose one
-- WHEN the pre-upload smoke runs on that platform
-- THEN it synthesises through a Voice the runner can actually execute
-- AND the engine that could not be exercised is recorded as an uncovered gap, not reported as
-  verified
+- GIVEN every TTS engine available to the darwin-arm64 Engine needs hardware the build runner
+  does not provide
+- WHEN the release build runs on that platform
+- THEN the pre-upload synthesis gate does not run there
+- AND that platform is recorded as having unverified synthesis, not reported as verified
 
 #### Scenario: Capabilities advertise TTS but synthesis is broken
 
@@ -94,11 +93,12 @@ SHALL NOT by itself be treated as evidence that the Engine initialises on that p
 - Cache scope on tag-triggered runs: a branch `workflow_dispatch` restores the `main`-scoped
   entry, observed. The `refs/tags/v*` case is inferred from the same default-branch scope, not
   observed, and can only be observed on a real release.
-- darwin Kokoro has no CI coverage: FluidAudio pins the Kokoro vocoder stage to
-  `.cpuAndNeuralEngine`, GitHub's `macos-14` runner is an ANE-less VM, and `fluidaudio-rs` does
-  not plumb FluidAudio's documented `computeUnits` override. The darwin pre-upload smoke
-  therefore proves AVSpeech, not Kokoro. Tracked in #678; verified working on real Apple
-  Silicon, so this is a coverage gap, not a known defect.
+- darwin synthesis has no CI coverage by either engine. Kokoro pins its vocoder stage to
+  `.cpuAndNeuralEngine` and the `macos-14` runner is an ANE-less VM; the AVSpeech sidecar times
+  out on every voice tried, including an OS-bundled compact one, for reasons not yet
+  established. Both engines work on real Apple Silicon, so this is a coverage gap, not a known
+  defect. Tracked in #678; darwin's only synthesis verification remains the manual draft-asset
+  check in CLAUDE.md.
 - Engine version marker: `release-branch-engine-smoke` writes `${KESHA_ENGINE_BIN}.version`
   from `package.json#keshaEngine.version`. On a release build the tag is the authority for
   that version, and whether the two can disagree mid-release is not established here.

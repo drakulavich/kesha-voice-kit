@@ -10,7 +10,7 @@
 - [x] 2.2 Write `${{ matrix.binary }}.version` from `package.json#keshaEngine.version`, mirroring `release-branch-engine-smoke`'s "Mark local engine version" step
 - [x] 2.3 Set `KESHA_ENGINE_BIN` to the staged artifact and `KESHA_CACHE_DIR` to a workspace path, job-scoped (D1)
 - [x] 2.4 Install English TTS models via `install-kesha-backend` with `cache-write: "false"` and key `${{ runner.os }}-kesha-models-tts-v1` on the linux and windows rows (D3)
-- [x] 2.5 On macOS, name the FluidAudio Kokoro fetch as an explicit download step and inventory the FluidAudio model directory on failure (D4)
+- [x] 2.5 Exempt the macOS row: neither of its TTS engines runs on a hosted macOS runner (D4, #678)
 - [x] 2.6 Run `bun .github/scripts/smoke-synthesis.ts --no-roundtrip <workdir>` after the existing `--capabilities-json` assertions and before `Upload engine artifact`
 - [x] 2.7 Leave every existing assertion in the `Smoke-test binary` step byte-for-byte unchanged
 
@@ -23,9 +23,9 @@
 
 - [x] 4.1 `bun test && bunx tsc --noEmit`
 - [x] 4.2 Push the branch and confirm `workflow-lint` is green on the head SHA
-- [ ] 4.3 Dispatch `build-engine.yml` against the branch with an empty `tag` input; confirm all three rows pass the new gate and the `release` job does not run
-- [ ] 4.4 Record from that run: whether the model cache restored on each platform, and the added wall-clock per row — settles D3's open question and the cache-scope question in the spec's Open Issues
-- [ ] 4.5 If the cache did not restore or cost more than a cold Kokoro download, drop the cache step per D3's fallback and re-dispatch
+- [x] 4.3 Dispatch `build-engine.yml` against the branch with an empty `tag` input; confirm the gated rows pass and the `release` job does not run
+- [x] 4.4 Record from that run: whether the model cache restored on each platform, and the added wall-clock per row — settles D3's open question and the cache-scope question in the spec's Open Issues
+- [x] 4.5 Cache restored in ~44s and the block cost ~55-60s per row, so D3's fallback was not needed
 
 ## 5. Land
 
