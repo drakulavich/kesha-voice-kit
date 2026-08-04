@@ -16,6 +16,7 @@ import {
   fluidKokoroCacheInfo,
   type FluidKokoroCacheInfo,
 } from "./fluid-kokoro-cache";
+import { fluidAsrCacheInfo, fluidAsrCachePath } from "./fluid-asr-cache";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import {
   getDiagnosticLogStatus,
@@ -206,7 +207,11 @@ function collectCache(
   const engineDir = dirname(dirname(binPath));
   const components: CacheComponent[] = [
     { label: "Engine", ...pathSummary(engineDir) },
-    { label: "ASR (Parakeet)", ...pathSummary(join(cache, "models/parakeet-tdt-v3")) },
+    // A CoreML engine never populates the ONNX dir; pointing at it would render a
+    // healthy darwin install as "ASR missing" (#684).
+    fluidAsrCacheInfo().supported
+      ? { label: "ASR (Parakeet, FluidAudio)", ...pathSummary(fluidAsrCachePath()) }
+      : { label: "ASR (Parakeet)", ...pathSummary(join(cache, "models/parakeet-tdt-v3")) },
     { label: "Language ID", ...pathSummary(join(cache, "models/lang-id-ecapa")) },
     { label: "VAD (Silero)", ...pathSummary(join(cache, "models/silero-vad")) },
     { label: "TTS (Kokoro)", ...pathSummary(join(cache, "models/kokoro-82m")) },

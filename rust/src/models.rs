@@ -24,6 +24,11 @@ pub struct ModelFile {
 /// Parakeet TDT v3 ONNX weights. Hashes pinned from a clean install against
 /// `huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx` — an upstream
 /// republish becomes a deliberate PR to bump.
+///
+/// Absent on `coreml` builds: that backend transcribes through FluidAudio's own
+/// bundle and `create_backend` discards the ONNX dir outright, so downloading
+/// these 2.43 GB would be pure waste (#684).
+#[cfg(not(feature = "coreml"))]
 const ASR_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/parakeet-tdt-v3/encoder-model.onnx",
@@ -554,6 +559,23 @@ pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
         .join("ANE")
 }
 
+/// FluidAudio's ASR bundle directory. Not under `KESHA_CACHE_DIR` — FluidAudio
+/// downloads and reads it here, and `AsrModels` resolves it as
+/// `<ApplicationSupport>/FluidAudio/Models/<repo.folderName>`, where `folderName`
+/// **strips** the `-coreml` suffix from `parakeet-tdt-0.6b-v3-coreml`. Keying on
+/// the `…-v3-coreml` sibling that also exists on disk would report a healthy
+/// install as broken (#684).
+#[cfg(feature = "coreml")]
+pub fn fluidaudio_asr_dir() -> PathBuf {
+    dirs::home_dir()
+        .expect("cannot determine home directory")
+        .join("Library")
+        .join("Application Support")
+        .join("FluidAudio")
+        .join("Models")
+        .join("parakeet-tdt-0.6b-v3")
+}
+
 /// Download + SHA-verify every advertised Kokoro voice pack directly into
 /// FluidAudio's ANE cache so `KokoroAneManager.ensureVoicePack` resolves them
 /// local-first (#475). Idempotent: an existing pack that already matches its
@@ -736,7 +758,12 @@ pub fn is_cached(kind: ModelKind) -> bool {
 /// stays single-source.
 pub fn is_cached_in(kind: ModelKind, dir: &Path) -> bool {
     match kind {
+        #[cfg(not(feature = "coreml"))]
         ModelKind::Asr => has_all_files(dir, ASR_FILES),
+        // `dir` is the ONNX layout, which this backend never reads; FluidAudio owns
+        // where its weights live, so that is the only thing worth checking here.
+        #[cfg(feature = "coreml")]
+        ModelKind::Asr => fluidaudio_asr_dir().is_dir(),
         ModelKind::LangId => has_all_files(dir, LANG_ID_FILES),
         ModelKind::Vad => has_all_files(dir, VAD_FILES),
         #[cfg(feature = "tts")]
@@ -792,7 +819,10 @@ pub fn install(no_cache: bool) -> Result<()> {
 
     // Always hash-verify even on cache hits — catches silent corruption (#174).
     // 4-worker pool (#178) overlaps ASR + lang-id round-trips within HF's per-IP tolerance.
+    #[cfg(not(feature = "coreml"))]
     let manifest: Vec<&ModelFile> = ASR_FILES.iter().chain(LANG_ID_FILES.iter()).collect();
+    #[cfg(feature = "coreml")]
+    let manifest: Vec<&ModelFile> = LANG_ID_FILES.iter().collect();
     parallel_download(&cache, &manifest, no_cache)?;
 
     cleanup_legacy();
@@ -867,6 +897,7 @@ mod manifest_tests {
         let plan: serde_json::Value = serde_json::from_str(include_str!("../../model-plan.json"))
             .expect("model plan JSON must parse");
 
+        #[cfg(not(feature = "coreml"))]
         assert_plan_paths(&plan, "asr", ASR_FILES);
         assert_plan_paths(&plan, "langId", LANG_ID_FILES);
         assert_plan_paths(&plan, "vad", VAD_FILES);
@@ -899,6 +930,7 @@ mod manifest_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "coreml"))]
     fn asr_manifest_has_expected_files_and_hashes() {
         assert_eq!(ASR_FILES.len(), 5);
         assert!(ASR_FILES.iter().any(|f| f.rel_path.ends_with("/vocab.txt")));
@@ -1838,6 +1870,20 @@ mod characterization_tests {
         Ok(())
     }
 
+    /// `Repo.folderName` strips the `-coreml` suffix, and a `…-v3-coreml` sibling
+    /// exists on disk. Keying on it would report a healthy install as missing ASR.
+    #[test]
+    #[cfg(feature = "coreml")]
+    fn fluidaudio_asr_dir_is_the_directory_fluidaudio_loads_from() {
+        let dir = fluidaudio_asr_dir();
+        assert!(dir.ends_with("parakeet-tdt-0.6b-v3"), "{dir:?}");
+        assert!(
+            dir.to_string_lossy()
+                .contains("Library/Application Support/FluidAudio/Models"),
+            "{dir:?} is not FluidAudio's ASR root"
+        );
+    }
+
     #[test]
     fn model_kind_subdir_table() {
         assert_eq!(ModelKind::Asr.subdir(), "models/parakeet-tdt-v3");
@@ -1872,6 +1918,7 @@ mod characterization_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "coreml"))]
     fn is_cached_in_asr_true_when_all_files_present() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("models/parakeet-tdt-v3");
@@ -1884,6 +1931,7 @@ mod characterization_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "coreml"))]
     fn is_cached_in_asr_false_when_one_file_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("models/parakeet-tdt-v3");

@@ -11,6 +11,7 @@ import { log } from "./log";
 import { packageVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
+import { fluidAsrCacheInfo, fluidAsrCachePath } from "./fluid-asr-cache";
 import { dirSizeBytes } from "./diagnostic-paths";
 import pc from "picocolors";
 
@@ -147,7 +148,11 @@ export function renderStatus(report: StatusReport): void {
 function buildDiskComponents(cache: string, engineDir: string): Array<{ label: string; path: string }> {
   return [
     { label: "Engine", path: engineDir },
-    { label: "ASR (Parakeet)", path: join(cache, "models/parakeet-tdt-v3") },
+    // A CoreML engine never populates the ONNX dir; pointing at it would render a
+    // healthy darwin install as "ASR missing" (#684).
+    fluidAsrCacheInfo().supported
+      ? { label: "ASR (Parakeet, FluidAudio)", path: fluidAsrCachePath() }
+      : { label: "ASR (Parakeet)", path: join(cache, "models/parakeet-tdt-v3") },
     { label: "Language ID", path: join(cache, "models/lang-id-ecapa") },
     { label: "VAD (Silero)", path: join(cache, "models/silero-vad") },
     { label: "TTS (Kokoro)", path: join(cache, "models/kokoro-82m") },

@@ -13,6 +13,7 @@ import {
   isDarwinArm64,
 } from "./fluid-kokoro-cache";
 import modelPlan from "../model-plan.json" with { type: "json" };
+import { fluidAsrCacheInfo } from "./fluid-asr-cache";
 
 export interface InstallPlanOptions {
   noCache?: boolean;
@@ -135,6 +136,37 @@ function bundleComponent(input: {
   };
 }
 
+/// A CoreML engine cannot read the ONNX weights, so quoting their 2.43 GB would
+/// promise a download that never happens. FluidAudio fetches its own bundle during
+/// the install warm-up instead — still a cost, so it is named rather than dropped (#684).
+///
+/// Measured from `parakeet-tdt-0.6b-v3`, the directory the current FluidAudio actually
+/// loads. A `…-v3-coreml` sibling may also exist from earlier versions; counting it here
+/// would overstate the plan against what `status --disk` then reports.
+const FLUID_ASR_BUNDLE_BYTES = 473 * 1024 * 1024;
+
+function asrComponent(cacheRoot: string, noCache: boolean): PlanComponent {
+  const fluid = fluidAsrCacheInfo();
+  if (!fluid.supported) {
+    return bundleComponent({
+      cacheRoot,
+      name: "ASR Parakeet TDT v3",
+      source: "model cache",
+      files: ASR_FILES,
+      refresh: noCache,
+      note: "required for speech-to-text",
+    });
+  }
+  return {
+    name: "ASR Parakeet TDT v3 (CoreML)",
+    source: "FluidAudio cache",
+    sizeBytes: FLUID_ASR_BUNDLE_BYTES,
+    cached: fluid.exists,
+    refresh: noCache,
+    note: "required for speech-to-text; fetched by the backend during warm-up, outside Kesha's model cache",
+  };
+}
+
 function buildEngineComponent(binPath: string, noCache: boolean): PlanComponent {
   const engineAsset = engineAssetForPlatform();
   if (engineAsset) {
@@ -254,7 +286,7 @@ function assembleComponents(input: {
   const components: PlanComponent[] = [
     buildEngineComponent(input.binPath, noCache),
     ...buildSidecarComponents(input.engineDir, noCache),
-    modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
+    asrComponent(cacheRoot, noCache),
     modelBundle(
       "Audio language ID ECAPA",
       LANG_ID_FILES,
