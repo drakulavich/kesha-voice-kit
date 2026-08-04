@@ -68,13 +68,19 @@ ort = { version = "2.0.0-rc.12" }
 ndarray = { version = "0.17" }
 
 # FluidAudio (macOS): ASR (CoreML/ANE), native Kokoro TTS, and model-path
-# diarization. Now on upstream `FluidInference/fluidaudio-rs` — the Kokoro
-# binding (upstream PR #19) and `diarize_file_with_models` both landed there, so
-# the fork is retired. Pinned to a rev for reproducible builds. API is unchanged
-# from the fork: `init_kokoro` takes a `lang` arg → `zh` selects the `.mandarin`
-# variant (tone-aware Mandarin G2P), else `.english` (#492); retains the `--rate`
-# model-native speed (#475).
-fluidaudio-rs = { git = "https://github.com/FluidInference/fluidaudio-rs", rev = "2d8e6b6891ccaf0807f8b6562893b24e5e1ec0f4", optional = true }
+# diarization. Back on the fork — NOT a leftover, do not "restore" upstream: it
+# carries two things upstream lacks, both prerequisites for open work.
+# `FluidAudio::with_models_dir` roots ASR/Kokoro/compile-cache under one
+# directory (#688), and `init_kokoro_with_compute_units` selects CoreML compute
+# units, which is the only way Kokoro runs where no ANE is exposed (#678 — the
+# default pins the vocoder stage to it, so a hosted macOS runner cannot even
+# prepare the program). Retire the fork once both land upstream.
+# Trade-off to know: this rev trails `FluidInference/main`, so upstream commits
+# after the previous pin are not present. Everything kesha calls is verified to
+# build against it.
+# `init_kokoro` still takes `lang` → `zh` selects `.mandarin` (tone-aware
+# Mandarin G2P), else `.english` (#492); `--rate` stays model-native (#475).
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "9b7ceda98c4b0485590c04805c62ebde76e66159", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
