@@ -53,6 +53,7 @@ export interface StatusDiskUsage {
   componentTotalBytes: number;
   totalBytes: number;
   fluidKokoro: { path: string; sizeBytes: number } | null;
+  fluidAsr: { path: string; sizeBytes: number } | null;
 }
 
 /**
@@ -91,7 +92,7 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
       ? null
       : `Run \`${installHint()}\` to download the engine and models.`,
     // Absent engine means no disk walk, matching the human path (#647).
-    disk: installed && options.disk ? collectDiskUsage(path) : null,
+    disk: installed && options.disk ? collectDiskUsage(path, capabilities?.backend) : null,
   };
 }
 
@@ -145,14 +146,19 @@ export function renderStatus(report: StatusReport): void {
 }
 
 
-function buildDiskComponents(cache: string, engineDir: string): Array<{ label: string; path: string }> {
+function buildDiskComponents(
+  cache: string,
+  engineDir: string,
+  coreml: boolean,
+): Array<{ label: string; path: string }> {
   return [
     { label: "Engine", path: engineDir },
-    // A CoreML engine never populates the ONNX dir; pointing at it would render a
-    // healthy darwin install as "ASR missing" (#684).
-    fluidAsrCacheInfo().supported
-      ? { label: "ASR (Parakeet, FluidAudio)", path: fluidAsrCachePath() }
-      : { label: "ASR (Parakeet)", path: join(cache, "models/parakeet-tdt-v3") },
+    // A CoreML engine never populates the ONNX dir, and its own bundle lives outside
+    // the Kesha cache — so it is reported under external caches, not here, or the rows
+    // would sum past a Total that cannot include it (#684).
+    ...(coreml
+      ? []
+      : [{ label: "ASR (Parakeet)", path: join(cache, "models/parakeet-tdt-v3") }]),
     { label: "Language ID", path: join(cache, "models/lang-id-ecapa") },
     { label: "VAD (Silero)", path: join(cache, "models/silero-vad") },
     { label: "TTS (Kokoro)", path: join(cache, "models/kokoro-82m") },
@@ -174,20 +180,30 @@ function logDiskRows(rows: StatusDiskComponent[], total: number, componentTotal:
   }
 }
 
-function logFluidKokoroCache(fluidKokoro: StatusDiskUsage["fluidKokoro"]): void {
-  if (!fluidKokoro) return;
+function logExternalCaches(disk: StatusDiskUsage): void {
+  if (!disk.fluidKokoro && !disk.fluidAsr) return;
   log.info("");
   log.info(`External caches (not included in Kesha total):`);
-  log.info(`  FluidAudio Kokoro: ${humanBytes(fluidKokoro.sizeBytes)} (${fluidKokoro.path})`);
+  if (disk.fluidAsr) {
+    log.info(`  FluidAudio ASR:    ${humanBytes(disk.fluidAsr.sizeBytes)} (${disk.fluidAsr.path})`);
+  }
+  if (disk.fluidKokoro) {
+    log.info(
+      `  FluidAudio Kokoro: ${humanBytes(disk.fluidKokoro.sizeBytes)} (${disk.fluidKokoro.path})`,
+    );
+  }
 }
 
-function collectDiskUsage(binPath: string): StatusDiskUsage {
+function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
   const cache = keshaCacheDir();
   // Two levels up from the binary (`<cache>/engine/bin/`) so future engine-root siblings are counted.
   const engineDir = join(binPath, "..", "..");
+  // The engine's compiled backend, not the host platform: a darwin-arm64 ONNX build
+  // reads the Kesha cache like any other ONNX build.
+  const coreml = backend === "coreml";
 
   const components: StatusDiskComponent[] = [];
-  for (const c of buildDiskComponents(cache, engineDir)) {
+  for (const c of buildDiskComponents(cache, engineDir, coreml)) {
     const sizeBytes = dirSizeBytes(c.path);
     if (sizeBytes > 0) components.push({ label: c.label, sizeBytes });
   }
@@ -196,6 +212,7 @@ function collectDiskUsage(binPath: string): StatusDiskUsage {
   const cacheTotal = dirSizeBytes(cache);
   const engineOutsideCache = engineDir.startsWith(cache) ? 0 : dirSizeBytes(engineDir);
   const fluidKokoro = fluidKokoroCacheInfo();
+  const fluidAsr = fluidAsrCacheInfo();
 
   return {
     cachePath: cache,
@@ -206,6 +223,10 @@ function collectDiskUsage(binPath: string): StatusDiskUsage {
       fluidKokoro.exists && fluidKokoro.sizeBytes > 0
         ? { path: fluidKokoro.path, sizeBytes: fluidKokoro.sizeBytes }
         : null,
+    fluidAsr:
+      coreml && fluidAsr.sizeBytes > 0
+        ? { path: fluidAsr.path, sizeBytes: fluidAsr.sizeBytes }
+        : null,
   };
 }
 
@@ -214,7 +235,7 @@ function showDiskUsage(disk: StatusDiskUsage): void {
 
   log.info(`Disk usage (${disk.cachePath}):`);
   logDiskRows(disk.components, disk.totalBytes, disk.componentTotalBytes);
-  logFluidKokoroCache(disk.fluidKokoro);
+  logExternalCaches(disk);
   log.info("");
   log.info(
     pc.dim(`  To reset cache: rm -rf ${disk.cachePath} — next \`kesha install\` re-downloads.`),

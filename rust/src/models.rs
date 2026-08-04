@@ -576,6 +576,36 @@ pub fn fluidaudio_asr_dir() -> PathBuf {
         .join("parakeet-tdt-0.6b-v3")
 }
 
+/// Entries FluidAudio's `requiredModelsV3` opens, minus the encoder — that one
+/// is precision-dependent (`Encoder.mlmodelc` at int8, `EncoderInt4.mlmodelc` at
+/// int4), so it is checked separately rather than pinned to one precision.
+#[cfg(feature = "coreml")]
+const FLUID_ASR_REQUIRED: &[&str] = &[
+    "Preprocessor.mlmodelc",
+    "Decoder.mlmodelc",
+    "JointDecisionv3.mlmodelc",
+    "parakeet_vocab.json",
+];
+
+#[cfg(feature = "coreml")]
+const FLUID_ASR_ENCODERS: &[&str] = &["Encoder.mlmodelc", "EncoderInt4.mlmodelc"];
+
+/// True iff FluidAudio's bundle is complete enough to transcribe. A bare
+/// `is_dir()` is not enough: an interrupted fetch leaves the directory present
+/// but partial, preflight would pass, and FluidAudio would then download the
+/// remainder mid-transcribe — exactly the silent multi-GB download the
+/// no-auto-download rule exists to prevent (#684).
+#[cfg(feature = "coreml")]
+pub fn fluidaudio_asr_ready() -> bool {
+    fluidaudio_asr_ready_in(&fluidaudio_asr_dir())
+}
+
+#[cfg(feature = "coreml")]
+fn fluidaudio_asr_ready_in(dir: &Path) -> bool {
+    FLUID_ASR_REQUIRED.iter().all(|f| dir.join(f).exists())
+        && FLUID_ASR_ENCODERS.iter().any(|f| dir.join(f).exists())
+}
+
 /// Download + SHA-verify every advertised Kokoro voice pack directly into
 /// FluidAudio's ANE cache so `KokoroAneManager.ensureVoicePack` resolves them
 /// local-first (#475). Idempotent: an existing pack that already matches its
@@ -763,7 +793,7 @@ pub fn is_cached_in(kind: ModelKind, dir: &Path) -> bool {
         // `dir` is the ONNX layout, which this backend never reads; FluidAudio owns
         // where its weights live, so that is the only thing worth checking here.
         #[cfg(feature = "coreml")]
-        ModelKind::Asr => fluidaudio_asr_dir().is_dir(),
+        ModelKind::Asr => fluidaudio_asr_ready(),
         ModelKind::LangId => has_all_files(dir, LANG_ID_FILES),
         ModelKind::Vad => has_all_files(dir, VAD_FILES),
         #[cfg(feature = "tts")]
@@ -1882,6 +1912,48 @@ mod characterization_tests {
                 .contains("Library/Application Support/FluidAudio/Models"),
             "{dir:?} is not FluidAudio's ASR root"
         );
+    }
+
+    /// An interrupted FluidAudio fetch leaves the directory present but partial.
+    /// Treating that as cached lets preflight pass and the backend finish the
+    /// download mid-transcribe, violating the no-auto-download rule (#684).
+    #[test]
+    #[cfg(feature = "coreml")]
+    fn fluidaudio_asr_readiness_requires_the_whole_bundle() {
+        let dir = std::env::temp_dir().join(format!("kesha-fluid-asr-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        assert!(
+            !fluidaudio_asr_ready_in(&dir),
+            "empty dir must not be ready"
+        );
+
+        fs::write(dir.join("Encoder.mlmodelc"), b"x").unwrap();
+        assert!(
+            !fluidaudio_asr_ready_in(&dir),
+            "encoder alone must not be ready"
+        );
+
+        for f in FLUID_ASR_REQUIRED {
+            fs::write(dir.join(f), b"x").unwrap();
+        }
+        assert!(
+            fluidaudio_asr_ready_in(&dir),
+            "complete bundle must be ready"
+        );
+
+        // int4 encoder substitutes for int8 — pinning one precision would report a
+        // healthy install as broken.
+        fs::remove_file(dir.join("Encoder.mlmodelc")).unwrap();
+        assert!(!fluidaudio_asr_ready_in(&dir));
+        fs::write(dir.join("EncoderInt4.mlmodelc"), b"x").unwrap();
+        assert!(
+            fluidaudio_asr_ready_in(&dir),
+            "int4 encoder must satisfy the check"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

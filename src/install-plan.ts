@@ -47,6 +47,10 @@ interface PlanComponent {
   cached: boolean;
   refresh: boolean;
   note?: string;
+  /** Fetched by a backend into its own cache — excluded from the Kesha-managed totals. */
+  external?: boolean;
+  /** Size is an estimate, not summed from a pinned manifest; rendered without a byte count. */
+  approx?: boolean;
 }
 
 interface PlanWarmup {
@@ -136,18 +140,31 @@ function bundleComponent(input: {
   };
 }
 
-/// A CoreML engine cannot read the ONNX weights, so quoting their 2.43 GB would
-/// promise a download that never happens. FluidAudio fetches its own bundle during
-/// the install warm-up instead — still a cost, so it is named rather than dropped (#684).
-///
-/// Measured from `parakeet-tdt-0.6b-v3`, the directory the current FluidAudio actually
-/// loads. A `…-v3-coreml` sibling may also exist from earlier versions; counting it here
-/// would overstate the plan against what `status --disk` then reports.
+/**
+ * A CoreML engine cannot read the ONNX weights, so quoting their 2.43 GB would
+ * promise a download that never happens. FluidAudio fetches its own bundle during
+ * the install warm-up instead — still a cost, so it is named rather than dropped (#684).
+ *
+ * Measured from `parakeet-tdt-0.6b-v3`, the directory the current FluidAudio actually
+ * loads. A `…-v3-coreml` sibling may also exist from earlier versions; counting it here
+ * would overstate the plan against what `status --disk` then reports. An estimate, not a
+ * manifest sum — rendered as approximate.
+ */
 const FLUID_ASR_BUNDLE_BYTES = 473 * 1024 * 1024;
 
-function asrComponent(cacheRoot: string, noCache: boolean): PlanComponent {
-  const fluid = fluidAsrCacheInfo();
-  if (!fluid.supported) {
+/**
+ * An explicit `--coreml` / `--onnx` wins; otherwise the platform decides which released
+ * binary `install` will fetch. Deliberately not probing the installed engine: `--plan`
+ * stays synchronous and must work before any engine exists.
+ */
+function planBackendIsCoreml(options: InstallPlanOptions): boolean {
+  if (options.backend === "coreml") return true;
+  if (options.backend === "onnx") return false;
+  return isDarwinArm64();
+}
+
+function asrComponent(cacheRoot: string, noCache: boolean, coreml: boolean): PlanComponent {
+  if (!coreml) {
     return bundleComponent({
       cacheRoot,
       name: "ASR Parakeet TDT v3",
@@ -161,8 +178,11 @@ function asrComponent(cacheRoot: string, noCache: boolean): PlanComponent {
     name: "ASR Parakeet TDT v3 (CoreML)",
     source: "FluidAudio cache",
     sizeBytes: FLUID_ASR_BUNDLE_BYTES,
-    cached: fluid.exists,
-    refresh: noCache,
+    cached: fluidAsrCacheInfo().exists,
+    // `--no-cache` is a Kesha-cache flag; FluidAudio's bundle is not re-fetched by it.
+    refresh: false,
+    external: true,
+    approx: true,
     note: "required for speech-to-text; fetched by the backend during warm-up, outside Kesha's model cache",
   };
 }
@@ -286,7 +306,7 @@ function assembleComponents(input: {
   const components: PlanComponent[] = [
     buildEngineComponent(input.binPath, noCache),
     ...buildSidecarComponents(input.engineDir, noCache),
-    asrComponent(cacheRoot, noCache),
+    asrComponent(cacheRoot, noCache, planBackendIsCoreml(options)),
     modelBundle(
       "Audio language ID ECAPA",
       LANG_ID_FILES,
@@ -330,7 +350,9 @@ function renderComponentLines(components: PlanComponent[]): string[] {
   const status = (c: PlanComponent) => (c.refresh ? "refresh" : c.cached ? "cached" : "needed");
   const lines: string[] = [];
   for (const c of components) {
-    lines.push(`  - ${c.name}: ${humanBytes(c.sizeBytes)} (${c.sizeBytes} bytes, ${status(c)}, ${c.source})`);
+    const size = c.approx ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
+    const detail = c.approx ? "approximate" : `${c.sizeBytes} bytes`;
+    lines.push(`  - ${c.name}: ${size} (${detail}, ${status(c)}, ${c.source})`);
     if (c.note) lines.push(`    ${c.note}`);
   }
   return lines;
@@ -342,14 +364,25 @@ function renderWarmupLines(warmups: PlanWarmup[]): string[] {
 }
 
 function renderTotalLines(components: PlanComponent[]): string[] {
-  const coldBytes = components.reduce((sum, c) => sum + c.sizeBytes, 0);
-  const expectedNetworkBytes = components.reduce((sum, c) => (c.cached && !c.refresh ? sum : sum + c.sizeBytes), 0);
-  return [
+  // External components are fetched by a backend into its own cache, so they cannot
+  // sit under a total labelled "Kesha-managed" — they get their own line (#684).
+  const managed = components.filter((c) => !c.external);
+  const external = components.filter((c) => c.external);
+  const coldBytes = managed.reduce((sum, c) => sum + c.sizeBytes, 0);
+  const expectedNetworkBytes = managed.reduce((sum, c) => (c.cached && !c.refresh ? sum : sum + c.sizeBytes), 0);
+  const lines = [
     "",
     "Totals:",
     `  Cold-cache Kesha-managed download: ${humanBytes(coldBytes)}`,
     `  Expected Kesha-managed network for this run: ${humanBytes(expectedNetworkBytes)}`,
   ];
+  const externalPending = external.reduce((sum, c) => (c.cached ? sum : sum + c.sizeBytes), 0);
+  if (externalPending > 0) {
+    lines.push(
+      `  Additionally fetched by the backend into its own cache: ~${humanBytes(externalPending)}`,
+    );
+  }
+  return lines;
 }
 
 function renderBehaviorLines(ttsLangs: string[], wantsAnyKokoro: boolean): string[] {

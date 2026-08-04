@@ -29,6 +29,31 @@ export function fluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
   );
 }
 
+/**
+ * Entries FluidAudio's `requiredModelsV3` opens. The encoder is precision-dependent
+ * (`Encoder.mlmodelc` at int8, `EncoderInt4.mlmodelc` at int4) so it is checked as
+ * an alternation — pinning one precision would report a healthy install as broken.
+ */
+const FLUID_ASR_REQUIRED = [
+  "Preprocessor.mlmodelc",
+  "Decoder.mlmodelc",
+  "JointDecisionv3.mlmodelc",
+  "parakeet_vocab.json",
+];
+const FLUID_ASR_ENCODERS = ["Encoder.mlmodelc", "EncoderInt4.mlmodelc"];
+
+/**
+ * Complete enough to transcribe. Mirrors `models.rs::fluidaudio_asr_ready` — a bare
+ * directory check would call an interrupted fetch healthy, and the engine would then
+ * download the remainder on first transcribe (#684).
+ */
+export function fluidAsrCacheReady(path: string): boolean {
+  return (
+    FLUID_ASR_REQUIRED.every((f) => existsSync(join(path, f))) &&
+    FLUID_ASR_ENCODERS.some((f) => existsSync(join(path, f)))
+  );
+}
+
 export function fluidAsrCacheInfo(
   options: {
     platform?: typeof process.platform;
@@ -42,7 +67,7 @@ export function fluidAsrCacheInfo(
   return {
     supported,
     path,
-    exists: supported && existsSync(path),
+    exists: supported && fluidAsrCacheReady(path),
     sizeBytes: supported ? dirSizeBytes(path) : 0,
   };
 }

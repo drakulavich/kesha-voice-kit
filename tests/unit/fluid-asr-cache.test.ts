@@ -15,12 +15,25 @@ describe("fluidAsrCacheInfo", () => {
     expect(path.endsWith("-coreml")).toBe(false);
   });
 
-  test("reports the bundle on darwin-arm64 when it exists", () => {
+  const COMPLETE = [
+    "Preprocessor.mlmodelc",
+    "Decoder.mlmodelc",
+    "JointDecisionv3.mlmodelc",
+    "parakeet_vocab.json",
+    "Encoder.mlmodelc",
+  ];
+
+  function seed(homeDir: string, entries: string[]): string {
+    const cache = fluidAsrCachePath(homeDir);
+    mkdirSync(cache, { recursive: true });
+    for (const e of entries) writeFileSync(join(cache, e), "coreml");
+    return cache;
+  }
+
+  test("reports the bundle on darwin-arm64 when it is complete", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-cache-test-"));
     try {
-      const cache = fluidAsrCachePath(dir);
-      mkdirSync(cache, { recursive: true });
-      writeFileSync(join(cache, "Encoder.mlmodelc"), "coreml");
+      const cache = seed(dir, COMPLETE);
 
       const info = fluidAsrCacheInfo({ platform: "darwin", arch: "arm64", homeDir: dir });
 
@@ -28,6 +41,47 @@ describe("fluidAsrCacheInfo", () => {
       expect(info.path).toBe(cache);
       expect(info.exists).toBe(true);
       expect(info.sizeBytes).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("accepts the int4 encoder in place of int8", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-cache-int4-"));
+    try {
+      seed(dir, [
+        ...COMPLETE.filter((f) => f !== "Encoder.mlmodelc"),
+        "EncoderInt4.mlmodelc",
+      ]);
+      expect(fluidAsrCacheInfo({ platform: "darwin", arch: "arm64", homeDir: dir }).exists).toBe(
+        true,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // An interrupted fetch leaves the directory present but partial. Calling that
+  // healthy lets preflight pass and FluidAudio finish the download mid-transcribe.
+  test("reports a partial bundle as absent, not healthy", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-cache-partial-"));
+    try {
+      seed(dir, ["Encoder.mlmodelc"]);
+      expect(fluidAsrCacheInfo({ platform: "darwin", arch: "arm64", homeDir: dir }).exists).toBe(
+        false,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("reports an empty bundle directory as absent", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-cache-bare-"));
+    try {
+      mkdirSync(fluidAsrCachePath(dir), { recursive: true });
+      expect(fluidAsrCacheInfo({ platform: "darwin", arch: "arm64", homeDir: dir }).exists).toBe(
+        false,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

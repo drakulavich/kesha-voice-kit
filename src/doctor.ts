@@ -201,22 +201,35 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
 function collectCache(
   redact: boolean,
   fluidKokoro: FluidKokoroCacheInfo,
+  backend?: string,
 ): DoctorReport["cache"] {
   const cache = keshaCacheDir();
   const binPath = getEngineBinPath();
   const engineDir = dirname(dirname(binPath));
+  // The engine's compiled backend, not the host platform: a darwin-arm64 ONNX build
+  // reads the Kesha cache like any other ONNX build.
+  const coreml = backend === "coreml";
   const components: CacheComponent[] = [
     { label: "Engine", ...pathSummary(engineDir) },
     // A CoreML engine never populates the ONNX dir; pointing at it would render a
     // healthy darwin install as "ASR missing" (#684).
-    fluidAsrCacheInfo().supported
-      ? { label: "ASR (Parakeet, FluidAudio)", ...pathSummary(fluidAsrCachePath()) }
-      : { label: "ASR (Parakeet)", ...pathSummary(join(cache, "models/parakeet-tdt-v3")) },
+    ...(coreml
+      ? []
+      : [{ label: "ASR (Parakeet)", ...pathSummary(join(cache, "models/parakeet-tdt-v3")) }]),
     { label: "Language ID", ...pathSummary(join(cache, "models/lang-id-ecapa")) },
     { label: "VAD (Silero)", ...pathSummary(join(cache, "models/silero-vad")) },
     { label: "TTS (Kokoro)", ...pathSummary(join(cache, "models/kokoro-82m")) },
     { label: "TTS (Vosk)", ...pathSummary(join(cache, "models/vosk-ru")) },
   ];
+  if (coreml) {
+    const fluidAsr = fluidAsrCacheInfo();
+    components.push({
+      label: "ASR (Parakeet, FluidAudio) (external)",
+      path: fluidAsr.path,
+      exists: fluidAsr.exists,
+      sizeBytes: fluidAsr.sizeBytes,
+    });
+  }
   if (fluidKokoro.supported) {
     components.push({
       label: "FluidAudio Kokoro cache (external)",
@@ -351,6 +364,7 @@ export async function collectDoctorReport(
 ): Promise<DoctorReport> {
   const redact = options.redact === true;
   const fluidKokoro = fluidKokoroCacheInfo();
+  const engine = await collectEngine(redact);
   return {
     generatedAt: new Date().toISOString(),
     redacted: redact,
@@ -360,8 +374,8 @@ export async function collectDoctorReport(
       platform: process.platform,
       arch: process.arch,
     },
-    engine: await collectEngine(redact),
-    cache: collectCache(redact, fluidKokoro),
+    engine,
+    cache: collectCache(redact, fluidKokoro, engine.capabilities?.backend),
     optionalComponents: collectOptionalComponents(redact, fluidKokoro),
     stats: collectStats(redact),
     diagnosticLogs: collectDiagnosticLogs(redact),
