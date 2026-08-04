@@ -210,8 +210,8 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          bunx @flakiness/junit-xml rust/target/nextest/ci/junit.xml \
-            --category rust --flakiness-project Laputa/kesha-voice-kit
+          bun .github/scripts/upload-flakiness.ts \
+            rust/target/nextest/ci/junit.xml rust Laputa/kesha-voice-kit
 
   coverage:
     needs: changes
@@ -288,12 +288,8 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          if [[ ! -f rust/target/nextest/ci/junit.xml ]]; then
-            echo "No Ubuntu JUnit report found; skipping Flakiness.io upload."
-            exit 0
-          fi
-          bunx @flakiness/junit-xml rust/target/nextest/ci/junit.xml \
-            --category rust --flakiness-project Laputa/kesha-voice-kit
+          bun .github/scripts/upload-flakiness.ts \
+            rust/target/nextest/ci/junit.xml rust Laputa/kesha-voice-kit
 
       - name: 🧯 Enforce Rust coverage gates
         run: bun run coverage:check:rust
@@ -320,6 +316,10 @@ jobs:
     # the PR; build-engine.yml is the cross-platform release gate. Ubuntu-only
     # on purpose.
     if: github.event_name == 'push'
+    permissions:
+      # A job-level block replaces the inherited grant, so omitting this breaks checkout.
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -341,7 +341,22 @@ jobs:
       - name: Clippy
         run: bash rust/ci/run-clippy.sh Linux
       - name: Tests
-        run: cd rust && cargo nextest run --features tts
+        # `--profile ci` is what emits target/nextest/ci/junit.xml for the upload below.
+        run: cd rust && cargo nextest run --profile ci --features tts
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: always()
+        with:
+          bun-version-file: .bun-version
+
+      - name: 🪼 Upload to Flakiness.io
+        # Gives main a Rust baseline so flip/fail rates have history to compute against.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bun .github/scripts/upload-flakiness.ts \
+            rust/target/nextest/ci/junit.xml rust Laputa/kesha-voice-kit
 
   # Provisioned macOS arm64 lane for the FluidAudio TDT decoder-state guard
   # (#592). `transcribe_samples_is_stateless_across_calls` is `#[ignore]` +
