@@ -16,6 +16,7 @@ rules:
   proposal:
     - Always include a "Non-goals" section
   specs:
+    - Put SHALL or MUST in the requirement's FIRST line — the validator reads only that line, so a SHALL on line two still fails
     - Use glossary terms from openspec/specs/GLOSSARY.md verbatim
     - Every requirement needs at least one happy-path and one error/edge scenario
     - State outcomes, not implementation mechanisms, in requirement text
