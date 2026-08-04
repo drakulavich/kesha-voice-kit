@@ -87,8 +87,9 @@ suffix-drop rather than a guess.
 last tag. Rejected for now — it adds a second inference layer that can disagree with the
 maintainer's intent, and the base can always be corrected by editing one field.
 
-The alpha version is written into `package.json` **in the runner** at publish time and never
-committed, exactly as Tolaria injects its computed version into the build.
+The alpha version is written into `package.json` **in the runner** and never committed,
+exactly as Tolaria injects its computed version into the build. Which runner matters — see
+"The publish workflow owns version injection".
 
 ### The tag, not the npm registry, is the record of what was published
 
@@ -98,10 +99,10 @@ published, and release notes lose their commit boundary — a silent no-op rathe
 failure. Tolaria avoids this implicitly because each of its alphas creates a GitHub Release,
 which creates the tag.
 
-So the alpha workflow tags the built commit as part of publishing, and a run whose artifact
-published but whose tag did not land fails rather than reporting success. This is also what
-makes "a published version identifier is never reissued" enforceable: the tag outlives the
-Release, so pruning old alpha Releases cannot free an identifier.
+So every alpha leaves a tag at the commit it was built from — created *before* the publish,
+for the reason set out under "The tag is reserved before the artifact is published". This is
+also what makes "a published version identifier is never reissued" enforceable: the tag
+outlives the Release, so pruning old alpha Releases cannot free an identifier.
 
 ### npm dist-tags are the channel mechanism
 
@@ -117,6 +118,66 @@ enough to run per merge; a four-platform Rust build including the CoreML/Swift l
 and the Engine changes far less often. Engine alphas are dispatched manually and publish as
 non-draft Prereleases, changing `build-engine.yml:484` from an unconditional `draft: true`
 to a draft only for stable tags.
+
+### Tag grammar: `-cli` suffix for CLI, bare prerelease for the Engine
+
+`build-engine.yml:3-13` triggers on `v*` excluding `!v*-cli`, so a bare `v<base>-alpha.N`
+CLI tag would start the three-platform Engine build — and then fail its dispatch validator
+(`:56`) and the release manifest (`release-manifest.mjs:8`), both of which accept only
+`vX.Y.Z` or `-beta.N`.
+
+CLI alphas therefore extend the existing marker convention: `v1.26.0-alpha.1-cli`. The
+Engine trigger already excludes it, and `npm-publish.yml:80-81` already strips a `-cli`
+suffix when deriving the expected version. Engine alphas take the bare form
+`v1.24.8-alpha.1`, which needs the two `-beta.N` validators widened to accept `-alpha.N`.
+
+*Alternatives considered:* a `cli-` prefix isolates CLI tags from `v*` completely but breaks
+the existing `v1.25.0-cli` convention; leaving both artifacts on identical bare grammar
+makes a CLI tag and an Engine tag indistinguishable by shape, which is what causes the
+problem in the first place.
+
+### The publish workflow owns version injection
+
+Writing the derived version into `package.json` in the alpha workflow and then calling a
+reusable workflow does not work: a `workflow_call` job runs on its own runner and cannot see
+the caller's filesystem. The called workflow checks out a ref and validates
+`package.json#version` against the tag — and a ref on `main` carries the base version, not
+the injected alpha.
+
+So the reusable publish workflow takes the version as an input and applies it after its own
+checkout, and its version guard compares against that input rather than assuming the
+checkout already matches. `keshaEngine.version` must be correct in the same tarball.
+
+### The tag is reserved before the artifact is published
+
+Publishing first and tagging after leaves a window where npm has a version that no tag
+records. The next derivation then reuses that version for a different commit, and the
+prior-publish check turns the second publish into a silent skip rather than an error.
+
+The tag is therefore created at the source commit *before* the publish, and functions as the
+reservation. Failing to publish after a successful tag wastes an identifier, which is cheap;
+publishing without a tag corrupts the sequence, which is not.
+
+### `main`'s base must lead the Engine version
+
+`check-versions.ts:104` requires `package.json#version >= package.json#keshaEngine.version`,
+and a prerelease sorts *below* its own stable version. If the CLI base ever equals the
+current Engine version, every alpha of that base fails the gate: `1.25.0-alpha.1 < 1.25.0`.
+
+The convention that `main` carries the *next* CLI version keeps the base strictly ahead of
+the released Engine, which satisfies the rule — but this is a constraint on when the base is
+bumped, not an accident, and the derivation should fail loudly rather than emit a version
+that cannot pass the gate.
+
+### Privilege split across jobs
+
+The pipeline needs `contents: write` to create tags and `id-token: write` for npm
+provenance. Holding both in one continuously-running job means any merged change to a
+workflow, script, or lifecycle hook has a standing path to provenance-backed publication.
+
+The work is split: an unprivileged job checks out, classifies paths, derives and tests; a tag
+job holds `contents: write` and no OIDC; the publish job holds `id-token: write` and no tag
+write. New workflows pin actions by SHA, as the existing ones do.
 
 ### Extracting the publish path is prerequisite work, not a follow-up
 
@@ -154,19 +215,40 @@ from the new capability.
   a natural pause. → Alphas are opt-in and unversioned in documentation; nothing in the CLI
   or docs points a first-time reader at the alpha channel.
 
+- **A plain concurrency group drops merges.** GitHub keeps one pending run per group and
+  cancels an existing pending run when a newer one joins, so under three quick merges the
+  middle one disappears — which contradicts "every qualifying merge produces an alpha". →
+  Request queueing explicitly with `queue: max` (up to 100 pending); it cannot be combined
+  with `cancel-in-progress`.
+
+- **Derivation can see an incomplete tag set.** A shallow checkout without tags makes every
+  run derive sequence 1. → The derivation job fetches full history and tags, as
+  `build-engine.yml:44-45` already does for the same reason.
+
+- **A CLI alpha produces an npm version and a Git tag, but no GitHub Release**, while the
+  retention requirement talks about pruning alpha Releases. → Retention applies to Engine
+  alpha Releases and to any Release the CLI alpha workflow chooses to create; the npm version
+  and the tag are permanent either way. If CLI alphas do get Releases, publishing one fires
+  `release: published` and reaches the publish workflow, which must recognise its own tag and
+  decline rather than republish.
+
 - **Publishing on every merge multiplies npm versions.** Unpublishing on npm is restricted,
   so the alpha version list grows permanently. → Accepted: it is the cost of the property we
   want, and the `alpha` dist-tag keeps the list out of the default resolution path.
 
 ## Migration Plan
 
-1. Land the publish-path extraction with no behaviour change; verify by cutting the next
+1. Set `package.json#version` to the next unreleased version once the current release is
+   out. The derivation is invalid until the base leads the Engine version, so this comes
+   first, not last.
+2. Fix the tag grammar and widen the Engine-side validators, so no later step can push a tag
+   that starts an unwanted build.
+3. Land the publish-path extraction with no behaviour change; verify by cutting the next
    stable release through the reusable workflow.
-2. Set `package.json#version` to the next unreleased version once that release is out.
-3. Land the version-derivation script with its tests, exercised in CI but not yet wired to a
+4. Land the version-derivation script with its tests, exercised but not yet wired to a
    publish.
-4. Enable the alpha workflow on the default branch.
-5. Change Engine alpha publishing to non-draft Prerelease and dispatch one by hand.
+5. Enable the alpha workflow on the default branch.
+6. Change Engine alpha publishing to non-draft Prerelease and dispatch one by hand.
 
 Rollback: disabling the alpha workflow stops alpha production immediately and affects no
 stable artifact. The `alpha` dist-tag can be left in place pointing at the last alpha, or

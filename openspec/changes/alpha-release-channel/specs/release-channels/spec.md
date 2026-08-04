@@ -1,5 +1,44 @@
 ## ADDED Requirements
 
+### Requirement: A tag names exactly one artifact and one channel
+
+Every release tag SHALL identify which artifact it belongs to and whether it is stable or
+alpha, by its shape alone. A pipeline SHALL decide what to do with a tag without inspecting
+the commit it points at.
+
+A CLI tag SHALL NOT start an Engine build. The Engine build is the expensive half of the
+release and runs on a tag pattern today, so an ambiguous tag does not merely mislabel — it
+triggers work that was never asked for and then fails downstream validation.
+
+Tag validators SHALL accept the alpha shapes for the artifact they govern, and SHALL keep
+rejecting shapes that belong to another artifact.
+
+#### Scenario: A CLI alpha tag does not trigger an Engine build
+
+- GIVEN a CLI alpha is published and its tag is pushed
+- WHEN the Engine build workflow evaluates its tag filter
+- THEN it does not run
+
+#### Scenario: An Engine alpha tag passes Engine validators
+
+- GIVEN Maks dispatches an Engine alpha
+- WHEN the Engine workflow validates the tag shape and builds its release manifest
+- THEN the alpha shape is accepted
+- AND the resulting manifest describes that alpha
+
+#### Scenario: A tag belonging to another artifact is rejected
+
+- GIVEN a tag whose shape belongs to the CLI
+- WHEN an Engine-side validator evaluates it
+- THEN it is rejected rather than processed as an Engine release
+
+> *Technical Note — `.github/workflows/build-engine.yml:3-13` triggers on `v*` excluding
+> `!v*-cli`, so a bare `v<base>-alpha.N` CLI tag would start the Engine build. Its dispatch
+> validator (`:56`) accepts only `^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$`, and
+> `.github/scripts/release-manifest.mjs:8` applies the same pattern — both reject `-alpha.N`
+> today. `.github/workflows/npm-publish.yml:80-81` already strips a `-cli` suffix when
+> deriving the expected version from a tag.*
+
 ### Requirement: Alpha builds reach only people who ask for them
 
 The project SHALL publish on two channels: **stable**, which is what an install command
@@ -57,14 +96,22 @@ from a workstation.
 - GIVEN a pull request that changes only documentation merges to the default branch
 - WHEN the alpha pipeline evaluates the change
 - THEN no alpha is published
-- AND the pipeline reports that it deliberately skipped, rather than failing
+- AND the pipeline records that it deliberately skipped, in a form a person can read
+  afterwards without inferring it from an absent run
 
-#### Scenario: Two merges land in quick succession
+#### Scenario: Three merges land in quick succession
 
 - GIVEN an alpha publish is already in flight
-- WHEN a second qualifying merge lands before it finishes
-- THEN each merge SHALL end with a distinct published alpha version
+- WHEN two further qualifying merges land before it finishes
+- THEN each of the three merges SHALL end with its own published alpha version
+- AND no qualifying merge is silently dropped because a later one superseded it
 - AND no published alpha version is ever reused for different source
+
+> *Technical Note — a plain concurrency group is not sufficient: GitHub cancels an existing
+> pending run when a newer one joins the group, so the middle merge would disappear.
+> Queueing must be requested explicitly (`queue: max`, up to 100 pending), and it cannot be
+> combined with `cancel-in-progress`. A skip decision must also be made inside a job — a
+> workflow-level path filter prevents the run from existing, leaving nothing to report.*
 
 > *Technical Note — the existing publish path fires on `release: published`
 > (`.github/workflows/npm-publish.yml:9-11`) and is therefore tied to the manual draft
@@ -140,13 +187,19 @@ version.
 - THEN the derivation observes the previous alpha's tag
 - AND the new alpha carries the next sequence rather than repeating the published one
 
-#### Scenario: The artifact publishes but the tag does not land
+#### Scenario: The tag cannot be recorded
 
-- GIVEN an alpha's artifact has been published
+- GIVEN an alpha version has been derived
 - WHEN recording its tag fails
-- THEN the pipeline reports failure rather than success
-- AND the condition is surfaced, because the next derivation would otherwise reuse that
-  version identifier
+- THEN nothing is published under that version
+- AND the run reports failure rather than success
+
+#### Scenario: The tag lands but the publish fails
+
+- GIVEN an alpha's tag has been recorded
+- WHEN publishing the artifact then fails
+- THEN that version identifier SHALL NOT be reused by a later alpha
+- AND the next alpha takes the following sequence instead
 
 #### Scenario: Derivation is verified before use
 
