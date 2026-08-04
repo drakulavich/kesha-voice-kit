@@ -2,37 +2,38 @@
 /**
  * Decide whether a set of changed paths can alter what a user installs.
  *
- * Derived from `package.json#files` — the list npm actually ships — so adding a file to the
- * package extends this filter without a second edit. A path filter on the workflow trigger
- * could not report a deliberate skip, because it prevents the run from existing (#685).
+ * The answer comes from `npm pack --dry-run`, not from mirroring npm's rules: `files`,
+ * its negations and `.npmignore` interact in ways that are easy to get subtly wrong —
+ * `.npmignore` is inert for anything `files` already allows, for one (#704).
  */
-import { readFileSync } from "node:fs";
-
-export function shippedPrefixes(files: string[]): string[] {
-  return files.map((entry) => entry.replace(/\/+$/, ""));
+export function publishableChanges(changed: string[], packed: string[]): string[] {
+  const shipped = new Set(packed);
+  return changed.filter((path) => shipped.has(path));
 }
 
-export function publishableChanges(changed: string[], files: string[]): string[] {
-  const prefixes = shippedPrefixes(files);
-  return changed.filter((path) =>
-    prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)),
-  );
+export function packedFiles(packOutput: string): string[] {
+  const parsed = JSON.parse(packOutput);
+  const files = parsed?.[0]?.files;
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error("npm pack reported no files — refusing to guess what ships");
+  }
+  return files.map((f: { path: string }) => f.path);
 }
 
 if (import.meta.main) {
   // Paths arrive on stdin, one per line: a git path may contain spaces, and argv would
   // depend on the caller's word-splitting rules.
   const changed = (await Bun.stdin.text()).split("\n").map((l) => l.trim()).filter(Boolean);
-  const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-  if (!Array.isArray(pkg.files) || pkg.files.length === 0) {
-    console.error("package.json#files is missing — refusing to guess what ships");
+  const pack = Bun.spawnSync(["npm", "pack", "--dry-run", "--json"]);
+  if (pack.exitCode !== 0) {
+    console.error(`npm pack --dry-run failed:\n${pack.stderr.toString()}`);
     process.exit(1);
   }
-  const matched = publishableChanges(changed, pkg.files);
+  const matched = publishableChanges(changed, packedFiles(pack.stdout.toString()));
   process.stdout.write(`publish=${matched.length > 0}\n`);
-  if (matched.length === 0) {
-    console.error(`No shipped path changed among ${changed.length} file(s) — skipping the alpha.`);
-  } else {
-    console.error(`Shipped paths changed: ${matched.join(", ")}`);
-  }
+  console.error(
+    matched.length === 0
+      ? `No packed path changed among ${changed.length} file(s) — skipping the alpha.`
+      : `Packed paths changed: ${matched.join(", ")}`,
+  );
 }

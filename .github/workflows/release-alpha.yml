@@ -1,9 +1,10 @@
 name: "🌱 Release (Alpha)"
 
-# Publishes a CLI alpha for every merge that can change what a user installs (#685).
+# Publishes a CLI alpha when a merged PR asked for one with the `alpha` label (#685).
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 # A bare group would cancel an already-pending run when a newer one joins, dropping the
 # middle of three quick merges; queueing must be asked for and excludes cancel-in-progress.
@@ -18,6 +19,9 @@ jobs:
   decide:
     name: Decide and derive
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       publish: ${{ steps.publishable.outputs.publish }}
       version: ${{ steps.derive.outputs.version }}
@@ -42,8 +46,19 @@ jobs:
         run: .github/scripts/changed-paths.sh
 
       - name: Is the change publishable
-        id: publishable
+        id: packed
         run: bun .github/scripts/alpha-publishable.ts < changed-paths.txt >> "$GITHUB_OUTPUT"
+
+      # The label is the intent; the packed-path check is the safety net. A manual run is
+      # the escape hatch for a PR that was merged before anyone remembered the label.
+      - name: Did the merged PR ask for an alpha
+        id: publishable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          PACKED: ${{ steps.packed.outputs.publish }}
+        run: .github/scripts/alpha-requested.sh >> "$GITHUB_OUTPUT"
 
       # Trusted before it produces a version — passing in general CI does not gate this run.
       - name: Test the derivation

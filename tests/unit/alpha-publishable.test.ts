@@ -1,50 +1,40 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { publishableChanges, shippedPrefixes } from "../../.github/scripts/alpha-publishable";
+import { packedFiles, publishableChanges } from "../../.github/scripts/alpha-publishable";
 
-const FILES = ["bin/", "src/", "package.json", "README.md"];
+const PACKED = ["package.json", "bin/kesha.js", "src/engine.ts", "README.md"];
 
 describe("publishableChanges", () => {
-  test("a change inside a shipped directory publishes", () => {
-    expect(publishableChanges(["src/cli/init.ts"], FILES)).toEqual(["src/cli/init.ts"]);
+  test("a change to a packed file publishes", () => {
+    expect(publishableChanges(["src/engine.ts"], PACKED)).toEqual(["src/engine.ts"]);
   });
 
-  test("a shipped file itself publishes", () => {
-    expect(publishableChanges(["package.json"], FILES)).toEqual(["package.json"]);
-  });
-
-  test("repo tooling and docs that do not ship publish nothing", () => {
+  test("repo tooling that is not packed publishes nothing", () => {
     const changed = [".github/workflows/ci.yml", "tests/unit/init.test.ts", "rust/src/models.rs"];
 
-    expect(publishableChanges(changed, FILES)).toEqual([]);
+    expect(publishableChanges(changed, PACKED)).toEqual([]);
   });
 
-  // `src/` must not match `srcery/` — the prefix is a directory, not a string fragment.
-  test("a sibling path that merely starts with a shipped name does not publish", () => {
-    expect(publishableChanges(["srcery/x.ts", "binary/y"], FILES)).toEqual([]);
+  // The whole point of asking npm: a path under a shipped directory can still be excluded.
+  test("a path inside a shipped directory that npm does not pack publishes nothing", () => {
+    expect(publishableChanges(["src/__tests__/error-codes.test.ts"], PACKED)).toEqual([]);
   });
 
   test("reports every matching path, not just the first", () => {
-    expect(publishableChanges(["src/a.ts", "docs/x.md", "bin/kesha.js"], FILES)).toEqual([
-      "src/a.ts",
+    expect(publishableChanges(["src/engine.ts", "docs/x.md", "bin/kesha.js"], PACKED)).toEqual([
+      "src/engine.ts",
       "bin/kesha.js",
     ]);
   });
-
-  test("trailing slashes in package.json#files are normalised", () => {
-    expect(shippedPrefixes(["bin/", "src/", "README.md"])).toEqual(["bin", "src", "README.md"]);
-  });
 });
 
-describe("against the real package", () => {
-  const files = JSON.parse(readFileSync(`${import.meta.dir}/../../package.json`, "utf8")).files;
+describe("packedFiles", () => {
+  test("reads the path list npm reports", () => {
+    const out = JSON.stringify([{ files: [{ path: "bin/kesha.js" }, { path: "src/engine.ts" }] }]);
 
-  test("package.json still declares what ships", () => {
-    expect(Array.isArray(files) && files.length > 0).toBe(true);
+    expect(packedFiles(out)).toEqual(["bin/kesha.js", "src/engine.ts"]);
   });
 
-  test("a CLI source change publishes; a workflow change does not", () => {
-    expect(publishableChanges(["src/engine.ts"], files)).toEqual(["src/engine.ts"]);
-    expect(publishableChanges([".github/workflows/release-alpha.yml"], files)).toEqual([]);
+  test("refuses an empty pack rather than skipping every alpha forever", () => {
+    expect(() => packedFiles(JSON.stringify([{ files: [] }]))).toThrow(/refusing to guess/);
   });
 });
