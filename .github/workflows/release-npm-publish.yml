@@ -1,0 +1,99 @@
+name: "📦 npm Publish (reusable)"
+
+# The one path that publishes to npm. Both channels call it so an alpha rehearses the
+# mechanism a stable release depends on, rather than a parallel copy that can drift (#685).
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to publish from (a tag for stable, a commit SHA for alpha)"
+        required: true
+        type: string
+      version:
+        description: "Version that must end up published"
+        required: true
+        type: string
+      dist-tag:
+        description: "npm dist-tag to publish under. Resolved by the caller, which runs from the default branch — a historical checkout may predate the resolver."
+        required: true
+        type: string
+      inject-version:
+        description: "Write `version` into package.json after checkout instead of verifying it. Alpha versions are derived at publish time and never committed."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout at ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Trusted Publishing (tokenless OIDC) requires Node >=22.14.0 and
+      # npm >=11.5.1. `registry-url` keeps the publish target; no
+      # NODE_AUTH_TOKEN is set — npm exchanges the GitHub OIDC token for a
+      # short-lived publish credential when the package is configured as a
+      # Trusted Publisher on npmjs.com.
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "lts/*"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest && npm --version
+
+      # A caller-supplied version reaches the shell through `env:`, never by direct
+      # interpolation: this job holds `id-token: write` (#291).
+      - name: Apply the derived version
+        if: inputs.inject-version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          node .github/scripts/set-package-version.mjs "$VERSION"
+          echo "package.json version set to $VERSION for this publish (not committed)."
+
+      # Guard: refuse to publish if `package.json#version` doesn't match what the
+      # caller says it is publishing. Catches a tag pointing at a commit whose
+      # package.json wasn't bumped — silently bad, because npm publishes whatever
+      # is in the checkout regardless of the release name.
+      - name: Verify package.json version matches the release
+        if: ${{ !inputs.inject-version }}
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          actual=$(jq -r .version package.json)
+          if [ "$VERSION" != "$actual" ]; then
+            echo "::error::Release implies version $VERSION but package.json says $actual" >&2
+            exit 1
+          fi
+          echo "package.json version $actual matches the release — OK"
+
+      # Idempotent guard: if this exact version is already on npm, skip the publish
+      # rather than failing, so a re-run no-ops cleanly after a successful publish.
+      - name: Check npm registry for prior publish
+        id: registry
+        run: |
+          name=$(jq -r .name package.json)
+          version=$(jq -r .version package.json)
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "$name@$version is already on npm — publish step will be skipped."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm with provenance
+        if: steps.registry.outputs.already_published == 'false'
+        run: |
+          echo "$(jq -r .version package.json) publishes to npm dist-tag $NPM_DIST_TAG."
+          npm publish --provenance --access public --tag "$NPM_DIST_TAG"
+        env:
+          NPM_DIST_TAG: ${{ inputs.dist-tag }}
