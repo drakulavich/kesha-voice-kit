@@ -12,9 +12,13 @@ export const FLUID_ASR_CACHE_NOTE =
  * "not CoreML" there would point darwin diagnostics at an ONNX directory this platform
  * never populates and render a working install as broken (#684).
  */
-export function isCoremlBackend(backend?: string): boolean {
+export function isCoremlBackend(
+  backend?: string,
+  platform?: typeof process.platform,
+  arch?: typeof process.arch,
+): boolean {
   if (backend) return backend === "coreml";
-  return isDarwinArm64();
+  return isDarwinArm64(platform, arch);
 }
 
 export interface FluidAsrCacheInfo {
@@ -58,6 +62,12 @@ const FLUID_ASR_REQUIRED = [
  * Complete enough to transcribe. Mirrors `models.rs::fluidaudio_asr_ready` — a bare
  * directory check would call an interrupted fetch healthy, and the engine would then
  * download the remainder on first transcribe (#684).
+ *
+ * Existence-only on purpose: FluidAudio's own `modelsExist` is `fileExists` over the same
+ * names, and its download skips whatever that predicate accepts. Requiring more here (that
+ * each `.mlmodelc` is a directory, that `coremldata.bin` is inside) would report not-ready
+ * for a bundle FluidAudio considers present, so `kesha install` would fetch nothing and the
+ * user could never clear the error. Match the loader; do not out-strict it.
  */
 export function fluidAsrCacheReady(path: string): boolean {
   return FLUID_ASR_REQUIRED.every((f) => existsSync(join(path, f)));

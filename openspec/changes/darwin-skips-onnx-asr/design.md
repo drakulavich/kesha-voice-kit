@@ -60,7 +60,7 @@ no-auto-download guarantee is unchanged; the check simply stops asking about the
 
 *Alternative considered:* return `true` unconditionally on coreml. Rejected — it deletes the
 guard rather than correcting it, and the first `kesha audio.ogg` on a fresh machine would then
-pull ~934 MB with no warning at all.
+pull ~473 MB with no warning at all.
 
 ### D3 — `--plan` names the external bundle instead of hiding it
 
@@ -69,7 +69,7 @@ is replaced by one describing FluidAudio's bundle: named, approximate size, and 
 by the Backend rather than by Kesha.
 
 Dropping the row entirely was rejected: `--plan` exists so the cost is known before it is paid,
-and ~934 MB is still a cost. Quoting 2.43 GB of ONNX is wrong; quoting nothing is also wrong.
+and ~473 MB is still a cost. Quoting 2.43 GB of ONNX is wrong; quoting nothing is also wrong.
 
 ### D4 — Diagnostics follow the Kokoro precedent
 
@@ -94,7 +94,7 @@ rather than inventing a second vocabulary for "lives outside the Model cache".
   sibling is the wrong target. Keying on it would report a healthy install as broken, which is
   the exact regression this change exists to avoid.
 - **Install feels slower to complete on macOS despite downloading less**, because the
-  ~934 MB moves from a visible download into the warm-up step. Worth watching against #680's
+  ~473 MB moves from a visible download into the warm-up step. Worth watching against #680's
   complaint; not a reason to keep downloading 2.43 GB.
 
 ## Open Questions

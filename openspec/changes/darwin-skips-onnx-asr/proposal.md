@@ -13,7 +13,7 @@ Measured on an M2 after a normal install:
 ```
 
 while the weights that Transcription actually runs on live in FluidAudio's own cache,
-`~/Library/Application Support/FluidAudio/Models/parakeet-tdt-0.6b-v3{,-coreml}`, ~934 MB.
+`~/Library/Application Support/FluidAudio/Models/parakeet-tdt-0.6b-v3`, ~473 MB. (A `…-v3-coreml` sibling also exists on disk; nothing in the current FluidAudio resolves to it, so it is not counted.)
 
 The cause is that `models::install` has no backend branch and `ASR_FILES` carries no `cfg` gate,
 so the ONNX manifest compiles into — and downloads on — every build, including the one whose

@@ -36,7 +36,8 @@ curl -fsSL https://bun.sh/install | bash        # or: brew install oven-sh/bun/b
 bun add -g @drakulavich/kesha-voice-kit
 kesha --version                                 # confirms `kesha` resolved on PATH
 kesha install --plan                            # preview exact download/disk sizes first — downloads nothing
-kesha install        # ~2.5 GB (engine + speech-to-text models), explicit — never automatic.
+kesha install        # ~2.5 GB on Linux/Windows; ~0.6 GB on Apple Silicon, whose CoreML
+                      # engine uses a different, smaller model set. Explicit — never automatic.
                       # No progress bar during the model step; can take several minutes.
                       # Prefer a guided wizard? `kesha init` walks through the same choices interactively.
 

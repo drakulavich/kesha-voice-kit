@@ -1,8 +1,23 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { fluidAsrCacheInfo, fluidAsrCachePath } from "../../src/fluid-asr-cache";
+import { fluidAsrCacheInfo, fluidAsrCachePath, isCoremlBackend } from "../../src/fluid-asr-cache";
+import { defaultBackendForPlatform, unavailableBackendError } from "../../src/cli/install";
+
+describe("isCoremlBackend", () => {
+  test("trusts the engine's reported backend over the host platform", () => {
+    expect(isCoremlBackend("coreml", "linux", "x64")).toBe(true);
+    expect(isCoremlBackend("onnx", "darwin", "arm64")).toBe(false);
+  });
+
+  // A failed probe must not point darwin at an ONNX dir it never populates (#684).
+  test("falls back to the platform when the capabilities probe yields nothing", () => {
+    expect(isCoremlBackend(undefined, "darwin", "arm64")).toBe(true);
+    expect(isCoremlBackend(undefined, "darwin", "x64")).toBe(false);
+    expect(isCoremlBackend(undefined, "linux", "x64")).toBe(false);
+  });
+});
 
 describe("fluidAsrCacheInfo", () => {
   // `Repo.folderName` strips the `-coreml` suffix, and a `…-v3-coreml` sibling exists
@@ -23,10 +38,18 @@ describe("fluidAsrCacheInfo", () => {
     "parakeet_vocab.json",
   ];
 
+  // `.mlmodelc` are compiled-model directories holding `coremldata.bin`, not flat files.
   function seed(homeDir: string, entries: string[]): string {
     const cache = fluidAsrCachePath(homeDir);
     mkdirSync(cache, { recursive: true });
-    for (const e of entries) writeFileSync(join(cache, e), "coreml");
+    for (const e of entries) {
+      if (e.endsWith(".mlmodelc")) {
+        mkdirSync(join(cache, e), { recursive: true });
+        writeFileSync(join(cache, e, "coremldata.bin"), "compiled");
+      } else {
+        writeFileSync(join(cache, e), "{}");
+      }
+    }
     return cache;
   }
 
@@ -105,5 +128,32 @@ describe("fluidAsrCacheInfo", () => {
     expect(info.supported).toBe(false);
     expect(info.exists).toBe(false);
     expect(info.sizeBytes).toBe(0);
+  });
+});
+
+describe("unavailableBackendError", () => {
+  const saved = process.env.KESHA_ENGINE_BIN;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
+    else process.env.KESHA_ENGINE_BIN = saved;
+  });
+
+  test("accepts an omitted backend and the platform's own", () => {
+    delete process.env.KESHA_ENGINE_BIN;
+    expect(unavailableBackendError(undefined)).toBeNull();
+    expect(unavailableBackendError(defaultBackendForPlatform())).toBeNull();
+  });
+
+  // Gates both `install --plan` and `init --plan` against previewing a rejected install (#684).
+  test("rejects a backend this platform does not ship", () => {
+    delete process.env.KESHA_ENGINE_BIN;
+    const other = defaultBackendForPlatform() === "coreml" ? "onnx" : "coreml";
+    expect(unavailableBackendError(other)).toContain(other);
+  });
+
+  test("defers to a user-supplied engine", () => {
+    process.env.KESHA_ENGINE_BIN = "/tmp/custom-engine";
+    const other = defaultBackendForPlatform() === "coreml" ? "onnx" : "coreml";
+    expect(unavailableBackendError(other)).toBeNull();
   });
 });
