@@ -2,10 +2,11 @@ name: "📦 npm Publish"
 
 # Fires once a GitHub release leaves draft (the manual gate per CLAUDE.md
 # release flow). Stable releases publish to npm's default `latest` dist-tag;
-# SemVer prereleases (`vX.Y.Z-beta.N`) publish to the `beta` dist-tag so
-# normal `bun add -g @drakulavich/kesha-voice-kit@latest` users do not get
-# unstable builds. CLI-only marker releases (`vX.Y.Z-cli`) follow the same
-# dist-tag rule after stripping `-cli`.
+# a SemVer prerelease publishes to the dist-tag named by its prerelease
+# identifier (`-beta.N` -> `beta`, `-alpha.N` -> `alpha`), so normal
+# `bun add -g @drakulavich/kesha-voice-kit@latest` users do not get unstable
+# builds and channels do not collide with each other. CLI-only marker
+# releases (`vX.Y.Z-cli`) follow the same rule after stripping `-cli`.
 on:
   release:
     types: [published]
@@ -105,14 +106,9 @@ jobs:
       - name: Resolve npm dist-tag
         id: dist_tag
         run: |
-          version=$(jq -r .version package.json)
-          if [[ "$version" == *-* ]]; then
-            echo "tag=beta" >> "$GITHUB_OUTPUT"
-            echo "$version is a prerelease — publishing to npm dist-tag beta."
-          else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-            echo "$version is stable — publishing to npm dist-tag latest."
-          fi
+          tag=$(node .github/scripts/npm-dist-tag.mjs)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "$(jq -r .version package.json) publishes to npm dist-tag $tag."
 
       - name: Publish to npm with provenance
         if: steps.registry.outputs.already_published == 'false'
