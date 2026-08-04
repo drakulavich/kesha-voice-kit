@@ -25,7 +25,8 @@
     "SKILL.md",
     "LICENSE",
     "NOTICES.md",
-    "README.md"
+    "README.md",
+    "!src/__tests__"
   ],
   "openclaw": {
     "extensions": [
