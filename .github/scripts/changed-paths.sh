@@ -10,6 +10,8 @@ else
   base="$BEFORE"
 fi
 
-git diff --name-only "$base" "$AFTER" > changed-paths.txt
+# Status, not just names: a deleted file is gone from the tree, so the packer cannot
+# answer for it and it has to be judged differently (#685).
+git diff --name-status "$base" "$AFTER" > changed-paths.txt
 echo "Changed since ${base}:" >&2
 cat changed-paths.txt >&2
