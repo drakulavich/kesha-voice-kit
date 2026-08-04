@@ -44,17 +44,13 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
 
-      # Shape + uniqueness validation BEFORE the tag value reaches any
-      # filesystem / argv site. Stable `vX.Y.Z` and SemVer prerelease
-      # `vX.Y.Z-beta.N` tags are allowed; CLI-only marker tags (vX.Y.Z-cli)
-      # and shell-injection attempts are rejected.
-      # CLAUDE.md → TAG NAMES ARE ONE-USE forbids reusing a tag name.
+      # Shape check runs before the tag reaches any filesystem/argv site; `-cli` marker tags are the CLI's, not ours (#685).
       - name: Validate tag shape and uniqueness
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
-            echo "::error::Tag '$INPUT_TAG' must match vX.Y.Z or vX.Y.Z-beta.N (CLI-only marker tags vX.Y.Z-cli are not supported by this workflow)"
+          if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(beta|alpha)\.[0-9]+)?$ ]]; then
+            echo "::error::Tag '$INPUT_TAG' must match vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-alpha.N (CLI marker tags ending in -cli are not supported by this workflow)"
             exit 1
           fi
           if git rev-parse "refs/tags/$INPUT_TAG" >/dev/null 2>&1; then

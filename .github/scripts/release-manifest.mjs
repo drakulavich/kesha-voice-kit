@@ -5,7 +5,8 @@ import { linuxPackageNames } from "./linux-package-names.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const MANIFEST_NAME = "kesha-release-manifest.json";
-const RELEASE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+(?:-beta\.[0-9]+)?$/;
+// Engine tags only — a `-cli` marker tag builds no engine assets to describe (#685).
+const RELEASE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+(?:-(?:beta|alpha)\.[0-9]+)?$/;
 const STABLE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
 
 const ENGINE_ASSETS = [
@@ -79,7 +80,7 @@ function isStableTag(tag) {
 
 function usage() {
   console.error(
-    "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N]] [--out path] [--check]",
+    "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N|-alpha.N]] [--out path] [--check]",
   );
   process.exit(2);
 }
@@ -120,9 +121,12 @@ function buildManifest(tag) {
 
   const sbomName = `kesha-voice-kit-${tag}.spdx.json`;
   const tagVersion = tag.slice(1);
-  if (tagVersion !== pkg.version) {
+  // Only stable tags name Linux packages after the CLI version; prereleases build none (#685).
+  const expectedVersion = isStableTag(tag) ? pkg.version : engineVersion;
+  const expectedField = isStableTag(tag) ? "package.json#version" : "package.json#keshaEngine.version";
+  if (tagVersion !== expectedVersion) {
     throw new Error(
-      `release tag ${tag} must match package.json#version (${pkg.version}) for Linux package filenames`,
+      `release tag ${tag} must match ${expectedField} (${expectedVersion})`,
     );
   }
 
@@ -221,7 +225,9 @@ const pkg = readPackage();
 const defaultTag = `v${pkg.version}`;
 const tag = getArg("--tag") ?? defaultTag;
 if (!RELEASE_TAG_RE.test(tag)) {
-  throw new Error(`release manifest tag must look like vX.Y.Z or vX.Y.Z-beta.N, got: ${tag}`);
+  throw new Error(
+    `release manifest tag must look like vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-alpha.N, got: ${tag}`,
+  );
 }
 
 const manifest = buildManifest(tag);
