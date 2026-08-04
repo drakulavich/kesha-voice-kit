@@ -2,12 +2,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { linuxPackageNames } from "./linux-package-names.mjs";
+import {
+  ENGINE_TAG_ERE,
+  ENGINE_TAG_RE,
+  expectedTagVersion,
+  isStableTag,
+} from "./release-tags.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const MANIFEST_NAME = "kesha-release-manifest.json";
-// Engine tags only — a `-cli` marker tag builds no engine assets to describe (#685).
-const RELEASE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+(?:-(?:beta|alpha)\.[0-9]+)?$/;
-const STABLE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
 
 const ENGINE_ASSETS = [
   {
@@ -74,10 +77,6 @@ function linuxPackageAssets(version) {
   ];
 }
 
-function isStableTag(tag) {
-  return STABLE_TAG_RE.test(tag);
-}
-
 function usage() {
   console.error(
     "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N|-alpha.N]] [--out path] [--check]",
@@ -120,22 +119,16 @@ function buildManifest(tag) {
   }
 
   const sbomName = `kesha-voice-kit-${tag}.spdx.json`;
-  const tagVersion = tag.slice(1);
-  // Only stable tags name Linux packages after the CLI version; prereleases build none (#685).
-  const expectedVersion = isStableTag(tag) ? pkg.version : engineVersion;
-  const expectedField = isStableTag(tag) ? "package.json#version" : "package.json#keshaEngine.version";
-  if (tagVersion !== expectedVersion) {
-    throw new Error(
-      `release tag ${tag} must match ${expectedField} (${expectedVersion})`,
-    );
+  const expected = expectedTagVersion(tag, { cliVersion: pkg.version, engineVersion });
+  if (tag.slice(1) !== expected.version) {
+    throw new Error(`release tag ${tag} must match ${expected.field} (${expected.version})`);
   }
 
-  const packageVersion = pkg.version;
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),
     ...DARWIN_SIDECARS.map((s) => asset(s.name, "sidecar", ["darwin-arm64"], s.install)),
     ...(isStableTag(tag)
-      ? linuxPackageAssets(packageVersion).map((p) =>
+      ? linuxPackageAssets(pkg.version).map((p) =>
           asset(p.name, p.kind, p.platforms, p.install),
         )
       : []),
@@ -197,6 +190,8 @@ function validateSourceConsistency(manifest) {
     assertIncludes(workflow, s.name, ".github/workflows/build-engine.yml");
   }
 
+  // The bash validator must ship the exact grammar string, so the two languages cannot drift (#685).
+  assertIncludes(workflow, ENGINE_TAG_ERE, ".github/workflows/build-engine.yml");
   assertIncludes(workflow, "SHA256SUMS", ".github/workflows/build-engine.yml");
   assertIncludes(workflow, ".sigstore.json", ".github/workflows/build-engine.yml");
   assertIncludes(workflow, "build-linux-packages.mjs", ".github/workflows/build-engine.yml");
@@ -224,7 +219,7 @@ function validateSourceConsistency(manifest) {
 const pkg = readPackage();
 const defaultTag = `v${pkg.version}`;
 const tag = getArg("--tag") ?? defaultTag;
-if (!RELEASE_TAG_RE.test(tag)) {
+if (!ENGINE_TAG_RE.test(tag)) {
   throw new Error(
     `release manifest tag must look like vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-alpha.N, got: ${tag}`,
   );
