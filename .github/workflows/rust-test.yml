@@ -42,6 +42,7 @@ jobs:
             # fluidaudio-rs commit, so a bump (the regression vector) always
             # lands here even though it's a git-branch dep.
             coreml:
+              # Listing this workflow means any edit to it wakes the ANE lane on a cold cache (#675).
               - 'rust/src/backend/fluidaudio.rs'
               - 'rust/build.rs'
               - 'rust/Cargo.toml'
