@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "fs";
 import { humanBytes } from "./format";
 import { dirname, join } from "path";
-import { getEngineBinPath } from "./engine";
+import { getEngineBinPath, getEngineCapabilities } from "./engine";
 import { SIDECARS } from "./engine-install";
 import { engineTarget } from "./engine-targets";
 import { readInstalledEngineVersion } from "./engine-version-marker";
@@ -13,6 +13,12 @@ import {
   isDarwinArm64,
 } from "./fluid-kokoro-cache";
 import modelPlan from "../model-plan.json" with { type: "json" };
+import {
+  FLUID_ASR_CACHE_NOTE,
+  fluidAsrCachePath,
+  fluidAsrCacheReady,
+  isCoremlBackend,
+} from "./fluid-asr-cache";
 
 export interface InstallPlanOptions {
   noCache?: boolean;
@@ -46,6 +52,8 @@ interface PlanComponent {
   cached: boolean;
   refresh: boolean;
   note?: string;
+  /** Fetched by a backend into its own cache — excluded from the Kesha-managed totals. */
+  external?: boolean;
 }
 
 interface PlanWarmup {
@@ -132,6 +140,44 @@ function bundleComponent(input: {
     cached: filesCached(input.cacheRoot, input.files),
     refresh: input.refresh,
     note: input.note,
+  };
+}
+
+/**
+ * A CoreML engine cannot read the ONNX weights, so quoting their 2.43 GB would
+ * promise a download that never happens. FluidAudio fetches its own bundle during
+ * the install warm-up instead — still a cost, so it is named rather than dropped (#684).
+ *
+ * Measured from `parakeet-tdt-0.6b-v3`, the directory the current FluidAudio actually
+ * loads. A `…-v3-coreml` sibling may also exist from earlier versions; counting it here
+ * would overstate the plan against what `status --disk` then reports. An estimate, not a
+ * manifest sum — rendered as approximate.
+ */
+const FLUID_ASR_BUNDLE_BYTES = 473 * 1024 * 1024;
+
+/**
+ * An explicit `--coreml` / `--onnx` wins. Otherwise ask the installed engine, so a custom
+ * `KESHA_ENGINE_BIN` is planned for what it actually is rather than what the host usually
+ * ships (#684). The probe is optional: `--plan` must still work before any engine exists,
+ * and `isCoremlBackend` falls back to the platform when it yields nothing.
+ */
+async function planBackendIsCoreml(options: InstallPlanOptions): Promise<boolean> {
+  if (options.backend === "coreml") return true;
+  if (options.backend === "onnx") return false;
+  const probed = await getEngineCapabilities().catch(() => null);
+  return isCoremlBackend(probed?.backend);
+}
+
+function fluidAsrComponent(): PlanComponent {
+  return {
+    name: "ASR Parakeet TDT v3 (CoreML)",
+    source: "FluidAudio cache",
+    sizeBytes: FLUID_ASR_BUNDLE_BYTES,
+    cached: fluidAsrCacheReady(fluidAsrCachePath()),
+    // `--no-cache` is a Kesha-cache flag; FluidAudio's bundle is not re-fetched by it.
+    refresh: false,
+    external: true,
+    note: FLUID_ASR_CACHE_NOTE,
   };
 }
 
@@ -245,6 +291,7 @@ function assembleComponents(input: {
   engineDir: string;
   noCache: boolean;
   options: InstallPlanOptions;
+  coreml: boolean;
   tts: ReturnType<typeof buildTtsComponents>;
 }): PlanComponent[] {
   const { cacheRoot, noCache, options } = input;
@@ -254,7 +301,9 @@ function assembleComponents(input: {
   const components: PlanComponent[] = [
     buildEngineComponent(input.binPath, noCache),
     ...buildSidecarComponents(input.engineDir, noCache),
-    modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
+    input.coreml
+      ? fluidAsrComponent()
+      : modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
     modelBundle(
       "Audio language ID ECAPA",
       LANG_ID_FILES,
@@ -298,7 +347,9 @@ function renderComponentLines(components: PlanComponent[]): string[] {
   const status = (c: PlanComponent) => (c.refresh ? "refresh" : c.cached ? "cached" : "needed");
   const lines: string[] = [];
   for (const c of components) {
-    lines.push(`  - ${c.name}: ${humanBytes(c.sizeBytes)} (${c.sizeBytes} bytes, ${status(c)}, ${c.source})`);
+    const size = c.external ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
+    const detail = c.external ? "approximate" : `${c.sizeBytes} bytes`;
+    lines.push(`  - ${c.name}: ${size} (${detail}, ${status(c)}, ${c.source})`);
     if (c.note) lines.push(`    ${c.note}`);
   }
   return lines;
@@ -310,14 +361,25 @@ function renderWarmupLines(warmups: PlanWarmup[]): string[] {
 }
 
 function renderTotalLines(components: PlanComponent[]): string[] {
-  const coldBytes = components.reduce((sum, c) => sum + c.sizeBytes, 0);
-  const expectedNetworkBytes = components.reduce((sum, c) => (c.cached && !c.refresh ? sum : sum + c.sizeBytes), 0);
-  return [
+  // External components are fetched by a backend into its own cache, so they cannot
+  // sit under a total labelled "Kesha-managed" — they get their own line (#684).
+  const managed = components.filter((c) => !c.external);
+  const external = components.filter((c) => c.external);
+  const coldBytes = managed.reduce((sum, c) => sum + c.sizeBytes, 0);
+  const expectedNetworkBytes = managed.reduce((sum, c) => (c.cached && !c.refresh ? sum : sum + c.sizeBytes), 0);
+  const lines = [
     "",
     "Totals:",
     `  Cold-cache Kesha-managed download: ${humanBytes(coldBytes)}`,
     `  Expected Kesha-managed network for this run: ${humanBytes(expectedNetworkBytes)}`,
   ];
+  const externalPending = external.reduce((sum, c) => (c.cached ? sum : sum + c.sizeBytes), 0);
+  if (externalPending > 0) {
+    lines.push(
+      `  Additionally fetched by the backend into its own cache: ~${humanBytes(externalPending)}`,
+    );
+  }
+  return lines;
 }
 
 function renderBehaviorLines(ttsLangs: string[], wantsAnyKokoro: boolean): string[] {
@@ -380,7 +442,8 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
   const ttsLangs = options.ttsLangs ?? [];
 
   const tts = buildTtsComponents(cacheRoot, ttsLangs, noCache);
-  const components = assembleComponents({ cacheRoot, binPath, engineDir, noCache, options, tts });
+  const coreml = await planBackendIsCoreml(options);
+  const components = assembleComponents({ cacheRoot, binPath, engineDir, noCache, options, coreml, tts });
 
   const lines = [
     ...renderHeader(cacheRoot, binPath, options.backend),

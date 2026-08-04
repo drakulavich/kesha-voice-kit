@@ -120,6 +120,17 @@ function finishInstallDiagnostic(
   }
 }
 
+/** Null when the requested backend is installable here. `KESHA_ENGINE_BIN` opts out — the user supplied their own engine. */
+export function unavailableBackendError(backend: string | undefined): string | null {
+  const platformBackend = defaultBackendForPlatform();
+  if (!backend || process.env.KESHA_ENGINE_BIN || !platformBackend) return null;
+  if (backend === platformBackend) return null;
+  return (
+    `Requested backend "${backend}" is not available on this platform; ` +
+    `the release engine uses "${platformBackend}".`
+  );
+}
+
 export async function performInstall(
   noCache: boolean,
   backend: string | undefined,
@@ -128,7 +139,14 @@ export async function performInstall(
   diarize = false,
   plan = false,
 ) {
+  // A plan for an unavailable backend previews what its own printed command rejects (#684).
+  const backendError = unavailableBackendError(backend);
   if (plan) {
+    if (backendError) {
+      log.error(backendError);
+      process.exitCode = 2;
+      return;
+    }
     log.info(await renderInstallPlan({ noCache, backend, ttsLangs, vad, diarize }));
     return;
   }
@@ -154,13 +172,9 @@ export async function performInstall(
         "(see https://github.com/drakulavich/kesha-voice-kit/issues/199).",
       );
     }
-    const platformBackend = defaultBackendForPlatform();
-    if (backend && !process.env.KESHA_ENGINE_BIN && platformBackend && backend !== platformBackend) {
+    if (backendError) {
       errorKind = "validation_failed";
-      throw new Error(
-        `Requested backend "${backend}" is not available on this platform; ` +
-          `the release engine uses "${platformBackend}".`,
-      );
+      throw new Error(backendError);
     }
     await downloadEngine(noCache, backend, { ttsLangs, vad, diarize });
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);

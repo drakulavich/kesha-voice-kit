@@ -3,7 +3,13 @@ import { confirm, multiselect, isCancel, cancel } from "@clack/prompts";
 import { renderInstallPlan } from "../install-plan";
 import { log } from "../log";
 import { getEngineCapabilities } from "../engine";
-import { performInstall, resolveBackendFlag, resolveNoCacheFlag, TTS_LANG_FALLBACK } from "./install";
+import {
+  performInstall,
+  resolveBackendFlag,
+  resolveNoCacheFlag,
+  TTS_LANG_FALLBACK,
+  unavailableBackendError,
+} from "./install";
 import type { SharedInstallArgs } from "./types";
 
 const TTS_LANG_LABELS: Record<string, string> = {
@@ -171,7 +177,14 @@ export async function promptInitSelection(
   };
 }
 
-async function printPlan(selection: InitSelection): Promise<void> {
+/** Mirrors the guard in `performInstall`: a preview must not describe an install this platform rejects (#684). */
+async function printPlan(selection: InitSelection): Promise<boolean> {
+  const backendError = unavailableBackendError(selection.backend);
+  if (backendError) {
+    log.error(backendError);
+    process.exitCode = 2;
+    return false;
+  }
   log.info(
     await renderInstallPlan({
       noCache: selection.noCache,
@@ -181,6 +194,7 @@ async function printPlan(selection: InitSelection): Promise<void> {
       diarize: selection.diarize,
     }),
   );
+  return true;
 }
 
 async function runNonInteractive(selection: InitSelection): Promise<void> {
@@ -190,7 +204,7 @@ async function runNonInteractive(selection: InitSelection): Promise<void> {
     log.warn("--diarize is currently darwin-arm64 only; omitting it from non-interactive examples.");
   }
   log.info(renderInitOverview(canDiarize));
-  await printPlan(printableSelection);
+  if (!(await printPlan(printableSelection))) return;
   log.info("Run one of these commands from an interactive terminal:");
   for (const command of initSuggestionCommands(printableSelection, canDiarize)) {
     log.info(`  ${command.join(" ")}`);
@@ -286,7 +300,7 @@ export const initCommand = defineCommand({
       noCache,
     );
     log.info("");
-    await printPlan(prompted);
+    if (!(await printPlan(prompted))) return;
     const confirmed = await promptConfirm(
       `Run \`${initInstallArgs(prompted).join(" ")}\` now?`,
       true,
