@@ -7,6 +7,7 @@ name: "📦 npm Publish"
 # `bun add -g @drakulavich/kesha-voice-kit@latest` users do not get unstable
 # builds and channels do not collide with each other. CLI-only marker
 # releases (`vX.Y.Z-cli`) follow the same rule after stripping `-cli`.
+# The publish itself lives in release-npm-publish.yml, shared with alpha (#685).
 on:
   release:
     types: [published]
@@ -16,102 +17,38 @@ on:
         description: "Tag to publish (must already exist and have a published GitHub release)"
         required: true
 
-# `id-token: write` is what unlocks npm provenance attestation. The OIDC
-# token issued by GitHub is signed by GHA's identity provider, which npm
-# verifies against the public sigstore log. Without this permission the
-# `--provenance` flag would fail.
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
+  resolve:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      engine_only: ${{ steps.tag.outputs.engine_only }}
     steps:
-      # Both `inputs.tag` (workflow_dispatch) and `github.event.release.tag_name`
-      # (release event) flow through `env:` rather than direct
-      # `${{ … }}` interpolation in the `run:` script. The job holds
-      # `id-token: write`; an attacker-controlled tag containing `$(cmd)` or
-      # `;` would otherwise execute arbitrary code AND get the OIDC token
-      # for npm provenance. GHA security hardening guide:
-      # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
-      - name: Resolve tag
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Tags reach the shell via `env:`, never interpolation — `$(cmd)` in a tag would execute (#291).
+      - name: Resolve tag and version
         id: tag
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_TAG: ${{ inputs.tag }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout at tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ steps.tag.outputs.tag }}
-
-      # Trusted Publishing (tokenless OIDC) requires Node >=22.14.0 and
-      # npm >=11.5.1. `registry-url` keeps the publish target; no
-      # NODE_AUTH_TOKEN is set — npm exchanges the GitHub OIDC token for a
-      # short-lived publish credential when the package is configured as a
-      # Trusted Publisher on npmjs.com.
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "lts/*"
-          registry-url: "https://registry.npmjs.org"
-          package-manager-cache: false
-      - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest && npm --version
-
-      # Guard: refuse to publish if `package.json#version` doesn't match
-      # the release tag. Catches an accidental release of a tag that
-      # points at a commit whose package.json wasn't bumped — that
-      # combination is silently bad (npm publishes whatever's in the
-      # checkout, regardless of the GitHub release name).
-      - name: Verify package.json version matches tag
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          tag="$TAG"
-          # Strip leading "v" and optional "-cli" suffix used for CLI-only
-          # marker releases (see CLAUDE.md → RELEASE PROCESS).
-          expected="${tag#v}"
-          expected="${expected%-cli}"
-          actual=$(jq -r .version package.json)
-          if [ "$expected" != "$actual" ]; then
-            echo "::error::Tag $tag implies version $expected but package.json says $actual" >&2
-            exit 1
-          fi
-          echo "package.json version $actual matches tag $tag — OK"
-
-      # Idempotent guard: if this exact version is already on npm, skip
-      # the publish step rather than failing. Lets `workflow_dispatch`
-      # re-runs no-op cleanly after a successful publish.
-      - name: Check npm registry for prior publish
-        id: registry
-        run: |
-          name=$(jq -r .name package.json)
-          version=$(jq -r .version package.json)
-          if npm view "$name@$version" version >/dev/null 2>&1; then
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-            echo "$name@$version is already on npm — publish step will be skipped."
-          else
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Resolve npm dist-tag
-        id: dist_tag
-        run: |
-          tag=$(node .github/scripts/npm-dist-tag.mjs)
+          [ "$EVENT_NAME" = "workflow_dispatch" ] && tag="$INPUT_TAG" || tag="$RELEASE_TAG"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "$(jq -r .version package.json) publishes to npm dist-tag $tag."
+          node .github/scripts/release-tags.mjs "$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm with provenance
-        if: steps.registry.outputs.already_published == 'false'
-        run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"
-        env:
-          NPM_DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
+  publish:
+    needs: resolve
+    if: needs.resolve.outputs.engine_only != 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release-npm-publish.yml
+    with:
+      ref: ${{ needs.resolve.outputs.tag }}
+      version: ${{ needs.resolve.outputs.version }}

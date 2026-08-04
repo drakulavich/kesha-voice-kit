@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import {
+  cliPublishTarget,
   ENGINE_TAG_ERE,
   ENGINE_TAG_RE,
   expectedTagVersion,
@@ -72,5 +73,28 @@ describe("expectedTagVersion", () => {
     const alpha = { cliVersion: "1.27.0", engineVersion: "1.24.8-alpha.1" };
 
     expect(expectedTagVersion("v1.24.8-alpha.1", alpha).version).toBe("1.24.8-alpha.1");
+  });
+});
+
+describe("cliPublishTarget", () => {
+  test("a CLI marker tag publishes the version the tag names", () => {
+    expect(cliPublishTarget("v1.26.0-cli")).toEqual({ version: "1.26.0", engineOnly: false });
+  });
+
+  test("a CLI alpha keeps its prerelease identifier", () => {
+    expect(cliPublishTarget("v1.27.0-alpha.1-cli")).toEqual({
+      version: "1.27.0-alpha.1",
+      engineOnly: false,
+    });
+  });
+
+  test("an engine prerelease publishes no CLI", () => {
+    for (const tag of ["v1.24.8-alpha.1", "v1.24.8-beta.1"]) {
+      expect(cliPublishTarget(tag).engineOnly).toBe(true);
+    }
+  });
+
+  test("a stable tag still publishes the CLI, as it does today", () => {
+    expect(cliPublishTarget("v1.24.8")).toEqual({ version: "1.24.8", engineOnly: false });
   });
 });

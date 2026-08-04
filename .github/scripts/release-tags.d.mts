@@ -7,3 +7,4 @@ export function expectedTagVersion(
   tag: string,
   versions: { cliVersion: string; engineVersion: string },
 ): { field: string; version: string };
+export function cliPublishTarget(tag: string): { version: string; engineOnly: boolean };
