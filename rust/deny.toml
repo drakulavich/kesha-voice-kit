@@ -65,7 +65,12 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# Upstream FluidAudio Rust bindings, consumed by the `coreml`/`system_*`
-# features (#199, #259). Was the personal fork until the Kokoro binding landed
-# upstream (FluidInference/fluidaudio-rs#19); fork now retired.
-allow-git = ["https://github.com/FluidInference/fluidaudio-rs"]
+# FluidAudio Rust bindings, consumed by the `coreml`/`system_*` features
+# (#199, #259). Both URLs stay allowed: the pin is on the fork for
+# `with_models_dir` (#688) and `init_kokoro_with_compute_units` (#678), which
+# upstream does not expose, and moves back to `FluidInference` once they land
+# there. See rust/Cargo.toml for why the fork is deliberate.
+allow-git = [
+  "https://github.com/FluidInference/fluidaudio-rs",
+  "https://github.com/drakulavich/fluidaudio-rs",
+]
