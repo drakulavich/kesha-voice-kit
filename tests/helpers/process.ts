@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 
 const PID_FILE_POLL_INTERVAL_MS = 25;
-// 10s budgets, ~10x the slowest observed teardown (1.0s), so a loaded runner still asserts.
+// 10s: the fake engine traps SIGTERM, so every abort waits out FORCE_KILL_GRACE_MS before SIGKILL.
 const PID_FILE_POLL_ATTEMPTS = 400;
 const PID_EXIT_POLL_ATTEMPTS = 400;
 
