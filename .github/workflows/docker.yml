@@ -3,8 +3,10 @@ name: "🐳 Docker"
 on:
   push:
     branches: [main]
+    # A tag ref skips the path filter below, so every alpha would ship a GHCR image (#685).
     tags:
       - "v*"
+      - "!v*-alpha*"
 
 permissions:
   contents: read

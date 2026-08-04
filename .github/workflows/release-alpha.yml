@@ -1,0 +1,115 @@
+name: "🌱 Release (Alpha)"
+
+# Publishes a CLI alpha when a merged PR asked for one with the `alpha` label (#685).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A bare group would cancel an already-pending run when a newer one joins, dropping the
+# middle of three quick merges; queueing must be asked for and excludes cancel-in-progress.
+concurrency:
+  group: release-alpha
+  queue: max
+
+permissions:
+  contents: read
+
+jobs:
+  decide:
+    name: Decide and derive
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      publish: ${{ steps.publishable.outputs.publish }}
+      version: ${{ steps.derive.outputs.version }}
+      tag: ${{ steps.derive.outputs.tag }}
+      dist_tag: ${{ steps.dist.outputs.dist_tag }}
+    steps:
+      # Full history and tags: the sequence is counted from tags, and a shallow checkout
+      # looks identical to a repository that has none.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.0.2
+        with:
+          bun-version: latest
+
+      - name: Changed paths
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: .github/scripts/changed-paths.sh
+
+      - name: Is the change publishable
+        id: packed
+        run: bun .github/scripts/alpha-publishable.ts < changed-paths.txt >> "$GITHUB_OUTPUT"
+
+      # The label is the intent; the packed-path check is the safety net. A manual run is
+      # the escape hatch for a PR that was merged before anyone remembered the label.
+      - name: Did the merged PR ask for an alpha
+        id: publishable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          PACKED: ${{ steps.packed.outputs.publish }}
+        run: .github/scripts/alpha-requested.sh >> "$GITHUB_OUTPUT"
+
+      # Trusted before it produces a version — passing in general CI does not gate this run.
+      - name: Test the derivation
+        if: steps.publishable.outputs.publish == 'true'
+        run: bun test tests/unit/derive-alpha-version.test.ts tests/unit/npm-dist-tag.test.ts
+
+      - name: Derive the alpha version
+        id: derive
+        if: steps.publishable.outputs.publish == 'true'
+        run: bun .github/scripts/derive-alpha-version.ts cli >> "$GITHUB_OUTPUT"
+
+      - name: Resolve npm dist-tag
+        id: dist
+        if: steps.publishable.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.derive.outputs.version }}
+        run: echo "dist_tag=$(bun .github/scripts/npm-dist-tag.mjs "$VERSION")" >> "$GITHUB_OUTPUT"
+
+  # `contents: write` and no OIDC: tagging and provenance publishing never share a job.
+  reserve-tag:
+    name: Reserve the version
+    needs: decide
+    if: needs.decide.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # Before the publish, not after: npm holding a version no tag records lets the next
+      # derivation reuse it, and the prior-publish guard turns that into a silent skip.
+      - name: Tag the built commit
+        env:
+          TAG: ${{ needs.decide.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          git tag "$TAG" "$SHA"
+          git push origin "$TAG"
+
+  publish:
+    name: Publish to npm
+    needs: [decide, reserve-tag]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release-npm-publish.yml
+    with:
+      ref: ${{ github.sha }}
+      version: ${{ needs.decide.outputs.version }}
+      dist-tag: ${{ needs.decide.outputs.dist_tag }}
+      inject-version: true
