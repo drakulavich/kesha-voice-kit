@@ -409,16 +409,28 @@ jobs:
       # TEMPORARY DEBUG — revert with this whole branch.
       # KESHA_DEBUG_FLUID_STDOUT disables the fd-1 silencer in fluid_stdout.rs so
       # FluidAudio's own diagnostic reaches nextest's capture instead of /dev/null.
+      # TEMPORARY DEBUG — the failure is intermittent (3 pass / 1 fail observed over
+      # 2026-08-04), so one attempt per job is a coin flip. Repeat until it trips and
+      # stop there, leaving the failing attempt's stdout as the last thing in the log.
       - name: 🧪 CoreML decoder-state regression (ANE)
         env:
           KESHA_DEBUG_FLUID_STDOUT: "1"
           RUST_BACKTRACE: "1"
         run: |
           cd rust
-          cargo nextest run \
-            --no-default-features --features coreml \
-            --run-ignored all \
-            -E 'test(transcribe_samples_is_stateless_across_calls)'
+          for attempt in 1 2 3 4 5 6; do
+            echo "::group::attempt $attempt"
+            cargo nextest run \
+              --no-default-features --features coreml \
+              --run-ignored all \
+              -E 'test(transcribe_samples_is_stateless_across_calls)' || {
+                echo "::endgroup::"
+                echo "::error::failed on attempt $attempt of 6"
+                exit 1
+              }
+            echo "::endgroup::"
+          done
+          echo "6 consecutive passes — did not reproduce in this job"
 
       # TEMPORARY DEBUG — revert with this whole branch.
       # The test passes locally against a long-lived model dir but fails in CI,
