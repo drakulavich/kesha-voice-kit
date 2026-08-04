@@ -16,7 +16,7 @@ import {
   fluidKokoroCacheInfo,
   type FluidKokoroCacheInfo,
 } from "./fluid-kokoro-cache";
-import { fluidAsrCacheInfo, fluidAsrCachePath } from "./fluid-asr-cache";
+import { fluidAsrCacheInfo, isCoremlBackend } from "./fluid-asr-cache";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import {
   getDiagnosticLogStatus,
@@ -206,9 +206,7 @@ function collectCache(
   const cache = keshaCacheDir();
   const binPath = getEngineBinPath();
   const engineDir = dirname(dirname(binPath));
-  // The engine's compiled backend, not the host platform: a darwin-arm64 ONNX build
-  // reads the Kesha cache like any other ONNX build.
-  const coreml = backend === "coreml";
+  const coreml = isCoremlBackend(backend);
   const components: CacheComponent[] = [
     { label: "Engine", ...pathSummary(engineDir) },
     // A CoreML engine never populates the ONNX dir; pointing at it would render a

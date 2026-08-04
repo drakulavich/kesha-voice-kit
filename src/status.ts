@@ -11,7 +11,7 @@ import { log } from "./log";
 import { packageVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
-import { fluidAsrCacheInfo, fluidAsrCachePath } from "./fluid-asr-cache";
+import { fluidAsrCacheInfo, isCoremlBackend } from "./fluid-asr-cache";
 import { dirSizeBytes } from "./diagnostic-paths";
 import pc from "picocolors";
 
@@ -198,9 +198,7 @@ function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
   const cache = keshaCacheDir();
   // Two levels up from the binary (`<cache>/engine/bin/`) so future engine-root siblings are counted.
   const engineDir = join(binPath, "..", "..");
-  // The engine's compiled backend, not the host platform: a darwin-arm64 ONNX build
-  // reads the Kesha cache like any other ONNX build.
-  const coreml = backend === "coreml";
+  const coreml = isCoremlBackend(backend);
 
   const components: StatusDiskComponent[] = [];
   for (const c of buildDiskComponents(cache, engineDir, coreml)) {

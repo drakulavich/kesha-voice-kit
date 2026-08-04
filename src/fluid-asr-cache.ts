@@ -6,6 +6,17 @@ import { isDarwinArm64 } from "./fluid-kokoro-cache";
 export const FLUID_ASR_CACHE_NOTE =
   "FluidAudio CoreML in-engine; the ASR weights are fetched by the backend during install warm-up, outside Kesha's pinned model cache";
 
+/**
+ * Which ASR layout applies. The engine's reported backend is authoritative, but the
+ * capabilities probe can fail on a perfectly healthy install — falling through to
+ * "not CoreML" there would point darwin diagnostics at an ONNX directory this platform
+ * never populates and render a working install as broken (#684).
+ */
+export function isCoremlBackend(backend?: string): boolean {
+  if (backend) return backend === "coreml";
+  return isDarwinArm64();
+}
+
 export interface FluidAsrCacheInfo {
   supported: boolean;
   path: string;
