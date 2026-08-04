@@ -221,8 +221,10 @@ function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
       fluidKokoro.exists && fluidKokoro.sizeBytes > 0
         ? { path: fluidKokoro.path, sizeBytes: fluidKokoro.sizeBytes }
         : null,
+    // Gate on readiness, not size, so a partial bundle is not shown as a present
+    // cache while doctor reports it missing.
     fluidAsr:
-      coreml && fluidAsr.sizeBytes > 0
+      coreml && fluidAsr.exists && fluidAsr.sizeBytes > 0
         ? { path: fluidAsr.path, sizeBytes: fluidAsr.sizeBytes }
         : null,
   };

@@ -576,19 +576,19 @@ pub fn fluidaudio_asr_dir() -> PathBuf {
         .join("parakeet-tdt-0.6b-v3")
 }
 
-/// Entries FluidAudio's `requiredModelsV3` opens, minus the encoder — that one
-/// is precision-dependent (`Encoder.mlmodelc` at int8, `EncoderInt4.mlmodelc` at
-/// int4), so it is checked separately rather than pinned to one precision.
+/// What FluidAudio's own `modelsExist` requires. The encoder is pinned to int8
+/// because the bridge calls `downloadAndLoad(to:)` with its default
+/// `useInt8Encoder: true` — accepting `EncoderInt4.mlmodelc` here would pass
+/// preflight and then let FluidAudio fetch the int8 encoder on first transcribe.
+/// If the bridge ever selects precision, this must follow it.
 #[cfg(feature = "coreml")]
 const FLUID_ASR_REQUIRED: &[&str] = &[
     "Preprocessor.mlmodelc",
+    "Encoder.mlmodelc",
     "Decoder.mlmodelc",
     "JointDecisionv3.mlmodelc",
     "parakeet_vocab.json",
 ];
-
-#[cfg(feature = "coreml")]
-const FLUID_ASR_ENCODERS: &[&str] = &["Encoder.mlmodelc", "EncoderInt4.mlmodelc"];
 
 /// True iff FluidAudio's bundle is complete enough to transcribe. A bare
 /// `is_dir()` is not enough: an interrupted fetch leaves the directory present
@@ -603,7 +603,6 @@ pub fn fluidaudio_asr_ready() -> bool {
 #[cfg(feature = "coreml")]
 fn fluidaudio_asr_ready_in(dir: &Path) -> bool {
     FLUID_ASR_REQUIRED.iter().all(|f| dir.join(f).exists())
-        && FLUID_ASR_ENCODERS.iter().any(|f| dir.join(f).exists())
 }
 
 /// Download + SHA-verify every advertised Kokoro voice pack directly into
@@ -1943,14 +1942,13 @@ mod characterization_tests {
             "complete bundle must be ready"
         );
 
-        // int4 encoder substitutes for int8 — pinning one precision would report a
-        // healthy install as broken.
+        // The bridge loads int8, so an int4-only bundle is unusable: calling it ready
+        // would pass preflight and let FluidAudio fetch the int8 encoder mid-transcribe.
         fs::remove_file(dir.join("Encoder.mlmodelc")).unwrap();
-        assert!(!fluidaudio_asr_ready_in(&dir));
         fs::write(dir.join("EncoderInt4.mlmodelc"), b"x").unwrap();
         assert!(
-            fluidaudio_asr_ready_in(&dir),
-            "int4 encoder must satisfy the check"
+            !fluidaudio_asr_ready_in(&dir),
+            "int4-only bundle must not satisfy an int8 loader"
         );
 
         let _ = fs::remove_dir_all(&dir);

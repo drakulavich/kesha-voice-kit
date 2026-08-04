@@ -17,10 +17,10 @@ describe("fluidAsrCacheInfo", () => {
 
   const COMPLETE = [
     "Preprocessor.mlmodelc",
+    "Encoder.mlmodelc",
     "Decoder.mlmodelc",
     "JointDecisionv3.mlmodelc",
     "parakeet_vocab.json",
-    "Encoder.mlmodelc",
   ];
 
   function seed(homeDir: string, entries: string[]): string {
@@ -46,7 +46,9 @@ describe("fluidAsrCacheInfo", () => {
     }
   });
 
-  test("accepts the int4 encoder in place of int8", () => {
+  // The bridge calls downloadAndLoad with useInt8Encoder: true, so an int4-only bundle
+  // is unusable — accepting it would pass preflight and let FluidAudio fetch int8.
+  test("rejects an int4-only bundle, which an int8 loader cannot use", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-cache-int4-"));
     try {
       seed(dir, [
@@ -54,7 +56,7 @@ describe("fluidAsrCacheInfo", () => {
         "EncoderInt4.mlmodelc",
       ]);
       expect(fluidAsrCacheInfo({ platform: "darwin", arch: "arm64", homeDir: dir }).exists).toBe(
-        true,
+        false,
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });

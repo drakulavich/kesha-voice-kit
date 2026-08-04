@@ -41,17 +41,18 @@ export function fluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
 }
 
 /**
- * Entries FluidAudio's `requiredModelsV3` opens. The encoder is precision-dependent
- * (`Encoder.mlmodelc` at int8, `EncoderInt4.mlmodelc` at int4) so it is checked as
- * an alternation — pinning one precision would report a healthy install as broken.
+ * What FluidAudio's own `modelsExist` requires. The encoder is pinned to int8 because
+ * the bridge calls `downloadAndLoad(to:)` with its default `useInt8Encoder: true` —
+ * accepting `EncoderInt4.mlmodelc` would pass preflight and then let FluidAudio fetch
+ * the int8 encoder on first transcribe. Keep in step with `models.rs::FLUID_ASR_REQUIRED`.
  */
 const FLUID_ASR_REQUIRED = [
   "Preprocessor.mlmodelc",
+  "Encoder.mlmodelc",
   "Decoder.mlmodelc",
   "JointDecisionv3.mlmodelc",
   "parakeet_vocab.json",
 ];
-const FLUID_ASR_ENCODERS = ["Encoder.mlmodelc", "EncoderInt4.mlmodelc"];
 
 /**
  * Complete enough to transcribe. Mirrors `models.rs::fluidaudio_asr_ready` — a bare
@@ -59,10 +60,7 @@ const FLUID_ASR_ENCODERS = ["Encoder.mlmodelc", "EncoderInt4.mlmodelc"];
  * download the remainder on first transcribe (#684).
  */
 export function fluidAsrCacheReady(path: string): boolean {
-  return (
-    FLUID_ASR_REQUIRED.every((f) => existsSync(join(path, f))) &&
-    FLUID_ASR_ENCODERS.some((f) => existsSync(join(path, f)))
-  );
+  return FLUID_ASR_REQUIRED.every((f) => existsSync(join(path, f)));
 }
 
 export function fluidAsrCacheInfo(
