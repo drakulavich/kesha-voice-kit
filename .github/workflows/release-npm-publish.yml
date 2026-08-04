@@ -13,6 +13,10 @@ on:
         description: "Version that must end up published"
         required: true
         type: string
+      dist-tag:
+        description: "npm dist-tag to publish under. Resolved by the caller, which runs from the default branch — a historical checkout may predate the resolver."
+        required: true
+        type: string
       inject-version:
         description: "Write `version` into package.json after checkout instead of verifying it. Alpha versions are derived at publish time and never committed."
         required: false
@@ -86,15 +90,10 @@ jobs:
             echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Resolve npm dist-tag
-        id: dist_tag
-        run: |
-          tag=$(node .github/scripts/npm-dist-tag.mjs)
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "$(jq -r .version package.json) publishes to npm dist-tag $tag."
-
       - name: Publish to npm with provenance
         if: steps.registry.outputs.already_published == 'false'
-        run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"
+        run: |
+          echo "$(jq -r .version package.json) publishes to npm dist-tag $NPM_DIST_TAG."
+          npm publish --provenance --access public --tag "$NPM_DIST_TAG"
         env:
-          NPM_DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
+          NPM_DIST_TAG: ${{ inputs.dist-tag }}

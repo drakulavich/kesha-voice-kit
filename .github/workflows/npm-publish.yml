@@ -27,6 +27,7 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
       engine_only: ${{ steps.tag.outputs.engine_only }}
+      dist_tag: ${{ steps.dist.outputs.dist_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -42,6 +43,14 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           node .github/scripts/release-tags.mjs "$tag" >> "$GITHUB_OUTPUT"
 
+      # Resolved here, not in the publish job: that job checks out the release tag, which
+      # for any tag cut before the resolver existed does not carry it (Greptile #700 P1).
+      - name: Resolve npm dist-tag
+        id: dist
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: echo "dist_tag=$(node .github/scripts/npm-dist-tag.mjs "$VERSION")" >> "$GITHUB_OUTPUT"
+
   publish:
     needs: resolve
     if: needs.resolve.outputs.engine_only != 'true'
@@ -52,3 +61,4 @@ jobs:
     with:
       ref: ${{ needs.resolve.outputs.tag }}
       version: ${{ needs.resolve.outputs.version }}
+      dist-tag: ${{ needs.resolve.outputs.dist_tag }}
