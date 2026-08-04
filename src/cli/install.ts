@@ -121,7 +121,7 @@ function finishInstallDiagnostic(
 }
 
 /** Null when the requested backend is installable here. `KESHA_ENGINE_BIN` opts out — the user supplied their own engine. */
-function unavailableBackendError(backend: string | undefined): string | null {
+export function unavailableBackendError(backend: string | undefined): string | null {
   const platformBackend = defaultBackendForPlatform();
   if (!backend || process.env.KESHA_ENGINE_BIN || !platformBackend) return null;
   if (backend === platformBackend) return null;
