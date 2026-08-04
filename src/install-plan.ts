@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "fs";
 import { humanBytes } from "./format";
 import { dirname, join } from "path";
-import { getEngineBinPath } from "./engine";
+import { getEngineBinPath, getEngineCapabilities } from "./engine";
 import { SIDECARS } from "./engine-install";
 import { engineTarget } from "./engine-targets";
 import { readInstalledEngineVersion } from "./engine-version-marker";
@@ -13,7 +13,7 @@ import {
   isDarwinArm64,
 } from "./fluid-kokoro-cache";
 import modelPlan from "../model-plan.json" with { type: "json" };
-import { fluidAsrCacheInfo } from "./fluid-asr-cache";
+import { fluidAsrCacheInfo, isCoremlBackend } from "./fluid-asr-cache";
 
 export interface InstallPlanOptions {
   noCache?: boolean;
@@ -153,14 +153,16 @@ function bundleComponent(input: {
 const FLUID_ASR_BUNDLE_BYTES = 473 * 1024 * 1024;
 
 /**
- * An explicit `--coreml` / `--onnx` wins; otherwise the platform decides which released
- * binary `install` will fetch. Deliberately not probing the installed engine: `--plan`
- * stays synchronous and must work before any engine exists.
+ * An explicit `--coreml` / `--onnx` wins. Otherwise ask the installed engine, so a custom
+ * `KESHA_ENGINE_BIN` is planned for what it actually is rather than what the host usually
+ * ships (#684). The probe is optional: `--plan` must still work before any engine exists,
+ * and `isCoremlBackend` falls back to the platform when it yields nothing.
  */
-function planBackendIsCoreml(options: InstallPlanOptions): boolean {
+async function planBackendIsCoreml(options: InstallPlanOptions): Promise<boolean> {
   if (options.backend === "coreml") return true;
   if (options.backend === "onnx") return false;
-  return isDarwinArm64();
+  const probed = await getEngineCapabilities().catch(() => null);
+  return isCoremlBackend(probed?.backend);
 }
 
 function asrComponent(cacheRoot: string, noCache: boolean, coreml: boolean): PlanComponent {
@@ -297,6 +299,7 @@ function assembleComponents(input: {
   engineDir: string;
   noCache: boolean;
   options: InstallPlanOptions;
+  coreml: boolean;
   tts: ReturnType<typeof buildTtsComponents>;
 }): PlanComponent[] {
   const { cacheRoot, noCache, options } = input;
@@ -306,7 +309,7 @@ function assembleComponents(input: {
   const components: PlanComponent[] = [
     buildEngineComponent(input.binPath, noCache),
     ...buildSidecarComponents(input.engineDir, noCache),
-    asrComponent(cacheRoot, noCache, planBackendIsCoreml(options)),
+    asrComponent(cacheRoot, noCache, input.coreml),
     modelBundle(
       "Audio language ID ECAPA",
       LANG_ID_FILES,
@@ -445,7 +448,8 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
   const ttsLangs = options.ttsLangs ?? [];
 
   const tts = buildTtsComponents(cacheRoot, ttsLangs, noCache);
-  const components = assembleComponents({ cacheRoot, binPath, engineDir, noCache, options, tts });
+  const coreml = await planBackendIsCoreml(options);
+  const components = assembleComponents({ cacheRoot, binPath, engineDir, noCache, options, coreml, tts });
 
   const lines = [
     ...renderHeader(cacheRoot, binPath, options.backend),
