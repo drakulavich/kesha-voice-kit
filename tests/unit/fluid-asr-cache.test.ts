@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
+import { basename, join } from "path";
 import { tmpdir } from "os";
 import {
   FLUID_ASR_REQUIRED,
@@ -182,7 +182,6 @@ describe("Rust/TS FluidAudio contract agreement", () => {
   });
 
   test("cache directory name matches", () => {
-    const leaf = fluidAsrCachePath("/tmp/home").split("/").pop();
-    expect(rust).toContain(`.join("${leaf}")`);
+    expect(rust).toContain(`.join("${basename(fluidAsrCachePath("/tmp/home"))}")`);
   });
 });
