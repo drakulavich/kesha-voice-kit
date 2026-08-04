@@ -210,7 +210,8 @@ function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
   const cacheTotal = dirSizeBytes(cache);
   const engineOutsideCache = engineDir.startsWith(cache) ? 0 : dirSizeBytes(engineDir);
   const fluidKokoro = fluidKokoroCacheInfo();
-  const fluidAsr = fluidAsrCacheInfo();
+  // Only walked when it is the backend in play; otherwise the size is computed and dropped.
+  const fluidAsr = coreml ? fluidAsrCacheInfo() : null;
 
   return {
     cachePath: cache,
@@ -224,7 +225,7 @@ function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
     // Gate on readiness, not size, so a partial bundle is not shown as a present
     // cache while doctor reports it missing.
     fluidAsr:
-      coreml && fluidAsr.exists && fluidAsr.sizeBytes > 0
+      fluidAsr?.exists && fluidAsr.sizeBytes > 0
         ? { path: fluidAsr.path, sizeBytes: fluidAsr.sizeBytes }
         : null,
   };

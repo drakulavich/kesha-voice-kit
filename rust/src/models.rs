@@ -781,10 +781,8 @@ pub fn is_cached(kind: ModelKind) -> bool {
     is_cached_in(kind, &model_dir(kind))
 }
 
-/// True iff `kind`'s required files are present in `dir` — callers that
-/// resolved the directory themselves (e.g. from a function-supplied cache
-/// root) use this instead of [`is_cached`] so the cache root parameter
-/// stays single-source.
+/// True iff `kind` is usable. `dir` is the Kesha cache location; the coreml `Asr`
+/// arm ignores it, since FluidAudio owns that bundle outside the cache entirely.
 pub fn is_cached_in(kind: ModelKind, dir: &Path) -> bool {
     match kind {
         #[cfg(not(feature = "coreml"))]

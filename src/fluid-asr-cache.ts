@@ -2,23 +2,22 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import { isDarwinArm64 } from "./fluid-kokoro-cache";
+import { engineTarget } from "./engine-targets";
 
 export const FLUID_ASR_CACHE_NOTE =
-  "FluidAudio CoreML in-engine; the ASR weights are fetched by the backend during install warm-up, outside Kesha's pinned model cache";
+  "required for speech-to-text; fetched by the backend during warm-up, outside Kesha's model cache";
 
 /**
- * Which ASR layout applies. The engine's reported backend is authoritative, but the
- * capabilities probe can fail on a perfectly healthy install — falling through to
- * "not CoreML" there would point darwin diagnostics at an ONNX directory this platform
- * never populates and render a working install as broken (#684).
+ * Which ASR layout applies. The reported backend is authoritative; when the capabilities
+ * probe yields nothing, fall back to the platform's shipped backend rather than to "not
+ * CoreML", which would point darwin at an ONNX directory it never populates (#684).
  */
 export function isCoremlBackend(
   backend?: string,
-  platform?: typeof process.platform,
-  arch?: typeof process.arch,
+  platform?: string,
+  arch?: string,
 ): boolean {
-  if (backend) return backend === "coreml";
-  return isDarwinArm64(platform, arch);
+  return (backend ?? engineTarget(platform, arch)?.backend) === "coreml";
 }
 
 export interface FluidAsrCacheInfo {
@@ -50,7 +49,7 @@ export function fluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
  * accepting `EncoderInt4.mlmodelc` would pass preflight and then let FluidAudio fetch
  * the int8 encoder on first transcribe. Keep in step with `models.rs::FLUID_ASR_REQUIRED`.
  */
-const FLUID_ASR_REQUIRED = [
+export const FLUID_ASR_REQUIRED = [
   "Preprocessor.mlmodelc",
   "Encoder.mlmodelc",
   "Decoder.mlmodelc",

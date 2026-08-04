@@ -158,7 +158,8 @@ jobs:
       # coreml code because no PR CI job ever tried to build it.
       - name: Check coreml feature
         if: matrix.os == 'macos-14'
-        run: cd rust && cargo check --features coreml --no-default-features
+        # --all-targets so the `#[cfg(feature = "coreml")]` tests compile here too (#708).
+        run: cd rust && cargo check --features coreml --no-default-features --all-targets
 
       # The default-feature nextest run (`run-cargo-test.sh`) builds only
       # `onnx,tts`, so the darwin-arm64 FluidAudio paths — `system_kokoro`

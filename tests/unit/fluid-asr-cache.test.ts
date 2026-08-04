@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { fluidAsrCacheInfo, fluidAsrCachePath, isCoremlBackend } from "../../src/fluid-asr-cache";
+import {
+  FLUID_ASR_REQUIRED,
+  fluidAsrCacheInfo,
+  fluidAsrCachePath,
+  isCoremlBackend,
+} from "../../src/fluid-asr-cache";
 import { defaultBackendForPlatform, unavailableBackendError } from "../../src/cli/install";
 
 describe("isCoremlBackend", () => {
@@ -155,5 +160,29 @@ describe("unavailableBackendError", () => {
     process.env.KESHA_ENGINE_BIN = "/tmp/custom-engine";
     const other = defaultBackendForPlatform() === "coreml" ? "onnx" : "coreml";
     expect(unavailableBackendError(other)).toBeNull();
+  });
+});
+
+// The bundle contract is hardcoded in both languages; nothing else fails when only one
+// side is edited, and the int4 hole (#684) was exactly that kind of silent divergence.
+describe("Rust/TS FluidAudio contract agreement", () => {
+  const rust = readFileSync(
+    join(import.meta.dir, "..", "..", "rust", "src", "models.rs"),
+    "utf8",
+  );
+
+  function rustList(constName: string): string[] {
+    const block = rust.match(new RegExp(`const ${constName}: &\\[&str\\] = &\\[([^\\]]*)\\]`));
+    if (!block) throw new Error(`${constName} not found in rust/src/models.rs`);
+    return [...block[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
+  }
+
+  test("required entry lists match", () => {
+    expect(rustList("FLUID_ASR_REQUIRED").sort()).toEqual([...FLUID_ASR_REQUIRED].sort());
+  });
+
+  test("cache directory name matches", () => {
+    const leaf = fluidAsrCachePath("/tmp/home").split("/").pop();
+    expect(rust).toContain(`.join("${leaf}")`);
   });
 });

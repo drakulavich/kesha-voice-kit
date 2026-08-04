@@ -182,6 +182,7 @@ async function printPlan(selection: InitSelection): Promise<boolean> {
   const backendError = unavailableBackendError(selection.backend);
   if (backendError) {
     log.error(backendError);
+    process.exitCode = 2;
     return false;
   }
   log.info(
@@ -203,10 +204,7 @@ async function runNonInteractive(selection: InitSelection): Promise<void> {
     log.warn("--diarize is currently darwin-arm64 only; omitting it from non-interactive examples.");
   }
   log.info(renderInitOverview(canDiarize));
-  if (!(await printPlan(printableSelection))) {
-    process.exitCode = 2;
-    return;
-  }
+  if (!(await printPlan(printableSelection))) return;
   log.info("Run one of these commands from an interactive terminal:");
   for (const command of initSuggestionCommands(printableSelection, canDiarize)) {
     log.info(`  ${command.join(" ")}`);
@@ -267,7 +265,7 @@ export const initCommand = defineCommand({
 
     if (args.plan) {
       log.info(renderInitOverview());
-      if (!(await printPlan(selection))) process.exitCode = 2;
+      await printPlan(selection);
       return;
     }
 
@@ -302,10 +300,7 @@ export const initCommand = defineCommand({
       noCache,
     );
     log.info("");
-    if (!(await printPlan(prompted))) {
-      process.exitCode = 2;
-      return;
-    }
+    if (!(await printPlan(prompted))) return;
     const confirmed = await promptConfirm(
       `Run \`${initInstallArgs(prompted).join(" ")}\` now?`,
       true,

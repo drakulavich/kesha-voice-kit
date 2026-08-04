@@ -13,7 +13,12 @@ import {
   isDarwinArm64,
 } from "./fluid-kokoro-cache";
 import modelPlan from "../model-plan.json" with { type: "json" };
-import { fluidAsrCacheInfo, isCoremlBackend } from "./fluid-asr-cache";
+import {
+  FLUID_ASR_CACHE_NOTE,
+  fluidAsrCachePath,
+  fluidAsrCacheReady,
+  isCoremlBackend,
+} from "./fluid-asr-cache";
 
 export interface InstallPlanOptions {
   noCache?: boolean;
@@ -49,8 +54,6 @@ interface PlanComponent {
   note?: string;
   /** Fetched by a backend into its own cache — excluded from the Kesha-managed totals. */
   external?: boolean;
-  /** Size is an estimate, not summed from a pinned manifest; rendered without a byte count. */
-  approx?: boolean;
 }
 
 interface PlanWarmup {
@@ -165,27 +168,16 @@ async function planBackendIsCoreml(options: InstallPlanOptions): Promise<boolean
   return isCoremlBackend(probed?.backend);
 }
 
-function asrComponent(cacheRoot: string, noCache: boolean, coreml: boolean): PlanComponent {
-  if (!coreml) {
-    return bundleComponent({
-      cacheRoot,
-      name: "ASR Parakeet TDT v3",
-      source: "model cache",
-      files: ASR_FILES,
-      refresh: noCache,
-      note: "required for speech-to-text",
-    });
-  }
+function fluidAsrComponent(): PlanComponent {
   return {
     name: "ASR Parakeet TDT v3 (CoreML)",
     source: "FluidAudio cache",
     sizeBytes: FLUID_ASR_BUNDLE_BYTES,
-    cached: fluidAsrCacheInfo().exists,
+    cached: fluidAsrCacheReady(fluidAsrCachePath()),
     // `--no-cache` is a Kesha-cache flag; FluidAudio's bundle is not re-fetched by it.
     refresh: false,
     external: true,
-    approx: true,
-    note: "required for speech-to-text; fetched by the backend during warm-up, outside Kesha's model cache",
+    note: FLUID_ASR_CACHE_NOTE,
   };
 }
 
@@ -309,7 +301,9 @@ function assembleComponents(input: {
   const components: PlanComponent[] = [
     buildEngineComponent(input.binPath, noCache),
     ...buildSidecarComponents(input.engineDir, noCache),
-    asrComponent(cacheRoot, noCache, input.coreml),
+    input.coreml
+      ? fluidAsrComponent()
+      : modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
     modelBundle(
       "Audio language ID ECAPA",
       LANG_ID_FILES,
@@ -353,8 +347,8 @@ function renderComponentLines(components: PlanComponent[]): string[] {
   const status = (c: PlanComponent) => (c.refresh ? "refresh" : c.cached ? "cached" : "needed");
   const lines: string[] = [];
   for (const c of components) {
-    const size = c.approx ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
-    const detail = c.approx ? "approximate" : `${c.sizeBytes} bytes`;
+    const size = c.external ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
+    const detail = c.external ? "approximate" : `${c.sizeBytes} bytes`;
     lines.push(`  - ${c.name}: ${size} (${detail}, ${status(c)}, ${c.source})`);
     if (c.note) lines.push(`    ${c.note}`);
   }
