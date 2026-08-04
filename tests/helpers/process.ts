@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "fs";
 
 const PID_FILE_POLL_INTERVAL_MS = 25;
-const PID_FILE_POLL_ATTEMPTS = 80;
-const PID_EXIT_POLL_ATTEMPTS = 120;
+// 10s: the fake engine traps SIGTERM, so every abort waits out FORCE_KILL_GRACE_MS before SIGKILL.
+const PID_FILE_POLL_ATTEMPTS = 400;
+const PID_EXIT_POLL_ATTEMPTS = 400;
 
 export async function waitForPidFile(path: string): Promise<number> {
   for (let i = 0; i < PID_FILE_POLL_ATTEMPTS; i++) {
