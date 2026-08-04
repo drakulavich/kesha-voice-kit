@@ -12,9 +12,12 @@ history the service ever holds, and both of them are ours.
 
 ### Environment identity forks on every macOS image bump
 
-Flakiness.io keys an environment on `(category, name, path, os + version,
-arch)`. The OS version carries a patch component, so a runner image bump mints a
-brand-new environment whose history starts empty. Over ~90 days:
+For the JUnit upload path an environment is identified by the report's
+`category` plus `environments[].{name, systemData.{osName, osVersion, osArch}}`
+— the fields the converter actually emits, confirmed by spike. (The CLI also
+exposes an `--env-path` filter, but no `path` field appears in reports produced
+from JUnit XML.) The OS version carries a patch component, so a runner image
+bump mints a brand-new environment whose history starts empty. Over ~90 days:
 
 | runner | jobs | environments produced |
 |---|---|---|
@@ -52,9 +55,20 @@ flakiness list tests --pr 690 --env-category rust     -> 1200
 (`rust-test.yml:317`) is the only Rust job that runs on push to main, and it
 runs `cargo nextest run --features tts` without `--profile ci`. JUnit XML is
 emitted only by that profile (`rust/.config/nextest.toml`), so there is nothing
-to upload and no upload step. The job already runs on every push to main and has
-no `needs: changes` gate, so it is a regular, cheap sampling point that is
-simply not wired up.
+to upload and no upload step.
+
+Sampling is sparser than it first appears. The job carries no `needs: changes`
+gate, but the workflow's push trigger does the filtering instead:
+
+```yaml
+push:
+  branches: [main]
+  paths: ["rust/**", ".github/workflows/rust-test.yml"]
+```
+
+So main samples Rust only on merges that touch Rust — not on dependency bumps,
+TS-only work, or docs. Wiring the upload up is still worth doing, but it will
+not produce a dense series on its own.
 
 Flakiness is measured against a stable branch: `flip_rate` counts pass/fail
 transitions along a branch's history. In PR scope that history is one point,
@@ -104,6 +118,18 @@ Rule: for `osName == "macos"` only, truncate `osVersion` to **major.minor**
 (`26.5.2` → `26.5`). Ubuntu (`24.04`) and Windows (`10.0.26100`) have not moved
 in 90 days and are left untouched.
 
+Edge cases the implementation must handle rather than discover: a version that
+is already `26.5` (no patch) passes through unchanged; every entry in
+`environments[]` is rewritten, not just the first; the `osName` match is
+case-insensitive; an absent or unparseable version fails the step rather than
+being silently skipped.
+
+**Forward-only. No history is reclaimed.** `26.5` is a *new* environment
+string; the existing `26.5.2` rows do not migrate into it. Every macOS bucket
+starts empty on merge day and fills at the rate CI runs. This bounds what the
+change can deliver and must not be read as "fragmentation is fixed" — it is
+"fragmentation stops getting worse, from here forward."
+
 **Accepted trade-off.** major.minor merges the dead 15.7.x line (three
 environments into one) but not the live one: `26.4` and `26.5` stay separate,
 and macOS ships minors roughly monthly, so the current line keeps forking at
@@ -111,6 +137,30 @@ about that cadence. Truncating to major would hold all of macOS 26 in one bucket
 for the OS lifecycle. major.minor was chosen deliberately with this understood;
 it is a compromise, not an oversight. If monthly buckets prove too short for
 rare-flake detection, moving to major-only is a one-line change to the script.
+
+**Preserve the real version.** Truncation destroys ground truth: a flake
+specific to Security Update 26.5.2 would be indistinguishable under `26.5`. The
+script writes the untruncated string to `environments[].metadata` so it stays
+recoverable without digging through GHA logs.
+
+*Depends on an unverified assumption*: that `metadata` is not part of
+server-side environment identity. If it is, dual-writing re-fragments exactly
+what the truncation merged, and this sub-step must be dropped. Verify before
+relying on it — see check 3.
+
+**Fail loudly on a broken rewrite.** Every upload step runs with
+`continue-on-error: true`, so a rewrite bug — missing `jq`, wrong JSON path,
+only the first environment patched, `"macOS"` vs `"macos"` case mismatch — would
+silently ship a no-op that looks green. This is the same failure class as the
+OIDC trap below. The script must assert that every macOS `osVersion` matches
+`^[0-9]+\.[0-9]+$` after rewriting and exit non-zero otherwise, so the failure
+surfaces as a red step rather than as absent data.
+
+**Windows is accepted debt, not an oversight.** `10.0.26100` is a build number
+and will drift the same way once GitHub bumps the image; it simply has not moved
+in 90 days. Left untouched to keep this change small. When it does move, the
+same truncation applies — the script should make adding Windows a one-line
+change rather than a rewrite.
 
 ### Consolidate the upload sites
 
@@ -127,10 +177,16 @@ In `rust-push-gate`: add `--profile ci` to the nextest run, add setup-bun, and
 add an upload step with `--category rust`. This gives main a per-push Rust
 history on ubuntu — the most stable bucket of the four.
 
-**Scope limit, stated deliberately.** `rust-push-gate` is ubuntu-only by design
-("lean post-merge gate"; the 3-OS matrix already ran on the PR). So main gets
-Rust history from ubuntu only, and Windows/macOS-specific Rust flakes stay
-invisible on main. This is a first step, not full coverage.
+**Two scope limits, stated deliberately.** `rust-push-gate` is ubuntu-only by
+design ("lean post-merge gate"; the 3-OS matrix already ran on the PR), so
+Windows/macOS-specific Rust flakes stay invisible on main. And the workflow's
+push `paths` filter means main samples Rust only on Rust-touching merges. The
+result is a sparse, ubuntu-only series — enough to give `flip_rate`/`fail_rate`
+a baseline to compute against, not enough for rare-flake detection on its own.
+
+Densifying it (a nightly Rust run on main, mirroring the `schedule` trigger
+`ci.yml` already has) is deliberately out of scope here: it adds recurring CI
+cost and should be a decision on its own evidence, once the baseline exists.
 
 ### The trap that would make this silently no-op
 
@@ -141,30 +197,62 @@ carries `continue-on-error: true` — deliberately, so a Flakiness outage cannot
 fail a test job (Greptile #301 P1). The consequence: a missing `id-token: write`
 would drop the data without failing anything, and the job would look green.
 
-So PR 1 must add `permissions: id-token: write` to `rust-push-gate`, and
-verification is a required step, not an optional one.
+So PR 1 must add a permissions block to `rust-push-gate` listing **both**
+`contents: read` and `id-token: write`, and verification is a required step, not
+an optional one.
+
+Listing both matters: a job-level `permissions` block *replaces* the inherited
+workflow-level grant rather than extending it, so `id-token: write` alone would
+strip `contents: read` and break `actions/checkout` before the tests ever run.
+The existing `test` (:79) and `coverage` (:219) jobs both list the pair for this
+reason.
 
 ### Verification
 
-After PR 1 merges, both must hold:
+After PR 1 merges, all four must hold:
 
 1. `flakiness list tests --env-category rust` on the default branch returns
    non-zero (currently 0, against 1200 in PR scope).
-2. `flakiness list tests --env-os "macos 26.5"` shows subsequent runs joining
-   that environment instead of minting a new one.
+2. `flakiness list tests --env-os "macos 26.5"` shows **two or more distinct
+   runs** landing in that one environment.
+3. `flakiness list tests --env-os "macos 26.5"` still returns that single
+   environment after the metadata dual-write is in place — proving `metadata`
+   is not part of environment identity.
+4. No workflow still calls `bunx @flakiness/junit-xml` directly:
+   `grep -rn 'flakiness/junit-xml' .github/workflows/` returns nothing outside
+   the shared script.
 
-Check 2 also tests the one real assumption in this PR: that the service derives
-environment identity solely from the reported `systemData`, and not from some
-additional fingerprint. If it does not merge, the normalization approach fails
-and we fall back to ubuntu+windows as the trend baseline.
+Check 2 needs care. It is *not* satisfied by the environment merely existing —
+after truncation the first upload creates `macos 26.5` unconditionally, so a
+single run proves nothing. What must be observed is a second run joining the
+same environment rather than minting another. This is the one real assumption in
+PR 1: that the service derives environment identity solely from the reported
+`systemData` and not from some additional fingerprint. If runs do not cluster,
+normalization has failed and we fall back to ubuntu+windows as the trend
+baseline.
+
+Check 4 guards the dual-reporter failure: one unmigrated job reporting the full
+version would permanently split the environment again, and
+`continue-on-error: true` would hide it.
+
+A follow-up worth raising upstream rather than solving here: asking Flakiness.io
+for configurable version granularity would remove the need to rewrite telemetry
+on every upload. Client-side rewriting is a reasonable short-term fix, not
+something to own forever.
 
 ## PR 2 — act on what the data already shows
 
-Separate from PR 1 on purpose. PR 1 changes *which data arrives*; PR 2 changes
-*the code being measured*. Landing them together would make any trend shift
-unattributable — normalization or code change. Sequencing them means PR 2's
-effect is visible in an already-trustworthy signal. The two touch disjoint
-files.
+Separate from PR 1 for reviewability: the two touch disjoint files
+(`.github/**` vs `rust/src/tts/vosk.rs` and `tests/helpers/process.ts`) and have
+independent rationales.
+
+An earlier draft justified the split as necessary for trend attribution. That
+was overstated, and the correction is worth recording so nobody rebuilds the
+argument later: neither PR 2 item depends on environment identity. Merging the
+Vosk tests changes the test inventory, which is a deliberate discontinuity
+rather than a confound, and the pid-poll ceiling is pure hardening. These could
+land before, with, or after PR 1 without muddying PR 1's verification. Ordering
+is a convenience here, not a methodological requirement.
 
 ### Two Vosk tests cost two minutes each
 
@@ -215,7 +303,14 @@ promptly — it only widens the margin before a slow runner turns into a failure
 
 ## Success criteria
 
-- Both PR 1 verification checks pass.
-- macOS environment count stops growing on patch-level image bumps.
+- All four PR 1 verification checks pass.
+- macOS environment count stops growing on **patch-level** image bumps. Minor
+  bumps (`26.5` → `26.6`) still fork by design — see the accepted trade-off.
 - Rust tests appear in default-branch queries, giving `flip_rate` and
   `fail_rate` a baseline to compute against.
+
+What this deliberately does *not* claim: that rare-flake detection works after
+this lands. Buckets start empty on merge day, macOS re-forks on each minor, and
+Rust samples only on Rust-touching merges. This work makes history *able* to
+accumulate; whether it accumulates fast enough is a question to revisit with
+data, not to assume here.
