@@ -20,6 +20,17 @@ pub struct Vosk {
     sample_rate: u32,
 }
 
+/// Split out so the range contract is testable without loading the ~935 MB bundle (#707).
+fn validate_speaker_id(speaker_id: u32) -> Result<()> {
+    if speaker_id >= SPEAKER_COUNT {
+        anyhow::bail!(
+            "vosk speaker_id must be 0..{} (got {speaker_id})",
+            SPEAKER_COUNT
+        );
+    }
+    Ok(())
+}
+
 impl Vosk {
     /// Load the model bundle from `model_dir`. Expects the directory layout
     /// produced by `models::VOSK_RU_FILES` (model.onnx, dictionary, config.json,
@@ -44,12 +55,7 @@ impl Vosk {
 
     /// `rate` maps to vosk's `speech_rate` (1.0 = model default).
     pub fn infer(&mut self, text: &str, speaker_id: u32, rate: f32) -> Result<Vec<f32>> {
-        if speaker_id >= SPEAKER_COUNT {
-            anyhow::bail!(
-                "vosk speaker_id must be 0..{} (got {speaker_id})",
-                SPEAKER_COUNT
-            );
-        }
+        validate_speaker_id(speaker_id)?;
         let pcm = self
             .synth
             .synth_audio(
@@ -82,20 +88,13 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_speaker() {
-        if !ci_true_or_skip("rejects_out_of_range_speaker") {
-            return;
-        }
-        let dir = crate::models::model_dir(crate::models::ModelKind::VoskRu);
-        if !crate::models::is_cached(crate::models::ModelKind::VoskRu) {
-            eprintln!(
-                "vosk model not cached at {} — skipping speaker_id range test",
-                dir.display()
-            );
-            return;
-        }
-        let mut v = Vosk::load(&dir).expect("load vosk");
-        let err = v.infer("привет", SPEAKER_COUNT, 1.0).unwrap_err();
+        let err = validate_speaker_id(SPEAKER_COUNT).unwrap_err();
         assert!(err.to_string().contains("speaker_id"), "msg: {err}");
+    }
+
+    #[test]
+    fn accepts_the_highest_valid_speaker() {
+        assert!(validate_speaker_id(SPEAKER_COUNT - 1).is_ok());
     }
 
     #[test]
@@ -113,6 +112,10 @@ mod tests {
         }
         let mut v = Vosk::load(&dir).expect("load vosk");
         assert_eq!(v.sample_rate(), 22050, "vosk-ru-0.9-multi is 22.05 kHz");
+        // Proves infer() still routes through validate_speaker_id; the standalone
+        // unit test above cannot catch that call being dropped.
+        let err = v.infer("привет", SPEAKER_COUNT, 1.0).unwrap_err();
+        assert!(err.to_string().contains("speaker_id"), "msg: {err}");
         let pcm = v.infer("Привет, мир.", 4, 1.0).expect("synth");
         // ~0.5s at 22.05kHz = 11025 samples lower bound; allow loose floor.
         assert!(pcm.len() > 5000, "got only {} samples", pcm.len());
