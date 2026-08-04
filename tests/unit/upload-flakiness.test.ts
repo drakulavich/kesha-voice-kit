@@ -54,10 +54,15 @@ describe("normaliseReport", () => {
         { systemData: { osName: "win", osVersion: "10.0.26100" } },
       ],
     };
-    const { normalised, skipped } = normaliseReport(report);
+    const { normalised, skipped } = normaliseReport(report, "linux");
     expect(normalised).toBe(0);
     expect(skipped).toBe(2);
     expect(report.environments[1].systemData.osVersion).toBe("10.0.26100");
+  });
+
+  test("throws when running on darwin but nothing was labelled macos", () => {
+    const report = { environments: [{ systemData: { osName: "darwin", osVersion: "26.5.2" } }] };
+    expect(() => normaliseReport(report, "darwin")).toThrow(/no environment was labelled "macos"/);
   });
 
   // Uploads run under `continue-on-error: true`, so these must fail loudly

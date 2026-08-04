@@ -18,6 +18,10 @@ import { join } from "node:path";
 
 const MACOS_NORMALISED = /^\d+\.\d+$/;
 
+// Pinned: a floating version is unreviewed code with OIDC access (Greptile #699 P2).
+const CONVERTER = "@flakiness/junit-xml@1.4.0";
+const UPLOADER = "flakiness@0.289.0";
+
 type Environment = {
   name?: string;
   systemData?: { osName?: string; osVersion?: string; osArch?: string };
@@ -35,7 +39,10 @@ export function truncateToMajorMinor(version: string): string {
   return `${parts[0]}.${parts[1]}`;
 }
 
-export function normaliseReport(report: Report): { normalised: number; skipped: number } {
+export function normaliseReport(
+  report: Report,
+  platform: string = process.platform,
+): { normalised: number; skipped: number } {
   const environments = report.environments ?? [];
   if (environments.length === 0) {
     throw new Error("report contains no environments — refusing to upload a report we cannot verify");
@@ -77,6 +84,14 @@ export function normaliseReport(report: Report): { normalised: number; skipped: 
     }
   }
 
+  // Otherwise the assert above passes vacuously should the converter rename osName.
+  if (platform === "darwin" && normalised === 0) {
+    throw new Error(
+      `running on darwin but no environment was labelled "macos" — ` +
+        `the converter's osName may have changed, which would silently defeat normalisation`,
+    );
+  }
+
   return { normalised, skipped };
 }
 
@@ -108,7 +123,7 @@ async function main(): Promise<void> {
   try {
     await run([
       "bunx",
-      "@flakiness/junit-xml",
+      CONVERTER,
       junitPath,
       "--category",
       category,
@@ -129,7 +144,7 @@ async function main(): Promise<void> {
     writeFileSync(reportPath, JSON.stringify(report));
     console.error(`Normalised ${normalised} macOS environment(s), left ${skipped} untouched.`);
 
-    await run(["bunx", "flakiness", "upload", reportPath, "--project", project]);
+    await run(["bunx", UPLOADER, "upload", reportPath, "--project", project]);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
