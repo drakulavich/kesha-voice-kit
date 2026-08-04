@@ -116,7 +116,9 @@ mod tests {
         // unit test above cannot catch that call being dropped.
         let err = v.infer("привет", SPEAKER_COUNT, 1.0).unwrap_err();
         assert!(err.to_string().contains("speaker_id"), "msg: {err}");
-        let pcm = v.infer("Привет, мир.", 4, 1.0).expect("synth");
+        let pcm = v
+            .infer("Привет, мир.", SPEAKER_COUNT - 1, 1.0)
+            .expect("synth");
         // ~0.5s at 22.05kHz = 11025 samples lower bound; allow loose floor.
         assert!(pcm.len() > 5000, "got only {} samples", pcm.len());
         for &s in pcm.iter().take(10000) {
