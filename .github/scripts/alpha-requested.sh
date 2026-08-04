@@ -9,7 +9,12 @@ if [ "${MANUAL:-false}" = "true" ]; then
   exit 0
 fi
 
-labels=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" --jq '[.[].labels[].name] | join(",")' 2>/dev/null || echo "")
+# A swallowed API error reads as "no label" — a green run that skips an alpha someone asked for.
+if ! labels=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" --jq '[.[].labels[].name] | join(",")'); then
+  echo "Could not read the labels of the PR merged as ${SHA} — refusing to guess whether an alpha was requested." >&2
+  exit 1
+fi
+
 if [ "$PACKED" = "true" ] && printf '%s' ",$labels," | grep -q ',alpha,'; then
   echo "publish=true"
   echo "PR carries the alpha label and changed packed files — publishing." >&2

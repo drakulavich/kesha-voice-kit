@@ -41,6 +41,19 @@ describe("publishableChanges", () => {
     expect(publishableChanges([deleted("tests/unit/old.test.ts")], PACKED, FILES)).toEqual([]);
   });
 
+  // Renaming out of the package takes a file off the tarball; only the source says so.
+  test("renaming a shipped file out of the package publishes", () => {
+    const renamed = parseNameStatus("R100\tsrc/engine.ts\tdocs/engine.md");
+
+    expect(publishableChanges(renamed, PACKED, FILES)).toEqual(["src/engine.ts"]);
+  });
+
+  test("renaming a file that never shipped into the package publishes the destination", () => {
+    const renamed = parseNameStatus("R100\ttests/unit/old.ts\tsrc/engine.ts");
+
+    expect(publishableChanges(renamed, PACKED, FILES)).toEqual(["src/engine.ts"]);
+  });
+
   test("deleting under a negated prefix publishes nothing", () => {
     expect(publishableChanges([deleted("src/__tests__/gone.test.ts")], PACKED, FILES)).toEqual([]);
   });
@@ -54,10 +67,10 @@ describe("parseNameStatus", () => {
     ]);
   });
 
-  // A rename lists both sides; the destination is the one that exists to be packed.
-  test("a rename resolves to its destination", () => {
+  test("a rename splits into the path that left and the path that arrived", () => {
     expect(parseNameStatus("R096\tsrc/old.ts\tsrc/new.ts")).toEqual([
-      { status: "R", path: "src/new.ts" },
+      { status: "D", path: "src/old.ts" },
+      { status: "A", path: "src/new.ts" },
     ]);
   });
 

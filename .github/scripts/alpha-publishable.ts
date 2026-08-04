@@ -17,10 +17,13 @@ export function parseNameStatus(diff: string): ChangedPath[] {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => {
+    .flatMap((line) => {
       const [status, ...rest] = line.split(/\t+/);
-      // A rename reports both sides; the destination is what exists to be packed.
-      return { status: status[0], path: rest[rest.length - 1] };
+      const path = rest[rest.length - 1];
+      // A rename is a delete plus an add to the tarball, and either side alone can ship.
+      return status[0] === "R"
+        ? [{ status: "D", path: rest[0] }, { status: "A", path }]
+        : [{ status: status[0], path }];
     });
 }
 
