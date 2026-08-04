@@ -90,6 +90,19 @@ maintainer's intent, and the base can always be corrected by editing one field.
 The alpha version is written into `package.json` **in the runner** at publish time and never
 committed, exactly as Tolaria injects its computed version into the build.
 
+### The tag, not the npm registry, is the record of what was published
+
+Deriving from tags only works if each alpha leaves one. Publishing to npm alone would mean
+the next merge re-derives the same sequence, the prior-publish check skips it as already
+published, and release notes lose their commit boundary — a silent no-op rather than a
+failure. Tolaria avoids this implicitly because each of its alphas creates a GitHub Release,
+which creates the tag.
+
+So the alpha workflow tags the built commit as part of publishing, and a run whose artifact
+published but whose tag did not land fails rather than reporting success. This is also what
+makes "a published version identifier is never reissued" enforceable: the tag outlives the
+Release, so pruning old alpha Releases cannot free an identifier.
+
 ### npm dist-tags are the channel mechanism
 
 No `alpha-latest.json` analogue is needed. `bun add -g @drakulavich/kesha-voice-kit@alpha`

@@ -115,6 +115,11 @@ An alpha version SHALL be computed from the repository's existing tags at publis
 commit SHALL be required to record an alpha version, and the default branch SHALL NOT
 accumulate version-bump commits for alphas.
 
+Every published alpha SHALL leave a tag behind at the commit it was built from. The tag is
+what the next derivation counts, what bounds the next set of release notes, and what makes
+a published version identifier permanently taken — an alpha that publishes an artifact
+without recording a tag would let the next derivation reuse its version.
+
 Alpha versions SHALL sort in publication order, SHALL sort below the stable version they
 lead up to, and SHALL be unique for the lifetime of the repository.
 
@@ -127,6 +132,21 @@ version.
 - WHEN another alpha is published for that same base version
 - THEN its sequence is one higher than the highest existing alpha for that base
 - AND it sorts above every earlier alpha for that base
+
+#### Scenario: Consecutive merges each advance the sequence
+
+- GIVEN an alpha has been published for the current base version
+- WHEN a further qualifying merge lands and its alpha is derived
+- THEN the derivation observes the previous alpha's tag
+- AND the new alpha carries the next sequence rather than repeating the published one
+
+#### Scenario: The artifact publishes but the tag does not land
+
+- GIVEN an alpha's artifact has been published
+- WHEN recording its tag fails
+- THEN the pipeline reports failure rather than success
+- AND the condition is surfaced, because the next derivation would otherwise reuse that
+  version identifier
 
 #### Scenario: Derivation is verified before use
 

@@ -24,9 +24,12 @@
 - [ ] 4.1 Add an alpha workflow triggered on pushes to the default branch, with a path filter that skips changes which cannot alter what a user runs
 - [ ] 4.2 Write the derived version into `package.json` in the runner without committing it
 - [ ] 4.3 Call the reusable publish workflow with the alpha channel
-- [ ] 4.4 Generate release notes from the commits since the previous alpha tag
-- [ ] 4.5 Add a concurrency group so overlapping merges each end with a distinct published version
-- [ ] 4.6 Make a skipped run report the skip explicitly rather than failing
+- [ ] 4.4 Create and push the derived alpha tag at the built commit, so the next derivation counts it and the next release notes have a boundary
+- [ ] 4.5 Fail the run if the artifact published but its tag did not land, rather than reporting success
+- [ ] 4.6 Generate release notes from the commits since the previous alpha tag
+- [ ] 4.7 Add a concurrency group so overlapping merges each end with a distinct published version
+- [ ] 4.8 Make a skipped run report the skip explicitly rather than failing
+- [ ] 4.9 Verify two consecutive qualifying merges produce two distinct published alpha versions
 
 ## 5. Publish Engine alphas on demand
 
