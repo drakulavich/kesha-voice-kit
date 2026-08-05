@@ -7,7 +7,7 @@ const REPO = `${import.meta.dir}/../..`;
 const SCRIPT = `${REPO}/.github/scripts/check-versions.ts`;
 
 // Nothing here is symlinked to the repo, so the fixture is safe to remove recursively.
-async function check(cli: string, engine: string, cargo = engine) {
+async function check(cli: string, engine: string, cargo = engine, server: string | null = cli) {
   const dir = mkdtempSync(join(tmpdir(), "kesha-versions-"));
   try {
     mkdirSync(join(dir, "rust"));
@@ -16,6 +16,12 @@ async function check(cli: string, engine: string, cargo = engine) {
       JSON.stringify({ version: cli, keshaEngine: { version: engine } }),
     );
     writeFileSync(join(dir, "rust/Cargo.toml"), `version = "${cargo}"\n`);
+    if (server !== null) {
+      writeFileSync(
+        join(dir, "server.json"),
+        JSON.stringify({ version: server, packages: [{ version: server }] }),
+      );
+    }
     const proc = Bun.spawn(["bun", SCRIPT], { cwd: dir, stdout: "ignore", stderr: "pipe" });
     const stderr = await new Response(proc.stderr).text();
     return { accepted: (await proc.exited) === 0, stderr };
@@ -54,10 +60,28 @@ describe("engine pin channel", () => {
       expect((await check("1.27.0", pin)).accepted).toBe(true);
     }
   });
+});
+
+// A stale server.json advertises an npm version that was never published.
+describe("MCP registry manifest", () => {
+  test("a server.json version lagging package.json#version is rejected", async () => {
+    const { accepted, stderr } = await check("1.27.0", "1.24.8", "1.24.8", "1.26.0");
+
+    expect(accepted).toBe(false);
+    expect(stderr).toContain("rule 4 violated");
+    expect(stderr).toContain("server.json#version");
+  });
+
+  test("a missing server.json is reported, not thrown", async () => {
+    const { accepted, stderr } = await check("1.27.0", "1.24.8", "1.24.8", null);
+
+    expect(accepted).toBe(false);
+    expect(stderr).toContain("server.json: unreadable");
+  });
 
   // In the real cwd, so rule 1 reads the actual rust/Cargo.toml rather than a fixture
   // written to agree with the pin by construction.
-  test("the repository itself passes every rule, Cargo.toml included", async () => {
+  test("the repository itself passes every rule, Cargo.toml and server.json included", async () => {
     const proc = Bun.spawn(["bun", SCRIPT], { cwd: REPO, stdout: "ignore", stderr: "pipe" });
     const stderr = await new Response(proc.stderr).text();
 

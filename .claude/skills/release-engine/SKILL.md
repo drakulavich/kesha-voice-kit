@@ -19,7 +19,7 @@ Cuts a kesha-engine release. **NEVER auto-runs** — user invokes via `/release-
 
 For docs/TS/plugin tweaks where the engine binary is unchanged.
 
-1. Bump only `package.json#version`. Leave `package.json#keshaEngine.version` and `rust/Cargo.toml` untouched.
+1. Bump `package.json#version`, plus `server.json#version` and `server.json#packages[0].version` to the same value. Leave `package.json#keshaEngine.version` and `rust/Cargo.toml` untouched.
 2. PR through CI (integration tests reuse the existing engine binary at the pinned `keshaEngine.version`).
 3. Merge.
 4. `gh release create $TAG --title "$VERSION (CLI-only)" --notes "Engine: v<keshaEngine.version> (unchanged)."`

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.drakulavich/kesha-voice-kit",
+  "title": "Kesha Voice Kit",
+  "description": "Offline speech-to-text in 25 languages, text-to-speech in 9, and language detection.",
+  "repository": {
+    "url": "https://github.com/drakulavich/kesha-voice-kit",
+    "source": "github"
+  },
+  "version": "1.27.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@drakulavich/kesha-voice-kit",
+      "version": "1.27.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "Starts the MCP server over stdio; without it the binary is a plain CLI."
+        }
+      ]
+    }
+  ]
+}

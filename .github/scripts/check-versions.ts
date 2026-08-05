@@ -1,11 +1,14 @@
 #!/usr/bin/env bun
 /**
- * Verify the three version sources stay aligned (#267 F16 / #313 P0):
+ * Verify the version sources stay aligned (#267 F16 / #313 P0):
  *
  *   - `package.json#version`              — npm-published CLI version
  *   - `package.json#keshaEngine.version`  — engine binary version the CLI
  *                                            downloads from GitHub Releases
  *   - `rust/Cargo.toml#version`           — engine crate version
+ *   - `server.json#version` + `#packages[].version` — the MCP registry
+ *                                            manifest, which points at an
+ *                                            npm version that must exist
  *
  * A silent drift between (b) and (c) means `kesha install` downloads a
  * release that doesn't match the source the engine was built from —
@@ -27,6 +30,16 @@ function parseOrExit(raw: string, label: string): SemVer {
 
 const pkgRaw = JSON.parse(readFileSync("package.json", "utf8"));
 const cargoToml = readFileSync("rust/Cargo.toml", "utf8");
+let serverJson: { version?: string; packages?: Array<{ version?: string }> };
+try {
+  serverJson = JSON.parse(readFileSync("server.json", "utf8"));
+} catch (err) {
+  console.error(
+    `server.json: unreadable (${err instanceof Error ? err.message : String(err)}). ` +
+      `It is the MCP registry manifest and must stay in the repo root.`,
+  );
+  process.exit(1);
+}
 
 // Anchor to column-zero `version` to avoid matching workspace-member or dependency version fields.
 const cargoVersionMatch = cargoToml.match(/^version\s*=\s*"([^"]+)"$/m);
@@ -79,9 +92,34 @@ if (engine.prerelease.some((id) => id.toLowerCase().startsWith("alpha"))) {
   failed = true;
 }
 
+const serverVersions: Array<[string, string]> = [
+  ["server.json#version", serverJson.version ?? ""],
+  ...(serverJson.packages ?? []).map(
+    (pkg: { version?: string }, i: number): [string, string] => [
+      `server.json#packages[${i}].version`,
+      pkg.version ?? "",
+    ],
+  ),
+];
+
+for (const [label, raw] of serverVersions) {
+  const parsed = parseOrExit(raw, label);
+  if (cmp(parsed, cli) !== 0) {
+    console.error(
+      `rule 4 violated: ${label} (${fmt(parsed)}) must equal package.json#version ` +
+        `(${fmt(cli)}). server.json is the MCP registry manifest: its version tells ` +
+        `registries which npm release to resolve, so a stale value points clients at ` +
+        `a version that was never published.`,
+    );
+    failed = true;
+  }
+}
+
 if (failed) {
   console.error(
-    `\nResolved sources:\n  package.json#version:              ${fmt(cli)}\n  package.json#keshaEngine.version: ${fmt(engine)}\n  rust/Cargo.toml#version:          ${fmt(cargo)}`,
+    `\nResolved sources:\n  package.json#version:              ${fmt(cli)}\n  package.json#keshaEngine.version: ${fmt(engine)}\n  rust/Cargo.toml#version:          ${fmt(cargo)}\n${serverVersions
+      .map(([label, raw]) => `  ${label}:${" ".repeat(Math.max(1, 34 - label.length))}${raw}`)
+      .join("\n")}`,
   );
   process.exit(1);
 }
