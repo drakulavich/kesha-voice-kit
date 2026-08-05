@@ -15,14 +15,19 @@ src/engine-install.ts:564-580
   cacheValid ? refreshCachedEngine(...) : fetchEngineBinary(binPath, installedVersion)
 ```
 
-Two consequences shape this design. First, the pin is the *only* input — there is no
-floating resolution anywhere in the repository (verified across `src/`, workflows,
-`flake.nix`, the Homebrew formula and the model URLs). Second, a binary whose `.version`
-disagrees with the pin is treated as a stale cache and replaced, which is why placing an
-alpha at `KESHA_ENGINE_BIN` and running an install destroys it.
+Two consequences shape this design. First, the pin is the *only* input for the Engine
+download — no path in `src/`, the workflows or `flake.nix` resolves a floating release.
+(The Homebrew formula installs the CLI from a tag tarball and never fetches an Engine, so
+it is not evidence either way; the "latest" link in `docs/linux-packages.md` is for human
+readers.) Second, a binary whose `.version` disagrees with the pin is treated as a stale
+cache and replaced, which is why placing an alpha at `KESHA_ENGINE_BIN` and running an
+install destroys it.
 
-The change is small in code and load-bearing in policy: it is the sanctioned alternative
-to editing the pin, which #736 forbids for alphas.
+The change is small in code and load-bearing in policy. It is the sanctioned alternative to
+editing the pin — **once #736 lands**, which forbids an alpha there. #736 is open at the
+time of writing, so this change depends on it rather than following from it. The gap it
+fills exists either way: there is no way today to install a named Engine version without
+editing `package.json`.
 
 ## Goals / Non-Goals
 
@@ -58,10 +63,17 @@ shell history that produced the install.
 ### The requested version flows through, rather than being read at the bottom
 
 `downloadEngine` takes the version it should install as a parameter, defaulting to the pin.
-The cache comparison and the `.version` write both use the requested version, so the three
-uses stay consistent by construction. Reading the pin in one place and the override in
-another is how "install says 1.24.8-alpha.1, cache check says 1.24.7, re-download" bugs get
-written.
+Everything downstream uses that one value: the binary URL (`:439`), the cache comparison
+(`:572`), the `.version` write (`:473`), **and the Sidecar downloads** — `fetchEngineBinary`
+starts them at `:445` and `refreshCachedEngine` tops up missing ones at `:358`, both from
+the module-level pin today. `src/engine-install.ts` reads that import at fifteen sites; a
+half-threaded change leaves darwin-arm64 with an overridden Engine and pinned Sidecars, or
+installs the alpha and then replaces it on the next cache check.
+
+`src/install-plan.ts` is the same shape: the pin is read at `:188`, `:191`, `:211` and
+`:336`, and `buildInstallCommand` (`:405`) prints the reproducible command. Changing only
+the header leaves four of five wrong, including a `Run:` line that reproduces something
+else.
 
 ### A missing release is an error, never a fallback to the pin
 
@@ -75,6 +87,10 @@ exists to prevent — the caller believes they are testing an alpha and are not.
 Printing a warning from every invocation would pollute stderr for the whole time an
 override is in use, and `kesha say` sends audio to stdout with all progress on stderr.
 `kesha doctor` is where installation truth is already reported, so drift is named there.
+
+`doctor` already prints `Version marker:` (`doctor.ts:456`); what is missing is the pin
+beside it and any statement that the two disagree. A marker alone reads as health, which is
+the actual defect.
 
 *Alternative considered:* refusing to run any command while the installed Engine differs
 from the pin. Rejected — that is the entire supported use of the flag.
@@ -96,6 +112,14 @@ and the committed pin stays stable. Nothing in this design writes to `package.js
   (`check-engine-targets.ts`); a lane using the override should say so at the call site.
 - **An override version that is older than the installed binary.** No downgrade protection
   is proposed: naming an exact older version is a legitimate bisection move.
+- **A release is validated against an Engine the pin does not name.** `doctor` reports the
+  drift, but nothing refuses. `make smoke-test` and the release preflight run against the
+  default Engine path and would happily exercise an override. → This change is scoped as a
+  developer tool for trying an Engine, not as a release-safety gate; whether preflight
+  should refuse on drift is left open below rather than assumed.
+- **Any install without the flag silently reverts to the pin**, including additive ones like
+  `kesha install --tts en`. That follows from "not a second pin" and is intended, but it is
+  the most likely surprise: the fix is to repeat the flag, not to make the override sticky.
 
 ## Open Questions
 
@@ -107,5 +131,10 @@ and the committed pin stays stable. Nothing in this design writes to `package.js
   grounds that the CLI cannot speak an arbitrarily distant Engine's Capabilities JSON? The
   Engine already reports a protocol version, so the check could be behavioural rather than
   numeric.
-- Does `--plan` need to show the overridden version? It shows the download plan and would
-  otherwise state the pin, which would be wrong.
+- Should the release preflight refuse to run against a drifted Engine? Reporting it in
+  `doctor` is enough for a developer trying a build; it is not enough to stop a release from
+  being smoke-tested against an Engine the pin does not name.
+
+Answered while writing the spec, recorded so it is not reopened: `--plan` must state the
+overridden version *and* carry the flag into the command it prints — a preview that
+reproduces something other than what it previewed is worse than no preview.
