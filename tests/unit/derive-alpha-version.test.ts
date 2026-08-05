@@ -124,6 +124,11 @@ describe("previousTag", () => {
     expect(previousTag("cli", ["v1.27.0-alpha.1-cli", "v1.28.0-cli"])).toBe("v1.28.0-cli");
   });
 
+  // A beta is published too, so notes anchored before it would repeat what it already shipped.
+  test("takes a beta released after the last alpha", () => {
+    expect(previousTag("engine", ["v1.24.8-alpha.2", "v1.25.0-beta.1"])).toBe("v1.25.0-beta.1");
+  });
+
   // Before any alpha exists the notes still need a lower bound, or they would span all history.
   test("falls back to the channel's highest stable tag", () => {
     expect(previousTag("cli", ["v1.25.0-cli", "v1.26.0-cli", "v1.24.7"])).toBe("v1.26.0-cli");

@@ -2,9 +2,15 @@
 # `gh release delete` without --cleanup-tag: the Release goes, the tag stays (#685).
 set -euo pipefail
 
-# Paginated: `gh release list --limit N` returns the newest N, losing alphas as they age out.
-releases=$(gh api "repos/{owner}/{repo}/releases" --paginate |
-  jq -s 'add | [.[] | {tagName: .tag_name, publishedAt: .published_at, isDraft: .draft}]')
+LIMIT=1000
+releases=$(gh release list --limit "$LIMIT" --json tagName,publishedAt,isDraft)
+
+# Hitting the cap means the oldest releases were never seen, and those are the prunable ones.
+if [ "$(printf '%s' "$releases" | jq 'length')" -ge "$LIMIT" ]; then
+  echo "::error::release list hit its $LIMIT cap — aged alphas may be invisible to the selector" >&2
+  exit 1
+fi
+
 aged=$(printf '%s' "$releases" | bun .github/scripts/prune-alpha-releases.ts)
 
 if [ -z "$aged" ]; then

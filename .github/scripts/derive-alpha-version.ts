@@ -7,12 +7,13 @@
  * `version=`/`tag=` lines suitable for `$GITHUB_OUTPUT`.
  */
 import { readFileSync } from "node:fs";
+import { CLI_MARKER, publishedVersionRe } from "./release-tags.mjs";
 import { cmp, parseSemver } from "../../src/semver.mjs";
 
 export type Channel = "cli" | "engine";
 
 /** CLI alphas carry the `-cli` marker so the engine build's `!v*-cli` filter skips them (#685). */
-const MARKER: Record<Channel, string> = { cli: "-cli", engine: "" };
+const MARKER: Record<Channel, string> = { cli: CLI_MARKER, engine: "" };
 
 export function alphaTag(channel: Channel, base: string, sequence: number): string {
   return `v${base}-alpha.${sequence}${MARKER[channel]}`;
@@ -37,13 +38,12 @@ export function nextSequence(channel: Channel, base: string, tags: string[]): nu
 }
 
 /**
- * The tag the next alpha's notes are counted from: the highest thing already published on
- * this channel, alpha or stable. Preferring alphas outright would anchor the range at an
- * ancient alpha once a stable shipped after it, making the notes span months (grok review).
- * Undefined only where the channel has no tag at all, which leaves notes no lower bound.
+ * The tag the next alpha's notes are counted from: the highest thing already published on this
+ * channel. Preferring alphas would anchor the range at an ancient one once anything shipped
+ * after it, making the notes span months.
  */
 export function previousTag(channel: Channel, tags: string[]): string | undefined {
-  const shape = new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+(?:-alpha\\.[0-9]+)?)${MARKER[channel]}$`);
+  const shape = publishedVersionRe(MARKER[channel]);
 
   let best: { tag: string; version: ReturnType<typeof parseSemver> } | undefined;
   for (const raw of tags) {

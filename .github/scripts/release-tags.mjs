@@ -24,7 +24,12 @@ export function isEngineAlphaTag(tag) {
   return ALPHA_TAG_RE.test(tag);
 }
 
-const CLI_MARKER = "-cli";
+export const CLI_MARKER = "-cli";
+
+/** Every shape a channel has already published, so notes can be anchored at the latest one. */
+export function publishedVersionRe(marker) {
+  return new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+(?:-(?:alpha|beta)\\.[0-9]+)?)${marker}$`);
+}
 
 /**
  * What the CLI publish path should do with a release tag.

@@ -76,21 +76,14 @@ describe("prunable", () => {
 describe("the pruning workflow", () => {
   const script = readFileSync(`${import.meta.dir}/../../.github/scripts/prune-alpha-releases.sh`, "utf8");
 
-  // Comments stripped: naming the flag in prose is fine, passing it is not.
-  const commands = script
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("#"))
-    .join("\n");
-
   // --cleanup-tag would free a version identifier for reuse, which the spec forbids.
   test("deletes the Release without touching its tag", () => {
-    expect(commands).toContain("gh release delete");
-    expect(commands).not.toContain("--cleanup-tag");
+    expect(script).toMatch(/^\s*gh release delete "\$tag" --yes$/m);
   });
 
-  // The newest-N listing drops an alpha from view exactly as it becomes prunable.
-  test("reads every release rather than the newest page", () => {
-    expect(commands).toContain("--paginate");
-    expect(commands).not.toContain("gh release list");
+  // A silent truncation would hide exactly the oldest releases, which are the prunable ones.
+  test("refuses to prune from a truncated listing", () => {
+    expect(script).toMatch(/-ge "\$LIMIT"/);
+    expect(script).toContain("::error::");
   });
 });
