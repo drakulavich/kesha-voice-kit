@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { renderInstallPlan } from "../../src/install-plan";
+import { engineVersion } from "../../src/package-info";
 
 const savedEnv = {
   HOME: process.env.HOME,
@@ -143,6 +144,38 @@ describe("renderInstallPlan", () => {
       } else {
         expect(output).not.toContain("Sidecar say-avspeech-darwin-arm64");
       }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("install plan with --engine-version (#738)", () => {
+  test("an installed pin still reads as needed when the plan names another version", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-engine-version-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      const engineDir = join(dir, "engine", "bin");
+      const binPath = join(engineDir, "kesha-engine");
+      process.env.KESHA_ENGINE_BIN = binPath;
+      mkdirSync(engineDir, { recursive: true });
+      writeFileSync(binPath, "engine");
+      writeFileSync(`${binPath}.version`, `${engineVersion}\n`);
+
+      const pinned = await renderInstallPlan({});
+      expect(pinned).toContain(`Engine release: v${engineVersion}`);
+      expect(pinned).not.toContain("overrides the pinned");
+      expect(pinned).toMatch(/Engine kesha-engine-[^:]+: [^(]+\([^,]+, cached,/);
+
+      const overridden = await renderInstallPlan({ engineVersion: "9.9.9-alpha.1" });
+      expect(overridden).toContain(
+        `Engine release: v9.9.9-alpha.1 (overrides the pinned v${engineVersion})`,
+      );
+      expect(overridden).toContain("GitHub release v9.9.9-alpha.1");
+      expect(overridden).not.toContain(`GitHub release v${engineVersion}`);
+      expect(overridden).toMatch(/Engine kesha-engine-[^:]+: [^(]+\([^,]+, needed,/);
+      expect(overridden).toContain("Run: kesha install --engine-version 9.9.9-alpha.1");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

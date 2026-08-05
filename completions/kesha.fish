@@ -54,6 +54,7 @@ complete -c kesha -n '__fish_seen_subcommand_from install' -l plan -d 'Show down
 complete -c kesha -n '__fish_seen_subcommand_from install' -l tts -d 'Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan))'
 complete -c kesha -n '__fish_seen_subcommand_from install' -l vad -d 'Also install Silero VAD (~2.3MB) for long-audio preprocessing'
 complete -c kesha -n '__fish_seen_subcommand_from install' -l diarize -d 'Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)'
+complete -c kesha -n '__fish_seen_subcommand_from install' -l engine-version -r -d 'Install this exact engine release instead of the pinned one (expert; the next install returns to the pin)'
 complete -c kesha -n '__fish_seen_subcommand_from logs' -l help -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from logs' -s h -d 'Show help'
 complete -c kesha -n '__fish_seen_subcommand_from logs' -l json -d 'Output status as JSON'

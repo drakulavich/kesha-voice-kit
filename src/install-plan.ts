@@ -27,6 +27,8 @@ export interface InstallPlanOptions {
   ttsLangs?: string[];
   vad?: boolean;
   diarize?: boolean;
+  /** `--engine-version`; the plan must preview the release the real install would fetch. */
+  engineVersion?: string;
 }
 
 interface PlanFile {
@@ -181,14 +183,18 @@ function fluidAsrComponent(): PlanComponent {
   };
 }
 
-function buildEngineComponent(binPath: string, noCache: boolean): PlanComponent {
+function buildEngineComponent(
+  binPath: string,
+  noCache: boolean,
+  version: string,
+): PlanComponent {
   const engineAsset = engineAssetForPlatform();
   if (engineAsset) {
     const engineCached =
-      existsSync(binPath) && readInstalledEngineVersion(binPath) === engineVersion;
+      existsSync(binPath) && readInstalledEngineVersion(binPath) === version;
     return {
       name: `Engine ${engineAsset.assetName}`,
-      source: `GitHub release v${engineVersion}`,
+      source: `GitHub release v${version}`,
       sizeBytes: engineAsset.sizeBytes,
       cached: engineCached,
       refresh: noCache,
@@ -204,11 +210,15 @@ function buildEngineComponent(binPath: string, noCache: boolean): PlanComponent 
   };
 }
 
-function buildSidecarComponents(engineDir: string, noCache: boolean): PlanComponent[] {
+function buildSidecarComponents(
+  engineDir: string,
+  noCache: boolean,
+  version: string,
+): PlanComponent[] {
   if (!isDarwinArm64()) return [];
   return DARWIN_SIDECARS.map((sidecar) => ({
     name: `Sidecar ${sidecar.assetName}`,
-    source: `GitHub release v${engineVersion}`,
+    source: `GitHub release v${version}`,
     sizeBytes: sidecar.sizeBytes,
     cached: existsSync(join(engineDir, sidecar.fileBasename)),
     refresh: noCache,
@@ -292,6 +302,7 @@ function assembleComponents(input: {
   noCache: boolean;
   options: InstallPlanOptions;
   coreml: boolean;
+  version: string;
   tts: ReturnType<typeof buildTtsComponents>;
 }): PlanComponent[] {
   const { cacheRoot, noCache, options } = input;
@@ -299,8 +310,8 @@ function assembleComponents(input: {
     bundleComponent({ cacheRoot, name, source: "model cache", files, refresh: noCache, note });
 
   const components: PlanComponent[] = [
-    buildEngineComponent(input.binPath, noCache),
-    ...buildSidecarComponents(input.engineDir, noCache),
+    buildEngineComponent(input.binPath, noCache, input.version),
+    ...buildSidecarComponents(input.engineDir, noCache, input.version),
     input.coreml
       ? fluidAsrComponent()
       : modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
@@ -328,12 +339,18 @@ function assembleComponents(input: {
   return components;
 }
 
-function renderHeader(cacheRoot: string, binPath: string, backend: string | undefined): string[] {
+function renderHeader(
+  cacheRoot: string,
+  binPath: string,
+  backend: string | undefined,
+  version: string,
+): string[] {
+  const pinNote = version === engineVersion ? "" : ` (overrides the pinned v${engineVersion})`;
   return [
     "Kesha install plan",
     "",
     `Package: @drakulavich/kesha-voice-kit ${packageVersion}`,
-    `Engine release: v${engineVersion}`,
+    `Engine release: v${version}${pinNote}`,
     `Platform: ${process.platform} ${process.arch}`,
     `Cache: ${cacheRoot}`,
     `Engine binary: ${binPath}`,
@@ -406,6 +423,7 @@ export function buildInstallCommand(options: InstallPlanOptions, ttsLangs: strin
   return [
     "kesha",
     "install",
+    ...(options.engineVersion ? ["--engine-version", options.engineVersion] : []),
     options.noCache ? "--no-cache" : "",
     options.backend === "coreml" ? "--coreml" : "",
     options.backend === "onnx" ? "--onnx" : "",
@@ -441,12 +459,23 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
   const noCache = options.noCache === true;
   const ttsLangs = options.ttsLangs ?? [];
 
+  const version = options.engineVersion ?? engineVersion;
+
   const tts = buildTtsComponents(cacheRoot, ttsLangs, noCache);
   const coreml = await planBackendIsCoreml(options);
-  const components = assembleComponents({ cacheRoot, binPath, engineDir, noCache, options, coreml, tts });
+  const components = assembleComponents({
+    cacheRoot,
+    binPath,
+    engineDir,
+    noCache,
+    options,
+    coreml,
+    version,
+    tts,
+  });
 
   const lines = [
-    ...renderHeader(cacheRoot, binPath, options.backend),
+    ...renderHeader(cacheRoot, binPath, options.backend, version),
     ...renderComponentLines(components),
     ...renderFooter({
       components,

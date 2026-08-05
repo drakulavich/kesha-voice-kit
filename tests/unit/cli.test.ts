@@ -274,13 +274,14 @@ USAGE install [OPTIONS]
 
 OPTIONS
 
-    --coreml    Force CoreML backend (macOS arm64) (Default: false)
-      --onnx    Force ONNX backend (Default: false)
-  --no-cache    Re-download even if cached (Default: false)
-      --plan    Show download, disk, and warm-up plan without changing local state (Default: false)
-       --tts    Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan)) (Default: false)
-       --vad    Also install Silero VAD (~2.3MB) for long-audio preprocessing (Default: false)
-   --diarize    Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199) (Default: false)`);
+                           --coreml    Force CoreML backend (macOS arm64) (Default: false)
+                             --onnx    Force ONNX backend (Default: false)
+                         --no-cache    Re-download even if cached (Default: false)
+                             --plan    Show download, disk, and warm-up plan without changing local state (Default: false)
+                              --tts    Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan)) (Default: false)
+                              --vad    Also install Silero VAD (~2.3MB) for long-audio preprocessing (Default: false)
+                          --diarize    Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199) (Default: false)
+  --engine-version=<engine_version>    Install this exact engine release instead of the pinned one (expert; the next install returns to the pin)`);
   });
 
   test("status help matches the normalized golden output", async () => {

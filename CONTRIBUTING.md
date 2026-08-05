@@ -32,6 +32,32 @@ downloaded from GitHub Releases at the version pinned in
 independently — see [`CLAUDE.md`](./CLAUDE.md) "RELEASE PROCESS" for the
 full split.
 
+### Trying an engine build without editing the pin
+
+The pin decides what every CI lane on every unrelated PR and every published
+CLI downloads, so committing a throwaway build points all of them at it —
+`bun run check:versions` refuses an alpha there outright. To exercise one
+release without touching version control:
+
+```bash
+kesha install --engine-version 1.24.8-alpha.1            # exact version, no floating "latest"
+kesha install --engine-version 1.24.8-alpha.1 --tts en   # one-shot: keeps the override for this install
+kesha doctor                                             # names the installed version and the pin
+kesha install                                            # back to the pin
+```
+
+The flag applies to the invocation that names it and nothing else. **Any later
+install without it reinstalls the pin over the engine you were testing** —
+including an additive one like `kesha install --tts en`, which is the most
+likely surprise. A version with no published release fails naming the tag it
+looked for; it never falls back to the pin. `kesha install --plan
+--engine-version …` previews the same install and downloads nothing.
+
+This is a developer tool for trying an engine, not a release channel: nothing
+resolves "the newest alpha", and the CLI's own prerelease channel is separate
+(the `alpha` npm dist-tag, `bun add -g @drakulavich/kesha-voice-kit@alpha`).
+`kesha init` deliberately has no such flag — it is the guided first-run path.
+
 New here? [`docs/architecture.md`](./docs/architecture.md) is the code-level
 map — repo layout, the CLI↔engine boundary, ASR/TTS backends, model pinning,
 where tests live, and a "where to change X" table.

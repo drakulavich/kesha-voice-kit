@@ -55,7 +55,7 @@
 
 - [ ] 7.1 Change `.github/workflows/build-engine.yml:484` to draft only stable tags, publishing alpha tags as non-draft Prereleases
 - [ ] 7.2 Confirm an Engine alpha tag passes the widened validators from group 2 end to end, including manifest generation
-- [ ] 7.3 Verify `kesha install` resolves an Engine alpha through `src/engine-install.ts:200` when `keshaEngine.version` matches the alpha tag
+- [ ] 7.3 Verify `kesha install --engine-version <alpha>` installs the Engine alpha, and that `kesha install` afterwards restores the pin — the pin itself may never name an alpha (#736 rule 3), so the old plan of matching `keshaEngine.version` to the alpha tag is not available (#738)
 - [ ] 7.4 Confirm publishing an Engine alpha does not publish a CLI package and does not leave a red workflow run
 
 ## 8. Keep alpha artifacts out of stable lanes

@@ -121,16 +121,22 @@ and the committed pin stays stable. Nothing in this design writes to `package.js
   `kesha install --tts en`. That follows from "not a second pin" and is intended, but it is
   the most likely surprise: the fix is to repeat the flag, not to make the override sticky.
 
-## Open Questions
+## Resolved while implementing
 
-- Should `kesha init` accept the flag, or is `kesha install` the only entry point? Init is
-  the guided path and an override is an expert action, which argues for leaving it out.
-- Should the programmatic `downloadModel` API (`src/lib.ts`) take the same option? Sona's
-  use cases do not obviously need it, and adding it widens a stable public surface.
-- Should `--engine-version` reject a version whose major differs from the pin, on the
-  grounds that the CLI cannot speak an arbitrarily distant Engine's Capabilities JSON? The
-  Engine already reports a protocol version, so the check could be behavioural rather than
-  numeric.
+- **`kesha init` does not accept the flag.** Init is the guided first-run path; an override
+  is an expert action, and adding it there would put a "which engine build?" question in
+  front of someone installing for the first time. `kesha init --plan` still names the pin.
+- **The programmatic `downloadModel` API does not take the option.** The version-carrying
+  entry point is `installEngine` in `src/engine-install.ts`, which the CLI calls;
+  `downloadEngine` (exported as `downloadModel`) keeps its signature and always installs the
+  pin. It forwards field by field rather than spreading, so a caller's stray `version` cannot
+  reach the installer through the untyped path.
+- **No major-version guard.** Naming a distant version is already an explicit act, and the
+  useful check is behavioural — the Engine reports its protocol version through Capabilities
+  JSON, which surfaces on use. A numeric guard would additionally block the legitimate
+  bisection case. Nothing here forecloses adding the behavioural check later.
+
+## Open Questions
 - Should the release preflight refuse to run against a drifted Engine? Reporting it in
   `doctor` is enough for a developer trying a build; it is not enough to stop a release from
   being smoke-tested against an Engine the pin does not name.

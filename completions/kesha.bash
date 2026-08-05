@@ -21,7 +21,7 @@ _kesha_completion() {
     completions) opts="--help -h" ;;
     doctor) opts="--help -h --json --redact" ;;
     init) opts="--help -h --coreml --onnx --no-cache --plan --yes --tts --vad --diarize" ;;
-    install) opts="--help -h --coreml --onnx --no-cache --plan --tts --vad --diarize" ;;
+    install) opts="--help -h --coreml --onnx --no-cache --plan --tts --vad --diarize --engine-version" ;;
     logs) opts="--help -h --json" ;;
     manpage) opts="--help -h" ;;
     mcp) opts="--help -h" ;;

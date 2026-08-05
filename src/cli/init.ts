@@ -274,13 +274,7 @@ export const initCommand = defineCommand({
       if (selection.diarize && !installSelection.diarize) {
         log.warn("--diarize is currently darwin-arm64 only; omitting it from the --yes install.");
       }
-      await performInstall(
-        installSelection.noCache,
-        installSelection.backend,
-        installSelection.ttsLangs,
-        installSelection.vad,
-        installSelection.diarize,
-      );
+      await performInstall(installSelection);
       return;
     }
 
@@ -309,13 +303,7 @@ export const initCommand = defineCommand({
       log.info(`Skipped install. Run later: ${initInstallArgs(prompted).join(" ")}`);
       return;
     }
-    await performInstall(
-      prompted.noCache,
-      prompted.backend,
-      prompted.ttsLangs,
-      prompted.vad,
-      prompted.diarize,
-    );
+    await performInstall(prompted);
     // #523: end on something runnable, not on the install log.
     log.info("");
     log.success("Kesha is ready. Try:");

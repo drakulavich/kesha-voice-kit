@@ -128,13 +128,14 @@ SHALL NOT download anything.
 
 ## Open Issues
 
-- Whether `kesha init` accepts `--engine-version`. Init is the guided first-run path and an
-  override is an expert action, which argues for leaving it out — but nothing yet decides it.
-- Whether the programmatic `downloadModel` API takes the same option. Sona's use cases do not
-  obviously need it, and it would widen a stable public surface.
 - Whether an Engine whose Capabilities JSON protocol the CLI cannot parse should be refused at
-  install time or left to surface later. A numeric major-version guard and a behavioural
-  protocol check are different answers and this change does not pick one.
+  install time or left to surface later. Implementation added no guard: a numeric major-version
+  check would block legitimate bisection, and the behavioural protocol check is a separate
+  change.
 - Whether a download failing mid-stream can leave a partial binary beside a stale Recorded
   Engine version. `streamResponseToFile` writes in place, so this predates the override; the
   error scenarios here deliberately promise only that a missing release installs nothing.
+
+Resolved during implementation: `kesha init` does not accept `--engine-version` (it is the
+guided first-run path), and the programmatic `downloadModel` API does not take the option —
+the version-carrying entry point is internal to `src/engine-install.ts`.

@@ -10,7 +10,7 @@ import {
 } from "./engine";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
-import { packageName, packageVersion } from "./package-info";
+import { engineVersion, packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
 import {
   fluidKokoroCacheInfo,
@@ -54,6 +54,21 @@ interface OptionalComponent extends PathSummary {
 
 type DoctorDiagnosticLogStatus = DiagnosticLogStatus & { error?: string };
 
+/**
+ * How the Recorded Engine version relates to the Pinned Engine version. `differs-from-pin`
+ * is a supported state (`kesha install --engine-version`), not a fault — `unrecorded` is
+ * separate so a missing marker is never reported as a difference.
+ */
+export type EngineVersionState = "matches-pin" | "differs-from-pin" | "unrecorded";
+
+export function engineVersionState(
+  versionMarker: string | null,
+  pinnedVersion: string,
+): EngineVersionState {
+  if (versionMarker === null) return "unrecorded";
+  return versionMarker === pinnedVersion ? "matches-pin" : "differs-from-pin";
+}
+
 export interface DoctorReport {
   generatedAt: string;
   redacted: boolean;
@@ -70,6 +85,8 @@ export interface DoctorReport {
     path: string;
     installed: boolean;
     versionMarker: string | null;
+    pinnedVersion: string;
+    versionState: EngineVersionState;
     capabilities: EngineCapabilities | null;
     probeError: string | null;
   };
@@ -189,10 +206,14 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
     }
   }
 
+  const versionMarker = readInstalledEngineVersion(binPath);
+
   return {
     path: redactPath(binPath, redact),
     installed,
-    versionMarker: readInstalledEngineVersion(binPath),
+    versionMarker,
+    pinnedVersion: engineVersion,
+    versionState: engineVersionState(versionMarker, engineVersion),
     capabilities,
     probeError: redactString("probeError", probeError, redact),
   };
@@ -385,6 +406,22 @@ function formatInstalled(installed: boolean): string {
   return installed ? "installed" : "missing";
 }
 
+function formatVersionState(engine: DoctorReport["engine"]): string {
+  switch (engine.versionState) {
+    case "differs-from-pin":
+      return (
+        `installed v${engine.versionMarker} differs from the pinned v${engine.pinnedVersion} — ` +
+        "supported; `kesha install` without --engine-version restores the pin"
+      );
+    case "unrecorded":
+      return engine.installed
+        ? "no recorded version beside the binary; `kesha install` records one"
+        : "no engine installed";
+    default:
+      return "matches the pin";
+  }
+}
+
 function formatCapabilities(engine: DoctorReport["engine"]): string {
   if (!engine.capabilities) return engine.probeError ?? "not available";
   const { backend, protocolVersion, features } = engine.capabilities;
@@ -454,6 +491,8 @@ export function formatDoctorReport(report: DoctorReport): string {
     "Engine:",
     `  Binary: ${report.engine.path} (${formatInstalled(report.engine.installed)})`,
     `  Version marker: ${report.engine.versionMarker ?? "missing"}`,
+    `  Pinned version: ${report.engine.pinnedVersion}`,
+    `  Version state: ${formatVersionState(report.engine)}`,
     `  Capabilities: ${formatCapabilities(report.engine)}`,
     "",
     ...formatCacheSection(report.cache),

@@ -192,12 +192,12 @@ function darwinTrustBinary(path: string, displayName: string): void {
 async function downloadSidecar(
   spec: SidecarSpec,
   binPath: string,
-  engineVersion: string,
+  version: string,
 ): Promise<void> {
   if (!isDarwinArm64()) return;
 
   const sidecarPath = join(dirname(binPath), spec.fileBasename);
-  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/${spec.assetName}`;
+  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/${spec.assetName}`;
 
   let res: Response;
   try {
@@ -211,7 +211,7 @@ async function downloadSidecar(
 
   if (!res.ok) {
     log.warn(
-      `${spec.displayName} not in release v${engineVersion} (HTTP ${res.status}); ${spec.unavailableHint}.`,
+      `${spec.displayName} not in release v${version} (HTTP ${res.status}); ${spec.unavailableHint}.`,
     );
     return;
   }
@@ -328,21 +328,22 @@ export interface InstallOptions {
 }
 
 /**
- * Cache-valid path: the binary at binPath already matches engineVersion.
+ * Cache-valid path: the binary at binPath already matches the requested version.
  * Re-trusts it and tops up any sidecars the cached install is missing.
  */
 async function refreshCachedEngine(
   binPath: string,
   canWriteEngineDir: boolean,
   noCache: boolean,
+  version: string,
 ): Promise<void> {
   const engineDir = dirname(binPath);
   if (noCache && !canWriteEngineDir) {
     log.info(
-      `Engine binary at v${engineVersion} is on a read-only filesystem; --no-cache skipped for engine (still forwarded to model installs).`,
+      `Engine binary at v${version} is on a read-only filesystem; --no-cache skipped for engine (still forwarded to model installs).`,
     );
   } else {
-    log.success(`Engine binary already installed (v${engineVersion}).`);
+    log.success(`Engine binary already installed (v${version}).`);
   }
   // Re-trust on cache hit: a user who upgraded to Sequoia after install would still have
   // com.apple.provenance attached; idempotent (~10ms no-op if already correct).
@@ -355,7 +356,7 @@ async function refreshCachedEngine(
     const missing = SIDECARS.filter(
       (s) => !existsSync(join(engineDir, s.fileBasename)),
     );
-    await Promise.all(missing.map((s) => downloadSidecar(s, binPath, engineVersion)));
+    await Promise.all(missing.map((s) => downloadSidecar(s, binPath, version)));
     // Also re-trust already-present sidecars for the Sequoia upgrade scenario.
     for (const s of SIDECARS) {
       const p = join(engineDir, s.fileBasename);
@@ -428,21 +429,22 @@ export async function waitUntilSpawnable(
 async function fetchEngineBinary(
   binPath: string,
   installedVersion: string | null,
+  version: string,
 ): Promise<void> {
   // Log why we're downloading — helps diagnose surprising re-downloads.
-  if (existsSync(binPath) && installedVersion && installedVersion !== engineVersion) {
+  if (existsSync(binPath) && installedVersion && installedVersion !== version) {
     log.progress(
-      `Upgrading engine v${installedVersion} → v${engineVersion}...`,
+      `Replacing engine v${installedVersion} → v${version}...`,
     );
   }
   const binaryName = getEngineBinaryName();
-  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/${binaryName}`;
+  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/${binaryName}`;
 
   mkdirSync(dirname(binPath), { recursive: true });
 
   // Overlap sidecar fetches with the engine fetch (~15-30s saved on cold install).
   const sidecarPromises = SIDECARS.map((s) =>
-    downloadSidecar(s, binPath, engineVersion),
+    downloadSidecar(s, binPath, version),
   );
   // If the engine fetch throws, silence in-flight sidecar rejections so unhandledRejection doesn't obscure the engine error.
   const muteSidecarRejections = () =>
@@ -460,8 +462,9 @@ async function fetchEngineBinary(
 
   if (!res.ok) {
     muteSidecarRejections();
+    // Names the tag: nothing falls back to the pin, so the caller must see which release 404ed.
     throw new Error(
-      `Failed to download engine binary (HTTP ${res.status})\n  Fix: Check https://github.com/${GITHUB_REPO}/releases for available versions`,
+      `Failed to download engine binary from release v${version} (HTTP ${res.status})\n  Fix: Check https://github.com/${GITHUB_REPO}/releases for available versions`,
     );
   }
 
@@ -470,8 +473,8 @@ async function fetchEngineBinary(
   darwinTrustBinary(binPath, "kesha-engine binary");
   // Marker last: writing it first sends the retry down the cacheValid branch, which never waits.
   await waitUntilSpawnable(binPath);
-  writeInstalledEngineVersion(binPath, engineVersion);
-  log.success(`Engine binary downloaded (v${engineVersion}).`);
+  writeInstalledEngineVersion(binPath, version);
+  log.success(`Engine binary downloaded (v${version}).`);
   await Promise.all(sidecarPromises);
 }
 
@@ -556,27 +559,51 @@ function runEngineModelInstall(
   }
 }
 
-export async function downloadEngine(
-  noCache = false,
-  backend?: string,
-  options: InstallOptions = {},
-): Promise<string> {
+export interface EngineInstallRequest extends InstallOptions {
+  noCache?: boolean;
+  backend?: string;
+  /** Engine release to install; defaults to the Pinned Engine version and applies to this call only. */
+  version?: string;
+}
+
+/**
+ * Installs one Engine release plus its models.
+ *
+ * `version` is the single input for the release URL, the cache-validity comparison, the
+ * sidecar downloads and the recorded `.version` marker — reading the pin at any one of
+ * them would install the requested Engine and then replace it on the next cache check.
+ */
+export async function installEngine(request: EngineInstallRequest = {}): Promise<string> {
+  const { noCache = false, backend, version = engineVersion, ...options } = request;
   const binPath = getEngineBinPath();
   const installedVersion = readInstalledEngineVersion(binPath);
   const engineDir = dirname(binPath);
 
+  if (version !== engineVersion) {
+    log.info(
+      `Installing engine v${version} instead of the pinned v${engineVersion}; ` +
+        "a later `kesha install` without --engine-version restores the pin.",
+    );
+  }
+
   // Read-only engine dir = Nix-store install; skip download/sidecar writes to avoid EROFS errors.
   const canWriteEngineDir = checkEngineWritable(engineDir);
 
-  const versionMatches =
-    existsSync(binPath) && installedVersion === engineVersion;
+  const versionMatches = existsSync(binPath) && installedVersion === version;
   // On read-only fs, --no-cache can't re-download; treat as cache-valid and forward flag to model install.
   const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 
   if (cacheValid) {
-    await refreshCachedEngine(binPath, canWriteEngineDir, noCache);
+    await refreshCachedEngine(binPath, canWriteEngineDir, noCache, version);
   } else {
-    await fetchEngineBinary(binPath, installedVersion);
+    if (!canWriteEngineDir) {
+      throw new Error(
+        `Cannot install engine v${version}: ${engineDir} is not writable ` +
+          `(installed: ${installedVersion ? `v${installedVersion}` : "no recorded version"}).\n` +
+          "  Fix: point KESHA_ENGINE_BIN at a writable path, or install into a writable prefix.",
+      );
+    }
+    await fetchEngineBinary(binPath, installedVersion, version);
   }
 
   if (backend || options.diarize) {
@@ -599,6 +626,22 @@ export async function downloadEngine(
     cleanupRetiredSidecars(engineDir);
   }
 
-  log.success("Backend installed successfully.");
+  log.success(`Backend installed successfully (engine v${version}).`);
   return binPath;
+}
+
+/** Installs the Pinned Engine version. Public API (`downloadModel`); the override is CLI-only. */
+export async function downloadEngine(
+  noCache = false,
+  backend?: string,
+  options: InstallOptions = {},
+): Promise<string> {
+  // Field-by-field, not a spread: a caller's stray `version` must not reach installEngine.
+  return installEngine({
+    noCache,
+    backend,
+    ttsLangs: options.ttsLangs,
+    vad: options.vad,
+    diarize: options.diarize,
+  });
 }
