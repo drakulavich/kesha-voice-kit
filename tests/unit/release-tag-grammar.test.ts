@@ -126,8 +126,8 @@ describe("release manifest tag check", () => {
     expect((await manifestCheck(["--tag", "v1.24.8"], alpha)).accepted).toBe(false);
 
     // Stripping -alpha.N before compare would publish an alpha tag as the stable release.
-    const stable = `v${pkg.keshaEngine.version}-alpha.1`;
-    expect((await manifestCheck(["--tag", stable])).accepted).toBe(false);
+    const stable = fixtureRepo("1.27.0", "1.24.8");
+    expect((await manifestCheck(["--tag", "v1.24.8-alpha.1"], stable)).accepted).toBe(false);
   });
 
   // Reverting the default *and* the assertion makes `v<cliVersion>` exit 0 again (grok).
