@@ -77,6 +77,8 @@ jobs:
               # skipped entirely and the drift merged undetected
               # (Greptile P1 on #315).
               - 'rust/Cargo.toml'
+              # Same reason as `rust/Cargo.toml`: a version source (rule 4), so a manifest-only bump must still reach `check:versions`.
+              - 'server.json'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
             integration:
