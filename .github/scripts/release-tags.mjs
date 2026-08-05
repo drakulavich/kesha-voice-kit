@@ -29,9 +29,12 @@ const CLI_MARKER = "-cli";
 export function cliPublishTarget(tag) {
   const cliMarked = tag.endsWith(CLI_MARKER);
   const base = cliMarked ? tag.slice(0, -CLI_MARKER.length) : tag;
+  const version = base.replace(/^v/, "");
   return {
-    version: base.replace(/^v/, ""),
+    version,
     engineOnly: !cliMarked && base.includes("-"),
+    // An alpha version is minted at publish time, so no commit carries it to verify against.
+    derived: version.includes("-alpha."),
   };
 }
 
@@ -42,5 +45,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     process.exit(2);
   }
   const target = cliPublishTarget(tag);
-  process.stdout.write(`version=${target.version}\nengine_only=${target.engineOnly}\n`);
+  process.stdout.write(
+    `version=${target.version}\nengine_only=${target.engineOnly}\nderived=${target.derived}\n`,
+  );
 }

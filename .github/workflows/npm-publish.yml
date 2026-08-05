@@ -20,6 +20,11 @@ on:
 permissions:
   contents: read
 
+# An older publish finishing last would drag its dist-tag backwards (#731).
+concurrency:
+  group: npm-publish
+  queue: max
+
 jobs:
   resolve:
     runs-on: ubuntu-latest
@@ -27,6 +32,7 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
       engine_only: ${{ steps.tag.outputs.engine_only }}
+      derived: ${{ steps.tag.outputs.derived }}
       dist_tag: ${{ steps.dist.outputs.dist_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,3 +68,4 @@ jobs:
       ref: ${{ needs.resolve.outputs.tag }}
       version: ${{ needs.resolve.outputs.version }}
       dist-tag: ${{ needs.resolve.outputs.dist_tag }}
+      inject-version: ${{ needs.resolve.outputs.derived == 'true' }}
