@@ -157,18 +157,18 @@ describe("cliPublishTarget", () => {
     });
   });
 
-  test("an engine prerelease publishes no CLI", () => {
-    for (const tag of ["v1.24.8-alpha.1", "v1.24.8-beta.1"]) {
+  // A bare tag names the engine version, so publishing it would put main's unreleased CLI
+  // on npm under the engine's number and move `latest` backwards (#729).
+  test("no engine tag publishes a CLI, stable included", () => {
+    for (const tag of ["v1.24.8", "v1.24.8-alpha.1", "v1.24.8-beta.1"]) {
       expect(cliPublishTarget(tag).engineOnly).toBe(true);
     }
   });
 
-  test("a stable tag still publishes the CLI, as it does today", () => {
-    expect(cliPublishTarget("v1.24.8")).toEqual({
-      version: "1.24.8",
-      engineOnly: false,
-      derived: false,
-    });
+  test("the CLI ships only from its own marker tag", () => {
+    for (const tag of ["v1.26.0-cli", "v1.27.0-alpha.1-cli"]) {
+      expect(cliPublishTarget(tag).engineOnly).toBe(false);
+    }
   });
 });
 

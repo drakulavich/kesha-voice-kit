@@ -28,7 +28,7 @@ npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
 
 **Engine release** (anything under `rust/` or an engine bump):
 
-1. Bump `rust/Cargo.toml`, `rust/Cargo.lock` (`cargo check`), `package.json#keshaEngine.version`, usually `package.json#version`.
+1. Bump `rust/Cargo.toml`, `rust/Cargo.lock` (`cargo check`), `package.json#keshaEngine.version` — leave `package.json#version` alone, it carries the next unreleased CLI (#691). An engine tag publishes nothing to npm; the bumped pin reaches users with the next `-cli` release (#729).
 2. Merge to main.
 3. Tag/push: `git tag vX.Y.Z && git push origin vX.Y.Z` → `build-engine.yml`.
 4. Write release notes before publishing. Draft releases start with an empty body:

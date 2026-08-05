@@ -23,8 +23,9 @@ const CLI_MARKER = "-cli";
 /**
  * What the CLI publish path should do with a release tag.
  *
- * An engine prerelease publishes no CLI: reacting to it would compare an engine version
- * against `package.json#version` and fail a workflow nobody asked to run (#685).
+ * No engine tag publishes a CLI. Since #691 a bare tag names the engine version only, so
+ * reacting to one would publish `main`'s CLI under the engine's number and drag npm's
+ * `latest` backwards; the CLI ships from its own `-cli` marker tag instead (#729).
  */
 export function cliPublishTarget(tag) {
   const cliMarked = tag.endsWith(CLI_MARKER);
@@ -32,7 +33,7 @@ export function cliPublishTarget(tag) {
   const version = base.replace(/^v/, "");
   return {
     version,
-    engineOnly: !cliMarked && base.includes("-"),
+    engineOnly: !cliMarked,
     // An alpha version is minted at publish time, so no commit carries it to verify against.
     derived: version.includes("-alpha."),
   };
