@@ -3,9 +3,11 @@ import { accessSync, chmodSync, constants, mkdirSync, mkdtempSync, readFileSync,
 import { join } from "path";
 import { tmpdir } from "os";
 import {
+  downloadEngine,
   getEngineBinaryName,
   installEngine,
   readInstalledEngineVersion,
+  type InstallOptions,
 } from "../../src/engine-install";
 import { resolveEngineVersionFlag } from "../../src/cli/install";
 import { engineVersion } from "../../src/package-info";
@@ -84,6 +86,14 @@ describe("resolveEngineVersionFlag", () => {
     expect(() => resolveEngineVersionFlag("")).toThrow(/exact version/);
   });
 
+  // Rejected here rather than left to 404 at the release URL.
+  test("rejects prerelease identifiers SemVer itself rejects", () => {
+    expect(() => resolveEngineVersionFlag("1.0.0-01")).toThrow(/exact version/);
+    expect(() => resolveEngineVersionFlag("1.0.0-..")).toThrow(/exact version/);
+    expect(() => resolveEngineVersionFlag("1.0.0-")).toThrow(/exact version/);
+    expect(resolveEngineVersionFlag("1.0.0-alpha.0")).toBe("1.0.0-alpha.0");
+  });
+
   test("a tag-shaped value names the leading v as the problem", () => {
     expect(() => resolveEngineVersionFlag("v1.24.8")).toThrow(/leading "v"/);
   });
@@ -118,6 +128,52 @@ describe("installEngine --engine-version (#738)", () => {
     const sidecarUrls = urls.filter((u) => u.includes("say-avspeech") || u.includes("kesha-textlang"));
     expect(sidecarUrls.length).toBeGreaterThan(0);
     for (const url of sidecarUrls) expect(url).toContain(`/download/v${OVERRIDE}/`);
+  }, 30_000);
+
+  posixTest("the cache-hit sidecar top-up follows the override, not the pin", async () => {
+    if (!(process.platform === "darwin" && process.arch === "arm64")) return;
+    const binPath = stageEngineDir("kesha-engine-override-topup-");
+    const urls = stubReleases([OVERRIDE]);
+
+    await installEngine({ version: OVERRIDE });
+    // Sidecars 404 above, so nothing was staged; write one and drop the other to force a top-up.
+    writeFileSync(join(binPath, "..", "say-avspeech"), "sidecar");
+    urls.length = 0;
+
+    await installEngine({ version: OVERRIDE });
+
+    expect(engineDownloads(urls)).toHaveLength(0);
+    const toppedUp = urls.filter((u) => u.includes("kesha-textlang"));
+    expect(toppedUp.length).toBeGreaterThan(0);
+    for (const url of toppedUp) expect(url).toContain(`/download/v${OVERRIDE}/`);
+    expect(urls.some((u) => u.includes(`/download/v${engineVersion}/`))).toBe(false);
+  }, 30_000);
+
+  posixTest("a read-only engine dir whose recorded version matches still installs", async () => {
+    if (process.getuid?.() === 0) return;
+    const binPath = stageEngineDir("kesha-engine-readonly-match-");
+    writeFileSync(binPath, FAKE_ENGINE);
+    chmodSync(binPath, 0o755);
+    writeFileSync(`${binPath}.version`, `${engineVersion}\n`);
+    chmodSync(join(binPath, ".."), 0o555);
+    const urls = stubReleases([engineVersion]);
+
+    // The Nix store and the CI lanes both stage a matching marker precisely so this succeeds.
+    await installEngine();
+
+    expect(urls).toHaveLength(0);
+    expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
+  }, 30_000);
+
+  posixTest("the public downloadEngine cannot be talked into a non-pinned version", async () => {
+    const binPath = stageEngineDir("kesha-engine-public-api-");
+    const urls = stubReleases([engineVersion]);
+
+    await downloadEngine(false, undefined, { version: OVERRIDE } as InstallOptions);
+
+    expect(urls[0]).toContain(`/download/v${engineVersion}/`);
+    expect(urls.some((u) => u.includes(`/download/v${OVERRIDE}/`))).toBe(false);
+    expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
   }, 30_000);
 
   posixTest("no override installs the pin, and a later install reverts to it", async () => {

@@ -176,6 +176,15 @@ describe("install plan with --engine-version (#738)", () => {
       expect(overridden).not.toContain(`GitHub release v${engineVersion}`);
       expect(overridden).toMatch(/Engine kesha-engine-[^:]+: [^(]+\([^,]+, needed,/);
       expect(overridden).toContain("Run: kesha install --engine-version 9.9.9-alpha.1");
+
+      if (process.platform === "darwin" && process.arch === "arm64") {
+        // A cold engine fetch re-downloads every sidecar, so present files are not cached work.
+        writeFileSync(join(engineDir, "say-avspeech"), "sidecar");
+        expect(await renderInstallPlan({})).toMatch(/Sidecar say-avspeech[^:]*: [^(]+\([^,]+, cached,/);
+        expect(await renderInstallPlan({ engineVersion: "9.9.9-alpha.1" })).toMatch(
+          /Sidecar say-avspeech[^:]*: [^(]+\([^,]+, needed,/,
+        );
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

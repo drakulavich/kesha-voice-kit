@@ -60,8 +60,9 @@ export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefi
   return langs;
 }
 
-// Exact versions only: the flag names one release, and nothing here resolves a floating one.
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+// Canonical SemVer 2.0: a looser pattern accepts `1.0.0-01` / `1.0.0-..`, which only 404 later.
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
 /**
  * Validates `--engine-version` before any network call. Returns undefined when the flag is

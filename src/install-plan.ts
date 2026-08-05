@@ -183,6 +183,10 @@ function fluidAsrComponent(): PlanComponent {
   };
 }
 
+function engineIsCached(binPath: string, version: string): boolean {
+  return existsSync(binPath) && readInstalledEngineVersion(binPath) === version;
+}
+
 function buildEngineComponent(
   binPath: string,
   noCache: boolean,
@@ -190,8 +194,7 @@ function buildEngineComponent(
 ): PlanComponent {
   const engineAsset = engineAssetForPlatform();
   if (engineAsset) {
-    const engineCached =
-      existsSync(binPath) && readInstalledEngineVersion(binPath) === version;
+    const engineCached = engineIsCached(binPath, version);
     return {
       name: `Engine ${engineAsset.assetName}`,
       source: `GitHub release v${version}`,
@@ -214,13 +217,15 @@ function buildSidecarComponents(
   engineDir: string,
   noCache: boolean,
   version: string,
+  engineCached: boolean,
 ): PlanComponent[] {
   if (!isDarwinArm64()) return [];
   return DARWIN_SIDECARS.map((sidecar) => ({
     name: `Sidecar ${sidecar.assetName}`,
     source: `GitHub release v${version}`,
     sizeBytes: sidecar.sizeBytes,
-    cached: existsSync(join(engineDir, sidecar.fileBasename)),
+    // A cold engine fetch re-downloads every sidecar; only a cache hit tops up the missing ones.
+    cached: engineCached && existsSync(join(engineDir, sidecar.fileBasename)),
     refresh: noCache,
   }));
 }
@@ -311,7 +316,12 @@ function assembleComponents(input: {
 
   const components: PlanComponent[] = [
     buildEngineComponent(input.binPath, noCache, input.version),
-    ...buildSidecarComponents(input.engineDir, noCache, input.version),
+    ...buildSidecarComponents(
+      input.engineDir,
+      noCache,
+      input.version,
+      engineIsCached(input.binPath, input.version),
+    ),
     input.coreml
       ? fluidAsrComponent()
       : modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
