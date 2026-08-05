@@ -152,7 +152,7 @@ describe("the alpha tag step", () => {
 
   test("writes the commits since the previous alpha into the tag message", () => {
     expect(script).toContain('git log --no-merges');
-    expect(script).toContain('"$PREVIOUS..$SHA"');
+    expect(script).toContain('"$base..$SHA"');
     expect(script).toContain("git tag -a");
   });
 
