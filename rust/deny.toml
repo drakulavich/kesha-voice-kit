@@ -70,7 +70,9 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # `with_models_dir` (#688) and `init_kokoro_with_compute_units` (#678), which
 # upstream does not expose, and moves back to `FluidInference` once they land
 # there. See rust/Cargo.toml for why the fork is deliberate.
+# text-processing-rs: ITN for `--itn` (#710); not on crates.io, so a git rev is the only pin available.
 allow-git = [
   "https://github.com/FluidInference/fluidaudio-rs",
   "https://github.com/drakulavich/fluidaudio-rs",
+  "https://github.com/FluidInference/text-processing-rs",
 ]
