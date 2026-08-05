@@ -200,6 +200,24 @@ fn compute_units_from_env() -> Result<KokoroComputeUnits> {
     )
 }
 
+/// Suffix naming the one Kokoro init failure kesha can repair: a `.mlmodelc`
+/// left incomplete in FluidAudio's cache by an older version (#709). The Swift
+/// bridge collapses every init failure into `-1` and logs the CoreML reason
+/// (`Error in reading the MIL network`) to stderr itself, so the cause is not in
+/// the Rust error — the cache is what we can inspect. Empty when the cache is
+/// clean, so a healthy install never gets misleading advice.
+fn incomplete_bundle_hint() -> String {
+    let names = crate::models::incomplete_ane_bundle_names();
+    if names.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; FluidAudio's CoreML cache has incomplete bundle(s) ({}) — re-run \
+         `kesha install --tts` to repair",
+        names.join(", ")
+    )
+}
+
 /// Initialize a FluidAudio Kokoro bridge for `voice_id` and run `f` against it
 /// with the process's stdout silenced for the whole bridge lifetime (create →
 /// call → drop). FluidAudio's CoreML pipeline writes diagnostics to stdout that
@@ -216,11 +234,12 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
         let audio = FluidAudio::new().context("init FluidAudio bridge")?;
         audio
             .init_kokoro_with_compute_units(voice_id, lang, compute_units)
-            .with_context(|| {
-                format!(
-                    "init FluidAudio Kokoro on {} compute units (downloads the model on first run)",
-                    preset_name(compute_units)
-                )
+            .map_err(|e| {
+                anyhow::Error::new(e).context(format!(
+                    "init FluidAudio Kokoro on {} compute units (downloads the model on first run){}",
+                    preset_name(compute_units),
+                    incomplete_bundle_hint()
+                ))
             })?;
         f(&audio)
     })
