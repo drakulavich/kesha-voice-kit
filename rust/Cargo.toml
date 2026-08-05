@@ -84,6 +84,14 @@ ndarray = { version = "0.17" }
 fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "dc931c5be72cf94700b8f53027391421ba0a0628", optional = true }
 audioadapter-buffers = "3.0.0"
 
+# ITN for `transcribe --itn` (#710). Not on crates.io and carries no release
+# tags, so it is pinned by rev like fluidaudio-rs. Default features only: `ffi`
+# and `fst-engine` (rustfst + ~7 MB of grammars) stay off — the pure-Rust rule
+# path is what kesha calls. NOT reached via fluidaudio-rs::itn_normalize, which
+# is a dlsym shim over a libnemo_text_processing nothing here links, and so
+# returns its input verbatim.
+text-processing-rs = { git = "https://github.com/FluidInference/text-processing-rs", rev = "8a043f1dae81eb18bab229f07109f72d005ec47d" }
+
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
 hound = "3.5"
 thiserror = { version = "2", optional = true }

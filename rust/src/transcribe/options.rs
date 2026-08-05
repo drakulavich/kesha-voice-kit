@@ -28,6 +28,7 @@ pub(crate) mod marker {
 pub struct TranscribeOptionsBuilder<S = marker::NoSegments> {
     mode: VadMode,
     with_speakers: bool,
+    itn: bool,
     _state: PhantomData<S>,
 }
 
@@ -44,6 +45,7 @@ impl TranscribeOptionsBuilder<marker::NoSegments> {
         Self {
             mode: VadMode::Auto,
             with_speakers: false,
+            itn: false,
             _state: PhantomData,
         }
     }
@@ -53,12 +55,21 @@ impl TranscribeOptionsBuilder<marker::NoSegments> {
         self
     }
 
+    /// Rewrite spoken-form numbers to written form (#710). Set before
+    /// [`Self::with_segments`]; the transition carries it through, so it is
+    /// available on both output shapes from a single method.
+    pub fn itn(mut self, enabled: bool) -> Self {
+        self.itn = enabled;
+        self
+    }
+
     /// Transition to the `WithSegments` state: per-utterance segments
     /// will be populated. Required before `with_speakers` becomes available.
     pub fn with_segments(self) -> TranscribeOptionsBuilder<marker::WithSegments> {
         TranscribeOptionsBuilder {
             mode: self.mode,
             with_speakers: false,
+            itn: self.itn,
             _state: PhantomData,
         }
     }
@@ -69,6 +80,7 @@ impl TranscribeOptionsBuilder<marker::NoSegments> {
             mode: self.mode,
             with_segments: false,
             with_speakers: false,
+            itn: self.itn,
         }
     }
 }
@@ -97,6 +109,7 @@ impl TranscribeOptionsBuilder<marker::WithSegments> {
             mode: self.mode,
             with_segments: true,
             with_speakers: self.with_speakers,
+            itn: self.itn,
         }
     }
 }
@@ -132,6 +145,20 @@ mod tests {
             .build();
         assert!(opts.with_segments);
         assert!(opts.with_speakers);
+    }
+
+    #[test]
+    fn itn_defaults_off_and_survives_the_with_segments_transition() {
+        assert!(!TranscribeOptionsBuilder::new().build().itn);
+        assert!(TranscribeOptionsBuilder::new().itn(true).build().itn);
+        assert!(
+            TranscribeOptionsBuilder::new()
+                .itn(true)
+                .with_segments()
+                .with_speakers()
+                .build()
+                .itn
+        );
     }
 
     #[test]

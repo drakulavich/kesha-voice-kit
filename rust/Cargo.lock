@@ -980,6 +980,7 @@ dependencies = [
  "symphonia",
  "symphonia-adapter-libopus",
  "tempfile",
+ "text-processing-rs",
  "thiserror 2.0.19",
  "ureq",
  "vosk_tts",
@@ -2094,6 +2095,14 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "text-processing-rs"
+version = "0.3.0"
+source = "git+https://github.com/FluidInference/text-processing-rs?rev=8a043f1dae81eb18bab229f07109f72d005ec47d#8a043f1dae81eb18bab229f07109f72d005ec47d"
+dependencies = [
+ "lazy_static",
 ]
 
 [[package]]

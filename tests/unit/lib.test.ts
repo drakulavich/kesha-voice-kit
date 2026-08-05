@@ -121,4 +121,32 @@ describe("lib API", () => {
       });
     });
   });
+
+  // The itn gate sits above the `timestamps || speakers` short-circuit, so it
+  // has to fire on the plain-text path too — the one that otherwise reaches the
+  // engine with no preflight at all (#710).
+  fakeEngineIt("preflights itn support on the plain-text path", async () => {
+    await withEngine(fakeEngine(["transcribe.segments"]), async () => {
+      await expect(preflightTranscribeWithSegments({ itn: true })).rejects.toThrow(
+        "--itn requires a newer kesha-engine",
+      );
+    });
+  });
+
+  fakeEngineIt("preflights itn support alongside timestamps", async () => {
+    await withEngine(fakeEngine(["transcribe.segments"]), async () => {
+      await expect(
+        preflightTranscribeWithSegments({ timestamps: true, itn: true }),
+      ).rejects.toThrow("--itn requires a newer kesha-engine");
+    });
+  });
+
+  fakeEngineIt("lets itn through when the engine advertises it", async () => {
+    await withEngine(fakeEngine(["transcribe.segments", "transcribe.itn"]), async () => {
+      await expect(transcribeWithSegments("audio.wav", { itn: true })).resolves.toEqual({
+        text: "ok",
+        segments: [],
+      });
+    });
+  });
 });
