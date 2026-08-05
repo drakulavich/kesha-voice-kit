@@ -144,9 +144,7 @@ fn ensure_script_supported(fluid_id: &str, text: &str) -> Result<()> {
 /// Env var overriding which CoreML compute units the Kokoro pipeline loads on.
 const COMPUTE_UNITS_ENV: &str = "KESHA_KOKORO_COMPUTE_UNITS";
 
-/// Accepted [`COMPUTE_UNITS_ENV`] values. Spelled to match FluidAudio's own
-/// `TtsComputeUnitPreset` CLI names so a value carries over unchanged when
-/// debugging against upstream tooling.
+/// Accepted [`COMPUTE_UNITS_ENV`] values, spelled as FluidAudio's own `TtsComputeUnitPreset` CLI names.
 const COMPUTE_UNIT_PRESETS: &[(&str, KokoroComputeUnits)] = &[
     ("default", KokoroComputeUnits::Default),
     ("cpu-and-gpu", KokoroComputeUnits::CpuAndGpu),
@@ -431,28 +429,22 @@ mod tests {
         }
     }
 
-    /// `compute_units_from_env` reads a process-global, so these cases share one
-    /// test rather than racing each other across nextest's threads.
     #[test]
     fn compute_units_env_defaults_and_validates() {
-        struct EnvGuard;
-        impl Drop for EnvGuard {
-            fn drop(&mut self) {
-                unsafe { std::env::remove_var(COMPUTE_UNITS_ENV) };
-            }
+        use crate::util::test_env::{lock, EnvGuard};
+        let _lock = lock();
+
+        {
+            let _g = EnvGuard::unset(COMPUTE_UNITS_ENV);
+            assert_eq!(
+                compute_units_from_env().expect("unset is valid"),
+                KokoroComputeUnits::Default
+            );
         }
-        let _guard = EnvGuard;
 
-        unsafe { std::env::remove_var(COMPUTE_UNITS_ENV) };
-        assert_eq!(
-            compute_units_from_env().expect("unset is valid"),
-            KokoroComputeUnits::Default
-        );
-
-        // Whitespace-only is treated as unset, not as a typo — a CI step that
-        // exports the var conditionally would otherwise fail every darwin run.
+        // GHA exports a conditional `env:` as the empty string rather than omitting it.
         for blank in ["", "   "] {
-            unsafe { std::env::set_var(COMPUTE_UNITS_ENV, blank) };
+            let _g = EnvGuard::set(COMPUTE_UNITS_ENV, blank);
             assert_eq!(
                 compute_units_from_env().expect("blank is valid"),
                 KokoroComputeUnits::Default
@@ -465,7 +457,7 @@ mod tests {
             ("ALL-ANE", KokoroComputeUnits::AllAne),
             ("default", KokoroComputeUnits::Default),
         ] {
-            unsafe { std::env::set_var(COMPUTE_UNITS_ENV, value) };
+            let _g = EnvGuard::set(COMPUTE_UNITS_ENV, value);
             let parsed = compute_units_from_env().unwrap_or_else(|e| panic!("{value:?}: {e}"));
             assert_eq!(parsed, expected);
             assert_eq!(preset_name(parsed), value.trim().to_ascii_lowercase());
@@ -473,11 +465,22 @@ mod tests {
 
         // An unknown preset must fail loudly rather than silently synthesizing
         // on the ANE the caller was trying to avoid.
-        unsafe { std::env::set_var(COMPUTE_UNITS_ENV, "ane-please") };
+        let _g = EnvGuard::set(COMPUTE_UNITS_ENV, "ane-please");
         let err = compute_units_from_env().expect_err("unknown preset must error");
         let msg = err.to_string();
         assert!(msg.contains("ane-please"), "{msg}");
         assert!(msg.contains("cpu-and-gpu"), "{msg}");
+    }
+
+    /// `preset_name` falls back to "default" for an unlisted variant, so a
+    /// `KokoroComputeUnits` growing a variant must extend the table or the
+    /// error text would name a preset the engine is not using.
+    #[test]
+    fn every_preset_round_trips_through_its_name() {
+        for (name, units) in COMPUTE_UNIT_PRESETS {
+            assert_eq!(preset_name(*units), *name);
+        }
+        assert_eq!(COMPUTE_UNIT_PRESETS.len(), 4, "extend the table");
     }
 
     #[test]

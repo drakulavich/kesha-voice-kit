@@ -118,19 +118,40 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
     f()
 }
 
-/// One-shot variant for non-hot-path FluidAudio calls (Kokoro synth,
-/// diarization): opens `/dev/null` itself for the duration of `f`. A failed
-/// open runs `f` with stdout untouched (best-effort). Wrap the FluidAudio
-/// instance's *whole* lifetime (create → call → drop) so teardown-time CoreML
-/// noise is silenced too.
+/// Where FluidAudio's stdout chatter goes for the duration of a one-shot call:
+/// `/dev/null` normally, stderr under `KESHA_DEBUG`.
+///
+/// CoreML reports real failures — the ANE-less prepare error and the E5RT
+/// exceptions behind it (#678) — on stdout, so discarding it unconditionally
+/// makes those failures unreadable exactly where they matter: a CI runner you
+/// cannot attach to. Redirecting to stderr is safe because callers write their
+/// payload *after* the guard returns, so nothing of ours is misrouted.
 #[cfg(any(feature = "system_kokoro", feature = "system_diarize"))]
-pub(crate) fn with_silenced_stdout_oneshot<R>(f: impl FnOnce() -> R) -> R {
-    let devnull: Option<OwnedFd> = std::fs::OpenOptions::new()
+fn oneshot_sink() -> Option<OwnedFd> {
+    use std::os::fd::FromRawFd;
+
+    if crate::debug::enabled() {
+        // SAFETY: dup(STDERR) hands back a fresh fd that OwnedFd will close.
+        let raw = unsafe { libc::dup(libc::STDERR_FILENO) };
+        if raw >= 0 {
+            return Some(unsafe { OwnedFd::from_raw_fd(raw) });
+        }
+    }
+    std::fs::OpenOptions::new()
         .write(true)
         .open("/dev/null")
         .ok()
-        .map(OwnedFd::from);
-    with_silenced_stdout(devnull.as_ref(), f)
+        .map(OwnedFd::from)
+}
+
+/// One-shot variant for non-hot-path FluidAudio calls (Kokoro synth,
+/// diarization). A failed open runs `f` with stdout untouched (best-effort).
+/// Wrap the FluidAudio instance's *whole* lifetime (create → call → drop) so
+/// teardown-time CoreML noise is captured too.
+#[cfg(any(feature = "system_kokoro", feature = "system_diarize"))]
+pub(crate) fn with_silenced_stdout_oneshot<R>(f: impl FnOnce() -> R) -> R {
+    let sink = oneshot_sink();
+    with_silenced_stdout(sink.as_ref(), f)
 }
 
 /// Permanently redirect the process's stdout to `/dev/null` and hand back a

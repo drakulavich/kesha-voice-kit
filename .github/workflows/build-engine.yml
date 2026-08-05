@@ -121,6 +121,10 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
       # Points the CLI at the staged artifact for the pre-upload smoke, as release-branch-engine-smoke does (#671).
       KESHA_ENGINE_BIN: ${{ github.workspace }}/${{ matrix.binary }}
+      # Job-wide since `kesha install` warms Kokoro too; cpu-only because the runner virtualises Metal as well as the ANE (#678).
+      KESHA_KOKORO_COMPUTE_UNITS: ${{ matrix.os == 'macos-14' && 'cpu-only' || '' }}
+      # Routes FluidAudio's stdout-only CoreML diagnostics to stderr, so a darwin failure is readable in the log (#678).
+      KESHA_DEBUG: ${{ matrix.os == 'macos-14' && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
@@ -315,8 +319,6 @@ jobs:
 
       - name: 🗣️ Pre-upload synthesis smoke
         shell: bash
-        env:
-          KESHA_KOKORO_COMPUTE_UNITS: ${{ matrix.os == 'macos-14' && 'cpu-and-gpu' || '' }}
         run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
 
       - name: Inspect macOS dynamic deps
