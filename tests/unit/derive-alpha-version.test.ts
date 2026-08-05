@@ -107,7 +107,7 @@ describe("deriveAlpha", () => {
 describe("previousTag", () => {
   const TAGS = ["v1.24.7", "v1.26.0-cli", "v1.27.0-alpha.1-cli", "v1.24.8-alpha.1", "v1.22.0-beta.1"];
 
-  test("takes the highest alpha of its own channel", () => {
+  test("takes the highest published tag of its own channel", () => {
     expect(previousTag("cli", TAGS)).toBe("v1.27.0-alpha.1-cli");
     expect(previousTag("engine", TAGS)).toBe("v1.24.8-alpha.1");
   });
@@ -141,32 +141,9 @@ describe("previousTag", () => {
 });
 
 describe("the alpha tag step", () => {
-  const script = readFileSync(`${import.meta.dir}/../../.github/scripts/alpha-tag.sh`, "utf8");
   const workflow = readFileSync(`${import.meta.dir}/../../.github/workflows/release-alpha.yml`, "utf8");
 
-  // A git log that fails mid-pipe would otherwise leave a tag carrying half a message.
-  test("resolves the message before the tag is created", () => {
-    expect(script.indexOf("git log --no-merges")).toBeLessThan(script.indexOf("git tag -a"));
-    expect(script).toContain("body=$(");
-  });
-
-  test("writes the commits since the previous alpha into the tag message", () => {
-    expect(script).toContain('git log --no-merges');
-    expect(script).toContain('"$base..$SHA"');
-    expect(script).toContain("git tag -a");
-  });
-
-  // An empty range would tag the whole history as if it were one alpha's changes.
-  test("says so rather than logging everything when there is no previous tag", () => {
-    expect(script).toContain('if [ -z "${PREVIOUS:-}" ]; then');
-  });
-
-  // A range from a tag off this history reads as a changelog while being nothing of the kind.
-  test("falls back to a reachable tag rather than dating the range wrongly", () => {
-    expect(script).toContain('git merge-base --is-ancestor "$PREVIOUS" "$SHA"');
-    expect(script).toContain("git describe --tags --abbrev=0 --match 'v[0-9]*'");
-  });
-
+  // Behaviour lives in tests/integration/alpha-tag.test.ts, which runs the script for real.
   test("the workflow passes the derived previous tag through env", () => {
     expect(workflow).toContain("PREVIOUS: ${{ needs.decide.outputs.previous }}");
     expect(workflow).toContain("run: .github/scripts/alpha-tag.sh");

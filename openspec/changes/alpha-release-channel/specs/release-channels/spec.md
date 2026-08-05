@@ -277,10 +277,6 @@ still something a person may be reading.
 
 ## Open Issues
 
-- `openspec/specs/GLOSSARY.md` has no entry for **channel**, **alpha**, or **Prerelease**.
-  These terms are used throughout this spec and should be added to the glossary rather than
-  defined ad hoc here. Not resolved in this change's specs because the delta format covers
-  requirements, not the glossary.
 - Whether a CLI alpha should be able to name an Engine alpha at all, or whether alpha CLIs
   must always resolve a stable Engine, is unresolved. Allowing it makes the two channels
   interact; forbidding it means an Engine change cannot be exercised through a CLI alpha.

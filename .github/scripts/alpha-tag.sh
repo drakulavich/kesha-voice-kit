@@ -6,13 +6,19 @@ set -euo pipefail
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+# This channel's release shapes only: `audio-244` exists here, and so do the other artifact's tags.
+if [ "${TAG%-cli}" != "$TAG" ]; then
+  reachable=(--match 'v[0-9]*-cli')
+else
+  reachable=(--match 'v[0-9]*' --exclude 'v*-cli')
+fi
+
 if [ -z "${PREVIOUS:-}" ]; then
   base=""
 elif git merge-base --is-ancestor "$PREVIOUS" "$SHA"; then
   base="$PREVIOUS"
 else
-  # Release shapes only: tags like `audio-244` exist here and would name a meaningless baseline.
-  base=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$SHA" 2>/dev/null || true)
+  base=$(git describe --tags --abbrev=0 "${reachable[@]}" "$SHA" 2>/dev/null || true)
 fi
 
 # Resolved before the tag exists: a git log failing mid-pipe leaves a tag with half a message.
