@@ -66,14 +66,16 @@ if (cmp(cli, engine) < 0) {
   failed = true;
 }
 
-if (engine.prerelease[0] === "alpha") {
+if (engine.prerelease.some((id) => id.toLowerCase().startsWith("alpha"))) {
   console.error(
     `rule 3 violated: package.json#keshaEngine.version (${fmt(engine)}) must not be an ` +
       `alpha. This pin is the only thing that decides which engine every lane downloads ` +
       `(src/engine-install.ts, check-engine-targets.ts) — nothing resolves "latest" — so ` +
       `committing an alpha points unrelated pull requests at a throwaway build, and ships ` +
-      `it in the next release. Exercise an engine alpha through KESHA_ENGINE_BIN or an ` +
-      `explicit install instead. A '-beta.N' pin is a release candidate and stays allowed.`,
+      `it in the next release. To try one, put the binary somewhere and point ` +
+      `KESHA_ENGINE_BIN at it; do not run \`kesha install\` against that path unless you ` +
+      `also write a matching \`\${bin}.version\`, because a mismatch re-downloads the ` +
+      `pinned engine over it. A '-beta.N' pin is a release candidate and stays allowed.`,
   );
   failed = true;
 }
