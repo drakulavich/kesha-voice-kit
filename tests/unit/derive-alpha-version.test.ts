@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   alphaTag,
   assertPassesVersionGate,
   deriveAlpha,
   nextSequence,
+  previousTag,
 } from "../../.github/scripts/derive-alpha-version";
 
 const PKG = { version: "1.27.0", keshaEngine: { version: "1.24.7" } };
@@ -99,5 +101,50 @@ describe("deriveAlpha", () => {
     const pkg = { version: "1.27.0-alpha.1", keshaEngine: { version: "1.24.7" } };
 
     expect(() => deriveAlpha("cli", pkg, SOME_TAGS)).toThrow(/must be a stable version/);
+  });
+});
+
+describe("previousTag", () => {
+  const TAGS = ["v1.24.7", "v1.26.0-cli", "v1.27.0-alpha.1-cli", "v1.24.8-alpha.1", "v1.22.0-beta.1"];
+
+  test("takes the highest alpha of its own channel", () => {
+    expect(previousTag("cli", TAGS)).toBe("v1.27.0-alpha.1-cli");
+    expect(previousTag("engine", TAGS)).toBe("v1.24.8-alpha.1");
+  });
+
+  test("compares by SemVer, not lexically", () => {
+    const tags = ["v1.27.0-alpha.2-cli", "v1.27.0-alpha.10-cli"];
+    expect(previousTag("cli", tags)).toBe("v1.27.0-alpha.10-cli");
+  });
+
+  // Before any alpha exists the notes still need a lower bound, or they would span all history.
+  test("falls back to the channel's highest stable tag", () => {
+    expect(previousTag("cli", ["v1.25.0-cli", "v1.26.0-cli", "v1.24.7"])).toBe("v1.26.0-cli");
+    expect(previousTag("engine", ["v1.24.6", "v1.24.7", "v1.26.0-cli"])).toBe("v1.24.7");
+  });
+
+  test("is undefined when the channel has no tag at all", () => {
+    expect(previousTag("cli", ["v1.24.7"])).toBeUndefined();
+  });
+});
+
+describe("the alpha tag step", () => {
+  const script = readFileSync(`${import.meta.dir}/../../.github/scripts/alpha-tag.sh`, "utf8");
+  const workflow = readFileSync(`${import.meta.dir}/../../.github/workflows/release-alpha.yml`, "utf8");
+
+  test("writes the commits since the previous alpha into the tag message", () => {
+    expect(script).toContain('git log --no-merges');
+    expect(script).toContain('"$PREVIOUS..$SHA"');
+    expect(script).toContain("git tag -a");
+  });
+
+  // An empty range would tag the whole history as if it were one alpha's changes.
+  test("says so rather than logging everything when there is no previous tag", () => {
+    expect(script).toContain('if [ -n "${PREVIOUS:-}" ]; then');
+  });
+
+  test("the workflow passes the derived previous tag through env", () => {
+    expect(workflow).toContain("PREVIOUS: ${{ needs.decide.outputs.previous }}");
+    expect(workflow).toContain("run: .github/scripts/alpha-tag.sh");
   });
 });

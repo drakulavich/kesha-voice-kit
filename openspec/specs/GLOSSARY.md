@@ -10,6 +10,9 @@ verbatim; if you need a new term, add it here first.
 | **Backend** | The compile-time ASR implementation inside the Engine: **CoreML** (Apple Silicon, FluidAudio/ANE) or **ONNX** (Linux/Windows/fallback, `ort`). Exactly one per Engine binary; no runtime fallback. |
 | **Model cache** | `~/.cache/kesha/` (override: `KESHA_CACHE_DIR`) where the Engine binary and all models live. |
 | **Pinned hash** | The SHA-256 recorded for every model file in `rust/src/models.rs`; downloads that don't match are rejected, never cached. |
+| **Channel** | How a published artifact is selected: **stable**, what an install resolves when nothing is named, and **alpha**, reached only by naming it (`@alpha` on npm). npm dist-tags are the mechanism; a `beta` dist-tag also exists for release candidates. |
+| **Alpha** | An unblessed build published on the alpha channel so a change can be run before it is released. Version `<next-version>-alpha.N`, derived from existing tags at publish time and never committed. No stability promise. |
+| **Prerelease** | A GitHub Release marked as not "Latest". Engine alphas are published Prereleases; beta Engine releases stay drafts until validated by hand. |
 | **Pinned Engine version** | `package.json#keshaEngine.version` — the Engine release the CLI downloads when nothing overrides it. The only version any unattended path resolves; nothing resolves a floating "latest". |
 | **Recorded Engine version** | The version written beside the installed Engine binary as `<bin>.version`; what is actually on disk, which a mismatch with the Pinned Engine version causes `kesha install` to replace. |
 | **Capabilities JSON** | The machine-readable self-description printed by `kesha-engine --capabilities-json` (protocol version 3); the CLI validates flags against it instead of blindly forwarding them. |

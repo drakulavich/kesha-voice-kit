@@ -1,0 +1,31 @@
+name: "🧹 Prune alpha releases"
+
+# Alpha Releases age out so the release list stays usable for finding stable ones (#685).
+# Tags are never touched: they are what makes a published version permanently taken.
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.0.2
+        with:
+          bun-version: latest
+
+      - name: Test the selection before trusting it
+        run: bun test tests/unit/prune-alpha-releases.test.ts
+
+      - name: Select and delete aged-out alpha releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/prune-alpha-releases.sh

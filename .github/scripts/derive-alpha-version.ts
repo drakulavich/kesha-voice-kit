@@ -37,6 +37,31 @@ export function nextSequence(channel: Channel, base: string, tags: string[]): nu
 }
 
 /**
+ * The tag the next alpha's notes are counted from: the highest alpha of this channel, or the
+ * channel's highest stable tag before any alpha existed. Undefined only in a repository whose
+ * first alpha is also its first release, where notes have no sensible lower bound.
+ */
+export function previousTag(channel: Channel, tags: string[]): string | undefined {
+  const marker = MARKER[channel];
+  const shapes = [
+    new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+-alpha\\.[0-9]+)${marker}$`),
+    new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+)${marker}$`),
+  ];
+
+  for (const shape of shapes) {
+    let best: { tag: string; version: ReturnType<typeof parseSemver> } | undefined;
+    for (const raw of tags) {
+      const match = shape.exec(raw.trim());
+      if (!match) continue;
+      const version = parseSemver(match[1], "existing tag");
+      if (!best || cmp(version, best.version) > 0) best = { tag: raw.trim(), version };
+    }
+    if (best) return best.tag;
+  }
+  return undefined;
+}
+
+/**
  * `check-versions.ts` requires the CLI version to be >= the engine version, and a prerelease
  * sorts below its own stable version — so a CLI base equal to the engine version would make
  * every alpha of it fail that gate. Refuse here rather than at publish time.
@@ -102,5 +127,7 @@ if (import.meta.main) {
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   const tags = Bun.spawnSync(["git", "tag", "--list"]).stdout.toString().split("\n").filter(Boolean);
   const derived = deriveAlpha(channel, pkg, tags, process.argv[3]);
-  process.stdout.write(`version=${derived.version}\ntag=${derived.tag}\n`);
+  process.stdout.write(
+    `version=${derived.version}\ntag=${derived.tag}\nprevious=${previousTag(channel, tags) ?? ""}\n`,
+  );
 }

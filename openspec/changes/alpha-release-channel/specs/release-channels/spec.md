@@ -253,6 +253,11 @@ usable for finding stable releases. Pruning SHALL NOT remove any stable release,
 NOT free an alpha tag name for reuse — a published version identifier is never reissued for
 different source.
 
+The window is **30 days from publication**. It applies to alpha Releases only; a CLI alpha
+leaves no Release to prune, so in practice this governs Engine alphas. A draft is never
+pruned: it has no publication date to age from, and an alpha that failed to publish is
+still something a person may be reading.
+
 #### Scenario: Old alphas are pruned
 
 - GIVEN alpha Releases older than the retention window exist
@@ -276,9 +281,6 @@ different source.
   These terms are used throughout this spec and should be added to the glossary rather than
   defined ad hoc here. Not resolved in this change's specs because the delta format covers
   requirements, not the glossary.
-- The retention window for alpha Releases is stated as a policy but not given a number.
-  Tolaria's cadence (18 alphas in one day) suggests days rather than releases as the unit,
-  but the right value depends on how far back Maks ever needs to reach.
 - Whether a CLI alpha should be able to name an Engine alpha at all, or whether alpha CLIs
   must always resolve a stable Engine, is unresolved. Allowing it makes the two channels
   interact; forbidding it means an Engine change cannot be exercised through a CLI alpha.
