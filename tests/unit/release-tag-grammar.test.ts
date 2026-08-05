@@ -1,5 +1,14 @@
-import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmdirSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parse } from "yaml";
 import {
   cliPublishTarget,
@@ -51,36 +60,79 @@ describe("engine build trigger", () => {
 
 // Driven through the script because that assertion is the gate build-engine.yml runs (#696).
 describe("release manifest tag check", () => {
-  const pkg = JSON.parse(readFileSync(`${import.meta.dir}/../../package.json`, "utf8"));
+  const REPO = `${import.meta.dir}/../..`;
+  const SCRIPT = `${REPO}/.github/scripts/release-manifest.mjs`;
+  const pkg = JSON.parse(readFileSync(`${REPO}/package.json`, "utf8"));
 
-  async function manifestAccepts(args: string[]): Promise<boolean> {
-    const proc = Bun.spawn(["node", ".github/scripts/release-manifest.mjs", ...args, "--check"], {
-      cwd: `${import.meta.dir}/../..`,
+  // Assert the message, not just a non-zero exit: an unrelated crash must not read as rejection.
+  async function manifestCheck(args: string[], cwd = REPO) {
+    const proc = Bun.spawn(["node", SCRIPT, ...args, "--check"], {
+      cwd,
       stdout: "ignore",
-      stderr: "ignore",
+      stderr: "pipe",
     });
-    return (await proc.exited) === 0;
+    const stderr = await new Response(proc.stderr).text();
+    return { accepted: (await proc.exited) === 0, stderr };
   }
 
-  test("the two version lines have diverged, so the check can tell them apart", () => {
-    expect(pkg.version).not.toBe(pkg.keshaEngine.version);
+  // validateSourceConsistency reads src/, .github/ and packaging/ from cwd, so link the real ones in.
+  const fixtures: string[] = [];
+  const LINKED = ["src", ".github", "packaging"];
+
+  function fixtureRepo(version: string, engineVersion: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-manifest-"));
+    for (const entry of LINKED) symlinkSync(`${REPO}/${entry}`, join(dir, entry));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ version, keshaEngine: { version: engineVersion } }),
+    );
+    fixtures.push(dir);
+    return dir;
+  }
+
+  afterAll(() => {
+    // Unlink by name rather than rm -r: never let cleanup walk into the linked repo dirs.
+    for (const dir of fixtures) {
+      for (const entry of [...LINKED, "package.json"]) unlinkSync(join(dir, entry));
+      rmdirSync(dir);
+    }
   });
 
   test("a stable tag naming the engine version is accepted", async () => {
-    expect(await manifestAccepts([`--tag`, `v${pkg.keshaEngine.version}`])).toBe(true);
+    expect((await manifestCheck(["--tag", `v${pkg.keshaEngine.version}`])).accepted).toBe(true);
   });
 
   test("a tag naming the CLI version is rejected — the engine never releases under it", async () => {
-    expect(await manifestAccepts([`--tag`, `v${pkg.version}`])).toBe(false);
+    const cwd = fixtureRepo("9.9.9", "1.24.8");
+    const { accepted, stderr } = await manifestCheck(["--tag", "v9.9.9"], cwd);
+
+    expect(accepted).toBe(false);
+    expect(stderr).toContain("must match package.json#keshaEngine.version (1.24.8)");
+  });
+
+  // Lockstep is legal (check-versions.ts rule 2 is `cli >= engine`), so divergence is not an invariant.
+  test("a release where both lines carry the same version still validates", async () => {
+    const cwd = fixtureRepo("1.24.8", "1.24.8");
+    expect((await manifestCheck(["--tag", "v1.24.8"], cwd)).accepted).toBe(true);
+  });
+
+  test("an engine alpha is accepted when the version line carries the suffix too", async () => {
+    const cwd = fixtureRepo("1.27.0", "1.24.8-alpha.1");
+    expect((await manifestCheck(["--tag", "v1.24.8-alpha.1"], cwd)).accepted).toBe(true);
+  });
+
+  test("the base version of an alpha is not an alias for it, in either direction", async () => {
+    const alpha = fixtureRepo("1.27.0", "1.24.8-alpha.1");
+    expect((await manifestCheck(["--tag", "v1.24.8"], alpha)).accepted).toBe(false);
+
+    // Stripping -alpha.N before compare would publish an alpha tag as the stable release.
+    const stable = fixtureRepo("1.27.0", "1.24.8");
+    expect((await manifestCheck(["--tag", "v1.24.8-alpha.1"], stable)).accepted).toBe(false);
   });
 
   // Reverting the default *and* the assertion makes `v<cliVersion>` exit 0 again (grok).
   test("with no tag it defaults to the engine version rather than the CLI's", async () => {
-    const proc = Bun.spawn(["node", ".github/scripts/release-manifest.mjs"], {
-      cwd: `${import.meta.dir}/../..`,
-      stdout: "pipe",
-      stderr: "ignore",
-    });
+    const proc = Bun.spawn(["node", SCRIPT], { cwd: REPO, stdout: "pipe", stderr: "ignore" });
     const manifest = JSON.parse(await new Response(proc.stdout).text());
 
     expect(await proc.exited).toBe(0);
