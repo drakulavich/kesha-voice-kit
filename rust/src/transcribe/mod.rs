@@ -1226,7 +1226,7 @@ mod tests {
             missing_diarize_model.to_str().unwrap(),
         );
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/fixtures/hello-english.wav")
+            .join("../tests/fixtures/tone-3s.wav")
             .to_string_lossy()
             .into_owned();
         let opts = TranscribeOptionsBuilder::new()
