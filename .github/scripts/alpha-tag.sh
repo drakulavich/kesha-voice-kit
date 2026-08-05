@@ -11,8 +11,8 @@ if [ -z "${PREVIOUS:-}" ]; then
 elif git merge-base --is-ancestor "$PREVIOUS" "$SHA"; then
   base="$PREVIOUS"
 else
-  # A baseline off this history would date the range wrongly; the nearest reachable tag cannot.
-  base=$(git describe --tags --abbrev=0 "$SHA" 2>/dev/null || true)
+  # Release shapes only: tags like `audio-244` exist here and would name a meaningless baseline.
+  base=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$SHA" 2>/dev/null || true)
 fi
 
 # Resolved before the tag exists: a git log failing mid-pipe leaves a tag with half a message.

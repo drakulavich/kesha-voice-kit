@@ -164,7 +164,7 @@ describe("the alpha tag step", () => {
   // A range from a tag off this history reads as a changelog while being nothing of the kind.
   test("falls back to a reachable tag rather than dating the range wrongly", () => {
     expect(script).toContain('git merge-base --is-ancestor "$PREVIOUS" "$SHA"');
-    expect(script).toContain('git describe --tags --abbrev=0 "$SHA"');
+    expect(script).toContain("git describe --tags --abbrev=0 --match 'v[0-9]*'");
   });
 
   test("the workflow passes the derived previous tag through env", () => {
