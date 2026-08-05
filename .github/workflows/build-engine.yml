@@ -121,10 +121,6 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
       # Points the CLI at the staged artifact for the pre-upload smoke, as release-branch-engine-smoke does (#671).
       KESHA_ENGINE_BIN: ${{ github.workspace }}/${{ matrix.binary }}
-      # Job-wide since `kesha install` warms Kokoro too; cpu-only because the runner virtualises Metal as well as the ANE (#678).
-      KESHA_KOKORO_COMPUTE_UNITS: ${{ matrix.os == 'macos-14' && 'cpu-only' || '' }}
-      # Routes FluidAudio's stdout-only CoreML diagnostics to stderr, so a darwin failure is readable in the log (#678).
-      KESHA_DEBUG: ${{ matrix.os == 'macos-14' && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
@@ -287,16 +283,19 @@ jobs:
           fi
 
       # The smoke above proves the artifact starts and advertises `tts`, not that it synthesises (#671, #636).
-      # macOS covers Kokoro only, and only off the ANE the runner lacks (#678); AVSpeech still times out there.
+      # darwin synthesises in `darwin-synthesis-smoke` instead — macos-14's CoreML cannot run the vocoder (#678).
       - name: 🍞 Setup Bun workspace
+        if: matrix.os != 'macos-14'
         uses: ./.github/actions/setup-bun
 
       - name: 🔗 Link the CLI
+        if: matrix.os != 'macos-14'
         shell: bash
         run: bun link
 
       # Load-bearing: on a version mismatch `downloadEngine` fetches the published engine, whose tag does not exist yet.
       - name: 🧾 Mark staged engine version
+        if: matrix.os != 'macos-14'
         shell: bash
         run: |
           bun -e '
@@ -304,13 +303,12 @@ jobs:
             await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
           '
 
-      # FluidAudio owns `~/.cache/fluidaudio` — the staged ANE voice packs and the bundle it self-fetches.
       - name: 🔊 Install English TTS models
+        if: matrix.os != 'macos-14'
         uses: ./.github/actions/install-kesha-backend
         with:
           cache-path: |
             ~/.cache/kesha
-            ~/.cache/fluidaudio
           cache-key: ${{ runner.os }}-kesha-models-tts-v1
           cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
           ffmpeg-provider: skip
@@ -318,6 +316,7 @@ jobs:
           cache-write: "false"
 
       - name: 🗣️ Pre-upload synthesis smoke
+        if: matrix.os != 'macos-14'
         shell: bash
         run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
 
@@ -346,8 +345,69 @@ jobs:
           name: kesha-textlang-darwin-arm64
           path: kesha-textlang-darwin-arm64
 
-  release:
+  # darwin cannot synthesise inside the build job: macos-14 is required for the build
+  # (COREML BUILD TRIPLE) and its CoreML cannot run the Kokoro vocoder at all (#678).
+  # So the artifact built there is exercised here instead, on a newer image.
+  darwin-synthesis-smoke:
+    name: Darwin synthesis smoke
     needs: build
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      KESHA_ENGINE_BIN: ${{ github.workspace }}/kesha-engine-darwin-arm64
+      # FluidAudio reports CoreML failures on stdout, which the bridge guard discards; this routes them to stderr (#678).
+      KESHA_DEBUG: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: kesha-engine-darwin-arm64
+
+      # Sibling-next-to-engine, the lookup order `tts::avspeech::helper_path` uses.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: say-avspeech-darwin-arm64
+
+      - name: Restore the executable bits upload-artifact drops
+        shell: bash
+        run: chmod +x kesha-engine-darwin-arm64 say-avspeech-darwin-arm64
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 🔗 Link the CLI
+        shell: bash
+        run: bun link
+
+      # Load-bearing: on a version mismatch `downloadEngine` fetches the published engine, whose tag does not exist yet.
+      - name: 🧾 Mark staged engine version
+        shell: bash
+        run: |
+          bun -e '
+            const pkg = await Bun.file("package.json").json();
+            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
+          '
+
+      # FluidAudio owns `~/.cache/fluidaudio` — the ANE voice packs install stages, plus the bundle it self-fetches.
+      - name: 🔊 Install English TTS models
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          cache-path: |
+            ~/.cache/kesha
+            ~/.cache/fluidaudio
+          cache-key: ${{ runner.os }}-kesha-models-tts-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          ffmpeg-provider: skip
+          install-args: --tts en
+          cache-write: "false"
+
+      - name: 🗣️ Synthesis smoke
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
+
+  release:
+    needs: [build, darwin-synthesis-smoke]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
