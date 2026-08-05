@@ -75,7 +75,8 @@ _kesha() {
         '--plan[Show download, disk, and warm-up plan without changing local state]' \
         '--tts[Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan))]' \
         '--vad[Also install Silero VAD (~2.3MB) for long-audio preprocessing]' \
-        '--diarize[Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)]'
+        '--diarize[Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)]' \
+        '--engine-version=[Install this exact engine release instead of the pinned one (expert; the next install returns to the pin)]:engine version:'
       ;;
     logs)
       _arguments '--help[Show help]' \

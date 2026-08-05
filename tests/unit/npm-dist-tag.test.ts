@@ -25,8 +25,15 @@ describe("npmDistTag", () => {
   });
 
   test("rejects a prerelease identifier that is not a usable channel name", () => {
-    for (const version of ["1.27.0-1", "1.27.0-.1", "1.27.0-Alpha.1", "1.27.0-"]) {
+    for (const version of ["1.27.0-1", "1.27.0-Alpha.1"]) {
       expect(() => npmDistTag(version)).toThrow(/not a usable channel name/);
+    }
+  });
+
+  // The string-slicing resolver read `not-a-version` as the channel `a-version`.
+  test("rejects a string that is not a version rather than reading a channel out of it", () => {
+    for (const version of ["1.27.0-.1", "1.27.0-", "not-a-version", "1.27"]) {
+      expect(() => npmDistTag(version)).toThrow(/not a valid SemVer 2\.0 version/);
     }
   });
 

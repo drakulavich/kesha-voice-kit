@@ -1,18 +1,22 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { downloadEngine } from "../engine-install";
+import { installEngine } from "../engine-install";
 import { engineTarget } from "../engine-targets";
 import { getEngineBinPath, getEngineCapabilities } from "../engine";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
+import { isSemver } from "../semver.mjs";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
 import type { SharedInstallArgs } from "./types";
 
 export interface InstallCommandArgs extends SharedInstallArgs {
   /** Positional args after `install` — candidate TTS language codes. */
   _?: string[];
+  /** `init` deliberately has no such flag: an override is an expert action, not a guided one. */
+  "engine-version"?: string;
+  engineVersion?: string;
 }
 
 /**
@@ -55,6 +59,23 @@ export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefi
     }
   }
   return langs;
+}
+
+/**
+ * Validates `--engine-version` before any network call. Returns undefined when the flag is
+ * absent, so the Pinned Engine version stays the default; throws on anything the version
+ * drift gate would not accept either — one SemVer 2.0 definition across the repo.
+ */
+export function resolveEngineVersionFlag(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null || raw === false) return undefined;
+  const value = String(raw).trim();
+  if (isSemver(value)) return value;
+  const hint = /^v\d/.test(value)
+    ? ' Drop the leading "v" — that belongs to the release tag, not the version.'
+    : "";
+  throw new Error(
+    `--engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "${value}".${hint}`,
+  );
 }
 
 export function resolveNoCacheFlag(
@@ -131,14 +152,20 @@ export function unavailableBackendError(backend: string | undefined): string | n
   );
 }
 
-export async function performInstall(
-  noCache: boolean,
-  backend: string | undefined,
-  ttsLangs: string[],
-  vad = false,
-  diarize = false,
-  plan = false,
-) {
+export interface PerformInstallOptions {
+  noCache: boolean;
+  backend?: string;
+  ttsLangs: string[];
+  vad?: boolean;
+  diarize?: boolean;
+  plan?: boolean;
+  /** Engine release to install instead of the pin, for this invocation only. */
+  engineVersion?: string;
+}
+
+export async function performInstall(options: PerformInstallOptions) {
+  const { noCache, backend, ttsLangs, vad = false, diarize = false, plan = false, engineVersion } =
+    options;
   // A plan for an unavailable backend previews what its own printed command rejects (#684).
   const backendError = unavailableBackendError(backend);
   if (plan) {
@@ -147,7 +174,9 @@ export async function performInstall(
       process.exitCode = 2;
       return;
     }
-    log.info(await renderInstallPlan({ noCache, backend, ttsLangs, vad, diarize }));
+    log.info(
+      await renderInstallPlan({ noCache, backend, ttsLangs, vad, diarize, engineVersion }),
+    );
     return;
   }
 
@@ -163,6 +192,7 @@ export async function performInstall(
       tts: ttsLangs.length > 0,
       vad,
       diarize,
+      engineVersionOverride: engineVersion !== undefined,
     });
 
     if (diarize && !(process.platform === "darwin" && process.arch === "arm64")) {
@@ -176,7 +206,7 @@ export async function performInstall(
       errorKind = "validation_failed";
       throw new Error(backendError);
     }
-    await downloadEngine(noCache, backend, { ttsLangs, vad, diarize });
+    await installEngine({ noCache, backend, ttsLangs, vad, diarize, version: engineVersion });
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);
     finishInstallDiagnostic(diagnosticLog, startedAt, "success");
   } catch (err: unknown) {
@@ -228,8 +258,20 @@ export const installCommand = defineCommand({
       description: "Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)",
       default: false,
     },
+    "engine-version": {
+      type: "string",
+      description:
+        "Install this exact engine release instead of the pinned one (expert; the next install returns to the pin)",
+    },
   },
   async run({ args, rawArgs }: { args: InstallCommandArgs; rawArgs: string[] }) {
+    let engineVersion: string | undefined;
+    try {
+      engineVersion = resolveEngineVersionFlag(args["engine-version"] ?? args.engineVersion);
+    } catch (err) {
+      log.error(errorMessage(err));
+      process.exit(2);
+    }
     const backend = resolveBackendFlag(args.coreml, args.onnx);
     const positionals = (args._ ?? []).map(String);
     const caps = await getEngineCapabilities();
@@ -241,13 +283,14 @@ export const installCommand = defineCommand({
       log.error(errorMessage(err));
       process.exit(1);
     }
-    await performInstall(
-      resolveNoCacheFlag(args, rawArgs),
+    await performInstall({
+      noCache: resolveNoCacheFlag(args, rawArgs),
       backend,
       ttsLangs,
-      args.vad,
-      args.diarize,
-      args.plan,
-    );
+      vad: args.vad,
+      diarize: args.diarize,
+      plan: args.plan,
+      engineVersion,
+    });
   },
 });

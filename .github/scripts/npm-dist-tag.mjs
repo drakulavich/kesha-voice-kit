@@ -11,6 +11,7 @@
  */
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { parseSemver } from "../../src/semver.mjs";
 
 const CHANNEL_RE = /^[a-z][a-z0-9-]*$/;
 
@@ -18,9 +19,10 @@ export function npmDistTag(version) {
   if (typeof version !== "string" || version === "") {
     throw new Error("npm dist-tag needs a version string");
   }
-  if (!version.includes("-")) return "latest";
+  const { prerelease } = parseSemver(version, "npm dist-tag");
+  if (prerelease.length === 0) return "latest";
 
-  const channel = version.slice(version.indexOf("-") + 1).split(".")[0];
+  const channel = prerelease[0];
   if (!CHANNEL_RE.test(channel)) {
     throw new Error(
       `cannot resolve an npm dist-tag from prerelease version ${version}: ` +

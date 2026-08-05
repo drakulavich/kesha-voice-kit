@@ -19,7 +19,9 @@ The CLI **spawns the engine as a subprocess** — it is never linked in-process.
 TypeScript runs directly under Bun (no build step); the engine is a precompiled
 binary downloaded from GitHub Releases during `kesha install`. The two are
 [versioned independently](../CLAUDE.md) (`package.json#version` vs
-`package.json#keshaEngine.version`).
+`package.json#keshaEngine.version`). The engine pin is what every unattended
+path resolves; `kesha install --engine-version <version>` installs one named
+release instead, for that invocation only ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## Runtime data flow
 

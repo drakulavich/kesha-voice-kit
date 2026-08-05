@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "fs";
+import { tryParseSemver } from "./semver.mjs";
 
 /**
  * Version-bump gate for the "star the repo" prompt in `kesha install`.
@@ -26,12 +27,8 @@ export function writeStarSeen(binPath: string, version: string): void {
 }
 
 function parseMajorMinor(v: string): [number, number] | null {
-  const parts = v.split(".");
-  if (parts.length < 2) return null;
-  const major = Number(parts[0]);
-  const minor = Number(parts[1]);
-  if (!Number.isFinite(major) || !Number.isFinite(minor)) return null;
-  return [major, minor];
+  const parsed = tryParseSemver(v);
+  return parsed && [parsed.major, parsed.minor];
 }
 
 /**

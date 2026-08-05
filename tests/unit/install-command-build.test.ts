@@ -34,6 +34,13 @@ describe("buildInstallCommand", () => {
     expect(buildInstallCommand({ backend: "onnx" }, [])).toBe("kesha install --onnx");
   });
 
+  // #738: reproducing a different version than the plan previewed is worse than no Run: line.
+  test("an engine override leads the reproduced command", () => {
+    expect(
+      buildInstallCommand({ engineVersion: "1.24.8-alpha.1", noCache: true }, ["en"]),
+    ).toBe("kesha install --engine-version 1.24.8-alpha.1 --no-cache --tts en");
+  });
+
   test("languages are only emitted with --tts", () => {
     expect(buildInstallCommand({}, ["es"])).toBe("kesha install --tts es");
     expect(buildInstallCommand({ vad: true }, [])).toBe("kesha install --vad");

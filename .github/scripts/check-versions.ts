@@ -13,7 +13,7 @@
  * build matrix.
  */
 import { readFileSync } from "node:fs";
-import { cmp, fmt, parseSemver, type SemVer } from "./semver";
+import { cmp, fmt, parseSemver, type SemVer } from "../../src/semver.mjs";
 
 function parseOrExit(raw: string, label: string): SemVer {
   try {
@@ -72,10 +72,9 @@ if (engine.prerelease.some((id) => id.toLowerCase().startsWith("alpha"))) {
       `alpha. This pin is the only thing that decides which engine every lane downloads ` +
       `(src/engine-install.ts, check-engine-targets.ts) — nothing resolves "latest" — so ` +
       `committing an alpha points unrelated pull requests at a throwaway build, and ships ` +
-      `it in the next release. To try one, put the binary somewhere and point ` +
-      `KESHA_ENGINE_BIN at it; do not run \`kesha install\` against that path unless you ` +
-      `also write a matching \`\${bin}.version\`, because a mismatch re-downloads the ` +
-      `pinned engine over it. A '-beta.N' pin is a release candidate and stays allowed.`,
+      `it in the next release. To try one, run \`kesha install --engine-version ${fmt(engine)}\`: ` +
+      `it installs that release for that invocation only and leaves this pin alone (#738). ` +
+      `A '-beta.N' pin is a release candidate and stays allowed.`,
   );
   failed = true;
 }

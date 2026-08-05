@@ -1010,4 +1010,42 @@ describe("CLI contracts", () => {
     });
     // ~20 sequential spawns; 30s needed alongside model-download e2e tests.
   }, 30000);
+
+  test("--plan previews the overridden engine version and downloads nothing (#738)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-engine-version-");
+    const enginePath = createFailingEngine(dir);
+    const env: Record<string, string> = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+
+    const [plan, invalid, initPlan] = await Promise.all([
+      runCli(["install", "--plan", "--engine-version", "9.9.9-alpha.1", "--tts"], { env }),
+      runCli(["install", "--plan", "--engine-version", "latest"], { env }),
+      runCli(["init", "--plan"], { env }),
+    ]);
+
+    expectContract(plan, {
+      exitCode: 0,
+      stdoutContains: [
+        "Engine release: v9.9.9-alpha.1 (overrides the pinned",
+        "GitHub release v9.9.9-alpha.1",
+        "Run: kesha install --engine-version 9.9.9-alpha.1 --tts en",
+      ],
+      stdoutNotContains: [`GitHub release v${engineVersion}`],
+      stderrNotContains: ["fake engine should not have been invoked"],
+    });
+
+    expectContract(invalid, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["--engine-version needs an exact SemVer 2.0 version"],
+    });
+
+    // `init` is the guided path; an override is an expert action and stays off it (#738).
+    expectContract(initPlan, {
+      exitCode: 0,
+      stdoutContains: [`Engine release: v${engineVersion}`],
+      stdoutNotContains: ["--engine-version"],
+    });
+
+    expect(existsSync(join(dir, "cache", "engine"))).toBe(false);
+  }, 30000);
 });

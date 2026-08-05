@@ -5,10 +5,12 @@ import { tmpdir } from "os";
 import { gunzipSync } from "node:zlib";
 import {
   collectDoctorReport,
+  engineVersionState,
   formatDoctorReport,
   redactDiagnosticValue,
 } from "../../src/doctor";
 import { createSupportBundle } from "../../src/support-bundle";
+import { engineVersion } from "../../src/package-info";
 
 const fakeCapabilities = {
   protocolVersion: 2,
@@ -422,6 +424,87 @@ describe("createSupportBundle", () => {
       expect(archive).toContain('"event":"command.start"');
       expect(archive).toContain('"event":"command.finish"');
       expect(archive).not.toContain(process.env.KESHA_LOG_DIR);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("engine version drift (#738)", () => {
+  const savedEnv = {
+    HOME: process.env.HOME,
+    KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
+    KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
+  };
+
+  function restoreEnv() {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  function stageEngine(prefix: string, marker: string | null): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    process.env.HOME = dir;
+    process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+    const binPath = join(dir, "engine", "bin", "kesha-engine");
+    mkdirSync(join(dir, "engine", "bin"), { recursive: true });
+    process.env.KESHA_ENGINE_BIN = binPath;
+    writeFakeEngine(binPath, "#!/bin/sh\nexit 1\n");
+    if (marker !== null) writeFileSync(`${binPath}.version`, `${marker}\n`);
+    return dir;
+  }
+
+  test("classifies the marker against the pin without conflating a missing one", () => {
+    expect(engineVersionState("1.24.7", "1.24.7")).toBe("matches-pin");
+    expect(engineVersionState("1.24.8-alpha.1", "1.24.7")).toBe("differs-from-pin");
+    expect(engineVersionState(null, "1.24.7")).toBe("unrecorded");
+  });
+
+  posixEngineTest("names both versions when an override is installed", async () => {
+    const dir = stageEngine("kesha-doctor-drift-", "9.9.9-alpha.1");
+    try {
+      const report = await collectDoctorReport();
+      expect(report.engine.versionState).toBe("differs-from-pin");
+      expect(report.engine.versionMarker).toBe("9.9.9-alpha.1");
+      expect(report.engine.pinnedVersion).toBe(engineVersion);
+
+      const output = formatDoctorReport(report);
+      expect(output).toContain("9.9.9-alpha.1");
+      expect(output).toContain(`Pinned version: ${engineVersion}`);
+      expect(output).toContain("differs from the pinned");
+      expect(output).not.toContain("Binary: " + report.engine.path + " (missing)");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("stays quiet when the installed engine matches the pin", async () => {
+    const dir = stageEngine("kesha-doctor-nodrift-", engineVersion);
+    try {
+      const report = await collectDoctorReport();
+      expect(report.engine.versionState).toBe("matches-pin");
+      expect(formatDoctorReport(report)).toContain("Version state: matches the pin");
+      expect(formatDoctorReport(report)).not.toContain("differs from the pinned");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("reports a missing marker as its own state, not as drift", async () => {
+    const dir = stageEngine("kesha-doctor-nomarker-", null);
+    try {
+      const report = await collectDoctorReport();
+      expect(report.engine.versionState).toBe("unrecorded");
+
+      const output = formatDoctorReport(report);
+      expect(output).toContain("Version marker: missing");
+      expect(output).toContain("no recorded version beside the binary");
+      expect(output).not.toContain("differs from the pinned");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
