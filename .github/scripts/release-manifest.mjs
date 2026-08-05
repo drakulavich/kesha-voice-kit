@@ -5,7 +5,6 @@ import { linuxPackageNames } from "./linux-package-names.mjs";
 import {
   ENGINE_TAG_ERE,
   ENGINE_TAG_RE,
-  expectedTagVersion,
   isStableTag,
 } from "./release-tags.mjs";
 
@@ -119,9 +118,11 @@ function buildManifest(tag) {
   }
 
   const sbomName = `kesha-voice-kit-${tag}.spdx.json`;
-  const expected = expectedTagVersion(tag, { cliVersion: pkg.version, engineVersion });
-  if (tag.slice(1) !== expected.version) {
-    throw new Error(`release tag ${tag} must match ${expected.field} (${expected.version})`);
+  // Every tag here is an engine tag, stable included; the CLI version names packages (#696).
+  if (tag.slice(1) !== engineVersion) {
+    throw new Error(
+      `release tag ${tag} must match package.json#keshaEngine.version (${engineVersion})`,
+    );
   }
 
   const assets = [
@@ -217,7 +218,7 @@ function validateSourceConsistency(manifest) {
 }
 
 const pkg = readPackage();
-const defaultTag = `v${pkg.version}`;
+const defaultTag = `v${pkg.keshaEngine?.version ?? pkg.version}`;
 const tag = getArg("--tag") ?? defaultTag;
 if (!ENGINE_TAG_RE.test(tag)) {
   throw new Error(

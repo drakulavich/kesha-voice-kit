@@ -18,18 +18,6 @@ export function isStableTag(tag) {
   return STABLE_TAG_RE.test(tag);
 }
 
-/**
- * Which version field an engine tag must equal, and what to call it in an error.
- *
- * Stable tags also name the Linux packages, whose filenames come from the CLI version;
- * a prerelease builds none, so it answers to the engine version the manifest describes.
- */
-export function expectedTagVersion(tag, { cliVersion, engineVersion }) {
-  return isStableTag(tag)
-    ? { field: "package.json#version", version: cliVersion }
-    : { field: "package.json#keshaEngine.version", version: engineVersion };
-}
-
 const CLI_MARKER = "-cli";
 
 /**

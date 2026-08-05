@@ -5,7 +5,6 @@ import {
   cliPublishTarget,
   ENGINE_TAG_ERE,
   ENGINE_TAG_RE,
-  expectedTagVersion,
 } from "../../.github/scripts/release-tags.mjs";
 
 const WORKFLOW = ".github/workflows/build-engine.yml";
@@ -50,29 +49,42 @@ describe("engine build trigger", () => {
   });
 });
 
-describe("expectedTagVersion", () => {
-  const pkg = { cliVersion: "1.27.0", engineVersion: "1.24.7" };
+// Driven through the script because that assertion is the gate build-engine.yml runs (#696).
+describe("release manifest tag check", () => {
+  const pkg = JSON.parse(readFileSync(`${import.meta.dir}/../../package.json`, "utf8"));
 
-  test("a stable tag answers to the CLI version, which names the Linux packages", () => {
-    expect(expectedTagVersion("v1.27.0", pkg)).toEqual({
-      field: "package.json#version",
-      version: "1.27.0",
+  async function manifestAccepts(args: string[]): Promise<boolean> {
+    const proc = Bun.spawn(["node", ".github/scripts/release-manifest.mjs", ...args, "--check"], {
+      cwd: `${import.meta.dir}/../..`,
+      stdout: "ignore",
+      stderr: "ignore",
     });
+    return (await proc.exited) === 0;
+  }
+
+  test("the two version lines have diverged, so the check can tell them apart", () => {
+    expect(pkg.version).not.toBe(pkg.keshaEngine.version);
   });
 
-  test("a prerelease answers to the engine version the manifest describes", () => {
-    for (const tag of ["v1.24.7-alpha.1", "v1.24.7-beta.1"]) {
-      expect(expectedTagVersion(tag, pkg)).toEqual({
-        field: "package.json#keshaEngine.version",
-        version: "1.24.7",
-      });
-    }
+  test("a stable tag naming the engine version is accepted", async () => {
+    expect(await manifestAccepts([`--tag`, `v${pkg.keshaEngine.version}`])).toBe(true);
   });
 
-  test("an engine alpha whose version line carries the suffix matches", () => {
-    const alpha = { cliVersion: "1.27.0", engineVersion: "1.24.8-alpha.1" };
+  test("a tag naming the CLI version is rejected — the engine never releases under it", async () => {
+    expect(await manifestAccepts([`--tag`, `v${pkg.version}`])).toBe(false);
+  });
 
-    expect(expectedTagVersion("v1.24.8-alpha.1", alpha).version).toBe("1.24.8-alpha.1");
+  // Reverting the default *and* the assertion makes `v<cliVersion>` exit 0 again (grok).
+  test("with no tag it defaults to the engine version rather than the CLI's", async () => {
+    const proc = Bun.spawn(["node", ".github/scripts/release-manifest.mjs"], {
+      cwd: `${import.meta.dir}/../..`,
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const manifest = JSON.parse(await new Response(proc.stdout).text());
+
+    expect(await proc.exited).toBe(0);
+    expect(manifest.tag).toBe(`v${pkg.keshaEngine.version}`);
   });
 });
 
