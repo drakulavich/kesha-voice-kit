@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { withCargoVersion } from "../../.github/scripts/set-cargo-version.mjs";
 
-const MANIFEST = readFileSync(`${import.meta.dir}/../../rust/Cargo.toml`, "utf8");
+// Normalised, not inherited: a Windows checkout carries CRLF and would double it below.
+const MANIFEST = readFileSync(`${import.meta.dir}/../../rust/Cargo.toml`, "utf8").replace(
+  /\r\n/g,
+  "\n",
+);
+const CRLF_MANIFEST = MANIFEST.replace(/\n/g, "\r\n");
 
 describe("withCargoVersion", () => {
   test("replaces the [package] version", () => {
@@ -17,24 +22,22 @@ describe("withCargoVersion", () => {
     expect(after.slice(after.indexOf("\n[dependencies]"))).toBe(before);
   });
 
-  // Split on both endings: a Windows checkout carries CRLF, which the rewrite preserves.
-  const lines = (source: string) => source.split(/\r?\n/);
-
   test("rewrites exactly one line", () => {
-    const original = lines(MANIFEST);
-    const changed = lines(withCargoVersion(MANIFEST, "1.24.8-alpha.1")).filter(
-      (line: string, i: number) => line !== original[i],
-    );
+    const original = MANIFEST.split("\n");
+    const changed = withCargoVersion(MANIFEST, "1.24.8-alpha.1")
+      .split("\n")
+      .filter((line: string, i: number) => line !== original[i]);
 
     expect(changed).toEqual(['version = "1.24.8-alpha.1"']);
   });
 
+  // The runner rewrites whatever git checked out, and on Windows that is CRLF.
   test("a CRLF manifest keeps its line endings", () => {
-    const crlf = MANIFEST.replace(/\n/g, "\r\n");
-    const out = withCargoVersion(crlf, "1.24.8-alpha.1");
+    const out = withCargoVersion(CRLF_MANIFEST, "1.24.8-alpha.1");
 
     expect(out).toContain('version = "1.24.8-alpha.1"\r\n');
     expect(out.match(/(?<!\r)\n/)).toBeNull();
+    expect(out.replace(/\r\n/g, "\n")).toBe(withCargoVersion(MANIFEST, "1.24.8-alpha.1"));
   });
 
   test("refuses a version that is not SemVer", () => {
