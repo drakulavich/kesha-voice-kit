@@ -101,15 +101,19 @@ jobs:
           git tag "$TAG" "$SHA"
           git push origin "$TAG"
 
+  # No OIDC here: npm-publish.yml owns the only entry name npm's publisher trusts (#731).
   publish:
-    name: Publish to npm
+    name: Publish through npm-publish.yml
     needs: [decide, reserve-tag]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
-    uses: ./.github/workflows/release-npm-publish.yml
-    with:
-      ref: ${{ github.sha }}
-      version: ${{ needs.decide.outputs.version }}
-      dist-tag: ${{ needs.decide.outputs.dist_tag }}
-      inject-version: true
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dispatch the publish and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.decide.outputs.tag }}
+        run: .github/scripts/dispatch-npm-publish.sh

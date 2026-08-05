@@ -90,13 +90,18 @@ describe("release manifest tag check", () => {
 
 describe("cliPublishTarget", () => {
   test("a CLI marker tag publishes the version the tag names", () => {
-    expect(cliPublishTarget("v1.26.0-cli")).toEqual({ version: "1.26.0", engineOnly: false });
+    expect(cliPublishTarget("v1.26.0-cli")).toEqual({
+      version: "1.26.0",
+      engineOnly: false,
+      derived: false,
+    });
   });
 
   test("a CLI alpha keeps its prerelease identifier", () => {
     expect(cliPublishTarget("v1.27.0-alpha.1-cli")).toEqual({
       version: "1.27.0-alpha.1",
       engineOnly: false,
+      derived: true,
     });
   });
 
@@ -107,6 +112,32 @@ describe("cliPublishTarget", () => {
   });
 
   test("a stable tag still publishes the CLI, as it does today", () => {
-    expect(cliPublishTarget("v1.24.8")).toEqual({ version: "1.24.8", engineOnly: false });
+    expect(cliPublishTarget("v1.24.8")).toEqual({
+      version: "1.24.8",
+      engineOnly: false,
+      derived: false,
+    });
+  });
+});
+
+// npm's trusted publisher is keyed to one entry workflow name, so an alpha that publishes
+// from its own workflow gets an opaque 404 from the registry (#731).
+describe("alpha publish entry", () => {
+  const read = (p: string) => readFileSync(`${import.meta.dir}/../../${p}`, "utf8");
+  const alpha = read(".github/workflows/release-alpha.yml");
+
+  test("the alpha workflow holds no OIDC credential", () => {
+    expect(alpha).not.toContain("id-token");
+  });
+
+  test("it publishes by dispatching npm-publish.yml", () => {
+    expect(read(".github/scripts/dispatch-npm-publish.sh")).toContain("WORKFLOW=npm-publish.yml");
+    expect(parse(alpha).jobs.publish.steps.at(-1).run).toContain("dispatch-npm-publish.sh");
+  });
+
+  test("npm-publish injects the version for tags no commit carries", () => {
+    const publish = parse(read(".github/workflows/npm-publish.yml")).jobs.publish;
+
+    expect(publish.with["inject-version"]).toContain("derived");
   });
 });
