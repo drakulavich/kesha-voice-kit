@@ -6,6 +6,7 @@ import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
   parseLangResult,
   getEngineBinPath,
+  preflightTranscribeEngineItn,
   preflightTranscribeEngineWithSegments,
   recordEngine,
   spawnStdioWithDebugFd,
@@ -35,6 +36,29 @@ exit 2
 }
 
 const fakeEngineTest = process.platform === "win32" ? test.skip : test;
+
+/** Echoes the `transcribe` argv it was handed as the transcript, so a test can assert which flags were forwarded. */
+function argEchoEngine(features: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-engine-argecho-"));
+  const path = join(dir, "kesha-engine");
+  writeFileSync(
+    path,
+    `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${JSON.stringify({ protocolVersion: 3, backend: "fake", features })}'
+  exit 0
+fi
+if [ "$1" = "transcribe" ]; then
+  shift
+  printf '%s\\n' "$*"
+  exit 0
+fi
+exit 2
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
 
 function fakeLongRunningEngine(dir: string, helperPidFile: string): string {
   const path = join(dir, "kesha-engine-long-running");
@@ -133,6 +157,42 @@ describe("engine", () => {
 
   test("parseLangResult returns null for missing code field", () => {
     expect(parseLangResult('{"confidence":0.94}')).toBeNull();
+  });
+
+  fakeEngineTest("itn preflight rejects when the engine does not advertise transcribe.itn (#710)", async () => {
+    await withEngineEnv(fakeEngine(["transcribe.segments"]), async () => {
+      await expect(preflightTranscribeEngineItn({ itn: true })).rejects.toThrow(
+        "--itn requires a newer kesha-engine",
+      );
+    });
+  });
+
+  fakeEngineTest("itn preflight is a no-op when itn was not requested", async () => {
+    await withEngineEnv(fakeEngine([]), async () => {
+      await expect(preflightTranscribeEngineItn({})).resolves.toBeUndefined();
+    });
+  });
+
+  fakeEngineTest("itn preflight passes when the engine advertises the capability", async () => {
+    await withEngineEnv(fakeEngine(["transcribe.itn"]), async () => {
+      await expect(preflightTranscribeEngineItn({ itn: true })).resolves.toBeUndefined();
+    });
+  });
+
+  fakeEngineTest("--itn forwards to the engine on the plain-text path", async () => {
+    await withEngineEnv(argEchoEngine(["transcribe.itn"]), async () => {
+      expect(await transcribeEngine("audio.wav", { itn: true })).toBe("audio.wav --itn");
+      expect(await transcribeEngine("audio.wav", {})).toBe("audio.wav");
+    });
+  });
+
+  fakeEngineTest("--itn forwards to the engine on the --json path", async () => {
+    await withEngineEnv(argEchoEngine(["transcribe.segments", "transcribe.itn"]), async () => {
+      // The arg-echo engine returns argv, not JSON, so the parse failure carries the argv we want to assert on.
+      await expect(transcribeEngineWithSegments("audio.wav", { itn: true })).rejects.toThrow(
+        "audio.wav --json --itn",
+      );
+    });
   });
 
   fakeEngineTest("preflight rejects timestamp requests when the engine lacks segment support", async () => {

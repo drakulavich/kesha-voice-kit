@@ -4,6 +4,7 @@ import {
   getEngineBinPath,
   TRANSCRIBE_SEGMENTS_FEATURE,
   TRANSCRIBE_DIARIZE_FEATURE,
+  TRANSCRIBE_ITN_FEATURE,
 } from "../../src/engine";
 
 const CWD = import.meta.dir + "/../..";
@@ -158,6 +159,50 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       expect(parsed.segments[0].text.length).toBeGreaterThan(0);
     }
   }, 60_000);
+
+  test("--itn keeps --json --timestamps output well-formed (#710)", async () => {
+    const capsRun = await runEngine(["--capabilities-json"]);
+    const caps = JSON.parse(capsRun.stdout);
+    if (!caps.features.includes(TRANSCRIBE_ITN_FEATURE)) {
+      console.warn(`engine lacks ${TRANSCRIBE_ITN_FEATURE}; skipping itn e2e`);
+      return;
+    }
+
+    const plain = await runEngine(["transcribe", FIXTURE_EN, "--json"]);
+    const itn = await runEngine(["transcribe", FIXTURE_EN, "--json", "--itn"]);
+    expect(plain.exitCode).toBe(0);
+    expect(itn.exitCode).toBe(0);
+
+    const before = JSON.parse(plain.stdout);
+    const after = JSON.parse(itn.stdout);
+    expect(Array.isArray(after.segments)).toBe(true);
+    expect(after.text.length).toBeGreaterThan(0);
+    // The pass rewrites text inside a segment and never its timing.
+    expect(after.segments.length).toBe(before.segments.length);
+    for (let i = 0; i < after.segments.length; i++) {
+      expect(after.segments[i].start).toBe(before.segments[i].start);
+      expect(after.segments[i].end).toBe(before.segments[i].end);
+      expect(after.segments[i].text.length).toBeGreaterThan(0);
+    }
+    if (after.segments.length > 0) {
+      expect(after.text).toBe(after.segments.map((s: { text: string }) => s.text).join(" "));
+    }
+  }, 120_000);
+
+  test("--itn leaves Russian transcripts unchanged (#710)", async () => {
+    const capsRun = await runEngine(["--capabilities-json"]);
+    const caps = JSON.parse(capsRun.stdout);
+    if (!caps.features.includes(TRANSCRIBE_ITN_FEATURE)) {
+      console.warn(`engine lacks ${TRANSCRIBE_ITN_FEATURE}; skipping itn e2e`);
+      return;
+    }
+
+    const plain = await runEngine(["transcribe", FIXTURE_RU]);
+    const itn = await runEngine(["transcribe", FIXTURE_RU, "--itn"]);
+    expect(plain.exitCode).toBe(0);
+    expect(itn.exitCode).toBe(0);
+    expect(itn.stdout).toBe(plain.stdout);
+  }, 120_000);
 
   test("engine detect-lang identifies Russian", async () => {
     const { stdout, exitCode } = await runEngine(["detect-lang", FIXTURE_RU]);

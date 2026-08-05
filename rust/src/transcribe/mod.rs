@@ -1,5 +1,6 @@
 #[cfg(all(feature = "system_diarize", target_os = "macos"))]
 pub(crate) mod diarize;
+mod itn;
 mod options;
 
 pub use options::TranscribeOptionsBuilder;
@@ -24,6 +25,12 @@ pub const TRANSCRIBE_SEGMENTS_FEATURE: &str = "transcribe.segments";
 /// that include the `system_diarize` feature. Closes #199 angle D.
 #[cfg_attr(not(feature = "system_diarize"), allow(dead_code))]
 pub const TRANSCRIBE_DIARIZE_FEATURE: &str = "transcribe.diarize";
+
+/// Capability flag for the opt-in written-form (ITN) pass on transcript text.
+/// Unlike [`TRANSCRIBE_DIARIZE_FEATURE`] this is not backend-gated — the pass
+/// is pure Rust and behaves identically on CoreML and ONNX, so the flag exists
+/// for engine-version skew only (#710).
+pub const TRANSCRIBE_ITN_FEATURE: &str = "transcribe.itn";
 
 /// Duration at which the `Auto` VAD mode flips to VAD preprocessing.
 /// Voice messages (<30 s) and short clips don't benefit; meetings and
@@ -129,6 +136,9 @@ pub struct TranscribeOptions {
     /// with its `speaker` cluster id. Currently darwin-arm64 only;
     /// `transcribe_with_options` returns an error on other platforms.
     pub with_speakers: bool,
+    /// Rewrite spoken-form numbers, money, dates and times in the transcript
+    /// to written form. Off by default; segment timing is unaffected (#710).
+    pub itn: bool,
 }
 
 /// Pure decision function so the auto-trigger rules can be unit-tested
@@ -179,6 +189,7 @@ pub fn transcribe_with_options(
         mode,
         with_segments: timestamps_required,
         with_speakers: speakers_required,
+        itn: itn_required,
     } = *opts;
     // Reject the `{with_speakers: true, with_segments: false}` combination
     // explicitly. On the plain path `transcribe_plain` returns an empty
@@ -238,10 +249,6 @@ pub fn transcribe_with_options(
         duration
     );
 
-    #[cfg_attr(
-        not(all(feature = "system_diarize", target_os = "macos")),
-        allow(unused_mut)
-    )]
     let mut output = match decision {
         VadDecision::Vad => {
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
@@ -281,6 +288,12 @@ pub fn transcribe_with_options(
             .context("speaker diarization failed")?;
             output.segments = diarize::merge_into(output.segments, &spans);
         }
+    }
+
+    // Last: diarization reads only segment spans, so the two are
+    // order-independent, and this keeps ITN a single post-processing tail.
+    if itn_required {
+        output = itn::normalize_output(output);
     }
 
     Ok(output)
@@ -1191,6 +1204,7 @@ mod tests {
         assert_eq!(o.mode, VadMode::Auto);
         assert!(!o.with_segments);
         assert!(!o.with_speakers);
+        assert!(!o.itn, "the ITN pass must never be on by default (#710)");
     }
 
     #[test]
@@ -1203,6 +1217,7 @@ mod tests {
             mode: VadMode::Off,
             with_segments: false,
             with_speakers: true,
+            itn: false,
         };
         let err = transcribe_with_options("/dev/null", &opts)
             .expect_err("speakers-without-segments must error");

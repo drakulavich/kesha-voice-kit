@@ -2,19 +2,27 @@ use anyhow::Result;
 
 use crate::transcribe::{self, TranscribeOptionsBuilder, VadMode};
 
-pub fn run(audio_path: String, json: bool, vad: bool, no_vad: bool, speakers: bool) -> Result<()> {
+pub fn run(
+    audio_path: String,
+    json: bool,
+    vad: bool,
+    no_vad: bool,
+    speakers: bool,
+    itn: bool,
+) -> Result<()> {
     if speakers && !json {
         anyhow::bail!("--speakers requires --json");
     }
     let mode = VadMode::from_flags(vad, no_vad);
+    let base = TranscribeOptionsBuilder::new().vad(mode).itn(itn);
     let opts = if json {
-        let mut b = TranscribeOptionsBuilder::new().vad(mode).with_segments();
+        let mut b = base.with_segments();
         if speakers {
             b = b.with_speakers();
         }
         b.build()
     } else {
-        TranscribeOptionsBuilder::new().vad(mode).build()
+        base.build()
     };
     // The diarization path (`--speakers`, CoreML only) triggers FluidAudio's
     // Espresso runtime to print an `E5RT ... STL exception` to stdout during
