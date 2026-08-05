@@ -283,19 +283,16 @@ jobs:
           fi
 
       # The smoke above proves the artifact starts and advertises `tts`, not that it synthesises (#671, #636).
-      # macOS is exempt throughout: neither TTS engine runs on an ANE-less, audio-less runner (#678).
+      # macOS covers Kokoro only, and only off the ANE the runner lacks (#678); AVSpeech still times out there.
       - name: 🍞 Setup Bun workspace
-        if: matrix.os != 'macos-14'
         uses: ./.github/actions/setup-bun
 
       - name: 🔗 Link the CLI
-        if: matrix.os != 'macos-14'
         shell: bash
         run: bun link
 
       # Load-bearing: on a version mismatch `downloadEngine` fetches the published engine, whose tag does not exist yet.
       - name: 🧾 Mark staged engine version
-        if: matrix.os != 'macos-14'
         shell: bash
         run: |
           bun -e '
@@ -303,12 +300,13 @@ jobs:
             await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
           '
 
+      # FluidAudio owns `~/.cache/fluidaudio` — the staged ANE voice packs and the bundle it self-fetches.
       - name: 🔊 Install English TTS models
-        if: matrix.os != 'macos-14'
         uses: ./.github/actions/install-kesha-backend
         with:
           cache-path: |
             ~/.cache/kesha
+            ~/.cache/fluidaudio
           cache-key: ${{ runner.os }}-kesha-models-tts-v1
           cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
           ffmpeg-provider: skip
@@ -316,8 +314,9 @@ jobs:
           cache-write: "false"
 
       - name: 🗣️ Pre-upload synthesis smoke
-        if: matrix.os != 'macos-14'
         shell: bash
+        env:
+          KESHA_KOKORO_COMPUTE_UNITS: ${{ matrix.os == 'macos-14' && 'cpu-and-gpu' || '' }}
         run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
 
       - name: Inspect macOS dynamic deps
