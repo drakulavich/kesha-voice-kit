@@ -53,10 +53,12 @@
 
 ## 7. Publish Engine alphas on demand
 
-- [ ] 7.1 Change `.github/workflows/build-engine.yml:484` to draft only stable tags, publishing alpha tags as non-draft Prereleases
+- [x] 7.1 Change `.github/workflows/build-engine.yml:484` to draft only stable tags, publishing alpha tags as non-draft Prereleases — beta keeps its draft, whose hand-validation gate is the point of that channel
 - [ ] 7.2 Confirm an Engine alpha tag passes the widened validators from group 2 end to end, including manifest generation
 - [ ] 7.3 Verify `kesha install --engine-version <alpha>` installs the Engine alpha, and that `kesha install` afterwards restores the pin — the pin itself may never name an alpha (#736 rule 3), so the old plan of matching `keshaEngine.version` to the alpha tag is not available (#738)
 - [ ] 7.4 Confirm publishing an Engine alpha does not publish a CLI package and does not leave a red workflow run
+- [x] 7.5 Let the release manifest accept an alpha tag above the pin, since the pin may never name one (#738), while still rejecting an alpha at or below it
+- [x] 7.6 Apply the alpha tag's version to `rust/Cargo.toml` in the runner, so the binary does not report the pinned release it is meant to be tested against
 
 ## 8. Keep alpha artifacts out of stable lanes
 

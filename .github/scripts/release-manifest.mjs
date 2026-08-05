@@ -5,8 +5,10 @@ import { linuxPackageNames } from "./linux-package-names.mjs";
 import {
   ENGINE_TAG_ERE,
   ENGINE_TAG_RE,
+  isEngineAlphaTag,
   isStableTag,
 } from "./release-tags.mjs";
+import { cmp, parseSemver } from "../../src/semver.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const MANIFEST_NAME = "kesha-release-manifest.json";
@@ -110,20 +112,42 @@ function asset(name, kind, platforms, install, checksummed = true) {
   };
 }
 
+/**
+ * An alpha is published ahead of the pin, never as it.
+ *
+ * The pin names the *released* engine and may never name an alpha (#738), so an alpha tag
+ * cannot be required to equal it. Requiring it to outrank the pin keeps what the exact-match
+ * rule was protecting: `v1.24.8-alpha.1` against a pin already at `1.24.8` sorts below it and
+ * is still refused, so an alpha can never stand in for the stable release of its own base.
+ */
+function assertTagNamesThisRelease(tag, pinnedVersion) {
+  const version = tag.slice(1);
+  if (version === pinnedVersion) return;
+
+  const ahead =
+    isEngineAlphaTag(tag) &&
+    cmp(parseSemver(version, "release tag"), parseSemver(pinnedVersion, "pinned engine version")) > 0;
+  if (ahead) return;
+
+  throw new Error(
+    `release tag ${tag} must match package.json#keshaEngine.version (${pinnedVersion})` +
+      (isEngineAlphaTag(tag) ? ` or name an alpha above it` : ""),
+  );
+}
+
 function buildManifest(tag) {
   const pkg = readPackage();
-  const engineVersion = pkg.keshaEngine?.version ?? pkg.version;
-  if (typeof pkg.version !== "string" || typeof engineVersion !== "string") {
+  const pinnedVersion = pkg.keshaEngine?.version ?? pkg.version;
+  if (typeof pkg.version !== "string" || typeof pinnedVersion !== "string") {
     throw new Error("package.json must contain version and keshaEngine.version strings");
   }
 
   const sbomName = `kesha-voice-kit-${tag}.spdx.json`;
   // Every tag here is an engine tag, stable included; the CLI version names packages (#696).
-  if (tag.slice(1) !== engineVersion) {
-    throw new Error(
-      `release tag ${tag} must match package.json#keshaEngine.version (${engineVersion})`,
-    );
-  }
+  assertTagNamesThisRelease(tag, pinnedVersion);
+
+  // The tag, not the pin: an alpha ships a version no commit carries (#685).
+  const engineVersion = tag.slice(1);
 
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),

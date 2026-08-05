@@ -13,9 +13,15 @@ export const ENGINE_TAG_ERE = "^v[0-9]+\\.[0-9]+\\.[0-9]+(-(beta|alpha)\\.[0-9]+
 
 export const ENGINE_TAG_RE = new RegExp(ENGINE_TAG_ERE);
 export const STABLE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
+export const ALPHA_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$/;
 
 export function isStableTag(tag) {
   return STABLE_TAG_RE.test(tag);
+}
+
+/** Engine alphas only. A CLI alpha ends in `-cli` and never reaches an engine-side validator. */
+export function isEngineAlphaTag(tag) {
+  return ALPHA_TAG_RE.test(tag);
 }
 
 const CLI_MARKER = "-cli";
