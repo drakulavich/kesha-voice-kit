@@ -20,5 +20,10 @@ if [ "$PACKED" = "true" ] && printf '%s' ",$labels," | grep -q ',alpha,'; then
   echo "PR carries the alpha label and changed packed files — publishing." >&2
 else
   echo "publish=false"
-  echo "Not publishing: packed=${PACKED}, labels=[${labels}] (needs the 'alpha' label)." >&2
+  # Naming the gate that actually refused: the old line blamed the label even when it was on.
+  if [ "$PACKED" = "true" ]; then
+    echo "Not publishing: nothing asked for an alpha. Labels: [${labels}]." >&2
+  else
+    echo "Not publishing: nothing that ships changed. Labels: [${labels}]." >&2
+  fi
 fi
