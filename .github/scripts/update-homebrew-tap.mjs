@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { isStableTag } from "./release-tags.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const FORMULA_REL = "Formula/kesha-voice-kit.rb";
@@ -38,7 +39,7 @@ function replaceOne(source, pattern, replacement, label) {
 const tag = getArg("--tag");
 const tapDir = getArg("--tap-dir");
 if (!tag || !tapDir) usage();
-if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag)) {
+if (!isStableTag(tag)) {
   throw new Error(`Homebrew tap updates only support stable vX.Y.Z tags, got: ${tag}`);
 }
 

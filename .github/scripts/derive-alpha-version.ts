@@ -7,7 +7,7 @@
  * `version=`/`tag=` lines suitable for `$GITHUB_OUTPUT`.
  */
 import { readFileSync } from "node:fs";
-import { cmp, parseSemver } from "../../src/semver";
+import { cmp, parseSemver } from "../../src/semver.mjs";
 
 export type Channel = "cli" | "engine";
 

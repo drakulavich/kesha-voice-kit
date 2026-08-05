@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cmp, fmt, parseSemver } from "../../src/semver";
+import { cmp, fmt, parseSemver } from "../../src/semver.mjs";
 
 const v = (raw: string) => parseSemver(raw, "test");
 

@@ -11,11 +11,10 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-
-const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+import { isSemver } from "../../src/semver.mjs";
 
 export function withVersion(packageJson, version) {
-  if (!SEMVER_RE.test(version)) {
+  if (!isSemver(version)) {
     throw new Error(`refusing to write a non-SemVer version into package.json: ${version}`);
   }
   const pkg = JSON.parse(packageJson);

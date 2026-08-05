@@ -7,7 +7,7 @@ import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
-import { isSemver } from "../semver";
+import { isSemver } from "../semver.mjs";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
 import type { SharedInstallArgs } from "./types";
 

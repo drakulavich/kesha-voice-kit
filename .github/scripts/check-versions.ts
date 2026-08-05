@@ -13,7 +13,7 @@
  * build matrix.
  */
 import { readFileSync } from "node:fs";
-import { cmp, fmt, parseSemver, type SemVer } from "../../src/semver";
+import { cmp, fmt, parseSemver, type SemVer } from "../../src/semver.mjs";
 
 function parseOrExit(raw: string, label: string): SemVer {
   try {

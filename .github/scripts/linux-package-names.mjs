@@ -1,7 +1,9 @@
+import { isStableVersion } from "../../src/semver.mjs";
+
 export const LINUX_PACKAGE_RELEASE = "1";
 
 export function validateLinuxPackageVersion(version) {
-  if (typeof version !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version)) {
+  if (!isStableVersion(version)) {
     throw new Error(`package version must be stable X.Y.Z, got: ${version}`);
   }
 }
