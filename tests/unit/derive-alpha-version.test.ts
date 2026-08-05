@@ -161,9 +161,10 @@ describe("the alpha tag step", () => {
     expect(script).toContain('if [ -z "${PREVIOUS:-}" ]; then');
   });
 
-  // A tag off this commit's history yields a range that reads as a changelog but is not one.
-  test("refuses a range whose lower bound is not an ancestor", () => {
+  // A range from a tag off this history reads as a changelog while being nothing of the kind.
+  test("falls back to a reachable tag rather than dating the range wrongly", () => {
     expect(script).toContain('git merge-base --is-ancestor "$PREVIOUS" "$SHA"');
+    expect(script).toContain('git describe --tags --abbrev=0 "$SHA"');
   });
 
   test("the workflow passes the derived previous tag through env", () => {
