@@ -346,7 +346,7 @@ jobs:
           path: kesha-textlang-darwin-arm64
 
   # Exercises the macos-14 artifact elsewhere: that image is required to build, and cannot run the vocoder (#678).
-  # Advisory until the second-invocation SIGBUS is fixed (#740) — a permanently red gate only teaches people to ignore red.
+  # Advisory until the longer-sentence SIGBUS is fixed (#742) — a permanently red gate only teaches people to ignore red.
   darwin-synthesis-smoke:
     name: Darwin synthesis smoke (advisory)
     needs: build
