@@ -19,10 +19,14 @@ name: "🌱 Seed shared caches"
 on:
   push:
     branches: [main]
-    # The key hashes rust/ci/download-kokoro.sh, so only a change to that file can
-    # make a re-seed necessary. Without this filter every push to main — up to 26
-    # a day here — spun three runners to probe a guaranteed hit.
-    paths: ["rust/ci/download-kokoro.sh", "rust/src/models.rs", ".github/workflows/cache-seed.yml"]
+    # Only a change to a file some cache key hashes can make a re-seed necessary.
+    # Without this filter every push to main — up to 26 a day here — spun runners
+    # to probe a guaranteed hit. Cargo.lock is here for the Parakeet key (#675).
+    paths:
+      - "rust/ci/download-kokoro.sh"
+      - "rust/src/models.rs"
+      - "rust/Cargo.lock"
+      - ".github/workflows/cache-seed.yml"
   # Eviction does not wait for pushes. Without this, a bundle evicted under budget
   # pressure stays gone until someone happens to touch the download script, and
   # every PR job in between pays a full cold download.
@@ -87,6 +91,58 @@ jobs:
         with:
           path: ${{ env.KOKORO_CACHE }}
           key: kokoro-models-v1-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+
+  parakeet:
+    name: Parakeet CoreML models
+    # Without a main-scoped copy, coreml-regression's PR-scoped entry is unreadable (#675).
+    runs-on: macos-14
+    timeout-minutes: 40
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    steps:
+      # Before the probe: the key hashes rust/Cargo.lock, which hashFiles resolves in the workspace.
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Probe cache
+        id: probe
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Application Support/FluidAudio/Models
+          key: parakeet-coreml-models-v1-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          lookup-only: true
+
+      - name: Select Xcode 16 (Swift 6)
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "16.2"
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        if: steps.probe.outputs.cache-hit != 'true'
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        if: steps.probe.outputs.cache-hit != 'true'
+        with:
+          workspaces: rust
+
+      - name: Install system audio deps (Opus)
+        if: steps.probe.outputs.cache-hit != 'true'
+        run: brew install opus pkg-config
+
+      # FluidAudio owns the bundle: install's warm-up builds the backend, which fetches on a miss.
+      - name: Populate the FluidAudio ASR bundle
+        if: steps.probe.outputs.cache-hit != 'true'
+        run: |
+          cd rust
+          cargo run --no-default-features --features coreml -- install
+
+      - name: Save Parakeet CoreML models
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Application Support/FluidAudio/Models
+          key: parakeet-coreml-models-v1-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
 
   kesha-models:
     name: Kesha models (${{ matrix.os }})
