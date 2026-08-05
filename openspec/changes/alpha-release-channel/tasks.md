@@ -54,16 +54,16 @@
 ## 7. Publish Engine alphas on demand
 
 - [x] 7.1 Publish alpha tags as live Prereleases — created as a draft like every release, since immutable releases refuse an asset upload after publication, then un-drafted by a following step; beta keeps its draft, whose hand-validation gate is the point of that channel
-- [ ] 7.2 Confirm an Engine alpha tag passes the widened validators from group 2 end to end, including manifest generation
-- [ ] 7.3 Verify `kesha install --engine-version <alpha>` installs the Engine alpha, and that `kesha install` afterwards restores the pin — the pin itself may never name an alpha (#736 rule 3), so the old plan of matching `keshaEngine.version` to the alpha tag is not available (#738)
-- [ ] 7.4 Confirm publishing an Engine alpha does not publish a CLI package and does not leave a red workflow run
+- [x] 7.2 Confirm an Engine alpha tag passes the widened validators from group 2 end to end, including manifest generation — `v1.24.8-alpha.1` built and released, its manifest naming `engineVersion 1.24.8-alpha.1`
+- [x] 7.3 Verify `kesha install --engine-version <alpha>` installs the Engine alpha, and that `kesha install` afterwards restores the pin — the pin itself may never name an alpha (#736 rule 3), so the old plan of matching `keshaEngine.version` to the alpha tag is not available (#738)
+- [x] 7.4 Confirm publishing an Engine alpha does not publish a CLI package and does not leave a red workflow run — satisfied, though not by the `engine_only` decline the design expected: a `GITHUB_TOKEN` un-draft raises no `release: published`, so no publish workflow runs at all
 - [x] 7.5 Let the release manifest accept an alpha tag above the pin, since the pin may never name one (#738), while still rejecting an alpha at or below it
 - [x] 7.6 Apply the alpha tag's version to `rust/Cargo.toml` in the runner, so the binary does not report the pinned release it is meant to be tested against
 
 ## 8. Keep alpha artifacts out of stable lanes
 
 - [x] 8.1 Make the lanes that download the published Engine (`ci.yml:387`, `:448`, `:501`) resolve an explicit stable version rather than inheriting possibly-prerelease metadata — solved upstream of the lanes instead: `check-versions.ts` rule 3 refuses an alpha pin outright, so no lane can inherit one
-- [ ] 8.2 Verify an unrelated pull request is unaffected after an Engine alpha is published
+- [ ] 8.2 Verify an unrelated pull request is unaffected after an Engine alpha is published — no engine-downloading lane has run since `v1.24.8-alpha.1` went out; the pin rule holds, but nothing has exercised it yet
 
 ## 9. Retention
 
@@ -83,5 +83,5 @@
 - [x] 11.2 Install the alpha by naming the channel and confirm it runs
 - [x] 11.3 Confirm an unqualified install still resolves the newest stable version before and after that alpha
 - [ ] 11.4 Merge a docs-only change and confirm nothing publishes and the skip is visible
-- [ ] 11.5 Dispatch an Engine alpha and install it end to end
+- [x] 11.5 Dispatch an Engine alpha and install it end to end
 - [x] 11.6 Confirm a CLI alpha tag left the Engine build workflow untriggered

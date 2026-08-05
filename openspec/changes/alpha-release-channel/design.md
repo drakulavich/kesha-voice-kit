@@ -231,7 +231,11 @@ from the new capability.
   workflow.** Its version guard compares `package.json#version` against the tag and would
   fail on every Engine alpha, turning a routine action red. → The publish workflow must
   recognise an Engine-only tag and exit successfully without publishing, rather than failing
-  the version comparison.
+  the version comparison. *Observed on `v1.24.8-alpha.1`: the event never fires. The
+  workflow un-drafts with its own `GITHUB_TOKEN`, and GitHub does not let a token-raised
+  event start another workflow — the same rule that keeps a token tag push from starting the
+  Engine build. The decline path stays as the guard for a hand-published Engine release; for
+  an alpha there is nothing to decline.*
 
 - **Alpha Engine tags could leak into lanes that download the published Engine**, breaking
   unrelated pull requests. → Those lanes resolve the stable channel explicitly. The existing
