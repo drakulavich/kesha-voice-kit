@@ -34,6 +34,7 @@ Install Kokoro + Vosk-TTS explicitly with `kesha install --tts` (~990 MB). `maco
 - `KESHA_ENGINE_BIN` — override the engine-binary path (useful when iterating on `rust/target/release/kesha-engine`).
 - `KESHA_CACHE_DIR` — isolated test cache.
 - `KESHA_MODEL_MIRROR` — redirect HF downloads to an internal mirror (#121), preserving `/<owner>/<repo>/resolve/<ref>/<file>` for `wget --mirror`; empty/unset = no-op. Rust `models.rs::apply_mirror` and TS `status.ts::activeModelMirror` both trim trailing slashes.
+- `KESHA_KOKORO_COMPUTE_UNITS` — `default` (FluidAudio's tuned per-stage mapping; Albert/PostAlbert/Alignment/Vocoder on the ANE) · `cpu-and-gpu` · `all-ane` · `cpu-only`. Diagnostic only, and darwin-arm64 `system_kokoro` only: FluidAudio's `KokoroAne.md` recommends the CPU baseline when deciding whether an artefact is the model or the accelerator. Unset is `default`; blank is treated as unset (a conditional GHA `env:` exports an empty string); an unknown value fails before model init rather than falling back to the ANE the caller was avoiding. Nothing in CI sets it — a non-ANE preset does **not** rescue the `macos-14` image, which fails on the vocoder's shape contract regardless (#678).
 - macOS dev runtime: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`. Release binaries fix up via `install_name_tool`.
 - macOS build env: `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`, `RUSTFLAGS="-L /opt/homebrew/lib"`.
 

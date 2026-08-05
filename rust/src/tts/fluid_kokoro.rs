@@ -12,7 +12,7 @@
 
 use anyhow::{Context, Result};
 
-use fluidaudio_rs::FluidAudio;
+use fluidaudio_rs::{FluidAudio, KokoroComputeUnits};
 
 use crate::coded_bail;
 use crate::errors::ErrorCode;
@@ -141,20 +141,85 @@ fn ensure_script_supported(fluid_id: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Env var overriding which CoreML compute units the Kokoro pipeline loads on.
+const COMPUTE_UNITS_ENV: &str = "KESHA_KOKORO_COMPUTE_UNITS";
+
+/// Accepted [`COMPUTE_UNITS_ENV`] values, spelled as FluidAudio's own `TtsComputeUnitPreset` CLI names.
+const COMPUTE_UNIT_PRESETS: &[(&str, KokoroComputeUnits)] = &[
+    ("default", KokoroComputeUnits::Default),
+    ("cpu-and-gpu", KokoroComputeUnits::CpuAndGpu),
+    ("all-ane", KokoroComputeUnits::AllAne),
+    ("cpu-only", KokoroComputeUnits::CpuOnly),
+];
+
+fn preset_name(units: KokoroComputeUnits) -> &'static str {
+    COMPUTE_UNIT_PRESETS
+        .iter()
+        .find(|(_, u)| *u == units)
+        .map(|(name, _)| *name)
+        .unwrap_or("default")
+}
+
+/// Read [`COMPUTE_UNITS_ENV`], defaulting to FluidAudio's empirical per-stage
+/// mapping (Albert / PostAlbert / Alignment / Vocoder on the Neural Engine).
+///
+/// The override exists for hosts with no usable ANE — notably a virtualised
+/// macOS guest such as a GitHub-hosted `macos-14` runner, where CoreML fails to
+/// prepare exactly those stages ("Failed to prepare the model for predictions",
+/// #678). Real Apple Silicon should never set it.
+fn compute_units_from_env() -> Result<KokoroComputeUnits> {
+    let Some(raw) = std::env::var_os(COMPUTE_UNITS_ENV) else {
+        return Ok(KokoroComputeUnits::Default);
+    };
+    let raw = raw.to_string_lossy();
+    let value = raw.trim();
+    if value.is_empty() {
+        return Ok(KokoroComputeUnits::Default);
+    }
+    let lowered = value.to_ascii_lowercase();
+    if let Some((_, units)) = COMPUTE_UNIT_PRESETS
+        .iter()
+        .find(|(name, _)| *name == lowered)
+    {
+        return Ok(*units);
+    }
+    // Coded: an uncoded error surfaces as E_INTERNAL, blaming the engine for the user's typo.
+    coded_bail!(
+        ErrorCode::InvalidArg,
+        "{COMPUTE_UNITS_ENV}='{value}' is not a known CoreML compute-units preset. \
+         Use one of: {}. `default` is the tuned mapping and the right choice on real \
+         Apple Silicon; override it only where no Neural Engine is exposed, such as a \
+         virtualised macOS guest.",
+        COMPUTE_UNIT_PRESETS
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
 /// Initialize a FluidAudio Kokoro bridge for `voice_id` and run `f` against it
 /// with the process's stdout silenced for the whole bridge lifetime (create →
 /// call → drop). FluidAudio's CoreML pipeline writes diagnostics to stdout that
 /// would corrupt `kesha say`'s WAV byte stream; the oneshot guard restores fd 1
-/// on return (#259, mirrors the diarize/ASR guard).
+/// on return (#259, mirrors the diarize/ASR guard). The non-ANE presets widen
+/// that leak — CPU+GPU adds E5RT "Data-dependent shapes were disabled" lines —
+/// so the guard matters more, not less, when the override is set.
 fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> Result<R> {
     // The voice's language selects the KokoroAne variant in the bridge
     // (`zh` → Mandarin, else English). Unknown voices default to English.
     let lang = lang_for_fluid_id(voice_id).unwrap_or("en-us");
+    let compute_units = compute_units_from_env()?;
     crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
         let audio = FluidAudio::new().context("init FluidAudio bridge")?;
         audio
-            .init_kokoro(voice_id, lang)
-            .context("init FluidAudio Kokoro (downloads the model on first run)")?;
+            .init_kokoro_with_compute_units(voice_id, lang, compute_units)
+            .with_context(|| {
+                format!(
+                    "init FluidAudio Kokoro on {} compute units (downloads the model on first run)",
+                    preset_name(compute_units)
+                )
+            })?;
         f(&audio)
     })
 }
@@ -364,6 +429,60 @@ mod tests {
                 pcm.len()
             );
         }
+    }
+
+    #[test]
+    fn compute_units_env_defaults_and_validates() {
+        use crate::util::test_env::{lock, EnvGuard};
+        let _lock = lock();
+
+        {
+            let _g = EnvGuard::unset(COMPUTE_UNITS_ENV);
+            assert_eq!(
+                compute_units_from_env().expect("unset is valid"),
+                KokoroComputeUnits::Default
+            );
+        }
+
+        // GHA exports a conditional `env:` as the empty string rather than omitting it.
+        for blank in ["", "   "] {
+            let _g = EnvGuard::set(COMPUTE_UNITS_ENV, blank);
+            assert_eq!(
+                compute_units_from_env().expect("blank is valid"),
+                KokoroComputeUnits::Default
+            );
+        }
+
+        for (value, expected) in [
+            ("cpu-and-gpu", KokoroComputeUnits::CpuAndGpu),
+            (" cpu-only ", KokoroComputeUnits::CpuOnly),
+            ("ALL-ANE", KokoroComputeUnits::AllAne),
+            ("default", KokoroComputeUnits::Default),
+        ] {
+            let _g = EnvGuard::set(COMPUTE_UNITS_ENV, value);
+            let parsed = compute_units_from_env().unwrap_or_else(|e| panic!("{value:?}: {e}"));
+            assert_eq!(parsed, expected);
+            assert_eq!(preset_name(parsed), value.trim().to_ascii_lowercase());
+        }
+
+        // Must fail loudly instead of silently using the ANE the caller was avoiding.
+        let _g = EnvGuard::set(COMPUTE_UNITS_ENV, "ane-please");
+        let err = compute_units_from_env().expect_err("unknown preset must error");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::InvalidArg);
+        let msg = err.to_string();
+        assert!(msg.contains("ane-please"), "{msg}");
+        assert!(msg.contains("cpu-and-gpu"), "{msg}");
+    }
+
+    /// `preset_name` falls back to "default" for an unlisted variant, so a
+    /// `KokoroComputeUnits` growing a variant must extend the table or the
+    /// error text would name a preset the engine is not using.
+    #[test]
+    fn every_preset_round_trips_through_its_name() {
+        for (name, units) in COMPUTE_UNIT_PRESETS {
+            assert_eq!(preset_name(*units), *name);
+        }
+        assert_eq!(COMPUTE_UNIT_PRESETS.len(), 4, "extend the table");
     }
 
     #[test]

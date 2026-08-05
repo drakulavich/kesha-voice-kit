@@ -31,6 +31,7 @@ const KNOWN_ENV_KEYS = [
   "KESHA_STATS_DB",
   "KESHA_DEBUG",
   "KESHA_DEBUG_FD",
+  "KESHA_KOKORO_COMPUTE_UNITS",
 ] as const;
 
 interface DoctorOptions {
