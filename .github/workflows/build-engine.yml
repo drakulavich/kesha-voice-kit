@@ -345,9 +345,7 @@ jobs:
           name: kesha-textlang-darwin-arm64
           path: kesha-textlang-darwin-arm64
 
-  # darwin cannot synthesise inside the build job: macos-14 is required for the build
-  # (COREML BUILD TRIPLE) and its CoreML cannot run the Kokoro vocoder at all (#678).
-  # So the artifact built there is exercised here instead, on a newer image.
+  # Exercises the macos-14 artifact elsewhere: that image is required to build, and cannot run the vocoder (#678).
   darwin-synthesis-smoke:
     name: Darwin synthesis smoke
     needs: build

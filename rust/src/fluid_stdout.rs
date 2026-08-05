@@ -124,8 +124,15 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
 /// CoreML reports real failures — the ANE-less prepare error and the E5RT
 /// exceptions behind it (#678) — on stdout, so discarding it unconditionally
 /// makes those failures unreadable exactly where they matter: a CI runner you
-/// cannot attach to. Redirecting to stderr is safe because callers write their
-/// payload *after* the guard returns, so nothing of ours is misrouted.
+/// cannot attach to.
+///
+/// Scope of what this changes, precisely: only where fd 1 points *while the
+/// guard is held*. Callers write their payload after it returns, so the
+/// redirect never misroutes kesha's own output. It does **not** address the
+/// hazard this module documents for the permanent-redirect variant — a
+/// background CoreML print landing on real stdout after the guard restores
+/// fd 1, which can still corrupt a streamed WAV. That is unchanged either way,
+/// since `/dev/null` does not catch a post-restore print either.
 #[cfg(any(feature = "system_kokoro", feature = "system_diarize"))]
 fn oneshot_sink() -> Option<OwnedFd> {
     use std::os::fd::FromRawFd;
