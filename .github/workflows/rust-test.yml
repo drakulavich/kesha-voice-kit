@@ -405,19 +405,19 @@ jobs:
       - name: Install system audio deps (Opus)
         run: brew install opus pkg-config
 
-      # Restore the compiled Parakeet CoreML bundle. On a cache miss the models
-      # are fetched from HuggingFace once, during the test's `init_asr()`, and
-      # saved back under this key — the fetch is bounded to the seed run and
-      # named plainly here, honoring the no-silent-download contract.
-      - name: 🎧 Cache Parakeet CoreML models
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restore-only: this job runs on pull_request, and GitHub scopes a cache to
+      # the ref that wrote it, so anything saved here is readable by re-runs of
+      # this PR alone — never by main, never by another PR (#675, the defect #663
+      # fixed for Kokoro). cache-seed.yml writes this key from main instead.
+      # On a miss the bundle is still fetched during the test's `init_asr()`;
+      # the run is slower, not wrong.
+      - name: 🎧 Restore Parakeet CoreML models
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/Library/Application Support/FluidAudio/Models
-          # Key on the fluidaudio-rs pin (Cargo.lock). actions/cache never
-          # saves on an exact-key hit, so a static key would let a model-set
-          # change after a bump silently re-download every run without ever
-          # persisting. The prefix restore-key warm-starts from the prior
-          # bundle on a bump, and the job re-saves under the new exact key.
+          path: ~/Library/Application Support/FluidAudio/Models/parakeet-tdt-0.6b-v3
+          # Keyed on the fluidaudio-rs pin (Cargo.lock): a bump changes the model
+          # set. The prefix restore-key warm-starts from the prior bundle so a
+          # bump tops up the delta instead of re-fetching everything.
           key: parakeet-coreml-models-v1-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: |
             parakeet-coreml-models-v1-${{ runner.os }}-
