@@ -137,6 +137,15 @@ jobs:
           cd rust
           cargo run --no-default-features --features coreml -- install
 
+      - name: 🍞 Setup Bun workspace
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-bun
+
+      # install exits 0 on a failed warm-up; the exact key is immutable, so a partial save poisons every PR (#675).
+      - name: Verify the bundle before saving
+        if: steps.probe.outputs.cache-hit != 'true'
+        run: bun .github/scripts/verify-fluid-asr-bundle.ts
+
       - name: Save Parakeet CoreML models
         if: steps.probe.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
