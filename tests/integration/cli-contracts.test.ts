@@ -1036,7 +1036,7 @@ describe("CLI contracts", () => {
     expectContract(invalid, {
       exitCode: 2,
       stdoutEmpty: true,
-      stderrContains: ["--engine-version needs an exact version"],
+      stderrContains: ["--engine-version needs an exact SemVer 2.0 version"],
     });
 
     // `init` is the guided path; an override is an expert action and stays off it (#738).

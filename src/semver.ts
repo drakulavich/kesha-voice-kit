@@ -1,7 +1,8 @@
 /**
- * SemVer parsing and precedence, shared by the version drift gate and the alpha
- * version derivation — both must agree on "a stable version outranks its prereleases",
- * or a derived alpha could pass one and fail the other (#685).
+ * SemVer 2.0 parsing and precedence, shared by `kesha install --engine-version`, the version
+ * drift gate and the alpha version derivation — all three must agree on what a version is and
+ * on "a stable version outranks its prereleases", or one accepts what another refuses
+ * (#685, #738).
  */
 
 export type SemVer = {
@@ -9,23 +10,28 @@ export type SemVer = {
   minor: number;
   patch: number;
   prerelease: string[];
+  build: string[];
 };
 
+/** The pattern published with the SemVer 2.0 spec; a looser one accepts `1.0.0-01` and `01.2.3`. */
+const SEMVER_2_0 =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
 export function parseSemver(raw: string, label: string): SemVer {
-  const m = raw.match(
-    /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/,
-  );
+  const m = raw.match(SEMVER_2_0);
   if (!m) {
-    throw new Error(`${label}: not a valid x.y.z semver (got '${raw}')`);
+    throw new Error(`${label}: not a valid SemVer 2.0 version (got '${raw}')`);
   }
   return {
     major: Number(m[1]),
     minor: Number(m[2]),
     patch: Number(m[3]),
     prerelease: m[4]?.split(".") ?? [],
+    build: m[5]?.split(".") ?? [],
   };
 }
 
+/** SemVer §10: build metadata is ignored when determining precedence. */
 export function cmp(a: SemVer, b: SemVer): number {
   if (a.major !== b.major) return a.major - b.major;
   if (a.minor !== b.minor) return a.minor - b.minor;
@@ -57,5 +63,6 @@ export function cmp(a: SemVer, b: SemVer): number {
 
 export function fmt(v: SemVer): string {
   const base = `${v.major}.${v.minor}.${v.patch}`;
-  return v.prerelease.length ? `${base}-${v.prerelease.join(".")}` : base;
+  const withPre = v.prerelease.length ? `${base}-${v.prerelease.join(".")}` : base;
+  return v.build.length ? `${withPre}+${v.build.join(".")}` : withPre;
 }

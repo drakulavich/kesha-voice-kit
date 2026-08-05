@@ -7,6 +7,7 @@ import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
+import { parseSemver } from "../semver";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
 import type { SharedInstallArgs } from "./types";
 
@@ -60,24 +61,25 @@ export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefi
   return langs;
 }
 
-// Canonical SemVer 2.0: a looser pattern accepts `1.0.0-01` / `1.0.0-..`, which only 404 later.
-const SEMVER =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
-
 /**
  * Validates `--engine-version` before any network call. Returns undefined when the flag is
- * absent, so the Pinned Engine version stays the default; throws on anything not SemVer.
+ * absent, so the Pinned Engine version stays the default; throws on anything the version
+ * drift gate would not accept either — one SemVer 2.0 definition across the repo.
  */
 export function resolveEngineVersionFlag(raw: unknown): string | undefined {
   if (raw === undefined || raw === null || raw === false) return undefined;
   const value = String(raw).trim();
-  if (SEMVER.test(value)) return value;
-  const hint = /^v\d/.test(value)
-    ? ' Drop the leading "v" — that belongs to the release tag, not the version.'
-    : "";
-  throw new Error(
-    `--engine-version needs an exact version like 1.24.8 or 1.24.8-alpha.1, got "${value}".${hint}`,
-  );
+  try {
+    parseSemver(value, "--engine-version");
+    return value;
+  } catch {
+    const hint = /^v\d/.test(value)
+      ? ' Drop the leading "v" — that belongs to the release tag, not the version.'
+      : "";
+    throw new Error(
+      `--engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "${value}".${hint}`,
+    );
+  }
 }
 
 export function resolveNoCacheFlag(

@@ -81,16 +81,16 @@ describe("resolveEngineVersionFlag", () => {
   });
 
   test("rejects anything that is not an exact version", () => {
-    expect(() => resolveEngineVersionFlag("latest")).toThrow(/exact version/);
-    expect(() => resolveEngineVersionFlag("1.24")).toThrow(/exact version/);
-    expect(() => resolveEngineVersionFlag("")).toThrow(/exact version/);
+    expect(() => resolveEngineVersionFlag("latest")).toThrow(/exact SemVer 2\.0 version/);
+    expect(() => resolveEngineVersionFlag("1.24")).toThrow(/exact SemVer 2\.0 version/);
+    expect(() => resolveEngineVersionFlag("")).toThrow(/exact SemVer 2\.0 version/);
   });
 
   // Rejected here rather than left to 404 at the release URL.
   test("rejects prerelease identifiers SemVer itself rejects", () => {
-    expect(() => resolveEngineVersionFlag("1.0.0-01")).toThrow(/exact version/);
-    expect(() => resolveEngineVersionFlag("1.0.0-..")).toThrow(/exact version/);
-    expect(() => resolveEngineVersionFlag("1.0.0-")).toThrow(/exact version/);
+    expect(() => resolveEngineVersionFlag("1.0.0-01")).toThrow(/exact SemVer 2\.0 version/);
+    expect(() => resolveEngineVersionFlag("1.0.0-..")).toThrow(/exact SemVer 2\.0 version/);
+    expect(() => resolveEngineVersionFlag("1.0.0-")).toThrow(/exact SemVer 2\.0 version/);
     expect(resolveEngineVersionFlag("1.0.0-alpha.0")).toBe("1.0.0-alpha.0");
   });
 
