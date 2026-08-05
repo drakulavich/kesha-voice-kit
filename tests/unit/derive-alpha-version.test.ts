@@ -158,7 +158,12 @@ describe("the alpha tag step", () => {
 
   // An empty range would tag the whole history as if it were one alpha's changes.
   test("says so rather than logging everything when there is no previous tag", () => {
-    expect(script).toContain('if [ -n "${PREVIOUS:-}" ]; then');
+    expect(script).toContain('if [ -z "${PREVIOUS:-}" ]; then');
+  });
+
+  // A tag off this commit's history yields a range that reads as a changelog but is not one.
+  test("refuses a range whose lower bound is not an ancestor", () => {
+    expect(script).toContain('git merge-base --is-ancestor "$PREVIOUS" "$SHA"');
   });
 
   test("the workflow passes the derived previous tag through env", () => {
