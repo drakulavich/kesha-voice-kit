@@ -141,3 +141,27 @@ describe("alpha publish entry", () => {
     expect(publish.with["inject-version"]).toContain("derived");
   });
 });
+
+describe("publish serialisation and provenance", () => {
+  const script = readFileSync(
+    `${import.meta.dir}/../../.github/scripts/dispatch-npm-publish.sh`,
+    "utf8",
+  );
+
+  // Without --ref the run's head_sha is main's tip, so provenance attests a commit whose
+  // tree is not what shipped; it is also what makes the run findable by tag.
+  test("the dispatch pins the run to the tag being published", () => {
+    expect(script).toContain('--ref "$TAG"');
+    expect(script).toContain('--branch "$TAG"');
+  });
+
+  test("an unidentifiable run fails rather than watching whatever is newest", () => {
+    expect(script).toContain('[ -z "$run" ]');
+  });
+
+  test("publishes are serialised so a late one cannot move a dist-tag backwards", () => {
+    const publish = parse(readFileSync(`${import.meta.dir}/../../.github/workflows/npm-publish.yml`, "utf8"));
+
+    expect(publish.concurrency).toEqual({ group: "npm-publish", queue: "max" });
+  });
+});

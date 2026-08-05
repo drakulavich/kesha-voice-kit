@@ -20,6 +20,11 @@ on:
 permissions:
   contents: read
 
+# An older publish finishing last would drag its dist-tag backwards (#731).
+concurrency:
+  group: npm-publish
+  queue: max
+
 jobs:
   resolve:
     runs-on: ubuntu-latest

@@ -5,25 +5,26 @@ set -euo pipefail
 
 WORKFLOW=npm-publish.yml
 
-latest_dispatch_run() {
-  gh run list --workflow "$WORKFLOW" --event workflow_dispatch --limit 1 \
-    --json databaseId --jq '.[0].databaseId // 0'
+# Dispatching on the tag pins provenance to the published commit and names the run uniquely.
+run_for_tag() {
+  gh run list --workflow "$WORKFLOW" --branch "$TAG" --limit 1 \
+    --json databaseId --jq '.[0].databaseId // ""'
 }
 
-before=$(latest_dispatch_run)
-gh workflow run "$WORKFLOW" -f tag="$TAG"
+before=$(run_for_tag)
+gh workflow run "$WORKFLOW" --ref "$TAG" -f tag="$TAG"
 echo "Dispatched $WORKFLOW for $TAG." >&2
 
 run="$before"
 for _ in $(seq 1 30); do
   sleep 2
-  run=$(latest_dispatch_run)
-  [ "$run" != "$before" ] && break
+  run=$(run_for_tag)
+  [ -n "$run" ] && [ "$run" != "$before" ] && break
 done
 
 # A dispatch that never became a run would leave the tag reserved and nothing published,
-# which is the failure this whole gate exists to make impossible to miss.
-if [ "$run" = "$before" ]; then
+# which is the failure this gate exists to make impossible to miss.
+if [ -z "$run" ] || [ "$run" = "$before" ]; then
   echo "::error::$WORKFLOW never started for $TAG — the version is tagged but unpublished." >&2
   exit 1
 fi
