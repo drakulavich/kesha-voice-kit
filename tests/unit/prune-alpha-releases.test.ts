@@ -35,12 +35,28 @@ describe("prunable", () => {
   });
 
   test("leaves a release that was never published", () => {
-    expect(prunable([{ tagName: "v1.24.8-alpha.3", publishedAt: null }], NOW)).toEqual([]);
+    expect(prunable([{ tagName: "v1.24.8-alpha.3", publishedAt: null, isDraft: false }], NOW)).toEqual([]);
+  });
+
+  // A CLI alpha is a different artifact; the selector must anchor, not merely contain "alpha".
+  test("never takes a CLI alpha, however old", () => {
+    expect(prunable([release("v1.27.0-alpha.1-cli", RETENTION_DAYS + 100)], NOW)).toEqual([]);
+  });
+
+  test("keeps a release on the day it reaches the window", () => {
+    expect(prunable([release("v1.24.8-alpha.1", RETENTION_DAYS)], NOW)).toEqual([]);
+  });
+
+  test("refuses a release whose draft flag is missing rather than assuming it is published", () => {
+    const noFlag = { tagName: "v1.24.8-alpha.5", publishedAt: daysAgo(RETENTION_DAYS + 1) };
+    expect(() => prunable([noFlag as never], NOW)).toThrow(/no isDraft flag/);
   });
 
   // Silently keeping it would read as "nothing aged out" on every future run.
   test("refuses a date it cannot parse rather than skipping the release", () => {
-    expect(() => prunable([{ tagName: "v1.24.8-alpha.4", publishedAt: "soon" }], NOW)).toThrow(
+    expect(() =>
+      prunable([{ tagName: "v1.24.8-alpha.4", publishedAt: "soon", isDraft: false }], NOW),
+    ).toThrow(
       /unparsable publishedAt/,
     );
   });
@@ -70,5 +86,11 @@ describe("the pruning workflow", () => {
   test("deletes the Release without touching its tag", () => {
     expect(commands).toContain("gh release delete");
     expect(commands).not.toContain("--cleanup-tag");
+  });
+
+  // The newest-N listing drops an alpha from view exactly as it becomes prunable.
+  test("reads every release rather than the newest page", () => {
+    expect(commands).toContain("--paginate");
+    expect(commands).not.toContain("gh release list");
   });
 });

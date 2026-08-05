@@ -117,6 +117,13 @@ describe("previousTag", () => {
     expect(previousTag("cli", tags)).toBe("v1.27.0-alpha.10-cli");
   });
 
+  // Anchoring at an old alpha would make the next alpha's notes span every stable since.
+  test("takes a stable released after the last alpha", () => {
+    const tags = ["v1.24.8-alpha.2", "v1.25.0", "v1.30.0", "v1.26.0-cli"];
+    expect(previousTag("engine", tags)).toBe("v1.30.0");
+    expect(previousTag("cli", ["v1.27.0-alpha.1-cli", "v1.28.0-cli"])).toBe("v1.28.0-cli");
+  });
+
   // Before any alpha exists the notes still need a lower bound, or they would span all history.
   test("falls back to the channel's highest stable tag", () => {
     expect(previousTag("cli", ["v1.25.0-cli", "v1.26.0-cli", "v1.24.7"])).toBe("v1.26.0-cli");
@@ -131,6 +138,12 @@ describe("previousTag", () => {
 describe("the alpha tag step", () => {
   const script = readFileSync(`${import.meta.dir}/../../.github/scripts/alpha-tag.sh`, "utf8");
   const workflow = readFileSync(`${import.meta.dir}/../../.github/workflows/release-alpha.yml`, "utf8");
+
+  // A git log that fails mid-pipe would otherwise leave a tag carrying half a message.
+  test("resolves the message before the tag is created", () => {
+    expect(script.indexOf("git log --no-merges")).toBeLessThan(script.indexOf("git tag -a"));
+    expect(script).toContain("body=$(");
+  });
 
   test("writes the commits since the previous alpha into the tag message", () => {
     expect(script).toContain('git log --no-merges');

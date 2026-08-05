@@ -6,14 +6,13 @@ set -euo pipefail
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-{
-  printf 'Alpha %s\n\n' "$TAG"
-  if [ -n "${PREVIOUS:-}" ]; then
-    printf 'Commits since %s:\n\n' "$PREVIOUS"
-    git log --no-merges --pretty='- %s (%h)' "$PREVIOUS..$SHA"
-  else
-    printf 'No earlier alpha or release tag to count from.\n'
-  fi
-} | git tag -a "$TAG" --cleanup=verbatim -F - "$SHA"
+# Resolved before the tag exists: a git log failing mid-pipe leaves a tag with half a message.
+if [ -n "${PREVIOUS:-}" ]; then
+  body=$(printf 'Commits since %s:\n\n' "$PREVIOUS"; git log --no-merges --pretty='- %s (%h)' "$PREVIOUS..$SHA")
+else
+  body="No earlier alpha or release tag to count from."
+fi
+
+printf 'Alpha %s\n\n%s\n' "$TAG" "$body" | git tag -a "$TAG" --cleanup=verbatim -F - "$SHA"
 
 git push origin "refs/tags/$TAG"

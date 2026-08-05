@@ -37,28 +37,22 @@ export function nextSequence(channel: Channel, base: string, tags: string[]): nu
 }
 
 /**
- * The tag the next alpha's notes are counted from: the highest alpha of this channel, or the
- * channel's highest stable tag before any alpha existed. Undefined only in a repository whose
- * first alpha is also its first release, where notes have no sensible lower bound.
+ * The tag the next alpha's notes are counted from: the highest thing already published on
+ * this channel, alpha or stable. Preferring alphas outright would anchor the range at an
+ * ancient alpha once a stable shipped after it, making the notes span months (grok review).
+ * Undefined only where the channel has no tag at all, which leaves notes no lower bound.
  */
 export function previousTag(channel: Channel, tags: string[]): string | undefined {
-  const marker = MARKER[channel];
-  const shapes = [
-    new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+-alpha\\.[0-9]+)${marker}$`),
-    new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+)${marker}$`),
-  ];
+  const shape = new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+(?:-alpha\\.[0-9]+)?)${MARKER[channel]}$`);
 
-  for (const shape of shapes) {
-    let best: { tag: string; version: ReturnType<typeof parseSemver> } | undefined;
-    for (const raw of tags) {
-      const match = shape.exec(raw.trim());
-      if (!match) continue;
-      const version = parseSemver(match[1], "existing tag");
-      if (!best || cmp(version, best.version) > 0) best = { tag: raw.trim(), version };
-    }
-    if (best) return best.tag;
+  let best: { tag: string; version: ReturnType<typeof parseSemver> } | undefined;
+  for (const raw of tags) {
+    const match = shape.exec(raw.trim());
+    if (!match) continue;
+    const version = parseSemver(match[1], "existing tag");
+    if (!best || cmp(version, best.version) > 0) best = { tag: raw.trim(), version };
   }
-  return undefined;
+  return best?.tag;
 }
 
 /**

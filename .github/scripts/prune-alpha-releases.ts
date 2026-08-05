@@ -10,15 +10,19 @@ import { isEngineAlphaTag } from "./release-tags.mjs";
 
 export const RETENTION_DAYS = 30;
 
-export type Release = { tagName: string; publishedAt: string | null; isDraft?: boolean };
+export type Release = { tagName: string; publishedAt: string | null; isDraft: boolean };
 
 export function prunable(releases: Release[], now: Date, days = RETENTION_DAYS): string[] {
   const cutoff = now.getTime() - days * 24 * 60 * 60 * 1000;
   return releases
     .filter((r) => isEngineAlphaTag(r.tagName))
-    // A draft has no publication date to age from, and an unpublished alpha is a failed
-    // build someone may still be reading.
-    .filter((r) => !r.isDraft && r.publishedAt !== null)
+    .filter((r) => {
+      // Absent rather than false would read as "not a draft" and select a draft for deletion.
+      if (typeof r.isDraft !== "boolean") {
+        throw new Error(`release ${r.tagName} has no isDraft flag to judge it by`);
+      }
+      return !r.isDraft && r.publishedAt !== null;
+    })
     .filter((r) => {
       const published = Date.parse(r.publishedAt as string);
       if (Number.isNaN(published)) {
