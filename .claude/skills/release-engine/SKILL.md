@@ -69,6 +69,11 @@ engine's number would publish that as npm `latest` and downgrade every user (#72
 engine tag publishes no npm package at all now — users get the new engine when a
 `-cli` release ships the bumped pin (Mode A, after this one).
 
+**Raise, never lower.** If the new engine version would overtake `package.json#version`,
+raise the CLI line to match in the same commit — `check:versions` rule 2 requires
+`cli >= engine` and will reject the release commit otherwise. Raising is safe because the
+result still leads the published `latest`; only lowering downgrades users.
+
 ```bash
 cd rust && cargo check
 cd ..
