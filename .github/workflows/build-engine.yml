@@ -64,18 +64,11 @@ jobs:
       # `contents: write`; an attacker-controlled value containing `$(cmd)` or
       # `;` would otherwise execute arbitrary code with that permission. Pattern
       # mirrors `.github/workflows/npm-publish.yml::Resolve tag` (post-#291).
-      # `git tag -F -` reads the message from stdin so newlines/shell metachars
-      # in INPUT_NOTES survive untouched (argv via `-m` would be a re-exposure).
-      # Default cleanup would strip the `#` heading lines the release body needs (#651).
       - name: Create and push annotated tag
         env:
-          INPUT_TAG: ${{ inputs.tag }}
+          TAG: ${{ inputs.tag }}
           INPUT_NOTES: ${{ inputs.notes }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          printf '%s' "$INPUT_NOTES" | git tag -a "$INPUT_TAG" --cleanup=verbatim -F -
-          git push origin "refs/tags/$INPUT_TAG"
+        run: printf '%s' "$INPUT_NOTES" | .github/scripts/push-annotated-tag.sh
 
       # A GITHUB_TOKEN push never fires `on.push.tags`; workflow_dispatch is the exception (#651).
       - name: Trigger build + release for the new tag
