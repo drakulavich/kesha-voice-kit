@@ -26,6 +26,7 @@ jobs:
       publish: ${{ steps.publishable.outputs.publish }}
       version: ${{ steps.derive.outputs.version }}
       tag: ${{ steps.derive.outputs.tag }}
+      previous: ${{ steps.derive.outputs.previous }}
       dist_tag: ${{ steps.dist.outputs.dist_tag }}
     steps:
       # Full history and tags: the sequence is counted from tags, and a shallow checkout
@@ -97,9 +98,8 @@ jobs:
         env:
           TAG: ${{ needs.decide.outputs.tag }}
           SHA: ${{ github.sha }}
-        run: |
-          git tag "$TAG" "$SHA"
-          git push origin "$TAG"
+          PREVIOUS: ${{ needs.decide.outputs.previous }}
+        run: .github/scripts/alpha-tag.sh
 
   # No OIDC here: npm-publish.yml owns the only entry name npm's publisher trusts (#731).
   publish:

@@ -7,12 +7,13 @@
  * `version=`/`tag=` lines suitable for `$GITHUB_OUTPUT`.
  */
 import { readFileSync } from "node:fs";
+import { CLI_MARKER, publishedVersionRe } from "./release-tags.mjs";
 import { cmp, parseSemver } from "../../src/semver.mjs";
 
 export type Channel = "cli" | "engine";
 
 /** CLI alphas carry the `-cli` marker so the engine build's `!v*-cli` filter skips them (#685). */
-const MARKER: Record<Channel, string> = { cli: "-cli", engine: "" };
+const MARKER: Record<Channel, string> = { cli: CLI_MARKER, engine: "" };
 
 export function alphaTag(channel: Channel, base: string, sequence: number): string {
   return `v${base}-alpha.${sequence}${MARKER[channel]}`;
@@ -34,6 +35,24 @@ export function nextSequence(channel: Channel, base: string, tags: string[]): nu
     if (match) highest = Math.max(highest, Number(match[1]));
   }
   return highest + 1;
+}
+
+/**
+ * The tag the next alpha's notes are counted from: the highest thing already published on this
+ * channel. Preferring alphas would anchor the range at an ancient one once anything shipped
+ * after it, making the notes span months.
+ */
+export function previousTag(channel: Channel, tags: string[]): string | undefined {
+  const shape = publishedVersionRe(MARKER[channel]);
+
+  let best: { tag: string; version: ReturnType<typeof parseSemver> } | undefined;
+  for (const raw of tags) {
+    const match = shape.exec(raw.trim());
+    if (!match) continue;
+    const version = parseSemver(match[1], "existing tag");
+    if (!best || cmp(version, best.version) > 0) best = { tag: raw.trim(), version };
+  }
+  return best?.tag;
 }
 
 /**
@@ -102,5 +121,7 @@ if (import.meta.main) {
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   const tags = Bun.spawnSync(["git", "tag", "--list"]).stdout.toString().split("\n").filter(Boolean);
   const derived = deriveAlpha(channel, pkg, tags, process.argv[3]);
-  process.stdout.write(`version=${derived.version}\ntag=${derived.tag}\n`);
+  process.stdout.write(
+    `version=${derived.version}\ntag=${derived.tag}\nprevious=${previousTag(channel, tags) ?? ""}\n`,
+  );
 }

@@ -5,6 +5,8 @@ export const STABLE_TAG_RE: RegExp;
 export const ALPHA_TAG_RE: RegExp;
 export function isStableTag(tag: string): boolean;
 export function isEngineAlphaTag(tag: string): boolean;
+export const CLI_MARKER: string;
+export function publishedVersionRe(marker: string): RegExp;
 export function cliPublishTarget(tag: string): {
   version: string;
   engineOnly: boolean;

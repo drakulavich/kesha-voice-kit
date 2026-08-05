@@ -19,7 +19,7 @@
 - [x] 3.3 Make its version guard compare against the input rather than assuming the checkout already matches, and confirm `keshaEngine.version` is correct in the published tarball — `1.27.0-alpha.1` on npm carries `keshaEngine 1.24.7`
 - [x] 3.4 Reduce `npm-publish.yml` to a thin caller, keeping its triggers and `id-token: write` intact
 - [x] 3.5 Confirm every `${{ }}` expression reaching a `run:` block still passes through `env:`
-- [ ] 3.6 Verify by dispatching against an already-published tag and confirming it no-ops on the prior-publish check
+- [x] 3.6 Verify by dispatching against an already-published tag and confirming it no-ops on the prior-publish check — dispatched from `main` so the extracted path ran, not the pre-refactor copy the tag's own ref still carries
 
 ## 4. Teach the resolver about the alpha channel
 
@@ -44,7 +44,7 @@
 - [x] 6.3 Record a skip in a form a person can read afterwards — every run so far logs which gate refused and why
 - [x] 6.4 Create and push the derived tag at the built commit **before** publishing, as the reservation that makes the version permanently taken
 - [x] 6.5 Call the reusable publish workflow with the alpha channel — through `npm-publish.yml`, the only entry name npm's Trusted Publishing accepts (#731)
-- [ ] 6.6 Generate release notes from the commits since the previous alpha tag for the same artifact — no notes exist to carry them while 6.10 stands
+- [x] 6.6 Generate release notes from the commits since the previous alpha tag for the same artifact — written into the annotated tag, the one record pruning never removes, since 6.10 leaves a CLI alpha no Release to hold them
 - [x] 6.7 Use `concurrency` with `queue: max` rather than a bare group — GitHub cancels an existing pending run when a newer one joins, dropping middle merges; queueing cannot be combined with `cancel-in-progress`
 - [x] 6.8 Split privileges across jobs: unprivileged derivation and tests, a tag job with `contents: write` and no OIDC, a publish job with `id-token: write` and no tag write
 - [x] 6.9 Pin every action in the new workflows by SHA
@@ -67,14 +67,14 @@
 
 ## 9. Retention
 
-- [ ] 9.1 Decide the retention window and which artifact it prunes, and record it in the spec, replacing the open issue
-- [ ] 9.2 Add a scheduled job pruning alpha Releases past the window, leaving every stable release and every tag intact
+- [x] 9.1 Decide the retention window and which artifact it prunes, and record it in the spec, replacing the open issue — 30 days from publication, alpha Releases only, drafts never
+- [x] 9.2 Add a scheduled job pruning alpha Releases past the window, leaving every stable release and every tag intact
 - [x] 9.3 Confirm the derivation does not depend on a pruned Release still existing — `nextSequence` counts `git tag --list` and never reads Releases
 
 ## 10. Documentation
 
 - [x] 10.1 Document the alpha channel in the release runbook and the `release-mechanics` skill, including the tag grammar and that `main` carries the next unreleased version
-- [ ] 10.2 Add **channel**, **alpha** and **Prerelease** to `openspec/specs/GLOSSARY.md`
+- [x] 10.2 Add **channel**, **alpha** and **Prerelease** to `openspec/specs/GLOSSARY.md`
 - [x] 10.3 Confirm no user-facing install hint points a first-time reader at the alpha channel, and that alpha install text says bun, never npm — the channel is named only in the maintainer-facing skill
 
 ## 11. End-to-end verification
@@ -82,6 +82,6 @@
 - [ ] 11.1 Merge a CLI-only change and confirm an alpha publishes without human action — `1.27.0-alpha.1` published, but through `workflow_dispatch`; the label-on-merge path is still unexercised
 - [x] 11.2 Install the alpha by naming the channel and confirm it runs
 - [x] 11.3 Confirm an unqualified install still resolves the newest stable version before and after that alpha
-- [ ] 11.4 Merge a docs-only change and confirm nothing publishes and the skip is visible
+- [x] 11.4 Merge a docs-only change and confirm nothing publishes and the skip is visible — #744 logged `Not publishing: nothing that ships changed. Labels: []`
 - [x] 11.5 Dispatch an Engine alpha and install it end to end
 - [x] 11.6 Confirm a CLI alpha tag left the Engine build workflow untriggered

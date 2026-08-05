@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   alphaTag,
   assertPassesVersionGate,
   deriveAlpha,
   nextSequence,
+  previousTag,
 } from "../../.github/scripts/derive-alpha-version";
 
 const PKG = { version: "1.27.0", keshaEngine: { version: "1.24.7" } };
@@ -99,5 +101,51 @@ describe("deriveAlpha", () => {
     const pkg = { version: "1.27.0-alpha.1", keshaEngine: { version: "1.24.7" } };
 
     expect(() => deriveAlpha("cli", pkg, SOME_TAGS)).toThrow(/must be a stable version/);
+  });
+});
+
+describe("previousTag", () => {
+  const TAGS = ["v1.24.7", "v1.26.0-cli", "v1.27.0-alpha.1-cli", "v1.24.8-alpha.1", "v1.22.0-beta.1"];
+
+  test("takes the highest published tag of its own channel", () => {
+    expect(previousTag("cli", TAGS)).toBe("v1.27.0-alpha.1-cli");
+    expect(previousTag("engine", TAGS)).toBe("v1.24.8-alpha.1");
+  });
+
+  test("compares by SemVer, not lexically", () => {
+    const tags = ["v1.27.0-alpha.2-cli", "v1.27.0-alpha.10-cli"];
+    expect(previousTag("cli", tags)).toBe("v1.27.0-alpha.10-cli");
+  });
+
+  // Anchoring at an old alpha would make the next alpha's notes span every stable since.
+  test("takes a stable released after the last alpha", () => {
+    const tags = ["v1.24.8-alpha.2", "v1.25.0", "v1.30.0", "v1.26.0-cli"];
+    expect(previousTag("engine", tags)).toBe("v1.30.0");
+    expect(previousTag("cli", ["v1.27.0-alpha.1-cli", "v1.28.0-cli"])).toBe("v1.28.0-cli");
+  });
+
+  // A beta is published too, so notes anchored before it would repeat what it already shipped.
+  test("takes a beta released after the last alpha", () => {
+    expect(previousTag("engine", ["v1.24.8-alpha.2", "v1.25.0-beta.1"])).toBe("v1.25.0-beta.1");
+  });
+
+  // Before any alpha exists the notes still need a lower bound, or they would span all history.
+  test("falls back to the channel's highest stable tag", () => {
+    expect(previousTag("cli", ["v1.25.0-cli", "v1.26.0-cli", "v1.24.7"])).toBe("v1.26.0-cli");
+    expect(previousTag("engine", ["v1.24.6", "v1.24.7", "v1.26.0-cli"])).toBe("v1.24.7");
+  });
+
+  test("is undefined when the channel has no tag at all", () => {
+    expect(previousTag("cli", ["v1.24.7"])).toBeUndefined();
+  });
+});
+
+describe("the alpha tag step", () => {
+  const workflow = readFileSync(`${import.meta.dir}/../../.github/workflows/release-alpha.yml`, "utf8");
+
+  // Behaviour lives in tests/integration/alpha-tag.test.ts, which runs the script for real.
+  test("the workflow passes the derived previous tag through env", () => {
+    expect(workflow).toContain("PREVIOUS: ${{ needs.decide.outputs.previous }}");
+    expect(workflow).toContain("run: .github/scripts/alpha-tag.sh");
   });
 });
