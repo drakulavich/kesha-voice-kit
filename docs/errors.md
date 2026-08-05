@@ -32,7 +32,7 @@ code never needs sanitizing.
 | `E_TRANSCRIBE_FAILED` | transcribe | no | The ASR pipeline failed. | Re-run; file a bug with a support bundle. |
 | `E_DIARIZE_TIMEOUT` | transcribe | yes | Speaker diarization timed out (cold compile or long audio). | Re-run once warm; shorten the audio. |
 | `E_ENGINE_SPAWN` | internal | no | The CLI couldn't spawn the engine subprocess. | `kesha install`; check the engine binary path (`KESHA_ENGINE_BIN`). |
-| `E_INVALID_ARG` | input | no | A CLI flag or argument was invalid. | See `kesha --help`. |
+| `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid. | See `kesha --help`; the message names the setting and its accepted values. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |
 
 ## Where codes come from

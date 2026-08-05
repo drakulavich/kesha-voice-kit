@@ -177,23 +177,25 @@ fn compute_units_from_env() -> Result<KokoroComputeUnits> {
         return Ok(KokoroComputeUnits::Default);
     }
     let lowered = value.to_ascii_lowercase();
-    COMPUTE_UNIT_PRESETS
+    if let Some((_, units)) = COMPUTE_UNIT_PRESETS
         .iter()
         .find(|(name, _)| *name == lowered)
-        .map(|(_, units)| *units)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "{COMPUTE_UNITS_ENV}='{value}' is not a known CoreML compute-units preset. \
-                 Use one of: {}. `default` is the tuned mapping and the right choice on real \
-                 Apple Silicon; override it only where no Neural Engine is exposed, such as a \
-                 virtualised macOS guest.",
-                COMPUTE_UNIT_PRESETS
-                    .iter()
-                    .map(|(name, _)| *name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        })
+    {
+        return Ok(*units);
+    }
+    // Coded: an uncoded error surfaces as E_INTERNAL, blaming the engine for the user's typo.
+    coded_bail!(
+        ErrorCode::InvalidArg,
+        "{COMPUTE_UNITS_ENV}='{value}' is not a known CoreML compute-units preset. \
+         Use one of: {}. `default` is the tuned mapping and the right choice on real \
+         Apple Silicon; override it only where no Neural Engine is exposed, such as a \
+         virtualised macOS guest.",
+        COMPUTE_UNIT_PRESETS
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 /// Initialize a FluidAudio Kokoro bridge for `voice_id` and run `f` against it
@@ -463,10 +465,10 @@ mod tests {
             assert_eq!(preset_name(parsed), value.trim().to_ascii_lowercase());
         }
 
-        // An unknown preset must fail loudly rather than silently synthesizing
-        // on the ANE the caller was trying to avoid.
+        // Must fail loudly instead of silently using the ANE the caller was avoiding.
         let _g = EnvGuard::set(COMPUTE_UNITS_ENV, "ane-please");
         let err = compute_units_from_env().expect_err("unknown preset must error");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::InvalidArg);
         let msg = err.to_string();
         assert!(msg.contains("ane-please"), "{msg}");
         assert!(msg.contains("cpu-and-gpu"), "{msg}");
