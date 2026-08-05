@@ -7,6 +7,7 @@ name: "📦 npm Publish"
 # `bun add -g @drakulavich/kesha-voice-kit@latest` users do not get unstable
 # builds and channels do not collide with each other. CLI-only marker
 # releases (`vX.Y.Z-cli`) follow the same rule after stripping `-cli`.
+# Only `-cli` tags publish: a bare tag names the engine, not the CLI (#729).
 # The publish itself lives in release-npm-publish.yml, shared with alpha (#685).
 on:
   release:

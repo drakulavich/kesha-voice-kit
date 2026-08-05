@@ -56,13 +56,23 @@ If anything fails, STOP. Do not bump versions.
 
 ## Engine release procedure
 
-### Step 1: Version bump in lockstep
+### Step 1: Version bump — engine fields ONLY
 
 Bump these THREE in the same commit:
 
 - `rust/Cargo.toml` — `version = "X.Y.Z"`
 - `rust/Cargo.lock` — refresh via `cd rust && cargo check`
-- `package.json` — both `version` AND `keshaEngine.version`
+- `package.json#keshaEngine.version` — **not** `package.json#version`
+
+Since #691 `main` carries the next unreleased CLI version; dragging it down to the
+engine's number would publish that as npm `latest` and downgrade every user (#729). An
+engine tag publishes no npm package at all now — users get the new engine when a
+`-cli` release ships the bumped pin (Mode A, after this one).
+
+**Raise, never lower.** If the new engine version would overtake `package.json#version`,
+raise the CLI line to match in the same commit — `check:versions` rule 2 requires
+`cli >= engine` and will reject the release commit otherwise. Raising is safe because the
+result still leads the published `latest`; only lowering downgrades users.
 
 ```bash
 cd rust && cargo check
