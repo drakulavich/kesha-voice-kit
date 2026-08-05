@@ -10,10 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { classifyReleaseTag } from "../../.github/scripts/classify-release-tag.mjs";
 import {
   cliPublishTarget,
   ENGINE_TAG_ERE,
   ENGINE_TAG_RE,
+  isEngineAlphaTag,
 } from "../../.github/scripts/release-tags.mjs";
 
 const WORKFLOW = ".github/workflows/build-engine.yml";
@@ -55,6 +57,53 @@ describe("engine tag grammar", () => {
 describe("engine build trigger", () => {
   test("CLI marker tags are excluded from the push filter", () => {
     expect(parse(WORKFLOW_YAML).on.push.tags).toEqual(["v*", "!v*-cli"]);
+  });
+});
+
+describe("engine alpha publication", () => {
+  const steps = parse(WORKFLOW_YAML).jobs.release.steps;
+  const releaseStep = steps.find((s: { uses?: string }) => s.uses?.startsWith("softprops/"));
+  const buildSteps = parse(WORKFLOW_YAML).jobs.build.steps;
+
+  test("only an engine alpha shape counts as one", () => {
+    expect(isEngineAlphaTag("v1.24.8-alpha.1")).toBe(true);
+    for (const tag of ["v1.24.8", "v1.24.8-beta.1", "v1.27.0-alpha.1-cli", "v1.24.8-alpha"]) {
+      expect(isEngineAlphaTag(tag)).toBe(false);
+    }
+  });
+
+  // An alpha behind the un-draft gate is not installable, which is the whole point of one (#685).
+  test("only an alpha publishes itself, and only stable is not a prerelease", () => {
+    expect(classifyReleaseTag("v1.24.8-alpha.1")).toEqual({ publish: true, prerelease: true });
+    expect(classifyReleaseTag("v1.24.8")).toEqual({ publish: false, prerelease: false });
+    expect(classifyReleaseTag("v1.24.8-beta.1")).toEqual({ publish: false, prerelease: true });
+  });
+
+  // Releases here are immutable: an asset uploaded after publication fails with a 422.
+  test("assets are always uploaded to a draft", () => {
+    expect(releaseStep.with.draft).toBe(true);
+    expect(releaseStep.with.prerelease).toBe("${{ steps.release_kind.outputs.prerelease }}");
+  });
+
+  test("the alpha is un-drafted afterwards, by the classifier's verdict", () => {
+    const publishStep = steps.find((s: { name?: string }) => s.name === "Publish the alpha");
+
+    expect(steps.indexOf(publishStep)).toBeGreaterThan(steps.indexOf(releaseStep));
+    expect(publishStep.if).toBe("steps.release_kind.outputs.publish == 'true'");
+    expect(publishStep.run).toContain("--draft=false");
+    expect(publishStep.run).not.toContain("${{");
+    expect(publishStep.env.TAG_NAME).toBe("${{ github.ref_name }}");
+  });
+
+  test("the build applies the alpha version, and only for a tag that names one", () => {
+    const inject = buildSteps.find((s: { name?: string }) => s.name === "Apply the alpha engine version");
+
+    expect(inject.run).toContain("set-cargo-version.mjs");
+    expect(inject.if).toContain("startsWith(github.ref, 'refs/tags/')");
+    expect(inject.if).toContain("contains(github.ref_name, '-alpha.')");
+    // The tag reaches the shell as a variable; `$(…)` in a ref must not execute (#291).
+    expect(inject.run).not.toContain("${{");
+    expect(inject.env.TAG_NAME).toBe("${{ github.ref_name }}");
   });
 });
 
@@ -119,6 +168,41 @@ describe("release manifest tag check", () => {
   test("an engine alpha is accepted when the version line carries the suffix too", async () => {
     const cwd = fixtureRepo("1.27.0", "1.24.8-alpha.1");
     expect((await manifestCheck(["--tag", "v1.24.8-alpha.1"], cwd)).accepted).toBe(true);
+  });
+
+  // The pin names the released engine and may never name an alpha (#738), so an alpha leads it.
+  test("an engine alpha above the pin is accepted", async () => {
+    const cwd = fixtureRepo("1.27.0", "1.24.7");
+    expect((await manifestCheck(["--tag", "v1.24.8-alpha.1"], cwd)).accepted).toBe(true);
+  });
+
+  test("an engine alpha below the pin is rejected", async () => {
+    const cwd = fixtureRepo("1.27.0", "1.24.9");
+    const { accepted, stderr } = await manifestCheck(["--tag", "v1.24.8-alpha.1"], cwd);
+
+    expect(accepted).toBe(false);
+    expect(stderr).toContain("or name an alpha above it");
+  });
+
+  // Only alphas may lead the pin; a stable or beta tag ahead of it means the bump was forgotten.
+  test("a stable or beta tag above the pin is still rejected", async () => {
+    const cwd = fixtureRepo("1.27.0", "1.24.7");
+
+    expect((await manifestCheck(["--tag", "v1.24.8"], cwd)).accepted).toBe(false);
+    expect((await manifestCheck(["--tag", "v1.24.8-beta.1"], cwd)).accepted).toBe(false);
+  });
+
+  test("the manifest describes the alpha, not the pin it leads", async () => {
+    const cwd = fixtureRepo("1.27.0", "1.24.7");
+    const proc = Bun.spawn(["node", SCRIPT, "--tag", "v1.24.8-alpha.1"], {
+      cwd,
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const manifest = JSON.parse(await new Response(proc.stdout).text());
+
+    expect(manifest.tag).toBe("v1.24.8-alpha.1");
+    expect(manifest.engineVersion).toBe("1.24.8-alpha.1");
   });
 
   test("the base version of an alpha is not an alias for it, in either direction", async () => {

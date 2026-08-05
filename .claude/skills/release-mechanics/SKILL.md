@@ -73,6 +73,19 @@ npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
 - Verify beta with `npm view @drakulavich/kesha-voice-kit@beta version`; user-facing beta install is `bun add -g @drakulavich/kesha-voice-kit@beta && kesha install`.
 - Promote by cutting a later stable `vX.Y.Z` release; do not reuse the beta tag or try to retag it as stable.
 
+**Alpha channel** (#685) — versions are derived from tags at publish time and never committed, so `main` carries the *next* unreleased CLI version as the alpha base:
+
+- **CLI alphas** publish themselves. Label a PR `alpha`; on merge `release-alpha.yml` derives `vX.Y.Z-alpha.N-cli`, pushes the tag, then dispatches `npm-publish.yml` (npm Trusted Publishing validates the *entry* workflow name, so an alpha must publish through that one). Install with `bun add -g @drakulavich/kesha-voice-kit@alpha`. `workflow_dispatch` skips the label gate for a PR merged without one.
+- **Engine alphas** are dispatched by hand, tagged `vX.Y.Z-alpha.N` (no `-cli`), and end up **live, not draft** — an alpha behind the un-draft gate is not installable. The build still creates a draft and un-drafts it after upload: releases here are immutable, so an asset uploaded to a published release 422s. Beta keeps its draft.
+- An engine alpha leads the pin instead of matching it: `package.json#keshaEngine.version` may never name an alpha (#738), so pick a base above it, and leave all three version fields alone. The build writes the tag's version into `rust/Cargo.toml` in the runner, so `kesha-engine --version` reports the alpha.
+
+```bash
+gh workflow run "🔨 Build Engine" -R drakulavich/kesha-voice-kit \
+  -f tag="$(bun .github/scripts/derive-alpha-version.ts engine 1.24.8 | sed -n 's/^tag=//p')" \
+  -f ref=main -f notes="Engine alpha."
+kesha install --engine-version 1.24.8-alpha.1   # a later plain `kesha install` restores the pin
+```
+
 **Alternate tag path:** `workflow_dispatch` validates tag shape and authors notes inline, useful when a sandbox cannot push tags:
 
 ```bash

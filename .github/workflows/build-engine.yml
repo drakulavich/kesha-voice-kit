@@ -179,6 +179,14 @@ jobs:
         # configure-time. Cheaper than installing libopus via vcpkg.
         run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
 
+      # Without this the binary reports the pinned release it is meant to be tested against (#685).
+      - name: Apply the alpha engine version
+        if: startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-alpha.')
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: node .github/scripts/set-cargo-version.mjs "${TAG_NAME#v}"
+
       - name: Build release binary
         run: cd rust && cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }} --no-default-features
       - name: Prepare artifact
@@ -461,12 +469,7 @@ jobs:
         id: release_kind
         env:
           TAG_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          fi
+        run: node .github/scripts/classify-release-tag.mjs "$TAG_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Generate source SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
@@ -533,6 +536,7 @@ jobs:
             cosign sign-blob --yes --bundle "${name}.sigstore.json" "$name"
           done < <(find . -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
 
+      # Always a draft: releases here are immutable, and an asset uploaded after publication 422s.
       - name: Create draft release with binaries
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -540,3 +544,11 @@ jobs:
           files: release-assets/*
           draft: true
           prerelease: ${{ steps.release_kind.outputs.prerelease }}
+
+      # Stable and beta wait for the human un-draft gate; an alpha nobody can install is not one (#685).
+      - name: Publish the alpha
+        if: steps.release_kind.outputs.publish == 'true'
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$TAG_NAME" --draft=false

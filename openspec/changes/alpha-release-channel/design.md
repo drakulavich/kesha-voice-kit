@@ -119,6 +119,41 @@ and the Engine changes far less often. Engine alphas are dispatched manually and
 non-draft Prereleases, changing `build-engine.yml:484` from an unconditional `draft: true`
 to a draft only for stable tags.
 
+### An Engine alpha leads the pin, and the runner carries its version
+
+`release-manifest.mjs` required the release tag to equal `package.json#keshaEngine.version`,
+which no Engine alpha can satisfy: the pin names the *released* Engine and may never name an
+alpha (#738). Exact match is therefore relaxed to "equal to the pin, or an alpha above it".
+That keeps what the original rule protected — `v1.24.8-alpha.1` against a pin already at
+`1.24.8` sorts below it and is still refused, so an alpha can never stand in for the stable
+release of its own base — while a stable or beta tag ahead of the pin stays an error, because
+there it means the bump was forgotten.
+
+The same gap appears inside the binary: `kesha-engine --version` reports `CARGO_PKG_VERSION`,
+so an alpha built from `main` would identify itself as the pinned release it is meant to be
+tested against. The build applies the tag's version to `rust/Cargo.toml` in the runner, exactly
+as the publish workflow applies the derived version to `package.json` — the version is carried
+by the tag, never by a commit. Cargo re-locks by itself, as the build does not pass `--locked`.
+
+Beta tags keep their draft, unlike alphas. A beta is a release candidate whose binaries are
+validated by hand before anyone can download them; that gate is the point of the beta channel,
+and removing it here would change how a channel this change does not touch behaves.
+
+### An alpha is published by un-drafting, not by being created live
+
+This repository has GitHub immutable releases enabled (`"immutable": true` on every published
+release, which is also why tag names are permanently reserved). GitHub refuses an asset upload
+to a published release, and `softprops/action-gh-release` creates a prerelease live whenever
+`draft: false` is passed explicitly — `const draft = prerelease === true ? config.input_draft
+=== true : true` — uploading its assets afterwards. Publishing an alpha that way therefore
+fails with 422 "Cannot upload asset to an immutable release", after the tag has already been
+created: a burned tag and an empty published release.
+
+Every release is created as a draft, and an alpha is un-drafted by a following step once the
+assets are attached. This is the pattern the action's own error guidance prescribes, and it
+keeps the property the requirement asks for — no human step between dispatch and an
+installable artifact — without the alpha and the stable path diverging on how assets land.
+
 ### Tag grammar: `-cli` suffix for CLI, bare prerelease for the Engine
 
 `build-engine.yml:3-13` triggers on `v*` excluding `!v*-cli`, so a bare `v<base>-alpha.N`
