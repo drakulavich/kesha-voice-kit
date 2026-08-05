@@ -65,19 +65,43 @@ npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
 7. Publish: `gh release edit vX.Y.Z --draft=false`. This fires `📦 npm Publish`; verify `npm view @drakulavich/kesha-voice-kit version` within ~60s. Manual fallback: `npm publish --access public` from the maintainer laptop.
 8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo, and attach Linux x64 `.deb`/`.rpm` packages covered by `SHA256SUMS` + Sigstore. CLI-only marker releases skip Homebrew/packages.
 
-**Beta engine release** (unstable channel):
+**Prerelease channels.** The validators accept two shapes beside stable — `vX.Y.Z-beta.N` and `vX.Y.Z-alpha.N` (a CLI alpha adds the `-cli` marker) — and the grammar has one home, `release-tags.mjs`. Neither channel can reach `latest`: `npm-dist-tag.mjs` derives the dist-tag from the SemVer prerelease identifier, returns `latest` only for a version that has none, and *refuses* one whose identifier decodes to `latest` (`1.27.0-latest.1`) rather than handing a prerelease to everyone who never asked for a channel.
+
+| | alpha | beta |
+| --- | --- | --- |
+| for | rehearsing the publish path continuously — every merge that ships | a candidate you want people to install and test |
+| version | derived from tags at publish time, never committed | committed in all three version fields |
+| dist-tag | `alpha` | `beta` |
+| reaches | whoever asked: `bun add -g @drakulavich/kesha-voice-kit@alpha` | `…@beta` |
+| skips | Linux `.deb`/`.rpm`, Homebrew, **and the human un-draft gate** | Linux `.deb`/`.rpm`, Homebrew |
+| promotion | none — it is evidence, not a candidate; cut a beta or a stable | a later stable `vX.Y.Z` |
+| Releases | engine alphas pruned after 30 days; tags kept | kept |
+
+**Beta engine release** (deliberate, human-gated):
 
 - Use SemVer prerelease versions in all three places: `package.json#version`, `package.json#keshaEngine.version`, and `rust/Cargo.toml`, for example `1.18.7-beta.1`; tag as `v1.18.7-beta.1`.
-- `build-engine.yml` accepts `vX.Y.Z-beta.N`, creates a **draft prerelease**, and uploads engine binaries, sidecars, `SHA256SUMS`, manifest, SBOM, and Sigstore bundles. It intentionally skips Homebrew and Linux `.deb`/`.rpm` packages for beta tags.
-- After draft asset validation, publish with `gh release edit vX.Y.Z-beta.N --draft=false`. `📦 npm Publish` publishes prerelease package versions with `npm publish --tag beta`, so `@latest` stays on the latest stable release.
-- Verify beta with `npm view @drakulavich/kesha-voice-kit@beta version`; user-facing beta install is `bun add -g @drakulavich/kesha-voice-kit@beta && kesha install`.
+- `build-engine.yml` creates a **draft prerelease** and uploads engine binaries, sidecars, `SHA256SUMS`, manifest, SBOM, and Sigstore bundles.
+- Verify before promoting exactly as for stable — engine-release step 5, authenticated `gh release download` against the draft — then `gh release edit vX.Y.Z-beta.N --draft=false`, then `npm view @drakulavich/kesha-voice-kit@beta version`. User-facing install is `bun add -g @drakulavich/kesha-voice-kit@beta && kesha install`.
 - Promote by cutting a later stable `vX.Y.Z` release; do not reuse the beta tag or try to retag it as stable.
 
 **Alpha channel** (#685) — versions are derived from tags at publish time and never committed, so `main` carries the *next* unreleased CLI version as the alpha base:
 
-- **CLI alphas** publish themselves. Label a PR `alpha`; on merge `release-alpha.yml` derives `vX.Y.Z-alpha.N-cli`, pushes the tag, then dispatches `npm-publish.yml` (npm Trusted Publishing validates the *entry* workflow name, so an alpha must publish through that one). Install with `bun add -g @drakulavich/kesha-voice-kit@alpha`. `workflow_dispatch` skips the label gate for a PR merged without one.
-- **Engine alphas** are dispatched by hand, tagged `vX.Y.Z-alpha.N` (no `-cli`), and end up **live, not draft** — an alpha behind the un-draft gate is not installable. The build still creates a draft and un-drafts it after upload: releases here are immutable, so an asset uploaded to a published release 422s. Beta keeps its draft.
+- **CLI alphas** publish themselves. Label a PR `alpha`; on merge `release-alpha.yml` derives `vX.Y.Z-alpha.N-cli`, pushes the tag, then dispatches `npm-publish.yml` (npm Trusted Publishing validates the *entry* workflow name, so an alpha must publish through that one). Install with `bun add -g @drakulavich/kesha-voice-kit@alpha`. `workflow_dispatch` skips the label gate for a PR merged without one. No GitHub Release is created — the annotated tag carries the notes.
+- A labelled PR that changed nothing npm packs publishes nothing: `alpha-publishable.ts` judges the changed paths against `npm pack --dry-run`.
+- **Engine alphas** are dispatched by hand, tagged `vX.Y.Z-alpha.N` (no `-cli`), and end up **live, not draft** — an alpha behind the un-draft gate is not installable. The build still creates a draft and un-drafts it after upload: releases here are immutable, so an asset uploaded to a published release 422s. Beta keeps its draft. Verify by installing from the channel, not from a draft asset.
 - An engine alpha leads the pin instead of matching it: `package.json#keshaEngine.version` may never name an alpha (#738), so pick a base above it, and leave all three version fields alone. The build writes the tag's version into `rust/Cargo.toml` in the runner, so `kesha-engine --version` reports the alpha.
+
+**Recovering a failed alpha publish.** `reserve-tag` runs *before* the publish on purpose: npm holding a version no tag records lets the next derivation reuse it, and the prior-publish guard turns that reuse into a green no-op. The cost of that ordering is the opposite failure — a publish that dies after the tag exists leaves an orphan tag, and the sequence is derived from tags alone.
+
+| | outcome |
+| --- | --- |
+| re-run **failed jobs only** | `decide` outputs are kept, the same version is retried — correct |
+| re-run **all jobs** | the new tag is now visible, the sequence advances, the orphan is never filled |
+| do nothing | the orphan stays; later merges continue past it |
+
+So: **re-run failed jobs only, or delete the orphan tag first.** A gap in the alpha sequence is expected and harmless — `nextSequence` only reads the highest.
+
+**The `alpha` label is read live, not frozen at merge.** `alpha-requested.sh` calls `GET /commits/{sha}/pulls`, which returns the merged PR's *current* labels. Between merge and the `decide` job, removing the label skips the publish and adding it causes one. Treat it as a soft gate — "I removed the label right after merging" is a real explanation for a missing alpha.
 
 ```bash
 gh workflow run "🔨 Build Engine" -R drakulavich/kesha-voice-kit \
@@ -110,10 +134,10 @@ git push origin vX.Y.Z
 
 Post-#291 happy path: publishing a GitHub release runs `.github/workflows/npm-publish.yml` → `npm publish --provenance --access public` in GHA. Do not publish from a maintainer laptop unless the workflow is broken.
 
-- Trigger: `release: published` (engine un-draft or published `v*-cli` marker) plus `workflow_dispatch` re-runs.
+- Trigger: `release: published` (engine un-draft or published `v*-cli` marker), `workflow_dispatch` re-runs, and the alpha lane's dispatch. Only `-cli` tags publish a CLI; a bare tag names the engine (#729).
 - Provenance: `permissions.id-token: write` gives npm the GHA OIDC chain (`commit SHA` → built tarball) and the npm "verified" badge.
-- Guards: tag must match `package.json#version` after stripping leading `v` and trailing `-cli`; already-published versions skip publish and exit 0.
-- Dist-tags: stable package versions publish to `latest`; SemVer prerelease package versions publish to `beta`.
+- Guards: tag must match `package.json#version` after stripping leading `v` and trailing `-cli`; already-published versions skip publish and exit 0. An alpha version is minted at publish time, so it is injected into `package.json` instead of verified against it.
+- Dist-tags: resolved by `npm-dist-tag.mjs` from the prerelease identifier — stable → `latest`, `-beta.N` → `beta`, `-alpha.N` → `alpha`, and a prerelease never lands on `latest`.
 - Injection rule: route `inputs.tag` / `github.event.release.tag_name` through `env:`, never directly into `run:` while the job holds `id-token: write`.
 - Required secret: `NPM_TOKEN` (granular publish-only token for `@drakulavich/kesha-voice-kit`), set with `gh secret set NPM_TOKEN -R drakulavich/kesha-voice-kit`. If missing, the release remains published but the publish step fails; fallback is `npm publish --access public` from a laptop.
 - Release implication: un-draft is the commit-to-publish point. Validate draft assets via authenticated `gh release download` before un-drafting; npm publish is effectively permanent (72 h unpublish window, noisy provenance). If validation fails before publish: delete release + tag, bump patch, retry.
