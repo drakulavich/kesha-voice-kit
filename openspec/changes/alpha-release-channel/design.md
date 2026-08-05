@@ -139,6 +139,21 @@ Beta tags keep their draft, unlike alphas. A beta is a release candidate whose b
 validated by hand before anyone can download them; that gate is the point of the beta channel,
 and removing it here would change how a channel this change does not touch behaves.
 
+### An alpha is published by un-drafting, not by being created live
+
+This repository has GitHub immutable releases enabled (`"immutable": true` on every published
+release, which is also why tag names are permanently reserved). GitHub refuses an asset upload
+to a published release, and `softprops/action-gh-release` creates a prerelease live whenever
+`draft: false` is passed explicitly — `const draft = prerelease === true ? config.input_draft
+=== true : true` — uploading its assets afterwards. Publishing an alpha that way therefore
+fails with 422 "Cannot upload asset to an immutable release", after the tag has already been
+created: a burned tag and an empty published release.
+
+Every release is created as a draft, and an alpha is un-drafted by a following step once the
+assets are attached. This is the pattern the action's own error guidance prescribes, and it
+keeps the property the requirement asks for — no human step between dispatch and an
+installable artifact — without the alpha and the stable path diverging on how assets land.
+
 ### Tag grammar: `-cli` suffix for CLI, bare prerelease for the Engine
 
 `build-engine.yml:3-13` triggers on `v*` excluding `!v*-cli`, so a bare `v<base>-alpha.N`

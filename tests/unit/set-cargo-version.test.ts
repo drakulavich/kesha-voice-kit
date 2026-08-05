@@ -46,9 +46,30 @@ describe("withCargoVersion", () => {
     }
   });
 
-  test("refuses a manifest whose first table is not [package]", () => {
+  // Valid TOML the rewrite must survive: failing here burns a tag the tag job already pushed.
+  test.each([
+    ['# header\n[package]\nversion = "1.0.0"\n', 'version = "1.24.8-alpha.1"'],
+    ['[package]\nversion = "1.0.0" # pinned\n', 'version = "1.24.8-alpha.1" # pinned'],
+    ["[package]\nversion = '1.0.0'\n", 'version = "1.24.8-alpha.1"'],
+    ['[package]\nversion="1.0.0"\n', 'version="1.24.8-alpha.1"'],
+    ['[package] # the crate\nversion = "1.0.0"\n', 'version = "1.24.8-alpha.1"'],
+  ])("rewrites %j", (source, expected) => {
+    expect(withCargoVersion(source, "1.24.8-alpha.1")).toContain(expected);
+  });
+
+  test("takes the version from [package], not from a table that precedes it", () => {
+    const out = withCargoVersion(
+      '[workspace.package]\nversion = "0.0.1"\n\n[package]\nversion = "1.0.0"\n',
+      "1.24.8-alpha.1",
+    );
+
+    expect(out).toContain('[workspace.package]\nversion = "0.0.1"');
+    expect(out).toContain('[package]\nversion = "1.24.8-alpha.1"');
+  });
+
+  test("refuses a manifest with no [package] table", () => {
     expect(() => withCargoVersion('[workspace]\nversion = "1.0.0"\n', "1.24.8-alpha.1")).toThrow(
-      /\[package\]/,
+      /no \[package\] table/,
     );
   });
 

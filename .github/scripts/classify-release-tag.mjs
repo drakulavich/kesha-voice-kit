@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 /**
- * Decide how a release tag is published: draft or live, release or Prerelease.
+ * Decide how a release tag is published: Prerelease or not, and whether the build publishes
+ * the draft itself.
  *
- * Stable and beta tags stay drafts because un-drafting is the human gate that validates the
- * binaries before anyone can download them. An alpha has no such gate — it is dispatched on
- * purpose and must be installable the moment the build finishes (#685), so it publishes live.
- * Prints `draft=`/`prerelease=` lines suitable for `$GITHUB_OUTPUT`.
+ * Every release is *created* as a draft regardless — this repository has GitHub immutable
+ * releases enabled, and an asset uploaded after publication fails with 422 "Cannot upload
+ * asset to an immutable release". Stable and beta then wait for the human un-draft gate that
+ * validates the binaries; an alpha is dispatched on purpose and must be installable the
+ * moment the build finishes (#685), so the workflow un-drafts it in a later step.
+ * Prints `publish=`/`prerelease=` lines suitable for `$GITHUB_OUTPUT`.
  */
 import { pathToFileURL } from "node:url";
 import { isEngineAlphaTag, isStableTag } from "./release-tags.mjs";
 
 export function classifyReleaseTag(tag) {
-  return { draft: !isEngineAlphaTag(tag), prerelease: !isStableTag(tag) };
+  return { publish: isEngineAlphaTag(tag), prerelease: !isStableTag(tag) };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
@@ -21,5 +24,5 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     process.exit(2);
   }
   const kind = classifyReleaseTag(tag);
-  process.stdout.write(`draft=${kind.draft}\nprerelease=${kind.prerelease}\n`);
+  process.stdout.write(`publish=${kind.publish}\nprerelease=${kind.prerelease}\n`);
 }

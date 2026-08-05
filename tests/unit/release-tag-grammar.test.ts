@@ -73,15 +73,26 @@ describe("engine alpha publication", () => {
   });
 
   // An alpha behind the un-draft gate is not installable, which is the whole point of one (#685).
-  test("an alpha publishes live while stable and beta stay drafts", () => {
-    expect(classifyReleaseTag("v1.24.8-alpha.1")).toEqual({ draft: false, prerelease: true });
-    expect(classifyReleaseTag("v1.24.8")).toEqual({ draft: true, prerelease: false });
-    expect(classifyReleaseTag("v1.24.8-beta.1")).toEqual({ draft: true, prerelease: true });
+  test("only an alpha publishes itself, and only stable is not a prerelease", () => {
+    expect(classifyReleaseTag("v1.24.8-alpha.1")).toEqual({ publish: true, prerelease: true });
+    expect(classifyReleaseTag("v1.24.8")).toEqual({ publish: false, prerelease: false });
+    expect(classifyReleaseTag("v1.24.8-beta.1")).toEqual({ publish: false, prerelease: true });
   });
 
-  test("the release step takes both flags from the classifier", () => {
-    expect(releaseStep.with.draft).toBe("${{ steps.release_kind.outputs.draft }}");
+  // Releases here are immutable: an asset uploaded after publication fails with a 422.
+  test("assets are always uploaded to a draft", () => {
+    expect(releaseStep.with.draft).toBe(true);
     expect(releaseStep.with.prerelease).toBe("${{ steps.release_kind.outputs.prerelease }}");
+  });
+
+  test("the alpha is un-drafted afterwards, by the classifier's verdict", () => {
+    const publishStep = steps.find((s: { name?: string }) => s.name === "Publish the alpha");
+
+    expect(steps.indexOf(publishStep)).toBeGreaterThan(steps.indexOf(releaseStep));
+    expect(publishStep.if).toBe("steps.release_kind.outputs.publish == 'true'");
+    expect(publishStep.run).toContain("--draft=false");
+    expect(publishStep.run).not.toContain("${{");
+    expect(publishStep.env.TAG_NAME).toBe("${{ github.ref_name }}");
   });
 
   test("the build applies the alpha version, and only for a tag that names one", () => {

@@ -536,11 +536,19 @@ jobs:
             cosign sign-blob --yes --bundle "${name}.sigstore.json" "$name"
           done < <(find . -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
 
-      # Draft for stable and beta, live for an alpha — an alpha nobody can install is not one (#685).
-      - name: Create release with binaries
+      # Always a draft: releases here are immutable, and an asset uploaded after publication 422s.
+      - name: Create draft release with binaries
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           body_path: release-notes.md
           files: release-assets/*
-          draft: ${{ steps.release_kind.outputs.draft }}
+          draft: true
           prerelease: ${{ steps.release_kind.outputs.prerelease }}
+
+      # Stable and beta wait for the human un-draft gate; an alpha nobody can install is not one (#685).
+      - name: Publish the alpha
+        if: steps.release_kind.outputs.publish == 'true'
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$TAG_NAME" --draft=false
