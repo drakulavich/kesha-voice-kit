@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # The tag carries the notes: a CLI alpha creates no Release to hold them, and the tag is the
-# one record pruning can never remove (#685). `-F -` keeps a subject line's metachars literal.
+# one record pruning can never remove (#685).
 set -euo pipefail
-
-git config user.name "github-actions[bot]"
-git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
 # This channel's release shapes only: `audio-244` exists here, and so do the other artifact's tags.
 if [ "${TAG%-cli}" != "$TAG" ]; then
@@ -28,6 +25,5 @@ else
   body="No earlier tag in this commit's history to count from."
 fi
 
-printf 'Alpha %s\n\n%s\n' "$TAG" "$body" | git tag -a "$TAG" --cleanup=verbatim -F - "$SHA"
-
-git push origin "refs/tags/$TAG"
+# Sibling, not cwd-relative: the caller's working directory is the repository being tagged.
+printf 'Alpha %s\n\n%s\n' "$TAG" "$body" | "$(dirname "$0")/push-annotated-tag.sh"
