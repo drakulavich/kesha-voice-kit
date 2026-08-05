@@ -17,6 +17,10 @@ export type SemVer = {
 const SEMVER_2_0 =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
+export function isSemver(raw: string): boolean {
+  return SEMVER_2_0.test(raw);
+}
+
 export function parseSemver(raw: string, label: string): SemVer {
   const m = raw.match(SEMVER_2_0);
   if (!m) {

@@ -7,7 +7,7 @@ import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
-import { parseSemver } from "../semver";
+import { isSemver } from "../semver";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
 import type { SharedInstallArgs } from "./types";
 
@@ -69,17 +69,13 @@ export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefi
 export function resolveEngineVersionFlag(raw: unknown): string | undefined {
   if (raw === undefined || raw === null || raw === false) return undefined;
   const value = String(raw).trim();
-  try {
-    parseSemver(value, "--engine-version");
-    return value;
-  } catch {
-    const hint = /^v\d/.test(value)
-      ? ' Drop the leading "v" — that belongs to the release tag, not the version.'
-      : "";
-    throw new Error(
-      `--engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "${value}".${hint}`,
-    );
-  }
+  if (isSemver(value)) return value;
+  const hint = /^v\d/.test(value)
+    ? ' Drop the leading "v" — that belongs to the release tag, not the version.'
+    : "";
+  throw new Error(
+    `--engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "${value}".${hint}`,
+  );
 }
 
 export function resolveNoCacheFlag(
