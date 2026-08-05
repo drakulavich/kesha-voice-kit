@@ -63,7 +63,7 @@
 ## 8. Keep alpha artifacts out of stable lanes
 
 - [x] 8.1 Make the lanes that download the published Engine (`ci.yml:387`, `:448`, `:501`) resolve an explicit stable version rather than inheriting possibly-prerelease metadata — solved upstream of the lanes instead: `check-versions.ts` rule 3 refuses an alpha pin outright, so no lane can inherit one
-- [ ] 8.2 Verify an unrelated pull request is unaffected after an Engine alpha is published — no engine-downloading lane has run since `v1.24.8-alpha.1` went out; the pin rule holds, but nothing has exercised it yet
+- [x] 8.2 Verify an unrelated pull request is unaffected after an Engine alpha is published — this PR's own CI ran `integration-tests-full`, `published-engine-smoke` and `windows-engine-smoke` after `v1.24.8-alpha.1` was published, and all three resolved `engine v1.24.7`
 
 ## 9. Retention
 
