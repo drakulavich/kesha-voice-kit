@@ -17,13 +17,24 @@ describe("withCargoVersion", () => {
     expect(after.slice(after.indexOf("\n[dependencies]"))).toBe(before);
   });
 
+  // Split on both endings: a Windows checkout carries CRLF, which the rewrite preserves.
+  const lines = (source: string) => source.split(/\r?\n/);
+
   test("rewrites exactly one line", () => {
-    const original = MANIFEST.split("\n");
-    const changed = withCargoVersion(MANIFEST, "1.24.8-alpha.1")
-      .split("\n")
-      .filter((line: string, i: number) => line !== original[i]);
+    const original = lines(MANIFEST);
+    const changed = lines(withCargoVersion(MANIFEST, "1.24.8-alpha.1")).filter(
+      (line: string, i: number) => line !== original[i],
+    );
 
     expect(changed).toEqual(['version = "1.24.8-alpha.1"']);
+  });
+
+  test("a CRLF manifest keeps its line endings", () => {
+    const crlf = MANIFEST.replace(/\n/g, "\r\n");
+    const out = withCargoVersion(crlf, "1.24.8-alpha.1");
+
+    expect(out).toContain('version = "1.24.8-alpha.1"\r\n');
+    expect(out.match(/(?<!\r)\n/)).toBeNull();
   });
 
   test("refuses a version that is not SemVer", () => {
