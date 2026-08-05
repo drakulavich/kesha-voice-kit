@@ -121,11 +121,9 @@ jobs:
         if: steps.probe.outputs.cache-hit != 'true'
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        if: steps.probe.outputs.cache-hit != 'true'
-        with:
-          workspaces: rust
 
+      # Deliberately no rust-cache: this job builds only on a miss, and its artifacts
+      # cost 716 MB of a budget whose pressure already evicts the bundle it seeds.
       - name: Install system audio deps (Opus)
         if: steps.probe.outputs.cache-hit != 'true'
         run: brew install opus pkg-config
