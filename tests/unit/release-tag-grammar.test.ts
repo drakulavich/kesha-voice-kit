@@ -74,8 +74,17 @@ describe("release manifest tag check", () => {
     expect(await manifestAccepts([`--tag`, `v${pkg.version}`])).toBe(false);
   });
 
+  // Reverting the default *and* the assertion makes `v<cliVersion>` exit 0 again (grok).
   test("with no tag it defaults to the engine version rather than the CLI's", async () => {
-    expect(await manifestAccepts([])).toBe(true);
+    const proc = Bun.spawn(["node", ".github/scripts/release-manifest.mjs"], {
+      cwd: `${import.meta.dir}/../..`,
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const manifest = JSON.parse(await new Response(proc.stdout).text());
+
+    expect(await proc.exited).toBe(0);
+    expect(manifest.tag).toBe(`v${pkg.keshaEngine.version}`);
   });
 });
 
