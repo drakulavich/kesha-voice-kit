@@ -17,7 +17,13 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::{charsiu::Charsiu, kokoro::Kokoro, tokenizer::Tokenizer, voices, vosk::Vosk};
+use super::{
+    charsiu::Charsiu,
+    kokoro::Kokoro,
+    tokenizer::{self, Tokenizer},
+    voices,
+    vosk::Vosk,
+};
 
 /// Cached Kokoro inference state. One ONNX session, one tokenizer, one voice
 /// cache. Cheap to clone-key (`PathBuf`); the actual session is non-Clone.
@@ -70,26 +76,34 @@ impl KokoroSession {
     /// Returns an empty `Vec` (not an error) when the IPA contains no recognisable
     /// phonemes — callers decide whether that's a hard error (one-shot) or a
     /// silent skip (SSML segments).
+    ///
+    /// IPA past Kokoro's active-token cap is split with
+    /// [`tokenizer::chunk_ipa`] and the chunks' samples concatenated, so long
+    /// input synthesizes in full instead of being cut at the cap (#715).
     pub fn infer_ipa(
         &mut self,
         ipa: &str,
         voice_path: &Path,
         speed: f32,
     ) -> anyhow::Result<Vec<f32>> {
-        let ids = self.tokenizer.encode(ipa);
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let active = ids.len();
-        let padded = Tokenizer::pad_to_context(ids);
+        let mut samples = Vec::new();
+        for chunk in tokenizer::chunk_ipa(ipa, tokenizer::KOKORO_MAX_ACTIVE) {
+            let ids = self.tokenizer.encode(&chunk);
+            if ids.is_empty() {
+                continue;
+            }
+            let active = ids.len();
+            let padded = Tokenizer::pad_to_context(ids);
 
-        // Detach style row from the &self.voices borrow before we touch
-        // &mut self.kokoro — the row is 256 floats (~1 KB), copy is free.
-        let style: Vec<f32> = {
-            let voice = self.voice(voice_path)?;
-            voices::select_style(voice, active).to_vec()
-        };
-        self.kokoro.infer(&padded, &style, speed)
+            // Detach style row from the &self.voices borrow before we touch
+            // &mut self.kokoro — the row is 256 floats (~1 KB), copy is free.
+            let style: Vec<f32> = {
+                let voice = self.voice(voice_path)?;
+                voices::select_style(voice, active).to_vec()
+            };
+            samples.extend(self.kokoro.infer(&padded, &style, speed)?);
+        }
+        Ok(samples)
     }
 }
 
