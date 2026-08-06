@@ -82,11 +82,14 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     spawn_stdin_stop_thread(stop_tx);
 
+    let sink = move |samples| {
+        let _ = sample_tx.send(samples);
+    };
     let err_fn = |err| eprintln!("recording stream error: {err}");
     let stream = match sample_format {
-        SampleFormat::F32 => build_input_stream::<f32>(&device, &config, sample_tx, err_fn)?,
-        SampleFormat::I16 => build_input_stream::<i16>(&device, &config, sample_tx, err_fn)?,
-        SampleFormat::U16 => build_input_stream::<u16>(&device, &config, sample_tx, err_fn)?,
+        SampleFormat::F32 => build_input_stream::<f32>(&device, &config, sink, err_fn)?,
+        SampleFormat::I16 => build_input_stream::<i16>(&device, &config, sink, err_fn)?,
+        SampleFormat::U16 => build_input_stream::<u16>(&device, &config, sink, err_fn)?,
         other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
     };
 
@@ -160,15 +163,25 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
     eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
     let mut session = StreamingAsrSession::start(sample_rate)?;
 
-    let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
+    let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(LIVE_QUEUE_BUFFERS);
+    let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     spawn_stdin_stop_thread(stop_tx);
 
+    let sink = {
+        let dropped = std::sync::Arc::clone(&dropped);
+        move |samples| {
+            // Never block the CPAL callback; overflow is reported, not absorbed.
+            if sample_tx.try_send(samples).is_err() {
+                dropped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    };
     let err_fn = |err| eprintln!("recording stream error: {err}");
     let stream = match sample_format {
-        SampleFormat::F32 => build_input_stream::<f32>(&device, &config, sample_tx, err_fn)?,
-        SampleFormat::I16 => build_input_stream::<i16>(&device, &config, sample_tx, err_fn)?,
-        SampleFormat::U16 => build_input_stream::<u16>(&device, &config, sample_tx, err_fn)?,
+        SampleFormat::F32 => build_input_stream::<f32>(&device, &config, sink, err_fn)?,
+        SampleFormat::I16 => build_input_stream::<i16>(&device, &config, sink, err_fn)?,
+        SampleFormat::U16 => build_input_stream::<u16>(&device, &config, sink, err_fn)?,
         other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
     };
 
@@ -186,15 +199,7 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
             break;
         }
         match sample_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(samples) => {
-                mono.clear();
-                mono.extend(
-                    samples
-                        .chunks_exact(usize::from(input_channels))
-                        .map(|frame| mix_frame_to_mono(frame).clamp(-1.0, 1.0)),
-                );
-                session.feed(&mono)?;
-            }
+            Ok(samples) => feed_mono(&mut session, &mut mono, &samples, input_channels)?,
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
         }
@@ -208,8 +213,43 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
         eprintln!();
     }
 
+    // Drain after stopping capture, or the last words spoken are never fed.
     drop(stream);
+    while let Ok(samples) = sample_rx.try_recv() {
+        feed_mono(&mut session, &mut mono, &samples, input_channels)?;
+    }
+
+    let dropped = dropped.load(std::sync::atomic::Ordering::Relaxed);
+    if dropped > 0 {
+        eprintln!(
+            "warning: dropped {dropped} microphone buffer(s) — transcription could not keep up, \
+             so the transcript may have gaps"
+        );
+    }
     session.finish()
+}
+
+/// Backlog the capture callback may run ahead by. At a typical 1024-frame
+/// callback on a 48 kHz device this is ~10 s of audio, far beyond the fraction
+/// of real time the ANE actually needs — reaching it means something is wrong,
+/// which is why overflow is reported rather than absorbed.
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+const LIVE_QUEUE_BUFFERS: usize = 512;
+
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+fn feed_mono(
+    session: &mut crate::streaming_asr::StreamingAsrSession,
+    mono: &mut Vec<f32>,
+    interleaved: &[f32],
+    channels: u16,
+) -> Result<()> {
+    mono.clear();
+    mono.extend(
+        interleaved
+            .chunks_exact(usize::from(channels))
+            .map(|frame| mix_frame_to_mono(frame).clamp(-1.0, 1.0)),
+    );
+    session.feed(mono)
 }
 
 #[cfg(target_os = "macos")]
@@ -228,7 +268,7 @@ fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<()>) {
 fn build_input_stream<T>(
     device: &cpal::Device,
     config: &StreamConfig,
-    sample_tx: mpsc::Sender<Vec<f32>>,
+    mut sink: impl FnMut(Vec<f32>) + Send + 'static,
     err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
 ) -> Result<cpal::Stream>
 where
@@ -246,7 +286,7 @@ where
                         samples.push(f32::from_input_sample(*sample));
                     }
                 }
-                let _ = sample_tx.send(samples);
+                sink(samples);
             },
             err_fn,
             None,
