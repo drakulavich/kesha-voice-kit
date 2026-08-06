@@ -24,12 +24,16 @@ pub fn run(out: Option<PathBuf>, live: bool, max_seconds: u64) -> Result<()> {
 
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 fn run_live(max_duration: Duration) -> Result<()> {
+    // CoreML prints on a background queue — between streaming feeds, and again at
+    // model teardown after the session drops — which a scoped guard cannot cover.
+    // fd 1 stays shielded for the whole session; see `fluid_stdout::StdoutShield`.
+    let shield = crate::fluid_stdout::StdoutShield::new();
     let transcript = crate::record::record_default_input_live(max_duration)?;
     let transcript = transcript.trim();
     if transcript.is_empty() {
         eprintln!("No speech detected.");
     } else {
-        println!("{transcript}");
+        shield.write_stdout(format!("{transcript}\n").as_bytes())?;
     }
     Ok(())
 }
