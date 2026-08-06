@@ -11,7 +11,7 @@
  * action references; stays silent on success so it composes cleanly with other
  * pre-push checks.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse, YAMLParseError } from "yaml";
 
@@ -73,8 +73,54 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
   return [];
 }
 
+/**
+ * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
+ * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
+ * so an uncovered script means edits to a gate skip the tests that prove it works.
+ */
+export function requireTestedScriptsInCodeFilter(
+  path: string,
+  document: unknown,
+  testedScripts: string[],
+): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const raw = (document as { jobs?: { changes?: { steps?: Array<{ with?: { filters?: unknown } }> } } })?.jobs?.changes
+    ?.steps?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+
+  const code = (parse(raw) as Record<string, string[]>)?.code;
+  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+
+  const covers = (file: string) =>
+    code.some((pattern) => (pattern.endsWith("/**") ? file.startsWith(pattern.slice(0, -2)) : pattern === file));
+
+  return testedScripts
+    .filter((file) => !covers(file))
+    .map((file) => `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`);
+}
+
+function collectTestedScripts(): string[] {
+  const tests = readdirSync("tests/unit", { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".test.ts"))
+    .map((entry) => readFileSync(join("tests/unit", entry), "utf8"));
+
+  // A TS import drops the extension, a spawned script keeps it — so try both and keep what exists on disk.
+  const found = new Set<string>();
+  for (const contents of tests) {
+    for (const match of contents.matchAll(/\.github\/scripts\/([\w.-]+)/g)) {
+      for (const candidate of [match[1], `${match[1]}.ts`]) {
+        const file = join(".github/scripts", candidate);
+        if (existsSync(file)) found.add(file);
+      }
+    }
+  }
+  return [...found].sort();
+}
+
 function main(): void {
   const files = dirs.flatMap((dir) => collectYamlFiles(dir)).sort();
+  const testedScripts = collectTestedScripts();
 
   if (files.length === 0) {
     console.error(`no workflow or action files found in ${dirs.join(", ")}`);
@@ -89,6 +135,7 @@ function main(): void {
       const errors = [
         ...requirePinnedActions(path, contents),
         ...requirePreUploadSynthesisSmoke(path, document),
+        ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ];
       if (errors.length > 0) {
         failed += errors.length;

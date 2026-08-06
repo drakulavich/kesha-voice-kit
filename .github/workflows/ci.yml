@@ -81,6 +81,8 @@ jobs:
               - 'server.json'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
+              # 16 of these scripts have unit tests; without this a script-only edit skips the tests that cover it (check-workflows.ts enforces it).
+              - '.github/scripts/**'
             integration:
               - 'src/**'
               - 'tests/integration/**'
