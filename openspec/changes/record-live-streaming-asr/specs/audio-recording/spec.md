@@ -1,3 +1,14 @@
+## Open Issues
+
+- Two of the baseline `audio-recording` Non-Goals are superseded by this change
+  and must be rewritten when it is archived: *"No transcription or language
+  detection is performed during recording; `kesha record` is a capture-only
+  command"* is now false on a CoreML Engine, and *"The output sample rate is
+  whatever the device reports; no resampling is applied by the recorder itself"*
+  holds for `--out` but not for `--live`, which resamples to 16 kHz in flight.
+  Neither is restated as a requirement here, so nothing in this delta silently
+  contradicts them — but the archive step must not just append.
+
 ## ADDED Requirements
 
 ### Requirement: `--live` transcribes the microphone without writing a file
