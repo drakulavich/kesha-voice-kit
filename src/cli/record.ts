@@ -1,17 +1,18 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { isEngineInstalled, recordEngine } from "../engine";
+import { isEngineInstalled, preflightRecordLive, recordEngine, type RecordTarget } from "../engine";
 import { installHint } from "../install-hint";
 import { log } from "../log";
 
 export interface RecordArgs {
   out?: string;
+  live?: boolean;
   "max-seconds"?: string | number;
   debug?: boolean;
 }
 
 export type ResolvedRecordArgs =
-  | { ok: true; out: string; maxSeconds: number }
+  | { ok: true; target: RecordTarget; maxSeconds: number }
   | { ok: false; error: string };
 
 const DEFAULT_MAX_SECONDS = 120;
@@ -19,8 +20,15 @@ const MAX_RECORD_SECONDS = 3600;
 
 export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
   const out = typeof args.out === "string" ? args.out.trim() : "";
-  if (!out) {
-    return { ok: false, error: "kesha record requires --out <path>." };
+  const live = args.live === true;
+  if (live && out) {
+    return {
+      ok: false,
+      error: "kesha record cannot combine --live with --out; --live prints the transcript to stdout.",
+    };
+  }
+  if (!live && !out) {
+    return { ok: false, error: "kesha record requires --out <path> (or --live)." };
   }
 
   const rawMax = args["max-seconds"] ?? String(DEFAULT_MAX_SECONDS);
@@ -36,7 +44,7 @@ export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
     };
   }
 
-  return { ok: true, out, maxSeconds };
+  return { ok: true, target: live ? { live: true } : { out }, maxSeconds };
 }
 
 /** Mirrors `src/transcribe.ts`'s "no transcription backend" guard message, worded for recording. */
@@ -52,13 +60,18 @@ export function noRecordingBackendMessage(): string {
 export const recordCommand = defineCommand({
   meta: {
     name: "record",
-    description: "Record microphone audio to a WAV file",
+    description: "Record microphone audio to a WAV file, or transcribe it live",
   },
   args: {
     out: {
       type: "string",
       description: "Write recorded WAV audio to this path",
-      required: true,
+    },
+    live: {
+      type: "boolean",
+      description:
+        "Transcribe the microphone live and print the transcript to stdout (CoreML on Apple Silicon only)",
+      default: false,
     },
     "max-seconds": {
       type: "string",
@@ -83,7 +96,8 @@ export const recordCommand = defineCommand({
       process.exit(1);
     }
     try {
-      await recordEngine(resolved.out, resolved.maxSeconds);
+      if (resolved.target.live) await preflightRecordLive();
+      await recordEngine(resolved.target, resolved.maxSeconds);
     } catch (err) {
       log.error(errorMessage(err));
       process.exit(1);

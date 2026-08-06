@@ -33,7 +33,7 @@ Print the kesha(1) manpage
 Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices, list_languages). Configure an MCP client with: { command: 'kesha', args: ['mcp'] }.
 .TP
 .B record
-Record microphone audio to a WAV file
+Record microphone audio to a WAV file, or transcribe it live
 .TP
 .B say
 Synthesize speech from text (TTS). Writes audio to stdout (or \-\-out file). Defaults to WAV; use \-\-format ogg\-opus for messenger\-ready voice notes.
@@ -152,6 +152,9 @@ Output status as JSON
 .TP
 .B \-\-out
 Write recorded WAV audio to this path
+.TP
+.B \-\-live
+Transcribe the microphone live and print the transcript to stdout (CoreML on Apple Silicon only)
 .TP
 .B \-\-max\-seconds
 Maximum recording duration in seconds

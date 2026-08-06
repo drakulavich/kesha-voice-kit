@@ -14,7 +14,7 @@ use symphonia::core::probe::{Hint, Probe};
 
 use crate::errors::{CodedContext, ErrorCode};
 
-const TARGET_SAMPLE_RATE: u32 = 16000;
+pub(crate) const TARGET_SAMPLE_RATE: u32 = 16000;
 
 fn get_codec_registry() -> CodecRegistry {
     let mut registry = CodecRegistry::new();
@@ -157,13 +157,11 @@ fn mix_to_mono(samples: &[f32], channels: usize) -> Vec<f32> {
         .collect()
 }
 
-pub(crate) fn resample_mono(samples: &[f32], src_rate: u32, dst_rate: u32) -> Result<Vec<f32>> {
-    if src_rate == dst_rate {
-        return Ok(samples.to_vec());
-    }
-
-    let ratio = dst_rate as f64 / src_rate as f64;
-
+/// One filter shape for every resampling path in the engine, so live capture and
+/// batch decode reach the model through the same filter. `FixedAsync::Input`
+/// makes `input_frames_next()` a constant `chunk_size`, which is what lets the
+/// live path buffer whole blocks.
+pub(crate) fn sinc_resampler(ratio: f64, chunk_size: usize) -> Result<Async<f32>> {
     let sinc_len = 128;
     let window = WindowFunction::BlackmanHarris2;
     let params = SincInterpolationParameters {
@@ -173,13 +171,22 @@ pub(crate) fn resample_mono(samples: &[f32], src_rate: u32, dst_rate: u32) -> Re
         oversampling_factor: 256,
         window,
     };
+    Async::<f32>::new_sinc(ratio, 1.1, &params, chunk_size, 1, FixedAsync::Input)
+        .context("failed to create resampler")
+}
 
-    let chunk_size = 1024usize;
+pub(crate) const RESAMPLER_CHUNK_SIZE: usize = 1024;
+
+pub(crate) fn resample_mono(samples: &[f32], src_rate: u32, dst_rate: u32) -> Result<Vec<f32>> {
+    if src_rate == dst_rate {
+        return Ok(samples.to_vec());
+    }
+
+    let ratio = dst_rate as f64 / src_rate as f64;
+    let chunk_size = RESAMPLER_CHUNK_SIZE;
     let channels = 1usize;
 
-    let mut resampler =
-        Async::<f32>::new_sinc(ratio, 1.1, &params, chunk_size, channels, FixedAsync::Input)
-            .context("failed to create resampler")?;
+    let mut resampler = sinc_resampler(ratio, chunk_size)?;
 
     let input_data = [samples.to_vec()];
     let total_frames = input_data[0].len();
