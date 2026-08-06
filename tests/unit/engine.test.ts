@@ -7,6 +7,7 @@ import {
   detectTextLanguageEngine,
   parseLangResult,
   getEngineBinPath,
+  preflightRecordLive,
   preflightTranscribeEngineWithSegments,
   recordEngine,
   spawnStdioWithDebugFd,
@@ -164,6 +165,35 @@ describe("engine", () => {
     });
   });
 
+  fakeEngineTest("preflight rejects --live when the engine lacks record.live", async () => {
+    await withEngineEnv(fakeEngine(["transcribe"]), async () => {
+      await expect(preflightRecordLive()).rejects.toThrow(
+        "live transcription requires a CoreML engine on Apple Silicon",
+      );
+      await expect(preflightRecordLive()).rejects.toThrow("kesha record --out note.wav");
+    });
+  });
+
+  fakeEngineTest("preflight accepts --live when the engine advertises record.live", async () => {
+    await withEngineEnv(fakeEngine(["transcribe", "record.live"]), async () => {
+      await expect(preflightRecordLive()).resolves.toBeUndefined();
+    });
+  });
+
+  // An unreadable probe must not be read as "supported" — that would forward
+  // --live into an engine that has no such flag.
+  fakeEngineTest("preflight rejects --live when capabilities cannot be read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-caps-fail-"));
+    const broken = join(dir, "kesha-engine");
+    writeFileSync(broken, "#!/bin/sh\nexit 3\n");
+    chmodSync(broken, 0o755);
+    await withEngineEnv(broken, async () => {
+      await expect(preflightRecordLive()).rejects.toThrow(
+        "live transcription requires a CoreML engine on Apple Silicon",
+      );
+    });
+  });
+
   fakeEngineTest("preflight rejects missing KESHA_DIARIZE_MODEL_PATH before transcription", async () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
@@ -241,8 +271,8 @@ describe("engine", () => {
     chmodSync(notExecutable, 0o644);
     await withEngineEnv(notExecutable, async () => {
       const out = join(dir, "out.wav");
-      await expect(recordEngine(out, 10)).rejects.toThrow(/error \[E_ENGINE_SPAWN\]: failed to launch kesha-engine at/);
-      await expect(recordEngine(out, 10)).rejects.toThrow(/Run `kesha install` \(or set KESHA_ENGINE_BIN\)/);
+      await expect(recordEngine({ out }, 10)).rejects.toThrow(/error \[E_ENGINE_SPAWN\]: failed to launch kesha-engine at/);
+      await expect(recordEngine({ out }, 10)).rejects.toThrow(/Run `kesha install` \(or set KESHA_ENGINE_BIN\)/);
     });
   });
 

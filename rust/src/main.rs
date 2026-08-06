@@ -55,9 +55,13 @@ enum Commands {
     },
     /// Record microphone audio to a WAV file
     Record {
-        /// Output WAV file
+        /// Output WAV file. Required unless --live is passed.
+        #[arg(long, conflicts_with = "live")]
+        out: Option<std::path::PathBuf>,
+        /// Transcribe the microphone live and print the transcript to stdout
+        /// instead of writing a WAV. CoreML builds on macOS only.
         #[arg(long)]
-        out: std::path::PathBuf,
+        live: bool,
         /// Maximum recording duration in seconds
         #[arg(long = "max-seconds", default_value_t = 120)]
         max_seconds: u64,
@@ -106,7 +110,11 @@ fn run_command(command: Option<Commands>) -> Result<()> {
         }) => cli::transcribe::run(audio_path, json, vad, no_vad, speakers)?,
         Some(Commands::DetectLang { audio_path }) => cli::detect_lang::run(audio_path)?,
         Some(Commands::DetectTextLang { text }) => cli::detect_text_lang::run(text)?,
-        Some(Commands::Record { out, max_seconds }) => cli::record::run(out, max_seconds)?,
+        Some(Commands::Record {
+            out,
+            live,
+            max_seconds,
+        }) => cli::record::run(out, live, max_seconds)?,
         Some(Commands::Install(args)) => cli::install::run(args)?,
         #[cfg(feature = "tts")]
         Some(Commands::Say(args)) => {
