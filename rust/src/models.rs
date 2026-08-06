@@ -1805,11 +1805,26 @@ fn parse_http_date(raw: &str) -> Option<i64> {
     let hour: i64 = hms.next()?.parse().ok()?;
     let minute: i64 = hms.next()?.parse().ok()?;
     let second: i64 = hms.next()?.parse().ok()?;
-    if parts.next().is_some() || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60
+    // `days_from_civil` normalises an impossible day rather than rejecting it, so
+    // "31 Feb" would silently become a real date and displace the backoff.
+    if parts.next().is_some()
+        || !(1..=days_in_month(year, month)).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 60
     {
         return None;
     }
     Some(days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
+fn days_in_month(year: i64, month: i64) -> i64 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
 }
 
 /// Days since 1970-01-01 for a proleptic-Gregorian date (Hinnant's algorithm).
@@ -2425,9 +2440,22 @@ mod retry_tests {
             "Sunday, 06-Nov-94 08:49:37 GMT",
             "Sun, 06 Foo 1994 08:49:37 GMT",
             "Sun, 06 Nov 1994 25:49:37 GMT",
+            "Tue, 31 Feb 1994 08:49:37 GMT",
+            "Tue, 29 Feb 1900 08:49:37 GMT",
+            "Thu, 31 Apr 1994 08:49:37 GMT",
         ] {
             assert_eq!(parse_retry_after(raw, 0), None, "{raw:?} must not parse");
         }
+    }
+
+    /// The century rule cuts both ways — 2000 is a leap year, 1900 is not.
+    #[test]
+    fn retry_after_accepts_a_real_leap_day() {
+        let epoch = 951_782_400; // 2000-02-29T00:00:00Z
+        assert_eq!(
+            parse_retry_after("Tue, 29 Feb 2000 00:00:00 GMT", epoch - 60),
+            Some(Duration::from_secs(60))
+        );
     }
 
     #[test]
