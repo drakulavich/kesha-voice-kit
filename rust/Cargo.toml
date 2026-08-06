@@ -81,7 +81,7 @@ ndarray = { version = "0.17" }
 # bindings are gone because 0.15.3 removed the backend upstream.
 # `init_kokoro` still takes `lang` → `zh` selects `.mandarin` (tone-aware
 # Mandarin G2P), else `.english` (#492); `--rate` stays model-native (#475).
-fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "dc931c5be72cf94700b8f53027391421ba0a0628", optional = true }
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "f0f6f689db2feec1a9c35196dbb4a7ebd3274581", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)

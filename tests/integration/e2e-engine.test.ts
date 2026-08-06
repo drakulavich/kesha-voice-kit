@@ -117,7 +117,8 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
         stderr.includes("diarization model not found") ||
         stderr.includes("kesha-diarize sidecar not found") ||
         stderr.includes("VAD model") ||
-        stderr.includes("kesha-diarize timed out")
+        stderr.includes("kesha-diarize timed out") ||
+        stderr.includes("E_DIARIZE_TIMEOUT")
       ) {
         console.warn(`skipping --speakers e2e: ${stderr.split("\n")[0]}`);
         return;
