@@ -220,6 +220,8 @@ function validateSourceConsistency(manifest) {
   assertIncludes(workflow, "SHA256SUMS", ".github/workflows/build-engine.yml");
   assertIncludes(workflow, ".sigstore.json", ".github/workflows/build-engine.yml");
   assertIncludes(workflow, "build-linux-packages.mjs", ".github/workflows/build-engine.yml");
+  // The manifest promises package names built from pkg.version; that gate is what proves npm has it (#728).
+  assertIncludes(workflow, "assert-npm-published.mjs", ".github/workflows/build-engine.yml");
   assertIncludes(workflow, "dist/linux-packages/*.{deb,rpm}", ".github/workflows/build-engine.yml");
 
   const packageScript = readFileSync(".github/scripts/build-linux-packages.mjs", "utf8");
