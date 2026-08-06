@@ -22,8 +22,13 @@ For stable `vX.Y.Z` releases, the manifest records:
 - supported platform status for package managers
 - checksum and Sigstore bundle naming conventions
 
-For prerelease tags such as `vX.Y.Z-beta.1`, Linux `.deb` and `.rpm` package
-assets are omitted.
+The manifest accepts three tag shapes — `vX.Y.Z`, `vX.Y.Z-beta.N`, and
+`vX.Y.Z-alpha.N` — and rejects anything else. For the two prerelease shapes,
+Linux `.deb` and `.rpm` package assets are omitted. `engineVersion` comes from
+the tag rather than from `package.json#keshaEngine.version`: an alpha ships a
+version no commit carries, and it must outrank the pin rather than equal it
+(#738). Channel policy — what each prerelease is for and how it reaches users —
+lives in the `release-mechanics` skill.
 
 `SHA256SUMS` and Sigstore bundles cover the manifest itself, so downstream
 packaging can verify the metadata before consuming it.
