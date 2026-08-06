@@ -30,7 +30,7 @@ code never needs sanitizing.
 | `E_SSML_UNSUPPORTED` | tts | no | SSML isn't supported for this engine/voice. | Use a plain-text request or a supported voice. |
 | `E_SCRIPT_UNSUPPORTED` | tts | no | The text uses a script the chosen voice's G2P can't phonemize (e.g. Devanagari / kana-kanji / Han for the FluidAudio Kokoro `hi`/`ja`/`zh` voices, which only handle Latin input). | Romanize the text (transliterate to Latin), or use a voice whose engine supports the script. See [#492](https://github.com/drakulavich/kesha-voice-kit/issues/492). |
 | `E_TRANSCRIBE_FAILED` | transcribe | no | The ASR pipeline failed. | Re-run; file a bug with a support bundle. |
-| `E_DIARIZE_TIMEOUT` | transcribe | yes | Speaker diarization timed out (cold compile or long audio). | Re-run once warm; shorten the audio. |
+| `E_DIARIZE_TIMEOUT` | transcribe | yes | A diarization phase exceeded its budget, or `KESHA_DIARIZE_TIMEOUT_SECS` cut the run short. The message names the phase: model load, reading the audio, or processing chunks. | Model load: re-run once warm (`kesha install --diarize`), or `KESHA_DIARIZE_COMPUTE_UNITS=cpu-and-gpu`, or raise `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` (default 300). Own cap: raise or unset `KESHA_DIARIZE_TIMEOUT_SECS`. Otherwise file a bug. |
 | `E_ENGINE_SPAWN` | internal | no | The CLI couldn't spawn the engine subprocess. | `kesha install`; check the engine binary path (`KESHA_ENGINE_BIN`). |
 | `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid. | See `kesha --help`; the message names the setting and its accepted values. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |

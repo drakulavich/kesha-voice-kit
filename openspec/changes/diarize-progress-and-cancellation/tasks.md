@@ -48,3 +48,23 @@
       `cargo check --features system_diarize --no-default-features`, `make rust-test`
 - [x] 4.5 Evidence: cold run (107.3 s load, visible), warm run (4.4 s load, 2 speakers over
       37 segments), forced cap (exit 1, not 139), `cpu-and-gpu` (same labels, 69 s)
+
+## 5. Review response: name the phases the binding can actually see
+
+- [x] 5.1 Binding: a one-shot model-ready marker between the `MLModel` load and
+      `processComplete`, delivered over the same callback context as progress; the Rust
+      side becomes `DiarizeEvent::{ModelReady, Progress}` (D1)
+- [x] 5.2 Binding: un-`#[ignore]` the diarize FFI tests — they are gated on
+      `FLUIDAUDIO_TEST_DIARIZE_MODEL`/`_AUDIO` and skip themselves without it — and cover
+      the marker's ordering
+- [x] 5.3 Engine: three phases (load / read / process), each with the budget its own work
+      justifies; the read budget is the only one that scales with the audio (D1)
+- [x] 5.4 Engine: `KESHA_DIARIZE_LOAD_TIMEOUT_SECS`, so the load-stall error names a knob
+      that can act on the load; the total cap is no longer offered as one
+- [x] 5.5 Engine: a `Cancelled` outcome reaching the `Finished` arm reports
+      `E_DIARIZE_TIMEOUT`, not `E_INTERNAL`; `stop_worker` returns spans that arrive during
+      the grace window instead of discarding a complete answer
+- [x] 5.6 `KESHA_DIARIZE_TIMEOUT_SECS` and `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` in
+      `doctor.ts`; `docs/errors.md` describes the phases
+- [x] 5.7 e2e: `--speakers` asserts `diarize:` progress on stderr with pure JSON on stdout,
+      and a forced cap asserts a coded `E_DIARIZE_TIMEOUT` with a clean exit
