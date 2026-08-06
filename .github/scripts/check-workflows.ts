@@ -38,6 +38,22 @@ function requirePinnedActions(path: string, contents: string): string[] {
   return errors;
 }
 
+type Step = { run?: unknown; uses?: unknown; if?: unknown; with?: { filters?: unknown } };
+
+function jobSteps(document: unknown, job: string): Step[] | undefined {
+  const steps = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs?.[job]?.steps;
+  return Array.isArray(steps) ? (steps as Step[]) : undefined;
+}
+
+const condition = (step: Step) => String(step.if ?? "");
+
+/** Indices of the steps whose `run` matches, skipping any switched off with `if: false`. */
+function runsMatching(steps: Step[], pattern: RegExp): number[] {
+  return steps.flatMap((step, at) =>
+    typeof step?.run === "string" && pattern.test(step.run) && condition(step).trim() !== "false" ? [at] : [],
+  );
+}
+
 /**
  * Fails when build-engine.yml's build job would upload an artifact it never synthesised with.
  * That workflow runs on releases only, so this is the one lane a PR can hold it to (#671).
@@ -45,23 +61,14 @@ function requirePinnedActions(path: string, contents: string): string[] {
 export function requirePreUploadSynthesisSmoke(path: string, document: unknown): string[] {
   if (!path.endsWith("build-engine.yml")) return [];
 
-  const steps = (document as { jobs?: { build?: { steps?: unknown[] } } })?.jobs?.build?.steps;
-  if (!Array.isArray(steps)) return [`${path}: expected a \`build\` job with steps`];
-
-  const index = (match: (step: { run?: unknown; uses?: unknown; if?: unknown }) => boolean) =>
-    steps.findIndex((step) => typeof step === "object" && step !== null && match(step));
+  const steps = jobSteps(document, "build");
+  if (!steps) return [`${path}: expected a \`build\` job with steps`];
 
   // Anchored at line start so a commented-out or echoed mention doesn't satisfy the guard.
-  const invocation = /^\s*bun\s+\S*smoke-synthesis\.ts\b/m;
-  const smoke = index(
-    (step) =>
-      typeof step.run === "string" &&
-      invocation.test(step.run) &&
-      String(step.if ?? "").trim() !== "false",
-  );
-  const upload = index((step) => typeof step.uses === "string" && step.uses.startsWith("actions/upload-artifact"));
+  const smoke = runsMatching(steps, /^\s*bun\s+\S*smoke-synthesis\.ts\b/m)[0];
+  const upload = steps.findIndex((step) => typeof step?.uses === "string" && step.uses.startsWith("actions/upload-artifact"));
 
-  if (smoke === -1) {
+  if (smoke === undefined) {
     return [`${path}: the build job must run smoke-synthesis.ts before uploading the artifact (#671)`];
   }
   if (upload === -1) {
@@ -81,39 +88,27 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
 export function requireNpmPublishedGate(path: string, document: unknown): string[] {
   if (!path.endsWith("build-engine.yml")) return [];
 
-  const steps = (document as { jobs?: { release?: { steps?: unknown[] } } })?.jobs?.release?.steps;
-  if (!Array.isArray(steps)) return [`${path}: expected a \`release\` job with steps`];
-
-  type Step = { run?: unknown; if?: unknown };
-  const enabled = (step: Step) => String(step.if ?? "").trim() !== "false";
-  const matches = (pattern: RegExp) =>
-    steps.flatMap((step, at) =>
-      typeof step === "object" && step !== null && typeof (step as Step).run === "string" &&
-      pattern.test((step as Step).run as string) && enabled(step as Step)
-        ? [{ at, step: step as Step }]
-        : [],
-    );
+  const steps = jobSteps(document, "release");
+  if (!steps) return [`${path}: expected a \`release\` job with steps`];
 
   // Anchored so a comment or an echoed mention cannot stand in for the invocation.
-  const gate = matches(/^\s*node\s+\S*assert-npm-published\.mjs\b/m)[0];
-  const packaging = matches(/^[^#\n]*\blinux-packages\b/m);
-
+  const packaging = runsMatching(steps, /^[^#\n]*\blinux-packages\b/m);
   if (packaging.length === 0) {
     return [`${path}: expected the release job to build and stage the Linux packages (#728)`];
   }
-  if (!gate) {
+  const gate = runsMatching(steps, /^\s*node\s+\S*assert-npm-published\.mjs\b/m)[0];
+  if (gate === undefined) {
     return [`${path}: the release job must run assert-npm-published.mjs before naming a Linux package (#728)`];
   }
 
   const errors: string[] = [];
-  const condition = String(gate.step.if ?? "");
-  for (const { at, step } of packaging) {
-    if (String(step.if ?? "") !== condition) {
+  for (const at of packaging) {
+    if (condition(steps[at]) !== condition(steps[gate])) {
       errors.push(
         `${path}: step ${at + 1} packages Linux artifacts under a different \`if\` than the npm gate, so it can run unguarded (#728)`,
       );
     }
-    if (gate.at > at) {
+    if (gate > at) {
       errors.push(`${path}: assert-npm-published.mjs runs after step ${at + 1} packages Linux artifacts; move it before (#728)`);
     }
   }
@@ -132,8 +127,7 @@ export function requireTestedScriptsInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const raw = (document as { jobs?: { changes?: { steps?: Array<{ with?: { filters?: unknown } }> } } })?.jobs?.changes
-    ?.steps?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
   if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
 
   const code = (parse(raw) as Record<string, string[]>)?.code;
