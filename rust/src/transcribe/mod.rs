@@ -59,10 +59,15 @@ const FIXED_CHUNK_OVERLAP_SECONDS: f32 = 5.0;
 /// overlap, and splicing on it would drop real speech.
 const SEAM_MIN_ANCHOR_WORDS: usize = 4;
 
-/// Generous speaking rate used to bound how far into the new chunk a seam
-/// anchor may sit. Over-estimating only widens a bounded scan; under-estimating
-/// would leave the overlap in the transcript twice.
+/// Generous speaking rate used to size how many words on either side of a seam
+/// may take part in a splice. Over-estimating only widens a bounded scan;
+/// under-estimating would leave the overlap in the transcript twice.
 const SEAM_WORDS_PER_SECOND: f32 = 3.0;
+
+/// How many leading words of the new chunk an anchor may start past. A window
+/// with no left context mangles its first token or two, but anything deeper is
+/// a later phrase recurring — anchoring there deletes the real speech before it.
+const SEAM_MAX_ANCHOR_SKIP_WORDS: usize = 3;
 
 /// Caller-requested VAD behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -751,8 +756,8 @@ fn trim_repeated_prefix<'a>(previous: &str, current: &'a str, budget: usize) -> 
     current
 }
 
-/// Find the longest run of words that both ends `prev` and occurs within the
-/// first `budget` words of `cur`, and return `current` from just past it.
+/// Find the longest run of words that both ends `prev` and starts within the
+/// first few words of `cur`, and return `current` from just past it.
 fn splice_after_anchor<'a>(
     prev: &[SeamWord],
     cur: &[SeamWord],
@@ -766,7 +771,12 @@ fn splice_after_anchor<'a>(
     }
     for n in (SEAM_MIN_ANCHOR_WORDS..=max_n).rev() {
         let anchor = &prev[prev.len() - n..];
-        for j in 0..=(limit - n) {
+        // One word repeated matches anywhere inside its own run, so it cannot
+        // say where the overlap ends.
+        if anchor.iter().all(|w| w.key == anchor[0].key) {
+            continue;
+        }
+        for j in 0..=(limit - n).min(SEAM_MAX_ANCHOR_SKIP_WORDS) {
             if cur[j..j + n]
                 .iter()
                 .map(|w| &w.key)
@@ -1191,6 +1201,34 @@ mod tests {
     }
 
     #[test]
+    fn chunked_segments_splice_a_cyrillic_seam() {
+        let samples = vec![0.0_f32; 30];
+        let mut call = 0usize;
+        let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
+            call += 1;
+            Ok(match call {
+                1 => "давайте начнём с обзора текущих задач",
+                2 => "с обзора текущих задач а потом обсудим план",
+                3 => "а потом обсудим план и на этом всё",
+                _ => "и на этом всё спасибо",
+            }
+            .to_string())
+        })
+        .expect("cyrillic seams must splice");
+
+        let texts: Vec<&str> = segs.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            vec![
+                "давайте начнём с обзора текущих задач",
+                "а потом обсудим план",
+                "и на этом всё",
+                "спасибо",
+            ]
+        );
+    }
+
+    #[test]
     fn single_segment_trims_text_and_drops_empty() {
         assert_eq!(single_segment(0.0, 1.0, "  hi  ")[0].text, "hi");
         assert!(single_segment(0.0, 1.0, "  ").is_empty());
@@ -1550,6 +1588,59 @@ mod tests {
     }
 
     #[test]
+    fn seam_splice_keeps_a_late_repeat_of_the_previous_tail() {
+        // The speaker re-quotes an earlier phrase several words into the new
+        // window. Anchoring on that recurrence would delete the clause in
+        // between — real speech, not re-transcribed overlap.
+        let prev = "we should probably just let's take that offline";
+        let curr =
+            "garbled audio before we continue I said let's take that offline but actually stay here";
+        assert_eq!(trim_repeated_prefix(prev, curr, budget()), curr);
+    }
+
+    #[test]
+    fn seam_splice_keeps_a_phrase_the_speaker_repeated_across_the_seam() {
+        // Said twice on purpose: the overlap copy goes, the second one stays.
+        let prev = "can you check the logs now please";
+        let curr = "check the logs now please check the logs now please again";
+        assert_eq!(
+            trim_repeated_prefix(prev, curr, budget()),
+            "check the logs now please again"
+        );
+    }
+
+    #[test]
+    fn seam_splice_will_not_truncate_a_repeated_word_run() {
+        // A run of one repeated word carries no positional information: an
+        // anchor inside it matches anywhere in it, so splicing would cut the
+        // run at an arbitrary point.
+        let prev = "ну да да да да да";
+        let curr = "да да да да да да потом поехали дальше";
+        assert_eq!(trim_repeated_prefix(prev, curr, budget()), curr);
+    }
+
+    #[test]
+    fn seam_splice_retry_keeps_everything_when_the_shortened_anchor_sits_late() {
+        // Previous window ends mid-word ("rev" for "review") and the phrase
+        // before it recurs deep in the new chunk. Dropping the fragment must
+        // not let the retry treat that recurrence as the overlap.
+        let prev = "the release notes are ready for the final rev";
+        let curr =
+            "some other clause entirely the release notes are ready for the final review ship it";
+        assert_eq!(trim_repeated_prefix(prev, curr, budget()), curr);
+    }
+
+    #[test]
+    fn seam_splice_retry_needs_more_than_the_minimum_anchor() {
+        // Dropping the truncated final word of a 4-word segment leaves too
+        // little to anchor on, so the overlap is emitted twice rather than
+        // spliced on a 3-word guess.
+        let prev = "for the new author";
+        let curr = "for the new authentication module ships today";
+        assert_eq!(trim_repeated_prefix(prev, curr, budget()), curr);
+    }
+
+    #[test]
     fn seam_splice_will_not_reach_past_its_budget() {
         // A repeat this far into the new window belongs to later speech, not
         // to the overlap; splicing on it would delete everything before it.
@@ -1870,8 +1961,11 @@ mod seam_long_form {
             merged.join(" "),
         );
         let inflation = merged.len() as f32 / single.len() as f32;
+        eprintln!("{ctx}: recall {r:.3} inflation {inflation:.3}");
+        // Measured 1.00-1.09 across these fixtures; the bug this locks out
+        // inflated real transcripts 1.11-1.57x (#722).
         assert!(
-            inflation <= 1.25,
+            inflation <= 1.15,
             "{ctx}: merged transcript is {inflation:.2}x the single-pass one \
              ({} vs {} words)\n  merged: {}",
             merged.len(),
