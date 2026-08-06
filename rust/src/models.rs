@@ -1639,7 +1639,7 @@ fn download_with_retries(url: &str, f: &ModelFile, target: &Path) -> Result<()> 
     loop {
         match download_attempt(url, f, target) {
             Ok(()) => return Ok(()),
-            Err(fail) if fail.transient && attempt < MAX_DOWNLOAD_ATTEMPTS => {
+            Err(fail) if attempt < fail.max_attempts => {
                 let delay = backoff_delay(attempt, fail.retry_after, jitter_fraction());
                 with_stderr(|| {
                     eprintln!(
@@ -1647,7 +1647,7 @@ fn download_with_retries(url: &str, f: &ModelFile, target: &Path) -> Result<()> 
                         f.rel_path,
                         delay.as_secs_f64(),
                         attempt + 1,
-                        MAX_DOWNLOAD_ATTEMPTS,
+                        fail.max_attempts,
                         fail.reason
                     )
                 });
@@ -1667,19 +1667,21 @@ fn download_with_retries(url: &str, f: &ModelFile, target: &Path) -> Result<()> 
 /// backoff on the default schedule — enough to ride out HuggingFace's anonymous
 /// per-IP 429 window without leaving a dead download hanging for minutes (#724).
 const MAX_DOWNLOAD_ATTEMPTS: u32 = 5;
+const DNS_MAX_ATTEMPTS: u32 = 3;
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 /// A server asking for more than this is asking for longer than a user will
 /// wait at an install prompt; clamp rather than honour it literally.
 const RETRY_AFTER_MAX: Duration = Duration::from_secs(60);
 
-/// One request+stream attempt that failed. `transient` decides whether the
-/// retry loop gets another go — a sha256 mismatch never does (#174).
+/// One request+stream attempt that failed. `max_attempts` is the total the
+/// retry loop may spend on this kind of failure; 1 means fatal, which is what a
+/// sha256 mismatch always is (#174).
 struct AttemptFailure {
     err: anyhow::Error,
     reason: String,
     retry_after: Option<Duration>,
-    transient: bool,
+    max_attempts: u32,
 }
 
 fn model_download_error(message: String) -> anyhow::Error {
@@ -1706,20 +1708,30 @@ fn download_attempt(
 
     // Status is inspected here rather than raised by ureq so a 429's
     // `Retry-After` header survives into the backoff decision (#724).
+    //
+    // ureq ships no timeouts by default, so without these a host that accepts
+    // the connection and then goes quiet hangs the install forever. The body is
+    // deliberately left unbounded: the 2.4GB encoder legitimately streams for
+    // hours on a slow link, and a deadline loose enough to survive that would
+    // not catch a stall anyway.
     let response = match ureq::get(url)
         .config()
         .http_status_as_error(false)
+        .timeout_resolve(Some(Duration::from_secs(10)))
+        .timeout_connect(Some(Duration::from_secs(10)))
+        .timeout_send_request(Some(Duration::from_secs(10)))
+        .timeout_recv_response(Some(Duration::from_secs(30)))
         .build()
         .call()
     {
         Ok(response) => response,
         Err(e) => {
-            let transient = ureq_error_is_transient(&e);
+            let max_attempts = ureq_error_attempts(&e);
             return Err(AttemptFailure {
                 reason: e.to_string(),
                 err: model_download_error(format!("GET {url} ({}): {e}", f.rel_path)),
                 retry_after: None,
-                transient,
+                max_attempts,
             });
         }
     };
@@ -1730,40 +1742,65 @@ fn download_attempt(
             .headers()
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| parse_retry_after(v, now_epoch_secs()));
+            .and_then(parse_retry_after);
         return Err(AttemptFailure {
             err: model_download_error(format!("GET {url} ({}): HTTP {status}", f.rel_path)),
             reason: format!("HTTP {status}"),
             retry_after,
-            transient: status_is_transient(status),
+            max_attempts: if status_is_transient(status) {
+                MAX_DOWNLOAD_ATTEMPTS
+            } else {
+                1
+            },
         });
     }
 
     // Not the raw header — that one reports the compressed size when decompression is active.
     let total = response.body().content_length().unwrap_or(0);
-    let mut reader = response.into_body().into_reader();
+    let mut reader = TrackedStream {
+        inner: response.into_body().into_reader(),
+        read_failed: false,
+    };
     let streamed = if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
         let mut reader = ProgressReader::new(&mut reader, total);
         write_verified(&mut reader, target, f.rel_path, f.sha256)
     } else {
         write_verified(&mut reader, target, f.rel_path, f.sha256)
     };
-    streamed.map_err(|err| {
-        // A truncated stream deserves another go; a sha mismatch means the host
-        // is not serving the pinned bytes, and no amount of retrying heals that
-        // (#174) — retry must never become a way around verification.
-        let transient = code_of(&err) == ErrorCode::ModelDownload;
-        AttemptFailure {
-            reason: if transient {
-                "download interrupted".to_string()
-            } else {
-                "hash mismatch".to_string()
-            },
-            err,
-            retry_after: None,
-            transient,
-        }
-    })
+    streamed.map_err(|err| stream_failure(err, reader.read_failed))
+}
+
+/// Classifies a failed `write_verified`. A truncated stream deserves another go;
+/// a sha mismatch means the host is not serving the pinned bytes and no amount
+/// of retrying heals that (#174); a local write failure — full disk, read-only
+/// cache — would only re-GET multiple GB to fail the same way (grok P2 on #761).
+fn stream_failure(err: anyhow::Error, read_failed: bool) -> AttemptFailure {
+    let (reason, max_attempts) = match code_of(&err) {
+        ErrorCode::CacheCorrupt => ("hash mismatch", 1),
+        _ if read_failed => ("download interrupted", MAX_DOWNLOAD_ATTEMPTS),
+        _ => ("cache write failed", 1),
+    };
+    AttemptFailure {
+        err,
+        reason: reason.to_string(),
+        retry_after: None,
+        max_attempts,
+    }
+}
+
+/// `io::copy` reports a stalled stream and a failing disk identically, so the
+/// reader records whose error it was.
+struct TrackedStream<R> {
+    inner: R,
+    read_failed: bool,
+}
+
+impl<R: io::Read> io::Read for TrackedStream<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buf);
+        self.read_failed |= read.is_err();
+        read
+    }
 }
 
 /// Statuses that a later attempt can plausibly resolve. Everything else — 403
@@ -1772,72 +1809,23 @@ fn status_is_transient(status: u16) -> bool {
     status == 408 || status == 429 || (500..600).contains(&status)
 }
 
-fn ureq_error_is_transient(err: &ureq::Error) -> bool {
-    matches!(
-        err,
-        ureq::Error::Timeout(_) | ureq::Error::Io(_) | ureq::Error::ConnectionFailed
-    )
-}
-
-/// `Retry-After` per RFC 9110: delay-seconds, or an IMF-fixdate. The two
-/// obsolete date formats are not accepted — a sender that uses them falls back
-/// to plain exponential backoff rather than to a misparsed delay.
-fn parse_retry_after(raw: &str, now_epoch_secs: i64) -> Option<Duration> {
-    let raw = raw.trim();
-    if let Ok(secs) = raw.parse::<u64>() {
-        return Some(Duration::from_secs(secs));
-    }
-    let at = parse_http_date(raw)?;
-    Some(Duration::from_secs(
-        at.saturating_sub(now_epoch_secs).max(0) as u64,
-    ))
-}
-
-const HTTP_DATE_MONTHS: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-/// `Sun, 06 Nov 1994 08:49:37 GMT` -> unix seconds.
-fn parse_http_date(raw: &str) -> Option<i64> {
-    let rest = raw.strip_suffix(" GMT")?;
-    let (_weekday, rest) = rest.split_once(", ")?;
-    let mut parts = rest.split(' ');
-    let day: i64 = parts.next()?.parse().ok()?;
-    let month_name = parts.next()?;
-    let month = HTTP_DATE_MONTHS.iter().position(|m| *m == month_name)? as i64 + 1;
-    let year: i64 = parts.next()?.parse().ok()?;
-    let mut hms = parts.next()?.splitn(3, ':');
-    // `days_from_civil` normalises an impossible day rather than rejecting it, so
-    // "31 Feb" would silently become a real date and displace the backoff.
-    let day = (1..=days_in_month(year, month))
-        .contains(&day)
-        .then_some(day)?;
-    let hour: i64 = hms.next()?.parse().ok().filter(|h| (0..24).contains(h))?;
-    let minute: i64 = hms.next()?.parse().ok().filter(|m| (0..60).contains(m))?;
-    let second: i64 = hms.next()?.parse().ok().filter(|s| (0..=60).contains(s))?;
-    if parts.next().is_some() {
-        return None;
-    }
-    Some(days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second)
-}
-
-fn days_in_month(year: i64, month: i64) -> i64 {
-    match month {
-        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
-        2 => 28,
-        4 | 6 | 9 | 11 => 30,
-        _ => 31,
+/// A resolver blip should not kill an install, but a genuinely wrong host would
+/// burn the whole schedule proving it, so DNS gets a shorter budget.
+fn ureq_error_attempts(err: &ureq::Error) -> u32 {
+    match err {
+        ureq::Error::Timeout(_) | ureq::Error::Io(_) | ureq::Error::ConnectionFailed => {
+            MAX_DOWNLOAD_ATTEMPTS
+        }
+        ureq::Error::HostNotFound => DNS_MAX_ATTEMPTS,
+        _ => 1,
     }
 }
 
-/// Days since 1970-01-01 for a proleptic-Gregorian date (Hinnant's algorithm).
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = if year >= 0 { year } else { year - 399 } / 400;
-    let year_of_era = year - era * 400;
-    let day_of_year = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * 146_097 + day_of_era - 719_468
+/// `Retry-After` per RFC 9110, delay-seconds only. HuggingFace's 429s send that
+/// form; an HTTP-date falls through to the backoff schedule rather than pull a
+/// calendar into the download path.
+fn parse_retry_after(raw: &str) -> Option<Duration> {
+    raw.trim().parse::<u64>().ok().map(Duration::from_secs)
 }
 
 /// Exponential backoff with ±25% jitter, or the server's own `Retry-After`
@@ -1857,10 +1845,6 @@ fn backoff_delay(attempt: u32, retry_after: Option<Duration>, jitter: f64) -> Du
 fn jitter_fraction() -> f64 {
     let nanos = now_since_epoch().map(|d| d.subsec_nanos()).unwrap_or(0);
     f64::from(nanos % 1_000) / 1_000.0
-}
-
-fn now_epoch_secs() -> i64 {
-    now_since_epoch().map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
 fn now_since_epoch() -> Option<Duration> {
@@ -2413,54 +2397,61 @@ mod retry_tests {
 
     #[test]
     fn retry_after_reads_delay_seconds() {
-        assert_eq!(parse_retry_after("120", 0), Some(Duration::from_secs(120)));
-        assert_eq!(parse_retry_after("  7 ", 0), Some(Duration::from_secs(7)));
-        assert_eq!(parse_retry_after("0", 0), Some(Duration::ZERO));
-    }
-
-    #[test]
-    fn retry_after_reads_an_http_date_relative_to_now() {
-        // 1994-11-06T08:49:37Z, the RFC 9110 example date.
-        let epoch = 784_111_777;
-        assert_eq!(
-            parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT", epoch - 30),
-            Some(Duration::from_secs(30))
-        );
-        assert_eq!(
-            parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT", epoch + 5),
-            Some(Duration::ZERO),
-            "a date already in the past means retry now, never a huge wait"
-        );
+        assert_eq!(parse_retry_after("120"), Some(Duration::from_secs(120)));
+        assert_eq!(parse_retry_after("  7 "), Some(Duration::from_secs(7)));
+        assert_eq!(parse_retry_after("0"), Some(Duration::ZERO));
     }
 
     #[test]
     fn retry_after_rejects_what_it_cannot_parse() {
-        for raw in [
-            "soon",
-            "",
-            "-5",
-            "Sun, 06 Nov 1994 08:49:37",
-            "Sunday, 06-Nov-94 08:49:37 GMT",
-            "Sun, 06 Foo 1994 08:49:37 GMT",
-            "Sun, 06 Nov 1994 25:49:37 GMT",
-            "Tue, 31 Feb 1994 08:49:37 GMT",
-            "Tue, 29 Feb 1900 08:49:37 GMT",
-            "Thu, 31 Apr 1994 08:49:37 GMT",
-            "Sun, 06 Nov 1994 -8:49:37 GMT",
-            "Sun, -6 Nov 1994 08:49:37 GMT",
-        ] {
-            assert_eq!(parse_retry_after(raw, 0), None, "{raw:?} must not parse");
+        for raw in ["soon", "", "-5", "Sun, 06 Nov 1994 08:49:37 GMT"] {
+            assert_eq!(parse_retry_after(raw), None, "{raw:?} must not parse");
         }
     }
 
-    /// The century rule cuts both ways — 2000 is a leap year, 1900 is not.
     #[test]
-    fn retry_after_accepts_a_real_leap_day() {
-        let epoch = 951_782_400; // 2000-02-29T00:00:00Z
+    fn dns_failures_retry_less_than_the_other_network_ones() {
+        for err in [
+            ureq::Error::ConnectionFailed,
+            ureq::Error::Timeout(ureq::Timeout::Connect),
+            ureq::Error::Io(io::Error::from(io::ErrorKind::UnexpectedEof)),
+        ] {
+            assert_eq!(ureq_error_attempts(&err), MAX_DOWNLOAD_ATTEMPTS, "{err}");
+        }
         assert_eq!(
-            parse_retry_after("Tue, 29 Feb 2000 00:00:00 GMT", epoch - 60),
-            Some(Duration::from_secs(60))
+            ureq_error_attempts(&ureq::Error::HostNotFound),
+            DNS_MAX_ATTEMPTS
         );
+        for err in [
+            ureq::Error::TooManyRedirects,
+            ureq::Error::RedirectFailed,
+            ureq::Error::BadUri("nonsense".to_string()),
+        ] {
+            assert_eq!(ureq_error_attempts(&err), 1, "{err} must be fatal");
+        }
+    }
+
+    /// `io::copy` cannot tell a stalled socket from a failing disk on its own,
+    /// and only the first is worth re-GETting gigabytes for (grok P2 on #761).
+    #[test]
+    fn a_local_write_failure_is_never_retried() {
+        let interrupted = stream_failure(model_download_error("download x".to_string()), true);
+        assert_eq!(interrupted.max_attempts, MAX_DOWNLOAD_ATTEMPTS);
+        assert_eq!(interrupted.reason, "download interrupted");
+
+        let disk = stream_failure(model_download_error("download x".to_string()), false);
+        assert_eq!(disk.max_attempts, 1);
+        assert_eq!(disk.reason, "cache write failed");
+
+        let mismatch = stream_failure(
+            anyhow::Error::new(CodedError {
+                code: ErrorCode::CacheCorrupt,
+                message: "sha256 mismatch".to_string(),
+            }),
+            false,
+        );
+        assert_eq!(mismatch.max_attempts, 1);
+        assert_eq!(mismatch.reason, "hash mismatch");
     }
 
     #[test]
@@ -2692,6 +2683,83 @@ mod retry_tests {
         assert!(
             !cache.0.join(file.rel_path).exists(),
             "unverified bytes never land at the target"
+        );
+    }
+
+    #[test]
+    fn a_truncated_stream_is_re_requested_and_then_verifies() {
+        let body = b"kesha model bytes".to_vec();
+        let mut truncated =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 64\r\nConnection: close\r\n\r\n".to_vec();
+        truncated.extend_from_slice(&body[..4]);
+        let (base, server) = stub_server(vec![truncated, ok_response(&body)]);
+        let cache = TempCache::new("truncated");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            &body,
+        );
+
+        download_verified(&cache.0, &file, false).expect("a short read must be retried");
+
+        assert_eq!(
+            fs::read(cache.0.join(file.rel_path)).expect("payload written"),
+            body
+        );
+        assert_eq!(server.join().expect("stub server"), 2);
+    }
+
+    /// A staging path that cannot be opened stands in for any permanent local
+    /// I/O failure: one GET, never five (grok P2 on #761).
+    #[test]
+    fn a_blocked_cache_write_gives_up_after_one_request() {
+        let body = b"kesha model bytes".to_vec();
+        let (base, server) = stub_server(vec![ok_response(&body)]);
+        let cache = TempCache::new("blocked");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            &body,
+        );
+        let target = cache.0.join(file.rel_path);
+        fs::create_dir_all(target.parent().expect("target parent")).expect("create model dir");
+        let mut part = target.file_name().map(OsString::from).expect("target name");
+        part.push(format!(".part.{}", std::process::id()));
+        fs::create_dir(target.with_file_name(part)).expect("occupy the staging path");
+
+        let err = download_verified(&cache.0, &file, false).expect_err("staging is blocked");
+
+        let rendered = format!("{err:#}");
+        assert!(rendered.contains("after 1 attempt"), "{rendered}");
+        assert_eq!(server.join().expect("stub server"), 1);
+    }
+
+    #[test]
+    fn an_exhausted_budget_names_every_attempt_it_spent() {
+        let rate_limited =
+            || header_only_response("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 0");
+        let (base, server) = stub_server(
+            (0..MAX_DOWNLOAD_ATTEMPTS)
+                .map(|_| rate_limited())
+                .collect::<Vec<_>>(),
+        );
+        let cache = TempCache::new("exhausted");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            b"never served",
+        );
+
+        let err = download_verified(&cache.0, &file, false).expect_err("every attempt 429s");
+
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains(&format!("after {MAX_DOWNLOAD_ATTEMPTS} attempt")),
+            "{rendered}"
+        );
+        assert_eq!(
+            server.join().expect("stub server"),
+            MAX_DOWNLOAD_ATTEMPTS as usize
         );
     }
 }
