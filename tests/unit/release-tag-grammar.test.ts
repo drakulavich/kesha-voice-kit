@@ -256,48 +256,78 @@ describe("cliPublishTarget", () => {
   });
 });
 
-// npm's trusted publisher is keyed to one entry workflow name, so an alpha that publishes
-// from its own workflow gets an opaque 404 from the registry (#731).
+// npm's trusted publisher is keyed to one *entry* workflow name and a package configures
+// exactly one, so any lane that publishes from a second workflow gets an opaque 404 from the
+// registry — which is why the alpha lane never published at all between #700 and #732.
 describe("alpha publish entry", () => {
   const read = (p: string) => readFileSync(`${import.meta.dir}/../../${p}`, "utf8");
-  const alpha = read(".github/workflows/release-alpha.yml");
+  const alphaYaml = read(".github/workflows/release-alpha.yml");
+  const alpha = parse(alphaYaml);
+  const npmPublish = parse(read(".github/workflows/npm-publish.yml"));
 
-  test("the alpha workflow holds no OIDC credential", () => {
-    expect(alpha).not.toContain("id-token");
+  test("the alpha lane holds no OIDC credential", () => {
+    expect(alphaYaml).not.toContain("id-token");
   });
 
-  test("it publishes by dispatching npm-publish.yml", () => {
-    expect(read(".github/scripts/dispatch-npm-publish.sh")).toContain("WORKFLOW=npm-publish.yml");
-    expect(parse(alpha).jobs.publish.steps.at(-1).run).toContain("dispatch-npm-publish.sh");
+  // Reachable only as a reusable: an `on:` trigger here would give npm a second caller name.
+  test("the alpha lane cannot start a run of its own", () => {
+    expect(Object.keys(alpha.on)).toEqual(["workflow_call"]);
+  });
+
+  test("nothing in the alpha lane publishes", () => {
+    expect(alphaYaml).not.toContain("npm publish");
+    expect(alphaYaml).not.toContain("release-npm-publish.yml");
+  });
+
+  test("every publish is entered through npm-publish.yml", () => {
+    expect(npmPublish.on.push.branches).toContain("main");
+    expect(npmPublish.jobs.alpha.uses).toBe("./.github/workflows/release-alpha.yml");
+    expect(npmPublish.jobs.publish.uses).toBe("./.github/workflows/release-npm-publish.yml");
+  });
+
+  // A push carries no tag; a dispatch with one is a re-publish of an existing release.
+  test("the two lanes split on the event, and the manual alpha keeps its escape hatch", () => {
+    expect(npmPublish.jobs.alpha.if).toBe(
+      "github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == '')",
+    );
+    expect(npmPublish.jobs.resolve.if).toBe(
+      "github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')",
+    );
+    expect(npmPublish.on.workflow_dispatch.inputs.tag.required).toBe(false);
+  });
+
+  // Tagging happens before the publish, so a decide that ran but a reserve that failed must
+  // not reach npm — `!cancelled()` alone would let the half-finished lane through.
+  test("a lane only publishes when it finished", () => {
+    for (const lane of ["alpha", "resolve"]) {
+      expect(npmPublish.jobs.publish.if).toContain(`needs.${lane}.result == 'success'`);
+    }
+    expect(npmPublish.jobs.publish.if).toContain("!cancelled()");
   });
 
   test("npm-publish injects the version for tags no commit carries", () => {
-    const publish = parse(read(".github/workflows/npm-publish.yml")).jobs.publish;
+    const inject = npmPublish.jobs.publish.with["inject-version"];
 
-    expect(publish.with["inject-version"]).toContain("derived");
+    expect(inject).toContain("needs.alpha.outputs.publish == 'true'");
+    expect(inject).toContain("needs.resolve.outputs.derived == 'true'");
+  });
+
+  test("a stable release is still verified against package.json, not injected", () => {
+    const steps = parse(read(".github/workflows/release-npm-publish.yml")).jobs.publish.steps;
+    const verify = steps.find((s: { name: string }) => s.name?.startsWith("Verify package.json"));
+
+    expect(verify.if).toBe("${{ !inputs.inject-version }}");
   });
 });
 
-describe("publish serialisation and provenance", () => {
-  const script = readFileSync(
-    `${import.meta.dir}/../../.github/scripts/dispatch-npm-publish.sh`,
-    "utf8",
+describe("publish serialisation", () => {
+  const npmPublish = parse(
+    readFileSync(`${import.meta.dir}/../../.github/workflows/npm-publish.yml`, "utf8"),
   );
 
-  // Without --ref the run's head_sha is main's tip, so provenance attests a commit whose
-  // tree is not what shipped; it is also what makes the run findable by tag.
-  test("the dispatch pins the run to the tag being published", () => {
-    expect(script).toContain('--ref "$TAG"');
-    expect(script).toContain('--branch "$TAG"');
-  });
-
-  test("an unidentifiable run fails rather than watching whatever is newest", () => {
-    expect(script).toContain('[ -z "$run" ]');
-  });
-
+  // One group for both lanes: an alpha deriving its sequence while another run holds an
+  // unpublished tag would reuse the version, and the prior-publish guard makes that a no-op.
   test("publishes are serialised so a late one cannot move a dist-tag backwards", () => {
-    const publish = parse(readFileSync(`${import.meta.dir}/../../.github/workflows/npm-publish.yml`, "utf8"));
-
-    expect(publish.concurrency).toEqual({ group: "npm-publish", queue: "max" });
+    expect(npmPublish.concurrency).toEqual({ group: "npm-publish", queue: "max" });
   });
 });
