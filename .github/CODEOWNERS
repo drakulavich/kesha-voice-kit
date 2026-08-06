@@ -1,0 +1,5 @@
+# Publish-capable surface: a PR that edits its own gate runs the rewritten
+# gate on the same push (#726), so these paths require the owner's review.
+/.github/workflows/release-*.yml   @drakulavich
+/.github/workflows/npm-publish.yml @drakulavich
+/.github/scripts/                  @drakulavich
