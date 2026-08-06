@@ -1626,14 +1626,19 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
-    let url = apply_mirror(f.url);
+    download_with_retries(&apply_mirror(f.url), f, &target)?;
+    with_stderr(|| eprintln!("OK  {}", f.rel_path));
+    Ok(())
+}
+
+/// Re-issues the request while the failure looks like it might clear, backing
+/// off between attempts. The verified write inside each attempt is unchanged:
+/// retry covers the request, never the hash check (#174).
+fn download_with_retries(url: &str, f: &ModelFile, target: &Path) -> Result<()> {
     let mut attempt: u32 = 1;
     loop {
-        match download_attempt(&url, f, &target) {
-            Ok(()) => {
-                with_stderr(|| eprintln!("OK  {}", f.rel_path));
-                return Ok(());
-            }
+        match download_attempt(url, f, target) {
+            Ok(()) => return Ok(()),
             Err(fail) if fail.transient && attempt < MAX_DOWNLOAD_ATTEMPTS => {
                 let delay = backoff_delay(attempt, fail.retry_after, jitter_fraction());
                 with_stderr(|| {
