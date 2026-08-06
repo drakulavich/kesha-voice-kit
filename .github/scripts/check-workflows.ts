@@ -38,6 +38,22 @@ function requirePinnedActions(path: string, contents: string): string[] {
   return errors;
 }
 
+type Step = { run?: unknown; uses?: unknown; if?: unknown; with?: { filters?: unknown } };
+
+function jobSteps(document: unknown, job: string): Step[] | undefined {
+  const steps = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs?.[job]?.steps;
+  return Array.isArray(steps) ? (steps as Step[]) : undefined;
+}
+
+const condition = (step: Step) => String(step.if ?? "");
+
+/** Indices of the steps whose `run` matches, skipping any switched off with `if: false`. */
+function runsMatching(steps: Step[], pattern: RegExp): number[] {
+  return steps.flatMap((step, at) =>
+    typeof step?.run === "string" && pattern.test(step.run) && condition(step).trim() !== "false" ? [at] : [],
+  );
+}
+
 /**
  * Fails when build-engine.yml's build job would upload an artifact it never synthesised with.
  * That workflow runs on releases only, so this is the one lane a PR can hold it to (#671).
@@ -45,23 +61,14 @@ function requirePinnedActions(path: string, contents: string): string[] {
 export function requirePreUploadSynthesisSmoke(path: string, document: unknown): string[] {
   if (!path.endsWith("build-engine.yml")) return [];
 
-  const steps = (document as { jobs?: { build?: { steps?: unknown[] } } })?.jobs?.build?.steps;
-  if (!Array.isArray(steps)) return [`${path}: expected a \`build\` job with steps`];
-
-  const index = (match: (step: { run?: unknown; uses?: unknown; if?: unknown }) => boolean) =>
-    steps.findIndex((step) => typeof step === "object" && step !== null && match(step));
+  const steps = jobSteps(document, "build");
+  if (!steps) return [`${path}: expected a \`build\` job with steps`];
 
   // Anchored at line start so a commented-out or echoed mention doesn't satisfy the guard.
-  const invocation = /^\s*bun\s+\S*smoke-synthesis\.ts\b/m;
-  const smoke = index(
-    (step) =>
-      typeof step.run === "string" &&
-      invocation.test(step.run) &&
-      String(step.if ?? "").trim() !== "false",
-  );
-  const upload = index((step) => typeof step.uses === "string" && step.uses.startsWith("actions/upload-artifact"));
+  const smoke = runsMatching(steps, /^\s*bun\s+\S*smoke-synthesis\.ts\b/m)[0];
+  const upload = steps.findIndex((step) => typeof step?.uses === "string" && step.uses.startsWith("actions/upload-artifact"));
 
-  if (smoke === -1) {
+  if (smoke === undefined) {
     return [`${path}: the build job must run smoke-synthesis.ts before uploading the artifact (#671)`];
   }
   if (upload === -1) {
@@ -71,6 +78,41 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
     return [`${path}: smoke-synthesis.ts runs after the artifact is uploaded; move it before (#671)`];
   }
   return [];
+}
+
+/**
+ * Fails when the release job would name a Linux package without first proving npm published
+ * that version. The equivalent assertions in tests/unit sit behind ci.yml's `code` filter, which a
+ * workflow-only edit never trips — this lane is the one that always sees such an edit (#728).
+ */
+export function requireNpmPublishedGate(path: string, document: unknown): string[] {
+  if (!path.endsWith("build-engine.yml")) return [];
+
+  const steps = jobSteps(document, "release");
+  if (!steps) return [`${path}: expected a \`release\` job with steps`];
+
+  // Anchored so a comment or an echoed mention cannot stand in for the invocation.
+  const packaging = runsMatching(steps, /^[^#\n]*\blinux-packages\b/m);
+  if (packaging.length === 0) {
+    return [`${path}: expected the release job to build and stage the Linux packages (#728)`];
+  }
+  const gate = runsMatching(steps, /^\s*node\s+\S*assert-npm-published\.mjs\b/m)[0];
+  if (gate === undefined) {
+    return [`${path}: the release job must run assert-npm-published.mjs before naming a Linux package (#728)`];
+  }
+
+  const errors: string[] = [];
+  for (const at of packaging) {
+    if (condition(steps[at]) !== condition(steps[gate])) {
+      errors.push(
+        `${path}: step ${at + 1} packages Linux artifacts under a different \`if\` than the npm gate, so it can run unguarded (#728)`,
+      );
+    }
+    if (gate > at) {
+      errors.push(`${path}: assert-npm-published.mjs runs after step ${at + 1} packages Linux artifacts; move it before (#728)`);
+    }
+  }
+  return errors;
 }
 
 /**
@@ -85,8 +127,7 @@ export function requireTestedScriptsInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const raw = (document as { jobs?: { changes?: { steps?: Array<{ with?: { filters?: unknown } }> } } })?.jobs?.changes
-    ?.steps?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
   if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
 
   const code = (parse(raw) as Record<string, string[]>)?.code;
@@ -135,6 +176,7 @@ function main(): void {
       const errors = [
         ...requirePinnedActions(path, contents),
         ...requirePreUploadSynthesisSmoke(path, document),
+        ...requireNpmPublishedGate(path, document),
         ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ];
       if (errors.length > 0) {

@@ -477,6 +477,11 @@ jobs:
       - name: Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
+      # The .deb/.rpm carry package.json#version, which `main` holds ahead of npm since #691 (#728).
+      - name: Assert the packaged CLI version is published on npm
+        if: steps.release_kind.outputs.prerelease != 'true'
+        run: node .github/scripts/assert-npm-published.mjs
+
       - name: Setup Go
         if: steps.release_kind.outputs.prerelease != 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
