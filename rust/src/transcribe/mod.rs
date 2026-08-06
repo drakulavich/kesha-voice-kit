@@ -53,7 +53,16 @@ const FULL_FILE_SINGLE_PASS_MAX_SECONDS: f32 = 24.0 * 60.0;
 /// non-overlapping ranges.
 const FIXED_CHUNK_SECONDS: f32 = 10.0 * 60.0;
 const FIXED_CHUNK_OVERLAP_SECONDS: f32 = 5.0;
-const CHUNK_DEDUP_MIN_CHARS: usize = 8;
+
+/// Shortest run of words allowed to anchor a seam splice. Below this a match
+/// is as likely to be a coincidental phrase repeat as the re-transcribed
+/// overlap, and splicing on it would drop real speech.
+const SEAM_MIN_ANCHOR_WORDS: usize = 4;
+
+/// Generous speaking rate used to bound how far into the new chunk a seam
+/// anchor may sit. Over-estimating only widens a bounded scan; under-estimating
+/// would leave the overlap in the transcript twice.
+const SEAM_WORDS_PER_SECOND: f32 = 3.0;
 
 /// Caller-requested VAD behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -569,8 +578,8 @@ where
     F: FnMut(&[f32]) -> Result<String>,
 {
     let windows = fixed_chunk_windows(samples.len(), sr, chunk_seconds, overlap_seconds);
-    let mut out = Vec::with_capacity(windows.len());
-    let mut accumulated_text = String::new();
+    let mut out: Vec<TranscriptionSegment> = Vec::with_capacity(windows.len());
+    let seam_budget = seam_word_budget(overlap_seconds);
     let mut failures = 0usize;
     let mut first_failure: Option<String> = None;
 
@@ -586,24 +595,14 @@ where
                     window.output_end_s,
                     text.chars().count()
                 );
-                // Only pass the tail of accumulated_text that can plausibly
-                // overlap with the next chunk; scanning the full transcript
-                // is both wasteful and increases false-positive risk from
-                // repeated phrases appearing elsewhere in the recording.
-                let overlap_chars = (FIXED_CHUNK_OVERLAP_SECONDS * 20.0).ceil() as usize;
-                let mut tail_start = accumulated_text.len().saturating_sub(overlap_chars * 4);
-                while !accumulated_text.is_char_boundary(tail_start) {
-                    tail_start -= 1;
-                }
-                let acc_tail = &accumulated_text[tail_start..];
-                let trimmed = trim_repeated_prefix(acc_tail, text.trim());
+                // Only the previous emitted segment physically overlaps this
+                // window, and it was already trimmed back to the seam — so its
+                // tail is exactly the pre-seam text this chunk re-transcribes.
+                let previous = out.last().map(|s| s.text.as_str()).unwrap_or("");
+                let trimmed = trim_repeated_prefix(previous, text.trim(), seam_budget);
                 if trimmed.is_empty() {
                     continue;
                 }
-                if !accumulated_text.is_empty() {
-                    accumulated_text.push(' ');
-                }
-                accumulated_text.push_str(trimmed);
                 out.push(TranscriptionSegment {
                     start: window.output_start_s,
                     end: window.output_end_s,
@@ -680,24 +679,104 @@ fn fixed_chunk_windows(
     windows
 }
 
-fn trim_repeated_prefix<'a>(previous: &str, current: &'a str) -> &'a str {
-    let previous = previous.trim_end();
-    let current = current.trim_start();
-    if previous.is_empty() || current.is_empty() {
-        return current;
-    }
+/// How many words on either side of a seam may take part in a splice.
+fn seam_word_budget(overlap_seconds: f32) -> usize {
+    ((overlap_seconds.max(0.0) * SEAM_WORDS_PER_SECOND * 2.0).ceil() as usize)
+        .max(SEAM_MIN_ANCHOR_WORDS * 2)
+}
 
-    let max = previous.len().min(current.len());
-    for n in (CHUNK_DEDUP_MIN_CHARS..=max).rev() {
-        let prev_start = previous.len() - n;
-        if !previous.is_char_boundary(prev_start) || !current.is_char_boundary(n) {
-            continue;
+/// One whitespace-delimited token plus its case- and punctuation-folded
+/// comparison key. `end` spans the raw token, so splicing just past a matched
+/// word also carries its trailing punctuation.
+struct SeamWord {
+    end: usize,
+    key: String,
+}
+
+fn seam_words(text: &str) -> Vec<SeamWord> {
+    let mut out = Vec::new();
+    let mut start: Option<usize> = None;
+    let push = |start: usize, end: usize, out: &mut Vec<SeamWord>| {
+        let key = text[start..end]
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        if !key.is_empty() {
+            out.push(SeamWord { end, key });
         }
-        if previous[prev_start..].to_lowercase() == current[..n].to_lowercase() {
-            return current[n..].trim_start();
+    };
+    for (i, c) in text.char_indices() {
+        match (c.is_whitespace(), start) {
+            (true, Some(s)) => {
+                push(s, i, &mut out);
+                start = None;
+            }
+            (false, None) => start = Some(i),
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        push(s, text.len(), &mut out);
+    }
+    out
+}
+
+/// Drop the leading part of `current` that re-transcribes audio `previous`
+/// already covered, returning the rest of `current` verbatim.
+///
+/// Matching is word-granular on purpose. A byte-granular cut splits words at
+/// the seam ("operational" spliced onto "…the operation" leaves "al") and can
+/// swallow a whole word whose spelling merely ends the previous chunk
+/// ("…the cooperation" eats the "operation" that follows) — the two failure
+/// shapes upstream FluidAudio fixed in its own seam merge (#683/#688/#759).
+/// When nothing anchors, `current` is returned untouched: a duplicated seam
+/// phrase is recoverable by a reader, a dropped one is not.
+fn trim_repeated_prefix<'a>(previous: &str, current: &'a str, budget: usize) -> &'a str {
+    let current = current.trim_start();
+    let all_prev = seam_words(previous);
+    let prev = &all_prev[all_prev.len().saturating_sub(budget)..];
+    let cur = seam_words(current);
+
+    if let Some(rest) = splice_after_anchor(prev, &cur, current, budget) {
+        return rest;
+    }
+    // A window boundary can cut the previous chunk off mid-word ("…for the new
+    // author" where the audio says "authentication"), which makes every anchor
+    // ending in that fragment unmatchable. Retry without it rather than emit
+    // the whole overlap twice; the fragment itself stays in the transcript.
+    if prev.len() > SEAM_MIN_ANCHOR_WORDS {
+        if let Some(rest) = splice_after_anchor(&prev[..prev.len() - 1], &cur, current, budget) {
+            return rest;
         }
     }
     current
+}
+
+/// Find the longest run of words that both ends `prev` and occurs within the
+/// first `budget` words of `cur`, and return `current` from just past it.
+fn splice_after_anchor<'a>(
+    prev: &[SeamWord],
+    cur: &[SeamWord],
+    current: &'a str,
+    budget: usize,
+) -> Option<&'a str> {
+    let limit = budget.min(cur.len());
+    let max_n = prev.len().min(limit);
+    if max_n < SEAM_MIN_ANCHOR_WORDS {
+        return None;
+    }
+    for n in (SEAM_MIN_ANCHOR_WORDS..=max_n).rev() {
+        let anchor = &prev[prev.len() - n..];
+        for j in 0..=(limit - n) {
+            if cur[j..j + n]
+                .iter()
+                .map(|w| &w.key)
+                .eq(anchor.iter().map(|w| &w.key))
+            {
+                return Some(current[cur[j + n - 1].end..].trim_start());
+            }
+        }
+    }
+    None
 }
 
 /// Re-uses duration from the `Auto` probe-and-decide step (#248) to avoid re-opening the file,
@@ -1038,8 +1117,8 @@ mod tests {
         let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
             call += 1;
             match call {
-                1 => Ok("hello sharedtext".to_string()),
-                2 => Ok("sharedtext world".to_string()),
+                1 => Ok("hello there over the wire".to_string()),
+                2 => Ok("there over the wire world".to_string()),
                 3 => anyhow::bail!("synthetic chunk failure"),
                 4 => Ok("tail".to_string()),
                 _ => unreachable!(),
@@ -1048,7 +1127,7 @@ mod tests {
         .expect("one failed chunk should not discard successful chunks");
 
         assert_eq!(segs.len(), 3);
-        assert_eq!(segs[0].text, "hello sharedtext");
+        assert_eq!(segs[0].text, "hello there over the wire");
         assert_eq!(segs[1].text, "world");
         assert_eq!(segs[2].text, "tail");
         assert_eq!(segs[0].start, 0.0);
@@ -1091,7 +1170,7 @@ mod tests {
     }
 
     #[test]
-    fn chunked_segments_clamp_overlap_tail_to_char_boundary() {
+    fn chunked_segments_handle_multibyte_transcripts_without_panicking() {
         let samples = vec![0.0_f32; 30];
         let long_ru = "я".repeat(300);
         let mut call = 0usize;
@@ -1361,47 +1440,124 @@ mod tests {
         );
     }
 
-    // ── trim_repeated_prefix characterization tests ─────────────────────────
-    #[test]
-    fn trim_repeated_prefix_empty_prev_returns_current_unchanged() {
-        assert_eq!(trim_repeated_prefix("", "hello world"), "hello world");
+    // ── seam splice: one test per failure shape upstream FluidAudio hit ─────
+
+    /// Budget for a 5 s overlap, matching the production chunker.
+    fn budget() -> usize {
+        seam_word_budget(FIXED_CHUNK_OVERLAP_SECONDS)
     }
 
     #[test]
-    fn trim_repeated_prefix_overlap_below_min_chars_not_stripped() {
-        // CHUNK_DEDUP_MIN_CHARS = 8; a 7-char overlap must NOT be stripped.
-        let prev = "abcdefg";
-        let curr = "abcdefg extra";
-        assert_eq!(trim_repeated_prefix(prev, curr), "abcdefg extra");
-    }
-
-    #[test]
-    fn trim_repeated_prefix_exactly_min_chars_is_stripped() {
-        // CHUNK_DEDUP_MIN_CHARS = 8; an exactly-8-char overlap must be stripped.
-        let prev = "abcdefgh";
-        let curr = "abcdefgh more";
-        assert_eq!(trim_repeated_prefix(prev, curr), "more");
-    }
-
-    #[test]
-    fn trim_repeated_prefix_case_insensitive() {
-        let prev = "Hello World";
-        let curr = "hello world continuation";
-        assert_eq!(trim_repeated_prefix(prev, curr), "continuation");
-    }
-
-    #[test]
-    fn trim_repeated_prefix_multi_byte_boundary_no_panic() {
-        // Cyrillic: each character is 2 bytes. The function must not panic when
-        // scanning char boundaries through a multibyte string.
-        let prev = "привет мир"; // 10 chars, 19 bytes
-        let curr = "привет мир продолжение";
-        // overlap "привет мир" is 10 chars = 19 bytes ≥ CHUNK_DEDUP_MIN_CHARS (8) → stripped
-        let result = trim_repeated_prefix(prev, curr);
-        assert!(
-            !result.contains("привет мир"),
-            "overlap should be stripped: {result}"
+    fn seam_splice_without_previous_text_returns_current_unchanged() {
+        assert_eq!(
+            trim_repeated_prefix("", "hello world again now", budget()),
+            "hello world again now"
         );
+    }
+
+    #[test]
+    fn seam_splice_drops_the_re_transcribed_overlap() {
+        let prev = "we can merge it into the main branch";
+        let curr = "merge it into the main branch and then deploy";
+        assert_eq!(
+            trim_repeated_prefix(prev, curr, budget()),
+            "and then deploy"
+        );
+    }
+
+    #[test]
+    fn seam_splice_skips_a_mangled_overlap_head() {
+        // The new window has no left context, so its first word is often
+        // garbage ("engaging" for "staging"). The anchor has to be findable
+        // past it, or the whole overlap lands in the transcript twice.
+        let prev = "deploy to the staging environment and run the smoke tests";
+        let curr = "engaging environment and run the smoke tests then verify";
+        assert_eq!(trim_repeated_prefix(prev, curr, budget()), "then verify");
+    }
+
+    #[test]
+    fn seam_splice_recovers_when_the_previous_window_ends_mid_word() {
+        // Window edge cut "authentication" down to "author"; every anchor
+        // ending in that fragment is unmatchable.
+        let prev = "we should schedule a code review session for the new author";
+        let curr = "schedule a code review session for the new authentication module next week";
+        assert_eq!(
+            trim_repeated_prefix(prev, curr, budget()),
+            "authentication module next week"
+        );
+    }
+
+    #[test]
+    fn seam_splice_never_cuts_a_word_in_half() {
+        // Byte-granular matching spliced "operational" onto "…the operation"
+        // and emitted "al" — upstream FluidAudio #683/#688.
+        let prev = "we discussed the operation";
+        let curr = "operational costs went up sharply";
+        assert_eq!(
+            trim_repeated_prefix(prev, curr, budget()),
+            "operational costs went up sharply"
+        );
+    }
+
+    #[test]
+    fn seam_splice_keeps_a_word_whose_spelling_ends_the_previous_chunk() {
+        // "cooperation" ends with "operation"; a byte-granular match ate the
+        // real word that followed — the DROP shape of upstream #759.
+        let prev = "they praised the cooperation";
+        let curr = "operation nightfall begins at dawn";
+        assert_eq!(
+            trim_repeated_prefix(prev, curr, budget()),
+            "operation nightfall begins at dawn"
+        );
+    }
+
+    #[test]
+    fn seam_splice_ignores_an_anchor_shorter_than_the_minimum() {
+        let prev = "the report is ready to send";
+        let curr = "to send it out by five";
+        assert_eq!(
+            trim_repeated_prefix(prev, curr, budget()),
+            "to send it out by five",
+            "a {SEAM_MIN_ANCHOR_WORDS}-word floor keeps coincidental phrases from splicing"
+        );
+    }
+
+    #[test]
+    fn seam_splice_keeps_everything_when_nothing_anchors() {
+        let prev = "the database migration completed successfully";
+        let curr = "unrelated speech about something else entirely";
+        assert_eq!(
+            trim_repeated_prefix(prev, curr, budget()),
+            "unrelated speech about something else entirely"
+        );
+    }
+
+    #[test]
+    fn seam_splice_folds_case_and_trailing_punctuation() {
+        let prev = "run the smoke tests, then wait.";
+        let curr = "Run the Smoke Tests, then wait! Results follow";
+        assert_eq!(trim_repeated_prefix(prev, curr, budget()), "Results follow");
+    }
+
+    #[test]
+    fn seam_splice_handles_multibyte_text() {
+        let prev = "проверь все свои конфиги перед запуском";
+        let curr = "все свои конфиги перед запуском и потом отпишись";
+        assert_eq!(
+            trim_repeated_prefix(prev, curr, budget()),
+            "и потом отпишись"
+        );
+    }
+
+    #[test]
+    fn seam_splice_will_not_reach_past_its_budget() {
+        // A repeat this far into the new window belongs to later speech, not
+        // to the overlap; splicing on it would delete everything before it.
+        let prev = "the meeting has been rescheduled";
+        let filler = "one two three four five six seven eight nine ten ".repeat(4);
+        let curr = format!("{filler}{prev} tail");
+        let out = trim_repeated_prefix(prev, &curr, seam_word_budget(1.0));
+        assert_eq!(out, curr, "budget must bound how much can be discarded");
     }
 
     // ── fixed_chunk_windows guard tests ─────────────────────────────────────
@@ -1440,6 +1596,71 @@ mod tests {
         assert!(!windows.is_empty(), "should produce at least one window");
         // last window must reach the end
         assert_eq!(windows.last().unwrap().input_end, 100);
+    }
+
+    #[test]
+    fn fixed_chunk_windows_tile_the_audio_exactly_once() {
+        // Upstream FluidAudio #747/#800 (final window truncated) and #761
+        // (seam-gap content drop) are both "some audio reaches no window".
+        // Output ranges must abut with no gap, no overlap, and reach the end.
+        for total in [1usize, 999, 16_000, 160_001, 1_234_567] {
+            for (chunk, overlap) in [(1.0_f32, 0.2_f32), (10.0, 5.0), (600.0, 5.0), (0.5, 0.49)] {
+                let ctx = format!("total={total} chunk={chunk} overlap={overlap}");
+                let windows = fixed_chunk_windows(total, 16_000.0, chunk, overlap);
+                assert!(!windows.is_empty(), "{ctx}: no windows");
+                assert_eq!(windows[0].output_start_s, 0.0, "{ctx}: gap at the start");
+                assert_eq!(
+                    windows.last().unwrap().input_end,
+                    total,
+                    "{ctx}: final window stops short of the audio"
+                );
+                for w in &windows {
+                    assert!(w.input_start < w.input_end, "{ctx}: empty input {w:?}");
+                    assert!(
+                        w.output_end_s > w.output_start_s,
+                        "{ctx}: empty output {w:?}"
+                    );
+                    assert!(
+                        w.input_start as f32 / 16_000.0 <= w.output_start_s,
+                        "{ctx}: {w:?}"
+                    );
+                }
+                for pair in windows.windows(2) {
+                    assert_eq!(
+                        pair[0].output_end_s, pair[1].output_start_s,
+                        "{ctx}: output ranges must abut, got {pair:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn chunked_segments_stay_ordered_across_seams() {
+        // Upstream FluidAudio #825/#830 reordered tokens at a seam. Kesha's
+        // merge appends windows in time order, so this locks that in.
+        let samples = vec![0.0_f32; 16_000 * 40];
+        let mut call = 0usize;
+        let segs = build_chunked_output_segments(&samples, 16_000.0, 10.0, 5.0, |_slice| {
+            call += 1;
+            Ok(format!("alpha{call} beta{call} gamma{call} delta{call}"))
+        })
+        .unwrap();
+        assert!(
+            segs.len() >= 4,
+            "expected several windows, got {}",
+            segs.len()
+        );
+        for pair in segs.windows(2) {
+            assert!(pair[1].start >= pair[0].start, "out of order: {pair:?}");
+            assert_eq!(pair[0].end, pair[1].start, "gap between {pair:?}");
+        }
+        let joined = join_segment_texts(&segs);
+        let order: Vec<usize> = (1..=segs.len())
+            .filter_map(|i| joined.find(&format!("alpha{i} ")))
+            .collect();
+        assert_eq!(order.len(), segs.len(), "a window went missing: {joined}");
+        assert!(order.windows(2).all(|p| p[0] < p[1]), "reordered: {joined}");
     }
 
     #[test]
@@ -1510,5 +1731,216 @@ mod tests {
             },
         ];
         assert_eq!(join_segment_texts(&segs), "foo bar");
+    }
+}
+
+/// Long-form seam audit against real speech (#722). Kesha's overlapped
+/// windowing and merge are its own code, never inherited from upstream
+/// FluidAudio, so they never inherited upstream's seam fixes either. These
+/// run the chunk-and-merge path against a single full-file pass over the
+/// same audio and diff the seams.
+///
+/// Skips — without failing — when the Parakeet weights aren't installed,
+/// matching the cache-gated convention in `rust/tests/common/mod.rs`.
+#[cfg(test)]
+mod seam_long_form {
+    use super::*;
+
+    const SR: f32 = 16_000.0;
+    const OVERLAP_S: f32 = FIXED_CHUNK_OVERLAP_SECONDS;
+
+    /// Eight unrelated English utterances. Concatenated they run ~36 s, so a
+    /// chunk length in the teens puts a seam inside a sentence — and, at some
+    /// lengths, inside a word.
+    const FIXTURES: &[&str] = &[
+        "01-check-email.ogg",
+        "02-meeting-rescheduled.ogg",
+        "03-review-pull-request.ogg",
+        "04-deploy-staging.ogg",
+        "05-database-migration.ogg",
+        "06-code-review-session.ogg",
+        "07-run-test-suite.ogg",
+        "08-update-documentation.ogg",
+    ];
+
+    fn backend_or_skip() -> Option<Box<dyn backend::TranscribeBackend>> {
+        if !models::is_cached(models::ModelKind::Asr) {
+            eprintln!("SKIP seam_long_form: ASR weights not installed (`kesha install`)");
+            return None;
+        }
+        let dir = models::model_dir(models::ModelKind::Asr)
+            .to_string_lossy()
+            .into_owned();
+        Some(backend::create_backend(&dir).expect("create ASR backend"))
+    }
+
+    fn fixture(name: &str) -> Vec<f32> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/benchmark-en")
+            .join(name);
+        audio::load_audio(path.to_str().unwrap()).unwrap_or_else(|e| {
+            panic!("load {name}: {e} — run `git lfs pull` if fixtures are pointer stubs")
+        })
+    }
+
+    fn keys(text: &str) -> Vec<String> {
+        seam_words(text).into_iter().map(|w| w.key).collect()
+    }
+
+    /// Fraction of `reference` words recoverable from `actual` in order.
+    fn recall(reference: &[String], actual: &[String]) -> f32 {
+        if reference.is_empty() {
+            return 1.0;
+        }
+        let mut cursor = 0usize;
+        let mut hits = 0usize;
+        for want in reference {
+            if let Some(at) = actual[cursor..].iter().position(|w| w == want) {
+                cursor += at + 1;
+                hits += 1;
+            }
+        }
+        hits as f32 / reference.len() as f32
+    }
+
+    /// The first word run of length `n` present in both slices, if any.
+    fn shared_run(a: &[String], b: &[String], n: usize) -> Option<String> {
+        if a.len() < n || b.len() < n {
+            return None;
+        }
+        a.windows(n)
+            .find(|run| b.windows(n).any(|other| other == *run))
+            .map(|run| run.join(" "))
+    }
+
+    /// The whole point of the overlap is that both windows hear it; exactly one
+    /// of them may print it. A word run repeated across the seam is the
+    /// duplicate shape upstream FluidAudio chased through #708/#825/#830.
+    fn assert_no_duplicated_seam(segments: &[TranscriptionSegment], ctx: &str) {
+        let budget = seam_word_budget(OVERLAP_S);
+        for pair in segments.windows(2) {
+            let left = keys(&pair[0].text);
+            let right = keys(&pair[1].text);
+            let tail = &left[left.len().saturating_sub(budget)..];
+            let head = &right[..budget.min(right.len())];
+            if let Some(run) = shared_run(tail, head, SEAM_MIN_ANCHOR_WORDS) {
+                panic!(
+                    "{ctx}: seam at {:.2}s emits \"{run}\" twice\n  left tail:  {}\n  right head: {}",
+                    pair[1].start,
+                    tail.join(" "),
+                    head.join(" "),
+                );
+            }
+        }
+    }
+
+    fn audit(
+        be: &mut Box<dyn backend::TranscribeBackend>,
+        samples: &[f32],
+        reference: &[String],
+        single: &[String],
+        chunk_s: f32,
+        ctx: &str,
+    ) {
+        let segments = build_chunked_output_segments(samples, SR, chunk_s, OVERLAP_S, |slice| {
+            be.transcribe_samples(slice)
+        })
+        .unwrap_or_else(|e| panic!("{ctx}: chunked transcription failed: {e}"));
+        assert!(
+            segments.len() >= 2,
+            "{ctx}: needs at least one seam, got {} segment(s)",
+            segments.len()
+        );
+
+        for pair in segments.windows(2) {
+            assert_eq!(
+                pair[0].end, pair[1].start,
+                "{ctx}: timestamp gap between {pair:?}"
+            );
+        }
+
+        assert_no_duplicated_seam(&segments, ctx);
+
+        let merged = keys(&join_segment_texts(&segments));
+        let r = recall(reference, &merged);
+        assert!(
+            r >= 0.9,
+            "{ctx}: merge dropped speech — reference recall {r:.2}\n  reference: {}\n  merged:    {}",
+            reference.join(" "),
+            merged.join(" "),
+        );
+        let inflation = merged.len() as f32 / single.len() as f32;
+        assert!(
+            inflation <= 1.25,
+            "{ctx}: merged transcript is {inflation:.2}x the single-pass one \
+             ({} vs {} words)\n  merged: {}",
+            merged.len(),
+            single.len(),
+            merged.join(" "),
+        );
+    }
+
+    #[test]
+    fn chunked_merge_of_long_form_speech_matches_a_single_pass() {
+        let Some(mut be) = backend_or_skip() else {
+            return;
+        };
+
+        let mut samples: Vec<f32> = Vec::new();
+        let mut reference: Vec<String> = Vec::new();
+        for name in FIXTURES {
+            let utterance = fixture(name);
+            reference.extend(keys(&be.transcribe_samples(&utterance).unwrap()));
+            samples.extend_from_slice(&utterance);
+        }
+        let single = keys(&be.transcribe_samples(&samples).unwrap());
+        eprintln!(
+            "seam audit: {:.1}s of speech, {} reference words, {} single-pass words",
+            samples.len() as f32 / SR,
+            reference.len(),
+            single.len()
+        );
+
+        // Three seam placements: mid-sentence, and two that cut the previous
+        // window off mid-word ("…the AP" for "API", "…the new author" for
+        // "authentication"). Production chunks at 600 s; the teens are the
+        // adversarial end of the same code path.
+        for chunk_s in [15.5_f32, 20.0, 25.0] {
+            audit(
+                &mut be,
+                &samples,
+                &reference,
+                &single,
+                chunk_s,
+                &format!("chunk={chunk_s}s"),
+            );
+        }
+    }
+
+    #[test]
+    fn chunked_merge_survives_silence_between_utterances() {
+        let Some(mut be) = backend_or_skip() else {
+            return;
+        };
+
+        let gap = vec![0.0_f32; (3.0 * SR) as usize];
+        let mut samples: Vec<f32> = Vec::new();
+        let mut reference: Vec<String> = Vec::new();
+        for name in FIXTURES {
+            let utterance = fixture(name);
+            reference.extend(keys(&be.transcribe_samples(&utterance).unwrap()));
+            samples.extend_from_slice(&utterance);
+            samples.extend_from_slice(&gap);
+        }
+        let single = keys(&be.transcribe_samples(&samples).unwrap());
+
+        audit(
+            &mut be,
+            &samples,
+            &reference,
+            &single,
+            20.0,
+            "silence-padded chunk=20s",
+        );
     }
 }
