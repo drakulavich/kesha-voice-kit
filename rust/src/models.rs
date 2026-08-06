@@ -1807,17 +1807,15 @@ fn parse_http_date(raw: &str) -> Option<i64> {
     let month = HTTP_DATE_MONTHS.iter().position(|m| *m == month_name)? as i64 + 1;
     let year: i64 = parts.next()?.parse().ok()?;
     let mut hms = parts.next()?.splitn(3, ':');
-    let hour: i64 = hms.next()?.parse().ok()?;
-    let minute: i64 = hms.next()?.parse().ok()?;
-    let second: i64 = hms.next()?.parse().ok()?;
     // `days_from_civil` normalises an impossible day rather than rejecting it, so
     // "31 Feb" would silently become a real date and displace the backoff.
-    if parts.next().is_some()
-        || !(1..=days_in_month(year, month)).contains(&day)
-        || hour > 23
-        || minute > 59
-        || second > 60
-    {
+    let day = (1..=days_in_month(year, month))
+        .contains(&day)
+        .then_some(day)?;
+    let hour: i64 = hms.next()?.parse().ok().filter(|h| (0..24).contains(h))?;
+    let minute: i64 = hms.next()?.parse().ok().filter(|m| (0..60).contains(m))?;
+    let second: i64 = hms.next()?.parse().ok().filter(|s| (0..=60).contains(s))?;
+    if parts.next().is_some() {
         return None;
     }
     Some(days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second)
@@ -2448,6 +2446,8 @@ mod retry_tests {
             "Tue, 31 Feb 1994 08:49:37 GMT",
             "Tue, 29 Feb 1900 08:49:37 GMT",
             "Thu, 31 Apr 1994 08:49:37 GMT",
+            "Sun, 06 Nov 1994 -8:49:37 GMT",
+            "Sun, -6 Nov 1994 08:49:37 GMT",
         ] {
             assert_eq!(parse_retry_after(raw, 0), None, "{raw:?} must not parse");
         }
