@@ -284,7 +284,15 @@ export async function transcribeEngineWithSegments(
  * Engine answer with `E_UNSUPPORTED_PLATFORM` after the spawn. */
 export async function preflightRecordLive(): Promise<void> {
   const caps = await getEngineCapabilities().catch(() => null);
-  if (!caps?.features.includes(RECORD_LIVE_FEATURE)) {
+  if (caps === null) {
+    throw new Error(
+      "could not read kesha-engine's capabilities, so --live cannot be verified.\n\n" +
+        "The engine binary failed to answer `--capabilities-json` — it may be missing, " +
+        "truncated, or blocked from running.\n\n" +
+        `Reinstall it and retry:\n\n    ${installHint()}`,
+    );
+  }
+  if (!caps.features.includes(RECORD_LIVE_FEATURE)) {
     throw new Error(
       "live transcription requires a CoreML engine on Apple Silicon.\n\n" +
         "On this platform, record and transcribe in two steps:\n\n" +

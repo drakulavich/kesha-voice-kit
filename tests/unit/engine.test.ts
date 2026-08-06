@@ -166,16 +166,20 @@ describe("engine", () => {
   });
 
   // An unreadable probe must not be read as "supported" — that would forward
-  // --live into an engine that has no such flag.
+  // --live into an engine that has no such flag. It is also not the same failure
+  // as an engine that answered and lacks the feature, so it says so.
   fakeEngineTest("preflight rejects --live when capabilities cannot be read", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-engine-caps-fail-"));
     const broken = join(dir, "kesha-engine");
     writeFileSync(broken, "#!/bin/sh\nexit 3\n");
     chmodSync(broken, 0o755);
     await withEngineEnv(broken, async () => {
-      await expect(preflightRecordLive()).rejects.toThrow(
-        "live transcription requires a CoreML engine on Apple Silicon",
+      const err = await preflightRecordLive().then(
+        () => null,
+        (e: unknown) => String(e),
       );
+      expect(err).toContain("could not read kesha-engine's capabilities");
+      expect(err).not.toContain("requires a CoreML engine on Apple Silicon");
     });
   });
 

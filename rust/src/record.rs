@@ -122,7 +122,14 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         }
     }
 
+    // Drain after stopping capture, or the last words spoken never reach the file.
     drop(stream);
+    while let Ok(samples) = sample_rx.try_recv() {
+        for frame in samples.chunks_exact(usize::from(input_channels)) {
+            mono_samples.push(mix_frame_to_mono(frame).clamp(-1.0, 1.0));
+        }
+    }
+
     write_plain_mono_float_wav(path, sample_rate, &mono_samples)
         .context("failed to write WAV recording")?;
 
