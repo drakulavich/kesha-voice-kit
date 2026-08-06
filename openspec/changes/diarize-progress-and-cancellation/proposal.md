@@ -42,11 +42,15 @@ that are out of scope here.
 - Diarization reports progress on stderr: the compute units it is loading on, how long
   the load took once the model is ready, and the percentage of audio processed. A cold
   load says so while it is happening instead of going silent for two minutes.
-- The single wall-clock timeout is replaced by two budgets against the phase each one
-  can actually bound — 300 s for the model load, 60 s without a processed chunk once
-  processing has started. Both are ~3x and ~50x the measured worst case respectively.
+- The single wall-clock timeout is replaced by a budget per phase, each bounding work the
+  binding actually reports the start and end of — 300 s for the model load (up to the
+  model-ready marker), 60 s + 0.01 s per audio-second to read and resample the file (up to
+  the first chunk), 60 s without a chunk thereafter. That is ~3x, ~7x and ~50x the
+  measured worst case respectively.
+- `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` raises the load budget, the one phase whose cost
+  belongs to the host rather than the audio.
 - There is no default cap on total run time any more. `KESHA_DIARIZE_TIMEOUT_SECS`
-  still exists as an opt-in cap.
+  still exists as an opt-in cap, and can only shorten a run.
 - Abandoning a run now cancels the CoreML work and waits for it to unwind. Returning
   while the Swift task is still running segfaults the process during exit; that was
   reproducible before this change and is fixed by it.
@@ -72,7 +76,8 @@ not whether it exists.
 - **speaker-diarization** — progress reporting, per-phase supervision, cancellation,
   and compute-unit selection replace the adaptive timeout.
 - **engine-contract** — `KESHA_DIARIZE_TIMEOUT_SECS` changes meaning from "override the
-  adaptive timeout" to "optional overall cap"; `KESHA_DIARIZE_COMPUTE_UNITS` is new.
+  adaptive timeout" to "optional overall cap"; `KESHA_DIARIZE_COMPUTE_UNITS` and
+  `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` are new.
 
 ## Non-Goals
 

@@ -19,15 +19,26 @@ cap 1800 s) scaled the budget with audio length. The measurements say the domina
 is a *constant* — a 107 s model load that does not care how long the audio is — and that
 the audio-proportional part is well behaved at a 0.19 real-time factor.
 
-So the budgets bind phases instead:
+So the budgets bind phases instead, and the phases are *reported* rather than inferred:
+the binding emits a one-shot model-ready marker between the `MLModel` load and the audio
+work, so "nothing yet" no longer means one 300 s bucket holding a CoreML load, an audio
+read and a first inference together.
 
-| phase | budget | measured worst case | headroom |
-|---|---|---|---|
-| model load (no progress yet) | 300 s | 107.3 s cold | 2.8x |
-| no chunk reported | 60 s | 1.2 s widest gap (cpu-only) | 50x |
+| phase | ends at | budget | measured worst case | headroom |
+|---|---|---|---|---|
+| model load | model-ready marker | 300 s (`KESHA_DIARIZE_LOAD_TIMEOUT_SECS`) | 107.3 s cold | 2.8x |
+| reading the audio | first chunk | 60 s + 0.01 s/audio-s | 0.26 s for 185 s of audio | ~7x at any length |
+| processing | next chunk | 60 s | 1.2 s widest gap (cpu-only) | 50x |
 
 Chunks land ~11/s on `.all` and ~2.8/s on `.cpuOnly`, so a 60 s silence is not a slow
-machine — it is a wedged one.
+machine — it is a wedged one. The read is the one phase that scales with the file, hence
+the only per-audio-second term left in the design; the load, which the old formula scaled,
+is the one that never grows.
+
+The load budget is the only one worth an escape hatch: it measures the host's ANE compile,
+not the user's audio, so a machine slower than the M2 measured here can legitimately need
+more. The other two describe work whose cost is known per unit — exceeding them is a
+defect, and an env var would only postpone the bug report.
 
 No overall cap by default. A cap can only be wrong: too low kills healthy long runs (the
 old 1800 s would have killed a 10-hour recording at the 30-minute mark), and too high is
@@ -85,11 +96,12 @@ partial trailing chunk is never counted). Completion is the `Finished` event, ne
 ## Risks
 
 - **A long ANE compile on a slower machine than the M2 measured here.** 300 s is 2.8x the
-  measured cold load; if that proves tight the failure is loud and names the phase, and
+  measured cold load; if that proves tight the failure is loud and names the phase,
+  `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` raises the budget, and
   `KESHA_DIARIZE_COMPUTE_UNITS=cpu-and-gpu` sidesteps the compile entirely.
 - **stderr noise.** Diarization now writes 3–15 lines where it wrote none. `--speakers`
   already requires `--json`, and stdout stays clean, so the affected surface is
   interactive use and logs.
-- **Fork pin.** The Engine now pins a fork branch rev rather than the previous rev; the
-  binding change is additive (a new C symbol beside the old one, whose arity is
-  untouched).
+- **Fork pin.** The Engine now pins a fork branch rev rather than the previous rev. The
+  original `fluidaudio_diarize_file_with_models` is untouched; everything new lives on
+  the `_controlled` symbol, which only this Engine calls.

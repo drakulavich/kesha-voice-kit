@@ -16,23 +16,28 @@ overall cap rather than an override of a default that no longer exists.
 ### Requirement: Diarization reports progress and is supervised per phase
 
 The Engine SHALL report diarization progress on stderr — never stdout — naming
-the compute units at the start, the model load time once the model is ready, and
-the percentage of audio processed at intervals thereafter.
+the compute units at the start, the model load time once the binding reports the
+model ready, and the percentage of audio processed at intervals thereafter.
 
-The Engine SHALL supervise the run with two budgets rather than one wall-clock
-timeout: 300 s for the model load (no progress reported yet) and 60 s without a
-processed chunk once processing has begun. Exceeding either SHALL cancel the run
-and report `E_DIARIZE_TIMEOUT` with a message naming which phase stalled. There
-SHALL be no default cap on total run time; `KESHA_DIARIZE_TIMEOUT_SECS`
-optionally imposes one.
+The Engine SHALL supervise the run with a budget per phase rather than one
+wall-clock timeout, each phase delimited by a signal from the binding rather than
+inferred: 300 s for the model load (up to the model-ready marker), 60 s plus
+0.01 s per audio-second for reading and resampling the file (up to the first
+processed chunk), and 60 s without a processed chunk thereafter. Exceeding any of
+them SHALL cancel the run and report `E_DIARIZE_TIMEOUT` with a message naming
+the phase and offering only remedies that can act on it. The load budget SHALL be
+overridable by `KESHA_DIARIZE_LOAD_TIMEOUT_SECS`, since a cold ANE compile is a
+fixed cost of the host rather than of the user's audio. There SHALL be no default
+cap on total run time; `KESHA_DIARIZE_TIMEOUT_SECS` optionally imposes one, and it
+can only shorten a run — never widen a phase budget.
 
 #### Scenario: Maks watches a long meeting diarize
 
 - GIVEN a 3-minute recording and a warm model
 - WHEN Maks runs `kesha --json --speakers meeting.ogg`
 - THEN stderr carries `diarize: loading the CoreML model on all`, then
-  `diarize: model ready in 4.4s; processing audio`, then percentage lines, then
-  `diarize: done in 39.3s (44 spans)`
+  `diarize: model ready in 4.0s; reading the audio`, then percentage lines, then
+  `diarize: done in 39.5s (20 spans)`
 - AND stdout carries only the JSON result
 
 #### Scenario: The first run after an ANE cache eviction
@@ -44,6 +49,23 @@ optionally imposes one.
 - AND the run completes rather than failing, because the load budget is 300 s
 - AND the reported `model ready in …` time tells Maks the load — not the
   diarization — was the slow part
+
+#### Scenario: The model loads but the audio never arrives
+
+- GIVEN the model-ready marker has been reported
+- WHEN no first chunk follows within the prepare budget
+- THEN the Engine reports `E_DIARIZE_TIMEOUT` saying the model loaded and the
+  read never produced a chunk, and does **not** suggest rewarming the ANE cache
+  or switching compute units — neither can affect a phase the model has already
+  cleared
+
+#### Scenario: A slower host raises the load budget
+
+- GIVEN `KESHA_DIARIZE_LOAD_TIMEOUT_SECS=900` on a machine whose cold ANE compile
+  exceeds 300 s
+- WHEN Ira runs `kesha --json --speakers meeting.ogg`
+- THEN the load is allowed 900 s, and the error text that would have fired names
+  that variable rather than the total cap, which cannot widen anything
 
 #### Scenario: Diarization stops making progress
 
@@ -63,12 +85,17 @@ optionally imposes one.
 - AND the message blames the cap rather than reporting a stall
 
 > *Technical Note — constants: `MODEL_LOAD_BUDGET_SECS = 300`,
+> `PREPARE_BUDGET_FLOOR_SECS = 60`, `PREPARE_BUDGET_PER_AUDIO_SECOND = 0.01`,
 > `PROGRESS_STALL_BUDGET_SECS = 60`, `PROGRESS_REPORT_INTERVAL = 5 s`,
 > `CANCEL_GRACE = 10 s`. Source: `rust/src/transcribe/diarize.rs`.
 > Error code `E_DIARIZE_TIMEOUT`: `rust/src/errors.rs` line 86.
 > Budgets are measured, not guessed: on an M2 a cold model load is 107.3 s and a
-> warm one 0.8–4.4 s, and chunks land ~11/s on the Neural Engine (~2.8/s
-> CPU-only) with a widest observed gap of 1.2 s.*
+> warm one 0.8–4.4 s, reading and resampling 185 s of audio costs 0.26 s, and
+> chunks land ~11/s on the Neural Engine (~2.8/s CPU-only) with a widest observed
+> gap of 1.2 s. The phase boundaries come from the binding — a one-shot
+> `DiarizeEvent::ModelReady` then per-chunk `DiarizeEvent::Progress`
+> (`fluidaudio-rs`, `swift/Diarize_ffi.swift`) — so no phase is inferred from
+> silence.*
 
 ### Requirement: Cancellation stops the CoreML work
 
