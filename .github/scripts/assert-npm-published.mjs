@@ -18,6 +18,9 @@ export const REGISTRY_URL = "https://registry.npmjs.org/@drakulavich%2Fkesha-voi
 /** Abbreviated packument: the same version list in ~68KB instead of ~2MB. */
 const ABBREVIATED = "application/vnd.npm.install-v1+json";
 
+/** A stalled connection would otherwise hold the release job open to its own outer timeout. */
+const TIMEOUT_MS = 15_000;
+
 export const E_REGISTRY_UNREACHABLE = "E_REGISTRY_UNREACHABLE";
 export const E_VERSION_UNPUBLISHED = "E_VERSION_UNPUBLISHED";
 
@@ -32,12 +35,22 @@ function unreachable(detail, cause) {
   return error;
 }
 
+const aborted = (error) => error?.name === "TimeoutError" || error?.name === "AbortError";
+
 async function fetchPublished(fetchImpl) {
   let response;
   try {
-    response = await fetchImpl(REGISTRY_URL, { headers: { accept: ABBREVIATED } });
+    response = await fetchImpl(REGISTRY_URL, {
+      headers: { accept: ABBREVIATED },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
   } catch (cause) {
-    throw unreachable(`${REGISTRY_URL} could not be reached (${cause?.message ?? cause})`, cause);
+    throw unreachable(
+      aborted(cause)
+        ? `${REGISTRY_URL} did not answer within ${TIMEOUT_MS / 1000}s`
+        : `${REGISTRY_URL} could not be reached (${cause?.message ?? cause})`,
+      cause,
+    );
   }
   if (!response.ok) {
     throw unreachable(`${REGISTRY_URL} answered HTTP ${response.status}`);

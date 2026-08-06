@@ -1,17 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
-import { assertNpmPublished } from "../../.github/scripts/assert-npm-published.mjs";
+import { REGISTRY_URL, assertNpmPublished } from "../../.github/scripts/assert-npm-published.mjs";
 
 type Packument = { versions?: Record<string, unknown>; "dist-tags"?: Record<string, string> };
+type Init = { headers?: Record<string, string>; signal?: AbortSignal };
 
 function registry(body: Packument, status = 200) {
-  return async () =>
-    ({
+  const calls: Array<{ url: string; init?: Init }> = [];
+  const impl = async (url: string, init?: Init) => {
+    calls.push({ url, init });
+    return {
       ok: status >= 200 && status < 300,
       status,
       json: async () => body,
-    }) as unknown as Response;
+    } as unknown as Response;
+  };
+  return Object.assign(impl, { calls });
 }
 
 const PUBLISHED: Packument = {
@@ -41,6 +46,34 @@ describe("assertNpmPublished", () => {
     expect(error.message).toContain("latest is 1.26.0");
     expect(error.message).toContain("v1.27.0-cli");
     expect(error.message).toContain("#728");
+  });
+
+  test("it asks npm for this package's abbreviated packument, under a deadline", async () => {
+    const stub = registry(PUBLISHED);
+    await assertNpmPublished("1.26.0", stub);
+
+    const { url, init } = stub.calls[0];
+    const { name } = JSON.parse(readFileSync(`${import.meta.dir}/../../package.json`, "utf8"));
+    expect(stub.calls).toHaveLength(1);
+    expect(url).toBe(REGISTRY_URL);
+    expect(new URL(url).host).toBe("registry.npmjs.org");
+    expect(decodeURIComponent(new URL(url).pathname.slice(1))).toBe(name);
+    expect(init?.headers?.accept).toBe("application/vnd.npm.install-v1+json");
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(init?.signal?.aborted).toBe(false);
+  });
+
+  test("a registry that never answers times out as unreachable, not unpublished", async () => {
+    for (const name of ["TimeoutError", "AbortError"]) {
+      const stalled = async () => {
+        throw new DOMException("The operation was aborted", name);
+      };
+      const error = await rejection(assertNpmPublished("1.26.0", stalled as unknown as typeof fetch));
+
+      expect(error.code).toBe("E_REGISTRY_UNREACHABLE");
+      expect(error.message).toContain("did not answer within 15s");
+      expect(error.message).toContain("Re-run");
+    }
   });
 
   test("a registry that cannot be reached is its own failure, not an absent version", async () => {

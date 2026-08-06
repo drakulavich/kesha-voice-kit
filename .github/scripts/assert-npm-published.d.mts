@@ -4,5 +4,8 @@ export const E_REGISTRY_UNREACHABLE: "E_REGISTRY_UNREACHABLE";
 export const E_VERSION_UNPUBLISHED: "E_VERSION_UNPUBLISHED";
 export function assertNpmPublished(
   version: string,
-  fetchImpl?: (url: string, init?: { headers?: Record<string, string> }) => Promise<Response>,
+  fetchImpl?: (
+    url: string,
+    init?: { headers?: Record<string, string>; signal?: AbortSignal },
+  ) => Promise<Response>,
 ): Promise<void>;

@@ -74,6 +74,53 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
 }
 
 /**
+ * Fails when the release job would name a Linux package without first proving npm published
+ * that version. The equivalent assertions in tests/unit sit behind ci.yml's `code` filter, which a
+ * workflow-only edit never trips — this lane is the one that always sees such an edit (#728).
+ */
+export function requireNpmPublishedGate(path: string, document: unknown): string[] {
+  if (!path.endsWith("build-engine.yml")) return [];
+
+  const steps = (document as { jobs?: { release?: { steps?: unknown[] } } })?.jobs?.release?.steps;
+  if (!Array.isArray(steps)) return [`${path}: expected a \`release\` job with steps`];
+
+  type Step = { run?: unknown; if?: unknown };
+  const enabled = (step: Step) => String(step.if ?? "").trim() !== "false";
+  const matches = (pattern: RegExp) =>
+    steps.flatMap((step, at) =>
+      typeof step === "object" && step !== null && typeof (step as Step).run === "string" &&
+      pattern.test((step as Step).run as string) && enabled(step as Step)
+        ? [{ at, step: step as Step }]
+        : [],
+    );
+
+  // Anchored so a comment or an echoed mention cannot stand in for the invocation.
+  const gate = matches(/^\s*node\s+\S*assert-npm-published\.mjs\b/m)[0];
+  const packaging = matches(/^[^#\n]*\blinux-packages\b/m);
+
+  if (packaging.length === 0) {
+    return [`${path}: expected the release job to build and stage the Linux packages (#728)`];
+  }
+  if (!gate) {
+    return [`${path}: the release job must run assert-npm-published.mjs before naming a Linux package (#728)`];
+  }
+
+  const errors: string[] = [];
+  const condition = String(gate.step.if ?? "");
+  for (const { at, step } of packaging) {
+    if (String(step.if ?? "") !== condition) {
+      errors.push(
+        `${path}: step ${at + 1} packages Linux artifacts under a different \`if\` than the npm gate, so it can run unguarded (#728)`,
+      );
+    }
+    if (gate.at > at) {
+      errors.push(`${path}: assert-npm-published.mjs runs after step ${at + 1} packages Linux artifacts; move it before (#728)`);
+    }
+  }
+  return errors;
+}
+
+/**
  * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
  * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
  * so an uncovered script means edits to a gate skip the tests that prove it works.
@@ -135,6 +182,7 @@ function main(): void {
       const errors = [
         ...requirePinnedActions(path, contents),
         ...requirePreUploadSynthesisSmoke(path, document),
+        ...requireNpmPublishedGate(path, document),
         ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ];
       if (errors.length > 0) {
