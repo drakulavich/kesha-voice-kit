@@ -229,10 +229,10 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
     session.finish()
 }
 
-/// Backlog the capture callback may run ahead by. At a typical 1024-frame
-/// callback on a 48 kHz device this is ~10 s of audio, far beyond the fraction
-/// of real time the ANE actually needs — reaching it means something is wrong,
-/// which is why overflow is reported rather than absorbed.
+/// Backlog the capture callback may run ahead by — ~5.5 s at the 512-frame,
+/// 48 kHz callback measured on an M-series Mac, far beyond the fraction of real
+/// time the ANE needs. Reaching it means something is wrong, which is why
+/// overflow is reported rather than absorbed.
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 const LIVE_QUEUE_BUFFERS: usize = 512;
 
