@@ -5,9 +5,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use crate::coded_bail;
-use crate::errors::{CodedContext, ErrorCode};
+use crate::errors::{code_of, CodedContext, CodedError, ErrorCode};
 
 /// A file in a model manifest. `rel_path` is relative to `cache_dir()`,
 /// uniform across ASR / lang-id / TTS. Every entry carries a pinned
@@ -869,14 +870,41 @@ fn download_pool() -> &'static rayon::ThreadPool {
     })
 }
 
-/// 4 concurrent downloads; first error bails the whole install (same contract as sequential).
+/// 4 concurrent downloads. Each file runs its own retry budget to completion, so
+/// one file's transient 429 no longer cancels the three siblings mid-flight
+/// (#724); the install then fails naming every file that exhausted its retries.
 fn parallel_download(cache: &Path, manifest: &[&ModelFile], no_cache: bool) -> Result<()> {
     use rayon::prelude::*;
-    download_pool().install(|| {
+    let mut failures: Vec<(&'static str, anyhow::Error)> = download_pool().install(|| {
         manifest
             .par_iter()
-            .try_for_each(|f| download_verified(cache, f, no_cache))
-    })
+            .filter_map(|f| {
+                download_verified(cache, f, no_cache)
+                    .err()
+                    .map(|e| (f.rel_path, e))
+            })
+            .collect()
+    });
+    if failures.is_empty() {
+        return Ok(());
+    }
+    let names: Vec<&str> = failures.iter().map(|(path, _)| *path).collect();
+    let summary = format!(
+        "{} of {} model downloads failed: {}",
+        failures.len(),
+        manifest.len(),
+        names.join(", ")
+    );
+    // The returned chain can only carry one root cause, so the others are
+    // reported here rather than dropped.
+    for (path, err) in failures.iter().skip(1) {
+        with_stderr(|| eprintln!("FAIL {path}: {err:#}"));
+    }
+    let first = failures.remove(0).1;
+    if names.len() == 1 {
+        return Err(first);
+    }
+    Err(first.context(summary))
 }
 
 #[cfg(test)]
@@ -1598,30 +1626,229 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
+    let url = apply_mirror(f.url);
+    let mut attempt: u32 = 1;
+    loop {
+        match download_attempt(&url, f, &target) {
+            Ok(()) => {
+                with_stderr(|| eprintln!("OK  {}", f.rel_path));
+                return Ok(());
+            }
+            Err(fail) if fail.transient && attempt < MAX_DOWNLOAD_ATTEMPTS => {
+                let delay = backoff_delay(attempt, fail.retry_after, jitter_fraction());
+                with_stderr(|| {
+                    eprintln!(
+                        "retrying {} in {:.1}s (attempt {}/{}, {})",
+                        f.rel_path,
+                        delay.as_secs_f64(),
+                        attempt + 1,
+                        MAX_DOWNLOAD_ATTEMPTS,
+                        fail.reason
+                    )
+                });
+                std::thread::sleep(delay);
+                attempt += 1;
+            }
+            Err(fail) => {
+                return Err(fail
+                    .err
+                    .context(format!("{} failed after {attempt} attempt(s)", f.rel_path)));
+            }
+        }
+    }
+}
+
+/// Attempts per file before the install gives up. Five spend roughly 15 s of
+/// backoff on the default schedule — enough to ride out HuggingFace's anonymous
+/// per-IP 429 window without leaving a dead download hanging for minutes (#724).
+const MAX_DOWNLOAD_ATTEMPTS: u32 = 5;
+const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
+/// A server asking for more than this is asking for longer than a user will
+/// wait at an install prompt; clamp rather than honour it literally.
+const RETRY_AFTER_MAX: Duration = Duration::from_secs(60);
+
+/// One request+stream attempt that failed. `transient` decides whether the
+/// retry loop gets another go — a sha256 mismatch never does (#174).
+struct AttemptFailure {
+    err: anyhow::Error,
+    reason: String,
+    retry_after: Option<Duration>,
+    transient: bool,
+}
+
+fn model_download_error(message: String) -> anyhow::Error {
+    anyhow::Error::new(CodedError {
+        code: ErrorCode::ModelDownload,
+        message,
+    })
+}
+
+/// One GET plus its verified stream to disk. Every failure path reports whether
+/// it is worth retrying; the caller owns the backoff.
+///
+/// The resolved URL rides in the error message (#275 D11): under
+/// `KESHA_MODEL_MIRROR` the user otherwise cannot tell which host was contacted.
+fn download_attempt(
+    url: &str,
+    f: &ModelFile,
+    target: &Path,
+) -> std::result::Result<(), AttemptFailure> {
     // Claim in-flight before announcing: the request below blocks on headers, and a
     // sibling's bar must stop repainting over this row first (Greptile P1 on #681).
     let _in_flight = InFlight::new();
     with_stderr(|| eprintln!("GET {}", f.rel_path));
-    let url = apply_mirror(f.url);
-    // Include the resolved URL in the error chain (#275 D11). On
-    // `KESHA_MODEL_MIRROR`-redirected downloads, the user otherwise has no
-    // visibility into which host was actually contacted when the download
-    // fails — anyhow's context surfaces the URL through the bail.
-    let response = ureq::get(&url)
+
+    // Status is inspected here rather than raised by ureq so a 429's
+    // `Retry-After` header survives into the backoff decision (#724).
+    let response = match ureq::get(url)
+        .config()
+        .http_status_as_error(false)
+        .build()
         .call()
-        .with_context(|| format!("GET {url} ({})", f.rel_path))
-        .coded(ErrorCode::ModelDownload)?;
+    {
+        Ok(response) => response,
+        Err(e) => {
+            let transient = ureq_error_is_transient(&e);
+            return Err(AttemptFailure {
+                reason: e.to_string(),
+                err: model_download_error(format!("GET {url} ({}): {e}", f.rel_path)),
+                retry_after: None,
+                transient,
+            });
+        }
+    };
+
+    let status = response.status().as_u16();
+    if !response.status().is_success() {
+        let retry_after = response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| parse_retry_after(v, now_epoch_secs()));
+        return Err(AttemptFailure {
+            err: model_download_error(format!("GET {url} ({}): HTTP {status}", f.rel_path)),
+            reason: format!("HTTP {status}"),
+            retry_after,
+            transient: status_is_transient(status),
+        });
+    }
+
     // Not the raw header — that one reports the compressed size when decompression is active.
     let total = response.body().content_length().unwrap_or(0);
     let mut reader = response.into_body().into_reader();
-    if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
+    let streamed = if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
         let mut reader = ProgressReader::new(&mut reader, total);
-        write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
+        write_verified(&mut reader, target, f.rel_path, f.sha256)
     } else {
-        write_verified(&mut reader, &target, f.rel_path, f.sha256)?;
+        write_verified(&mut reader, target, f.rel_path, f.sha256)
+    };
+    streamed.map_err(|err| {
+        // A truncated stream deserves another go; a sha mismatch means the host
+        // is not serving the pinned bytes, and no amount of retrying heals that
+        // (#174) — retry must never become a way around verification.
+        let transient = code_of(&err) == ErrorCode::ModelDownload;
+        AttemptFailure {
+            reason: if transient {
+                "download interrupted".to_string()
+            } else {
+                "hash mismatch".to_string()
+            },
+            err,
+            retry_after: None,
+            transient,
+        }
+    })
+}
+
+/// Statuses that a later attempt can plausibly resolve. Everything else — 403
+/// from a private repo, 404 from a moved artifact — is fatal on the first try.
+fn status_is_transient(status: u16) -> bool {
+    status == 408 || status == 429 || (500..600).contains(&status)
+}
+
+fn ureq_error_is_transient(err: &ureq::Error) -> bool {
+    matches!(
+        err,
+        ureq::Error::Timeout(_) | ureq::Error::Io(_) | ureq::Error::ConnectionFailed
+    )
+}
+
+/// `Retry-After` per RFC 9110: delay-seconds, or an IMF-fixdate. The two
+/// obsolete date formats are not accepted — a sender that uses them falls back
+/// to plain exponential backoff rather than to a misparsed delay.
+fn parse_retry_after(raw: &str, now_epoch_secs: i64) -> Option<Duration> {
+    let raw = raw.trim();
+    if let Ok(secs) = raw.parse::<u64>() {
+        return Some(Duration::from_secs(secs));
     }
-    with_stderr(|| eprintln!("OK  {}", f.rel_path));
-    Ok(())
+    let at = parse_http_date(raw)?;
+    Some(Duration::from_secs(
+        at.saturating_sub(now_epoch_secs).max(0) as u64,
+    ))
+}
+
+const HTTP_DATE_MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/// `Sun, 06 Nov 1994 08:49:37 GMT` -> unix seconds.
+fn parse_http_date(raw: &str) -> Option<i64> {
+    let rest = raw.strip_suffix(" GMT")?;
+    let (_weekday, rest) = rest.split_once(", ")?;
+    let mut parts = rest.split(' ');
+    let day: i64 = parts.next()?.parse().ok()?;
+    let month_name = parts.next()?;
+    let month = HTTP_DATE_MONTHS.iter().position(|m| *m == month_name)? as i64 + 1;
+    let year: i64 = parts.next()?.parse().ok()?;
+    let mut hms = parts.next()?.splitn(3, ':');
+    let hour: i64 = hms.next()?.parse().ok()?;
+    let minute: i64 = hms.next()?.parse().ok()?;
+    let second: i64 = hms.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60
+    {
+        return None;
+    }
+    Some(days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
+/// Days since 1970-01-01 for a proleptic-Gregorian date (Hinnant's algorithm).
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let day_of_year = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+/// Exponential backoff with ±25% jitter, or the server's own `Retry-After`
+/// where it gave one. Jitter matters more than usual here: four rayon workers
+/// hit the same host together, so an unjittered schedule retries them in
+/// lockstep and re-triggers the rate limit that caused the backoff.
+fn backoff_delay(attempt: u32, retry_after: Option<Duration>, jitter: f64) -> Duration {
+    if let Some(after) = retry_after {
+        return after.clamp(RETRY_BASE_DELAY, RETRY_AFTER_MAX);
+    }
+    let exponential = RETRY_BASE_DELAY.saturating_mul(1u32 << attempt.saturating_sub(1).min(10));
+    exponential
+        .min(RETRY_MAX_DELAY)
+        .mul_f64(0.75 + 0.5 * jitter.clamp(0.0, 1.0))
+}
+
+fn jitter_fraction() -> f64 {
+    let nanos = now_since_epoch().map(|d| d.subsec_nanos()).unwrap_or(0);
+    f64::from(nanos % 1_000) / 1_000.0
+}
+
+fn now_epoch_secs() -> i64 {
+    now_since_epoch().map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+fn now_since_epoch() -> Option<Duration> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
 }
 
 /// Below this a download finishes fast enough that a bar is noise, not feedback.
@@ -2147,5 +2374,291 @@ mod progress_tests {
             assert!(*lock_stderr(), "bar row is open");
         }
         assert!(!*lock_stderr(), "drop must close the row");
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    #[test]
+    fn only_rate_limit_timeout_and_server_errors_are_retried() {
+        for status in [408, 429, 500, 502, 503, 504] {
+            assert!(status_is_transient(status), "{status} must be retried");
+        }
+        for status in [400, 401, 403, 404, 410, 451, 200, 301] {
+            assert!(!status_is_transient(status), "{status} must be fatal");
+        }
+    }
+
+    #[test]
+    fn retry_after_reads_delay_seconds() {
+        assert_eq!(parse_retry_after("120", 0), Some(Duration::from_secs(120)));
+        assert_eq!(parse_retry_after("  7 ", 0), Some(Duration::from_secs(7)));
+        assert_eq!(parse_retry_after("0", 0), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn retry_after_reads_an_http_date_relative_to_now() {
+        // 1994-11-06T08:49:37Z, the RFC 9110 example date.
+        let epoch = 784_111_777;
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT", epoch - 30),
+            Some(Duration::from_secs(30))
+        );
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT", epoch + 5),
+            Some(Duration::ZERO),
+            "a date already in the past means retry now, never a huge wait"
+        );
+    }
+
+    #[test]
+    fn retry_after_rejects_what_it_cannot_parse() {
+        for raw in [
+            "soon",
+            "",
+            "-5",
+            "Sun, 06 Nov 1994 08:49:37",
+            "Sunday, 06-Nov-94 08:49:37 GMT",
+            "Sun, 06 Foo 1994 08:49:37 GMT",
+            "Sun, 06 Nov 1994 25:49:37 GMT",
+        ] {
+            assert_eq!(parse_retry_after(raw, 0), None, "{raw:?} must not parse");
+        }
+    }
+
+    #[test]
+    fn backoff_grows_exponentially_and_stays_capped() {
+        let plain = |attempt| backoff_delay(attempt, None, 0.5).as_secs_f64();
+        assert!((plain(1) - 1.0).abs() < 1e-9);
+        assert!((plain(2) - 2.0).abs() < 1e-9);
+        assert!((plain(3) - 4.0).abs() < 1e-9);
+        assert!((plain(4) - 8.0).abs() < 1e-9);
+        assert!(
+            plain(20) <= RETRY_MAX_DELAY.as_secs_f64(),
+            "a long schedule must not run away"
+        );
+    }
+
+    #[test]
+    fn backoff_jitter_stays_within_a_quarter_of_the_schedule() {
+        for jitter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let delay = backoff_delay(3, None, jitter).as_secs_f64();
+            assert!((3.0..=5.0).contains(&delay), "{jitter} produced {delay}s");
+        }
+    }
+
+    #[test]
+    fn retry_after_overrides_the_schedule_but_is_clamped() {
+        assert_eq!(
+            backoff_delay(1, Some(Duration::from_secs(12)), 0.5),
+            Duration::from_secs(12)
+        );
+        assert_eq!(
+            backoff_delay(1, Some(Duration::from_secs(3_600)), 0.5),
+            RETRY_AFTER_MAX,
+            "an hour-long Retry-After is clamped, not honoured"
+        );
+        assert_eq!(
+            backoff_delay(4, Some(Duration::ZERO), 0.5),
+            RETRY_BASE_DELAY,
+            "Retry-After: 0 must not become a hot loop"
+        );
+    }
+
+    /// Serves `responses` in order, one per connection, and reports how many
+    /// requests it answered. Each response must close the connection.
+    fn stub_server(responses: Vec<Vec<u8>>) -> (String, std::thread::JoinHandle<usize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
+        let base = format!("http://{}", listener.local_addr().expect("stub addr"));
+        let handle = std::thread::spawn(move || {
+            let mut served = 0;
+            for response in responses {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                let mut request = Vec::new();
+                let mut buf = [0u8; 512];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => request.extend_from_slice(&buf[..n]),
+                    }
+                }
+                if stream.write_all(&response).is_err() {
+                    break;
+                }
+                let _ = stream.flush();
+                served += 1;
+            }
+            served
+        });
+        (base, handle)
+    }
+
+    fn ok_response(body: &[u8]) -> Vec<u8> {
+        let mut out = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        out.extend_from_slice(body);
+        out
+    }
+
+    fn header_only_response(head: &str) -> Vec<u8> {
+        format!("{head}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").into_bytes()
+    }
+
+    struct TempCache(PathBuf);
+
+    impl TempCache {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "kesha-retry-{name}-{}-{}",
+                std::process::id(),
+                now_since_epoch().map(|d| d.as_nanos()).unwrap_or(0)
+            ));
+            fs::create_dir_all(&dir).expect("create temp cache");
+            Self(dir)
+        }
+    }
+
+    impl Drop for TempCache {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn model_file(rel_path: &'static str, url: String, body: &[u8]) -> ModelFile {
+        use sha2::{Digest, Sha256};
+        let sha = format!("{:x}", Sha256::digest(body));
+        ModelFile {
+            rel_path,
+            url: Box::leak(url.into_boxed_str()),
+            sha256: Box::leak(sha.into_boxed_str()),
+        }
+    }
+
+    #[test]
+    fn a_rate_limited_download_retries_and_then_verifies() {
+        let body = b"kesha model bytes".to_vec();
+        let (base, server) = stub_server(vec![
+            header_only_response("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 0"),
+            header_only_response("HTTP/1.1 302 Found\r\nLocation: /payload.bin"),
+            ok_response(&body),
+        ]);
+        let cache = TempCache::new("429");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            &body,
+        );
+
+        download_verified(&cache.0, &file, false).expect("429 then success must install");
+
+        assert_eq!(
+            fs::read(cache.0.join(file.rel_path)).expect("payload written"),
+            body
+        );
+        assert_eq!(
+            server.join().expect("stub server"),
+            3,
+            "one 429, one redirect hop, one delivery"
+        );
+    }
+
+    #[test]
+    fn a_missing_artifact_fails_on_the_first_attempt() {
+        let (base, server) = stub_server(vec![header_only_response("HTTP/1.1 404 Not Found")]);
+        let cache = TempCache::new("404");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            b"unused",
+        );
+
+        let err = download_verified(&cache.0, &file, false).expect_err("404 must fail");
+
+        assert_eq!(code_of(&err), ErrorCode::ModelDownload);
+        let rendered = format!("{err:#}");
+        assert!(rendered.contains("HTTP 404"), "{rendered}");
+        assert!(rendered.contains("after 1 attempt"), "{rendered}");
+        assert_eq!(server.join().expect("stub server"), 1, "404 never retries");
+    }
+
+    /// One file's fatal failure used to short-circuit rayon and could cancel a
+    /// sibling before it ever ran. Every file now gets its own attempt (#724).
+    #[test]
+    fn a_failing_file_does_not_cancel_its_siblings() {
+        let body = b"sibling bytes".to_vec();
+        let (good_base, good) = stub_server(vec![ok_response(&body)]);
+        let (bad_base, bad) = stub_server(vec![header_only_response("HTTP/1.1 404 Not Found")]);
+        let cache = TempCache::new("sibling");
+        let ok_file = model_file(
+            "models/retry/good.bin",
+            format!("{good_base}/good.bin"),
+            &body,
+        );
+        let bad_file = model_file("models/retry/bad.bin", format!("{bad_base}/bad.bin"), b"x");
+
+        let err = parallel_download(&cache.0, &[&bad_file, &ok_file], false)
+            .expect_err("the 404 still fails the install");
+
+        assert_eq!(code_of(&err), ErrorCode::ModelDownload);
+        assert_eq!(
+            fs::read(cache.0.join(ok_file.rel_path)).expect("sibling installed"),
+            body
+        );
+        assert_eq!(good.join().expect("good server"), 1);
+        assert_eq!(bad.join().expect("bad server"), 1);
+    }
+
+    #[test]
+    fn every_exhausted_file_is_named_in_the_install_failure() {
+        let (first_base, first) = stub_server(vec![header_only_response("HTTP/1.1 404 Not Found")]);
+        let (second_base, second) =
+            stub_server(vec![header_only_response("HTTP/1.1 403 Forbidden")]);
+        let cache = TempCache::new("aggregate");
+        let a = model_file("models/retry/a.bin", format!("{first_base}/a.bin"), b"a");
+        let b = model_file("models/retry/b.bin", format!("{second_base}/b.bin"), b"b");
+
+        let err = parallel_download(&cache.0, &[&a, &b], false).expect_err("both files fail");
+
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains("2 of 2 model downloads failed"),
+            "{rendered}"
+        );
+        assert!(rendered.contains(a.rel_path), "{rendered}");
+        assert!(rendered.contains(b.rel_path), "{rendered}");
+        assert_eq!(first.join().expect("first server"), 1);
+        assert_eq!(second.join().expect("second server"), 1);
+    }
+
+    /// Retry wraps the request only. Bytes that do not match the pinned hash are
+    /// rejected on the first attempt — retrying them would be a way around
+    /// verification (#174).
+    #[test]
+    fn a_hash_mismatch_is_never_retried() {
+        let (base, server) = stub_server(vec![ok_response(b"wrong bytes")]);
+        let cache = TempCache::new("hash");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            b"expected bytes",
+        );
+
+        let err = download_verified(&cache.0, &file, false).expect_err("bad hash must fail");
+
+        assert_eq!(code_of(&err), ErrorCode::CacheCorrupt);
+        assert_eq!(server.join().expect("stub server"), 1);
+        assert!(
+            !cache.0.join(file.rel_path).exists(),
+            "unverified bytes never land at the target"
+        );
     }
 }
