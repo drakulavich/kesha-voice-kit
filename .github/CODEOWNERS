@@ -1,5 +1,12 @@
 # Publish-capable surface: a PR that edits its own gate runs the rewritten
 # gate on the same push (#726), so these paths require the owner's review.
-/.github/workflows/release-*.yml   @drakulavich
-/.github/workflows/npm-publish.yml @drakulavich
-/.github/scripts/                  @drakulavich
+# Self-owned first — otherwise one PR empties this file, the next rewrites
+# a gate, and neither needed a code-owner review.
+/.github/CODEOWNERS                     @drakulavich
+/.github/workflows/release-*.yml        @drakulavich
+/.github/workflows/npm-publish.yml      @drakulavich
+/.github/workflows/build-engine.yml     @drakulavich
+/.github/workflows/docker.yml           @drakulavich
+/.github/workflows/homebrew-tap.yml     @drakulavich
+/.github/workflows/prune-alpha-releases.yml @drakulavich
+/.github/scripts/                       @drakulavich
