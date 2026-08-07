@@ -30,16 +30,26 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
 
 async function runEngine(
   args: string[],
-  opts: { timeoutMs?: number; timeoutMessage?: string } = {},
+  opts: {
+    timeoutMs?: number;
+    timeoutMessage?: string;
+    // `undefined` unsets a variable the default env would otherwise supply.
+    env?: Record<string, string | undefined>;
+  } = {},
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const binPath = getEngineBinPath();
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    KESHA_DIARIZE_TIMEOUT_SECS: process.env.KESHA_DIARIZE_TIMEOUT_SECS ?? "30",
+    ...opts.env,
+  };
+  for (const key of Object.keys(env)) {
+    if (env[key] === undefined) delete env[key];
+  }
   const proc = Bun.spawn([binPath, ...args], {
     stdout: "pipe",
     stderr: "pipe",
-    env: {
-      ...process.env,
-      KESHA_DIARIZE_TIMEOUT_SECS: process.env.KESHA_DIARIZE_TIMEOUT_SECS ?? "30",
-    },
+    env: env as Record<string, string>,
   });
   let timedOut = false;
   const timeout =
@@ -95,13 +105,29 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     }
   });
 
-  test("--speakers round-trip stamps every segment (#199)", async () => {
+  async function engineDiarizes(): Promise<boolean> {
     const capsRun = await runEngine(["--capabilities-json"]);
     const caps = JSON.parse(capsRun.stdout);
     if (!caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
       console.warn(`engine lacks ${TRANSCRIBE_DIARIZE_FEATURE}; skipping --speakers e2e`);
-      return;
+      return false;
     }
+    return true;
+  }
+
+  /** Missing prerequisites are skip, not fail; installer flows are tested separately. */
+  function isMissingPrerequisite(stderr: string): boolean {
+    return (
+      stderr.includes("diarization model not found") ||
+      stderr.includes("kesha-diarize sidecar not found") ||
+      stderr.includes("VAD model") ||
+      stderr.includes("kesha-diarize timed out") ||
+      stderr.includes("E_DIARIZE_TIMEOUT")
+    );
+  }
+
+  test("--speakers round-trip stamps every segment (#199)", async () => {
+    if (!(await engineDiarizes())) return;
 
     // --vad exercises multiple segments; missing VAD model surfaces as non-zero exit and is skipped below.
     const { stdout, stderr, exitCode } = await runEngine(
@@ -112,13 +138,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       },
     );
     if (exitCode !== 0) {
-      // Missing prerequisites are skip, not fail; installer flows are tested separately.
-      if (
-        stderr.includes("diarization model not found") ||
-        stderr.includes("kesha-diarize sidecar not found") ||
-        stderr.includes("VAD model") ||
-        stderr.includes("kesha-diarize timed out")
-      ) {
+      if (isMissingPrerequisite(stderr)) {
         console.warn(`skipping --speakers e2e: ${stderr.split("\n")[0]}`);
         return;
       }
@@ -132,6 +152,75 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       expect(parsed.segments.every((s: { speaker?: unknown }) => typeof s.speaker === "number")).toBe(true);
     }
   }, 120_000);
+
+  // No total cap: a cold ANE compile takes ~105s and would trip this file's 30s default.
+  test("--speakers narrates its phases on stderr and leaves stdout pure JSON (#721)", async () => {
+    if (!(await engineDiarizes())) return;
+
+    const { stdout, stderr, exitCode } = await runEngine(
+      ["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN],
+      {
+        env: { KESHA_DIARIZE_TIMEOUT_SECS: undefined },
+        timeoutMs: 300_000,
+        timeoutMessage: "kesha-diarize timed out after 300s",
+      },
+    );
+    if (exitCode !== 0) {
+      if (isMissingPrerequisite(stderr)) {
+        console.warn(`skipping --speakers progress e2e: ${stderr.split("\n")[0]}`);
+        return;
+      }
+      throw new Error(`engine transcribe --speakers failed: ${stderr}`);
+    }
+
+    // Every phase boundary the supervisor bounds must be visible, in order.
+    const phases = stderr
+      .split("\n")
+      .filter((line) => line.startsWith("diarize: "))
+      .join("\n");
+    if (phases === "") {
+      // A released engine older than #721 diarizes in silence; nothing to assert on it.
+      console.warn("engine predates diarize phase reporting (#721); skipping progress e2e");
+      return;
+    }
+    expect(phases).toMatch(/^diarize: loading the CoreML model on \w[\w-]*$/m);
+    expect(phases).toMatch(/^diarize: model ready in [\d.]+s; reading the audio$/m);
+    expect(phases).toMatch(/^diarize: done in [\d.]+s \(\d+ spans\)$/m);
+    expect(phases.indexOf("model ready")).toBeGreaterThan(phases.indexOf("loading the CoreML"));
+    expect(phases.indexOf("done in")).toBeGreaterThan(phases.indexOf("model ready"));
+
+    // Progress goes to stderr precisely so stdout stays a pipeable JSON document.
+    const parsed = JSON.parse(stdout);
+    expect(typeof parsed.text).toBe("string");
+    expect(stdout).not.toContain("diarize:");
+  }, 360_000);
+
+  test("a reached KESHA_DIARIZE_TIMEOUT_SECS fails coded, not by signal (#721)", async () => {
+    if (!(await engineDiarizes())) return;
+
+    const { stdout, stderr, exitCode } = await runEngine(
+      ["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN],
+      {
+        env: { KESHA_DIARIZE_TIMEOUT_SECS: "1" },
+        timeoutMs: 300_000,
+        timeoutMessage: "engine ignored KESHA_DIARIZE_TIMEOUT_SECS=1",
+      },
+    );
+    if (!stderr.includes("E_DIARIZE_TIMEOUT")) {
+      throw new Error(`expected E_DIARIZE_TIMEOUT, got: ${stderr}`);
+    }
+    if (stderr.includes("the adaptive limit")) {
+      // A released engine older than #721 still scales one clock; its wording is not this contract.
+      console.warn("engine predates per-phase supervision (#721); skipping cap e2e");
+      return;
+    }
+
+    // Cancelling used to segfault the process on exit (139); 1 is the coded-failure exit.
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("[E_DIARIZE_TIMEOUT]");
+    expect(stderr).toContain("KESHA_DIARIZE_TIMEOUT_SECS=1s was reached");
+    expect(stdout).toBe("");
+  }, 360_000);
 
   test("engine transcribes Russian audio", async () => {
     const { stdout, exitCode } = await runEngine(["transcribe", FIXTURE_RU]);

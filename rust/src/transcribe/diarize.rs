@@ -8,23 +8,82 @@ use serde::{Deserialize, Serialize};
 use crate::coded_bail;
 use crate::errors::ErrorCode;
 use std::collections::HashMap;
-use std::path::Path;
+use std::ops::ControlFlow;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::{dtrace, dtrace_json};
-use fluidaudio_rs::FluidAudio;
+use fluidaudio_rs::{
+    DiarizationSegment, DiarizeCancelToken, DiarizeComputeUnits, DiarizeEvent, DiarizeOutcome,
+    FluidAudio,
+};
 
 use super::TranscriptionSegment;
 
 const MIN_DIARIZE_SEGMENT_COVERAGE: f32 = 0.95;
 const MAX_DIARIZE_TAIL_GAP_SECONDS: f32 = 30.0;
 
-// Floor covers a cold Apple e5rt/ANE compile after OS cache eviction ("slow once" not deterministic timeout). (#443)
-const DEFAULT_DIARIZE_TIMEOUT_SECS: u64 = 150;
-const MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS: u64 = 1_800;
-const DIARIZE_TIMEOUT_SECONDS_PER_AUDIO_SECOND: f32 = 0.05;
-const DIARIZE_TIMEOUT_SECONDS_PER_ASR_SEGMENT: f32 = 0.10;
+/// Default budget for the model load — the span before the binding's model-ready
+/// marker, which is one synchronous CoreML call and nothing else. Cold that is the
+/// ANE program compile, measured at 107.3 s on an M2 (0.3 s of it
+/// `MLModel.compileModel`; the rest is the e5rt bundle build Apple caches per
+/// compiled-model path); warm it is 0.8–4.1 s. The budget is ~3x the measured cold
+/// cost and does not depend on the audio, because this phase does not read any.
+/// [`LOAD_TIMEOUT_ENV`] overrides it for a machine that is legitimately slower.
+/// Nothing can interrupt this phase, so exceeding it abandons the worker thread (#443).
+const MODEL_LOAD_BUDGET_SECS: u64 = 300;
+
+/// Floor for the prepare budget — the span between the model-ready marker and the
+/// first processed chunk, which is FluidAudio reading and resampling the whole file.
+const PREPARE_BUDGET_FLOOR_SECS: u64 = 60;
+
+/// Per audio-second allowance added to [`PREPARE_BUDGET_FLOOR_SECS`]. Unlike the load,
+/// this phase scales with the file: measured at 0.26 s for 185 s of audio on an M2
+/// (0.0014 s per audio-second), so this is ~7x headroom, and a 10-hour recording gets
+/// 420 s to be read rather than the floor alone.
+const PREPARE_BUDGET_PER_AUDIO_SECOND: f32 = 0.01;
+
+/// How long diarization may run without reporting a processed chunk. Chunks land
+/// ~11/s on the Neural Engine and ~2.8/s CPU-only, the widest measured gap being
+/// 1.2 s, so this is ~50x headroom over the slowest healthy path. Unlike the load,
+/// this phase is cancellable, so hitting the budget stops the Swift work.
+const PROGRESS_STALL_BUDGET_SECS: u64 = 60;
+
+/// Minimum wall-clock gap between progress lines on stderr. Chunk reports are far
+/// too frequent to forward one-for-one (191 for 92 s of audio).
+const PROGRESS_REPORT_INTERVAL: Duration = Duration::from_secs(5);
+
+/// How long a phase may go quiet before we say what it is waiting for. Above a warm
+/// load (0.8–4.2 s measured) but far below a cold one, so only the slow cases explain
+/// themselves.
+const SLOW_PHASE_HINT_AFTER: Duration = Duration::from_secs(15);
+
+/// Gap between "still working" ticks once a phase is known to be a slow one.
+const SLOW_PHASE_TICK_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How long a cancelled run gets to unwind before we stop waiting for it. The
+/// Swift side notices between chunks, measured at 0.06 s.
+const CANCEL_GRACE: Duration = Duration::from_secs(10);
+
+/// Env var overriding which CoreML compute units the Sortformer model loads on.
+const COMPUTE_UNITS_ENV: &str = "KESHA_DIARIZE_COMPUTE_UNITS";
+
+/// Accepted [`COMPUTE_UNITS_ENV`] values, spelled as the binding's own preset names.
+const COMPUTE_UNIT_PRESETS: &[(&str, DiarizeComputeUnits)] = &[
+    ("all", DiarizeComputeUnits::All),
+    ("cpu-and-ane", DiarizeComputeUnits::CpuAndAne),
+    ("cpu-and-gpu", DiarizeComputeUnits::CpuAndGpu),
+    ("cpu-only", DiarizeComputeUnits::CpuOnly),
+];
+
+/// Env var capping total diarization wall time. It can only cut a run short: the phase
+/// budgets still apply, so it never widens one.
+const TOTAL_TIMEOUT_ENV: &str = "KESHA_DIARIZE_TIMEOUT_SECS";
+
+/// Env var replacing [`MODEL_LOAD_BUDGET_SECS`], the one budget a user can legitimately
+/// need more of — the ANE compile is a fixed cost of the host, not of their audio.
+const LOAD_TIMEOUT_ENV: &str = "KESHA_DIARIZE_LOAD_TIMEOUT_SECS";
 
 /// One speaker span emitted by the sidecar. Cluster IDs are stable within
 /// one invocation but not across calls.
@@ -46,23 +105,31 @@ pub(crate) fn run(
     let audio_secs = duration
         .or_else(|| max_asr_end(asr_segments))
         .unwrap_or(0.0);
-    let timeout = diarize_timeout(asr_segments, duration);
+    let units = compute_units_from_env()?;
+    let total_deadline = total_timeout_from_env();
     dtrace!(
-        "diarize::start timeout={}s audio_secs={:.1} asr_segments={}",
-        timeout.as_secs(),
+        "diarize::start audio_secs={:.1} asr_segments={} compute_units={} total_deadline={:?}",
         audio_secs,
-        asr_segments.len()
+        asr_segments.len(),
+        units.as_str(),
+        total_deadline.map(|d| d.as_secs())
     );
     dtrace_json!(
         "diarize.start",
         {
-            "timeout_secs": timeout.as_secs(),
             "audio_secs": audio_secs,
-            "asr_segments": asr_segments.len()
+            "asr_segments": asr_segments.len(),
+            "compute_units": units.as_str(),
+            "total_deadline_secs": total_deadline.map(|d| d.as_secs())
         }
     );
 
-    let spans: Vec<DiarizeSpan> = run_with_timeout(audio_path, model_path, timeout, audio_secs)?;
+    let job = DiarizeJob {
+        audio_path: audio_path.to_path_buf(),
+        model_path: model_path.to_path_buf(),
+        units,
+    };
+    let spans: Vec<DiarizeSpan> = run_supervised(job, total_deadline, audio_secs)?;
 
     let coverage = validate_coverage(asr_segments, &spans)?;
     dtrace!(
@@ -88,72 +155,181 @@ pub(crate) fn run(
     Ok(spans)
 }
 
-fn diarize_timeout(asr_segments: &[TranscriptionSegment], duration: Option<f32>) -> Duration {
-    if let Some(secs) = std::env::var("KESHA_DIARIZE_TIMEOUT_SECS")
-        .ok()
-        .and_then(|raw| raw.parse::<u64>().ok())
-        .filter(|secs| *secs > 0)
-    {
-        return Duration::from_secs(secs);
+/// Read [`COMPUTE_UNITS_ENV`], defaulting to `all` — the units the whole model has
+/// always loaded on, and the only ones that use the Neural Engine.
+///
+/// The override exists for hosts where the ANE is unusable or where its ~105 s
+/// first-load compile is not worth paying: `cpu-and-gpu` skips it entirely at
+/// roughly 2x the processing time (measured: 32.1 s vs 17.5 s for 92 s of audio).
+fn compute_units_from_env() -> Result<DiarizeComputeUnits> {
+    let Some(raw) = std::env::var_os(COMPUTE_UNITS_ENV) else {
+        return Ok(DiarizeComputeUnits::All);
+    };
+    let raw = raw.to_string_lossy();
+    let value = raw.trim();
+    if value.is_empty() {
+        return Ok(DiarizeComputeUnits::All);
     }
-
-    let asr_end = max_asr_end(asr_segments);
-    let audio_secs = duration.or(asr_end).unwrap_or(0.0).max(0.0);
-    let by_audio = (audio_secs * DIARIZE_TIMEOUT_SECONDS_PER_AUDIO_SECOND).ceil() as u64;
-    let by_segments =
-        (asr_segments.len() as f32 * DIARIZE_TIMEOUT_SECONDS_PER_ASR_SEGMENT).ceil() as u64;
-    let secs = DEFAULT_DIARIZE_TIMEOUT_SECS
-        .max(by_audio)
-        .max(by_segments)
-        .min(MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS);
-    Duration::from_secs(secs)
+    let lowered = value.to_ascii_lowercase();
+    if let Some((_, units)) = COMPUTE_UNIT_PRESETS
+        .iter()
+        .find(|(name, _)| *name == lowered)
+    {
+        return Ok(*units);
+    }
+    // Coded: an uncoded error surfaces as E_INTERNAL, blaming the engine for the user's typo.
+    coded_bail!(
+        ErrorCode::InvalidArg,
+        "{COMPUTE_UNITS_ENV}='{value}' is not a known CoreML compute-units preset. \
+         Use one of: {}. `all` is the default and the right choice on real Apple \
+         Silicon; override it only where the Neural Engine is unusable.",
+        COMPUTE_UNIT_PRESETS
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
-/// Run the (blocking, un-interruptible) FluidAudio diarization on a worker thread
-/// so the caller can enforce `timeout`. A stalled CoreML call can't be cancelled,
-/// so on timeout we deliberately abandon the worker thread: diarization only runs
-/// in a one-shot CLI invocation, so the process exits right after we bail and the
-/// OS reclaims the thread + the stalled model. (#434)
-fn run_with_timeout(
-    audio_path: &Path,
-    model_path: &Path,
-    timeout: Duration,
+/// Read [`TOTAL_TIMEOUT_ENV`]. Unset means no overall cap: the per-phase budgets
+/// already bound every way diarization can hang, and a wall-clock cap scaled to
+/// audio length would kill healthy long runs (a 10-hour recording legitimately
+/// takes ~2 h at the measured 0.19 real-time factor).
+fn total_timeout_from_env() -> Option<Duration> {
+    positive_secs_from_env(TOTAL_TIMEOUT_ENV)
+}
+
+/// Read [`LOAD_TIMEOUT_ENV`], falling back to [`MODEL_LOAD_BUDGET_SECS`].
+fn load_budget_from_env() -> Duration {
+    positive_secs_from_env(LOAD_TIMEOUT_ENV)
+        .unwrap_or_else(|| Duration::from_secs(MODEL_LOAD_BUDGET_SECS))
+}
+
+/// A zero or unparseable value means "unset" rather than "expire immediately".
+fn positive_secs_from_env(name: &str) -> Option<Duration> {
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+        .map(Duration::from_secs)
+}
+
+/// How long the audio may take to read and resample before the first chunk.
+fn prepare_budget(audio_secs: f32) -> Duration {
+    Duration::from_secs(PREPARE_BUDGET_FLOOR_SECS)
+        + Duration::from_secs_f32(audio_secs.max(0.0) * PREPARE_BUDGET_PER_AUDIO_SECOND)
+}
+
+/// What the worker thread is given to diarize, owned so it can outlive the caller's
+/// borrows for as long as the thread does.
+struct DiarizeJob {
+    audio_path: PathBuf,
+    model_path: PathBuf,
+    units: DiarizeComputeUnits,
+}
+
+/// What the worker thread reports back while diarizing.
+enum WorkerEvent {
+    ModelReady,
+    Progress {
+        processed: u64,
+        total: u64,
+        chunks: u32,
+    },
+    Finished(Result<Option<Vec<DiarizeSpan>>>),
+}
+
+/// Which phase a run is in, as the binding reports it: [`Phase::Loading`] ends at the
+/// model-ready marker and [`Phase::Preparing`] at the first processed chunk. Only
+/// [`Phase::Processing`] responds to cancellation promptly — the Swift side checks it
+/// between chunks, so a cancel during the load or the read waits for one to end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    Loading,
+    Preparing,
+    Processing,
+}
+
+/// Run FluidAudio diarization on a worker thread, forwarding its progress to stderr
+/// and holding each phase to its own budget.
+///
+/// The blocking call is supervised rather than merely raced against a clock: the
+/// binding marks the model as ready and then reports a chunk at a time, so the fixed
+/// cost of loading CoreML is bounded separately from the audio-scaled cost of reading
+/// the file, a stalled run is distinguishable from a slow one, and cancelling actually
+/// stops the Swift work. The model load is the exception — it is a single
+/// un-interruptible CoreML call, so exceeding its budget still abandons the worker
+/// thread. That is safe here for the same reason as before: diarization only runs in a
+/// one-shot CLI invocation, so the process exits right after we bail and the OS
+/// reclaims the thread and the stalled model (#434).
+fn run_supervised(
+    job: DiarizeJob,
+    total_deadline: Option<Duration>,
     audio_secs: f32,
 ) -> Result<Vec<DiarizeSpan>> {
     let (tx, rx) = mpsc::channel();
-    let audio_path = audio_path.to_path_buf();
-    let model_path = model_path.to_path_buf();
-    std::thread::spawn(move || {
-        // Oneshot guard silences sync CoreML stdout; async E5RT teardown print is
-        // handled by `StdoutShield` at the CLI layer (fd 1 stays redirected past exit). (#259/#397/#434)
-        let result =
-            crate::fluid_stdout::with_silenced_stdout_oneshot(|| -> Result<Vec<DiarizeSpan>> {
-                let audio = FluidAudio::new().context("failed to initialize FluidAudio bridge")?;
-                let segments = audio
-                    .diarize_file_with_models(&audio_path, &model_path)
-                    .context("FluidAudio diarization failed")?;
-                let mut seen: HashMap<String, u32> = HashMap::new();
-                Ok(segments
-                    .into_iter()
-                    .map(|seg| DiarizeSpan {
-                        start: seg.start_time,
-                        end: seg.end_time,
-                        speaker: speaker_id_to_index(&mut seen, &seg.speaker_id),
-                    })
-                    .collect())
-            });
-        // The receiver is gone if we already timed out; dropping `result` is fine.
-        let _ = tx.send(result);
-    });
+    let cancel = std::sync::Arc::new(DiarizeCancelToken::new());
+    let units = job.units;
+    spawn_worker(job, std::sync::Arc::clone(&cancel), tx);
 
-    match rx.recv_timeout(timeout) {
-        Ok(result) => result,
+    eprintln!("diarize: loading the CoreML model on {}", units.as_str());
+
+    let now = Instant::now();
+    let mut supervisor = PhaseSupervisor {
+        phase: Phase::Loading,
+        started: now,
+        last_event: now,
+        last_report: now,
+        warned_slow_phase: false,
+        last_progress: None,
+        load_budget: load_budget_from_env(),
+        prepare_budget: prepare_budget(audio_secs),
+        audio_secs,
+        total_deadline,
+    };
+
+    loop {
+        // Per iteration, not in the timeout arm: chunks arrive every ~0.1 s, so that arm never runs.
+        if let Some(deadline) = supervisor.deadline_reached() {
+            return stop_and_report(&supervisor, &cancel, &rx, || {
+                supervisor.deadline_message(deadline)
+            });
+        }
+
+        let event = rx.recv_timeout(supervisor.recv_timeout());
+        if let Some(spans) = step(&mut supervisor, event, &cancel, &rx)? {
+            return Ok(spans);
+        }
+    }
+}
+
+/// Fold one worker event into `supervisor`, yielding the spans once the run is over.
+fn step(
+    supervisor: &mut PhaseSupervisor,
+    event: Result<WorkerEvent, mpsc::RecvTimeoutError>,
+    cancel: &DiarizeCancelToken,
+    rx: &mpsc::Receiver<WorkerEvent>,
+) -> Result<Option<Vec<DiarizeSpan>>> {
+    match event {
+        Ok(WorkerEvent::ModelReady) => supervisor.on_model_ready(),
+        Ok(WorkerEvent::Progress {
+            processed,
+            total,
+            chunks,
+        }) => supervisor.on_progress(processed, total, chunks),
+        Ok(WorkerEvent::Finished(result)) => {
+            let Some(spans) = result? else {
+                // Only `stop_worker` cancels, and it consumes the outcome itself; reaching
+                // here means one raced past it, which is a timeout rather than a defect.
+                coded_bail!(ErrorCode::DiarizeTimeout, "{}", supervisor.stall_message())
+            };
+            return Ok(Some(supervisor.report_done(spans)));
+        }
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            coded_bail!(
-                ErrorCode::DiarizeTimeout,
-                "{}",
-                diarize_timeout_error(timeout, audio_secs)
-            )
+            if supervisor.on_quiet_tick().is_break() {
+                return stop_and_report(supervisor, cancel, rx, || supervisor.stall_message())
+                    .map(Some);
+            }
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             coded_bail!(
@@ -162,16 +338,343 @@ fn run_with_timeout(
             )
         }
     }
+    Ok(None)
 }
 
-fn diarize_timeout_error(timeout: Duration, audio_secs: f32) -> String {
+/// Stop the worker, then report what it left: its spans if the run beat the cancel,
+/// otherwise `message` as a timeout. The message is built after the wait so it can
+/// report the elapsed time the caller actually spent.
+fn stop_and_report(
+    supervisor: &PhaseSupervisor,
+    cancel: &DiarizeCancelToken,
+    rx: &mpsc::Receiver<WorkerEvent>,
+    message: impl FnOnce() -> String,
+) -> Result<Vec<DiarizeSpan>> {
+    if let Some(spans) = stop_worker(cancel, rx) {
+        return Ok(supervisor.report_done(spans));
+    }
+    coded_bail!(ErrorCode::DiarizeTimeout, "{}", message())
+}
+
+/// Run the blocking FluidAudio call on its own thread, reporting every event it emits
+/// over `tx` and finishing with exactly one [`WorkerEvent::Finished`].
+fn spawn_worker(
+    job: DiarizeJob,
+    cancel: std::sync::Arc<DiarizeCancelToken>,
+    tx: mpsc::Sender<WorkerEvent>,
+) {
+    let DiarizeJob {
+        audio_path,
+        model_path,
+        units,
+    } = job;
+    let progress_tx = tx.clone();
+
+    std::thread::spawn(move || {
+        // Oneshot guard silences sync CoreML stdout; async E5RT teardown print is
+        // handled by `StdoutShield` at the CLI layer (fd 1 stays redirected past exit). (#259/#397/#434)
+        let result = crate::fluid_stdout::with_silenced_stdout_oneshot(
+            || -> Result<Option<Vec<DiarizeSpan>>> {
+                let audio = FluidAudio::new().context("failed to initialize FluidAudio bridge")?;
+                let mut on_event = |event: DiarizeEvent| {
+                    let _ = progress_tx.send(match event {
+                        DiarizeEvent::ModelReady => WorkerEvent::ModelReady,
+                        DiarizeEvent::Progress(p) => WorkerEvent::Progress {
+                            processed: p.processed_samples,
+                            total: p.total_samples,
+                            chunks: p.chunks,
+                        },
+                    });
+                };
+                let outcome = audio
+                    .diarize_file_with_models_controlled(
+                        &audio_path,
+                        &model_path,
+                        units,
+                        Some(&cancel),
+                        Some(&mut on_event),
+                    )
+                    .context("FluidAudio diarization failed")?;
+                Ok(match outcome {
+                    DiarizeOutcome::Completed(segments) => Some(to_spans(segments)),
+                    DiarizeOutcome::Cancelled => None,
+                })
+            },
+        );
+        // The receiver is gone if we already bailed; dropping `result` is fine.
+        let _ = tx.send(WorkerEvent::Finished(result));
+    });
+}
+
+fn to_spans(segments: Vec<DiarizationSegment>) -> Vec<DiarizeSpan> {
+    let mut seen: HashMap<String, u32> = HashMap::new();
+    segments
+        .into_iter()
+        .map(|seg| DiarizeSpan {
+            start: seg.start_time,
+            end: seg.end_time,
+            speaker: speaker_id_to_index(&mut seen, &seg.speaker_id),
+        })
+        .collect()
+}
+
+/// Which phase the run is in and what it may spend there, so the receive loop only has
+/// to dispatch events.
+struct PhaseSupervisor {
+    phase: Phase,
+    started: Instant,
+    last_event: Instant,
+    last_report: Instant,
+    warned_slow_phase: bool,
+    last_progress: Option<(u64, u64, u32)>,
+    load_budget: Duration,
+    prepare_budget: Duration,
+    audio_secs: f32,
+    total_deadline: Option<Duration>,
+}
+
+impl PhaseSupervisor {
+    /// How long the current phase may go without an event before it counts as stalled.
+    fn budget(&self) -> Duration {
+        match self.phase {
+            Phase::Loading => self.load_budget,
+            Phase::Preparing => self.prepare_budget,
+            Phase::Processing => Duration::from_secs(PROGRESS_STALL_BUDGET_SECS),
+        }
+    }
+
+    /// The caller's total cap, once it has run out.
+    fn deadline_reached(&self) -> Option<Duration> {
+        let deadline = self.total_deadline?;
+        deadline
+            .saturating_sub(self.started.elapsed())
+            .is_zero()
+            .then_some(deadline)
+    }
+
+    fn recv_timeout(&self) -> Duration {
+        match self.total_deadline {
+            Some(deadline) => {
+                PROGRESS_REPORT_INTERVAL.min(deadline.saturating_sub(self.started.elapsed()))
+            }
+            None => PROGRESS_REPORT_INTERVAL,
+        }
+    }
+
+    fn on_model_ready(&mut self) {
+        self.phase = Phase::Preparing;
+        let load_secs = self.started.elapsed().as_secs_f32();
+        eprintln!("diarize: model ready in {load_secs:.1}s; reading the audio");
+        dtrace!("diarize::model_loaded dt={:.1}s", load_secs);
+        dtrace_json!("diarize.model_loaded", { "load_secs": load_secs });
+        let now = Instant::now();
+        self.last_event = now;
+        self.last_report = now;
+        self.warned_slow_phase = false;
+    }
+
+    fn on_progress(&mut self, processed: u64, total: u64, chunks: u32) {
+        if self.phase != Phase::Processing {
+            self.phase = Phase::Processing;
+            self.last_report = Instant::now();
+            self.warned_slow_phase = false;
+        }
+        self.last_event = Instant::now();
+        self.last_progress = Some((processed, total, chunks));
+        if self.last_report.elapsed() >= PROGRESS_REPORT_INTERVAL {
+            self.last_report = Instant::now();
+            eprintln!(
+                "diarize: {:.0}% ({} chunks, {:.0}s elapsed)",
+                progress_ratio(processed, total) * 100.0,
+                chunks,
+                self.started.elapsed().as_secs_f32()
+            );
+        }
+    }
+
+    /// Breaks once the phase has outrun its budget; otherwise says what a phase that has
+    /// gone quiet is waiting for.
+    fn on_quiet_tick(&mut self) -> ControlFlow<()> {
+        let stalled_for = self.last_event.elapsed();
+        if stalled_for >= self.budget() {
+            return ControlFlow::Break(());
+        }
+        if self.phase != Phase::Processing && stalled_for >= SLOW_PHASE_HINT_AFTER {
+            self.report_slow_phase(stalled_for);
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn report_slow_phase(&mut self, stalled_for: Duration) {
+        if !self.warned_slow_phase {
+            self.warned_slow_phase = true;
+            eprintln!(
+                "diarize: {}",
+                slow_phase_hint(self.phase, stalled_for, self.audio_secs)
+            );
+            self.last_report = Instant::now();
+        } else if self.last_report.elapsed() >= SLOW_PHASE_TICK_INTERVAL {
+            self.last_report = Instant::now();
+            eprintln!(
+                "diarize: still {} ({:.0}s)",
+                match self.phase {
+                    Phase::Loading => "loading",
+                    _ => "reading the audio",
+                },
+                stalled_for.as_secs_f32()
+            );
+        }
+    }
+
+    fn stall_message(&self) -> String {
+        stall_error(
+            self.phase,
+            self.started.elapsed(),
+            self.audio_secs,
+            self.last_progress,
+        )
+    }
+
+    fn deadline_message(&self, deadline: Duration) -> String {
+        deadline_error(deadline, self.phase, self.audio_secs, self.last_progress)
+    }
+
+    /// Announce a completed run on stderr and hand the spans back.
+    fn report_done(&self, spans: Vec<DiarizeSpan>) -> Vec<DiarizeSpan> {
+        let elapsed = self.started.elapsed().as_secs_f32();
+        eprintln!("diarize: done in {elapsed:.1}s ({} spans)", spans.len());
+        dtrace!("diarize::finished dt={:.1}s spans={}", elapsed, spans.len());
+        dtrace_json!(
+            "diarize.finished",
+            { "elapsed_secs": elapsed, "spans": spans.len() }
+        );
+        spans
+    }
+}
+
+/// Say what a phase that has gone quiet is actually waiting for, so the wait reads as
+/// diagnosis rather than a hang.
+fn slow_phase_hint(phase: Phase, stalled_for: Duration, audio_secs: f32) -> String {
+    match phase {
+        Phase::Loading => format!(
+            "the model is still loading after {:.0}s — a cold Neural Engine cache makes this \
+             take ~105s, once (#443)",
+            stalled_for.as_secs_f32()
+        ),
+        _ => format!(
+            "the model is loaded; still reading and resampling {audio_secs:.0}s of audio after \
+             {:.0}s",
+            stalled_for.as_secs_f32()
+        ),
+    }
+}
+
+/// Cancel the run and wait for the worker to acknowledge before the caller bails.
+/// Returns the spans if the run turned out to have finished successfully inside the
+/// grace window — a cancel that loses that race has nothing to report, and throwing
+/// away a complete answer to report a timeout would be a lie.
+///
+/// Returning while the Swift task is still unwinding crashes the process on exit
+/// (observed as SIGSEGV), so the grace period is what makes cancellation a clean
+/// stop rather than a faster abandonment. If the wait expires the work was not
+/// interruptible — the model load, in practice — and we fall back to the old
+/// behaviour of leaving the thread for process exit to reap (#434).
+fn stop_worker(
+    cancel: &DiarizeCancelToken,
+    rx: &mpsc::Receiver<WorkerEvent>,
+) -> Option<Vec<DiarizeSpan>> {
+    cancel.cancel();
+    let deadline = Instant::now() + CANCEL_GRACE;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return None;
+        }
+        match rx.recv_timeout(left) {
+            Ok(WorkerEvent::Progress { .. }) | Ok(WorkerEvent::ModelReady) => continue,
+            Ok(WorkerEvent::Finished(result)) => return result.ok().flatten(),
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Fraction of the audio consumed. Whole chunks only, so a healthy run tops out
+/// around 99% rather than 100% — never report it as completion.
+fn progress_ratio(processed: u64, total: u64) -> f32 {
+    if total == 0 {
+        return 0.0;
+    }
+    (processed as f32 / total as f32).clamp(0.0, 1.0)
+}
+
+/// Explain a run cut short by the caller's own cap, which is not a malfunction and
+/// must not read like one.
+fn deadline_error(
+    deadline: Duration,
+    phase: Phase,
+    audio_secs: f32,
+    last_progress: Option<(u64, u64, u32)>,
+) -> String {
+    let where_at = match (phase, last_progress) {
+        (Phase::Loading, _) => "while the CoreML model was still loading".to_string(),
+        (Phase::Preparing, _) => "while the audio was still being read".to_string(),
+        (Phase::Processing, Some((processed, total, chunks))) => format!(
+            "at {:.0}% ({chunks} chunks processed)",
+            progress_ratio(processed, total) * 100.0
+        ),
+        (Phase::Processing, None) => "before the first chunk was reported".to_string(),
+    };
     format!(
-        "speaker diarization timed out after {}s for {:.0}s of audio; \
-         the Apple ANE cache may be cold or evicted. Re-run `kesha install --diarize` \
-         to warm it, or set KESHA_DIARIZE_TIMEOUT_SECS to override the adaptive limit",
-        timeout.as_secs(),
-        audio_secs,
+        "speaker diarization was cancelled {where_at} because {TOTAL_TIMEOUT_ENV}={}s was \
+         reached, on {audio_secs:.0}s of audio. Raise or unset it to let the run finish",
+        deadline.as_secs(),
     )
+}
+
+/// Explain a stall in terms of the phase it happened in, naming only remedies that can
+/// act on that phase — so #443's "slow once" is readable off stderr instead of inferred.
+fn stall_error(
+    phase: Phase,
+    elapsed: Duration,
+    audio_secs: f32,
+    last_progress: Option<(u64, u64, u32)>,
+) -> String {
+    match phase {
+        Phase::Loading => format!(
+            "speaker diarization gave up after {}s waiting for the CoreML model to load, \
+             before reading any audio. A cold Apple ANE cache makes this load take ~105s; \
+             longer than that means it is stuck, not slow. Re-run `kesha install --diarize` \
+             to warm the cache, or set {COMPUTE_UNITS_ENV}=cpu-and-gpu to skip the Neural \
+             Engine entirely. If this machine is simply slower, raise the budget with \
+             {LOAD_TIMEOUT_ENV} (default {MODEL_LOAD_BUDGET_SECS}s)",
+            elapsed.as_secs(),
+        ),
+        Phase::Preparing => format!(
+            "speaker diarization gave up after {}s: the CoreML model loaded, but reading and \
+             resampling {audio_secs:.0}s of audio never produced a first chunk. Reading is \
+             normally far faster than the audio is long (measured 0.26s for 185s), so this is \
+             a bug rather than a slow machine — please report it at \
+             https://github.com/drakulavich/kesha-voice-kit/issues",
+            elapsed.as_secs(),
+        ),
+        Phase::Processing => {
+            let where_at = match last_progress {
+                Some((processed, total, chunks)) => format!(
+                    "at {:.0}% ({chunks} chunks processed)",
+                    progress_ratio(processed, total) * 100.0
+                ),
+                None => "before reporting any progress".to_string(),
+            };
+            format!(
+                "speaker diarization stalled {where_at} and was cancelled after {}s on {:.0}s \
+                 of audio; it normally processes ~10 chunks per second. This is a bug in the \
+                 CoreML pipeline rather than a slow machine — please report it at \
+                 https://github.com/drakulavich/kesha-voice-kit/issues",
+                elapsed.as_secs(),
+                audio_secs,
+            )
+        }
+    }
 }
 
 /// Map FluidAudio's speaker labels to stable numeric ids by first-seen order.
@@ -434,82 +937,147 @@ mod tests {
     }
 
     #[test]
-    fn adaptive_timeout_floor_covers_cold_e5rt_compile() {
-        let _guard = crate::util::test_env::lock();
-        let segs = vec![seg(0.0, 1.0, "a")];
+    fn load_stall_error_explains_the_cold_ane_compile() {
+        let msg = stall_error(Phase::Loading, Duration::from_secs(300), 4.0, None);
 
-        unsafe {
-            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
-        }
-
-        assert_eq!(
-            diarize_timeout(&segs, Some(10.0)),
-            Duration::from_secs(DEFAULT_DIARIZE_TIMEOUT_SECS)
-        );
-    }
-
-    #[test]
-    fn timeout_error_mentions_rewarming_the_ane_cache() {
-        let msg = diarize_timeout_error(Duration::from_secs(DEFAULT_DIARIZE_TIMEOUT_SECS), 4.0);
-
-        assert!(msg.contains(&format!(
-            "speaker diarization timed out after {}s for 4s of audio",
-            DEFAULT_DIARIZE_TIMEOUT_SECS
-        )));
-        assert!(msg.contains("Apple ANE cache may be cold or evicted"));
+        assert!(msg.contains("gave up after 300s waiting for the CoreML model to load"));
+        assert!(msg.contains("before reading any audio"));
+        assert!(msg.contains("~105s"));
         assert!(msg.contains("kesha install --diarize"));
-        assert!(msg.contains("KESHA_DIARIZE_TIMEOUT_SECS"));
+        assert!(msg.contains(COMPUTE_UNITS_ENV));
+        // The load budget is the one this phase answers to; the total cap can only
+        // shorten a run, so offering it as a remedy would send the user nowhere.
+        assert!(msg.contains(LOAD_TIMEOUT_ENV));
+        assert!(!msg.contains(&format!("raise {TOTAL_TIMEOUT_ENV}")));
     }
 
     #[test]
-    fn adaptive_timeout_scales_for_long_audio() {
+    fn prepare_stall_error_does_not_blame_the_model_load() {
+        let msg = stall_error(Phase::Preparing, Duration::from_secs(60), 185.0, None);
+
+        assert!(msg.contains("the CoreML model loaded"));
+        assert!(msg.contains("reading and resampling 185s of audio"));
+        // Past the load the ANE cache is demonstrably warm; don't send them to rewarm it (#443).
+        assert!(!msg.contains("kesha install --diarize"));
+        assert!(!msg.contains("~105s"));
+    }
+
+    #[test]
+    fn processing_stall_error_names_where_it_stopped() {
+        let msg = stall_error(
+            Phase::Processing,
+            Duration::from_secs(60),
+            92.0,
+            Some((300, 1_000, 42)),
+        );
+
+        assert!(msg.contains("stalled at 30% (42 chunks processed)"));
+        assert!(msg.contains("cancelled after 60s on 92s of audio"));
+        // Past the chunk loop the ANE cache is demonstrably warm; don't send them to rewarm it (#443).
+        assert!(!msg.contains("kesha install --diarize"));
+    }
+
+    #[test]
+    fn deadline_error_blames_the_cap_not_the_engine() {
+        let msg = deadline_error(
+            Duration::from_secs(12),
+            Phase::Processing,
+            185.0,
+            Some((250, 1_000, 30)),
+        );
+
+        assert!(msg.contains("cancelled at 25% (30 chunks processed)"));
+        assert!(msg.contains(&format!("{TOTAL_TIMEOUT_ENV}=12s was reached")));
+        assert!(msg.contains("on 185s of audio"));
+        assert!(!msg.contains("stalled"));
+    }
+
+    #[test]
+    fn deadline_error_names_the_phase_it_interrupted() {
+        let loading = deadline_error(Duration::from_secs(1), Phase::Loading, 185.0, None);
+        let preparing = deadline_error(Duration::from_secs(1), Phase::Preparing, 185.0, None);
+
+        assert!(loading.contains("while the CoreML model was still loading"));
+        assert!(preparing.contains("while the audio was still being read"));
+        assert!(!preparing.contains("loading"));
+    }
+
+    #[test]
+    fn prepare_budget_scales_with_the_audio() {
+        // The floor covers everything short; only a very long file needs more.
+        assert_eq!(
+            prepare_budget(0.0),
+            Duration::from_secs(PREPARE_BUDGET_FLOOR_SECS)
+        );
+        assert!((prepare_budget(185.0).as_secs_f32() - 61.85).abs() < 0.01);
+        // 10 hours: measured reading cost ~50s, budget 420s.
+        assert_eq!(prepare_budget(36_000.0).as_secs(), 420);
+    }
+
+    #[test]
+    fn progress_ratio_never_exceeds_one_or_divides_by_zero() {
+        assert_eq!(progress_ratio(0, 0), 0.0);
+        assert_eq!(progress_ratio(500, 1_000), 0.5);
+        assert_eq!(progress_ratio(2_000, 1_000), 1.0);
+    }
+
+    #[test]
+    fn compute_units_default_to_all_and_reject_junk() {
         let _guard = crate::util::test_env::lock();
-        let segs: Vec<_> = (0..6_000)
-            .map(|i| {
-                let start = i as f32;
-                seg(start, start + 0.5, "a")
-            })
-            .collect();
 
         unsafe {
-            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
+            std::env::remove_var(COMPUTE_UNITS_ENV);
         }
+        assert_eq!(compute_units_from_env().unwrap(), DiarizeComputeUnits::All);
 
+        let _env = crate::util::test_env::EnvGuard::set(COMPUTE_UNITS_ENV, "CPU-Only");
         assert_eq!(
-            diarize_timeout(&segs, Some(12_000.0)),
-            Duration::from_secs(600)
+            compute_units_from_env().unwrap(),
+            DiarizeComputeUnits::CpuOnly
         );
+
+        let _env = crate::util::test_env::EnvGuard::set(COMPUTE_UNITS_ENV, "tpu");
+        let err = compute_units_from_env().unwrap_err().to_string();
+        assert!(err.contains("is not a known CoreML compute-units preset"));
+        assert!(err.contains("cpu-and-gpu"));
     }
 
     #[test]
-    fn adaptive_timeout_is_capped() {
+    fn total_timeout_is_opt_in() {
         let _guard = crate::util::test_env::lock();
-        let segs: Vec<_> = (0..100_000)
-            .map(|i| {
-                let start = i as f32;
-                seg(start, start + 0.5, "a")
-            })
-            .collect();
 
         unsafe {
-            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
+            std::env::remove_var(TOTAL_TIMEOUT_ENV);
         }
+        assert_eq!(total_timeout_from_env(), None);
 
-        assert_eq!(
-            diarize_timeout(&segs, Some(100_000.0)),
-            Duration::from_secs(MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS)
-        );
+        let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, "3600");
+        assert_eq!(total_timeout_from_env(), Some(Duration::from_secs(3_600)));
+
+        // A zero or unparseable value must not become an instant deadline.
+        let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, "0");
+        assert_eq!(total_timeout_from_env(), None);
     }
 
     #[test]
-    fn adaptive_timeout_env_override_wins() {
+    fn load_budget_is_overridable_but_never_zero() {
         let _guard = crate::util::test_env::lock();
-        let segs = vec![seg(0.0, 1.0, "a")];
-        let _env = crate::util::test_env::EnvGuard::set("KESHA_DIARIZE_TIMEOUT_SECS", "3600");
 
+        unsafe {
+            std::env::remove_var(LOAD_TIMEOUT_ENV);
+        }
         assert_eq!(
-            diarize_timeout(&segs, Some(1.0)),
-            Duration::from_secs(3_600)
+            load_budget_from_env(),
+            Duration::from_secs(MODEL_LOAD_BUDGET_SECS)
+        );
+
+        let _env = crate::util::test_env::EnvGuard::set(LOAD_TIMEOUT_ENV, "900");
+        assert_eq!(load_budget_from_env(), Duration::from_secs(900));
+
+        let _env = crate::util::test_env::EnvGuard::set(LOAD_TIMEOUT_ENV, "nope");
+        assert_eq!(
+            load_budget_from_env(),
+            Duration::from_secs(MODEL_LOAD_BUDGET_SECS)
         );
     }
 }
