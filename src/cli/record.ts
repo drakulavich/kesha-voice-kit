@@ -18,7 +18,9 @@ export type ResolvedRecordArgs =
 const DEFAULT_MAX_SECONDS = 120;
 const MAX_RECORD_SECONDS = 3600;
 
-export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
+type Rejected = { ok: false; error: string };
+
+function resolveTarget(args: RecordArgs): { ok: true; target: RecordTarget } | Rejected {
   const out = typeof args.out === "string" ? args.out.trim() : "";
   const live = args.live === true;
   if (live && out) {
@@ -30,9 +32,13 @@ export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
   if (!live && !out) {
     return { ok: false, error: "kesha record requires --out <path> (or --live)." };
   }
+  return { ok: true, target: live ? { live: true } : { out } };
+}
 
-  const rawMax = args["max-seconds"] ?? String(DEFAULT_MAX_SECONDS);
-  const raw = String(rawMax).trim();
+function resolveMaxSeconds(
+  rawMax: string | number | undefined,
+): { ok: true; maxSeconds: number } | Rejected {
+  const raw = String(rawMax ?? DEFAULT_MAX_SECONDS).trim();
   const maxSeconds = Number(raw);
   if (raw === "" || !Number.isFinite(maxSeconds)) {
     return { ok: false, error: "--max-seconds must be a finite number." };
@@ -43,8 +49,15 @@ export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
       error: `--max-seconds must be an integer between 1 and ${MAX_RECORD_SECONDS}.`,
     };
   }
+  return { ok: true, maxSeconds };
+}
 
-  return { ok: true, target: live ? { live: true } : { out }, maxSeconds };
+export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
+  const target = resolveTarget(args);
+  if (!target.ok) return target;
+  const max = resolveMaxSeconds(args["max-seconds"]);
+  if (!max.ok) return max;
+  return { ok: true, target: target.target, maxSeconds: max.maxSeconds };
 }
 
 /** Mirrors `src/transcribe.ts`'s "no transcription backend" guard message, worded for recording. */

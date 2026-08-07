@@ -65,18 +65,9 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         anyhow::bail!("--max-seconds must be greater than 0");
     }
 
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .context("no default microphone input device found")?;
-    let supported = device
-        .default_input_config()
-        .context("failed to read default microphone format")?;
-    let sample_format = supported.sample_format();
-    let config: StreamConfig = supported.into();
-    let input_channels = config.channels;
-    ensure_input_channels(input_channels)?;
-    let sample_rate = config.sample_rate.0;
+    let input = open_default_input()?;
+    let input_channels = input.config.channels;
+    let sample_rate = input.config.sample_rate.0;
 
     let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
@@ -85,13 +76,7 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
     let sink = move |samples| {
         let _ = sample_tx.send(samples);
     };
-    let err_fn = |err| eprintln!("recording stream error: {err}");
-    let stream = match sample_format {
-        SampleFormat::F32 => build_input_stream::<f32>(&device, &config, sink, err_fn)?,
-        SampleFormat::I16 => build_input_stream::<i16>(&device, &config, sink, err_fn)?,
-        SampleFormat::U16 => build_input_stream::<u16>(&device, &config, sink, err_fn)?,
-        other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
-    };
+    let stream = build_input_stream_for_format(&input, sink)?;
 
     stream
         .play()
@@ -154,18 +139,9 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
         anyhow::bail!("--max-seconds must be greater than 0");
     }
 
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .context("no default microphone input device found")?;
-    let supported = device
-        .default_input_config()
-        .context("failed to read default microphone format")?;
-    let sample_format = supported.sample_format();
-    let config: StreamConfig = supported.into();
-    let input_channels = config.channels;
-    ensure_input_channels(input_channels)?;
-    let sample_rate = config.sample_rate.0;
+    let input = open_default_input()?;
+    let input_channels = input.config.channels;
+    let sample_rate = input.config.sample_rate.0;
 
     eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
     let mut session = StreamingAsrSession::start(sample_rate)?;
@@ -184,19 +160,37 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
             }
         }
     };
-    let err_fn = |err| eprintln!("recording stream error: {err}");
-    let stream = match sample_format {
-        SampleFormat::F32 => build_input_stream::<f32>(&device, &config, sink, err_fn)?,
-        SampleFormat::I16 => build_input_stream::<i16>(&device, &config, sink, err_fn)?,
-        SampleFormat::U16 => build_input_stream::<u16>(&device, &config, sink, err_fn)?,
-        other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
-    };
+    let stream = build_input_stream_for_format(&input, sink)?;
 
     stream
         .play()
         .context("failed to start microphone recording")?;
     eprintln!("Listening ({sample_rate} Hz)... transcript prints when recording stops.");
 
+    feed_until_stopped(
+        &mut session,
+        &sample_rx,
+        &stop_rx,
+        input_channels,
+        max_duration,
+    )?;
+
+    // Drain after stopping capture, or the last words spoken are never fed.
+    drop(stream);
+    feed_backlog(&mut session, &sample_rx, input_channels)?;
+
+    warn_dropped_buffers(dropped.load(std::sync::atomic::Ordering::Relaxed));
+    session.finish()
+}
+
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+fn feed_until_stopped(
+    session: &mut crate::streaming_asr::StreamingAsrSession,
+    sample_rx: &mpsc::Receiver<Vec<f32>>,
+    stop_rx: &mpsc::Receiver<()>,
+    input_channels: u16,
+    max_duration: Duration,
+) -> Result<()> {
     let started = Instant::now();
     let mut mono = Vec::new();
     let mut announced = 0u64;
@@ -206,7 +200,7 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
             break;
         }
         match sample_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(samples) => feed_mono(&mut session, &mut mono, &samples, input_channels)?,
+            Ok(samples) => feed_mono(session, &mut mono, &samples, input_channels)?,
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
         }
@@ -219,21 +213,30 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
     if announced > 0 {
         eprintln!();
     }
+    Ok(())
+}
 
-    // Drain after stopping capture, or the last words spoken are never fed.
-    drop(stream);
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+fn feed_backlog(
+    session: &mut crate::streaming_asr::StreamingAsrSession,
+    sample_rx: &mpsc::Receiver<Vec<f32>>,
+    input_channels: u16,
+) -> Result<()> {
+    let mut mono = Vec::new();
     while let Ok(samples) = sample_rx.try_recv() {
-        feed_mono(&mut session, &mut mono, &samples, input_channels)?;
+        feed_mono(session, &mut mono, &samples, input_channels)?;
     }
+    Ok(())
+}
 
-    let dropped = dropped.load(std::sync::atomic::Ordering::Relaxed);
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+fn warn_dropped_buffers(dropped: usize) {
     if dropped > 0 {
         eprintln!(
             "warning: dropped {dropped} microphone buffer(s) — transcription could not keep up, \
              so the transcript may have gaps"
         );
     }
-    session.finish()
 }
 
 /// Backlog the capture callback may run ahead by — ~5.5 s at the 512-frame,
@@ -269,6 +272,46 @@ fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<()>) {
         let _ = io::stdin().read(&mut buf);
         let _ = stop_tx.send(());
     });
+}
+
+#[cfg(target_os = "macos")]
+struct DefaultInput {
+    device: cpal::Device,
+    config: StreamConfig,
+    sample_format: SampleFormat,
+}
+
+#[cfg(target_os = "macos")]
+fn open_default_input() -> Result<DefaultInput> {
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .context("no default microphone input device found")?;
+    let supported = device
+        .default_input_config()
+        .context("failed to read default microphone format")?;
+    let sample_format = supported.sample_format();
+    let config: StreamConfig = supported.into();
+    ensure_input_channels(config.channels)?;
+    Ok(DefaultInput {
+        device,
+        config,
+        sample_format,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn build_input_stream_for_format(
+    input: &DefaultInput,
+    sink: impl FnMut(Vec<f32>) + Send + 'static,
+) -> Result<cpal::Stream> {
+    let err_fn = |err| eprintln!("recording stream error: {err}");
+    match input.sample_format {
+        SampleFormat::F32 => build_input_stream::<f32>(&input.device, &input.config, sink, err_fn),
+        SampleFormat::I16 => build_input_stream::<i16>(&input.device, &input.config, sink, err_fn),
+        SampleFormat::U16 => build_input_stream::<u16>(&input.device, &input.config, sink, err_fn),
+        other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
+    }
 }
 
 #[cfg(target_os = "macos")]
