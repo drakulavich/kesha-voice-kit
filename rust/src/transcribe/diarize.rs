@@ -8,13 +8,15 @@ use serde::{Deserialize, Serialize};
 use crate::coded_bail;
 use crate::errors::ErrorCode;
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::{dtrace, dtrace_json};
 use fluidaudio_rs::{
-    DiarizeCancelToken, DiarizeComputeUnits, DiarizeEvent, DiarizeOutcome, FluidAudio,
+    DiarizationSegment, DiarizeCancelToken, DiarizeComputeUnits, DiarizeEvent, DiarizeOutcome,
+    FluidAudio,
 };
 
 use super::TranscriptionSegment;
@@ -257,9 +259,75 @@ fn run_supervised(
 ) -> Result<Vec<DiarizeSpan>> {
     let (tx, rx) = mpsc::channel();
     let cancel = std::sync::Arc::new(DiarizeCancelToken::new());
-    let worker_cancel = std::sync::Arc::clone(&cancel);
-    let audio_path_buf = audio_path.to_path_buf();
-    let model_path_buf = model_path.to_path_buf();
+    spawn_worker(
+        audio_path,
+        model_path,
+        units,
+        std::sync::Arc::clone(&cancel),
+        tx,
+    );
+
+    eprintln!("diarize: loading the CoreML model on {}", units.as_str());
+
+    let mut supervisor = PhaseSupervisor::new(audio_secs, total_deadline);
+
+    loop {
+        // Per iteration, not in the timeout arm: chunks arrive every ~0.1 s, so that arm never runs.
+        if let Some(deadline) = supervisor.deadline_reached() {
+            if let Some(spans) = stop_worker(&cancel, &rx) {
+                return Ok(supervisor.report_done(spans));
+            }
+            coded_bail!(
+                ErrorCode::DiarizeTimeout,
+                "{}",
+                supervisor.deadline_message(deadline)
+            )
+        }
+
+        match rx.recv_timeout(supervisor.recv_timeout()) {
+            Ok(WorkerEvent::ModelReady) => supervisor.on_model_ready(),
+            Ok(WorkerEvent::Progress {
+                processed,
+                total,
+                chunks,
+            }) => supervisor.on_progress(processed, total, chunks),
+            Ok(WorkerEvent::Finished(result)) => {
+                let Some(spans) = result? else {
+                    // Only `stop_worker` cancels, and it consumes the outcome itself; reaching
+                    // here means one raced past it, which is a timeout rather than a defect.
+                    coded_bail!(ErrorCode::DiarizeTimeout, "{}", supervisor.stall_message())
+                };
+                return Ok(supervisor.report_done(spans));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if supervisor.on_quiet_tick().is_break() {
+                    if let Some(spans) = stop_worker(&cancel, &rx) {
+                        return Ok(supervisor.report_done(spans));
+                    }
+                    coded_bail!(ErrorCode::DiarizeTimeout, "{}", supervisor.stall_message())
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                coded_bail!(
+                    ErrorCode::Internal,
+                    "speaker diarization worker terminated unexpectedly"
+                )
+            }
+        }
+    }
+}
+
+/// Run the blocking FluidAudio call on its own thread, reporting every event it emits
+/// over `tx` and finishing with exactly one [`WorkerEvent::Finished`].
+fn spawn_worker(
+    audio_path: &Path,
+    model_path: &Path,
+    units: DiarizeComputeUnits,
+    cancel: std::sync::Arc<DiarizeCancelToken>,
+    tx: mpsc::Sender<WorkerEvent>,
+) {
+    let audio_path = audio_path.to_path_buf();
+    let model_path = model_path.to_path_buf();
     let progress_tx = tx.clone();
 
     std::thread::spawn(move || {
@@ -280,168 +348,184 @@ fn run_supervised(
                 };
                 let outcome = audio
                     .diarize_file_with_models_controlled(
-                        &audio_path_buf,
-                        &model_path_buf,
+                        &audio_path,
+                        &model_path,
                         units,
-                        Some(&worker_cancel),
+                        Some(&cancel),
                         Some(&mut on_event),
                     )
                     .context("FluidAudio diarization failed")?;
-                let segments = match outcome {
-                    DiarizeOutcome::Completed(segments) => segments,
-                    DiarizeOutcome::Cancelled => return Ok(None),
-                };
-                let mut seen: HashMap<String, u32> = HashMap::new();
-                Ok(Some(
-                    segments
-                        .into_iter()
-                        .map(|seg| DiarizeSpan {
-                            start: seg.start_time,
-                            end: seg.end_time,
-                            speaker: speaker_id_to_index(&mut seen, &seg.speaker_id),
-                        })
-                        .collect(),
-                ))
+                Ok(match outcome {
+                    DiarizeOutcome::Completed(segments) => Some(to_spans(segments)),
+                    DiarizeOutcome::Cancelled => None,
+                })
             },
         );
         // The receiver is gone if we already bailed; dropping `result` is fine.
         let _ = tx.send(WorkerEvent::Finished(result));
     });
-
-    eprintln!("diarize: loading the CoreML model on {}", units.as_str());
-
-    let started = Instant::now();
-    let load_budget = load_budget_from_env();
-    let prepare_budget = prepare_budget(audio_secs);
-    let mut phase = Phase::Loading;
-    let mut last_event = Instant::now();
-    let mut last_report = Instant::now();
-    let mut warned_slow_phase = false;
-    let mut last_progress: Option<(u64, u64, u32)> = None;
-
-    loop {
-        let budget = match phase {
-            Phase::Loading => load_budget,
-            Phase::Preparing => prepare_budget,
-            Phase::Processing => Duration::from_secs(PROGRESS_STALL_BUDGET_SECS),
-        };
-        // Per iteration, not in the timeout arm: chunks arrive every ~0.1 s, so that arm never runs.
-        let remaining = match total_deadline {
-            Some(deadline) => {
-                let left = deadline.saturating_sub(started.elapsed());
-                if left.is_zero() {
-                    if let Some(spans) = stop_worker(&cancel, &rx) {
-                        return Ok(report_done(started, spans));
-                    }
-                    coded_bail!(
-                        ErrorCode::DiarizeTimeout,
-                        "{}",
-                        deadline_error(deadline, phase, audio_secs, last_progress)
-                    )
-                }
-                left
-            }
-            None => PROGRESS_REPORT_INTERVAL,
-        };
-
-        match rx.recv_timeout(PROGRESS_REPORT_INTERVAL.min(remaining)) {
-            Ok(WorkerEvent::ModelReady) => {
-                phase = Phase::Preparing;
-                let load_secs = started.elapsed().as_secs_f32();
-                eprintln!("diarize: model ready in {load_secs:.1}s; reading the audio");
-                dtrace!("diarize::model_loaded dt={:.1}s", load_secs);
-                dtrace_json!("diarize.model_loaded", { "load_secs": load_secs });
-                last_event = Instant::now();
-                last_report = Instant::now();
-                warned_slow_phase = false;
-            }
-            Ok(WorkerEvent::Progress {
-                processed,
-                total,
-                chunks,
-            }) => {
-                if phase != Phase::Processing {
-                    phase = Phase::Processing;
-                    last_report = Instant::now();
-                    warned_slow_phase = false;
-                }
-                last_event = Instant::now();
-                last_progress = Some((processed, total, chunks));
-                if last_report.elapsed() >= PROGRESS_REPORT_INTERVAL {
-                    last_report = Instant::now();
-                    eprintln!(
-                        "diarize: {:.0}% ({} chunks, {:.0}s elapsed)",
-                        progress_ratio(processed, total) * 100.0,
-                        chunks,
-                        started.elapsed().as_secs_f32()
-                    );
-                }
-            }
-            Ok(WorkerEvent::Finished(result)) => {
-                let Some(spans) = result? else {
-                    // Only `stop_worker` cancels, and it consumes the outcome itself; reaching
-                    // here means one raced past it, which is a timeout rather than a defect.
-                    coded_bail!(
-                        ErrorCode::DiarizeTimeout,
-                        "{}",
-                        stall_error(phase, started.elapsed(), audio_secs, last_progress)
-                    )
-                };
-                return Ok(report_done(started, spans));
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                let stalled_for = last_event.elapsed();
-                if stalled_for >= budget {
-                    if let Some(spans) = stop_worker(&cancel, &rx) {
-                        return Ok(report_done(started, spans));
-                    }
-                    coded_bail!(
-                        ErrorCode::DiarizeTimeout,
-                        "{}",
-                        stall_error(phase, started.elapsed(), audio_secs, last_progress)
-                    )
-                }
-                if phase != Phase::Processing && stalled_for >= SLOW_PHASE_HINT_AFTER {
-                    if !warned_slow_phase {
-                        warned_slow_phase = true;
-                        eprintln!(
-                            "diarize: {}",
-                            slow_phase_hint(phase, stalled_for, audio_secs)
-                        );
-                        last_report = Instant::now();
-                    } else if last_report.elapsed() >= SLOW_PHASE_TICK_INTERVAL {
-                        last_report = Instant::now();
-                        eprintln!(
-                            "diarize: still {} ({:.0}s)",
-                            match phase {
-                                Phase::Loading => "loading",
-                                _ => "reading the audio",
-                            },
-                            stalled_for.as_secs_f32()
-                        );
-                    }
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                coded_bail!(
-                    ErrorCode::Internal,
-                    "speaker diarization worker terminated unexpectedly"
-                )
-            }
-        }
-    }
 }
 
-/// Announce a completed run on stderr and hand the spans back.
-fn report_done(started: Instant, spans: Vec<DiarizeSpan>) -> Vec<DiarizeSpan> {
-    let elapsed = started.elapsed().as_secs_f32();
-    eprintln!("diarize: done in {elapsed:.1}s ({} spans)", spans.len());
-    dtrace!("diarize::finished dt={:.1}s spans={}", elapsed, spans.len());
-    dtrace_json!(
-        "diarize.finished",
-        { "elapsed_secs": elapsed, "spans": spans.len() }
-    );
-    spans
+fn to_spans(segments: Vec<DiarizationSegment>) -> Vec<DiarizeSpan> {
+    let mut seen: HashMap<String, u32> = HashMap::new();
+    segments
+        .into_iter()
+        .map(|seg| DiarizeSpan {
+            start: seg.start_time,
+            end: seg.end_time,
+            speaker: speaker_id_to_index(&mut seen, &seg.speaker_id),
+        })
+        .collect()
+}
+
+/// Which phase the run is in and what it may spend there, so the receive loop only has
+/// to dispatch events.
+struct PhaseSupervisor {
+    phase: Phase,
+    started: Instant,
+    last_event: Instant,
+    last_report: Instant,
+    warned_slow_phase: bool,
+    last_progress: Option<(u64, u64, u32)>,
+    load_budget: Duration,
+    prepare_budget: Duration,
+    audio_secs: f32,
+    total_deadline: Option<Duration>,
+}
+
+impl PhaseSupervisor {
+    fn new(audio_secs: f32, total_deadline: Option<Duration>) -> Self {
+        let now = Instant::now();
+        Self {
+            phase: Phase::Loading,
+            started: now,
+            last_event: now,
+            last_report: now,
+            warned_slow_phase: false,
+            last_progress: None,
+            load_budget: load_budget_from_env(),
+            prepare_budget: prepare_budget(audio_secs),
+            audio_secs,
+            total_deadline,
+        }
+    }
+
+    /// How long the current phase may go without an event before it counts as stalled.
+    fn budget(&self) -> Duration {
+        match self.phase {
+            Phase::Loading => self.load_budget,
+            Phase::Preparing => self.prepare_budget,
+            Phase::Processing => Duration::from_secs(PROGRESS_STALL_BUDGET_SECS),
+        }
+    }
+
+    /// The caller's total cap, once it has run out.
+    fn deadline_reached(&self) -> Option<Duration> {
+        let deadline = self.total_deadline?;
+        deadline
+            .saturating_sub(self.started.elapsed())
+            .is_zero()
+            .then_some(deadline)
+    }
+
+    fn recv_timeout(&self) -> Duration {
+        match self.total_deadline {
+            Some(deadline) => {
+                PROGRESS_REPORT_INTERVAL.min(deadline.saturating_sub(self.started.elapsed()))
+            }
+            None => PROGRESS_REPORT_INTERVAL,
+        }
+    }
+
+    fn on_model_ready(&mut self) {
+        self.phase = Phase::Preparing;
+        let load_secs = self.started.elapsed().as_secs_f32();
+        eprintln!("diarize: model ready in {load_secs:.1}s; reading the audio");
+        dtrace!("diarize::model_loaded dt={:.1}s", load_secs);
+        dtrace_json!("diarize.model_loaded", { "load_secs": load_secs });
+        let now = Instant::now();
+        self.last_event = now;
+        self.last_report = now;
+        self.warned_slow_phase = false;
+    }
+
+    fn on_progress(&mut self, processed: u64, total: u64, chunks: u32) {
+        if self.phase != Phase::Processing {
+            self.phase = Phase::Processing;
+            self.last_report = Instant::now();
+            self.warned_slow_phase = false;
+        }
+        self.last_event = Instant::now();
+        self.last_progress = Some((processed, total, chunks));
+        if self.last_report.elapsed() >= PROGRESS_REPORT_INTERVAL {
+            self.last_report = Instant::now();
+            eprintln!(
+                "diarize: {:.0}% ({} chunks, {:.0}s elapsed)",
+                progress_ratio(processed, total) * 100.0,
+                chunks,
+                self.started.elapsed().as_secs_f32()
+            );
+        }
+    }
+
+    /// Breaks once the phase has outrun its budget; otherwise says what a phase that has
+    /// gone quiet is waiting for.
+    fn on_quiet_tick(&mut self) -> ControlFlow<()> {
+        let stalled_for = self.last_event.elapsed();
+        if stalled_for >= self.budget() {
+            return ControlFlow::Break(());
+        }
+        if self.phase != Phase::Processing && stalled_for >= SLOW_PHASE_HINT_AFTER {
+            self.report_slow_phase(stalled_for);
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn report_slow_phase(&mut self, stalled_for: Duration) {
+        if !self.warned_slow_phase {
+            self.warned_slow_phase = true;
+            eprintln!(
+                "diarize: {}",
+                slow_phase_hint(self.phase, stalled_for, self.audio_secs)
+            );
+            self.last_report = Instant::now();
+        } else if self.last_report.elapsed() >= SLOW_PHASE_TICK_INTERVAL {
+            self.last_report = Instant::now();
+            eprintln!(
+                "diarize: still {} ({:.0}s)",
+                match self.phase {
+                    Phase::Loading => "loading",
+                    _ => "reading the audio",
+                },
+                stalled_for.as_secs_f32()
+            );
+        }
+    }
+
+    fn stall_message(&self) -> String {
+        stall_error(
+            self.phase,
+            self.started.elapsed(),
+            self.audio_secs,
+            self.last_progress,
+        )
+    }
+
+    fn deadline_message(&self, deadline: Duration) -> String {
+        deadline_error(deadline, self.phase, self.audio_secs, self.last_progress)
+    }
+
+    /// Announce a completed run on stderr and hand the spans back.
+    fn report_done(&self, spans: Vec<DiarizeSpan>) -> Vec<DiarizeSpan> {
+        let elapsed = self.started.elapsed().as_secs_f32();
+        eprintln!("diarize: done in {elapsed:.1}s ({} spans)", spans.len());
+        dtrace!("diarize::finished dt={:.1}s spans={}", elapsed, spans.len());
+        dtrace_json!(
+            "diarize.finished",
+            { "elapsed_secs": elapsed, "spans": spans.len() }
+        );
+        spans
+    }
 }
 
 /// Say what a phase that has gone quiet is actually waiting for, so the wait reads as
