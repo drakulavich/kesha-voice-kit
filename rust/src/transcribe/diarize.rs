@@ -9,7 +9,7 @@ use crate::coded_bail;
 use crate::errors::ErrorCode;
 use std::collections::HashMap;
 use std::ops::ControlFlow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -124,8 +124,12 @@ pub(crate) fn run(
         }
     );
 
-    let spans: Vec<DiarizeSpan> =
-        run_supervised(audio_path, model_path, units, total_deadline, audio_secs)?;
+    let job = DiarizeJob {
+        audio_path: audio_path.to_path_buf(),
+        model_path: model_path.to_path_buf(),
+        units,
+    };
+    let spans: Vec<DiarizeSpan> = run_supervised(job, total_deadline, audio_secs)?;
 
     let coverage = validate_coverage(asr_segments, &spans)?;
     dtrace!(
@@ -216,6 +220,14 @@ fn prepare_budget(audio_secs: f32) -> Duration {
         + Duration::from_secs_f32(audio_secs.max(0.0) * PREPARE_BUDGET_PER_AUDIO_SECOND)
 }
 
+/// What the worker thread is given to diarize, owned so it can outlive the caller's
+/// borrows for as long as the thread does.
+struct DiarizeJob {
+    audio_path: PathBuf,
+    model_path: PathBuf,
+    units: DiarizeComputeUnits,
+}
+
 /// What the worker thread reports back while diarizing.
 enum WorkerEvent {
     ModelReady,
@@ -251,21 +263,14 @@ enum Phase {
 /// one-shot CLI invocation, so the process exits right after we bail and the OS
 /// reclaims the thread and the stalled model (#434).
 fn run_supervised(
-    audio_path: &Path,
-    model_path: &Path,
-    units: DiarizeComputeUnits,
+    job: DiarizeJob,
     total_deadline: Option<Duration>,
     audio_secs: f32,
 ) -> Result<Vec<DiarizeSpan>> {
     let (tx, rx) = mpsc::channel();
     let cancel = std::sync::Arc::new(DiarizeCancelToken::new());
-    spawn_worker(
-        audio_path,
-        model_path,
-        units,
-        std::sync::Arc::clone(&cancel),
-        tx,
-    );
+    let units = job.units;
+    spawn_worker(job, std::sync::Arc::clone(&cancel), tx);
 
     eprintln!("diarize: loading the CoreML model on {}", units.as_str());
 
@@ -291,36 +296,49 @@ fn run_supervised(
             });
         }
 
-        match rx.recv_timeout(supervisor.recv_timeout()) {
-            Ok(WorkerEvent::ModelReady) => supervisor.on_model_ready(),
-            Ok(WorkerEvent::Progress {
-                processed,
-                total,
-                chunks,
-            }) => supervisor.on_progress(processed, total, chunks),
-            Ok(WorkerEvent::Finished(result)) => {
-                let Some(spans) = result? else {
-                    // Only `stop_worker` cancels, and it consumes the outcome itself; reaching
-                    // here means one raced past it, which is a timeout rather than a defect.
-                    coded_bail!(ErrorCode::DiarizeTimeout, "{}", supervisor.stall_message())
-                };
-                return Ok(supervisor.report_done(spans));
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if supervisor.on_quiet_tick().is_break() {
-                    return stop_and_report(&supervisor, &cancel, &rx, || {
-                        supervisor.stall_message()
-                    });
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                coded_bail!(
-                    ErrorCode::Internal,
-                    "speaker diarization worker terminated unexpectedly"
-                )
-            }
+        let event = rx.recv_timeout(supervisor.recv_timeout());
+        if let Some(spans) = step(&mut supervisor, event, &cancel, &rx)? {
+            return Ok(spans);
         }
     }
+}
+
+/// Fold one worker event into `supervisor`, yielding the spans once the run is over.
+fn step(
+    supervisor: &mut PhaseSupervisor,
+    event: Result<WorkerEvent, mpsc::RecvTimeoutError>,
+    cancel: &DiarizeCancelToken,
+    rx: &mpsc::Receiver<WorkerEvent>,
+) -> Result<Option<Vec<DiarizeSpan>>> {
+    match event {
+        Ok(WorkerEvent::ModelReady) => supervisor.on_model_ready(),
+        Ok(WorkerEvent::Progress {
+            processed,
+            total,
+            chunks,
+        }) => supervisor.on_progress(processed, total, chunks),
+        Ok(WorkerEvent::Finished(result)) => {
+            let Some(spans) = result? else {
+                // Only `stop_worker` cancels, and it consumes the outcome itself; reaching
+                // here means one raced past it, which is a timeout rather than a defect.
+                coded_bail!(ErrorCode::DiarizeTimeout, "{}", supervisor.stall_message())
+            };
+            return Ok(Some(supervisor.report_done(spans)));
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            if supervisor.on_quiet_tick().is_break() {
+                return stop_and_report(supervisor, cancel, rx, || supervisor.stall_message())
+                    .map(Some);
+            }
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            coded_bail!(
+                ErrorCode::Internal,
+                "speaker diarization worker terminated unexpectedly"
+            )
+        }
+    }
+    Ok(None)
 }
 
 /// Stop the worker, then report what it left: its spans if the run beat the cancel,
@@ -341,14 +359,15 @@ fn stop_and_report(
 /// Run the blocking FluidAudio call on its own thread, reporting every event it emits
 /// over `tx` and finishing with exactly one [`WorkerEvent::Finished`].
 fn spawn_worker(
-    audio_path: &Path,
-    model_path: &Path,
-    units: DiarizeComputeUnits,
+    job: DiarizeJob,
     cancel: std::sync::Arc<DiarizeCancelToken>,
     tx: mpsc::Sender<WorkerEvent>,
 ) {
-    let audio_path = audio_path.to_path_buf();
-    let model_path = model_path.to_path_buf();
+    let DiarizeJob {
+        audio_path,
+        model_path,
+        units,
+    } = job;
     let progress_tx = tx.clone();
 
     std::thread::spawn(move || {
