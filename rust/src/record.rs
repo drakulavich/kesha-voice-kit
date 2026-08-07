@@ -141,7 +141,11 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
     let sample_rate = input.config.sample_rate.0;
 
     eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
-    let mut feed = LiveFeed::start(sample_rate, input.config.channels)?;
+    let mut feed = LiveFeed {
+        session: crate::streaming_asr::StreamingAsrSession::start(sample_rate)?,
+        mono: Vec::new(),
+        input_channels: input.config.channels,
+    };
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(LIVE_QUEUE_BUFFERS);
     let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -184,14 +188,6 @@ struct LiveFeed {
 
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 impl LiveFeed {
-    fn start(sample_rate: u32, input_channels: u16) -> Result<Self> {
-        Ok(Self {
-            session: crate::streaming_asr::StreamingAsrSession::start(sample_rate)?,
-            mono: Vec::new(),
-            input_channels,
-        })
-    }
-
     fn feed(&mut self, interleaved: &[f32]) -> Result<()> {
         self.mono.clear();
         self.mono.extend(
