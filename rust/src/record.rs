@@ -133,18 +133,15 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
 /// the CPAL callback, which stays a convert-and-send as in the WAV path.
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
-    use crate::streaming_asr::StreamingAsrSession;
-
     if max_duration.is_zero() {
         anyhow::bail!("--max-seconds must be greater than 0");
     }
 
     let input = open_default_input()?;
-    let input_channels = input.config.channels;
     let sample_rate = input.config.sample_rate.0;
 
     eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
-    let mut session = StreamingAsrSession::start(sample_rate)?;
+    let mut feed = LiveFeed::start(sample_rate, input.config.channels)?;
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(LIVE_QUEUE_BUFFERS);
     let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -167,66 +164,84 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
         .context("failed to start microphone recording")?;
     eprintln!("Listening ({sample_rate} Hz)... transcript prints when recording stops.");
 
-    feed_until_stopped(
-        &mut session,
-        &sample_rx,
-        &stop_rx,
-        input_channels,
-        max_duration,
-    )?;
+    feed.listen(&sample_rx, &stop_rx, max_duration)?;
 
     // Drain after stopping capture, or the last words spoken are never fed.
     drop(stream);
-    feed_backlog(&mut session, &sample_rx, input_channels)?;
+    feed.drain(&sample_rx)?;
 
     warn_dropped_buffers(dropped.load(std::sync::atomic::Ordering::Relaxed));
-    session.finish()
+    feed.finish()
+}
+
+/// `mono` is per-call scratch, not accumulated audio as in the WAV path.
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+struct LiveFeed {
+    session: crate::streaming_asr::StreamingAsrSession,
+    mono: Vec<f32>,
+    input_channels: u16,
 }
 
 #[cfg(all(feature = "coreml", target_os = "macos"))]
-fn feed_until_stopped(
-    session: &mut crate::streaming_asr::StreamingAsrSession,
-    sample_rx: &mpsc::Receiver<Vec<f32>>,
-    stop_rx: &mpsc::Receiver<()>,
-    input_channels: u16,
-    max_duration: Duration,
-) -> Result<()> {
-    let started = Instant::now();
-    let mut mono = Vec::new();
-    let mut announced = 0u64;
-    let tick = io::stderr().is_terminal();
-    loop {
-        if stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration {
-            break;
-        }
-        match sample_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(samples) => feed_mono(session, &mut mono, &samples, input_channels)?,
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => break,
-        }
-        let elapsed = started.elapsed().as_secs();
-        if tick && elapsed > announced {
-            announced = elapsed;
-            eprint!("\rListening... {elapsed}s");
-        }
+impl LiveFeed {
+    fn start(sample_rate: u32, input_channels: u16) -> Result<Self> {
+        Ok(Self {
+            session: crate::streaming_asr::StreamingAsrSession::start(sample_rate)?,
+            mono: Vec::new(),
+            input_channels,
+        })
     }
-    if announced > 0 {
-        eprintln!();
-    }
-    Ok(())
-}
 
-#[cfg(all(feature = "coreml", target_os = "macos"))]
-fn feed_backlog(
-    session: &mut crate::streaming_asr::StreamingAsrSession,
-    sample_rx: &mpsc::Receiver<Vec<f32>>,
-    input_channels: u16,
-) -> Result<()> {
-    let mut mono = Vec::new();
-    while let Ok(samples) = sample_rx.try_recv() {
-        feed_mono(session, &mut mono, &samples, input_channels)?;
+    fn feed(&mut self, interleaved: &[f32]) -> Result<()> {
+        self.mono.clear();
+        self.mono.extend(
+            interleaved
+                .chunks_exact(usize::from(self.input_channels))
+                .map(|frame| mix_frame_to_mono(frame).clamp(-1.0, 1.0)),
+        );
+        self.session.feed(&self.mono)
     }
-    Ok(())
+
+    fn listen(
+        &mut self,
+        sample_rx: &mpsc::Receiver<Vec<f32>>,
+        stop_rx: &mpsc::Receiver<()>,
+        max_duration: Duration,
+    ) -> Result<()> {
+        let started = Instant::now();
+        let mut announced = 0u64;
+        let tick = io::stderr().is_terminal();
+        loop {
+            if stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration {
+                break;
+            }
+            match sample_rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(samples) => self.feed(&samples)?,
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+            let elapsed = started.elapsed().as_secs();
+            if tick && elapsed > announced {
+                announced = elapsed;
+                eprint!("\rListening... {elapsed}s");
+            }
+        }
+        if announced > 0 {
+            eprintln!();
+        }
+        Ok(())
+    }
+
+    fn drain(&mut self, sample_rx: &mpsc::Receiver<Vec<f32>>) -> Result<()> {
+        while let Ok(samples) = sample_rx.try_recv() {
+            self.feed(&samples)?;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<String> {
+        self.session.finish()
+    }
 }
 
 #[cfg(all(feature = "coreml", target_os = "macos"))]
@@ -245,22 +260,6 @@ fn warn_dropped_buffers(dropped: usize) {
 /// overflow is reported rather than absorbed.
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 const LIVE_QUEUE_BUFFERS: usize = 512;
-
-#[cfg(all(feature = "coreml", target_os = "macos"))]
-fn feed_mono(
-    session: &mut crate::streaming_asr::StreamingAsrSession,
-    mono: &mut Vec<f32>,
-    interleaved: &[f32],
-    channels: u16,
-) -> Result<()> {
-    mono.clear();
-    mono.extend(
-        interleaved
-            .chunks_exact(usize::from(channels))
-            .map(|frame| mix_frame_to_mono(frame).clamp(-1.0, 1.0)),
-    );
-    session.feed(mono)
-}
 
 #[cfg(target_os = "macos")]
 fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<()>) {
