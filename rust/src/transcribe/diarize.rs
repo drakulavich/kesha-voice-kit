@@ -269,19 +269,26 @@ fn run_supervised(
 
     eprintln!("diarize: loading the CoreML model on {}", units.as_str());
 
-    let mut supervisor = PhaseSupervisor::new(audio_secs, total_deadline);
+    let now = Instant::now();
+    let mut supervisor = PhaseSupervisor {
+        phase: Phase::Loading,
+        started: now,
+        last_event: now,
+        last_report: now,
+        warned_slow_phase: false,
+        last_progress: None,
+        load_budget: load_budget_from_env(),
+        prepare_budget: prepare_budget(audio_secs),
+        audio_secs,
+        total_deadline,
+    };
 
     loop {
         // Per iteration, not in the timeout arm: chunks arrive every ~0.1 s, so that arm never runs.
         if let Some(deadline) = supervisor.deadline_reached() {
-            if let Some(spans) = stop_worker(&cancel, &rx) {
-                return Ok(supervisor.report_done(spans));
-            }
-            coded_bail!(
-                ErrorCode::DiarizeTimeout,
-                "{}",
+            return stop_and_report(&supervisor, &cancel, &rx, || {
                 supervisor.deadline_message(deadline)
-            )
+            });
         }
 
         match rx.recv_timeout(supervisor.recv_timeout()) {
@@ -301,10 +308,9 @@ fn run_supervised(
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if supervisor.on_quiet_tick().is_break() {
-                    if let Some(spans) = stop_worker(&cancel, &rx) {
-                        return Ok(supervisor.report_done(spans));
-                    }
-                    coded_bail!(ErrorCode::DiarizeTimeout, "{}", supervisor.stall_message())
+                    return stop_and_report(&supervisor, &cancel, &rx, || {
+                        supervisor.stall_message()
+                    });
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -315,6 +321,21 @@ fn run_supervised(
             }
         }
     }
+}
+
+/// Stop the worker, then report what it left: its spans if the run beat the cancel,
+/// otherwise `message` as a timeout. The message is built after the wait so it can
+/// report the elapsed time the caller actually spent.
+fn stop_and_report(
+    supervisor: &PhaseSupervisor,
+    cancel: &DiarizeCancelToken,
+    rx: &mpsc::Receiver<WorkerEvent>,
+    message: impl FnOnce() -> String,
+) -> Result<Vec<DiarizeSpan>> {
+    if let Some(spans) = stop_worker(cancel, rx) {
+        return Ok(supervisor.report_done(spans));
+    }
+    coded_bail!(ErrorCode::DiarizeTimeout, "{}", message())
 }
 
 /// Run the blocking FluidAudio call on its own thread, reporting every event it emits
@@ -394,22 +415,6 @@ struct PhaseSupervisor {
 }
 
 impl PhaseSupervisor {
-    fn new(audio_secs: f32, total_deadline: Option<Duration>) -> Self {
-        let now = Instant::now();
-        Self {
-            phase: Phase::Loading,
-            started: now,
-            last_event: now,
-            last_report: now,
-            warned_slow_phase: false,
-            last_progress: None,
-            load_budget: load_budget_from_env(),
-            prepare_budget: prepare_budget(audio_secs),
-            audio_secs,
-            total_deadline,
-        }
-    }
-
     /// How long the current phase may go without an event before it counts as stalled.
     fn budget(&self) -> Duration {
         match self.phase {
