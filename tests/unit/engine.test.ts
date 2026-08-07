@@ -38,10 +38,10 @@ exit 2
 const fakeEngineTest = process.platform === "win32" ? test.skip : test;
 
 /** Echoes the `transcribe` argv it was handed as the transcript, so a test can assert which flags were forwarded. */
-function argEchoEngine(features: string[]): string {
+async function argEchoEngine(features: string[]): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "kesha-engine-argecho-"));
   const path = join(dir, "kesha-engine");
-  writeFileSync(
+  await Bun.write(
     path,
     `#!/bin/sh
 if [ "$1" = "--capabilities-json" ]; then
@@ -180,14 +180,14 @@ describe("engine", () => {
   });
 
   fakeEngineTest("--itn forwards to the engine on the plain-text path", async () => {
-    await withEngineEnv(argEchoEngine(["transcribe.itn"]), async () => {
+    await withEngineEnv(await argEchoEngine(["transcribe.itn"]), async () => {
       expect(await transcribeEngine("audio.wav", { itn: true })).toBe("audio.wav --itn");
       expect(await transcribeEngine("audio.wav", {})).toBe("audio.wav");
     });
   });
 
   fakeEngineTest("--itn forwards to the engine on the --json path", async () => {
-    await withEngineEnv(argEchoEngine(["transcribe.segments", "transcribe.itn"]), async () => {
+    await withEngineEnv(await argEchoEngine(["transcribe.segments", "transcribe.itn"]), async () => {
       // The arg-echo engine returns argv, not JSON, so the parse failure carries the argv we want to assert on.
       await expect(transcribeEngineWithSegments("audio.wav", { itn: true })).rejects.toThrow(
         "audio.wav --json --itn",

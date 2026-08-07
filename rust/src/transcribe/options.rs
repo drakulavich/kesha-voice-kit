@@ -21,14 +21,12 @@ pub(crate) mod marker {
 }
 
 /// Type-state builder for [`TranscribeOptions`]. Start with
-/// [`TranscribeOptionsBuilder::new`] and chain `vad`, `with_segments`,
+/// [`TranscribeOptionsBuilder::new`] and chain `vad`, `itn`, `with_segments`,
 /// `with_speakers` in any order — `with_speakers` is only available
 /// after the `with_segments` transition.
 #[derive(Debug)]
 pub struct TranscribeOptionsBuilder<S = marker::NoSegments> {
-    mode: VadMode,
-    with_speakers: bool,
-    itn: bool,
+    options: TranscribeOptions,
     _state: PhantomData<S>,
 }
 
@@ -38,79 +36,56 @@ impl Default for TranscribeOptionsBuilder<marker::NoSegments> {
     }
 }
 
+impl<S> TranscribeOptionsBuilder<S> {
+    /// Available in either state, so call-site ordering doesn't matter (#318 Greptile P2).
+    pub fn vad(mut self, mode: VadMode) -> Self {
+        self.options.mode = mode;
+        self
+    }
+
+    /// Rewrite spoken-form numbers to written form (#710).
+    pub fn itn(mut self, enabled: bool) -> Self {
+        self.options.itn = enabled;
+        self
+    }
+
+    /// Finalise into a [`TranscribeOptions`]. Segments and speakers reflect
+    /// the state transitions taken, never the order the setters were called in.
+    pub fn build(self) -> TranscribeOptions {
+        self.options
+    }
+}
+
 impl TranscribeOptionsBuilder<marker::NoSegments> {
     /// Start a new builder. Defaults match [`TranscribeOptions::default`]:
     /// `VadMode::Auto`, no segments, no speakers.
     pub fn new() -> Self {
         Self {
-            mode: VadMode::Auto,
-            with_speakers: false,
-            itn: false,
+            options: TranscribeOptions::default(),
             _state: PhantomData,
         }
-    }
-
-    pub fn vad(mut self, mode: VadMode) -> Self {
-        self.mode = mode;
-        self
-    }
-
-    /// Rewrite spoken-form numbers to written form (#710). Set before
-    /// [`Self::with_segments`]; the transition carries it through, so it is
-    /// available on both output shapes from a single method.
-    pub fn itn(mut self, enabled: bool) -> Self {
-        self.itn = enabled;
-        self
     }
 
     /// Transition to the `WithSegments` state: per-utterance segments
     /// will be populated. Required before `with_speakers` becomes available.
     pub fn with_segments(self) -> TranscribeOptionsBuilder<marker::WithSegments> {
         TranscribeOptionsBuilder {
-            mode: self.mode,
-            with_speakers: false,
-            itn: self.itn,
+            options: TranscribeOptions {
+                with_segments: true,
+                ..self.options
+            },
             _state: PhantomData,
-        }
-    }
-
-    /// Finalise into a [`TranscribeOptions`] with text-only output.
-    pub fn build(self) -> TranscribeOptions {
-        TranscribeOptions {
-            mode: self.mode,
-            with_segments: false,
-            with_speakers: false,
-            itn: self.itn,
         }
     }
 }
 
 impl TranscribeOptionsBuilder<marker::WithSegments> {
-    /// Mirrors `NoSegments::vad` so call-site ordering doesn't matter (#318 Greptile P2).
-    // No current consumer chains vad() after with_segments(); exists for symmetry.
-    #[allow(dead_code)]
-    pub fn vad(mut self, mode: VadMode) -> Self {
-        self.mode = mode;
-        self
-    }
-
     /// Enable speaker diarization labels on each segment. Only callable
     /// in the `WithSegments` state — the type-state mirrors the runtime
     /// `anyhow::ensure!` guard in [`super::transcribe_with_options`].
     pub fn with_speakers(mut self) -> Self {
-        self.with_speakers = true;
+        self.options.with_speakers = true;
         self
-    }
-
-    /// Finalise into a [`TranscribeOptions`] with segments enabled
-    /// (and speakers if [`Self::with_speakers`] was called).
-    pub fn build(self) -> TranscribeOptions {
-        TranscribeOptions {
-            mode: self.mode,
-            with_segments: true,
-            with_speakers: self.with_speakers,
-            itn: self.itn,
-        }
     }
 }
 
@@ -163,8 +138,6 @@ mod tests {
 
     #[test]
     fn vad_after_with_segments_matches_vad_before() {
-        // Pins the WithSegments::vad type-state method — without this row it
-        // has no callers and order-dependence could creep in unnoticed.
         let before = TranscribeOptionsBuilder::new()
             .vad(VadMode::On)
             .with_segments()
