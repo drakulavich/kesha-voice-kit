@@ -48,6 +48,8 @@ mod process_tree;
 pub mod record;
 #[cfg(feature = "tts")]
 pub mod say_loop;
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+pub mod streaming_asr;
 pub mod text_lang;
 pub mod transcribe;
 pub mod util;

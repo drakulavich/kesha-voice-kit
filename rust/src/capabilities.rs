@@ -41,6 +41,11 @@ pub fn get_capabilities() -> Capabilities {
     #[cfg(target_os = "macos")]
     features.push("detect-text-lang");
 
+    // Mirrors the runtime gate in cli::record::run_live exactly — advertising
+    // this where the streaming session does not compile would lie.
+    #[cfg(all(feature = "coreml", target_os = "macos"))]
+    features.push(crate::record::RECORD_LIVE_FEATURE);
+
     #[cfg(feature = "tts")]
     features.push("tts");
     #[cfg(feature = "tts")]
@@ -109,6 +114,20 @@ mod caps_tests {
             assert!(seen.insert(f), "duplicate feature entry {f:?}");
         }
         assert!(!caps.backend.is_empty(), "backend name must be reported");
+    }
+
+    /// The flag must track the compiled streaming path, not the OS alone —
+    /// a macOS ONNX build cannot serve `--live` either.
+    #[test]
+    fn record_live_is_advertised_only_where_it_compiles() {
+        let advertised = get_capabilities()
+            .features
+            .contains(&crate::record::RECORD_LIVE_FEATURE);
+        let servable = cfg!(all(feature = "coreml", target_os = "macos"));
+        assert_eq!(
+            advertised, servable,
+            "record.live advertisement diverged from the compiled streaming path"
+        );
     }
 }
 

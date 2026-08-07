@@ -11,8 +11,9 @@
 //!   guard. Right for *synchronous* prints (ASR `invalidAudioData`, #259).
 //! - [`StdoutShield`] redirects fd 1 to /dev/null and **never restores** it,
 //!   emitting the real payload through a saved `dup`. Required for the
-//!   diarization teardown `E5RT` print, which fires asynchronously after the
-//!   call returns — a scoped guard can't catch it.
+//!   asynchronous `E5RT` prints — diarization teardown, and anything CoreML
+//!   emits between two streaming ASR calls — which fire after the call returns,
+//!   where a scoped guard has already put fd 1 back.
 
 use std::io::Write;
 use std::os::fd::OwnedFd;
@@ -164,12 +165,14 @@ pub(crate) fn with_silenced_stdout_oneshot<R>(f: impl FnOnce() -> R) -> R {
 /// Permanently redirect the process's stdout to `/dev/null` and hand back a
 /// handle to the *original* stdout for emitting the engine's real payload.
 ///
-/// This exists for the diarization path. FluidAudio's Espresso runtime prints
-/// `E5RT encountered an STL exception. msg = unordered_map::at: key not found.`
-/// to stdout during **asynchronous CoreML model teardown** — *after* the
-/// synchronous diarize call (and any scoped [`with_silenced_stdout`] guard) has
-/// returned. A scoped guard structurally cannot catch a print that fires on a
-/// background queue once it has already restored fd 1.
+/// This exists for the FluidAudio paths that own stdout: diarization
+/// (`transcribe --speakers`) and the live streaming ASR session
+/// (`record --live`). FluidAudio's Espresso runtime prints `E5RT encountered an
+/// STL exception. msg = unordered_map::at: key not found.` to stdout during
+/// **asynchronous CoreML model teardown** — *after* the synchronous call (and
+/// any scoped [`with_silenced_stdout`] guard) has returned. A scoped guard
+/// structurally cannot catch a print that fires on a background queue once it
+/// has already restored fd 1, nor one that fires between two guarded calls.
 ///
 /// So this guard is deliberately one-way: it points fd 1 at `/dev/null` and
 /// **never restores it**. The teardown print can fire arbitrarily late (even
@@ -182,12 +185,18 @@ pub(crate) fn with_silenced_stdout_oneshot<R>(f: impl FnOnce() -> R) -> R {
 /// [`write_stdout`](Self::write_stdout) falls back to the process stdout —
 /// best-effort, never worse than no shield (the teardown noise may leak, but we
 /// never silently swallow the payload).
-#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+#[cfg(all(
+    any(feature = "system_diarize", feature = "coreml"),
+    target_os = "macos"
+))]
 pub(crate) struct StdoutShield {
     real_stdout: Option<std::fs::File>,
 }
 
-#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+#[cfg(all(
+    any(feature = "system_diarize", feature = "coreml"),
+    target_os = "macos"
+))]
 impl StdoutShield {
     pub(crate) fn new() -> Self {
         use std::os::fd::{AsRawFd, FromRawFd};
@@ -216,7 +225,7 @@ impl StdoutShield {
                     let errno = std::io::Error::last_os_error();
                     let _ = writeln!(
                         std::io::stderr(),
-                        "warning: failed to shield stdout before diarization: {errno}"
+                        "warning: failed to shield stdout from FluidAudio: {errno}"
                     );
                 }
             }
@@ -249,6 +258,20 @@ mod tests {
     use std::io::{Read, Seek};
     use std::os::fd::{AsRawFd, OwnedFd};
 
+    /// Restores the test's original fd 1 even when an assert panics — under a
+    /// single-process `cargo test --lib` run a leaked redirect would misdirect
+    /// other tests' output.
+    struct RestoreStdout(std::os::fd::RawFd);
+    impl Drop for RestoreStdout {
+        fn drop(&mut self) {
+            // SAFETY: self.0 is the dup of the original fd 1 we own.
+            unsafe {
+                libc::dup2(self.0, libc::STDOUT_FILENO);
+                libc::close(self.0);
+            }
+        }
+    }
+
     /// #543: a C-stdio write buffered inside the guarded scope (a Swift
     /// `print` from the FluidAudio bridge) must be flushed to /dev/null
     /// *before* fd 1 is restored — reordering the flush after the restore
@@ -256,20 +279,6 @@ mod tests {
     /// nextest runs each test in its own process, so rewiring fd 1 is safe.
     #[test]
     fn silenced_scope_discards_buffered_c_stdio_before_restore() {
-        /// Restores the test's original fd 1 even when an assert panics —
-        /// under a single-process `cargo test --lib` run a leaked redirect
-        /// would misdirect other tests' output.
-        struct RestoreStdout(std::os::fd::RawFd);
-        impl Drop for RestoreStdout {
-            fn drop(&mut self) {
-                // SAFETY: self.0 is the dup of the original fd 1 we own.
-                unsafe {
-                    libc::dup2(self.0, libc::STDOUT_FILENO);
-                    libc::close(self.0);
-                }
-            }
-        }
-
         let mut capture = tempfile::tempfile().expect("capture tempfile");
         let saved_real = unsafe { libc::dup(libc::STDOUT_FILENO) };
         assert!(saved_real >= 0, "dup stdout failed");
@@ -303,6 +312,52 @@ mod tests {
         assert!(
             contents.contains("after guard"),
             "post-guard output must reach the restored stdout: {contents:?}"
+        );
+    }
+
+    /// The shield's whole point over a scoped guard: fd 1 stays on /dev/null for
+    /// prints that fire *between* FluidAudio calls and *after* the shield itself
+    /// is dropped (CoreML teardown runs on a background queue), while the
+    /// payload still reaches the real stdout.
+    #[cfg(all(
+        any(feature = "system_diarize", feature = "coreml"),
+        target_os = "macos"
+    ))]
+    #[test]
+    fn shield_holds_fd1_through_drop() {
+        let mut capture = tempfile::tempfile().expect("capture tempfile");
+        let saved_real = unsafe { libc::dup(libc::STDOUT_FILENO) };
+        assert!(saved_real >= 0, "dup stdout failed");
+        let _restore = RestoreStdout(saved_real);
+        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
+
+        {
+            let shield = StdoutShield::new();
+            // SAFETY: NUL-terminated literals; printf goes through C stdio, like
+            // the Espresso runtime's own prints.
+            unsafe {
+                libc::printf(c"E5RT between calls\n".as_ptr());
+                libc::fflush(std::ptr::null_mut());
+            }
+            shield.write_stdout(b"transcript\n").expect("write payload");
+            unsafe {
+                libc::printf(c"E5RT at teardown\n".as_ptr());
+                libc::fflush(std::ptr::null_mut());
+            }
+        }
+        // SAFETY: as above; fires after the shield dropped, as a teardown print can.
+        unsafe {
+            libc::printf(c"E5RT after drop\n".as_ptr());
+            libc::fflush(std::ptr::null_mut());
+        }
+        drop(_restore);
+
+        let mut contents = String::new();
+        capture.rewind().unwrap();
+        capture.read_to_string(&mut contents).unwrap();
+        assert_eq!(
+            contents, "transcript\n",
+            "shielded stdout must carry only the payload"
         );
     }
 }

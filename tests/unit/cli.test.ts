@@ -173,17 +173,40 @@ describe("audio language detection routing", () => {
 });
 
 describe("record command validation", () => {
-  test("requires --out", () => {
+  test("requires --out or --live", () => {
     expect(resolveRecordArgs({})).toEqual({
       ok: false,
-      error: "kesha record requires --out <path>.",
+      error: "kesha record requires --out <path> (or --live).",
+    });
+  });
+
+  test("rejects --live combined with --out", () => {
+    expect(resolveRecordArgs({ live: true, out: "mic.wav" })).toEqual({
+      ok: false,
+      error:
+        "kesha record cannot combine --live with --out; --live prints the transcript to stdout.",
+    });
+  });
+
+  test("accepts --live on its own", () => {
+    expect(resolveRecordArgs({ live: true })).toEqual({
+      ok: true,
+      target: { live: true },
+      maxSeconds: 120,
+    });
+  });
+
+  test("--live still honours --max-seconds validation", () => {
+    expect(resolveRecordArgs({ live: true, "max-seconds": "0" })).toEqual({
+      ok: false,
+      error: "--max-seconds must be an integer between 1 and 3600.",
     });
   });
 
   test("normalizes default max seconds", () => {
     expect(resolveRecordArgs({ out: "mic.wav" })).toEqual({
       ok: true,
-      out: "mic.wav",
+      target: { out: "mic.wav" },
       maxSeconds: 120,
     });
   });

@@ -11,7 +11,7 @@ _kesha() {
     'logs:Manage local privacy-safe diagnostic logs'
     'manpage:Print the kesha(1) manpage'
     'mcp:Run a Model Context Protocol server over stdio (transcribe_audio, synthesize_speech, list_voices, list_languages). Configure an MCP client with: { command: '\''kesha'\'', args: \['\''mcp'\''\] }.'
-    'record:Record microphone audio to a WAV file'
+    'record:Record microphone audio to a WAV file, or transcribe it live'
     'say:Synthesize speech from text (TTS). Writes audio to stdout (or --out file). Defaults to WAV; use --format ogg-opus for messenger-ready voice notes.'
     'stats:Manage local anonymous Kesha Stats'
     'status:Show backend installation status'
@@ -95,6 +95,7 @@ _kesha() {
       _arguments '--help[Show help]' \
         '-h[Show help]' \
         '--out=[Write recorded WAV audio to this path]:out:' \
+        '--live[Transcribe the microphone live and print the transcript to stdout (CoreML on Apple Silicon only)]' \
         '--max-seconds=[Maximum recording duration in seconds]:max seconds:' \
         '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]'
       ;;
