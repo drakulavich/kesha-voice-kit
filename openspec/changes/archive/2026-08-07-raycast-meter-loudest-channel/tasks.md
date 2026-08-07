@@ -43,5 +43,7 @@
       whose line ranges predate that change
 - [x] 5.2 Land the upstream half in `raycast/extensions#29936` and keep both
       files byte-identical to it, so the next mirror sync is a no-op on them
-- [ ] 5.3 After merge, fold this delta into
-      `openspec/specs/raycast-extension/spec.md` and archive the change
+- [x] 5.3 After merge, fold this delta into
+      `openspec/specs/raycast-extension/spec.md` and archive the change.
+      `openspec archive` folds the requirement only — the Open Issues had to be
+      carried across by hand, same as change 2026-08-01's task 5.3 records
