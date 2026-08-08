@@ -77,10 +77,11 @@ ndarray = { version = "0.17" }
 # prepare the program). Retire the fork once both land upstream.
 # Trade-off to know: this rev trails `FluidInference/main`, so upstream commits
 # after the previous pin are not present. Everything kesha calls is verified to
-# build against it.
+# build against it. Tracks FluidAudio Swift 0.15.5 (#709); the fork's `qwen3_*`
+# bindings are gone because 0.15.3 removed the backend upstream.
 # `init_kokoro` still takes `lang` → `zh` selects `.mandarin` (tone-aware
 # Mandarin G2P), else `.english` (#492); `--rate` stays model-native (#475).
-fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "9b7ceda98c4b0485590c04805c62ebde76e66159", optional = true }
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "dc931c5be72cf94700b8f53027391421ba0a0628", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)

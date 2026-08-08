@@ -343,7 +343,7 @@ fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
 
 /// FluidAudio ANE Kokoro voice packs (`system_kokoro` darwin path, #475).
 ///
-/// FluidAudio 0.14.7's `KokoroAneManager` resolves `<voice>.bin` LOCAL-FIRST
+/// FluidAudio 0.15.5's `KokoroAneManager` resolves `<voice>.bin` LOCAL-FIRST
 /// from its own cache (`~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/`)
 /// before any download. The ANE bundle only ships `af_heart`, so `am_michael`
 /// (kesha's male brand default) and the rest of the advertised Kokoro catalog
@@ -351,7 +351,7 @@ fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
 /// the standard onnx-community Kokoro packs kesha used on the ONNX path — so we
 /// download them from onnx-community and stage them into the ANE cache at install
 /// time (see [`stage_ane_kokoro_voices`]). `af_heart` is intentionally EXCLUDED:
-/// FluidAudio 0.14.7 auto-downloads its own `af_heart.bin` into the ANE dir on
+/// FluidAudio 0.15.5 auto-downloads its own `af_heart.bin` into the ANE dir on
 /// first synth, and staging our own copy would risk an SHA mismatch overwriting
 /// FluidAudio's authoritative pack. Kesha only stages the voices the ANE bundle
 /// LACKS (`am_michael` and the rest of the advertised catalog).
@@ -397,7 +397,7 @@ const ANE_KOKORO_VOICES: &[ModelFile] = &[
         "af_bella",
         "f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b"
     ),
-    // `af_heart` intentionally excluded: FluidAudio 0.14.7 ships/auto-downloads
+    // `af_heart` intentionally excluded: FluidAudio 0.15.5 ships/auto-downloads
     // its own `af_heart.bin` into this ANE dir. Staging our own copy would risk
     // overwriting FluidAudio's authoritative pack if the upstream hash ever
     // drifted.
@@ -495,7 +495,7 @@ const ANE_KOKORO_VOICES: &[ModelFile] = &[
     ),
     // re-pinned (#492): removed the flat `zm_yunjian.bin`
     // (was sha de48a00bdbf3649f07162269a2b6e0513604389bfac8a2e6c75cb34b323ad6fa).
-    // zh (Mandarin) voices are NOT staged here — the FluidAudio 0.14.8 `.mandarin`
+    // zh (Mandarin) voices are NOT staged here — the FluidAudio 0.15.5 `.mandarin`
     // KokoroAne variant fetches its own `ANE-zh/` bundle (nested `voices/<id>.bin`)
     // on first synth, and those ids are numbered (e.g. zm_050), not the
     // onnx-community names. A flat kesha-staged pack would be unused. See
@@ -540,8 +540,25 @@ fn ane_voices_for(langs: &[&str]) -> Vec<&'static ModelFile> {
         .collect()
 }
 
+/// FluidAudio's Kokoro CoreML cache root. Each KokoroAne variant gets its own
+/// subdirectory of bundles here (`ANE` for English/Latin, `ANE-zh` for the
+/// Mandarin variant, and so on per `ModelNames.Repo.subPath`).
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn fluidaudio_kokoro_cache_dir() -> PathBuf {
+    dirs::home_dir()
+        .expect("cannot determine home directory")
+        .join(".cache")
+        .join("fluidaudio")
+        .join("Models")
+        .join("kokoro-82m-coreml")
+}
+
 /// FluidAudio's Kokoro ANE voice-pack cache directory. NOT under
-/// `KESHA_CACHE_DIR` — FluidAudio 0.14.7 owns this path and reads voice packs
+/// `KESHA_CACHE_DIR` — FluidAudio 0.15.5 owns this path and reads voice packs
 /// from here local-first. We pre-stage onnx-community packs here so the full
 /// advertised Kokoro catalog (and the male `am_michael` default) resolve
 /// without a 404 against the ANE bundle.
@@ -551,13 +568,7 @@ fn ane_voices_for(langs: &[&str]) -> Vec<&'static ModelFile> {
     target_arch = "aarch64"
 ))]
 pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("cannot determine home directory")
-        .join(".cache")
-        .join("fluidaudio")
-        .join("Models")
-        .join("kokoro-82m-coreml")
-        .join("ANE")
+    fluidaudio_kokoro_cache_dir().join("ANE")
 }
 
 /// FluidAudio's ASR bundle directory. Not under `KESHA_CACHE_DIR` — FluidAudio
@@ -626,6 +637,137 @@ pub fn stage_ane_kokoro_voices(langs: &[&str], no_cache: bool) -> Result<()> {
     fs::create_dir_all(&ane_dir)
         .with_context(|| format!("create FluidAudio ANE dir {}", ane_dir.display()))?;
     parallel_download(&ane_dir, &manifest, no_cache)
+}
+
+/// `.mlmodelc` bundles in FluidAudio's Kokoro cache that are missing
+/// `model.mil`, i.e. left half-fetched by an earlier version.
+///
+/// FluidAudio's "already downloaded" check is directory-name based, so such a
+/// bundle is never repaired on its own: 0.14.8 fully fetched the
+/// `KokoroNoise.mlmodelc` it loaded and only partially fetched its
+/// `KokoroNoise_v2.mlmodelc` sibling, and 0.15.5 loads `_v2` — turning an
+/// upgrade on an existing cache into `Error in reading the MIL network` (#709,
+/// upstream #821/#826). Every Kokoro ANE bundle is CoreML ML Program format, so
+/// a missing `model.mil` means incomplete, never a valid alternative encoding.
+///
+/// Scans every `ANE*` variant directory (`ANE`, `ANE-zh`, …), which share the
+/// same required bundle set, and one extension-less level below each so the
+/// Mandarin variant's nested `g2pw/g2pw.mlmodelc` is covered. `.mlpackage`
+/// sources, `.bin` voice packs and `vocab.json` are never candidates.
+#[cfg(any(
+    all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ),
+    test
+))]
+fn incomplete_ane_bundles_in(kokoro_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+    for variant in read_dir_paths(kokoro_dir)? {
+        let is_variant = variant.is_dir()
+            && variant
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("ANE"));
+        if is_variant {
+            collect_incomplete_bundles(&variant, 1, &mut found)?;
+        }
+    }
+    Ok(found)
+}
+
+#[cfg(any(
+    all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ),
+    test
+))]
+fn collect_incomplete_bundles(dir: &Path, depth: u32, found: &mut Vec<PathBuf>) -> Result<()> {
+    for path in read_dir_paths(dir)? {
+        if !path.is_dir() {
+            continue;
+        }
+        if path.extension().is_some_and(|x| x == "mlmodelc") {
+            if !path.join("model.mil").exists() {
+                found.push(path);
+            }
+        } else if depth > 0 && path.extension().is_none() {
+            collect_incomplete_bundles(&path, depth - 1, found)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ),
+    test
+))]
+fn read_dir_paths(dir: &Path) -> Result<Vec<PathBuf>> {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e).with_context(|| format!("read {}", dir.display())),
+    };
+    entries
+        .map(|e| {
+            Ok(
+                e.with_context(|| format!("read entry in {}", dir.display()))?
+                    .path(),
+            )
+        })
+        .collect()
+}
+
+/// Delete the bundles [`incomplete_ane_bundles_in`] finds so FluidAudio
+/// refetches them instead of failing to load. Filesystem-only: it never
+/// downloads, so every `kesha install` can run it (#709).
+#[cfg(any(
+    all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ),
+    test
+))]
+fn purge_incomplete_ane_bundles_in(kokoro_dir: &Path) -> Result<()> {
+    for path in incomplete_ane_bundles_in(kokoro_dir)? {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        with_stderr(|| eprintln!("REPAIR {name} (incomplete, will refetch on first synth)"));
+        fs::remove_dir_all(&path)
+            .with_context(|| format!("remove incomplete CoreML bundle {}", path.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn purge_incomplete_ane_bundles() -> Result<()> {
+    purge_incomplete_ane_bundles_in(&fluidaudio_kokoro_cache_dir())
+}
+
+/// Names of the incomplete bundles currently in the cache, for the hint
+/// `tts::fluid_kokoro` attaches to a Kokoro init failure. Best-effort: it runs
+/// while another error is being reported, so a scan failure must not mask it.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn incomplete_ane_bundle_names() -> Vec<String> {
+    incomplete_ane_bundles_in(&fluidaudio_kokoro_cache_dir())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect()
 }
 
 /// Vosk-TTS multi-speaker Russian model, mirrored to HF at
@@ -844,6 +986,15 @@ fn has_all_files(dir: &Path, files: &[ModelFile]) -> bool {
 
 pub fn install(no_cache: bool) -> Result<()> {
     let cache = cache_dir();
+
+    // Every install repairs the ANE cache, not just `--tts`: a user who already had
+    // TTS and only upgrades the engine still carries the incomplete bundle (#709).
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    purge_incomplete_ane_bundles()?;
 
     // Always hash-verify even on cache hits — catches silent corruption (#174).
     // 4-worker pool (#178) overlaps ASR + lang-id round-trips within HF's per-IP tolerance.
@@ -1135,6 +1286,93 @@ mod manifest_tests {
     }
 }
 
+#[cfg(test)]
+mod ane_bundle_repair_tests {
+    use super::*;
+
+    fn bundle(dir: &Path, name: &str, with_mil: bool) -> Result<PathBuf> {
+        let path = dir.join(name);
+        fs::create_dir_all(&path)?;
+        fs::write(path.join("coremldata.bin"), b"x")?;
+        if with_mil {
+            fs::write(path.join("model.mil"), b"x")?;
+        }
+        Ok(path)
+    }
+
+    #[test]
+    fn purge_removes_only_bundles_missing_model_mil() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let ane = tmp.path().join("ANE");
+        let complete = bundle(&ane, "KokoroVocoder.mlmodelc", true)?;
+        let incomplete = bundle(&ane, "KokoroNoise_v2.mlmodelc", false)?;
+        // Staged voice packs, the loose vocab and the .mlpackage sources share the
+        // directory and must survive.
+        let voice = ane.join("am_michael.bin");
+        fs::write(&voice, b"voice")?;
+        let vocab = ane.join("vocab.json");
+        fs::write(&vocab, b"{}")?;
+        let package = ane.join("KokoroNoise_v2.mlpackage");
+        fs::create_dir_all(&package)?;
+
+        purge_incomplete_ane_bundles_in(tmp.path())?;
+
+        assert!(complete.exists(), "complete bundle must be kept");
+        assert!(!incomplete.exists(), "incomplete bundle must be removed");
+        assert!(voice.exists(), "staged voice packs must survive the repair");
+        assert!(vocab.exists(), "vocab.json must survive the repair");
+        assert!(
+            package.exists(),
+            ".mlpackage sources must survive the repair"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn purge_covers_sibling_variant_caches() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let zh = bundle(&tmp.path().join("ANE-zh"), "KokoroNoise_v2.mlmodelc", false)?;
+        let g2pw = bundle(&tmp.path().join("ANE-zh/g2pw"), "g2pw.mlmodelc", false)?;
+        let ja = bundle(&tmp.path().join("ANE-ja"), "KokoroNoise_v2.mlmodelc", false)?;
+        let voices = tmp.path().join("ANE-zh/voices/zf_001.bin");
+        fs::create_dir_all(voices.parent().expect("voices dir"))?;
+        fs::write(&voices, b"voice")?;
+
+        purge_incomplete_ane_bundles_in(tmp.path())?;
+
+        assert!(!zh.exists(), "ANE-zh bundle must be repaired too");
+        assert!(!g2pw.exists(), "nested g2pw bundle must be repaired too");
+        assert!(!ja.exists(), "ANE-ja bundle must be repaired too");
+        assert!(
+            voices.exists(),
+            "nested voice packs must survive the repair"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn purge_ignores_directories_outside_the_ane_variants() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let other = bundle(&tmp.path().join("GPU"), "KokoroNoise_v2.mlmodelc", false)?;
+        let loose = bundle(tmp.path(), "KokoroNoise_v2.mlmodelc", false)?;
+
+        purge_incomplete_ane_bundles_in(tmp.path())?;
+
+        assert!(
+            other.exists(),
+            "non-ANE variant dirs are not ours to repair"
+        );
+        assert!(loose.exists(), "only variant subdirectories are scanned");
+        Ok(())
+    }
+
+    #[test]
+    fn purge_is_a_noop_on_a_missing_directory() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        purge_incomplete_ane_bundles_in(&tmp.path().join("absent"))
+    }
+}
+
 #[cfg(all(test, feature = "system_diarize"))]
 mod diarize_sidecar_tests {
     use super::*;
@@ -1321,7 +1559,7 @@ mod tts_tests {
         }
         // Every FluidAudio Kokoro voice kesha advertises must have a staged
         // pack, or `--voice <lang>-<x>` resolves then 404s on the ANE bundle —
-        // EXCEPT `af_heart`, which FluidAudio 0.14.7 auto-provides into the
+        // EXCEPT `af_heart`, which FluidAudio 0.15.5 auto-provides into the
         // same ANE dir on first synth, so kesha must NOT stage its own copy.
         for v in crate::tts::fluid_kokoro::available_voice_ids() {
             let bare = v
