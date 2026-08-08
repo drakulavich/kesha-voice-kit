@@ -45,7 +45,7 @@ fn build_hint(path: &str) -> Hint {
 }
 
 /// Open `path`, probe format + select the first supported audio track.
-/// Shared by `decode_audio` and `probe_duration_seconds` so container
+/// Shared by the decode loop and the duration probes so container
 /// detection + error messages live in one place.
 fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameters)> {
     let src = std::fs::File::open(path).map_err(|e| {
@@ -89,7 +89,11 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
     Ok((probed.format, track_id, codec_params))
 }
 
-fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
+/// Stream `path` through the decoder, handing every decoded buffer's
+/// interleaved samples to `on_samples`. Returns the track's sample rate and
+/// channel count. Consumers that don't need the audio itself must not retain
+/// the slice, so they stay O(1) in memory.
+fn decode_packets<F: FnMut(&[f32])>(path: &str, mut on_samples: F) -> Result<(u32, usize)> {
     let (mut format, track_id, codec_params) = open_format(path)?;
 
     let sample_rate = codec_params
@@ -103,14 +107,12 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
         .make(&codec_params, &dec_opts)
         .with_context(|| format!("unsupported codec in: {path}"))?;
 
-    let mut all_samples: Vec<f32> = Vec::new();
     let mut sample_buf: Option<SampleBuffer<f32>> = None;
 
     loop {
         let packet = match format.next_packet() {
             Ok(p) => p,
-            Err(SymphoniaError::IoError(_)) => break,
-            Err(SymphoniaError::ResetRequired) => break,
+            Err(SymphoniaError::IoError(_)) | Err(SymphoniaError::ResetRequired) => break,
             Err(e) => {
                 return Err(e)
                     .with_context(|| format!("decode error in: {path}"))
@@ -141,9 +143,16 @@ fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
         });
 
         buf.copy_interleaved_ref(decoded);
-        all_samples.extend_from_slice(buf.samples());
+        on_samples(buf.samples());
     }
 
+    Ok((sample_rate, channels))
+}
+
+fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
+    let mut all_samples: Vec<f32> = Vec::new();
+    let (sample_rate, channels) =
+        decode_packets(path, |samples| all_samples.extend_from_slice(samples))?;
     Ok((all_samples, sample_rate, channels))
 }
 
@@ -267,6 +276,24 @@ pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
         (Some(n), Some(sr)) if sr > 0 => Ok(Some(n as f32 / sr as f32)),
         _ => Ok(None),
     }
+}
+
+/// Measure audio duration in seconds by streaming the file through the decoder
+/// and counting frames, retaining no samples. Unlike [`probe_duration_seconds`]
+/// it answers for containers that declare no frame count, but it costs a full
+/// decode pass and errors on containers that decode to nothing (truncated or
+/// metadata-only) — call it only when the duration is required, never for
+/// advisory routing decisions.
+pub fn measure_duration_seconds(path: &str) -> Result<f32> {
+    let mut decoded_samples = 0usize;
+    let (sample_rate, channels) = decode_packets(path, |samples| decoded_samples += samples.len())?;
+    let frames = decoded_samples / channels.max(1);
+    anyhow::ensure!(
+        frames > 0 && sample_rate > 0,
+        "decoded no audio frames from: {path} (the container may be truncated or hold only metadata); \
+         re-export the file or transcribe without timestamps"
+    );
+    Ok(frames as f32 / sample_rate as f32)
 }
 
 /// Validate that the file is a supported audio container with at least one

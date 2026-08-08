@@ -1,12 +1,12 @@
 //! End-to-end regression tests for audio-container error handling on
 //! `transcribe`. Lives outside `rust/src/transcribe/` so it can use the
-//! checked-in fixture under `rust/tests/fixtures/silence.m4a` without
-//! pulling that path into the production module's `use` graph.
+//! checked-in fixtures under `rust/tests/fixtures/` without pulling that
+//! path into the production module's `use` graph.
 //!
-//! Both tests exercise `transcribe_with_options`'s `audio::ensure_audio_track`
-//! early bail (v1.17.0). The garbage-input test verifies the
-//! "unsupported audio format" arm; the m4a-fixture test verifies the
-//! `isomp4` symphonia feature is wired so AAC-in-M4A probes succeed.
+//! The `ensure_audio_track` tests exercise `transcribe_with_options`'s early
+//! bail (v1.17.0). The garbage-input test verifies the "unsupported audio
+//! format" arm; the m4a-fixture test verifies the `isomp4` symphonia feature
+//! is wired so AAC-in-M4A probes succeed.
 
 use kesha_engine::audio;
 
@@ -54,6 +54,49 @@ fn ensure_audio_track_accepts_isomp4_aac_fixture() {
     assert!(
         dur.is_some(),
         "expected Some duration for the silence.m4a fixture, got None"
+    );
+}
+
+#[test]
+fn measure_duration_recovers_what_the_probe_cannot_report() {
+    // #767: an Ogg whose last page carries no end-of-stream flag declares no
+    // frame count, so the probe reports unknown — the shape of every Russian
+    // benchmark fixture. Regenerate it with `fixtures/regen-tone-no-eos.py`.
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("tone-no-eos.ogg");
+    let path = fixture.to_str().unwrap();
+
+    assert_eq!(
+        audio::probe_duration_seconds(path).expect("probe should open the container"),
+        None,
+        "fixture no longer probes as unknown duration, so it stops covering #767"
+    );
+
+    let measured =
+        audio::measure_duration_seconds(path).expect("decode-and-measure should succeed");
+    // The 0.5 s source decodes to 0.5135 s: libopus pads the tail to a whole frame.
+    assert!(
+        (0.48..0.55).contains(&measured),
+        "expected the fixture's 0.51 s, got {measured}"
+    );
+}
+
+#[test]
+fn measure_duration_reports_a_usable_error_for_a_non_container() {
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-measure-bad-")
+        .suffix(".ogg")
+        .tempfile()
+        .unwrap();
+    std::fs::write(tmp.path(), b"not an audio file at all").unwrap();
+
+    let err = audio::measure_duration_seconds(tmp.path().to_str().unwrap())
+        .expect_err("measuring a non-container must fail");
+    assert!(
+        format!("{err:#}").contains("unsupported audio format"),
+        "expected clear format error, got: {err:#}"
     );
 }
 
