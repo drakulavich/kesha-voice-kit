@@ -176,11 +176,14 @@ function publishStaging(stagingPath: string, destPath: string): void {
   }
 }
 
+/** The pid alone would collide between two concurrent calls in one process, which then share a staging file. */
+let stagingSeq = 0;
+
 /**
- * Downloads into a sibling `.part.<pid>` file and renames it into place, so an interrupted
- * download can never leave a truncated binary at `destPath` (#770). Mirrors the staging
- * `rust/src/models.rs::write_verified` already does for model files. Staging beside the
- * destination keeps the rename within one filesystem, where it is atomic.
+ * Downloads into a sibling `.part.<pid>.<n>` file and renames it into place, so an
+ * interrupted download can never leave a truncated binary at `destPath` (#770). Mirrors the
+ * staging `rust/src/models.rs::write_verified` already does for model files. Staging beside
+ * the destination keeps the rename within one filesystem, where it is atomic.
  */
 export async function streamResponseToFile(
   res: Response,
@@ -197,10 +200,7 @@ export async function streamResponseToFile(
   const progress = createProgressBar(label, totalBytes);
 
   sweepStagingFiles(destPath);
-  const stagingPath = `${destPath}.part.${process.pid}`;
-  // Bun's FileSink writes from offset 0 without truncating, so a not-yet-stale staging file
-  // left by a killed run that held this pid would leave its tail in the published download.
-  rmSync(stagingPath, { force: true });
+  const stagingPath = `${destPath}.part.${process.pid}.${stagingSeq++}`;
   const writer = Bun.file(stagingPath).writer();
   let bytes = 0;
   try {

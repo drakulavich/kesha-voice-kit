@@ -129,7 +129,7 @@ describe("streamResponseToFile publishes atomically (#770)", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-stream-orphan-"));
     try {
       const dest = join(dir, "kesha-engine");
-      const orphan = `${dest}.part.4242`;
+      const orphan = `${dest}.part.4242.3`;
       writeFileSync(orphan, "orphan from a killed run");
       const dayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
       utimesSync(orphan, dayAgo, dayAgo);
@@ -160,17 +160,39 @@ describe("streamResponseToFile publishes atomically (#770)", () => {
     }
   });
 
-  // Pids are recycled, and the sweep now spares anything under a day old — so the only thing
-  // standing between a killed run's leftovers and the published file is this unlink.
-  test("a same-pid staging leftover cannot bleed into the download", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-pid-reuse-"));
+  /** Yields the body a chunk at a time, so two of these genuinely interleave. */
+  function slowResponse(body: string): Response {
+    const chunks = body.match(/.{1,16}/g) ?? [];
+    let next = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (next >= chunks.length) {
+          controller.close();
+          return;
+        }
+        await Bun.sleep(5);
+        controller.enqueue(new TextEncoder().encode(chunks[next++]!));
+      },
+    });
+    return new Response(stream, { headers: { "content-length": String(body.length) } });
+  }
+
+  // The pid tells processes apart, not calls within one — two concurrent programmatic
+  // downloads of the same file would otherwise share a staging path and clobber each other.
+  test("two concurrent downloads of one destination get their own staging files", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-concurrent-"));
     try {
       const dest = join(dir, "kesha-engine");
-      writeFileSync(`${dest}.part.${process.pid}`, "leftovers from a killed run with this pid");
+      const first = "a".repeat(128);
+      const second = "b".repeat(128);
 
-      await streamResponseToFile(responseOf("fresh"), dest, "payload");
+      await Promise.all([
+        streamResponseToFile(slowResponse(first), dest, "first"),
+        streamResponseToFile(slowResponse(second), dest, "second"),
+      ]);
 
-      expect(readFileSync(dest, "utf8")).toBe("fresh");
+      expect([first, second]).toContain(readFileSync(dest, "utf8"));
+      expect(readdirSync(dir)).toEqual(["kesha-engine"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -342,7 +342,8 @@ the first one is still streaming into.
 - AND a staging file older than 24 hours is removed instead
 
 > *Technical Note — sources: `src/progress.ts::streamResponseToFile` (stages to
-> `<dest>.part.<pid>`, renames on success, sweeps orphans older than `STALE_STAGING_MS`),
+> `<dest>.part.<pid>.<n>` — unique per call, since two concurrent calls in one process
+> would share a pid — renames on success, sweeps orphans older than `STALE_STAGING_MS`),
 > `src/engine-health.ts::probeExecutable`, `src/engine-install.ts::installEngine`
 > (health-gated cache validity; skipped on a read-only engine directory, where nothing
 > could be repaired anyway), `src/engine-install.ts::sidecarNeedsDownload`,
