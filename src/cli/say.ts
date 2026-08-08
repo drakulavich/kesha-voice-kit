@@ -25,10 +25,9 @@ async function autoRouteVoice(text: string): Promise<string | undefined> {
  * Resolve the voice for `kesha say`. Precedence: explicit `--voice` > explicit
  * `--lang` (route by the stated language, skipping detection — also the path on
  * Linux/Windows where text-language detection is unavailable) > macOS
- * text-language auto-detection > engine default (`undefined`). A `--lang` with
- * no mapped voice (an unsupported language, or French which has no male Kokoro
- * voice) resolves to `undefined` (engine default) rather than re-running
- * detection — the user stated the language explicitly.
+ * text-language auto-detection > engine default (`undefined`). A `--lang` the
+ * build has no voice for resolves to `undefined` (engine default) rather than
+ * re-running detection — the user stated the language explicitly.
  */
 export async function resolveSayVoice(
   explicitVoice: string | undefined,

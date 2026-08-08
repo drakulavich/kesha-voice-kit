@@ -1,6 +1,12 @@
 import { describe, it, expect } from "bun:test";
 import { pickVoiceForLang } from "../../src/voice-routing";
 
+/** Mirrors `rust/src/models.rs::tts_languages()` — keep in sync when adding a language. */
+const ADVERTISED_TTS_LANGS = {
+  systemKokoro: ["en", "es", "fr", "hi", "it", "ja", "pt", "zh", "ru"],
+  onnx: ["en", "es", "fr", "it", "pt", "ru"],
+};
+
 describe("pickVoiceForLang (auto-routing)", () => {
   it("returns en-am_michael for English with high confidence", () => {
     expect(pickVoiceForLang("en", 0.95)).toBe("en-am_michael");
@@ -21,6 +27,9 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("es", 0.95, "darwin", "arm64")).toBe("es-em_alex");
     expect(pickVoiceForLang("es-ES", 0.95, "darwin", "arm64")).toBe("es-em_alex");
     expect(pickVoiceForLang("hi", 0.95, "darwin", "arm64")).toBe("hi-hm_omega");
+    // fr is female — the documented brand-rule exception, Kokoro v1.0 has no male fr voice.
+    expect(pickVoiceForLang("fr", 0.95, "darwin", "arm64")).toBe("fr-ff_siwis");
+    expect(pickVoiceForLang("fr-CA", 0.95, "darwin", "arm64")).toBe("fr-ff_siwis");
     expect(pickVoiceForLang("it", 0.95, "darwin", "arm64")).toBe("it-im_nicola");
     expect(pickVoiceForLang("ja", 0.95, "darwin", "arm64")).toBe("ja-jm_kumo");
     expect(pickVoiceForLang("pt-BR", 0.95, "darwin", "arm64")).toBe("pt-pm_alex");
@@ -68,8 +77,26 @@ describe("pickVoiceForLang (auto-routing)", () => {
     // de/ko have no Kokoro voice on either the ONNX or the darwin path.
     expect(pickVoiceForLang("de", 0.95, "linux", "x64")).toBeUndefined();
     expect(pickVoiceForLang("ko", 0.95, "darwin", "arm64")).toBeUndefined();
-    // fr maps on the ONNX path (ff_siwis) but NOT on darwin/FluidAudio — no fr voice there.
-    expect(pickVoiceForLang("fr", 0.95, "darwin", "arm64")).toBeUndefined();
+  });
+
+  it("routes every language the darwin-arm64 build advertises in --capabilities-json", () => {
+    const unrouted = ADVERTISED_TTS_LANGS.systemKokoro.filter(
+      (lang) => pickVoiceForLang(lang, 0.95, "darwin", "arm64") === undefined,
+    );
+    expect(unrouted).toEqual([]);
+  });
+
+  it("routes every language ONNX builds advertise in --capabilities-json", () => {
+    for (const [platform, arch] of [
+      ["linux", "x64"],
+      ["win32", "x64"],
+      ["darwin", "x64"],
+    ] as const) {
+      const unrouted = ADVERTISED_TTS_LANGS.onnx.filter(
+        (lang) => pickVoiceForLang(lang, 0.95, platform, arch) === undefined,
+      );
+      expect(unrouted).toEqual([]);
+    }
   });
 
   it("returns undefined when code is missing", () => {
