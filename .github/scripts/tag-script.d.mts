@@ -1,0 +1,8 @@
+// The module stays .mjs: the workflows run its callers under node, which cannot import a .ts.
+export function runTagScript(
+  moduleUrl: string,
+  options: {
+    usage: string;
+    run: (tag: string) => Record<string, string | number | boolean>;
+  },
+): void;

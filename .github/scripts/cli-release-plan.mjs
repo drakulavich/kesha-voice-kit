@@ -7,9 +7,9 @@
  * to each other — the assertion #727 removed and #728 replaced with this lane.
  */
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
 import { validateLinuxPackageVersion } from "./linux-package-names.mjs";
 import { CLI_MARKER, CLI_TAG_RE, cliPublishTarget } from "./release-tags.mjs";
+import { runTagScript } from "./tag-script.mjs";
 import { isStableVersion } from "../../src/semver.mjs";
 
 export function planCliRelease(tag, pkg) {
@@ -39,24 +39,24 @@ export function planCliRelease(tag, pkg) {
   return { version, packages: true, engineVersion };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const tag = process.argv[2];
-  if (!tag) {
-    console.error("usage: node .github/scripts/cli-release-plan.mjs <tag>");
-    process.exit(2);
-  }
-
+runTagScript(import.meta.url, {
+  usage: "usage: node .github/scripts/cli-release-plan.mjs <tag>",
   // The tag is echoed back rather than written by the workflow: it reaches GITHUB_OUTPUT only
   // once the grammar has accepted it, so a dispatch input carrying a newline cannot append keys.
-  const plan = planCliRelease(tag, JSON.parse(readFileSync("package.json", "utf8")));
-  if (!plan.packages) {
-    console.error(
-      `::notice::${tag} is a prerelease marker — beta and alpha CLI markers ship no Linux ` +
-        `packages and no GitHub release from this lane. Publish it the legacy way: ` +
-        `gh release create ${tag} --title "${plan.version} (CLI-only)" --notes "…".`,
-    );
-  }
-  process.stdout.write(
-    `tag=${tag}\nversion=${plan.version}\npackages=${plan.packages}\nengine_version=${plan.engineVersion ?? ""}\n`,
-  );
-}
+  run: (tag) => {
+    const plan = planCliRelease(tag, JSON.parse(readFileSync("package.json", "utf8")));
+    if (!plan.packages) {
+      console.error(
+        `::notice::${tag} is a prerelease marker — beta and alpha CLI markers ship no Linux ` +
+          `packages and no GitHub release from this lane. Publish it the legacy way: ` +
+          `gh release create ${tag} --title "${plan.version} (CLI-only)" --notes "…".`,
+      );
+    }
+    return {
+      tag,
+      version: plan.version,
+      packages: plan.packages,
+      engine_version: plan.engineVersion ?? "",
+    };
+  },
+});
