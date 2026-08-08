@@ -74,7 +74,7 @@ $ kesha freedom.ogg tahiti.ogg
 
 - **Record from the mic (macOS):** `kesha record --out hello.wav` writes microphone audio to a WAV file (`kesha hello.wav` transcribes it). macOS prompts for microphone access on first use — grant it under System Settings → Privacy & Security → Microphone if it was denied. On Linux/Windows or headless boxes, pass any existing audio file straight to `kesha` instead.
 - **Long / silence-heavy audio:** install VAD (`kesha install --vad`); Kesha auto-uses it past 120 s. Without VAD, long audio falls back to fixed ASR chunks. See [docs/vad.md](docs/vad.md).
-- **Speaker diarization** (darwin-arm64): `kesha install --diarize`, then `kesha --json --vad --speakers meeting.m4a` stamps each segment with a `speaker` id. Linux/Windows return a clear "darwin-arm64 only" error ([#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
+- **Speaker diarization** (darwin-arm64): `kesha install --diarize` (which installs VAD too), then `kesha --json --speakers meeting.m4a` stamps each segment with a `speaker` id. `--speakers` engages VAD windowing itself at any duration, so it cannot be combined with `--no-vad`. Linux/Windows return a clear "darwin-arm64 only" error ([#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
 
 ## Text-to-speech
 

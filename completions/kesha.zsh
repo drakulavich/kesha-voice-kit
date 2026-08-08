@@ -27,14 +27,14 @@ _kesha() {
       '--json[Output results as JSON]' \
       '--toon[Output results as TOON (compact, LLM-friendly encoding of the same data as --json)]' \
       '--timestamps[Include timestamped transcript segments in JSON/TOON output]' \
-      '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize --vad` first. Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).]' \
+      '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).]' \
       '--include-errors[With --json, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
       '--verbose[Show language detection details]' \
       '--format=[Output format: transcript | json | toon (long-form alias for --json / --toon)]:format:' \
       '--lang=[Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch]:lang:' \
       '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]' \
       '--vad[Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.]' \
-      '--no-vad[Force full-file ASR for short/medium files; long audio fails early]' \
+      '--no-vad[Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers]' \
       '--quiet[Suppress progress output; print only results and errors]' \
       '--no-color[Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)]'
     else
@@ -139,14 +139,14 @@ _kesha() {
       '--json[Output results as JSON]' \
       '--toon[Output results as TOON (compact, LLM-friendly encoding of the same data as --json)]' \
       '--timestamps[Include timestamped transcript segments in JSON/TOON output]' \
-      '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize --vad` first. Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).]' \
+      '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).]' \
       '--include-errors[With --json, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
       '--verbose[Show language detection details]' \
       '--format=[Output format: transcript | json | toon (long-form alias for --json / --toon)]:format:' \
       '--lang=[Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch]:lang:' \
       '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]' \
       '--vad[Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.]' \
-      '--no-vad[Force full-file ASR for short/medium files; long audio fails early]' \
+      '--no-vad[Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers]' \
       '--quiet[Suppress progress output; print only results and errors]' \
       '--no-color[Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)]'
       ;;

@@ -332,8 +332,17 @@ function assembleComponents(input: {
     ),
     ...input.tts.components,
   ];
-  if (options.vad) {
-    components.push(modelBundle("VAD Silero v5", VAD_FILES, "long-audio preprocessing"));
+  // #768: --diarize implies VAD — speaker labels attach to VAD-windowed segments.
+  if (options.vad || options.diarize) {
+    components.push(
+      modelBundle(
+        "VAD Silero v5",
+        VAD_FILES,
+        options.vad
+          ? "long-audio preprocessing"
+          : "long-audio preprocessing; --diarize installs it to window audio into labelable segments",
+      ),
+    );
   }
   if (options.diarize) {
     components.push(
@@ -341,7 +350,7 @@ function assembleComponents(input: {
         "Diarization Sortformer",
         DIARIZE_FILES,
         isDarwinArm64()
-          ? "speaker labels for --speakers; also needs --vad, which windows the audio into labelable segments"
+          ? "speaker labels for --speakers"
           : "darwin-arm64 only; install will reject this flag on the current platform",
       ),
     );

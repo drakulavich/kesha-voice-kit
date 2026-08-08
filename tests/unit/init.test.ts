@@ -156,7 +156,8 @@ describe("init onboarding", () => {
     expect(commands).toContain("kesha install --no-cache --coreml");
     expect(commands).toContain("kesha install --no-cache --coreml --vad");
     expect(commands).toContain("kesha install --no-cache --coreml --tts en --vad");
-    expect(commands).toContain("kesha install --no-cache --coreml --vad --diarize");
+    // #768: --diarize installs VAD itself, so the suggestion no longer repeats --vad.
+    expect(commands).toContain("kesha install --no-cache --coreml --diarize");
   });
 
   test("--yes install selection drops unsupported diarize preselection", () => {

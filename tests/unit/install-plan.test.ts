@@ -67,6 +67,23 @@ describe("renderInstallPlan", () => {
     }
   });
 
+  test("--diarize plans the VAD model too (#768)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-diarize-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+
+      const output = await renderInstallPlan({ diarize: true });
+
+      expect(output).toContain("VAD Silero v5");
+      expect(output).toContain("--diarize installs it to window audio into labelable segments");
+      expect(output).toContain("Diarization Sortformer");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("--tts plan on non-darwin includes G2P + multilingual voice packs", async () => {
     if (process.platform === "darwin" && process.arch === "arm64") {
       // darwin-arm64 uses FluidAudio Kokoro warmup path, not the ONNX manifest

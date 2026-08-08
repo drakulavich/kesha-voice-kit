@@ -181,6 +181,34 @@ function hasDiarizeModelLayout(modelPath: string): boolean {
   );
 }
 
+function assertDiarizeModelInstalled(): void {
+  const envPath = process.env.KESHA_DIARIZE_MODEL_PATH;
+  if (envPath !== undefined) {
+    if (existsSync(envPath)) return;
+    throw new Error(
+      `speaker diarization requires a model path\n\nCaused by:\n    KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`,
+    );
+  }
+
+  const modelPath = defaultDiarizeModelPath();
+  if (hasDiarizeModelLayout(modelPath)) return;
+  throw new Error(
+    `speaker diarization requires a model path\n\nCaused by:\n    diarization model not found at ${modelPath}. ` +
+      `Run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH).`,
+  );
+}
+
+/** #768: `--speakers` forces VAD windowing, so the VAD model is a hard dependency. */
+function assertVadModelInstalled(): void {
+  const modelPath = join(keshaCacheDir(), "models", "silero-vad", "silero_vad.onnx");
+  if (existsSync(modelPath)) return;
+  throw new Error(
+    "speaker diarization requires the VAD model: --speakers windows the audio with Silero VAD " +
+      `so each speech span can be labeled.\n\nCaused by:\n    VAD model not found at ${modelPath}. ` +
+      `Run \`${installHint("--vad")}\`.`,
+  );
+}
+
 export async function preflightTranscribeEngineWithSegments(
   opts: TranscribeEngineOptions = {},
 ): Promise<void> {
@@ -200,20 +228,8 @@ export async function preflightTranscribeEngineWithSegments(
     );
   }
 
-  const envPath = process.env.KESHA_DIARIZE_MODEL_PATH;
-  if (envPath !== undefined) {
-    if (existsSync(envPath)) return;
-    throw new Error(
-      `speaker diarization requires a model path\n\nCaused by:\n    KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`,
-    );
-  }
-
-  const modelPath = defaultDiarizeModelPath();
-  if (hasDiarizeModelLayout(modelPath)) return;
-  throw new Error(
-    `speaker diarization requires a model path\n\nCaused by:\n    diarization model not found at ${modelPath}. ` +
-      `Run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH).`,
-  );
+  assertDiarizeModelInstalled();
+  assertVadModelInstalled();
 }
 
 function vadArg(vad: VadMode | undefined): string[] {

@@ -57,6 +57,10 @@ export function installFakeDiarizeModel(cacheDir: string): void {
   writeFileSync(join(model, "Data", "com.apple.CoreML", "model.mlmodel"), "model");
   writeFileSync(join(weights, "0-weight.bin"), "0");
   writeFileSync(join(weights, "1-weight.bin"), "1");
+  // #768: --speakers preflight requires VAD too, and `kesha install --diarize` installs it.
+  const vad = join(cacheDir, "models", "silero-vad");
+  mkdirSync(vad, { recursive: true });
+  writeFileSync(join(vad, "silero_vad.onnx"), "vad");
 }
 
 export async function runCliScenario(

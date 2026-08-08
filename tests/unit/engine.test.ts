@@ -65,6 +65,7 @@ async function withEngineEnv<T>(
 ): Promise<T> {
   const savedEngine = process.env.KESHA_ENGINE_BIN;
   const savedDiarize = process.env.KESHA_DIARIZE_MODEL_PATH;
+  const savedExtra = Object.keys(extraEnv).map((key) => [key, process.env[key]] as const);
   try {
     process.env.KESHA_ENGINE_BIN = enginePath;
     for (const [key, value] of Object.entries(extraEnv)) {
@@ -77,7 +78,19 @@ async function withEngineEnv<T>(
     else process.env.KESHA_ENGINE_BIN = savedEngine;
     if (savedDiarize === undefined) delete process.env.KESHA_DIARIZE_MODEL_PATH;
     else process.env.KESHA_DIARIZE_MODEL_PATH = savedDiarize;
+    for (const [key, value] of savedExtra) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
+}
+
+/** #768: `--speakers` preflight requires the VAD model alongside the diarize model. */
+function cacheDirWithVadModel(): string {
+  const cache = mkdtempSync(join(tmpdir(), "kesha-cache-vad-"));
+  mkdirSync(join(cache, "models", "silero-vad"), { recursive: true });
+  writeFileSync(join(cache, "models", "silero-vad", "silero_vad.onnx"), "");
+  return cache;
 }
 
 const engineBasename = process.platform === "win32" ? "kesha-engine.exe" : "kesha-engine";
@@ -161,6 +174,23 @@ describe("engine", () => {
     );
   });
 
+  fakeEngineTest("preflight rejects speakers when the VAD model is missing (#768)", async () => {
+    const modelPath = mkdtempSync(join(tmpdir(), "kesha-diarize-model-"));
+    mkdirSync(join(modelPath, "Data", "com.apple.CoreML", "weights"), { recursive: true });
+    await withEngineEnv(
+      fakeEngine(["transcribe.segments", "transcribe.diarize"]),
+      async () => {
+        await expect(preflightTranscribeEngineWithSegments({ speakers: true })).rejects.toThrow(
+          "speaker diarization requires the VAD model",
+        );
+      },
+      {
+        KESHA_DIARIZE_MODEL_PATH: modelPath,
+        KESHA_CACHE_DIR: mkdtempSync(join(tmpdir(), "kesha-cache-no-vad-")),
+      },
+    );
+  });
+
   fakeEngineTest("transcribeEngineWithSegments accepts a valid diarize override and parses speakers", async () => {
     const modelPath = mkdtempSync(join(tmpdir(), "kesha-diarize-model-"));
     mkdirSync(join(modelPath, "Data", "com.apple.CoreML", "weights"), { recursive: true });
@@ -173,7 +203,7 @@ describe("engine", () => {
         });
         expect(out.segments[0]).toEqual({ start: 0, end: 1, text: "ok", speaker: 0 });
       },
-      { KESHA_DIARIZE_MODEL_PATH: modelPath },
+      { KESHA_DIARIZE_MODEL_PATH: modelPath, KESHA_CACHE_DIR: cacheDirWithVadModel() },
     );
   });
 

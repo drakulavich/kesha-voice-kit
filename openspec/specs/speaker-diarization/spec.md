@@ -60,7 +60,15 @@ regardless of audio duration, overriding the 120 s auto-VAD threshold, and SHALL
 fail with an actionable message naming `kesha install --vad` when the VAD model
 is missing. An explicit `--no-vad` SHALL be refused rather than silently
 overridden: the CLI SHALL exit 2 before spawning the Engine, and the Engine SHALL
-report `E_INVALID_ARG` if reached directly.
+report `E_INVALID_ARG` if reached directly. The two layers report differently on
+purpose — CLI flag gates exit 2 with an uncoded message (the
+`validateTranscribeArgs` convention), while the Engine exits 1 with
+`E_INVALID_ARG` — and the Engine SHALL evaluate the flag pair before resolving
+any model, so an invalid invocation reads as invalid even with nothing installed.
+
+Because speaker labels depend on VAD, `kesha install --diarize` SHALL also
+install the VAD model, and the CLI preflight SHALL check for both before
+spawning the Engine.
 
 #### Scenario: Maks diarizes a 6-second voice-note exchange
 
@@ -76,9 +84,11 @@ report `E_INVALID_ARG` if reached directly.
   VAD-windowed Segments and that `--no-vad` leaves nothing to label
 - AND the process exits 2 without spawning the Engine
 
-> *Technical Note — `vad_mode_for_diarization` in `rust/src/transcribe/mod.rs`
-> resolves the mode before the ASR install check; the CLI-side exit-2 guard lives
-> in `validateTranscribeArgs` (`src/cli/main.ts`). Closes #768.*
+> *Technical Note — `reject_no_vad_with_speakers` runs at the top of
+> `transcribe_with_options` and `vad_mode_for_diarization` resolves the mode
+> before the ASR install check (`rust/src/transcribe/mod.rs`); the CLI-side
+> exit-2 guard lives in `validateTranscribeArgs` (`src/cli/main.ts`) and the
+> model preflight in `src/engine.ts`. Closes #768.*
 
 ### Requirement: Diarization is gated on darwin-arm64 and the installed model
 

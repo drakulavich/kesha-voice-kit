@@ -447,7 +447,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       },
       speakers: {
         type: "boolean",
-        description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize --vad` first. Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).",
+        description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).",
         default: false,
       },
       "include-errors": {
@@ -480,7 +480,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       },
       "no-vad": {
         type: "boolean",
-        description: "Force full-file ASR for short/medium files; long audio fails early",
+        description: "Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers",
         default: false,
       },
       // quiet and no-color are resolved before citty in dispatch.ts (so they
