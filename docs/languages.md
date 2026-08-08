@@ -54,10 +54,10 @@ Languages marked **darwin-arm64** below require a darwin-arm64 engine build (Flu
 |---:|----------|------|---|------------------------|----------|-------|
 | 1 | English | `en` | 🇬🇧 | Kokoro (`en-*`) | all | default `en-am_michael` |
 | 2 | Russian | `ru` | 🇷🇺 | Vosk-TTS (`ru-*`) | all | default `ru-vosk-m02`; macOS also offers `macos-*` Milena |
-| 3 | Spanish | `es` | 🇪🇸 | Kokoro (`es-*`) | darwin-arm64 | FluidAudio CoreML |
-| 4 | French | `fr` | 🇫🇷 | Kokoro (`fr-*`) | darwin-arm64 | female voice only (`fr-ff_siwis`) |
-| 5 | Italian | `it` | 🇮🇹 | Kokoro (`it-*`) | darwin-arm64 | FluidAudio CoreML |
-| 6 | Portuguese | `pt` | 🇧🇷 | Kokoro (`pt-*`) | darwin-arm64 | Brazilian (`pt-pm_alex`) |
+| 3 | Spanish | `es` | 🇪🇸 | Kokoro (`es-*`) | all | FluidAudio CoreML on darwin-arm64, CharsiuG2P ONNX elsewhere |
+| 4 | French | `fr` | 🇫🇷 | Kokoro (`fr-*`) | all | female voice only (`fr-ff_siwis`) |
+| 5 | Italian | `it` | 🇮🇹 | Kokoro (`it-*`) | all | FluidAudio CoreML on darwin-arm64, CharsiuG2P ONNX elsewhere |
+| 6 | Portuguese | `pt` | 🇧🇷 | Kokoro (`pt-*`) | all | Brazilian (`pt-pm_alex`) |
 | 7 | Hindi | `hi` | 🇮🇳 | Kokoro (`hi-*`) | darwin-arm64 | **romanized (Latin) input only** — native Devanagari is rejected with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
 | 8 | Japanese | `ja` | 🇯🇵 | Kokoro (`ja-*`) | darwin-arm64 | **romaji (Latin) input only** — native kana/kanji is rejected ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
 | 9 | Chinese | `zh` | 🇨🇳 | Kokoro (`zh-*`) | darwin-arm64 | **pinyin (Latin) input only** — native Han is rejected ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |

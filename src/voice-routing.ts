@@ -6,9 +6,10 @@
 const RU_DARWIN_FALLBACK_VOICE = "macos-com.apple.voice.compact.ru-RU.Milena";
 
 /**
- * darwin-arm64 (FluidAudio ANE voice pack) defaults. Must cover every code
- * `tts_languages()` advertises on a system_kokoro build — a missing entry
- * silently drops `--voice` and the engine falls back to English (#769).
+ * darwin-arm64 (FluidAudio ANE voice pack) defaults. This table plus the
+ * `en`/`ru` switch arms must together cover every code `tts_languages()`
+ * advertises on a system_kokoro build — a missing entry silently drops
+ * `--voice` and the engine falls back to English (#769).
  * fr is the documented brand-rule exception (no male French voice in Kokoro v1.0).
  */
 const DARWIN_KOKORO_DEFAULTS: Record<string, string> = {

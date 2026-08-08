@@ -1,11 +1,28 @@
 import { describe, it, expect } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { pickVoiceForLang } from "../../src/voice-routing";
 
-/** Mirrors `rust/src/models.rs::tts_languages()` — keep in sync when adding a language. */
-const ADVERTISED_TTS_LANGS = {
-  systemKokoro: ["en", "es", "fr", "hi", "it", "ja", "pt", "zh", "ru"],
-  onnx: ["en", "es", "fr", "it", "pt", "ru"],
-};
+const MODELS_RS = readFileSync(
+  join(import.meta.dir, "..", "..", "rust", "src", "models.rs"),
+  "utf8",
+).replace(/\r\n/g, "\n");
+
+// Parsed, not copied: a language added to tts_languages() alone must turn these guards red (#769).
+function advertisedTtsLangs(): { systemKokoro: string[]; onnx: string[] } {
+  const body = MODELS_RS.match(/pub fn tts_languages\(\)[^{]*\{\n([\s\S]*?)\n\}/)?.[1];
+  const arms = body ? [...body.matchAll(/#\[cfg\((not\()?[\s\S]*?vec!\[([^\]]*)\]/g)] : [];
+  const langsOf = (negated: boolean) =>
+    [...(arms.find((m) => Boolean(m[1]) === negated)?.[2] ?? "").matchAll(/"([^"]+)"/g)].map(
+      (m) => m[1]!,
+    );
+  const systemKokoro = langsOf(false);
+  const onnx = langsOf(true);
+  if (systemKokoro.length === 0 || onnx.length === 0) {
+    throw new Error("could not parse tts_languages() — did rust/src/models.rs change shape?");
+  }
+  return { systemKokoro, onnx };
+}
 
 describe("pickVoiceForLang (auto-routing)", () => {
   it("returns en-am_michael for English with high confidence", () => {
@@ -23,7 +40,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-vosk-m02");
   });
 
-  it("routes supported Kokoro languages to male FluidAudio voices on darwin-arm64", () => {
+  it("routes supported Kokoro languages on darwin-arm64 (male defaults; fr is the documented female exception)", () => {
     expect(pickVoiceForLang("es", 0.95, "darwin", "arm64")).toBe("es-em_alex");
     expect(pickVoiceForLang("es-ES", 0.95, "darwin", "arm64")).toBe("es-em_alex");
     expect(pickVoiceForLang("hi", 0.95, "darwin", "arm64")).toBe("hi-hm_omega");
@@ -80,7 +97,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
   });
 
   it("routes every language the darwin-arm64 build advertises in --capabilities-json", () => {
-    const unrouted = ADVERTISED_TTS_LANGS.systemKokoro.filter(
+    const unrouted = advertisedTtsLangs().systemKokoro.filter(
       (lang) => pickVoiceForLang(lang, 0.95, "darwin", "arm64") === undefined,
     );
     expect(unrouted).toEqual([]);
@@ -92,7 +109,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
       ["win32", "x64"],
       ["darwin", "x64"],
     ] as const) {
-      const unrouted = ADVERTISED_TTS_LANGS.onnx.filter(
+      const unrouted = advertisedTtsLangs().onnx.filter(
         (lang) => pickVoiceForLang(lang, 0.95, platform, arch) === undefined,
       );
       expect(unrouted).toEqual([]);

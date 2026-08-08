@@ -15,7 +15,7 @@ kesha say --lang es "Hola, mundo" > hola.wav   # route by stated language, skip 
 kesha say --list-voices
 ```
 
-Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → engine default (`en-am_michael`). A `--lang` whose language has no mapped male voice (e.g. French) falls to the engine default rather than re-detecting.
+Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → engine default (`en-am_michael`). A `--lang` whose language has no mapped voice on the current platform (e.g. `hi` on Linux) falls to the engine default rather than re-detecting.
 
 Output format: WAV (default, mono float32 — 24 kHz for Kokoro, 22.05 kHz for Vosk), OGG/Opus (`--format ogg-opus`), and FLAC (`--format flac`) are all supported. MP3/AAC output were evaluated and rejected on licensing/patent grounds — see [docs/decision-log.md](decision-log.md).
 

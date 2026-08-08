@@ -138,7 +138,7 @@ Voice id SHALL fail with `E_VOICE_UNKNOWN` and exit 1.
 > | `en` | `en-am_michael` | `en-am_michael` | `en-am_michael` |
 > | `ru` | `macos-com.apple.voice.compact.ru-RU.Milena` | `macos-com.apple.voice.compact.ru-RU.Milena` | `ru-vosk-m02` |
 > | `es` | `es-em_alex` | `es-em_alex` | `es-em_alex` |
-> | `fr` | *(unmapped → engine default)* | `fr-ff_siwis` | `fr-ff_siwis` |
+> | `fr` | `fr-ff_siwis` | `fr-ff_siwis` | `fr-ff_siwis` |
 > | `hi` | `hi-hm_omega` | *(unmapped)* | *(unmapped)* |
 > | `it` | `it-im_nicola` | `it-im_nicola` | `it-im_nicola` |
 > | `ja` | `ja-jm_kumo` | *(unmapped)* | *(unmapped)* |
