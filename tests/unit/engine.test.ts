@@ -174,6 +174,19 @@ describe("engine", () => {
     );
   });
 
+  test("preflight rejects speakers + vad:off before resolving capabilities or models (#768)", async () => {
+    const emptyCache = mkdtempSync(join(tmpdir(), "kesha-cache-empty-"));
+    await withEngineEnv(
+      join(emptyCache, "no-such-kesha-engine"),
+      async () => {
+        await expect(
+          preflightTranscribeEngineWithSegments({ speakers: true, vad: "off" }),
+        ).rejects.toThrow("E_INVALID_ARG");
+      },
+      { KESHA_CACHE_DIR: emptyCache, KESHA_DIARIZE_MODEL_PATH: undefined },
+    );
+  });
+
   fakeEngineTest("preflight rejects speakers when the VAD model is missing (#768)", async () => {
     const modelPath = mkdtempSync(join(tmpdir(), "kesha-diarize-model-"));
     mkdirSync(join(modelPath, "Data", "com.apple.CoreML", "weights"), { recursive: true });

@@ -83,6 +83,19 @@ describe("lib API", () => {
     }
   });
 
+  it("rejects speakers + vad:off before the engine-installed check (#768)", async () => {
+    const saved = process.env.KESHA_ENGINE_BIN;
+    try {
+      process.env.KESHA_ENGINE_BIN = join(mkdtempSync(join(tmpdir(), "kesha-no-engine-")), "absent");
+      await expect(
+        preflightTranscribeWithSegments({ speakers: true, vad: "off" }),
+      ).rejects.toThrow("E_INVALID_ARG");
+    } finally {
+      if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = saved;
+    }
+  });
+
   fakeEngineIt("preflights timestamp support before segment transcription", async () => {
     await withEngine(fakeEngine([]), async () => {
       await expect(preflightTranscribeWithSegments({ timestamps: true })).rejects.toThrow(

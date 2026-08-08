@@ -1,4 +1,5 @@
 import {
+  assertSpeakersVadCompatible,
   isEngineInstalled,
   preflightTranscribeEngineWithSegments,
   transcribeEngine,
@@ -30,6 +31,9 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
 }
 
 export async function preflightTranscribeWithSegments(opts: TranscribeOptions = {}): Promise<void> {
+  // #768: ahead of isEngineInstalled(), so an invalid pair never reads as a missing install.
+  assertSpeakersVadCompatible(opts);
+
   if (!isEngineInstalled()) {
     throw new Error(
       "Error: No transcription backend is installed.\n\n" +

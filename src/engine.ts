@@ -168,6 +168,19 @@ export interface TranscribeEngineOptions {
   speakers?: boolean;
 }
 
+/** #768: speakers force VAD windowing, so `vad: "off"` is an invalid pair. Callers
+ * must run this before any capability or model resolution — an invalid request
+ * has to read as invalid whatever happens to be installed. */
+export function assertSpeakersVadCompatible(opts: TranscribeEngineOptions): void {
+  if (!opts.speakers || opts.vad !== "off") return;
+  throw new Error(
+    `error [${TS_NATIVE_CODES.INVALID_ARG}]: speakers cannot be combined with vad: "off": ` +
+      "speaker labels attach to VAD-windowed speech segments, and disabling VAD leaves the " +
+      'whole file as one segment with nothing to label. Drop vad: "off" (VAD engages ' +
+      "automatically for speakers), or drop speakers.",
+  );
+}
+
 function defaultDiarizeModelPath(): string {
   return join(keshaCacheDir(), "models", "diarize", "SortformerNvidiaLow_v2.mlpackage");
 }
@@ -212,6 +225,8 @@ function assertVadModelInstalled(): void {
 export async function preflightTranscribeEngineWithSegments(
   opts: TranscribeEngineOptions = {},
 ): Promise<void> {
+  assertSpeakersVadCompatible(opts);
+
   const caps = await getEngineCapabilities();
   if (!caps?.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
     throw new Error(
