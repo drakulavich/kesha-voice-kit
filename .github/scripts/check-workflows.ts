@@ -81,38 +81,27 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
 }
 
 /**
- * Fails when the release job would name a Linux package without first proving npm published
- * that version. The equivalent assertions in tests/unit sit behind ci.yml's `code` filter, which a
- * workflow-only edit never trips — this lane is the one that always sees such an edit (#728).
+ * Fails when build-engine.yml mentions Linux packaging at all. The `.deb`/`.rpm` carry
+ * `package.json#version`, which `main` holds ahead of npm since #691, so a stable engine tag can
+ * never name them after a published CLI — the gate that checked this made engine releases
+ * unreleasable instead (#728). Matched against the raw file, not the parsed steps: `nfpm package`
+ * or `cp dist/*.deb` reintroduces publishing without ever naming the old script.
  */
-export function requireNpmPublishedGate(path: string, document: unknown): string[] {
+const PACKAGING_TOKENS = ["build-linux-packages", "linux-packages", "nfpm", ".deb", ".rpm"];
+
+export function forbidLinuxPackaging(path: string, contents: string): string[] {
   if (!path.endsWith("build-engine.yml")) return [];
 
-  const steps = jobSteps(document, "release");
-  if (!steps) return [`${path}: expected a \`release\` job with steps`];
+  // Comment lines are prose about the policy, not a step that ships a package.
+  const code = contents
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
 
-  // Anchored so a comment or an echoed mention cannot stand in for the invocation.
-  const packaging = runsMatching(steps, /^[^#\n]*\blinux-packages\b/m);
-  if (packaging.length === 0) {
-    return [`${path}: expected the release job to build and stage the Linux packages (#728)`];
-  }
-  const gate = runsMatching(steps, /^\s*node\s+\S*assert-npm-published\.mjs\b/m)[0];
-  if (gate === undefined) {
-    return [`${path}: the release job must run assert-npm-published.mjs before naming a Linux package (#728)`];
-  }
-
-  const errors: string[] = [];
-  for (const at of packaging) {
-    if (condition(steps[at]) !== condition(steps[gate])) {
-      errors.push(
-        `${path}: step ${at + 1} packages Linux artifacts under a different \`if\` than the npm gate, so it can run unguarded (#728)`,
-      );
-    }
-    if (gate > at) {
-      errors.push(`${path}: assert-npm-published.mjs runs after step ${at + 1} packages Linux artifacts; move it before (#728)`);
-    }
-  }
-  return errors;
+  return PACKAGING_TOKENS.filter((token) => code.includes(token)).map(
+    (token) =>
+      `${path}: mentions \`${token}\`; engine releases must not attach Linux packages until #728 picks a channel`,
+  );
 }
 
 /**
@@ -176,7 +165,7 @@ function main(): void {
       const errors = [
         ...requirePinnedActions(path, contents),
         ...requirePreUploadSynthesisSmoke(path, document),
-        ...requireNpmPublishedGate(path, document),
+        ...forbidLinuxPackaging(path, contents),
         ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ];
       if (errors.length > 0) {

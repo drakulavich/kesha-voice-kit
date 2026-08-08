@@ -63,7 +63,7 @@ npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
 
 6. Treat `make smoke-test` as a local sanity check only; it can run the old globally installed CLI/engine. The release gate is draft-asset validation.
 7. Publish: `gh release edit vX.Y.Z --draft=false`. This fires `📦 npm Publish`; verify `npm view @drakulavich/kesha-voice-kit version` within ~60s. Manual fallback: `npm publish --access public` from the maintainer laptop.
-8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo, and attach Linux x64 `.deb`/`.rpm` packages covered by `SHA256SUMS` + Sigstore. CLI-only marker releases skip Homebrew/packages. Those packages carry `package.json#version`, so `assert-npm-published.mjs` fails the stable release early unless npm has already published that CLI version — since #691 `main` normally leads npm, so a stable engine cut usually needs its `vX.Y.Z-cli` release to land first (#728).
+8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo. CLI-only marker releases skip Homebrew. **Engine releases no longer attach Linux `.deb`/`.rpm`**: those packages carry `package.json#version`, which `main` holds ahead of npm since #691, so naming them on an engine tag meant naming a CLI version npm had not published. The gate that checked this (`assert-npm-published.mjs`) made stable engine tags unreleasable and is gone; `linux-packages.yml` still builds and smoke-installs the pair on `main`, and #728 owns where they should be published.
 
 **Prerelease channels.** The validators accept two shapes beside stable — `vX.Y.Z-beta.N` and `vX.Y.Z-alpha.N` (a CLI release on either channel adds the `-cli` marker) — and the grammar has one home, `release-tags.mjs`. Neither channel can reach `latest`: `npm-dist-tag.mjs` derives the dist-tag from the SemVer prerelease identifier, returns `latest` only for a version that has none, and *refuses* one whose identifier decodes to `latest` (`1.27.0-latest.1`) rather than handing a prerelease to everyone who never asked for a channel.
 
@@ -73,7 +73,7 @@ npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
 | version | derived from tags at publish time, never committed | committed in all three version fields |
 | dist-tag | `alpha` | `beta` |
 | reaches | CLI: whoever asked, `bun add -g @drakulavich/kesha-voice-kit@alpha`. Engine: `kesha install --engine-version X.Y.Z-alpha.N` | the same two, with `@beta` / `-beta.N` |
-| skips | Linux `.deb`/`.rpm`, Homebrew, **and the human un-draft gate** | Linux `.deb`/`.rpm`, Homebrew |
+| skips | Homebrew, **and the human un-draft gate** | Homebrew |
 | promotion | none — it is evidence, not a candidate; cut a beta or a stable | a later stable `vX.Y.Z` |
 | Releases | engine alphas pruned after 30 days; tags kept | kept |
 

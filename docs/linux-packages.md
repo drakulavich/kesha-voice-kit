@@ -1,8 +1,18 @@
 # Linux Packages
 
-Kesha publishes `.deb` and `.rpm` packages for Linux x64 on stable engine
-releases. They install a standalone Bun-compiled CLI wrapper as `kesha`.
-Engine binaries and models are still downloaded explicitly with `kesha install`
+> **Not currently published.** `.deb` and `.rpm` used to be attached to stable
+> engine releases, where they were named after a CLI version npm had not
+> published yet — so they shipped a version that did not exist
+> ([#728](https://github.com/drakulavich/kesha-voice-kit/issues/728)). Engine
+> releases no longer carry them, and no channel has replaced that yet. The last
+> published pair is on
+> [v1.24.7](https://github.com/drakulavich/kesha-voice-kit/releases/tag/v1.24.7).
+> Install with `bun add -g @drakulavich/kesha-voice-kit`, the
+> [Docker image](docker.md), or [Nix](nix-install.md) in the meantime; #728
+> tracks where packages should live.
+
+The packages install a standalone Bun-compiled CLI wrapper as `kesha`. Engine
+binaries and models are still downloaded explicitly with `kesha install`
 (~2.5 GB for speech-to-text; see [What Linux Gets](#what-linux-gets) below).
 
 The wrapper is compiled with Bun's glibc target (`bun-linux-x64`) — it won't
