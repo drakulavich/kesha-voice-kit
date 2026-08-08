@@ -235,9 +235,10 @@ already installed leaves English in place.
 > `src/install-plan.ts` (KOKORO_GRAPH_FILE ~325 MB, per-language KOKORO_VOICE_FILES
 > ~522 KB each, VOSK_RU_FILES ~937 MB total, G2P_CHARSIU_FILES ~30 MB for es/fr/it/pt
 > on ONNX). Supported language list comes from `getEngineCapabilities()` when the
-> Engine is already installed; falls back to `TTS_LANG_FALLBACK` = `["en", "es", "fr",
-> "it", "pt", "ru"]` when the Engine is not yet installed (hi/ja/zh excluded as they
-> require darwin-arm64 capabilities to confirm).*
+> Engine is already installed; when it is not, `src/cli/install.ts::installableTtsLangs`
+> supplies the platform's static set — `["en", "es", "fr", "it", "pt", "ru"]` plus
+> `hi`, `ja`, `zh` on darwin-arm64 — so a bad code is rejected before anything downloads.
+> The Engine re-validates authoritatively at download time.*
 
 ### Requirement: VAD and Diarize install are separate opt-in flags
 
@@ -300,6 +301,56 @@ begin.
 > *Technical Note — sources: `rust/src/models.rs` (SHA-256 per `ModelFile` entry,
 > `download_verified` function, `init_mirror_logging`, `model_mirror()`).
 > Error code `E_CACHE_CORRUPT` is used when a cached file fails hash verification.*
+
+### Requirement: Downloads land atomically and an installed Engine is verified by running it
+
+The CLI SHALL stream every downloaded file into a staging file beside its destination and
+rename it into place only once the download completes, so an interrupted download never
+leaves a partial file where a complete one is expected. A download that fails or is
+interrupted SHALL leave the previous file untouched, or no file at all when there was none.
+
+`kesha install` SHALL treat an Engine whose recorded version matches the requested one but
+which cannot be spawned as invalid, and re-download it. The same applies to the Sidecars on
+a cache hit: one that is present but which the OS refuses to execute SHALL be re-downloaded
+rather than re-trusted. A Capabilities probe that fails because the installed Engine cannot
+be spawned SHALL NOT abort the install.
+
+Staging files left behind by a killed process SHALL be swept only once they are older than
+24 hours, so a second `kesha install` running concurrently never deletes the staging file
+the first one is still streaming into.
+
+#### Scenario: Maks interrupts a download with Ctrl-C
+
+- GIVEN `kesha install` is downloading the Engine binary
+- WHEN Maks presses Ctrl-C partway through
+- THEN no partial Engine binary is left at the install path
+- AND a previously installed Engine binary is still intact and runnable
+
+#### Scenario: Ira re-runs install over a corrupt Engine
+
+- GIVEN the Engine binary is truncated but its `.version` marker names the pinned version
+- WHEN Ira runs `kesha install`
+- THEN the CLI reports that the installed Engine does not run and re-downloads it
+- AND the command completes without surfacing an `E_ENGINE_SPAWN` failure from the
+  Capabilities probe
+
+#### Scenario: Sona runs two installs at once
+
+- GIVEN one `kesha install` is streaming the Engine into its staging file
+- WHEN Sona starts a second `kesha install` in another terminal
+- THEN the second run leaves the first run's staging file alone
+- AND a staging file older than 24 hours is removed instead
+
+> *Technical Note — sources: `src/progress.ts::streamResponseToFile` (stages to
+> `<dest>.part.<pid>.<n>` — unique per call, since two concurrent calls in one process
+> would share a pid — renames on success, sweeps orphans older than `STALE_STAGING_MS`),
+> `src/engine-health.ts::probeExecutable`, `src/engine-install.ts::installEngine`
+> (health-gated cache validity; skipped on a read-only engine directory, where nothing
+> could be repaired anyway), `src/engine-install.ts::sidecarNeedsDownload`,
+> `src/cli/install.ts::probeCapabilitiesForInstall`. Mirrors the staging and the
+> age-gated, Unix-only orphan sweep of `rust/src/models.rs` (`write_verified`,
+> `cleanup_orphan_staging`): Windows keeps last-write time stale while a handle is open,
+> so an in-flight download there cannot be told apart from an orphan.*
 
 ### Requirement: `--plan` shows the download plan without changing local state
 
@@ -499,9 +550,5 @@ Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL m
 
 ## Open Issues
 
-- `kesha install --tts zh` on a darwin-arm64 machine without the Engine installed
-  falls back to `TTS_LANG_FALLBACK` (which excludes `zh`) and rejects the request;
-  the error message says "unsupported" rather than "install the engine first to
-  unlock platform-specific languages" — see the `resolveTtsLangs` fallback path.
 - `kesha record` has no Windows or Linux microphone capture; `record.rs` gates capture on
   macOS and the README directs other platforms to pass an existing audio file.

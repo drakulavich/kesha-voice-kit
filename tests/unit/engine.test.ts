@@ -4,11 +4,13 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
+  detectTextLanguageEngine,
   parseLangResult,
   getEngineBinPath,
   preflightTranscribeEngineWithSegments,
   recordEngine,
   spawnStdioWithDebugFd,
+  textLangFailureWarning,
   transcribeEngine,
   transcribeEngineWithSegments,
 } from "../../src/engine";
@@ -318,4 +320,40 @@ describe("spawnStdioWithDebugFd", () => {
     expect(spawnStdioWithDebugFd(["pipe", "pipe", "pipe"])).toEqual(["pipe", "pipe", "pipe", 3]);
   });
 
+});
+
+describe("text language detection degrades loudly (#770)", () => {
+  test("a darwin failure names the sidecar and the fix", () => {
+    const warning = textLangFailureWarning("kesha-textlang helper exited 137", "darwin");
+    expect(warning).toContain("kesha-textlang helper exited 137");
+    expect(warning).toContain("kesha install");
+  });
+
+  // Text detection is macOS-only, so failing elsewhere is the documented behaviour, not a fault.
+  test("no warning on platforms that never supported detection", () => {
+    expect(textLangFailureWarning("unsupported on this platform", "linux")).toBeNull();
+    expect(textLangFailureWarning("unsupported on this platform", "win32")).toBeNull();
+  });
+
+  fakeEngineTest("a failing subprocess warns on stderr and still resolves null", async () => {
+    const savedEngineBin = process.env.KESHA_ENGINE_BIN;
+    const savedWrite = process.stderr.write;
+    const captured: string[] = [];
+    process.env.KESHA_ENGINE_BIN = fakeEngine([]);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      expect(await detectTextLanguageEngine("Привет, как дела?")).toBeNull();
+    } finally {
+      process.stderr.write = savedWrite;
+      if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = savedEngineBin;
+    }
+
+    const warned = captured.some((line) => line.includes("Text language detection failed"));
+    expect(warned).toBe(process.platform === "darwin");
+  });
 });

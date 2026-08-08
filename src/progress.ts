@@ -1,3 +1,6 @@
+import { copyFileSync, readdirSync, renameSync, rmSync, statSync } from "fs";
+import { basename, dirname, join } from "path";
+import { errorMessage } from "./error-utils";
 import { log } from "./log";
 
 const BAR_WIDTH = 20;
@@ -126,6 +129,62 @@ export async function applyBackpressure(
   if (written < 0) await writer.flush();
 }
 
+/**
+ * Age threshold and platform gate mirror `rust/src/models.rs::cleanup_orphan_staging`: a
+ * concurrent installer's staging file keeps a fresh mtime while bytes stream into it, and
+ * Windows leaves last-write time stale while a handle is open, so an in-flight download
+ * there could not be told apart from an orphan.
+ */
+const STALE_STAGING_MS = 24 * 60 * 60 * 1000;
+
+/** A Ctrl-C kills the process before any cleanup runs, so last run's staging file is swept by the next one (#770). */
+function sweepStagingFiles(destPath: string): void {
+  if (process.platform === "win32") return;
+  const dir = dirname(destPath);
+  const prefix = `${basename(destPath)}.part.`;
+  const cutoffMs = Date.now() - STALE_STAGING_MS;
+
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch (err) {
+    log.debug(`Could not scan ${dir} for orphaned download staging: ${errorMessage(err)}`);
+    return;
+  }
+
+  for (const name of names) {
+    if (!name.startsWith(prefix)) continue;
+    const path = join(dir, name);
+    try {
+      if (statSync(path).mtimeMs > cutoffMs) continue;
+      rmSync(path, { force: true });
+      log.debug(`Cleaned up orphaned download staging: ${name}`);
+    } catch (err) {
+      log.debug(`Could not sweep orphaned download staging ${name}: ${errorMessage(err)}`);
+    }
+  }
+}
+
+/** Windows refuses `rename` onto a destination another handle still holds; POSIX overwrites. */
+function publishStaging(stagingPath: string, destPath: string): void {
+  try {
+    renameSync(stagingPath, destPath);
+  } catch (err) {
+    if (process.platform !== "win32") throw err;
+    copyFileSync(stagingPath, destPath);
+    rmSync(stagingPath, { force: true });
+  }
+}
+
+/** The pid alone would collide between two concurrent calls in one process, which then share a staging file. */
+let stagingSeq = 0;
+
+/**
+ * Downloads into a sibling `.part.<pid>.<n>` file and renames it into place, so an
+ * interrupted download can never leave a truncated binary at `destPath` (#770). Mirrors the
+ * staging `rust/src/models.rs::write_verified` already does for model files. Staging beside
+ * the destination keeps the rename within one filesystem, where it is atomic.
+ */
 export async function streamResponseToFile(
   res: Response,
   destPath: string,
@@ -140,17 +199,25 @@ export async function streamResponseToFile(
   const totalBytes = Number(res.headers.get("content-length") || 0);
   const progress = createProgressBar(label, totalBytes);
 
-  const writer = Bun.file(destPath).writer();
+  sweepStagingFiles(destPath);
+  const stagingPath = `${destPath}.part.${process.pid}.${stagingSeq++}`;
+  const writer = Bun.file(stagingPath).writer();
   let bytes = 0;
   try {
-    for await (const chunk of res.body) {
-      await applyBackpressure(writer, writer.write(chunk));
-      bytes += chunk.length;
-      progress.update(chunk.length);
+    try {
+      for await (const chunk of res.body) {
+        await applyBackpressure(writer, writer.write(chunk));
+        bytes += chunk.length;
+        progress.update(chunk.length);
+      }
+    } finally {
+      // Must await: an open write handle makes the freshly-downloaded engine unspawnable — EBUSY on Windows, ETXTBSY on Linux.
+      await writer.end();
     }
-  } finally {
-    // Must await: an open write handle makes the freshly-downloaded engine unspawnable — EBUSY on Windows, ETXTBSY on Linux.
-    await writer.end();
+    publishStaging(stagingPath, destPath);
+  } catch (err) {
+    rmSync(stagingPath, { force: true });
+    throw err;
   }
 
   progress.finish();

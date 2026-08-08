@@ -8,6 +8,7 @@ import {
   TRANSCRIBE_DIARIZE_FEATURE,
   type EngineCapabilities,
 } from "./engine";
+import { probeExecutable } from "./engine-health";
 import { engineTarget } from "./engine-targets";
 import { isDarwinArm64 } from "./fluid-kokoro-cache";
 import { log } from "./log";
@@ -328,9 +329,21 @@ export interface InstallOptions {
   diarize?: boolean;
 }
 
+/** A sidecar that is present but unrunnable is as useless as an absent one, and `kesha install` is the repair (#770). */
+async function sidecarNeedsDownload(spec: SidecarSpec, engineDir: string): Promise<boolean> {
+  const health = await probeExecutable(join(engineDir, spec.fileBasename));
+  if (health.status === "ok") return false;
+  if (health.status === "unusable") {
+    log.warn(
+      `${spec.displayName} is installed but does not run (${health.detail}); re-downloading it.`,
+    );
+  }
+  return true;
+}
+
 /**
  * Cache-valid path: the binary at binPath already matches the requested version.
- * Re-trusts it and tops up any sidecars the cached install is missing.
+ * Re-trusts it and re-fetches any sidecar the cached install is missing or cannot run.
  */
 async function refreshCachedEngine(
   binPath: string,
@@ -351,18 +364,19 @@ async function refreshCachedEngine(
   if (canWriteEngineDir && existsSync(binPath)) {
     darwinTrustBinary(binPath, "kesha-engine binary");
   }
-  // Top up missing sidecars (pre-#141/#199 cached binaries never had them);
+  // Top up missing or broken sidecars (pre-#141/#199 cached binaries never had them);
   // skip on read-only fs (Nix-store) to avoid confusing "install failed" warnings.
   if (canWriteEngineDir) {
-    const missing = SIDECARS.filter(
-      (s) => !existsSync(join(engineDir, s.fileBasename)),
-    );
-    await Promise.all(missing.map((s) => downloadSidecar(s, binPath, version)));
-    // Also re-trust already-present sidecars for the Sequoia upgrade scenario.
+    // Re-trust before probing, for the Sequoia upgrade scenario: a provenance-blocked
+    // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
     for (const s of SIDECARS) {
       const p = join(engineDir, s.fileBasename);
       if (existsSync(p)) darwinTrustBinary(p, s.displayName);
     }
+    const needed = await Promise.all(SIDECARS.map((s) => sidecarNeedsDownload(s, engineDir)));
+    await Promise.all(
+      SIDECARS.filter((_, i) => needed[i]).map((s) => downloadSidecar(s, binPath, version)),
+    );
   }
 }
 
@@ -377,45 +391,34 @@ export function isTransientSpawnLock(message: string): boolean {
  * A security scanner (Windows Defender is the one this was found on) holds a lock on a newly
  * written 60 MB PE while it scans, so the first spawn fails with EBUSY 15 ms after the download
  * reported success (#216). The lock is transient, so probe until it clears.
+ *
+ * The probe is a full health check: a Gatekeeper-SIGKILLed binary spawns without throwing, and
+ * accepting that would let the `.version` marker vouch for an engine that never ran (#770).
  */
-export async function waitUntilSpawnable(
-  binPath: string,
-  deadlineMs = 60_000,
-  probeTimeoutMs = 5_000,
-): Promise<void> {
+export async function waitUntilSpawnable(binPath: string, deadlineMs = 60_000): Promise<void> {
   const deadline = Date.now() + deadlineMs;
   let lastError = "";
   let warned = false;
   let delay = 100;
 
   for (;;) {
-    try {
-      // Only a throw means locked; the timeout is for a scanner that detains rather than refuses.
-      const proc = Bun.spawn([binPath, "--version"], { stdout: "ignore", stderr: "ignore" });
-      const timer = setTimeout(() => proc.kill(), probeTimeoutMs);
-      try {
-        await proc.exited;
-      } finally {
-        clearTimeout(timer);
-      }
-      return;
-    } catch (e) {
-      lastError = errorMessage(e);
-      // Only a lock is worth waiting out — a missing or corrupt binary never becomes spawnable.
-      if (!isTransientSpawnLock(lastError)) {
-        throw new Error(
-          `Downloaded the engine to ${binPath} but it could not be started: ${lastError}\n` +
-            `  Fix: delete ${dirname(binPath)} and re-run \`kesha install\`.`,
-        );
-      }
-      if (Date.now() + delay > deadline) break;
-      if (!warned) {
-        warned = true;
-        log.progress("Waiting for the engine binary to be released by the system...");
-      }
-      await Bun.sleep(delay);
-      delay = Math.min(delay * 2, 2_000);
+    const health = await probeExecutable(binPath, ["--version"]);
+    if (health.status === "ok") return;
+    lastError = health.status === "unusable" ? health.detail : "the binary is gone";
+    // Only a lock is worth waiting out — a missing or corrupt binary never becomes spawnable.
+    if (!isTransientSpawnLock(lastError)) {
+      throw new Error(
+        `Downloaded the engine to ${binPath} but it could not be started: ${lastError}\n` +
+          `  Fix: delete ${dirname(binPath)} and re-run \`kesha install\`.`,
+      );
     }
+    if (Date.now() + delay > deadline) break;
+    if (!warned) {
+      warned = true;
+      log.progress("Waiting for the engine binary to be released by the system...");
+    }
+    await Bun.sleep(delay);
+    delay = Math.min(delay * 2, 2_000);
   }
 
   throw new Error(
@@ -424,6 +427,21 @@ export async function waitUntilSpawnable(
       `  Fix: a security scanner is likely holding the file. Re-run \`kesha install\`, ` +
       `or exclude ${dirname(binPath)} from real-time scanning.`,
   );
+}
+
+/**
+ * Cache-validity health check: an install interrupted before `chmod`/marker-write, or a
+ * binary from another architecture, exists at the right version yet cannot start (#770).
+ */
+async function engineRuns(binPath: string): Promise<boolean> {
+  const health = await probeExecutable(binPath, ["--version"]);
+  if (health.status === "ok") return true;
+  const detail = health.status === "unusable" ? health.detail : "binary disappeared";
+  log.warn(
+    `Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` +
+      "another architecture — re-downloading it.",
+  );
+  return false;
 }
 
 /** Cold path: download the engine binary (and sidecars, concurrently). */
@@ -590,7 +608,12 @@ export async function installEngine(request: EngineInstallRequest = {}): Promise
   // Read-only engine dir = Nix-store install; skip download/sidecar writes to avoid EROFS errors.
   const canWriteEngineDir = checkEngineWritable(engineDir);
 
-  const versionMatches = existsSync(binPath) && installedVersion === version;
+  const markerMatches = existsSync(binPath) && installedVersion === version;
+  // The marker vouches for a file, not for a working binary. Skipped on a read-only engine
+  // dir: nothing there can be repaired, so a failed probe would only turn a usable Nix
+  // install into a hard error.
+  const versionMatches =
+    markerMatches && (!canWriteEngineDir || (await engineRuns(binPath)));
   // On read-only fs, --no-cache can't re-download; treat as cache-valid and forward flag to model install.
   const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 

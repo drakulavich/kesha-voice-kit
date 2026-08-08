@@ -8,6 +8,7 @@ import {
   isEngineInstalled,
   type EngineCapabilities,
 } from "./engine";
+import { probeExecutable } from "./engine-health";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { engineVersion, packageName, packageVersion } from "./package-info";
@@ -51,6 +52,8 @@ interface CacheComponent extends PathSummary {
 interface OptionalComponent extends PathSummary {
   name: string;
   note?: string;
+  /** Binaries only: whether the file actually executes. Absent for model directories. */
+  runnable?: boolean;
 }
 
 type DoctorDiagnosticLogStatus = DiagnosticLogStatus & { error?: string };
@@ -88,6 +91,8 @@ export interface DoctorReport {
     versionMarker: string | null;
     pinnedVersion: string;
     versionState: EngineVersionState;
+    /** False when the binary is present but the OS refuses to run it (#770). */
+    runnable: boolean;
     capabilities: EngineCapabilities | null;
     probeError: string | null;
   };
@@ -197,8 +202,15 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   const installed = isEngineInstalled();
   let capabilities: EngineCapabilities | null = null;
   let probeError: string | null = null;
+  // A truncated download exists, so `installed` alone would report a bricked engine as
+  // healthy; probing the loader separates that from an old engine with no capabilities JSON.
+  const health = installed
+    ? await probeExecutable(binPath, ["--version"])
+    : ({ status: "missing" } as const);
 
-  if (installed) {
+  if (health.status === "unusable") {
+    probeError = `binary is present but does not run (${health.detail}); re-run \`kesha install\``;
+  } else if (installed) {
     try {
       capabilities = await getEngineCapabilities();
       if (!capabilities) probeError = "capabilities probe returned no data";
@@ -215,6 +227,7 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
     versionMarker,
     pinnedVersion: engineVersion,
     versionState: engineVersionState(versionMarker, engineVersion),
+    runnable: health.status === "ok",
     capabilities,
     probeError: redactString("probeError", probeError, redact),
   };
@@ -269,10 +282,27 @@ function collectCache(
   };
 }
 
-function collectOptionalComponents(
+const SIDECAR_COMPONENTS = [
+  { name: "AVSpeech sidecar", note: "macOS voices", file: "say-avspeech" },
+  { name: "Text language sidecar", note: "darwin text language fast path", file: "kesha-textlang" },
+];
+
+/** Reporting a truncated sidecar as "installed" is a false clean — spawn it instead (#770). */
+async function sidecarComponent(
+  spec: (typeof SIDECAR_COMPONENTS)[number],
+  sidecarDir: string,
+): Promise<OptionalComponent> {
+  const summary = pathSummary(join(sidecarDir, spec.file));
+  const base = { name: spec.name, note: spec.note, ...summary };
+  if (!summary.exists) return base;
+  const health = await probeExecutable(summary.path);
+  return { ...base, runnable: health.status === "ok" };
+}
+
+async function collectOptionalComponents(
   redact: boolean,
   fluidKokoro: FluidKokoroCacheInfo,
-): OptionalComponent[] {
+): Promise<OptionalComponent[]> {
   const cache = keshaCacheDir();
   const sidecarDir = dirname(getEngineBinPath());
   const components: OptionalComponent[] = [
@@ -311,16 +341,7 @@ function collectOptionalComponents(
       note: "enabled with `kesha install --diarize` (darwin-arm64); runs in-engine",
       ...pathSummary(join(cache, "models/diarize")),
     },
-    {
-      name: "AVSpeech sidecar",
-      note: "macOS voices",
-      ...pathSummary(join(sidecarDir, "say-avspeech")),
-    },
-    {
-      name: "Text language sidecar",
-      note: "darwin text language fast path",
-      ...pathSummary(join(sidecarDir, "kesha-textlang")),
-    },
+    ...(await Promise.all(SIDECAR_COMPONENTS.map((spec) => sidecarComponent(spec, sidecarDir)))),
   ];
   return components.map((component) => redactComponent(component, redact));
 }
@@ -396,15 +417,23 @@ export async function collectDoctorReport(
     },
     engine,
     cache: collectCache(redact, fluidKokoro, engine.capabilities?.backend),
-    optionalComponents: collectOptionalComponents(redact, fluidKokoro),
+    optionalComponents: await collectOptionalComponents(redact, fluidKokoro),
     stats: collectStats(redact),
     diagnosticLogs: collectDiagnosticLogs(redact),
     env: collectEnv(redact),
   };
 }
 
-function formatInstalled(installed: boolean): string {
-  return installed ? "installed" : "missing";
+const CORRUPT_STATE = "installed but not executable (corrupt) - re-run `kesha install`";
+
+function formatComponentState(component: OptionalComponent): string {
+  if (!component.exists) return "missing";
+  return component.runnable === false ? CORRUPT_STATE : "installed";
+}
+
+function formatEngineBinaryState(engine: DoctorReport["engine"]): string {
+  if (!engine.installed) return "missing";
+  return engine.runnable ? "installed" : CORRUPT_STATE;
 }
 
 function formatVersionState(engine: DoctorReport["engine"]): string {
@@ -441,7 +470,7 @@ function formatOptionalSection(components: DoctorReport["optionalComponents"]): 
   const lines = ["", "Optional components:"];
   for (const c of components) {
     const note = c.note ? ` - ${c.note}` : "";
-    lines.push(`  ${c.name}: ${formatInstalled(c.exists)}${note}`);
+    lines.push(`  ${c.name}: ${formatComponentState(c)}${note}`);
   }
   return lines;
 }
@@ -490,7 +519,7 @@ export function formatDoctorReport(report: DoctorReport): string {
     `  Platform: ${report.runtime.platform} ${report.runtime.arch}`,
     "",
     "Engine:",
-    `  Binary: ${report.engine.path} (${formatInstalled(report.engine.installed)})`,
+    `  Binary: ${report.engine.path} (${formatEngineBinaryState(report.engine)})`,
     `  Version marker: ${report.engine.versionMarker ?? "missing"}`,
     `  Pinned version: ${report.engine.pinnedVersion}`,
     `  Version state: ${formatVersionState(report.engine)}`,

@@ -120,7 +120,8 @@ function markFakeEngineInstalled(enginePath: string): void {
   if (process.platform === "darwin" && process.arch === "arm64") {
     for (const sidecar of ["say-avspeech", "kesha-textlang"]) {
       const path = join(dirname(enginePath), sidecar);
-      writeFileSync(path, "");
+      // Must actually run: install re-downloads a sidecar it cannot spawn (#770).
+      writeFileSync(path, "#!/bin/sh\nexit 0\n");
       chmodSync(path, 0o755);
     }
   }
