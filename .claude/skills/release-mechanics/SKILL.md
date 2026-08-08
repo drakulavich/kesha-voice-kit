@@ -25,7 +25,17 @@ npm view @drakulavich/kesha-voice-kit version   # a few minutes, expect X.Y.Z
 
 `v*-cli` is excluded from `build-engine.yml` and picked up by `🚀 Release (CLI)` (`release-cli.yml`), which builds the Linux `.deb`/`.rpm`, creates the marker release as a **draft** with them plus `SHA256SUMS`, un-drafts it, then dispatches `📦 npm Publish` and waits for it. Un-drafting from a workflow fires no `release: published` (a `GITHUB_TOKEN` event does not cascade), so the dispatch is explicit — which is also why the tag must be pushed by a **human**: a token-pushed tag triggers nothing. That is by design for the alpha lane, whose `-cli` tags have no GitHub release.
 
-The lane refuses to proceed if `package.json#version` at the tag is not exactly the version the tag names — the packages carry that field, and nothing downstream re-checks it since #727 (#728). If npm fails after the release is public, re-run only the publish; it is idempotent:
+The lane refuses to proceed if `package.json#version` at the tag is not exactly the version the tag names — the packages carry that field, and nothing downstream re-checks it since #727 (#728). **Cut one stable CLI release at a time.** `npm-publish.yml`'s `concurrency: queue: max` serialises runs but does not order them by version, so two stable markers in flight together can still finish out of order and leave `latest` on the older one.
+
+**Recovering a failed lane run.** Which recovery applies depends on how far it got; the failing run prints the right one, and `gh release view vX.Y.Z-cli` tells you directly.
+
+| state | what happened | recovery |
+| --- | --- | --- |
+| no release | died in `plan` or during the build | fix the cause, re-run the lane |
+| **draft** | died between `create --draft` and `--draft=false` | assets all present → `gh release edit vX.Y.Z-cli --draft=false` then dispatch npm. Otherwise `gh release delete vX.Y.Z-cli --yes` (safe while draft — only publishing reserves the tag name) and re-run the lane |
+| published | the release is out, npm publish failed | re-run the publish alone |
+
+A leftover draft is not inert: `assert-release-absent.sh` counts drafts, so it blocks a re-run until it is finished or deleted. Re-running just the publish is idempotent — an already-published version exits 0 without republishing:
 
 ```bash
 gh workflow run npm-publish.yml --ref vX.Y.Z-cli -f tag=vX.Y.Z-cli

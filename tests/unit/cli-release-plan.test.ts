@@ -61,11 +61,25 @@ describe("the CLI release lane", () => {
     expect(workflow.on.push.branches).toBeUndefined();
   });
 
-  test("the packaging job is the one holding contents: write", () => {
+  // plan holds write only so `gh release view` can see drafts; a read-only token cannot.
+  test("only the jobs that touch releases hold contents: write", () => {
     const jobs = parse(read(".github/workflows/release-cli.yml")).jobs;
 
+    expect(jobs.plan.permissions).toEqual({ contents: "write" });
     expect(jobs.packages.permissions).toEqual({ contents: "write" });
     expect(jobs["publish-npm"].permissions).toEqual({ contents: "read", actions: "write" });
+  });
+
+  // Writing the raw dispatch input to GITHUB_OUTPUT before validating it would let a tag
+  // carrying a newline append its own output keys, so the validator echoes the tag instead.
+  test("the tag reaches GITHUB_OUTPUT only from the validator", () => {
+    const plan = parse(read(".github/workflows/release-cli.yml")).jobs.plan;
+    const step = plan.steps.find((s: { id?: string }) => s.id === "plan");
+
+    expect(plan.outputs.tag).toBe("${{ steps.plan.outputs.tag }}");
+    expect(step.run).toContain("cli-release-plan.mjs");
+    expect(step.run).not.toContain("${{");
+    expect(plan.steps.some((s: { run?: string }) => /tag=.*>>.*GITHUB_OUTPUT/.test(s.run ?? ""))).toBe(false);
   });
 
   // Assets go onto a draft and the release is un-drafted afterwards: releases here are

@@ -109,6 +109,9 @@ export function forbidLinuxPackaging(path: string, contents: string): string[] {
  * Fails when release-cli.yml could publish Linux packages without publishing the same version
  * to npm in the same run. A `.deb` names `package.json#version` and npm is the only thing that
  * makes that version real; the assertion that used to hold them together is gone (#727, #728).
+ *
+ * Both halves have to be real: `needs:` ordering alone is satisfied by a `packages` job that
+ * builds and publishes nothing, so the job's own two steps are required as well.
  */
 export function requireNpmPublishAfterPackaging(path: string, document: unknown): string[] {
   if (!path.endsWith("release-cli.yml")) return [];
@@ -116,6 +119,19 @@ export function requireNpmPublishAfterPackaging(path: string, document: unknown)
   const tags = (document as { on?: { push?: { tags?: unknown } } })?.on?.push?.tags;
   if (!Array.isArray(tags) || !tags.includes("v*-cli")) {
     return [`${path}: must trigger on \`v*-cli\` tag pushes (#728)`];
+  }
+
+  const packaging = jobSteps(document, "packages");
+  if (!packaging) return [`${path}: expected a \`packages\` job with steps`];
+
+  const builds = packaging.some(
+    (step) => typeof step?.uses === "string" && step.uses === "./.github/actions/linux-packages",
+  );
+  if (!builds) {
+    return [`${path}: \`packages\` must build through ./.github/actions/linux-packages, the composite the CI lane shares (#728)`];
+  }
+  if (runsMatching(packaging, /publish-cli-release\.sh/).length === 0) {
+    return [`${path}: \`packages\` must run publish-cli-release.sh — it is what attaches the packages to the release (#728)`];
   }
 
   const steps = jobSteps(document, "publish-npm");

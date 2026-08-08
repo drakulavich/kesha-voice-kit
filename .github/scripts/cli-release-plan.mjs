@@ -46,6 +46,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     process.exit(2);
   }
 
+  // The tag is echoed back rather than written by the workflow: it reaches GITHUB_OUTPUT only
+  // once the grammar has accepted it, so a dispatch input carrying a newline cannot append keys.
   const plan = planCliRelease(tag, JSON.parse(readFileSync("package.json", "utf8")));
   if (!plan.packages) {
     console.error(
@@ -55,6 +57,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     );
   }
   process.stdout.write(
-    `version=${plan.version}\npackages=${plan.packages}\nengine_version=${plan.engineVersion ?? ""}\n`,
+    `tag=${tag}\nversion=${plan.version}\npackages=${plan.packages}\nengine_version=${plan.engineVersion ?? ""}\n`,
   );
 }
