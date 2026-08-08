@@ -896,7 +896,10 @@ mod tests {
 
         let dur = resolve_segment_duration(&path, None)
             .expect("unknown probe duration must fall back to a decode, not fail");
-        assert!((dur - 0.5).abs() < 0.1, "expected ~0.5 s, got {dur}");
+        assert!(
+            (0.48..0.55).contains(&dur),
+            "expected the fixture's 0.51 s, got {dur}"
+        );
     }
 
     #[test]

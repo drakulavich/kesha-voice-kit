@@ -61,8 +61,7 @@ fn ensure_audio_track_accepts_isomp4_aac_fixture() {
 fn measure_duration_recovers_what_the_probe_cannot_report() {
     // #767: an Ogg whose last page carries no end-of-stream flag declares no
     // frame count, so the probe reports unknown — the shape of every Russian
-    // benchmark fixture. Fixture: 0.5 s libopus sine from ffmpeg, then bit 0x04
-    // cleared in the last page's header-type byte and that page's CRC32 redone.
+    // benchmark fixture. Regenerate it with `fixtures/regen-tone-no-eos.py`.
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
@@ -77,9 +76,10 @@ fn measure_duration_recovers_what_the_probe_cannot_report() {
 
     let measured =
         audio::measure_duration_seconds(path).expect("decode-and-measure should succeed");
+    // The 0.5 s source decodes to 0.5135 s: libopus pads the tail to a whole frame.
     assert!(
-        (measured - 0.5).abs() < 0.1,
-        "expected ~0.5 s for the fixture, got {measured}"
+        (0.48..0.55).contains(&measured),
+        "expected the fixture's 0.51 s, got {measured}"
     );
 }
 
