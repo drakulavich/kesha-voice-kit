@@ -15,7 +15,7 @@ kesha say --lang es "Hola, mundo" > hola.wav   # route by stated language, skip 
 kesha say --list-voices
 ```
 
-Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → engine default (`en-am_michael`). A `--lang` whose language has no mapped male voice (e.g. French) falls to the engine default rather than re-detecting.
+Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → engine default (`en-am_michael`). A `--lang` whose language has no mapped voice on the current platform (e.g. `hi` on Linux) falls to the engine default rather than re-detecting.
 
 Output format: WAV (default, mono float32 — 24 kHz for Kokoro, 22.05 kHz for Vosk), OGG/Opus (`--format ogg-opus`), and FLAC (`--format flac`) are all supported. MP3/AAC output were evaluated and rejected on licensing/patent grounds — see [docs/decision-log.md](decision-log.md).
 
@@ -59,7 +59,7 @@ Default voices are **male** per CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE": `am
 
 **Supported voices:**
 - English: `en-am_michael` (default). Darwin FluidAudio builds expose the supported FluidAudio Kokoro English voices via `kesha say --list-voices`; ONNX builds also see any `.bin` voice you add under `~/.cache/kesha/models/kokoro-82m/voices/`.
-- Apple Silicon Kokoro multilingual voices: `es-em_alex`, `hi-hm_omega`, `it-im_nicola`, `ja-jm_kumo`, `pt-pm_alex`, `zh-zm_050`, and `fr-ff_siwis`. The Spanish, Hindi, Italian, Japanese, Portuguese, and Chinese defaults are male; upstream Kokoro currently has no native male French voice, so French remains explicit-only.
+- Apple Silicon Kokoro multilingual voices: `es-em_alex`, `hi-hm_omega`, `it-im_nicola`, `ja-jm_kumo`, `pt-pm_alex`, `zh-zm_050`, and `fr-ff_siwis`. The Spanish, Hindi, Italian, Japanese, Portuguese, and Chinese defaults are male; French auto-routes to `fr-ff_siwis` (female) because upstream Kokoro ships no native male French voice.
 - Russian: 5 Vosk-TTS speakers baked into the multi-speaker model — `ru-vosk-m02` (default, male), `ru-vosk-m01` (male), `ru-vosk-f01`/`f02`/`f03` (female).
 - macOS system voices: `macos-<identifier-or-language>` routes to `AVSpeechSynthesizer`. Zero install, any of the 180+ voices already on your Mac.
 
