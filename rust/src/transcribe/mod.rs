@@ -11,6 +11,8 @@ use std::time::Instant;
 
 use crate::audio;
 use crate::backend;
+use crate::coded_bail;
+use crate::errors::ErrorCode;
 use crate::models;
 use crate::vad::{VadConfig, VadDetector, SAMPLE_RATE as VAD_SAMPLE_RATE};
 use crate::{dtrace, dtrace_json};
@@ -155,6 +157,39 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
     }
 }
 
+/// Speaker labels attach to ASR segments, so diarization needs a real
+/// segmentation: without VAD the transcript is one whole-file segment and the
+/// coverage guard degenerates to a coin flip on multi-speaker audio (#768).
+/// An explicit `--no-vad` is refused rather than silently overridden. Runs
+/// before any model resolution so an invalid flag pair reads as invalid even
+/// when nothing is installed.
+fn reject_no_vad_with_speakers(mode: VadMode) -> Result<()> {
+    if mode == VadMode::Off {
+        coded_bail!(
+            ErrorCode::InvalidArg,
+            "--speakers cannot be combined with --no-vad: diarization labels VAD-windowed \
+             speech segments, and --no-vad leaves the whole file as one segment with nothing \
+             to label. Drop --no-vad (VAD engages automatically for --speakers), or drop \
+             --speakers to get a plain full-file transcript."
+        );
+    }
+    Ok(())
+}
+
+/// Diarization forces VAD windowing regardless of duration, overriding the
+/// auto-VAD duration threshold (#768).
+fn vad_mode_for_diarization(vad_installed: bool) -> Result<VadMode> {
+    if !vad_installed {
+        coded_bail!(
+            ErrorCode::ModelMissing,
+            "speaker diarization needs the VAD model, which is not installed: --speakers \
+             windows the audio with Silero VAD so each speech span can be labeled. \
+             Run `kesha install --vad`."
+        );
+    }
+    Ok(VadMode::On)
+}
+
 /// Canonical transcribe entry. New flags should land in [`TranscribeOptions`]
 /// instead of growing a new top-level wrapper.
 ///
@@ -191,6 +226,9 @@ pub fn transcribe_with_options(
          (speaker labels attach to per-utterance segments; without segments \
          there is nowhere to put them)"
     );
+    if speakers_required {
+        reject_no_vad_with_speakers(mode)?;
+    }
     // Bail cleanly on unsupported containers / video-only files BEFORE
     // paying the 25 s+ ANE cold-load tax in `ensure_asr_installed` +
     // backend construction. Symphonia's error message names the
@@ -216,11 +254,17 @@ pub fn transcribe_with_options(
         );
     }
 
-    let model_dir = ensure_asr_installed()?;
     let vad_dir = models::model_dir(models::ModelKind::Vad)
         .to_string_lossy()
         .into_owned();
     let vad_installed = models::is_cached(models::ModelKind::Vad);
+    let mode = if speakers_required {
+        vad_mode_for_diarization(vad_installed)?
+    } else {
+        mode
+    };
+
+    let model_dir = ensure_asr_installed()?;
 
     // `Auto` needs a duration probe for routing. `Off` probes too so explicit
     // full-file ASR can fail before loading a backend for media beyond the
@@ -415,7 +459,8 @@ fn transcribe_via_vad(
                 });
             } else {
                 eprintln!(
-                    "warning: VAD produced no speech segments; transcribing full file (consider lowering --vad threshold or skipping --vad)"
+                    // No flag advice here: --no-vad is refused under --speakers (#768).
+                    "warning: VAD produced no speech segments; transcribing full file (the audio may be silent, or its speech quieter than the VAD threshold)"
                 );
             }
         }
@@ -1136,6 +1181,53 @@ mod tests {
     }
 
     #[test]
+    fn speakers_engage_vad_windowing_at_any_duration() {
+        // #768: Auto used to leave sub-120s audio as one whole-file segment, which
+        // diarization cannot label.
+        let mode = vad_mode_for_diarization(true).expect("speakers force VAD");
+        assert_eq!(mode, VadMode::On);
+        assert_eq!(decide(mode, Some(6.6), true), VadDecision::Vad);
+
+        for allowed in [VadMode::Auto, VadMode::On] {
+            reject_no_vad_with_speakers(allowed).expect("only --no-vad is refused");
+        }
+    }
+
+    #[test]
+    fn speakers_with_explicit_no_vad_are_refused_not_overridden() {
+        let err = reject_no_vad_with_speakers(VadMode::Off)
+            .expect_err("--no-vad + --speakers should fail early");
+        let msg = format!("{err}");
+
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::InvalidArg);
+        assert!(msg.contains("--speakers cannot be combined with --no-vad"));
+        assert!(msg.contains("Drop --no-vad"));
+    }
+
+    #[test]
+    fn speakers_without_the_vad_model_name_the_install_command() {
+        let err = vad_mode_for_diarization(false).expect_err("diarization needs the VAD model");
+
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
+        assert!(format!("{err}").contains("kesha install --vad"));
+    }
+
+    #[test]
+    fn no_vad_with_speakers_is_invalid_before_any_model_is_resolved() {
+        // #772: checked after diarize-model resolution, this reported E_MODEL_MISSING.
+        let opts = TranscribeOptionsBuilder::new()
+            .vad(VadMode::Off)
+            .with_segments()
+            .with_speakers()
+            .build();
+
+        let err = transcribe_with_options("/nonexistent/kesha-768.wav", &opts)
+            .expect_err("--speakers --no-vad must be rejected as an invalid argument");
+
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::InvalidArg);
+    }
+
+    #[test]
     fn on_mode_always_uses_vad_regardless_of_other_inputs() {
         assert_eq!(decide(VadMode::On, None, false), VadDecision::Vad);
         assert_eq!(decide(VadMode::On, Some(5.0), false), VadDecision::Vad);
@@ -1251,7 +1343,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let opts = TranscribeOptionsBuilder::new()
-            .vad(VadMode::Off)
+            .vad(VadMode::Auto)
             .with_segments()
             .with_speakers()
             .build();

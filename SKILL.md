@@ -148,12 +148,12 @@ Each segment has `start`, `end`, and `text` fields. `--timestamps` is available 
 **Speaker diarization** (darwin-arm64, post-v1.12.0). Add `--speakers` to label each segment with a cluster ID — useful for transcribing multi-person calls / meetings:
 
 ```bash
-kesha install --diarize                                  # one-time, ~245MB
-kesha --json --vad --speakers meeting.m4a > out.json
+kesha install --diarize                                  # one-time, ~245MB (installs VAD too)
+kesha --json --speakers meeting.m4a > out.json           # --speakers engages VAD itself
 jq '.[0].segments[] | "\(.speaker)\t\(.text)"' out.json
 ```
 
-Each `segment.speaker` is a number (cluster id, stable within one file). On Linux / Windows the engine returns a clear "currently darwin-arm64 only" error — see [#199](https://github.com/drakulavich/kesha-voice-kit/issues/199).
+Each `segment.speaker` is a number (cluster id, stable within one file). `--speakers` forces VAD windowing at any duration, so it cannot be combined with `--no-vad`. On Linux / Windows the engine returns a clear "currently darwin-arm64 only" error — see [#199](https://github.com/drakulavich/kesha-voice-kit/issues/199).
 
 **Formats:** .ogg, .opus, .mp3, .m4a, .wav, .flac, .webm — decoded via symphonia, no ffmpeg required.
 
@@ -221,7 +221,7 @@ kesha install                                    # engine only — ~0.6 GB on Ap
 kesha install --plan                             # preview exact download/disk sizes first — downloads nothing
 kesha install --tts                              # + English Kokoro; add langs additively: --tts en ru es
 kesha install --tts --vad                        # + Silero VAD (long-audio chunking)
-kesha install --tts --vad --diarize              # + speaker diarization (darwin-arm64 only)
+kesha install --tts --diarize                    # + speaker diarization, VAD included (darwin-arm64 only)
 ```
 
 Kesha's runtime error/warning messages adapt to the same split: when `kesha` is invoked from a TTY, hints suggest `kesha init`; when stderr is piped (CI logs, OpenClaw, agent subprocess), hints suggest the equivalent `kesha install [...flags]`. Both run the same install code under the hood — pick the one your caller is.

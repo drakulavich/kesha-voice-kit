@@ -144,8 +144,8 @@ Transcribe meeting recordings with speaker labels and timestamps.
 **Full meeting transcript with speaker diarization (macOS Apple Silicon):**
 
 ```bash
-kesha install --diarize                                     # one-time, ~245 MB
-kesha --json --vad --speakers meeting.m4a > meeting.json
+kesha install --diarize                                     # one-time, ~245 MB (installs VAD too)
+kesha --json --speakers meeting.m4a > meeting.json           # --speakers engages VAD itself
 jq -r '.[0].segments[] | "[\(.speaker)] \(.start)-\(.end): \(.text)"' meeting.json
 # → [0] 0.0-2.3: Good morning everyone
 # → [1] 2.5-5.1: Let's start with Q3 results
@@ -170,7 +170,7 @@ kesha --vad lecture.m4a
 ```bash
 mkdir -p transcripts
 for f in meetings/*.m4a; do
-  kesha --json --vad --speakers "$f" > "transcripts/$(basename "$f" .m4a).json"
+  kesha --json --speakers "$f" > "transcripts/$(basename "$f" .m4a).json"
 done
 # → transcripts/standup.json, transcripts/retro.json, ...
 ```

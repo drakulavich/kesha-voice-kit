@@ -233,9 +233,7 @@ pub(crate) fn validate_coverage(
         max_span_end,
     };
 
-    if max_span_end + MAX_DIARIZE_TAIL_GAP_SECONDS < max_asr_end
-        || coverage_ratio < MIN_DIARIZE_SEGMENT_COVERAGE
-    {
+    if coverage_is_incomplete(&coverage, diarize_spans.is_empty()) {
         bail!(
             "speaker diarization coverage incomplete: labeled {}/{} segments ({:.1}%), \
              spans end at {:.1}s while transcript ends at {:.1}s",
@@ -248,6 +246,19 @@ pub(crate) fn validate_coverage(
     }
 
     Ok(coverage)
+}
+
+fn coverage_is_incomplete(coverage: &DiarizeCoverage, spans_absent: bool) -> bool {
+    if spans_absent {
+        return true;
+    }
+    if coverage.max_span_end + MAX_DIARIZE_TAIL_GAP_SECONDS < coverage.max_asr_end {
+        return true;
+    }
+    // A lone ASR segment makes the ratio a coin flip (0.0 or 1.0) decided by whether the
+    // midpoint lands in a speaker-change gap: that is absent segmentation, not partial
+    // labeling, so the percentage cannot decide it (#768).
+    coverage.total_segments > 1 && coverage.coverage_ratio < MIN_DIARIZE_SEGMENT_COVERAGE
 }
 
 fn max_asr_end(asr_segments: &[TranscriptionSegment]) -> Option<f32> {
@@ -408,6 +419,32 @@ mod tests {
 
         assert!(msg.contains("labeled 0/1 segments"));
         assert!(msg.contains("spans end at 0.0s while transcript ends at 1.0s"));
+    }
+
+    #[test]
+    fn coverage_validation_does_not_coin_flip_on_a_lone_whole_file_segment() {
+        // #768: no VAD windowing → one whole-file segment whose midpoint lands in the
+        // silence between two speakers. 0/1 labeled must not read as 0% coverage.
+        let segs = vec![seg(0.0, 6.6, "hello there hi back")];
+        let spans = vec![span(0.0, 3.0, 0), span(3.5, 6.2, 1)];
+
+        let coverage =
+            validate_coverage(&segs, &spans).expect("absent segmentation is not partial coverage");
+
+        assert_eq!(coverage.labeled_segments, 0);
+        assert_eq!(coverage.coverage_ratio, 0.0);
+        assert_eq!(coverage.max_span_end, 6.2);
+    }
+
+    #[test]
+    fn coverage_validation_still_rejects_a_lone_segment_with_a_stalled_tail() {
+        let segs = vec![seg(0.0, 600.0, "long")];
+        let spans = vec![span(0.0, 120.0, 0)];
+
+        let err = validate_coverage(&segs, &spans)
+            .expect_err("spans stopping 480s before the transcript end should fail closed");
+
+        assert!(format!("{err}").contains("speaker diarization coverage incomplete"));
     }
 
     #[test]

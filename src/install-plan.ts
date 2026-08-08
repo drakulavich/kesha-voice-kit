@@ -332,8 +332,17 @@ function assembleComponents(input: {
     ),
     ...input.tts.components,
   ];
-  if (options.vad) {
-    components.push(modelBundle("VAD Silero v5", VAD_FILES, "long-audio preprocessing"));
+  // #768: --diarize implies VAD — speaker labels attach to VAD-windowed segments.
+  if (options.vad || options.diarize) {
+    components.push(
+      modelBundle(
+        "VAD Silero v5",
+        VAD_FILES,
+        options.vad
+          ? "long-audio preprocessing"
+          : "long-audio preprocessing; --diarize installs it to window audio into labelable segments",
+      ),
+    );
   }
   if (options.diarize) {
     components.push(

@@ -312,7 +312,8 @@ export function buildEngineInstallArgs(opts: {
     "install",
     ...(opts.noCache ? ["--no-cache"] : []),
     ...(opts.ttsLangs && opts.ttsLangs.length > 0 ? ["--tts", ...opts.ttsLangs] : []),
-    ...(opts.vad ? ["--vad"] : []),
+    // #768: speaker labels attach to VAD-windowed segments, so --diarize pulls VAD in.
+    ...(opts.vad || opts.diarize ? ["--vad"] : []),
     ...(opts.diarize ? ["--diarize"] : []),
   ];
 }

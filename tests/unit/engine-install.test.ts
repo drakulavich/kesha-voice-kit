@@ -79,6 +79,13 @@ describe("buildEngineInstallArgs (#517)", () => {
     expect(buildEngineInstallArgs({ noCache: true, ttsLangs: [] }))
       .toEqual(["install", "--no-cache"]);
   });
+  test("--diarize pulls in --vad, which speaker labels depend on (#768)", () => {
+    expect(buildEngineInstallArgs({ noCache: false, diarize: true }))
+      .toEqual(["install", "--vad", "--diarize"]);
+    expect(buildEngineInstallArgs({ noCache: false, vad: true, diarize: true }))
+      .toEqual(["install", "--vad", "--diarize"]);
+    expect(buildEngineInstallArgs({ noCache: false, vad: true })).toEqual(["install", "--vad"]);
+  });
 });
 
 describe("engine-install retired sidecar cleanup (#438)", () => {

@@ -113,8 +113,9 @@ export function initSuggestionCommands(
     { ...selection, ttsLangs: ["en"], vad: true, diarize: false },
   ];
 
+  // #768: --diarize installs VAD on its own, so no explicit --vad here.
   if (canDiarize) {
-    variants.push({ ...selection, ttsLangs: [], vad: true, diarize: true });
+    variants.push({ ...selection, ttsLangs: [], vad: false, diarize: true });
   }
 
   const seen = new Set<string>();
@@ -143,7 +144,7 @@ export function renderInitOverview(canDiarize = canInstallDiarizeOnPlatform()): 
     "  - Text-to-speech: enables `kesha say` with Kokoro English voices (more languages via `kesha install --tts <langs>`).",
     "  - VAD: skips silence in long audio and improves meeting, lecture, and podcast transcripts (~2.3MB).",
     canDiarize
-      ? "  - Speaker diarization: labels speakers in JSON/TOON transcript segments (~245MB, darwin-arm64)."
+      ? "  - Speaker diarization: labels speakers in JSON/TOON transcript segments (~245MB, darwin-arm64; installs VAD too, since labels attach to VAD segments)."
       : "  - Speaker diarization: labels speakers, but the install is currently darwin-arm64 only.",
     "",
     "Nothing downloads until you confirm the final install plan.",
@@ -163,7 +164,10 @@ export async function promptInitSelection(
   const vad = await prompt("Install VAD for long or silence-heavy audio?", args.vad);
   let diarize = false;
   if (canDiarize) {
-    diarize = await prompt("Install speaker diarization for `--speakers`?", args.diarize);
+    diarize = await prompt(
+      "Install speaker diarization for `--speakers`? (installs VAD as well)",
+      args.diarize,
+    );
   } else if (args.diarize) {
     log.warn("--diarize is currently darwin-arm64 only; omitting it from the interactive install.");
   }

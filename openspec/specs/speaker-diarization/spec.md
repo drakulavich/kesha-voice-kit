@@ -51,6 +51,45 @@ timestamps when `--speakers` is set.
 > `--speakers` implies `with_segments = true` via `TranscribeOptionsBuilder`
 > (`rust/src/transcribe/mod.rs`, `rust/src/transcribe/options.rs`).*
 
+### Requirement: Diarization engages VAD windowing at any duration
+
+When `--speakers` is requested the Engine SHALL force VAD preprocessing
+regardless of audio duration, overriding the 120 s auto-VAD threshold, because
+speaker labels attach to ASR Segments: without VAD the transcript is a single
+whole-file Segment with nothing to label. The Engine SHALL fail with an
+actionable message naming `kesha install --vad` when the VAD model is missing.
+An explicit `--no-vad` SHALL be refused rather than silently
+overridden: the CLI SHALL exit 2 before spawning the Engine, and the Engine SHALL
+report `E_INVALID_ARG` if reached directly. The two layers report differently on
+purpose — CLI flag gates exit 2 with an uncoded message (the
+`validateTranscribeArgs` convention), while the Engine exits 1 with
+`E_INVALID_ARG` — and the Engine SHALL evaluate the flag pair before resolving
+any model, so an invalid invocation reads as invalid even with nothing installed.
+
+Because speaker labels depend on VAD, `kesha install --diarize` SHALL also
+install the VAD model, and the CLI preflight SHALL check for both before
+spawning the Engine.
+
+#### Scenario: Maks diarizes a 6-second voice-note exchange
+
+- GIVEN a two-speaker 6.6 s recording and the VAD + diarize models installed
+- WHEN Maks runs `kesha --json --speakers exchange.wav` without `--vad`
+- THEN the Engine segments the audio with VAD before diarizing
+- AND the Segments carry distinct `speaker` values and the process exits 0
+
+#### Scenario: Ira combines --speakers with --no-vad
+
+- WHEN Ira runs `kesha --json --speakers --no-vad meeting.ogg`
+- THEN the CLI prints an error explaining that speaker labels attach to
+  VAD-windowed Segments and that `--no-vad` leaves nothing to label
+- AND the process exits 2 without spawning the Engine
+
+> *Technical Note — `reject_no_vad_with_speakers` runs at the top of
+> `transcribe_with_options` and `vad_mode_for_diarization` resolves the mode
+> before the ASR install check (`rust/src/transcribe/mod.rs`); the CLI-side
+> exit-2 guard lives in `validateTranscribeArgs` (`src/cli/main.ts`) and the
+> model preflight in `src/engine.ts`. Closes #768.*
+
 ### Requirement: Diarization is gated on darwin-arm64 and the installed model
 
 The Engine SHALL reject `--speakers` at runtime on non-darwin-arm64 targets
@@ -137,6 +176,19 @@ Segments have been labeled by midpoint overlap, AND that the diarization
 timeline ends no more than 30 s before the final ASR Segment. If either
 check fails, the Engine SHALL report an error with labeled/total counts and
 the span/transcript end times.
+
+The percentage check SHALL be skipped when there is exactly one ASR Segment: the
+ratio can then only be 0 % or 100 % depending on whether that Segment's midpoint
+lands in a speaker-change gap, which measures absent segmentation rather than
+partial labeling. Diarization returning no spans at all SHALL still fail closed
+at any Segment count.
+
+#### Scenario: A single whole-file Segment does not fail closed
+
+- GIVEN one ASR Segment spanning 0–6.6 s and diarization spans 0–3.0 s and
+  3.5–6.2 s, so the Segment midpoint at 3.3 s falls between them
+- THEN the Engine reports no coverage error, and the Segment is returned without
+  a `speaker` field rather than the request failing
 
 #### Scenario: Full meeting is labeled
 
