@@ -4,6 +4,8 @@
 set -euo pipefail
 
 DIR="${1:-dist/linux-packages}"
+# `apt install a/b.deb` reads `a/b` as package/suite, not a path; only a leading ./ or / is a file.
+case "$DIR" in /* | ./*) ;; *) DIR="./$DIR" ;; esac
 
 dpkg-deb --info "$DIR"/*.deb
 dpkg-deb --contents "$DIR"/*.deb
