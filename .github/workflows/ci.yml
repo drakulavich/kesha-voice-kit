@@ -588,7 +588,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.timeout }}
     env:
-      KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-release-smoke
       KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/${{ matrix.engine-bin }}
     steps:
       - name: 📥 Checkout
@@ -645,13 +644,14 @@ jobs:
             await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
           '
 
+      # Its own key was restore-only and nothing ever wrote it, so every run cold-downloaded ~3.5GB.
       - name: 🔊 Install models through local backend
         uses: ./.github/actions/install-kesha-backend
         with:
           cache-path: |
-            ${{ github.workspace }}/.kesha-release-smoke
-          cache-key: ${{ runner.os }}-kesha-release-smoke-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-release-smoke-
+            ~/.cache/kesha
+          cache-key: ${{ runner.os }}-kesha-models-tts-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
           ffmpeg-provider: ${{ matrix.ffmpeg-provider }}
           install-args: --onnx --tts en ru
           cache-write: "false"
