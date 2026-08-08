@@ -1,13 +1,7 @@
 #!/usr/bin/env node
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { linuxPackageNames } from "./linux-package-names.mjs";
-import {
-  ENGINE_TAG_ERE,
-  ENGINE_TAG_RE,
-  isEngineAlphaTag,
-  isStableTag,
-} from "./release-tags.mjs";
+import { ENGINE_TAG_ERE, ENGINE_TAG_RE, isEngineAlphaTag } from "./release-tags.mjs";
 import { cmp, parseSemver } from "../../src/semver.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
@@ -54,29 +48,6 @@ const DARWIN_SIDECARS = [
   },
 ];
 
-function linuxPackageAssets(version) {
-  const packages = linuxPackageNames(version);
-  return [
-    {
-      name: packages.deb,
-      kind: "package",
-      platforms: ["linux-x64"],
-      install: {
-        packageManager: "apt",
-        command: `sudo apt install ./${packages.deb}`,
-      },
-    },
-    {
-      name: packages.rpm,
-      kind: "package",
-      platforms: ["linux-x64"],
-      install: {
-        packageManager: "dnf",
-        command: `sudo dnf install ./${packages.rpm}`,
-      },
-    },
-  ];
-}
 
 function usage() {
   console.error(
@@ -143,7 +114,6 @@ function buildManifest(tag) {
   }
 
   const sbomName = `kesha-voice-kit-${tag}.spdx.json`;
-  // Every tag here is an engine tag, stable included; the CLI version names packages (#696).
   assertTagNamesThisRelease(tag, pinnedVersion);
 
   // The tag, not the pin: an alpha ships a version no commit carries (#685).
@@ -152,11 +122,6 @@ function buildManifest(tag) {
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),
     ...DARWIN_SIDECARS.map((s) => asset(s.name, "sidecar", ["darwin-arm64"], s.install)),
-    ...(isStableTag(tag)
-      ? linuxPackageAssets(pkg.version).map((p) =>
-          asset(p.name, p.kind, p.platforms, p.install),
-        )
-      : []),
     asset(sbomName, "sbom", []),
     asset(MANIFEST_NAME, "manifest", []),
     asset("SHA256SUMS", "checksum", [], undefined, false),
@@ -219,19 +184,6 @@ function validateSourceConsistency(manifest) {
   assertIncludes(workflow, ENGINE_TAG_ERE, ".github/workflows/build-engine.yml");
   assertIncludes(workflow, "SHA256SUMS", ".github/workflows/build-engine.yml");
   assertIncludes(workflow, ".sigstore.json", ".github/workflows/build-engine.yml");
-  assertIncludes(workflow, "build-linux-packages.mjs", ".github/workflows/build-engine.yml");
-  // The manifest promises package names built from pkg.version; that gate is what proves npm has it (#728).
-  assertIncludes(workflow, "assert-npm-published.mjs", ".github/workflows/build-engine.yml");
-  assertIncludes(workflow, "dist/linux-packages/*.{deb,rpm}", ".github/workflows/build-engine.yml");
-
-  const packageScript = readFileSync(".github/scripts/build-linux-packages.mjs", "utf8");
-  const packageNames = readFileSync(".github/scripts/linux-package-names.mjs", "utf8");
-  const nfpmConfig = readFileSync("packaging/nfpm.yaml", "utf8");
-  assertIncludes(packageScript, "--target=bun-linux-x64", ".github/scripts/build-linux-packages.mjs");
-  assertIncludes(packageScript, "packaging/nfpm.yaml", ".github/scripts/build-linux-packages.mjs");
-  assertIncludes(packageScript, "LINUX_PACKAGE_RELEASE", ".github/scripts/build-linux-packages.mjs");
-  assertIncludes(packageNames, "LINUX_PACKAGE_RELEASE", ".github/scripts/linux-package-names.mjs");
-  assertIncludes(nfpmConfig, "dst: /usr/bin/kesha", "packaging/nfpm.yaml");
 
   const names = new Set();
   for (const a of manifest.assets) {

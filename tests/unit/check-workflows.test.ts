@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import {
-  requireNpmPublishedGate,
+  forbidLinuxPackaging,
   requirePreUploadSynthesisSmoke,
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
@@ -71,60 +71,36 @@ describe("requirePreUploadSynthesisSmoke", () => {
 });
 
 const STABLE = "steps.release_kind.outputs.prerelease != 'true'";
-const GATE = { name: "gate", if: STABLE, run: "node .github/scripts/assert-npm-published.mjs" };
 const BUILD_PKG = { name: "build", if: STABLE, run: "node .github/scripts/build-linux-packages.mjs" };
 const STAGE_PKG = { name: "stage", if: STABLE, run: "cp dist/linux-packages/*.{deb,rpm} release-assets/" };
 
-describe("requireNpmPublishedGate", () => {
+describe("forbidLinuxPackaging", () => {
   test("passes on the real build-engine.yml", () => {
-    expect(requireNpmPublishedGate(PATH, parse(readFileSync(PATH, "utf8")))).toEqual([]);
+    expect(forbidLinuxPackaging(PATH, parse(readFileSync(PATH, "utf8")))).toEqual([]);
   });
 
   test("ignores every other workflow", () => {
-    expect(requireNpmPublishedGate(CI, job("release", [BUILD_PKG]))).toEqual([]);
+    expect(forbidLinuxPackaging(CI, job("release", [BUILD_PKG]))).toEqual([]);
   });
 
-  test("passes when the gate precedes both packaging steps", () => {
-    expect(requireNpmPublishedGate(PATH, job("release", [GATE, BUILD_PKG, STAGE_PKG]))).toEqual([]);
+  test("fails once per packaging step", () => {
+    const errors = forbidLinuxPackaging(PATH, job("release", [BUILD_PKG, STAGE_PKG]));
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain("step 1 packages Linux artifacts into an engine release");
+    expect(errors[1]).toContain("step 2 packages Linux artifacts into an engine release");
   });
 
-  test("fails when the gate is deleted", () => {
-    const errors = requireNpmPublishedGate(PATH, job("release", [BUILD_PKG, STAGE_PKG]));
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("must run assert-npm-published.mjs before naming a Linux package");
+  test("a step switched off with `if: false` is inert", () => {
+    expect(forbidLinuxPackaging(PATH, job("release", [{ ...BUILD_PKG, if: "false" }]))).toEqual([]);
   });
 
-  test("fails when the gate is only mentioned, not run", () => {
-    for (const run of ["# node .github/scripts/assert-npm-published.mjs", 'echo "assert-npm-published.mjs"']) {
-      const errors = requireNpmPublishedGate(PATH, job("release", [{ name: "x", if: STABLE, run }, BUILD_PKG]));
-      expect(errors[0]).toContain("must run assert-npm-published.mjs");
-    }
-  });
-
-  test("fails when the gate step is disabled", () => {
-    const errors = requireNpmPublishedGate(PATH, job("release", [{ ...GATE, if: "false" }, BUILD_PKG]));
-    expect(errors[0]).toContain("must run assert-npm-published.mjs");
-  });
-
-  test("fails when the gate runs after a packaging step", () => {
-    const errors = requireNpmPublishedGate(PATH, job("release", [BUILD_PKG, GATE, STAGE_PKG]));
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("runs after step 1 packages Linux artifacts");
-  });
-
-  // A packaging step on a wider condition runs on releases the gate sits out.
-  test("fails when a packaging step carries a different condition", () => {
-    const errors = requireNpmPublishedGate(PATH, job("release", [GATE, BUILD_PKG, { ...STAGE_PKG, if: undefined }]));
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("step 3 packages Linux artifacts under a different `if`");
+  test("a commented-out invocation is not packaging", () => {
+    const run = "# node .github/scripts/build-linux-packages.mjs";
+    expect(forbidLinuxPackaging(PATH, job("release", [{ name: "x", run }]))).toEqual([]);
   });
 
   test("fails when the release job is gone", () => {
-    expect(requireNpmPublishedGate(PATH, { jobs: { build: {} } })[0]).toContain("expected a `release` job");
-  });
-
-  test("fails when nothing packages the Linux artifacts", () => {
-    expect(requireNpmPublishedGate(PATH, job("release", [GATE]))[0]).toContain("build and stage the Linux packages");
+    expect(forbidLinuxPackaging(PATH, { jobs: { build: {} } })[0]).toContain("expected a `release` job");
   });
 });
 
