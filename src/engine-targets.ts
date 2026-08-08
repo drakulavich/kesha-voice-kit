@@ -17,17 +17,17 @@ const ENGINE_TARGETS: Record<string, EngineTarget> = {
   "darwin-arm64": {
     assetName: "kesha-engine-darwin-arm64",
     backend: "coreml",
-    sizeBytes: 62_172_768,
+    sizeBytes: 63_780_320,
   },
   "linux-x64": {
     assetName: "kesha-engine-linux-x64",
     backend: "onnx",
-    sizeBytes: 63_188_728,
+    sizeBytes: 66_101_160,
   },
   "win32-x64": {
     assetName: "kesha-engine-windows-x64.exe",
     backend: "onnx",
-    sizeBytes: 63_447_040,
+    sizeBytes: 65_067_520,
   },
 };
 
