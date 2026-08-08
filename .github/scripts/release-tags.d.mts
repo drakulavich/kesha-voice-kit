@@ -3,6 +3,7 @@ export const ENGINE_TAG_ERE: string;
 export const ENGINE_TAG_RE: RegExp;
 export const STABLE_TAG_RE: RegExp;
 export const ALPHA_TAG_RE: RegExp;
+export const CLI_TAG_RE: RegExp;
 export function isStableTag(tag: string): boolean;
 export function isEngineAlphaTag(tag: string): boolean;
 export const CLI_MARKER: string;

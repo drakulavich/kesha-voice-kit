@@ -8,12 +8,19 @@
 
 import { pathToFileURL } from "node:url";
 
+const VERSION_ERE = "[0-9]+\\.[0-9]+\\.[0-9]+(-(beta|alpha)\\.[0-9]+)?";
+
 /** Engine tags: `vX.Y.Z`, `vX.Y.Z-beta.N`, `vX.Y.Z-alpha.N`. CLI marker tags end in `-cli`. */
-export const ENGINE_TAG_ERE = "^v[0-9]+\\.[0-9]+\\.[0-9]+(-(beta|alpha)\\.[0-9]+)?$";
+export const ENGINE_TAG_ERE = `^v${VERSION_ERE}$`;
 
 export const ENGINE_TAG_RE = new RegExp(ENGINE_TAG_ERE);
 export const STABLE_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
 export const ALPHA_TAG_RE = /^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$/;
+
+export const CLI_MARKER = "-cli";
+
+/** The same version shapes as an engine tag, carrying the marker that makes them the CLI's. */
+export const CLI_TAG_RE = new RegExp(`^v${VERSION_ERE}${CLI_MARKER}$`);
 
 export function isStableTag(tag) {
   return STABLE_TAG_RE.test(tag);
@@ -23,8 +30,6 @@ export function isStableTag(tag) {
 export function isEngineAlphaTag(tag) {
   return ALPHA_TAG_RE.test(tag);
 }
-
-export const CLI_MARKER = "-cli";
 
 /** Every shape a channel has already published, so notes can be anchored at the latest one. */
 export function publishedVersionRe(marker) {

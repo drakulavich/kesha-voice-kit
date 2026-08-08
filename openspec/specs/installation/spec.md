@@ -189,6 +189,46 @@ SHALL NOT by itself be treated as evidence that the Engine initialises on that p
 > `.github/scripts/smoke-synthesis.ts`), `.github/scripts/assert-install-warmup.ts`, and
 > `rust/src/cli/install.rs` (warm-up warns and continues, #298).*
 
+### Requirement: Linux packages ship only from a release that publishes the same CLI version
+
+A `.deb` or `.rpm` SHALL be published only by the release of the CLI marker tag whose version it carries, and that release SHALL publish the same version to npm in the same run. A release lane that attaches the packages without publishing that version SHALL fail rather than ship a package naming a CLI version users cannot otherwise install.
+
+The packaged version is taken from `package.json#version` at the tag, so the lane SHALL refuse a tag whose version differs from it. Prerelease markers ship no packages.
+
+#### Scenario: Maks installs the CLI from apt
+
+- GIVEN a stable CLI marker tag `vX.Y.Z-cli` is pushed
+- WHEN the CLI release lane runs
+- THEN it attaches the `.deb`, the `.rpm`, and their `SHA256SUMS` to that tag's release
+- AND it publishes `X.Y.Z` to npm in the same run
+- AND `X.Y.Z` is the version `package.json` carries at that tag
+
+#### Scenario: The tag names a version the commit does not carry
+
+- GIVEN a CLI marker tag whose version differs from `package.json#version` at that tag
+- WHEN the CLI release lane runs
+- THEN it fails before building, naming both versions
+- AND no package and no GitHub release is produced
+
+#### Scenario: A prerelease marker is pushed
+
+- GIVEN a CLI marker tag on the beta or alpha channel
+- WHEN the CLI release lane runs
+- THEN it exits successfully having produced no packages
+- AND it states that prerelease markers carry none
+
+#### Scenario: An engine release is cut
+
+- GIVEN a stable engine tag `vX.Y.Z` with no CLI marker
+- WHEN the engine release lane runs
+- THEN it attaches no Linux package, because the engine version does not name the CLI the package contains
+
+> *Technical Note — sources: `.github/workflows/release-cli.yml`,
+> `.github/scripts/cli-release-plan.mjs::planCliRelease`,
+> `.github/scripts/publish-cli-release.sh`, and the two lane checks in
+> `.github/scripts/check-workflows.ts` (`forbidLinuxPackaging`,
+> `requireNpmPublishAfterPackaging`). Replaces the tag/version assertion #727 removed (#728).*
+
 ### Requirement: TTS install is opt-in and requires `--tts`
 
 The CLI SHALL install TTS models only when `--tts` is passed. Bare `--tts` installs

@@ -3,12 +3,14 @@ import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import {
   forbidLinuxPackaging,
+  requireNpmPublishAfterPackaging,
   requirePreUploadSynthesisSmoke,
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
 
 const PATH = ".github/workflows/build-engine.yml";
 const CI = ".github/workflows/ci.yml";
+const RELEASE_CLI = ".github/workflows/release-cli.yml";
 
 function job(name: string, steps: unknown[]) {
   return { jobs: { [name]: { steps } } };
@@ -92,6 +94,43 @@ describe("forbidLinuxPackaging", () => {
   test("prose about the policy is not packaging", () => {
     const comment = "      # packages (.deb/.rpm) moved off engine tags; see nfpm notes in #728";
     expect(forbidLinuxPackaging(PATH, comment)).toEqual([]);
+  });
+});
+
+describe("requireNpmPublishAfterPackaging", () => {
+  const DISPATCH = { name: "dispatch", run: ".github/scripts/dispatch-npm-publish.sh" };
+  const lane = (publishNpm: unknown) => ({
+    on: { push: { tags: ["v*-cli"] } },
+    jobs: { packages: { steps: [] }, "publish-npm": publishNpm },
+  });
+
+  test("passes on the real release-cli.yml", () => {
+    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, parse(readFileSync(RELEASE_CLI, "utf8")))).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireNpmPublishAfterPackaging(PATH, { jobs: {} })).toEqual([]);
+  });
+
+  test("fails when the tag filter would take in engine tags", () => {
+    const document = { ...lane({ needs: ["packages"], steps: [DISPATCH] }), on: { push: { tags: ["v*"] } } };
+    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, document)[0]).toContain("must trigger on `v*-cli`");
+  });
+
+  // Dropping the dependency lets a .deb reach users for a version npm never served (#728).
+  test("fails when the npm publish no longer waits for the packaging job", () => {
+    const errors = requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ needs: ["plan"], steps: [DISPATCH] }));
+    expect(errors[0]).toContain("must `needs: packages`");
+  });
+
+  test("fails when nothing dispatches npm-publish.yml", () => {
+    const errors = requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ needs: ["plan", "packages"], steps: [] }));
+    expect(errors[0]).toContain("must run dispatch-npm-publish.sh");
+  });
+
+  test("fails when the publish job is gone", () => {
+    const document = { on: { push: { tags: ["v*-cli"] } }, jobs: { packages: { steps: [] } } };
+    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, document)[0]).toContain("expected a `publish-npm` job");
   });
 });
 

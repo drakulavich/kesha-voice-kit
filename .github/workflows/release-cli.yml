@@ -1,0 +1,113 @@
+name: "🚀 Release (CLI)"
+
+# Cuts the CLI release a `vX.Y.Z-cli` marker tag names: builds the Linux packages, publishes
+# them on that tag's release, then publishes the same version to npm (#728). The two must
+# happen in one run — the `.deb` is named from `package.json#version`, and nothing downstream
+# checks that npm ever served it since #727 deleted the assertion that did.
+#
+# A human pushes the tag. A GITHUB_TOKEN push fires no `on.push.tags`, which is why the alpha
+# lane's own `-cli` tags never reach this workflow — alphas have no GitHub release by design.
+on:
+  push:
+    tags:
+      - "v*-cli"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "CLI marker tag to release (must already exist, e.g. v1.27.0-cli)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-cli-${{ inputs.tag || github.ref_name }}
+
+jobs:
+  plan:
+    name: Classify the tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      packages: ${{ steps.plan.outputs.packages }}
+      engine_version: ${{ steps.plan.outputs.engine_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      # Tags reach the shell via `env:`, never interpolation — `$(cmd)` in a tag would execute (#291).
+      - name: Resolve the tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "tag=${INPUT_TAG:-$REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Plan the release
+        id: plan
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: node .github/scripts/cli-release-plan.mjs "$TAG" >> "$GITHUB_OUTPUT"
+
+      # Before the build, not after it: nothing that follows can recover from this.
+      - name: Refuse a tag that already has a release
+        if: steps.plan.outputs.packages == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: .github/scripts/assert-release-absent.sh
+
+  packages:
+    name: Build and publish the Linux packages
+    needs: plan
+    if: needs.plan.outputs.packages == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.tag }}
+
+      - name: Build and verify packages
+        uses: ./.github/actions/linux-packages
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          ENGINE_VERSION: ${{ needs.plan.outputs.engine_version }}
+        run: .github/scripts/publish-cli-release.sh
+
+  # Un-drafting from a workflow fires no `release: published`, so npm-publish.yml — the one
+  # entry workflow npm's trusted publisher accepts (#731) — has to be dispatched by hand.
+  publish-npm:
+    name: Publish to npm
+    needs: [plan, packages]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dispatch the publish and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: .github/scripts/dispatch-npm-publish.sh
+
+      - name: Verify the version is on npm
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: .github/scripts/verify-npm-version.sh
+
+      - name: Explain the recovery
+        if: failure()
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          echo "::error::npm publish failed for $TAG while its GitHub release is already public. Re-run the publish alone — it is idempotent, an already-published version exits 0 without republishing: gh workflow run npm-publish.yml --ref $TAG -f tag=$TAG"
