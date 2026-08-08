@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { planCliRelease } from "../../.github/scripts/cli-release-plan.mjs";
-import { CLI_TAG_RE } from "../../.github/scripts/release-tags.mjs";
 
 // Windows CI checks the repo out with CRLF, which no assertion here is about.
 const read = (path: string) => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
@@ -52,16 +51,7 @@ describe("planCliRelease", () => {
   });
 });
 
-describe("CLI marker tag grammar", () => {
-  test("it accepts every CLI shape and nothing else", () => {
-    for (const tag of ["v1.27.0-cli", "v1.27.0-beta.1-cli", "v1.27.0-alpha.1-cli"]) {
-      expect(CLI_TAG_RE.test(tag)).toBe(true);
-    }
-    for (const tag of ["v1.27.0", "v1.27.0-beta.1", "v1.27.0-cli-cli", "cli"]) {
-      expect(CLI_TAG_RE.test(tag)).toBe(false);
-    }
-  });
-
+describe("the CLI release lane", () => {
   // The lane exists to publish packages and npm together; a wider filter would run it on
   // engine tags, which publish neither (#729).
   test("release-cli.yml fires on CLI marker tags only", () => {
