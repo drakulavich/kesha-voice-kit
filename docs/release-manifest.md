@@ -13,18 +13,19 @@ kesha install
 
 ## Contents
 
-For stable `vX.Y.Z` releases, the manifest records:
+For every release, the manifest records:
 
 - the repository, release tag, CLI version, and engine version
 - released engine binaries and macOS sidecars
-- released Linux `.deb` and `.rpm` packages
 - the install layout used by `kesha install`
 - supported platform status for package managers
 - checksum and Sigstore bundle naming conventions
 
 The manifest accepts three tag shapes — `vX.Y.Z`, `vX.Y.Z-beta.N`, and
-`vX.Y.Z-alpha.N` — and rejects anything else. For the two prerelease shapes,
-Linux `.deb` and `.rpm` package assets are omitted. `engineVersion` comes from
+`vX.Y.Z-alpha.N` — and rejects anything else. Linux `.deb`/`.rpm` assets were
+listed here until #728: they were named after a CLI version npm had not
+published, so engine releases stopped attaching them and the manifest stopped
+promising them. `engineVersion` comes from
 the tag rather than from `package.json#keshaEngine.version`: an alpha ships a
 version no commit carries, and it must outrank the pin rather than equal it
 (#738). Channel policy — what each prerelease is for and how it reaches users —

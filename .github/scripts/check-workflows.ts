@@ -81,21 +81,26 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
 }
 
 /**
- * Fails when the release job packages Linux artifacts. The `.deb`/`.rpm` carry
+ * Fails when build-engine.yml mentions Linux packaging at all. The `.deb`/`.rpm` carry
  * `package.json#version`, which `main` holds ahead of npm since #691, so a stable engine tag can
  * never name them after a published CLI — the gate that checked this made engine releases
- * unreleasable instead (#728).
+ * unreleasable instead (#728). Matched against the raw file, not the parsed steps: `nfpm package`
+ * or `cp dist/*.deb` reintroduces publishing without ever naming the old script.
  */
-export function forbidLinuxPackaging(path: string, document: unknown): string[] {
+const PACKAGING_TOKENS = ["build-linux-packages", "linux-packages", "nfpm", ".deb", ".rpm"];
+
+export function forbidLinuxPackaging(path: string, contents: string): string[] {
   if (!path.endsWith("build-engine.yml")) return [];
 
-  const steps = jobSteps(document, "release");
-  if (!steps) return [`${path}: expected a \`release\` job with steps`];
+  // Comment lines are prose about the policy, not a step that ships a package.
+  const code = contents
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
 
-  // Anchored so a comment mentioning the script cannot trip it.
-  return runsMatching(steps, /^[^#\n]*\blinux-packages\b/m).map(
-    (at) =>
-      `${path}: step ${at + 1} packages Linux artifacts into an engine release; they name an unpublished CLI version (#728)`,
+  return PACKAGING_TOKENS.filter((token) => code.includes(token)).map(
+    (token) =>
+      `${path}: mentions \`${token}\`; engine releases must not attach Linux packages until #728 picks a channel`,
   );
 }
 
@@ -160,7 +165,7 @@ function main(): void {
       const errors = [
         ...requirePinnedActions(path, contents),
         ...requirePreUploadSynthesisSmoke(path, document),
-        ...forbidLinuxPackaging(path, document),
+        ...forbidLinuxPackaging(path, contents),
         ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ];
       if (errors.length > 0) {

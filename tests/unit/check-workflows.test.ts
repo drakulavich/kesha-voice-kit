@@ -70,37 +70,28 @@ describe("requirePreUploadSynthesisSmoke", () => {
   });
 });
 
-const STABLE = "steps.release_kind.outputs.prerelease != 'true'";
-const BUILD_PKG = { name: "build", if: STABLE, run: "node .github/scripts/build-linux-packages.mjs" };
-const STAGE_PKG = { name: "stage", if: STABLE, run: "cp dist/linux-packages/*.{deb,rpm} release-assets/" };
-
 describe("forbidLinuxPackaging", () => {
   test("passes on the real build-engine.yml", () => {
-    expect(forbidLinuxPackaging(PATH, parse(readFileSync(PATH, "utf8")))).toEqual([]);
+    expect(forbidLinuxPackaging(PATH, readFileSync(PATH, "utf8"))).toEqual([]);
   });
 
   test("ignores every other workflow", () => {
-    expect(forbidLinuxPackaging(CI, job("release", [BUILD_PKG]))).toEqual([]);
+    expect(forbidLinuxPackaging(CI, "run: node .github/scripts/build-linux-packages.mjs")).toEqual([]);
   });
 
-  test("fails once per packaging step", () => {
-    const errors = forbidLinuxPackaging(PATH, job("release", [BUILD_PKG, STAGE_PKG]));
-    expect(errors).toHaveLength(2);
-    expect(errors[0]).toContain("step 1 packages Linux artifacts into an engine release");
-    expect(errors[1]).toContain("step 2 packages Linux artifacts into an engine release");
+  test.each([
+    "        run: node .github/scripts/build-linux-packages.mjs",
+    "        run: cp dist/linux-packages/*.{deb,rpm} release-assets/",
+    "        run: nfpm package -p deb -t release-assets/",
+    "        run: cp dist/*.deb release-assets/",
+    "        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.4",
+  ])("catches %s", (line) => {
+    expect(forbidLinuxPackaging(PATH, line).length).toBeGreaterThan(0);
   });
 
-  test("a step switched off with `if: false` is inert", () => {
-    expect(forbidLinuxPackaging(PATH, job("release", [{ ...BUILD_PKG, if: "false" }]))).toEqual([]);
-  });
-
-  test("a commented-out invocation is not packaging", () => {
-    const run = "# node .github/scripts/build-linux-packages.mjs";
-    expect(forbidLinuxPackaging(PATH, job("release", [{ name: "x", run }]))).toEqual([]);
-  });
-
-  test("fails when the release job is gone", () => {
-    expect(forbidLinuxPackaging(PATH, { jobs: { build: {} } })[0]).toContain("expected a `release` job");
+  test("prose about the policy is not packaging", () => {
+    const comment = "      # packages (.deb/.rpm) moved off engine tags; see nfpm notes in #728";
+    expect(forbidLinuxPackaging(PATH, comment)).toEqual([]);
   });
 });
 
