@@ -40,6 +40,11 @@ enum Commands {
         /// Currently darwin-arm64 only (#199).
         #[arg(long)]
         speakers: bool,
+        /// Rewrite spoken-form numbers, money, dates and times to written form
+        /// ("two hundred thirty two" → "232"). English-only in practice; other
+        /// languages pass through unchanged (#710).
+        #[arg(long)]
+        itn: bool,
     },
     /// Detect spoken language from audio
     DetectLang {
@@ -101,7 +106,8 @@ fn run_command(command: Option<Commands>) -> Result<()> {
             vad,
             no_vad,
             speakers,
-        }) => cli::transcribe::run(audio_path, json, vad, no_vad, speakers)?,
+            itn,
+        }) => cli::transcribe::run(audio_path, json, vad, no_vad, speakers, itn)?,
         Some(Commands::DetectLang { audio_path }) => cli::detect_lang::run(audio_path)?,
         Some(Commands::DetectTextLang { text }) => cli::detect_text_lang::run(text)?,
         Some(Commands::Record { out, max_seconds }) => cli::record::run(out, max_seconds)?,

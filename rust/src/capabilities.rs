@@ -3,7 +3,7 @@ use serde::Serialize;
 // Mirror runtime gate: system_diarize on Linux has no code path; advertising without it would lie.
 #[cfg(all(feature = "system_diarize", target_os = "macos"))]
 use crate::transcribe::TRANSCRIBE_DIARIZE_FEATURE;
-use crate::transcribe::TRANSCRIBE_SEGMENTS_FEATURE;
+use crate::transcribe::{TRANSCRIBE_ITN_FEATURE, TRANSCRIBE_SEGMENTS_FEATURE};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +34,7 @@ pub fn get_capabilities() -> Capabilities {
     let mut features = vec![
         "transcribe",
         TRANSCRIBE_SEGMENTS_FEATURE,
+        TRANSCRIBE_ITN_FEATURE,
         "detect-lang",
         "vad",
     ];
@@ -97,7 +98,9 @@ mod caps_tests {
     #[test]
     fn feature_list_core_invariants() {
         let caps = get_capabilities();
-        for must in ["transcribe", "detect-lang", "vad"] {
+        // `transcribe.itn` is here rather than in a coreml-only row on purpose:
+        // the ITN pass is pure Rust, so every build shape must advertise it.
+        for must in ["transcribe", "detect-lang", "vad", TRANSCRIBE_ITN_FEATURE] {
             assert!(
                 caps.features.contains(&must),
                 "{must} missing: {:?}",

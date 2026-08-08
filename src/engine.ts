@@ -21,6 +21,14 @@ export const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
  */
 export const TRANSCRIBE_DIARIZE_FEATURE = "transcribe.diarize";
 
+/**
+ * Capability-flag string for the opt-in written-form (ITN) pass. Every engine
+ * built since #710 advertises it regardless of backend, so a missing entry
+ * means the installed engine predates the feature.
+ * Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_ITN_FEATURE`.
+ */
+export const TRANSCRIBE_ITN_FEATURE = "transcribe.itn";
+
 export interface LangDetectResult {
   code: string;
   confidence: number;
@@ -166,6 +174,9 @@ export interface TranscribeEngineOptions {
   /** Request speaker labels in transcript segments. Requires the engine to
    * advertise `transcribe.diarize` (darwin-arm64 only — see #199). */
   speakers?: boolean;
+  /** Rewrite spoken-form numbers to written form. Requires the engine to
+   * advertise `transcribe.itn` (#710). */
+  itn?: boolean;
 }
 
 function defaultDiarizeModelPath(): string {
@@ -179,6 +190,28 @@ function hasDiarizeModelLayout(modelPath: string): boolean {
     existsSync(join(modelPath, "Data", "com.apple.CoreML", "weights", "0-weight.bin")) &&
     existsSync(join(modelPath, "Data", "com.apple.CoreML", "weights", "1-weight.bin"))
   );
+}
+
+/**
+ * Gate `--itn` on the engine advertising it, per the "don't blindly forward
+ * flags" rule. Unlike `--speakers` this is not a platform gate — every backend
+ * supports the pass — so a missing capability means the installed engine is
+ * older than the CLI asking for it.
+ */
+export async function preflightTranscribeEngineItn(
+  opts: TranscribeEngineOptions = {},
+): Promise<void> {
+  if (!opts.itn) return;
+  const caps = await getEngineCapabilities();
+  if (!caps?.features.includes(TRANSCRIBE_ITN_FEATURE)) {
+    throw new Error(
+      "--itn requires a newer kesha-engine: the installed engine does not advertise " +
+        `${TRANSCRIBE_ITN_FEATURE}.\n\n` +
+        "Upgrade Kesha Voice Kit, then replace the engine:\n\n" +
+        "    bun add -g @drakulavich/kesha-voice-kit@latest\n" +
+        `    ${installHint()}`,
+    );
+  }
 }
 
 export async function preflightTranscribeEngineWithSegments(
@@ -222,11 +255,15 @@ function vadArg(vad: VadMode | undefined): string[] {
   return [];
 }
 
+function itnArg(itn: boolean | undefined): string[] {
+  return itn ? ["--itn"] : [];
+}
+
 export async function transcribeEngine(
   audioPath: string,
   opts: TranscribeEngineOptions = {},
 ): Promise<string> {
-  const args = ["transcribe", audioPath, ...vadArg(opts.vad)];
+  const args = ["transcribe", audioPath, ...vadArg(opts.vad), ...itnArg(opts.itn)];
   const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
@@ -263,7 +300,7 @@ export async function transcribeEngineWithSegments(
 ): Promise<TranscriptionOutput> {
   await preflightTranscribeEngineWithSegments(opts);
 
-  const args = ["transcribe", audioPath, "--json", ...vadArg(opts.vad)];
+  const args = ["transcribe", audioPath, "--json", ...vadArg(opts.vad), ...itnArg(opts.itn)];
   if (opts.speakers) args.push("--speakers");
   const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {

@@ -55,6 +55,7 @@ kesha audio.ogg                            # transcribe (plain text)
 kesha --format transcript audio.ogg        # text + language/confidence
 kesha --format json audio.ogg              # full JSON with lang fields
 kesha --json --timestamps audio.ogg        # JSON with timestamped segments
+kesha --itn audio.ogg                      # spelled-out numbers -> digits
 kesha --toon audio.ogg                     # compact LLM-friendly TOON
 kesha status                               # show installed backend info
 kesha status --disk                        # + recursive cache disk usage
@@ -75,6 +76,7 @@ $ kesha freedom.ogg tahiti.ogg
 - **Record from the mic (macOS):** `kesha record --out hello.wav` writes microphone audio to a WAV file (`kesha hello.wav` transcribes it). macOS prompts for microphone access on first use — grant it under System Settings → Privacy & Security → Microphone if it was denied. On Linux/Windows or headless boxes, pass any existing audio file straight to `kesha` instead.
 - **Long / silence-heavy audio:** install VAD (`kesha install --vad`); Kesha auto-uses it past 120 s. Without VAD, long audio falls back to fixed ASR chunks. See [docs/vad.md](docs/vad.md).
 - **Speaker diarization** (darwin-arm64): `kesha install --diarize`, then `kesha --json --vad --speakers meeting.m4a` stamps each segment with a `speaker` id. Linux/Windows return a clear "darwin-arm64 only" error ([#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
+- **Written-form numbers:** `--itn` rewrites what the model spells out — `"two hundred thirty two"` → `"232"`, `"five dollars and fifty cents"` → `"$5.50"`. Opt-in, works on every platform, and leaves timestamps alone. English-only in practice: other languages, Russian included, pass through unchanged. It also rewrites a spoken `"period"` to `"."` with no context check, which is why it is off by default ([#710](https://github.com/drakulavich/kesha-voice-kit/issues/710)).
 
 ## Text-to-speech
 

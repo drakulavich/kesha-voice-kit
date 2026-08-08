@@ -28,6 +28,7 @@ _kesha() {
       '--toon[Output results as TOON (compact, LLM-friendly encoding of the same data as --json)]' \
       '--timestamps[Include timestamped transcript segments in JSON/TOON output]' \
       '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first. Implies --timestamps.]' \
+      '--itn[Rewrite spoken-form numbers, money, dates and times to written form ("two hundred thirty two" -> "232"). English-only; other languages pass through unchanged.]' \
       '--include-errors[With --json, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
       '--verbose[Show language detection details]' \
       '--format=[Output format: transcript | json | toon (long-form alias for --json / --toon)]:format:' \
@@ -140,6 +141,7 @@ _kesha() {
       '--toon[Output results as TOON (compact, LLM-friendly encoding of the same data as --json)]' \
       '--timestamps[Include timestamped transcript segments in JSON/TOON output]' \
       '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first. Implies --timestamps.]' \
+      '--itn[Rewrite spoken-form numbers, money, dates and times to written form ("two hundred thirty two" -> "232"). English-only; other languages pass through unchanged.]' \
       '--include-errors[With --json, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
       '--verbose[Show language detection details]' \
       '--format=[Output format: transcript | json | toon (long-form alias for --json / --toon)]:format:' \
