@@ -40,7 +40,7 @@
     }
   },
   "keshaEngine": {
-    "version": "1.24.7"
+    "version": "1.24.8"
   },
   "scripts": {
     "test": "bun test --timeout 30000",
