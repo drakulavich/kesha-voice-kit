@@ -269,6 +269,21 @@ pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
     }
 }
 
+/// Measure audio duration in seconds by decoding the file. Unlike
+/// [`probe_duration_seconds`] this always yields a duration for any decodable
+/// container, at the cost of a full decode — call it only when the duration is
+/// required, never for advisory routing decisions.
+pub fn measure_duration_seconds(path: &str) -> Result<f32> {
+    let (interleaved, sample_rate, channels) = decode_audio(path)?;
+    let frames = interleaved.len() / channels.max(1);
+    anyhow::ensure!(
+        frames > 0 && sample_rate > 0,
+        "decoded no audio frames from: {path} (the container may be truncated or hold only metadata); \
+         re-export the file or transcribe without timestamps"
+    );
+    Ok(frames as f32 / sample_rate as f32)
+}
+
 /// Validate that the file is a supported audio container with at least one
 /// audio track. Reads container headers only — never decodes frames or
 /// scans for `n_frames` (so it stays cheap even for the Xing-less CBR MP3

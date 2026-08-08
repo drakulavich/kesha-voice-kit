@@ -158,13 +158,11 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
 /// Canonical transcribe entry. New flags should land in [`TranscribeOptions`]
 /// instead of growing a new top-level wrapper.
 ///
-/// `opts.with_segments` gates whether the non-VAD plain path probes audio
-/// duration to attach a single whole-file segment. Text-only callers skip
-/// the probe because `audio::probe_duration_seconds` returns `Ok(None)`
-/// for streaming Ogg/Opus without a frame count, which would turn into a
-/// hard error for inputs that previously transcribed cleanly. The VAD
-/// path always builds segments cheaply (per-span boundaries already in
-/// hand from VAD output).
+/// `opts.with_segments` gates whether the non-VAD plain path resolves audio
+/// duration to attach a single whole-file segment. Text-only callers skip it
+/// so they never pay the decode fallback that streaming Ogg/Opus without a
+/// frame count requires (#767). The VAD path always builds segments cheaply
+/// (per-span boundaries already in hand from VAD output).
 ///
 /// `opts.with_speakers` preflights diarization prerequisites before ASR starts,
 /// then runs the diarization post-step after ASR completes. On darwin-arm64
@@ -318,11 +316,8 @@ fn transcribe_plain(
         t1.elapsed().as_millis(),
         text.chars().count()
     );
-    // Skip the duration probe for text-only callers AND for blank
-    // transcripts — streaming Ogg/Opus (and a few other format edge cases)
-    // return `Ok(None)` from `probe_duration_seconds`, which would surface
-    // as a hard error for callers that don't need segments anyway, a
-    // regression vs pre-#248 behavior.
+    // Text-only callers and blank transcripts have nothing to timestamp, so
+    // they skip duration resolution and its decode fallback entirely.
     let segments = if timestamps_required && !text.trim().is_empty() {
         let dur = resolve_segment_duration(audio_path, duration)?;
         single_segment(0.0, dur, &text)
@@ -660,19 +655,24 @@ fn trim_repeated_prefix<'a>(previous: &str, current: &'a str) -> &'a str {
     current
 }
 
-/// Re-uses duration from the `Auto` probe-and-decide step (#248) to avoid re-opening the file.
+/// Re-uses duration from the `Auto` probe-and-decide step (#248) to avoid re-opening the file,
+/// then the cheap header probe, then a decode-and-measure for containers the probe can't answer.
 /// Split from `transcribe_plain` for testability without an ASR backend.
 fn resolve_segment_duration(audio_path: &str, hint: Option<f32>) -> Result<f32> {
     if let Some(d) = hint {
         return Ok(d);
     }
-    audio::probe_duration_seconds(audio_path)
-        .with_context(|| {
-            format!("failed to probe audio duration for timestamped segments: {audio_path}")
-        })?
-        .with_context(|| {
-            format!("audio duration is unavailable for timestamped segments: {audio_path}")
-        })
+    let probed = audio::probe_duration_seconds(audio_path).with_context(|| {
+        format!("failed to probe audio duration for timestamped segments: {audio_path}")
+    })?;
+    match probed {
+        Some(d) => Ok(d),
+        // #767: streaming containers declare no frame count, so the cheap probe
+        // reports "unknown" — decode to measure rather than failing the request.
+        None => audio::measure_duration_seconds(audio_path).with_context(|| {
+            format!("failed to measure audio duration for timestamped segments: {audio_path}")
+        }),
+    }
 }
 
 fn single_segment(start: f32, end: f32, text: &str) -> Vec<TranscriptionSegment> {
@@ -879,6 +879,24 @@ mod tests {
                 .contains("failed to probe audio duration for timestamped segments"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn resolve_segment_duration_decodes_when_the_probe_reports_unknown() {
+        // #767: containers that declare no frame count (every Ogg voice message
+        // without an end-of-stream page) probed as `None`, which the caller
+        // escalated into a fatal error instead of measuring the duration.
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tone-no-eos.ogg");
+        let path = fixture.to_string_lossy().into_owned();
+        assert_eq!(
+            audio::probe_duration_seconds(&path).unwrap(),
+            None,
+            "fixture no longer probes as unknown duration, so it stops covering #767"
+        );
+
+        let dur = resolve_segment_duration(&path, None)
+            .expect("unknown probe duration must fall back to a decode, not fail");
+        assert!((dur - 0.5).abs() < 0.1, "expected ~0.5 s, got {dur}");
     }
 
     #[test]
