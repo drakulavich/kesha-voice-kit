@@ -1,5 +1,6 @@
-import { readdirSync, renameSync, rmSync } from "fs";
+import { copyFileSync, readdirSync, renameSync, rmSync, statSync } from "fs";
 import { basename, dirname, join } from "path";
+import { errorMessage } from "./error-utils";
 import { log } from "./log";
 
 const BAR_WIDTH = 20;
@@ -128,16 +129,50 @@ export async function applyBackpressure(
   if (written < 0) await writer.flush();
 }
 
+/**
+ * Age threshold and platform gate mirror `rust/src/models.rs::cleanup_orphan_staging`: a
+ * concurrent installer's staging file keeps a fresh mtime while bytes stream into it, and
+ * Windows leaves last-write time stale while a handle is open, so an in-flight download
+ * there could not be told apart from an orphan.
+ */
+const STALE_STAGING_MS = 24 * 60 * 60 * 1000;
+
 /** A Ctrl-C kills the process before any cleanup runs, so last run's staging file is swept by the next one (#770). */
 function sweepStagingFiles(destPath: string): void {
+  if (process.platform === "win32") return;
   const dir = dirname(destPath);
   const prefix = `${basename(destPath)}.part.`;
+  const cutoffMs = Date.now() - STALE_STAGING_MS;
+
+  let names: string[];
   try {
-    for (const name of readdirSync(dir)) {
-      if (name.startsWith(prefix)) rmSync(join(dir, name), { force: true });
+    names = readdirSync(dir);
+  } catch (err) {
+    log.debug(`Could not scan ${dir} for orphaned download staging: ${errorMessage(err)}`);
+    return;
+  }
+
+  for (const name of names) {
+    if (!name.startsWith(prefix)) continue;
+    const path = join(dir, name);
+    try {
+      if (statSync(path).mtimeMs > cutoffMs) continue;
+      rmSync(path, { force: true });
+      log.debug(`Cleaned up orphaned download staging: ${name}`);
+    } catch (err) {
+      log.debug(`Could not sweep orphaned download staging ${name}: ${errorMessage(err)}`);
     }
-  } catch {
-    // Best-effort: an unreadable directory surfaces on the write below, with a better message.
+  }
+}
+
+/** Windows refuses `rename` onto a destination another handle still holds; POSIX overwrites. */
+function publishStaging(stagingPath: string, destPath: string): void {
+  try {
+    renameSync(stagingPath, destPath);
+  } catch (err) {
+    if (process.platform !== "win32") throw err;
+    copyFileSync(stagingPath, destPath);
+    rmSync(stagingPath, { force: true });
   }
 }
 
@@ -163,6 +198,9 @@ export async function streamResponseToFile(
 
   sweepStagingFiles(destPath);
   const stagingPath = `${destPath}.part.${process.pid}`;
+  // Bun's FileSink writes from offset 0 without truncating, so a not-yet-stale staging file
+  // left by a killed run that held this pid would leave its tail in the published download.
+  rmSync(stagingPath, { force: true });
   const writer = Bun.file(stagingPath).writer();
   let bytes = 0;
   try {
@@ -176,7 +214,7 @@ export async function streamResponseToFile(
       // Must await: an open write handle makes the freshly-downloaded engine unspawnable — EBUSY on Windows, ETXTBSY on Linux.
       await writer.end();
     }
-    renameSync(stagingPath, destPath);
+    publishStaging(stagingPath, destPath);
   } catch (err) {
     rmSync(stagingPath, { force: true });
     throw err;

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
-import { getEngineBinaryName, installEngine } from "../../src/engine-install";
-import { probeCapabilitiesForInstall } from "../../src/cli/install";
+import { getEngineBinaryName, installEngine, SIDECARS } from "../../src/engine-install";
+import { installableTtsLangs, probeCapabilitiesForInstall, resolveTtsLangs } from "../../src/cli/install";
 import { probeExecutable } from "../../src/engine-health";
 import { getEngineCapabilities } from "../../src/engine";
+import { isDarwinArm64 } from "../../src/fluid-kokoro-cache";
 import { engineVersion } from "../../src/package-info";
 
 // #770: an interrupted `kesha install` left a truncated binary that the kernel refuses to
@@ -20,6 +21,8 @@ const savedFetch = globalThis.fetch;
 const tempDirs: string[] = [];
 
 const posixTest = process.platform === "win32" ? test.skip : test;
+/** Sidecars are only ever fetched on darwin-arm64, so only there can their repair be observed. */
+const sidecarTest = isDarwinArm64() ? test : test.skip;
 
 afterEach(() => {
   globalThis.fetch = savedFetch;
@@ -41,13 +44,15 @@ function stageEngine(prefix: string, body: string): string {
   return binPath;
 }
 
-function stubRelease(): string[] {
+/** Serves `WORKING_ENGINE` for the engine asset, and for the sidecars too when `withSidecars`. */
+function stubRelease(withSidecars = false): string[] {
   const urls: string[] = [];
   const binaryName = getEngineBinaryName();
+  const served = [binaryName, ...(withSidecars ? SIDECARS.map((s) => s.assetName) : [])];
   globalThis.fetch = (async (input: Request | URL | string) => {
     const url = String(input instanceof Request ? input.url : input);
     urls.push(url);
-    return url.endsWith(binaryName)
+    return served.some((name) => url.endsWith(name))
       ? new Response(WORKING_ENGINE, {
           status: 200,
           headers: { "content-length": String(WORKING_ENGINE.length) },
@@ -108,5 +113,39 @@ describe("install repairs a corrupt engine (#770)", () => {
 
     await expect(getEngineCapabilities()).rejects.toThrow(/E_ENGINE_SPAWN/);
     expect(await probeCapabilitiesForInstall()).toBeNull();
+  });
+
+  // A cache hit used to top up only ABSENT sidecars, so a truncated one was re-trusted
+  // forever and doctor's "re-run kesha install" hint was a lie for it.
+  sidecarTest("a cache hit repairs a sidecar that is present but cannot run", async () => {
+    const binPath = stageEngine("kesha-repair-sidecar-", WORKING_ENGINE);
+    const sidecarPath = join(dirname(binPath), SIDECARS[0]!.fileBasename);
+    writeFileSync(sidecarPath, CORRUPT_ENGINE);
+    chmodSync(sidecarPath, 0o755);
+    const urls = stubRelease(true);
+
+    await installEngine();
+
+    expect(engineDownloads(urls)).toHaveLength(0);
+    expect(readFileSync(sidecarPath, "utf8")).toBe(WORKING_ENGINE);
+  }, 60_000);
+});
+
+describe("--tts codes are validated before the engine download (#770)", () => {
+  test("hi/ja/zh are only offered where the ANE engine is built", () => {
+    expect(installableTtsLangs("linux", "x64")).not.toContain("ja");
+    expect(installableTtsLangs("darwin", "arm64")).toContain("ja");
+    expect(installableTtsLangs("darwin", "x64")).not.toContain("ja");
+  });
+
+  // Without a static list, `kesha install --tts ja` on linux downloaded a full engine and
+  // only then heard "unsupported" from it.
+  test("an unsupported code fails without an engine to ask", () => {
+    expect(() =>
+      resolveTtsLangs({ tts: true, positionals: ["ja"] }, installableTtsLangs("linux", "x64")),
+    ).toThrow(/ja/);
+    expect(
+      resolveTtsLangs({ tts: true, positionals: ["ru"] }, installableTtsLangs("linux", "x64")),
+    ).toEqual(["ru"]);
   });
 });

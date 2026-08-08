@@ -2,6 +2,7 @@ import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { installEngine } from "../engine-install";
 import { engineTarget } from "../engine-targets";
+import { isDarwinArm64 } from "../fluid-kokoro-cache";
 import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from "../engine";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
@@ -19,12 +20,24 @@ export interface InstallCommandArgs extends SharedInstallArgs {
   engineVersion?: string;
 }
 
+/** TTS languages every build installs. */
+const TTS_LANGS_EVERYWHERE = ["en", "es", "fr", "it", "pt", "ru"];
+
+/** hi/ja/zh need FluidAudio's ANE Kokoro, which only the darwin-arm64 engine is built with. */
+const DARWIN_ARM64_ONLY_TTS_LANGS = ["hi", "ja", "zh"];
+
 /**
- * TTS languages installable on EVERY build, used when the engine binary isn't
- * installed yet (capabilities unavailable). hi/ja/zh are darwin-arm64-only and
- * can't be assumed without capabilities, so they're excluded here.
+ * What `--tts` may name when the Engine cannot be asked. Without it, a bogus code is only
+ * caught by the engine that a full download had to install first (#770).
  */
-export const TTS_LANG_FALLBACK = ["en", "es", "fr", "it", "pt", "ru"];
+export function installableTtsLangs(
+  platform = process.platform,
+  arch = process.arch,
+): string[] {
+  return isDarwinArm64(platform, arch)
+    ? [...TTS_LANGS_EVERYWHERE, ...DARWIN_ARM64_ONLY_TTS_LANGS]
+    : TTS_LANGS_EVERYWHERE;
+}
 
 export interface TtsArgInput {
   tts: boolean;
@@ -34,9 +47,9 @@ export interface TtsArgInput {
 /**
  * Resolve the requested TTS language list. Bare `--tts` defaults to English.
  * Positionals without `--tts` are an error. When `supported` is provided,
- * unsupported codes are a hard error (nothing downloads); when it's undefined
- * (engine not yet installed, capabilities unavailable) the check is skipped and
- * the engine validates authoritatively at download time.
+ * unsupported codes are a hard error (nothing downloads); the CLI passes the
+ * Engine's own list when it has one and `installableTtsLangs()` otherwise, and
+ * the installed Engine re-validates authoritatively at download time.
  */
 export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefined): string[] {
   if (!input.tts) {
@@ -292,7 +305,7 @@ export const installCommand = defineCommand({
     const backend = resolveBackendFlag(args.coreml, args.onnx);
     const positionals = (args._ ?? []).map(String);
     const caps = await probeCapabilitiesForInstall();
-    const supported = caps?.tts?.languages.map((l) => l.code);
+    const supported = caps?.tts?.languages.map((l) => l.code) ?? installableTtsLangs();
     let ttsLangs: string[];
     try {
       ttsLangs = resolveTtsLangs({ tts: args.tts === true, positionals }, supported);

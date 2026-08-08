@@ -195,6 +195,20 @@ describe("waitUntilSpawnable (#216)", () => {
     }
   });
 
+  // Gatekeeper SIGKILLs an untrusted ad-hoc binary after the spawn succeeds, so "it spawned"
+  // was never proof it ran — and the `.version` marker written next vouched for it (#770).
+  spawnFixtureTest("a binary killed by a signal is not accepted as spawnable", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-killed-"));
+    try {
+      const binPath = join(dir, "engine");
+      writeFileSync(binPath, "#!/bin/sh\nkill -9 $$\n");
+      chmodSync(binPath, 0o755);
+      await expect(waitUntilSpawnable(binPath, 1_000)).rejects.toThrow(/could not be started/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // A missing binary never becomes spawnable, so retrying it would just stall the
   // install for the full deadline before failing anyway.
   test("fails fast on a non-transient error instead of waiting out the deadline", async () => {

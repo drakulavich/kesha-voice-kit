@@ -4,10 +4,10 @@ import { renderInstallPlan } from "../install-plan";
 import { log } from "../log";
 import { getEngineCapabilities } from "../engine";
 import {
+  installableTtsLangs,
   performInstall,
   resolveBackendFlag,
   resolveNoCacheFlag,
-  TTS_LANG_FALLBACK,
   unavailableBackendError,
 } from "./install";
 import type { SharedInstallArgs } from "./types";
@@ -43,7 +43,7 @@ async function promptTtsLangs(preselect: string[]): Promise<string[]> {
   // A corrupt engine must leave init offering the fallback list rather than aborting the
   // guided setup that would replace it (#770).
   const caps = await getEngineCapabilities().catch(() => null);
-  const supported = caps?.tts?.languages.map((l) => l.code) ?? TTS_LANG_FALLBACK;
+  const supported = caps?.tts?.languages.map((l) => l.code) ?? installableTtsLangs();
   const selected = await multiselect({
     message:
       "Select TTS languages to install (space to toggle, enter to confirm; none = skip TTS):",

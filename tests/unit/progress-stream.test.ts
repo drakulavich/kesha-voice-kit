@@ -1,8 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { applyBackpressure, streamResponseToFile } from "../../src/progress";
+
+const posixTest = process.platform === "win32" ? test.skip : test;
 
 // #216: `writer.end()` went unawaited, so the write handle outlived the call. Whether an
 // OS then lets you spawn the file is nondeterministic — that half is covered by
@@ -113,14 +124,67 @@ describe("streamResponseToFile publishes atomically (#770)", () => {
   });
 
   // A Ctrl-C kills the process before cleanup runs, so the next download has to sweep.
-  test("a staging file orphaned by a killed process is swept", async () => {
+  // The sweep is Unix-only and age-gated, exactly as models.rs::cleanup_orphan_staging is.
+  posixTest("a staging file orphaned by a killed process is swept once it is a day old", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-stream-orphan-"));
     try {
       const dest = join(dir, "kesha-engine");
-      writeFileSync(`${dest}.part.4242`, "orphan from a killed run");
+      const orphan = `${dest}.part.4242`;
+      writeFileSync(orphan, "orphan from a killed run");
+      const dayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      utimesSync(orphan, dayAgo, dayAgo);
 
       await streamResponseToFile(responseOf("engine bytes"), dest, "payload");
 
+      expect(readdirSync(dir)).toEqual(["kesha-engine"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Two concurrent `kesha install` runs: sweeping B's in-flight staging leaves B renaming an
+  // unlinked inode. Only age tells a live download apart from an orphan.
+  test("a concurrent installer's fresh staging file survives the sweep", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-live-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+      const live = `${dest}.part.999`;
+      writeFileSync(live, "another process is still writing this");
+
+      await streamResponseToFile(responseOf("engine bytes"), dest, "payload");
+
+      expect(readFileSync(live, "utf8")).toBe("another process is still writing this");
+      expect(readdirSync(dir).sort()).toEqual(["kesha-engine", "kesha-engine.part.999"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Pids are recycled, and the sweep now spares anything under a day old — so the only thing
+  // standing between a killed run's leftovers and the published file is this unlink.
+  test("a same-pid staging leftover cannot bleed into the download", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-pid-reuse-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+      writeFileSync(`${dest}.part.${process.pid}`, "leftovers from a killed run with this pid");
+
+      await streamResponseToFile(responseOf("fresh"), dest, "payload");
+
+      expect(readFileSync(dest, "utf8")).toBe("fresh");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an existing destination is replaced with the new bytes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-overwrite-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+      writeFileSync(dest, "stale engine from an older release");
+
+      await streamResponseToFile(responseOf("fresh engine bytes"), dest, "payload");
+
+      expect(readFileSync(dest, "utf8")).toBe("fresh engine bytes");
       expect(readdirSync(dir)).toEqual(["kesha-engine"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
