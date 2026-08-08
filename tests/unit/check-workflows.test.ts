@@ -123,6 +123,10 @@ describe("requireNpmPublishAfterPackaging", () => {
     expect(errors[0]).toContain("must `needs: packages`");
   });
 
+  test("accepts the single-job spelling of needs", () => {
+    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ needs: "packages", steps: [DISPATCH] }))).toEqual([]);
+  });
+
   test("fails when nothing dispatches npm-publish.yml", () => {
     const errors = requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ needs: ["plan", "packages"], steps: [] }));
     expect(errors[0]).toContain("must run dispatch-npm-publish.sh");

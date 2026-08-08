@@ -121,8 +121,9 @@ export function requireNpmPublishAfterPackaging(path: string, document: unknown)
   const steps = jobSteps(document, "publish-npm");
   if (!steps) return [`${path}: expected a \`publish-npm\` job with steps`];
 
+  // `needs:` is a string when it names one job, a list when it names several.
   const needs = (document as { jobs?: Record<string, { needs?: unknown }> })?.jobs?.["publish-npm"]?.needs;
-  if (!Array.isArray(needs) || !needs.includes("packages")) {
+  if (![needs].flat().includes("packages")) {
     return [`${path}: \`publish-npm\` must \`needs: packages\`, so no .deb is published without the npm publish it names (#728)`];
   }
   if (runsMatching(steps, /dispatch-npm-publish\.sh/).length === 0) {
