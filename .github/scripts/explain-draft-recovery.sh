@@ -6,7 +6,17 @@ set -euo pipefail
 
 : "${TAG:?}"
 
-state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo none)
+err=$(mktemp)
+trap 'rm -f "$err"' EXIT
+
+# "not found" is a real answer; any other gh failure is not, and must not read as one.
+if state=$(gh release view "$TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>"$err"); then
+  :
+elif grep -qi "release not found" "$err"; then
+  state=none
+else
+  state=unknown
+fi
 
 case "$state" in
   draft)
@@ -25,7 +35,11 @@ EOF
   published)
     echo "::error::$TAG failed after its release went public. The packages are already out; npm is what is missing, and re-running the publish alone is idempotent: gh workflow run npm-publish.yml --ref $TAG -f tag=$TAG" >&2
     ;;
-  *)
+  none)
     echo "::error::$TAG failed before any release was created, so there is nothing to clean up — fix the cause and re-run the lane: gh workflow run release-cli.yml -f tag=$TAG" >&2
+    ;;
+  *)
+    echo "::error::$TAG failed, and the release state could not be read: $(tr '\n' ' ' < "$err")" >&2
+    echo "Check with \`gh release view $TAG\` before re-running — a draft left behind blocks the lane until it is finished or deleted." >&2
     ;;
 esac
