@@ -7,9 +7,11 @@ on:
       - packaging/**
       - .github/scripts/build-linux-packages.mjs
       - .github/scripts/linux-package-names.mjs
+      - .github/scripts/verify-linux-packages.sh
       - .github/workflows/linux-packages.yml
       - .github/workflows/build-engine.yml
       - .github/actions/setup-bun/action.yml
+      - .github/actions/linux-packages/action.yml
       - package.json
       - bun.lock
       - tsconfig.json
@@ -19,6 +21,16 @@ on:
       - docs/linux-packages.md
       - LICENSE
       - NOTICES.md
+  # release-cli.yml shares this build and only ever runs on a tag, so a PR touching the shared
+  # machinery is the last place a broken step can surface before a release depends on it (#728).
+  pull_request:
+    paths:
+      - packaging/**
+      - .github/scripts/build-linux-packages.mjs
+      - .github/scripts/linux-package-names.mjs
+      - .github/scripts/verify-linux-packages.sh
+      - .github/workflows/linux-packages.yml
+      - .github/actions/linux-packages/action.yml
 
 permissions:
   contents: read
@@ -28,38 +40,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # CI only. The packages users install are cut from a `-cli` tag by release-cli.yml (#728).
   linux-packages:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Bun workspace
-        uses: ./.github/actions/setup-bun
-
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: stable
-
-      - name: Install nFPM
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.4
-
-      - name: Build packages
-        run: node .github/scripts/build-linux-packages.mjs
-
-      - name: Inspect package metadata
-        run: |
-          dpkg-deb --info dist/linux-packages/*.deb
-          dpkg-deb --contents dist/linux-packages/*.deb
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends rpm
-          rpm -qip dist/linux-packages/*.rpm
-          rpm -qlp dist/linux-packages/*.rpm
-
-      - name: Smoke deb install
-        run: |
-          sudo apt install -y ./dist/linux-packages/*.deb
-          kesha --version
-          kesha install --plan
-          sudo apt remove -y kesha-voice-kit
+      - name: Build and verify packages
+        uses: ./.github/actions/linux-packages

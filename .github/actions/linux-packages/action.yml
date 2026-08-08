@@ -1,0 +1,25 @@
+name: Build Linux Packages
+description: Build the .deb/.rpm pair from package.json#version and prove the .deb installs
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bun workspace
+      uses: ./.github/actions/setup-bun
+
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: stable
+
+    - name: Install nFPM
+      run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.4
+      shell: bash
+
+    - name: Build packages
+      run: node .github/scripts/build-linux-packages.mjs
+      shell: bash
+
+    - name: Inspect and smoke-install the packages
+      run: .github/scripts/verify-linux-packages.sh
+      shell: bash

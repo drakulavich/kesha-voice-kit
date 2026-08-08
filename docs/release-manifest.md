@@ -25,7 +25,9 @@ The manifest accepts three tag shapes — `vX.Y.Z`, `vX.Y.Z-beta.N`, and
 `vX.Y.Z-alpha.N` — and rejects anything else. Linux `.deb`/`.rpm` assets were
 listed here until #728: they were named after a CLI version npm had not
 published, so engine releases stopped attaching them and the manifest stopped
-promising them. `engineVersion` comes from
+promising them. They now ship on the CLI's own `vX.Y.Z-cli` marker release,
+which carries no manifest — it is engine metadata, and a CLI-only release
+changes no engine asset. `engineVersion` comes from
 the tag rather than from `package.json#keshaEngine.version`: an alpha ships a
 version no commit carries, and it must outrank the pin rather than equal it
 (#738). Channel policy — what each prerelease is for and how it reaches users —

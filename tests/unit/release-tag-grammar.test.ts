@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { classifyReleaseTag } from "../../.github/scripts/classify-release-tag.mjs";
 import {
+  CLI_TAG_RE,
   cliPublishTarget,
   ENGINE_TAG_ERE,
   ENGINE_TAG_RE,
@@ -51,6 +52,21 @@ describe("engine tag grammar", () => {
 
   test("the workflow ships the grammar verbatim", () => {
     expect(WORKFLOW_YAML).toContain(ENGINE_TAG_ERE);
+  });
+});
+
+// Built from the same version pattern as the engine grammar, so the two cannot drift apart.
+describe("CLI marker tag grammar", () => {
+  test("accepts every CLI shape", () => {
+    for (const tag of [...CLI_TAGS, "v1.27.0-beta.1-cli"]) {
+      expect(CLI_TAG_RE.test(tag)).toBe(true);
+    }
+  });
+
+  test("rejects engine tags and malformed shapes", () => {
+    for (const tag of [...ENGINE_TAGS, ...NOT_TAGS, "v1.27.0-cli-cli", "v1.27.0-rc.1-cli", "cli"]) {
+      expect(CLI_TAG_RE.test(tag)).toBe(false);
+    }
   });
 });
 

@@ -84,7 +84,8 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
  * Fails when build-engine.yml mentions Linux packaging at all. The `.deb`/`.rpm` carry
  * `package.json#version`, which `main` holds ahead of npm since #691, so a stable engine tag can
  * never name them after a published CLI — the gate that checked this made engine releases
- * unreleasable instead (#728). Matched against the raw file, not the parsed steps: `nfpm package`
+ * unreleasable instead. They ship from release-cli.yml, on the tag that publishes the same
+ * version to npm (#728). Matched against the raw file, not the parsed steps: `nfpm package`
  * or `cp dist/*.deb` reintroduces publishing without ever naming the old script.
  */
 const PACKAGING_TOKENS = ["build-linux-packages", "linux-packages", "nfpm", ".deb", ".rpm"];
@@ -100,8 +101,51 @@ export function forbidLinuxPackaging(path: string, contents: string): string[] {
 
   return PACKAGING_TOKENS.filter((token) => code.includes(token)).map(
     (token) =>
-      `${path}: mentions \`${token}\`; engine releases must not attach Linux packages until #728 picks a channel`,
+      `${path}: mentions \`${token}\`; Linux packages ship from release-cli.yml, which publishes npm in the same run (#728)`,
   );
+}
+
+/**
+ * Fails when release-cli.yml could publish Linux packages without publishing the same version
+ * to npm in the same run. A `.deb` names `package.json#version` and npm is the only thing that
+ * makes that version real; the assertion that used to hold them together is gone (#727, #728).
+ *
+ * Both halves have to be real: `needs:` ordering alone is satisfied by a `packages` job that
+ * builds and publishes nothing, so the job's own two steps are required as well.
+ */
+export function requireNpmPublishAfterPackaging(path: string, document: unknown): string[] {
+  if (!path.endsWith("release-cli.yml")) return [];
+
+  const tags = (document as { on?: { push?: { tags?: unknown } } })?.on?.push?.tags;
+  if (!Array.isArray(tags) || !tags.includes("v*-cli")) {
+    return [`${path}: must trigger on \`v*-cli\` tag pushes (#728)`];
+  }
+
+  const packaging = jobSteps(document, "packages");
+  if (!packaging) return [`${path}: expected a \`packages\` job with steps`];
+
+  const builds = packaging.some(
+    (step) => typeof step?.uses === "string" && step.uses === "./.github/actions/linux-packages",
+  );
+  if (!builds) {
+    return [`${path}: \`packages\` must build through ./.github/actions/linux-packages, the composite the CI lane shares (#728)`];
+  }
+  if (runsMatching(packaging, /publish-cli-release\.sh/).length === 0) {
+    return [`${path}: \`packages\` must run publish-cli-release.sh — it is what attaches the packages to the release (#728)`];
+  }
+
+  const steps = jobSteps(document, "publish-npm");
+  if (!steps) return [`${path}: expected a \`publish-npm\` job with steps`];
+
+  // `needs:` is a string when it names one job, a list when it names several.
+  const needs = (document as { jobs?: Record<string, { needs?: unknown }> })?.jobs?.["publish-npm"]?.needs;
+  if (![needs].flat().includes("packages")) {
+    return [`${path}: \`publish-npm\` must \`needs: packages\`, so no .deb is published without the npm publish it names (#728)`];
+  }
+  if (runsMatching(steps, /dispatch-npm-publish\.sh/).length === 0) {
+    return [`${path}: \`publish-npm\` must run dispatch-npm-publish.sh — npm trusts one entry workflow (#731)`];
+  }
+  return [];
 }
 
 /**
@@ -166,6 +210,7 @@ function main(): void {
         ...requirePinnedActions(path, contents),
         ...requirePreUploadSynthesisSmoke(path, document),
         ...forbidLinuxPackaging(path, contents),
+        ...requireNpmPublishAfterPackaging(path, document),
         ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ];
       if (errors.length > 0) {

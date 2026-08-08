@@ -19,12 +19,29 @@ Version drift gate: `bun .github/scripts/check-versions.ts` (`bun run check:vers
 CLI-only is allowed only when the changed CLI surface works against the already-published engine pinned by `package.json#keshaEngine.version`. If a CLI command delegates to a new engine subcommand, capability flag, feature behavior, or output contract, it is an **engine release**: bump `package.json#keshaEngine.version`, `rust/Cargo.toml`, and `rust/Cargo.lock` together. Before cutting any `v*-cli` marker, smoke-test new/changed CLI commands against the published pinned engine, not only a repo-local engine build. The `v1.18.2-cli` / `v1.18.3-cli` mistake was exposing `kesha record` while the pinned published engine was still `v1.18.0` and did not implement `kesha-engine record`.
 
 ```bash
-gh release create vX.Y.Z-cli --title "vX.Y.Z (CLI-only)" \
-  --notes "Engine: v<keshaEngine.version> (unchanged)."
-npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
+git tag vX.Y.Z-cli && git push origin vX.Y.Z-cli
+npm view @drakulavich/kesha-voice-kit version   # a few minutes, expect X.Y.Z
 ```
 
-`v*-cli` is excluded from `build-engine.yml`; the published marker fires `📦 npm Publish` automatically.
+`v*-cli` is excluded from `build-engine.yml` and picked up by `🚀 Release (CLI)` (`release-cli.yml`), which builds the Linux `.deb`/`.rpm`, creates the marker release as a **draft** with them plus `SHA256SUMS`, un-drafts it, then dispatches `📦 npm Publish` and waits for it. Un-drafting from a workflow fires no `release: published` (a `GITHUB_TOKEN` event does not cascade), so the dispatch is explicit — which is also why the tag must be pushed by a **human**: a token-pushed tag triggers nothing. That is by design for the alpha lane, whose `-cli` tags have no GitHub release.
+
+The lane refuses to proceed if `package.json#version` at the tag is not exactly the version the tag names — the packages carry that field, and nothing downstream re-checks it since #727 (#728). **Cut one stable CLI release at a time.** `npm-publish.yml`'s `concurrency: queue: max` serialises runs but does not order them by version, so two stable markers in flight together can still finish out of order and leave `latest` on the older one.
+
+**Recovering a failed lane run.** Which recovery applies depends on how far it got; the failing run prints the right one, and `gh release view vX.Y.Z-cli` tells you directly.
+
+| state | what happened | recovery |
+| --- | --- | --- |
+| no release | died in `plan` or during the build | fix the cause, re-run the lane |
+| **draft** | died between `create --draft` and `--draft=false` | assets all present → `gh release edit vX.Y.Z-cli --draft=false` then dispatch npm. Otherwise `gh release delete vX.Y.Z-cli --yes` (safe while draft — only publishing reserves the tag name) and re-run the lane |
+| published | the release is out, npm publish failed | re-run the publish alone |
+
+A leftover draft is not inert: `assert-release-absent.sh` counts drafts, so it blocks a re-run until it is finished or deleted. Re-running just the publish is idempotent — an already-published version exits 0 without republishing:
+
+```bash
+gh workflow run npm-publish.yml --ref vX.Y.Z-cli -f tag=vX.Y.Z-cli
+```
+
+Two things do *not* go through this lane. A **beta marker** (`vX.Y.Z-beta.N-cli`) is skipped with a notice — betas ship no Linux packages and keep the human un-draft gate, so cut them the legacy way with `gh release create vX.Y.Z-beta.N-cli --notes …`, which still fires `📦 npm Publish` on publication. **Alpha markers** are minted and published by `release-alpha.yml` and never get a GitHub release at all. The legacy `gh release create vX.Y.Z-cli` still works for a stable marker too, but ships no packages and leaves the tag unusable by this lane — do not use it.
 
 **Engine release** (anything under `rust/` or an engine bump):
 
@@ -63,7 +80,7 @@ npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
 
 6. Treat `make smoke-test` as a local sanity check only; it can run the old globally installed CLI/engine. The release gate is draft-asset validation.
 7. Publish: `gh release edit vX.Y.Z --draft=false`. This fires `📦 npm Publish`; verify `npm view @drakulavich/kesha-voice-kit version` within ~60s. Manual fallback: `npm publish --access public` from the maintainer laptop.
-8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo. CLI-only marker releases skip Homebrew. **Engine releases no longer attach Linux `.deb`/`.rpm`**: those packages carry `package.json#version`, which `main` holds ahead of npm since #691, so naming them on an engine tag meant naming a CLI version npm had not published. The gate that checked this (`assert-npm-published.mjs`) made stable engine tags unreleasable and is gone; `linux-packages.yml` still builds and smoke-installs the pair on `main`, and #728 owns where they should be published.
+8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo. CLI-only marker releases skip Homebrew. **Engine releases no longer attach Linux `.deb`/`.rpm`**: those packages carry `package.json#version`, which `main` holds ahead of npm since #691, so naming them on an engine tag meant naming a CLI version npm had not published. The gate that checked this (`assert-npm-published.mjs`) made stable engine tags unreleasable and is gone. They ship from the stable `-cli` marker instead (#728) — the package *is* the CLI — which is the one release that publishes the same version to npm in the same run; `linux-packages.yml` keeps building and smoke-installing the pair on `main` as CI. `check-workflows.ts` holds both halves: `forbidLinuxPackaging` keeps them off engine tags, `requireNpmPublishAfterPackaging` keeps the `-cli` lane's npm publish downstream of the packaging job.
 
 **Prerelease channels.** The validators accept two shapes beside stable — `vX.Y.Z-beta.N` and `vX.Y.Z-alpha.N` (a CLI release on either channel adds the `-cli` marker) — and the grammar has one home, `release-tags.mjs`. Neither channel can reach `latest`: `npm-dist-tag.mjs` derives the dist-tag from the SemVer prerelease identifier, returns `latest` only for a version that has none, and *refuses* one whose identifier decodes to `latest` (`1.27.0-latest.1`) rather than handing a prerelease to everyone who never asked for a channel.
 
@@ -137,7 +154,7 @@ git push origin vX.Y.Z
 
 Post-#291 happy path: publishing a GitHub release runs `.github/workflows/npm-publish.yml` → `npm publish --provenance --access public` in GHA. Do not publish from a maintainer laptop unless the workflow is broken.
 
-- Trigger: `release: published` (engine un-draft or published `v*-cli` marker), `workflow_dispatch` re-runs, and the alpha lane's dispatch. Only `-cli` tags publish a CLI; a bare tag names the engine (#729).
+- Trigger: `release: published` (engine un-draft or a hand-cut `v*-cli` marker), `workflow_dispatch` re-runs, and the dispatches from `release-alpha.yml` and `release-cli.yml`. Only `-cli` tags publish a CLI; a bare tag names the engine (#729).
 - Provenance: `permissions.id-token: write` gives npm the GHA OIDC chain (`commit SHA` → built tarball) and the npm "verified" badge.
 - Guards: tag must match `package.json#version` after stripping leading `v` and trailing `-cli`; already-published versions skip publish and exit 0. An alpha version is minted at publish time, so it is injected into `package.json` instead of verified against it.
 - Dist-tags: resolved by `npm-dist-tag.mjs` from the prerelease identifier — stable → `latest`, `-beta.N` → `beta`, `-alpha.N` → `alpha`, and a prerelease never lands on `latest`.

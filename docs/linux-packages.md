@@ -1,15 +1,14 @@
 # Linux Packages
 
-> **Not currently published.** `.deb` and `.rpm` used to be attached to stable
-> engine releases, where they were named after a CLI version npm had not
-> published yet — so they shipped a version that did not exist
-> ([#728](https://github.com/drakulavich/kesha-voice-kit/issues/728)). Engine
-> releases no longer carry them, and no channel has replaced that yet. The last
-> published pair is on
-> [v1.24.7](https://github.com/drakulavich/kesha-voice-kit/releases/tag/v1.24.7).
-> Install with `bun add -g @drakulavich/kesha-voice-kit`, the
-> [Docker image](docker.md), or [Nix](nix-install.md) in the meantime; #728
-> tracks where packages should live.
+> **Where to find them.** `.deb` and `.rpm` are attached to **CLI releases** —
+> the marker releases tagged `vX.Y.Z-cli` — because the package *is* the CLI.
+> They used to ride stable engine releases (`vX.Y.Z`), where they were named
+> after a CLI version npm had not published yet
+> ([#728](https://github.com/drakulavich/kesha-voice-kit/issues/728)). Releases
+> between `v1.24.7` and the first `-cli` release after that change carry no
+> packages; the
+> [releases page](https://github.com/drakulavich/kesha-voice-kit/releases)
+> shows which. Prereleases ship none at all.
 
 The packages install a standalone Bun-compiled CLI wrapper as `kesha`. Engine
 binaries and models are still downloaded explicitly with `kesha install`
@@ -19,33 +18,38 @@ The wrapper is compiled with Bun's glibc target (`bun-linux-x64`) — it won't
 run on musl-based distros (e.g. Alpine). Use the [Docker image](docker.md)
 there instead.
 
+## Download
+
+The newest release is often an engine release, which carries no packages, so
+resolve the latest `-cli` tag rather than asking for `latest`:
+
+```bash
+TAG=$(gh release list -R drakulavich/kesha-voice-kit --limit 50 --json tagName \
+  --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-cli$"))][0].tagName')
+gh release download "$TAG" -R drakulavich/kesha-voice-kit \
+  -p 'kesha-voice-kit_*_amd64.deb' -p 'kesha-voice-kit-*.x86_64.rpm' -p SHA256SUMS
+sha256sum -c SHA256SUMS
+```
+
+No `gh` CLI? Pick the newest `vX.Y.Z-cli` release from the
+[releases page](https://github.com/drakulavich/kesha-voice-kit/releases) and
+download the assets by hand.
+
 ## Debian / Ubuntu
 
 ```bash
-gh release download \
-  -R drakulavich/kesha-voice-kit \
-  -p 'kesha-voice-kit_*_amd64.deb'
 sudo apt install ./kesha-voice-kit_*_amd64.deb
 kesha install
 kesha audio.ogg
 ```
 
-No `gh` CLI? Download the same `.deb` from the
-[latest release page](https://github.com/drakulavich/kesha-voice-kit/releases/latest).
-
 ## Fedora / RHEL
 
 ```bash
-gh release download \
-  -R drakulavich/kesha-voice-kit \
-  -p 'kesha-voice-kit-*.x86_64.rpm'
 sudo dnf install ./kesha-voice-kit-*.x86_64.rpm
 kesha install
 kesha audio.ogg
 ```
-
-No `gh` CLI? Download the same `.rpm` from the
-[latest release page](https://github.com/drakulavich/kesha-voice-kit/releases/latest).
 
 ## What Linux Gets
 
@@ -82,8 +86,9 @@ the same config.
 ```bash
 go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.4
 node .github/scripts/build-linux-packages.mjs
-sudo apt install ./dist/linux-packages/kesha-voice-kit_*_amd64.deb
-kesha --version
-kesha install --plan
-sudo apt remove kesha-voice-kit
+.github/scripts/verify-linux-packages.sh
 ```
+
+CI runs those same two commands through `.github/actions/linux-packages`, from
+both `linux-packages.yml` (on `main`) and `release-cli.yml` (on a
+`vX.Y.Z-cli` tag, which is what publishes them).

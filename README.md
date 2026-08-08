@@ -117,7 +117,7 @@ Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md).
 All of these install the Bun CLI wrapper; engine + models still download explicitly via `kesha install`.
 
 - **Homebrew** — `brew install drakulavich/tap/kesha-voice-kit` · [docs/homebrew.md](docs/homebrew.md)
-- **Linux packages** (`.deb`/`.rpm`, x64) — not currently published, see [docs/linux-packages.md](docs/linux-packages.md)
+- **Linux packages** (`.deb`/`.rpm`, x64) — published on CLI releases, see [docs/linux-packages.md](docs/linux-packages.md)
 - **Docker** (GHCR image) — [docs/docker.md](docs/docker.md)
 - **Nix** (`aarch64-darwin` / `x86_64-linux`) — `nix run github:drakulavich/kesha-voice-kit -- install` · [docs/nix-install.md](docs/nix-install.md)
 - **Shell completions + manpage** — `kesha completions bash|zsh|fish` and `kesha manpage` print the packaged files to install wherever your shell expects them.
