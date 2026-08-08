@@ -1,20 +1,32 @@
-name: "🌱 Release (Alpha)"
+name: "🌱 Release (Alpha) (reusable)"
 
-# Publishes a CLI alpha when a merged PR asked for one with the `alpha` label (#685).
+# Decides whether a merged PR asked for a CLI alpha with the `alpha` label, and reserves the
+# derived version by tagging (#685). It deliberately does not publish: npm Trusted Publishing
+# validates the name of the workflow that *entered* the run and a package configures exactly
+# one, so npm-publish.yml owns every publish and calls this (#732). Neither job touches npm,
+# so the entry name they run under does not matter.
+#
+# No concurrency group of its own: the caller serialises the whole lane, which is the right
+# granularity — deriving a sequence while another run holds an unpublished tag reuses it.
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
+    outputs:
+      publish:
+        description: "Whether this commit earned an alpha"
+        value: ${{ jobs.decide.outputs.publish }}
+      version:
+        description: "Derived alpha version, e.g. 1.27.0-alpha.3"
+        value: ${{ jobs.decide.outputs.version }}
+      tag:
+        description: "Tag reserved for it, e.g. v1.27.0-alpha.3-cli"
+        value: ${{ jobs.decide.outputs.tag }}
+      dist_tag:
+        description: "npm dist-tag the derived version publishes under"
+        value: ${{ jobs.decide.outputs.dist_tag }}
 
-# A bare group would cancel an already-pending run when a newer one joins, dropping the
-# middle of three quick merges; queueing must be asked for and excludes cancel-in-progress.
-concurrency:
-  group: release-alpha
-  queue: max
-
-permissions:
-  contents: read
-
+# No workflow-level `permissions`: a called workflow may only maintain or reduce what the
+# caller granted, so a `contents: read` default here could be read as capping `reserve-tag`
+# below the write it needs. Every job below states its own instead.
 jobs:
   decide:
     name: Decide and derive
@@ -100,20 +112,3 @@ jobs:
           SHA: ${{ github.sha }}
           PREVIOUS: ${{ needs.decide.outputs.previous }}
         run: .github/scripts/alpha-tag.sh
-
-  # No OIDC here: npm-publish.yml owns the only entry name npm's publisher trusts (#731).
-  publish:
-    name: Publish through npm-publish.yml
-    needs: [decide, reserve-tag]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Dispatch the publish and wait for it
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.decide.outputs.tag }}
-        run: .github/scripts/dispatch-npm-publish.sh
