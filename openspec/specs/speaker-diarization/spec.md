@@ -53,12 +53,12 @@ timestamps when `--speakers` is set.
 
 ### Requirement: Diarization engages VAD windowing at any duration
 
-Speaker labels attach to ASR Segments, so diarization needs a real segmentation:
-without VAD the transcript is a single whole-file Segment with nothing to label.
 When `--speakers` is requested the Engine SHALL force VAD preprocessing
-regardless of audio duration, overriding the 120 s auto-VAD threshold, and SHALL
-fail with an actionable message naming `kesha install --vad` when the VAD model
-is missing. An explicit `--no-vad` SHALL be refused rather than silently
+regardless of audio duration, overriding the 120 s auto-VAD threshold, because
+speaker labels attach to ASR Segments: without VAD the transcript is a single
+whole-file Segment with nothing to label. The Engine SHALL fail with an
+actionable message naming `kesha install --vad` when the VAD model is missing.
+An explicit `--no-vad` SHALL be refused rather than silently
 overridden: the CLI SHALL exit 2 before spawning the Engine, and the Engine SHALL
 report `E_INVALID_ARG` if reached directly. The two layers report differently on
 purpose — CLI flag gates exit 2 with an uncoded message (the
