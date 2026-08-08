@@ -324,9 +324,30 @@ export async function detectTextLanguageEngine(
 ): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
-  const { stdout, exitCode } = await runEngine(["detect-text-lang", text], opts);
-  if (exitCode !== 0) return null;
+  const { stdout, stderr, exitCode } = await runEngine(["detect-text-lang", text], opts);
+  if (exitCode !== 0) {
+    const warning = textLangFailureWarning(stderr);
+    if (warning) log.warn(warning);
+    return null;
+  }
   return parseLangResult(stdout);
+}
+
+/**
+ * Null off darwin, where text detection is unsupported by design and failing is expected.
+ *
+ * On darwin a failure means a broken `kesha-textlang` sidecar, and swallowing it routed
+ * `kesha say` to the default voice with no hint that detection had stopped working (#770).
+ */
+export function textLangFailureWarning(
+  stderr: string,
+  platform: string = process.platform,
+): string | null {
+  if (platform !== "darwin") return null;
+  return (
+    `Text language detection failed${stderr ? `: ${stderr}` : ""}\n` +
+    "  Falling back to the default voice. Fix: run `kesha install` to reinstall the kesha-textlang sidecar."
+  );
 }
 
 export interface TtsLanguageCapability {

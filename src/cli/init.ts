@@ -40,7 +40,9 @@ function exitIfCancelled<T>(answer: T | symbol): T {
 }
 
 async function promptTtsLangs(preselect: string[]): Promise<string[]> {
-  const caps = await getEngineCapabilities();
+  // A corrupt engine must leave init offering the fallback list rather than aborting the
+  // guided setup that would replace it (#770).
+  const caps = await getEngineCapabilities().catch(() => null);
   const supported = caps?.tts?.languages.map((l) => l.code) ?? TTS_LANG_FALLBACK;
   const selected = await multiselect({
     message:

@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { installEngine } from "../engine-install";
 import { engineTarget } from "../engine-targets";
-import { getEngineBinPath, getEngineCapabilities } from "../engine";
+import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from "../engine";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
@@ -88,6 +88,23 @@ export function resolveNoCacheFlag(
     args.noCache === true ||
     args.no_cache === true
   );
+}
+
+/**
+ * Capabilities for `--tts` validation, tolerating an engine that cannot be spawned (#770).
+ *
+ * A corrupt or wrong-arch binary used to throw here and kill the command before the
+ * re-download that repairs it. Without capabilities the language codes simply go
+ * unvalidated locally — the freshly installed engine rejects unsupported ones at
+ * download time, which is authoritative anyway.
+ */
+export async function probeCapabilitiesForInstall(): Promise<EngineCapabilities | null> {
+  try {
+    return await getEngineCapabilities();
+  } catch (err) {
+    log.debug(`capabilities probe failed before install: ${errorMessage(err)}`);
+    return null;
+  }
 }
 
 export type BackendSelection =
@@ -274,7 +291,7 @@ export const installCommand = defineCommand({
     }
     const backend = resolveBackendFlag(args.coreml, args.onnx);
     const positionals = (args._ ?? []).map(String);
-    const caps = await getEngineCapabilities();
+    const caps = await probeCapabilitiesForInstall();
     const supported = caps?.tts?.languages.map((l) => l.code);
     let ttsLangs: string[];
     try {

@@ -1,3 +1,5 @@
+import { readdirSync, renameSync, rmSync } from "fs";
+import { basename, dirname, join } from "path";
 import { log } from "./log";
 
 const BAR_WIDTH = 20;
@@ -126,6 +128,25 @@ export async function applyBackpressure(
   if (written < 0) await writer.flush();
 }
 
+/** A Ctrl-C kills the process before any cleanup runs, so last run's staging file is swept by the next one (#770). */
+function sweepStagingFiles(destPath: string): void {
+  const dir = dirname(destPath);
+  const prefix = `${basename(destPath)}.part.`;
+  try {
+    for (const name of readdirSync(dir)) {
+      if (name.startsWith(prefix)) rmSync(join(dir, name), { force: true });
+    }
+  } catch {
+    // Best-effort: an unreadable directory surfaces on the write below, with a better message.
+  }
+}
+
+/**
+ * Downloads into a sibling `.part.<pid>` file and renames it into place, so an interrupted
+ * download can never leave a truncated binary at `destPath` (#770). Mirrors the staging
+ * `rust/src/models.rs::write_verified` already does for model files. Staging beside the
+ * destination keeps the rename within one filesystem, where it is atomic.
+ */
 export async function streamResponseToFile(
   res: Response,
   destPath: string,
@@ -140,17 +161,25 @@ export async function streamResponseToFile(
   const totalBytes = Number(res.headers.get("content-length") || 0);
   const progress = createProgressBar(label, totalBytes);
 
-  const writer = Bun.file(destPath).writer();
+  sweepStagingFiles(destPath);
+  const stagingPath = `${destPath}.part.${process.pid}`;
+  const writer = Bun.file(stagingPath).writer();
   let bytes = 0;
   try {
-    for await (const chunk of res.body) {
-      await applyBackpressure(writer, writer.write(chunk));
-      bytes += chunk.length;
-      progress.update(chunk.length);
+    try {
+      for await (const chunk of res.body) {
+        await applyBackpressure(writer, writer.write(chunk));
+        bytes += chunk.length;
+        progress.update(chunk.length);
+      }
+    } finally {
+      // Must await: an open write handle makes the freshly-downloaded engine unspawnable — EBUSY on Windows, ETXTBSY on Linux.
+      await writer.end();
     }
-  } finally {
-    // Must await: an open write handle makes the freshly-downloaded engine unspawnable — EBUSY on Windows, ETXTBSY on Linux.
-    await writer.end();
+    renameSync(stagingPath, destPath);
+  } catch (err) {
+    rmSync(stagingPath, { force: true });
+    throw err;
   }
 
   progress.finish();

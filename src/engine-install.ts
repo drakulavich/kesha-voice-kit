@@ -8,6 +8,7 @@ import {
   TRANSCRIBE_DIARIZE_FEATURE,
   type EngineCapabilities,
 } from "./engine";
+import { probeExecutable } from "./engine-health";
 import { engineTarget } from "./engine-targets";
 import { isDarwinArm64 } from "./fluid-kokoro-cache";
 import { log } from "./log";
@@ -425,6 +426,21 @@ export async function waitUntilSpawnable(
   );
 }
 
+/**
+ * Cache-validity health check: an install interrupted before `chmod`/marker-write, or a
+ * binary from another architecture, exists at the right version yet cannot start (#770).
+ */
+async function engineRuns(binPath: string): Promise<boolean> {
+  const health = await probeExecutable(binPath, ["--version"]);
+  if (health.status === "ok") return true;
+  const detail = health.status === "unusable" ? health.detail : "binary disappeared";
+  log.warn(
+    `Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` +
+      "another architecture — re-downloading it.",
+  );
+  return false;
+}
+
 /** Cold path: download the engine binary (and sidecars, concurrently). */
 async function fetchEngineBinary(
   binPath: string,
@@ -589,7 +605,12 @@ export async function installEngine(request: EngineInstallRequest = {}): Promise
   // Read-only engine dir = Nix-store install; skip download/sidecar writes to avoid EROFS errors.
   const canWriteEngineDir = checkEngineWritable(engineDir);
 
-  const versionMatches = existsSync(binPath) && installedVersion === version;
+  const markerMatches = existsSync(binPath) && installedVersion === version;
+  // The marker vouches for a file, not for a working binary. Skipped on a read-only engine
+  // dir: nothing there can be repaired, so a failed probe would only turn a usable Nix
+  // install into a hard error.
+  const versionMatches =
+    markerMatches && (!canWriteEngineDir || (await engineRuns(binPath)));
   // On read-only fs, --no-cache can't re-download; treat as cache-valid and forward flag to model install.
   const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 

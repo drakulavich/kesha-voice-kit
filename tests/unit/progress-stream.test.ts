@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync } from "fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { applyBackpressure, streamResponseToFile } from "../../src/progress";
@@ -48,6 +48,94 @@ describe("streamResponseToFile flushes before resolving", () => {
       const back = new Uint8Array(await Bun.file(dest).arrayBuffer());
       expect(back.length).toBe(source.length);
       expect(Bun.SHA256.hash(back, "hex")).toBe(Bun.SHA256.hash(source, "hex"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("streamResponseToFile publishes atomically (#770)", () => {
+  /** Streams `prefix`, then fails — the shape of a Ctrl-C or a dropped connection mid-download. */
+  function failingResponse(prefix: string, message: string): Response {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(prefix));
+        controller.error(new Error(message));
+      },
+    });
+    return new Response(body, { headers: { "content-length": "999999" } });
+  }
+
+  test("an interrupted download leaves the previous file untouched", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-abort-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+      writeFileSync(dest, "previous engine");
+
+      await expect(
+        streamResponseToFile(failingResponse("truncated", "connection reset"), dest, "payload"),
+      ).rejects.toThrow(/connection reset/);
+
+      expect(readFileSync(dest, "utf8")).toBe("previous engine");
+      expect(readdirSync(dir)).toEqual(["kesha-engine"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an interrupted first download leaves no file at all", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-abort-cold-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+
+      await expect(
+        streamResponseToFile(failingResponse("truncated", "connection reset"), dest, "payload"),
+      ).rejects.toThrow(/connection reset/);
+
+      expect(readdirSync(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a successful download leaves no staging file behind", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-staging-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+
+      await streamResponseToFile(responseOf("engine bytes"), dest, "payload");
+
+      expect(readFileSync(dest, "utf8")).toBe("engine bytes");
+      expect(readdirSync(dir)).toEqual(["kesha-engine"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A Ctrl-C kills the process before cleanup runs, so the next download has to sweep.
+  test("a staging file orphaned by a killed process is swept", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-orphan-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+      writeFileSync(`${dest}.part.4242`, "orphan from a killed run");
+
+      await streamResponseToFile(responseOf("engine bytes"), dest, "payload");
+
+      expect(readdirSync(dir)).toEqual(["kesha-engine"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the published file carries the mode the caller then chmods", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-mode-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+
+      await streamResponseToFile(responseOf("engine bytes"), dest, "payload");
+      chmodSync(dest, 0o755);
+
+      expect(statSync(dest).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o755);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

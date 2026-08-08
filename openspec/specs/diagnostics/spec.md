@@ -34,6 +34,11 @@ snapshot of known `KESHA_*` environment variables.
 `kesha doctor` SHALL always exit 0, even when components are missing or the Engine
 probe fails. It SHALL never download or modify any file.
 
+Install status for the Engine binary and the Sidecars SHALL be established by running
+them, not by testing that the file exists. A binary that is present but which the OS
+refuses to execute SHALL be reported as corrupt with a reinstall hint, distinctly from
+one that is not installed.
+
 `--json` outputs the same data as 2-space-indented JSON to stdout.
 
 `--redact` replaces secret-pattern key values (keys containing TOKEN, KEY, SECRET,
@@ -58,6 +63,14 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
   `optionalComponents`, `stats`, `diagnosticLogs`, and `env` keys
 - AND the process exits 0
 
+#### Scenario: Maks checks an install an interrupted download left behind
+
+- GIVEN the `say-avspeech` sidecar file exists but is truncated
+- WHEN Maks runs `kesha doctor`
+- THEN the report shows it as installed but not executable, with a `kesha install` hint
+- AND a sidecar that is simply absent is still shown as missing
+- AND the process exits 0
+
 #### Scenario: Sona redacts before sharing
 
 - GIVEN `KESHA_MODEL_MIRROR=https://user:pass@mirror.example.com/models` is set
@@ -69,6 +82,9 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 
 > *Technical Note — sources: `src/doctor.ts::collectDoctorReport`,
 > `src/doctor.ts::formatDoctorReport`, `src/cli/doctor.ts::doctorCommand`.
+> Executability comes from `src/engine-health.ts::probeExecutable` and surfaces as
+> `engine.runnable` and per-component `runnable` in the JSON report; any exit code counts
+> as healthy, since the sidecars legitimately exit non-zero when given no work.
 > Known env keys snapshot: `KESHA_ENGINE_BIN`, `KESHA_CACHE_DIR`,
 > `KESHA_MODEL_MIRROR`, `KESHA_STATS_DB`, `KESHA_DEBUG`, `KESHA_DEBUG_FD`
 > (from `KNOWN_ENV_KEYS`). Secret-pattern detection splits the key on

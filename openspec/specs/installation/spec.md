@@ -301,6 +301,40 @@ begin.
 > `download_verified` function, `init_mirror_logging`, `model_mirror()`).
 > Error code `E_CACHE_CORRUPT` is used when a cached file fails hash verification.*
 
+### Requirement: Downloads land atomically and an installed Engine is verified by running it
+
+The CLI SHALL stream every downloaded file into a staging file beside its destination and
+rename it into place only once the download completes, so an interrupted download never
+leaves a partial file where a complete one is expected. A download that fails or is
+interrupted SHALL leave the previous file untouched, or no file at all when there was none.
+
+`kesha install` SHALL treat an Engine whose recorded version matches the requested one but
+which cannot be spawned as invalid, and re-download it. A Capabilities probe that fails
+because the installed Engine cannot be spawned SHALL NOT abort the install: the requested
+TTS language codes are then validated by the freshly installed Engine instead.
+
+#### Scenario: Maks interrupts a download with Ctrl-C
+
+- GIVEN `kesha install` is downloading the Engine binary
+- WHEN Maks presses Ctrl-C partway through
+- THEN no partial Engine binary is left at the install path
+- AND a previously installed Engine binary is still intact and runnable
+
+#### Scenario: Ira re-runs install over a corrupt Engine
+
+- GIVEN the Engine binary is truncated but its `.version` marker names the pinned version
+- WHEN Ira runs `kesha install`
+- THEN the CLI reports that the installed Engine does not run and re-downloads it
+- AND the command completes without surfacing an `E_ENGINE_SPAWN` failure from the
+  Capabilities probe
+
+> *Technical Note — sources: `src/progress.ts::streamResponseToFile` (stages to
+> `<dest>.part.<pid>`, renames on success, sweeps orphans left by a killed process),
+> `src/engine-health.ts::probeExecutable`, `src/engine-install.ts::installEngine`
+> (health-gated cache validity; skipped on a read-only engine directory, where nothing
+> could be repaired anyway), `src/cli/install.ts::probeCapabilitiesForInstall`. Mirrors
+> the staging `rust/src/models.rs::write_verified` already performs for model files.*
+
 ### Requirement: `--plan` shows the download plan without changing local state
 
 The CLI SHALL print a human-readable Install plan when `--plan` is passed, listing all

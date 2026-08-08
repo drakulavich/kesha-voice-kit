@@ -510,3 +510,113 @@ describe("engine version drift (#738)", () => {
     }
   });
 });
+
+// #770: a truncated download leaves a file that exists but cannot run. Reporting it as
+// "installed" is a false clean from the one command whose job is to find such faults.
+describe("doctor separates corrupt components from missing ones", () => {
+  const savedEnv = {
+    HOME: process.env.HOME,
+    KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
+    KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
+    KESHA_STATS_DB: process.env.KESHA_STATS_DB,
+  };
+
+  function restoreEnv() {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  /** Mode 0o755 but not a loadable image, exactly what an interrupted download leaves behind. */
+  const TRUNCATED = "\x7fELF\x00\x01\x02truncated";
+
+  function stageInstall(prefix: string, engineBody: string, sidecarBody: string | null): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    const binDir = join(dir, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    writeFakeEngine(join(binDir, "kesha-engine"), engineBody);
+    if (sidecarBody !== null) {
+      writeFakeEngine(join(binDir, "say-avspeech"), sidecarBody);
+      writeFakeEngine(join(binDir, "kesha-textlang"), sidecarBody);
+    }
+    process.env.HOME = dir;
+    process.env.KESHA_ENGINE_BIN = join(binDir, "kesha-engine");
+    process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+    process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+    return dir;
+  }
+
+  function sidecarStates(report: Awaited<ReturnType<typeof collectDoctorReport>>) {
+    return report.optionalComponents
+      .filter((c) => c.name.endsWith("sidecar"))
+      .map((c) => ({ name: c.name, exists: c.exists, runnable: c.runnable }));
+  }
+
+  posixEngineTest("a truncated sidecar reports as corrupt, not installed", async () => {
+    const dir = stageInstall("kesha-doctor-corrupt-sidecar-", "#!/bin/sh\nexit 0\n", TRUNCATED);
+    try {
+      const report = await collectDoctorReport();
+      expect(sidecarStates(report)).toEqual([
+        { name: "AVSpeech sidecar", exists: true, runnable: false },
+        { name: "Text language sidecar", exists: true, runnable: false },
+      ]);
+
+      const output = formatDoctorReport(report);
+      expect(output).toContain("AVSpeech sidecar: installed but not executable (corrupt)");
+      expect(output).toContain("Text language sidecar: installed but not executable (corrupt)");
+      expect(output).toContain("re-run `kesha install`");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The sidecars exit non-zero with no work to do, so "it ran" is the only fair health bar.
+  posixEngineTest("a working sidecar still reports as installed", async () => {
+    const dir = stageInstall("kesha-doctor-ok-sidecar-", "#!/bin/sh\nexit 0\n", "#!/bin/sh\nexit 1\n");
+    try {
+      const report = await collectDoctorReport();
+      expect(sidecarStates(report)).toEqual([
+        { name: "AVSpeech sidecar", exists: true, runnable: true },
+        { name: "Text language sidecar", exists: true, runnable: true },
+      ]);
+      expect(formatDoctorReport(report)).not.toContain("corrupt");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an absent sidecar stays missing rather than corrupt", async () => {
+    const dir = stageInstall("kesha-doctor-no-sidecar-", "#!/bin/sh\nexit 0\n", null);
+    try {
+      const report = await collectDoctorReport();
+      expect(sidecarStates(report)).toEqual([
+        { name: "AVSpeech sidecar", exists: false, runnable: undefined },
+        { name: "Text language sidecar", exists: false, runnable: undefined },
+      ]);
+      expect(formatDoctorReport(report)).toContain("AVSpeech sidecar: missing");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("a truncated engine is named as corrupt rather than probed for capabilities", async () => {
+    const dir = stageInstall("kesha-doctor-corrupt-engine-", TRUNCATED, null);
+    try {
+      const report = await collectDoctorReport();
+      expect(report.engine.installed).toBe(true);
+      expect(report.engine.runnable).toBe(false);
+      expect(report.engine.probeError).toContain("does not run");
+
+      const output = formatDoctorReport(report);
+      expect(output).toContain(
+        `Binary: ${report.engine.path} (installed but not executable (corrupt) - re-run \`kesha install\`)`,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
