@@ -1673,11 +1673,6 @@ const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 /// A server asking for more than this is asking for longer than a user will
 /// wait at an install prompt; clamp rather than honour it literally.
 const RETRY_AFTER_MAX: Duration = Duration::from_secs(60);
-/// How long the origin may take to send response *headers*. Sized for the
-/// largest artifact we host: HuggingFace reconstructs the 654MB Xet-backed vosk
-/// bert model before answering, which took longer than 30s on every attempt
-/// (#777).
-const RECV_RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// One request+stream attempt that failed. `max_attempts` is the total the
 /// retry loop may spend on this kind of failure; 1 means fatal, which is what a
@@ -1719,18 +1714,13 @@ fn download_attempt(
     // deliberately left unbounded: the 2.4GB encoder legitimately streams for
     // hours on a slow link, and a deadline loose enough to survive that would
     // not catch a stall anyway.
-    //
-    // `recv_response` bounds the *headers*, not the download, and HuggingFace
-    // reconstructs Xet-deduplicated objects before it answers: the 654MB vosk
-    // bert model needs well over 30s to start responding (#777). Resolve and
-    // connect still fail fast, so an unreachable host never waits this long.
     let response = match ureq::get(url)
         .config()
         .http_status_as_error(false)
         .timeout_resolve(Some(Duration::from_secs(10)))
         .timeout_connect(Some(Duration::from_secs(10)))
         .timeout_send_request(Some(Duration::from_secs(10)))
-        .timeout_recv_response(Some(RECV_RESPONSE_TIMEOUT))
+        .timeout_recv_response(Some(Duration::from_secs(30)))
         .build()
         .call()
     {
