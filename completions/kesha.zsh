@@ -27,7 +27,7 @@ _kesha() {
       '--json[Output results as JSON]' \
       '--toon[Output results as TOON (compact, LLM-friendly encoding of the same data as --json)]' \
       '--timestamps[Include timestamped transcript segments in JSON/TOON output]' \
-      '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first. Implies --timestamps.]' \
+      '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize --vad` first. Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).]' \
       '--include-errors[With --json, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
       '--verbose[Show language detection details]' \
       '--format=[Output format: transcript | json | toon (long-form alias for --json / --toon)]:format:' \
@@ -139,7 +139,7 @@ _kesha() {
       '--json[Output results as JSON]' \
       '--toon[Output results as TOON (compact, LLM-friendly encoding of the same data as --json)]' \
       '--timestamps[Include timestamped transcript segments in JSON/TOON output]' \
-      '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first. Implies --timestamps.]' \
+      '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize --vad` first. Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).]' \
       '--include-errors[With --json, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
       '--verbose[Show language detection details]' \
       '--format=[Output format: transcript | json | toon (long-form alias for --json / --toon)]:format:' \

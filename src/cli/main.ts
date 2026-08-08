@@ -175,6 +175,16 @@ export function validateTranscribeArgs(
   if (args.speakers && !(wantsJson || wantsToon)) {
     return { ok: false, error: "--speakers requires --json, --toon, or --format {json,toon}." };
   }
+  // #768: diarization labels VAD-windowed segments, so --no-vad leaves nothing to label.
+  if (args.speakers && noVad) {
+    return {
+      ok: false,
+      error:
+        "--speakers cannot be combined with --no-vad: speaker labels attach to VAD-windowed " +
+        "speech segments, and --no-vad leaves the whole file as one segment. Drop --no-vad " +
+        "(VAD engages automatically for --speakers), or drop --speakers.",
+    };
+  }
   if (args["include-errors"] && !wantsJson) {
     return { ok: false, error: "--include-errors requires --json or --format json." };
   }
@@ -437,7 +447,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       },
       speakers: {
         type: "boolean",
-        description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first. Implies --timestamps.",
+        description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize --vad` first. Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).",
         default: false,
       },
       "include-errors": {

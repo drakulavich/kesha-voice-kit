@@ -255,7 +255,7 @@ OPTIONS
              --json    Output results as JSON (Default: false)
              --toon    Output results as TOON (compact, LLM-friendly encoding of the same data as --json) (Default: false)
        --timestamps    Include timestamped transcript segments in JSON/TOON output (Default: false)
-         --speakers    Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run \`kesha install --diarize\` first. Implies --timestamps. (Default: false)
+         --speakers    Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run \`kesha install --diarize --vad\` first. Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad). (Default: false)
    --include-errors    With --json, output { results, errors } so scripts can read per-file failures without parsing stderr (Default: false)
           --verbose    Show language detection details (Default: false)
   --format=<format>    Output format: transcript | json | toon (long-form alias for --json / --toon)
@@ -709,5 +709,17 @@ describe("validateTranscribeArgs guards", () => {
     expect(expectAccepted({}, [], okFmt()).vadMode).toBe("auto");
     expect(expectAccepted({ vad: true }, ["--vad"], okFmt()).vadMode).toBe("on");
     expect(expectAccepted({}, ["--no-vad"], okFmt()).vadMode).toBe("off");
+  });
+
+  test("--speakers with --no-vad is rejected (#768)", () => {
+    expect(
+      expectRejected({ speakers: true, json: true }, ["--speakers", "--no-vad"], okFmt(true)),
+    ).toContain("--speakers cannot be combined with --no-vad");
+  });
+
+  test("--speakers alone still routes through auto VAD", () => {
+    expect(
+      expectAccepted({ speakers: true, json: true }, ["--speakers", "--json"], okFmt(true)).vadMode,
+    ).toBe("auto");
   });
 });

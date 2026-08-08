@@ -341,7 +341,7 @@ function assembleComponents(input: {
         "Diarization Sortformer",
         DIARIZE_FILES,
         isDarwinArm64()
-          ? "speaker labels for --speakers"
+          ? "speaker labels for --speakers; also needs --vad, which windows the audio into labelable segments"
           : "darwin-arm64 only; install will reject this flag on the current platform",
       ),
     );

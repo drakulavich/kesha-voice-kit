@@ -37,6 +37,8 @@ enum Commands {
         #[arg(long = "no-vad")]
         no_vad: bool,
         /// Include speaker labels in transcript segments. Requires --json.
+        /// Engages VAD windowing automatically at any duration (labels attach
+        /// to speech segments), so it cannot be combined with `--no-vad`.
         /// Currently darwin-arm64 only (#199).
         #[arg(long)]
         speakers: bool,
