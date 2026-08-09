@@ -28,3 +28,4 @@ skills-lock.json
 .stryker-tmp/
 reports/
 mutants.out/
+mutants.out.old/

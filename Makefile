@@ -33,12 +33,16 @@ integration: ## Run integration tests
 rust-test: ## Run Rust tests via nextest (matches CI — rust-test.yml)
 	cd rust && cargo nextest run --features tts
 
+# The widened set measures the ANE + diarize surfaces; `system_kokoro` cfg-excludes the ONNX-Kokoro
+# ones, so those need a second pass with FEATURES=tts. No target measures both — they are exclusive.
+FEATURES ?= tts,system_kokoro,system_diarize
+
 # `--in-place` is not optional: models.rs include_str!s a file above the crate, so the copy build fails.
-mutants-rust: ## Mutation-test one engine file, e.g. make mutants-rust FILE=src/errors.rs
-	@test -n "$(FILE)" || { echo "usage: make mutants-rust FILE=src/<file>.rs" >&2; exit 2; }
+mutants-rust: ## Mutation-test one engine file, e.g. make mutants-rust FILE=src/errors.rs [FEATURES=tts]
+	@test -n "$(FILE)" || { echo "usage: make mutants-rust FILE=src/<file>.rs [FEATURES=<set>]" >&2; exit 2; }
 	@command -v cargo-mutants >/dev/null || { echo "install it: cargo install --locked cargo-mutants" >&2; exit 2; }
 	@git diff --quiet -- rust || { echo "rust/ has uncommitted changes; --in-place mutates the tree" >&2; exit 2; }
-	cd rust && cargo mutants --in-place -f $(FILE)
+	cd rust && cargo mutants --in-place -f $(FILE) --features $(FEATURES)
 
 lint: ## Type-check with tsc
 	bunx tsc --noEmit
