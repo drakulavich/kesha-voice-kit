@@ -124,6 +124,10 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 
 **`make smoke-test` can false-green here.** It runs whatever `kesha` resolves to, and a previously `bun add -g`'d install outranks `bun link`; if its output prints an older version, it tested an older CLI and proves nothing about this release.
 
+### Step 6 — Re-lead the base version on `main`
+
+`main` must carry the next *unreleased* CLI version (#691), and this release just consumed the current one. Open a follow-up PR bumping `package.json#version`, `server.json#version`, and `server.json#packages[0].version` to the next minor. Skipping this step is how #802 happened: the alpha derivation kept emitting `X.Y.Z-alpha.N` for an already-released `X.Y.Z`, so the next labelled merge would point `@alpha` at a version older than `@latest`.
+
 ## Hard rules
 
 - NEVER `npm publish` from a laptop — GHA owns it, with provenance.
