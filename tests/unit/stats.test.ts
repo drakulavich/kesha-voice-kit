@@ -23,23 +23,30 @@ import {
   type StatsWeekSummary,
 } from "../../src/stats";
 
-describe("stats storage", () => {
+/** Points the stats DB at a throwaway directory for one describe, and cleans it up after. */
+function useTempStatsDb(prefix: string): () => string {
   let dir: string;
-  const savedStatsDb = process.env.KESHA_STATS_DB;
+  const saved = process.env.KESHA_STATS_DB;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "kesha-stats-test-"));
+    dir = mkdtempSync(join(tmpdir(), prefix));
     process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
   });
 
   afterEach(() => {
-    if (savedStatsDb === undefined) delete process.env.KESHA_STATS_DB;
-    else process.env.KESHA_STATS_DB = savedStatsDb;
+    if (saved === undefined) delete process.env.KESHA_STATS_DB;
+    else process.env.KESHA_STATS_DB = saved;
     rmSync(dir, { recursive: true, force: true });
   });
 
+  return () => dir;
+}
+
+describe("stats storage", () => {
+  const statsDir = useTempStatsDb("kesha-stats-test-");
+
   test("resolveStatsDbPath respects KESHA_STATS_DB", () => {
-    expect(resolveStatsDbPath()).toBe(join(dir, "stats.sqlite"));
+    expect(resolveStatsDbPath()).toBe(join(statsDir(), "stats.sqlite"));
   });
 
   test("status is disabled before the database exists", () => {
@@ -69,7 +76,7 @@ describe("stats storage", () => {
     expect(recorder.enabled).toBe(true);
     recorder.recordArtifact({ kind: "input_audio", format: ".ogg", sizeBytes: 1024 });
     await recorder.timeStage("transcribe", async () => "ok");
-    recorder.recordError("transcribe", new Error(`${dir}/secret.ogg failed?token=abc`));
+    recorder.recordError("transcribe", new Error(`${statsDir()}/secret.ogg failed?token=abc`));
     recorder.finish("failed", 1);
 
     const status = getStatsStatus();
@@ -83,7 +90,7 @@ describe("stats storage", () => {
     expect(week.inputBytes).toBe(1024);
     expect(week.sttTimeMs).toBeGreaterThanOrEqual(0);
     expect(errors).toHaveLength(1);
-    expect(errors[0].message).not.toContain(dir);
+    expect(errors[0].message).not.toContain(statsDir());
     expect(errors[0].message).not.toContain("secret.ogg");
   });
 
@@ -175,7 +182,7 @@ describe("stats storage", () => {
 
   test("exports content-free JSON and CSV", () => {
     enableStats();
-    const secretPath = `${dir}/private-recording.wav`;
+    const secretPath = `${statsDir()}/private-recording.wav`;
     seedStatsRun({
       command: "transcribe",
       status: "failed",
@@ -297,19 +304,7 @@ describe("stats storage", () => {
 });
 
 describe("week summary aggregation", () => {
-  let dir: string;
-  const savedStatsDb = process.env.KESHA_STATS_DB;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "kesha-stats-agg-"));
-    process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
-  });
-
-  afterEach(() => {
-    if (savedStatsDb === undefined) delete process.env.KESHA_STATS_DB;
-    else process.env.KESHA_STATS_DB = savedStatsDb;
-    rmSync(dir, { recursive: true, force: true });
-  });
+  useTempStatsDb("kesha-stats-agg-");
 
   const NOW = new Date("2026-05-17T00:00:00.000Z");
 
@@ -584,19 +579,7 @@ describe("week summary aggregation", () => {
 });
 
 describe("the recorder writes what it is handed", () => {
-  let dir: string;
-  const savedStatsDb = process.env.KESHA_STATS_DB;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "kesha-stats-recorder-"));
-    process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
-  });
-
-  afterEach(() => {
-    if (savedStatsDb === undefined) delete process.env.KESHA_STATS_DB;
-    else process.env.KESHA_STATS_DB = savedStatsDb;
-    rmSync(dir, { recursive: true, force: true });
-  });
+  useTempStatsDb("kesha-stats-recorder-");
 
   test("optional artifact and error fields survive the round trip, and absent ones are null", () => {
     enableStats();
@@ -948,19 +931,7 @@ describe("stats retention settings", () => {
 });
 
 describe("stats export contracts", () => {
-  let dir: string;
-  const savedStatsDb = process.env.KESHA_STATS_DB;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "kesha-stats-export-"));
-    process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
-  });
-
-  afterEach(() => {
-    if (savedStatsDb === undefined) delete process.env.KESHA_STATS_DB;
-    else process.env.KESHA_STATS_DB = savedStatsDb;
-    rmSync(dir, { recursive: true, force: true });
-  });
+  useTempStatsDb("kesha-stats-export-");
 
   test("the CSV header is the whole column contract, in order", () => {
     enableStats();
