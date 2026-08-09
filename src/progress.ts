@@ -10,20 +10,19 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
+function bar(pct: number): string {
+  const filled = Math.round((pct / 100) * BAR_WIDTH);
+  return "█".repeat(filled) + "░".repeat(BAR_WIDTH - filled);
+}
+
 export function formatProgressBar(label: string, downloaded: number, total: number): string {
   const pct = total <= 0 ? 0 : Math.min(100, Math.floor((downloaded / total) * 100));
-  const filled = Math.round((pct / 100) * BAR_WIDTH);
-  const empty = BAR_WIDTH - filled;
-  const bar = "█".repeat(filled) + "░".repeat(empty);
-  return `${label}  [${bar}] ${pct}%  ${formatBytes(downloaded)}/${formatBytes(total)}`;
+  return `${label}  [${bar(pct)}] ${pct}%  ${formatBytes(downloaded)}/${formatBytes(total)}`;
 }
 
 export function formatPercentProgress(label: string, percent: number): string {
   const pct = Math.max(0, Math.min(100, Math.floor(percent)));
-  const filled = Math.round((pct / 100) * BAR_WIDTH);
-  const empty = BAR_WIDTH - filled;
-  const bar = "█".repeat(filled) + "░".repeat(empty);
-  return `${label}  [${bar}] ${pct}%`;
+  return `${label}  [${bar(pct)}] ${pct}%`;
 }
 
 function estimatePercent(elapsedMs: number, estimatedTotalMs: number): number {
@@ -230,7 +229,8 @@ export function createProgressBar(label: string, totalBytes: number): {
 } {
   const isTTY = process.stderr.isTTY;
 
-  if (!isTTY || totalBytes <= 0) {
+  // A garbage `Content-Length` parses to NaN, which is not `<= 0`, and `NaN === lastPct` never coalesces.
+  if (!isTTY || !Number.isFinite(totalBytes) || totalBytes <= 0) {
     const sizeInfo = totalBytes > 0 ? ` (${formatBytes(totalBytes)})` : "";
     log.progress(`Downloading ${label}${sizeInfo}...`);
     return {
@@ -246,7 +246,7 @@ export function createProgressBar(label: string, totalBytes: number): {
   return {
     update(downloadedBytes: number) {
       current += downloadedBytes;
-      const pct = totalBytes > 0 ? Math.floor((current / totalBytes) * 100) : 0;
+      const pct = Math.floor((current / totalBytes) * 100);
       if (pct === lastPct) return;
       lastPct = pct;
       const line = formatProgressBar(label, current, totalBytes);

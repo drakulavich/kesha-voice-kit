@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { prunable, RETENTION_DAYS } from "../../.github/scripts/prune-alpha-releases";
+import { readRepoFile } from "../helpers/repo";
 
 const NOW = new Date("2026-08-05T12:00:00Z");
 const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString();
@@ -74,7 +74,7 @@ describe("prunable", () => {
 });
 
 describe("the pruning workflow", () => {
-  const script = readFileSync(`${import.meta.dir}/../../.github/scripts/prune-alpha-releases.sh`, "utf8");
+  const script = readRepoFile(".github/scripts/prune-alpha-releases.sh");
 
   // --cleanup-tag would free a version identifier for reuse, which the spec forbids.
   test("deletes the Release without touching its tag", () => {

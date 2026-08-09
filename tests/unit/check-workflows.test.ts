@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { parse } from "yaml";
 import {
   forbidLinuxPackaging,
   requireNpmPublishAfterPackaging,
   requirePreUploadSynthesisSmoke,
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
+import { parseRepoYaml, readRepoFile } from "../helpers/repo";
 
 const PATH = ".github/workflows/build-engine.yml";
 const CI = ".github/workflows/ci.yml";
@@ -21,7 +20,7 @@ const UPLOAD = { name: "upload", uses: "actions/upload-artifact@043fb46" };
 
 describe("requirePreUploadSynthesisSmoke", () => {
   test("passes on the real build-engine.yml", () => {
-    expect(requirePreUploadSynthesisSmoke(PATH, parse(readFileSync(PATH, "utf8")))).toEqual([]);
+    expect(requirePreUploadSynthesisSmoke(PATH, parseRepoYaml(PATH))).toEqual([]);
   });
 
   test("ignores every other workflow", () => {
@@ -74,7 +73,7 @@ describe("requirePreUploadSynthesisSmoke", () => {
 
 describe("forbidLinuxPackaging", () => {
   test("passes on the real build-engine.yml", () => {
-    expect(forbidLinuxPackaging(PATH, readFileSync(PATH, "utf8"))).toEqual([]);
+    expect(forbidLinuxPackaging(PATH, readRepoFile(PATH))).toEqual([]);
   });
 
   test("ignores every other workflow", () => {
@@ -110,7 +109,7 @@ describe("requireNpmPublishAfterPackaging", () => {
   const withNpm = (packages: unknown[]) => lane({ needs: ["packages"], steps: [DISPATCH] }, packages);
 
   test("passes on the real release-cli.yml", () => {
-    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, parse(readFileSync(RELEASE_CLI, "utf8")))).toEqual([]);
+    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, parseRepoYaml(RELEASE_CLI))).toEqual([]);
   });
 
   test("ignores every other workflow", () => {
@@ -147,7 +146,7 @@ const codeFilter = (paths: string[]) =>
 
 describe("requireTestedScriptsInCodeFilter", () => {
   test("passes on the real ci.yml", () => {
-    const document = parse(readFileSync(CI, "utf8"));
+    const document = parseRepoYaml(CI);
     expect(requireTestedScriptsInCodeFilter(CI, document, [".github/scripts/check-versions.ts"])).toEqual([]);
   });
 

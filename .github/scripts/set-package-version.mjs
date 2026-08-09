@@ -10,7 +10,7 @@
  * right value in the commit being published.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { entryArg } from "./script-entry.mjs";
 import { isSemver } from "../../src/semver.mjs";
 
 export function withVersion(packageJson, version) {
@@ -24,11 +24,7 @@ export function withVersion(packageJson, version) {
   return `${JSON.stringify({ ...pkg, version }, null, 2)}\n`;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const version = process.argv[2];
-  if (!version) {
-    console.error("usage: node .github/scripts/set-package-version.mjs <version>");
-    process.exit(2);
-  }
+const version = entryArg(import.meta.url, "usage: node .github/scripts/set-package-version.mjs <version>");
+if (version) {
   writeFileSync("package.json", withVersion(readFileSync("package.json", "utf8"), version));
 }

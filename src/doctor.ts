@@ -1,4 +1,5 @@
-import { existsSync, statSync } from "fs";
+import { existsSync } from "fs";
+import { cacheComponentPaths } from "./cache-layout";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
 import { dirname, join, sep } from "path";
@@ -190,13 +191,6 @@ function redactComponent<T extends PathSummary>(component: T, redact: boolean): 
   return { ...component, path: redactPath(component.path, true) };
 }
 
-function readPackageInfo(): { name: string; version: string } {
-  return {
-    name: packageName,
-    version: packageVersion,
-  };
-}
-
 async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   const binPath = getEngineBinPath();
   const installed = isEngineInstalled();
@@ -242,18 +236,9 @@ function collectCache(
   const binPath = getEngineBinPath();
   const engineDir = dirname(dirname(binPath));
   const coreml = isCoremlBackend(backend);
-  const components: CacheComponent[] = [
-    { label: "Engine", ...pathSummary(engineDir) },
-    // A CoreML engine never populates the ONNX dir; pointing at it would render a
-    // healthy darwin install as "ASR missing" (#684).
-    ...(coreml
-      ? []
-      : [{ label: "ASR (Parakeet)", ...pathSummary(join(cache, "models/parakeet-tdt-v3")) }]),
-    { label: "Language ID", ...pathSummary(join(cache, "models/lang-id-ecapa")) },
-    { label: "VAD (Silero)", ...pathSummary(join(cache, "models/silero-vad")) },
-    { label: "TTS (Kokoro)", ...pathSummary(join(cache, "models/kokoro-82m")) },
-    { label: "TTS (Vosk)", ...pathSummary(join(cache, "models/vosk-ru")) },
-  ];
+  const components: CacheComponent[] = cacheComponentPaths(cache, engineDir, coreml).map(
+    (component) => ({ label: component.label, ...pathSummary(component.path) }),
+  );
   if (coreml) {
     const fluidAsr = fluidAsrCacheInfo();
     components.push({
@@ -409,7 +394,7 @@ export async function collectDoctorReport(
   return {
     generatedAt: new Date().toISOString(),
     redacted: redact,
-    package: readPackageInfo(),
+    package: { name: packageName, version: packageVersion },
     runtime: {
       bunVersion: Bun.version,
       platform: process.platform,

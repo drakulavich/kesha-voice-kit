@@ -9,10 +9,10 @@ describe("parseArgs", () => {
     const parsed = parseArgs(["/tmp/kesha-linux-synth"]);
     expect(parsed?.workDir).toBe("/tmp/kesha-linux-synth");
     expect(parsed?.noRoundtrip).toBe(false);
-    expect(parsed?.voices.map((v) => v.voice)).toEqual(["en-am_michael", "ru-vosk-m02"]);
+    expect(parsed?.voices.map((v) => v.voice)).toEqual(["en-am_michael"]);
   });
 
-  test("--no-roundtrip drops to English and sets the flag", () => {
+  test("--no-roundtrip sets the flag and keeps the voice list", () => {
     const parsed = parseArgs(["--no-roundtrip", "out"]);
     expect(parsed?.workDir).toBe("out");
     expect(parsed?.noRoundtrip).toBe(true);

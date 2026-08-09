@@ -6,7 +6,7 @@
  * workflow to it, which is what keeps the two languages from drifting (#685).
  */
 
-import { runTagScript } from "./tag-script.mjs";
+import { runTagScript } from "./script-entry.mjs";
 
 const VERSION_ERE = "[0-9]+\\.[0-9]+\\.[0-9]+(-(beta|alpha)\\.[0-9]+)?";
 

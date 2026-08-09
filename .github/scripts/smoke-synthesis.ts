@@ -17,10 +17,9 @@ import { join } from "path";
 import { assertSingleTranscript } from "./assert-transcript";
 
 const ENGLISH = "The quick brown fox jumps over the lazy dog.";
-const ALL_VOICES = [
-  { voice: "en-am_michael", text: ENGLISH },
-  { voice: "ru-vosk-m02", text: "Проверка синтеза речи на русском языке." },
-];
+// English only: the ru voice costs ~940MB of vosk per lane, and `say.test.ts` already covers the
+// Russian path against a fake engine. Pass `--voice` to smoke another one.
+const ALL_VOICES = [{ voice: "en-am_michael", text: ENGLISH }];
 
 export type SmokeArgs = { workDir: string; noRoundtrip: boolean; voices: typeof ALL_VOICES };
 
@@ -35,11 +34,7 @@ export function parseArgs(argv: string[]): SmokeArgs | null {
   const workDir = argv.find((arg, i) => !arg.startsWith("--") && i !== voiceValueAt);
   if (!workDir) return null;
 
-  const voices = voiceOverride
-    ? [{ voice: voiceOverride, text: ENGLISH }]
-    : noRoundtrip
-      ? ALL_VOICES.filter((v) => v.voice === "en-am_michael")
-      : ALL_VOICES;
+  const voices = voiceOverride ? [{ voice: voiceOverride, text: ENGLISH }] : ALL_VOICES;
   return { workDir, noRoundtrip, voices };
 }
 

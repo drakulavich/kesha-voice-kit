@@ -1,12 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { withCargoVersion } from "../../.github/scripts/set-cargo-version.mjs";
+import { readRepoFile } from "../helpers/repo";
 
-// Normalised, not inherited: a Windows checkout carries CRLF and would double it below.
-const MANIFEST = readFileSync(`${import.meta.dir}/../../rust/Cargo.toml`, "utf8").replace(
-  /\r\n/g,
-  "\n",
-);
+const MANIFEST = readRepoFile("rust/Cargo.toml");
+// Normalised by readRepoFile, so a Windows checkout does not double the endings below.
 const CRLF_MANIFEST = MANIFEST.replace(/\n/g, "\r\n");
 
 describe("withCargoVersion", () => {

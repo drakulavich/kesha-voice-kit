@@ -7,9 +7,8 @@
  * to each other — the assertion #727 removed and #728 replaced with this lane.
  */
 import { readFileSync } from "node:fs";
-import { validateLinuxPackageVersion } from "./linux-package-names.mjs";
 import { CLI_MARKER, CLI_TAG_RE, cliPublishTarget } from "./release-tags.mjs";
-import { runTagScript } from "./tag-script.mjs";
+import { runTagScript } from "./script-entry.mjs";
 import { isStableVersion } from "../../src/semver.mjs";
 
 export function planCliRelease(tag, pkg) {
@@ -35,7 +34,6 @@ export function planCliRelease(tag, pkg) {
     throw new Error(`package.json at ${tag} has no keshaEngine.version to name in the release notes`);
   }
 
-  validateLinuxPackageVersion(version);
   return { version, packages: true, engineVersion };
 }
 
