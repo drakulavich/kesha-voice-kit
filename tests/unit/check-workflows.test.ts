@@ -117,45 +117,28 @@ describe("requireNpmPublishAfterPackaging", () => {
     expect(requireNpmPublishAfterPackaging(PATH, { jobs: {} })).toEqual([]);
   });
 
-  test("fails when the tag filter would take in engine tags", () => {
-    const document = { ...lane({ needs: ["packages"], steps: [DISPATCH] }), on: { push: { tags: ["v*"] } } };
-    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, document)[0]).toContain("must trigger on `v*-cli`");
-  });
+  const NPM = { needs: ["packages"], steps: [DISPATCH] };
+  const firstError = (document: unknown) =>
+    requireNpmPublishAfterPackaging(RELEASE_CLI, document)[0] ?? "";
 
-  // `needs: packages` on an empty packages job satisfies the ordering and ships nothing (grok).
-  test("fails when the packaging job builds nothing", () => {
-    const errors = requireNpmPublishAfterPackaging(RELEASE_CLI, withNpm([PACKAGING[1]]));
-    expect(errors[0]).toContain("must build through ./.github/actions/linux-packages");
-  });
+  const broken: [string, unknown, string][] = [
+    ["the tag filter would take in engine tags", { ...lane(NPM), on: { push: { tags: ["v*"] } } }, "must trigger on `v*-cli`"],
+    // `needs: packages` on a packages job that builds nothing satisfies the ordering and ships nothing (grok).
+    ["the packaging job builds nothing", withNpm([PACKAGING[1]]), "must build through ./.github/actions/linux-packages"],
+    ["the packaging job publishes nothing", withNpm([PACKAGING[0]]), "must run publish-cli-release.sh"],
+    ["the packaging job is gone", { on: { push: { tags: ["v*-cli"] } }, jobs: { "publish-npm": NPM } }, "expected a `packages` job"],
+    // Dropping the dependency lets a .deb reach users for a version npm never served (#728).
+    ["the npm publish no longer waits for the packaging job", lane({ ...NPM, needs: ["plan"] }), "must `needs: packages`"],
+    ["nothing dispatches npm-publish.yml", lane({ needs: ["plan", "packages"], steps: [] }), "must run dispatch-npm-publish.sh"],
+    ["the publish job is gone", { on: { push: { tags: ["v*-cli"] } }, jobs: { packages: { steps: PACKAGING } } }, "expected a `publish-npm` job"],
+  ];
 
-  test("fails when the packaging job publishes nothing", () => {
-    const errors = requireNpmPublishAfterPackaging(RELEASE_CLI, withNpm([PACKAGING[0]]));
-    expect(errors[0]).toContain("must run publish-cli-release.sh");
-  });
-
-  test("fails when the packaging job is gone", () => {
-    const document = { on: { push: { tags: ["v*-cli"] } }, jobs: { "publish-npm": { steps: [DISPATCH] } } };
-    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, document)[0]).toContain("expected a `packages` job");
-  });
-
-  // Dropping the dependency lets a .deb reach users for a version npm never served (#728).
-  test("fails when the npm publish no longer waits for the packaging job", () => {
-    const errors = requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ needs: ["plan"], steps: [DISPATCH] }));
-    expect(errors[0]).toContain("must `needs: packages`");
+  test.each(broken)("fails when %s", (_name, document, expected) => {
+    expect(firstError(document)).toContain(expected);
   });
 
   test("accepts the single-job spelling of needs", () => {
-    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ needs: "packages", steps: [DISPATCH] }))).toEqual([]);
-  });
-
-  test("fails when nothing dispatches npm-publish.yml", () => {
-    const errors = requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ needs: ["plan", "packages"], steps: [] }));
-    expect(errors[0]).toContain("must run dispatch-npm-publish.sh");
-  });
-
-  test("fails when the publish job is gone", () => {
-    const document = { on: { push: { tags: ["v*-cli"] } }, jobs: { packages: { steps: PACKAGING } } };
-    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, document)[0]).toContain("expected a `publish-npm` job");
+    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ ...NPM, needs: "packages" }))).toEqual([]);
   });
 });
 

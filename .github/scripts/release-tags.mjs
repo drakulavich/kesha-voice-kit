@@ -6,7 +6,7 @@
  * workflow to it, which is what keeps the two languages from drifting (#685).
  */
 
-import { pathToFileURL } from "node:url";
+import { runTagScript } from "./tag-script.mjs";
 
 const VERSION_ERE = "[0-9]+\\.[0-9]+\\.[0-9]+(-(beta|alpha)\\.[0-9]+)?";
 
@@ -55,14 +55,10 @@ export function cliPublishTarget(tag) {
   };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const tag = process.argv[2];
-  if (!tag) {
-    console.error("usage: node .github/scripts/release-tags.mjs <tag>");
-    process.exit(2);
-  }
-  const target = cliPublishTarget(tag);
-  process.stdout.write(
-    `version=${target.version}\nengine_only=${target.engineOnly}\nderived=${target.derived}\n`,
-  );
-}
+runTagScript(import.meta.url, {
+  usage: "usage: node .github/scripts/release-tags.mjs <tag>",
+  run: (tag) => {
+    const target = cliPublishTarget(tag);
+    return { version: target.version, engine_only: target.engineOnly, derived: target.derived };
+  },
+});

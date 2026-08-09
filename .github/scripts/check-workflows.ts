@@ -113,6 +113,42 @@ export function forbidLinuxPackaging(path: string, contents: string): string[] {
  * Both halves have to be real: `needs:` ordering alone is satisfied by a `packages` job that
  * builds and publishes nothing, so the job's own two steps are required as well.
  */
+const usesAction = (steps: Step[], action: string) =>
+  steps.some((step) => typeof step?.uses === "string" && step.uses === action);
+
+const runsScript = (steps: Step[], script: string) =>
+  runsMatching(steps, new RegExp(script.replace(/\./g, "\\."))).length > 0;
+
+/** `needs:` is a string when it names one job, a list when it names several. */
+function dependsOn(document: unknown, job: string, dependency: string): boolean {
+  const needs = (document as { jobs?: Record<string, { needs?: unknown }> })?.jobs?.[job]?.needs;
+  return [needs].flat().includes(dependency);
+}
+
+function requirePackagingJob(path: string, document: unknown): string[] {
+  const steps = jobSteps(document, "packages");
+  if (!steps) return [`${path}: expected a \`packages\` job with steps`];
+  if (!usesAction(steps, "./.github/actions/linux-packages")) {
+    return [`${path}: \`packages\` must build through ./.github/actions/linux-packages, the composite the CI lane shares (#728)`];
+  }
+  if (!runsScript(steps, "publish-cli-release.sh")) {
+    return [`${path}: \`packages\` must run publish-cli-release.sh — it is what attaches the packages to the release (#728)`];
+  }
+  return [];
+}
+
+function requireNpmDispatchJob(path: string, document: unknown): string[] {
+  const steps = jobSteps(document, "publish-npm");
+  if (!steps) return [`${path}: expected a \`publish-npm\` job with steps`];
+  if (!dependsOn(document, "publish-npm", "packages")) {
+    return [`${path}: \`publish-npm\` must \`needs: packages\`, so no .deb is published without the npm publish it names (#728)`];
+  }
+  if (!runsScript(steps, "dispatch-npm-publish.sh")) {
+    return [`${path}: \`publish-npm\` must run dispatch-npm-publish.sh — npm trusts one entry workflow (#731)`];
+  }
+  return [];
+}
+
 export function requireNpmPublishAfterPackaging(path: string, document: unknown): string[] {
   if (!path.endsWith("release-cli.yml")) return [];
 
@@ -121,31 +157,7 @@ export function requireNpmPublishAfterPackaging(path: string, document: unknown)
     return [`${path}: must trigger on \`v*-cli\` tag pushes (#728)`];
   }
 
-  const packaging = jobSteps(document, "packages");
-  if (!packaging) return [`${path}: expected a \`packages\` job with steps`];
-
-  const builds = packaging.some(
-    (step) => typeof step?.uses === "string" && step.uses === "./.github/actions/linux-packages",
-  );
-  if (!builds) {
-    return [`${path}: \`packages\` must build through ./.github/actions/linux-packages, the composite the CI lane shares (#728)`];
-  }
-  if (runsMatching(packaging, /publish-cli-release\.sh/).length === 0) {
-    return [`${path}: \`packages\` must run publish-cli-release.sh — it is what attaches the packages to the release (#728)`];
-  }
-
-  const steps = jobSteps(document, "publish-npm");
-  if (!steps) return [`${path}: expected a \`publish-npm\` job with steps`];
-
-  // `needs:` is a string when it names one job, a list when it names several.
-  const needs = (document as { jobs?: Record<string, { needs?: unknown }> })?.jobs?.["publish-npm"]?.needs;
-  if (![needs].flat().includes("packages")) {
-    return [`${path}: \`publish-npm\` must \`needs: packages\`, so no .deb is published without the npm publish it names (#728)`];
-  }
-  if (runsMatching(steps, /dispatch-npm-publish\.sh/).length === 0) {
-    return [`${path}: \`publish-npm\` must run dispatch-npm-publish.sh — npm trusts one entry workflow (#731)`];
-  }
-  return [];
+  return [...requirePackagingJob(path, document), ...requireNpmDispatchJob(path, document)];
 }
 
 /**
@@ -192,45 +204,43 @@ function collectTestedScripts(): string[] {
   return [...found].sort();
 }
 
+function describeUnreadable(path: string, err: unknown): string {
+  if (err instanceof YAMLParseError) {
+    // Rendered line:col so editors can jump to the offending position.
+    return `${path}:${err.linePos?.[0]?.line ?? "?"}:${err.linePos?.[0]?.col ?? "?"}: ${err.message}`;
+  }
+  return `${path}: ${err instanceof Error ? err.message : String(err)}`;
+}
+
+function checkFile(path: string, testedScripts: string[]): string[] {
+  try {
+    const contents = readFileSync(path, "utf8");
+    const document = parse(contents);
+    return [
+      ...requirePinnedActions(path, contents),
+      ...requirePreUploadSynthesisSmoke(path, document),
+      ...forbidLinuxPackaging(path, contents),
+      ...requireNpmPublishAfterPackaging(path, document),
+      ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
+    ];
+  } catch (err) {
+    return [describeUnreadable(path, err)];
+  }
+}
+
 function main(): void {
   const files = dirs.flatMap((dir) => collectYamlFiles(dir)).sort();
-  const testedScripts = collectTestedScripts();
-
   if (files.length === 0) {
     console.error(`no workflow or action files found in ${dirs.join(", ")}`);
     process.exit(1);
   }
 
-  let failed = 0;
-  for (const path of files) {
-    try {
-      const contents = readFileSync(path, "utf8");
-      const document = parse(contents);
-      const errors = [
-        ...requirePinnedActions(path, contents),
-        ...requirePreUploadSynthesisSmoke(path, document),
-        ...forbidLinuxPackaging(path, contents),
-        ...requireNpmPublishAfterPackaging(path, document),
-        ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
-      ];
-      if (errors.length > 0) {
-        failed += errors.length;
-        for (const error of errors) console.error(error);
-      }
-    } catch (err) {
-      failed += 1;
-      if (err instanceof YAMLParseError) {
-        // Rendered line:col so editors can jump to the offending position.
-        console.error(`${path}:${err.linePos?.[0]?.line ?? "?"}:${err.linePos?.[0]?.col ?? "?"}: ${err.message}`);
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`${path}: ${msg}`);
-      }
-    }
-  }
+  const testedScripts = collectTestedScripts();
+  const errors = files.flatMap((path) => checkFile(path, testedScripts));
+  for (const error of errors) console.error(error);
 
-  if (failed > 0) {
-    console.error(`\n${failed} workflow or action check(s) failed.`);
+  if (errors.length > 0) {
+    console.error(`\n${errors.length} workflow or action check(s) failed.`);
     process.exit(1);
   }
 }
