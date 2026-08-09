@@ -1196,6 +1196,61 @@ mod diarize_sidecar_tests {
         assert_eq!(cleanup_diarize_compiled_sidecars(&missing)?, 0);
         Ok(())
     }
+
+    const DIARIZE_RUNTIME_FILES: [&str; 4] = [
+        "Manifest.json",
+        "Data/com.apple.CoreML/model.mlmodel",
+        "Data/com.apple.CoreML/weights/0-weight.bin",
+        "Data/com.apple.CoreML/weights/1-weight.bin",
+    ];
+
+    fn write_layout(dir: &Path, files: &[&str]) -> Result<()> {
+        for rel in files {
+            let path = dir.join(rel);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&path, b"x")?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn diarize_layout_needs_every_runtime_file() -> Result<()> {
+        let tmp = TempDir::new("diarize-layout")?;
+        let complete = tmp.path.join("complete.mlpackage");
+        write_layout(&complete, &DIARIZE_RUNTIME_FILES)?;
+        assert!(has_diarize_layout(&complete), "complete bundle is ready");
+
+        for (i, missing) in DIARIZE_RUNTIME_FILES.iter().enumerate() {
+            let partial = tmp.path.join(format!("partial-{i}.mlpackage"));
+            let present: Vec<&str> = DIARIZE_RUNTIME_FILES
+                .iter()
+                .filter(|f| f != &missing)
+                .copied()
+                .collect();
+            write_layout(&partial, &present)?;
+            assert!(
+                !has_diarize_layout(&partial),
+                "{missing} missing must not read as ready"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn only_compiled_sidecars_are_removable() {
+        assert!(is_compiled_mlpackage_sidecar(Path::new(
+            "/cache/Sortformer.mlpackage.mlmodelc"
+        )));
+        assert!(!is_compiled_mlpackage_sidecar(Path::new(
+            "/cache/Sortformer.mlpackage"
+        )));
+        assert!(!is_compiled_mlpackage_sidecar(Path::new(
+            "/cache/Sortformer.mlmodelc"
+        )));
+        assert!(!is_compiled_mlpackage_sidecar(Path::new("/")));
+    }
 }
 
 #[cfg(test)]
@@ -1837,9 +1892,10 @@ fn backoff_delay(attempt: u32, retry_after: Option<Duration>, jitter: f64) -> Du
         .mul_f64(0.75 + 0.5 * jitter.clamp(0.0, 1.0))
 }
 
+/// macOS clocks tick in microseconds, so the low 1000 ns were always zero there and every worker drew the same jitter (#724).
 fn jitter_fraction() -> f64 {
     let nanos = now_since_epoch().map(|d| d.subsec_nanos()).unwrap_or(0);
-    f64::from(nanos % 1_000) / 1_000.0
+    f64::from(nanos) / 1_000_000_000.0
 }
 
 fn now_since_epoch() -> Option<Duration> {
@@ -2094,7 +2150,7 @@ mod characterization_tests {
 
     #[cfg(unix)]
     #[test]
-    fn orphan_staging_sweep_removes_stale_keeps_fresh_and_finished() -> Result<()> {
+    fn orphan_staging_sweep_removes_only_what_passed_the_24h_threshold() -> Result<()> {
         let dir = std::env::temp_dir().join(format!(
             "kesha-part-gc-{}-{}",
             std::process::id(),
@@ -2104,25 +2160,53 @@ mod characterization_tests {
         ));
         fs::create_dir_all(dir.join("models"))?;
         let stale = dir.join("models/encoder.onnx.part.12345");
+        let at_threshold = dir.join("models/joint.onnx.part.4242");
         let fresh = dir.join("models/decoder.onnx.part.999");
         let finished = dir.join("models/encoder.onnx");
-        for p in [&stale, &fresh, &finished] {
+        for p in [&stale, &at_threshold, &fresh, &finished] {
             fs::write(p, b"bytes")?;
         }
-        let old =
-            std::time::SystemTime::now() - std::time::Duration::from_secs(STALE_STAGING_SECS + 60);
-        fs::File::options()
-            .write(true)
-            .open(&stale)?
-            .set_times(fs::FileTimes::new().set_modified(old))?;
+        let now = std::time::SystemTime::now();
+        for (path, age) in [
+            (&stale, STALE_STAGING_SECS + 60),
+            (&at_threshold, STALE_STAGING_SECS),
+        ] {
+            fs::File::options().write(true).open(path)?.set_times(
+                fs::FileTimes::new().set_modified(now - std::time::Duration::from_secs(age)),
+            )?;
+        }
 
         cleanup_orphan_staging(&dir);
 
         assert!(!stale.exists(), "stale staging must be swept");
+        assert!(
+            at_threshold.exists(),
+            "24h is the boundary a download must pass, not reach"
+        );
         assert!(fresh.exists(), "a live installer's fresh staging survives");
         assert!(finished.exists(), "real model files are never touched");
         let _ = fs::remove_dir_all(&dir);
         Ok(())
+    }
+
+    #[test]
+    fn is_cached_resolves_against_the_active_cache_root() {
+        let _lock = crate::util::test_env::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::util::test_env::EnvGuard::set(
+            "KESHA_CACHE_DIR",
+            tmp.path().to_str().expect("utf-8 temp path"),
+        );
+
+        assert!(!is_cached(ModelKind::LangId), "empty cache is not cached");
+
+        let dir = tmp.path().join(ModelKind::LangId.subdir());
+        fs::create_dir_all(&dir).unwrap();
+        for f in LANG_ID_FILES {
+            let name = std::path::Path::new(f.rel_path).file_name().unwrap();
+            fs::write(dir.join(name), b"dummy").unwrap();
+        }
+        assert!(is_cached(ModelKind::LangId), "staged cache is cached");
     }
 
     /// `Repo.folderName` strips the `-coreml` suffix, and a `…-v3-coreml` sibling
@@ -2472,6 +2556,19 @@ mod retry_tests {
             let delay = backoff_delay(3, None, jitter).as_secs_f64();
             assert!((3.0..=5.0).contains(&delay), "{jitter} produced {delay}s");
         }
+    }
+
+    /// A constant jitter puts the four download workers back in lockstep, which is
+    /// what re-triggers the rate limit the backoff exists to escape (#724).
+    #[test]
+    fn jitter_fraction_is_a_varying_unit_fraction() {
+        let samples: Vec<f64> = (0..1_000).map(|_| jitter_fraction()).collect();
+        for j in &samples {
+            assert!((0.0..1.0).contains(j), "jitter {j} escaped [0, 1)");
+        }
+        let distinct: std::collections::HashSet<u64> =
+            samples.iter().map(|j| j.to_bits()).collect();
+        assert!(distinct.len() > 1, "jitter never varied across 1000 draws");
     }
 
     #[test]
