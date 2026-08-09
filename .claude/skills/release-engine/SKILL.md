@@ -71,14 +71,14 @@ That window must stay short. While it is open, `main` pins an engine with no rel
 
 ### Step 3 — Tag with the notes inside it
 
-Write the notes first, then create an **annotated** tag whose message is the notes. `build-engine.yml` reads `git tag -l --format='%(contents)'` into the draft body, so this sidesteps the published-release notes trap entirely.
+Write the notes first, then create an **annotated** tag whose message is the notes. `build-engine.yml` reads the annotation into the draft body via `engine-release-notes.mjs`, so this sidesteps the published-release notes trap entirely.
 
 ```bash
 git tag -a vX.Y.Z --cleanup=verbatim -F notes.md
 git push origin refs/tags/vX.Y.Z
 ```
 
-`--cleanup=verbatim` keeps the `#` heading lines a release body needs. Do **not** run `.github/scripts/push-annotated-tag.sh` locally — it sets `user.name`/`user.email` to github-actions[bot] in the repo config, which is right in CI and wrong on a laptop.
+`--cleanup=verbatim` keeps the `#` heading lines a release body needs; git's default cleanup strips every line starting with `#`. The `-a` is equally load-bearing: a lightweight tag carries no annotation, and the notes are dropped with a `::notice::` rather than published — before #815 the lane read `%(contents)` unguarded and shipped the *commit* message as the release body instead. Do **not** run `.github/scripts/push-annotated-tag.sh` locally — it sets `user.name`/`user.email` to github-actions[bot] in the repo config, which is right in CI and wrong on a laptop.
 
 The build produces 3 platform binaries, smoke-tests each with `--capabilities-json`, and creates a **draft** release with SBOM, manifest, `SHA256SUMS` and Sigstore bundles. Engine tags do **not** attach Linux `.deb`/`.rpm` — those ship on the `-cli` marker release now (#728).
 
