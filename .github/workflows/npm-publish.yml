@@ -1,33 +1,56 @@
 name: "📦 npm Publish"
 
-# Fires once a GitHub release leaves draft (the manual gate per CLAUDE.md
-# release flow). Stable releases publish to npm's default `latest` dist-tag;
+# The single entry point for every npm publish, on three triggers: a GitHub release leaving
+# draft (the manual gate per CLAUDE.md release flow), a push to main that earned a CLI alpha,
+# and a manual dispatch. Stable releases publish to npm's default `latest` dist-tag;
 # a SemVer prerelease publishes to the dist-tag named by its prerelease
 # identifier (`-beta.N` -> `beta`, `-alpha.N` -> `alpha`), so normal
 # `bun add -g @drakulavich/kesha-voice-kit@latest` users do not get unstable
 # builds and channels do not collide with each other. CLI-only marker
 # releases (`vX.Y.Z-cli`) follow the same rule after stripping `-cli`.
 # Only `-cli` tags publish: a bare tag names the engine, not the CLI (#729).
-# The publish itself lives in release-npm-publish.yml, shared with alpha (#685).
+# The publish itself lives in release-npm-publish.yml (#685).
+#
+# This is the ONLY workflow that may reach npm publish. Trusted Publishing validates the name
+# of the workflow that *entered* the run, and a package configures exactly one — so the alpha
+# lane rides the `push` trigger here rather than owning a second entry point, and its
+# decide/reserve jobs live in a reusable this calls (#732).
 on:
   release:
     types: [published]
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish (must already exist and have a published GitHub release)"
-        required: true
+        description: "Tag to publish (must already exist and have a published GitHub release). Leave empty to cut a CLI alpha from this ref, skipping the label gate."
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
-# An older publish finishing last would drag its dist-tag backwards (#731).
+# An older publish finishing last would drag its dist-tag backwards (#731). It also serialises
+# the alpha lane: a sequence derived while another run holds an unpublished tag reuses it. A
+# bare group would cancel an already-pending run when a newer one joins, dropping the middle of
+# three quick merges; queueing must be asked for and excludes cancel-in-progress.
 concurrency:
   group: npm-publish
   queue: max
 
 jobs:
+  # The alpha lane. Reserving a tag needs `contents: write`, so it is granted here and never
+  # alongside `id-token: write` — tagging and provenance publishing stay in separate jobs.
+  alpha:
+    name: Decide and reserve an alpha
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == '')
+    permissions:
+      contents: write
+      pull-requests: read
+    uses: ./.github/workflows/release-alpha.yml
+
   resolve:
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -58,15 +81,21 @@ jobs:
           VERSION: ${{ steps.tag.outputs.version }}
         run: echo "dist_tag=$(node .github/scripts/npm-dist-tag.mjs "$VERSION")" >> "$GITHUB_OUTPUT"
 
+  # `!cancelled()` so a skipped sibling lane does not skip this one; `result == 'success'`
+  # so a lane that failed mid-way — an alpha whose tag never landed — publishes nothing.
   publish:
-    needs: resolve
-    if: needs.resolve.outputs.engine_only != 'true'
+    needs: [alpha, resolve]
+    if: >-
+      !cancelled()
+      && ((needs.alpha.result == 'success' && needs.alpha.outputs.publish == 'true')
+      || (needs.resolve.result == 'success' && needs.resolve.outputs.engine_only != 'true'))
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/release-npm-publish.yml
+    # Exactly one lane runs per event, so the other's outputs are the empty string.
     with:
-      ref: ${{ needs.resolve.outputs.tag }}
-      version: ${{ needs.resolve.outputs.version }}
-      dist-tag: ${{ needs.resolve.outputs.dist_tag }}
-      inject-version: ${{ needs.resolve.outputs.derived == 'true' }}
+      ref: ${{ needs.alpha.outputs.tag || needs.resolve.outputs.tag }}
+      version: ${{ needs.alpha.outputs.version || needs.resolve.outputs.version }}
+      dist-tag: ${{ needs.alpha.outputs.dist_tag || needs.resolve.outputs.dist_tag }}
+      inject-version: ${{ needs.alpha.outputs.publish == 'true' || needs.resolve.outputs.derived == 'true' }}
