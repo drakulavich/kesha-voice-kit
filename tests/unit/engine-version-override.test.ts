@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { accessSync, chmodSync, constants, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -11,21 +11,25 @@ import {
 } from "../../src/engine-install";
 import { resolveEngineVersionFlag } from "../../src/cli/install";
 import { engineVersion } from "../../src/package-info";
+import { isolateEngineCache } from "../helpers/fake-engine";
 
 const OVERRIDE = "9.9.9-alpha.1";
 const FAKE_ENGINE = "#!/bin/sh\nexit 0\n";
 
-const savedEnv = { KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN };
 const savedFetch = globalThis.fetch;
 const tempDirs: string[] = [];
+let releaseCacheIsolation: () => void = () => {};
 
 // The fake engine is a shell script, which Windows cannot spawn.
 const posixTest = process.platform === "win32" ? test.skip : test;
 
+beforeEach(() => {
+  releaseCacheIsolation = isolateEngineCache();
+});
+
 afterEach(() => {
   globalThis.fetch = savedFetch;
-  if (savedEnv.KESHA_ENGINE_BIN === undefined) delete process.env.KESHA_ENGINE_BIN;
-  else process.env.KESHA_ENGINE_BIN = savedEnv.KESHA_ENGINE_BIN;
+  releaseCacheIsolation();
   for (const dir of tempDirs.splice(0)) {
     try {
       chmodSync(join(dir, "bin"), 0o755);

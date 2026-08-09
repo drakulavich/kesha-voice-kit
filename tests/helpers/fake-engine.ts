@@ -1,4 +1,5 @@
-import { chmodSync, mkdirSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 
 const ENGINE_ENV = ["KESHA_ENGINE_BIN", "KESHA_CACHE_DIR", "HOME", "KESHA_MODEL_MIRROR"] as const;
@@ -11,6 +12,25 @@ export function saveEngineEnv(): () => void {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  };
+}
+
+/**
+ * Redirects the whole engine cache into a throwaway dir for one test, and returns the undo.
+ *
+ * #796: pointing `KESHA_ENGINE_BIN` at a temp path is opt-in per test, so a test that reaches
+ * `installEngine` before staging one falls back to `~/.cache/kesha` and overwrites the
+ * developer's real engine. Overriding `KESHA_CACHE_DIR` makes that fallback harmless instead
+ * of relying on every test to remember.
+ */
+export function isolateEngineCache(): () => void {
+  const restore = saveEngineEnv();
+  const dir = mkdtempSync(join(tmpdir(), "kesha-cache-isolated-"));
+  process.env.KESHA_CACHE_DIR = dir;
+  delete process.env.KESHA_ENGINE_BIN;
+  return () => {
+    restore();
+    rmSync(dir, { recursive: true, force: true });
   };
 }
 

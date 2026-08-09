@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
@@ -8,6 +8,7 @@ import { probeExecutable } from "../../src/engine-health";
 import { getEngineCapabilities } from "../../src/engine";
 import { isDarwinArm64 } from "../../src/fluid-kokoro-cache";
 import { engineVersion } from "../../src/package-info";
+import { isolateEngineCache } from "../helpers/fake-engine";
 
 // #770: an interrupted `kesha install` left a truncated binary that the kernel refuses to
 // load, while the `.version` marker still vouched for it. Every repair path then failed.
@@ -16,18 +17,21 @@ const WORKING_ENGINE = "#!/bin/sh\nexit 0\n";
 /** Mode 0o755 but not a loadable image: `posix_spawn` fails with ENOEXEC, as on a truncated Mach-O. */
 const CORRUPT_ENGINE = "\x7fELF\x00\x01\x02truncated";
 
-const savedEnv = { KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN };
 const savedFetch = globalThis.fetch;
 const tempDirs: string[] = [];
+let releaseCacheIsolation: () => void = () => {};
 
 const posixTest = process.platform === "win32" ? test.skip : test;
 /** Sidecars are only ever fetched on darwin-arm64, so only there can their repair be observed. */
 const sidecarTest = isDarwinArm64() ? test : test.skip;
 
+beforeEach(() => {
+  releaseCacheIsolation = isolateEngineCache();
+});
+
 afterEach(() => {
   globalThis.fetch = savedFetch;
-  if (savedEnv.KESHA_ENGINE_BIN === undefined) delete process.env.KESHA_ENGINE_BIN;
-  else process.env.KESHA_ENGINE_BIN = savedEnv.KESHA_ENGINE_BIN;
+  releaseCacheIsolation();
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
