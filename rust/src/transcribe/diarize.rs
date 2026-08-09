@@ -106,7 +106,7 @@ pub(crate) fn run(
         .or_else(|| max_asr_end(asr_segments))
         .unwrap_or(0.0);
     let units = compute_units_from_env()?;
-    let total_deadline = total_timeout_from_env();
+    let total_deadline = total_timeout_from_env()?;
     dtrace!(
         "diarize::start audio_secs={:.1} asr_segments={} compute_units={} total_deadline={:?}",
         audio_secs,
@@ -195,23 +195,36 @@ fn compute_units_from_env() -> Result<DiarizeComputeUnits> {
 /// already bound every way diarization can hang, and a wall-clock cap scaled to
 /// audio length would kill healthy long runs (a 10-hour recording legitimately
 /// takes ~2 h at the measured 0.19 real-time factor).
-fn total_timeout_from_env() -> Option<Duration> {
+fn total_timeout_from_env() -> Result<Option<Duration>> {
     positive_secs_from_env(TOTAL_TIMEOUT_ENV)
 }
 
 /// Read [`LOAD_TIMEOUT_ENV`], falling back to [`MODEL_LOAD_BUDGET_SECS`].
-fn load_budget_from_env() -> Duration {
-    positive_secs_from_env(LOAD_TIMEOUT_ENV)
-        .unwrap_or_else(|| Duration::from_secs(MODEL_LOAD_BUDGET_SECS))
+fn load_budget_from_env() -> Result<Duration> {
+    Ok(positive_secs_from_env(LOAD_TIMEOUT_ENV)?
+        .unwrap_or_else(|| Duration::from_secs(MODEL_LOAD_BUDGET_SECS)))
 }
 
-/// A zero or unparseable value means "unset" rather than "expire immediately".
-fn positive_secs_from_env(name: &str) -> Option<Duration> {
-    std::env::var(name)
-        .ok()
-        .and_then(|raw| raw.trim().parse::<u64>().ok())
-        .filter(|secs| *secs > 0)
-        .map(Duration::from_secs)
+/// Unset or empty means "not configured"; anything else must be a positive whole number
+/// of seconds. Accepting `0`, `-1` or `30s` as "unset" would turn a typo into a silently
+/// absent cap or a silently default budget — the fail-open that [`COMPUTE_UNITS_ENV`]
+/// already refuses.
+fn positive_secs_from_env(name: &str) -> Result<Option<Duration>> {
+    let Ok(raw) = std::env::var(name) else {
+        return Ok(None);
+    };
+    let value = raw.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    match value.parse::<u64>() {
+        Ok(secs) if secs > 0 => Ok(Some(Duration::from_secs(secs))),
+        _ => coded_bail!(
+            ErrorCode::InvalidArg,
+            "{name}='{value}' is not a positive whole number of seconds. \
+             Unset it to leave that budget at its default."
+        ),
+    }
 }
 
 /// How long the audio may take to read and resample before the first chunk.
@@ -282,7 +295,7 @@ fn run_supervised(
         last_report: now,
         warned_slow_phase: false,
         last_progress: None,
-        load_budget: load_budget_from_env(),
+        load_budget: load_budget_from_env()?,
         prepare_budget: prepare_budget(audio_secs),
         audio_secs,
         total_deadline,
@@ -319,9 +332,14 @@ fn step(
         }) => supervisor.on_progress(processed, total, chunks),
         Ok(WorkerEvent::Finished(result)) => {
             let Some(spans) = result? else {
-                // Only `stop_worker` cancels, and it consumes the outcome itself; reaching
-                // here means one raced past it, which is a timeout rather than a defect.
-                coded_bail!(ErrorCode::DiarizeTimeout, "{}", supervisor.stall_message())
+                // Only `stop_worker` cancels and it consumes that outcome itself, so one
+                // arriving here raced past it — report the cancel rather than a stall that
+                // did not happen.
+                coded_bail!(
+                    ErrorCode::DiarizeTimeout,
+                    "speaker diarization was cancelled after {:.0}s",
+                    supervisor.started.elapsed().as_secs_f32()
+                )
             };
             return Ok(Some(supervisor.report_done(spans)));
         }
@@ -350,7 +368,19 @@ fn stop_and_report(
     rx: &mpsc::Receiver<WorkerEvent>,
     message: impl FnOnce() -> String,
 ) -> Result<Vec<DiarizeSpan>> {
-    if let Some(spans) = stop_worker(cancel, rx) {
+    let grace = supervisor.cancel_grace();
+    if grace > CANCEL_GRACE {
+        let waiting_on = match supervisor.phase {
+            Phase::Loading => "the model load",
+            _ => "reading the audio",
+        };
+        eprintln!(
+            "diarize: stopping, but {waiting_on} cannot be interrupted — waiting up to {:.0}s \
+             for it to return",
+            grace.as_secs_f32()
+        );
+    }
+    if let Some(spans) = stop_worker(cancel, rx, grace) {
         return Ok(supervisor.report_done(spans));
     }
     coded_bail!(ErrorCode::DiarizeTimeout, "{}", message())
@@ -440,6 +470,22 @@ impl PhaseSupervisor {
             Phase::Loading => self.load_budget,
             Phase::Preparing => self.prepare_budget,
             Phase::Processing => Duration::from_secs(PROGRESS_STALL_BUDGET_SECS),
+        }
+    }
+
+    /// How long to wait for the worker to acknowledge a cancel. Processing checks the
+    /// token between chunks and answers in ~0.06s, but the load and the read are each a
+    /// single call that only notices the cancel once it returns — so the wait there has
+    /// to be the rest of the budget that phase was already granted. Cutting it to
+    /// [`CANCEL_GRACE`] would return under a live CoreML call, which is the SIGSEGV this
+    /// supervision exists to prevent, merely moved off the processing path (#443).
+    fn cancel_grace(&self) -> Duration {
+        match self.phase {
+            Phase::Processing => CANCEL_GRACE,
+            _ => self
+                .budget()
+                .saturating_sub(self.last_event.elapsed())
+                .max(CANCEL_GRACE),
         }
     }
 
@@ -582,9 +628,19 @@ fn slow_phase_hint(phase: Phase, stalled_for: Duration, audio_secs: f32) -> Stri
 fn stop_worker(
     cancel: &DiarizeCancelToken,
     rx: &mpsc::Receiver<WorkerEvent>,
+    grace: Duration,
 ) -> Option<Vec<DiarizeSpan>> {
     cancel.cancel();
-    let deadline = Instant::now() + CANCEL_GRACE;
+    await_worker_stop(rx, grace)
+}
+
+/// Wait out the acknowledgement, discarding the events that arrive while the worker
+/// unwinds. Split from [`stop_worker`] so the wait can be driven by a plain channel.
+fn await_worker_stop(
+    rx: &mpsc::Receiver<WorkerEvent>,
+    grace: Duration,
+) -> Option<Vec<DiarizeSpan>> {
+    let deadline = Instant::now() + grace;
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
@@ -1086,14 +1142,35 @@ mod tests {
         unsafe {
             std::env::remove_var(TOTAL_TIMEOUT_ENV);
         }
-        assert_eq!(total_timeout_from_env(), None);
+        assert_eq!(total_timeout_from_env().unwrap(), None);
 
         let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, "3600");
-        assert_eq!(total_timeout_from_env(), Some(Duration::from_secs(3_600)));
+        assert_eq!(
+            total_timeout_from_env().unwrap(),
+            Some(Duration::from_secs(3_600))
+        );
 
-        // A zero or unparseable value must not become an instant deadline.
-        let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, "0");
-        assert_eq!(total_timeout_from_env(), None);
+        // Empty reads as "not configured"; a wrapper exporting an unset variable is not
+        // making a claim about the cap.
+        let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, "  ");
+        assert_eq!(total_timeout_from_env().unwrap(), None);
+    }
+
+    #[test]
+    fn a_cap_that_cannot_be_honoured_is_refused_not_ignored() {
+        let _guard = crate::util::test_env::lock();
+
+        // Silently reading as "no cap" is how a typo removes the only bound the user
+        // asked for; `0` gets the same treatment because unsetting already means no cap.
+        for bad in ["0", "-1", "1.5", "300s", "nope"] {
+            let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, bad);
+            let err = total_timeout_from_env().unwrap_err().to_string();
+            assert!(err.contains(TOTAL_TIMEOUT_ENV), "{bad}: {err}");
+            assert!(
+                err.contains("positive whole number of seconds"),
+                "{bad}: {err}"
+            );
+        }
     }
 
     #[test]
@@ -1104,17 +1181,167 @@ mod tests {
             std::env::remove_var(LOAD_TIMEOUT_ENV);
         }
         assert_eq!(
-            load_budget_from_env(),
+            load_budget_from_env().unwrap(),
             Duration::from_secs(MODEL_LOAD_BUDGET_SECS)
         );
 
         let _env = crate::util::test_env::EnvGuard::set(LOAD_TIMEOUT_ENV, "900");
-        assert_eq!(load_budget_from_env(), Duration::from_secs(900));
+        assert_eq!(load_budget_from_env().unwrap(), Duration::from_secs(900));
 
+        // A typo here used to hand back the default budget without a word.
         let _env = crate::util::test_env::EnvGuard::set(LOAD_TIMEOUT_ENV, "nope");
-        assert_eq!(
-            load_budget_from_env(),
-            Duration::from_secs(MODEL_LOAD_BUDGET_SECS)
+        let err = load_budget_from_env().unwrap_err().to_string();
+        assert!(err.contains(LOAD_TIMEOUT_ENV), "{err}");
+    }
+
+    fn supervisor_in(phase: Phase, load_budget: Duration) -> PhaseSupervisor {
+        let now = Instant::now();
+        PhaseSupervisor {
+            phase,
+            started: now,
+            last_event: now,
+            last_report: now,
+            warned_slow_phase: false,
+            last_progress: None,
+            load_budget,
+            prepare_budget: Duration::from_secs(PREPARE_BUDGET_FLOOR_SECS),
+            audio_secs: 90.0,
+            total_deadline: None,
+        }
+    }
+
+    #[test]
+    fn cancel_grace_during_the_load_outlasts_the_uninterruptible_call() {
+        let supervisor = supervisor_in(Phase::Loading, Duration::from_secs(300));
+
+        // A cold ANE compile runs ~105s and cannot be interrupted, so a cap that fires
+        // early must still wait it out: returning first leaves CoreML running under a
+        // process about to exit, which is the SIGSEGV this supervision exists to stop.
+        assert!(
+            supervisor.cancel_grace() >= Duration::from_secs(240),
+            "load grace was {:?}",
+            supervisor.cancel_grace()
         );
+    }
+
+    #[test]
+    fn cancel_grace_during_the_read_outlasts_it_too() {
+        let mut supervisor = supervisor_in(Phase::Loading, Duration::from_secs(300));
+        supervisor.on_model_ready();
+
+        assert!(supervisor.cancel_grace() > CANCEL_GRACE);
+    }
+
+    #[test]
+    fn cancel_grace_stays_short_once_chunks_are_flowing() {
+        let mut supervisor = supervisor_in(Phase::Loading, Duration::from_secs(300));
+        supervisor.on_progress(1, 10, 1);
+
+        // Processing checks the token between chunks, so it acknowledges in ~0.06s.
+        assert_eq!(supervisor.cancel_grace(), CANCEL_GRACE);
+    }
+
+    #[test]
+    fn an_exhausted_phase_still_gets_a_grace_window() {
+        let supervisor = supervisor_in(Phase::Loading, Duration::ZERO);
+
+        assert_eq!(supervisor.cancel_grace(), CANCEL_GRACE);
+    }
+
+    #[test]
+    fn phases_advance_from_load_through_read_to_processing() {
+        let mut supervisor = supervisor_in(Phase::Loading, Duration::from_secs(300));
+        assert_eq!(supervisor.budget(), Duration::from_secs(300));
+
+        supervisor.on_model_ready();
+        assert_eq!(supervisor.phase, Phase::Preparing);
+        assert_eq!(
+            supervisor.budget(),
+            Duration::from_secs(PREPARE_BUDGET_FLOOR_SECS)
+        );
+
+        supervisor.on_progress(1, 10, 1);
+        assert_eq!(supervisor.phase, Phase::Processing);
+        assert_eq!(
+            supervisor.budget(),
+            Duration::from_secs(PROGRESS_STALL_BUDGET_SECS)
+        );
+    }
+
+    #[test]
+    fn a_phase_that_outruns_its_budget_breaks_the_loop() {
+        let mut supervisor = supervisor_in(Phase::Loading, Duration::from_millis(1));
+        std::thread::sleep(Duration::from_millis(5));
+
+        assert!(supervisor.on_quiet_tick().is_break());
+    }
+
+    #[test]
+    fn a_phase_inside_its_budget_keeps_waiting() {
+        let mut supervisor = supervisor_in(Phase::Loading, Duration::from_secs(300));
+
+        assert!(supervisor.on_quiet_tick().is_continue());
+    }
+
+    #[test]
+    fn the_total_cap_is_reached_before_the_next_receive() {
+        let mut supervisor = supervisor_in(Phase::Loading, Duration::from_secs(300));
+        supervisor.total_deadline = Some(Duration::from_millis(1));
+        std::thread::sleep(Duration::from_millis(5));
+
+        assert_eq!(
+            supervisor.deadline_reached(),
+            Some(Duration::from_millis(1))
+        );
+    }
+
+    #[test]
+    fn without_a_total_cap_no_deadline_is_ever_reached() {
+        let supervisor = supervisor_in(Phase::Loading, Duration::from_secs(300));
+
+        assert_eq!(supervisor.deadline_reached(), None);
+    }
+
+    #[test]
+    fn a_run_that_beats_the_cancel_keeps_its_spans() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(WorkerEvent::Finished(Ok(Some(vec![span(0.0, 1.0, 3)]))))
+            .unwrap();
+
+        let kept = await_worker_stop(&rx, Duration::from_secs(5)).expect("spans");
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].speaker, 3);
+    }
+
+    #[test]
+    fn events_arriving_while_the_worker_unwinds_are_drained() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(WorkerEvent::Progress {
+            processed: 1,
+            total: 2,
+            chunks: 1,
+        })
+        .unwrap();
+        tx.send(WorkerEvent::ModelReady).unwrap();
+        tx.send(WorkerEvent::Finished(Ok(None))).unwrap();
+
+        assert!(await_worker_stop(&rx, Duration::from_secs(5)).is_none());
+    }
+
+    #[test]
+    fn a_worker_that_never_answers_is_abandoned_after_the_grace() {
+        let (_tx, rx) = mpsc::channel::<WorkerEvent>();
+        let started = Instant::now();
+
+        assert!(await_worker_stop(&rx, Duration::from_millis(50)).is_none());
+        assert!(started.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[test]
+    fn a_dead_worker_is_not_waited_out() {
+        let (tx, rx) = mpsc::channel::<WorkerEvent>();
+        drop(tx);
+
+        assert!(await_worker_stop(&rx, Duration::from_secs(30)).is_none());
     }
 }

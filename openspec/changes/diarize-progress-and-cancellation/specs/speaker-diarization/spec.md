@@ -87,7 +87,9 @@ can only shorten a run — never widen a phase budget.
 > *Technical Note — constants: `MODEL_LOAD_BUDGET_SECS = 300`,
 > `PREPARE_BUDGET_FLOOR_SECS = 60`, `PREPARE_BUDGET_PER_AUDIO_SECOND = 0.01`,
 > `PROGRESS_STALL_BUDGET_SECS = 60`, `PROGRESS_REPORT_INTERVAL = 5 s`,
-> `CANCEL_GRACE = 10 s`. Source: `rust/src/transcribe/diarize.rs`.
+> `CANCEL_GRACE = 10 s` (the processing-phase floor; an uninterruptible phase
+> instead waits out the rest of its own budget). Source:
+> `rust/src/transcribe/diarize.rs`.
 > Error code `E_DIARIZE_TIMEOUT`: `rust/src/errors.rs` line 86.
 > Budgets are measured, not guessed: on an M2 a cold model load is 107.3 s and a
 > warm one 0.8–4.4 s, reading and resampling 185 s of audio costs 0.26 s, and
@@ -100,19 +102,33 @@ can only shorten a run — never widen a phase budget.
 ### Requirement: Cancellation stops the CoreML work
 
 When the Engine abandons a diarization it SHALL cancel the underlying Swift task
-and wait up to 10 s for it to unwind before returning. Returning while the task
-is still running crashes the process during exit.
+and wait for it to unwind before returning. Returning while the task is still
+running crashes the process during exit.
 
-The chunk loop is cancellable; the model load is not. A cancellation requested
-during the load SHALL take effect once the load completes, and if the load
-itself exceeds its budget the Engine falls back to abandoning the worker thread
-for process exit to reap.
+The chunk loop is cancellable; the model load and the audio read are not. The
+wait SHALL therefore be as long as the cancelled phase needs: 10 s while
+processing, since the Swift side checks the token between chunks, but the
+remainder of the current phase's own budget while loading or reading, because a
+cancellation there only takes effect when that single call returns. Waiting less
+than that would return under a live CoreML call — the crash this requirement
+exists to prevent. Only once a phase outlives its full budget does the Engine
+fall back to abandoning the worker thread for process exit to reap.
 
 #### Scenario: A capped run exits cleanly
 
 - GIVEN `KESHA_DIARIZE_TIMEOUT_SECS=12` and a run that will exceed it
 - WHEN the cap is reached mid-processing
 - THEN the Engine cancels, the Swift task stops within one chunk, and the
+  process exits 1 — not with a signal
+
+#### Scenario: A cap reached during a cold model load still exits cleanly
+
+- GIVEN `KESHA_DIARIZE_TIMEOUT_SECS=1` and a cold Neural Engine cache whose
+  model load takes ~105 s
+- WHEN the cap is reached while the model is still loading
+- THEN the Engine says on stderr that the load cannot be interrupted and how
+  long it will wait
+- AND it waits out the remainder of the load budget rather than 10 s, so the
   process exits 1 — not with a signal
 
 > *Technical Note — `stop_worker` in `rust/src/transcribe/diarize.rs`. The
