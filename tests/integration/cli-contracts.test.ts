@@ -1,15 +1,20 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { engineVersion } from "../../src/package-info";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
+  DEFAULT_TIMEOUT_MS,
   installFakeDiarizeModel,
   runCliScenario,
   type CliScenarioOptions,
   type CliScenarioResult,
 } from "./cli-scenario";
+
+// bun's 5 s per-test default sits below the harness budget, so a scenario dies by
+// opaque SIGTERM before it can report what the CLI had managed to do (#805).
+setDefaultTimeout(DEFAULT_TIMEOUT_MS * 2);
 
 const tempDirs: string[] = [];
 const DEFAULT_CWD = import.meta.dir + "/../..";
