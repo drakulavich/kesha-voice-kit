@@ -10,6 +10,9 @@ binary.
 
 ## [Unreleased]
 
+### Added
+- **`kesha --itn`:** opt-in inverse text normalization on transcript text — `"two hundred thirty two"` → `"232"`, `"five dollars and fifty cents"` → `"$5.50"`, `"four thirty p m"` → `"04:30 p.m."`. Off by default. The pass runs per segment, so `--timestamps` boundaries and `--speakers` labels are unaffected and the transcript stays equal to its segments joined. Available on every backend; the engine advertises `transcribe.itn` in `--capabilities-json` and the CLI validates the flag against it, so an older engine fails with an upgrade hint instead of silently ignoring it. English-only in practice — Russian and other non-English transcripts pass through byte-identical. Known limitation: a spoken `"period"` becomes `"."` with no part-of-speech check ([#710](https://github.com/drakulavich/kesha-voice-kit/issues/710)).
+
 ## [1.25.0] — 2026-08-01
 
 CLI-only release; reuses engine v1.24.7. Adds machine-readable `kesha status`

@@ -265,6 +265,7 @@ OPTIONS
              --toon    Output results as TOON (compact, LLM-friendly encoding of the same data as --json) (Default: false)
        --timestamps    Include timestamped transcript segments in JSON/TOON output (Default: false)
          --speakers    Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run \`kesha install --diarize\` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad). (Default: false)
+              --itn    Rewrite spoken-form numbers, money, dates and times to written form ("two hundred thirty two" -> "232"). English-only; other languages pass through unchanged. (Default: false)
    --include-errors    With --json, output { results, errors } so scripts can read per-file failures without parsing stderr (Default: false)
           --verbose    Show language detection details (Default: false)
   --format=<format>    Output format: transcript | json | toon (long-form alias for --json / --toon)

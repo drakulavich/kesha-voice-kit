@@ -84,6 +84,9 @@ ndarray = { version = "0.17" }
 fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "dc931c5be72cf94700b8f53027391421ba0a0628", optional = true }
 audioadapter-buffers = "3.0.0"
 
+# ITN for `--itn` (#710). Called directly: fluidaudio-rs::itn_normalize is a dlsym shim over a libnemo_text_processing nothing links, so it returns its input verbatim.
+text-processing-rs = { git = "https://github.com/FluidInference/text-processing-rs", rev = "8a043f1dae81eb18bab229f07109f72d005ec47d" }
+
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
 hound = "3.5"
 thiserror = { version = "2", optional = true }

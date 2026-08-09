@@ -1,6 +1,7 @@
 import {
   assertSpeakersVadCompatible,
   isEngineInstalled,
+  preflightTranscribeEngineItn,
   preflightTranscribeEngineWithSegments,
   transcribeEngine,
   transcribeEngineWithSegments,
@@ -24,6 +25,11 @@ export interface TranscribeOptions {
    * Currently darwin-arm64 only — throws when the engine doesn't advertise
    * `transcribe.diarize`. */
   speakers?: boolean;
+  /** Rewrite spoken-form numbers, money, dates and times in the transcript to
+   * written form (#710). English-only in practice; other languages pass
+   * through unchanged. Throws when the engine doesn't advertise
+   * `transcribe.itn`. */
+  itn?: boolean;
 }
 
 export async function transcribe(audioPath: string, opts: TranscribeOptions = {}): Promise<string> {
@@ -42,6 +48,10 @@ export async function preflightTranscribeWithSegments(opts: TranscribeOptions = 
       `    ${installHint()}`,
     );
   }
+
+  // Above the timestamps short-circuit: `--itn` is meaningful with plain text
+  // output too, which otherwise reaches the engine with no preflight at all.
+  await preflightTranscribeEngineItn({ itn: opts.itn });
 
   if (opts.timestamps || opts.speakers) {
     await preflightTranscribeEngineWithSegments({
@@ -62,9 +72,14 @@ export async function transcribeWithSegments(
       vad: opts.vad,
       signal: opts.signal,
       speakers: opts.speakers,
+      itn: opts.itn,
     });
   }
 
-  const text = await transcribeEngine(audioPath, { vad: opts.vad, signal: opts.signal });
+  const text = await transcribeEngine(audioPath, {
+    vad: opts.vad,
+    signal: opts.signal,
+    itn: opts.itn,
+  });
   return { text, segments: [] };
 }

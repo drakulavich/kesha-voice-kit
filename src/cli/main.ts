@@ -36,6 +36,7 @@ interface MainCommandArgs {
   no_vad?: boolean;
   timestamps: boolean;
   speakers: boolean;
+  itn: boolean;
   "include-errors": boolean;
   format?: string;
   lang?: string;
@@ -270,6 +271,7 @@ type ProcessFileOptions = {
   vadMode: "on" | "off" | "auto";
   timestamps: boolean;
   speakers: boolean;
+  itn: boolean;
   wantsLangId: boolean;
   expectedLang?: string;
   reportProgress: boolean;
@@ -283,7 +285,7 @@ async function processFile(
   options: ProcessFileOptions,
   recorders: CommandSession,
 ): Promise<ProcessFileSuccess | ProcessFileFailure> {
-  const { vadMode, timestamps, speakers, wantsLangId, expectedLang, reportProgress } = options;
+  const { vadMode, timestamps, speakers, itn, wantsLangId, expectedLang, reportProgress } = options;
   const { stats, diagnosticLog } = recorders;
 
   if (!existsSync(file)) {
@@ -322,14 +324,14 @@ async function processFile(
   const startedAt = performance.now();
   let progress: ReturnType<typeof createPercentProgress> | null = null;
   try {
-    await preflightTranscribeWithSegments({ vad: vadMode, timestamps, speakers });
+    await preflightTranscribeWithSegments({ vad: vadMode, timestamps, speakers, itn });
     progress = reportProgress
       ? createPercentProgress(`Transcribing ${file}`, {
           estimatedTotalMs: speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
         })
       : null;
     const transcript = await stats.timeStage("transcribe", () =>
-      transcribeWithSegments(file, { vad: vadMode, timestamps, speakers }),
+      transcribeWithSegments(file, { vad: vadMode, timestamps, speakers, itn }),
     );
     const { text, segments } = transcript;
     const transcriptDurationSeconds = estimateTranscriptDurationSeconds(segments);
@@ -450,6 +452,11 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).",
         default: false,
       },
+      itn: {
+        type: "boolean",
+        description: "Rewrite spoken-form numbers, money, dates and times to written form (\"two hundred thirty two\" -> \"232\"). English-only; other languages pass through unchanged.",
+        default: false,
+      },
       "include-errors": {
         type: "boolean",
         description: "With --json, output { results, errors } so scripts can read per-file failures without parsing stderr",
@@ -552,6 +559,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
           vadMode,
           timestamps: args.timestamps,
           speakers: args.speakers,
+          itn: args.itn,
           includeErrors: args["include-errors"],
           hasExpectedLang: Boolean(args.lang),
         },
@@ -566,6 +574,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
                 vadMode,
                 timestamps: args.timestamps,
                 speakers: args.speakers,
+                itn: args.itn,
                 wantsLangId,
                 expectedLang: args.lang,
                 reportProgress,
