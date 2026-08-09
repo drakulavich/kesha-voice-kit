@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
-import { dirname, join } from "path";
+import { delimiter, dirname, join } from "path";
 import { engineVersion } from "../../src/package-info";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
@@ -118,6 +127,17 @@ process.exit(2);
   );
   chmodSync(enginePath, 0o755);
   return enginePath;
+}
+
+/** A `gh` that never answers, shadowing the scenario's fast stub via a PATH override. */
+function createWedgedGh(dir: string): string {
+  const binDir = join(dir, "wedged-bin");
+  mkdirSync(binDir, { recursive: true });
+  const staging = join(binDir, "gh.staging");
+  writeFileSync(staging, "#!/bin/sh\nexec sleep 30\n");
+  chmodSync(staging, 0o755);
+  renameSync(staging, join(binDir, "gh"));
+  return binDir;
 }
 
 function markFakeEngineInstalled(enginePath: string): void {
@@ -677,6 +697,27 @@ describe("CLI contracts", () => {
       status: "success",
     });
     expect(typeof events[1].durationMs).toBe("number");
+  });
+
+  test("install finishes even when gh on PATH never answers (#810)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-wedged-gh-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      PATH: [createWedgedGh(dir), dirname(process.execPath), process.env.PATH]
+        .filter(Boolean)
+        .join(delimiter),
+    };
+
+    // The star probe is the last thing install does, so completing at all — inside
+    // the harness budget, against a `gh` that sleeps far past it — is the contract.
+    const run = await runCli(["install"], { env });
+    expectContract(run, {
+      exitCode: 0,
+      stdoutContains: ["Backend installed successfully"],
+    });
   });
 
   test("diagnostic logs record failed install events without content", async () => {

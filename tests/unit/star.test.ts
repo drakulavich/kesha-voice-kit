@@ -111,7 +111,7 @@ describe("maybeAskForStar — orchestration", () => {
   // exitCode for each so we can simulate every branch deterministically
   // without spawning a real subprocess (Bun.which caches PATH at process
   // start, so PATH manipulation in-test does not work).
-  function shimsWithGh(opts: { authExit: number; apiExit: number }) {
+  function shimsWithGh(opts: { authExit: number | null; apiExit: number | null }) {
     return {
       which: () => "/fake/gh",
       spawn: (cmd: string[]) => ({
@@ -156,6 +156,24 @@ describe("maybeAskForStar — orchestration", () => {
     await maybeAskForStar(binPath, "1.2.0", log, shimsWithGh({ authExit: 1, apiExit: 0 }));
     expect(hasStarMarker(binPath)).toBe(true);
     expect(lines.join("\n")).toContain("consider starring the repo");
+  });
+
+  // Bun reports a spawnSync timeout as exitCode null, so these two cover the
+  // budget expiring on either probe (#810).
+  test("auth probe times out → marker written + basic prompt printed", async () => {
+    const binPath = mkTmpBinPath();
+    const { log, lines } = captureLog();
+    await maybeAskForStar(binPath, "1.2.0", log, shimsWithGh({ authExit: null, apiExit: 0 }));
+    expect(hasStarMarker(binPath)).toBe(true);
+    expect(lines.join("\n")).toContain("consider starring the repo");
+  });
+
+  test("star probe times out → rich prompt rather than a silent already-starred", async () => {
+    const binPath = mkTmpBinPath();
+    const { log, lines } = captureLog();
+    await maybeAskForStar(binPath, "1.2.0", log, shimsWithGh({ authExit: 0, apiExit: null }));
+    expect(hasStarMarker(binPath)).toBe(true);
+    expect(lines.join("\n")).toContain("⭐ If you enjoy Kesha Voice Kit");
   });
 
   test("gh authenticated + already starred → marker consumed, no prompt", async () => {

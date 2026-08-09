@@ -1,6 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { tryParseSemver } from "./semver.mjs";
 
+// Clears a healthy `gh auth status` (0.77-1.21 s measured) but not a wedged one, which
+// blocked install 11-25 s; Bun kills at the budget and reports exitCode null (#810).
+const GH_PROBE_TIMEOUT_MS = 2_000;
+
 /**
  * Version-bump gate for the "star the repo" prompt in `kesha install`.
  *
@@ -68,7 +72,11 @@ export async function maybeAskForStar(
   const spawn =
     shims?.spawn ??
     ((cmd: string[]) =>
-      Bun.spawnSync(cmd, { stdout: "ignore", stderr: "ignore" }));
+      Bun.spawnSync(cmd, {
+        stdout: "ignore",
+        stderr: "ignore",
+        timeout: GH_PROBE_TIMEOUT_MS,
+      }));
   if (!currentVersion) return;
   const seen = readStarSeen(binPath);
   if (!shouldShowStarPrompt(currentVersion, seen)) {
