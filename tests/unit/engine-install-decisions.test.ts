@@ -6,11 +6,17 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "fs";
 import { dirname, join } from "path";
-import { tmpdir } from "os";
-import { getEngineBinaryName, installEngine, SIDECARS } from "../../src/engine-install";
+import { homedir, tmpdir } from "os";
+import {
+  assertNotRealCacheUnderTest,
+  getEngineBinaryName,
+  installEngine,
+  SIDECARS,
+} from "../../src/engine-install";
 import { isDarwinArm64 } from "../../src/fluid-kokoro-cache";
 import { engineVersion } from "../../src/package-info";
 import { isolateEngineCache } from "../helpers/fake-engine";
@@ -28,6 +34,11 @@ interface EngineStub {
   sayExit?: number;
 }
 
+/** POSIX single-quote escape, so a quote in the JSON or the path cannot end the sh literal. */
+function shQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 /**
  * A shell stub answering the three things `installEngine` asks of a real engine:
  * `--capabilities-json`, `install`, and `say` (the Kokoro warmup). Each invocation appends
@@ -39,11 +50,11 @@ interface EngineStub {
  */
 function engineScript({ caps = PLAIN_CAPS, installExit = 0, sayExit = 0 }: EngineStub = {}): string {
   const capsCase = caps
-    ? `  --capabilities-json) printf '%s\\n' '${JSON.stringify(caps)}'; exit 0 ;;\n`
+    ? `  --capabilities-json) printf '%s\\n' ${shQuote(JSON.stringify(caps))}; exit 0 ;;\n`
     : `  --capabilities-json) exit 2 ;;\n`;
   return (
     `#!/bin/sh\n` +
-    `echo "$*" >> '${argvLog}'\n` +
+    `echo "$*" >> ${shQuote(argvLog)}\n` +
     `case "$1" in\n` +
     capsCase +
     `  install) exit ${installExit} ;;\n` +
@@ -137,6 +148,14 @@ function engineDownloads(urls: string[]): string[] {
   return urls.filter((u) => u.endsWith(binaryName));
 }
 
+/** Read-only view of the developer's real engine, to prove a test run never touched it (#796). */
+function realEngineSnapshot(): { exists: boolean; size?: number; mtimeMs?: number } {
+  const real = join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
+  if (!existsSync(real)) return { exists: false };
+  const s = statSync(real);
+  return { exists: true, size: s.size, mtimeMs: s.mtimeMs };
+}
+
 // The developer's real ~/.cache/kesha was overwritten with a test stub because pointing
 // KESHA_ENGINE_BIN at a temp path is opt-in per test, and the fallback is the real cache.
 describe("an install only ever writes where it was pointed (#796)", () => {
@@ -154,42 +173,81 @@ describe("an install only ever writes where it was pointed (#796)", () => {
       "#!/bin/sh",
     );
   }, 30_000);
+
+  // The adversarial half: isolation is opt-in, so prove that forgetting it fails loudly
+  // rather than reaching ~/.cache/kesha. This is the automated proof the hole is closed.
+  posixTest("a test that forgets to isolate is refused, not silently served", async () => {
+    delete process.env.KESHA_ENGINE_BIN;
+    delete process.env.KESHA_CACHE_DIR;
+    const before = realEngineSnapshot();
+    stubRelease();
+
+    await expect(installEngine()).rejects.toThrow(/real\s+per-user cache/);
+
+    expect(realEngineSnapshot()).toEqual(before);
+  }, 30_000);
+
+  posixTest("the guard leaves a redirected cache alone", () => {
+    expect(() =>
+      assertNotRealCacheUnderTest(join(process.env.KESHA_CACHE_DIR!, "engine", "bin", "kesha-engine")),
+    ).not.toThrow();
+  });
+
+  // The guard must not cost a real user their install: outside `bun test` it is inert, even
+  // for the very path it refuses under one.
+  posixTest("outside a test run the real cache is allowed", () => {
+    const realBin = join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
+    expect(() => assertNotRealCacheUnderTest(realBin)).toThrow(/real\s+per-user cache/);
+
+    const saved = process.env.NODE_ENV;
+    delete process.env.NODE_ENV;
+    try {
+      expect(() => assertNotRealCacheUnderTest(realBin)).not.toThrow();
+    } finally {
+      if (saved === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = saved;
+    }
+  });
 });
 
 describe("capabilities gate the flags forwarded to the engine (#772)", () => {
   posixTest("a backend the installed engine does not provide fails by name", async () => {
-    stageInstalledEngine("kesha-caps-backend-mismatch-");
+    const binPath = stageInstalledEngine("kesha-caps-backend-mismatch-");
+    const before = readFileSync(binPath, "utf8");
     stubRelease();
 
     await expect(installEngine({ backend: "coreml" })).rejects.toThrow(/coreml.*onnx|onnx.*coreml/s);
-    expect(engineInvocations().some((a) => a.startsWith("install"))).toBe(false);
+
+    expect(readFileSync(binPath, "utf8")).toBe(before);
   }, 30_000);
 
   posixTest("the backend the engine reports is accepted", async () => {
-    stageInstalledEngine("kesha-caps-backend-match-");
+    const binPath = stageInstalledEngine("kesha-caps-backend-match-");
     stubRelease();
 
-    await installEngine({ backend: "onnx" });
-
-    expect(engineInvocations().some((a) => a.startsWith("install"))).toBe(true);
+    expect(await installEngine({ backend: "onnx" })).toBe(binPath);
   }, 30_000);
 
   posixTest("--diarize on an engine built without it names the missing feature", async () => {
-    stageInstalledEngine("kesha-caps-no-diarize-");
+    const binPath = stageInstalledEngine("kesha-caps-no-diarize-");
+    const before = readFileSync(binPath, "utf8");
     stubRelease();
 
     await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
-    expect(engineInvocations().some((a) => a.startsWith("install"))).toBe(false);
+
+    expect(readFileSync(binPath, "utf8")).toBe(before);
   }, 30_000);
 
   // A pre-capabilities engine cannot be asked, and forwarding --diarize blind would surface
   // as clap's generic "unexpected argument".
   posixTest("--diarize is refused when the engine cannot describe itself", async () => {
-    stageInstalledEngine("kesha-caps-silent-", { caps: null });
+    const binPath = stageInstalledEngine("kesha-caps-silent-", { caps: null });
+    const before = readFileSync(binPath, "utf8");
     stubRelease();
 
     await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
-    expect(engineInvocations().some((a) => a.startsWith("install"))).toBe(false);
+
+    expect(readFileSync(binPath, "utf8")).toBe(before);
   }, 30_000);
 
   posixTest("--diarize reaches the engine, and pulls --vad with it (#768)", async () => {
@@ -257,7 +315,8 @@ describe("a download that never starts", () => {
       throw new Error("getaddrinfo ENOTFOUND github.com");
     }) as typeof fetch;
 
-    await expect(installEngine()).rejects.toThrow(/network connection/);
+    // The cause has to survive: "download failed" without the DNS failure is not actionable.
+    await expect(installEngine()).rejects.toThrow(/ENOTFOUND/);
 
     expect(readFileSync(binPath, "utf8")).toBe("previous engine");
   }, 30_000);

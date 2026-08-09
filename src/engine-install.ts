@@ -1,6 +1,6 @@
-import { dirname, join } from "path";
+import { dirname, join, resolve, sep } from "path";
 import { errorMessage } from "./error-utils";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
 import {
   getEngineBinPath,
@@ -560,6 +560,27 @@ function runEngineModelInstall(
   }
 }
 
+/**
+ * Refuses a test-run install that resolves to the developer's real engine cache (#796).
+ *
+ * Redirecting `KESHA_ENGINE_BIN`/`KESHA_CACHE_DIR` is opt-in per test, so a suite that forgets
+ * it overwrites a real multi-GB install with a stub — and does it silently. Bun sets
+ * `NODE_ENV=test` only under `bun test`, so this fires exactly there and nowhere else; it is
+ * checked against `homedir()` rather than `keshaCacheDir()` so an isolated cache never trips it.
+ */
+export function assertNotRealCacheUnderTest(binPath: string): void {
+  if (process.env.NODE_ENV !== "test") return;
+  const realCache = resolve(join(homedir(), ".cache", "kesha"));
+  if (!resolve(binPath).startsWith(realCache + sep)) return;
+  throw new Error(
+    `Refusing to install the engine into ${binPath} during a test run: that is the real ` +
+      "per-user cache, and writing there destroys the developer's install (#796).\n" +
+      "  Fix: call isolateEngineCache() from tests/helpers/fake-engine.ts in beforeEach, or set " +
+      "KESHA_ENGINE_BIN to a temp path.\n" +
+      "  If this is not a test run, unset NODE_ENV — Bun sets NODE_ENV=test under `bun test`.",
+  );
+}
+
 export interface EngineInstallRequest extends InstallOptions {
   noCache?: boolean;
   backend?: string;
@@ -577,6 +598,7 @@ export interface EngineInstallRequest extends InstallOptions {
 export async function installEngine(request: EngineInstallRequest = {}): Promise<string> {
   const { noCache = false, backend, version = engineVersion, ...options } = request;
   const binPath = getEngineBinPath();
+  assertNotRealCacheUnderTest(binPath);
   const installedVersion = readInstalledEngineVersion(binPath);
   const engineDir = dirname(binPath);
 
