@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { gunzipSync } from "node:zlib";
@@ -10,6 +18,7 @@ import {
   redactDiagnosticValue,
   type DoctorReport,
 } from "../../src/doctor";
+import { collectStatus } from "../../src/status";
 import { createSupportBundle } from "../../src/support-bundle";
 import { engineVersion, packageName, packageVersion } from "../../src/package-info";
 import { enableStats } from "../../src/stats";
@@ -993,6 +1002,59 @@ describe("doctor separates corrupt components from missing ones", () => {
       expect(output).toContain(
         `Binary: ${report.engine.path} (installed but not executable (corrupt) - re-run \`kesha install\`)`,
       );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("doctor and status agree on the disk total (#790)", () => {
+  const savedEnv = {
+    HOME: process.env.HOME,
+    KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
+    KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
+    KESHA_STATS_DB: process.env.KESHA_STATS_DB,
+  };
+
+  function restoreEnv() {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  posixEngineTest("an engine in a prefix-sharing sibling of the cache counts in both", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-status-sibling-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binDir = join(`${cache}-alt`, "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFakeEngine(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+
+    process.env.HOME = dir;
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+    try {
+      const doctorTotal = (await collectDoctorReport()).cache.totalBytes;
+      const statusTotal = (await collectStatus({ disk: true })).disk!.totalBytes;
+
+      expect(doctorTotal).toBe(64 + statSync(binPath).size);
+      expect(statusTotal).toBe(doctorTotal);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

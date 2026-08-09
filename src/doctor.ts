@@ -1,8 +1,8 @@
 import { existsSync } from "fs";
-import { cacheComponentPaths } from "./cache-layout";
+import { cacheComponentPaths, isInsideDir } from "./cache-layout";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
-import { dirname, join, sep } from "path";
+import { dirname, join } from "path";
 import {
   getEngineBinPath,
   getEngineCapabilities,
@@ -259,8 +259,7 @@ function collectCache(
       sizeBytes: fluidKokoro.sizeBytes,
     });
   }
-  const engineInsideCache = engineDir === cache || engineDir.startsWith(`${cache}${sep}`);
-  const engineOutsideCache = engineInsideCache ? 0 : dirSizeBytes(engineDir);
+  const engineOutsideCache = isInsideDir(engineDir, cache) ? 0 : dirSizeBytes(engineDir);
 
   return {
     path: redactPath(cache, redact),
