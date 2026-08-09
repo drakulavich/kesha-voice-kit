@@ -1879,9 +1879,10 @@ fn parse_retry_after(raw: &str) -> Option<Duration> {
 }
 
 /// Exponential backoff with ±25% jitter, or the server's own `Retry-After`
-/// where it gave one. Jitter matters more than usual here: four rayon workers
-/// hit the same host together, so an unjittered schedule retries them in
-/// lockstep and re-triggers the rate limit that caused the backoff.
+/// where it gave one. Four rayon workers hit the same host together, so `jitter`
+/// must be drawn independently per call — anything they can all read at the same
+/// instant, a clock included, retries them in lockstep and re-triggers the rate
+/// limit that caused the backoff (#724).
 fn backoff_delay(attempt: u32, retry_after: Option<Duration>, jitter: f64) -> Duration {
     if let Some(after) = retry_after {
         return after.clamp(RETRY_BASE_DELAY, RETRY_AFTER_MAX);
@@ -1892,16 +1893,15 @@ fn backoff_delay(attempt: u32, retry_after: Option<Duration>, jitter: f64) -> Du
         .mul_f64(0.75 + 0.5 * jitter.clamp(0.0, 1.0))
 }
 
-/// macOS clocks tick in microseconds, so the low 1000 ns were always zero there and every worker drew the same jitter (#724).
+/// A fresh fraction in `[0, 1)` per call, independent across calls and threads.
+/// `RandomState` re-keys on every construction, so workers that back off within
+/// the same microsecond still spread; a clock read cannot promise that (#724).
 fn jitter_fraction() -> f64 {
-    let nanos = now_since_epoch().map(|d| d.subsec_nanos()).unwrap_or(0);
-    f64::from(nanos) / 1_000_000_000.0
-}
-
-fn now_since_epoch() -> Option<Duration> {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()
+    use std::hash::{BuildHasher, Hasher};
+    let bits = std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish();
+    (bits >> 11) as f64 / (1u64 << 53) as f64
 }
 
 /// Below this a download finishes fast enough that a bar is noise, not feedback.
@@ -2558,17 +2558,41 @@ mod retry_tests {
         }
     }
 
-    /// A constant jitter puts the four download workers back in lockstep, which is
-    /// what re-triggers the rate limit the backoff exists to escape (#724).
+    /// The workers that matter draw at the same instant, so sequential variance is
+    /// not the contract — independence across threads is (#724).
     #[test]
-    fn jitter_fraction_is_a_varying_unit_fraction() {
-        let samples: Vec<f64> = (0..1_000).map(|_| jitter_fraction()).collect();
+    fn jitter_fraction_is_independent_across_simultaneous_workers() {
+        const THREADS: usize = 4;
+        const DRAWS: usize = 8;
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(THREADS));
+        let workers: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let barrier = std::sync::Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    (0..DRAWS).map(|_| jitter_fraction()).collect::<Vec<f64>>()
+                })
+            })
+            .collect();
+        let samples: Vec<f64> = workers
+            .into_iter()
+            .flat_map(|w| w.join().expect("jitter worker panicked"))
+            .collect();
+
         for j in &samples {
             assert!((0.0..1.0).contains(j), "jitter {j} escaped [0, 1)");
         }
         let distinct: std::collections::HashSet<u64> =
             samples.iter().map(|j| j.to_bits()).collect();
-        assert!(distinct.len() > 1, "jitter never varied across 1000 draws");
+        assert_eq!(
+            distinct.len(),
+            THREADS * DRAWS,
+            "64-bit draws must not repeat; a shared clock is what makes them collide"
+        );
+        let spread = samples.iter().cloned().fold(f64::MIN, f64::max)
+            - samples.iter().cloned().fold(f64::MAX, f64::min);
+        assert!(spread > 0.001, "jitter spread {spread} is not usable");
     }
 
     #[test]
@@ -2640,7 +2664,10 @@ mod retry_tests {
             let dir = std::env::temp_dir().join(format!(
                 "kesha-retry-{name}-{}-{}",
                 std::process::id(),
-                now_since_epoch().map(|d| d.as_nanos()).unwrap_or(0)
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
             ));
             fs::create_dir_all(&dir).expect("create temp cache");
             Self(dir)

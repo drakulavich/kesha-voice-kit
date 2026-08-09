@@ -1,5 +1,5 @@
 # Mutation testing for the engine. Run it through `make mutants-rust FILE=src/errors.rs`, which
-# supplies the two flags this repo needs — see the Makefile target for why they are not optional.
+# supplies the flags this repo needs — see the Makefile target for why they are not optional.
+# The feature set lives there too: a cfg'd-out fn compiles away, so its mutants all read as
+# missed even when a good test exists (#793), and no single feature set covers the whole file.
 test_tool = "nextest"
-# A cfg'd-out fn compiles away, so its mutants all read as missed even when tested (#793). No coreml: it excludes onnx.
-additional_cargo_args = ["--features", "tts,system_kokoro,system_diarize"]
