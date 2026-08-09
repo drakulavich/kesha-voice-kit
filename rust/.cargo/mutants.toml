@@ -1,0 +1,4 @@
+# Mutation testing for the engine. Run it through `make mutants-rust FILE=src/errors.rs`, which
+# supplies the two flags this repo needs — see the Makefile target for why they are not optional.
+test_tool = "nextest"
+additional_cargo_args = ["--features", "tts"]

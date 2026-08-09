@@ -33,6 +33,13 @@ integration: ## Run integration tests
 rust-test: ## Run Rust tests via nextest (matches CI — rust-test.yml)
 	cd rust && cargo nextest run --features tts
 
+# `--in-place` is not optional: models.rs include_str!s a file above the crate, so the copy build fails.
+mutants-rust: ## Mutation-test one engine file, e.g. make mutants-rust FILE=src/errors.rs
+	@test -n "$(FILE)" || { echo "usage: make mutants-rust FILE=src/<file>.rs" >&2; exit 2; }
+	@command -v cargo-mutants >/dev/null || { echo "install it: cargo install --locked cargo-mutants" >&2; exit 2; }
+	@git diff --quiet -- rust || { echo "rust/ has uncommitted changes; --in-place mutates the tree" >&2; exit 2; }
+	cd rust && cargo mutants --in-place -f $(FILE)
+
 lint: ## Type-check with tsc
 	bunx tsc --noEmit
 
