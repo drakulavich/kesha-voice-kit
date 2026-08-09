@@ -296,6 +296,8 @@ export async function transcribeEngine(
   audioPath: string,
   opts: TranscribeEngineOptions = {},
 ): Promise<string> {
+  await preflightTranscribeEngineItn(opts);
+
   const args = ["transcribe", audioPath, ...vadArg(opts.vad), ...itnArg(opts.itn)];
   const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {
@@ -331,6 +333,7 @@ export async function transcribeEngineWithSegments(
   audioPath: string,
   opts: TranscribeEngineOptions = {},
 ): Promise<TranscriptionOutput> {
+  await preflightTranscribeEngineItn(opts);
   await preflightTranscribeEngineWithSegments(opts);
 
   const args = ["transcribe", audioPath, "--json", ...vadArg(opts.vad), ...itnArg(opts.itn)];

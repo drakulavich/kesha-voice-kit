@@ -58,7 +58,7 @@ impl<S> TranscribeOptionsBuilder<S> {
 
 impl TranscribeOptionsBuilder<marker::NoSegments> {
     /// Start a new builder. Defaults match [`TranscribeOptions::default`]:
-    /// `VadMode::Auto`, no segments, no speakers.
+    /// `VadMode::Auto`, no segments, no speakers, `itn: false`.
     pub fn new() -> Self {
         Self {
             options: TranscribeOptions::default(),
