@@ -5,11 +5,11 @@
  * A CLI release is how a new engine reaches users, so the engine line is the one thing the body
  * must get right; it used to be a fixed string asserting "(unchanged)" even on the releases that
  * moved the pin (#788). Here it is computed against the previous release's pin, and the notes on
- * top of it come from the annotated tag message the way the engine lane already reads them.
+ * top of it come from the annotated tag message, read through the gate both lanes share.
  */
-import { spawnSync } from "node:child_process";
 import { CLI_MARKER, STABLE_CLI_TAG_RE, cliPublishTarget } from "./release-tags.mjs";
 import { isEntry } from "./script-entry.mjs";
+import { git, readTagNotes } from "./tag-notes.mjs";
 import { cmp, parseSemver } from "../../src/semver.mjs";
 
 /**
@@ -43,33 +43,6 @@ export function composeCliReleaseBody({ version, engineVersion, previousEngineVe
   const generated = `v${version} (CLI-only). ${engine}`;
   const authored = notes?.trim();
   return authored ? `${authored}\n\n${generated}\n` : `${generated}\n`;
-}
-
-function git(args) {
-  const result = spawnSync("git", args, { encoding: "utf8" });
-  if (result.error) throw result.error;
-  return result.status === 0 ? result.stdout : undefined;
-}
-
-/**
- * A lightweight tag has no annotation, and `%(contents)` falls through to the *commit* message —
- * shipping a commit subject as the release body. Only a real tag object carries notes.
- */
-function tagNotes(tag) {
-  const kind = git(["cat-file", "-t", tag])?.trim();
-  if (kind !== "tag") {
-    console.error(
-      `::notice::${tag} carries no annotation (git reads it as ${kind ?? "unreadable"}), so the body is the ` +
-        `generated line alone. To author notes: git tag -a --cleanup=verbatim ${tag} -F notes.md`,
-    );
-    return undefined;
-  }
-
-  const notes = git(["tag", "-l", "--format=%(contents)", tag]);
-  if (notes === undefined) {
-    console.error(`::notice::the annotation on ${tag} could not be read, so the body is the generated line alone.`);
-  }
-  return notes;
 }
 
 function enginePinAt(tag) {
@@ -110,7 +83,7 @@ function main() {
       version,
       engineVersion,
       previousEngineVersion: previous ? enginePinAt(previous) : undefined,
-      notes: tagNotes(tag),
+      notes: readTagNotes(tag),
     }),
   );
 }

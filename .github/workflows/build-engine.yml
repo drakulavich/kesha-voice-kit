@@ -419,9 +419,10 @@ jobs:
       # actions/checkout doesn't fetch tag objects under `on.push.tags`, so
       # `fetch-tags: true` is explicit. The `tag` job (fix #306) writes the
       # release notes into the annotated tag's message; this checkout + the
-      # extract step below recover it. Lightweight tags (manual
-      # `git tag vX.Y.Z` from a laptop, no `-a`) produce an empty annotation,
-      # which falls through to today's empty-body behavior.
+      # extract step below recover it. A lightweight tag (manual
+      # `git tag vX.Y.Z` from a laptop, no `-a`) has no annotation to recover —
+      # `%(contents)` returns the *commit* message there, so the extract step
+      # gates on `git cat-file -t` and drops it rather than publishing it (#815).
       - name: Checkout at tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -432,28 +433,7 @@ jobs:
       - name: Prepare release notes from tag annotation
         env:
           TAG_NAME: ${{ github.ref_name }}
-        run: |
-          git tag -l --format='%(contents)' "$TAG_NAME" > release-notes.md
-          cat >> release-notes.md <<EOF
-
-          ### Verify release assets
-
-          Download the published binaries and checksums, then verify them:
-
-          \`\`\`bash
-          gh release download $TAG_NAME -p SHA256SUMS -p kesha-release-manifest.json -p '*.sigstore.json' -p 'kesha-*' -p 'say-*'
-          sha256sum -c SHA256SUMS
-
-          cosign verify-blob \\
-            --bundle kesha-engine-darwin-arm64.sigstore.json \\
-            --certificate-identity "https://github.com/drakulavich/kesha-voice-kit/.github/workflows/build-engine.yml@refs/tags/$TAG_NAME" \\
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
-            kesha-engine-darwin-arm64
-          \`\`\`
-
-          The release also includes packaging metadata in \`kesha-release-manifest.json\`
-          and a source SBOM in \`kesha-voice-kit-$TAG_NAME.spdx.json\`.
-          EOF
+        run: node .github/scripts/engine-release-notes.mjs > release-notes.md
 
       - name: Prepare release asset directory
         run: mkdir -p release-assets

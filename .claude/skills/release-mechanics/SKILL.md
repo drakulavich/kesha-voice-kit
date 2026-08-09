@@ -47,7 +47,7 @@ Two things do *not* go through this lane. A **beta marker** (`vX.Y.Z-beta.N-cli`
 
 1. Bump `rust/Cargo.toml`, `rust/Cargo.lock` (`cargo check`), `package.json#keshaEngine.version` — leave `package.json#version` alone, it carries the next unreleased CLI (#691). An engine tag publishes nothing to npm; the bumped pin reaches users with the next `-cli` release (#729). If the engine would overtake the CLI line, raise it to match — rule 2 (`cli >= engine`) rejects the commit otherwise — but never lower it.
 2. Merge to main.
-3. Tag/push **annotated, with the notes as the message**: `git tag -a vX.Y.Z --cleanup=verbatim -F notes.md && git push origin refs/tags/vX.Y.Z` → `build-engine.yml`, whose release job reads `git tag -l --format='%(contents)'` into the draft body. A lightweight tag leaves the body empty.
+3. Tag/push **annotated, with the notes as the message**: `git tag -a vX.Y.Z --cleanup=verbatim -F notes.md && git push origin refs/tags/vX.Y.Z` → `build-engine.yml`, whose release job composes the draft body with `engine-release-notes.mjs`: the annotation, then the asset-verification section. A lightweight tag has no annotation, so its notes are dropped with a `::notice::` and the body is the verification section alone — `%(contents)` returns the *commit* message there, and publishing that leaked internal subjects into public releases until #815.
 4. If the tag was lightweight, write the notes before publishing:
 
    ```bash
