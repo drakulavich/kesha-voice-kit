@@ -43,7 +43,7 @@ macro_rules! fluid_voice {
     };
 }
 
-// FluidAudio 0.14.8 voice snapshot plus the multilingual Kokoro voice packs
+// FluidAudio 0.15.5 voice snapshot plus the multilingual Kokoro voice packs
 // validated against the ANE cache. Keep this list in sync with the FluidAudio
 // pin in the fluidaudio-rs git rev (rust/Cargo.toml) whenever it changes.
 const VOICES: &[VoiceSpec] = &[
@@ -105,9 +105,11 @@ fn is_han(c: char) -> bool {
 }
 
 /// FluidAudio's Kokoro G2P handles Latin (en/es/fr/it/pt) and, since the
-/// FluidAudio 0.14.8 `.mandarin` KokoroAne variant, Chinese (Han). For the other
+/// FluidAudio 0.15.5 `.mandarin` KokoroAne variant, Chinese (Han). For the other
 /// non-Latin languages it ships voices for (hi/ja) native-script text is not
 /// converted to phonemes and synthesizes as noise rather than speech (#492).
+/// FluidAudio 0.15.5 added a `.japanese` variant, but the binding still routes
+/// only `zh` away from `.english`, so `ja` keeps bailing until that is wired.
 /// Returns the human-facing script name when `text` actually contains characters
 /// of the script `fluid_id`'s language is written in — romanized (Latin) input
 /// for the same voice returns `None` because it works.
@@ -117,7 +119,7 @@ fn unsupported_native_script(text: &str, fluid_id: &str) -> Option<&'static str>
         "hi" => any(|c| ('\u{0900}'..='\u{097F}').contains(&c)).then_some("Devanagari"),
         "ja" => any(|c| matches!(c, '\u{3040}'..='\u{30FF}') || is_han(c))
             .then_some("Japanese (kana/kanji)"),
-        // zh (Han) is supported via FluidAudio 0.14.8's Mandarin KokoroAne variant.
+        // zh (Han) is supported via FluidAudio 0.15.5's Mandarin KokoroAne variant.
         _ => None,
     }
 }
@@ -197,6 +199,24 @@ fn compute_units_from_env() -> Result<KokoroComputeUnits> {
     )
 }
 
+/// Suffix naming the one Kokoro init failure kesha can repair: a `.mlmodelc`
+/// left incomplete in FluidAudio's cache by an older version (#709). The Swift
+/// bridge collapses every init failure into `-1` and logs the CoreML reason
+/// (`Error in reading the MIL network`) to stderr itself, so the cause is not in
+/// the Rust error — the cache is what we can inspect. Empty when the cache is
+/// clean, so a healthy install never gets misleading advice.
+fn incomplete_bundle_hint() -> String {
+    let names = crate::models::incomplete_ane_bundle_names();
+    if names.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; FluidAudio's CoreML cache has incomplete bundle(s) ({}) — re-run \
+         `kesha install --tts` to repair",
+        names.join(", ")
+    )
+}
+
 /// Initialize a FluidAudio Kokoro bridge for `voice_id` and run `f` against it
 /// with the process's stdout silenced for the whole bridge lifetime (create →
 /// call → drop). FluidAudio's CoreML pipeline writes diagnostics to stdout that
@@ -213,11 +233,12 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
         let audio = FluidAudio::new().context("init FluidAudio bridge")?;
         audio
             .init_kokoro_with_compute_units(voice_id, lang, compute_units)
-            .with_context(|| {
-                format!(
-                    "init FluidAudio Kokoro on {} compute units (downloads the model on first run)",
-                    preset_name(compute_units)
-                )
+            .map_err(|e| {
+                anyhow::Error::new(e).context(format!(
+                    "init FluidAudio Kokoro on {} compute units (downloads the model on first run){}",
+                    preset_name(compute_units),
+                    incomplete_bundle_hint()
+                ))
             })?;
         f(&audio)
     })
@@ -351,7 +372,7 @@ mod tests {
             unsupported_native_script("日本語", "jm_kumo"),
             Some("Japanese (kana/kanji)")
         );
-        // zh (Han) is now SUPPORTED via FluidAudio 0.14.8's Mandarin KokoroAne
+        // zh (Han) is now SUPPORTED via FluidAudio 0.15.5's Mandarin KokoroAne
         // variant (#492) — native-script Chinese must NOT be flagged.
         assert_eq!(unsupported_native_script("你好我叫凯沙", "zm_050"), None);
         assert_eq!(unsupported_native_script("\u{20000}", "zm_050"), None);
@@ -393,7 +414,8 @@ mod tests {
 
     #[test]
     fn ensure_script_supported_bails_with_code_on_native_script() {
-        // hi/ja native script still bails (no FluidAudio 0.14.8 KokoroAne variant).
+        // hi/ja native script still bails: no hi variant upstream, and the binding
+        // does not route ja to 0.15.5's `.japanese` variant.
         for (text, voice) in [("नमस्ते", "hm_omega"), ("こんにちは", "jm_kumo")] {
             let err =
                 ensure_script_supported(voice, text).expect_err("should reject native script");
