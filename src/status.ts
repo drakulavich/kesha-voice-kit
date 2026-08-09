@@ -6,7 +6,7 @@ import {
   getEngineCapabilities,
   type EngineCapabilities,
 } from "./engine";
-import { cacheComponentPaths } from "./cache-layout";
+import { cacheComponentPaths, isInsideDir } from "./cache-layout";
 import { humanBytes } from "./format";
 import { installHint } from "./install-hint";
 import { log } from "./log";
@@ -178,7 +178,7 @@ function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
 
   // Sum cache root + engine dir separately so `KESHA_ENGINE_BIN` overrides outside the cache are still counted.
   const cacheTotal = dirSizeBytes(cache);
-  const engineOutsideCache = engineDir.startsWith(cache) ? 0 : dirSizeBytes(engineDir);
+  const engineOutsideCache = isInsideDir(engineDir, cache) ? 0 : dirSizeBytes(engineDir);
   const fluidKokoro = fluidKokoroCacheInfo();
   // Only walked when it is the backend in play; otherwise the size is computed and dropped.
   const fluidAsr = coreml ? fluidAsrCacheInfo() : null;

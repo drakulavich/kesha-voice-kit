@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join, resolve, sep } from "path";
 
 export interface CachePathEntry {
   label: string;
@@ -11,6 +11,19 @@ export interface CachePathEntry {
  * populates the ONNX ASR dir and keeps its own bundle outside this cache, so that row is
  * dropped rather than rendered as missing; callers list it under external caches (#684).
  */
+/**
+ * Whether `child` is `parent` itself or lives under it — the one answer `status --disk` and
+ * `doctor` both need before deciding whether an engine dir is already inside the cache total.
+ * A bare `startsWith` reads the sibling `~/.cache/kesha-alt` as inside `~/.cache/kesha` and
+ * drops its size (#790); `KESHA_CACHE_DIR` and `KESHA_ENGINE_BIN` are taken verbatim, so both
+ * sides are resolved first.
+ */
+export function isInsideDir(child: string, parent: string): boolean {
+  const resolvedChild = resolve(child);
+  const resolvedParent = resolve(parent);
+  return resolvedChild === resolvedParent || resolvedChild.startsWith(`${resolvedParent}${sep}`);
+}
+
 export function cacheComponentPaths(
   cacheRoot: string,
   engineDir: string,

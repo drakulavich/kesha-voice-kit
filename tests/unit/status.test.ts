@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
-import { join } from "path";
+import { join, sep } from "path";
 import { tmpdir } from "os";
 import {
   formatStatusLine,
@@ -565,6 +565,61 @@ describe("collectStatus disk accounting (#647)", () => {
 
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      expect(disk.totalBytes).toBe(64 + statSync(binPath).size);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("a sibling directory sharing the cache path prefix is counted (#790)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-sibling-"));
+    const cache = join(dir, ".cache", "kesha");
+    // `<cache>-alt` is a string prefix match for the cache but is not inside it.
+    const binPath = writeFakeEngine(join(`${cache}-alt`, "bin"));
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      expect(disk.totalBytes).toBe(64 + statSync(binPath).size);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an engine rooted at the cache itself is counted once", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-atroot-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = writeFakeEngine(join(cache, "bin"));
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      expect(disk.totalBytes).toBe(64 + statSync(binPath).size);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("a trailing separator on KESHA_CACHE_DIR does not double-count", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-trailing-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = writeFakeEngine(join(cache, "engine", "bin"));
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = `${cache}${sep}`;
     process.env.HOME = dir;
     try {
       const disk = (await collectStatus({ disk: true })).disk!;
