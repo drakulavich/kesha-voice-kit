@@ -74,14 +74,27 @@ const MUTE_DETAIL = "reports no capabilities";
  * `probeExecutable` and answers nothing. `mute` is that engine, and it is a fault of the
  * same severity as `unusable`; only `missing` is not a fault, because an absent engine is
  * already reported loudly everywhere (#770).
+ *
+ * Capabilities are asked for first, so a healthy engine costs one spawn — and they carry
+ * the same deadline as the `--version` probe, because a binary that never answers is one
+ * that could not be made to answer (`unusable`), not one that answered nothing (`mute`).
  */
-export async function engineFunctionalHealth(): Promise<EngineFunctionalHealth> {
+export async function engineFunctionalHealth(
+  timeoutMs = PROBE_TIMEOUT_MS,
+): Promise<EngineFunctionalHealth> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const capabilities = await getEngineCapabilities();
+    const capabilities = await getEngineCapabilities({ signal: controller.signal });
     if (capabilities) return { status: "ok", capabilities };
   } catch {
-    // Nothing is swallowed: only an engine that cannot be spawned throws here, and the
-    // probe below reports that as `unusable` with the loader's own reason.
+    // Nothing is swallowed: an engine that cannot be spawned, or that outlived the
+    // deadline, is classified below rather than reported as a bare stack trace.
+  } finally {
+    clearTimeout(timer);
+  }
+  if (controller.signal.aborted) {
+    return { status: "unusable", detail: `no exit within ${timeoutMs / 1000}s` };
   }
   const executable = await probeExecutable(getEngineBinPath(), ["--version"]);
   if (executable.status !== "ok") return executable;

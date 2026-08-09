@@ -29,6 +29,29 @@ if [ "$1" = "--capabilities-json" ]; then
 fi
 exit 0
 `;
+/**
+ * `exec` so the terminate signal lands on `sleep` itself, not on a shell that ignores it.
+ * The duration doubles as a per-test marker, so one hang test never observes another's child.
+ */
+function hangingEngine(marker: string): string {
+  return `#!/bin/sh\nexec sleep ${marker}\n`;
+}
+const SLOW_ENGINE = `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  sleep 1
+  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+fi
+exit 0
+`;
+
+async function sleepingEngineSurvives(marker: string): Promise<boolean> {
+  const proc = Bun.spawn(["pgrep", "-f", `sleep ${marker}`], {
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  return out.trim().length > 0;
+}
 
 const savedFetch = globalThis.fetch;
 const tempDirs: string[] = [];
@@ -135,6 +158,37 @@ describe("engineFunctionalHealth (#801)", () => {
     const health = await engineFunctionalHealth();
     expect(health.status).toBe("unusable");
   });
+
+  // The capabilities probe is the primary one, so it carries the deadline the `--version`
+  // probe has had since #775 — otherwise a hung binary stalls doctor, status and the
+  // install cache check for as long as it likes.
+  posixTest("a binary that hangs is unusable within the deadline, never mute", async () => {
+    stageEngine("kesha-functional-hang-", hangingEngine("61.5"));
+
+    const startedAt = performance.now();
+    const health = await engineFunctionalHealth(500);
+    const elapsed = performance.now() - startedAt;
+
+    expect(health.status).toBe("unusable");
+    expect(health.status === "unusable" && health.detail).toContain("no exit within");
+    expect(elapsed).toBeLessThan(5_000);
+  }, 15_000);
+
+  posixTest("the hung engine is killed, not left running behind us", async () => {
+    stageEngine("kesha-functional-hang-kill-", hangingEngine("62.5"));
+
+    await engineFunctionalHealth(500);
+
+    // SIGTERM first, SIGKILL after a 1s grace, so give the tree time to actually go.
+    for (let i = 0; i < 30 && (await sleepingEngineSurvives("62.5")); i++) await Bun.sleep(100);
+    expect(await sleepingEngineSurvives("62.5")).toBe(false);
+  }, 15_000);
+
+  posixTest("an engine that answers slowly is ok, not timed out", async () => {
+    stageEngine("kesha-functional-slow-", SLOW_ENGINE);
+    const health = await engineFunctionalHealth(10_000);
+    expect(health.status).toBe("ok");
+  }, 20_000);
 });
 
 describe("install repairs a corrupt engine (#770)", () => {
