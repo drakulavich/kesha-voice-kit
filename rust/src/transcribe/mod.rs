@@ -305,6 +305,10 @@ pub fn transcribe_with_options(
         duration
     );
 
+    #[cfg_attr(
+        not(all(feature = "system_diarize", target_os = "macos")),
+        allow(unused_mut)
+    )]
     let mut output = match decision {
         VadDecision::Vad => {
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
@@ -346,13 +350,28 @@ pub fn transcribe_with_options(
         }
     }
 
-    // Last: diarization reads only segment spans, so the two are
-    // order-independent, and this keeps ITN a single post-processing tail.
+    Ok(finalize_output(output, timestamps_required, itn_required))
+}
+
+/// Post-processing tail shared by every ASR path, run after diarization —
+/// diarization reads only segment spans, so the two are order-independent.
+fn finalize_output(
+    mut output: TranscriptionOutput,
+    timestamps_required: bool,
+    itn_required: bool,
+) -> TranscriptionOutput {
+    // The VAD path returns its speech spans even when segments weren't asked
+    // for; plain and chunked already return none. Normalising here makes
+    // `with_segments: false` mean the same thing everywhere, so text-only ITN
+    // always sees the whole transcript instead of per-span text that can split
+    // a number phrase across segments (#710).
+    if !timestamps_required {
+        output.segments.clear();
+    }
     if itn_required {
         output = itn::normalize_output(output);
     }
-
-    Ok(output)
+    output
 }
 
 /// Shared by plain and chunked paths to avoid duplicate timing+logging+create_backend blocks.
@@ -1435,6 +1454,69 @@ mod tests {
         assert!(!o.with_segments);
         assert!(!o.with_speakers);
         assert!(!o.itn, "the ITN pass must never be on by default (#710)");
+    }
+
+    /// The VAD path returns its speech spans whether or not segments were
+    /// requested, while plain returns none and chunked clears them. Text-only
+    /// ITN must not depend on which path ran: normalizing per span rewrites a
+    /// number phrase VAD split in two as "20 1" instead of "21" (#710).
+    #[test]
+    fn text_only_itn_is_whole_transcript_on_every_path() {
+        let vad_shaped = TranscriptionOutput {
+            text: "twenty one".into(),
+            segments: vec![
+                TranscriptionSegment {
+                    start: 0.0,
+                    end: 1.0,
+                    text: "twenty".into(),
+                    speaker: None,
+                },
+                TranscriptionSegment {
+                    start: 1.0,
+                    end: 2.0,
+                    text: "one".into(),
+                    speaker: None,
+                },
+            ],
+        };
+        let plain_shaped = TranscriptionOutput {
+            text: "twenty one".into(),
+            segments: vec![],
+        };
+
+        let from_vad = finalize_output(vad_shaped, false, true);
+        let from_plain = finalize_output(plain_shaped, false, true);
+
+        assert_eq!(from_vad.text, from_plain.text);
+        assert_eq!(from_vad.text, "21");
+        assert!(
+            from_vad.segments.is_empty(),
+            "with_segments=false must emit no segments regardless of path"
+        );
+    }
+
+    /// The counterpart to the parity test: requesting segments keeps the
+    /// per-segment contract, so `--json --timestamps` still round-trips.
+    #[test]
+    fn requested_segments_keep_per_segment_itn() {
+        let out = finalize_output(
+            TranscriptionOutput {
+                text: "forty two".into(),
+                segments: vec![TranscriptionSegment {
+                    start: 0.0,
+                    end: 1.0,
+                    text: "forty two".into(),
+                    speaker: Some(3),
+                }],
+            },
+            true,
+            true,
+        );
+
+        assert_eq!(out.segments.len(), 1);
+        assert_eq!(out.segments[0].text, "42");
+        assert_eq!(out.segments[0].speaker, Some(3));
+        assert_eq!(out.text, "42");
     }
 
     #[test]

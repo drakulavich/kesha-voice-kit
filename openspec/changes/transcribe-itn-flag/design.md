@@ -48,6 +48,13 @@ VAD and chunked paths already produce, so `text` and `segments` cannot drift. On
 path with `--json` there is exactly one Segment whose text is the transcript, so the rebuild is
 an identity. With no Segments at all (the text-only path) the transcript is normalized directly.
 
+"The text-only path has no Segments" is not free, though: the VAD path returns its speech spans
+whether or not the caller asked for Segments, where plain returns none and chunked clears them.
+Left alone, `--itn` without `--timestamps` would normalize per span on long audio only, and a
+number phrase VAD split across two spans normalizes to `"20 1"` rather than `"21"`. So the pass
+runs behind one shared tail that drops Segments whenever they weren't requested, making
+`with_segments: false` mean the same thing on all three paths.
+
 Ordering: ITN runs last in `transcribe_with_options`, after the Diarization merge. Diarization
 assigns Speaker labels from time spans and never reads Segment text, so the two are
 order-independent; running ITN last keeps it a single post-processing tail with one call site.
