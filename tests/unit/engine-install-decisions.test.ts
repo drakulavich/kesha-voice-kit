@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "fs";
 import { dirname, join } from "path";
@@ -148,13 +147,7 @@ function engineDownloads(urls: string[]): string[] {
   return urls.filter((u) => u.endsWith(binaryName));
 }
 
-/** Read-only view of the developer's real engine, to prove a test run never touched it (#796). */
-function realEngineSnapshot(): { exists: boolean; size?: number; mtimeMs?: number } {
-  const real = join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
-  if (!existsSync(real)) return { exists: false };
-  const s = statSync(real);
-  return { exists: true, size: s.size, mtimeMs: s.mtimeMs };
-}
+const realEngineBin = join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
 
 // The developer's real ~/.cache/kesha was overwritten with a test stub because pointing
 // KESHA_ENGINE_BIN at a temp path is opt-in per test, and the fallback is the real cache.
@@ -175,17 +168,12 @@ describe("an install only ever writes where it was pointed (#796)", () => {
   }, 30_000);
 
   // The adversarial half: isolation is opt-in, so prove that forgetting it fails loudly
-  // rather than reaching ~/.cache/kesha. This is the automated proof the hole is closed.
-  posixTest("a test that forgets to isolate is refused, not silently served", async () => {
-    delete process.env.KESHA_ENGINE_BIN;
-    delete process.env.KESHA_CACHE_DIR;
-    const before = realEngineSnapshot();
-    stubRelease();
-
-    await expect(installEngine()).rejects.toThrow(/real\s+per-user cache/);
-
-    expect(realEngineSnapshot()).toEqual(before);
-  }, 30_000);
+  // rather than reaching ~/.cache/kesha. Asserted on the predicate, never by running an
+  // install at the real path — under mutation a disabled guard would do exactly the damage
+  // this test exists to rule out.
+  posixTest("a test that forgets to isolate is refused, not silently served", () => {
+    expect(() => assertNotRealCacheUnderTest(realEngineBin)).toThrow(/real\s+per-user cache/);
+  });
 
   posixTest("the guard leaves a redirected cache alone", () => {
     expect(() =>
@@ -196,13 +184,10 @@ describe("an install only ever writes where it was pointed (#796)", () => {
   // The guard must not cost a real user their install: outside `bun test` it is inert, even
   // for the very path it refuses under one.
   posixTest("outside a test run the real cache is allowed", () => {
-    const realBin = join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
-    expect(() => assertNotRealCacheUnderTest(realBin)).toThrow(/real\s+per-user cache/);
-
     const saved = process.env.NODE_ENV;
     delete process.env.NODE_ENV;
     try {
-      expect(() => assertNotRealCacheUnderTest(realBin)).not.toThrow();
+      expect(() => assertNotRealCacheUnderTest(realEngineBin)).not.toThrow();
     } finally {
       if (saved === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = saved;
