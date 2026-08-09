@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import { errorMessage } from "./error-utils";
+import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from "./engine";
 
 export type ExecutableHealth =
   | { status: "ok" }
@@ -52,4 +53,37 @@ export async function probeExecutable(
   }
   if (proc.signalCode) return { status: "unusable", detail: `killed by ${proc.signalCode}` };
   return { status: "ok" };
+}
+
+export type EngineFunctionalHealth =
+  | { status: "ok"; capabilities: EngineCapabilities }
+  | { status: "missing" }
+  | { status: "unusable"; detail: string }
+  | { status: "mute"; detail: string };
+
+export const CORRUPT_STATE = "installed but not executable (corrupt) - re-run `kesha install`";
+export const NOT_FUNCTIONAL_STATE =
+  "installed but not functional (reports no capabilities) - re-run `kesha install`";
+const MUTE_DETAIL = "reports no capabilities";
+
+/**
+ * The single "does this engine describe itself" verdict — doctor, status and the install
+ * cache-validity check all consult it so they cannot disagree (#801).
+ *
+ * Spawning is not working: the #796 stub was `#!/bin/sh\nexit 0`, which passes
+ * `probeExecutable` and answers nothing. `mute` is that engine, and it is a fault of the
+ * same severity as `unusable`; only `missing` is not a fault, because an absent engine is
+ * already reported loudly everywhere (#770).
+ */
+export async function engineFunctionalHealth(): Promise<EngineFunctionalHealth> {
+  try {
+    const capabilities = await getEngineCapabilities();
+    if (capabilities) return { status: "ok", capabilities };
+  } catch {
+    // Nothing is swallowed: only an engine that cannot be spawned throws here, and the
+    // probe below reports that as `unusable` with the loader's own reason.
+  }
+  const executable = await probeExecutable(getEngineBinPath(), ["--version"]);
+  if (executable.status !== "ok") return executable;
+  return { status: "mute", detail: MUTE_DETAIL };
 }

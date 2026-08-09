@@ -3,9 +3,14 @@ import { join } from "path";
 import {
   isEngineInstalled,
   getEngineBinPath,
-  getEngineCapabilities,
   type EngineCapabilities,
 } from "./engine";
+import {
+  CORRUPT_STATE,
+  engineFunctionalHealth,
+  NOT_FUNCTIONAL_STATE,
+  type EngineFunctionalHealth,
+} from "./engine-health";
 import { cacheComponentPaths, isInsideDir } from "./cache-layout";
 import { humanBytes } from "./format";
 import { installHint } from "./install-hint";
@@ -70,7 +75,8 @@ export interface StatusReport {
 export async function collectStatus(options: ShowStatusOptions = {}): Promise<StatusReport> {
   const path = getEngineBinPath();
   const installed = isEngineInstalled();
-  const capabilities = installed ? await getEngineCapabilities().catch(() => null) : null;
+  const health = installed ? await engineFunctionalHealth() : ({ status: "missing" } as const);
+  const capabilities = health.status === "ok" ? health.capabilities : null;
 
   return {
     cliVersion: packageVersion,
@@ -78,12 +84,24 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
     voices: installed ? listInstalledVoices() : [],
     runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
     modelMirror: activeModelMirror(),
-    hint: installed
-      ? null
-      : `Run \`${installHint()}\` to download the engine and models.`,
+    hint: engineHint(path, health.status),
     // Absent engine means no disk walk, matching the human path (#647).
     disk: installed && options.disk ? collectDiskUsage(path, capabilities?.backend) : null,
   };
+}
+
+/** An engine that runs but describes nothing needs the same repair as a missing one (#801). */
+function engineHint(path: string, health: EngineFunctionalHealth["status"]): string | null {
+  switch (health) {
+    case "missing":
+      return `Run \`${installHint()}\` to download the engine and models.`;
+    case "mute":
+      return `Engine at ${path} is ${NOT_FUNCTIONAL_STATE}`;
+    case "unusable":
+      return `Engine at ${path} is ${CORRUPT_STATE}`;
+    default:
+      return null;
+  }
 }
 
 function logEngineCapabilities(caps: EngineCapabilities | null): void {

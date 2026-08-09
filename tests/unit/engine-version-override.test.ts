@@ -14,7 +14,14 @@ import { engineVersion } from "../../src/package-info";
 import { isolateEngineCache } from "../helpers/fake-engine";
 
 const OVERRIDE = "9.9.9-alpha.1";
-const FAKE_ENGINE = "#!/bin/sh\nexit 0\n";
+// It has to answer `--capabilities-json`: an engine that describes nothing is re-downloaded
+// rather than treated as a cache hit (#801).
+const FAKE_ENGINE = `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+fi
+exit 0
+`;
 
 const savedFetch = globalThis.fetch;
 const tempDirs: string[] = [];
