@@ -20,6 +20,8 @@ export const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
  * Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_DIARIZE_FEATURE`.
  */
 export const TRANSCRIBE_DIARIZE_FEATURE = "transcribe.diarize";
+/** Mirrors `rust/src/record.rs::RECORD_LIVE_FEATURE`. */
+export const RECORD_LIVE_FEATURE = "record.live";
 
 export interface LangDetectResult {
   code: string;
@@ -308,9 +310,37 @@ export async function transcribeEngineWithSegments(
   }
 }
 
-export async function recordEngine(outPath: string, maxSeconds: number): Promise<void> {
+/** Live transcription needs the Engine's streaming ASR session, which only the
+ * CoreML backend on Apple Silicon compiles. Refuses here rather than letting the
+ * Engine answer with `E_UNSUPPORTED_PLATFORM` after the spawn. */
+export async function preflightRecordLive(): Promise<void> {
+  const caps = await getEngineCapabilities().catch(() => null);
+  if (caps === null) {
+    throw new Error(
+      "could not read kesha-engine's capabilities, so --live cannot be verified.\n\n" +
+        "The engine binary failed to answer `--capabilities-json` — it may be missing, " +
+        "truncated, or blocked from running.\n\n" +
+        `Reinstall it and retry:\n\n    ${installHint()}`,
+    );
+  }
+  if (!caps.features.includes(RECORD_LIVE_FEATURE)) {
+    throw new Error(
+      "live transcription requires a CoreML engine on Apple Silicon.\n\n" +
+        "On this platform, record and transcribe in two steps:\n\n" +
+        "    kesha record --out note.wav\n" +
+        "    kesha note.wav",
+    );
+  }
+}
+
+/** Either capture to a WAV or transcribe live — the Engine rejects both at once. */
+export type RecordTarget = { live: true } | { live?: false; out: string };
+
+export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
   const binPath = getEngineBinPath();
-  const args = ["record", "--out", outPath, "--max-seconds", String(maxSeconds)];
+  const args = target.live
+    ? ["record", "--live", "--max-seconds", String(maxSeconds)]
+    : ["record", "--out", target.out, "--max-seconds", String(maxSeconds)];
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
   const proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]));

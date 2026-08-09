@@ -1,30 +1,44 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { isEngineInstalled, recordEngine } from "../engine";
+import { isEngineInstalled, preflightRecordLive, recordEngine, type RecordTarget } from "../engine";
 import { installHint } from "../install-hint";
 import { log } from "../log";
 
 export interface RecordArgs {
   out?: string;
+  live?: boolean;
   "max-seconds"?: string | number;
   debug?: boolean;
 }
 
 export type ResolvedRecordArgs =
-  | { ok: true; out: string; maxSeconds: number }
+  | { ok: true; target: RecordTarget; maxSeconds: number }
   | { ok: false; error: string };
 
 const DEFAULT_MAX_SECONDS = 120;
 const MAX_RECORD_SECONDS = 3600;
 
-export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
-  const out = typeof args.out === "string" ? args.out.trim() : "";
-  if (!out) {
-    return { ok: false, error: "kesha record requires --out <path>." };
-  }
+type Rejected = { ok: false; error: string };
 
-  const rawMax = args["max-seconds"] ?? String(DEFAULT_MAX_SECONDS);
-  const raw = String(rawMax).trim();
+function resolveTarget(args: RecordArgs): { ok: true; target: RecordTarget } | Rejected {
+  const out = typeof args.out === "string" ? args.out.trim() : "";
+  const live = args.live === true;
+  if (live && out) {
+    return {
+      ok: false,
+      error: "kesha record cannot combine --live with --out; --live prints the transcript to stdout.",
+    };
+  }
+  if (!live && !out) {
+    return { ok: false, error: "kesha record requires --out <path> (or --live)." };
+  }
+  return { ok: true, target: live ? { live: true } : { out } };
+}
+
+function resolveMaxSeconds(
+  rawMax: string | number | undefined,
+): { ok: true; maxSeconds: number } | Rejected {
+  const raw = String(rawMax ?? DEFAULT_MAX_SECONDS).trim();
   const maxSeconds = Number(raw);
   if (raw === "" || !Number.isFinite(maxSeconds)) {
     return { ok: false, error: "--max-seconds must be a finite number." };
@@ -35,8 +49,15 @@ export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
       error: `--max-seconds must be an integer between 1 and ${MAX_RECORD_SECONDS}.`,
     };
   }
+  return { ok: true, maxSeconds };
+}
 
-  return { ok: true, out, maxSeconds };
+export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
+  const target = resolveTarget(args);
+  if (!target.ok) return target;
+  const max = resolveMaxSeconds(args["max-seconds"]);
+  if (!max.ok) return max;
+  return { ok: true, target: target.target, maxSeconds: max.maxSeconds };
 }
 
 /** Mirrors `src/transcribe.ts`'s "no transcription backend" guard message, worded for recording. */
@@ -52,13 +73,18 @@ export function noRecordingBackendMessage(): string {
 export const recordCommand = defineCommand({
   meta: {
     name: "record",
-    description: "Record microphone audio to a WAV file",
+    description: "Record microphone audio to a WAV file, or transcribe it live",
   },
   args: {
     out: {
       type: "string",
       description: "Write recorded WAV audio to this path",
-      required: true,
+    },
+    live: {
+      type: "boolean",
+      description:
+        "Transcribe the microphone live and print the transcript to stdout (CoreML on Apple Silicon only)",
+      default: false,
     },
     "max-seconds": {
       type: "string",
@@ -83,7 +109,8 @@ export const recordCommand = defineCommand({
       process.exit(1);
     }
     try {
-      await recordEngine(resolved.out, resolved.maxSeconds);
+      if (resolved.target.live) await preflightRecordLive();
+      await recordEngine(resolved.target, resolved.maxSeconds);
     } catch (err) {
       log.error(errorMessage(err));
       process.exit(1);

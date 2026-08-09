@@ -38,6 +38,10 @@ const FACT_CHUNK_SIZE: u32 = 4;
 #[cfg(any(target_os = "macos", test))]
 const DATA_CHUNK_HEADER: u32 = 8;
 
+/// Capabilities flag for `kesha record --live`; the CLI checks it before
+/// forwarding the flag.
+pub const RECORD_LIVE_FEATURE: &str = "record.live";
+
 pub struct RecordSummary {
     pub path: std::path::PathBuf,
     pub sample_rate: u32,
@@ -61,30 +65,18 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         anyhow::bail!("--max-seconds must be greater than 0");
     }
 
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .context("no default microphone input device found")?;
-    let supported = device
-        .default_input_config()
-        .context("failed to read default microphone format")?;
-    let sample_format = supported.sample_format();
-    let config: StreamConfig = supported.into();
-    let input_channels = config.channels;
-    ensure_input_channels(input_channels)?;
-    let sample_rate = config.sample_rate.0;
+    let input = open_default_input()?;
+    let input_channels = input.config.channels;
+    let sample_rate = input.config.sample_rate.0;
 
     let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     spawn_stdin_stop_thread(stop_tx);
 
-    let err_fn = |err| eprintln!("recording stream error: {err}");
-    let stream = match sample_format {
-        SampleFormat::F32 => build_input_stream::<f32>(&device, &config, sample_tx, err_fn)?,
-        SampleFormat::I16 => build_input_stream::<i16>(&device, &config, sample_tx, err_fn)?,
-        SampleFormat::U16 => build_input_stream::<u16>(&device, &config, sample_tx, err_fn)?,
-        other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
+    let sink = move |samples| {
+        let _ = sample_tx.send(samples);
     };
+    let stream = build_input_stream_for_format(&input, sink)?;
 
     stream
         .play()
@@ -115,7 +107,14 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         }
     }
 
+    // Drain after stopping capture, or the last words spoken never reach the file.
     drop(stream);
+    while let Ok(samples) = sample_rx.try_recv() {
+        for frame in samples.chunks_exact(usize::from(input_channels)) {
+            mono_samples.push(mix_frame_to_mono(frame).clamp(-1.0, 1.0));
+        }
+    }
+
     write_plain_mono_float_wav(path, sample_rate, &mono_samples)
         .context("failed to write WAV recording")?;
 
@@ -126,6 +125,137 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         frames: mono_samples.len() as u64,
     })
 }
+
+/// Captures the default microphone and transcribes it through a streaming ASR
+/// session, returning the transcript. Nothing is written to disk.
+///
+/// Feeding happens here, on the thread draining the sample channel — never in
+/// the CPAL callback, which stays a convert-and-send as in the WAV path.
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
+    if max_duration.is_zero() {
+        anyhow::bail!("--max-seconds must be greater than 0");
+    }
+
+    let input = open_default_input()?;
+    let sample_rate = input.config.sample_rate.0;
+
+    eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
+    let mut feed = LiveFeed {
+        session: crate::streaming_asr::StreamingAsrSession::start(sample_rate)?,
+        mono: Vec::new(),
+        input_channels: input.config.channels,
+    };
+
+    let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(LIVE_QUEUE_BUFFERS);
+    let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (stop_tx, stop_rx) = mpsc::channel::<()>();
+    spawn_stdin_stop_thread(stop_tx);
+
+    let sink = {
+        let dropped = std::sync::Arc::clone(&dropped);
+        move |samples| {
+            // Never block the CPAL callback; overflow is reported, not absorbed.
+            if sample_tx.try_send(samples).is_err() {
+                dropped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    };
+    let stream = build_input_stream_for_format(&input, sink)?;
+
+    stream
+        .play()
+        .context("failed to start microphone recording")?;
+    eprintln!("Listening ({sample_rate} Hz)... transcript prints when recording stops.");
+
+    feed.listen(&sample_rx, &stop_rx, max_duration)?;
+
+    // Drain after stopping capture, or the last words spoken are never fed.
+    drop(stream);
+    feed.drain(&sample_rx)?;
+
+    warn_dropped_buffers(dropped.load(std::sync::atomic::Ordering::Relaxed));
+    feed.finish()
+}
+
+/// `mono` is per-call scratch, not accumulated audio as in the WAV path.
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+struct LiveFeed {
+    session: crate::streaming_asr::StreamingAsrSession,
+    mono: Vec<f32>,
+    input_channels: u16,
+}
+
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+impl LiveFeed {
+    fn feed(&mut self, interleaved: &[f32]) -> Result<()> {
+        self.mono.clear();
+        self.mono.extend(
+            interleaved
+                .chunks_exact(usize::from(self.input_channels))
+                .map(|frame| mix_frame_to_mono(frame).clamp(-1.0, 1.0)),
+        );
+        self.session.feed(&self.mono)
+    }
+
+    fn listen(
+        &mut self,
+        sample_rx: &mpsc::Receiver<Vec<f32>>,
+        stop_rx: &mpsc::Receiver<()>,
+        max_duration: Duration,
+    ) -> Result<()> {
+        let started = Instant::now();
+        let mut announced = 0u64;
+        let tick = io::stderr().is_terminal();
+        loop {
+            if stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration {
+                break;
+            }
+            match sample_rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(samples) => self.feed(&samples)?,
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+            let elapsed = started.elapsed().as_secs();
+            if tick && elapsed > announced {
+                announced = elapsed;
+                eprint!("\rListening... {elapsed}s");
+            }
+        }
+        if announced > 0 {
+            eprintln!();
+        }
+        Ok(())
+    }
+
+    fn drain(&mut self, sample_rx: &mpsc::Receiver<Vec<f32>>) -> Result<()> {
+        while let Ok(samples) = sample_rx.try_recv() {
+            self.feed(&samples)?;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<String> {
+        self.session.finish()
+    }
+}
+
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+fn warn_dropped_buffers(dropped: usize) {
+    if dropped > 0 {
+        eprintln!(
+            "warning: dropped {dropped} microphone buffer(s) — transcription could not keep up, \
+             so the transcript may have gaps"
+        );
+    }
+}
+
+/// Backlog the capture callback may run ahead by — ~5.5 s at the 512-frame,
+/// 48 kHz callback measured on an M-series Mac, far beyond the fraction of real
+/// time the ANE needs. Reaching it means something is wrong, which is why
+/// overflow is reported rather than absorbed.
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+const LIVE_QUEUE_BUFFERS: usize = 512;
 
 #[cfg(target_os = "macos")]
 fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<()>) {
@@ -140,10 +270,50 @@ fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<()>) {
 }
 
 #[cfg(target_os = "macos")]
+struct DefaultInput {
+    device: cpal::Device,
+    config: StreamConfig,
+    sample_format: SampleFormat,
+}
+
+#[cfg(target_os = "macos")]
+fn open_default_input() -> Result<DefaultInput> {
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .context("no default microphone input device found")?;
+    let supported = device
+        .default_input_config()
+        .context("failed to read default microphone format")?;
+    let sample_format = supported.sample_format();
+    let config: StreamConfig = supported.into();
+    ensure_input_channels(config.channels)?;
+    Ok(DefaultInput {
+        device,
+        config,
+        sample_format,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn build_input_stream_for_format(
+    input: &DefaultInput,
+    sink: impl FnMut(Vec<f32>) + Send + 'static,
+) -> Result<cpal::Stream> {
+    let err_fn = |err| eprintln!("recording stream error: {err}");
+    match input.sample_format {
+        SampleFormat::F32 => build_input_stream::<f32>(&input.device, &input.config, sink, err_fn),
+        SampleFormat::I16 => build_input_stream::<i16>(&input.device, &input.config, sink, err_fn),
+        SampleFormat::U16 => build_input_stream::<u16>(&input.device, &input.config, sink, err_fn),
+        other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn build_input_stream<T>(
     device: &cpal::Device,
     config: &StreamConfig,
-    sample_tx: mpsc::Sender<Vec<f32>>,
+    mut sink: impl FnMut(Vec<f32>) + Send + 'static,
     err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
 ) -> Result<cpal::Stream>
 where
@@ -161,7 +331,7 @@ where
                         samples.push(f32::from_input_sample(*sample));
                     }
                 }
-                let _ = sample_tx.send(samples);
+                sink(samples);
             },
             err_fn,
             None,
