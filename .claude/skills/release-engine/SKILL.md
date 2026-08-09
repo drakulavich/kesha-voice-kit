@@ -13,7 +13,6 @@ For a CLI release (`vX.Y.Z-cli`, npm) use the **`release-cli`** skill instead. T
 ## Inputs
 
 - `$1`: target tag, e.g. `v1.24.9`. Bare — no `-cli` suffix. `-beta.N` / `-alpha.N` are prerelease shapes; alphas are dispatched, not tagged by hand (see `release-mechanics`).
-- Optional: `--draft` to stop before publishing.
 
 ## THE TRAP THAT COSTS A TAG
 
@@ -68,7 +67,7 @@ In a worktree (`git worktree add .worktrees/release-X.Y.Z -b release/X.Y.Z origi
 
 The branch name matters twice: `integration-tests-full` skips on `release/*` (it downloads the *published* engine, whose tag does not exist yet), and `check-engine-targets` skips its 404 check there — that is the documented window between the release merge and its tag.
 
-That window must stay short. While it is open, `check-engine-targets` fails **every other PR** in the repo, because `main` pins an engine with no release.
+That window must stay short. While it is open, `main` pins an engine with no release, so `check-engine-targets` fails any PR that reaches `workflow-lint` — anything touching workflow-shaped paths, plus the scheduled run.
 
 ### Step 3 — Tag with the notes inside it
 
@@ -97,7 +96,19 @@ shasum -a 256 -c SHA256SUMS --ignore-missing
 ./kesha-engine-darwin-arm64 --capabilities-json | jq '.backend, (.features|length)'
 ```
 
-Compare the feature list against the previous release. A silently missing feature is the v1.1.0 failure mode, and the count is the cheapest way to catch it.
+Compare the feature list against the previous release: a silently missing feature is the v1.1.0 failure mode, and the count is the cheapest way to catch it.
+
+**A capabilities probe is not enough.** v1.5.0 reported itself healthy and could not synthesise. Actually exercise the binary before un-drafting — transcribe a fixture and synthesise a line — and verify a signature while you are there:
+
+```bash
+export KESHA_ENGINE_BIN="$PWD/kesha-engine-darwin-arm64"
+bun run bin/kesha.js tests/fixtures/benchmark-en/01-check-email.ogg
+bun run bin/kesha.js say "release check" --out /tmp/check.wav
+cosign verify-blob --bundle kesha-engine-darwin-arm64.sigstore.json \
+  --certificate-identity "https://github.com/drakulavich/kesha-voice-kit/.github/workflows/build-engine.yml@refs/tags/vX.Y.Z" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  kesha-engine-darwin-arm64
+```
 
 ### Step 5 — Publish
 
@@ -105,17 +116,19 @@ Compare the feature list against the previous release. A silently missing featur
 gh release edit vX.Y.Z --draft=false
 ```
 
-Un-drafting a **bare** engine tag publishes nothing to npm: `cliPublishTarget` marks it `engineOnly`. The blast radius is the GitHub release alone.
+Un-drafting a **bare** engine tag publishes nothing to npm — `npm-publish.yml` skips its publish job on `engine_only` (#729). It does fire `release: published`, which starts **`🍺 Homebrew Tap`** for stable tags, so the blast radius is the GitHub release plus the tap.
 
 ### Step 6 — Verify against the published release
 
 **`make smoke-test` is not sufficient on its own.** It runs whatever `kesha` resolves to, and a previously `bun add -g`'d install outranks `bun link` — a run that prints an old version tested an old CLI. Verify the real artifact in an isolated path:
 
 ```bash
-export KESHA_ENGINE_BIN="$SCRATCH/engine/kesha-engine"
+SMOKE=$(mktemp -d) && export KESHA_ENGINE_BIN="$SMOKE/kesha-engine"
 bun run bin/kesha.js install          # must report the new engine version
-bun run bin/kesha.js tests/fixtures/benchmark/09-*.ogg
+bun run bin/kesha.js tests/fixtures/benchmark/09-ustanovi-poka-klod-kod.ogg
 ```
+
+This re-downloads from the published release rather than re-using the draft binary from step 4 — which is the point: it exercises what a user gets.
 
 Then hand off to **`/release-cli`** so the pin reaches users.
 

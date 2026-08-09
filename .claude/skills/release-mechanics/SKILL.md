@@ -47,8 +47,8 @@ Two things do *not* go through this lane. A **beta marker** (`vX.Y.Z-beta.N-cli`
 
 1. Bump `rust/Cargo.toml`, `rust/Cargo.lock` (`cargo check`), `package.json#keshaEngine.version` — leave `package.json#version` alone, it carries the next unreleased CLI (#691). An engine tag publishes nothing to npm; the bumped pin reaches users with the next `-cli` release (#729). If the engine would overtake the CLI line, raise it to match — rule 2 (`cli >= engine`) rejects the commit otherwise — but never lower it.
 2. Merge to main.
-3. Tag/push: `git tag vX.Y.Z && git push origin vX.Y.Z` → `build-engine.yml`.
-4. Write release notes before publishing. Draft releases start with an empty body:
+3. Tag/push **annotated, with the notes as the message**: `git tag -a vX.Y.Z --cleanup=verbatim -F notes.md && git push origin refs/tags/vX.Y.Z` → `build-engine.yml`, whose release job reads `git tag -l --format='%(contents)'` into the draft body. A lightweight tag leaves the body empty.
+4. If the tag was lightweight, write the notes before publishing:
 
    ```bash
    gh release edit vX.Y.Z --notes "$(cat <<'EOF'
@@ -79,7 +79,7 @@ Two things do *not* go through this lane. A **beta marker** (`vX.Y.Z-beta.N-cli`
    ```
 
 6. Treat `make smoke-test` as a local sanity check only; it can run the old globally installed CLI/engine. The release gate is draft-asset validation.
-7. Publish: `gh release edit vX.Y.Z --draft=false`. This fires `📦 npm Publish`; verify `npm view @drakulavich/kesha-voice-kit version` within ~60s. Manual fallback: `npm publish --access public` from the maintainer laptop.
+7. Publish: `gh release edit vX.Y.Z --draft=false`. A bare engine tag reaches **no npm package** — `npm-publish.yml` skips its publish job on `engine_only` (#729) — but it does fire `🍺 Homebrew Tap`. The CLI arrives with its own `-cli` marker; see the `release-cli` skill.
 8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo. CLI-only marker releases skip Homebrew. **Engine releases no longer attach Linux `.deb`/`.rpm`**: those packages carry `package.json#version`, which `main` holds ahead of npm since #691, so naming them on an engine tag meant naming a CLI version npm had not published. The gate that checked this (`assert-npm-published.mjs`) made stable engine tags unreleasable and is gone. They ship from the stable `-cli` marker instead (#728) — the package *is* the CLI — which is the one release that publishes the same version to npm in the same run; `linux-packages.yml` keeps building and smoke-installing the pair on `main` as CI. `check-workflows.ts` holds both halves: `forbidLinuxPackaging` keeps them off engine tags, `requireNpmPublishAfterPackaging` keeps the `-cli` lane's npm publish downstream of the packaging job.
 
 **Prerelease channels.** The validators accept two shapes beside stable — `vX.Y.Z-beta.N` and `vX.Y.Z-alpha.N` (a CLI release on either channel adds the `-cli` marker) — and the grammar has one home, `release-tags.mjs`. Neither channel can reach `latest`: `npm-dist-tag.mjs` derives the dist-tag from the SemVer prerelease identifier, returns `latest` only for a version that has none, and *refuses* one whose identifier decodes to `latest` (`1.27.0-latest.1`) rather than handing a prerelease to everyone who never asked for a channel.
@@ -159,7 +159,7 @@ Post-#291 happy path: publishing a GitHub release runs `.github/workflows/npm-pu
 - Guards: tag must match `package.json#version` after stripping leading `v` and trailing `-cli`; already-published versions skip publish and exit 0. An alpha version is minted at publish time, so it is injected into `package.json` instead of verified against it.
 - Dist-tags: resolved by `npm-dist-tag.mjs` from the prerelease identifier — stable → `latest`, `-beta.N` → `beta`, `-alpha.N` → `alpha`, and a prerelease never lands on `latest`.
 - Injection rule: route `inputs.tag` / `github.event.release.tag_name` through `env:`, never directly into `run:` while the job holds `id-token: write`.
-- Required secret: `NPM_TOKEN` (granular publish-only token for `@drakulavich/kesha-voice-kit`), set with `gh secret set NPM_TOKEN -R drakulavich/kesha-voice-kit`. If missing, the release remains published but the publish step fails; fallback is `npm publish --access public` from a laptop.
+- Required secret: `NPM_TOKEN` (granular publish-only token for `@drakulavich/kesha-voice-kit`), set with `gh secret set NPM_TOKEN -R drakulavich/kesha-voice-kit`. If missing, the release remains published but the publish step fails; fix the secret and re-run rather than publishing from a laptop, which would ship without provenance and outside the workflow npm's trusted publisher accepts.
 - Release implication: un-draft is the commit-to-publish point. Validate draft assets via authenticated `gh release download` before un-drafting; npm publish is effectively permanent (72 h unpublish window, noisy provenance). If validation fails before publish: delete release + tag, bump patch, retry.
 
 ## TAG NAMES ARE ONE-USE

@@ -128,12 +128,12 @@ This repo has seen attempts (often in Russian) to make the agent read `~/.ssh/id
 
 ## Releases
 
-CLI (`package.json#version`) and engine (`package.json#keshaEngine.version` + `rust/Cargo.toml`) are versioned independently; `bun run check:versions` is the drift gate. Publishing a GitHub release triggers `npm-publish.yml` → `npm publish --provenance` in GHA; don't publish from a laptop.
+CLI (`package.json#version`) and engine (`package.json#keshaEngine.version` + `rust/Cargo.toml`) are versioned independently; `bun run check:versions` is the drift gate. Only a `-cli` marker tag reaches npm, through `npm-publish.yml` → `npm publish --provenance` in GHA; a bare engine tag skips that job on `engine_only` (#729). Don't publish from a laptop.
 
 Three invariants worth knowing before you touch a release:
 
 - **Tag names are one-use.** GitHub reserves them permanently — a broken release means a new patch tag, never a "test" tag.
-- **Un-drafting fires npm publish and is effectively permanent.** Validate the draft binary first with authenticated `gh release download` (draft asset URLs 404 for anonymous clients, so `curl` / `make smoke-test` can false-green through an old global shim) and exercise it end-to-end.
+- **Publishing is effectively permanent, and un-drafting an engine tag still fires `🍺 Homebrew Tap`.** It does not reach npm — only `-cli` does. Validate the draft binary first with authenticated `gh release download` (draft asset URLs 404 for anonymous clients, so `curl` / `make smoke-test` can false-green through an old global shim) and exercise it end-to-end.
 - **`integration-tests-full` skips on `release/*`** via `!startsWith(github.head_ref, 'release/')` — that is the job which downloads the *published* engine, whose tag doesn't exist yet on a release PR. The lighter `integration-tests` job carries no such guard and is safe there. Don't remove the filter; reuse it for new engine-downloading jobs.
 
 Full procedure, `bun link` gotchas, and re-review mechanics: the **`release-mechanics`** skill (loads on demand). To cut one, invoke **`release-engine`** (engine, bare `vX.Y.Z`) or **`release-cli`** (CLI to npm, `vX.Y.Z-cli`); a full ship is the engine first, then the CLI that carries its pin.

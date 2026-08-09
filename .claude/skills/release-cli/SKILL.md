@@ -1,6 +1,6 @@
 ---
 name: release-cli
-description: Cuts a CLI release (vX.Y.Z-cli marker tag) — the `🚀 Release (CLI)` lane builds the Linux packages, publishes the marker release, and dispatches npm publish with provenance. Covers version alignment across package.json and server.json, why the tag must be pushed by a human, and how to verify from the registry rather than through a stale global install. Refuses to auto-run; user must explicitly invoke. For an engine release use release-engine.
+description: Cuts a STABLE CLI release (vX.Y.Z-cli marker tag; not for beta or alpha markers, which this lane silently skips while burning the tag) — the `🚀 Release (CLI)` lane builds the Linux packages, publishes the marker release, and dispatches npm publish with provenance. Covers version alignment across package.json and server.json, why the tag must be pushed by a human, and how to verify from the registry rather than through a stale global install. Refuses to auto-run; user must explicitly invoke. For an engine release use release-engine.
 disable-model-invocation: true
 ---
 
@@ -13,6 +13,8 @@ For an engine release (bare `vX.Y.Z`, GitHub Release only) use the **`release-en
 ## Inputs
 
 - `$1`: target tag, e.g. `v1.27.0-cli`. The `-cli` marker routes it: `build-engine.yml` excludes it, `release-cli.yml` claims it.
+
+**Stable versions only.** `cli-release-plan.mjs` returns `packages: false` for anything with a prerelease identifier, which skips the packages job and — because `publish-npm` needs it — the npm dispatch too. A `v1.28.0-beta.1-cli` tag therefore does nothing at all while permanently consuming the name. Betas go through the legacy hand-cut path in `release-mechanics`; alphas have their own lane and no GitHub release.
 
 ## What the tag sets off
 
@@ -41,7 +43,7 @@ git fetch origin main && git status -sb | head -3
 bun run check:versions
 node -p "require('./package.json').version"
 python3 -c "import json;d=json.load(open('server.json'));print(d['version'], d['packages'][0]['version'])"
-gh release view "v$(node -p "require('./package.json').keshaEngine.version")" --json isDraft,isPrerelease
+gh release view "v$(node -p "require('./package.json').keshaEngine.version")" --json isDraft --jq 'if .isDraft then error("engine pin is still a draft") else "pin published" end'
 
 # 3. CI green on main
 gh run list --workflow ci.yml --branch main --limit 1
@@ -71,16 +73,24 @@ Since #691 `main` carries the next unreleased CLI version, so these are frequent
 
 Branch `release/X.Y.Z`; `integration-tests-full` skips on `release/*`.
 
-### Step 3 — Write the notes, then push the tag
-
-The lane creates the release itself, so the notes go on afterwards **while it is still a draft** — or, more simply, be ready to add them the moment the release appears. `gh release edit --notes` silently drops content on an already-published release.
+### Step 3 — Push the tag
 
 ```bash
 git tag vX.Y.Z-cli
 git push origin vX.Y.Z-cli
 ```
 
-Notes should say where the engine pin landed. "Engine unchanged" is only true when it is; if the pin moved, that movement is the headline, because it is how the new engine reaches users. User-facing upgrade text says **bun**, never npm: `bun add -g @drakulavich/kesha-voice-kit@latest`.
+**The lane writes the release body itself, and there is no draft window to slip notes into.** `publish-cli-release.sh` runs `gh release create --draft … --notes "v$VERSION (CLI-only). Engine: v$ENGINE_VERSION (unchanged)."` and un-drafts it in the next line of the same script.
+
+That body is hardcoded, so it says **"(unchanged)" even when this release is the one carrying a new engine pin** — the case that most deserves a headline. When the pin moved, replace the body after the fact; `gh release edit --notes` is silently dropped on a published release, so it takes the API:
+
+```bash
+RELEASE_ID=$(gh api repos/drakulavich/kesha-voice-kit/releases/tags/vX.Y.Z-cli --jq .id)
+jq -Rs '{body: .}' < notes.md > body.json
+gh api -X PATCH "repos/drakulavich/kesha-voice-kit/releases/$RELEASE_ID" --input body.json
+```
+
+User-facing upgrade text says **bun**, never npm: `bun add -g @drakulavich/kesha-voice-kit@latest`.
 
 ### Step 4 — Watch the lane
 
@@ -104,11 +114,12 @@ npm pack @drakulavich/kesha-voice-kit@X.Y.Z && tar -xzOf *.tgz package/package.j
 Then install it somewhere isolated and run it — a fresh directory with `KESHA_ENGINE_BIN` pointing inside it, never the global install:
 
 ```bash
+V=$(mktemp -d) && cd "$V"          # never in the repo: bun add here rewrites package.json
 bun add @drakulavich/kesha-voice-kit@X.Y.Z
-export KESHA_ENGINE_BIN="$PWD/eng/kesha-engine"
+export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 ./node_modules/.bin/kesha --version         # X.Y.Z
 ./node_modules/.bin/kesha install           # must fetch the pinned engine
-./node_modules/.bin/kesha <fixture>.ogg
+./node_modules/.bin/kesha <repo>/tests/fixtures/benchmark/09-ustanovi-poka-klod-kod.ogg
 ```
 
 **`make smoke-test` can false-green here.** It runs whatever `kesha` resolves to, and a previously `bun add -g`'d install outranks `bun link`; if its output prints an older version, it tested an older CLI and proves nothing about this release.
@@ -116,6 +127,8 @@ export KESHA_ENGINE_BIN="$PWD/eng/kesha-engine"
 ## Hard rules
 
 - NEVER `npm publish` from a laptop — GHA owns it, with provenance.
+- NEVER push a `-beta.N-cli` or alpha marker through this lane; it no-ops and burns the tag.
+- NEVER hand-cut `gh release create vX.Y.Z-cli`. The release would carry no packages, and `assert-release-absent.sh` then blocks the lane on that tag forever.
 - NEVER let a bot push the marker tag; a token push triggers nothing.
 - NEVER reuse a tag name; GitHub reserves them permanently.
 - NEVER write release notes after the release is published.
