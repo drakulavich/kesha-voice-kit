@@ -67,9 +67,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Full history and tag objects: the release body is computed against the previous CLI
+      # release's engine pin, and reads this tag's own annotation for the notes (#788).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.plan.outputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Build and verify packages
         uses: ./.github/actions/linux-packages

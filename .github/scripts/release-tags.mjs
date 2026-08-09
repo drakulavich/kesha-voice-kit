@@ -22,6 +22,9 @@ export const CLI_MARKER = "-cli";
 /** The same version shapes as an engine tag, carrying the marker that makes them the CLI's. */
 export const CLI_TAG_RE = new RegExp(`^v${VERSION_ERE}${CLI_MARKER}$`);
 
+/** The only CLI shape this repo publishes a GitHub release for; prerelease markers ship none. */
+export const STABLE_CLI_TAG_RE = new RegExp(`^v[0-9]+\\.[0-9]+\\.[0-9]+${CLI_MARKER}$`);
+
 export function isStableTag(tag) {
   return STABLE_TAG_RE.test(tag);
 }
