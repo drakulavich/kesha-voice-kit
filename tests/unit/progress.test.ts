@@ -172,6 +172,30 @@ describe("createPercentProgress", () => {
 });
 
 describe("createProgressBar", () => {
+  test("a non-numeric Content-Length falls back to the sizeless line, not a NaN bar", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const writes: string[] = [];
+    const originalWrite = process.stderr.write;
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const bar = createProgressBar("model.onnx", Number("not-a-number"));
+      bar.update(100);
+      bar.update(50);
+      bar.finish();
+
+      expect(writes.join("")).not.toContain("NaN");
+    } finally {
+      process.stderr.write = originalWrite;
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+    }
+  });
+
   test("TTY mode ends with 100% and a newline", () => {
     // Contract: user sees progress culminating in 100% + newline.
     // Intentionally does not assert write count or per-write content —

@@ -229,7 +229,8 @@ export function createProgressBar(label: string, totalBytes: number): {
 } {
   const isTTY = process.stderr.isTTY;
 
-  if (!isTTY || totalBytes <= 0) {
+  // A garbage `Content-Length` parses to NaN, which is not `<= 0`, and `NaN === lastPct` never coalesces.
+  if (!isTTY || !Number.isFinite(totalBytes) || totalBytes <= 0) {
     const sizeInfo = totalBytes > 0 ? ` (${formatBytes(totalBytes)})` : "";
     log.progress(`Downloading ${label}${sizeInfo}...`);
     return {
