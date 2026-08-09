@@ -108,71 +108,52 @@ export function cleanupRetiredSidecars(engineDir: string): string[] {
   return removed;
 }
 
+/** Best-effort; `alreadyDoneExit1` marks the exit-1 stderr that means the work was already done. */
+function trustStep(
+  argv: string[],
+  label: string,
+  displayName: string,
+  alreadyDoneExit1?: RegExp,
+): boolean {
+  try {
+    const proc = Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe" });
+    const stderr = new TextDecoder().decode(proc.stderr).trim();
+    const ok =
+      proc.exitCode === 0 ||
+      (proc.exitCode === 1 && alreadyDoneExit1 !== undefined && alreadyDoneExit1.test(stderr));
+    if (!ok) log.debug(`${label} on ${displayName} exited ${proc.exitCode}: ${stderr}`);
+    return ok;
+  } catch (e) {
+    log.debug(`${label} on ${displayName} threw: ${errorMessage(e)}`);
+    return false;
+  }
+}
+
 /**
  * Make a freshly-downloaded Mach-O runnable on macOS 15+ Sequoia.
  *
- * The release binaries ship `Signature=adhoc` (built via `cargo build`,
- * no Apple Developer ID). When fetched via HTTPS into `~/.cache/...`,
- * macOS attaches a `com.apple.provenance` xattr identifying the download
- * source. Combined with stricter Gatekeeper policy on macOS 15+ Sequoia,
- * the resulting "untrusted downloaded ad-hoc binary" is killed with
- * SIGKILL on first invocation (exit 137), with no log line — Gatekeeper
- * denies before Rust's main runs.
+ * The release binaries ship `Signature=adhoc` (no Apple Developer ID), and an HTTPS download
+ * into `~/.cache/...` carries a `com.apple.provenance` xattr. On Sequoia that combination is
+ * SIGKILLed on first invocation (exit 137) before Rust's main runs, with no log line.
  *
- * Two independent fixes run in sequence; both are best-effort:
- *
- * 1. `codesign --force --sign - <path>` — re-applies the ad-hoc
- *    signature with the user's own host identity, defeating the trust
- *    mismatch.
- * 2. `xattr -d com.apple.provenance <path>` — strips the provenance
- *    marker entirely. Cheaper than codesign and works even when
- *    `codesign` is absent from PATH (corporate-locked machine, minimal
- *    CI image).
- *
- * Either step alone has unblocked the SIGKILL in field reports, so we
- * run both. If both fail, surface the manual recovery commands in
- * stderr. Linux/Windows paths never reach this function.
+ * Re-signing ad-hoc with the host identity and stripping the provenance xattr each unblock it
+ * on their own in field reports, and `xattr` survives a machine with no `codesign` on PATH, so
+ * both run. Linux/Windows never reach this function.
  */
 function darwinTrustBinary(path: string, displayName: string): void {
   if (process.platform !== "darwin") return;
-  let codesignOk = false;
-  let xattrOk = false;
-  try {
-    const proc = Bun.spawnSync(["codesign", "--force", "--sign", "-", path], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    codesignOk = proc.exitCode === 0;
-    if (!codesignOk) {
-      const stderr = new TextDecoder().decode(proc.stderr).trim();
-      log.debug(`codesign on ${displayName} exited ${proc.exitCode}: ${stderr}`);
-    }
-  } catch (e) {
-    log.debug(
-      `codesign on ${displayName} threw: ${errorMessage(e)}`,
-    );
-  }
-  try {
-    // `xattr -d` returns exit 1 with "No such xattr" if the attribute is
-    // already absent (e.g. the file was placed via `bun link` instead of
-    // downloaded). That's a success outcome for our purposes — the
-    // attribute we wanted gone is already gone — so treat exit 1 as ok.
-    const proc = Bun.spawnSync(
-      ["xattr", "-d", "com.apple.provenance", path],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    const stderr = new TextDecoder().decode(proc.stderr).trim();
-    xattrOk =
-      proc.exitCode === 0 ||
-      (proc.exitCode === 1 && /No such xattr/i.test(stderr));
-    if (!xattrOk) {
-      log.debug(`xattr -d on ${displayName} exited ${proc.exitCode}: ${stderr}`);
-    }
-  } catch (e) {
-    log.debug(
-      `xattr -d on ${displayName} threw: ${errorMessage(e)}`,
-    );
-  }
+  const codesignOk = trustStep(
+    ["codesign", "--force", "--sign", "-", path],
+    "codesign",
+    displayName,
+  );
+  // A file placed by `bun link` was never downloaded, so exit 1 "No such xattr" is the outcome we wanted.
+  const xattrOk = trustStep(
+    ["xattr", "-d", "com.apple.provenance", path],
+    "xattr -d",
+    displayName,
+    /No such xattr/i,
+  );
   if (!codesignOk && !xattrOk) {
     // POSIX single-quote escape so spaces/metachars in the path don't break paste-into-shell.
     const q = (p: string) => `'${p.replace(/'/g, `'\\''`)}'`;
@@ -367,15 +348,16 @@ async function refreshCachedEngine(
   // Top up missing or broken sidecars (pre-#141/#199 cached binaries never had them);
   // skip on read-only fs (Nix-store) to avoid confusing "install failed" warnings.
   if (canWriteEngineDir) {
-    // Re-trust before probing, for the Sequoia upgrade scenario: a provenance-blocked
-    // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
-    for (const s of SIDECARS) {
-      const p = join(engineDir, s.fileBasename);
-      if (existsSync(p)) darwinTrustBinary(p, s.displayName);
-    }
-    const needed = await Promise.all(SIDECARS.map((s) => sidecarNeedsDownload(s, engineDir)));
     await Promise.all(
-      SIDECARS.filter((_, i) => needed[i]).map((s) => downloadSidecar(s, binPath, version)),
+      SIDECARS.map(async (spec) => {
+        const path = join(engineDir, spec.fileBasename);
+        // Re-trust before probing, for the Sequoia upgrade scenario: a provenance-blocked
+        // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
+        if (existsSync(path)) darwinTrustBinary(path, spec.displayName);
+        if (await sidecarNeedsDownload(spec, engineDir)) {
+          await downloadSidecar(spec, binPath, version);
+        }
+      }),
     );
   }
 }

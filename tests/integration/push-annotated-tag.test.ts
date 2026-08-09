@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanupGitRepos, commit, git, gitRepoWithRemote } from "../helpers/git-repo";
+import { repoPath } from "../helpers/repo";
 
-const SCRIPT = `${import.meta.dir}/../../.github/scripts/push-annotated-tag.sh`;
+const SCRIPT = repoPath(".github/scripts/push-annotated-tag.sh");
 
 afterEach(cleanupGitRepos);
 

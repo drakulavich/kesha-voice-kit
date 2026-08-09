@@ -888,23 +888,25 @@ fn parallel_download(cache: &Path, manifest: &[&ModelFile], no_cache: bool) -> R
     if failures.is_empty() {
         return Ok(());
     }
-    let names: Vec<&str> = failures.iter().map(|(path, _)| *path).collect();
+    if failures.len() == 1 {
+        return Err(failures.remove(0).1);
+    }
     let summary = format!(
         "{} of {} model downloads failed: {}",
         failures.len(),
         manifest.len(),
-        names.join(", ")
+        failures
+            .iter()
+            .map(|(path, _)| *path)
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     // The returned chain can only carry one root cause, so the others are
     // reported here rather than dropped.
     for (path, err) in failures.iter().skip(1) {
         with_stderr(|| eprintln!("FAIL {path}: {err:#}"));
     }
-    let first = failures.remove(0).1;
-    if names.len() == 1 {
-        return Err(first);
-    }
-    Err(first.context(summary))
+    Err(failures.remove(0).1.context(summary))
 }
 
 #[cfg(test)]
@@ -1089,12 +1091,6 @@ mod manifest_tests {
         assert!(!staging_path(&target).exists());
         let _ = fs::remove_file(&target);
         Ok(())
-    }
-
-    fn staging_path(target: &std::path::Path) -> PathBuf {
-        let mut name = target.file_name().map(std::ffi::OsString::from).unwrap();
-        name.push(format!(".part.{}", std::process::id()));
-        target.with_file_name(name)
     }
 
     #[test]
@@ -1726,12 +1722,11 @@ fn download_attempt(
     {
         Ok(response) => response,
         Err(e) => {
-            let max_attempts = ureq_error_attempts(&e);
             return Err(AttemptFailure {
-                reason: e.to_string(),
                 err: model_download_error(format!("GET {url} ({}): {e}", f.rel_path)),
+                reason: e.to_string(),
                 retry_after: None,
-                max_attempts,
+                max_attempts: ureq_error_attempts(&e),
             });
         }
     };
@@ -1978,9 +1973,7 @@ fn write_verified<R: io::Read>(
     rel_path: &str,
     expected_sha: &str,
 ) -> Result<()> {
-    let mut part_name = target.file_name().map(OsString::from).unwrap_or_default();
-    part_name.push(format!(".part.{}", std::process::id()));
-    let part = target.with_file_name(part_name);
+    let part = staging_path(target);
 
     let result = (|| -> Result<()> {
         let mut out =
@@ -2015,6 +2008,12 @@ fn write_verified<R: io::Read>(
         let _ = fs::remove_file(&part);
     }
     result
+}
+
+fn staging_path(target: &Path) -> PathBuf {
+    let mut name = target.file_name().map(OsString::from).unwrap_or_default();
+    name.push(format!(".part.{}", std::process::id()));
+    target.with_file_name(name)
 }
 
 fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
@@ -2723,9 +2722,7 @@ mod retry_tests {
         );
         let target = cache.0.join(file.rel_path);
         fs::create_dir_all(target.parent().expect("target parent")).expect("create model dir");
-        let mut part = target.file_name().map(OsString::from).expect("target name");
-        part.push(format!(".part.{}", std::process::id()));
-        fs::create_dir(target.with_file_name(part)).expect("occupy the staging path");
+        fs::create_dir(staging_path(&target)).expect("occupy the staging path");
 
         let err = download_verified(&cache.0, &file, false).expect_err("staging is blocked");
 

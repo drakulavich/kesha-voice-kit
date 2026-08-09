@@ -168,9 +168,8 @@ fn preset_name(units: KokoroComputeUnits) -> &'static str {
 /// prepare exactly those stages ("Failed to prepare the model for predictions",
 /// #678). Real Apple Silicon should never set it.
 fn compute_units_from_env() -> Result<KokoroComputeUnits> {
-    let Some(raw) = std::env::var_os(COMPUTE_UNITS_ENV) else {
-        return Ok(KokoroComputeUnits::Default);
-    };
+    // Unset and blank are the same case: GHA exports a conditional `env:` as "".
+    let raw = std::env::var_os(COMPUTE_UNITS_ENV).unwrap_or_default();
     let raw = raw.to_string_lossy();
     let value = raw.trim();
     if value.is_empty() {

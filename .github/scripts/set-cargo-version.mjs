@@ -11,7 +11,7 @@
  * Rewrites only the `version` of the `[package]` table; dependency versions are left alone.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { entryArg } from "./script-entry.mjs";
 import { isSemver } from "../../src/semver.mjs";
 
 const MANIFEST = "rust/Cargo.toml";
@@ -42,11 +42,7 @@ export function withCargoVersion(manifest, version) {
   return manifest.slice(0, start) + rewritten + manifest.slice(end);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const version = process.argv[2];
-  if (!version) {
-    console.error("usage: node .github/scripts/set-cargo-version.mjs <version>");
-    process.exit(2);
-  }
+const version = entryArg(import.meta.url, "usage: node .github/scripts/set-cargo-version.mjs <version>");
+if (version) {
   writeFileSync(MANIFEST, withCargoVersion(readFileSync(MANIFEST, "utf8"), version));
 }

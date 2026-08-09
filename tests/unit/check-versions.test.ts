@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { REPO_ROOT } from "../helpers/repo";
 
-const REPO = `${import.meta.dir}/../..`;
-const SCRIPT = `${REPO}/.github/scripts/check-versions.ts`;
+const SCRIPT = `${REPO_ROOT}/.github/scripts/check-versions.ts`;
 
 // Nothing here is symlinked to the repo, so the fixture is safe to remove recursively.
 async function check(cli: string, engine: string, cargo = engine, server: string | null = cli) {
@@ -82,7 +82,7 @@ describe("MCP registry manifest", () => {
   // In the real cwd, so rule 1 reads the actual rust/Cargo.toml rather than a fixture
   // written to agree with the pin by construction.
   test("the repository itself passes every rule, Cargo.toml and server.json included", async () => {
-    const proc = Bun.spawn(["bun", SCRIPT], { cwd: REPO, stdout: "ignore", stderr: "pipe" });
+    const proc = Bun.spawn(["bun", SCRIPT], { cwd: REPO_ROOT, stdout: "ignore", stderr: "pipe" });
     const stderr = await new Response(proc.stderr).text();
 
     expect(stderr).toBe("");

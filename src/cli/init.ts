@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import { confirm, multiselect, isCancel, cancel } from "@clack/prompts";
-import { renderInstallPlan } from "../install-plan";
+import { installCommandTokens, renderInstallPlan } from "../install-plan";
 import { log } from "../log";
 import { getEngineCapabilities } from "../engine";
 import {
@@ -93,16 +93,7 @@ export function resolveInitSelection(
 }
 
 export function initInstallArgs(selection: InitSelection): string[] {
-  return [
-    "kesha",
-    "install",
-    selection.noCache ? "--no-cache" : "",
-    selection.backend === "coreml" ? "--coreml" : "",
-    selection.backend === "onnx" ? "--onnx" : "",
-    ...(selection.ttsLangs.length > 0 ? ["--tts", ...selection.ttsLangs] : []),
-    selection.vad ? "--vad" : "",
-    selection.diarize ? "--diarize" : "",
-  ].filter(Boolean);
+  return installCommandTokens(selection, selection.ttsLangs);
 }
 
 export function initSuggestionCommands(

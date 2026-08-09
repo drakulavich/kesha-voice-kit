@@ -6,6 +6,8 @@ import {
   getEngineCapabilities,
   type EngineCapabilities,
 } from "./engine";
+import { cacheComponentPaths } from "./cache-layout";
+import { humanBytes } from "./format";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
@@ -14,18 +16,6 @@ import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
 import { fluidAsrCacheInfo, isCoremlBackend } from "./fluid-asr-cache";
 import { dirSizeBytes } from "./diagnostic-paths";
 import pc from "picocolors";
-
-function humanBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let n = bytes / 1024;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
-}
 
 export function formatStatusLine(
   label: string,
@@ -146,26 +136,6 @@ export function renderStatus(report: StatusReport): void {
 }
 
 
-function buildDiskComponents(
-  cache: string,
-  engineDir: string,
-  coreml: boolean,
-): Array<{ label: string; path: string }> {
-  return [
-    { label: "Engine", path: engineDir },
-    // A CoreML engine never populates the ONNX dir, and its own bundle lives outside
-    // the Kesha cache — so it is reported under external caches, not here, or the rows
-    // would sum past a Total that cannot include it (#684).
-    ...(coreml
-      ? []
-      : [{ label: "ASR (Parakeet)", path: join(cache, "models/parakeet-tdt-v3") }]),
-    { label: "Language ID", path: join(cache, "models/lang-id-ecapa") },
-    { label: "VAD (Silero)", path: join(cache, "models/silero-vad") },
-    { label: "TTS (Kokoro)", path: join(cache, "models/kokoro-82m") },
-    { label: "TTS (Vosk)", path: join(cache, "models/vosk-ru") },
-  ];
-}
-
 function logDiskRows(rows: StatusDiskComponent[], total: number, componentTotal: number): void {
   const labelWidth = Math.max(...rows.map((r) => r.label.length), "Total".length);
   for (const r of rows) {
@@ -201,7 +171,7 @@ function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
   const coreml = isCoremlBackend(backend);
 
   const components: StatusDiskComponent[] = [];
-  for (const c of buildDiskComponents(cache, engineDir, coreml)) {
+  for (const c of cacheComponentPaths(cache, engineDir, coreml)) {
     const sizeBytes = dirSizeBytes(c.path);
     if (sizeBytes > 0) components.push({ label: c.label, sizeBytes });
   }

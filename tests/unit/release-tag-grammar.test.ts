@@ -1,15 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import {
-  mkdtempSync,
-  readFileSync,
-  rmdirSync,
-  symlinkSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parse } from "yaml";
 import { classifyReleaseTag } from "../../.github/scripts/classify-release-tag.mjs";
 import {
   CLI_TAG_RE,
@@ -18,9 +10,11 @@ import {
   ENGINE_TAG_RE,
   isEngineAlphaTag,
 } from "../../.github/scripts/release-tags.mjs";
+import { parseRepoYaml, readRepoFile, REPO_ROOT } from "../helpers/repo";
 
 const WORKFLOW = ".github/workflows/build-engine.yml";
-const WORKFLOW_YAML = readFileSync(`${import.meta.dir}/../../${WORKFLOW}`, "utf8");
+const WORKFLOW_YAML = readRepoFile(WORKFLOW);
+const BUILD_ENGINE = parseRepoYaml(WORKFLOW);
 
 const ENGINE_TAGS = ["v1.24.8", "v1.24.8-beta.1", "v1.24.8-alpha.1"];
 const CLI_TAGS = ["v1.27.0-cli", "v1.27.0-alpha.1-cli"];
@@ -72,14 +66,14 @@ describe("CLI marker tag grammar", () => {
 
 describe("engine build trigger", () => {
   test("CLI marker tags are excluded from the push filter", () => {
-    expect(parse(WORKFLOW_YAML).on.push.tags).toEqual(["v*", "!v*-cli"]);
+    expect(BUILD_ENGINE.on.push.tags).toEqual(["v*", "!v*-cli"]);
   });
 });
 
 describe("engine alpha publication", () => {
-  const steps = parse(WORKFLOW_YAML).jobs.release.steps;
+  const steps = BUILD_ENGINE.jobs.release.steps;
   const releaseStep = steps.find((s: { uses?: string }) => s.uses?.startsWith("softprops/"));
-  const buildSteps = parse(WORKFLOW_YAML).jobs.build.steps;
+  const buildSteps = BUILD_ENGINE.jobs.build.steps;
 
   test("only an engine alpha shape counts as one", () => {
     expect(isEngineAlphaTag("v1.24.8-alpha.1")).toBe(true);
@@ -125,12 +119,11 @@ describe("engine alpha publication", () => {
 
 // Driven through the script because that assertion is the gate build-engine.yml runs (#696).
 describe("release manifest tag check", () => {
-  const REPO = `${import.meta.dir}/../..`;
-  const SCRIPT = `${REPO}/.github/scripts/release-manifest.mjs`;
-  const pkg = JSON.parse(readFileSync(`${REPO}/package.json`, "utf8"));
+  const SCRIPT = `${REPO_ROOT}/.github/scripts/release-manifest.mjs`;
+  const pkg = JSON.parse(readRepoFile("package.json"));
 
   // Assert the message, not just a non-zero exit: an unrelated crash must not read as rejection.
-  async function manifestCheck(args: string[], cwd = REPO) {
+  async function manifestCheck(args: string[], cwd = REPO_ROOT) {
     const proc = Bun.spawn(["node", SCRIPT, ...args, "--check"], {
       cwd,
       stdout: "ignore",
@@ -146,7 +139,7 @@ describe("release manifest tag check", () => {
 
   function fixtureRepo(version: string, engineVersion: string): string {
     const dir = mkdtempSync(join(tmpdir(), "kesha-manifest-"));
-    for (const entry of LINKED) symlinkSync(`${REPO}/${entry}`, join(dir, entry));
+    for (const entry of LINKED) symlinkSync(`${REPO_ROOT}/${entry}`, join(dir, entry));
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({ version, keshaEngine: { version: engineVersion } }),
@@ -232,7 +225,7 @@ describe("release manifest tag check", () => {
 
   // Reverting the default *and* the assertion makes `v<cliVersion>` exit 0 again (grok).
   test("with no tag it defaults to the engine version rather than the CLI's", async () => {
-    const proc = Bun.spawn(["node", SCRIPT], { cwd: REPO, stdout: "pipe", stderr: "ignore" });
+    const proc = Bun.spawn(["node", SCRIPT], { cwd: REPO_ROOT, stdout: "pipe", stderr: "ignore" });
     const manifest = JSON.parse(await new Response(proc.stdout).text());
 
     expect(await proc.exited).toBe(0);
@@ -275,30 +268,26 @@ describe("cliPublishTarget", () => {
 // npm's trusted publisher is keyed to one entry workflow name, so an alpha that publishes
 // from its own workflow gets an opaque 404 from the registry (#731).
 describe("alpha publish entry", () => {
-  const read = (p: string) => readFileSync(`${import.meta.dir}/../../${p}`, "utf8");
-  const alpha = read(".github/workflows/release-alpha.yml");
+  const alpha = ".github/workflows/release-alpha.yml";
 
   test("the alpha workflow holds no OIDC credential", () => {
-    expect(alpha).not.toContain("id-token");
+    expect(readRepoFile(alpha)).not.toContain("id-token");
   });
 
   test("it publishes by dispatching npm-publish.yml", () => {
-    expect(read(".github/scripts/dispatch-npm-publish.sh")).toContain("WORKFLOW=npm-publish.yml");
-    expect(parse(alpha).jobs.publish.steps.at(-1).run).toContain("dispatch-npm-publish.sh");
+    expect(readRepoFile(".github/scripts/dispatch-npm-publish.sh")).toContain("WORKFLOW=npm-publish.yml");
+    expect(parseRepoYaml(alpha).jobs.publish.steps.at(-1).run).toContain("dispatch-npm-publish.sh");
   });
 
   test("npm-publish injects the version for tags no commit carries", () => {
-    const publish = parse(read(".github/workflows/npm-publish.yml")).jobs.publish;
+    const publish = parseRepoYaml(".github/workflows/npm-publish.yml").jobs.publish;
 
     expect(publish.with["inject-version"]).toContain("derived");
   });
 });
 
 describe("publish serialisation and provenance", () => {
-  const script = readFileSync(
-    `${import.meta.dir}/../../.github/scripts/dispatch-npm-publish.sh`,
-    "utf8",
-  );
+  const script = readRepoFile(".github/scripts/dispatch-npm-publish.sh");
 
   // Without --ref the run's head_sha is main's tip, so provenance attests a commit whose
   // tree is not what shipped; it is also what makes the run findable by tag.
@@ -312,7 +301,7 @@ describe("publish serialisation and provenance", () => {
   });
 
   test("publishes are serialised so a late one cannot move a dist-tag backwards", () => {
-    const publish = parse(readFileSync(`${import.meta.dir}/../../.github/workflows/npm-publish.yml`, "utf8"));
+    const publish = parseRepoYaml(".github/workflows/npm-publish.yml");
 
     expect(publish.concurrency).toEqual({ group: "npm-publish", queue: "max" });
   });

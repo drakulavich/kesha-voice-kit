@@ -1,10 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { parse } from "yaml";
 import { planCliRelease } from "../../.github/scripts/cli-release-plan.mjs";
+import { parseRepoYaml, readRepoFile } from "../helpers/repo";
 
-// Windows CI checks the repo out with CRLF, which no assertion here is about.
-const read = (path: string) => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+const RELEASE_CLI = ".github/workflows/release-cli.yml";
 
 const pkg = (version: string, engineVersion = "1.24.9") => ({
   version,
@@ -55,7 +53,7 @@ describe("the CLI release lane", () => {
   // The lane exists to publish packages and npm together; a wider filter would run it on
   // engine tags, which publish neither (#729).
   test("release-cli.yml fires on CLI marker tags only", () => {
-    const workflow = parse(read(".github/workflows/release-cli.yml"));
+    const workflow = parseRepoYaml(RELEASE_CLI);
 
     expect(workflow.on.push.tags).toEqual(["v*-cli"]);
     expect(workflow.on.push.branches).toBeUndefined();
@@ -63,7 +61,7 @@ describe("the CLI release lane", () => {
 
   // plan holds write only so `gh release view` can see drafts; a read-only token cannot.
   test("only the jobs that touch releases hold contents: write", () => {
-    const jobs = parse(read(".github/workflows/release-cli.yml")).jobs;
+    const jobs = parseRepoYaml(RELEASE_CLI).jobs;
 
     expect(jobs.plan.permissions).toEqual({ contents: "write" });
     expect(jobs.packages.permissions).toEqual({ contents: "write" });
@@ -73,7 +71,7 @@ describe("the CLI release lane", () => {
   // Writing the raw dispatch input to GITHUB_OUTPUT before validating it would let a tag
   // carrying a newline append its own output keys, so the validator echoes the tag instead.
   test("the tag reaches GITHUB_OUTPUT only from the validator", () => {
-    const plan = parse(read(".github/workflows/release-cli.yml")).jobs.plan;
+    const plan = parseRepoYaml(RELEASE_CLI).jobs.plan;
     const step = plan.steps.find((s: { id?: string }) => s.id === "plan");
 
     expect(plan.outputs.tag).toBe("${{ steps.plan.outputs.tag }}");
@@ -85,7 +83,7 @@ describe("the CLI release lane", () => {
   // Assets go onto a draft and the release is un-drafted afterwards: releases here are
   // immutable, so an asset uploaded to a published one 422s.
   test("the packages are attached before the release goes public", () => {
-    const script = read(".github/scripts/publish-cli-release.sh");
+    const script = readRepoFile(".github/scripts/publish-cli-release.sh");
     const create = script.indexOf("gh release create");
     const undraft = script.indexOf("--draft=false");
 
@@ -97,7 +95,7 @@ describe("the CLI release lane", () => {
   // nfpm's input sits in the same directory as its output; uploading it would ship a
   // 50 MB compiled wrapper as a release asset.
   test("only the packages and their checksums are uploaded", () => {
-    const script = read(".github/scripts/publish-cli-release.sh");
+    const script = readRepoFile(".github/scripts/publish-cli-release.sh");
 
     expect(script).toContain('"$DIR"/*.deb "$DIR"/*.rpm "$DIR/SHA256SUMS"');
   });

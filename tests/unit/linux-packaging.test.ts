@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readRepoFile } from "../helpers/repo";
 
 // These lived in release-manifest.mjs while the manifest promised .deb/.rpm assets. Engine
 // releases no longer attach them; the CLI's own `-cli` tag does (#728). linux-packages.yml
@@ -9,8 +9,6 @@ const PACKAGE_SCRIPT = ".github/scripts/build-linux-packages.mjs";
 const PACKAGE_NAMES = ".github/scripts/linux-package-names.mjs";
 const NFPM_CONFIG = "packaging/nfpm.yaml";
 const COMPOSITE = ".github/actions/linux-packages/action.yml";
-
-const read = (path: string) => readFileSync(path, "utf8");
 
 describe("linux packaging pipeline", () => {
   test.each([
@@ -22,18 +20,18 @@ describe("linux packaging pipeline", () => {
     [COMPOSITE, "build-linux-packages.mjs"],
     [COMPOSITE, "verify-linux-packages.sh"],
   ])("%s carries %s", (path, token) => {
-    expect(read(path)).toContain(token);
+    expect(readRepoFile(path)).toContain(token);
   });
 
   // One composite so the CI lane and the release lane cannot build the pair differently.
   test.each([".github/workflows/linux-packages.yml", ".github/workflows/release-cli.yml"])(
     "%s builds through the shared composite",
     (workflow) => {
-      expect(read(workflow)).toContain("./.github/actions/linux-packages");
+      expect(readRepoFile(workflow)).toContain("./.github/actions/linux-packages");
     },
   );
 
   test("no engine release builds them", () => {
-    expect(read(".github/workflows/build-engine.yml")).not.toContain("build-linux-packages.mjs");
+    expect(readRepoFile(".github/workflows/build-engine.yml")).not.toContain("build-linux-packages.mjs");
   });
 });

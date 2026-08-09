@@ -188,13 +188,12 @@ function engineIsCached(binPath: string, version: string): boolean {
 }
 
 function buildEngineComponent(
-  binPath: string,
   noCache: boolean,
   version: string,
+  engineCached: boolean,
 ): PlanComponent {
   const engineAsset = engineAssetForPlatform();
   if (engineAsset) {
-    const engineCached = engineIsCached(binPath, version);
     return {
       name: `Engine ${engineAsset.assetName}`,
       source: `GitHub release v${version}`,
@@ -308,20 +307,16 @@ function assembleComponents(input: {
   options: InstallPlanOptions;
   coreml: boolean;
   version: string;
-  tts: ReturnType<typeof buildTtsComponents>;
+  ttsComponents: PlanComponent[];
 }): PlanComponent[] {
   const { cacheRoot, noCache, options } = input;
   const modelBundle = (name: string, files: PlanFile[], note: string) =>
     bundleComponent({ cacheRoot, name, source: "model cache", files, refresh: noCache, note });
 
+  const engineCached = engineIsCached(input.binPath, input.version);
   const components: PlanComponent[] = [
-    buildEngineComponent(input.binPath, noCache, input.version),
-    ...buildSidecarComponents(
-      input.engineDir,
-      noCache,
-      input.version,
-      engineIsCached(input.binPath, input.version),
-    ),
+    buildEngineComponent(noCache, input.version, engineCached),
+    ...buildSidecarComponents(input.engineDir, noCache, input.version, engineCached),
     input.coreml
       ? fluidAsrComponent()
       : modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
@@ -330,7 +325,7 @@ function assembleComponents(input: {
       LANG_ID_FILES,
       "required for --json, --toon, --format transcript, --lang, and --verbose language metadata",
     ),
-    ...input.tts.components,
+    ...input.ttsComponents,
   ];
   // #768: --diarize implies VAD — speaker labels attach to VAD-windowed segments.
   if (options.vad || options.diarize) {
@@ -437,8 +432,11 @@ function renderBehaviorLines(ttsLangs: string[], wantsAnyKokoro: boolean): strin
   return lines;
 }
 
-/** Reconstructs the `kesha install` invocation this plan describes, so users can copy it verbatim. */
-export function buildInstallCommand(options: InstallPlanOptions, ttsLangs: string[]): string {
+/** Argv of the `kesha install` invocation a plan describes. Shared with `kesha init`, whose suggestions must stay in step with it. */
+export function installCommandTokens(
+  options: InstallPlanOptions,
+  ttsLangs: string[],
+): string[] {
   return [
     "kesha",
     "install",
@@ -449,9 +447,12 @@ export function buildInstallCommand(options: InstallPlanOptions, ttsLangs: strin
     ...(ttsLangs.length > 0 ? ["--tts", ...ttsLangs] : []),
     options.vad ? "--vad" : "",
     options.diarize ? "--diarize" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  ].filter(Boolean);
+}
+
+/** Reconstructs the `kesha install` invocation this plan describes, so users can copy it verbatim. */
+export function buildInstallCommand(options: InstallPlanOptions, ttsLangs: string[]): string {
+  return installCommandTokens(options, ttsLangs).join(" ");
 }
 
 function renderFooter(input: {
@@ -490,7 +491,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
     options,
     coreml,
     version,
-    tts,
+    ttsComponents: tts.components,
   });
 
   const lines = [

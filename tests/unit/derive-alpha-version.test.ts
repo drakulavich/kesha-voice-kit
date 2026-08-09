@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import {
   alphaTag,
   assertPassesVersionGate,
@@ -7,6 +6,7 @@ import {
   nextSequence,
   previousTag,
 } from "../../.github/scripts/derive-alpha-version";
+import { readRepoFile } from "../helpers/repo";
 
 const PKG = { version: "1.27.0", keshaEngine: { version: "1.24.7" } };
 const SOME_TAGS = ["v1.24.7", "v1.26.0-cli", "v1.22.0-beta.1"];
@@ -141,7 +141,7 @@ describe("previousTag", () => {
 });
 
 describe("the alpha tag step", () => {
-  const workflow = readFileSync(`${import.meta.dir}/../../.github/workflows/release-alpha.yml`, "utf8");
+  const workflow = readRepoFile(".github/workflows/release-alpha.yml");
 
   // Behaviour lives in tests/integration/alpha-tag.test.ts, which runs the script for real.
   test("the workflow passes the derived previous tag through env", () => {

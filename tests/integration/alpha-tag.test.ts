@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupGitRepos, commit, git, gitRepoWithRemote } from "../helpers/git-repo";
+import { repoPath } from "../helpers/repo";
 
-const SCRIPT = `${import.meta.dir}/../../.github/scripts/alpha-tag.sh`;
+const SCRIPT = repoPath(".github/scripts/alpha-tag.sh");
 
 afterEach(cleanupGitRepos);
 
