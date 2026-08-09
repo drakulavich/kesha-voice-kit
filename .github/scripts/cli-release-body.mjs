@@ -56,8 +56,20 @@ function git(args) {
  * shipping a commit subject as the release body. Only a real tag object carries notes.
  */
 function tagNotes(tag) {
-  if (git(["cat-file", "-t", tag])?.trim() !== "tag") return undefined;
-  return git(["tag", "-l", "--format=%(contents)", tag]);
+  const kind = git(["cat-file", "-t", tag])?.trim();
+  if (kind !== "tag") {
+    console.error(
+      `::notice::${tag} carries no annotation (git reads it as ${kind ?? "unreadable"}), so the body is the ` +
+        `generated line alone. To author notes: git tag -a --cleanup=verbatim ${tag} -F notes.md`,
+    );
+    return undefined;
+  }
+
+  const notes = git(["tag", "-l", "--format=%(contents)", tag]);
+  if (notes === undefined) {
+    console.error(`::notice::the annotation on ${tag} could not be read, so the body is the generated line alone.`);
+  }
+  return notes;
 }
 
 function enginePinAt(tag) {
@@ -82,8 +94,9 @@ function main() {
   const tags = (git(["tag", "--list"]) ?? "").split("\n").filter(Boolean);
   if (tags.length === 0) {
     throw new Error(
-      `no tags visible, so the engine pin ${tag} inherits cannot be read — a shallow checkout ` +
-        `looks identical to a repo that has never released. Check out with fetch-depth: 0 and re-run.`,
+      `no tags are visible, so the previous release's engine pin cannot be read and the body for ${tag} ` +
+        `would claim this is the first CLI release ever. A shallow checkout looks identical to a repo that ` +
+        `has never released — check out with fetch-depth: 0 and re-run.`,
     );
   }
 
