@@ -61,6 +61,24 @@ git worktree remove .worktrees/<slug> && git worktree prune
 
 Rust toolchain quirks (CI rustc drift, rustfmt, `protoc`) and language gotchas: `docs/runbooks/rust-gotchas.md`.
 
+### TESTS COME FIRST, AND ARE JUDGED BY WHAT THEY CATCH
+
+Red → Green → Refactor → Commit, one cycle per commit. For a bug the failing regression test lands **before** the fix — a test written afterwards never demonstrated it was failing. Exception: formatting- or docs-only changes.
+
+Quality bar (Kent Beck's desiderata): **isolated · deterministic · fast · behavioural · structure-insensitive · specific · predictive**. Structure-insensitive is the one that bites here — assert the contract a user can observe, never the implementation producing it. Argv ordering, call counts, stderr spies and "the export exists" smoke tests all fail that bar; the #161 audit retired ~130 lines of them for exactly this reason (#163).
+
+The rule behind that audit: a test pays off when the **contract is stable and the implementation is likely to change**. If both change together it is a liability that gets rewritten every time, and if neither changes it never fires.
+
+- Unit-test pure functions whose contract is stable — `pickVoiceForLang`, `detectLanguage`, `ssml::parse`, `voices::resolve_voice`.
+- Prefer `tests/integration/` the moment behaviour crosses the CLI or the engine boundary; that is where the highest-value coverage lives.
+- New behaviour gets coverage next to the code that changed. Do not lean on a broad e2e test that happens to walk the branch.
+
+**Fix a flaky test before doing anything else.** A suite that fails at random teaches everyone to re-run it, and the next genuine failure gets re-run too. Never `skip` one to get green — fix it, or quarantine it behind an issue. When deciding whether some change caused a flake, one run per arm settles nothing: check CI on the same SHA first, then repeat each arm enough times to tell a real signal from the known `cli-contracts` install flake (macOS Gatekeeper scanning a freshly written fake engine for 2–9 s against a 4 s harness timeout — a slow scan, not a hang).
+
+Coverage is a release gate, not a vanity metric. `bun run coverage:check:ts` holds total TS lines at ≥70% plus risk-based floors on the surfaces that invoke, install or route the engine (`src/engine.ts` 80%, `src/cli/say.ts` 50%, `src/cli/main.ts` 35%, `src/engine-install.ts` 15%); `bun run coverage:check:rust` holds Rust at ≥70%. They run as the `ts-coverage` job in `ci.yml` and the `coverage` job in `rust-test.yml`. Raise a floor when a surface earns it; lowering one needs its reason in the PR body. These are deliberately not per-file ratchets — the floors protect critical paths without inviting coverage-padding tests everywhere else.
+
+Which suite runs where, and why every-PR runs never download the 2.4 GB model bundle: `docs/superpowers/specs/2026-05-30-ci-fast-heavy-test-lanes-design.md`. Model-dependent suites self-skip — `e2e-engine` and `mcp-e2e` on `describe.skipIf(!engineInstalled)`, `say-e2e` on `it.skipIf(!SPIKE_AVAILABLE)`. A new real-engine test without such a guard **fails** the fast lane instead of skipping, which is the intended loud signal; there is no meta-test enforcing it.
+
 ### PR ETIQUETTE
 
 - `main` is protected; every change goes through a PR and CI must pass.
