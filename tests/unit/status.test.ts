@@ -1,8 +1,16 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { formatStatusLine, activeModelMirror, collectStatus, renderStatus } from "../../src/status";
+import {
+  formatStatusLine,
+  activeModelMirror,
+  collectStatus,
+  renderStatus,
+  type StatusDiskUsage,
+  type StatusReport,
+} from "../../src/status";
+import { humanBytes } from "../../src/format";
 import { starSeenPath } from "../../src/star";
 import { saveEngineEnv, writeFakeEngine } from "../helpers/fake-engine";
 
@@ -368,6 +376,310 @@ describe("collectStatus --json payload (#647)", () => {
   });
 });
 
+describe("renderStatus turns a report into the states a user acts on", () => {
+  function report(overrides: Partial<StatusReport> = {}): StatusReport {
+    return {
+      cliVersion: "9.9.9",
+      engine: { installed: true, path: "/cache/engine/bin/kesha-engine", capabilities: null },
+      voices: [],
+      runtime: { bun: "1.9.9", platform: "testos", arch: "testarch" },
+      modelMirror: null,
+      hint: null,
+      disk: null,
+      ...overrides,
+    };
+  }
+
+  function render(r: StatusReport): string {
+    const originalLog = console.log;
+    const lines: string[] = [];
+    console.log = (msg: string) => {
+      lines.push(msg);
+    };
+    try {
+      renderStatus(r);
+    } finally {
+      console.log = originalLog;
+    }
+    return lines.join("\n").replace(/\u001b\[\d+m/g, "");
+  }
+
+  test("an engine that cannot describe itself is a failed probe, not a missing one", () => {
+    const output = render(report({ engine: { installed: true, path: "/bin/e", capabilities: null } }));
+    expect(output).toContain("✗ Capabilities: probe failed");
+    expect(output).not.toContain("Backend");
+  });
+
+  test("a described engine reports its backend, protocol and features", () => {
+    const output = render(
+      report({
+        engine: {
+          installed: true,
+          path: "/bin/e",
+          capabilities: { protocolVersion: 4, backend: "onnx", features: ["tts", "diarize"] },
+        },
+      }),
+    );
+    expect(output).toContain("✓ Backend: onnx");
+    expect(output).toContain("✓ Protocol: v4");
+    expect(output).toContain("✓ Features: tts, diarize");
+    expect(output).not.toContain("probe failed");
+  });
+
+  test("nothing engine-shaped is reported when the engine is absent", () => {
+    const output = render(
+      report({
+        engine: {
+          installed: false,
+          path: "/bin/e",
+          capabilities: { protocolVersion: 4, backend: "onnx", features: ["tts"] },
+        },
+        voices: ["en-am_michael"],
+        disk: diskUsage(),
+      }),
+    );
+    expect(output).toContain("✗ Binary: not installed");
+    expect(output).not.toContain("Backend");
+    expect(output).not.toContain("TTS voices");
+    expect(output).not.toContain("Disk usage");
+  });
+
+  test("runtime and platform are reported as present, never as not installed", () => {
+    const output = render(report());
+    expect(output).toContain("Runtime: Bun 1.9.9");
+    expect(output).toContain("Platform: testos testarch");
+    expect(output).not.toContain("Runtime: not installed");
+    expect(output).not.toContain("Platform: not installed");
+  });
+
+  test("the mirror line appears only when a mirror is configured", () => {
+    expect(render(report({ modelMirror: "https://mirror.example.com" }))).toContain(
+      "Mirror: https://mirror.example.com",
+    );
+    expect(render(report())).not.toContain("Mirror");
+  });
+
+  test("the voices section is dropped rather than shown empty", () => {
+    expect(render(report({ voices: [] }))).not.toContain("TTS voices");
+    const listed = render(report({ voices: ["en-am_michael", "ru-vosk-m02"] }));
+    expect(listed).toContain("TTS voices:");
+    expect(listed).toContain("en-am_michael");
+    expect(listed).toContain("ru-vosk-m02");
+  });
+
+  function diskUsage(overrides: Partial<StatusDiskUsage> = {}): StatusDiskUsage {
+    return {
+      cachePath: "/cache",
+      components: [
+        { label: "Engine", sizeBytes: 4_000 },
+        { label: "TTS (Kokoro)", sizeBytes: 6_000 },
+      ],
+      componentTotalBytes: 10_000,
+      totalBytes: 10_000,
+      fluidKokoro: null,
+      fluidAsr: null,
+      ...overrides,
+    };
+  }
+
+  test("each component is listed with its own size", () => {
+    const output = render(report({ disk: diskUsage() }));
+    expect(output).toContain(`Engine:`);
+    expect(output).toContain(humanBytes(4_000));
+    expect(output).toContain(`TTS (Kokoro):`);
+    expect(output).toContain(humanBytes(6_000));
+  });
+
+  test("cache bytes outside the listed components are called out, and only then", () => {
+    const surplus = render(report({ disk: diskUsage({ totalBytes: 25_000 }) }));
+    expect(surplus).toContain(humanBytes(25_000));
+    expect(surplus).toContain(`includes ${humanBytes(15_000)} of other cache files`);
+
+    const exact = render(report({ disk: diskUsage() }));
+    expect(exact).not.toContain("other cache files");
+  });
+
+  test("external caches are reported apart from the Kesha total", () => {
+    const output = render(
+      report({
+        disk: diskUsage({ fluidAsr: { path: "/fluid/asr", sizeBytes: 2_000_000 } }),
+      }),
+    );
+    expect(output).toContain("External caches (not included in Kesha total):");
+    expect(output).toContain(`FluidAudio ASR:    ${humanBytes(2_000_000)} (/fluid/asr)`);
+    expect(output).not.toContain("FluidAudio Kokoro:");
+
+    expect(render(report({ disk: diskUsage() }))).not.toContain("External caches");
+  });
+
+  test("a cache with nothing in it prints no disk section", () => {
+    expect(render(report({ disk: diskUsage({ components: [] }) }))).not.toContain("Disk usage");
+  });
+
+  test("the reset hint names the directory to remove", () => {
+    const output = render(report({ disk: diskUsage({ cachePath: "/somewhere/kesha" }) }));
+    expect(output).toContain("rm -rf /somewhere/kesha");
+  });
+});
+
+describe("collectStatus disk accounting (#647)", () => {
+  const restoreEnv = saveEngineEnv();
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  posixEngineTest("empty component directories are dropped and the rest are summed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-sum-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = writeFakeEngine(join(cache, "engine", "bin"));
+    mkdirSync(join(cache, "engine", "lib"), { recursive: true });
+    writeFileSync(join(cache, "engine", "lib", "sidecar.dylib"), "x".repeat(32));
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+    mkdirSync(join(cache, "models", "vosk-ru"), { recursive: true });
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      // The Engine row covers the whole engine root, not just the bin/ dir the binary sits in.
+      const engineBytes = statSync(binPath).size + 32;
+
+      expect(disk.components.map((c) => c.label)).toEqual(["Engine", "TTS (Kokoro)"]);
+      expect(disk.components[0].sizeBytes).toBe(engineBytes);
+      expect(disk.componentTotalBytes).toBe(engineBytes + 64);
+      // The engine lives under the cache, so its bytes are counted once, not twice.
+      expect(disk.totalBytes).toBe(engineBytes + 64);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an engine installed outside the cache is added to the total", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-outside-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = writeFakeEngine(join(dir, "opt", "engine", "bin"));
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      expect(disk.totalBytes).toBe(64 + statSync(binPath).size);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("collectStatus voice inventory", () => {
+  const restoreEnv = saveEngineEnv();
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  posixEngineTest("a half-downloaded Vosk model advertises no Russian voices", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-vosk-partial-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = writeFakeEngine(join(cache, "engine", "bin"));
+    const vosk = join(cache, "models", "vosk-ru");
+    mkdirSync(join(vosk, "bert"), { recursive: true });
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      writeFileSync(join(vosk, "bert", "model.onnx"), "bert");
+      expect((await collectStatus()).voices).toEqual([]);
+
+      rmSync(join(vosk, "bert", "model.onnx"));
+      writeFileSync(join(vosk, "model.onnx"), "model");
+      expect((await collectStatus()).voices).toEqual([]);
+
+      writeFileSync(join(vosk, "bert", "model.onnx"), "bert");
+      expect((await collectStatus()).voices).toEqual([
+        "ru-vosk-f01",
+        "ru-vosk-f02",
+        "ru-vosk-f03",
+        "ru-vosk-m01",
+        "ru-vosk-m02",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("voices are listed in sorted order across engines", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-voice-order-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = writeFakeEngine(join(cache, "engine", "bin"));
+    mkdirSync(join(cache, "models", "kokoro-82m", "voices"), { recursive: true });
+    for (const name of ["zf_xiaobei.bin", "am_michael.bin", "bf_emma.bin"]) {
+      writeFileSync(join(cache, "models", "kokoro-82m", "voices", name), "voice");
+    }
+    mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
+    writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
+    writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      expect((await collectStatus()).voices).toEqual([
+        "en-am_michael",
+        "en-bf_emma",
+        "en-zf_xiaobei",
+        "ru-vosk-f01",
+        "ru-vosk-f02",
+        "ru-vosk-f03",
+        "ru-vosk-m01",
+        "ru-vosk-m02",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the runtime block describes the running process", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-runtime-"));
+    process.env.KESHA_ENGINE_BIN = join(dir, "nope", "kesha-engine");
+    process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+    process.env.HOME = dir;
+    try {
+      expect((await collectStatus()).runtime).toEqual({
+        bun: Bun.version,
+        platform: process.platform,
+        arch: process.arch,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an engine the OS refuses to run reports capabilities as null", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-unrunnable-"));
+    const binDir = join(dir, ".cache", "kesha", "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
+    chmodSync(binPath, 0o644);
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+    process.env.HOME = dir;
+    try {
+      const report = await collectStatus();
+      expect(report.engine.installed).toBe(true);
+      expect(JSON.parse(JSON.stringify(report)).engine).toHaveProperty("capabilities", null);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("kesha status --json stdout discipline (#647)", () => {
   test("stdout is exactly one JSON object and the hint stays off stderr", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-cli-"));
@@ -418,11 +730,16 @@ describe("human status output is a load-bearing contract (#647)", () => {
       },
     });
     try {
-      const stdout = await new Response(proc.stdout).text();
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
       await proc.exited;
       const binaryLine = stdout.split("\n").find((l) => l.includes("Binary:"));
       expect(binaryLine).toBeDefined();
       expect(binaryLine!).toContain("not installed");
+      // The human path has no payload to carry the hint, so it has to reach stderr.
+      expect(stderr).toContain("kesha install");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
