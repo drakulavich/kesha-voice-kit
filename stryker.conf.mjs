@@ -7,9 +7,10 @@
 // Scoped runs are fast: 44 mutants in ~1s, 1.3 tests per mutant, because `perTest` coverage
 // re-runs only the covering tests rather than the suite.
 //
-// KNOWN LIMIT — the whole unit suite cannot be a `testFiles` glob. Either 30-file half runs
-// clean; all 60 together die with "Failed to get inspector URL", so this is the runner's
-// inspector handshake hitting a scale limit, not a bad test. Keep runs file-scoped.
+// KNOWN LIMIT — `testFiles` cannot be a whole-suite glob. Measured: either 30-file half of
+// tests/unit passes; all 60 together wait out the full inspectorTimeout and fail with "Failed to
+// get inspector URL", so the process is alive and the URL never arrives. Cause unconfirmed;
+// NO_COLOR/FORCE_COLOR (shell and bun.env) and a 60s timeout were tried and change nothing.
 export default {
   testRunner: "bun",
   // Stryker auto-loads only @stryker-mutator/*; this runner lives under another scope.

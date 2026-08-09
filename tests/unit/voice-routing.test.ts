@@ -98,9 +98,17 @@ describe("pickVoiceForLang (auto-routing)", () => {
 
   // The routing-completeness guards below force a route to *exist*; nothing forced it to be male,
   // so a new language could arrive with a female default and pass the whole suite (#791).
+  // CLAUDE.md's exceptions are situational, so they are keyed by the route, not the voice id:
+  // `fr-ff_siwis` is fine for French and nowhere else (#792 review).
   const FEMALE_BY_DESIGN: Record<string, string> = {
-    "fr-ff_siwis": "Kokoro v1.0 ships no male French voice",
-    "macos-com.apple.voice.compact.ru-RU.Milena": "darwin ru is the zero-install path",
+    "linux-x64 fr -> fr-ff_siwis": "Kokoro v1.0 ships no male French voice",
+    "win32-x64 fr -> fr-ff_siwis": "Kokoro v1.0 ships no male French voice",
+    "darwin-x64 fr -> fr-ff_siwis": "Kokoro v1.0 ships no male French voice",
+    "darwin-arm64 fr -> fr-ff_siwis": "Kokoro v1.0 ships no male French voice",
+    "darwin-arm64 ru -> macos-com.apple.voice.compact.ru-RU.Milena":
+      "darwin ru is the zero-install path",
+    "darwin-x64 ru -> macos-com.apple.voice.compact.ru-RU.Milena":
+      "darwin ru is the zero-install path",
   };
   // AVSpeech ids carry no gender, so every macos-* default has to declare one here.
   const AVSPEECH_GENDER: Record<string, "male" | "female"> = {
@@ -114,15 +122,19 @@ describe("pickVoiceForLang (auto-routing)", () => {
     return undefined;
   };
 
-  it("keeps the documented female exceptions at exactly two", () => {
-    // A third one is a brand decision that belongs in CLAUDE.md, not an append to the allowlist.
+  it("keeps the documented female routes to the ones CLAUDE.md argues for", () => {
+    // A third exception is a brand decision that belongs in CLAUDE.md, not an append here.
     expect(Object.keys(FEMALE_BY_DESIGN).sort()).toEqual([
-      "fr-ff_siwis",
-      "macos-com.apple.voice.compact.ru-RU.Milena",
+      "darwin-arm64 fr -> fr-ff_siwis",
+      "darwin-arm64 ru -> macos-com.apple.voice.compact.ru-RU.Milena",
+      "darwin-x64 fr -> fr-ff_siwis",
+      "darwin-x64 ru -> macos-com.apple.voice.compact.ru-RU.Milena",
+      "linux-x64 fr -> fr-ff_siwis",
+      "win32-x64 fr -> fr-ff_siwis",
     ]);
   });
 
-  it("routes every advertised language to a male voice, bar the two documented exceptions", () => {
+  it("routes every advertised language to a male voice, bar the documented exceptions", () => {
     const platforms = [
       ["darwin", "arm64", advertisedTtsLangs().systemKokoro],
       ["linux", "x64", advertisedTtsLangs().onnx],
@@ -137,8 +149,9 @@ describe("pickVoiceForLang (auto-routing)", () => {
         if (voice === undefined) continue;
         const gender = genderOf(voice);
         // `undefined` is an offender too: an unclassifiable default must be declared, not assumed.
-        if (gender === "male" || voice in FEMALE_BY_DESIGN) continue;
-        offenders.push(`${platform}-${arch} ${lang} -> ${voice} (${gender ?? "unclassified"})`);
+        const route = `${platform}-${arch} ${lang} -> ${voice}`;
+        if (gender === "male" || route in FEMALE_BY_DESIGN) continue;
+        offenders.push(`${route} (${gender ?? "unclassified"})`);
       }
     }
     expect(offenders).toEqual([]);
