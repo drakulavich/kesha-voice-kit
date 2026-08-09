@@ -105,8 +105,12 @@ pub(crate) fn run(
     let audio_secs = duration
         .or_else(|| max_asr_end(asr_segments))
         .unwrap_or(0.0);
+    // Every env read happens here, before any worker exists: rejecting a typo once the
+    // thread is inside the uninterruptible CoreML load would return under a live Swift
+    // task with no cancel and no grace wait, which is the crash `run_supervised` guards.
     let units = compute_units_from_env()?;
     let total_deadline = total_timeout_from_env()?;
+    let load_budget = load_budget_from_env()?;
     dtrace!(
         "diarize::start audio_secs={:.1} asr_segments={} compute_units={} total_deadline={:?}",
         audio_secs,
@@ -129,7 +133,7 @@ pub(crate) fn run(
         model_path: model_path.to_path_buf(),
         units,
     };
-    let spans: Vec<DiarizeSpan> = run_supervised(job, total_deadline, audio_secs)?;
+    let spans: Vec<DiarizeSpan> = run_supervised(job, total_deadline, load_budget, audio_secs)?;
 
     let coverage = validate_coverage(asr_segments, &spans)?;
     dtrace!(
@@ -278,6 +282,7 @@ enum Phase {
 fn run_supervised(
     job: DiarizeJob,
     total_deadline: Option<Duration>,
+    load_budget: Duration,
     audio_secs: f32,
 ) -> Result<Vec<DiarizeSpan>> {
     let (tx, rx) = mpsc::channel();
@@ -295,7 +300,7 @@ fn run_supervised(
         last_report: now,
         warned_slow_phase: false,
         last_progress: None,
-        load_budget: load_budget_from_env()?,
+        load_budget,
         prepare_budget: prepare_budget(audio_secs),
         audio_secs,
         total_deadline,
@@ -370,15 +375,7 @@ fn stop_and_report(
 ) -> Result<Vec<DiarizeSpan>> {
     let grace = supervisor.cancel_grace();
     if grace > CANCEL_GRACE {
-        let waiting_on = match supervisor.phase {
-            Phase::Loading => "the model load",
-            _ => "reading the audio",
-        };
-        eprintln!(
-            "diarize: stopping, but {waiting_on} cannot be interrupted — waiting up to {:.0}s \
-             for it to return",
-            grace.as_secs_f32()
-        );
+        eprintln!("diarize: {}", cancel_wait_notice(supervisor.phase, grace));
     }
     if let Some(spans) = stop_worker(cancel, rx, grace) {
         return Ok(supervisor.report_done(spans));
@@ -613,6 +610,19 @@ fn slow_phase_hint(phase: Phase, stalled_for: Duration, audio_secs: f32) -> Stri
             stalled_for.as_secs_f32()
         ),
     }
+}
+
+/// Say that the stop will not be immediate, so a wait measured in minutes reads as the
+/// uninterruptible call it is rather than as a hang.
+fn cancel_wait_notice(phase: Phase, grace: Duration) -> String {
+    let waiting_on = match phase {
+        Phase::Loading => "the model load",
+        _ => "reading the audio",
+    };
+    format!(
+        "stopping, but {waiting_on} cannot be interrupted — waiting up to {:.0}s for it to return",
+        grace.as_secs_f32()
+    )
 }
 
 /// Cancel the run and wait for the worker to acknowledge before the caller bails.
@@ -1222,6 +1232,33 @@ mod tests {
             "load grace was {:?}",
             supervisor.cancel_grace()
         );
+    }
+
+    #[test]
+    fn cancel_grace_shrinks_as_the_phase_it_covers_runs_down() {
+        let mut supervisor = supervisor_in(Phase::Loading, Duration::from_secs(300));
+        supervisor.last_event = Instant::now()
+            .checked_sub(Duration::from_secs(60))
+            .expect("clock");
+
+        // 60s of the 300s budget is already spent, so 240s of it is left to wait out.
+        // Returning the whole budget, or the flat CANCEL_GRACE, both miss this.
+        let grace = supervisor.cancel_grace();
+        assert!(
+            grace > Duration::from_secs(239) && grace < Duration::from_secs(241),
+            "grace was {grace:?}"
+        );
+    }
+
+    #[test]
+    fn the_cancel_wait_notice_names_the_phase_and_the_wait() {
+        let loading = cancel_wait_notice(Phase::Loading, Duration::from_secs(240));
+        assert!(loading.contains("the model load"), "{loading}");
+        assert!(loading.contains("240s"), "{loading}");
+        assert!(loading.contains("cannot be interrupted"), "{loading}");
+
+        let reading = cancel_wait_notice(Phase::Preparing, Duration::from_secs(60));
+        assert!(reading.contains("reading the audio"), "{reading}");
     }
 
     #[test]
