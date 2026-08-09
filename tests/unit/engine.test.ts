@@ -211,6 +211,24 @@ describe("engine", () => {
     });
   });
 
+  fakeEngineTest("the plain-text helper refuses --itn on an engine without the capability", async () => {
+    // Direct ./engine callers bypass the CLI preflight, and would otherwise get
+    // clap usage noise from the old engine instead of the upgrade hint.
+    await withEngineEnv(await argEchoEngine(["transcribe.segments"]), async () => {
+      await expect(transcribeEngine("audio.wav", { itn: true })).rejects.toThrow(
+        "--itn requires a newer kesha-engine",
+      );
+    });
+  });
+
+  fakeEngineTest("the --json helper refuses --itn on an engine without the capability", async () => {
+    await withEngineEnv(await argEchoEngine(["transcribe.segments"]), async () => {
+      await expect(
+        transcribeEngineWithSegments("audio.wav", { itn: true }),
+      ).rejects.toThrow("--itn requires a newer kesha-engine");
+    });
+  });
+
   fakeEngineTest("preflight rejects timestamp requests when the engine lacks segment support", async () => {
     await withEngineEnv(fakeEngine([]), async () => {
       await expect(preflightTranscribeEngineWithSegments()).rejects.toThrow("Timestamped segments require");

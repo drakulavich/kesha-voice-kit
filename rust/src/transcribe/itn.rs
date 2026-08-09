@@ -146,6 +146,44 @@ mod tests {
         assert_eq!(normalize_text("   "), "");
     }
 
+    /// The pass rewrites content but re-tokenizes whitespace, so "unchanged"
+    /// is only true word-for-word — the spec says content-preserving for this
+    /// reason rather than byte-identical.
+    #[test]
+    fn text_without_numbers_keeps_its_words_but_may_lose_spacing() {
+        assert_eq!(normalize_text("  hello   world "), "hello world");
+        assert_eq!(normalize_text("no numbers here"), "no numbers here");
+    }
+
+    #[test]
+    fn the_pass_is_idempotent() {
+        for text in [
+            "there are two hundred thirty two open pull requests",
+            "it costs five dollars and fifty cents",
+            "проверь все свои конфиги",
+            "у меня двадцать три сообщения",
+            "hello мир two hundred",
+            "nothing to rewrite here",
+        ] {
+            let once = normalize_text(text);
+            assert_eq!(normalize_text(&once), once, "not idempotent for {text:?}");
+        }
+
+        let once = normalize_output(TranscriptionOutput {
+            text: "forty two tests passed".into(),
+            segments: vec![
+                segment(0.0, 1.0, "forty two"),
+                segment(1.0, 2.0, "tests passed"),
+            ],
+        });
+        let twice = normalize_output(once.clone());
+        assert_eq!(twice.text, once.text);
+        assert_eq!(
+            twice.segments.iter().map(|s| &s.text).collect::<Vec<_>>(),
+            once.segments.iter().map(|s| &s.text).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn text_is_kept_when_normalization_would_erase_it() {
         // Guards the one shape that would be data loss: non-blank in, blank out.

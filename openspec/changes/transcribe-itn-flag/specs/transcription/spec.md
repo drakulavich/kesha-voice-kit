@@ -55,11 +55,13 @@ The pass rewrites text inside a Segment; it never splits, merges, drops or re-ti
 
 - GIVEN the same recording
 - WHEN Ira transcribes it as plain text with the written-form pass requested
-- THEN the transcript is normalized
+- THEN the transcript is normalized as a whole
 - AND no Segments are emitted
+- AND the result does not depend on whether VAD, chunked or single-pass ASR produced it
 
 #### Scenario: a Segment contains nothing the pass recognizes
 
 - GIVEN a Segment whose text has no spoken-form number, money amount, date or time
 - WHEN the written-form pass runs over it
-- THEN the Segment's text is unchanged
+- THEN the Segment's text is content-preserving: no word is added, removed or rewritten
+- AND leading, trailing and repeated whitespace may be normalized
