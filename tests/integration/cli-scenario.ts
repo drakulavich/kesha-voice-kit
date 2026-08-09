@@ -1,11 +1,32 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 
 const DEFAULT_CWD = import.meta.dir + "/../..";
-// macOS scans every freshly-written executable on first exec, and these scenarios
-// mint a new fake engine per test: 2-9 s observed locally, ~0.4 s once warm.
-const DEFAULT_TIMEOUT_MS = 15_000;
+// Headroom for macOS scanning the fake engine each scenario mints; measured at ~1 s
+// for a test's three stubs, well under the 2-9 s #649 attributed to it (#805).
+export const DEFAULT_TIMEOUT_MS = 15_000;
 const FORCE_KILL_GRACE_MS = 1_000;
+
+/**
+ * `kesha install` ends by asking `gh` whether the repo is already starred. Under a
+ * scenario's throwaway HOME that is an unauthenticated `gh auth status`, which blocks
+ * on the network for as long as the developer's `gh` takes — 11-25 s through a wrapper
+ * shim here — so the CLI's timing tracked an external tool rather than its own work
+ * (#805). Resolve `gh` to a stub that declines instantly; star behaviour itself is
+ * covered by tests/unit/star.test.ts, which injects its own shims.
+ */
+function stubGhOnPath(): string {
+  const binDir = join(tmpdir(), "kesha-cli-scenario-bin");
+  mkdirSync(binDir, { recursive: true });
+  const staging = join(binDir, `gh.${process.pid}`);
+  writeFileSync(staging, "#!/bin/sh\nexit 1\n");
+  chmodSync(staging, 0o755);
+  renameSync(staging, join(binDir, "gh"));
+  return binDir;
+}
+
+const STUB_BIN_DIR = stubGhOnPath();
 
 export interface CliScenarioArtifactRequest {
   name?: string;
@@ -80,7 +101,9 @@ export async function runCliScenario(
     cwd: opts.cwd ?? DEFAULT_CWD,
     env: {
       ...process.env,
-      PATH: [dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
+      PATH: [STUB_BIN_DIR, dirname(process.execPath), process.env.PATH]
+        .filter(Boolean)
+        .join(delimiter),
       ...envOverrides,
     },
   });
