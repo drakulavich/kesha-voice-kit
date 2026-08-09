@@ -182,7 +182,7 @@ jobs:
         uses: ./.github/actions/install-kesha-backend
         with:
           ffmpeg-provider: skip
-          install-args: --tts en ru
+          install-args: --tts en
 
       - name: Save models
         if: steps.probe.outputs.cache-hit != 'true'
