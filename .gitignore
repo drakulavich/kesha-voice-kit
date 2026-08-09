@@ -23,3 +23,8 @@ result
 .codegraph/
 .codex/
 skills-lock.json
+
+# Mutation testing scratch (stryker sandbox, cargo-mutants output)
+.stryker-tmp/
+reports/
+mutants.out/

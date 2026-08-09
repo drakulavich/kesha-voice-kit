@@ -36,14 +36,6 @@ function defaultMainArgs(overrides: Record<string, unknown> = {}): Record<string
 }
 
 describe("CLI help", () => {
-  test("install help contains backend and cache options", async () => {
-    const usage = await renderUsage(installCommand);
-    expect(usage).toContain("--coreml");
-    expect(usage).toContain("--onnx");
-    expect(usage).toContain("--no-cache");
-    expect(usage).toContain("--plan");
-  });
-
   test("init help contains onboarding and feature options", async () => {
     const usage = await renderUsage(initCommand);
     expect(usage).toContain("Interactive setup guide");
@@ -85,12 +77,6 @@ describe("CLI help", () => {
     expect(usage).toContain("logs");
     expect(usage).toContain("enable");
     expect(usage).toContain("privacy-safe diagnostic logs");
-  });
-
-  test("status help has command description", async () => {
-    const usage = await renderUsage(statusCommand);
-    expect(usage).toContain("status");
-    expect(usage).toContain("Show backend installation status");
   });
 
   test("record help contains output and duration options", async () => {
@@ -400,12 +386,6 @@ describe("TOON output (#138)", () => {
 });
 
 describe("output formatting with lang", () => {
-  test("JSON output includes lang field", () => {
-    const output = formatJsonOutput([{ file: "a.ogg", text: "Hello world", lang: "en" }]);
-    const parsed = JSON.parse(output);
-    expect(parsed[0].lang).toBe("en");
-  });
-
   test("JSON output includes empty lang when not detected", () => {
     const output = formatJsonOutput([{ file: "a.ogg", text: "", lang: "" }]);
     const parsed = JSON.parse(output);

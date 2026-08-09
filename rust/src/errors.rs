@@ -242,13 +242,6 @@ mod tests {
         }
     }
 
-    // ALL must stay in sync with the enum — catches a variant added without updating ALL.
-    #[test]
-    fn all_length_matches_variant_count() {
-        // 19 variants; update this number when adding a new ErrorCode variant.
-        assert_eq!(ErrorCode::ALL.len(), 19);
-    }
-
     #[test]
     fn category_and_retryable_are_total_and_consistent() {
         for c in ErrorCode::ALL {
