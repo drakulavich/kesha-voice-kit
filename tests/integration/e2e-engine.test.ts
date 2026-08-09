@@ -116,14 +116,17 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     return true;
   }
 
-  /** Missing prerequisites are skip, not fail; installer flows are tested separately. */
+  /**
+   * Missing prerequisites are skip, not fail; installer flows are tested separately.
+   * A timeout is deliberately not one of them: a wedged supervisor or a phase budget
+   * that is too tight is the failure these tests exist to catch, and this is the only
+   * lane that can catch it.
+   */
   function isMissingPrerequisite(stderr: string): boolean {
     return (
       stderr.includes("diarization model not found") ||
       stderr.includes("kesha-diarize sidecar not found") ||
-      stderr.includes("VAD model") ||
-      stderr.includes("kesha-diarize timed out") ||
-      stderr.includes("E_DIARIZE_TIMEOUT")
+      stderr.includes("VAD model")
     );
   }
 
@@ -131,11 +134,14 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     if (!(await engineDiarizes())) return;
 
     // --vad exercises multiple segments; missing VAD model surfaces as non-zero exit and is skipped below.
+    // The cap stays unset for the same reason as the progress test: a cold ANE compile
+    // takes ~105s once, and capping it turns #443 into a failure of this test instead.
     const { stdout, stderr, exitCode } = await runEngine(
       ["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN],
       {
-        timeoutMs: 35_000,
-        timeoutMessage: "kesha-diarize timed out after 30s",
+        env: { KESHA_DIARIZE_TIMEOUT_SECS: undefined },
+        timeoutMs: 300_000,
+        timeoutMessage: "kesha-diarize timed out after 300s",
       },
     );
     if (exitCode !== 0) {
@@ -152,7 +158,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       // One cluster ID is fine; locking that speaker field is numeric on every segment (wire shape).
       expect(parsed.segments.every((s: { speaker?: unknown }) => typeof s.speaker === "number")).toBe(true);
     }
-  }, 120_000);
+  }, 360_000);
 
   // No total cap: a cold ANE compile takes ~105s and would trip this file's 30s default.
   test("--speakers narrates its phases on stderr and leaves stdout pure JSON (#721)", async () => {
