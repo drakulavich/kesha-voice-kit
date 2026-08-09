@@ -1,215 +1,143 @@
 ---
 name: release-engine
-description: Cuts a kesha-engine release per CLAUDE.md rules — pre-flight audits, version bump, tag, release-notes BEFORE publish, smoke-test AFTER publish, then npm publish. Refuses to auto-run; user must explicitly invoke. Knows the gh-cli release-notes trap and the draft-URL 404 trap.
+description: Cuts a kesha-engine release (bare vX.Y.Z tag) per CLAUDE.md rules — pre-flight audits, engine-only version bump, annotated tag carrying the notes, draft validation with authenticated download, publish, then verify. Refuses to auto-run; user must explicitly invoke. Knows the workflow-frozen-at-the-tag trap, the gh-cli release-notes trap, and the draft-URL 404 trap. For a CLI release use release-cli.
 disable-model-invocation: true
 ---
 
 # release-engine
 
-Cuts a kesha-engine release. **NEVER auto-runs** — user invokes via `/release-engine vX.Y.Z` (or `/release-engine vX.Y.Z-cli` for CLI-only).
+Cuts a **kesha-engine** release. **NEVER auto-runs** — user invokes via `/release-engine vX.Y.Z`.
+
+For a CLI release (`vX.Y.Z-cli`, npm) use the **`release-cli`** skill instead. The two are independent version lines; a full ship is usually `/release-engine` then `/release-cli`.
 
 ## Inputs
 
-- `$1`: target tag, e.g. `v1.4.4` (engine release) or `v1.4.4-cli` (CLI-only marker release).
+- `$1`: target tag, e.g. `v1.24.9`. Bare — no `-cli` suffix. `-beta.N` / `-alpha.N` are prerelease shapes; alphas are dispatched, not tagged by hand (see `release-mechanics`).
 - Optional: `--draft` to stop before publishing.
 
-## Two release modes
+## THE TRAP THAT COSTS A TAG
 
-### Mode A: CLI-only (suffix `-cli`)
+**The workflow GitHub runs for a tag is the one stored *at that tag*.** A fix merged to `main` afterwards cannot rescue it, and re-running the failed job re-runs the broken definition. If the release job fails for a reason living in the workflow itself, that tag is dead — tag names are one-use, so you bump the patch and cut a new one. (v1.24.8 was lost exactly this way.)
 
-For docs/TS/plugin tweaks where the engine binary is unchanged.
-
-1. Bump `package.json#version`, plus `server.json#version` and `server.json#packages[0].version` to the same value. Leave `package.json#keshaEngine.version` and `rust/Cargo.toml` untouched.
-2. PR through CI (integration tests reuse the existing engine binary at the pinned `keshaEngine.version`).
-3. Merge.
-4. `gh release create $TAG --title "$VERSION (CLI-only)" --notes "Engine: v<keshaEngine.version> (unchanged)."`
-5. `npm publish --access public`
-
-The `-cli` suffix is excluded from `build-engine.yml`'s tag filter — no Rust rebuild.
-
-### Mode B: Engine release (no suffix, e.g. `v1.4.4`)
-
-Anything under `rust/`, or bumping `keshaEngine.version`.
-
-## Pre-flight checklist (run BEFORE bumping versions)
+Corollary: when the workflow on `main` is already fixed but a tag is not, release via `workflow_dispatch --ref main`, which runs main's definition:
 
 ```bash
-# 1. Working tree clean, on main, up to date
-git status
-git fetch origin && git status -sb | head -3
+gh workflow run "🔨 Build Engine" -R drakulavich/kesha-voice-kit \
+  -f tag=vX.Y.Z -f ref=main -f notes="$(cat notes.md)"
+```
 
-# 2. Feature matrix audit — every default cargo feature MUST appear in every build-engine.yml matrix row.
-#    v1.1.0 shipped without TTS because the matrix drifted; v1.1.3 fixed it.
-diff <(grep 'features = ' .github/workflows/build-engine.yml) <(grep '^default' rust/Cargo.toml)
+## Pre-flight (run BEFORE bumping versions)
+
+```bash
+# 1. Root checkout clean, on main, up to date. Edit in a worktree, never here.
+git fetch origin main && git status -sb | head -3
+
+# 2. Every additive cargo default in every matrix row — v1.1.0 shipped without TTS when this drifted.
+grep -E '^\s+features:' .github/workflows/build-engine.yml
+grep '^default =' rust/Cargo.toml
 
 # 3. CI green on main
 gh run list --workflow ci.yml --branch main --limit 1
 gh run list --workflow rust-test.yml --branch main --limit 1
 
-# 4. Local sanity
-cd rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings
-cargo test --release
-cd .. && bun test && bunx tsc --noEmit
+# 4. Local sanity — nextest, not `cargo test` (CLAUDE.md)
+cargo fmt --check --manifest-path rust/Cargo.toml
+cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+cargo check --manifest-path rust/Cargo.toml --features coreml --no-default-features
+make rust-test
+bunx tsc --noEmit && bun test && bun run check:versions
 ```
 
-If anything fails, STOP. Do not bump versions.
+If anything fails, STOP. Do not bump versions. A `bun test` failure that does not reproduce on a second run is the documented timing flake — confirm against CI on the same SHA rather than chasing it.
 
-## Engine release procedure
+## Procedure
 
-### Step 1: Version bump — engine fields ONLY
+### Step 1 — Version bump, engine fields ONLY
 
-Bump these THREE in the same commit:
+In a worktree (`git worktree add .worktrees/release-X.Y.Z -b release/X.Y.Z origin/main`), bump three fields in one commit:
 
-- `rust/Cargo.toml` — `version = "X.Y.Z"`
-- `rust/Cargo.lock` — refresh via `cd rust && cargo check`
+- `rust/Cargo.toml` — use `node .github/scripts/set-cargo-version.mjs X.Y.Z`, which rewrites only the `[package]` version. **It resolves paths from the current directory** — run it from inside the worktree or it edits the root checkout.
+- `rust/Cargo.lock` — refresh with `cd rust && cargo check`
 - `package.json#keshaEngine.version` — **not** `package.json#version`
 
-Since #691 `main` carries the next unreleased CLI version; dragging it down to the
-engine's number would publish that as npm `latest` and downgrade every user (#729). An
-engine tag publishes no npm package at all now — users get the new engine when a
-`-cli` release ships the bumped pin (Mode A, after this one).
+`main` carries the next *unreleased* CLI version since #691; dragging it down would publish that as npm `latest` and downgrade every user (#729). An engine tag publishes no npm package — users get the engine when a `-cli` release ships the bumped pin.
 
-**Raise, never lower.** If the new engine version would overtake `package.json#version`,
-raise the CLI line to match in the same commit — `check:versions` rule 2 requires
-`cli >= engine` and will reject the release commit otherwise. Raising is safe because the
-result still leads the published `latest`; only lowering downgrades users.
+**Raise, never lower.** If the engine version would overtake `package.json#version`, raise the CLI line to match in the same commit: `check:versions` rule 2 requires `cli >= engine`.
 
-```bash
-cd rust && cargo check
-cd ..
-git diff rust/Cargo.toml rust/Cargo.lock package.json  # eyeball
-git add rust/Cargo.toml rust/Cargo.lock package.json
-git commit -m "chore(release): vX.Y.Z"
-```
+### Step 2 — Merge through a PR on `release/X.Y.Z`
 
-### Step 2: Merge through PR (branch `release/X.Y.Z` is fine — `integration-tests` job is filtered to skip on `release/*` since the engine tag doesn't exist yet)
+The branch name matters twice: `integration-tests-full` skips on `release/*` (it downloads the *published* engine, whose tag does not exist yet), and `check-engine-targets` skips its 404 check there — that is the documented window between the release merge and its tag.
+
+That window must stay short. While it is open, `check-engine-targets` fails **every other PR** in the repo, because `main` pins an engine with no release.
+
+### Step 3 — Tag with the notes inside it
+
+Write the notes first, then create an **annotated** tag whose message is the notes. `build-engine.yml` reads `git tag -l --format='%(contents)'` into the draft body, so this sidesteps the published-release notes trap entirely.
 
 ```bash
-git push -u origin release/X.Y.Z
-gh pr create --fill --base main
-# wait for green
-gh pr merge --squash --delete-branch
+git tag -a vX.Y.Z --cleanup=verbatim -F notes.md
+git push origin refs/tags/vX.Y.Z
 ```
 
-### Step 3: Tag + push (triggers build-engine.yml)
+`--cleanup=verbatim` keeps the `#` heading lines a release body needs. Do **not** run `.github/scripts/push-annotated-tag.sh` locally — it sets `user.name`/`user.email` to github-actions[bot] in the repo config, which is right in CI and wrong on a laptop.
+
+The build produces 3 platform binaries, smoke-tests each with `--capabilities-json`, and creates a **draft** release with SBOM, manifest, `SHA256SUMS` and Sigstore bundles. Engine tags do **not** attach Linux `.deb`/`.rpm` — those ship on the `-cli` marker release now (#728).
+
+Expect `Darwin synthesis smoke (advisory)` to fail — it is `continue-on-error` and tracked as #742 / #678.
+
+### Step 4 — Validate the draft before publishing
+
+Draft asset URLs return **404 to unauthenticated clients**, so `curl` and `make smoke-test` can false-green through a stale global install. Download with `gh`:
 
 ```bash
-git checkout main && git pull
-git tag vX.Y.Z
-git push origin vX.Y.Z
+gh release download vX.Y.Z -p 'kesha-engine-darwin-arm64' -p 'SHA256SUMS' -p 'kesha-release-manifest.json'
+chmod +x kesha-engine-darwin-arm64
+./kesha-engine-darwin-arm64 --version          # must equal X.Y.Z
+shasum -a 256 -c SHA256SUMS --ignore-missing
+./kesha-engine-darwin-arm64 --capabilities-json | jq '.backend, (.features|length)'
 ```
 
-`build-engine.yml` builds 3 platform binaries, smoke-tests each with `--capabilities-json`, creates a **DRAFT** release with EMPTY body.
+Compare the feature list against the previous release. A silently missing feature is the v1.1.0 failure mode, and the count is the cheapest way to catch it.
 
-### Step 4: WRITE RELEASE NOTES — BEFORE PUBLISHING
-
-⚠️ **CRITICAL:** `gh release edit --notes` silently drops content on PUBLISHED releases (gh CLI quirk, not GitHub limitation). Author the notes WHILE the release is still a draft.
-
-Template (modeled on v1.1.3):
-
-```markdown
-## Highlights
-- <new feature 1>
-- <new feature 2>
-
-## Platform support
-- macOS arm64 (CoreML)
-- macOS arm64 / x64 (ONNX)
-- Linux x64 (ONNX)
-- Windows x64 (ONNX)
-
-## Breaking changes
-- <if any; otherwise omit>
-
-## Shipped PRs
-- #N — title
-- ...
-
-## Follow-up issues
-- #N — title
-- ...
-
-## Upgrade
-```bash
-bun install -g @drakulavich/kesha-voice-kit@X.Y.Z
-kesha install
-```
-```
-
-Apply:
-
-```bash
-gh release edit vX.Y.Z --notes "$(cat <<'EOF'
-<your notes>
-EOF
-)"
-```
-
-**If you forgot and already published:** the only escape hatch is a direct API PATCH (gh's `--notes` is silently ignored on published releases due to `immutable: true` on tag/assets, NOT body — but gh treats it as immutable anyway).
-
-```bash
-RELEASE_ID=$(gh api repos/drakulavich/kesha-voice-kit/releases/tags/vX.Y.Z --jq '.id')
-jq -Rs '{body: .}' < notes.md > body.json
-gh api -X PATCH "repos/drakulavich/kesha-voice-kit/releases/$RELEASE_ID" --input body.json
-```
-
-### Step 5: Publish the draft
+### Step 5 — Publish
 
 ```bash
 gh release edit vX.Y.Z --draft=false
 ```
 
-⚠️ Draft release asset URLs return **HTTP 404** to unauthenticated clients. `make smoke-test` and `kesha install` will fail against a draft. Smoke-test must run AFTER publish.
+Un-drafting a **bare** engine tag publishes nothing to npm: `cliPublishTarget` marks it `engineOnly`. The blast radius is the GitHub release alone.
 
-### Step 6: Smoke test
+### Step 6 — Verify against the published release
 
-```bash
-make smoke-test
-```
-
-Verifies each platform binary downloads + executes correctly.
-
-If smoke fails: **DO NOT** publish to npm. Investigate. The release can be re-drafted with `gh release edit vX.Y.Z --draft=true`, fixed via re-tag of a NEW version (tags are immutable — never reuse vX.Y.Z), and re-published.
-
-### Step 7: npm publish
+**`make smoke-test` is not sufficient on its own.** It runs whatever `kesha` resolves to, and a previously `bun add -g`'d install outranks `bun link` — a run that prints an old version tested an old CLI. Verify the real artifact in an isolated path:
 
 ```bash
-npm publish --access public
+export KESHA_ENGINE_BIN="$SCRATCH/engine/kesha-engine"
+bun run bin/kesha.js install          # must report the new engine version
+bun run bin/kesha.js tests/fixtures/benchmark/09-*.ogg
 ```
 
-### Step 8: Verify install end-to-end
+Then hand off to **`/release-cli`** so the pin reaches users.
 
-```bash
-npx -y @drakulavich/kesha-voice-kit@X.Y.Z --version
-npx -y @drakulavich/kesha-voice-kit@X.Y.Z install
-npx -y @drakulavich/kesha-voice-kit@X.Y.Z <fixture.ogg>
-```
+## Hard rules
 
-## Hard rules (from CLAUDE.md)
-
-- NEVER reuse a tag name. Bump patch instead of "tagging just to test" — use `gh workflow run "🔨 Build Engine" --ref main` for test builds.
-- NEVER skip pre-commit hooks (`--no-verify`).
-- NEVER force-push to main.
-- NEVER `npm publish` if smoke-test failed.
-- NEVER write release notes AFTER publishing — gh silently drops them.
-- ALWAYS verify the build-engine.yml feature matrix matches `rust/Cargo.toml` `default = [...]` before tagging.
+- NEVER reuse a tag name. Broken release → bump patch, new tag. For test builds use `gh workflow run "🔨 Build Engine" --ref main` with no tag.
+- NEVER skip pre-commit hooks (`--no-verify`) or force-push to `main`.
+- NEVER write release notes after publishing — `gh release edit --notes` silently drops them.
+- ALWAYS check the feature matrix against cargo's defaults before tagging.
+- ALWAYS leave the root checkout on `main`; edit in a worktree.
 
 ## Output
-
-At the end, print:
 
 ```
 🎉 Released vX.Y.Z
 - GitHub: https://github.com/drakulavich/kesha-voice-kit/releases/tag/vX.Y.Z
-- npm:    https://www.npmjs.com/package/@drakulavich/kesha-voice-kit/v/X.Y.Z
-- npm tag: latest
+- Assets: <n> (engine ×3, sidecars ×2, SBOM, manifest, SHA256SUMS, Sigstore bundles)
+- Engine reports: X.Y.Z   Checksums: OK   Features: <n> (unchanged vs previous)
 
-Smoke: <macos-coreml ✓ | linux-onnx ✓ | windows-onnx ✓>
+Next: /release-cli vA.B.C-cli to ship the pin to npm.
 ```
 
 ## On failure
 
-If any step fails partway through, report:
-- Last successful step
-- The failing command + output
-- Recovery hint (most common: re-run smoke after `gh release edit --draft=false`)
+Report the last successful step, the failing command and its output, and whether the tag is still usable. If the failure lives in the workflow stored at the tag, say so plainly: that tag cannot be rescued and the fix ships under the next patch number.

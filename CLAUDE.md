@@ -136,7 +136,7 @@ Three invariants worth knowing before you touch a release:
 - **Un-drafting fires npm publish and is effectively permanent.** Validate the draft binary first with authenticated `gh release download` (draft asset URLs 404 for anonymous clients, so `curl` / `make smoke-test` can false-green through an old global shim) and exercise it end-to-end.
 - **`integration-tests-full` skips on `release/*`** via `!startsWith(github.head_ref, 'release/')` — that is the job which downloads the *published* engine, whose tag doesn't exist yet on a release PR. The lighter `integration-tests` job carries no such guard and is safe there. Don't remove the filter; reuse it for new engine-downloading jobs.
 
-Full procedure, `bun link` gotchas, and re-review mechanics: the **`release-mechanics`** skill (loads on demand). To cut a release, invoke **`release-engine`**.
+Full procedure, `bun link` gotchas, and re-review mechanics: the **`release-mechanics`** skill (loads on demand). To cut one, invoke **`release-engine`** (engine, bare `vX.Y.Z`) or **`release-cli`** (CLI to npm, `vX.Y.Z-cli`); a full ship is the engine first, then the CLI that carries its pin.
 
 ## Build Commands
 
@@ -184,7 +184,7 @@ Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: the **`t
 
 ## Deeper references
 
-Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-engine` (cuts a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches).
+Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-engine` and `release-cli` (cut a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches).
 
 Still plain runbooks: [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).
 

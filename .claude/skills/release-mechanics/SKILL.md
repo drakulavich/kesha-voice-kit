@@ -1,6 +1,6 @@
 ---
 name: release-mechanics
-description: Use when touching anything release-shaped — version bumps, tags, draft releases, npm publish and provenance, the build-engine feature matrix, release/* PRs, bun link, or CI jobs that download a published engine. Explains why CLI and engine version independently, why tag names are one-use, why draft assets 404 for anonymous clients, and how Greptile re-review and auto-merge behave. To actually cut a release use the release-engine skill instead; this one is the reference behind it.
+description: Use when touching anything release-shaped — version bumps, tags, draft releases, npm publish and provenance, the build-engine feature matrix, release/* PRs, bun link, or CI jobs that download a published engine. Explains why CLI and engine version independently, why tag names are one-use, why draft assets 404 for anonymous clients, and how Greptile re-review and auto-merge behave. To actually cut a release use the release-engine skill (engine) or release-cli skill (npm) instead; this one is the reference behind both.
 ---
 
 # Release mechanics
