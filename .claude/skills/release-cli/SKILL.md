@@ -75,20 +75,16 @@ Branch `release/X.Y.Z`; `integration-tests-full` skips on `release/*`.
 
 ### Step 3 — Push the tag
 
+**Write the notes into the tag annotation — that is the only window there is.** `publish-cli-release.sh` creates the release and un-drafts it in consecutive lines, and `gh release edit --notes` is silently dropped once a release is published. The engine lane already authors this way; since #788 the CLI lane does too.
+
 ```bash
-git tag vX.Y.Z-cli
+git tag -a --cleanup=verbatim vX.Y.Z-cli -F notes.md
 git push origin vX.Y.Z-cli
 ```
 
-**The lane writes the release body itself, and there is no draft window to slip notes into.** `publish-cli-release.sh` runs `gh release create --draft … --notes "v$VERSION (CLI-only). Engine: v$ENGINE_VERSION (unchanged)."` and un-drafts it in the next line of the same script.
+`--cleanup=verbatim` is not optional: git's default tag-message cleanup strips every line starting with `#`, which silently eats Markdown headings. A lightweight `git tag vX.Y.Z-cli` still works and contributes no notes — `cli-release-body.mjs` refuses to read `%(contents)` off a lightweight tag, because there git hands back the *commit* message.
 
-That body is hardcoded, so it says **"(unchanged)" even when this release is the one carrying a new engine pin** — the case that most deserves a headline. When the pin moved, replace the body after the fact; `gh release edit --notes` is silently dropped on a published release, so it takes the API:
-
-```bash
-RELEASE_ID=$(gh api repos/drakulavich/kesha-voice-kit/releases/tags/vX.Y.Z-cli --jq .id)
-jq -Rs '{body: .}' < notes.md > body.json
-gh api -X PATCH "repos/drakulavich/kesha-voice-kit/releases/$RELEASE_ID" --input body.json
-```
+Underneath the notes the lane appends one generated line, always. Its engine half is **computed** against the previous stable `-cli` tag's `keshaEngine.version` — `Engine: v1.24.7 → v1.24.9.` when this release moves the pin, `Engine: v1.24.9 (unchanged).` when it does not, and a bare `Engine: v1.24.9.` when there is no previous release to compare against. Prerelease markers are not baselines; this lane publishes no release for them.
 
 User-facing upgrade text says **bun**, never npm: `bun add -g @drakulavich/kesha-voice-kit@latest`.
 

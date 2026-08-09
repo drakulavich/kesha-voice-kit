@@ -7,9 +7,14 @@
  */
 import { pathToFileURL } from "node:url";
 
+/** Whether this module is the file node was pointed at, rather than an import of it. */
+export function isEntry(moduleUrl) {
+  return moduleUrl === pathToFileURL(process.argv[1] ?? "").href;
+}
+
 /** `process.argv[2]` when this module is what node was pointed at, else undefined. */
 export function entryArg(moduleUrl, usage) {
-  if (moduleUrl !== pathToFileURL(process.argv[1] ?? "").href) return undefined;
+  if (!isEntry(moduleUrl)) return undefined;
 
   const arg = process.argv[2];
   if (!arg) {

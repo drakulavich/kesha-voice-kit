@@ -99,4 +99,25 @@ describe("the CLI release lane", () => {
 
     expect(script).toContain('"$DIR"/*.deb "$DIR"/*.rpm "$DIR/SHA256SUMS"');
   });
+
+  // A CLI release is how a new engine reaches users, and the body used to assert the
+  // opposite from a fixed string (#788).
+  test("the body is composed, not spelled out in the publish script", () => {
+    const script = readRepoFile(".github/scripts/publish-cli-release.sh");
+
+    expect(script).toContain("cli-release-body.mjs");
+    expect(script).toContain("--notes-file");
+    expect(script).not.toContain("unchanged");
+  });
+
+  // Without the tags and the history behind them, the previous pin is invisible and every
+  // release would read as the first one.
+  test("the publishing job checks out enough history to see the previous release", () => {
+    const checkout = parseRepoYaml(RELEASE_CLI).jobs.packages.steps.find((s: { uses?: string }) =>
+      s.uses?.startsWith("actions/checkout"),
+    );
+
+    expect(checkout.with["fetch-depth"]).toBe(0);
+    expect(checkout.with["fetch-tags"]).toBe(true);
+  });
 });

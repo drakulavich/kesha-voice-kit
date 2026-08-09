@@ -12,10 +12,16 @@ DIR="${ASSET_DIR:-dist/linux-packages}"
 # that nfpm consumed, which is not a release asset.
 ( cd "$DIR" && sha256sum ./*.deb ./*.rpm > SHA256SUMS && cat SHA256SUMS )
 
+body=$(mktemp)
+trap 'rm -f "$body"' EXIT
+
+node "$(dirname "$0")/cli-release-body.mjs" > "$body"
+cat "$body" >&2
+
 gh release create "$TAG" \
   --draft \
   --title "v$VERSION (CLI-only)" \
-  --notes "v$VERSION (CLI-only). Engine: v$ENGINE_VERSION (unchanged)." \
+  --notes-file "$body" \
   "$DIR"/*.deb "$DIR"/*.rpm "$DIR/SHA256SUMS"
 
 gh release edit "$TAG" --draft=false
