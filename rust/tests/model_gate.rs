@@ -11,10 +11,10 @@
 //! The rule is meant to be complete: every model-gated skip site either asserts
 //! the flag or is listed here as deliberately exempt. Exempt today:
 //! `kokoro_rate_e2e.rs` and `diarize_e2e.rs` (ANE/Sortformer bundles no lane
-//! stages), `vosk.rs`'s synth test (its own `KESHA_REQUIRE_VOSK_TESTS`, since
-//! only one lane carries that bundle), and the `KESHA_*` env skips inside
-//! `rust/src/tts/` — those sit behind integration gates that already fail loudly,
-//! so covering them is defense-in-depth for a later stage, not a hole today.
+//! stages), and `vosk.rs`'s synth test, which carries `KESHA_REQUIRE_VOSK_TESTS`
+//! because only the weekly canary stages that bundle. The CharsiuG2P skips in
+//! `rust/src/tts/` are no longer exempt: they gained `KESHA_REQUIRE_G2P_TESTS`
+//! when those IPA assertions became the named owner of phoneme fidelity.
 
 mod common;
 

@@ -81,7 +81,9 @@ Coverage is a merge gate, not a vanity metric. `bun run coverage:check:ts` holds
 
 Which suite runs where: the `integration-tests` (fast) and `integration-tests-full` (heavy) jobs in `ci.yml` are authoritative — every-PR runs never download the 2.4 GB model bundle. `docs/superpowers/specs/2026-05-30-ci-fast-heavy-test-lanes-design.md` explains why, but it is a design doc and has drifted; read it for intent, not for current fact.
 
-Model-dependent suites self-skip, and not uniformly: `e2e-engine` and `mcp-e2e` guard their outer `describe` on `!engineInstalled`, while `mcp-e2e`'s TTS cases and all of `say-e2e` guard on `!SPIKE_AVAILABLE` — an installed engine does not mean `mcp-e2e` runs in full. A new real-engine test without such a guard breaks the fast lane instead of skipping, which is the intended loud signal, though it may surface as a timeout rather than a clean assertion failure. Nothing enforces the guard: there is no meta-test and no `tests/integration/README`.
+Model-dependent suites self-skip, and not uniformly: `e2e-engine` and `mcp-e2e` guard their outer `describe` on `!engineInstalled`, while `mcp-e2e`'s TTS cases and all of `say-e2e` guard on `!SPIKE_AVAILABLE` — an installed engine does not mean `mcp-e2e` runs in full. A new real-engine test without such a guard breaks the fast lane instead of skipping, which is the intended loud signal, though it may surface as a timeout rather than a clean assertion failure. `say-e2e`'s gate also requires the source-built engine, not just a model — since the Kokoro stand-in is committed, a model-only gate would run it in lanes that never build the binary.
+
+On the Rust side the guard **is** enforced: `KESHA_REQUIRE_MODEL_TESTS` names which weights a lane promised (`mini` or real), every gate in `rust/tests/common/mod.rs` refuses the wrong tier, and `rust/tests/model_gate.rs` is the meta-test — including the exemptions it lists deliberately. `KESHA_REQUIRE_G2P_TESTS` and `KESHA_REQUIRE_VOSK_TESTS` do the same for the two bundles that have no stand-in. There is still no `tests/integration/README` and no equivalent meta-test on the TS side.
 
 ### PR ETIQUETTE
 
