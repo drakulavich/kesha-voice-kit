@@ -91,6 +91,10 @@ jobs:
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
       MACOSX_DEPLOYMENT_TARGET: "14.0"
+      # This lane stages models, so a gate that can't find them is a broken
+      # layout, not a laptop — fail instead of skipping to a green run of
+      # nothing (#741). Lanes that stage nothing (rust-push-gate) leave it unset.
+      KESHA_REQUIRE_MODEL_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
@@ -225,6 +229,7 @@ jobs:
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
       NEXTEST_PROFILE: ci
+      KESHA_REQUIRE_MODEL_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -260,20 +265,7 @@ jobs:
       - name: 📈 Rust coverage
         shell: bash
         run: |
-          if [[ -f "$KOKORO_CACHE/model.onnx" && -f "$KOKORO_CACHE/am_michael.bin" ]]; then
-            export KOKORO_MODEL="$KOKORO_CACHE/model.onnx"
-            export KOKORO_VOICE="$KOKORO_CACHE/am_michael.bin"
-            echo "KOKORO_MODEL=$KOKORO_CACHE/model.onnx" >> "$GITHUB_ENV"
-            echo "KOKORO_VOICE=$KOKORO_CACHE/am_michael.bin" >> "$GITHUB_ENV"
-          fi
-          if [[ -f "$KOKORO_CACHE/models/vosk-ru/model.onnx" && -f "$KOKORO_CACHE/models/vosk-ru/bert/model.onnx" ]]; then
-            export KESHA_CACHE_DIR="$KOKORO_CACHE"
-            echo "KESHA_CACHE_DIR=$KOKORO_CACHE" >> "$GITHUB_ENV"
-          fi
-          if [[ -f "$KOKORO_CACHE/models/g2p/byt5-tiny/encoder_model.onnx" ]]; then
-            export CHARSIU_ONNX="$KOKORO_CACHE/models/g2p/byt5-tiny"
-            echo "CHARSIU_ONNX=$KOKORO_CACHE/models/g2p/byt5-tiny" >> "$GITHUB_ENV"
-          fi
+          source rust/ci/kokoro-env.sh "$KOKORO_CACHE"
           bun run coverage:rust
 
       - name: 📤 Upload Ubuntu JUnit

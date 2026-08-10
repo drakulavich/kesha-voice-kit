@@ -1,8 +1,8 @@
 name: Setup Kokoro TTS models
 description: >
-  Restore-or-download the shared Kokoro + Vosk-RU + multilingual CharsiuG2P model
-  cache used by every TTS test lane (rust-test nextest + ci.yml say-e2e). One cache
-  key per OS so the macOS lanes share a single ~1.3 GB cache instead of duplicating it.
+  Restore-or-download the shared Kokoro + CharsiuG2P model cache used by every TTS
+  test lane (rust-test nextest + ci.yml say-e2e). One cache key per OS so the macOS
+  lanes share a single ~340 MB cache instead of duplicating it.
 
   Restore-only by design: writing is the job of cache-seed.yml on main. GitHub
   scopes a cache written during a pull_request run to that PR's merge ref, so only
@@ -31,15 +31,20 @@ runs:
     # an unchanged path — on main, for everyone.
     #
     # The prefix restore-key warm-starts from the previous bundle after an edit,
-    # so a model-set change tops up the delta instead of re-fetching ~1.1 GB.
+    # so a model-set change tops up the delta instead of re-fetching ~340 MB.
+    # That is also why the `v<n>` exists despite the argument above: dropping a
+    # model can only shrink the cache if the prefix stops matching the entries
+    # that still carry it, since the save persists the whole directory and would
+    # otherwise re-inherit what the script no longer downloads. Bump it when the
+    # change is a *removal* (#741), never for an addition.
     # Keep both in sync with the write side in .github/workflows/cache-seed.yml.
     - name: Restore TTS models
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.cache-dir }}
-        key: kokoro-models-v1-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+        key: kokoro-models-v2-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
         restore-keys: |
-          kokoro-models-v1-${{ runner.os }}
+          kokoro-models-v2-${{ runner.os }}
 
     # Idempotent: downloads only the files the restore didn't provide, so a cold
     # cache still works (just slower) and a warm one costs nothing.

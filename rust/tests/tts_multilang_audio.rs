@@ -37,6 +37,11 @@ fn default_voice(lang: &str) -> &'static str {
 fn multilang_paths_or_skip(lang: &str) -> Option<(PathBuf, PathBuf)> {
     // Gate 1: G2P model present.
     if std::env::var_os("CHARSIU_ONNX").is_none() {
+        assert!(
+            !common::models_required(),
+            "CHARSIU_ONNX unset while KESHA_REQUIRE_MODEL_TESTS is set — \
+             this lane stages CharsiuG2P, so skipping here would be a green run of nothing (#741)"
+        );
         eprintln!("skipping tts_multilang_audio: CHARSIU_ONNX not set");
         return None;
     }
