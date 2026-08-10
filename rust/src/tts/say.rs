@@ -845,6 +845,106 @@ mod tests {
         );
     }
 
+    /// Every inference emits its own lead-in and tail padding (#825). One
+    /// call → `[silence, tone, silence]`; the walker must not stack those
+    /// paddings mid-utterance.
+    struct PaddedSink {
+        pad: usize,
+        tone: usize,
+    }
+
+    impl PaddedSink {
+        fn new() -> Self {
+            // 8 kHz: 300 ms of padding either side of 200 ms of tone.
+            Self {
+                pad: 2_400,
+                tone: 1_600,
+            }
+        }
+        fn utterance(&self) -> Vec<f32> {
+            let mut v = vec![0.0_f32; self.pad];
+            v.extend(std::iter::repeat_n(0.5_f32, self.tone));
+            v.extend(std::iter::repeat_n(0.0_f32, self.pad));
+            v
+        }
+    }
+
+    impl SegmentSink for PaddedSink {
+        fn sample_rate(&mut self) -> Result<u32, TtsError> {
+            Ok(8_000)
+        }
+        fn text(&mut self, _text: &str, _speed: f32) -> Result<Vec<f32>, TtsError> {
+            Ok(self.utterance())
+        }
+        fn spell(&mut self, _text: &str, _speed: f32) -> Result<Vec<f32>, TtsError> {
+            Ok(self.utterance())
+        }
+        fn ipa(&mut self, _ipa: &str, _speed: f32) -> Result<Vec<f32>, TtsError> {
+            Ok(self.utterance())
+        }
+        fn emphasis_warning(&self) -> &'static str {
+            "padded-sink emphasis fallback"
+        }
+    }
+
+    /// Longest run of near-silence that is neither the leading nor the
+    /// trailing one, in samples.
+    fn longest_interior_silence(samples: &[f32]) -> usize {
+        let loud = |s: &f32| s.abs() >= 1e-3;
+        let Some(first) = samples.iter().position(loud) else {
+            return 0;
+        };
+        let last = samples.iter().rposition(loud).unwrap();
+        let mut longest = 0;
+        let mut run = 0;
+        for s in &samples[first..=last] {
+            if loud(s) {
+                run = 0;
+            } else {
+                run += 1;
+                longest = longest.max(run);
+            }
+        }
+        longest
+    }
+
+    #[test]
+    fn adjacent_speech_segments_leave_no_interior_dead_air() {
+        // "The JSON file is ready." — Text / Ipa / Text after the lexicon
+        // rewrite. The user asked for no pause, so there must be none.
+        let segs = [
+            ssml::Segment::Text("The ".into()),
+            ssml::Segment::Ipa("ˈdʒeɪsən".into()),
+            ssml::Segment::Text(" file is ready.".into()),
+        ];
+        let mut sink = PaddedSink::new();
+        let mut out = Vec::new();
+        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        let dead = longest_interior_silence(&out);
+        assert!(
+            dead <= 800,
+            "interior dead air of {} ms where none was requested",
+            dead / 8
+        );
+    }
+
+    #[test]
+    fn explicit_break_still_produces_its_silence() {
+        use std::time::Duration;
+        let segs = [
+            ssml::Segment::Text("before".into()),
+            ssml::Segment::Break(Duration::from_millis(500)),
+            ssml::Segment::Text("after".into()),
+        ];
+        let mut sink = PaddedSink::new();
+        let mut out = Vec::new();
+        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        assert!(
+            longest_interior_silence(&out) >= 4_000,
+            "the 500 ms <break> was swallowed"
+        );
+    }
+
     #[test]
     fn walker_strips_emphasis_markers_and_routes_to_text() {
         let seg = ssml::Segment::Emphasis {
