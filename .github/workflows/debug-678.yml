@@ -1,0 +1,66 @@
+name: debug-678
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: AVSpeech sidecar staging probe
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      KESHA_ENGINE_BIN: ${{ github.workspace }}/kesha-engine-darwin-arm64
+      KESHA_DEBUG: "1"
+      ENGINE_TAG: v1.24.9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Stage the published release assets
+        shell: bash
+        run: |
+          base="https://github.com/drakulavich/kesha-voice-kit/releases/download/$ENGINE_TAG"
+          curl -fsSL -o kesha-engine-darwin-arm64 "$base/kesha-engine-darwin-arm64"
+          curl -fsSL -o say-avspeech-darwin-arm64 "$base/say-avspeech-darwin-arm64"
+          chmod +x kesha-engine-darwin-arm64 say-avspeech-darwin-arm64
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 🔗 Link the CLI
+        shell: bash
+        run: bun link
+
+      - name: 🧾 Mark staged engine version
+        shell: bash
+        run: |
+          bun -e '
+            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${process.env.ENGINE_TAG.slice(1)}\n`);
+          '
+
+      - name: 🔊 Install English TTS models
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          cache-path: |
+            ~/.cache/kesha
+            ~/.cache/fluidaudio
+          cache-key: ${{ runner.os }}-kesha-models-tts-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          ffmpeg-provider: skip
+          install-args: --tts en
+          cache-write: "false"
+
+      - name: Control — release-path layout before the fix (asset name only)
+        continue-on-error: true
+        shell: bash
+        run: |
+          rm -f say-avspeech
+          ls -l kesha-engine-darwin-arm64 say-avspeech* || true
+          time bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice macos-en-US control-smoke
+
+      - name: Fixed — the staging build-engine.yml now does
+        shell: bash
+        run: |
+          cp -f say-avspeech-darwin-arm64 say-avspeech
+          chmod +x say-avspeech
+          ls -l kesha-engine-darwin-arm64 say-avspeech*
+          time bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice macos-en-US avspeech-smoke
