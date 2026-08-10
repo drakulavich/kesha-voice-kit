@@ -122,20 +122,25 @@ function cacheDirWithVadModel(): string {
 
 const engineBasename = process.platform === "win32" ? "kesha-engine.exe" : "kesha-engine";
 
-/** Runs `fn` with the two path-resolution vars forced to `env`, restoring whatever the shell had. */
-function withPathEnv<T>(env: Record<"KESHA_CACHE_DIR" | "KESHA_ENGINE_BIN", string | undefined>, fn: () => T): T {
-  const saved = { ...process.env };
-  try {
-    for (const [key, value] of Object.entries(env)) {
+type PathEnv = Record<"KESHA_CACHE_DIR" | "KESHA_ENGINE_BIN", string | undefined>;
+
+/** Runs `fn` with the two path-resolution vars forced to `env`, restoring the two it mutated. */
+function withPathEnv<T>(env: PathEnv, fn: () => T): T {
+  const saved: PathEnv = {
+    KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
+    KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
+  };
+  const apply = (values: PathEnv) => {
+    for (const [key, value] of Object.entries(values)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  };
+  try {
+    apply(env);
     return fn();
   } finally {
-    for (const key of ["KESHA_CACHE_DIR", "KESHA_ENGINE_BIN"]) {
-      if (saved[key] === undefined) delete process.env[key];
-      else process.env[key] = saved[key];
-    }
+    apply(saved);
   }
 }
 
