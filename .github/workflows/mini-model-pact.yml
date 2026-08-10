@@ -94,8 +94,12 @@ jobs:
         shell: bash
         run: |
           python3 -m venv /tmp/mini-venv && /tmp/mini-venv/bin/pip -q install 'onnx==1.22.0' numpy
-          /tmp/mini-venv/bin/python .github/scripts/generate-mini-models.py tests/fixtures/mini-models/kokoro
-          git diff --exit-code -- tests/fixtures/mini-models/kokoro
+          # Separated so the failure names itself: a toolchain that could not run is a
+          # different problem from bytes that came out different.
+          /tmp/mini-venv/bin/python .github/scripts/generate-mini-models.py tests/fixtures/mini-models/kokoro \
+            || { echo "::error::the generator could not run — toolchain problem, not drift"; exit 1; }
+          git diff --exit-code -- tests/fixtures/mini-models/kokoro \
+            || { echo "::error::the generator produced different bytes than the committed fixture"; exit 1; }
 
       - name: 🔍 Verify the recorded signature against the real model
         id: verify

@@ -7,6 +7,17 @@
 //! - non-silent RMS,
 //! - plausible duration relative to grapheme count.
 //!
+//! What this owns, since the Kokoro graph here is a stand-in (#741): the duration
+//! band and RMS checks are **stand-in sanity** — that text of a given length yields
+//! audio of a plausible length, unclipped and non-silent. They are a weak oracle for
+//! phonemisation: the measured ratios sit at 0.58-1.02 inside a [0.3, 1.5] band, so
+//! halving the phoneme count would still pass.
+//!
+//! **Phoneme fidelity is owned by the IPA assertions** in `tts::charsiu::tests` and
+//! `tts::sessions::tests`, which pin exact output (`bonjour` -> `bɔ̃ʒuʁ`) and zero
+//! post-remap OOV. Both refuse to skip when `KESHA_REQUIRE_G2P_TESTS` is set, so the
+//! lane that stages CharsiuG2P cannot go green without them.
+//!
 //! Skip condition: `CHARSIU_ONNX` unset OR Kokoro model/voice absent from cache.
 //! Run with:
 //!   cd rust && CHARSIU_ONNX=~/.cache/kesha/models/g2p/byt5-tiny \

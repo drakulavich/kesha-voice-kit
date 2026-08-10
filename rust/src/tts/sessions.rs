@@ -262,6 +262,11 @@ mod tests {
     #[test]
     fn charsiu_cache_loads_once_and_reuses() {
         let Some(dir_os) = std::env::var_os("CHARSIU_ONNX") else {
+            assert!(
+                std::env::var_os("KESHA_REQUIRE_G2P_TESTS").is_none(),
+                "CHARSIU_ONNX unset while KESHA_REQUIRE_G2P_TESTS is set — this lane stages \
+             CharsiuG2P, and these IPA assertions are what own phoneme fidelity (#741)"
+            );
             eprintln!("CHARSIU_ONNX not set; skipping");
             return;
         };

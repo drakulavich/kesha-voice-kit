@@ -289,16 +289,19 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
 
-      - name: 🎚️ Stage Kokoro stand-ins
-        shell: bash
-        run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
-
       # The only lane carrying weights nothing can stand in for: CharsiuG2P for the
       # multilingual phonemiser, and Vosk-RU for its one synth test (#741).
       - name: 🎚️ Setup real TTS models
         uses: ./.github/actions/setup-kokoro-models
         with:
           vosk: "true"
+
+      # After the restore, never before: an archive written under an older key still
+      # carries a real model.onnx, and unpacking it over a staged stand-in would put
+      # this lane back on weights it did not promise.
+      - name: 🎚️ Stage Kokoro stand-ins
+        shell: bash
+        run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
 
       - name: 📈 Rust coverage
         shell: bash

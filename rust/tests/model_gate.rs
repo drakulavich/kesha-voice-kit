@@ -125,6 +125,49 @@ fn every_gate_refuses_a_mini_when_the_lane_promised_real_models() {
     );
 }
 
+/// The reverse direction at the other two entry points, and the cell neither the
+/// tier nor the marker covers: `mini` promised with nothing staged at all, which
+/// must still fail rather than skip.
+#[test]
+fn the_other_gates_refuse_real_weights_and_an_empty_layout_when_minis_were_promised() {
+    let empty = std::env::temp_dir().join(format!("kesha-mini-rev-{}", std::process::id()));
+    let voices = empty.join("models/kokoro-82m/voices");
+    std::fs::create_dir_all(&voices).unwrap();
+    // Unmarked, so these read as real weights.
+    std::fs::write(empty.join("models/kokoro-82m/model.onnx"), b"stub").unwrap();
+    std::fs::write(voices.join("am_michael.bin"), b"stub").unwrap();
+    std::fs::write(voices.join("em_alex.bin"), b"stub").unwrap();
+
+    std::env::set_var("KOKORO_MODEL", empty.join("models/kokoro-82m/model.onnx"));
+    std::env::set_var("KOKORO_VOICE", voices.join("am_michael.bin"));
+    std::env::set_var("KESHA_REQUIRE_MODEL_TESTS", "mini");
+    let by_env = std::panic::catch_unwind(common::kokoro_paths_or_skip);
+    let by_voice = std::panic::catch_unwind(|| common::kokoro_voice_or_skip(&empty, "em_alex"));
+
+    // Nothing staged at all: the tier is promised and no gate can resolve.
+    std::env::remove_var("KOKORO_MODEL");
+    std::env::remove_var("KOKORO_VOICE");
+    std::env::set_var("KESHA_CACHE_DIR", empty.join("nowhere"));
+    let nothing_staged = std::panic::catch_unwind(common::kokoro_cache_dir_or_skip);
+
+    std::env::remove_var("KESHA_REQUIRE_MODEL_TESTS");
+    std::env::remove_var("KESHA_CACHE_DIR");
+    std::fs::remove_dir_all(&empty).ok();
+
+    assert!(
+        by_env.is_err(),
+        "kokoro_paths_or_skip must refuse real weights on a mini lane"
+    );
+    assert!(
+        by_voice.is_err(),
+        "kokoro_voice_or_skip must refuse real weights on a mini lane"
+    );
+    assert!(
+        nothing_staged.is_err(),
+        "a promised tier with nothing staged must fail, not skip"
+    );
+}
+
 #[test]
 fn the_flag_names_which_weights_a_lane_promised() {
     use common::RequiredModels::{Mini, Real};
