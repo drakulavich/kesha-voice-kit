@@ -241,6 +241,17 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
                     incomplete_bundle_hint()
                 ))
             })?;
+        // FluidAudio phonemizes raw text itself, so `en::normalize_segments`
+        // never runs here and substituting IPA into the text is not an option.
+        // Handing it the table instead makes our pronunciations authoritative
+        // ahead of its bundled Misaki lexicon and its G2P fallback (#818).
+        if crate::tts::en::is_en(lang) {
+            audio
+                .set_kokoro_english_lexicon(crate::tts::en::ipa_overrides())
+                .map_err(|e| {
+                    anyhow::Error::new(e).context("install the English pronunciation overrides")
+                })?;
+        }
         f(&audio)
     })
 }

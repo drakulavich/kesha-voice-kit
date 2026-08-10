@@ -26,7 +26,7 @@ const STOP_LIST: &[&str] = &[
 /// Token → IPA phoneme map. Keys are case-sensitive. Values use IPA without
 /// syllable separators — `infer_ipa` accepts stress (`ˈ` `ˌ`) and length (`ː`)
 /// marks but not `.` separators.
-const IPA_LEXICON: &[(&str, &str)] = &[
+pub(super) const IPA_LEXICON: &[(&str, &str)] = &[
     ("EPAM", "ˈiːpæm"),
     ("JSON", "ˈdʒeɪsən"),
     ("JPEG", "ˈdʒeɪpɛɡ"),
@@ -239,31 +239,26 @@ mod tests {
         }
     }
 
-    /// A failure here is a maintainer-side data error (typo/wrong char), not a code bug.
+    /// A failure here is a maintainer-side data error (typo/wrong char), not a
+    /// code bug. Both Kokoro paths encode an IPA string character by character
+    /// against the same vocab and drop what it does not cover — silently, on
+    /// purpose, matching upstream misaki — so a wrong character costs the
+    /// phoneme rather than raising anything. FluidAudio's ANE chain ships a
+    /// byte-identical `vocab.json`, which is what lets the ANE path take these
+    /// values verbatim through `setEnglishCustomLexicon` (#818).
     #[test]
-    fn ipa_lexicon_values_are_well_formed() {
+    fn ipa_lexicon_values_survive_kokoro_tokenization() {
+        let tokenizer = crate::tts::tokenizer::Tokenizer::load().expect("kokoro vocab");
         for (key, ipa) in IPA_LEXICON {
             assert!(!ipa.is_empty(), "IPA_LEXICON entry {key:?} has empty value");
-            for ch in ipa.chars() {
-                let ok = ch.is_ascii_lowercase()           // a-z (rare in IPA but ok)
-                    || ch.is_whitespace()                  // space-separated phoneme groups
-                    || matches!(
-                        ch,
-                        // Stress + length + syllable separator
-                        'ˈ' | 'ˌ' | 'ː' | '.' |
-                        // Vowel symbols
-                        'ə' | 'ɛ' | 'ɪ' | 'ɒ' | 'ɔ' | 'ʌ' | 'ʊ' | 'æ' | 'ɑ' |
-                        // Consonant symbols
-                        'ʃ' | 'ʒ' | 'ʧ' | 'ʤ' | 'ŋ' | 'θ' | 'ð' | 'ɹ' | 'ɾ' | 'ɫ' |
-                        // Velar g (IPA U+0261, distinct from ASCII 'g') + tie / glottal
-                        'ɡ' | 'ʔ' | '͡'
-                    );
-                assert!(
-                    ok,
-                    "IPA_LEXICON[{key:?}] contains unexpected char {ch:?} (U+{:04X})",
-                    ch as u32
-                );
-            }
+            let dropped: Vec<char> = ipa
+                .chars()
+                .filter(|c| tokenizer.encode(&c.to_string()).is_empty())
+                .collect();
+            assert!(
+                dropped.is_empty(),
+                "IPA_LEXICON[{key:?}] = {ipa:?} has characters Kokoro cannot encode: {dropped:?}"
+            );
         }
     }
 }
