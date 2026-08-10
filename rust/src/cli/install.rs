@@ -98,7 +98,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
         );
         let t = std::time::Instant::now();
         let result = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
-            fluidaudio_rs::FluidAudio::new()
+            models::fluidaudio_bridge(&models::fluidaudio_diarize_location())
                 .and_then(|fa| fa.compile_diarization_model(&diarize_pkg))
         });
         match result {

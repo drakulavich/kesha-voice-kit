@@ -7,8 +7,10 @@ import {
   fluidAsrCacheInfo,
   fluidAsrCachePath,
   isCoremlBackend,
+  legacyFluidAsrCachePath,
 } from "../../src/fluid-asr-cache";
 import { defaultBackendForPlatform, unavailableBackendError } from "../../src/cli/install";
+import { isInsideDir } from "../../src/cache-layout";
 
 describe("isCoremlBackend", () => {
   test("trusts the engine's reported backend over the host platform", () => {
@@ -28,7 +30,7 @@ describe("fluidAsrCacheInfo", () => {
   // `Repo.folderName` strips the `-coreml` suffix, and a `…-v3-coreml` sibling exists
   // on disk. Reporting that one would call a healthy install broken.
   test("points at the directory FluidAudio loads from, not the -coreml sibling", () => {
-    const path = fluidAsrCachePath("/tmp/home");
+    const path = legacyFluidAsrCachePath("/tmp/home");
     expect(path).toBe(
       join("/tmp/home", "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3"),
     );
@@ -45,7 +47,7 @@ describe("fluidAsrCacheInfo", () => {
 
   // `.mlmodelc` are compiled-model directories holding `coremldata.bin`, not flat files.
   function seed(homeDir: string, entries: string[]): string {
-    const cache = fluidAsrCachePath(homeDir);
+    const cache = legacyFluidAsrCachePath(homeDir);
     mkdirSync(cache, { recursive: true });
     for (const e of entries) {
       if (e.endsWith(".mlmodelc")) {
@@ -108,7 +110,7 @@ describe("fluidAsrCacheInfo", () => {
   test("reports an empty bundle directory as absent", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-cache-bare-"));
     try {
-      mkdirSync(fluidAsrCachePath(dir), { recursive: true });
+      mkdirSync(legacyFluidAsrCachePath(dir), { recursive: true });
       expect(fluidAsrCacheInfo({ platform: "darwin", arch: "arm64", homeDir: dir }).exists).toBe(
         false,
       );
@@ -120,9 +122,55 @@ describe("fluidAsrCacheInfo", () => {
   test("reports absent rather than throwing when the bundle was never fetched", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-cache-empty-"));
     try {
-      const info = fluidAsrCacheInfo({ platform: "darwin", arch: "arm64", homeDir: dir });
+      const info = fluidAsrCacheInfo({
+        platform: "darwin",
+        arch: "arm64",
+        homeDir: dir,
+        cacheRoot: join(dir, "cache"),
+      });
       expect(info.supported).toBe(true);
       expect(info.exists).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Relocating a bundle FluidAudio already holds would re-download ~460 MB, so a complete
+  // legacy copy wins and nothing moves (#688).
+  test("keeps a complete legacy bundle where FluidAudio already put it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-legacy-"));
+    try {
+      const legacy = seed(dir, COMPLETE);
+      expect(fluidAsrCachePath(dir, join(dir, "cache"))).toBe(legacy);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A fresh install has no legacy bundle, so the engine roots it under the Kesha cache.
+  // Reporting the old path here would call every new install broken (#688).
+  test("follows the engine into the Kesha cache when there is no legacy bundle", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-fresh-"));
+    try {
+      const cacheRoot = join(dir, "cache");
+      expect(fluidAsrCachePath(dir, cacheRoot)).toBe(
+        join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3"),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // `status --disk` and `doctor` both branch on this to decide whether the bundle is already
+  // inside the cache total, and so whether calling it "external" is a double count (#688/#790).
+  test("containment in the cache root tracks which location won", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-inside-"));
+    try {
+      const cacheRoot = join(dir, "cache");
+      expect(isInsideDir(fluidAsrCachePath(dir, cacheRoot), cacheRoot)).toBe(true);
+
+      seed(dir, COMPLETE);
+      expect(isInsideDir(fluidAsrCachePath(dir, cacheRoot), cacheRoot)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -182,6 +230,15 @@ describe("Rust/TS FluidAudio contract agreement", () => {
   });
 
   test("cache directory name matches", () => {
-    expect(rust).toContain(`.join("${basename(fluidAsrCachePath("/tmp/home"))}")`);
+    expect(rust).toContain(`.join("${basename(legacyFluidAsrCachePath("/tmp/home"))}")`);
+  });
+
+  // Both sides derive the relocated bundle from the cache root; a rename on one side alone
+  // would point doctor at a directory the engine never writes (#688).
+  test("relocated bundle path matches", () => {
+    expect(rust).toContain(`cache_dir().join("fluidaudio")`);
+    expect(fluidAsrCachePath("/tmp/home", "/tmp/cache")).toBe(
+      join("/tmp/cache", "fluidaudio", "parakeet-tdt-0.6b-v3"),
+    );
   });
 });

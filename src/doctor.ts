@@ -241,8 +241,11 @@ function collectCache(
   );
   if (coreml) {
     const fluidAsr = fluidAsrCacheInfo();
+    // A relocated bundle is inside the cache and already inside `totalBytes`; calling it
+    // external there would send a user hunting for a directory that no longer exists (#688).
+    const external = isInsideDir(fluidAsr.path, cache) ? "" : " (external)";
     components.push({
-      label: "ASR (Parakeet, FluidAudio) (external)",
+      label: `ASR (Parakeet, FluidAudio)${external}`,
       path: fluidAsr.path,
       exists: fluidAsr.exists,
       sizeBytes: fluidAsr.sizeBytes,

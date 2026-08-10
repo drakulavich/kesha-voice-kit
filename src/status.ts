@@ -199,7 +199,11 @@ function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
   const engineOutsideCache = isInsideDir(engineDir, cache) ? 0 : dirSizeBytes(engineDir);
   const fluidKokoro = fluidKokoroCacheInfo();
   // Only walked when it is the backend in play; otherwise the size is computed and dropped.
-  const fluidAsr = coreml ? fluidAsrCacheInfo() : null;
+  // A relocated bundle sits inside the cache and is already counted in `totalBytes`, so
+  // listing it under "not included in Kesha total" would be a double count (#688).
+  const fluidAsrInfo = coreml ? fluidAsrCacheInfo() : null;
+  const fluidAsr =
+    fluidAsrInfo && !isInsideDir(fluidAsrInfo.path, cache) ? fluidAsrInfo : null;
 
   return {
     cachePath: cache,

@@ -168,6 +168,36 @@ darwin) and the native `fluidaudio-rs` CoreML path (`coreml` / `system_diarize`)
   identity, so a recompile is a cold ~98 s cost (see
   [#444](https://github.com/drakulavich/kesha-voice-kit/issues/444)).
 
+### Where FluidAudio's models live
+
+FluidAudio picks its own directories, historically three of them outside
+`KESHA_CACHE_DIR` entirely. On darwin-arm64 the engine now hands it a root of
+`<cache>/fluidaudio` instead, and each subsystem appends its own repo folder
+underneath: `parakeet-tdt-0.6b-v3/` (ASR), `kokoro-82m-coreml/ANE/` (Kokoro
+bundles and the voice packs Kesha pre-stages) and
+`fluidaudio-rs/SortformerCompiled/` (compiled diarizer). See
+[#688](https://github.com/drakulavich/kesha-voice-kit/issues/688).
+
+**Existing installs do not move.** Each subsystem is resolved independently,
+and a legacy directory that already holds a usable bundle keeps being read from
+where it is — relocating would make FluidAudio re-download it, roughly 2 GB on
+a full install. Only what is absent lands under the cache, so in practice the
+new layout applies to fresh installs. Nothing is ever moved or deleted; the two
+layouts simply coexist, and `kesha doctor` prints whichever is in play.
+
+Two directories stay outside the cache regardless, both upstream constraints
+rather than choices:
+
+| Path | Why |
+|---|---|
+| `~/Library/Application Support/FluidAudio/Models/silero-vad` | The bridge accepts a root for ASR, Kokoro and the compiled diarizer only; VAD and the offline diarizer are not plumbed yet. ~1 MB. |
+| `~/.cache/fluidaudio/Models/kokoro` | Kokoro's G2P assets. `KokoroAneManager` passes `nil` for these deliberately — `G2PModel.shared` is a singleton pinned to this path, so honouring a custom directory would download to a path it cannot read. ~24 MB. |
+
+So a full uninstall is `rm -rf ~/.cache/kesha` plus those two, and on a
+pre-#688 install also `~/Library/Application Support/FluidAudio`,
+`~/.cache/fluidaudio` and `~/Library/Application Support/fluidaudio-rs`. Run
+`kesha status --disk` first: it prints every root actually in use.
+
 ## Build, test & release
 
 - **TS tests:** `tests/unit/` + `tests/integration/`, run with `bun test` /

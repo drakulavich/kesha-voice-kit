@@ -41,7 +41,8 @@ impl StreamingAsrSession {
             .ok()
             .map(OwnedFd::from);
 
-        let audio = FluidAudio::new().context("failed to initialize FluidAudio bridge")?;
+        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location())
+            .context("failed to initialize FluidAudio bridge")?;
         with_silenced_stdout(devnull.as_ref(), || audio.init_streaming_asr()).context(
             "failed to initialize FluidAudio streaming ASR \
              (first run compiles models for ANE)",

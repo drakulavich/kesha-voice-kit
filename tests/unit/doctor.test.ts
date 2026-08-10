@@ -633,7 +633,7 @@ describe("collectDoctorReport probe and cache accounting", () => {
     }
   });
 
-  posixEngineTest("a CoreML engine gets the external ASR row, not the ONNX model dir", async () => {
+  posixEngineTest("a CoreML engine gets the FluidAudio ASR row, not the ONNX model dir", async () => {
     const { dir, binDir } = stage("kesha-doctor-coreml-cache-");
     writeFakeEngine(
       join(binDir, "kesha-engine"),
@@ -647,7 +647,9 @@ exit 2
     );
     try {
       const labels = (await collectDoctorReport()).cache.components.map((c) => c.label);
-      expect(labels).toContain("ASR (Parakeet, FluidAudio) (external)");
+      // No legacy bundle here, so the engine roots it inside the cache — calling that row
+      // external would send the user hunting for a directory that is not there (#688).
+      expect(labels).toContain("ASR (Parakeet, FluidAudio)");
       expect(labels).not.toContain("ASR (Parakeet)");
     } finally {
       rmSync(dir, { recursive: true, force: true });
