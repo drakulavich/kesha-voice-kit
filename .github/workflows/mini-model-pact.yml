@@ -1,0 +1,117 @@
+name: "🧬 Mini-Model Pact"
+
+# Provider verification for the committed mini stand-ins (#741), the same shape the
+# capability pact uses for flags (#798).
+#
+# `rust/tests/mini_model_pact.rs` asserts the mini presents Kokoro's I/O signature on
+# every PR without downloading anything. That is only sound while the recording still
+# matches the real model, so this job re-derives the signature from the real weights
+# and fails on drift. It downloads the Kokoro graph (~326 MB) and nothing else.
+#
+# Same test, same extractor, different subject: `KESHA_PACT_MODEL` points it at the
+# downloaded model instead of the fixture, so a drift here means the *recording* is
+# wrong, not the mini.
+#
+# RE-RECORDING. A model bump that renames a tensor or changes a rank fails this job on
+# purpose, and the fix is never to relax the check:
+#
+#   1. confirm the new weights are the intended ones (verify-pin-bump skill)
+#   2. update `tests/fixtures/mini-models/kokoro/signature.json` from the run log's diff
+#   3. regenerate the mini so it presents the new signature — see the header of
+#      `.github/scripts/generate-mini-models.py` — and commit both
+#
+# Skipping step 3 is the failure mode this job exists to prevent: a signature.json that
+# matches the real model but not the mini leaves every mini-backed lane green against a
+# model nobody runs.
+
+on:
+  schedule:
+    # Weekly, a few hours off the capability pact so two model downloads never overlap.
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  pact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - uses: taiki-e/install-action@1beb33eee6d086258184383af9a538940be190ed # v2.85.6
+        with:
+          tool: nextest
+
+      - name: 🎧 Install system audio deps
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
+
+      # The URL and the pinned digest both come from the recording, so a mirror or a
+      # re-upload cannot quietly substitute different weights for this check.
+      - name: ⬇️ Fetch the real Kokoro graph
+        id: fetch
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/fetch-pact-model.sh tests/fixtures/mini-models/kokoro/signature.json /tmp/kokoro-real.onnx
+
+      - name: 🔍 Verify the recorded signature against the real model
+        id: verify
+        if: steps.fetch.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          KESHA_PACT_MODEL: /tmp/kokoro-real.onnx
+        run: cd rust && cargo nextest run --features tts -E 'binary(mini_model_pact)'
+
+      - name: 📣 Report an unverified mini-model pact (scheduled only)
+        if: github.event_name == 'schedule' && (steps.fetch.outcome == 'failure' || steps.verify.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          {
+            echo "## The Kokoro mini-model pact was not confirmed against the real weights"
+            echo
+            echo "Read the run log before acting — this fails for two different reasons:"
+            echo
+            echo "- **The signature drifted.** The log shows a \`left\`/\`right\` mismatch of"
+            echo "  tensor names, dtypes or ranks. Every mini-backed lane is now asserting"
+            echo "  against a shape the real model no longer has. Re-record per the header of"
+            echo "  \`.github/workflows/mini-model-pact.yml\` — and regenerate the mini too,"
+            echo "  or the recording will match the real model but not the stand-in."
+            echo "- **Verification could not run.** The log ends at the download or the"
+            echo "  sha256 check. The pact is not implicated; the run proved nothing either"
+            echo "  way. Usually a network failure or an upstream re-upload."
+            echo
+            echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > /tmp/mini-pact-body.md
+          bash .github/scripts/upsert-audit-issue.sh /tmp/mini-pact-body.md "Mini-model pact unverified: kokoro-82m" pact-drift
+
+      - name: ❌ Fail an unverified pact
+        if: steps.fetch.outcome == 'failure' || steps.verify.outcome == 'failure'
+        shell: bash
+        run: exit 1

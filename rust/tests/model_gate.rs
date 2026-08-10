@@ -19,6 +19,23 @@
 mod common;
 
 #[test]
+fn a_mini_staged_lane_is_distinguishable_from_a_real_one() {
+    let mini = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("tests/fixtures/mini-models/kokoro/model.onnx");
+    assert!(
+        common::staged_with_mini_models(&mini),
+        "the committed mini must carry its marker, or KESHA_REQUIRE_MODEL_TESTS \
+         would accept it as real coverage"
+    );
+    assert!(
+        !common::staged_with_mini_models(std::path::Path::new("/nonexistent/model.onnx")),
+        "an unmarked path is treated as real"
+    );
+}
+
+#[test]
 fn a_missing_model_skips_by_default_and_fails_where_models_are_promised() {
     assert!(!common::missing_model_is_fatal(None));
     assert!(!common::missing_model_is_fatal(Some("")));

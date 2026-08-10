@@ -1,0 +1,8 @@
+{
+  "_comment": "Kokoro-82M's ONNX I/O signature, recorded from the real model via rust/tests/mini_model_pact.rs. Both the committed mini and the real model must match it: the mini on every PR, the real one weekly in mini-model-pact.yml. Re-record only when the upstream model genuinely changes — see the workflow header.",
+  "model": "kokoro-82m",
+  "source_url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
+  "recorded_from_sha256": "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
+  "inputs": ["tokens: int64[1,-1]", "style: float32[1,256]", "speed: float32[1]"],
+  "outputs": ["audio: float32[-1]"]
+}

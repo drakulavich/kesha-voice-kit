@@ -11,7 +11,7 @@
 
 #![allow(dead_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use hound::SampleFormat;
 
@@ -93,6 +93,25 @@ pub fn models_required() -> bool {
     missing_model_is_fatal(std::env::var("KESHA_REQUIRE_MODEL_TESTS").ok().as_deref())
 }
 
+/// The mini stand-ins satisfy every structural gate by construction, so a lane
+/// staged with them would pass `KESHA_REQUIRE_MODEL_TESTS` having proved nothing
+/// about the real weights — the loud signal would go quiet exactly where it
+/// matters. The marker beside the model is what tells the two apart (#741).
+pub fn staged_with_mini_models(model: &Path) -> bool {
+    model
+        .parent()
+        .is_some_and(|dir| dir.join("MINI-MODEL.json").exists())
+}
+
+fn reject_mini_models_when_real_are_required(model: &Path) {
+    assert!(
+        !(models_required() && staged_with_mini_models(model)),
+        "KESHA_REQUIRE_MODEL_TESTS is set but {} is a mini stand-in — a lane cannot \
+         claim real-model coverage off a synthetic signature (#741)",
+        model.display()
+    );
+}
+
 /// `KOKORO_MODEL` + `KOKORO_VOICE` env-var skip gate.
 ///
 /// Returns `Some((model, voice))` when both vars are set, `None` otherwise.
@@ -101,6 +120,7 @@ pub fn models_required() -> bool {
 /// reason themselves so each test owns its own message.
 pub fn kokoro_paths_or_skip() -> Option<(String, String)> {
     if let (Ok(m), Ok(v)) = (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
+        reject_mini_models_when_real_are_required(Path::new(&m));
         return Some((m, v));
     }
     assert!(
