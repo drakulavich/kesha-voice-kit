@@ -190,7 +190,7 @@ function logExternalRoots(disk: StatusDiskUsage): void {
       log.info(`    ${s.label}: ${humanBytes(s.sizeBytes)}`);
     }
     if (root.otherBytes > 0) {
-      log.info(pc.dim(`    ${humanBytes(root.otherBytes)} not read by the engine`));
+      log.info(pc.dim(`    ${humanBytes(root.otherBytes)} not attributed to any subsystem above`));
     }
   }
   log.info(`  ${pc.bold("Grand total")}: ${pc.bold(humanBytes(disk.grandTotalBytes))}`);

@@ -29,6 +29,8 @@ const legacy = {
     join(home, "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3"),
   ane: (home: string) => join(home, ".cache", "fluidaudio", "Models", "kokoro-82m-coreml"),
   g2p: (home: string) => join(home, ".cache", "fluidaudio", "Models", "kokoro"),
+  vad: (home: string) =>
+    join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad"),
   sortformer: (home: string) =>
     join(home, "Library", "Application Support", "fluidaudio-rs", "SortformerCompiled"),
 };
@@ -50,11 +52,13 @@ describe("fluidSubsystemDirs", () => {
       write(join(legacy.ane(home), "bundle.bin"), 100);
       write(join(legacy.g2p(home), "g2p_vocab.json"), 30);
       write(join(legacy.sortformer(home), "compiled.bin"), 200);
+      write(join(legacy.vad(home), "model.mlmodelc"), 5);
 
       const resolved = fluidSubsystemDirs({ homeDir: home, cacheRoot });
       expect(resolved.every((s) => !s.inCache)).toBe(true);
       expect(dirsByLabel(home, cacheRoot)).toEqual({
         "ASR (Parakeet)": legacy.asr(home),
+        "VAD (Silero, FluidAudio)": legacy.vad(home),
         "TTS (Kokoro ANE)": legacy.ane(home),
         "TTS (Kokoro G2P)": legacy.g2p(home),
         "Diarization (Sortformer)": legacy.sortformer(home),
@@ -175,8 +179,9 @@ describe("fluidExternalRoots", () => {
     });
   });
 
-  // FluidAudio's own download leftovers — the `…-v3-coreml` sibling and silero-vad — are
-  // real bytes in a root Kesha created, so a total that drops them is not the honest one.
+  // FluidAudio's own download leftovers are real bytes in a root Kesha created, so a total
+  // that drops them is not the honest one. The `…-v3-coreml` sibling is genuinely orphaned;
+  // silero-vad is not, and must not be lumped in with it.
   test("bytes no subsystem accounts for are reported as residue, not dropped", () => {
     withHome((home, cacheRoot) => {
       writeCompleteAsr(legacy.asr(home));
@@ -186,7 +191,34 @@ describe("fluidExternalRoots", () => {
 
       const roots = fluidExternalRoots({ homeDir: home, cacheRoot });
       expect(roots[0]!.sizeBytes).toBe(125);
-      expect(roots[0]!.otherBytes).toBe(75);
+      expect(roots[0]!.subsystems.map((s) => s.label)).toEqual([
+        "ASR (Parakeet)",
+        "VAD (Silero, FluidAudio)",
+      ]);
+      expect(roots[0]!.otherBytes).toBe(70);
+    });
+  });
+
+  // The bridge passes no directory for VAD, so FluidAudio keeps its own copy here whatever
+  // the models root is — calling it unread would invite deleting a model still in use (#688).
+  test("FluidAudio's own VAD copy is named, and stays external on a fresh install", () => {
+    withHome((home, cacheRoot) => {
+      const vad = join(
+        home,
+        "Library",
+        "Application Support",
+        "FluidAudio",
+        "Models",
+        "silero-vad",
+      );
+      write(join(vad, "model.mlmodelc"), 12);
+
+      const resolved = fluidSubsystemDirs({ homeDir: home, cacheRoot }).find(
+        (s) => s.label === "VAD (Silero, FluidAudio)",
+      );
+      expect(resolved?.path).toBe(vad);
+      expect(resolved?.inCache).toBe(false);
+      expect(fluidExternalRoots({ homeDir: home, cacheRoot })[0]!.otherBytes).toBe(0);
     });
   });
 

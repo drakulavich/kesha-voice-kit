@@ -532,7 +532,7 @@ describe("renderStatus turns a report into the states a user acts on", () => {
     expect(render(report({ disk: diskUsage() }))).not.toContain("FluidAudio");
   });
 
-  test("a root the engine has stopped reading says so rather than naming a subsystem", () => {
+  test("a root with nothing left to attribute says so rather than naming a subsystem", () => {
     const output = render(
       report({
         disk: diskUsage({
@@ -544,7 +544,7 @@ describe("renderStatus turns a report into the states a user acts on", () => {
         }),
       }),
     );
-    expect(output).toContain("not read by the engine");
+    expect(output).toContain("not attributed to any subsystem above");
     expect(output).not.toContain("ASR (Parakeet)");
   });
 

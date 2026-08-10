@@ -54,6 +54,15 @@ function kokoroG2pDir(homeDir: string): string {
   return join(homeDir, ".cache", "fluidaudio", "Models", "kokoro");
 }
 
+/**
+ * FluidAudio's own VAD copy, distinct from the Silero model Kesha pins under `<cache>/models`.
+ * The bridge passes no directory for VAD, so this stays put whatever the models root is —
+ * and it is in use, which is why it is named rather than left in a root's residue (#688).
+ */
+function fluidVadDir(homeDir: string): string {
+  return join(homeDir, "Library", "Application Support", "FluidAudio", "Models", "silero-vad");
+}
+
 function legacySortformerDir(homeDir: string): string {
   return join(homeDir, "Library", "Application Support", "fluidaudio-rs", "SortformerCompiled");
 }
@@ -89,6 +98,7 @@ export function fluidSubsystemDirs(options: FluidRootsOptions = {}): FluidSubsys
       label: "ASR (Parakeet)",
       path: at(asrLegacy, fluidAsrCacheReady(asrLegacy), "parakeet-tdt-0.6b-v3"),
     },
+    { label: "VAD (Silero, FluidAudio)", path: fluidVadDir(homeDir) },
     {
       label: "TTS (Kokoro ANE)",
       path: at(aneLegacy, dirHasEntries(aneLegacy), "kokoro-82m-coreml"),
@@ -107,9 +117,9 @@ export function fluidSubsystemDirs(options: FluidRootsOptions = {}): FluidSubsys
 }
 
 /**
- * Every FluidAudio tree holding bytes outside the Kesha cache. A root with no subsystem
- * named is one the engine has stopped reading — still real disk usage, and the only way a
- * user finds it to delete it (#688).
+ * Every FluidAudio tree holding bytes outside the Kesha cache, with the subsystems still
+ * resolved into it. Bytes no subsystem claims stay in `otherBytes` rather than being dropped:
+ * they are real disk usage, and naming the root is the only way a user finds them (#688).
  */
 export function fluidExternalRoots(options: FluidRootsOptions = {}): FluidExternalRoot[] {
   const homeDir = options.homeDir ?? diagnosticHomeDir();
@@ -123,7 +133,8 @@ export function fluidExternalRoots(options: FluidRootsOptions = {}): FluidExtern
     if (sizeBytes === 0) continue;
     const subsystems = external
       .filter((s) => isInsideDir(s.path, path))
-      .map((s) => ({ label: s.label, path: s.path, sizeBytes: dirSizeBytes(s.path) }));
+      .map((s) => ({ label: s.label, path: s.path, sizeBytes: dirSizeBytes(s.path) }))
+      .filter((s) => s.sizeBytes > 0);
     const accounted = subsystems.reduce((n, s) => n + s.sizeBytes, 0);
     roots.push({ path, sizeBytes, subsystems, otherBytes: Math.max(0, sizeBytes - accounted) });
   }

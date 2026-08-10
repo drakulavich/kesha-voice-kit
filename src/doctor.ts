@@ -470,7 +470,7 @@ function formatExternalRootsSection(cache: DoctorReport["cache"]): string[] {
       lines.push(`    ${s.label}: ${humanBytes(s.sizeBytes)}`);
     }
     if (root.otherBytes > 0) {
-      lines.push(`    ${humanBytes(root.otherBytes)} not read by the engine`);
+      lines.push(`    ${humanBytes(root.otherBytes)} not attributed to any subsystem above`);
     }
   }
   lines.push(`  Grand total: ${humanBytes(cache.grandTotalBytes)}`);

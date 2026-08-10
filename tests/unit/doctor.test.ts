@@ -540,7 +540,7 @@ describe("the human report states what each component is doing (#770)", () => {
     expect(output).toContain("FluidAudio caches outside the Kesha cache:");
     expect(output).toContain("/home/Library/Application Support/FluidAudio: 4.0 KB");
     expect(output).toContain("ASR (Parakeet): 3.0 KB");
-    expect(output).toContain("1.0 KB not read by the engine");
+    expect(output).toContain("1.0 KB not attributed to any subsystem above");
     expect(output).toContain("Grand total: 12.0 KB");
 
     expect(formatDoctorReport(doctorReport())).not.toContain("FluidAudio caches outside");
