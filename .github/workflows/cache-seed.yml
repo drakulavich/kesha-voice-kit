@@ -48,12 +48,13 @@ concurrency:
 jobs:
   kokoro:
     name: Kokoro models (${{ matrix.os }})
+    # Linux only: the macOS and Windows lanes run against the committed Kokoro
+    # stand-in and download nothing, so there is no entry left to seed for them
+    # (#741). CharsiuG2P and Vosk-RU are platform-independent ONNX, covered once.
     strategy:
-      # Each OS owns a separate key, so a network flake on one must not cancel
-      # seeding for the others.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
@@ -74,7 +75,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-models-v2-${{ runner.os }}-vosk${{ runner.os == 'Linux' }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+          key: kokoro-models-v3-${{ runner.os }}-vosk${{ runner.os == 'Linux' }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
           lookup-only: true
 
       # Restores through the prefix key (so a model-set change tops up the delta
@@ -92,7 +93,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-models-v2-${{ runner.os }}-vosk${{ runner.os == 'Linux' }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+          key: kokoro-models-v3-${{ runner.os }}-vosk${{ runner.os == 'Linux' }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
 
   parakeet:
     name: Parakeet CoreML models

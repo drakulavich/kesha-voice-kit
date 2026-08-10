@@ -341,7 +341,13 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
+      # mcp-e2e's synthesis case needs a Kokoro model to resolve; the committed
+      # stand-in satisfies its structural assertions, so it finally runs here
+      # without this lane downloading a graph for it (#741).
       - name: 🧪 Integration tests
+        env:
+          KOKORO_MODEL: ${{ github.workspace }}/tests/fixtures/mini-models/kokoro/model.onnx
+          KOKORO_VOICE: ${{ github.workspace }}/tests/fixtures/mini-models/kokoro/am_michael.bin
         run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration.xml
         timeout-minutes: 10
 

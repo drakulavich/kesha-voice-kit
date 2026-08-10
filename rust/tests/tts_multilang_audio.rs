@@ -35,12 +35,14 @@ fn default_voice(lang: &str) -> &'static str {
 /// Skip gate: both `CHARSIU_ONNX` must be set AND Kokoro model + the relevant
 /// voice must be present. Returns `(model_path, voice_path)` or `None`.
 fn multilang_paths_or_skip(lang: &str) -> Option<(PathBuf, PathBuf)> {
-    // Gate 1: G2P model present.
+    // Gate 1: G2P model present. Its own flag rather than the Kokoro tier, because
+    // CharsiuG2P has no stand-in — the mini graph replaces Kokoro's weights, not the
+    // phonemiser — so only the one lane that downloads the ~106 MB pack runs these.
     if std::env::var_os("CHARSIU_ONNX").is_none() {
         assert!(
-            !common::models_required(),
-            "CHARSIU_ONNX unset while KESHA_REQUIRE_MODEL_TESTS is set — \
-             this lane stages CharsiuG2P, so skipping here would be a green run of nothing (#741)"
+            std::env::var_os("KESHA_REQUIRE_G2P_TESTS").is_none(),
+            "CHARSIU_ONNX unset while KESHA_REQUIRE_G2P_TESTS is set — this lane stages \
+             CharsiuG2P, so skipping here would be a green run of nothing (#741)"
         );
         eprintln!("skipping tts_multilang_audio: CHARSIU_ONNX not set");
         return None;

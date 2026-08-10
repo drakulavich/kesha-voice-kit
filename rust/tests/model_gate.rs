@@ -96,6 +96,13 @@ fn every_gate_refuses_a_mini_when_the_lane_promised_real_models() {
     let by_cache = std::panic::catch_unwind(common::kokoro_cache_dir_or_skip);
     let by_voice = std::panic::catch_unwind(|| common::kokoro_voice_or_skip(&staged, "am_michael"));
 
+    // The other direction: a lane that meant to run on stand-ins must not slip
+    // back to paying for real weights unnoticed.
+    std::env::set_var("KESHA_REQUIRE_MODEL_TESTS", "mini");
+    let minis_accepted = std::panic::catch_unwind(common::kokoro_cache_dir_or_skip);
+    std::fs::remove_file(staged.join("models/kokoro-82m/MINI-MODEL.json")).unwrap();
+    let real_where_mini_promised = std::panic::catch_unwind(common::kokoro_cache_dir_or_skip);
+
     std::env::remove_var("KESHA_REQUIRE_MODEL_TESTS");
     std::env::remove_var("KESHA_CACHE_DIR");
     std::env::remove_var("KOKORO_MODEL");
@@ -108,14 +115,26 @@ fn every_gate_refuses_a_mini_when_the_lane_promised_real_models() {
         "kokoro_cache_dir_or_skip must refuse a mini"
     );
     assert!(by_voice.is_err(), "kokoro_voice_or_skip must refuse a mini");
+    assert!(
+        matches!(minis_accepted, Ok(Some(_))),
+        "a lane that asked for minis must accept them"
+    );
+    assert!(
+        real_where_mini_promised.is_err(),
+        "a lane that asked for minis must refuse unmarked (real) weights"
+    );
 }
 
 #[test]
-fn a_missing_model_skips_by_default_and_fails_where_models_are_promised() {
-    assert!(!common::missing_model_is_fatal(None));
-    assert!(!common::missing_model_is_fatal(Some("")));
-    assert!(!common::missing_model_is_fatal(Some("0")));
-    assert!(common::missing_model_is_fatal(Some("1")));
+fn the_flag_names_which_weights_a_lane_promised() {
+    use common::RequiredModels::{Mini, Real};
+    assert_eq!(common::required_models(None), None);
+    assert_eq!(common::required_models(Some("")), None);
+    assert_eq!(common::required_models(Some("0")), None);
+    assert_eq!(common::required_models(Some("mini")), Some(Mini));
+    assert_eq!(common::required_models(Some("MINI")), Some(Mini));
+    assert_eq!(common::required_models(Some("1")), Some(Real));
+    assert_eq!(common::required_models(Some("real")), Some(Real));
 }
 
 /// Groups its assertions rather than splitting them because it mutates process

@@ -13,12 +13,13 @@ length and `--rate`). It reads `style` so a wrong-shaped voice pack still fails.
 
 Run inside a throwaway venv, per CLAUDE.md's no-system-python rule:
 
-    python3 -m venv /tmp/mini-venv && /tmp/mini-venv/bin/pip install onnx numpy
+    python3 -m venv /tmp/mini-venv && /tmp/mini-venv/bin/pip install 'onnx==1.22.0' numpy
     /tmp/mini-venv/bin/python .github/scripts/generate-mini-models.py \
         tests/fixtures/mini-models/kokoro
     rm -rf /tmp/mini-venv
 
-Output is byte-reproducible: same onnx version, same bytes.
+Output is byte-reproducible at a fixed onnx version, which mini-model-pact.yml
+re-checks weekly — hence the pin above. Bumping it re-writes the artifacts.
 """
 
 import hashlib

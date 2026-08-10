@@ -1,8 +1,8 @@
 name: Setup Kokoro TTS models
 description: >
-  Restore-or-download the shared Kokoro + CharsiuG2P model cache used by every TTS
-  test lane (rust-test nextest + ci.yml say-e2e). One cache key per OS so the macOS
-  lanes share a single ~340 MB cache instead of duplicating it.
+  Restore-or-download the TTS models that have no stand-in: CharsiuG2P always, and
+  Vosk-RU when `vosk` is set. Kokoro itself is served by the committed mini, so this
+  action is now called by the Linux coverage lane alone (#741).
 
   Restore-only by design: writing is the job of cache-seed.yml on main. GitHub
   scopes a cache written during a pull_request run to that PR's merge ref, so only
@@ -49,9 +49,9 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.cache-dir }}
-        key: kokoro-models-v2-${{ runner.os }}-vosk${{ inputs.vosk }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+        key: kokoro-models-v3-${{ runner.os }}-vosk${{ inputs.vosk }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
         restore-keys: |
-          kokoro-models-v2-${{ runner.os }}-vosk${{ inputs.vosk }}
+          kokoro-models-v3-${{ runner.os }}-vosk${{ inputs.vosk }}
 
     # Idempotent: downloads only the files the restore didn't provide, so a cold
     # cache still works (just slower) and a warm one costs nothing.

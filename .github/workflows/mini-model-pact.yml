@@ -83,6 +83,20 @@ jobs:
         shell: bash
         run: bash .github/scripts/fetch-pact-model.sh tests/fixtures/mini-models/kokoro/signature.json /tmp/kokoro-real.onnx
 
+      # The committed artifacts are only trustworthy while the generator still
+      # produces them; a hand-edited fixture would otherwise pass every check.
+      # Off the PR path on purpose — this is the one lane allowed a Python
+      # toolchain (#741). onnx is pinned because the marker records its version,
+      # so an unpinned install would fail this on every upstream release.
+      - name: 🧬 Verify the mini is what the generator produces
+        id: regen
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 -m venv /tmp/mini-venv && /tmp/mini-venv/bin/pip -q install 'onnx==1.22.0' numpy
+          /tmp/mini-venv/bin/python .github/scripts/generate-mini-models.py tests/fixtures/mini-models/kokoro
+          git diff --exit-code -- tests/fixtures/mini-models/kokoro
+
       - name: 🔍 Verify the recorded signature against the real model
         id: verify
         if: steps.fetch.outcome == 'success'
@@ -93,7 +107,7 @@ jobs:
         run: cd rust && cargo nextest run --features tts -E 'binary(mini_model_pact)'
 
       - name: 📣 Report an unverified mini-model pact (scheduled only)
-        if: github.event_name == 'schedule' && (steps.fetch.outcome == 'failure' || steps.verify.outcome == 'failure')
+        if: github.event_name == 'schedule' && (steps.fetch.outcome == 'failure' || steps.verify.outcome == 'failure' || steps.regen.outcome == 'failure')
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -102,13 +116,17 @@ jobs:
           {
             echo "## The Kokoro mini-model pact was not confirmed against the real weights"
             echo
-            echo "Read the run log before acting — this fails for two different reasons:"
+            echo "Read the run log before acting — this fails for three different reasons:"
             echo
             echo "- **The signature drifted.** The log shows a \`left\`/\`right\` mismatch of"
             echo "  tensor names, dtypes or ranks. Every mini-backed lane is now asserting"
             echo "  against a shape the real model no longer has. Re-record per the header of"
             echo "  \`.github/workflows/mini-model-pact.yml\` — and regenerate the mini too,"
             echo "  or the recording will match the real model but not the stand-in."
+            echo "- **The committed mini is not what the generator produces.** The log shows"
+            echo "  a \`git diff\` against tests/fixtures/mini-models/kokoro. Someone edited the"
+            echo "  fixture by hand, or the onnx version moved. Regenerate per the generator's"
+            echo "  header and commit the result."
             echo "- **Verification could not run.** The log ends at the download or the"
             echo "  sha256 check. The pact is not implicated; the run proved nothing either"
             echo "  way. Usually a network failure or an upstream re-upload."
@@ -118,6 +136,6 @@ jobs:
           bash .github/scripts/upsert-audit-issue.sh /tmp/mini-pact-body.md "Mini-model pact unverified: kokoro-82m" pact-drift
 
       - name: ❌ Fail an unverified pact
-        if: steps.fetch.outcome == 'failure' || steps.verify.outcome == 'failure'
+        if: steps.fetch.outcome == 'failure' || steps.verify.outcome == 'failure' || steps.regen.outcome == 'failure'
         shell: bash
         run: exit 1
