@@ -82,10 +82,10 @@ describe("list_voices guard when the engine is present but not executable", () =
 // Skip the full tool test if the engine is not installed (unit environment).
 // The integration path (tests/integration/) covers the full round-trip with a
 // real engine binary.
+// Guarding on "any voice" let a Russian-only `--tts ru` install run the English assertions.
 let engineAvailable = false;
 try {
-  const voices = await listVoices();
-  engineAvailable = voices.length > 0;
+  engineAvailable = (await listVoices()).some((v) => v.voiceId === "en-am_michael");
 } catch {
   engineAvailable = false;
 }
@@ -130,10 +130,12 @@ describe("list_languages tool", () => {
       languageCode: "en-US",
       languageName: "American English",
     });
-    // voiceCount must count the voices actually listed, not be a shape-check placeholder.
-    const voices = (await listVoices()) as Array<{ languageCode: string }>;
+
+    // Cross-tool agreement, not a re-implementation; the maths has its oracle in mcp-voices.
+    const voicesRes = await client.callTool({ name: "list_voices", arguments: {} });
+    const listed = (voicesRes.structuredContent as { voices: Array<{ languageCode: string }> }).voices;
     for (const lang of sc.languages) {
-      expect(lang.voiceCount).toBe(voices.filter((v) => v.languageCode === lang.languageCode).length);
+      expect(lang.voiceCount).toBe(listed.filter((v) => v.languageCode === lang.languageCode).length);
     }
   });
 });
