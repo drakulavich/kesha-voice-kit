@@ -26,4 +26,5 @@ else
 fi
 
 # Sibling, not cwd-relative: the caller's working directory is the repository being tagged.
-printf 'Alpha %s\n\n%s\n' "$TAG" "$body" | "$(dirname "$0")/push-annotated-tag.sh"
+# Run through bash rather than the exec bit, which a mode-dropping copy of the tree loses.
+printf 'Alpha %s\n\n%s\n' "$TAG" "$body" | bash "$(dirname "$0")/push-annotated-tag.sh"
