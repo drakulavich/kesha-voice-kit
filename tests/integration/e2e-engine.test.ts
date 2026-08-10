@@ -342,8 +342,8 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout);
     expect(Array.isArray(parsed)).toBe(true);
-    // Presence-only assertions could not tell this fixture from the English one.
-    expect(parsed[0].text).toContain("сообщения");
+    // Backend-stable word: CoreML and ONNX disagree on "сообщения"/"сообщение" for this clip.
+    expect(parsed[0].text).toContain("транскрипцией");
     expect(parsed[0].lang).toBe("ru");
     expect(parsed[0].textLanguage.code).toBe("ru");
     expect(parsed[0].textLanguage.confidence).toBeGreaterThan(0.5);
@@ -415,7 +415,7 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].file).toBe(FIXTURE_RU);
-    expect(parsed[0].text).toContain("сообщения");
+    expect(parsed[0].text).toContain("транскрипцией");
   }, 60_000);
 
   test("--toon output decodes to the same shape as --json (#138)", async () => {
