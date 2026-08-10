@@ -10,6 +10,9 @@ binary.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING (`kesha status --json --disk` and `kesha doctor --json`):** the disk payload now accounts for every FluidAudio root. `disk.fluidAsr` and `disk.fluidKokoro` are **removed** and replaced by `disk.externalRoots` (each entry: `path`, `sizeBytes`, `subsystems[{label, path, sizeBytes}]`, `otherBytes`), `disk.externalTotalBytes` and `disk.grandTotalBytes`; `doctor`'s `cache` object gains the same three keys. The two removed keys pointed at the wrong directories — `fluidKokoro` reported the ~24 MB Kokoro G2P directory as the Kokoro cache while the ~799 MB ANE bundle tree and the ~235 MB compiled-Sortformer cache were not counted at all, so the reported total understated real disk use by gigabytes on a machine that predates the cache consolidation. Each subsystem is now counted once, at the copy the engine actually reads, and every root is printed with its full path ([#688](https://github.com/drakulavich/kesha-voice-kit/issues/688), [#828](https://github.com/drakulavich/kesha-voice-kit/pull/828)).
+
 ### Added
 - **`kesha --itn`:** opt-in inverse text normalization on transcript text — `"two hundred thirty two"` → `"232"`, `"five dollars and fifty cents"` → `"$5.50"`, `"four thirty p m"` → `"04:30 p.m."`. Off by default. The pass runs per segment, so `--timestamps` boundaries and `--speakers` labels are unaffected and the transcript stays equal to its segments joined. Available on every backend; the engine advertises `transcribe.itn` in `--capabilities-json` and the CLI validates the flag against it, so an older engine fails with an upgrade hint instead of silently ignoring it. English-only in practice — Russian and other non-English transcripts pass through byte-identical. Known limitation: a spoken `"period"` becomes `"."` with no part-of-speech check ([#710](https://github.com/drakulavich/kesha-voice-kit/issues/710)).
 

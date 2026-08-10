@@ -121,21 +121,6 @@ describe("collectStatus + renderStatus", () => {
     writeFileSync(binPath, "not a real executable");
     mkdirSync(join(dir, "models", "parakeet-tdt-v3"), { recursive: true });
     writeFileSync(join(dir, "models", "parakeet-tdt-v3", "model.onnx"), "model");
-    mkdirSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_15s.mlmodelc"), {
-      recursive: true,
-    });
-    writeFileSync(
-      join(
-        dir,
-        ".cache",
-        "fluidaudio",
-        "Models",
-        "kokoro",
-        "kokoro_21_15s.mlmodelc",
-        "coremldata.bin",
-      ),
-      "coreml",
-    );
 
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = dir;
@@ -155,13 +140,6 @@ describe("collectStatus + renderStatus", () => {
       lines.length = 0;
       renderStatus(await collectStatus({ disk: true }));
       expect(lines.join("\n")).toContain("Disk usage");
-      if (process.platform === "darwin" && process.arch === "arm64") {
-        expect(lines.join("\n")).toContain("External caches (not included in Kesha total):");
-        expect(lines.join("\n")).toContain("FluidAudio Kokoro:");
-        expect(lines.join("\n")).toContain(".cache/fluidaudio/Models/kokoro");
-      } else {
-        expect(lines.join("\n")).not.toContain("FluidAudio Kokoro:");
-      }
     } finally {
       console.log = originalLog;
       console.error = originalError;
@@ -500,11 +478,15 @@ describe("renderStatus turns a report into the states a user acts on", () => {
       ],
       componentTotalBytes: 10_000,
       totalBytes: 10_000,
-      fluidKokoro: null,
-      fluidAsr: null,
+      externalRoots: [],
+      externalTotalBytes: 0,
+      grandTotalBytes: 10_000,
       ...overrides,
     };
   }
+
+  const fluidRoot = "/home/Library/Application Support/FluidAudio";
+  const asrDir = `${fluidRoot}/Models/parakeet-tdt-0.6b-v3`;
 
   test("each component is listed with its own size", () => {
     const output = render(report({ disk: diskUsage() }));
@@ -523,21 +505,69 @@ describe("renderStatus turns a report into the states a user acts on", () => {
     expect(exact).not.toContain("other cache files");
   });
 
-  test("external caches are reported apart from the Kesha total", () => {
+  test("a FluidAudio root outside the cache is named, sized and folded into a grand total", () => {
     const output = render(
       report({
-        disk: diskUsage({ fluidAsr: { path: "/fluid/asr", sizeBytes: 2_000_000 } }),
+        disk: diskUsage({
+          externalRoots: [
+            {
+              path: fluidRoot,
+              sizeBytes: 3_000_000,
+              subsystems: [{ label: "ASR (Parakeet)", path: asrDir, sizeBytes: 2_000_000 }],
+              otherBytes: 1_000_000,
+            },
+          ],
+          externalTotalBytes: 3_000_000,
+          grandTotalBytes: 3_010_000,
+        }),
       }),
     );
-    expect(output).toContain("External caches (not included in Kesha total):");
-    expect(output).toContain(`FluidAudio ASR:    ${humanBytes(2_000_000)} (/fluid/asr)`);
-    expect(output).not.toContain("FluidAudio Kokoro:");
+    expect(output).toContain(fluidRoot);
+    expect(output).toContain(humanBytes(3_000_000));
+    expect(output).toContain("ASR (Parakeet)");
+    expect(output).toContain(humanBytes(2_000_000));
+    expect(output).toContain(humanBytes(1_000_000));
+    expect(output).toContain(humanBytes(3_010_000));
 
-    expect(render(report({ disk: diskUsage() }))).not.toContain("External caches");
+    expect(render(report({ disk: diskUsage() }))).not.toContain("FluidAudio");
+  });
+
+  test("a root with nothing left to attribute says so rather than naming a subsystem", () => {
+    const output = render(
+      report({
+        disk: diskUsage({
+          externalRoots: [
+            { path: fluidRoot, sizeBytes: 900_000, subsystems: [], otherBytes: 900_000 },
+          ],
+          externalTotalBytes: 900_000,
+          grandTotalBytes: 910_000,
+        }),
+      }),
+    );
+    expect(output).toContain("not attributed to any subsystem above");
+    expect(output).not.toContain("ASR (Parakeet)");
   });
 
   test("a cache with nothing in it prints no disk section", () => {
     expect(render(report({ disk: diskUsage({ components: [] }) }))).not.toContain("Disk usage");
+  });
+
+  test("an empty cache still reports a FluidAudio root that holds bytes", () => {
+    const output = render(
+      report({
+        disk: diskUsage({
+          components: [],
+          componentTotalBytes: 0,
+          totalBytes: 0,
+          externalRoots: [
+            { path: fluidRoot, sizeBytes: 900_000, subsystems: [], otherBytes: 900_000 },
+          ],
+          externalTotalBytes: 900_000,
+          grandTotalBytes: 900_000,
+        }),
+      }),
+    );
+    expect(output).toContain(fluidRoot);
   });
 
   test("the reset hint names the directory to remove", () => {
@@ -650,6 +680,137 @@ describe("collectStatus disk accounting (#647)", () => {
       expect(disk.totalBytes).toBe(64 + statSync(binPath).size);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Every legacy FluidAudio root is home-relative, so `--disk` was untestable until the home
+// could be injected — which is why the honest total was deferred out of #820 (#688).
+describe("collectStatus FluidAudio accounting (#688)", () => {
+  const restoreEnv = saveEngineEnv();
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  const ASR_FILES = [
+    "Preprocessor.mlmodelc",
+    "Encoder.mlmodelc",
+    "Decoder.mlmodelc",
+    "JointDecisionv3.mlmodelc",
+    "parakeet_vocab.json",
+  ];
+
+  function write(path: string, bytes: number): void {
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, "x".repeat(bytes));
+  }
+
+  /** A cache with an engine and a Kokoro model, plus a home with no FluidAudio tree at all. */
+  function stage(
+    prefix: string,
+    backend = "fake-coreml",
+  ): { dir: string; fluidHome: string; cache: string; binPath: string } {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    const fluidHome = mkdtempSync(join(tmpdir(), `${prefix}home-`));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = writeFakeEngine(join(cache, "engine", "bin"), {
+      protocolVersion: 3,
+      backend,
+      features: [],
+    });
+    write(join(cache, "models", "kokoro-82m", "voice.bin"), 64);
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    return { dir, fluidHome, cache, binPath };
+  }
+
+  posixEngineTest("a machine split across both layouts counts each subsystem once", async () => {
+    const { dir, fluidHome, cache, binPath } = stage("kesha-status-fluid-mixed-");
+    const fluidRoot = join(fluidHome, "Library", "Application Support", "FluidAudio");
+    for (const file of ASR_FILES) write(join(fluidRoot, "Models", "parakeet-tdt-0.6b-v3", file), 10);
+    write(join(fluidRoot, "Models", "parakeet-tdt-0.6b-v3-coreml", "Encoder.mlmodelc"), 20);
+    write(join(cache, "fluidaudio", "kokoro-82m-coreml", "bundle.bin"), 128);
+
+    try {
+      const disk = (await collectStatus({ disk: true, homeDir: fluidHome })).disk!;
+
+      expect(disk.totalBytes).toBe(statSync(binPath).size + 64 + 128);
+      expect(disk.externalRoots).toEqual([
+        {
+          path: fluidRoot,
+          sizeBytes: 70,
+          subsystems: [
+            {
+              label: "ASR (Parakeet)",
+              path: join(fluidRoot, "Models", "parakeet-tdt-0.6b-v3"),
+              sizeBytes: 50,
+            },
+          ],
+          otherBytes: 20,
+        },
+      ]);
+      expect(disk.externalTotalBytes).toBe(70);
+      expect(disk.grandTotalBytes).toBe(disk.totalBytes + 70);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(fluidHome, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an install predating #688 puts all three legacy roots in the total", async () => {
+    const { dir, fluidHome, binPath } = stage("kesha-status-fluid-legacy-");
+    const support = join(fluidHome, "Library", "Application Support");
+    for (const file of ASR_FILES) {
+      write(join(support, "FluidAudio", "Models", "parakeet-tdt-0.6b-v3", file), 10);
+    }
+    write(join(fluidHome, ".cache", "fluidaudio", "Models", "kokoro-82m-coreml", "b.bin"), 100);
+    write(join(fluidHome, ".cache", "fluidaudio", "Models", "kokoro", "g2p_vocab.json"), 30);
+    write(join(support, "fluidaudio-rs", "SortformerCompiled", "c.mlmodelc"), 200);
+
+    try {
+      const disk = (await collectStatus({ disk: true, homeDir: fluidHome })).disk!;
+
+      expect(disk.externalRoots.map((r) => r.sizeBytes)).toEqual([50, 130, 200]);
+      expect(disk.externalRoots.flatMap((r) => r.subsystems.map((s) => s.label))).toEqual([
+        "ASR (Parakeet)",
+        "TTS (Kokoro ANE)",
+        "TTS (Kokoro G2P)",
+        "Diarization (Sortformer)",
+      ]);
+      expect(disk.grandTotalBytes).toBe(statSync(binPath).size + 64 + 380);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(fluidHome, { recursive: true, force: true });
+    }
+  });
+
+  // Otherwise a relocated ~800 MB of ANE bundles shows up only as "other cache files" (#688).
+  posixEngineTest("a CoreML engine itemises the FluidAudio bytes inside the cache", async () => {
+    const { dir, fluidHome, cache } = stage("kesha-status-fluid-incache-", "coreml");
+    write(join(cache, "fluidaudio", "kokoro-82m-coreml", "bundle.bin"), 128);
+
+    try {
+      const disk = (await collectStatus({ disk: true, homeDir: fluidHome })).disk!;
+      expect(disk.components.find((c) => c.label === "FluidAudio (in cache)")?.sizeBytes).toBe(128);
+      expect(disk.externalRoots).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(fluidHome, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("a fresh install reports no external root and no inflated total", async () => {
+    const { dir, fluidHome } = stage("kesha-status-fluid-fresh-");
+    try {
+      const disk = (await collectStatus({ disk: true, homeDir: fluidHome })).disk!;
+      expect(disk.externalRoots).toEqual([]);
+      expect(disk.externalTotalBytes).toBe(0);
+      expect(disk.grandTotalBytes).toBe(disk.totalBytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(fluidHome, { recursive: true, force: true });
     }
   });
 });

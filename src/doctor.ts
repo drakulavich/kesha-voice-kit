@@ -18,7 +18,12 @@ import {
   fluidKokoroCacheInfo,
   type FluidKokoroCacheInfo,
 } from "./fluid-kokoro-cache";
-import { fluidAsrCacheInfo, isCoremlBackend } from "./fluid-asr-cache";
+import { isCoremlBackend } from "./fluid-asr-cache";
+import {
+  fluidExternalRoots,
+  fluidExternalTotalBytes,
+  type FluidExternalRoot,
+} from "./fluid-roots";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import {
   getDiagnosticLogStatus,
@@ -41,6 +46,8 @@ const KNOWN_ENV_KEYS = [
 
 interface DoctorOptions {
   redact?: boolean;
+  /** Every legacy FluidAudio root is home-relative; injecting the home makes the report testable (#688). */
+  homeDir?: string;
 }
 
 interface PathSummary {
@@ -103,8 +110,13 @@ export interface DoctorReport {
   cache: {
     path: string;
     exists: boolean;
+    /** The Kesha cache plus an engine installed outside it. */
     totalBytes: number;
     components: CacheComponent[];
+    externalRoots: FluidExternalRoot[];
+    externalTotalBytes: number;
+    /** Everything Kesha put on disk, wherever it landed. */
+    grandTotalBytes: number;
   };
   optionalComponents: OptionalComponent[];
   stats: StatsStatus | (Partial<StatsStatus> & { error: string });
@@ -227,45 +239,41 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   };
 }
 
+function redactExternalRoot(root: FluidExternalRoot, redact: boolean): FluidExternalRoot {
+  if (!redact) return root;
+  return {
+    ...root,
+    path: redactPath(root.path, true),
+    subsystems: root.subsystems.map((s) => ({ ...s, path: redactPath(s.path, true) })),
+  };
+}
+
 function collectCache(
   redact: boolean,
-  fluidKokoro: FluidKokoroCacheInfo,
   backend?: string,
+  homeDir?: string,
 ): DoctorReport["cache"] {
   const cache = keshaCacheDir();
   const binPath = getEngineBinPath();
   const engineDir = dirname(dirname(binPath));
-  const coreml = isCoremlBackend(backend);
-  const components: CacheComponent[] = cacheComponentPaths(cache, engineDir, coreml).map(
-    (component) => ({ label: component.label, ...pathSummary(component.path) }),
-  );
-  if (coreml) {
-    const fluidAsr = fluidAsrCacheInfo();
-    // A relocated bundle is inside the cache and already inside `totalBytes`; calling it
-    // external there would send a user hunting for a directory that no longer exists (#688).
-    const external = isInsideDir(fluidAsr.path, cache) ? "" : " (external)";
-    components.push({
-      label: `ASR (Parakeet, FluidAudio)${external}`,
-      path: fluidAsr.path,
-      exists: fluidAsr.exists,
-      sizeBytes: fluidAsr.sizeBytes,
-    });
-  }
-  if (fluidKokoro.supported) {
-    components.push({
-      label: "FluidAudio Kokoro cache (external)",
-      path: fluidKokoro.path,
-      exists: fluidKokoro.exists,
-      sizeBytes: fluidKokoro.sizeBytes,
-    });
-  }
+  const components: CacheComponent[] = cacheComponentPaths(
+    cache,
+    engineDir,
+    isCoremlBackend(backend),
+  ).map((component) => ({ label: component.label, ...pathSummary(component.path) }));
   const engineOutsideCache = isInsideDir(engineDir, cache) ? 0 : dirSizeBytes(engineDir);
+  const totalBytes = dirSizeBytes(cache) + engineOutsideCache;
+  const externalRoots = fluidExternalRoots({ homeDir, cacheRoot: cache });
+  const externalTotalBytes = fluidExternalTotalBytes(externalRoots);
 
   return {
     path: redactPath(cache, redact),
     exists: existsSync(cache),
-    totalBytes: dirSizeBytes(cache) + engineOutsideCache,
+    totalBytes,
     components: components.map((component) => redactComponent(component, redact)),
+    externalRoots: externalRoots.map((root) => redactExternalRoot(root, redact)),
+    externalTotalBytes,
+    grandTotalBytes: totalBytes + externalTotalBytes,
   };
 }
 
@@ -403,7 +411,7 @@ export async function collectDoctorReport(
       arch: process.arch,
     },
     engine,
-    cache: collectCache(redact, fluidKokoro, engine.capabilities?.backend),
+    cache: collectCache(redact, engine.capabilities?.backend, options.homeDir),
     optionalComponents: await collectOptionalComponents(redact, fluidKokoro),
     stats: collectStats(redact),
     diagnosticLogs: collectDiagnosticLogs(redact),
@@ -449,7 +457,24 @@ function formatCacheSection(cache: DoctorReport["cache"]): string[] {
   const rows = cache.components.map(
     (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}`,
   );
-  return [header, ...rows];
+  return [header, ...rows, ...formatExternalRootsSection(cache)];
+}
+
+/** Roots FluidAudio keeps for itself. Named with full paths because there is no `kesha uninstall`. */
+function formatExternalRootsSection(cache: DoctorReport["cache"]): string[] {
+  if (cache.externalRoots.length === 0) return [];
+  const lines = ["", "FluidAudio caches outside the Kesha cache:"];
+  for (const root of cache.externalRoots) {
+    lines.push(`  ${root.path}: ${humanBytes(root.sizeBytes)}`);
+    for (const s of root.subsystems) {
+      lines.push(`    ${s.label}: ${humanBytes(s.sizeBytes)}`);
+    }
+    if (root.otherBytes > 0) {
+      lines.push(`    ${humanBytes(root.otherBytes)} not attributed to any subsystem above`);
+    }
+  }
+  lines.push(`  Grand total: ${humanBytes(cache.grandTotalBytes)}`);
+  return lines;
 }
 
 function formatOptionalSection(components: DoctorReport["optionalComponents"]): string[] {
