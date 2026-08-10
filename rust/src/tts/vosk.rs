@@ -104,6 +104,14 @@ mod tests {
         }
         let dir = crate::models::model_dir(crate::models::ModelKind::VoskRu);
         if !crate::models::is_cached(crate::models::ModelKind::VoskRu) {
+            // This is the only consumer of the ~935 MB bundle, so a silent skip
+            // here is how CI would lose Russian synthesis coverage without any
+            // signal — the lane that stages it says so and gets a failure (#741).
+            assert!(
+                std::env::var_os("KESHA_REQUIRE_VOSK_TESTS").is_none(),
+                "vosk model not cached at {} while KESHA_REQUIRE_VOSK_TESTS is set",
+                dir.display()
+            );
             eprintln!(
                 "vosk model not cached at {} — skipping synth e2e test",
                 dir.display()

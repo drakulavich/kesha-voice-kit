@@ -19,6 +19,13 @@ inputs:
     description: Model cache directory (also used as KOKORO_CACHE by callers).
     required: false
     default: ${{ github.workspace }}/.kokoro-spike
+  vosk:
+    description: >
+      Also stage the ~935 MB Vosk-TTS-RU bundle. Only the one lane that runs
+      `tts::vosk::tests::synth_short_phrase_produces_audio` needs it; every other
+      caller leaves this false and keeps its cache entry ~935 MB smaller (#741).
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -42,9 +49,9 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.cache-dir }}
-        key: kokoro-models-v2-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+        key: kokoro-models-v2-${{ runner.os }}-vosk${{ inputs.vosk }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
         restore-keys: |
-          kokoro-models-v2-${{ runner.os }}
+          kokoro-models-v2-${{ runner.os }}-vosk${{ inputs.vosk }}
 
     # Idempotent: downloads only the files the restore didn't provide, so a cold
     # cache still works (just slower) and a warm one costs nothing.
@@ -52,4 +59,5 @@ runs:
       shell: bash
       env:
         KOKORO_CACHE_DIR: ${{ inputs.cache-dir }}
+        WITH_VOSK: ${{ inputs.vosk == 'true' && '1' || '0' }}
       run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE_DIR"

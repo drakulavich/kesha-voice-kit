@@ -74,7 +74,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-models-v2-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+          key: kokoro-models-v2-${{ runner.os }}-vosk${{ runner.os == 'Linux' }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
           lookup-only: true
 
       # Restores through the prefix key (so a model-set change tops up the delta
@@ -84,13 +84,15 @@ jobs:
         uses: ./.github/actions/setup-kokoro-models
         with:
           cache-dir: ${{ env.KOKORO_CACHE }}
+          # Only the Linux lane runs the Vosk synth test, so only Linux carries the bundle.
+          vosk: ${{ runner.os == 'Linux' }}
 
       - name: Save TTS models
         if: steps.probe.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KOKORO_CACHE }}
-          key: kokoro-models-v2-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+          key: kokoro-models-v2-${{ runner.os }}-vosk${{ runner.os == 'Linux' }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
 
   parakeet:
     name: Parakeet CoreML models

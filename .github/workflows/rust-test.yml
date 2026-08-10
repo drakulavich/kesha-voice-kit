@@ -230,6 +230,9 @@ jobs:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
       NEXTEST_PROFILE: ci
       KESHA_REQUIRE_MODEL_TESTS: "1"
+      # Separate from the flag above because this is the only lane staging Vosk;
+      # the macOS/Windows lanes promise Kokoro + G2P and nothing more.
+      KESHA_REQUIRE_VOSK_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -261,6 +264,10 @@ jobs:
 
       - name: 🎚️ Setup Kokoro TTS models
         uses: ./.github/actions/setup-kokoro-models
+        with:
+          # This is the one lane that runs the Vosk synth test, so it is the one
+          # lane that pays for the bundle (#741).
+          vosk: "true"
 
       - name: 📈 Rust coverage
         shell: bash
