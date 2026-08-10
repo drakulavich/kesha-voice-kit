@@ -36,7 +36,16 @@ describe("parseArgs", () => {
     expect(parseArgs(["--voice", "--no-roundtrip", "out"])).toBeNull();
   });
 
-  // The darwin lane synthesises a shorter sentence than everyone else (#742).
+  // Only the darwin lane passes --text (#742); every other lane must keep the pangram.
+  test("keeps the default sentence when --text is absent", () => {
+    expect(parseArgs(["out"])?.voices.map((v) => v.text)).toEqual([
+      "The quick brown fox jumps over the lazy dog.",
+    ]);
+    expect(parseArgs(["out", "--voice", "macos-Sam"])?.voices.map((v) => v.text)).toEqual([
+      "The quick brown fox jumps over the lazy dog.",
+    ]);
+  });
+
   test("--text overrides the sentence for every voice", () => {
     const parsed = parseArgs(["--text", "Kesha speaks.", "out"]);
     expect(parsed?.workDir).toBe("out");

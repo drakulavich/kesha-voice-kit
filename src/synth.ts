@@ -133,10 +133,11 @@ export function engineCrashMessage(
   // input shapes overflow the dispatch worker's stack (#742).
   if (platform === "darwin" && (signal === "SIGBUS" || signal === "SIGSEGV")) {
     return (
-      `${base}. On a Mac with no Apple Neural Engine — virtualised macOS, such as a CI ` +
-      `runner — CoreML falls back to the CPU for Kokoro synthesis and crashes on some ` +
-      `inputs. Shorter text, or a \`macos-*\` AVSpeech voice, avoids it. ` +
-      `See https://github.com/drakulavich/kesha-voice-kit/issues/742`
+      `${base}. This is commonly a virtualised macOS host with no Apple Neural Engine — a ` +
+      `GitHub-hosted CI runner — where CoreML falls back to the CPU for Kokoro synthesis and ` +
+      `crashes on some inputs; shorter text or a \`macos-*\` AVSpeech voice avoids it there. ` +
+      `On a physical Mac the cause is something else, so please report it: ` +
+      `https://github.com/drakulavich/kesha-voice-kit/issues/742`
     );
   }
   return `${base}.`;

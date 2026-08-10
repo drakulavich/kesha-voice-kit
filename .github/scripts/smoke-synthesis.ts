@@ -78,7 +78,9 @@ function fail(message: string): never {
 if (import.meta.main) {
   const parsed = parseArgs(process.argv.slice(2));
   if (!parsed) {
-    console.error("usage: smoke-synthesis.ts [--no-roundtrip] [--voice <id>] <work-dir>");
+    console.error(
+      "usage: smoke-synthesis.ts [--no-roundtrip] [--voice <id>] [--text <sentence>] <work-dir>",
+    );
     process.exit(2);
   }
   const { workDir, noRoundtrip, voices } = parsed;

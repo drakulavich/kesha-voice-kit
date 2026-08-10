@@ -347,10 +347,12 @@ jobs:
           path: kesha-textlang-darwin-arm64
 
   # Exercises the macos-14 artifact elsewhere: that image is required to build, and cannot run the vocoder (#678).
-  # Hosted macOS runners are VMs with no Neural Engine, so CoreML runs Kokoro through libBNNS on
-  # the CPU, which overflows the dispatch worker's stack on longer input (#742). Every prefix of
-  # the default pangram up to 31 chars synthesises; 32-33 and 38+ die on SIGBUS. This lane
-  # therefore gates a short sentence — long-utterance darwin synthesis stays uncovered in CI.
+  # Hosted macOS runners are VMs with no Neural Engine, so CoreML runs Kokoro through libBNNS on the
+  # CPU, where a shape-proportional stack allocation overflows the dispatch worker's 512 KB stack and
+  # the process takes SIGBUS (#742). Length is only a proxy for that shape, and not a monotonic one:
+  # prefixes of the default pangram survive to 31 chars, die at 32-33, survive again at 34-37, and die
+  # from 38 on. So do not swap in another "short enough" sentence — this one was measured 20/20 clean
+  # on a runner. Long-utterance darwin synthesis stays uncovered in CI.
   darwin-synthesis-smoke:
     name: Darwin synthesis smoke
     needs: build
@@ -409,8 +411,12 @@ jobs:
         shell: bash
         run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." synthesis-smoke
 
+  # Gating on the darwin smoke as well as the matrix is what makes it a gate over artifacts rather
+  # than run colour (#737): a red smoke has to stop the draft below, and the alpha auto-publish with
+  # it. Accepted tradeoff — the pinned sentence measured 20/20, so a failure here is environment
+  # drift that should hold the release until a human looks (#742).
   release:
-    needs: build
+    needs: [build, darwin-synthesis-smoke]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
