@@ -3,12 +3,18 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { existsSync, mkdirSync, symlinkSync } from "fs";
 import { createKeshaMcpServer } from "../../src/mcp/server";
-import { engineUsableOrRequired } from "../helpers/model-gate";
+import { engineGate } from "../helpers/model-gate";
 
 const FIXTURE_RU = "tests/fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";
 
 // Presence is not usability: the #796 stub existed, ran, and failed every case here (#801).
-const engineInstalled = await engineUsableOrRequired();
+const engineGateResult = await engineGate();
+const engineInstalled = engineGateResult.installed;
+if (engineGateResult.requiredFailure) {
+  test("this lane must ship a functional engine (#741)", () => {
+    throw new Error(engineGateResult.requiredFailure!);
+  });
+}
 
 async function client() {
   const server = createKeshaMcpServer();

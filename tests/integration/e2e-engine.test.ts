@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll } from "bun:test";
-import { engineUsableOrRequired } from "../helpers/model-gate";
+import { engineGate } from "../helpers/model-gate";
 import {
   getEngineBinPath,
   TRANSCRIBE_SEGMENTS_FEATURE,
@@ -12,7 +12,13 @@ const FIXTURE_RU = "tests/fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg
 const FIXTURE_EN = "tests/fixtures/benchmark-en/01-check-email.ogg";
 
 // Presence is not usability: the #796 stub existed, ran, and failed all 19 of these (#801).
-const engineInstalled = await engineUsableOrRequired();
+const engineGateResult = await engineGate();
+const engineInstalled = engineGateResult.installed;
+if (engineGateResult.requiredFailure) {
+  test("this lane must ship a functional engine (#741)", () => {
+    throw new Error(engineGateResult.requiredFailure!);
+  });
+}
 
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", ...args], {
