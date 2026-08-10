@@ -185,6 +185,14 @@ a full install. Only what is absent lands under the cache, so in practice the
 new layout applies to fresh installs. Nothing is ever moved or deleted; the two
 layouts simply coexist, and `kesha doctor` prints whichever is in play.
 
+The one case that needs saying out loud is a legacy ASR bundle that exists but
+no longer satisfies its probe — a fetch that died half-way, or a pin bump that
+changed the required model set. The engine then reads from the cache instead and
+prints one stderr line naming the abandoned directory, because otherwise ~461 MB
+sits in Application Support with nothing pointing at it. It still deletes
+nothing; a complete legacy bundle and a machine that never had one both stay
+silent.
+
 Two directories stay outside the cache regardless, both upstream constraints
 rather than choices:
 

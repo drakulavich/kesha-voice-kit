@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -603,16 +603,37 @@ pub fn fluidaudio_bridge(
 /// True when `dir` exists and holds at least one entry. Deliberately weak: the cost of a
 /// false positive is keeping a legacy directory in use, the cost of a false negative is
 /// re-downloading it (#688).
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    feature = "system_diarize"
-))]
 fn dir_has_entries(dir: &Path) -> bool {
     fs::read_dir(dir).is_ok_and(|mut e| e.next().is_some())
+}
+
+/// One stderr line for the moment a legacy bundle stops being read, or `None` when there is
+/// nothing to say.
+///
+/// When a probe rejects a directory that still holds files — a fetch that died half-way, or a
+/// pin bump that changed the required model set — the subsystem moves under
+/// [`fluidaudio_models_root`] and ~461 MB stays behind with nothing pointing at it (#688).
+/// Silent otherwise: a legacy bundle that passes its probe is the one in use, and a machine
+/// that never had one is the common case, where a warning would name a path the user has
+/// never seen. `latched` holds it to once per process — the location is resolved per bridge
+/// construction, not once.
+///
+/// Only the ASR path can reach the firing case. Kokoro and the compiled diarizer probe with
+/// [`dir_has_entries`], where a rejection *means* the directory is missing or empty, so by
+/// construction they never abandon anything.
+pub fn stale_legacy_notice(
+    legacy: &Path,
+    legacy_ready: bool,
+    latched: &AtomicBool,
+) -> Option<String> {
+    if legacy_ready || !dir_has_entries(legacy) || latched.swap(true, Ordering::Relaxed) {
+        return None;
+    }
+    Some(format!(
+        "warning: legacy FluidAudio bundle at {} is no longer read (incomplete, or superseded by a model-set change); models now load from {}, so the old directory can be deleted",
+        legacy.display(),
+        fluidaudio_models_root().display()
+    ))
 }
 
 /// FluidAudio's Kokoro CoreML cache root. Each KokoroAne variant gets its own
@@ -679,8 +700,12 @@ pub fn fluidaudio_asr_dir() -> PathBuf {
 /// Where the Parakeet bundle lives, and the root that puts it there.
 #[cfg(feature = "coreml")]
 pub fn fluidaudio_asr_location() -> FluidAudioLocation {
+    static ANNOUNCED: AtomicBool = AtomicBool::new(false);
     let legacy = legacy_fluidaudio_asr_dir();
     let complete = fluidaudio_asr_ready_in(&legacy);
+    if let Some(notice) = stale_legacy_notice(&legacy, complete, &ANNOUNCED) {
+        with_stderr(|| eprintln!("{notice}"));
+    }
     fluidaudio_location(&legacy, complete, "parakeet-tdt-0.6b-v3")
 }
 
@@ -2661,6 +2686,72 @@ mod characterization_tests {
         assert_eq!(asr.root, kokoro.root);
         assert_eq!(kokoro.root, sortformer.root);
         assert_eq!(asr.dir.parent(), kokoro.dir.parent());
+    }
+
+    /// The transition the notice exists for: a pin bump changes the required model set, the
+    /// probe rejects a bundle that still holds ~461 MB, and nothing ever reads it again. It
+    /// was silent before #688, so the bytes stranded with nothing pointing at them.
+    #[test]
+    fn a_rejected_legacy_bundle_that_still_holds_files_names_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("parakeet-tdt-0.6b-v3");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("Encoder.mlmodelc"), b"x").unwrap();
+
+        let notice = stale_legacy_notice(&legacy, false, &AtomicBool::new(false))
+            .expect("a bundle the probe rejected but that still holds files must be announced");
+
+        assert!(
+            notice.contains(&legacy.display().to_string()),
+            "the notice must name the directory to delete: {notice}"
+        );
+        assert_eq!(
+            notice.lines().count(),
+            1,
+            "one line, not a paragraph: {notice}"
+        );
+    }
+
+    /// The common case is a machine that never had a legacy bundle, and a warning there would
+    /// greet every first-run user with a path they have never seen.
+    #[test]
+    fn a_missing_legacy_directory_is_silent() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(
+            stale_legacy_notice(&tmp.path().join("absent"), false, &AtomicBool::new(false))
+                .is_none()
+        );
+    }
+
+    /// An empty directory strands no bytes, so there is nothing to tell anyone to delete.
+    #[test]
+    fn an_empty_legacy_directory_is_silent() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(stale_legacy_notice(tmp.path(), false, &AtomicBool::new(false)).is_none());
+    }
+
+    /// A bundle that still passes its probe is the one being read — announcing it as
+    /// abandoned would invite a healthy install to delete the models it is using.
+    #[test]
+    fn a_legacy_bundle_still_in_use_is_silent() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("Encoder.mlmodelc"), b"x").unwrap();
+        assert!(stale_legacy_notice(tmp.path(), true, &AtomicBool::new(false)).is_none());
+    }
+
+    /// The location is resolved per bridge construction, not once — five sites do it, and a
+    /// single `kesha transcribe` reaches more than one.
+    #[test]
+    fn the_notice_is_emitted_once_per_process() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("Encoder.mlmodelc"), b"x").unwrap();
+        let latched = AtomicBool::new(false);
+
+        assert!(stale_legacy_notice(tmp.path(), false, &latched).is_some());
+        assert!(
+            stale_legacy_notice(tmp.path(), false, &latched).is_none(),
+            "a second resolution must stay quiet"
+        );
     }
 
     /// An interrupted FluidAudio fetch leaves the directory present but partial.
