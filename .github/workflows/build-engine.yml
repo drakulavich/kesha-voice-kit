@@ -347,13 +347,17 @@ jobs:
           path: kesha-textlang-darwin-arm64
 
   # Exercises the macos-14 artifact elsewhere: that image is required to build, and cannot run the vocoder (#678).
-  # Advisory until the longer-sentence SIGBUS is fixed (#742) — a permanently red gate only teaches people to ignore red.
+  # Hosted macOS runners are VMs with no Neural Engine, so CoreML runs Kokoro through libBNNS on the
+  # CPU, where a shape-proportional stack allocation overflows the dispatch worker's 512 KB stack and
+  # the process takes SIGBUS (#742). Length is only a proxy for that shape, and not a monotonic one:
+  # prefixes of the default pangram survive to 31 chars, die at 32-33, survive again at 34-37, and die
+  # from 38 on. So do not swap in another "short enough" sentence — this one was measured 20/20 clean
+  # on a runner. Long-utterance darwin synthesis stays uncovered in CI.
   darwin-synthesis-smoke:
-    name: Darwin synthesis smoke (advisory)
+    name: Darwin synthesis smoke
     needs: build
     runs-on: macos-15
     timeout-minutes: 30
-    continue-on-error: true
     env:
       KESHA_ENGINE_BIN: ${{ github.workspace }}/kesha-engine-darwin-arm64
       # FluidAudio reports CoreML failures on stdout, which the bridge guard discards; this routes them to stderr (#678).
@@ -405,10 +409,14 @@ jobs:
 
       - name: 🗣️ Synthesis smoke
         shell: bash
-        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
+        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." synthesis-smoke
 
+  # Gating on the darwin smoke as well as the matrix is what makes it a gate over artifacts rather
+  # than run colour (#737): a red smoke has to stop the draft below, and the alpha auto-publish with
+  # it. Accepted tradeoff — the pinned sentence measured 20/20, so a failure here is environment
+  # drift that should hold the release until a human looks (#742).
   release:
-    needs: build
+    needs: [build, darwin-synthesis-smoke]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

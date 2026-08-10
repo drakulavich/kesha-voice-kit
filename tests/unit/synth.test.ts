@@ -1,5 +1,5 @@
 import { describe, it, expect, spyOn } from "bun:test";
-import { buildSayArgs, say, SayError } from "../../src/synth";
+import { buildSayArgs, engineCrashMessage, say, SayError } from "../../src/synth";
 import { log } from "../../src/log";
 
 describe("buildSayArgs", () => {
@@ -108,5 +108,46 @@ describe("say input preflight", () => {
       expect((err as SayError).exitCode).toBe(2);
       expect((err as Error).message).toBe("text is empty");
     }
+  });
+});
+
+describe("engineCrashMessage", () => {
+  it("says nothing for an ordinary non-zero exit", () => {
+    expect(engineCrashMessage(1, null)).toBeNull();
+    expect(engineCrashMessage(2, null)).toBeNull();
+  });
+
+  it("names the signal that killed the engine", () => {
+    expect(engineCrashMessage(139, "SIGSEGV", "darwin")).toContain("SIGSEGV");
+    expect(engineCrashMessage(134, "SIGABRT", "darwin")).toContain("SIGABRT");
+  });
+
+  it("derives the signal from the exit code when Bun reports none", () => {
+    expect(engineCrashMessage(139, null, "darwin")).toContain("SIGSEGV");
+  });
+
+  // Bun names signal 10 SIGUSR1 — its linux value — even on darwin, where the
+  // engine's exit 138 means SIGBUS. The wait status wins.
+  it("does not repeat Bun's linux signal name on darwin", () => {
+    const msg = engineCrashMessage(138, "SIGUSR1", "darwin");
+    expect(msg).toContain("SIGBUS");
+    expect(msg).not.toContain("SIGUSR1");
+  });
+
+  it("uses each platform's own SIGBUS number", () => {
+    expect(engineCrashMessage(135, null, "linux")).toContain("SIGBUS");
+    expect(engineCrashMessage(138, null, "darwin")).toContain("SIGBUS");
+  });
+
+  it("explains the ANE-less CoreML crash for a darwin SIGBUS (#742)", () => {
+    const msg = engineCrashMessage(138, "SIGBUS", "darwin");
+    expect(msg).toContain("Neural Engine");
+    expect(msg).toContain("742");
+  });
+
+  it("keeps the CoreML explanation off non-darwin platforms", () => {
+    const msg = engineCrashMessage(135, null, "linux");
+    expect(msg).toContain("SIGBUS");
+    expect(msg).not.toContain("Neural Engine");
   });
 });
