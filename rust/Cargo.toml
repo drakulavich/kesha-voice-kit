@@ -81,7 +81,7 @@ ndarray = { version = "0.17" }
 # bindings are gone because 0.15.3 removed the backend upstream.
 # `init_kokoro` still takes `lang` → `zh` selects `.mandarin` (tone-aware
 # Mandarin G2P), else `.english` (#492); `--rate` stays model-native (#475).
-fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "861d4da8561f601039d85a9e89abc9c9b599ec19", optional = true }
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "304d64a1a42da7d88d8df15826da5c00dd958b15", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # ITN for `--itn` (#710). Called directly: fluidaudio-rs::itn_normalize is a dlsym shim over a libnemo_text_processing nothing links, so it returns its input verbatim.
