@@ -336,6 +336,11 @@ fn synth_segments(
     encode_or_fail(&out, sample_rate, format)
 }
 
+/// Punctuation that binds to the word before it, so no separator is inserted
+/// ahead of it — the lexicon leaves a token's trailing punct in the *next*
+/// text segment, which would otherwise merge as `ˈiːpæm .`.
+const CLINGING_PUNCTUATION: [char; 7] = [',', '.', ';', ':', '!', '?', '…'];
+
 /// Append one speakable segment's engine-native form to the pending run,
 /// separated by a single space unless either side already carries one.
 fn push_unit(
@@ -349,7 +354,9 @@ fn push_unit(
     if unit.is_empty() {
         return Ok(());
     }
+    let clings = unit.starts_with(|c| CLINGING_PUNCTUATION.contains(&c));
     if !run.is_empty()
+        && !clings
         && !run.ends_with(char::is_whitespace)
         && !unit.starts_with(char::is_whitespace)
     {
@@ -359,16 +366,22 @@ fn push_unit(
     Ok(())
 }
 
+/// Whitespace is collapsed so the engine sees the same input wherever the
+/// segment boundaries happened to fall — a dropped unit between two spaced
+/// segments would otherwise leave a double space behind (FluidAudio drops
+/// `Ipa`), and on Kokoro each space is its own token.
 fn flush_run(
     sink: &mut dyn SegmentSink,
     run: &mut String,
     speed: f32,
     out: &mut Vec<f32>,
 ) -> Result<(), TtsError> {
-    if !run.trim().is_empty() {
-        out.extend(sink.synth(run, speed)?);
-    }
+    let merged = run.split_whitespace().collect::<Vec<_>>().join(" ");
     run.clear();
+    if merged.is_empty() {
+        return Ok(());
+    }
+    out.extend(sink.synth(&merged, speed)?);
     Ok(())
 }
 
@@ -915,6 +928,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn trailing_punctuation_joins_without_a_separator() {
+        // The lexicon leaves a token's trailing punct in the following text
+        // segment, so `<say-as>` / `<phoneme>` before a period must not merge
+        // as "… ." — raw-text engines would read the gap as a pause.
+        let mut sink = RecordingSink::new();
+        let mut out = Vec::new();
+        let segs = [
+            ssml::Segment::Ipa("ˈiːpæm".into()),
+            ssml::Segment::Text(", and more.".into()),
+        ];
+        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        assert_eq!(sink.calls, vec![("ipa:ˈiːpæm, and more.".to_string(), 1.0)]);
+    }
+
+    #[test]
+    fn a_dropped_unit_between_spaced_segments_leaves_no_double_space() {
+        // FluidAudio drops Ipa mid-run; the surrounding text keeps its own
+        // spacing, which would otherwise splice into "before  after".
+        struct DropIpaSink(Vec<String>);
+        impl SegmentSink for DropIpaSink {
+            fn sample_rate(&mut self) -> Result<u32, TtsError> {
+                Ok(8_000)
+            }
+            fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError> {
+                Ok(match seg {
+                    Speakable::Ipa(_) => None,
+                    Speakable::Text(t) | Speakable::Spell(t) => Some(t.to_string()),
+                })
+            }
+            fn synth(&mut self, unit: &str, _speed: f32) -> Result<Vec<f32>, TtsError> {
+                self.0.push(unit.to_string());
+                Ok(vec![0.5_f32; unit.chars().count()])
+            }
+            fn emphasis_warning(&self) -> &'static str {
+                "drop-ipa-sink emphasis fallback"
+            }
+        }
+
+        let mut sink = DropIpaSink(Vec::new());
+        let mut out = Vec::new();
+        let segs = [
+            ssml::Segment::Text("before ".into()),
+            ssml::Segment::Ipa("hˈaɪ".into()),
+            ssml::Segment::Text(" after".into()),
+        ];
+        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        assert_eq!(sink.0, vec!["before after".to_string()]);
+    }
+
     /// Every inference emits its own lead-in and tail padding (#825). One
     /// call → `[silence, tone, silence]`; the walker must not stack those
     /// paddings mid-utterance.
@@ -1169,6 +1232,22 @@ mod fluid_kokoro_ssml_tests {
         assert_eq!(calls.len(), 1, "Spell must synthesize its content as text");
         assert_eq!(calls[0].0, "ВОЗ");
         assert_eq!(out.len(), 3, "expected one sentinel sample per character");
+    }
+
+    #[test]
+    fn dropped_ipa_mid_run_splices_the_surrounding_text_into_one_call() {
+        let log = RefCell::new(Vec::new());
+        let synth = recording_synth(&log);
+        let mut out = Vec::new();
+        let segs = [
+            Segment::Text("before ".into()),
+            Segment::Ipa("həˈloʊ".into()),
+            Segment::Text(" after".into()),
+        ];
+        walk(&synth, &segs, 1.0, &mut out);
+        let calls = log.borrow();
+        assert_eq!(calls.len(), 1, "the dropped Ipa must not split the run");
+        assert_eq!(calls[0].0, "before after");
     }
 
     #[test]
