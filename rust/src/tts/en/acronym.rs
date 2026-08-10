@@ -180,7 +180,7 @@ mod tests {
     fn kubernetes_long_token_lexicon_hit() {
         // 10 chars; matcher rejects (length > 5), but IPA_LEXICON is checked first.
         let segs = expand_to_segments("deploy on Kubernetes", true);
-        assert_eq!(flatten(&segs), "deploy on [ˌkuːbərˈnɛtiːz]");
+        assert_eq!(flatten(&segs), "deploy on [kˌubəɹnˈits]");
     }
 
     #[test]
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn multiple_lexicon_hits_in_one_input() {
         let segs = expand_to_segments("Anthropic builds Claude", true);
-        assert_eq!(flatten(&segs), "[ænˈθrɒpɪk] builds [klɔːd]");
+        assert_eq!(flatten(&segs), "[ænθɹˈɑpɪk] builds [klɔːd]");
     }
 
     #[test]
