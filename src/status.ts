@@ -17,8 +17,12 @@ import { installHint } from "./install-hint";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
-import { fluidKokoroCacheInfo } from "./fluid-kokoro-cache";
-import { fluidAsrCacheInfo, isCoremlBackend } from "./fluid-asr-cache";
+import { isCoremlBackend } from "./fluid-asr-cache";
+import {
+  fluidExternalRoots,
+  fluidExternalTotalBytes,
+  type FluidExternalRoot,
+} from "./fluid-roots";
 import { dirSizeBytes } from "./diagnostic-paths";
 import pc from "picocolors";
 
@@ -35,6 +39,8 @@ export function formatStatusLine(
 
 export interface ShowStatusOptions {
   disk?: boolean;
+  /** Every legacy FluidAudio root is home-relative; injecting the home makes `--disk` testable (#688). */
+  homeDir?: string;
 }
 
 export interface StatusDiskComponent {
@@ -46,9 +52,12 @@ export interface StatusDiskUsage {
   cachePath: string;
   components: StatusDiskComponent[];
   componentTotalBytes: number;
+  /** The Kesha cache plus an engine installed outside it. */
   totalBytes: number;
-  fluidKokoro: { path: string; sizeBytes: number } | null;
-  fluidAsr: { path: string; sizeBytes: number } | null;
+  externalRoots: FluidExternalRoot[];
+  externalTotalBytes: number;
+  /** Everything Kesha put on disk, wherever it landed. */
+  grandTotalBytes: number;
 }
 
 /**
@@ -86,7 +95,10 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
     modelMirror: activeModelMirror(),
     hint: engineHint(path, health.status),
     // Absent engine means no disk walk, matching the human path (#647).
-    disk: installed && options.disk ? collectDiskUsage(path, capabilities?.backend) : null,
+    disk:
+      installed && options.disk
+        ? collectDiskUsage(path, capabilities?.backend, options.homeDir)
+        : null,
   };
 }
 
@@ -168,28 +180,29 @@ function logDiskRows(rows: StatusDiskComponent[], total: number, componentTotal:
   }
 }
 
-function logExternalCaches(disk: StatusDiskUsage): void {
-  if (!disk.fluidKokoro && !disk.fluidAsr) return;
+function logExternalRoots(disk: StatusDiskUsage): void {
+  if (disk.externalRoots.length === 0) return;
   log.info("");
-  log.info(`External caches (not included in Kesha total):`);
-  if (disk.fluidAsr) {
-    log.info(`  FluidAudio ASR:    ${humanBytes(disk.fluidAsr.sizeBytes)} (${disk.fluidAsr.path})`);
+  log.info("FluidAudio caches outside the Kesha cache:");
+  for (const root of disk.externalRoots) {
+    log.info(`  ${root.path}: ${humanBytes(root.sizeBytes)}`);
+    for (const s of root.subsystems) {
+      log.info(`    ${s.label}: ${humanBytes(s.sizeBytes)}`);
+    }
+    if (root.otherBytes > 0) {
+      log.info(pc.dim(`    ${humanBytes(root.otherBytes)} not read by the engine`));
+    }
   }
-  if (disk.fluidKokoro) {
-    log.info(
-      `  FluidAudio Kokoro: ${humanBytes(disk.fluidKokoro.sizeBytes)} (${disk.fluidKokoro.path})`,
-    );
-  }
+  log.info(`  ${pc.bold("Grand total")}: ${pc.bold(humanBytes(disk.grandTotalBytes))}`);
 }
 
-function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
+function collectDiskUsage(binPath: string, backend?: string, homeDir?: string): StatusDiskUsage {
   const cache = keshaCacheDir();
   // Two levels up from the binary (`<cache>/engine/bin/`) so future engine-root siblings are counted.
   const engineDir = join(binPath, "..", "..");
-  const coreml = isCoremlBackend(backend);
 
   const components: StatusDiskComponent[] = [];
-  for (const c of cacheComponentPaths(cache, engineDir, coreml)) {
+  for (const c of cacheComponentPaths(cache, engineDir, isCoremlBackend(backend))) {
     const sizeBytes = dirSizeBytes(c.path);
     if (sizeBytes > 0) components.push({ label: c.label, sizeBytes });
   }
@@ -197,38 +210,27 @@ function collectDiskUsage(binPath: string, backend?: string): StatusDiskUsage {
   // Sum cache root + engine dir separately so `KESHA_ENGINE_BIN` overrides outside the cache are still counted.
   const cacheTotal = dirSizeBytes(cache);
   const engineOutsideCache = isInsideDir(engineDir, cache) ? 0 : dirSizeBytes(engineDir);
-  const fluidKokoro = fluidKokoroCacheInfo();
-  // Only walked when it is the backend in play; otherwise the size is computed and dropped.
-  // A relocated bundle sits inside the cache and is already counted in `totalBytes`, so
-  // listing it under "not included in Kesha total" would be a double count (#688).
-  const fluidAsrInfo = coreml ? fluidAsrCacheInfo() : null;
-  const fluidAsr =
-    fluidAsrInfo && !isInsideDir(fluidAsrInfo.path, cache) ? fluidAsrInfo : null;
+  const totalBytes = cacheTotal + engineOutsideCache;
+  const externalRoots = fluidExternalRoots({ homeDir, cacheRoot: cache });
+  const externalTotalBytes = fluidExternalTotalBytes(externalRoots);
 
   return {
     cachePath: cache,
     components,
     componentTotalBytes: components.reduce((n, c) => n + c.sizeBytes, 0),
-    totalBytes: cacheTotal + engineOutsideCache,
-    fluidKokoro:
-      fluidKokoro.exists && fluidKokoro.sizeBytes > 0
-        ? { path: fluidKokoro.path, sizeBytes: fluidKokoro.sizeBytes }
-        : null,
-    // Gate on readiness, not size, so a partial bundle is not shown as a present
-    // cache while doctor reports it missing.
-    fluidAsr:
-      fluidAsr?.exists && fluidAsr.sizeBytes > 0
-        ? { path: fluidAsr.path, sizeBytes: fluidAsr.sizeBytes }
-        : null,
+    totalBytes,
+    externalRoots,
+    externalTotalBytes,
+    grandTotalBytes: totalBytes + externalTotalBytes,
   };
 }
 
 function showDiskUsage(disk: StatusDiskUsage): void {
-  if (disk.components.length === 0) return;
+  if (disk.components.length === 0 && disk.externalRoots.length === 0) return;
 
   log.info(`Disk usage (${disk.cachePath}):`);
   logDiskRows(disk.components, disk.totalBytes, disk.componentTotalBytes);
-  logExternalCaches(disk);
+  logExternalRoots(disk);
   log.info("");
   log.info(
     pc.dim(`  To reset cache: rm -rf ${disk.cachePath} — next \`kesha install\` re-downloads.`),

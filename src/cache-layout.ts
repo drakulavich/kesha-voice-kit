@@ -32,7 +32,7 @@ export function cacheComponentPaths(
   return [
     { label: "Engine", path: engineDir },
     ...(coreml
-      ? []
+      ? [{ label: "FluidAudio (in cache)", path: join(cacheRoot, "fluidaudio") }]
       : [{ label: "ASR (Parakeet)", path: join(cacheRoot, "models/parakeet-tdt-v3") }]),
     { label: "Language ID", path: join(cacheRoot, "models/lang-id-ecapa") },
     { label: "VAD (Silero)", path: join(cacheRoot, "models/silero-vad") },

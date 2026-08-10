@@ -1,7 +1,6 @@
 import { existsSync } from "fs";
 import { join } from "path";
-import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
-import { isDarwinArm64 } from "./fluid-kokoro-cache";
+import { diagnosticHomeDir } from "./diagnostic-paths";
 import { engineTarget } from "./engine-targets";
 import { keshaCacheDir } from "./paths";
 
@@ -22,13 +21,6 @@ export function isCoremlBackend(
   arch?: string,
 ): boolean {
   return (backend ?? engineTarget(platform, arch)?.backend) === "coreml";
-}
-
-export interface FluidAsrCacheInfo {
-  supported: boolean;
-  path: string;
-  exists: boolean;
-  sizeBytes: number;
 }
 
 /**
@@ -90,23 +82,4 @@ export const FLUID_ASR_REQUIRED = [
  */
 export function fluidAsrCacheReady(path: string): boolean {
   return FLUID_ASR_REQUIRED.every((f) => existsSync(join(path, f)));
-}
-
-export function fluidAsrCacheInfo(
-  options: {
-    platform?: typeof process.platform;
-    arch?: typeof process.arch;
-    homeDir?: string;
-    cacheRoot?: string;
-  } = {},
-): FluidAsrCacheInfo {
-  const supported = isDarwinArm64(options.platform, options.arch);
-  const path = fluidAsrCachePath(options.homeDir, options.cacheRoot);
-
-  return {
-    supported,
-    path,
-    exists: supported && fluidAsrCacheReady(path),
-    sizeBytes: supported ? dirSizeBytes(path) : 0,
-  };
 }

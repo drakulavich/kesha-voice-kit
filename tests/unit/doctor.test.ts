@@ -172,24 +172,26 @@ describe("collectDoctorReport", () => {
       expect(report.diagnosticLogs.totalSizeBytes).toBeGreaterThan(report.diagnosticLogs.activeSizeBytes);
       expect(report.diagnosticLogs.rotatedFiles).toEqual(["kesha.1.ndjson"]);
 
-      const fluidCache = report.cache.components.find(
-        (component) => component.label === "FluidAudio Kokoro cache (external)",
-      );
+      expect(report.cache.externalRoots).toEqual([
+        {
+          path: "~/.cache/fluidaudio",
+          sizeBytes: 6,
+          subsystems: [
+            { label: "TTS (Kokoro G2P)", path: "~/.cache/fluidaudio/Models/kokoro", sizeBytes: 6 },
+          ],
+          otherBytes: 0,
+        },
+      ]);
+
       const fluidOptional = report.optionalComponents.find(
         (component) => component.name === "FluidAudio Kokoro cache",
       );
       if (process.platform === "darwin" && process.arch === "arm64") {
-        expect(fluidCache).toMatchObject({
-          path: "~/.cache/fluidaudio/Models/kokoro",
-          exists: true,
-        });
-        expect(fluidCache?.sizeBytes).toBeGreaterThan(0);
         expect(fluidOptional).toMatchObject({
           path: "~/.cache/fluidaudio/Models/kokoro",
           exists: true,
         });
       } else {
-        expect(fluidCache).toBeUndefined();
         expect(fluidOptional).toBeUndefined();
       }
     } finally {
@@ -197,7 +199,7 @@ describe("collectDoctorReport", () => {
     }
   });
 
-  test("reports unredacted FluidAudio Kokoro cache on darwin-arm64", async () => {
+  test("reports the FluidAudio root unredacted when redaction is off", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-fluid-kokoro-test-"));
     try {
       process.env.HOME = dir;
@@ -221,18 +223,12 @@ describe("collectDoctorReport", () => {
       );
 
       const report = await collectDoctorReport({ redact: false });
-      const fluidCache = report.cache.components.find(
-        (component) => component.label === "FluidAudio Kokoro cache (external)",
-      );
-      if (process.platform === "darwin" && process.arch === "arm64") {
-        expect(fluidCache).toMatchObject({
-          path: join(dir, ".cache", "fluidaudio", "Models", "kokoro"),
-          exists: true,
-        });
-        expect(fluidCache?.sizeBytes).toBeGreaterThan(0);
-      } else {
-        expect(fluidCache).toBeUndefined();
-      }
+      const root = report.cache.externalRoots[0];
+      expect(root?.path).toBe(join(dir, ".cache", "fluidaudio"));
+      expect(root?.subsystems.map((s) => s.path)).toEqual([
+        join(dir, ".cache", "fluidaudio", "Models", "kokoro"),
+      ]);
+      expect(report.cache.grandTotalBytes).toBe(report.cache.totalBytes + root!.sizeBytes);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -361,6 +357,19 @@ exit 2
 });
 
 describe("the human report states what each component is doing (#770)", () => {
+  function cacheReport(overrides: Partial<DoctorReport["cache"]> = {}): DoctorReport["cache"] {
+    return {
+      path: "/cache",
+      exists: true,
+      totalBytes: 4096,
+      components: [],
+      externalRoots: [],
+      externalTotalBytes: 0,
+      grandTotalBytes: 4096,
+      ...overrides,
+    };
+  }
+
   function doctorReport(overrides: Partial<DoctorReport> = {}): DoctorReport {
     return {
       generatedAt: "2026-05-17T12:00:00.000Z",
@@ -377,7 +386,7 @@ describe("the human report states what each component is doing (#770)", () => {
         capabilities: { protocolVersion: 3, backend: "onnx", features: ["tts", "diarize"] },
         probeError: null,
       },
-      cache: { path: "/cache", exists: true, totalBytes: 4096, components: [] },
+      cache: cacheReport({ totalBytes: 4096 }),
       optionalComponents: [],
       stats: {
         enabled: true,
@@ -492,15 +501,13 @@ describe("the human report states what each component is doing (#770)", () => {
   test("a cache row shows its size when present and `missing` when not", () => {
     const output = formatDoctorReport(
       doctorReport({
-        cache: {
-          path: "/cache",
-          exists: true,
+        cache: cacheReport({
           totalBytes: 8192,
           components: [
             { label: "Engine", path: "/cache/engine", exists: true, sizeBytes: 4096 },
             { label: "TTS (Vosk)", path: "/cache/models/vosk-ru", exists: false, sizeBytes: 0 },
           ],
-        },
+        }),
       }),
     );
     expect(output).toContain("Cache: /cache (8.0 KB)");
@@ -508,10 +515,35 @@ describe("the human report states what each component is doing (#770)", () => {
     expect(output).toContain("TTS (Vosk): missing");
 
     expect(
-      formatDoctorReport(
-        doctorReport({ cache: { path: "/cache", exists: false, totalBytes: 0, components: [] } }),
-      ),
+      formatDoctorReport(doctorReport({ cache: cacheReport({ exists: false, totalBytes: 0 }) })),
     ).toContain("Cache: /cache (missing)");
+  });
+
+  test("a FluidAudio root outside the cache is named with its path and the grand total", () => {
+    const output = formatDoctorReport(
+      doctorReport({
+        cache: cacheReport({
+          totalBytes: 8192,
+          externalRoots: [
+            {
+              path: "/home/Library/Application Support/FluidAudio",
+              sizeBytes: 4096,
+              subsystems: [{ label: "ASR (Parakeet)", path: "/home/asr", sizeBytes: 3072 }],
+              otherBytes: 1024,
+            },
+          ],
+          externalTotalBytes: 4096,
+          grandTotalBytes: 12288,
+        }),
+      }),
+    );
+    expect(output).toContain("FluidAudio caches outside the Kesha cache:");
+    expect(output).toContain("/home/Library/Application Support/FluidAudio: 4.0 KB");
+    expect(output).toContain("ASR (Parakeet): 3.0 KB");
+    expect(output).toContain("1.0 KB not read by the engine");
+    expect(output).toContain("Grand total: 12.0 KB");
+
+    expect(formatDoctorReport(doctorReport())).not.toContain("FluidAudio caches outside");
   });
 
   test("stats report either their counters or the error that hid them", () => {
@@ -633,7 +665,7 @@ describe("collectDoctorReport probe and cache accounting", () => {
     }
   });
 
-  posixEngineTest("a CoreML engine gets the FluidAudio ASR row, not the ONNX model dir", async () => {
+  posixEngineTest("a CoreML engine gets the in-cache FluidAudio row, not the ONNX model dir", async () => {
     const { dir, binDir } = stage("kesha-doctor-coreml-cache-");
     writeFakeEngine(
       join(binDir, "kesha-engine"),
@@ -647,16 +679,16 @@ exit 2
     );
     try {
       const labels = (await collectDoctorReport()).cache.components.map((c) => c.label);
-      // No legacy bundle here, so the engine roots it inside the cache — calling that row
-      // external would send the user hunting for a directory that is not there (#688).
-      expect(labels).toContain("ASR (Parakeet, FluidAudio)");
+      // The engine roots FluidAudio inside the cache, so those bytes belong to the cache
+      // breakdown rather than to the external-root list (#688).
+      expect(labels).toContain("FluidAudio (in cache)");
       expect(labels).not.toContain("ASR (Parakeet)");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  posixEngineTest("an ONNX engine keeps the ONNX model dir and no external ASR row", async () => {
+  posixEngineTest("an ONNX engine keeps the ONNX model dir and no in-cache FluidAudio row", async () => {
     const { dir, binDir } = stage("kesha-doctor-onnx-cache-");
     writeFakeEngine(
       join(binDir, "kesha-engine"),
@@ -671,7 +703,7 @@ exit 2
     try {
       const labels = (await collectDoctorReport()).cache.components.map((c) => c.label);
       expect(labels).toContain("ASR (Parakeet)");
-      expect(labels).not.toContain("ASR (Parakeet, FluidAudio) (external)");
+      expect(labels).not.toContain("FluidAudio (in cache)");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1090,6 +1122,63 @@ exit 2
       expect(statusTotal).toBe(doctorTotal);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Two commands reporting different FluidAudio totals is the #790 failure again, one root
+  // further out — so both read the same resolver and the same helper (#688).
+  posixEngineTest("both name the same FluidAudio roots and the same grand total", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-status-fluid-"));
+    const fluidHome = mkdtempSync(join(tmpdir(), "kesha-doctor-status-fluid-home-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFakeEngine(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '{"protocolVersion":3,"backend":"coreml","features":[]}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    const asr = join(
+      fluidHome,
+      "Library",
+      "Application Support",
+      "FluidAudio",
+      "Models",
+      "parakeet-tdt-0.6b-v3",
+    );
+    mkdirSync(asr, { recursive: true });
+    for (const file of [
+      "Preprocessor.mlmodelc",
+      "Encoder.mlmodelc",
+      "Decoder.mlmodelc",
+      "JointDecisionv3.mlmodelc",
+      "parakeet_vocab.json",
+    ]) {
+      writeFileSync(join(asr, file), "x".repeat(10));
+    }
+
+    process.env.HOME = dir;
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+    try {
+      const doctor = (await collectDoctorReport({ homeDir: fluidHome })).cache;
+      const disk = (await collectStatus({ disk: true, homeDir: fluidHome })).disk!;
+
+      expect(doctor.externalRoots).toEqual(disk.externalRoots);
+      expect(doctor.externalRoots[0]?.subsystems[0]?.path).toBe(asr);
+      expect(doctor.totalBytes).toBe(disk.totalBytes);
+      expect(doctor.grandTotalBytes).toBe(disk.grandTotalBytes);
+      expect(doctor.grandTotalBytes).toBe(doctor.totalBytes + 50);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(fluidHome, { recursive: true, force: true });
     }
   });
 });
