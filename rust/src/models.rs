@@ -552,8 +552,14 @@ pub struct FluidAudioLocation {
 /// base that each subsystem appends its own repo folder to, so Parakeet ASR, the Kokoro ANE
 /// chain and the compiled-Sortformer cache become siblings here instead of three separate
 /// home-directory roots FluidAudio picks for itself.
+/// Mirrored by `src/fluid-asr-cache.ts`; `fluid-asr-cache.test.ts` reads this value to pin them.
+pub const FLUIDAUDIO_ROOT_DIR: &str = "fluidaudio";
+
+/// FluidAudio's repo folder for the Parakeet bundle, mirrored TS-side the same way (#684).
+pub const FLUID_ASR_REPO_DIR: &str = "parakeet-tdt-0.6b-v3";
+
 pub fn fluidaudio_models_root() -> PathBuf {
-    cache_dir().join("fluidaudio")
+    cache_dir().join(FLUIDAUDIO_ROOT_DIR)
 }
 
 /// Resolve one subsystem, preferring a legacy location that already holds a usable bundle.
@@ -706,7 +712,7 @@ pub fn fluidaudio_asr_location() -> FluidAudioLocation {
     if let Some(notice) = stale_legacy_notice(&legacy, complete, &ANNOUNCED) {
         with_stderr(|| eprintln!("{notice}"));
     }
-    fluidaudio_location(&legacy, complete, "parakeet-tdt-0.6b-v3")
+    fluidaudio_location(&legacy, complete, FLUID_ASR_REPO_DIR)
 }
 
 /// The Application Support tree FluidAudio picks on its own, kept as the read-fallback.
@@ -723,7 +729,7 @@ fn legacy_fluidaudio_asr_dir() -> PathBuf {
         .join("Application Support")
         .join("FluidAudio")
         .join("Models")
-        .join("parakeet-tdt-0.6b-v3")
+        .join(FLUID_ASR_REPO_DIR)
 }
 
 /// Where `fluidaudio-rs` keeps compiled Sortformer `.mlmodelc` bundles, and the root that
