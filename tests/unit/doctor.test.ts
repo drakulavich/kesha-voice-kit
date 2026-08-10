@@ -29,7 +29,7 @@ const fakeCapabilities = {
   features: ["transcribe.segments", "transcribe.diarize"],
 };
 
-function writeFakeEngine(path: string, body: string): void {
+function writeEngineStub(path: string, body: string): void {
   writeFileSync(path, body);
   chmodSync(path, 0o755);
 }
@@ -310,7 +310,7 @@ describe("collectDoctorReport", () => {
       const binDir = join(dir, "engine", "bin");
       mkdirSync(binDir, { recursive: true });
       const binPath = join(binDir, "kesha-engine");
-      writeFakeEngine(
+      writeEngineStub(
         binPath,
         `#!/bin/sh
 if [ "$1" = "--capabilities-json" ]; then
@@ -636,7 +636,7 @@ describe("collectDoctorReport probe and cache accounting", () => {
   // #801: this is the #796 stub verbatim — it ran, so doctor called it installed.
   posixEngineTest("an engine that runs but describes nothing is a fault, not a footnote", async () => {
     const { dir, binDir } = stage("kesha-doctor-mute-engine-");
-    writeFakeEngine(join(binDir, "kesha-engine"), "#!/bin/sh\nexit 0\n");
+    writeEngineStub(join(binDir, "kesha-engine"), "#!/bin/sh\nexit 0\n");
     try {
       const report = await collectDoctorReport();
       expect(report.engine.installed).toBe(true);
@@ -654,7 +654,7 @@ describe("collectDoctorReport probe and cache accounting", () => {
 
   posixEngineTest("capabilities that do not parse read as the same fault as none", async () => {
     const { dir, binDir } = stage("kesha-doctor-silent-engine-");
-    writeFakeEngine(join(binDir, "kesha-engine"), "#!/bin/sh\nexit 2\n");
+    writeEngineStub(join(binDir, "kesha-engine"), "#!/bin/sh\nexit 2\n");
     try {
       const report = await collectDoctorReport();
       expect(report.engine.runnable).toBe(true);
@@ -667,7 +667,7 @@ describe("collectDoctorReport probe and cache accounting", () => {
 
   posixEngineTest("a CoreML engine gets the in-cache FluidAudio row, not the ONNX model dir", async () => {
     const { dir, binDir } = stage("kesha-doctor-coreml-cache-");
-    writeFakeEngine(
+    writeEngineStub(
       join(binDir, "kesha-engine"),
       `#!/bin/sh
 if [ "$1" = "--capabilities-json" ]; then
@@ -690,7 +690,7 @@ exit 2
 
   posixEngineTest("an ONNX engine keeps the ONNX model dir and no in-cache FluidAudio row", async () => {
     const { dir, binDir } = stage("kesha-doctor-onnx-cache-");
-    writeFakeEngine(
+    writeEngineStub(
       join(binDir, "kesha-engine"),
       `#!/bin/sh
 if [ "$1" = "--capabilities-json" ]; then
@@ -711,7 +711,7 @@ exit 2
 
   posixEngineTest("an engine inside the cache is counted once, outside it is added", async () => {
     const { dir, cache, binDir } = stage("kesha-doctor-cache-total-");
-    writeFakeEngine(join(binDir, "kesha-engine"), "#!/bin/sh\nexit 2\n");
+    writeEngineStub(join(binDir, "kesha-engine"), "#!/bin/sh\nexit 2\n");
     mkdirSync(join(cache, "models", "silero-vad"), { recursive: true });
     writeFileSync(join(cache, "models", "silero-vad", "model.onnx"), "x".repeat(128));
     const engineBytes = readFileSync(join(binDir, "kesha-engine")).length;
@@ -720,7 +720,7 @@ exit 2
 
       const outside = join(dir, "opt", "engine", "bin");
       mkdirSync(outside, { recursive: true });
-      writeFakeEngine(join(outside, "kesha-engine"), "#!/bin/sh\nexit 2\n");
+      writeEngineStub(join(outside, "kesha-engine"), "#!/bin/sh\nexit 2\n");
       process.env.KESHA_ENGINE_BIN = join(outside, "kesha-engine");
       expect((await collectDoctorReport()).cache.totalBytes).toBe(
         engineBytes + 128 + engineBytes,
@@ -906,7 +906,7 @@ describe("engine version drift (#738)", () => {
     const binPath = join(dir, "engine", "bin", "kesha-engine");
     mkdirSync(join(dir, "engine", "bin"), { recursive: true });
     process.env.KESHA_ENGINE_BIN = binPath;
-    writeFakeEngine(binPath, "#!/bin/sh\nexit 1\n");
+    writeEngineStub(binPath, "#!/bin/sh\nexit 1\n");
     if (marker !== null) writeFileSync(`${binPath}.version`, `${marker}\n`);
     return dir;
   }
@@ -990,10 +990,10 @@ describe("doctor separates corrupt components from missing ones", () => {
     const dir = mkdtempSync(join(tmpdir(), prefix));
     const binDir = join(dir, "engine", "bin");
     mkdirSync(binDir, { recursive: true });
-    writeFakeEngine(join(binDir, "kesha-engine"), engineBody);
+    writeEngineStub(join(binDir, "kesha-engine"), engineBody);
     if (sidecarBody !== null) {
-      writeFakeEngine(join(binDir, "say-avspeech"), sidecarBody);
-      writeFakeEngine(join(binDir, "kesha-textlang"), sidecarBody);
+      writeEngineStub(join(binDir, "say-avspeech"), sidecarBody);
+      writeEngineStub(join(binDir, "kesha-textlang"), sidecarBody);
     }
     process.env.HOME = dir;
     process.env.KESHA_ENGINE_BIN = join(binDir, "kesha-engine");
@@ -1097,7 +1097,7 @@ describe("doctor and status agree on the disk total (#790)", () => {
     const binDir = join(`${cache}-alt`, "bin");
     mkdirSync(binDir, { recursive: true });
     const binPath = join(binDir, "kesha-engine");
-    writeFakeEngine(
+    writeEngineStub(
       binPath,
       `#!/bin/sh
 if [ "$1" = "--capabilities-json" ]; then
@@ -1134,7 +1134,7 @@ exit 2
     const binDir = join(cache, "engine", "bin");
     mkdirSync(binDir, { recursive: true });
     const binPath = join(binDir, "kesha-engine");
-    writeFakeEngine(
+    writeEngineStub(
       binPath,
       `#!/bin/sh
 if [ "$1" = "--capabilities-json" ]; then

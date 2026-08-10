@@ -55,3 +55,35 @@ export function writeFakeEngine(
   chmodSync(binPath, 0o755);
   return binPath;
 }
+
+/**
+ * Writes a stub in a fresh temp dir that answers `--capabilities-json` with `features`
+ * and `transcribe` with `transcribeBody`, and returns its path.
+ *
+ * `transcribeBody` is shell, so a caller that needs to vary the reply by flag can branch.
+ */
+export function writeTranscribingEngine(
+  prefix: string,
+  features: string[],
+  transcribeBody: string,
+): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const path = join(dir, "kesha-engine");
+  const capabilities = JSON.stringify({ protocolVersion: 2, backend: "fake", features });
+  writeFileSync(
+    path,
+    `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${capabilities}'
+  exit 0
+fi
+if [ "$1" = "transcribe" ]; then
+${transcribeBody}
+  exit 0
+fi
+exit 2
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}

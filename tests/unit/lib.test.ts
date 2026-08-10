@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { transcribe } from "../../src/lib";
+import { writeTranscribingEngine } from "../helpers/fake-engine";
 import {
   preflightTranscribeWithSegments,
   transcribe as transcribeWrapper,
@@ -10,28 +11,15 @@ import {
 } from "../../src/transcribe";
 
 function fakeEngine(features: string[]): string {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-transcribe-test-"));
-  const path = join(dir, "kesha-engine");
-  writeFileSync(
-    path,
-    `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '${JSON.stringify({ protocolVersion: 2, backend: "fake", features })}'
-  exit 0
-fi
-if [ "$1" = "transcribe" ]; then
-  if [ "$3" = "--json" ] || [ "$2" = "--json" ]; then
+  return writeTranscribingEngine(
+    "kesha-transcribe-test-",
+    features,
+    `  if [ "$3" = "--json" ] || [ "$2" = "--json" ]; then
     printf '%s\\n' '{"text":"ok","segments":[{"start":0,"end":1,"text":"ok"}]}'
   else
     printf '%s\\n' 'ok'
-  fi
-  exit 0
-fi
-exit 2
-`,
+  fi`,
   );
-  chmodSync(path, 0o755);
-  return path;
 }
 
 const fakeEngineIt = process.platform === "win32" ? it.skip : it;
