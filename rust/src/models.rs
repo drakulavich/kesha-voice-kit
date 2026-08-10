@@ -350,11 +350,9 @@ fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
 /// 404 from the bundle. These packs are 510×256 f32 `.bin` — byte-identical to
 /// the standard onnx-community Kokoro packs kesha used on the ONNX path — so we
 /// download them from onnx-community and stage them into the ANE cache at install
-/// time (see [`stage_ane_kokoro_voices`]). `af_heart` is intentionally EXCLUDED:
-/// FluidAudio 0.15.5 auto-downloads its own `af_heart.bin` into the ANE dir on
-/// first synth, and staging our own copy would risk an SHA mismatch overwriting
-/// FluidAudio's authoritative pack. Kesha only stages the voices the ANE bundle
-/// LACKS (`am_michael` and the rest of the advertised catalog).
+/// time (see [`stage_ane_kokoro_voices`]). `af_heart` is not here because it
+/// belongs to the bundle's own required set and is staged by [`ANE_EN_FILES`]
+/// instead — see there for why the conflict this list once feared never existed.
 ///
 /// SHA-256 pins computed from `onnx-community/Kokoro-82M-v1.0-ONNX` — an
 /// upstream rehost becomes a deliberate PR to bump (CLAUDE.md MODEL HASHES).
@@ -397,10 +395,8 @@ const ANE_KOKORO_VOICES: &[ModelFile] = &[
         "af_bella",
         "f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b"
     ),
-    // `af_heart` intentionally excluded: FluidAudio 0.15.5 ships/auto-downloads
-    // its own `af_heart.bin` into this ANE dir. Staging our own copy would risk
-    // overwriting FluidAudio's authoritative pack if the upstream hash ever
-    // drifted.
+    // `af_heart` is staged by `ANE_EN_FILES` instead — it is part of the ANE
+    // bundle's required set, not an addition to it.
     ane_kokoro_voice!(
         "af_jessica",
         "a240a5e3c15b43563d6e923bdca8ef5613a23471d9b77653694012435df23bd8"
@@ -500,6 +496,538 @@ const ANE_KOKORO_VOICES: &[ModelFile] = &[
     // on first synth, and those ids are numbered (e.g. zm_050), not the
     // onnx-community names. A flat kesha-staged pack would be unused. See
     // `tts::fluid_kokoro` zh-* voices.
+];
+
+/// Everything FluidAudio 0.15.5 fetches for itself on a first `kesha say`, so
+/// that `kesha install --tts` can put it there instead (#823).
+///
+/// Without this, `KokoroAneManager.initialize` pulls the 7-stage ANE chain, the
+/// shared G2P bundle and the Misaki lexicon at *synthesis* time — a download on
+/// a command the user did not think was one, which is what NEVER AUTO-DOWNLOAD
+/// exists to prevent. Once these are staged, upstream's presence checks
+/// short-circuit before any network call, and `set_offline_mode` turns any gap
+/// that remains into a loud error instead of a silent fetch.
+///
+/// Pinned SHA-256s like every other staged artifact; a rehost or a re-export
+/// upstream becomes a deliberate bump (CLAUDE.md MODEL HASHES ARE PINNED).
+/// `rel_path` doubles as the remote path under each repo prefix, so a name,
+/// path or URL cannot drift independently of the hash.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+macro_rules! ane_en_file {
+    ($rel:literal, $sha:literal) => {
+        ModelFile {
+            rel_path: $rel,
+            url: concat!(
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/",
+                "ANE/",
+                $rel
+            ),
+            sha256: $sha,
+        }
+    };
+}
+
+/// The English (`ANE/`) 7-stage chain, its vocab, and `af_heart`.
+///
+/// `af_heart` is staged here and NOT among [`ANE_KOKORO_VOICES`]: it belongs to
+/// this bundle's required set, so a missing copy makes upstream re-fetch the
+/// whole repo. Taking it from FluidInference rather than onnx-community also
+/// settles the conflict the old exclusion note guessed at — the two are
+/// byte-identical (sha256 d583ccff…), and this is the authoritative copy.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+const ANE_EN_FILES: &[ModelFile] = &[
+    ane_en_file!(
+        "KokoroAlbert.mlmodelc/analytics/coremldata.bin",
+        "14a61873d8759a38b79c93f9021ae865f408f56301209a0168dbfc2283265ccd"
+    ),
+    ane_en_file!(
+        "KokoroAlbert.mlmodelc/coremldata.bin",
+        "70b6d2f8429229f6800dda9480341669f7ac0eabf05a82934d8632ab2b4b63a6"
+    ),
+    ane_en_file!(
+        "KokoroAlbert.mlmodelc/metadata.json",
+        "fe1d005481f646707a948267ac089dfb2cd2ccea7d5827a14c28587eb4c89930"
+    ),
+    ane_en_file!(
+        "KokoroAlbert.mlmodelc/model.mil",
+        "2038154d06a20e399a8ae35ec5c9242702cb23db8dd24dde7679cd53708e4eae"
+    ),
+    ane_en_file!(
+        "KokoroAlbert.mlmodelc/weights/weight.bin",
+        "36089a39359b800d3e2c60e5e8ac9217d8f2d1010a8b9273192290e621f1fabc"
+    ),
+    ane_en_file!(
+        "KokoroPostAlbert.mlmodelc/analytics/coremldata.bin",
+        "6640044c875505382edbc361cdd56f3f1c30f082953e0f9473a31ae3f71e6c43"
+    ),
+    ane_en_file!(
+        "KokoroPostAlbert.mlmodelc/coremldata.bin",
+        "86de3ab0c1e8c6f8842b57bc24695a5099590c49b864e3fa2737b1fb5b15ba3b"
+    ),
+    ane_en_file!(
+        "KokoroPostAlbert.mlmodelc/metadata.json",
+        "2e3be1af412a76e340120a01cd04a502666371ada86b1fdaf5a622896e0bf979"
+    ),
+    ane_en_file!(
+        "KokoroPostAlbert.mlmodelc/model.mil",
+        "450b73a3b179e1702e7b2210bad008eac20d58b2d6076e3c2de76290a66e5fef"
+    ),
+    ane_en_file!(
+        "KokoroPostAlbert.mlmodelc/weights/weight.bin",
+        "e4f300a23cc2e05d38680d9fc94681cc722d445076d1d248f83255122ba091c8"
+    ),
+    ane_en_file!(
+        "KokoroAlignment.mlmodelc/analytics/coremldata.bin",
+        "f6074d1039a9151d0f97dc6ec9ee0cd9c7b865f1af646d718ab38b659fa84f3f"
+    ),
+    ane_en_file!(
+        "KokoroAlignment.mlmodelc/coremldata.bin",
+        "9a0fb4a536f665a052914d7f17b0e6ac80a3614f702e4be87ac0302c1143a4ea"
+    ),
+    ane_en_file!(
+        "KokoroAlignment.mlmodelc/metadata.json",
+        "6f610d23b9f93c7f1a968d6a861efa99725a191de696bf1c3be334ead39b7f00"
+    ),
+    ane_en_file!(
+        "KokoroAlignment.mlmodelc/model.mil",
+        "eb3a618bda0cdf95cdffab586ef5c76333d0d0a1dcb881190b3ef414f3421b3e"
+    ),
+    ane_en_file!(
+        "KokoroAlignment.mlmodelc/weights/weight.bin",
+        "2e7d69128b59d615fc3d3cf85637a687235fc086b1eb136359adb11a61615f6b"
+    ),
+    ane_en_file!(
+        "KokoroProsody.mlmodelc/analytics/coremldata.bin",
+        "7708aab83deabd72539512acd850447fa955187608d9710a828943aa8498c6b8"
+    ),
+    ane_en_file!(
+        "KokoroProsody.mlmodelc/coremldata.bin",
+        "d65d87f246a6546c0fb7af6efe020106c38604e5c2b9ca00a78561c115dda33e"
+    ),
+    ane_en_file!(
+        "KokoroProsody.mlmodelc/metadata.json",
+        "a780887a790fe54e2ad14d26b2d936eca4fc6ab9f727e60f7e01f0c208163eef"
+    ),
+    ane_en_file!(
+        "KokoroProsody.mlmodelc/model.mil",
+        "e6b332f1ed1b22178a406a16c9767c0eed2d64b7f0c17c86ccb2b6abf863b1ed"
+    ),
+    ane_en_file!(
+        "KokoroProsody.mlmodelc/weights/weight.bin",
+        "d3c2670eb0c528802f0815d917dcb77bf17faf063bd2bc09cfd0970e2bc1444c"
+    ),
+    ane_en_file!(
+        "KokoroNoise_v2.mlmodelc/analytics/coremldata.bin",
+        "53af6bf61482f6002bdb6e3a62f30774cde6e96411aebd888222a34b369f3d04"
+    ),
+    ane_en_file!(
+        "KokoroNoise_v2.mlmodelc/coremldata.bin",
+        "9911047f924b41f8b92811c32c50b7c718bd7b0c14842b3bc1b66b9ffe341a19"
+    ),
+    ane_en_file!(
+        "KokoroNoise_v2.mlmodelc/metadata.json",
+        "eb3102217532d952479c6f1b04d26d7ac4cdbc59875b6a23e8aae86e5e02c2bc"
+    ),
+    ane_en_file!(
+        "KokoroNoise_v2.mlmodelc/model.mil",
+        "60233949d896f15ef38aea19afda558935d7569fa77a3ca4babddd3ffe845a36"
+    ),
+    ane_en_file!(
+        "KokoroNoise_v2.mlmodelc/weights/weight.bin",
+        "1102fc2d31dfcfe3de3978a4c78b65202ff8b0a4d55a9304213bd4e8bda66bc2"
+    ),
+    ane_en_file!(
+        "KokoroVocoder.mlmodelc/analytics/coremldata.bin",
+        "8c7c1a25a46ad46b1068905ece8f841c4bd23df23306551bad175d0da28ae74b"
+    ),
+    ane_en_file!(
+        "KokoroVocoder.mlmodelc/coremldata.bin",
+        "e73aaf146c7543c0f75f544ac52e3287fa4eaa7e9a04bf3ac6a94d0023f16c00"
+    ),
+    ane_en_file!(
+        "KokoroVocoder.mlmodelc/metadata.json",
+        "0c3decd8c05850a80964fda07e3f9be17030fcb0724e223ea5b187d370a821b1"
+    ),
+    ane_en_file!(
+        "KokoroVocoder.mlmodelc/model.mil",
+        "c42be65f1e0b502dc80aba3173df1cbb02e1c8f474c550feb0f6d83c3128aae7"
+    ),
+    ane_en_file!(
+        "KokoroVocoder.mlmodelc/weights/weight.bin",
+        "6d1f96eb50218ab687b12d6d862d2ae854c12b7165c3cd9b6b5cef261ef02ff1"
+    ),
+    ane_en_file!(
+        "KokoroTail.mlmodelc/analytics/coremldata.bin",
+        "7dd3d6b8cfbcdcac37b46f6eb1312b842b972dc75f7cb9968f349fedfc0d77db"
+    ),
+    ane_en_file!(
+        "KokoroTail.mlmodelc/coremldata.bin",
+        "f28f17e4217d7ec1bed48bff4c65287169daa9198315f6fffb00a1483831f5d3"
+    ),
+    ane_en_file!(
+        "KokoroTail.mlmodelc/metadata.json",
+        "7708ecc145eecf8e3ef5ef8979ea7a4f77d04c8da787454c6d9190e5300fc50b"
+    ),
+    ane_en_file!(
+        "KokoroTail.mlmodelc/model.mil",
+        "b0b8fd573bac76ba7eb85730eeb25538fc7f1c666ecbf939fd4b3a4ad4495ad7"
+    ),
+    ane_en_file!(
+        "KokoroTail.mlmodelc/weights/weight.bin",
+        "2d4877b5d2725a9f017653e391638bee1262d1877a080bce09726aae128fecb2"
+    ),
+    ane_en_file!(
+        "vocab.json",
+        "8d65b0188b77eafc60751dac42bbac7ab5f5685074af44db91d1877b42dc1d7c"
+    ),
+    ane_en_file!(
+        "af_heart.bin",
+        "d583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b"
+    ),
+];
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+macro_rules! kokoro_g2p_file {
+    ($rel:literal, $sha:literal) => {
+        ModelFile {
+            rel_path: $rel,
+            url: concat!(
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/",
+                "",
+                $rel
+            ),
+            sha256: $sha,
+        }
+    };
+}
+
+/// The shared BART G2P bundle plus the Misaki lexicon cache, staged into the
+/// one directory FluidAudio will look in: `G2PModel.shared` is a singleton
+/// pinned to `~/.cache/fluidaudio/Models/kokoro`, so unlike the ANE chain these
+/// cannot follow `with_models_dir` (fluidaudio-rs 4e488d7).
+///
+/// The lexicon is 10 MB of Misaki weak forms — best-effort upstream, a
+/// pronunciation-quality booster rather than a hard dependency, but staging it
+/// is what stops it downloading behind the user's back.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+const KOKORO_G2P_FILES: &[ModelFile] = &[
+    kokoro_g2p_file!(
+        "G2PEncoder.mlmodelc/analytics/coremldata.bin",
+        "cf7fbd7e7a65529b2d2bf3941e458a0ab6dff7a298bf48e205a1727c81c26a99"
+    ),
+    kokoro_g2p_file!(
+        "G2PEncoder.mlmodelc/coremldata.bin",
+        "0f14d46ca9fd06c68b4717294575b2b99449e67d40b7a2c56f926bf05cd90b11"
+    ),
+    kokoro_g2p_file!(
+        "G2PEncoder.mlmodelc/metadata.json",
+        "c8e0cfd7f494ac1b3662ff8f1914b2b45f79ffb2791724cdc0576981996732e1"
+    ),
+    kokoro_g2p_file!(
+        "G2PEncoder.mlmodelc/model.mil",
+        "8c617e569f37286b056dad800d862dc145be9a95fa9ed43857bb646ba199d7da"
+    ),
+    kokoro_g2p_file!(
+        "G2PEncoder.mlmodelc/weights/weight.bin",
+        "6926bcd2827d21fec82839487b987e06f85fd8a6a5bb896bc4f6062461d014ec"
+    ),
+    kokoro_g2p_file!(
+        "G2PDecoder.mlmodelc/analytics/coremldata.bin",
+        "dbf1767747fdc188222d467a45b04608b396c76c71db3abb18a5fb3680ef9827"
+    ),
+    kokoro_g2p_file!(
+        "G2PDecoder.mlmodelc/coremldata.bin",
+        "607e960f19b4d9a30317a5a11869fcce84b300a909fcab2cc756c0d98e2dacd9"
+    ),
+    kokoro_g2p_file!(
+        "G2PDecoder.mlmodelc/metadata.json",
+        "e54e98484fd60d26f22fd3c4e7fe87b0d92a5d2de1f958cc3c4bb36d4ae06a44"
+    ),
+    kokoro_g2p_file!(
+        "G2PDecoder.mlmodelc/model.mil",
+        "fe647c598e0d9454d360b8ee49a59ae57ca147fc5330863ba84ccb90dce482ad"
+    ),
+    kokoro_g2p_file!(
+        "G2PDecoder.mlmodelc/weights/weight.bin",
+        "cbaeb4e743359f607ab161af0c6d8a817462fdaec622ee788ef8ef952c5f8214"
+    ),
+    kokoro_g2p_file!(
+        "g2p_vocab.json",
+        "295ed64b86c2820cd665b0602ae50c6947c0e82ac643082873e0be87dca282ce"
+    ),
+    kokoro_g2p_file!(
+        "us_lexicon_cache.json",
+        "6b36ba313202227d6914ad32cd684a0304bd2757e9ec4158ea7bc36ec40e224e"
+    ),
+];
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+macro_rules! ane_zh_file {
+    ($rel:literal, $sha:literal) => {
+        ModelFile {
+            rel_path: $rel,
+            url: concat!(
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/",
+                "ANE-zh/",
+                $rel
+            ),
+            sha256: $sha,
+        }
+    };
+}
+
+/// The Mandarin (`ANE-zh/`) chain, staged only when `zh` is requested.
+///
+/// Carries `g2pw/g2pw.mlmodelc` (159 MB) because upstream lists it in
+/// `requiredModelsZh`, even though the g2pW disambiguator cannot currently
+/// activate: `ensureMandarinG2pw` needs `ANE-zh/g2pw/vocab.txt`, which upstream
+/// has not published (404 at this pin), so Mandarin G2P runs dict-only either
+/// way. Dropping the bundle would only make upstream re-download the whole
+/// repo.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+const ANE_ZH_FILES: &[ModelFile] = &[
+    ane_zh_file!(
+        "KokoroAlbert.mlmodelc/analytics/coremldata.bin",
+        "e3b66851b7a61e9b2f2fb17a5050a46f5d98acaec46b3822b65c3e509c15c94e"
+    ),
+    ane_zh_file!(
+        "KokoroAlbert.mlmodelc/coremldata.bin",
+        "bae8190320b079bc995d69b19c2247c2e66faf5ebefe0cfb99bddf4efa98a86c"
+    ),
+    ane_zh_file!(
+        "KokoroAlbert.mlmodelc/metadata.json",
+        "d5fbc004f1b6eb8e15efe4392e702b7d064e704536e1b585e7cd910a62680fd2"
+    ),
+    ane_zh_file!(
+        "KokoroAlbert.mlmodelc/model.mil",
+        "3af07f753779fdd7d81cf482098a2a94feda50f677b8ce606c14596c2f44e732"
+    ),
+    ane_zh_file!(
+        "KokoroAlbert.mlmodelc/weights/weight.bin",
+        "8c3d8458f357f2e60380de284139af566c6c22e3719bb985524616d0a4f57e5b"
+    ),
+    ane_zh_file!(
+        "KokoroPostAlbert.mlmodelc/analytics/coremldata.bin",
+        "9ac50dad158a0dc349a240675d84ad920ae3202f282fc70fb2b833d78eb6829f"
+    ),
+    ane_zh_file!(
+        "KokoroPostAlbert.mlmodelc/coremldata.bin",
+        "c9246412170c6118149ccf412efafbb76db5bd47946776a1897b046ca2576f95"
+    ),
+    ane_zh_file!(
+        "KokoroPostAlbert.mlmodelc/metadata.json",
+        "fdc356568fef6d2a7a88a31d1934498c9466da48e95822e7176d9ec055b8be5c"
+    ),
+    ane_zh_file!(
+        "KokoroPostAlbert.mlmodelc/model.mil",
+        "325c79e75c3f883b575dbef00efd22a9cee523bdd6a556efe5506c505c2a624d"
+    ),
+    ane_zh_file!(
+        "KokoroPostAlbert.mlmodelc/weights/weight.bin",
+        "bca73c9f402ccd18052fe8cc418741caa196c3caceeb3637187cdc5d67d8daf7"
+    ),
+    ane_zh_file!(
+        "KokoroAlignment.mlmodelc/analytics/coremldata.bin",
+        "7c84c8820e2e6f1b27229db6ce4ec2cc2817c546aa31d2d2f677d35be5445443"
+    ),
+    ane_zh_file!(
+        "KokoroAlignment.mlmodelc/coremldata.bin",
+        "8bede89325746a1b540c3350a473ceeaea39a5cea7a641c340e9013655865936"
+    ),
+    ane_zh_file!(
+        "KokoroAlignment.mlmodelc/metadata.json",
+        "a1e61d00267f01da2ea32fea44a2c1c04e1a04533b1464bdbc48de03f69e3099"
+    ),
+    ane_zh_file!(
+        "KokoroAlignment.mlmodelc/model.mil",
+        "107daf70364aab37665fd29509c3be81a1b046c04a368d780ec43b0afe5b5064"
+    ),
+    ane_zh_file!(
+        "KokoroAlignment.mlmodelc/weights/weight.bin",
+        "2e7d69128b59d615fc3d3cf85637a687235fc086b1eb136359adb11a61615f6b"
+    ),
+    ane_zh_file!(
+        "KokoroProsody.mlmodelc/analytics/coremldata.bin",
+        "3c90a008bfe021f8c24f39d26706a894cffb3cc6d5dca1ad131f54547f0554a1"
+    ),
+    ane_zh_file!(
+        "KokoroProsody.mlmodelc/coremldata.bin",
+        "7f1932bc07f52171e0fff898ae0e9c289a8c73aaf0a2ac06b2352b8ef58afc61"
+    ),
+    ane_zh_file!(
+        "KokoroProsody.mlmodelc/metadata.json",
+        "dea9dbc84c8b96cd0e17961f4bd5eb6972d762e9b18f0a08ceee4b4e1cdb49ab"
+    ),
+    ane_zh_file!(
+        "KokoroProsody.mlmodelc/model.mil",
+        "df6b4852bbade0f94c63721ad2e05171efbe915bcc9bbd59d05cdbda8cda17d7"
+    ),
+    ane_zh_file!(
+        "KokoroProsody.mlmodelc/weights/weight.bin",
+        "0d7229d31a47e1d5c054c24b7aed8ce0df20460523472a55ff998f5939a75cf8"
+    ),
+    ane_zh_file!(
+        "KokoroNoise_v2.mlmodelc/analytics/coremldata.bin",
+        "7eacfc0eb5b0f576ccc38e6ac8c1746e740dab1459cb9a3408542576723cc012"
+    ),
+    ane_zh_file!(
+        "KokoroNoise_v2.mlmodelc/coremldata.bin",
+        "3d8f933a62fc1d0b08f97bd776afa61d887bca7c3f93a21b5ff3d92cb88099ee"
+    ),
+    ane_zh_file!(
+        "KokoroNoise_v2.mlmodelc/metadata.json",
+        "44e7cab52849d84da4b603e17b2b6ab61ee31f5ea5645b4765b5160942b63afa"
+    ),
+    ane_zh_file!(
+        "KokoroNoise_v2.mlmodelc/model.mil",
+        "58b78ba89d89e1e3aacecabd2ad5f504f6eae5ae1796b11b819598452afb1dc3"
+    ),
+    ane_zh_file!(
+        "KokoroNoise_v2.mlmodelc/weights/weight.bin",
+        "2bf3f47ba8851668634ae7e28e0df8854c0f56add4177ca38054036a846de24a"
+    ),
+    ane_zh_file!(
+        "KokoroVocoder.mlmodelc/analytics/coremldata.bin",
+        "12bf39f5117a2fe2645b0158d75d71a99b328b237f1add55a1511d0e2ee3b456"
+    ),
+    ane_zh_file!(
+        "KokoroVocoder.mlmodelc/coremldata.bin",
+        "24ad83fed32d94eff2b3d9d70159140057ebad500b2a7f8fb54b0be0204b1cd2"
+    ),
+    ane_zh_file!(
+        "KokoroVocoder.mlmodelc/metadata.json",
+        "56a46a2f4f9015b6845b0e39c544be4d9923f00a48d5dd0ea58905dd0e336ba4"
+    ),
+    ane_zh_file!(
+        "KokoroVocoder.mlmodelc/model.mil",
+        "d55193676724a4bcaf0d419146994fa651ee6061d458edfd88dee518dff9268c"
+    ),
+    ane_zh_file!(
+        "KokoroVocoder.mlmodelc/weights/weight.bin",
+        "daa560673b32e3efce3ca99299d083c42c5844dd8022a8a847c23f2d00b20c6b"
+    ),
+    ane_zh_file!(
+        "KokoroTail.mlmodelc/analytics/coremldata.bin",
+        "cbffea509dfcba72fae7a9dc7ae424e19f8af08eabc70360fe30fd7c1de09151"
+    ),
+    ane_zh_file!(
+        "KokoroTail.mlmodelc/coremldata.bin",
+        "94e611a84f91c7b135b031a0f978cc47b0edab42912e68a86c3f3e78f9edf6a0"
+    ),
+    ane_zh_file!(
+        "KokoroTail.mlmodelc/metadata.json",
+        "d3c8a18ae48455281d614c098658c606174c2f02f594022232d427ac7070c899"
+    ),
+    ane_zh_file!(
+        "KokoroTail.mlmodelc/model.mil",
+        "05abf10a8c6fdc77a614948a1d2a8b2374ac71daf2b24aaee077044067fde15f"
+    ),
+    ane_zh_file!(
+        "KokoroTail.mlmodelc/weights/weight.bin",
+        "1865207df8b7608f3fd443b5a3c744634a8942ccc917b5c8734818d569c0f4eb"
+    ),
+    ane_zh_file!(
+        "vocab.json",
+        "3c4eb3ae5080b67c6ddae731f35e1bad0a3dd7d7afc9c356f906284ae0f9e6f3"
+    ),
+    ane_zh_file!(
+        "voices/zf_001.bin",
+        "0a89ec12bb93fb9c74077924daf02568baad64e1f869389f5aaee01a386035f8"
+    ),
+    // The one Mandarin voice kesha advertises (`zh-zm_050`, the male brand
+    // default). Upstream would fetch it through `ensureVoicePack`, which is not
+    // covered by offline mode, so staging is the only thing that stops it.
+    ane_zh_file!(
+        "voices/zm_050.bin",
+        "7869f25a5e71ea9b67a1893777e375ac411bdbfb75feff5efe25fad2fc766c8d"
+    ),
+    ane_zh_file!(
+        "g2pw/g2pw.mlmodelc/analytics/coremldata.bin",
+        "b5697bf7c53b3ef37aed797c91ba198ff8804fe04858131710644023e62f15c7"
+    ),
+    ane_zh_file!(
+        "g2pw/g2pw.mlmodelc/coremldata.bin",
+        "3a4aa20b8e59a846f0946f8213e41e121294866218716c3c670ad0371ef1e06e"
+    ),
+    ane_zh_file!(
+        "g2pw/g2pw.mlmodelc/metadata.json",
+        "c938ccdebac94bce1a72dfb0e96eb86caa8b4ec530382e1a530fd164e39b2bbc"
+    ),
+    ane_zh_file!(
+        "g2pw/g2pw.mlmodelc/model.mil",
+        "168f7e71f7501c33583ec3fa4c61fe725e42493b73660f8369f5e38328f0388b"
+    ),
+    ane_zh_file!(
+        "g2pw/g2pw.mlmodelc/weights/weight.bin",
+        "95b5d709600e2133f8ea5139268ed2b5e539787d37e1f69d8bed37ba2cdc5aaa"
+    ),
+];
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+macro_rules! ane_zh_asset {
+    ($rel:literal, $remote:literal, $sha:literal) => {
+        ModelFile {
+            rel_path: $rel,
+            url: concat!(
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/",
+                $remote
+            ),
+            sha256: $sha,
+        }
+    };
+}
+
+/// The Mandarin pinyin dictionaries. Split from [`ANE_ZH_FILES`] because they
+/// are the one group whose local path differs from its remote path: upstream
+/// publishes them under `ANE-zh/assets/` and reads them from `<repoDir>/g2p/`.
+///
+/// The jieba HMM tables `ensureMandarinJiebaHmm` also wants are not staged —
+/// upstream never published them, so that fetch fails and segmentation falls
+/// back to FMM by design.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+const ANE_ZH_G2P_ASSETS: &[ModelFile] = &[
+    ane_zh_asset!(
+        "g2p/pinyin_phrases.bin",
+        "ANE-zh/assets/pinyin_phrases.bin",
+        "ee86607bd17bee526a2a503c9aa99e87adfe61f336707531ba7eec866f796049"
+    ),
+    ane_zh_asset!(
+        "g2p/pinyin_single.bin",
+        "ANE-zh/assets/pinyin_single.bin",
+        "6afc4165be18718ab64ca623044ea1dfef30e7b652e59917967bd752b7c9d73f"
+    ),
 ];
 
 /// Map a flat ANE voice-pack basename (`<x><gender>_name.bin`) to its Kokoro
@@ -668,6 +1196,38 @@ pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
     fluidaudio_kokoro_cache_dir().join("ANE")
 }
 
+/// FluidAudio's Mandarin (`ANE-zh/`) bundle directory, the Kokoro sibling of
+/// [`fluidaudio_ane_kokoro_dir`].
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn fluidaudio_ane_zh_kokoro_dir() -> PathBuf {
+    fluidaudio_kokoro_cache_dir().join("ANE-zh")
+}
+
+/// Where the shared BART G2P bundle and the Misaki lexicon must be staged.
+///
+/// The one FluidAudio directory `with_models_dir` cannot move: `G2PModel.shared`
+/// is a singleton that resolves `TtsCacheDirectory.ensure()/Models/kokoro`
+/// itself, so a copy anywhere else is invisible to it (fluidaudio-rs 4e488d7,
+/// still true at upstream 0.15.5). Staging elsewhere would leave English
+/// synthesis failing with `G2PModelError.vocabLoadFailed`.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn fluidaudio_kokoro_g2p_dir() -> PathBuf {
+    dirs::home_dir()
+        .expect("cannot determine home directory")
+        .join(".cache")
+        .join("fluidaudio")
+        .join("Models")
+        .join("kokoro")
+}
+
 /// Where FluidAudio's Kokoro CoreML bundles live, and the root that puts them there.
 #[cfg(all(
     feature = "system_kokoro",
@@ -801,6 +1361,55 @@ pub fn stage_ane_kokoro_voices(langs: &[&str], no_cache: bool) -> Result<()> {
     fs::create_dir_all(&ane_dir)
         .with_context(|| format!("create FluidAudio ANE dir {}", ane_dir.display()))?;
     parallel_download(&ane_dir, &manifest, no_cache)
+}
+
+/// Languages served by the English KokoroAne variant. `zh` has its own bundle
+/// and `ru` never reaches Kokoro on this build (Vosk / AVSpeech).
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+const ANE_ENGLISH_VARIANT_LANGS: &[&str] = &["en", "es", "fr", "hi", "it", "ja", "pt"];
+
+/// Stage the assets FluidAudio would otherwise fetch at first synthesis (#823).
+///
+/// Everything `KokoroAneManager.initialize` looks for, put where it looks,
+/// during the command the user asked to download things in. Each group lands in
+/// its own directory because upstream reads them from three different places:
+/// the ANE chain and the Mandarin bundle follow whichever root the bridge is
+/// pointed at, while the shared G2P assets are pinned to a home-directory path
+/// no root can move (see [`fluidaudio_kokoro_g2p_dir`]).
+///
+/// Idempotent and hash-verified on every run, like [`stage_ane_kokoro_voices`].
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<()> {
+    if langs.iter().any(|l| ANE_ENGLISH_VARIANT_LANGS.contains(l)) {
+        stage_into(&fluidaudio_ane_kokoro_dir(), ANE_EN_FILES, no_cache)?;
+        stage_into(&fluidaudio_kokoro_g2p_dir(), KOKORO_G2P_FILES, no_cache)?;
+    }
+    if langs.contains(&"zh") {
+        let zh = fluidaudio_ane_zh_kokoro_dir();
+        stage_into(&zh, ANE_ZH_FILES, no_cache)?;
+        stage_into(&zh, ANE_ZH_G2P_ASSETS, no_cache)?;
+    }
+    Ok(())
+}
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn stage_into(dir: &Path, manifest: &'static [ModelFile], no_cache: bool) -> Result<()> {
+    fs::create_dir_all(dir)
+        .with_context(|| format!("create FluidAudio cache dir {}", dir.display()))?;
+    let refs: Vec<&ModelFile> = manifest.iter().collect();
+    parallel_download(dir, &refs, no_cache)
 }
 
 /// `.mlmodelc` bundles in FluidAudio's Kokoro cache that are missing
@@ -1773,31 +2382,159 @@ mod tts_tests {
             );
         }
         // Every FluidAudio Kokoro voice kesha advertises must have a staged
-        // pack, or `--voice <lang>-<x>` resolves then 404s on the ANE bundle —
-        // EXCEPT `af_heart`, which FluidAudio 0.15.5 auto-provides into the
-        // same ANE dir on first synth, so kesha must NOT stage its own copy.
+        // pack, or `--voice <lang>-<x>` resolves and then reaches for the
+        // network under a flag that forbids it. Three manifests can supply one:
+        // the English catalog here, the ANE bundle's own `af_heart`, and the
+        // Mandarin bundle's nested `voices/`.
+        let staged_anywhere = |bare: &str| {
+            names.contains(format!("{bare}.bin").as_str())
+                || ANE_EN_FILES
+                    .iter()
+                    .any(|f| f.rel_path == format!("{bare}.bin"))
+                || ANE_ZH_FILES
+                    .iter()
+                    .any(|f| f.rel_path == format!("voices/{bare}.bin"))
+        };
         for v in crate::tts::fluid_kokoro::available_voice_ids() {
             let bare = v
                 .split_once('-')
                 .map(|(_, bare)| bare)
                 .unwrap_or(v.as_str());
-            // af_heart: FluidAudio auto-provides it into the English ANE dir.
-            // zh-*: the Mandarin KokoroAne variant fetches its own ANE-zh bundle
-            // (nested voices/) on first synth, so kesha does not stage it (#492).
-            // Both are first-synth FluidAudio-owned downloads — the SAME class as
-            // the English Kokoro model graph + af_heart, which `download_tts`
-            // deliberately leaves to FluidAudio (see the `kokoro_manifest()` is
-            // empty note in `download_tts`). Pre-staging zh here is impossible
-            // (FluidAudio owns the nested ANE-zh layout) and would be inconsistent
-            // with how the en model graph already loads.
-            if bare == "af_heart" || v.starts_with("zh-") {
-                continue;
+            assert!(staged_anywhere(bare), "advertised voice {v} is not staged");
+        }
+    }
+
+    /// Every file `KokoroAneManager.initialize` requires has to be in one of the
+    /// staging manifests, or offline mode turns a working install into an error
+    /// (#823). Names come from upstream's `ModelNames.KokoroAne` /
+    /// `ModelNames.G2P`; a pin bump that renames a stage fails here.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn staged_manifests_cover_what_fluidaudio_requires() {
+        const CHAIN: [&str; 7] = [
+            "KokoroAlbert.mlmodelc",
+            "KokoroPostAlbert.mlmodelc",
+            "KokoroAlignment.mlmodelc",
+            "KokoroProsody.mlmodelc",
+            "KokoroNoise_v2.mlmodelc",
+            "KokoroVocoder.mlmodelc",
+            "KokoroTail.mlmodelc",
+        ];
+        // A CoreML ML Program bundle is only loadable with all five of these;
+        // `model.mil` missing is exactly the half-fetch #709 was about.
+        const PARTS: [&str; 5] = [
+            "analytics/coremldata.bin",
+            "coremldata.bin",
+            "metadata.json",
+            "model.mil",
+            "weights/weight.bin",
+        ];
+        let has = |m: &[ModelFile], p: &str| m.iter().any(|f| f.rel_path == p);
+
+        for bundle in CHAIN {
+            for part in PARTS {
+                let rel = format!("{bundle}/{part}");
+                assert!(has(ANE_EN_FILES, &rel), "English chain is missing {rel}");
+                assert!(has(ANE_ZH_FILES, &rel), "Mandarin chain is missing {rel}");
             }
+        }
+        for required in ["vocab.json", "af_heart.bin"] {
             assert!(
-                names.contains(format!("{bare}.bin").as_str()),
-                "advertised voice {v} has no staged ANE pack"
+                has(ANE_EN_FILES, required),
+                "English set is missing {required}"
             );
         }
+        for required in ["vocab.json", "voices/zf_001.bin"] {
+            assert!(
+                has(ANE_ZH_FILES, required),
+                "Mandarin set is missing {required}"
+            );
+        }
+        for part in PARTS {
+            assert!(
+                has(ANE_ZH_FILES, &format!("g2pw/g2pw.mlmodelc/{part}")),
+                "requiredModelsZh lists g2pw.mlmodelc, so it must be staged whole"
+            );
+        }
+        for required in [
+            "G2PEncoder.mlmodelc/model.mil",
+            "G2PDecoder.mlmodelc/model.mil",
+            "g2p_vocab.json",
+            "us_lexicon_cache.json",
+        ] {
+            assert!(
+                has(KOKORO_G2P_FILES, required),
+                "G2P set is missing {required}"
+            );
+        }
+        for required in ["g2p/pinyin_phrases.bin", "g2p/pinyin_single.bin"] {
+            assert!(
+                has(ANE_ZH_G2P_ASSETS, required),
+                "Mandarin G2P is missing {required}"
+            );
+        }
+    }
+
+    /// Same pin discipline the rest of `models.rs` gets: 64 hex chars, on
+    /// huggingface.co so `KESHA_MODEL_MIRROR` can rewrite it, and a relative
+    /// path that stays inside the directory it is staged into.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn staged_manifests_are_pinned_and_contained() {
+        for manifest in [
+            ANE_EN_FILES,
+            ANE_ZH_FILES,
+            ANE_ZH_G2P_ASSETS,
+            KOKORO_G2P_FILES,
+        ] {
+            assert!(!manifest.is_empty());
+            for f in manifest {
+                assert_eq!(f.sha256.len(), 64, "{f:?} sha256 not 64 hex chars");
+                assert!(
+                    f.sha256.chars().all(|c| c.is_ascii_hexdigit()),
+                    "{f:?} sha256 is not hex"
+                );
+                assert!(
+                    f.url.starts_with(
+                        "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/"
+                    ),
+                    "{f:?} must come from the FluidInference repo FluidAudio itself uses"
+                );
+                let rel = Path::new(f.rel_path);
+                assert!(
+                    rel.is_relative()
+                        && !rel
+                            .components()
+                            .any(|c| matches!(c, std::path::Component::ParentDir)),
+                    "{f:?} rel_path must stay inside its staging directory"
+                );
+            }
+        }
+    }
+
+    /// Staging follows the language the user asked for: an English-only install
+    /// never pays for the 250 MB Mandarin bundle, and a Russian-only install
+    /// touches neither (Vosk / AVSpeech serve `ru` on this build).
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn staging_is_scoped_to_the_requested_languages() {
+        let english = |langs: &[&str]| langs.iter().any(|l| ANE_ENGLISH_VARIANT_LANGS.contains(l));
+        assert!(english(&["en"]));
+        assert!(english(&["pt", "ru"]));
+        assert!(!english(&["ru"]));
+        assert!(!english(&["zh"]));
     }
 
     #[test]
@@ -2036,12 +2773,12 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
         parallel_download(&cache, &refs, no_cache)?;
     }
 
-    // On the FluidAudio ANE Kokoro path the model graph + `af_heart`
-    // auto-download into FluidAudio's own cache on first synth. Stage only the
-    // requested en/es/it/… catalog — including the male `am_michael` default —
-    // into FluidAudio's ANE voice-pack cache so they resolve local-first
-    // instead of 404ing against the ANE bundle (#475). Vosk-RU still lands
-    // under KESHA_CACHE_DIR.
+    // On the FluidAudio ANE Kokoro path everything lands in FluidAudio's own
+    // caches: the model chain and its G2P assets so nothing downloads at first
+    // synth (#823), plus the requested en/es/it/… voice catalog — including the
+    // male `am_michael` default — so those resolve local-first instead of
+    // 404ing against the ANE bundle (#475). Vosk-RU still lands under
+    // KESHA_CACHE_DIR.
     #[cfg(all(
         feature = "system_kokoro",
         target_os = "macos",
@@ -2051,6 +2788,7 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
         if langs.contains(&"ru") {
             download_manifest(VOSK_RU_FILES, no_cache)?;
         }
+        stage_fluidaudio_kokoro_assets(langs, no_cache)?;
         stage_ane_kokoro_voices(langs, no_cache)?;
     }
 

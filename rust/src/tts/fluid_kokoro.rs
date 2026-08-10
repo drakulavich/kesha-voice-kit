@@ -199,6 +199,22 @@ fn compute_units_from_env() -> Result<KokoroComputeUnits> {
     )
 }
 
+/// What to say when offline mode stopped FluidAudio fetching a model asset:
+/// the install did not finish (or something removed part of it), and re-running
+/// it is the fix. `lang` names the exact install to run so a Mandarin user is
+/// not told to install English.
+fn missing_assets_error(lang: &str) -> anyhow::Error {
+    let install_lang = if lang == "zh" { "zh" } else { "en" };
+    anyhow::Error::new(crate::errors::CodedError {
+        code: ErrorCode::ModelMissing,
+        message: format!(
+            "FluidAudio Kokoro assets are missing and kesha never downloads them \
+             behind your back — run `kesha install --tts {install_lang}`{}",
+            incomplete_bundle_hint()
+        ),
+    })
+}
+
 /// Suffix naming the one Kokoro init failure kesha can repair: a `.mlmodelc`
 /// left incomplete in FluidAudio's cache by an older version (#709). The Swift
 /// bridge collapses every init failure into `-1` and logs the CoreML reason
@@ -229,17 +245,24 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
     // (`zh` → Mandarin, else English). Unknown voices default to English.
     let lang = lang_for_fluid_id(voice_id).unwrap_or("en-us");
     let compute_units = compute_units_from_env()?;
+    // Before any loader is touched, per upstream's contract: `kesha install
+    // --tts` stages every asset FluidAudio needs, so a gap here is a broken
+    // install to report, never a download to make (#823). Process-global by
+    // construction, which is safe because the engine runs one subcommand per
+    // process and `say` never initialises ASR.
+    fluidaudio_rs::set_offline_mode(true);
     crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
         let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_kokoro_location())
             .context("init FluidAudio bridge")?;
         audio
             .init_kokoro_with_compute_units(voice_id, lang, compute_units)
-            .map_err(|e| {
-                anyhow::Error::new(e).context(format!(
-                    "init FluidAudio Kokoro on {} compute units (downloads the model on first run){}",
+            .map_err(|e| match e {
+                fluidaudio_rs::FluidAudioError::AssetsUnavailable(_) => missing_assets_error(lang),
+                other => anyhow::Error::new(other).context(format!(
+                    "init FluidAudio Kokoro on {} compute units{}",
                     preset_name(compute_units),
                     incomplete_bundle_hint()
-                ))
+                )),
             })?;
         // FluidAudio phonemizes raw text itself, so `en::normalize_segments`
         // never runs here and substituting IPA into the text is not an option.
@@ -518,8 +541,38 @@ mod tests {
         assert_eq!(COMPUTE_UNIT_PRESETS.len(), 4, "extend the table");
     }
 
+    /// Both Kokoro paths must agree on phoneme → token id, or the same IPA
+    /// renders as different audio depending on the backend. Kesha embeds its own
+    /// copy for ONNX (`fixtures/tts/kokoro_vocab.json`) while the ANE chain reads
+    /// FluidAudio's `vocab.json`; nothing keeps them in step but this.
+    ///
+    /// Equality is over the parsed mapping, not the bytes: the two files carry
+    /// the same table with different JSON formatting, so a byte compare fails on
+    /// whitespace alone. Self-skips until the ANE bundle is staged, since it only
+    /// exists after `kesha install --tts`.
     #[test]
-    #[ignore = "downloads the FluidAudio Kokoro model; run locally on darwin-arm64"]
+    fn the_ane_vocab_agrees_with_the_onnx_fixture() {
+        let staged = crate::models::fluidaudio_ane_kokoro_dir().join("vocab.json");
+        let Ok(ane_json) = std::fs::read_to_string(&staged) else {
+            return;
+        };
+        let ane: std::collections::HashMap<String, i64> =
+            serde_json::from_str(&ane_json).expect("FluidAudio vocab.json must parse");
+        let onnx: std::collections::HashMap<String, i64> =
+            serde_json::from_str(include_str!("../../fixtures/tts/kokoro_vocab.json"))
+                .expect("kesha vocab fixture must parse");
+        assert_eq!(
+            ane,
+            onnx,
+            "FluidAudio's ANE vocab at {} diverged from kesha's ONNX fixture — \
+             a pin bump changed the token table, so the two backends would now \
+             render the same IPA differently",
+            staged.display()
+        );
+    }
+
+    #[test]
+    #[ignore = "needs `kesha install --tts en`; run locally on darwin-arm64"]
     fn synthesize_returns_wav() {
         let wav = synthesize("Hello world", "am_michael", 1.0).expect("synth");
         assert!(

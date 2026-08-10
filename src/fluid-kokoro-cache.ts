@@ -3,9 +3,16 @@ import { join } from "path";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 
 export const FLUID_KOKORO_CACHE_NOTE =
-  "FluidAudio CoreML in-engine; first warm-up may download/compile FluidAudio's Kokoro CoreML cache outside Kesha's pinned model cache";
+  "FluidAudio CoreML in-engine; first synthesis compiles the ANE chain. `kesha install --tts` stages the shared G2P assets here, outside Kesha's pinned model cache, because FluidAudio resolves them from this path and no other";
 
-const KOKORO_COREML_BUNDLES = ["kokoro_21_15s.mlmodelc", "kokoro_21_5s.mlmodelc"];
+// `G2PEncoder` is what a current install leaves here (#823); the two
+// `kokoro_21_*` graphs are what a pre-0.15.5 install left, and are still worth
+// reporting on a machine that never re-installed.
+const KOKORO_COREML_BUNDLES = [
+  "G2PEncoder.mlmodelc",
+  "kokoro_21_15s.mlmodelc",
+  "kokoro_21_5s.mlmodelc",
+];
 
 export interface FluidKokoroCacheInfo {
   supported: boolean;
