@@ -7,6 +7,17 @@
 //! - non-silent RMS,
 //! - plausible duration relative to grapheme count.
 //!
+//! What this owns, since the Kokoro graph here is a stand-in (#741): the duration
+//! band and RMS checks are **stand-in sanity** — that text of a given length yields
+//! audio of a plausible length, unclipped and non-silent. They are a weak oracle for
+//! phonemisation: the measured ratios sit at 0.58-1.02 inside a [0.3, 1.5] band, so
+//! halving the phoneme count would still pass.
+//!
+//! **Phoneme fidelity is owned by the IPA assertions** in `tts::charsiu::tests` and
+//! `tts::sessions::tests`, which pin exact output (`bonjour` -> `bɔ̃ʒuʁ`) and zero
+//! post-remap OOV. Both refuse to skip when `KESHA_REQUIRE_G2P_TESTS` is set, so the
+//! lane that stages CharsiuG2P cannot go green without them.
+//!
 //! Skip condition: `CHARSIU_ONNX` unset OR Kokoro model/voice absent from cache.
 //! Run with:
 //!   cd rust && CHARSIU_ONNX=~/.cache/kesha/models/g2p/byt5-tiny \
@@ -35,12 +46,14 @@ fn default_voice(lang: &str) -> &'static str {
 /// Skip gate: both `CHARSIU_ONNX` must be set AND Kokoro model + the relevant
 /// voice must be present. Returns `(model_path, voice_path)` or `None`.
 fn multilang_paths_or_skip(lang: &str) -> Option<(PathBuf, PathBuf)> {
-    // Gate 1: G2P model present.
+    // Gate 1: G2P model present. Its own flag rather than the Kokoro tier, because
+    // CharsiuG2P has no stand-in — the mini graph replaces Kokoro's weights, not the
+    // phonemiser — so only the one lane that downloads the ~106 MB pack runs these.
     if std::env::var_os("CHARSIU_ONNX").is_none() {
         assert!(
-            !common::models_required(),
-            "CHARSIU_ONNX unset while KESHA_REQUIRE_MODEL_TESTS is set — \
-             this lane stages CharsiuG2P, so skipping here would be a green run of nothing (#741)"
+            std::env::var_os("KESHA_REQUIRE_G2P_TESTS").is_none(),
+            "CHARSIU_ONNX unset while KESHA_REQUIRE_G2P_TESTS is set — this lane stages \
+             CharsiuG2P, so skipping here would be a green run of nothing (#741)"
         );
         eprintln!("skipping tts_multilang_audio: CHARSIU_ONNX not set");
         return None;

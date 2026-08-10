@@ -18,7 +18,13 @@ _kokoro_export() {
 if [[ -f "$_kokoro_cache/model.onnx" && -f "$_kokoro_cache/am_michael.bin" ]]; then
   _kokoro_export KOKORO_MODEL "$_kokoro_cache/model.onnx"
   _kokoro_export KOKORO_VOICE "$_kokoro_cache/am_michael.bin"
-  echo "Running with real Kokoro models from $_kokoro_cache"
+  # Say which: a log line claiming real weights over a stand-in is the confusion
+  # this whole tier exists to prevent (#741).
+  if [[ -f "$_kokoro_cache/MINI-MODEL.json" ]]; then
+    echo "Running with Kokoro stand-ins from $_kokoro_cache"
+  else
+    echo "Running with real Kokoro models from $_kokoro_cache"
+  fi
 else
   echo "Kokoro cache empty — gated tests will skip"
 fi

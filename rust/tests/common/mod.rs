@@ -80,17 +80,32 @@ pub fn assert_kokoro_speech(wav: &[u8], ctx: &str) -> Vec<f32> {
     samples
 }
 
-/// True when the lane promised to stage models, so a missing one must fail the
-/// run rather than skip. Every gate below returns `None` on a missing model and
-/// its callers return early, which nextest reports as a pass — so a lane whose
-/// layout stopped matching what the gates read goes green having run nothing
-/// (#741). CI lanes that stage models set `KESHA_REQUIRE_MODEL_TESTS`.
-pub fn missing_model_is_fatal(flag: Option<&str>) -> bool {
-    !matches!(flag, None | Some("") | Some("0"))
+/// Which weights a lane promised to stage, if any.
+///
+/// Every gate below returns `None` on a missing model and its callers return
+/// early, which nextest reports as a pass — so a lane whose layout stopped
+/// matching what the gates read goes green having run nothing (#741). The tier
+/// makes that failure loud, and makes the *wrong* weights loud too: a lane on
+/// stand-ins must not claim real coverage, and a lane that meant to use
+/// stand-ins must not quietly start paying for real ones again.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum RequiredModels {
+    Real,
+    Mini,
 }
 
-pub fn models_required() -> bool {
-    missing_model_is_fatal(std::env::var("KESHA_REQUIRE_MODEL_TESTS").ok().as_deref())
+/// `KESHA_REQUIRE_MODEL_TESTS`: unset/empty/`0` skips freely, `mini` demands the
+/// stand-ins, anything else truthy demands real weights.
+pub fn required_models(flag: Option<&str>) -> Option<RequiredModels> {
+    match flag {
+        None | Some("") | Some("0") => None,
+        Some(v) if v.eq_ignore_ascii_case("mini") => Some(RequiredModels::Mini),
+        Some(_) => Some(RequiredModels::Real),
+    }
+}
+
+pub fn models_required() -> Option<RequiredModels> {
+    required_models(std::env::var("KESHA_REQUIRE_MODEL_TESTS").ok().as_deref())
 }
 
 /// The mini stand-ins satisfy every structural gate by construction, so a lane
@@ -113,12 +128,22 @@ pub fn staged_with_mini_models(model: &Path) -> bool {
 }
 
 /// Every gate below funnels through this, so a new gate that forgets it is the
-/// only way back to a lane claiming real coverage off a stand-in.
-fn reject_mini_models_when_real_are_required(model: &Path) {
-    assert!(
-        !(models_required() && staged_with_mini_models(model)),
-        "KESHA_REQUIRE_MODEL_TESTS is set but {} is a mini stand-in — a lane cannot \
-         claim real-model coverage off a synthetic signature (#741)",
+/// only way back to a lane running against weights it did not promise.
+fn assert_staged_tier_matches(model: &Path) {
+    let Some(required) = models_required() else {
+        return;
+    };
+    let staged = if staged_with_mini_models(model) {
+        RequiredModels::Mini
+    } else {
+        RequiredModels::Real
+    };
+    assert_eq!(
+        staged,
+        required,
+        "KESHA_REQUIRE_MODEL_TESTS asks for {required:?} weights but {} is {staged:?} — \
+         a lane cannot claim real coverage off a stand-in, and a lane meant for stand-ins \
+         should not be paying to download real ones (#741)",
         model.display()
     );
 }
@@ -131,11 +156,11 @@ fn reject_mini_models_when_real_are_required(model: &Path) {
 /// reason themselves so each test owns its own message.
 pub fn kokoro_paths_or_skip() -> Option<(String, String)> {
     if let (Ok(m), Ok(v)) = (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        reject_mini_models_when_real_are_required(Path::new(&m));
+        assert_staged_tier_matches(Path::new(&m));
         return Some((m, v));
     }
     assert!(
-        !models_required(),
+        models_required().is_none(),
         "KOKORO_MODEL/KOKORO_VOICE unset while KESHA_REQUIRE_MODEL_TESTS is set — \
          this lane stages models, so skipping here would be a green run of nothing (#741)"
     );
@@ -155,11 +180,11 @@ pub fn kokoro_cache_dir_or_skip() -> Option<PathBuf> {
     let model = base.join("models/kokoro-82m/model.onnx");
     let voice = base.join("models/kokoro-82m/voices/am_michael.bin");
     if model.exists() && voice.exists() {
-        reject_mini_models_when_real_are_required(&model);
+        assert_staged_tier_matches(&model);
         return Some(base);
     }
     assert!(
-        !models_required(),
+        models_required().is_none(),
         "no Kokoro runtime layout under {} while KESHA_REQUIRE_MODEL_TESTS is set — \
          this lane stages models, so skipping here would be a green run of nothing (#741)",
         base.display()
@@ -178,11 +203,11 @@ pub fn kokoro_voice_or_skip(
         .join("models/kokoro-82m/voices")
         .join(format!("{voice_name}.bin"));
     if model.exists() && voice.exists() {
-        reject_mini_models_when_real_are_required(&model);
+        assert_staged_tier_matches(&model);
         return Some((model, voice));
     }
     assert!(
-        !models_required(),
+        models_required().is_none(),
         "Kokoro graph or voice {voice_name} missing under {} while \
          KESHA_REQUIRE_MODEL_TESTS is set — this lane stages the voice packs, so \
          skipping here would be a green run of nothing (#741)",

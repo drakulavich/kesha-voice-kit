@@ -14,11 +14,17 @@ const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
  */
 const SPIKE_MODEL = process.env.KOKORO_MODEL ?? "/tmp/kokoro-spike/model.onnx";
 const SPIKE_VOICE = process.env.KOKORO_VOICE ?? "/tmp/kokoro-spike/am_michael.bin";
-const SPIKE_AVAILABLE = existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE);
 
 const CACHE_DIR = `/tmp/kesha-e2e-${Date.now()}`;
 const MODEL_DIR = `${CACHE_DIR}/models/kokoro-82m`;
 const BUILT_ENGINE = `${new URL("../..", import.meta.url).pathname}rust/target/release/kesha-engine`;
+
+// The engine belongs in the gate, not just the model. Since the Kokoro stand-in
+// is committed, a model is now always present, so a model-only gate would have
+// this suite run in every lane — including the ones that never build the binary
+// it drives (#741).
+const SPIKE_AVAILABLE =
+  existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE) && existsSync(BUILT_ENGINE);
 
 beforeAll(() => {
   if (!SPIKE_AVAILABLE) return;

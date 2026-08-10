@@ -108,8 +108,10 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
       # This lane stages models, so a gate that can't find them is a broken
       # layout, not a laptop — fail instead of skipping to a green run of
-      # nothing (#741). Lanes that stage nothing (rust-push-gate) leave it unset.
-      KESHA_REQUIRE_MODEL_TESTS: "1"
+      # nothing (#741). `mini` also fails if real weights reappear here, which is
+      # what keeps the download from creeping back. Lanes that stage nothing
+      # (rust-push-gate) leave it unset.
+      KESHA_REQUIRE_MODEL_TESTS: mini
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
@@ -198,10 +200,14 @@ jobs:
             --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
             --no-default-features -- -D warnings
 
-      - name: 🎚️ Setup Kokoro TTS models
-        uses: ./.github/actions/setup-kokoro-models
+      # No model cache on this lane at all: the Kokoro stand-in is committed, and
+      # the bundles that have no stand-in (CharsiuG2P, Vosk-RU) are covered once on
+      # the Linux coverage lane rather than three times (#741).
+      - name: 🎚️ Stage Kokoro stand-ins
+        shell: bash
+        run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
 
-      - name: Run tests (with real Kokoro)
+      - name: Run tests
         shell: bash
         run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "${{ runner.os }}"
 
@@ -245,10 +251,11 @@ jobs:
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
       NEXTEST_PROFILE: ci
-      KESHA_REQUIRE_MODEL_TESTS: "1"
-      # Separate from the flag above because this is the only lane staging Vosk;
-      # the macOS/Windows lanes promise Kokoro + G2P and nothing more.
+      KESHA_REQUIRE_MODEL_TESTS: mini
+      # Separate flags because this is the only lane staging either bundle; the
+      # macOS/Windows lanes promise the Kokoro stand-in and nothing more.
       KESHA_REQUIRE_VOSK_TESTS: "1"
+      KESHA_REQUIRE_G2P_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -282,12 +289,19 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
 
-      - name: 🎚️ Setup Kokoro TTS models
+      # The only lane carrying weights nothing can stand in for: CharsiuG2P for the
+      # multilingual phonemiser, and Vosk-RU for its one synth test (#741).
+      - name: 🎚️ Setup real TTS models
         uses: ./.github/actions/setup-kokoro-models
         with:
-          # This is the one lane that runs the Vosk synth test, so it is the one
-          # lane that pays for the bundle (#741).
           vosk: "true"
+
+      # After the restore, never before: an archive written under an older key still
+      # carries a real model.onnx, and unpacking it over a staged stand-in would put
+      # this lane back on weights it did not promise.
+      - name: 🎚️ Stage Kokoro stand-ins
+        shell: bash
+        run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
 
       - name: 📈 Rust coverage
         shell: bash
