@@ -409,6 +409,10 @@ jobs:
         with:
           cache-path: |
             ~/.cache/kesha
+          # 94 MB today because this key predates #820, so the entry archives the
+          # ONNX layout only. Rotating it re-archives the ~450 MB FluidAudio
+          # bundle now rooted under the same tree — check the budget before you
+          # bump it, or move this lane off the PR path first (#741).
           cache-key: ${{ runner.os }}-kesha-engine-v1
           cache-restore-keys: ${{ runner.os }}-kesha-engine-
       - name: 🧪 Integration tests (real engine)
@@ -605,6 +609,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: 🎧 Install system audio deps
         if: runner.os == 'Linux'
@@ -723,6 +728,9 @@ jobs:
           # with `clang_rt.osx not found` even after the Xcode 16.2 pin. Bump
           # this discriminator if the stale path ever resurfaces.
           key: xcode-16.2
+          # ci.yml runs on push to main, so this lane keeps a main-scoped entry
+          # every PR restores — the one rust cache that already worked that way.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: 🎚️ Setup Kokoro TTS models
         uses: ./.github/actions/setup-kokoro-models
