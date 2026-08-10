@@ -1,8 +1,8 @@
 name: Setup Kokoro TTS models
 description: >
-  Restore-or-download the TTS models that have no stand-in: CharsiuG2P always, and
-  Vosk-RU when `vosk` is set. Kokoro itself is served by the committed mini, so this
-  action is now called by the Linux coverage lane alone (#741).
+  Restore-or-download CharsiuG2P, the only TTS weights left on the PR path that have
+  no stand-in. Kokoro is served by the committed mini and Vosk-RU moved to the weekly
+  real-model canary, so the Linux coverage lane is this action's only caller (#741).
 
   Restore-only by design: writing is the job of cache-seed.yml on main. GitHub
   scopes a cache written during a pull_request run to that PR's merge ref, so only
@@ -19,13 +19,6 @@ inputs:
     description: Model cache directory (also used as KOKORO_CACHE by callers).
     required: false
     default: ${{ github.workspace }}/.kokoro-spike
-  vosk:
-    description: >
-      Also stage the ~935 MB Vosk-TTS-RU bundle. Only the one lane that runs
-      `tts::vosk::tests::synth_short_phrase_produces_audio` needs it; every other
-      caller leaves this false and keeps its cache entry ~935 MB smaller (#741).
-    required: false
-    default: "false"
 
 runs:
   using: composite
@@ -49,9 +42,9 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.cache-dir }}
-        key: kokoro-models-v3-${{ runner.os }}-vosk${{ inputs.vosk }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
+        key: kokoro-models-v4-${{ runner.os }}-${{ hashFiles('rust/ci/download-kokoro.sh') }}
         restore-keys: |
-          kokoro-models-v3-${{ runner.os }}-vosk${{ inputs.vosk }}
+          kokoro-models-v4-${{ runner.os }}
 
     # Idempotent: downloads only the files the restore didn't provide, so a cold
     # cache still works (just slower) and a warm one costs nothing.
@@ -59,5 +52,4 @@ runs:
       shell: bash
       env:
         KOKORO_CACHE_DIR: ${{ inputs.cache-dir }}
-        WITH_VOSK: ${{ inputs.vosk == 'true' && '1' || '0' }}
       run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE_DIR"

@@ -252,9 +252,10 @@ jobs:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
       NEXTEST_PROFILE: ci
       KESHA_REQUIRE_MODEL_TESTS: mini
-      # Separate flags because this is the only lane staging either bundle; the
-      # macOS/Windows lanes promise the Kokoro stand-in and nothing more.
-      KESHA_REQUIRE_VOSK_TESTS: "1"
+      # CharsiuG2P has no stand-in and its IPA goldens own phoneme fidelity, so this
+      # lane still promises it. Vosk-RU moved to real-model-canary.yml: one synth test
+      # was not worth ~935 MB of per-PR cache, and it needs real weights either way
+      # (#741).
       KESHA_REQUIRE_G2P_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -289,12 +290,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
 
-      # The only lane carrying weights nothing can stand in for: CharsiuG2P for the
-      # multilingual phonemiser, and Vosk-RU for its one synth test (#741).
+      # The only weights left on the PR path that nothing can stand in for:
+      # CharsiuG2P, whose phonemiser the Kokoro mini does not replace (#741).
       - name: 🎚️ Setup real TTS models
         uses: ./.github/actions/setup-kokoro-models
-        with:
-          vosk: "true"
 
       # After the restore, never before: an archive written under an older key still
       # carries a real model.onnx, and unpacking it over a staged stand-in would put
