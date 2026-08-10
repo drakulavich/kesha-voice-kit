@@ -35,7 +35,8 @@ const presets: Record<PresetName, CoveragePreset> = {
     minFileLines: {
       "src/cli/main.ts": 35,
       "src/cli/say.ts": 50,
-      "src/engine-install.ts": 15,
+      // Sat at 15 while the file measured 65.9%, so a fourfold collapse would still pass (#847 audit).
+      "src/engine-install.ts": 60,
       "src/engine.ts": 80,
     },
   },
