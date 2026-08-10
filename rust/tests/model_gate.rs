@@ -18,14 +18,17 @@
 
 mod common;
 
-#[test]
-fn a_mini_staged_lane_is_distinguishable_from_a_real_one() {
-    let mini = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+fn mini_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("tests/fixtures/mini-models/kokoro/model.onnx");
+        .join("tests/fixtures/mini-models/kokoro")
+}
+
+#[test]
+fn a_mini_staged_lane_is_distinguishable_from_a_real_one() {
     assert!(
-        common::staged_with_mini_models(&mini),
+        common::staged_with_mini_models(&mini_dir().join("model.onnx")),
         "the committed mini must carry its marker, or KESHA_REQUIRE_MODEL_TESTS \
          would accept it as real coverage"
     );
@@ -33,6 +36,78 @@ fn a_mini_staged_lane_is_distinguishable_from_a_real_one() {
         !common::staged_with_mini_models(std::path::Path::new("/nonexistent/model.onnx")),
         "an unmarked path is treated as real"
     );
+}
+
+/// say-e2e stages by symlinking the model into a temp cache, which leaves the
+/// marker behind at the target — the shape that would otherwise read as real.
+#[cfg(unix)]
+#[test]
+fn a_symlinked_mini_is_still_recognised_as_a_stand_in() {
+    let staged = std::env::temp_dir().join(format!("kesha-mini-link-{}", std::process::id()));
+    let dir = staged.join("models/kokoro-82m");
+    std::fs::create_dir_all(&dir).unwrap();
+    let link = dir.join("model.onnx");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(mini_dir().join("model.onnx"), &link).unwrap();
+
+    assert!(
+        !link.parent().unwrap().join("MINI-MODEL.json").exists(),
+        "the staging dir must not carry the marker, or this proves nothing"
+    );
+    assert!(
+        common::staged_with_mini_models(&link),
+        "a symlinked mini must still be recognised through its target"
+    );
+    std::fs::remove_dir_all(&staged).ok();
+}
+
+/// Every gate entry point, not just the one that had it first: a lane that
+/// promised real models must fail on a stand-in wherever it enters.
+#[test]
+fn every_gate_refuses_a_mini_when_the_lane_promised_real_models() {
+    let mini = mini_dir();
+    let staged = std::env::temp_dir().join(format!("kesha-mini-gate-{}", std::process::id()));
+    let dir = staged.join("models/kokoro-82m/voices");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(
+        mini.join("model.onnx"),
+        staged.join("models/kokoro-82m/model.onnx"),
+    )
+    .unwrap();
+    std::fs::copy(mini.join("am_michael.bin"), dir.join("am_michael.bin")).unwrap();
+    std::fs::copy(
+        mini.join("MINI-MODEL.json"),
+        staged.join("models/kokoro-82m/MINI-MODEL.json"),
+    )
+    .unwrap();
+
+    std::env::set_var("KESHA_CACHE_DIR", &staged);
+    std::env::set_var("KOKORO_MODEL", mini.join("model.onnx"));
+    std::env::set_var("KOKORO_VOICE", mini.join("am_michael.bin"));
+
+    std::env::remove_var("KESHA_REQUIRE_MODEL_TESTS");
+    assert!(
+        common::kokoro_paths_or_skip().is_some() && common::kokoro_cache_dir_or_skip().is_some(),
+        "a lane that promised nothing may use minis freely"
+    );
+
+    std::env::set_var("KESHA_REQUIRE_MODEL_TESTS", "1");
+    let by_env = std::panic::catch_unwind(common::kokoro_paths_or_skip);
+    let by_cache = std::panic::catch_unwind(common::kokoro_cache_dir_or_skip);
+    let by_voice = std::panic::catch_unwind(|| common::kokoro_voice_or_skip(&staged, "am_michael"));
+
+    std::env::remove_var("KESHA_REQUIRE_MODEL_TESTS");
+    std::env::remove_var("KESHA_CACHE_DIR");
+    std::env::remove_var("KOKORO_MODEL");
+    std::env::remove_var("KOKORO_VOICE");
+    std::fs::remove_dir_all(&staged).ok();
+
+    assert!(by_env.is_err(), "kokoro_paths_or_skip must refuse a mini");
+    assert!(
+        by_cache.is_err(),
+        "kokoro_cache_dir_or_skip must refuse a mini"
+    );
+    assert!(by_voice.is_err(), "kokoro_voice_or_skip must refuse a mini");
 }
 
 #[test]
@@ -43,8 +118,10 @@ fn a_missing_model_skips_by_default_and_fails_where_models_are_promised() {
     assert!(common::missing_model_is_fatal(Some("1")));
 }
 
-/// Both gates live in one test because it mutates process env: nextest gives
-/// each test its own process, but plain `cargo test` would race them.
+/// Groups its assertions rather than splitting them because it mutates process
+/// env, which is only safe under nextest's process-per-test — the runner
+/// CLAUDE.md mandates. Plain `cargo test` would race this against the other
+/// env-mutating test in this file.
 #[test]
 fn the_kokoro_gates_fail_loudly_rather_than_skipping_when_models_are_promised() {
     let root = std::env::temp_dir().join(format!("kesha-model-gate-{}", std::process::id()));

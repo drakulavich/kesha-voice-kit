@@ -97,12 +97,23 @@ pub fn models_required() -> bool {
 /// staged with them would pass `KESHA_REQUIRE_MODEL_TESTS` having proved nothing
 /// about the real weights — the loud signal would go quiet exactly where it
 /// matters. The marker beside the model is what tells the two apart (#741).
+///
+/// Checks the link's own directory *and* the resolved target's: staging shapes
+/// differ, and say-e2e symlinks the model into a temp cache, which leaves the
+/// marker behind at the target.
 pub fn staged_with_mini_models(model: &Path) -> bool {
-    model
-        .parent()
-        .is_some_and(|dir| dir.join("MINI-MODEL.json").exists())
+    let mut candidates = vec![model.to_path_buf()];
+    if let Ok(resolved) = std::fs::canonicalize(model) {
+        candidates.push(resolved);
+    }
+    candidates
+        .iter()
+        .filter_map(|p| p.parent())
+        .any(|dir| dir.join("MINI-MODEL.json").exists())
 }
 
+/// Every gate below funnels through this, so a new gate that forgets it is the
+/// only way back to a lane claiming real coverage off a stand-in.
 fn reject_mini_models_when_real_are_required(model: &Path) {
     assert!(
         !(models_required() && staged_with_mini_models(model)),
@@ -144,6 +155,7 @@ pub fn kokoro_cache_dir_or_skip() -> Option<PathBuf> {
     let model = base.join("models/kokoro-82m/model.onnx");
     let voice = base.join("models/kokoro-82m/voices/am_michael.bin");
     if model.exists() && voice.exists() {
+        reject_mini_models_when_real_are_required(&model);
         return Some(base);
     }
     assert!(
@@ -166,6 +178,7 @@ pub fn kokoro_voice_or_skip(
         .join("models/kokoro-82m/voices")
         .join(format!("{voice_name}.bin"));
     if model.exists() && voice.exists() {
+        reject_mini_models_when_real_are_required(&model);
         return Some((model, voice));
     }
     assert!(

@@ -12,6 +12,12 @@ name: "🧬 Mini-Model Pact"
 # downloaded model instead of the fixture, so a drift here means the *recording* is
 # wrong, not the mini.
 #
+# What this compares is the structural signature — tensor names, dtypes, ranks — and
+# deliberately not opset, initializer count or external-data layout: the real model is
+# opset 20 with 554 initializers, the mini opset 17 with none. Those differ by design,
+# and asserting on them would turn a contract check into a weights fingerprint that
+# fails on every upstream rebuild.
+#
 # RE-RECORDING. A model bump that renames a tensor or changes a rank fails this job on
 # purpose, and the fix is never to relax the check:
 #
