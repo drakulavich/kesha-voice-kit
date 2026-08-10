@@ -184,6 +184,65 @@ mod tests {
     }
 
     #[test]
+    fn chunk_splits_one_char_past_the_cap_and_not_at_it() {
+        let at_cap = "a".repeat(KOKORO_MAX_ACTIVE);
+        assert_eq!(chunk_ipa(&at_cap, KOKORO_MAX_ACTIVE), vec![at_cap.clone()]);
+
+        let past_cap = format!("{at_cap}a");
+        assert_eq!(
+            chunk_ipa(&past_cap, KOKORO_MAX_ACTIVE),
+            vec![at_cap, "a".to_string()]
+        );
+    }
+
+    #[test]
+    fn chunk_counts_characters_not_utf8_bytes() {
+        // ˈ is two bytes: a byte-counting cap would split this in half.
+        let ipa = "ˈ".repeat(KOKORO_MAX_ACTIVE);
+        assert_eq!(chunk_ipa(&ipa, KOKORO_MAX_ACTIVE), vec![ipa]);
+    }
+
+    #[test]
+    fn chunk_collapses_consecutive_whitespace_at_a_break() {
+        assert_eq!(chunk_ipa("aaa \t\n bbb ccc", 8), vec!["aaa", "bbb ccc"]);
+    }
+
+    #[test]
+    fn chunk_breaks_cleanly_on_whitespace_at_the_window_edge() {
+        assert_eq!(chunk_ipa("aaa bbb", 3), vec!["aaa", "bbb"]);
+        assert_eq!(chunk_ipa("aaa bbbb", 4), vec!["aaa", "bbbb"]);
+    }
+
+    #[test]
+    fn chunk_conserves_phonemes_across_punctuation_splits() {
+        let ipa = (0..200)
+            .map(|i| format!("wˈɜːrd{i},"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let chunks = chunk_ipa(&ipa, KOKORO_MAX_ACTIVE);
+        assert!(chunks.len() > 1, "expected a split, got {}", chunks.len());
+        let strip = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+        assert_eq!(
+            strip(&chunks.concat()),
+            strip(&ipa),
+            "chunking dropped or reordered phonemes"
+        );
+    }
+
+    #[test]
+    fn chunk_conserves_a_combining_mark_run() {
+        // e + U+0303 pairs with no boundary anywhere: every break is a hard
+        // split, and each half must still carry every character it was given.
+        let ipa = "e\u{0303}".repeat(400);
+        let chunks = chunk_ipa(&ipa, KOKORO_MAX_ACTIVE);
+        assert!(chunks.len() > 1, "expected a split, got {}", chunks.len());
+        for c in &chunks {
+            assert!(c.chars().count() <= KOKORO_MAX_ACTIVE);
+        }
+        assert_eq!(chunks.concat(), ipa);
+    }
+
+    #[test]
     fn truncates_beyond_max_active() {
         let ids: Vec<i64> = (1..=600).collect();
         let padded = Tokenizer::pad_to_context(ids);
