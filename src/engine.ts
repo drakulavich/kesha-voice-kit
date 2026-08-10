@@ -467,7 +467,9 @@ let cachedEngineCapabilities:
   | { binPath: string; mtime: number; capabilities: EngineCapabilities }
   | null = null;
 
-export async function getEngineCapabilities(): Promise<EngineCapabilities | null> {
+export async function getEngineCapabilities(
+  opts: RunEngineOptions = {},
+): Promise<EngineCapabilities | null> {
   const binPath = getEngineBinPath();
   // #248: include mtimeMs so an in-place `kesha install` overwite invalidates the cache.
   // statSync throws on missing file — catch returns null, no separate isEngineInstalled() needed.
@@ -483,7 +485,7 @@ export async function getEngineCapabilities(): Promise<EngineCapabilities | null
   ) {
     return cachedEngineCapabilities.capabilities;
   }
-  const { stdout, exitCode } = await runEngine(["--capabilities-json"]);
+  const { stdout, exitCode } = await runEngine(["--capabilities-json"], opts);
   if (exitCode !== 0) return null;
   try {
     const capabilities = parseCapabilities(JSON.parse(stdout));

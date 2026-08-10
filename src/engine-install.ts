@@ -8,7 +8,7 @@ import {
   TRANSCRIBE_DIARIZE_FEATURE,
   type EngineCapabilities,
 } from "./engine";
-import { probeExecutable } from "./engine-health";
+import { engineFunctionalHealth, probeExecutable } from "./engine-health";
 import { engineTarget } from "./engine-targets";
 import { isDarwinArm64 } from "./fluid-kokoro-cache";
 import { log } from "./log";
@@ -413,11 +413,19 @@ export async function waitUntilSpawnable(binPath: string, deadlineMs = 60_000): 
 
 /**
  * Cache-validity health check: an install interrupted before `chmod`/marker-write, or a
- * binary from another architecture, exists at the right version yet cannot start (#770).
+ * binary from another architecture, exists at the right version yet cannot start (#770) —
+ * or starts and cannot describe itself, which is just as unusable (#801).
  */
-async function engineRuns(binPath: string): Promise<boolean> {
-  const health = await probeExecutable(binPath, ["--version"]);
+async function engineWorks(binPath: string): Promise<boolean> {
+  const health = await engineFunctionalHealth();
   if (health.status === "ok") return true;
+  if (health.status === "mute") {
+    log.warn(
+      `Installed engine at ${binPath} runs but ${health.detail}; it is corrupt or truncated ` +
+        "— re-downloading it.",
+    );
+    return false;
+  }
   const detail = health.status === "unusable" ? health.detail : "binary disappeared";
   log.warn(
     `Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` +
@@ -617,7 +625,7 @@ export async function installEngine(request: EngineInstallRequest = {}): Promise
   // dir: nothing there can be repaired, so a failed probe would only turn a usable Nix
   // install into a hard error.
   const versionMatches =
-    markerMatches && (!canWriteEngineDir || (await engineRuns(binPath)));
+    markerMatches && (!canWriteEngineDir || (await engineWorks(binPath)));
   // On read-only fs, --no-cache can't re-download; treat as cache-valid and forward flag to model install.
   const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 

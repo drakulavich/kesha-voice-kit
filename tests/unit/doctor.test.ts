@@ -421,6 +421,18 @@ describe("the human report states what each component is doing (#770)", () => {
     expect(corrupt).not.toContain("(installed)");
   });
 
+  // #801: an engine that spawns is not thereby working. Nothing may read clean while
+  // the binary is present and its capabilities are null.
+  test("a runnable engine with no capabilities is a fault of its own", () => {
+    const mute = engineLine(
+      doctorReport({ engine: { ...doctorReport().engine, capabilities: null } }),
+    );
+    expect(mute).toContain("installed but not functional (reports no capabilities)");
+    expect(mute).toContain("kesha install");
+    expect(mute).not.toContain("(installed)");
+    expect(mute).not.toContain("corrupt");
+  });
+
   test("an optional component's state separates corrupt from missing", () => {
     const output = formatDoctorReport(
       doctorReport({
@@ -589,14 +601,33 @@ describe("collectDoctorReport probe and cache accounting", () => {
     }
   });
 
-  posixEngineTest("an engine that runs but describes nothing says so", async () => {
+  // #801: this is the #796 stub verbatim — it ran, so doctor called it installed.
+  posixEngineTest("an engine that runs but describes nothing is a fault, not a footnote", async () => {
+    const { dir, binDir } = stage("kesha-doctor-mute-engine-");
+    writeFakeEngine(join(binDir, "kesha-engine"), "#!/bin/sh\nexit 0\n");
+    try {
+      const report = await collectDoctorReport();
+      expect(report.engine.installed).toBe(true);
+      expect(report.engine.runnable).toBe(true);
+      expect(report.engine.capabilities).toBeNull();
+      const binaryLine = formatDoctorReport(report)
+        .split("\n")
+        .find((l) => l.includes("Binary:"))!;
+      expect(binaryLine).toContain("installed but not functional (reports no capabilities)");
+      expect(binaryLine).toContain("kesha install");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("capabilities that do not parse read as the same fault as none", async () => {
     const { dir, binDir } = stage("kesha-doctor-silent-engine-");
     writeFakeEngine(join(binDir, "kesha-engine"), "#!/bin/sh\nexit 2\n");
     try {
       const report = await collectDoctorReport();
       expect(report.engine.runnable).toBe(true);
       expect(report.engine.capabilities).toBeNull();
-      expect(report.engine.probeError).toBe("capabilities probe returned no data");
+      expect(report.engine.probeError).toContain("reports no capabilities");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

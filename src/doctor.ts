@@ -3,13 +3,13 @@ import { cacheComponentPaths, isInsideDir } from "./cache-layout";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
 import { dirname, join } from "path";
+import { getEngineBinPath, isEngineInstalled, type EngineCapabilities } from "./engine";
 import {
-  getEngineBinPath,
-  getEngineCapabilities,
-  isEngineInstalled,
-  type EngineCapabilities,
-} from "./engine";
-import { probeExecutable } from "./engine-health";
+  CORRUPT_STATE,
+  engineFunctionalHealth,
+  NOT_FUNCTIONAL_STATE,
+  probeExecutable,
+} from "./engine-health";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { engineVersion, packageName, packageVersion } from "./package-info";
@@ -199,21 +199,18 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   const installed = isEngineInstalled();
   let capabilities: EngineCapabilities | null = null;
   let probeError: string | null = null;
-  // A truncated download exists, so `installed` alone would report a bricked engine as
-  // healthy; probing the loader separates that from an old engine with no capabilities JSON.
+  // A truncated download exists and the #796 stub even runs, so neither `installed` nor a
+  // clean spawn says the engine works — only its own account of itself does (#801).
   const health = installed
-    ? await probeExecutable(binPath, ["--version"])
+    ? await engineFunctionalHealth()
     : ({ status: "missing" } as const);
 
   if (health.status === "unusable") {
     probeError = `binary is present but does not run (${health.detail}); re-run \`kesha install\``;
-  } else if (installed) {
-    try {
-      capabilities = await getEngineCapabilities();
-      if (!capabilities) probeError = "capabilities probe returned no data";
-    } catch (err) {
-      probeError = errorMessage(err);
-    }
+  } else if (health.status === "mute") {
+    probeError = `${health.detail}; re-run \`kesha install\``;
+  } else if (health.status === "ok") {
+    capabilities = health.capabilities;
   }
 
   const versionMarker = readInstalledEngineVersion(binPath);
@@ -224,7 +221,7 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
     versionMarker,
     pinnedVersion: engineVersion,
     versionState: engineVersionState(versionMarker, engineVersion),
-    runnable: health.status === "ok",
+    runnable: health.status !== "missing" && health.status !== "unusable",
     capabilities,
     probeError: redactString("probeError", probeError, redact),
   };
@@ -411,8 +408,6 @@ export async function collectDoctorReport(
   };
 }
 
-const CORRUPT_STATE = "installed but not executable (corrupt) - re-run `kesha install`";
-
 function formatComponentState(component: OptionalComponent): string {
   if (!component.exists) return "missing";
   return component.runnable === false ? CORRUPT_STATE : "installed";
@@ -420,7 +415,8 @@ function formatComponentState(component: OptionalComponent): string {
 
 function formatEngineBinaryState(engine: DoctorReport["engine"]): string {
   if (!engine.installed) return "missing";
-  return engine.runnable ? "installed" : CORRUPT_STATE;
+  if (!engine.runnable) return CORRUPT_STATE;
+  return engine.capabilities ? "installed" : NOT_FUNCTIONAL_STATE;
 }
 
 function formatVersionState(engine: DoctorReport["engine"]): string {

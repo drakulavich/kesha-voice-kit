@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll } from "bun:test";
+import { engineFunctionalHealth } from "../../src/engine-health";
 import {
-  isEngineInstalled,
   getEngineBinPath,
   TRANSCRIBE_SEGMENTS_FEATURE,
   TRANSCRIBE_DIARIZE_FEATURE,
@@ -11,7 +11,8 @@ const CWD = import.meta.dir + "/../..";
 const FIXTURE_RU = "tests/fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";
 const FIXTURE_EN = "tests/fixtures/benchmark-en/01-check-email.ogg";
 
-const engineInstalled = isEngineInstalled();
+// Presence is not usability: the #796 stub existed, ran, and failed all 19 of these (#801).
+const engineInstalled = (await engineFunctionalHealth()).status === "ok";
 
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", ...args], {

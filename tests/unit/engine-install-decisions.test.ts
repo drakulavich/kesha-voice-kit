@@ -224,15 +224,23 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
   }, 30_000);
 
   // A pre-capabilities engine cannot be asked, and forwarding --diarize blind would surface
-  // as clap's generic "unexpected argument".
+  // as clap's generic "unexpected argument". Reached through a download because a cached
+  // engine that describes nothing is repaired before any flag is validated (#801).
   posixTest("--diarize is refused when the engine cannot describe itself", async () => {
-    const binPath = stageInstalledEngine("kesha-caps-silent-", { caps: null });
-    const before = readFileSync(binPath, "utf8");
-    stubRelease();
+    stageEmptyEngineDir("kesha-caps-silent-");
+    stubRelease({ caps: null });
+
+    await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
+  }, 30_000);
+
+  posixTest("a cached engine that describes nothing is repaired before the flag is judged", async () => {
+    const binPath = stageInstalledEngine("kesha-caps-mute-cache-", { caps: null });
+    const urls = stubRelease();
 
     await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
 
-    expect(readFileSync(binPath, "utf8")).toBe(before);
+    expect(engineDownloads(urls)).toHaveLength(1);
+    expect(readFileSync(binPath, "utf8")).toContain("--capabilities-json");
   }, 30_000);
 
   posixTest("--diarize reaches the engine, and pulls --vad with it (#768)", async () => {

@@ -278,7 +278,9 @@ describe("collectStatus --json payload (#647)", () => {
     }
   });
 
-  posixEngineTest("binary present but capabilities unreadable: installed, caps null", async () => {
+  // #801: `installed: true` with `capabilities: null` used to carry no hint at all, so
+  // status read clean for an engine that could not answer a single question.
+  posixEngineTest("binary present but capabilities unreadable: installed, caps null, hint", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-broken-"));
     const cache = join(dir, ".cache", "kesha");
     const binPath = writeFakeEngine(join(cache, "engine", "bin"), null);
@@ -289,7 +291,29 @@ describe("collectStatus --json payload (#647)", () => {
       const report = await collectStatus();
       expect(report.engine.installed).toBe(true);
       expect(report.engine.capabilities).toBeNull();
-      expect(report.hint).toBeNull();
+      expect(report.hint).toContain("not functional (reports no capabilities)");
+      expect(report.hint).toContain("kesha install");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an engine that exits 0 and says nothing is not a clean bill", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-mute-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
+    chmodSync(binPath, 0o755);
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const report = await collectStatus();
+      expect(report.engine.installed).toBe(true);
+      expect(report.engine.capabilities).toBeNull();
+      expect(report.hint).toContain("not functional (reports no capabilities)");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -799,4 +823,38 @@ describe("human status output is a load-bearing contract (#647)", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // #801: the human path is where the false clean bill was read — the mute engine printed
+  // a green Binary line and nothing on stderr at all.
+  posixEngineTest("a mute engine reaches stderr with the repair command", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-mute-"));
+    const binDir = join(dir, ".cache", "kesha", "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
+    chmodSync(binPath, 0o755);
+    const proc = Bun.spawn([process.execPath, "bin/kesha.js", "status"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: `${import.meta.dir}/../..`,
+      env: {
+        ...process.env,
+        KESHA_ENGINE_BIN: binPath,
+        KESHA_CACHE_DIR: join(dir, ".cache", "kesha"),
+        HOME: dir,
+        NO_COLOR: "1",
+      },
+    });
+    try {
+      const [, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      await proc.exited;
+      expect(stderr).toContain("not functional (reports no capabilities)");
+      expect(stderr).toContain("kesha install");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 15_000);
 });
