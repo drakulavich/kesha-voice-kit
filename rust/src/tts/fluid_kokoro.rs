@@ -247,7 +247,7 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
         // ahead of its bundled Misaki lexicon and its G2P fallback (#818).
         if crate::tts::en::is_en(lang) {
             audio
-                .set_kokoro_english_lexicon(crate::tts::en::ipa_overrides())
+                .set_kokoro_english_lexicon(&crate::tts::en::ane_ipa_overrides())
                 .map_err(|e| {
                     anyhow::Error::new(e).context("install the English pronunciation overrides")
                 })?;

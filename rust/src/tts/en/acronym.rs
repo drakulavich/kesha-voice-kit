@@ -51,6 +51,12 @@ pub(super) const IPA_LEXICON: &[(&str, &str)] = &[
     ("Granola", "ɡrəˈnoʊlə"),
 ];
 
+/// Keys withheld from the ANE custom-lexicon feed (`en::ane_ipa_overrides`):
+/// owner ear-validation found the entries above give these a spurious leading
+/// vowel there, and FluidAudio's native G2P renders them better (#844). The
+/// ONNX substitution path still uses the full table.
+pub(super) const ANE_NATIVE_PREFERRED: &[&str] = &["Kubernetes", "Tokio", "macOS", "Anthropic"];
+
 /// Tokenize `text` and emit a segment list:
 /// - Tokens hit by `IPA_LEXICON` (case-sensitive on the punct-stripped core)
 ///   become `Segment::Ipa(...)`; surrounding head/tail punct rejoin the
