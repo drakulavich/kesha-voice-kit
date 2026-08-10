@@ -79,7 +79,18 @@ fn normalize_text(text: &str) -> String {
     let source = masked.as_ref().map_or(text, |(masked, _)| masked.as_str());
     let normalized = text_processing_rs::normalize_sentence(source);
     let normalized = match &masked {
-        Some((_, names)) => restore_punctuation_names(&normalized, names),
+        Some((_, names)) => match restore_punctuation_names(&normalized, names) {
+            Some(restored) => restored,
+            None => {
+                eprintln!(
+                    "warning: --itn left a segment unnormalized: the text pass returned {} of {} punctuation-name placeholders, \
+                     so the pinned text-processing-rs revision no longer treats U+FFFC as inert. Report this against #822.",
+                    normalized.matches(PUNCTUATION_MASK).count(),
+                    names.len()
+                );
+                return text.to_string();
+            }
+        },
         None => normalized,
     };
     if normalized.trim().is_empty() && !text.trim().is_empty() {
@@ -128,16 +139,19 @@ fn punctuation_core(word: &str) -> String {
         .to_lowercase()
 }
 
-fn restore_punctuation_names(text: &str, names: &[String]) -> String {
+/// All-or-nothing: `None` unless every placeholder is matched by exactly one
+/// saved name, so a pin that eats or splits the mask fails closed rather than
+/// shifting every later name onto the wrong slot.
+fn restore_punctuation_names(text: &str, names: &[String]) -> Option<String> {
     let mut names = names.iter();
     let mut out = String::with_capacity(text.len());
     for (index, part) in text.split(PUNCTUATION_MASK).enumerate() {
         if index > 0 {
-            out.push_str(names.next().map_or(PUNCTUATION_MASK, String::as_str));
+            out.push_str(names.next()?);
         }
         out.push_str(part);
     }
-    out
+    names.next().is_none().then_some(out)
 }
 
 #[cfg(test)]
@@ -367,7 +381,7 @@ mod tests {
         assert_eq!(out.text, "the period of growth was remarkable");
     }
 
-    /// Deliberate cost of the guard (#822): spoken identifiers and arithmetic
+    /// Deliberate cost of the guard (#822): identifiers, arithmetic and units
     /// that upstream assembled out of a punctuation name now stay literal.
     #[test]
     fn spoken_identifiers_keep_their_punctuation_names() {
@@ -378,6 +392,54 @@ mod tests {
         assert_eq!(
             normalize_text("two plus two equals four"),
             "2 plus 2 equals 4"
+        );
+        assert_eq!(
+            normalize_text("revenue grew twenty percent"),
+            "revenue grew 20 percent"
+        );
+    }
+
+    #[test]
+    fn the_guard_ignores_case() {
+        assert_eq!(normalize_text("Period of growth"), "Period of growth");
+        assert_eq!(
+            normalize_text("the PERIOD of growth"),
+            "the PERIOD of growth"
+        );
+        assert_eq!(
+            normalize_text("a Question Mark appeared"),
+            "a Question Mark appeared"
+        );
+    }
+
+    #[test]
+    fn adjacent_punctuation_names_each_keep_their_word() {
+        assert_eq!(normalize_text("comma comma"), "comma comma");
+        assert_eq!(
+            normalize_text("the dash dash between them"),
+            "the dash dash between them"
+        );
+    }
+
+    #[test]
+    fn a_punctuation_name_inside_mixed_script_text_is_guarded() {
+        assert_eq!(
+            normalize_text("hello мир the period of two hundred"),
+            "hello мир the period of 200"
+        );
+    }
+
+    #[test]
+    fn restoring_is_all_or_nothing() {
+        let names = vec!["period".to_string(), "comma".to_string()];
+        assert_eq!(
+            restore_punctuation_names("a \u{FFFC} b \u{FFFC} c", &names),
+            Some("a period b comma c".to_string())
+        );
+        assert_eq!(restore_punctuation_names("a \u{FFFC} b", &names), None);
+        assert_eq!(
+            restore_punctuation_names("a \u{FFFC} b \u{FFFC} c \u{FFFC}", &names),
+            None
         );
     }
 
