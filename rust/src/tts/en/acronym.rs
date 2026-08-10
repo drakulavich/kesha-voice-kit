@@ -25,7 +25,8 @@ const STOP_LIST: &[&str] = &[
 
 /// Token → IPA phoneme map. Keys are case-sensitive. Values use IPA without
 /// syllable separators — `infer_ipa` accepts stress (`ˈ` `ˌ`) and length (`ː`)
-/// marks but not `.` separators.
+/// marks but not `.` separators. Misaki's diphthong shorthand (`A` `I` `O` `W`
+/// `Y`) is a vocab token like any other, not a literal letter (#846).
 pub(super) const IPA_LEXICON: &[(&str, &str)] = &[
     ("EPAM", "ˈiːpæm"),
     ("JSON", "ˈdʒeɪsən"),
@@ -37,25 +38,19 @@ pub(super) const IPA_LEXICON: &[(&str, &str)] = &[
     ("JWT", "ˌdʒeɪdʌbəljuːˈtiː"),
     ("OAuth", "ˈoʊɔːθ"),
     ("Microsoft", "ˈmaɪkroʊsɔːft"),
-    ("Anthropic", "ænˈθrɒpɪk"),
+    ("Anthropic", "ænθɹˈɑpɪk"),
     ("Claude", "klɔːd"),
     // NVIDIA: removed from lexicon — Kokoro renders it natively. None of A–N
     // IPA renderings reproduced the desired "en-VID-ee-ah" pronunciation
     // accurately enough; default G2P path is the cleanest fallback.
-    ("Kubernetes", "ˌkuːbərˈnɛtiːz"),
+    ("Kubernetes", "kˌubəɹnˈits"),
     ("PostgreSQL", "ˈpoʊstɡrɛs"),
     ("GraphQL", "ˌɡræfˈkjuːɛl"),
     ("Linux", "ˈlɪnəks"),
-    ("Tokio", "ˈtoʊkioʊ"),
-    ("macOS", "ˌmækˈoʊɛs"),
+    ("Tokio", "tˈOkiO"),
+    ("macOS", "mˈækOz"),
     ("Granola", "ɡrəˈnoʊlə"),
 ];
-
-/// Keys withheld from the ANE custom-lexicon feed (`en::ane_ipa_overrides`):
-/// owner ear-validation found the entries above give these a spurious leading
-/// vowel there, and FluidAudio's native G2P renders them better (#844). The
-/// ONNX substitution path still uses the full table.
-pub(super) const ANE_NATIVE_PREFERRED: &[&str] = &["Kubernetes", "Tokio", "macOS", "Anthropic"];
 
 /// Tokenize `text` and emit a segment list:
 /// - Tokens hit by `IPA_LEXICON` (case-sensitive on the punct-stripped core)
@@ -180,7 +175,7 @@ mod tests {
     fn kubernetes_long_token_lexicon_hit() {
         // 10 chars; matcher rejects (length > 5), but IPA_LEXICON is checked first.
         let segs = expand_to_segments("deploy on Kubernetes", true);
-        assert_eq!(flatten(&segs), "deploy on [ˌkuːbərˈnɛtiːz]");
+        assert_eq!(flatten(&segs), "deploy on [kˌubəɹnˈits]");
     }
 
     #[test]
@@ -204,7 +199,7 @@ mod tests {
     #[test]
     fn multiple_lexicon_hits_in_one_input() {
         let segs = expand_to_segments("Anthropic builds Claude", true);
-        assert_eq!(flatten(&segs), "[ænˈθrɒpɪk] builds [klɔːd]");
+        assert_eq!(flatten(&segs), "[ænθɹˈɑpɪk] builds [klɔːd]");
     }
 
     #[test]
