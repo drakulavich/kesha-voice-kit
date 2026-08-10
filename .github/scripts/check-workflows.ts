@@ -81,6 +81,35 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
 }
 
 /**
+ * Fails when the darwin smoke lane stops covering both of the engines a macOS build ships.
+ * They fail independently — Kokoro is CoreML in-process, AVSpeech is the Swift sidecar — and the
+ * lane downloaded `say-avspeech-darwin-arm64` for a year without ever routing through it (#678).
+ * The Kokoro arm carries the shorter sentence a runner's CPU CoreML survives (#742); AVSpeech,
+ * which needs no accelerator, carries the full one.
+ */
+export function requireDarwinSmokeCoversBothEngines(path: string, document: unknown): string[] {
+  if (!path.endsWith("build-engine.yml")) return [];
+
+  const job = "darwin-synthesis-smoke";
+  const steps = jobSteps(document, job);
+  if (!steps) return [`${path}: expected a \`${job}\` job with steps`];
+
+  const smokes = runsMatching(steps, /^\s*bun\s+\S*smoke-synthesis\.ts\b/m);
+  const isAvspeech = (at: number) => /--voice\s+macos-/.test(String(steps[at].run));
+  const avspeech = smokes.some(isAvspeech);
+  const kokoro = smokes.some((at) => !isAvspeech(at));
+
+  const errors: string[] = [];
+  if (!kokoro) {
+    errors.push(`${path}: \`${job}\` must synthesise through Kokoro — a smoke-synthesis.ts run on a non-\`macos-*\` voice (#678)`);
+  }
+  if (!avspeech) {
+    errors.push(`${path}: \`${job}\` must synthesise through the AVSpeech sidecar — a smoke-synthesis.ts run with \`--voice macos-*\` (#678)`);
+  }
+  return errors;
+}
+
+/**
  * Fails when build-engine.yml mentions Linux packaging at all. The `.deb`/`.rpm` carry
  * `package.json#version`, which `main` holds ahead of npm since #691, so a stable engine tag can
  * never name them after a published CLI — the gate that checked this made engine releases
@@ -219,6 +248,7 @@ function checkFile(path: string, testedScripts: string[]): string[] {
     return [
       ...requirePinnedActions(path, contents),
       ...requirePreUploadSynthesisSmoke(path, document),
+      ...requireDarwinSmokeCoversBothEngines(path, document),
       ...forbidLinuxPackaging(path, contents),
       ...requireNpmPublishAfterPackaging(path, document),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),

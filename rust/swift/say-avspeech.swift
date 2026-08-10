@@ -110,7 +110,10 @@ synth.write(utt) { buffer in
   samples.append(contentsOf: UnsafeBufferPointer(start: floatPtr, count: count))
 }
 
-// 15s wall-clock watchdog. The actual timeout body hops back to the main
+// 15s wall-clock watchdog, ~13x the measured worst case: ten runs of a 44-char
+// sentence on a macos-15 runner — the slowest host anything ships through — took
+// 0.77-1.12s, and 179 chars took 1.04s, so the cost is setup rather than text
+// length (#678). The actual timeout body hops back to the main
 // queue so every read/write of `timedOut` happens on one thread — keeps
 // us out of Swift's data-race territory (CFRunLoopStop's happens-before
 // semantics are enough in practice, but TSan and future compiler

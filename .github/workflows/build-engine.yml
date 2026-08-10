@@ -346,7 +346,8 @@ jobs:
           name: kesha-textlang-darwin-arm64
           path: kesha-textlang-darwin-arm64
 
-  # Exercises the macos-14 artifact elsewhere: that image is required to build, and cannot run the vocoder (#678).
+  # Exercises the macos-14 artifact elsewhere: that image is required to build, and its CoreML cannot
+  # run the vocoder — the image's CoreML version, not its missing ANE, which #678 measured and refuted.
   # Hosted macOS runners are VMs with no Neural Engine, so CoreML runs Kokoro through libBNNS on the
   # CPU, where a shape-proportional stack allocation overflows the dispatch worker's 512 KB stack and
   # the process takes SIGBUS (#742). Length is only a proxy for that shape, and not a monotonic one:
@@ -407,9 +408,19 @@ jobs:
           install-args: --tts en
           cache-write: "false"
 
-      - name: 🗣️ Synthesis smoke
+      - name: 🗣️ Synthesis smoke — Kokoro
         shell: bash
         run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." synthesis-smoke
+
+      # The other engine a macOS build ships, and the one this lane downloaded the sidecar for
+      # without ever routing through it (#678). AVSpeech needs no accelerator, so it carries the
+      # full sentence Kokoro cannot. `macos-en-US` resolves through AVSpeechSynthesisVoice(language:),
+      # so no per-image voice identifier can go missing under us. Runs even when the arm above is
+      # red — they exercise different engines, and one failing must not hide the other's result.
+      - name: 🗣️ Synthesis smoke — AVSpeech sidecar
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice macos-en-US avspeech-smoke
 
   # Gating on the darwin smoke as well as the matrix is what makes it a gate over artifacts rather
   # than run colour (#737): a red smoke has to stop the draft below, and the alpha auto-publish with
