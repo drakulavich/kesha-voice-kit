@@ -198,16 +198,6 @@ export function requireNpmPublishAfterPackaging(path: string, document: unknown)
 }
 
 /**
- * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
- * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
- * so an uncovered script means edits to a gate skip the tests that prove it works.
- */
-/**
- * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
- * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
- * so an uncovered script means edits to a gate skip the tests that prove it works.
- */
-/**
  * Fails when a published engine target has no runner verifying its capability pact.
  *
  * The per-PR pact tests are only sound while the recordings still match the binaries, and
@@ -229,6 +219,11 @@ export function requirePactVerificationCoversEveryTarget(path: string, document:
     .map((target) => `${path}: no runner verifies ${target}'s pact, so nothing would catch it drifting (#798)`);
 }
 
+/**
+ * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
+ * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
+ * so an uncovered script means edits to a gate skip the tests that prove it works.
+ */
 export function requireTestedScriptsInCodeFilter(
   path: string,
   document: unknown,

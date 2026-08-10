@@ -59,8 +59,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      # Only the scheduled run upserts the drift issue; one per target, so three runners
-      # failing together cannot race each other into duplicates.
+      # Only the scheduled run files an issue; one per target, so three runners failing
+      # together cannot race each other into duplicates.
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,30 +77,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ matrix.target }}
+        # Every run: here is bash. windows-latest defaults to pwsh, where `$TARGET` is not an
+        # env var (`$env:TARGET` is) and would expand to empty, silently un-pinning --target.
+        shell: bash
         run: bun .github/scripts/record-capability-pacts.ts --from-release --target "$TARGET" --check
 
-      - name: 📣 Report drift (scheduled only)
+      - name: 📣 Report an unverified pact (scheduled only)
         if: github.event_name == 'schedule' && steps.verify.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           TARGET: ${{ matrix.target }}
+        shell: bash
         run: |
           {
-            echo "## $TARGET's capability pact no longer matches the published engine"
+            echo "## $TARGET's capability pact was not confirmed against the published engine"
             echo
-            echo "\`tests/fixtures/capabilities/$TARGET.json\` was recorded from an engine that"
-            echo "no longer matches what \`kesha install\` downloads, so every per-PR assertion"
-            echo "derived from it is now gating against a binary nobody has."
+            echo "Read the run log before acting — the step fails for two different reasons:"
             echo
-            echo "Re-record per the header of \`.github/workflows/capability-pact.yml\`."
+            echo "- **The shape drifted.** The log shows a \`--- committed\` / \`+++\` diff, a"
+            echo "  sha256 mismatch, or an engine-version mismatch. Every per-PR assertion"
+            echo "  derived from \`tests/fixtures/capabilities/$TARGET.json\` is now gating"
+            echo "  against a binary nobody has. Re-record per the header of"
+            echo "  \`.github/workflows/capability-pact.yml\`."
+            echo "- **Verification could not run.** The log ends at the \`gh release download\`"
+            echo "  or \`--capabilities-json\` step. The pact is not implicated; the run proved"
+            echo "  nothing either way. Common causes: a network or API failure, or the window"
+            echo "  between a release merge and its tag, where \`keshaEngine.version\` names a"
+            echo "  release that does not exist yet."
             echo
             echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           } > /tmp/pact-body.md
-          bash .github/scripts/upsert-audit-issue.sh /tmp/pact-body.md "Capability pact drift: $TARGET" ci
+          bash .github/scripts/upsert-audit-issue.sh /tmp/pact-body.md "Capability pact unverified: $TARGET" pact-drift
 
-      - name: ❌ Fail on drift
+      - name: ❌ Fail an unverified pact
         if: steps.verify.outcome == 'failure'
+        shell: bash
         run: exit 1
 
       - name: 📝 Re-record ${{ matrix.target }}
@@ -108,6 +120,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ matrix.target }}
+        shell: bash
         run: bun .github/scripts/record-capability-pacts.ts --from-release --target "$TARGET"
 
       - name: 📤 Upload the re-recorded pact

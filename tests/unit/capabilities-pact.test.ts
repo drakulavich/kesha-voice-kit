@@ -67,10 +67,10 @@ for (const { platform, arch, target } of engineTargetEntries()) {
 }
 
 /**
- * Every engine flag the TS side can emit, and the capabilities that make a target accept it —
- * an empty list means clap defines it on every published build. A flag emitted by one of the
- * argv builders with no row here fails `classifies every flag the TS side can emit`, which is
- * what keeps this table honest as flags are added.
+ * Every flag the three pure argv builders emit, and the capabilities that make a target accept
+ * it — an empty list means clap defines it on every published build. A flag added to a builder
+ * with no row here fails `classifies every flag the say, install and transcribe builders emit`.
+ * Subcommands with no pure builder (`record`, `say --list-voices`) are outside this view.
  */
 const FLAG_CAPABILITIES: Record<string, string[]> = {
   "--voice": ["tts"],
@@ -161,7 +161,7 @@ describe("capability pact — recordings", () => {
 });
 
 describe("capability pact — flags the TS side emits", () => {
-  it("classifies every flag the TS side can emit", () => {
+  it("classifies every flag the say, install and transcribe builders emit", () => {
     const emitted = new Set([
       ...flagsIn(buildSayArgs(EVERY_SAY_OPTION, EVERY_CAPABILITY)),
       ...capabilityBlindFlags(),
