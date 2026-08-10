@@ -101,6 +101,47 @@ export class SayError extends Error {
   }
 }
 
+/** Fault signals, by number. SIGBUS is 10 on darwin but 7 on linux. */
+const FAULT_SIGNALS: Record<number, string> = { 4: "SIGILL", 6: "SIGABRT", 8: "SIGFPE", 11: "SIGSEGV" };
+
+/**
+ * Explain an engine death that produced no error of its own, or null when the
+ * engine exited normally with a non-zero status. A signal kill leaves stderr
+ * without an `error [CODE]:` line, so without this the caller only sees a bare
+ * "exited 138".
+ *
+ * The wait status is the authority, not `signalCode`: Bun names signal 10
+ * SIGUSR1 (its linux value) even on darwin, where it is SIGBUS.
+ */
+export function engineCrashMessage(
+  exitCode: number,
+  signalCode: string | null,
+  platform: string = process.platform,
+): string | null {
+  const number = exitCode > 128 ? exitCode - 128 : undefined;
+  const sigbus = platform === "darwin" ? 10 : 7;
+  const signal =
+    number === undefined
+      ? (signalCode ?? undefined)
+      : number === sigbus
+        ? "SIGBUS"
+        : (FAULT_SIGNALS[number] ?? signalCode ?? undefined);
+  if (!signal) return null;
+  const base = `kesha-engine was killed by ${signal} and produced no audio`;
+  // Every physical Apple Silicon Mac has a Neural Engine; virtualised macOS has
+  // none, so CoreML runs Kokoro's stages through libBNNS on the CPU, where some
+  // input shapes overflow the dispatch worker's stack (#742).
+  if (platform === "darwin" && (signal === "SIGBUS" || signal === "SIGSEGV")) {
+    return (
+      `${base}. On a Mac with no Apple Neural Engine — virtualised macOS, such as a CI ` +
+      `runner — CoreML falls back to the CPU for Kokoro synthesis and crashes on some ` +
+      `inputs. Shorter text, or a \`macos-*\` AVSpeech voice, avoids it. ` +
+      `See https://github.com/drakulavich/kesha-voice-kit/issues/742`
+    );
+  }
+  return `${base}.`;
+}
+
 export async function say(opts: SayOptions): Promise<Uint8Array> {
   const text = opts.text ?? "";
   if (text.length === 0) {
@@ -161,10 +202,16 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     process.stderr.write(stderrText.endsWith("\n") ? stderrText : stderrText + "\n");
   }
   if (exitCode !== 0) {
+    // The crash line goes into `stderr` too: `cli/say.ts` prints that in
+    // preference to the message, and a crash leaves progress lines behind that
+    // would otherwise hide the diagnosis.
+    const detail = [stderrText.trim(), engineCrashMessage(exitCode, proc.signalCode)]
+      .filter((part): part is string => Boolean(part))
+      .join("\n");
     throw new SayError(
-      stderrText.trim() || `kesha-engine say exited ${exitCode}`,
+      detail || `kesha-engine say exited ${exitCode}`,
       exitCode,
-      stderrText,
+      detail,
       engineErrorCode(stderrText),
     );
   }

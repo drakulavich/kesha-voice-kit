@@ -35,4 +35,21 @@ describe("parseArgs", () => {
     expect(parseArgs(["out", "--voice"])).toBeNull();
     expect(parseArgs(["--voice", "--no-roundtrip", "out"])).toBeNull();
   });
+
+  // The darwin lane synthesises a shorter sentence than everyone else (#742).
+  test("--text overrides the sentence for every voice", () => {
+    const parsed = parseArgs(["--text", "Kesha speaks.", "out"]);
+    expect(parsed?.workDir).toBe("out");
+    expect(parsed?.voices.map((v) => v.text)).toEqual(["Kesha speaks."]);
+  });
+
+  test("the text value is never mistaken for the work-dir", () => {
+    expect(parseArgs(["--text", "Kesha speaks."])).toBeNull();
+    expect(parseArgs(["out", "--text"])).toBeNull();
+  });
+
+  test("--text and --voice combine", () => {
+    const parsed = parseArgs(["out", "--voice", "macos-Sam", "--text", "Hi."]);
+    expect(parsed?.voices).toEqual([{ voice: "macos-Sam", text: "Hi." }]);
+  });
 });

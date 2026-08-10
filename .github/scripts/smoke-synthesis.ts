@@ -5,12 +5,13 @@
  * no lane covered — rust-test.yml runs unit and contract tests, and the Linux
  * engine smokes transcribe a fixture but never synthesise.
  *
- * Usage: bun .github/scripts/smoke-synthesis.ts [--no-roundtrip] [--voice <id>] <work-dir>
+ * Usage: bun .github/scripts/smoke-synthesis.ts [--no-roundtrip] [--voice <id>] [--text <s>] <work-dir>
  *
  * `--no-roundtrip` stops after synthesis and drops to English only. It exists for
  * build-engine.yml's pre-upload gate (#671), which runs on a release builder with no ASR
  * model set — transcribing back there would cost a multi-GB download per platform.
  * `--voice` overrides the voice, for platforms whose default engine can't run in CI.
+ * `--text` overrides the sentence, for hosts that cannot synthesise the default one (#742).
  */
 import { mkdirSync } from "fs";
 import { join } from "path";
@@ -26,15 +27,27 @@ export type SmokeArgs = { workDir: string; noRoundtrip: boolean; voices: typeof 
 /** Returns null when argv is unusable; the caller prints usage and exits 2. */
 export function parseArgs(argv: string[]): SmokeArgs | null {
   const noRoundtrip = argv.includes("--no-roundtrip");
-  const voiceFlag = argv.indexOf("--voice");
-  const voiceOverride = voiceFlag === -1 ? undefined : argv[voiceFlag + 1];
-  if (voiceFlag !== -1 && (!voiceOverride || voiceOverride.startsWith("--"))) return null;
+  const valueAt: number[] = [];
+  const valueOf = (flag: string): string | null | undefined => {
+    const at = argv.indexOf(flag);
+    if (at === -1) return undefined;
+    const value = argv[at + 1];
+    if (!value || value.startsWith("--")) return null;
+    valueAt.push(at + 1);
+    return value;
+  };
 
-  const voiceValueAt = voiceFlag === -1 ? -1 : voiceFlag + 1;
-  const workDir = argv.find((arg, i) => !arg.startsWith("--") && i !== voiceValueAt);
+  const voiceOverride = valueOf("--voice");
+  const textOverride = valueOf("--text");
+  if (voiceOverride === null || textOverride === null) return null;
+
+  const workDir = argv.find((arg, i) => !arg.startsWith("--") && !valueAt.includes(i));
   if (!workDir) return null;
 
-  const voices = voiceOverride ? [{ voice: voiceOverride, text: ENGLISH }] : ALL_VOICES;
+  const text = textOverride ?? ENGLISH;
+  const voices = voiceOverride
+    ? [{ voice: voiceOverride, text }]
+    : ALL_VOICES.map((v) => ({ ...v, text }));
   return { workDir, noRoundtrip, voices };
 }
 

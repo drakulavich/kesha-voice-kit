@@ -347,13 +347,15 @@ jobs:
           path: kesha-textlang-darwin-arm64
 
   # Exercises the macos-14 artifact elsewhere: that image is required to build, and cannot run the vocoder (#678).
-  # Advisory until the longer-sentence SIGBUS is fixed (#742) — a permanently red gate only teaches people to ignore red.
+  # Hosted macOS runners are VMs with no Neural Engine, so CoreML runs Kokoro through libBNNS on
+  # the CPU, which overflows the dispatch worker's stack on longer input (#742). Every prefix of
+  # the default pangram up to 31 chars synthesises; 32-33 and 38+ die on SIGBUS. This lane
+  # therefore gates a short sentence — long-utterance darwin synthesis stays uncovered in CI.
   darwin-synthesis-smoke:
-    name: Darwin synthesis smoke (advisory)
+    name: Darwin synthesis smoke
     needs: build
     runs-on: macos-15
     timeout-minutes: 30
-    continue-on-error: true
     env:
       KESHA_ENGINE_BIN: ${{ github.workspace }}/kesha-engine-darwin-arm64
       # FluidAudio reports CoreML failures on stdout, which the bridge guard discards; this routes them to stderr (#678).
@@ -405,7 +407,7 @@ jobs:
 
       - name: 🗣️ Synthesis smoke
         shell: bash
-        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip synthesis-smoke
+        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." synthesis-smoke
 
   release:
     needs: build
