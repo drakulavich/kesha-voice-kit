@@ -11,12 +11,12 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun" alt="Bun"></a>
 </p>
 
-<p align="center"><b>Give your local tools and LLM agents a voice.</b><br>Fast speech-to-text, text-to-speech, voice-activity detection, and language detection in one local-first CLI: Apple Silicon CoreML first, ONNX fallback on supported Linux/Windows builds.</p>
+<p align="center"><b>Give your local tools and LLM agents a voice.</b><br>Fast speech-to-text, text-to-speech, voice-activity detection, and language detection in one local-first CLI — CoreML on Apple Silicon, ONNX on Linux and Windows.</p>
 
 - **Transcribe locally** — [25 languages](docs/languages.md#speech-to-text-25), up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Speak back** — text-to-speech in [9 languages](docs/languages.md#text-to-speech)
 - **Plug into agents** — ship voice workflows as CLI commands, an MCP server, an <a href="docs/openclaw.md">OpenClaw</a> skill, or a <a href="docs/hermes.md">Hermes</a> agent
-- **Small Rust engine** — single ~60MB binary, no ffmpeg, no Python, no native Node addons
+- **Small Rust engine** — single ~65MB binary, no ffmpeg, no Python, no native Node addons
 
 <p align="center">
   <img src="https://github.com/drakulavich/kesha-voice-kit/raw/main/demo.gif" alt="kesha demo — English + Russian transcription with automatic language detection" width="800">
@@ -24,29 +24,44 @@
 
 ## Quick Start
 
-Runtime: **[Bun](https://bun.sh)** >= 1.3.0 · Platforms: macOS arm64, Linux x64, Windows x64. Linux and Windows run the ONNX engine — everything except microphone capture (`kesha record`), macOS system voices, speaker diarization, and text language detection, which need Apple frameworks.
+Runtime: **[Bun](https://bun.sh)** >= 1.3.0.
 
 ```bash
-# 1. Install Bun (skip if you have it) — Linux & macOS:
-curl -fsSL https://bun.sh/install | bash        # or: brew install oven-sh/bun/bun
-# Windows: powershell -c "irm bun.sh/install.ps1 | iex"
-# if `bun --version` fails, reload PATH: exec $SHELL -l
+# 1. Install Bun (skip if you have it)
+curl -fsSL https://bun.sh/install | bash        # macOS/Linux — or: brew install oven-sh/bun/bun
+powershell -c "irm bun.sh/install.ps1 | iex"    # Windows
 
-# 2. Install Kesha:
+# 2. Install Kesha
 bun add -g @drakulavich/kesha-voice-kit
 kesha --version                                 # confirms `kesha` resolved on PATH
-kesha install --plan                            # preview exact download/disk sizes first — downloads nothing
-kesha install        # ~2.5 GB on Linux/Windows; ~0.6 GB on Apple Silicon, whose CoreML
-                      # engine uses a different, smaller model set. Explicit — never automatic.
-                      # No progress bar during the model step; can take several minutes.
-                      # Prefer a guided wizard? `kesha init` walks through the same choices interactively.
 
-# 3. Transcribe:
-kesha audio.ogg      # transcript to stdout
+# 3. Download the engine and models — pick one path
+kesha init                                      # guided: backend, languages, TTS voices
+kesha install --plan && kesha install           # manual: preview the sizes, then download
+
+# 4. Transcribe
+kesha audio.ogg                                 # transcript to stdout
 ```
+
+`kesha install` pulls ~2.5 GB on Linux/Windows and ~0.6 GB on Apple Silicon, whose CoreML engine reads a smaller model set. It is always explicit — nothing downloads behind your back — and the model step has no progress bar, so expect a few quiet minutes. If `bun --version` fails right after step 1, reload your PATH: `exec $SHELL -l`.
 
 Prefer Homebrew, Docker, or Nix? See [Other install methods](#other-install-methods).
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
+
+### Platform support
+
+All three targets transcribe, detect the spoken language, run VAD, and speak. The macOS-only rows need Apple frameworks — they are not a missing port. Windows is a tested path rather than a published binary nobody ran: CI does a cold `kesha install` on `windows-latest`, transcribes a fixture, and round-trips a synthesis ([#216](https://github.com/drakulavich/kesha-voice-kit/issues/216), [#667](https://github.com/drakulavich/kesha-voice-kit/pull/667)).
+
+| | macOS arm64 | Linux x64 | Windows x64 |
+|---|:---:|:---:|:---:|
+| Transcribe · audio language ID · [VAD](docs/vad.md) | CoreML / ANE | ONNX CPU | ONNX CPU |
+| TTS — `en` `ru` `es` `fr` `it` `pt` | ✅ | ✅ | ✅ |
+| TTS — `hi` `ja` `zh` and macOS system voices | ✅ | — | — |
+| Mic capture and live dictation (`kesha record`) | ✅ | — | — |
+| Speaker diarization (`--speakers`) | ✅ | — | — |
+| Voice auto-routing from the text's language | ✅ | pass `--lang` | pass `--lang` |
+
+Intel Macs get no published engine binary. Full matrix with maturity labels: [docs/product-positioning.md](docs/product-positioning.md#platform-matrix).
 
 ## Speech-to-text
 
@@ -77,17 +92,18 @@ $ kesha freedom.ogg tahiti.ogg
 - **Dictate straight to text (darwin-arm64):** `kesha record --live` transcribes the mic as it captures and prints the transcript to stdout — no WAV in between, so it pipes (`kesha record --live | pbcopy`). Progress goes to stderr. Other platforms keep the two-step `record --out` + transcribe flow.
 - **Long / silence-heavy audio:** install VAD (`kesha install --vad`); Kesha auto-uses it past 120 s. Without VAD, long audio falls back to fixed ASR chunks. See [docs/vad.md](docs/vad.md).
 - **Speaker diarization** (darwin-arm64): `kesha install --diarize` (which installs VAD too), then `kesha --json --speakers meeting.m4a` stamps each segment with a `speaker` id. `--speakers` engages VAD windowing itself at any duration, so it cannot be combined with `--no-vad`. Linux/Windows return a clear "darwin-arm64 only" error ([#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
-- **Written-form numbers:** `--itn` rewrites what the model spells out — `"two hundred thirty two"` → `"232"`, `"five dollars and fifty cents"` → `"$5.50"`. Opt-in, works on every platform, and leaves timestamps alone. English-only in practice: other languages, Russian included, pass through unchanged. Spoken punctuation names stay words — `"the period of growth"` keeps its `period`, and so do `"dot"`, `"comma"`, `"dash"` and the rest, because Kesha transcribes speech rather than dictation ([#822](https://github.com/drakulavich/kesha-voice-kit/issues/822)). The cost is that spoken identifiers keep theirs too: `"example dot com"` is not rewritten to `example.com`.
+- **Written-form numbers:** `--itn` rewrites what the model spells out — `"two hundred thirty two"` → `"232"`, `"five dollars and fifty cents"` → `"$5.50"`. Opt-in, every platform, timestamps untouched. English-only in practice; Russian and the rest pass through unchanged. Spoken punctuation names stay words (`"dot"`, `"comma"`, `"the period of growth"`) because Kesha transcribes speech rather than dictation — so `"example dot com"` keeps its words too ([#822](https://github.com/drakulavich/kesha-voice-kit/issues/822)).
 
 ## Text-to-speech
 
-Kesha speaks back in [9 languages](docs/languages.md#text-to-speech), auto-picking the voice from the text's language. Override with `--lang <code>` or `--voice <id>`.
+Kesha speaks back in [9 languages](docs/languages.md#text-to-speech). On macOS it picks the voice from the text's own language; on Linux and Windows text detection needs Apple frameworks, so state the language with `--lang <code>` (or the voice with `--voice <id>`) — otherwise the engine default speaks.
 
 ```bash
 kesha install --tts                              # English voices; sizes differ per platform — preview: kesha install --plan
 kesha install --tts en ru                        # + Russian (+~890 MB, Vosk)
 kesha say "Hello, world" > hello.wav
-kesha say "Привет, мир" > privet.wav             # auto-routes by language
+kesha say "Привет, мир" > privet.wav             # auto-routes by language (macOS)
+kesha say --lang ru "Привет, мир" > privet.wav   # explicit — the Linux/Windows path
 kesha say --voice ru-vosk-m02 "Голос в текст." > ru.wav
 ```
 
@@ -103,7 +119,7 @@ kesha say "Hello" --format flac --out hi.flac     # FLAC — lossless, plays in 
 
 ## Languages
 
-**Speech-to-text** spans 25 languages and **text-to-speech** covers English, Russian, and select multilingual voices — full tables with codes and flags in **[docs/languages.md](docs/languages.md)**. Audio language detection identifies [107 languages](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa).
+**Speech-to-text** spans 25 languages and **text-to-speech** 9 — full tables with codes, flags, and per-platform availability in **[docs/languages.md](docs/languages.md)**. Audio language detection identifies [107 languages](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa).
 
 ## Performance
 
@@ -113,7 +129,7 @@ Compared against Whisper `large-v3-turbo`, all engines auto-detecting language:
 
 ![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](https://github.com/drakulavich/kesha-voice-kit/raw/main/docs/assets/benchmark.svg)
 
-Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md).
+Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md). The CPU figure is the ONNX engine on an M2's CPU cores; no x86 numbers are published yet.
 
 ## Other install methods
 
@@ -138,8 +154,9 @@ All of these install the Bun CLI wrapper; engine + models still download explici
 - [Architecture](docs/architecture.md) — runtime data flow, the models that ship, the CLI ↔ Rust engine boundary, model pinning, and where tests live.
 - [Use cases](docs/use-cases.md) — copy-paste recipes (transcribe a meeting, speak from OpenClaw, run offline, move the cache).
 - [Product positioning](docs/product-positioning.md) — supported workflows, non-goals, maturity labels, platform matrix.
+- [Changelog](CHANGELOG.md) — every release, with the behaviour changes spelled out.
 - **Diagnostics:** `kesha doctor`, `kesha support-bundle` (redacted `.tar.gz` for issues), and `kesha logs` produce local, content-free diagnostics — see [docs/diagnostic-logs.md](docs/diagnostic-logs.md). Every failure prints a stable `error [CODE]: …` line and a documented [process exit code](docs/errors.md#process-exit-codes).
-- **Scripting & CI:** `--json` (or `--toon`) for machine-readable output, `--quiet`/`-q` to silence progress, and `--no-color` (or `NO_COLOR=1`) for plain logs. Colors switch off automatically when `CI=true`.
+- **Scripting & CI:** `--json` (or `--toon`) for machine-readable output, `--json --include-errors` to get per-file failures on stdout alongside the results, `--quiet`/`-q` to silence progress, and `--no-color` (or `NO_COLOR=1`) for plain logs. Colors switch off automatically when `CI=true`.
 - **Privacy / Local Stats:** Stats are **off by default** and fully local. Opt in with `kesha stats enable` to record content-free operational metrics in a local SQLite database — never networked, never storing audio, transcripts, text, or paths. Full commands & lifecycle: [docs/local-stats.md](docs/local-stats.md).
 
 ## Contributing

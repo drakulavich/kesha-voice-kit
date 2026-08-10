@@ -60,7 +60,7 @@ Languages marked **darwin-arm64** below require a darwin-arm64 engine build (Flu
 | 6 | Portuguese | `pt` | 🇧🇷 | Kokoro (`pt-*`) | all | Brazilian (`pt-pm_alex`) |
 | 7 | Hindi | `hi` | 🇮🇳 | Kokoro (`hi-*`) | darwin-arm64 | **romanized (Latin) input only** — native Devanagari is rejected with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
 | 8 | Japanese | `ja` | 🇯🇵 | Kokoro (`ja-*`) | darwin-arm64 | **romaji (Latin) input only** — native kana/kanji is rejected ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
-| 9 | Chinese | `zh` | 🇨🇳 | Kokoro (`zh-*`) | darwin-arm64 | **pinyin (Latin) input only** — native Han is rejected ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
+| 9 | Chinese | `zh` | 🇨🇳 | Kokoro (`zh-*`) | darwin-arm64 | native Han supported through FluidAudio's Mandarin KokoroAne variant |
 | — | *(system voices)* | — | 🍎 | AVSpeech (`macos-*`) | macOS | any of the 180+ voices already installed on your Mac; zero model download |
 
 On Linux/Windows, text-to-speech covers English (Kokoro ONNX), Russian (Vosk-TTS), and the Romance languages es/fr/it/pt (CharsiuG2P ONNX). The FluidAudio Kokoro voices for hi/ja/zh are darwin-arm64 only. `macos-*` AVSpeech voices need no install.
