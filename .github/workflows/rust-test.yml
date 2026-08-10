@@ -414,13 +414,16 @@ jobs:
       - name: 🎧 Restore Parakeet CoreML models
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/Library/Application Support/FluidAudio/Models/parakeet-tdt-0.6b-v3
+          # Must track `models::fluidaudio_asr_location`. A runner has no legacy bundle, so
+          # the engine roots it under the Kesha cache; caching the old Application Support
+          # path would restore where nothing reads and save where nothing wrote (#688).
+          path: ~/.cache/kesha/fluidaudio/parakeet-tdt-0.6b-v3
           # Keyed on the fluidaudio-rs pin (Cargo.lock): a bump changes the model
           # set. The prefix restore-key warm-starts from the prior bundle so a
           # bump tops up the delta instead of re-fetching everything.
-          key: parakeet-coreml-models-v1-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          key: parakeet-coreml-models-v2-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: |
-            parakeet-coreml-models-v1-${{ runner.os }}-
+            parakeet-coreml-models-v2-${{ runner.os }}-
 
       - name: 🧪 CoreML decoder-state regression (ANE)
         run: |
