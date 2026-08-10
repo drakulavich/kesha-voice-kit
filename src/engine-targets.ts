@@ -31,6 +31,10 @@ const ENGINE_TARGETS: Record<string, EngineTarget> = {
   },
 };
 
+export function targetKey(platform: string = process.platform, arch: string = process.arch): string {
+  return `${platform}-${arch}`;
+}
+
 /** Returns null for a platform with no published engine — callers choose how loudly to fail. */
 export function engineTarget(
   platform: string = process.platform,

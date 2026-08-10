@@ -1,0 +1,132 @@
+name: "📜 Capability Pact"
+
+# Provider verification for the recorded capability pacts (#798).
+#
+# `tests/unit/capabilities-pact.test.ts` gates flag routing per target on every PR without
+# downloading anything, which is only sound while the recordings still match the binaries.
+# This job re-derives each pact from the artifact `kesha install` hands users and fails on
+# drift. It downloads the engine executable (~65 MB) and no models.
+#
+# RE-RECORDING — the canonical procedure. A new engine release that adds, removes or renames
+# a capability fails this job on purpose, and the fix is to re-record, never to relax the check:
+#
+#   1. bump `keshaEngine.version` to the new release and merge it
+#   2. run this workflow with `record: true` (Actions → 📜 Capability Pact → Run workflow)
+#   3. commit the contents of all three `capability-pact-<target>` artifacts
+#
+# Each target is recorded on its own OS — a binary only answers for the platform it was built
+# for — and each artifact carries only its own two files, so committing all three cannot
+# clobber. `matrix.target` is passed to the recorder, which refuses a row whose runner and
+# target disagree.
+#
+# Never runs on a pull request, so it cannot interfere with a `release/*` branch. The window
+# where `keshaEngine.version` names an unpublished tag fails loudly here, which is the point:
+# it is the check the PR lane deliberately does not carry, because a release PR must be able
+# to go green before the tag it names exists.
+
+on:
+  schedule:
+    # Weekly. A release is the moment the re-record is owed; this is the backstop for one
+    # that forgot, and the only thing standing between a pact and rotting into a false green.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      record:
+        description: "Re-record the pacts and upload them as artifacts instead of verifying."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  pact:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: darwin-arm64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: windows-latest
+            target: win32-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Only the scheduled run files an issue; one per target, so three runners failing
+      # together cannot race each other into duplicates.
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      # Explicitly not `!inputs.record`: were `inputs` ever to resolve unexpectedly, both
+      # steps would skip and the job would go green having verified nothing.
+      - name: 🔍 Verify ${{ matrix.target }} against the published binary
+        id: verify
+        if: github.event_name != 'workflow_dispatch' || !inputs.record
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.target }}
+        # Every run: here is bash. windows-latest defaults to pwsh, where `$TARGET` is not an
+        # env var (`$env:TARGET` is) and would expand to empty, silently un-pinning --target.
+        shell: bash
+        run: bun .github/scripts/record-capability-pacts.ts --from-release --target "$TARGET" --check
+
+      - name: 📣 Report an unverified pact (scheduled only)
+        if: github.event_name == 'schedule' && steps.verify.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          {
+            echo "## $TARGET's capability pact was not confirmed against the published engine"
+            echo
+            echo "Read the run log before acting — the step fails for two different reasons:"
+            echo
+            echo "- **The shape drifted.** The log shows a \`--- committed\` / \`+++\` diff, a"
+            echo "  sha256 mismatch, or an engine-version mismatch. Every per-PR assertion"
+            echo "  derived from \`tests/fixtures/capabilities/$TARGET.json\` is now gating"
+            echo "  against a binary nobody has. Re-record per the header of"
+            echo "  \`.github/workflows/capability-pact.yml\`."
+            echo "- **Verification could not run.** The log ends at the \`gh release download\`"
+            echo "  or \`--capabilities-json\` step. The pact is not implicated; the run proved"
+            echo "  nothing either way. Common causes: a network or API failure, or the window"
+            echo "  between a release merge and its tag, where \`keshaEngine.version\` names a"
+            echo "  release that does not exist yet."
+            echo
+            echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > /tmp/pact-body.md
+          bash .github/scripts/upsert-audit-issue.sh /tmp/pact-body.md "Capability pact unverified: $TARGET" pact-drift
+
+      - name: ❌ Fail an unverified pact
+        if: steps.verify.outcome == 'failure'
+        shell: bash
+        run: exit 1
+
+      - name: 📝 Re-record ${{ matrix.target }}
+        if: github.event_name == 'workflow_dispatch' && inputs.record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: bun .github/scripts/record-capability-pacts.ts --from-release --target "$TARGET"
+
+      - name: 📤 Upload the re-recorded pact
+        if: github.event_name == 'workflow_dispatch' && inputs.record
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: capability-pact-${{ matrix.target }}
+          path: tests/fixtures/capabilities/${{ matrix.target }}.*
+          if-no-files-found: error

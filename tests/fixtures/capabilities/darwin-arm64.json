@@ -1,0 +1,75 @@
+{
+  "protocolVersion": 3,
+  "backend": "coreml",
+  "features": [
+    "transcribe",
+    "transcribe.segments",
+    "detect-lang",
+    "vad",
+    "detect-text-lang",
+    "tts",
+    "tts.ru_acronym_expansion",
+    "tts.en_acronym_expansion",
+    "tts.ru_emphasis_marker",
+    "tts.prosody_rate",
+    "transcribe.diarize"
+  ],
+  "tts": {
+    "languages": [
+      {
+        "code": "en",
+        "engines": [
+          "kokoro"
+        ]
+      },
+      {
+        "code": "es",
+        "engines": [
+          "kokoro"
+        ]
+      },
+      {
+        "code": "fr",
+        "engines": [
+          "kokoro"
+        ]
+      },
+      {
+        "code": "hi",
+        "engines": [
+          "kokoro"
+        ]
+      },
+      {
+        "code": "it",
+        "engines": [
+          "kokoro"
+        ]
+      },
+      {
+        "code": "ja",
+        "engines": [
+          "kokoro"
+        ]
+      },
+      {
+        "code": "pt",
+        "engines": [
+          "kokoro"
+        ]
+      },
+      {
+        "code": "zh",
+        "engines": [
+          "kokoro"
+        ]
+      },
+      {
+        "code": "ru",
+        "engines": [
+          "vosk"
+        ]
+      }
+    ]
+  }
+}
