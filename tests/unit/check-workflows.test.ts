@@ -75,7 +75,11 @@ describe("requirePreUploadSynthesisSmoke", () => {
 describe("requireDarwinSmokeCoversBothEngines", () => {
   const DARWIN = "darwin-synthesis-smoke";
   const KOKORO = { name: "kokoro", run: 'bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." out' };
-  const AVSPEECH = { name: "avspeech", run: "bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice macos-en-US av" };
+  const AVSPEECH = {
+    name: "avspeech",
+    if: "${{ !cancelled() }}",
+    run: "bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice macos-en-US av",
+  };
 
   test("passes on the real build-engine.yml", () => {
     expect(requireDarwinSmokeCoversBothEngines(PATH, parseRepoYaml(PATH))).toEqual([]);
@@ -105,6 +109,21 @@ describe("requireDarwinSmokeCoversBothEngines", () => {
 
   test("passes when both arms run", () => {
     expect(requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [KOKORO, AVSPEECH]))).toEqual([]);
+  });
+
+  // AVSpeech is the only arm carrying the full pangram, and `--text` shrinks it back silently.
+  test("fails when the AVSpeech arm overrides the sentence", () => {
+    const shortened = { ...AVSPEECH, run: `${AVSPEECH.run} --text "Kesha speaks."` };
+    const errors = requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [KOKORO, shortened]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("--text");
+  });
+
+  test("fails when the AVSpeech arm stops running after a red Kokoro arm", () => {
+    const { if: _guard, ...unguarded } = AVSPEECH;
+    const errors = requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [KOKORO, unguarded]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("!cancelled()");
   });
 
   test("fails when the lane is gone", () => {

@@ -96,15 +96,22 @@ export function requireDarwinSmokeCoversBothEngines(path: string, document: unkn
 
   const smokes = runsMatching(steps, /^\s*bun\s+\S*smoke-synthesis\.ts\b/m);
   const isAvspeech = (at: number) => /--voice\s+macos-/.test(String(steps[at].run));
-  const avspeech = smokes.some(isAvspeech);
+  const avspeech = smokes.find(isAvspeech);
   const kokoro = smokes.some((at) => !isAvspeech(at));
 
   const errors: string[] = [];
   if (!kokoro) {
     errors.push(`${path}: \`${job}\` must synthesise through Kokoro — a smoke-synthesis.ts run on a non-\`macos-*\` voice (#678)`);
   }
-  if (!avspeech) {
+  if (avspeech === undefined) {
     errors.push(`${path}: \`${job}\` must synthesise through the AVSpeech sidecar — a smoke-synthesis.ts run with \`--voice macos-*\` (#678)`);
+    return errors;
+  }
+  if (/--text\b/.test(String(steps[avspeech].run))) {
+    errors.push(`${path}: \`${job}\`'s AVSpeech arm must carry the default pangram, not a \`--text\` override — it is the only long-utterance darwin coverage (#678)`);
+  }
+  if (!/!\s*cancelled\(\)/.test(condition(steps[avspeech]))) {
+    errors.push(`${path}: \`${job}\`'s AVSpeech arm needs \`if: \${{ !cancelled() }}\`, or a red Kokoro arm hides whether the sidecar works (#678)`);
   }
   return errors;
 }
