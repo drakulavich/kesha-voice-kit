@@ -108,3 +108,5 @@ fn build_text_lang_helper() {
         out_bin.display()
     );
 }
+
+// CI control for #818: exercise the coreml-regression guard at main's fluidaudio-rs pin.
