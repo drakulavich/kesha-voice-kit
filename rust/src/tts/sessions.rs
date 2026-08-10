@@ -19,7 +19,8 @@ use std::path::{Path, PathBuf};
 
 use super::{
     charsiu::Charsiu,
-    kokoro::Kokoro,
+    kokoro::{self, Kokoro},
+    seam,
     tokenizer::{self, Tokenizer},
     voices,
     vosk::Vosk,
@@ -78,20 +79,29 @@ impl KokoroSession {
     /// silent skip (SSML segments).
     ///
     /// IPA past Kokoro's active-token cap is split with
-    /// [`tokenizer::chunk_ipa`] and the chunks' samples concatenated, so long
-    /// input synthesizes in full instead of being cut at the cap (#715).
+    /// [`tokenizer::chunk_ipa`] and the chunks' samples joined by
+    /// [`seam::join_chunks`], so long input synthesizes in full instead of
+    /// being cut at the cap (#715) without a dead-air join (#808).
     pub fn infer_ipa(
         &mut self,
         ipa: &str,
         voice_path: &Path,
         speed: f32,
     ) -> anyhow::Result<Vec<f32>> {
-        let mut samples = Vec::new();
+        let mut rendered = Vec::new();
         for chunk in tokenizer::chunk_ipa(ipa, tokenizer::KOKORO_MAX_ACTIVE) {
             let ids = self.tokenizer.encode(&chunk);
             if ids.is_empty() {
                 continue;
             }
+            // `pad_to_context` truncates past the cap, which is how #715 lost
+            // audio silently; fail loudly in debug if chunking stops holding.
+            debug_assert!(
+                ids.len() <= tokenizer::KOKORO_MAX_ACTIVE,
+                "chunk encoded to {} ids, past the {} cap",
+                ids.len(),
+                tokenizer::KOKORO_MAX_ACTIVE
+            );
             let active = ids.len();
             let padded = Tokenizer::pad_to_context(ids);
 
@@ -101,9 +111,9 @@ impl KokoroSession {
                 let voice = self.voice(voice_path)?;
                 voices::select_style(voice, active).to_vec()
             };
-            samples.extend(self.kokoro.infer(&padded, &style, speed)?);
+            rendered.push(self.kokoro.infer(&padded, &style, speed)?);
         }
-        Ok(samples)
+        Ok(seam::join_chunks(rendered, kokoro::SAMPLE_RATE))
     }
 }
 

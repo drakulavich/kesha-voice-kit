@@ -27,12 +27,44 @@ pub fn join_chunks(chunks: Vec<Vec<f32>>, sample_rate: u32) -> Vec<f32> {
     if chunks.len() < 2 {
         return chunks.into_iter().next().unwrap_or_default();
     }
+    let frame = (sample_rate as usize * FRAME_MS / 1000).max(1);
+    let keep = sample_rate as usize * SEAM_SILENCE_MS / 2000;
+    let last = chunks.len() - 1;
     let mut out = Vec::new();
-    for chunk in &chunks {
-        out.extend_from_slice(chunk);
+    for (i, chunk) in chunks.iter().enumerate() {
+        out.extend_from_slice(clip_edges(chunk, frame, keep, i > 0, i < last));
     }
-    let _ = sample_rate;
     out
+}
+
+/// Narrow `samples` to the span that keeps at most `keep` samples of silence
+/// on each requested edge. An edge not requested is returned in full.
+fn clip_edges(samples: &[f32], frame: usize, keep: usize, lead: bool, tail: bool) -> &[f32] {
+    let rms: Vec<f32> = samples
+        .chunks(frame)
+        .map(|f| (f.iter().map(|s| s * s).sum::<f32>() / f.len() as f32).sqrt())
+        .collect();
+    let floor = rms.iter().fold(0.0f32, |a, &b| a.max(b)) * SILENCE_FLOOR;
+    let Some(first) = rms.iter().position(|&r| r > floor) else {
+        let len = if lead || tail {
+            keep.min(samples.len())
+        } else {
+            samples.len()
+        };
+        return &samples[..len];
+    };
+    let voiced_end = rms.iter().rposition(|&r| r > floor).unwrap_or(first);
+    let start = if lead {
+        (first * frame).saturating_sub(keep)
+    } else {
+        0
+    };
+    let end = if tail {
+        ((voiced_end + 1) * frame + keep).min(samples.len())
+    } else {
+        samples.len()
+    };
+    &samples[start..end]
 }
 
 #[cfg(test)]
@@ -48,7 +80,7 @@ mod tests {
     /// Silence, then a tone, then silence — the shape Kokoro emits per chunk.
     fn padded(lead_ms: usize, tone_ms: usize, tail_ms: usize) -> Vec<f32> {
         let mut v = vec![0.0; ms(lead_ms)];
-        v.extend((0..ms(tone_ms)).map(|i| (i as f32 * 0.1).sin() * 0.5));
+        v.extend((0..ms(tone_ms)).map(|i| if i % 24 < 12 { 0.5 } else { -0.5 }));
         v.extend(vec![0.0; ms(tail_ms)]);
         v
     }
