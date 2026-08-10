@@ -19,15 +19,125 @@ pub fn normalize_output(mut output: TranscriptionOutput) -> TranscriptionOutput 
     output
 }
 
+/// Upstream's punctuation vocabulary (`itn/en/punctuation.rs` at the `8a043f1`
+/// pin), split by token count so two-token names match before their tail word.
+/// Kesha transcribes natural speech, not dictation, so a spoken punctuation
+/// name is a noun here and never becomes a symbol (#822).
+const PUNCTUATION_NAME_PAIRS: &[&str] = &[
+    "exclamation point",
+    "exclamation mark",
+    "question mark",
+    "open parenthesis",
+    "close parenthesis",
+    "left parenthesis",
+    "right parenthesis",
+    "open bracket",
+    "close bracket",
+    "left bracket",
+    "right bracket",
+    "open brace",
+    "close brace",
+    "left brace",
+    "right brace",
+    "double quote",
+    "single quote",
+    "forward slash",
+    "back slash",
+    "at sign",
+];
+
+const PUNCTUATION_NAMES: &[&str] = &[
+    "period",
+    "dot",
+    "comma",
+    "colon",
+    "semicolon",
+    "hyphen",
+    "dash",
+    "ellipsis",
+    "ampersand",
+    "asterisk",
+    "hash",
+    "percent",
+    "plus",
+    "equals",
+    "tilde",
+    "underscore",
+    "pipe",
+    "slash",
+];
+
+/// Object-replacement character: no upstream tagger matches a span containing
+/// it, and the pretokenizer neither splits nor absorbs it.
+const PUNCTUATION_MASK: &str = "\u{FFFC}";
+
 /// `normalize_sentence` trims its input and can return an empty string for
 /// whitespace-only text; keep the original in that case so the pass can only
 /// ever rewrite content, never erase it.
 fn normalize_text(text: &str) -> String {
-    let normalized = text_processing_rs::normalize_sentence(text);
+    let masked = mask_punctuation_names(text);
+    let source = masked.as_ref().map_or(text, |(masked, _)| masked.as_str());
+    let normalized = text_processing_rs::normalize_sentence(source);
+    let normalized = match &masked {
+        Some((_, names)) => restore_punctuation_names(&normalized, names),
+        None => normalized,
+    };
     if normalized.trim().is_empty() && !text.trim().is_empty() {
         return text.to_string();
     }
     normalized
+}
+
+/// Replace every spoken punctuation name with [`PUNCTUATION_MASK`], returning
+/// the masked text and the original words in order. `None` when there is
+/// nothing to protect, so untouched text reaches upstream byte-identical.
+fn mask_punctuation_names(text: &str) -> Option<(String, Vec<String>)> {
+    if text.contains(PUNCTUATION_MASK) {
+        return None;
+    }
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut masked: Vec<&str> = Vec::with_capacity(words.len());
+    let mut names: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        let core = punctuation_core(words[i]);
+        let pair = words
+            .get(i + 1)
+            .map(|next| format!("{core} {}", punctuation_core(next)));
+        if pair.is_some_and(|pair| PUNCTUATION_NAME_PAIRS.contains(&pair.as_str())) {
+            names.push(format!("{} {}", words[i], words[i + 1]));
+            masked.push(PUNCTUATION_MASK);
+            i += 2;
+        } else if PUNCTUATION_NAMES.contains(&core.as_str()) {
+            names.push(words[i].to_string());
+            masked.push(PUNCTUATION_MASK);
+            i += 1;
+        } else {
+            masked.push(words[i]);
+            i += 1;
+        }
+    }
+    if names.is_empty() {
+        return None;
+    }
+    Some((masked.join(" "), names))
+}
+
+fn punctuation_core(word: &str) -> String {
+    word.trim_matches(|c: char| c.is_ascii_punctuation())
+        .to_lowercase()
+}
+
+fn restore_punctuation_names(text: &str, names: &[String]) -> String {
+    let mut names = names.iter();
+    let mut out = String::with_capacity(text.len());
+    for (index, part) in text.split(PUNCTUATION_MASK).enumerate() {
+        if index > 0 {
+            out.push_str(names.next().map_or(PUNCTUATION_MASK, String::as_str));
+        }
+        out.push_str(part);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -164,6 +274,10 @@ mod tests {
             "у меня двадцать три сообщения",
             "hello мир two hundred",
             "nothing to rewrite here",
+            "the period of growth was remarkable",
+            "she gave a plus one",
+            "it was a difficult period.",
+            "go to example dot com",
         ] {
             let once = normalize_text(text);
             assert_eq!(normalize_text(&once), once, "not idempotent for {text:?}");
@@ -198,6 +312,34 @@ mod tests {
         );
         assert_eq!(normalize_text("put a comma there"), "put a comma there");
         assert_eq!(normalize_text("she gave a plus one"), "she gave a plus 1");
+    }
+
+    fn protected_names() -> impl Iterator<Item = &'static str> {
+        PUNCTUATION_NAME_PAIRS
+            .iter()
+            .chain(PUNCTUATION_NAMES)
+            .copied()
+    }
+
+    #[test]
+    fn every_protected_name_survives_as_a_noun() {
+        for name in protected_names() {
+            let sentence = format!("the {name} of it");
+            assert_eq!(normalize_text(&sentence), sentence);
+        }
+    }
+
+    #[test]
+    fn every_protected_name_is_one_upstream_would_rewrite() {
+        // Keeps the list grounded in upstream's vocabulary rather than
+        // guesswork, and fails loudly if a pin bump drops a name.
+        for name in protected_names() {
+            assert_ne!(
+                text_processing_rs::normalize_sentence(name),
+                name,
+                "{name} is not upstream punctuation vocabulary"
+            );
+        }
     }
 
     #[test]
