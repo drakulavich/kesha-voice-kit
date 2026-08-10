@@ -3,7 +3,8 @@
 //! Shells out to a Swift sidecar (`swift/say-avspeech.swift`, compiled by
 //! `build.rs` into `$OUT_DIR/say-avspeech`). The Rust side pipes UTF-8 text on
 //! stdin, passes the voice identifier as argv\[1\], and reads a complete WAV
-//! (mono IEEE-float @ 22050 Hz) from stdout. Stderr is surfaced in the error
+//! (mono IEEE-float at the voice's own rate — 22050 Hz for the legacy voices,
+//! 16000 Hz for the Eloquence set) from stdout. Stderr is surfaced in the error
 //! message when synthesis fails.
 
 #![cfg(all(feature = "system_tts", target_os = "macos"))]

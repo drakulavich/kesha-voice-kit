@@ -73,7 +73,7 @@ kesha say --voice macos-com.apple.voice.compact.en-US.Samantha "Hello" > out.wav
 kesha say --voice macos-ru-RU "Привет, мир" > hello-ru.wav                   # language-code fallback
 ```
 
-Voice id format: `macos-<id>` where `<id>` is either a full Apple identifier (`com.apple.voice.compact.en-US.Samantha`) or a language code (`en-US`, `ru-RU`) — the Swift helper tries the identifier first and falls back to the language. Output is mono float32 @ 22050 Hz, structurally identical to Vosk.
+Voice id format: `macos-<id>` where `<id>` is either a full Apple identifier (`com.apple.voice.compact.en-US.Samantha`) or a language code (`en-US`, `ru-RU`) — the Swift helper tries the identifier first and falls back to the language. Output is mono float32, structurally identical to Vosk; the sample rate is whatever the chosen system voice renders at (22050 Hz for the legacy voices, 16000 Hz for the Eloquence set).
 
 Quality tradeoff is honest: macOS system voices are notification-grade. Use them when you want zero-install TTS on macOS; keep Kokoro/Vosk for anything that needs to sound good.
 

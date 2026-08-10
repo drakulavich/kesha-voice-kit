@@ -2,7 +2,8 @@
 //
 // Invoked by the Rust `avspeech` backend when a `macos-*` voice is selected.
 // Emits mono float32 WAV (IEEE_FLOAT) at the voice's native sample rate
-// (22050 Hz on every macOS voice we've tested). Stderr carries progress + errors.
+// (22050 Hz for the legacy voices, 16000 Hz for the Eloquence set). Stderr
+// carries progress + errors.
 //
 // Usage:
 //   say-avspeech <voiceId> [--rate <speed>] [text]   # synthesize (stdin if text is omitted)
@@ -139,8 +140,10 @@ guard !samples.isEmpty, sampleRate > 0, channels > 0 else {
 }
 
 // Minimal WAV-float32 encoder (mono). IEEE_FLOAT (wFormatTag = 3) so downstream
-// consumers can read the stream without re-quantization. Matches the shape
-// emitted by `tts::wav::encode_wav` in the Rust engine.
+// consumers can read the stream without re-quantization. Deliberately NOT the
+// shape `tts::wav::encode_wav` writes — no cbSize, no fact chunk — which is why
+// `tts::say::transcode_to` re-encodes these bytes rather than passing them
+// through (#826).
 func appendLE32(_ v: UInt32, to data: inout Data) {
   var le = v.littleEndian
   withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
