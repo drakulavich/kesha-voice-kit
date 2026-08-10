@@ -159,7 +159,7 @@ describe("collectDoctorReport", () => {
       expect(report.engine.installed).toBe(false);
       expect(report.engine.path).toBe("~/engine/bin/kesha-engine");
       expect(report.cache.path).toBe("~/.cache/kesha");
-      expect(report.cache.totalBytes).toBeGreaterThan(0);
+      expect(report.cache.totalBytes).toBe("vad".length);
       expect(report.env.KESHA_MODEL_MIRROR).toBe("https://example.com/kesha");
       expect(report.env.KESHA_DEBUG).toBe("1");
       expect("runCount" in report.stats).toBe(true);
@@ -168,8 +168,8 @@ describe("collectDoctorReport", () => {
       expect(report.diagnosticLogs.activePath).toBe("~/logs/kesha.ndjson");
       expect(report.diagnosticLogs.statePath).toBe("~/logs/diagnostic-logs.json");
       expect(report.diagnosticLogs.exists).toBe(true);
-      expect(report.diagnosticLogs.activeSizeBytes).toBeGreaterThan(0);
-      expect(report.diagnosticLogs.totalSizeBytes).toBeGreaterThan(report.diagnosticLogs.activeSizeBytes);
+      expect(report.diagnosticLogs.activeSizeBytes).toBe("diagnostic\n".length);
+      expect(report.diagnosticLogs.totalSizeBytes).toBe("diagnostic\n".length + "rotated\n".length);
       expect(report.diagnosticLogs.rotatedFiles).toEqual(["kesha.1.ndjson"]);
 
       expect(report.cache.externalRoots).toEqual([

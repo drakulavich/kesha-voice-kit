@@ -98,18 +98,19 @@ describe("list_voices tool", () => {
     const client = new Client({ name: "t", version: "0" });
     await client.connect(c);
     const res = await client.callTool({ name: "list_voices", arguments: {} });
-    expect(res.isError).toBeFalsy();
+    expect(res.isError).toBeUndefined();
     const sc = res.structuredContent as {
       voices: Array<{ voiceId: string; modelId: string; modelName: string; languageCode: string; languageName: string; gender: string | null }>;
     };
-    expect(Array.isArray(sc.voices)).toBe(true);
-    expect(sc.voices.length).toBeGreaterThan(0);
-    expect(sc.voices[0]).toHaveProperty("voiceId");
-    expect(sc.voices[0]).toHaveProperty("modelId");
-    expect(sc.voices[0]).toHaveProperty("modelName");
-    expect(sc.voices[0]).toHaveProperty("languageCode");
-    expect(sc.voices[0]).toHaveProperty("languageName");
-    expect(sc.voices[0]).toHaveProperty("gender");
+    // The English default is a brand contract; naming it pins every field, BCP-47 tag included.
+    expect(sc.voices.find((v) => v.voiceId === "en-am_michael")).toEqual({
+      voiceId: "en-am_michael",
+      modelId: "kokoro",
+      modelName: "Kokoro-82M",
+      languageCode: "en-US",
+      languageName: "American English",
+      gender: "male",
+    });
   });
 });
 
@@ -121,15 +122,18 @@ describe("list_languages tool", () => {
     const client = new Client({ name: "t", version: "0" });
     await client.connect(c);
     const res = await client.callTool({ name: "list_languages", arguments: {} });
-    expect(res.isError).toBeFalsy();
+    expect(res.isError).toBeUndefined();
     const sc = res.structuredContent as {
       languages: Array<{ languageCode: string; languageName: string; voiceCount: number }>;
     };
-    expect(Array.isArray(sc.languages)).toBe(true);
-    expect(sc.languages.length).toBeGreaterThan(0);
-    expect(sc.languages[0]).toHaveProperty("languageCode");
-    expect(sc.languages[0]).toHaveProperty("languageName");
-    expect(sc.languages[0]).toHaveProperty("voiceCount");
-    expect(typeof sc.languages[0].voiceCount).toBe("number");
+    expect(sc.languages.find((l) => l.languageCode === "en-US")).toMatchObject({
+      languageCode: "en-US",
+      languageName: "American English",
+    });
+    // voiceCount must count the voices actually listed, not be a shape-check placeholder.
+    const voices = (await listVoices()) as Array<{ languageCode: string }>;
+    for (const lang of sc.languages) {
+      expect(lang.voiceCount).toBe(voices.filter((v) => v.languageCode === lang.languageCode).length);
+    }
   });
 });

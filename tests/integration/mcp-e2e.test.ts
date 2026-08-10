@@ -49,8 +49,9 @@ describe.skipIf(!engineInstalled)("mcp e2e", () => {
   test("transcribe_audio returns non-empty text", async () => {
     const cl = await client();
     const res = await cl.callTool({ name: "transcribe_audio", arguments: { path: FIXTURE_RU } });
-    expect(res.isError).toBeFalsy();
-    expect((res.content as Array<{ text: string }>)[0].text.length).toBeGreaterThan(0);
+    expect(res.isError).toBeUndefined();
+    // Backend-stable word: CoreML and ONNX disagree on "сообщения"/"сообщение" for this clip.
+    expect((res.content as Array<{ text: string }>)[0].text).toContain("транскрипцией");
   }, 60_000);
 
   test.skipIf(!SPIKE_AVAILABLE)(
@@ -61,7 +62,7 @@ describe.skipIf(!engineInstalled)("mcp e2e", () => {
         name: "synthesize_speech",
         arguments: { text: "Hello world", voice: "en-am_michael", format: "wav" },
       });
-      expect(res.isError).toBeFalsy();
+      expect(res.isError).toBeUndefined();
       const link = (res.content as Array<{ type: string; uri: string }>).find((c) => c.type === "resource_link");
       expect(link?.uri.startsWith("kesha-audio://")).toBe(true);
       const sc = res.structuredContent as { uri: string; path: string; bytes: number };

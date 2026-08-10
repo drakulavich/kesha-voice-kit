@@ -83,7 +83,8 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(exitCode).toBe(0);
     const caps = JSON.parse(stdout);
     expect(caps.protocolVersion).toBe(3);
-    expect(caps.backend).toBeDefined();
+    // Exactly one backend is compiled in; "some string" would accept a build that named none.
+    expect(["coreml", "onnx"]).toContain(caps.backend);
     expect(caps.features).toContain("transcribe");
     expect(caps.features).toContain("detect-lang");
   });
@@ -383,7 +384,8 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     const { stdout, stderr, exitCode } = await runCli(["--lang", "en", FIXTURE_RU]);
     expect(exitCode).toBe(0);
     expect(stderr).toContain("expected language");
-    expect(stdout.length).toBeGreaterThan(0);
+    // The warning must not suppress the transcript, which a length check never showed.
+    expect(stdout).toContain("транскрипцией");
   }, 60_000);
 
   test("kesha transcribes English audio", async () => {
