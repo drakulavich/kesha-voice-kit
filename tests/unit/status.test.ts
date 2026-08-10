@@ -12,7 +12,7 @@ import {
 } from "../../src/status";
 import { humanBytes } from "../../src/format";
 import { starSeenPath } from "../../src/star";
-import { saveEngineEnv, writeFakeEngine } from "../helpers/fake-engine";
+import { saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
 
 const posixEngineTest = process.platform === "win32" ? test.skip : test;
 
@@ -209,13 +209,9 @@ describe("collectStatus --json payload (#647)", () => {
   afterEach(restoreEnv);
 
   function healthyEngine(): { dir: string; cache: string; binPath: string } {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-"));
-    const cache = join(dir, ".cache", "kesha");
-    const binPath = writeFakeEngine(join(cache, "engine", "bin"));
-    process.env.KESHA_ENGINE_BIN = binPath;
-    process.env.KESHA_CACHE_DIR = cache;
-    process.env.HOME = dir;
-    return { dir, cache, binPath };
+    const staged = stageEngineHome("kesha-status-json-");
+    writeFakeEngine(staged.binDir);
+    return staged;
   }
 
   posixEngineTest("engine installed: presence, path, capabilities, voices", async () => {

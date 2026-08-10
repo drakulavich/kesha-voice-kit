@@ -4,6 +4,33 @@ import { join } from "path";
 
 const ENGINE_ENV = ["KESHA_ENGINE_BIN", "KESHA_CACHE_DIR", "HOME", "KESHA_MODEL_MIRROR"] as const;
 
+export interface StagedEngineHome {
+  /** The temp directory standing in for `$HOME`. Remove it when the test finishes. */
+  dir: string;
+  cache: string;
+  binDir: string;
+  binPath: string;
+}
+
+/**
+ * Creates a temp `$HOME` holding the engine cache layout and points `HOME`, `KESHA_CACHE_DIR`
+ * and `KESHA_ENGINE_BIN` at it. The bin directory exists; no engine is written, so the caller
+ * decides whether it is healthy, mute or absent.
+ *
+ * Restore the environment with `saveEngineEnv()`'s undo, and `rmSync` the returned `dir`.
+ */
+export function stageEngineHome(prefix: string): StagedEngineHome {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const cache = join(dir, ".cache", "kesha");
+  const binDir = join(cache, "engine", "bin");
+  mkdirSync(binDir, { recursive: true });
+  const binPath = join(binDir, "kesha-engine");
+  process.env.HOME = dir;
+  process.env.KESHA_CACHE_DIR = cache;
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return { dir, cache, binDir, binPath };
+}
+
 /** Snapshots the engine-related env so a test can point them at a temp dir and restore afterwards. */
 export function saveEngineEnv(): () => void {
   const saved = ENGINE_ENV.map((key) => [key, process.env[key]] as const);

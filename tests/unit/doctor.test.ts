@@ -19,6 +19,7 @@ import {
   type DoctorReport,
 } from "../../src/doctor";
 import { collectStatus } from "../../src/status";
+import { stageEngineHome } from "../helpers/fake-engine";
 import { createSupportBundle } from "../../src/support-bundle";
 import { engineVersion, packageName, packageVersion } from "../../src/package-info";
 import { enableStats } from "../../src/stats";
@@ -609,15 +610,9 @@ describe("collectDoctorReport probe and cache accounting", () => {
   afterEach(restoreEnv);
 
   function stage(prefix: string): { dir: string; cache: string; binDir: string } {
-    const dir = mkdtempSync(join(tmpdir(), prefix));
-    const cache = join(dir, ".cache", "kesha");
-    const binDir = join(cache, "engine", "bin");
-    mkdirSync(binDir, { recursive: true });
-    process.env.HOME = dir;
-    process.env.KESHA_ENGINE_BIN = join(binDir, "kesha-engine");
-    process.env.KESHA_CACHE_DIR = cache;
-    process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
-    return { dir, cache, binDir };
+    const staged = stageEngineHome(prefix);
+    process.env.KESHA_STATS_DB = join(staged.dir, "stats.sqlite");
+    return staged;
   }
 
   test("an absent engine is not probed, so it carries no probe error", async () => {
