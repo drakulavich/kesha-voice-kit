@@ -1,0 +1,122 @@
+name: "🐤 Real-Model Canary"
+
+# The counterweight to the stand-ins (#741).
+#
+# Every per-PR lane now runs Kokoro through a 1 KB stand-in, and the Vosk synth test
+# is off the PR path entirely. That trade is only honest if something still exercises
+# the real weights, and this is that something: the full nextest suite against real
+# Kokoro, real Vosk-RU and real CharsiuG2P, weekly.
+#
+# `KESHA_REQUIRE_MODEL_TESTS: real` is the point. Every gate that a PR lane satisfies
+# with a stand-in must here resolve to genuine weights or fail — this is the only lane
+# where the `real` tier is exercised, and it is what stops the stand-ins from quietly
+# becoming the only thing anyone runs.
+#
+# Distinct from `mini-model-pact.yml` on purpose: that job asks whether the stand-in
+# still *matches* the real model's signature, this one asks whether the real model
+# still *works*. Same weakness would fail them differently, and a shared job would
+# blur which.
+#
+# Detection latency is up to a week, deliberately: real Kokoro audio through a
+# from-source build was previously asserted on every PR that touched TTS, and this is
+# the price of the ~2.6 GB the stand-ins took out of the cache budget.
+
+on:
+  schedule:
+    # Weekly, clear of both the capability pact (05:00) and the mini-model pact (08:00)
+    # so three model-downloading jobs never contend.
+    - cron: "0 11 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+    env:
+      KOKORO_CACHE: ${{ github.workspace }}/.kokoro-real
+      NEXTEST_PROFILE: ci
+      # Real weights or fail: a stand-in satisfying a gate here would defeat the lane.
+      KESHA_REQUIRE_MODEL_TESTS: real
+      KESHA_REQUIRE_VOSK_TESTS: "1"
+      KESHA_REQUIRE_G2P_TESTS: "1"
+      # tts::vosk's synth test is CI-only, and this is now the lane that runs it.
+      CI: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - uses: taiki-e/install-action@1beb33eee6d086258184383af9a538940be190ed # v2.85.6
+        with:
+          tool: nextest
+
+      - name: 🎧 Install system audio deps
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
+
+      # Deliberately uncached: this runs weekly, and a ~1.4 GB entry to save one
+      # download a week is exactly the trade #741 exists to refuse.
+      - name: ⬇️ Download the real TTS weights
+        id: models
+        continue-on-error: true
+        shell: bash
+        env:
+          WITH_REAL_KOKORO: "1"
+          WITH_VOSK: "1"
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+
+      - name: 🧪 Run the suite against real weights
+        id: suite
+        if: steps.models.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" Linux
+
+      - name: 📣 Report a failed canary (scheduled only)
+        if: github.event_name == 'schedule' && (steps.models.outcome == 'failure' || steps.suite.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          {
+            echo "## The real-model canary failed"
+            echo
+            echo "Read the run log before acting — this fails for three different reasons:"
+            echo
+            echo "- **A real model regressed.** The suite ran and a test failed. Every per-PR"
+            echo "  lane is on stand-ins, so this is the only place that signal exists, and"
+            echo "  the regression may be up to a week old. Do not dismiss it as flake."
+            echo "- **A gate resolved to a stand-in.** The failure names"
+            echo "  \`KESHA_REQUIRE_MODEL_TESTS asks for Real\`. The staging is wrong, not the"
+            echo "  model — this lane must never run on the committed mini."
+            echo "- **The download could not run.** The log ends in the download step. The"
+            echo "  models are not implicated; the run proved nothing either way."
+            echo
+            echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > /tmp/canary-body.md
+          bash .github/scripts/upsert-audit-issue.sh /tmp/canary-body.md "Real-model canary failing" pact-drift
+
+      - name: ❌ Fail the canary
+        if: steps.models.outcome == 'failure' || steps.suite.outcome == 'failure'
+        shell: bash
+        run: exit 1

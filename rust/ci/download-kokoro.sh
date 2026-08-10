@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Download the TTS models that have no stand-in: CharsiuG2P always, Vosk-RU when
-# the caller asks. Kokoro is served by the committed mini instead (#741).
+# Download the TTS models the caller asks for. CharsiuG2P always; Vosk-RU and the
+# real Kokoro weights only behind their flags, which only the weekly canary sets.
+# The PR lanes run on the committed Kokoro stand-in instead (#741).
 # Called by rust-test.yml; cache warms on subsequent runs.
 set -euo pipefail
 
@@ -22,10 +23,39 @@ fetch() {
   mv "$dest.part" "$dest"
 }
 
-# Kokoro's graph and voice packs are no longer fetched: the committed stand-in in
-# tests/fixtures/mini-models/kokoro carries the same I/O signature for ~1 KB, and
-# rust/ci/stage-mini-models.sh lays it out (#741). Only weights nothing can stand
-# in for are downloaded here.
+# Kokoro's graph and voice packs are not fetched for the PR lanes: the committed
+# stand-in in tests/fixtures/mini-models/kokoro carries the same I/O signature for
+# ~1 KB, and rust/ci/stage-mini-models.sh lays it out (#741).
+#
+# WITH_REAL_KOKORO is the canary's opt-in. Weekly, real-model-canary.yml runs the
+# same suites against these weights, which is the only place real Kokoro audio is
+# asserted at all now — so this arm is the counterweight to the stand-ins, not a
+# leftover.
+if [[ "${WITH_REAL_KOKORO:-0}" == "1" ]]; then
+  if [[ ! -f "$DEST/model.onnx" ]]; then
+    echo "Downloading Kokoro model.onnx (kokoro-onnx official release)..."
+    # Mirrors rust/src/models.rs::kokoro_manifest URL — see #207 for why we
+    # switched off the HF onnx-community variant.
+    fetch "$DEST/model.onnx" \
+      https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+  fi
+  KOKORO_DIR="$DEST/models/kokoro-82m"
+  mkdir -p "$KOKORO_DIR/voices"
+  ln -f "$DEST/model.onnx" "$KOKORO_DIR/model.onnx" 2>/dev/null \
+    || cp "$DEST/model.onnx" "$KOKORO_DIR/model.onnx"
+  # am_michael is the male brand default (CLAUDE.md); the rest carry the multilang
+  # corpus. ff_siwis is the documented French exception.
+  VOICE_BASE="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices"
+  for v in am_michael em_alex ff_siwis im_nicola pm_alex; do
+    if [[ ! -f "$KOKORO_DIR/voices/$v.bin" ]]; then
+      echo "Downloading Kokoro voice $v.bin..."
+      fetch "$KOKORO_DIR/voices/$v.bin" "$VOICE_BASE/$v.bin"
+    fi
+  done
+  ln -f "$KOKORO_DIR/voices/am_michael.bin" "$DEST/am_michael.bin" 2>/dev/null \
+    || cp "$KOKORO_DIR/voices/am_michael.bin" "$DEST/am_michael.bin"
+  ls -lh "$KOKORO_DIR/voices"
+fi
 
 # Vosk-TTS Russian, ~935 MB. Exactly one consumer:
 # `tts::vosk::tests::synth_short_phrase_produces_audio`, which needs real weights
