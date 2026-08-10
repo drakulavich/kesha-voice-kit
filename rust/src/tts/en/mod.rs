@@ -21,14 +21,9 @@ pub fn is_en(lang: &str) -> bool {
 /// [`normalize_segments`] applies the full table by substitution, which suits an
 /// engine taking IPA. FluidAudio does its own G2P from raw text and instead
 /// accepts the table itself, so the ANE path hands it these pairs at init
-/// (#818) — minus [`acronym::ANE_NATIVE_PREFERRED`], whose native rendering the
-/// owner judged better (#844).
+/// (#818).
 pub fn ane_ipa_overrides() -> Vec<(&'static str, &'static str)> {
-    acronym::IPA_LEXICON
-        .iter()
-        .filter(|(word, _)| !acronym::ANE_NATIVE_PREFERRED.contains(word))
-        .copied()
-        .collect()
+    acronym::IPA_LEXICON.to_vec()
 }
 
 /// Normalize a segment list for the Kokoro path.
