@@ -649,8 +649,9 @@ fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsEr
     encode_or_fail(&samples, spec.sample_rate, format)
 }
 
-/// Mix WAV samples to mono f32. Generic so a future sidecar format change
-/// doesn't break us (AVSpeech currently emits 22.05 kHz 16-bit mono).
+/// Mix WAV samples to mono f32. Generic because the sidecars disagree:
+/// FluidAudio Kokoro emits 16-bit PCM at 24 kHz, AVSpeech float32 at whatever
+/// rate the chosen system voice renders at.
 #[cfg(any(
     test,
     all(feature = "system_tts", target_os = "macos"),
@@ -895,11 +896,12 @@ mod tests {
         assert!((super::compose_rate(1.0, 1.0) - 1.0).abs() < 1e-6);
     }
 
-    /// Build a sidecar-shaped WAV: mono 16-bit PCM, the encoding AVSpeech and
-    /// FluidAudio Kokoro hand us.
-    fn pcm16_wav(samples: &[i16], sample_rate: u32) -> Vec<u8> {
+    /// Build a sidecar-shaped WAV: 16-bit PCM, the encoding FluidAudio Kokoro
+    /// hands us. `channels` interleaves, matching how a multi-channel sidecar
+    /// buffer would arrive.
+    fn pcm16_wav(samples: &[i16], sample_rate: u32, channels: u16) -> Vec<u8> {
         let spec = hound::WavSpec {
-            channels: 1,
+            channels,
             sample_rate,
             bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
@@ -913,26 +915,65 @@ mod tests {
         buf.into_inner()
     }
 
-    fn fmt_chunk(wav: &[u8]) -> (u16, u32, u16) {
+    /// Byte-for-byte what `swift/say-avspeech.swift` writes: IEEE float 32-bit
+    /// with a 16-byte `fmt ` chunk and no `fact` chunk. hound reads it, but it
+    /// is not the shape `wav::encode_wav` produces.
+    fn avspeech_shaped_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
+        let data_size = (samples.len() * 4) as u32;
+        let mut w = Vec::new();
+        w.extend_from_slice(b"RIFF");
+        w.extend_from_slice(&(36 + data_size).to_le_bytes());
+        w.extend_from_slice(b"WAVE");
+        w.extend_from_slice(b"fmt ");
+        w.extend_from_slice(&16_u32.to_le_bytes());
+        w.extend_from_slice(&3_u16.to_le_bytes());
+        w.extend_from_slice(&1_u16.to_le_bytes());
+        w.extend_from_slice(&sample_rate.to_le_bytes());
+        w.extend_from_slice(&(sample_rate * 4).to_le_bytes());
+        w.extend_from_slice(&4_u16.to_le_bytes());
+        w.extend_from_slice(&32_u16.to_le_bytes());
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&data_size.to_le_bytes());
+        for s in samples {
+            w.extend_from_slice(&s.to_le_bytes());
+        }
+        w
+    }
+
+    /// `(fmt chunk size, format tag, sample rate, bits per sample)`.
+    fn fmt_chunk(wav: &[u8]) -> (u32, u16, u32, u16) {
         let at = (0..wav.len() - 8)
             .find(|i| &wav[*i..*i + 4] == b"fmt ")
             .expect("fmt chunk not found");
+        let size = u32::from_le_bytes([wav[at + 4], wav[at + 5], wav[at + 6], wav[at + 7]]);
         let tag = u16::from_le_bytes([wav[at + 8], wav[at + 9]]);
         let rate = u32::from_le_bytes([wav[at + 12], wav[at + 13], wav[at + 14], wav[at + 15]]);
         let bits = u16::from_le_bytes([wav[at + 22], wav[at + 23]]);
-        (tag, rate, bits)
+        (size, tag, rate, bits)
+    }
+
+    fn has_fact_chunk(wav: &[u8]) -> bool {
+        (0..wav.len() - 4).any(|i| &wav[i..i + 4] == b"fact")
+    }
+
+    fn decode_f32(wav: &[u8]) -> Vec<f32> {
+        hound::WavReader::new(std::io::Cursor::new(wav))
+            .unwrap()
+            .into_samples::<f32>()
+            .collect::<Result<_, _>>()
+            .unwrap()
     }
 
     #[test]
     fn wav_output_is_ieee_float_even_for_sidecar_pcm16() {
         // #826: `OutputFormat::Wav` used to pass sidecar bytes through untouched,
         // so the same voice emitted PCM16 for plain text and IEEE float for --ssml.
-        let src = pcm16_wav(&[0, 8192, -8192, 16384, -16384, 32767, -32768], 22_050);
-        assert_eq!(fmt_chunk(&src), (0x0001, 22_050, 16), "fixture shape");
+        let src = pcm16_wav(&[0, 8192, -8192, 16384, -16384, 32767, -32768], 22_050, 1);
+        assert_eq!(fmt_chunk(&src), (16, 0x0001, 22_050, 16), "fixture shape");
 
         let out = super::transcode_to(&src, OutputFormat::Wav).unwrap();
 
-        let (tag, rate, bits) = fmt_chunk(&out);
+        let (_, tag, rate, bits) = fmt_chunk(&out);
         assert_eq!(
             tag, 0x0003,
             "expected WAVE_FORMAT_IEEE_FLOAT (0x0003), got 0x{tag:04x}"
@@ -945,17 +986,46 @@ mod tests {
     }
 
     #[test]
+    fn avspeech_shaped_float_wav_is_rewritten_to_the_canonical_layout() {
+        // AVSpeech already emits IEEE float, so #826 looked like a no-op here —
+        // but its `fmt ` chunk is 16 bytes with no `cbSize` and no `fact`, which
+        // is non-conformant for non-PCM. Now it goes through `wav::encode_wav`.
+        let pcm: Vec<f32> = (0..512).map(|i| (i as f32 * 0.02).sin()).collect();
+        let src = avspeech_shaped_wav(&pcm, 16_000);
+        assert_eq!(fmt_chunk(&src), (16, 0x0003, 16_000, 32), "fixture shape");
+        assert!(!has_fact_chunk(&src), "fixture must have no fact chunk");
+
+        let out = super::transcode_to(&src, OutputFormat::Wav).unwrap();
+
+        assert_eq!(fmt_chunk(&out), (18, 0x0003, 16_000, 32));
+        assert!(has_fact_chunk(&out), "non-PCM WAV needs a fact chunk");
+        assert_eq!(decode_f32(&out), pcm, "float input re-encodes exactly");
+    }
+
+    #[test]
+    fn stereo_sidecar_input_is_mixed_down_to_mono() {
+        // The downmix is defensive — no shipping voice returns stereo — but it
+        // silently doubles the sample count if it ever regresses.
+        let interleaved: Vec<i16> = vec![16384, -16384, 8192, 8192, 0, 32766];
+        let out =
+            super::transcode_to(&pcm16_wav(&interleaved, 24_000, 2), OutputFormat::Wav).unwrap();
+
+        let decoded = decode_f32(&out);
+        let expected = [0.0, 8192.0 / 32_768.0, 16383.0 / 32_768.0];
+        assert_eq!(decoded.len(), 3, "three frames in, three samples out");
+        for (i, (got, want)) in decoded.iter().zip(expected).enumerate() {
+            assert!((got - want).abs() < 1e-6, "frame {i}: {got} vs {want}");
+        }
+    }
+
+    #[test]
     fn wav_normalization_preserves_the_sidecar_audio() {
         let pcm: Vec<i16> = (0..2048)
             .map(|i| ((i as f32 * 0.05).sin() * 30_000.0) as i16)
             .collect();
-        let out = super::transcode_to(&pcm16_wav(&pcm, 24_000), OutputFormat::Wav).unwrap();
+        let out = super::transcode_to(&pcm16_wav(&pcm, 24_000, 1), OutputFormat::Wav).unwrap();
 
-        let decoded: Vec<f32> = hound::WavReader::new(std::io::Cursor::new(&out))
-            .unwrap()
-            .into_samples::<f32>()
-            .collect::<Result<_, _>>()
-            .unwrap();
+        let decoded = decode_f32(&out);
         assert_eq!(decoded.len(), pcm.len());
         for (i, (got, want)) in decoded.iter().zip(&pcm).enumerate() {
             let want = *want as f32 / 32_768.0;
