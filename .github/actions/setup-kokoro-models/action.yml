@@ -2,7 +2,8 @@ name: Setup Kokoro TTS models
 description: >
   Restore-or-download CharsiuG2P, the only TTS weights left on the PR path that have
   no stand-in. Kokoro is served by the committed mini and Vosk-RU moved to the weekly
-  real-model canary, so the Linux coverage lane is this action's only caller (#741).
+  real-model canary, so the callers are down to two: rust-test.yml's Linux coverage
+  lane, which reads the entry, and cache-seed.yml, which writes it (#741).
 
   Restore-only by design: writing is the job of cache-seed.yml on main. GitHub
   scopes a cache written during a pull_request run to that PR's merge ref, so only

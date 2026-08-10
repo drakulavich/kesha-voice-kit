@@ -410,13 +410,18 @@ jobs:
       - name: 🔊 Setup integration backend
         uses: ./.github/actions/install-kesha-backend
         with:
+          # Just the engine tree, not the whole cache root. #820 rooted the ~450 MB
+          # FluidAudio bundle under `~/.cache/kesha`, so archiving that root would
+          # re-mint this entry at ~550 MB on the first main-side miss — no key bump
+          # needed, and the budget would move without anyone deciding to. Narrowing
+          # the path bounds the entry by construction instead of by discipline.
+          #
+          # `engine/` is what is worth keeping: the binary, its sidecars and the
+          # `.version` marker that gates re-download. The model bundles under
+          # `models/` and `fluidaudio/` are not in this entry today and are fetched
+          # per run regardless (#741).
           cache-path: |
-            ~/.cache/kesha
-          # 94 MB because this key predates #820, so the entry archives the ONNX
-          # layout only. Do NOT rotate it casually: the same key today would
-          # re-archive the ~450 MB FluidAudio bundle now rooted under that tree,
-          # and this lane's entry is the one the whole budget is measured against
-          # (#741).
+            ~/.cache/kesha/engine
           cache-key: ${{ runner.os }}-kesha-engine-v1
           # The last cache a pull request could still write. It never does in
           # practice — the restore hits main's entry, so the save is skipped — but

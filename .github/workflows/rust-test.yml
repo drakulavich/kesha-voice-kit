@@ -200,9 +200,9 @@ jobs:
             --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
             --no-default-features -- -D warnings
 
-      # No model cache on this lane at all: the Kokoro stand-in is committed, and
-      # the bundles that have no stand-in (CharsiuG2P, Vosk-RU) are covered once on
-      # the Linux coverage lane rather than three times (#741).
+      # No model cache on this lane at all: the Kokoro stand-in is committed,
+      # CharsiuG2P is covered once on the Linux coverage lane rather than three
+      # times, and Vosk-RU left the PR path entirely for the weekly canary (#741).
       - name: 🎚️ Stage Kokoro stand-ins
         shell: bash
         run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
