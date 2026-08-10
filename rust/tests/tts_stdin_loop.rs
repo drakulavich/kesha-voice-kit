@@ -152,6 +152,12 @@ fn loop_synthesises_kokoro_and_caches_session() {
         return;
     };
     if !std::path::Path::new(&model).exists() || !std::path::Path::new(&voice).exists() {
+        assert!(
+            !common::models_required(),
+            "KOKORO_MODEL/KOKORO_VOICE point at missing files while \
+             KESHA_REQUIRE_MODEL_TESTS is set — this lane stages models, so skipping \
+             here would be a green run of nothing (#741)"
+        );
         eprintln!("skipping: KOKORO_MODEL / KOKORO_VOICE files missing");
         return;
     }

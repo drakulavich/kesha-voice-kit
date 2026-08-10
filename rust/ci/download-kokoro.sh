@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Download Kokoro + Vosk-TTS-Russian ONNX models for CI tts_e2e tests.
+# Download the Kokoro + CharsiuG2P models the CI tts lanes actually read.
 # Called by rust-test.yml; cache warms on subsequent runs.
 #
 # Kokoro files land directly in $DEST (legacy layout — the test env vars
-# KOKORO_MODEL / KOKORO_VOICE take direct paths). Vosk files land under
-# $DEST/models/vosk-ru/, matching `models::vosk_ru_model_dir()` so the
-# runtime loader finds them when KESHA_CACHE_DIR=$DEST is set by the
-# test runner.
+# KOKORO_MODEL / KOKORO_VOICE take direct paths) and are hardlinked into the
+# runtime layout below, which is what KESHA_CACHE_DIR=$DEST resolves against.
 set -euo pipefail
 
 DEST="${1:?usage: download-kokoro.sh <dest_dir>}"
@@ -43,40 +41,44 @@ if [[ ! -f "$DEST/am_michael.bin" ]]; then
     https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin
 fi
 
-# Vosk-TTS Russian (replaces old engine as of #213). Multi-speaker model,
-# 5 files, ~935 MB total. SHA-256 pinned in rust/src/models.rs::vosk_ru_manifest().
-# Downloads run in parallel to keep cold-cache CI times bounded.
-VOSK_DIR="$DEST/models/vosk-ru"
-mkdir -p "$VOSK_DIR/bert"
-VOSK_BASE="https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main"
-download_if_missing() {
-  local rel="$1"
-  if [[ ! -f "$VOSK_DIR/$rel" ]]; then
-    echo "Downloading Vosk $rel..."
-    fetch "$VOSK_DIR/$rel" "$VOSK_BASE/$rel"
+# Vosk-TTS Russian, ~935 MB. Exactly one consumer:
+# `tts::vosk::tests::synth_short_phrase_produces_audio`, which needs real weights
+# (the ONNX sessions live inside the vosk_tts crate, so nothing can stand in for
+# them). One lane running it is the whole boundary — Vosk behaves the same on
+# every OS — so only the caller that passes WITH_VOSK=1 pays for it instead of
+# all three (#741).
+if [[ "${WITH_VOSK:-0}" == "1" ]]; then
+  VOSK_DIR="$DEST/models/vosk-ru"
+  mkdir -p "$VOSK_DIR/bert"
+  VOSK_BASE="https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main"
+  download_if_missing() {
+    local rel="$1"
+    if [[ ! -f "$VOSK_DIR/$rel" ]]; then
+      echo "Downloading Vosk $rel..."
+      fetch "$VOSK_DIR/$rel" "$VOSK_BASE/$rel"
+    fi
+  }
+  # Bare `wait` reports success even when a background job failed, so a partial
+  # bundle used to reach the caller as exit 0 — and cache-seed.yml would then
+  # persist it on main under an immutable key that never self-heals. Wait on each
+  # PID and propagate the first failure instead.
+  vosk_pids=()
+  for rel in model.onnx dictionary config.json bert/model.onnx bert/vocab.txt; do
+    download_if_missing "$rel" &
+    vosk_pids+=("$!")
+  done
+  vosk_failed=0
+  for pid in "${vosk_pids[@]}"; do
+    wait "$pid" || vosk_failed=1
+  done
+  if [[ "$vosk_failed" -ne 0 ]]; then
+    echo "error: at least one Vosk download failed; refusing to report a partial bundle" >&2
+    exit 1
   fi
-}
-# Bare `wait` reports success even when a background job failed, so a partial
-# bundle used to reach the caller as exit 0 — and cache-seed.yml would then
-# persist it on main under an immutable key that never self-heals. Wait on each
-# PID and propagate the first failure instead.
-vosk_pids=()
-for rel in model.onnx dictionary config.json bert/model.onnx bert/vocab.txt; do
-  download_if_missing "$rel" &
-  vosk_pids+=("$!")
-done
-vosk_failed=0
-for pid in "${vosk_pids[@]}"; do
-  wait "$pid" || vosk_failed=1
-done
-if [[ "$vosk_failed" -ne 0 ]]; then
-  echo "error: at least one Vosk download failed; refusing to report a partial bundle" >&2
-  exit 1
+  ls -lh "$VOSK_DIR" "$VOSK_DIR/bert"
 fi
 
 ls -lh "$DEST"
-ls -lh "$VOSK_DIR"
-ls -lh "$VOSK_DIR/bert"
 
 # Runtime cache layout (models/kokoro-82m/...) for tests that resolve Kokoro via
 # KESHA_CACHE_DIR instead of the flat KOKORO_MODEL env — tts_multilang_audio.

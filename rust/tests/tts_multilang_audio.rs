@@ -37,21 +37,22 @@ fn default_voice(lang: &str) -> &'static str {
 fn multilang_paths_or_skip(lang: &str) -> Option<(PathBuf, PathBuf)> {
     // Gate 1: G2P model present.
     if std::env::var_os("CHARSIU_ONNX").is_none() {
+        assert!(
+            !common::models_required(),
+            "CHARSIU_ONNX unset while KESHA_REQUIRE_MODEL_TESTS is set — \
+             this lane stages CharsiuG2P, so skipping here would be a green run of nothing (#741)"
+        );
         eprintln!("skipping tts_multilang_audio: CHARSIU_ONNX not set");
         return None;
     }
     // Gate 2: Kokoro model + voice from cache.
     let cache = common::kokoro_cache_dir_or_skip()?;
-    let model = cache.join("models/kokoro-82m/model.onnx");
     let voice_name = default_voice(lang);
-    let voice = cache
-        .join("models/kokoro-82m/voices")
-        .join(format!("{voice_name}.bin"));
-    if !model.exists() || !voice.exists() {
+    let paths = common::kokoro_voice_or_skip(&cache, voice_name);
+    if paths.is_none() {
         eprintln!("skipping tts_multilang_audio[{lang}]: model or voice {voice_name} not in cache");
-        return None;
     }
-    Some((model, voice))
+    paths
 }
 
 fn run_corpus_for_lang(lang: &str, sentences: &[String]) {

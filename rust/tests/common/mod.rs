@@ -80,6 +80,19 @@ pub fn assert_kokoro_speech(wav: &[u8], ctx: &str) -> Vec<f32> {
     samples
 }
 
+/// True when the lane promised to stage models, so a missing one must fail the
+/// run rather than skip. Every gate below returns `None` on a missing model and
+/// its callers return early, which nextest reports as a pass — so a lane whose
+/// layout stopped matching what the gates read goes green having run nothing
+/// (#741). CI lanes that stage models set `KESHA_REQUIRE_MODEL_TESTS`.
+pub fn missing_model_is_fatal(flag: Option<&str>) -> bool {
+    !matches!(flag, None | Some("") | Some("0"))
+}
+
+pub fn models_required() -> bool {
+    missing_model_is_fatal(std::env::var("KESHA_REQUIRE_MODEL_TESTS").ok().as_deref())
+}
+
 /// `KOKORO_MODEL` + `KOKORO_VOICE` env-var skip gate.
 ///
 /// Returns `Some((model, voice))` when both vars are set, `None` otherwise.
@@ -87,10 +100,15 @@ pub fn assert_kokoro_speech(wav: &[u8], ctx: &str) -> Vec<f32> {
 /// skip silently on CI runs that don't stage them. Callers print the skip
 /// reason themselves so each test owns its own message.
 pub fn kokoro_paths_or_skip() -> Option<(String, String)> {
-    match (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        (Ok(m), Ok(v)) => Some((m, v)),
-        _ => None,
+    if let (Ok(m), Ok(v)) = (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
+        return Some((m, v));
     }
+    assert!(
+        !models_required(),
+        "KOKORO_MODEL/KOKORO_VOICE unset while KESHA_REQUIRE_MODEL_TESTS is set — \
+         this lane stages models, so skipping here would be a green run of nothing (#741)"
+    );
+    None
 }
 
 /// Cache-based skip gate for Kokoro: returns the cache base
@@ -106,31 +124,38 @@ pub fn kokoro_cache_dir_or_skip() -> Option<PathBuf> {
     let model = base.join("models/kokoro-82m/model.onnx");
     let voice = base.join("models/kokoro-82m/voices/am_michael.bin");
     if model.exists() && voice.exists() {
-        Some(base)
-    } else {
-        None
+        return Some(base);
     }
+    assert!(
+        !models_required(),
+        "no Kokoro runtime layout under {} while KESHA_REQUIRE_MODEL_TESTS is set — \
+         this lane stages models, so skipping here would be a green run of nothing (#741)",
+        base.display()
+    );
+    None
 }
 
-/// Cache-based skip gate for Vosk-RU: returns the cache base
-/// (`KESHA_CACHE_DIR` if set, else `~/.cache/kesha`) when all three
-/// runtime files (`model.onnx`, `dictionary`, `bert/model.onnx`) are
-/// present under `models/vosk-ru`. Returns `None` otherwise.
-///
-/// Returning the base (rather than the model dir) lets callers both
-/// reuse it as `KESHA_CACHE_DIR` for child processes AND derive the
-/// model dir via `.join("models/vosk-ru")`.
-pub fn vosk_ru_cache_dir_or_skip() -> Option<PathBuf> {
-    let base = cache_base();
-    let model_dir = base.join("models/vosk-ru");
-    if model_dir.join("model.onnx").exists()
-        && model_dir.join("dictionary").exists()
-        && model_dir.join("bert/model.onnx").exists()
-    {
-        Some(base)
-    } else {
-        None
+/// Kokoro graph + `voice_name`'s pack under `cache`, or `None` when either is
+/// absent. Same policy as the gates above: a lane that promised models fails.
+pub fn kokoro_voice_or_skip(
+    cache: &std::path::Path,
+    voice_name: &str,
+) -> Option<(PathBuf, PathBuf)> {
+    let model = cache.join("models/kokoro-82m/model.onnx");
+    let voice = cache
+        .join("models/kokoro-82m/voices")
+        .join(format!("{voice_name}.bin"));
+    if model.exists() && voice.exists() {
+        return Some((model, voice));
     }
+    assert!(
+        !models_required(),
+        "Kokoro graph or voice {voice_name} missing under {} while \
+         KESHA_REQUIRE_MODEL_TESTS is set — this lane stages the voice packs, so \
+         skipping here would be a green run of nothing (#741)",
+        cache.display()
+    );
+    None
 }
 
 /// Resolve the cache base used by every cache-based skip gate.

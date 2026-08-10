@@ -744,8 +744,8 @@ jobs:
         env:
           KOKORO_MODEL: ${{ env.KOKORO_CACHE }}/model.onnx
           KOKORO_VOICE: ${{ env.KOKORO_CACHE }}/am_michael.bin
-          # Vosk-ru lives under this dir (see rust/ci/download-kokoro.sh)
-          # — runtime loader resolves it via `models::vosk_ru_model_dir()`.
+          # Runtime Kokoro layout (models/kokoro-82m/…) lives under this dir. Vosk-ru
+          # no longer does — only the coverage lane stages that bundle (#741).
           KESHA_CACHE_DIR: ${{ env.KOKORO_CACHE }}
           KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
           DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
