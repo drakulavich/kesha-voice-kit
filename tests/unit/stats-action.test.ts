@@ -57,14 +57,17 @@ describe("runStatsAction", () => {
     const result = runStatsAction({ action: "export", format: "json" });
     if (!result.ok) throw new Error(result.error);
     expect(result.messages).toEqual([]);
-    expect(() => JSON.parse(result.stdout ?? "")).not.toThrow();
+    const exported = JSON.parse(result.stdout ?? "");
+    expect(exported).toMatchObject({ runs: [], artifacts: [] });
   });
 
   test("export accepts the format as a positional value", () => {
     enableStats();
     const result = runStatsAction({ action: "export", value: "csv" });
     if (!result.ok) throw new Error(result.error);
-    expect(result.stdout).toBeDefined();
+    // `toBeDefined` passed for the JSON payload too, so it never proved the positional took effect.
+    expect(result.stdout?.split("\n")[0]).toContain(",");
+    expect(result.stdout?.trimStart().startsWith("{")).toBe(false);
   });
 
   test("export rejects an unknown format with a usage hint", () => {
@@ -99,8 +102,8 @@ describe("runStatsAction", () => {
   });
 
   test("week and errors render without an existing database", () => {
-    expect(texts(runStatsAction({ action: "week" })).length).toBeGreaterThan(0);
-    expect(texts(runStatsAction({ action: "errors" })).length).toBeGreaterThan(0);
+    expect(texts(runStatsAction({ action: "week" }))[0]).toContain("Runs: 0 (0 success, 0 failed)");
+    expect(texts(runStatsAction({ action: "errors" }))[0]).toBe("Kesha Stats - no recorded errors");
   });
 
   test("reset and vacuum report what they changed", () => {

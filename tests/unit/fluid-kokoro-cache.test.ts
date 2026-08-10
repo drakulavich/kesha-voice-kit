@@ -19,8 +19,9 @@ describe("fluidKokoroCacheInfo", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-kokoro-cache-test-"));
     try {
       const cache = fluidKokoroCachePath(dir);
+      const body = "coreml";
       mkdirSync(join(cache, "kokoro_21_15s.mlmodelc"), { recursive: true });
-      writeFileSync(join(cache, "kokoro_21_15s.mlmodelc", "coremldata.bin"), "coreml");
+      writeFileSync(join(cache, "kokoro_21_15s.mlmodelc", "coremldata.bin"), body);
 
       const info = fluidKokoroCacheInfo({
         platform: "darwin",
@@ -31,7 +32,7 @@ describe("fluidKokoroCacheInfo", () => {
       expect(info.supported).toBe(true);
       expect(info.path).toBe(cache);
       expect(info.exists).toBe(true);
-      expect(info.sizeBytes).toBeGreaterThan(0);
+      expect(info.sizeBytes).toBe(body.length);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

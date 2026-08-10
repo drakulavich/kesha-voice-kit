@@ -54,7 +54,11 @@ describe("runLogsAction", () => {
     const result = runLogsAction({ action: "status", json: true });
     if (!result.ok) throw new Error(result.error);
     expect(result.messages).toEqual([]);
-    expect(JSON.parse(result.stdout ?? "").mode).toBeDefined();
+    const status = JSON.parse(result.stdout ?? "");
+    expect(status.mode).toBe("retain-on-failure");
+    expect(status.dir).toBe(dir);
+    expect(status.activePath).toBe(join(dir, "kesha.ndjson"));
+    expect(status).toMatchObject({ exists: false, activeSizeBytes: 0, rotatedFiles: [] });
   });
 
   test("--json is rejected for any action other than status", () => {

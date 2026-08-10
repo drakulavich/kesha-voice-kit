@@ -337,14 +337,17 @@ describe("collectStatus --json payload (#647)", () => {
 
   posixEngineTest("--disk toggles the disk section", async () => {
     const { dir, cache } = healthyEngine();
+    const model = "model";
     mkdirSync(join(cache, "models", "parakeet-tdt-v3"), { recursive: true });
-    writeFileSync(join(cache, "models", "parakeet-tdt-v3", "model.onnx"), "model");
+    writeFileSync(join(cache, "models", "parakeet-tdt-v3", "model.onnx"), model);
     try {
       expect((await collectStatus()).disk).toBeNull();
       const withDisk = await collectStatus({ disk: true });
-      expect(withDisk.disk).not.toBeNull();
-      expect(withDisk.disk!.components.length).toBeGreaterThan(0);
-      expect(withDisk.disk!.totalBytes).toBeGreaterThan(0);
+      const disk = withDisk.disk!;
+      expect(disk.components.map((c) => c.label)).toEqual(["Engine", "ASR (Parakeet)"]);
+      expect(disk.components.find((c) => c.label === "ASR (Parakeet)")!.sizeBytes).toBe(model.length);
+      // The stub engine's own byte count is incidental; that the total sums them is not.
+      expect(disk.totalBytes).toBe(disk.components.reduce((n, c) => n + c.sizeBytes, 0));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -976,8 +979,7 @@ describe("human status output is a load-bearing contract (#647)", () => {
       ]);
       await proc.exited;
       const binaryLine = stdout.split("\n").find((l) => l.includes("Binary:"));
-      expect(binaryLine).toBeDefined();
-      expect(binaryLine!).toContain("not installed");
+      expect(binaryLine).toContain("not installed");
       // The human path has no payload to carry the hint, so it has to reach stderr.
       expect(stderr).toContain("kesha install");
     } finally {
