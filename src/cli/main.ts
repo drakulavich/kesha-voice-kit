@@ -390,6 +390,12 @@ function writeOutput(
   format: ValidatedTranscribeArgs["outputFormat"],
   opts: { includeErrors: boolean; verbose: boolean },
 ): void {
+  const errorEnvelope = format === "json" && opts.includeErrors;
+  // #773: `[]` on a batch where nothing succeeded reads as "ran fine, nothing
+  // found" to a consumer that ignores the exit code. --include-errors is exempt:
+  // that caller asked for the failures.
+  if (results.length === 0 && errors.length > 0 && !errorEnvelope) return;
+
   if (format === "json") {
     process.stdout.write(formatJsonOutput(results, opts.includeErrors ? errors : undefined));
   } else if (format === "toon") {
