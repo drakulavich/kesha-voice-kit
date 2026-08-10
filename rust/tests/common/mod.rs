@@ -135,6 +135,29 @@ pub fn kokoro_cache_dir_or_skip() -> Option<PathBuf> {
     None
 }
 
+/// Kokoro graph + `voice_name`'s pack under `cache`, or `None` when either is
+/// absent. Same policy as the gates above: a lane that promised models fails.
+pub fn kokoro_voice_or_skip(
+    cache: &std::path::Path,
+    voice_name: &str,
+) -> Option<(PathBuf, PathBuf)> {
+    let model = cache.join("models/kokoro-82m/model.onnx");
+    let voice = cache
+        .join("models/kokoro-82m/voices")
+        .join(format!("{voice_name}.bin"));
+    if model.exists() && voice.exists() {
+        return Some((model, voice));
+    }
+    assert!(
+        !models_required(),
+        "Kokoro graph or voice {voice_name} missing under {} while \
+         KESHA_REQUIRE_MODEL_TESTS is set — this lane stages the voice packs, so \
+         skipping here would be a green run of nothing (#741)",
+        cache.display()
+    );
+    None
+}
+
 /// Resolve the cache base used by every cache-based skip gate.
 /// `KESHA_CACHE_DIR` if set, else `$HOME/.cache/kesha`. Falls back to
 /// `/tmp/.cache/kesha` if `HOME` is unset (matches the historical
