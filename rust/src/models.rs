@@ -802,8 +802,11 @@ macro_rules! ane_zh_file {
 /// `requiredModelsZh`, even though the g2pW disambiguator cannot currently
 /// activate: `ensureMandarinG2pw` needs `ANE-zh/g2pw/vocab.txt`, which upstream
 /// has not published (404 at this pin), so Mandarin G2P runs dict-only either
-/// way. Dropping the bundle would only make upstream re-download the whole
-/// repo.
+/// way. It is staged anyway because `ensureModels` checks the whole required set
+/// before it will load anything: omit the bundle and Mandarin stops working
+/// entirely under offline mode. Staging an empty directory would satisfy that
+/// check and then be purged by the next `kesha install`, which repairs
+/// `.mlmodelc` bundles missing `model.mil` (#709).
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -1398,6 +1401,72 @@ pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<
         stage_into(&zh, ANE_ZH_G2P_ASSETS, no_cache)?;
     }
     Ok(())
+}
+
+/// Files that must already be on disk before `voice` can be synthesized, and
+/// which of them are not (#823 P2).
+///
+/// The offline flag alone cannot carry the no-auto-download guarantee: upstream's
+/// `AssetDownloader` consults no flag, so `ensureVoicePack` will happily fetch a
+/// pack that `kesha install --tts <other-lang>` never staged. Checking locally
+/// first is what makes the guarantee hold for every voice rather than only the
+/// staged happy path — the answer is a list of paths, so the caller can name
+/// what is missing instead of guessing.
+///
+/// The required set is derived from the staging manifests themselves, so a
+/// manifest change cannot leave the check behind.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn missing_kokoro_assets(lang: &str, voice: &str) -> Vec<PathBuf> {
+    if lang == "zh" {
+        let zh = fluidaudio_ane_zh_kokoro_dir();
+        missing_kokoro_assets_in(&zh, &zh, lang, voice)
+    } else {
+        missing_kokoro_assets_in(
+            &fluidaudio_ane_kokoro_dir(),
+            &fluidaudio_kokoro_g2p_dir(),
+            lang,
+            voice,
+        )
+    }
+}
+
+/// [`missing_kokoro_assets`] against explicit directories. `bundle_dir` is the
+/// variant's own bundle (`ANE` or `ANE-zh`); `g2p_dir` is where that variant's
+/// text frontend reads from, which for English is a path no models-root can move.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn missing_kokoro_assets_in(
+    bundle_dir: &Path,
+    g2p_dir: &Path,
+    lang: &str,
+    voice: &str,
+) -> Vec<PathBuf> {
+    let (bundle, g2p, voice_rel) = if lang == "zh" {
+        (
+            ANE_ZH_FILES,
+            ANE_ZH_G2P_ASSETS,
+            format!("voices/{voice}.bin"),
+        )
+    } else {
+        (ANE_EN_FILES, KOKORO_G2P_FILES, format!("{voice}.bin"))
+    };
+    // The default voices (`af_heart`, `zf_001`, `zm_050`) are in the manifests
+    // already, so a request for one would otherwise be named twice.
+    let mut seen = std::collections::HashSet::new();
+    bundle
+        .iter()
+        .map(|f| bundle_dir.join(f.rel_path))
+        .chain(std::iter::once(bundle_dir.join(voice_rel)))
+        .chain(g2p.iter().map(|f| g2p_dir.join(f.rel_path)))
+        .filter(|p| !p.exists() && seen.insert(p.clone()))
+        .collect()
 }
 
 #[cfg(all(
@@ -2518,6 +2587,125 @@ mod tts_tests {
                 );
             }
         }
+    }
+
+    /// Lay down every file `lang`/`voice` needs under `bundle`/`g2p`, so a test
+    /// can then take exactly one away.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    fn stage_fixture(bundle: &Path, g2p: &Path, lang: &str, voice: &str) {
+        let (files, g2p_files, voice_rel) = if lang == "zh" {
+            (
+                ANE_ZH_FILES,
+                ANE_ZH_G2P_ASSETS,
+                format!("voices/{voice}.bin"),
+            )
+        } else {
+            (ANE_EN_FILES, KOKORO_G2P_FILES, format!("{voice}.bin"))
+        };
+        let touch = |p: PathBuf| {
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, b"x").unwrap();
+        };
+        for f in files {
+            touch(bundle.join(f.rel_path));
+        }
+        touch(bundle.join(voice_rel));
+        for f in g2p_files {
+            touch(g2p.join(f.rel_path));
+        }
+    }
+
+    /// A complete install reports nothing missing — otherwise the preflight
+    /// would refuse to synthesize on a healthy machine.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn a_complete_install_is_missing_nothing() {
+        for (lang, voice) in [("en-us", "am_michael"), ("zh", "zm_050")] {
+            let tmp = tempfile::tempdir().unwrap();
+            let bundle = tmp.path().join("bundle");
+            let g2p = tmp.path().join("g2p");
+            stage_fixture(&bundle, &g2p, lang, voice);
+            assert!(
+                missing_kokoro_assets_in(&bundle, &g2p, lang, voice).is_empty(),
+                "{lang}/{voice} should be complete"
+            );
+        }
+    }
+
+    /// The hole this preflight exists to close: `kesha install --tts en` leaves
+    /// `em_alex.bin` unstaged, `--list-voices` still advertises it, and upstream's
+    /// `ensureVoicePack` is on the un-flagged `AssetDownloader` path — so without
+    /// a local check `kesha say --voice es-em_alex` downloads mid-synthesis.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn an_unstaged_voice_pack_is_reported_before_anything_can_fetch_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("bundle");
+        let g2p = tmp.path().join("g2p");
+        stage_fixture(&bundle, &g2p, "en-us", "am_michael");
+
+        let missing = missing_kokoro_assets_in(&bundle, &g2p, "es", "em_alex");
+        assert_eq!(
+            missing,
+            vec![bundle.join("em_alex.bin")],
+            "only the unstaged pack should be missing"
+        );
+    }
+
+    /// Mandarin packs live under `voices/`, not at the bundle root, so checking
+    /// the flat English path would report a present pack as missing and a
+    /// missing one as present.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn mandarin_voice_packs_are_checked_under_their_voices_subdir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("bundle");
+        stage_fixture(&bundle, &bundle, "zh", "zm_050");
+        fs::remove_file(bundle.join("voices/zm_050.bin")).unwrap();
+
+        let missing = missing_kokoro_assets_in(&bundle, &bundle, "zh", "zm_050");
+        assert_eq!(missing, vec![bundle.join("voices/zm_050.bin")]);
+    }
+
+    /// A half-finished install is caught the same way, whichever half is short —
+    /// including the G2P assets, which sit in a different directory entirely.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn a_partial_install_names_every_gap_wherever_it_lives() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("bundle");
+        let g2p = tmp.path().join("g2p");
+        stage_fixture(&bundle, &g2p, "en-us", "am_michael");
+
+        let chain = bundle.join("KokoroVocoder.mlmodelc/model.mil");
+        let vocab = g2p.join("g2p_vocab.json");
+        fs::remove_file(&chain).unwrap();
+        fs::remove_file(&vocab).unwrap();
+
+        let missing = missing_kokoro_assets_in(&bundle, &g2p, "en-us", "am_michael");
+        assert!(missing.contains(&chain), "chain gap missed: {missing:?}");
+        assert!(missing.contains(&vocab), "G2P gap missed: {missing:?}");
+        assert_eq!(missing.len(), 2, "nothing else should be reported");
     }
 
     /// Staging follows the language the user asked for: an English-only install

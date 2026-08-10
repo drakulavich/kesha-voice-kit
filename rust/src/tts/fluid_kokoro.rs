@@ -199,17 +199,31 @@ fn compute_units_from_env() -> Result<KokoroComputeUnits> {
     )
 }
 
-/// What to say when offline mode stopped FluidAudio fetching a model asset:
-/// the install did not finish (or something removed part of it), and re-running
-/// it is the fix. `lang` names the exact install to run so a Mandarin user is
-/// not told to install English.
-fn missing_assets_error(lang: &str) -> anyhow::Error {
-    let install_lang = if lang == "zh" { "zh" } else { "en" };
+/// What to say when a model asset is absent: the install did not finish (or
+/// something removed part of it), and re-running it is the fix. `lang` names the
+/// exact install to run so a Mandarin user is not told to install English, and
+/// `missing` names what to look for when a re-install does not help.
+fn missing_assets_error(lang: &str, missing: &[std::path::PathBuf]) -> anyhow::Error {
+    // `kesha install --tts` takes bare language codes, so the region has to go:
+    // the voice's lang is `en-us` here but `es` / `zh` there.
+    let install_lang = lang.split('-').next().unwrap_or(lang);
+    // The full list can be the whole 40-file manifest on a bare machine, which
+    // buries the instruction; the first few identify the gap just as well.
+    let named: Vec<String> = missing
+        .iter()
+        .take(3)
+        .map(|p| p.display().to_string())
+        .collect();
+    let detail = match missing.len() {
+        0 => String::new(),
+        n if n > 3 => format!(" (missing {}, and {} more)", named.join(", "), n - 3),
+        _ => format!(" (missing {})", named.join(", ")),
+    };
     anyhow::Error::new(crate::errors::CodedError {
         code: ErrorCode::ModelMissing,
         message: format!(
             "FluidAudio Kokoro assets are missing and kesha never downloads them \
-             behind your back — run `kesha install --tts {install_lang}`{}",
+             behind your back — run `kesha install --tts {install_lang}`{detail}{}",
             incomplete_bundle_hint()
         ),
     })
@@ -245,19 +259,28 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
     // (`zh` → Mandarin, else English). Unknown voices default to English.
     let lang = lang_for_fluid_id(voice_id).unwrap_or("en-us");
     let compute_units = compute_units_from_env()?;
-    // Before any loader is touched, per upstream's contract: `kesha install
-    // --tts` stages every asset FluidAudio needs, so a gap here is a broken
-    // install to report, never a download to make (#823). Process-global by
-    // construction, which is safe because the engine runs one subcommand per
-    // process and `say` never initialises ASR.
+    // Two defences, because neither covers the other. The flag stops FluidAudio's
+    // repo downloads; it does NOT cover `AssetDownloader`, which is how a voice
+    // pack `kesha install --tts <other-lang>` never staged would be fetched
+    // mid-synthesis. So check locally first and refuse before FluidAudio is
+    // handed anything (#823). Setting the flag process-globally is safe: the
+    // engine runs one subcommand per process, and `say` never initialises ASR.
     fluidaudio_rs::set_offline_mode(true);
+    let missing = crate::models::missing_kokoro_assets(lang, voice_id);
+    if !missing.is_empty() {
+        return Err(missing_assets_error(lang, &missing));
+    }
     crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
         let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_kokoro_location())
             .context("init FluidAudio bridge")?;
         audio
             .init_kokoro_with_compute_units(voice_id, lang, compute_units)
             .map_err(|e| match e {
-                fluidaudio_rs::FluidAudioError::AssetsUnavailable(_) => missing_assets_error(lang),
+                // Reachable despite the preflight: a file can be present but
+                // truncated or unreadable, which only the loader finds out.
+                fluidaudio_rs::FluidAudioError::AssetsUnavailable(_) => {
+                    missing_assets_error(lang, &[])
+                }
                 other => anyhow::Error::new(other).context(format!(
                     "init FluidAudio Kokoro on {} compute units{}",
                     preset_name(compute_units),
@@ -539,6 +562,39 @@ mod tests {
             assert_eq!(preset_name(*units), *name);
         }
         assert_eq!(COMPUTE_UNIT_PRESETS.len(), 4, "extend the table");
+    }
+
+    /// The hint has to name the language the user actually asked for. Telling
+    /// someone who wanted `es-em_alex` to run `--tts en` sends them to re-run an
+    /// install they already have, which fixes nothing.
+    #[test]
+    fn the_install_hint_names_the_voices_own_language() {
+        for (lang, expected) in [
+            ("en-us", "--tts en"),
+            ("es", "--tts es"),
+            ("zh", "--tts zh"),
+        ] {
+            let err = missing_assets_error(lang, &[]).to_string();
+            assert!(err.contains(expected), "{lang}: {err}");
+        }
+    }
+
+    /// A bare machine is missing the whole manifest; naming all forty paths
+    /// would bury the one line that tells the user what to do.
+    #[test]
+    fn a_long_missing_list_is_summarised_rather_than_dumped() {
+        let many: Vec<std::path::PathBuf> = (0..40)
+            .map(|i| std::path::PathBuf::from(format!("/tmp/f{i}.bin")))
+            .collect();
+        let err = missing_assets_error("en-us", &many).to_string();
+        assert!(err.contains("and 37 more"), "{err}");
+        assert!(!err.contains("f39.bin"), "{err}");
+
+        // A short list is named in full — that is the actionable case.
+        let one = [std::path::PathBuf::from("/tmp/em_alex.bin")];
+        let err = missing_assets_error("es", &one).to_string();
+        assert!(err.contains("/tmp/em_alex.bin"), "{err}");
+        assert!(!err.contains("more"), "{err}");
     }
 
     /// Both Kokoro paths must agree on phoneme → token id, or the same IPA
