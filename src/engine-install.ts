@@ -525,7 +525,7 @@ function validateBackend(backend: string, caps: EngineCapabilities | null): void
  * Nix sandbox forbids it. Without this guard, `kesha-engine install
  * --diarize` would fail with clap's generic "unexpected argument" error.
  */
-function validateDiarize(caps: EngineCapabilities | null): void {
+export function validateDiarize(caps: EngineCapabilities | null): void {
   // null = pre-capabilities-JSON engine; forwarding --diarize would surface as clap's "unexpected argument".
   if (!caps || !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
     throw new Error(

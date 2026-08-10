@@ -14,6 +14,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse, YAMLParseError } from "yaml";
+import { engineTargetEntries, targetKey } from "../../src/engine-targets";
 
 const dirs = [".github/workflows", ".github/actions"];
 
@@ -201,6 +202,33 @@ export function requireNpmPublishAfterPackaging(path: string, document: unknown)
  * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
  * so an uncovered script means edits to a gate skip the tests that prove it works.
  */
+/**
+ * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
+ * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
+ * so an uncovered script means edits to a gate skip the tests that prove it works.
+ */
+/**
+ * Fails when a published engine target has no runner verifying its capability pact.
+ *
+ * The per-PR pact tests are only sound while the recordings still match the binaries, and
+ * a pact nothing re-derives rots into a false green. A target absent from this matrix keeps
+ * its committed pact and loses the only thing checking it, which is the failure mode #798
+ * exists to prevent — so adding a platform to `src/engine-targets.ts` must add a row here.
+ */
+export function requirePactVerificationCoversEveryTarget(path: string, document: unknown): string[] {
+  if (!path.endsWith("capability-pact.yml")) return [];
+
+  const include = (document as { jobs?: { pact?: { strategy?: { matrix?: { include?: unknown } } } } })
+    ?.jobs?.pact?.strategy?.matrix?.include;
+  if (!Array.isArray(include)) return [`${path}: expected a \`pact\` job with a \`strategy.matrix.include\` list`];
+
+  const covered = new Set(include.map((row) => String((row as { target?: unknown })?.target)));
+  return engineTargetEntries()
+    .map(({ platform, arch }) => targetKey(platform, arch))
+    .filter((target) => !covered.has(target))
+    .map((target) => `${path}: no runner verifies ${target}'s pact, so nothing would catch it drifting (#798)`);
+}
+
 export function requireTestedScriptsInCodeFilter(
   path: string,
   document: unknown,
@@ -258,6 +286,7 @@ function checkFile(path: string, testedScripts: string[]): string[] {
       ...requireDarwinSmokeCoversBothEngines(path, document),
       ...forbidLinuxPackaging(path, contents),
       ...requireNpmPublishAfterPackaging(path, document),
+      ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
     ];
   } catch (err) {

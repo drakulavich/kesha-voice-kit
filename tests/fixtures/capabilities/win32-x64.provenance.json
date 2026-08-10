@@ -1,0 +1,6 @@
+{
+  "engineVersion": "1.24.9",
+  "assetName": "kesha-engine-windows-x64.exe",
+  "sha256": "c3c2b61f7e381c99b68b745e27f61cd04a151f65e0c936df9df6a05f346f8de3",
+  "recordedFrom": "kesha-engine-windows-x64.exe smoke-tested pre-upload in build-engine run 31274041934 job 93144639921 (tag v1.24.9); sha256 from the release SHA256SUMS"
+}

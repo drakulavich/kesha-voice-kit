@@ -3,6 +3,7 @@ import {
   forbidLinuxPackaging,
   requireDarwinSmokeCoversBothEngines,
   requireNpmPublishAfterPackaging,
+  requirePactVerificationCoversEveryTarget,
   requirePreUploadSynthesisSmoke,
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
@@ -11,6 +12,7 @@ import { parseRepoYaml, readRepoFile } from "../helpers/repo";
 const PATH = ".github/workflows/build-engine.yml";
 const CI = ".github/workflows/ci.yml";
 const RELEASE_CLI = ".github/workflows/release-cli.yml";
+const PACT = ".github/workflows/capability-pact.yml";
 
 function job(name: string, steps: unknown[]) {
   return { jobs: { [name]: { steps } } };
@@ -242,5 +244,31 @@ describe("requireTestedScriptsInCodeFilter", () => {
 
   test("fails when the changes job has no inline filters", () => {
     expect(requireTestedScriptsInCodeFilter(CI, { jobs: { changes: {} } }, [])[0]).toContain("expected a `changes` job");
+  });
+});
+
+describe("requirePactVerificationCoversEveryTarget", () => {
+  const matrix = (targets: string[]) => ({
+    jobs: { pact: { strategy: { matrix: { include: targets.map((target) => ({ os: "ubuntu-latest", target })) } } } },
+  });
+
+  test("passes on the real capability-pact.yml", () => {
+    expect(requirePactVerificationCoversEveryTarget(PACT, parseRepoYaml(PACT))).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requirePactVerificationCoversEveryTarget(CI, matrix([]))).toEqual([]);
+  });
+
+  test("fails when a published target has no runner", () => {
+    const errors = requirePactVerificationCoversEveryTarget(PACT, matrix(["darwin-arm64"]));
+    expect(errors).toHaveLength(2);
+    expect(errors.join("\n")).toContain("no runner verifies linux-x64's pact");
+  });
+
+  test("fails when the matrix is gone", () => {
+    expect(requirePactVerificationCoversEveryTarget(PACT, { jobs: { pact: {} } })[0]).toContain(
+      "strategy.matrix.include",
+    );
   });
 });

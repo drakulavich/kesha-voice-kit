@@ -1,0 +1,119 @@
+name: "📜 Capability Pact"
+
+# Provider verification for the recorded capability pacts (#798).
+#
+# `tests/unit/capabilities-pact.test.ts` gates flag routing per target on every PR without
+# downloading anything, which is only sound while the recordings still match the binaries.
+# This job re-derives each pact from the artifact `kesha install` hands users and fails on
+# drift. It downloads the engine executable (~65 MB) and no models.
+#
+# RE-RECORDING — the canonical procedure. A new engine release that adds, removes or renames
+# a capability fails this job on purpose, and the fix is to re-record, never to relax the check:
+#
+#   1. bump `keshaEngine.version` to the new release and merge it
+#   2. run this workflow with `record: true` (Actions → 📜 Capability Pact → Run workflow)
+#   3. commit the contents of all three `capability-pact-<target>` artifacts
+#
+# Each target is recorded on its own OS — a binary only answers for the platform it was built
+# for — and each artifact carries only its own two files, so committing all three cannot
+# clobber. `matrix.target` is passed to the recorder, which refuses a row whose runner and
+# target disagree.
+#
+# Never runs on a pull request, so it cannot interfere with a `release/*` branch. The window
+# where `keshaEngine.version` names an unpublished tag fails loudly here, which is the point:
+# it is the check the PR lane deliberately does not carry, because a release PR must be able
+# to go green before the tag it names exists.
+
+on:
+  schedule:
+    # Weekly. A release is the moment the re-record is owed; this is the backstop for one
+    # that forgot, and the only thing standing between a pact and rotting into a false green.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      record:
+        description: "Re-record the pacts and upload them as artifacts instead of verifying."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  pact:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: darwin-arm64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: windows-latest
+            target: win32-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Only the scheduled run upserts the drift issue; one per target, so three runners
+      # failing together cannot race each other into duplicates.
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      # Explicitly not `!inputs.record`: were `inputs` ever to resolve unexpectedly, both
+      # steps would skip and the job would go green having verified nothing.
+      - name: 🔍 Verify ${{ matrix.target }} against the published binary
+        id: verify
+        if: github.event_name != 'workflow_dispatch' || !inputs.record
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.target }}
+        run: bun .github/scripts/record-capability-pacts.ts --from-release --target "$TARGET" --check
+
+      - name: 📣 Report drift (scheduled only)
+        if: github.event_name == 'schedule' && steps.verify.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          {
+            echo "## $TARGET's capability pact no longer matches the published engine"
+            echo
+            echo "\`tests/fixtures/capabilities/$TARGET.json\` was recorded from an engine that"
+            echo "no longer matches what \`kesha install\` downloads, so every per-PR assertion"
+            echo "derived from it is now gating against a binary nobody has."
+            echo
+            echo "Re-record per the header of \`.github/workflows/capability-pact.yml\`."
+            echo
+            echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > /tmp/pact-body.md
+          bash .github/scripts/upsert-audit-issue.sh /tmp/pact-body.md "Capability pact drift: $TARGET" ci
+
+      - name: ❌ Fail on drift
+        if: steps.verify.outcome == 'failure'
+        run: exit 1
+
+      - name: 📝 Re-record ${{ matrix.target }}
+        if: github.event_name == 'workflow_dispatch' && inputs.record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.target }}
+        run: bun .github/scripts/record-capability-pacts.ts --from-release --target "$TARGET"
+
+      - name: 📤 Upload the re-recorded pact
+        if: github.event_name == 'workflow_dispatch' && inputs.record
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: capability-pact-${{ matrix.target }}
+          path: tests/fixtures/capabilities/${{ matrix.target }}.*
+          if-no-files-found: error

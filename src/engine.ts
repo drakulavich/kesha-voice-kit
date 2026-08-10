@@ -241,11 +241,7 @@ function assertVadModelInstalled(): void {
  * supports the pass — so a missing capability means the installed engine is
  * older than the CLI asking for it.
  */
-export async function preflightTranscribeEngineItn(
-  opts: TranscribeEngineOptions = {},
-): Promise<void> {
-  if (!opts.itn) return;
-  const caps = await getEngineCapabilities();
+export function assertItnSupported(caps: EngineCapabilities | null): void {
   if (!caps?.features.includes(TRANSCRIBE_ITN_FEATURE)) {
     throw new Error(
       "--itn requires a newer kesha-engine: the installed engine does not advertise " +
@@ -255,6 +251,13 @@ export async function preflightTranscribeEngineItn(
         `    ${installHint()}`,
     );
   }
+}
+
+export async function preflightTranscribeEngineItn(
+  opts: TranscribeEngineOptions = {},
+): Promise<void> {
+  if (!opts.itn) return;
+  assertItnSupported(await getEngineCapabilities());
 }
 
 export async function preflightTranscribeEngineWithSegments(
@@ -271,15 +274,18 @@ export async function preflightTranscribeEngineWithSegments(
 
   if (!opts.speakers) return;
 
-  if (!caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
+  assertSpeakersSupported(caps);
+  assertDiarizeModelInstalled();
+  assertVadModelInstalled();
+}
+
+export function assertSpeakersSupported(caps: EngineCapabilities | null): void {
+  if (!caps?.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
     throw new Error(
       "speaker diarization is currently darwin-arm64 only " +
         "(see https://github.com/drakulavich/kesha-voice-kit/issues/199)",
     );
   }
-
-  assertDiarizeModelInstalled();
-  assertVadModelInstalled();
 }
 
 function vadArg(vad: VadMode | undefined): string[] {
@@ -288,8 +294,16 @@ function vadArg(vad: VadMode | undefined): string[] {
   return [];
 }
 
-function itnArg(itn: boolean | undefined): string[] {
-  return itn ? ["--itn"] : [];
+/** Build the argv passed to `kesha-engine transcribe` (pure, unit-testable). */
+export function buildTranscribeArgs(
+  audioPath: string,
+  opts: TranscribeEngineOptions,
+  json = false,
+): string[] {
+  const args = ["transcribe", audioPath, ...(json ? ["--json"] : []), ...vadArg(opts.vad)];
+  if (opts.itn) args.push("--itn");
+  if (json && opts.speakers) args.push("--speakers");
+  return args;
 }
 
 export async function transcribeEngine(
@@ -298,7 +312,7 @@ export async function transcribeEngine(
 ): Promise<string> {
   await preflightTranscribeEngineItn(opts);
 
-  const args = ["transcribe", audioPath, ...vadArg(opts.vad), ...itnArg(opts.itn)];
+  const args = buildTranscribeArgs(audioPath, opts);
   const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
@@ -336,8 +350,7 @@ export async function transcribeEngineWithSegments(
   await preflightTranscribeEngineItn(opts);
   await preflightTranscribeEngineWithSegments(opts);
 
-  const args = ["transcribe", audioPath, "--json", ...vadArg(opts.vad), ...itnArg(opts.itn)];
-  if (opts.speakers) args.push("--speakers");
+  const args = buildTranscribeArgs(audioPath, opts, true);
   const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
