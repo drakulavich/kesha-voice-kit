@@ -390,6 +390,10 @@ function writeOutput(
   format: ValidatedTranscribeArgs["outputFormat"],
   opts: { includeErrors: boolean; verbose: boolean },
 ): void {
+  const errorEnvelope = format === "json" && opts.includeErrors;
+  // #773: `[]` reads as "ran fine, nothing found" to a consumer ignoring the exit code.
+  if (results.length === 0 && errors.length > 0 && !errorEnvelope) return;
+
   if (format === "json") {
     process.stdout.write(formatJsonOutput(results, opts.includeErrors ? errors : undefined));
   } else if (format === "toon") {

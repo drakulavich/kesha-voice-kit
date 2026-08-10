@@ -436,16 +436,75 @@ describe("CLI contracts", () => {
     expect(run.stderr).not.toMatch(/^\s+at /m);
   });
 
-  test("machine-readable missing-file failures keep JSON on stdout and diagnostics on stderr", async () => {
+  test("a batch where every file failed writes nothing to stdout", async () => {
     const run = await runCli(["--json", "a.wav", "b.wav"], {
       env: isolatedEnv(),
     });
 
     expectContract(run, {
       exitCode: 1,
+      stdoutEmpty: true,
       stderrContains: ["a.wav: File not found", "b.wav: File not found"],
     });
-    expect(JSON.parse(run.stdout)).toEqual([]);
+  });
+
+  test("--toon takes the same empty-stdout path when every file failed", async () => {
+    const run = await runCli(["--toon", "a.wav", "b.wav"], {
+      env: isolatedEnv(),
+    });
+
+    expectContract(run, {
+      exitCode: 1,
+      stdoutEmpty: true,
+      stderrContains: ["a.wav: File not found", "b.wav: File not found"],
+    });
+  });
+
+  // trimOutput off: the assertion is a lone "\n" vs nothing, which trimming hides.
+  test("human-readable formats leave no stray newline when every file failed", async () => {
+    for (const format of [[], ["--verbose"], ["--format", "transcript"]]) {
+      const run = await runCli([...format, "a.wav", "b.wav"], {
+        env: isolatedEnv(),
+        trimOutput: false,
+      });
+      expect(run.exitCode).toBe(1);
+      expect(run.stdout).toBe("");
+    }
+  });
+
+  test("--include-errors still reports an all-failed batch structurally", async () => {
+    const run = await runCli(["--json", "--include-errors", "a.wav", "b.wav"], {
+      env: isolatedEnv(),
+    });
+
+    expectContract(run, { exitCode: 1 });
+    const parsed = JSON.parse(run.stdout);
+    expect(parsed.results).toEqual([]);
+    expect(parsed.errors).toEqual([
+      { file: "a.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
+      { file: "b.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
+    ]);
+  });
+
+  test("a partial failure still prints the results array for the files that succeeded", async () => {
+    const dir = makeTempDir("kesha-cli-contract-partial-plain-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+    };
+
+    const run = await runCli(["--json", mediaPath, "missing.wav"], { env });
+    expectContract(run, {
+      exitCode: 1,
+      stderrContains: ["missing.wav: File not found"],
+    });
+
+    const parsed = JSON.parse(run.stdout);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].file).toBe(mediaPath);
   });
 
   test("machine-readable partial failures keep parseable JSON on stdout and diagnostics on stderr", async () => {
@@ -827,9 +886,9 @@ describe("CLI contracts", () => {
 
     expectContract(run, {
       exitCode: 1,
+      stdoutEmpty: true,
       stderrContains: ["transcribe failed quickly"],
     });
-    expect(JSON.parse(run.stdout)).toEqual([]);
     expect(existsSync(langPidPath)).toBe(false);
   });
 

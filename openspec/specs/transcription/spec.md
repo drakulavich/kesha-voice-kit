@@ -111,6 +111,41 @@ output).
 - THEN stdout is `{ "results": [...], "errors": [...] }` where the error record
   for `b.ogg` carries a stable error code
 - AND without `--include-errors` stdout would be the plain results array
+  holding only `a.ogg`
+
+### Requirement: A batch that produced no results writes nothing to stdout
+
+The CLI SHALL leave stdout empty when every input failed, in every output
+format, so that a consumer which ignores the exit code cannot read a
+well-formed empty result set as "ran fine, nothing found". `--include-errors`
+is the opt-in that still reports those failures on stdout.
+
+#### Scenario: Every file in the batch fails
+
+- GIVEN neither `a.ogg` nor `b.ogg` exists
+- WHEN Ira runs `kesha --json a.ogg b.ogg` (or the same with `--toon`)
+- THEN stdout is empty rather than `[]`
+- AND both errors go to stderr and the process exits 1
+
+#### Scenario: One file survives the batch
+
+- GIVEN `a.ogg` exists but `b.ogg` does not
+- WHEN Ira runs `kesha --json a.ogg b.ogg`
+- THEN stdout is the results array holding `a.ogg` alone
+- AND the process exits 1
+
+#### Scenario: Sona wants the failures on stdout anyway
+
+- GIVEN neither `a.ogg` nor `b.ogg` exists
+- WHEN Sona runs `kesha --json --include-errors a.ogg b.ogg`
+- THEN stdout is `{ "results": [], "errors": [...] }` with a record per file
+- AND the process exits 1
+
+> *Technical Note — source: `src/cli/main.ts` (`writeOutput`). Suppression is
+> keyed on "no file produced a result", so `--format transcript` and `--verbose`
+> stop emitting their lone trailing newline here too; plain text already wrote
+> nothing. Decision and the rejected alternatives:
+> [#773](https://github.com/drakulavich/kesha-voice-kit/issues/773).*
 
 ### Requirement: Conflicting or incomplete flag combinations are rejected
 
