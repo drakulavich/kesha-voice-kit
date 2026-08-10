@@ -16,6 +16,15 @@ pub fn is_en(lang: &str) -> bool {
     lang.starts_with("en")
 }
 
+/// The pronunciation overrides as `(word, IPA)` pairs.
+///
+/// [`normalize_segments`] applies them by substitution, which suits an engine
+/// taking IPA. FluidAudio does its own G2P from raw text and instead accepts the
+/// table itself, so the ANE path hands it these pairs at init (#818).
+pub fn ipa_overrides() -> &'static [(&'static str, &'static str)] {
+    acronym::IPA_LEXICON
+}
+
 /// Normalize a segment list for the Kokoro path.
 /// `ProsodyRate` content is recursively normalized so that IPA_LEXICON
 /// overrides, `<say-as characters>`, and `<emphasis>` warnings remain active
