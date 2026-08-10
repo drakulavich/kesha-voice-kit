@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   forbidLinuxPackaging,
+  requireDarwinSmokeCoversBothEngines,
   requireNpmPublishAfterPackaging,
   requirePreUploadSynthesisSmoke,
   requireTestedScriptsInCodeFilter,
@@ -68,6 +69,66 @@ describe("requirePreUploadSynthesisSmoke", () => {
   test("fails when the build job is gone", () => {
     const errors = requirePreUploadSynthesisSmoke(PATH, { jobs: { release: {} } });
     expect(errors[0]).toContain("expected a `build` job");
+  });
+});
+
+describe("requireDarwinSmokeCoversBothEngines", () => {
+  const DARWIN = "darwin-synthesis-smoke";
+  const KOKORO = { name: "kokoro", run: 'bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." out' };
+  const AVSPEECH = {
+    name: "avspeech",
+    if: "${{ !cancelled() }}",
+    run: "bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice macos-en-US av",
+  };
+
+  test("passes on the real build-engine.yml", () => {
+    expect(requireDarwinSmokeCoversBothEngines(PATH, parseRepoYaml(PATH))).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireDarwinSmokeCoversBothEngines(CI, job(DARWIN, [KOKORO]))).toEqual([]);
+  });
+
+  test("fails when only Kokoro is exercised", () => {
+    const errors = requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [KOKORO]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("macos-*");
+  });
+
+  // The Kokoro arm is the one #742 shrank; losing it would leave darwin CoreML unexercised.
+  test("fails when only AVSpeech is exercised", () => {
+    const errors = requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [AVSPEECH]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("Kokoro");
+  });
+
+  test("fails when an arm is switched off rather than deleted", () => {
+    const errors = requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [KOKORO, { ...AVSPEECH, if: "false" }]));
+    expect(errors[0]).toContain("macos-*");
+  });
+
+  test("passes when both arms run", () => {
+    expect(requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [KOKORO, AVSPEECH]))).toEqual([]);
+  });
+
+  // AVSpeech is the only arm carrying the full pangram, and `--text` shrinks it back silently.
+  test("fails when the AVSpeech arm overrides the sentence", () => {
+    const shortened = { ...AVSPEECH, run: `${AVSPEECH.run} --text "Kesha speaks."` };
+    const errors = requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [KOKORO, shortened]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("--text");
+  });
+
+  test("fails when the AVSpeech arm stops running after a red Kokoro arm", () => {
+    const { if: _guard, ...unguarded } = AVSPEECH;
+    const errors = requireDarwinSmokeCoversBothEngines(PATH, job(DARWIN, [KOKORO, unguarded]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("!cancelled()");
+  });
+
+  test("fails when the lane is gone", () => {
+    const errors = requireDarwinSmokeCoversBothEngines(PATH, { jobs: { build: {} } });
+    expect(errors[0]).toContain(`expected a \`${DARWIN}\` job`);
   });
 });
 
