@@ -391,9 +391,7 @@ function writeOutput(
   opts: { includeErrors: boolean; verbose: boolean },
 ): void {
   const errorEnvelope = format === "json" && opts.includeErrors;
-  // #773: `[]` on a batch where nothing succeeded reads as "ran fine, nothing
-  // found" to a consumer that ignores the exit code. --include-errors is exempt:
-  // that caller asked for the failures.
+  // #773: `[]` reads as "ran fine, nothing found" to a consumer ignoring the exit code.
   if (results.length === 0 && errors.length > 0 && !errorEnvelope) return;
 
   if (format === "json") {
