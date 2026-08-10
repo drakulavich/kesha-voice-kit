@@ -16,6 +16,7 @@ pub mod kokoro;
 pub mod normalize;
 pub mod ru;
 pub mod say;
+pub mod seam;
 pub mod sessions;
 pub mod ssml;
 mod token;
