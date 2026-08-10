@@ -704,8 +704,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    env:
-      KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -735,9 +733,6 @@ jobs:
           # every PR restores — the one rust cache that already worked that way.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: 🎚️ Setup Kokoro TTS models
-        uses: ./.github/actions/setup-kokoro-models
-
       - name: 🎧 Install system Opus
         # audiopus_sys / opusic-sys fall back to a cmake build of vendored
         # libopus when pkg-config can't locate it, and the vendored
@@ -751,13 +746,14 @@ jobs:
           RUSTFLAGS: "-L /opt/homebrew/lib"
         run: cd rust && cargo build --release
 
+      # say-e2e asserts only audio *structure* — RIFF, byte count, clean stderr — so it
+      # runs against the committed mini stand-in and this lane downloads no weights at
+      # all (#741). `rust/tests/mini_model_pact.rs` plus the weekly mini-model-pact
+      # workflow are what keep the stand-in's signature honest.
       - name: 🧪 TTS e2e tests
         env:
-          KOKORO_MODEL: ${{ env.KOKORO_CACHE }}/model.onnx
-          KOKORO_VOICE: ${{ env.KOKORO_CACHE }}/am_michael.bin
-          # Runtime Kokoro layout (models/kokoro-82m/…) lives under this dir. Vosk-ru
-          # no longer does — only the coverage lane stages that bundle (#741).
-          KESHA_CACHE_DIR: ${{ env.KOKORO_CACHE }}
+          KOKORO_MODEL: ${{ github.workspace }}/tests/fixtures/mini-models/kokoro/model.onnx
+          KOKORO_VOICE: ${{ github.workspace }}/tests/fixtures/mini-models/kokoro/am_michael.bin
           KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
           DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
         run: |

@@ -1,0 +1,28 @@
+{
+  "files": {
+    "am_michael.bin": {
+      "bytes": 522240,
+      "sha256": "064db07dc4f58237c90365b4854e51faed02d660d6ddb4830128f77a6ed213d0"
+    },
+    "model.onnx": {
+      "bytes": 1086,
+      "sha256": "d6f9fd017e7df2b5581612ee32da84a0b31837de6228ba4eca9cf7744bbadf2d"
+    }
+  },
+  "generator": ".github/scripts/generate-mini-models.py",
+  "ir_version": 9,
+  "kind": "mini-model",
+  "model": "kokoro-82m",
+  "onnx_version": "1.22.0",
+  "opset": 17,
+  "params": {
+    "amplitude": 0.2,
+    "sample_rate": 24000,
+    "samples_per_token": 1200.0,
+    "tone_hz": 220.0,
+    "voice_cols": 256,
+    "voice_rows": 510,
+    "voice_seed": 741
+  },
+  "warning": "Synthetic stand-in. Carries Kokoro's I/O signature, none of its weights. A lane staged with this must never claim real-model coverage."
+}
