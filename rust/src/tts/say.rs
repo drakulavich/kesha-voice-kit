@@ -625,8 +625,14 @@ fn encode_or_fail(
 }
 
 /// Re-encode WAV bytes from a Swift sidecar into the caller's chosen format.
-/// WAV → WAV short-circuits to avoid a hound round-trip.
+/// WAV → WAV goes through the round-trip too: #826 — passing sidecar PCM16
+/// through untouched made `OutputFormat::Wav` mean two different encodings
+/// depending on which engine served the request, and left those voices outside
+/// the #245 plain-IEEE-float guarantee that `tts::wav` exists to hold.
+// `test` joins the gate so the #826 regression test runs in the default
+// `--features tts` lane, not only under the darwin sidecar features.
 #[cfg(any(
+    test,
     all(feature = "system_tts", target_os = "macos"),
     all(
         feature = "system_kokoro",
@@ -635,9 +641,6 @@ fn encode_or_fail(
     )
 ))]
 fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsError> {
-    if matches!(format, OutputFormat::Wav) {
-        return Ok(wav_bytes.to_vec());
-    }
     let reader = hound::WavReader::new(std::io::Cursor::new(wav_bytes))
         .map_err(|e| TtsError::SynthesisFailed(format!("sidecar wav decode: {e}")))?;
     let spec = reader.spec();
@@ -649,6 +652,7 @@ fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsEr
 /// Mix WAV samples to mono f32. Generic so a future sidecar format change
 /// doesn't break us (AVSpeech currently emits 22.05 kHz 16-bit mono).
 #[cfg(any(
+    test,
     all(feature = "system_tts", target_os = "macos"),
     all(
         feature = "system_kokoro",
@@ -889,6 +893,74 @@ mod tests {
         assert!((super::compose_rate(0.5, 1.0) - 0.5).abs() < 1e-6);
         assert!((super::compose_rate(2.0, 1.0) - 2.0).abs() < 1e-6);
         assert!((super::compose_rate(1.0, 1.0) - 1.0).abs() < 1e-6);
+    }
+
+    /// Build a sidecar-shaped WAV: mono 16-bit PCM, the encoding AVSpeech and
+    /// FluidAudio Kokoro hand us.
+    fn pcm16_wav(samples: &[i16], sample_rate: u32) -> Vec<u8> {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut writer = hound::WavWriter::new(&mut buf, spec).unwrap();
+        for s in samples {
+            writer.write_sample(*s).unwrap();
+        }
+        writer.finalize().unwrap();
+        buf.into_inner()
+    }
+
+    fn fmt_chunk(wav: &[u8]) -> (u16, u32, u16) {
+        let at = (0..wav.len() - 8)
+            .find(|i| &wav[*i..*i + 4] == b"fmt ")
+            .expect("fmt chunk not found");
+        let tag = u16::from_le_bytes([wav[at + 8], wav[at + 9]]);
+        let rate = u32::from_le_bytes([wav[at + 12], wav[at + 13], wav[at + 14], wav[at + 15]]);
+        let bits = u16::from_le_bytes([wav[at + 22], wav[at + 23]]);
+        (tag, rate, bits)
+    }
+
+    #[test]
+    fn wav_output_is_ieee_float_even_for_sidecar_pcm16() {
+        // #826: `OutputFormat::Wav` used to pass sidecar bytes through untouched,
+        // so the same voice emitted PCM16 for plain text and IEEE float for --ssml.
+        let src = pcm16_wav(&[0, 8192, -8192, 16384, -16384, 32767, -32768], 22_050);
+        assert_eq!(fmt_chunk(&src), (0x0001, 22_050, 16), "fixture shape");
+
+        let out = super::transcode_to(&src, OutputFormat::Wav).unwrap();
+
+        let (tag, rate, bits) = fmt_chunk(&out);
+        assert_eq!(
+            tag, 0x0003,
+            "expected WAVE_FORMAT_IEEE_FLOAT (0x0003), got 0x{tag:04x}"
+        );
+        assert_eq!(bits, 32);
+        assert_eq!(
+            rate, 22_050,
+            "sample rate stays per-voice; WAV pins the encoding, not the rate"
+        );
+    }
+
+    #[test]
+    fn wav_normalization_preserves_the_sidecar_audio() {
+        let pcm: Vec<i16> = (0..2048)
+            .map(|i| ((i as f32 * 0.05).sin() * 30_000.0) as i16)
+            .collect();
+        let out = super::transcode_to(&pcm16_wav(&pcm, 24_000), OutputFormat::Wav).unwrap();
+
+        let decoded: Vec<f32> = hound::WavReader::new(std::io::Cursor::new(&out))
+            .unwrap()
+            .into_samples::<f32>()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(decoded.len(), pcm.len());
+        for (i, (got, want)) in decoded.iter().zip(&pcm).enumerate() {
+            let want = *want as f32 / 32_768.0;
+            assert!((got - want).abs() < 1e-6, "sample {i}: {got} vs {want}");
+        }
     }
 }
 
