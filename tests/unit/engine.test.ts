@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
@@ -122,41 +122,49 @@ function cacheDirWithVadModel(): string {
 
 const engineBasename = process.platform === "win32" ? "kesha-engine.exe" : "kesha-engine";
 
+/** Runs `fn` with the two path-resolution vars forced to `env`, restoring whatever the shell had. */
+function withPathEnv<T>(env: Record<"KESHA_CACHE_DIR" | "KESHA_ENGINE_BIN", string | undefined>, fn: () => T): T {
+  const saved = { ...process.env };
+  try {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    return fn();
+  } finally {
+    for (const key of ["KESHA_CACHE_DIR", "KESHA_ENGINE_BIN"]) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+}
+
 describe("engine", () => {
-  test("getEngineBinPath returns path under .cache kesha", () => {
-    const path = getEngineBinPath();
-    expect(path).toMatch(/\.cache[/\\]kesha/);
-    expect(path).toContain("kesha-engine");
+  test("getEngineBinPath defaults to the XDG-style cache under $HOME", () => {
+    withPathEnv({ KESHA_CACHE_DIR: undefined, KESHA_ENGINE_BIN: undefined }, () => {
+      expect(getEngineBinPath()).toBe(
+        join(homedir(), ".cache", "kesha", "engine", "bin", engineBasename),
+      );
+    });
+  });
+
+  test("getEngineBinPath lets KESHA_ENGINE_BIN outrank KESHA_CACHE_DIR", () => {
+    withPathEnv(
+      { KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "/tmp/kesha-explicit-engine" },
+      () => expect(getEngineBinPath()).toBe("/tmp/kesha-explicit-engine"),
+    );
   });
 
   test("getEngineBinPath follows KESHA_CACHE_DIR", () => {
-    const savedCacheDir = process.env.KESHA_CACHE_DIR;
-    const savedEngineBin = process.env.KESHA_ENGINE_BIN;
-    try {
-      delete process.env.KESHA_ENGINE_BIN;
-      process.env.KESHA_CACHE_DIR = "/tmp/kesha-cache";
+    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: undefined }, () => {
       expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", engineBasename));
-    } finally {
-      if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
-      else process.env.KESHA_CACHE_DIR = savedCacheDir;
-      if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
-      else process.env.KESHA_ENGINE_BIN = savedEngineBin;
-    }
+    });
   });
 
   test("getEngineBinPath treats an empty KESHA_ENGINE_BIN as unset", () => {
-    const savedCacheDir = process.env.KESHA_CACHE_DIR;
-    const savedEngineBin = process.env.KESHA_ENGINE_BIN;
-    try {
-      process.env.KESHA_CACHE_DIR = "/tmp/kesha-cache";
-      process.env.KESHA_ENGINE_BIN = "";
+    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "" }, () => {
       expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", engineBasename));
-    } finally {
-      if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
-      else process.env.KESHA_CACHE_DIR = savedCacheDir;
-      if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
-      else process.env.KESHA_ENGINE_BIN = savedEngineBin;
-    }
+    });
   });
 
   test("parseLangResult parses valid JSON", () => {

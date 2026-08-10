@@ -17,7 +17,7 @@ export function enginePublishesJson(bin: string, flag: string): boolean {
   } catch {
     return false;
   }
-  if (res.exitCode !== 0) return false;
+  if (res.exitCode !== 0 || res.stdout === undefined) return false;
 
   try {
     const parsed: unknown = JSON.parse(res.stdout.toString());
