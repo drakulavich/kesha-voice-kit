@@ -185,6 +185,61 @@ mod tests {
     }
 
     #[test]
+    fn punctuation_names_stay_words_in_prose() {
+        // #822: the upstream pass rewrites a bare punctuation name into its
+        // symbol wherever it appears, so ordinary nouns lost their word.
+        assert_eq!(
+            normalize_text("the period of growth was remarkable"),
+            "the period of growth was remarkable"
+        );
+        assert_eq!(
+            normalize_text("the dash between them"),
+            "the dash between them"
+        );
+        assert_eq!(normalize_text("put a comma there"), "put a comma there");
+        assert_eq!(normalize_text("she gave a plus one"), "she gave a plus 1");
+    }
+
+    #[test]
+    fn punctuation_names_keep_their_sentence_punctuation() {
+        assert_eq!(
+            normalize_text("it was a difficult period."),
+            "it was a difficult period."
+        );
+        assert_eq!(
+            normalize_text("she asked a question mark, then left"),
+            "she asked a question mark, then left"
+        );
+    }
+
+    #[test]
+    fn punctuation_names_are_guarded_on_the_segment_path() {
+        let out = normalize_output(TranscriptionOutput {
+            text: "stale".into(),
+            segments: vec![
+                segment(0.0, 1.0, "the period of growth"),
+                segment(1.0, 2.0, "was remarkable"),
+            ],
+        });
+        assert_eq!(out.segments[0].text, "the period of growth");
+        assert_eq!(out.text, "the period of growth was remarkable");
+    }
+
+    /// Deliberate cost of the guard (#822): spoken identifiers and arithmetic
+    /// that upstream assembled out of a punctuation name now stay literal.
+    #[test]
+    fn spoken_identifiers_keep_their_punctuation_names() {
+        assert_eq!(
+            normalize_text("go to example dot com"),
+            "go to example dot com"
+        );
+        assert_eq!(
+            normalize_text("two plus two equals four"),
+            "2 plus 2 equals 4"
+        );
+    }
+
+    #[test]
     fn text_is_kept_when_normalization_would_erase_it() {
         // Guards the one shape that would be data loss: non-blank in, blank out.
         for text in ["ok", "hello world", "проверь все свои конфиги"] {
