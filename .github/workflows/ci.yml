@@ -418,13 +418,7 @@ jobs:
           # bump it, or move this lane off the PR path first (#741).
           cache-key: ${{ runner.os }}-kesha-engine-v1
           cache-restore-keys: ${{ runner.os }}-kesha-engine-
-      # mcp-e2e's synthesis case needs a Kokoro model to resolve; the committed
-      # stand-in satisfies its structural assertions, so it finally runs here
-      # without this lane downloading a graph for it (#741).
       - name: 🧪 Integration tests (real engine)
-        env:
-          KOKORO_MODEL: ${{ github.workspace }}/tests/fixtures/mini-models/kokoro/model.onnx
-          KOKORO_VOICE: ${{ github.workspace }}/tests/fixtures/mini-models/kokoro/am_michael.bin
         run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration-full.xml
         timeout-minutes: 12
       - name: 📊 Test summary

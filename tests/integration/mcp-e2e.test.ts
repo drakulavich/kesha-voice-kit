@@ -25,24 +25,29 @@ async function client() {
   return cl;
 }
 
-// TTS model availability — mirrors say-e2e.test.ts gating.
-//
-// The synthesis case asks for `en-am_michael`, and English phonemises through the
-// embedded misaki lexicon rather than the byt5 CharsiuG2P pack (#207), so no G2P
-// artifact belongs in this gate. Requiring one — and staging the voice under a
-// different name than the one requested — is why this case never ran in CI (#741).
+// TTS model availability — mirrors say-e2e.test.ts gating
 const SPIKE_MODEL = process.env.KOKORO_MODEL ?? "/tmp/kokoro-spike/model.onnx";
-const SPIKE_VOICE = process.env.KOKORO_VOICE ?? "/tmp/kokoro-spike/am_michael.bin";
-const SPIKE_AVAILABLE = existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE);
+const SPIKE_VOICE = process.env.KOKORO_VOICE ?? "/tmp/kokoro-spike/af_heart.bin";
+const G2P_SRC_DIR = process.env.KESHA_CACHE_DIR
+  ? `${process.env.KESHA_CACHE_DIR}/models/g2p/byt5-tiny`
+  : "";
+const G2P_AVAILABLE =
+  G2P_SRC_DIR !== "" && existsSync(`${G2P_SRC_DIR}/encoder_model.onnx`);
+const SPIKE_AVAILABLE = existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE) && G2P_AVAILABLE;
 
 const TTS_CACHE_DIR = `/tmp/kesha-mcp-e2e-${Date.now()}`;
 const MODEL_DIR = `${TTS_CACHE_DIR}/models/kokoro-82m`;
+const G2P_DIR = `${TTS_CACHE_DIR}/models/g2p/byt5-tiny`;
 
 beforeAll(() => {
   if (!SPIKE_AVAILABLE) return;
   mkdirSync(`${MODEL_DIR}/voices`, { recursive: true });
   symlinkSync(SPIKE_MODEL, `${MODEL_DIR}/model.onnx`);
-  symlinkSync(SPIKE_VOICE, `${MODEL_DIR}/voices/am_michael.bin`);
+  symlinkSync(SPIKE_VOICE, `${MODEL_DIR}/voices/af_heart.bin`);
+  mkdirSync(G2P_DIR, { recursive: true });
+  for (const f of ["encoder_model.onnx", "decoder_model.onnx", "decoder_with_past_model.onnx"]) {
+    symlinkSync(`${G2P_SRC_DIR}/${f}`, `${G2P_DIR}/${f}`);
+  }
   process.env.KESHA_CACHE_DIR = TTS_CACHE_DIR;
 });
 
