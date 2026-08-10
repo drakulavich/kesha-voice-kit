@@ -3,12 +3,12 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { existsSync, mkdirSync, symlinkSync } from "fs";
 import { createKeshaMcpServer } from "../../src/mcp/server";
-import { engineFunctionalHealth } from "../../src/engine-health";
+import { engineUsableOrRequired } from "../helpers/model-gate";
 
 const FIXTURE_RU = "tests/fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";
 
 // Presence is not usability: the #796 stub existed, ran, and failed every case here (#801).
-const engineInstalled = (await engineFunctionalHealth()).status === "ok";
+const engineInstalled = await engineUsableOrRequired();
 
 async function client() {
   const server = createKeshaMcpServer();
