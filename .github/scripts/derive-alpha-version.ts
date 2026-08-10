@@ -7,7 +7,7 @@
  * `version=`/`tag=` lines suitable for `$GITHUB_OUTPUT`.
  */
 import { readFileSync } from "node:fs";
-import { CLI_MARKER, publishedVersionRe } from "./release-tags.mjs";
+import { CLI_MARKER, publishedVersionRe, stableVersionRe } from "./release-tags.mjs";
 import { cmp, parseSemver } from "../../src/semver.mjs";
 
 export type Channel = "cli" | "engine";
@@ -53,6 +53,36 @@ export function previousTag(channel: Channel, tags: string[]): string | undefine
     if (!best || cmp(version, best.version) > 0) best = { tag: raw.trim(), version };
   }
   return best?.tag;
+}
+
+/**
+ * A prerelease sorts below its own stable version, so an alpha of an already-released base is
+ * older than what the channel already serves — npm showed `@alpha` 1.27.0-alpha.2 behind
+ * `@latest` 1.27.0 (#802). The refusal reads the same tags the sequence is counted from.
+ */
+export function assertBaseLeadsPublished(channel: Channel, base: string, tags: string[]): void {
+  const shape = stableVersionRe(MARKER[channel]);
+
+  let highest: { raw: string; version: ReturnType<typeof parseSemver> } | undefined;
+  for (const tag of tags) {
+    const match = shape.exec(tag.trim());
+    if (!match) continue;
+    const version = parseSemver(match[1], "published stable");
+    if (!highest || cmp(version, highest.version) > 0) highest = { raw: match[1], version };
+  }
+  if (!highest) return;
+  if (cmp(parseSemver(base, "alpha base"), highest.version) > 0) return;
+
+  const remedy =
+    channel === "cli"
+      ? "bump package.json#version on main to the next unreleased version — the release-cli " +
+        "skill's 'Re-lead the base version on main' step"
+      : "name an engine base above it";
+  throw new Error(
+    `${channel} alpha base ${base} does not lead the highest published stable ${highest.raw}: ` +
+      `${base}-alpha.N sorts below ${highest.raw}, so the alpha channel would serve a version older ` +
+      `than the released one. Fix: ${remedy}.`,
+  );
 }
 
 /**
@@ -104,6 +134,8 @@ export function deriveAlpha(
   if (base.includes("-")) {
     throw new Error(`alpha base must be a stable version, got ${base} — alphas derive from it`);
   }
+
+  assertBaseLeadsPublished(channel, base, tags);
 
   const sequence = nextSequence(channel, base, tags);
   const version = `${base}-alpha.${sequence}`;

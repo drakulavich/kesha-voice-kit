@@ -39,6 +39,11 @@ export function publishedVersionRe(marker) {
   return new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+(?:-(?:alpha|beta)\\.[0-9]+)?)${marker}$`);
 }
 
+/** A channel's released stables only — the floor an alpha base has to lead (#802). */
+export function stableVersionRe(marker) {
+  return new RegExp(`^v([0-9]+\\.[0-9]+\\.[0-9]+)${marker}$`);
+}
+
 /**
  * What the CLI publish path should do with a release tag.
  *

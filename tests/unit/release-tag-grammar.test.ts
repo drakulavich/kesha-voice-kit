@@ -9,6 +9,7 @@ import {
   ENGINE_TAG_ERE,
   ENGINE_TAG_RE,
   isEngineAlphaTag,
+  stableVersionRe,
 } from "../../.github/scripts/release-tags.mjs";
 import { parseRepoYaml, readRepoFile, REPO_ROOT } from "../helpers/repo";
 
@@ -61,6 +62,57 @@ describe("CLI marker tag grammar", () => {
     for (const tag of [...ENGINE_TAGS, ...NOT_TAGS, "v1.27.0-cli-cli", "v1.27.0-rc.1-cli", "cli"]) {
       expect(CLI_TAG_RE.test(tag)).toBe(false);
     }
+  });
+});
+
+// The floor the alpha derivation refuses to mint below, so a prerelease slipping through here
+// would let an alpha of an already-released base pass the guard (#802).
+describe("published stable shape", () => {
+  const CLI_STABLE = stableVersionRe("-cli");
+  const ENGINE_STABLE = stableVersionRe("");
+  const PRERELEASES = ["v1.27.0-alpha.2-cli", "v1.27.0-beta.1-cli", "v1.27.0-alpha.2", "v1.24.8-beta.1"];
+  const LOOKALIKES = [
+    "V1.27.0-cli",
+    "1.27.0-cli",
+    "v1.27.0-cli-cli",
+    "v1.27.0cli",
+    "v1.27.0-CLI",
+    "v1.27.0.1-cli",
+    "v1.27.0+build-cli",
+    "V1.24.8",
+    "1.24.8",
+    "v1.24.8.1",
+    "v1.24.8+build",
+  ];
+
+  test("accepts exactly its own channel's stable tag", () => {
+    expect(CLI_STABLE.test("v1.27.0-cli")).toBe(true);
+    expect(ENGINE_STABLE.test("v1.24.8")).toBe(true);
+  });
+
+  // The guard compares the captured version, not the tag, so the marker must not leak into it.
+  test("captures the bare version", () => {
+    expect(CLI_STABLE.exec("v1.27.0-cli")?.[1]).toBe("1.27.0");
+    expect(ENGINE_STABLE.exec("v1.24.8")?.[1]).toBe("1.24.8");
+  });
+
+  test("rejects every prerelease", () => {
+    for (const tag of PRERELEASES) {
+      expect(CLI_STABLE.test(tag)).toBe(false);
+      expect(ENGINE_STABLE.test(tag)).toBe(false);
+    }
+  });
+
+  test("rejects malformed and marker-lookalike shapes", () => {
+    for (const tag of [...LOOKALIKES, ...NOT_TAGS, "cli", ""]) {
+      expect(CLI_STABLE.test(tag)).toBe(false);
+      expect(ENGINE_STABLE.test(tag)).toBe(false);
+    }
+  });
+
+  test("neither channel matches the other's stable tag", () => {
+    expect(CLI_STABLE.test("v1.24.8")).toBe(false);
+    expect(ENGINE_STABLE.test("v1.27.0-cli")).toBe(false);
   });
 });
 

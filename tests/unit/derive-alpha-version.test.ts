@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   alphaTag,
+  assertBaseLeadsPublished,
   assertPassesVersionGate,
   deriveAlpha,
   nextSequence,
@@ -70,6 +71,57 @@ describe("assertPassesVersionGate", () => {
   });
 });
 
+describe("assertBaseLeadsPublished", () => {
+  test("accepts a base above every published stable on the channel", () => {
+    const tags = ["v1.27.0-cli", "v1.26.0-cli", "v1.24.7"];
+
+    expect(() => assertBaseLeadsPublished("cli", "1.28.0", tags)).not.toThrow();
+  });
+
+  // The #802 inversion: 1.27.0-alpha.N sorts below the released 1.27.0, so npm's @alpha
+  // would serve something older than @latest.
+  test("refuses a base equal to the highest published stable", () => {
+    expect(() => assertBaseLeadsPublished("cli", "1.27.0", ["v1.27.0-cli"])).toThrow(
+      /1\.27\.0.*does not lead.*1\.27\.0/s,
+    );
+  });
+
+  test("refuses a base below the highest published stable", () => {
+    const tags = ["v1.26.0-cli", "v1.27.0-cli"];
+
+    expect(() => assertBaseLeadsPublished("cli", "1.26.5", tags)).toThrow(/does not lead/);
+  });
+
+  test("names the remedy so the refusal is actionable", () => {
+    expect(() => assertBaseLeadsPublished("cli", "1.27.0", ["v1.27.0-cli"])).toThrow(
+      /package\.json#version/,
+    );
+    expect(() => assertBaseLeadsPublished("engine", "1.24.7", ["v1.24.7"])).toThrow(
+      /engine base above it/,
+    );
+  });
+
+  // A first release must not be bricked: nothing published means nothing to lead.
+  test("proceeds when the channel has published no stable yet", () => {
+    expect(() => assertBaseLeadsPublished("cli", "0.1.0", ["v1.24.7"])).not.toThrow();
+  });
+
+  test("proceeds against a prerelease-only history", () => {
+    const tags = ["v1.27.0-alpha.2-cli", "v1.27.0-beta.1-cli"];
+
+    expect(() => assertBaseLeadsPublished("cli", "1.27.0", tags)).not.toThrow();
+  });
+
+  test("ignores the other channel's stables", () => {
+    expect(() => assertBaseLeadsPublished("cli", "1.25.0", ["v1.30.0"])).not.toThrow();
+    expect(() => assertBaseLeadsPublished("engine", "1.25.0", ["v1.30.0-cli"])).not.toThrow();
+  });
+
+  test("compares by SemVer, not lexically", () => {
+    expect(() => assertBaseLeadsPublished("cli", "1.9.0", ["v1.10.0-cli"])).toThrow(/does not lead/);
+  });
+});
+
 describe("deriveAlpha", () => {
   test("the CLI base comes from the next unreleased version on main", () => {
     expect(deriveAlpha("cli", PKG, SOME_TAGS)).toEqual({
@@ -95,6 +147,21 @@ describe("deriveAlpha", () => {
     for (const base of ["1.24.7", "1.24.6"]) {
       expect(() => deriveAlpha("engine", PKG, SOME_TAGS, base)).toThrow(/must be above/);
     }
+  });
+
+  // #802: main's base lapsed to the version v1.27.0-cli had already released.
+  test("refuses a CLI base the channel has already released", () => {
+    const tags = ["v1.24.7", "v1.27.0-cli", "v1.27.0-alpha.2-cli"];
+
+    expect(() => deriveAlpha("cli", PKG, tags)).toThrow(/does not lead/);
+  });
+
+  test("refuses an engine target a bare tag has already released", () => {
+    const pkg = { version: "1.30.0", keshaEngine: { version: "1.24.7" } };
+
+    expect(() => deriveAlpha("engine", pkg, ["v1.24.9", "v1.26.0-cli"], "1.24.8")).toThrow(
+      /does not lead/,
+    );
   });
 
   test("refuses a base that is already a prerelease", () => {
