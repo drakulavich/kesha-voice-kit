@@ -230,7 +230,8 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
     let lang = lang_for_fluid_id(voice_id).unwrap_or("en-us");
     let compute_units = compute_units_from_env()?;
     crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
-        let audio = FluidAudio::new().context("init FluidAudio bridge")?;
+        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_kokoro_location())
+            .context("init FluidAudio bridge")?;
         audio
             .init_kokoro_with_compute_units(voice_id, lang, compute_units)
             .map_err(|e| {

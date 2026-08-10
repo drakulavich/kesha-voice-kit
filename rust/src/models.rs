@@ -540,6 +540,81 @@ fn ane_voices_for(langs: &[&str]) -> Vec<&'static ModelFile> {
         .collect()
 }
 
+/// Where one FluidAudio subsystem's files live, and the root that puts them there.
+pub struct FluidAudioLocation {
+    /// The directory the subsystem reads and writes.
+    pub dir: PathBuf,
+    /// Base to hand `FluidAudio::with_models_dir`. `None` keeps FluidAudio's own defaults.
+    pub root: Option<PathBuf>,
+}
+
+/// FluidAudio's models root inside Kesha's cache (#688). `with_models_dir` treats this as a
+/// base that each subsystem appends its own repo folder to, so Parakeet ASR, the Kokoro ANE
+/// chain and the compiled-Sortformer cache become siblings here instead of three separate
+/// home-directory roots FluidAudio picks for itself.
+pub fn fluidaudio_models_root() -> PathBuf {
+    cache_dir().join("fluidaudio")
+}
+
+/// Resolve one subsystem, preferring a legacy location that already holds a usable bundle.
+///
+/// An install predating #688 holds ~2 GB under FluidAudio's own defaults, and injecting a
+/// root would make FluidAudio re-download all of it. So `legacy_ready` pins the subsystem
+/// where it already is and injects nothing; only what is absent — a fresh install, or a
+/// bundle the user deleted — lands under [`fluidaudio_models_root`]. Nothing is ever moved
+/// or removed, so the fallback is pure reading.
+///
+/// Returning both halves of the decision together is the point: `dir` and `root` must agree,
+/// or Kesha stages voice packs into a directory FluidAudio never reads.
+pub fn fluidaudio_location(
+    legacy: &Path,
+    legacy_ready: bool,
+    repo_subpath: &str,
+) -> FluidAudioLocation {
+    if legacy_ready {
+        return FluidAudioLocation {
+            dir: legacy.to_path_buf(),
+            root: None,
+        };
+    }
+    let root = fluidaudio_models_root();
+    FluidAudioLocation {
+        dir: root.join(repo_subpath),
+        root: Some(root),
+    }
+}
+
+/// Open a FluidAudio bridge honouring `at`. Routing every construction site through this
+/// keeps the directory Kesha reports and the directory FluidAudio writes to from drifting.
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+pub fn fluidaudio_bridge(
+    at: &FluidAudioLocation,
+) -> std::result::Result<fluidaudio_rs::FluidAudio, fluidaudio_rs::FluidAudioError> {
+    match &at.root {
+        Some(root) => fluidaudio_rs::FluidAudio::with_models_dir(root),
+        None => fluidaudio_rs::FluidAudio::new(),
+    }
+}
+
+/// True when `dir` exists and holds at least one entry. Deliberately weak: the cost of a
+/// false positive is keeping a legacy directory in use, the cost of a false negative is
+/// re-downloading it (#688).
+#[cfg(any(
+    all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ),
+    feature = "system_diarize"
+))]
+fn dir_has_entries(dir: &Path) -> bool {
+    fs::read_dir(dir).is_ok_and(|mut e| e.next().is_some())
+}
+
 /// FluidAudio's Kokoro CoreML cache root. Each KokoroAne variant gets its own
 /// subdirectory of bundles here (`ANE` for English/Latin, `ANE-zh` for the
 /// Mandarin variant, and so on per `ModelNames.Repo.subPath`).
@@ -549,19 +624,14 @@ fn ane_voices_for(langs: &[&str]) -> Vec<&'static ModelFile> {
     target_arch = "aarch64"
 ))]
 pub fn fluidaudio_kokoro_cache_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("cannot determine home directory")
-        .join(".cache")
-        .join("fluidaudio")
-        .join("Models")
-        .join("kokoro-82m-coreml")
+    fluidaudio_kokoro_location().dir
 }
 
-/// FluidAudio's Kokoro ANE voice-pack cache directory. NOT under
-/// `KESHA_CACHE_DIR` — FluidAudio 0.15.5 owns this path and reads voice packs
-/// from here local-first. We pre-stage onnx-community packs here so the full
-/// advertised Kokoro catalog (and the male `am_michael` default) resolve
-/// without a 404 against the ANE bundle.
+/// FluidAudio's Kokoro ANE voice-pack cache directory. FluidAudio 0.15.5 reads voice packs
+/// from here local-first, so we pre-stage onnx-community packs into it and the full
+/// advertised Kokoro catalog (and the male `am_michael` default) resolve without a 404
+/// against the ANE bundle. Follows [`fluidaudio_kokoro_location`], so staging always lands
+/// wherever the bridge is actually pointed.
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -571,14 +641,57 @@ pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
     fluidaudio_kokoro_cache_dir().join("ANE")
 }
 
-/// FluidAudio's ASR bundle directory. Not under `KESHA_CACHE_DIR` — FluidAudio
-/// downloads and reads it here, and `AsrModels` resolves it as
-/// `<ApplicationSupport>/FluidAudio/Models/<repo.folderName>`, where `folderName`
-/// **strips** the `-coreml` suffix from `parakeet-tdt-0.6b-v3-coreml`. Keying on
-/// the `…-v3-coreml` sibling that also exists on disk would report a healthy
-/// install as broken (#684).
+/// Where FluidAudio's Kokoro CoreML bundles live, and the root that puts them there.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub fn fluidaudio_kokoro_location() -> FluidAudioLocation {
+    let legacy = legacy_fluidaudio_kokoro_cache_dir();
+    let staged = dir_has_entries(&legacy);
+    fluidaudio_location(&legacy, staged, "kokoro-82m-coreml")
+}
+
+/// The `.cache/fluidaudio` tree FluidAudio picks on its own. Kept as the read-fallback so an
+/// upgrade never re-fetches the ~800 MB of ANE bundles already sitting here (#688).
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn legacy_fluidaudio_kokoro_cache_dir() -> PathBuf {
+    dirs::home_dir()
+        .expect("cannot determine home directory")
+        .join(".cache")
+        .join("fluidaudio")
+        .join("Models")
+        .join("kokoro-82m-coreml")
+}
+
+/// FluidAudio's ASR bundle directory — the one `AsrModels` loads from, wherever that
+/// currently is. See [`fluidaudio_asr_location`] for which of the two it can be.
 #[cfg(feature = "coreml")]
 pub fn fluidaudio_asr_dir() -> PathBuf {
+    fluidaudio_asr_location().dir
+}
+
+/// Where the Parakeet bundle lives, and the root that puts it there.
+#[cfg(feature = "coreml")]
+pub fn fluidaudio_asr_location() -> FluidAudioLocation {
+    let legacy = legacy_fluidaudio_asr_dir();
+    let complete = fluidaudio_asr_ready_in(&legacy);
+    fluidaudio_location(&legacy, complete, "parakeet-tdt-0.6b-v3")
+}
+
+/// The Application Support tree FluidAudio picks on its own, kept as the read-fallback.
+///
+/// `AsrModels` resolves it as `<ApplicationSupport>/FluidAudio/Models/<repo.folderName>`,
+/// where `folderName` **strips** the `-coreml` suffix from `parakeet-tdt-0.6b-v3-coreml`.
+/// Keying on the `…-v3-coreml` sibling that also exists on disk would report a healthy
+/// install as broken (#684).
+#[cfg(feature = "coreml")]
+fn legacy_fluidaudio_asr_dir() -> PathBuf {
     dirs::home_dir()
         .expect("cannot determine home directory")
         .join("Library")
@@ -586,6 +699,26 @@ pub fn fluidaudio_asr_dir() -> PathBuf {
         .join("FluidAudio")
         .join("Models")
         .join("parakeet-tdt-0.6b-v3")
+}
+
+/// Where `fluidaudio-rs` keeps compiled Sortformer `.mlmodelc` bundles, and the root that
+/// puts them there. Relocating this costs a ~100 s ANE recompile rather than a download, but
+/// the fallback rule is the same: an existing cache stays where it is.
+#[cfg(feature = "system_diarize")]
+pub fn fluidaudio_diarize_location() -> FluidAudioLocation {
+    let legacy = legacy_sortformer_compiled_dir();
+    let compiled = dir_has_entries(&legacy);
+    fluidaudio_location(&legacy, compiled, "fluidaudio-rs/SortformerCompiled")
+}
+
+#[cfg(feature = "system_diarize")]
+fn legacy_sortformer_compiled_dir() -> PathBuf {
+    dirs::home_dir()
+        .expect("cannot determine home directory")
+        .join("Library")
+        .join("Application Support")
+        .join("fluidaudio-rs")
+        .join("SortformerCompiled")
 }
 
 /// What FluidAudio's own `modelsExist` requires. The encoder is pinned to int8
@@ -2452,13 +2585,82 @@ mod characterization_tests {
     #[test]
     #[cfg(feature = "coreml")]
     fn fluidaudio_asr_dir_is_the_directory_fluidaudio_loads_from() {
-        let dir = fluidaudio_asr_dir();
+        let dir = legacy_fluidaudio_asr_dir();
         assert!(dir.ends_with("parakeet-tdt-0.6b-v3"), "{dir:?}");
         assert!(
             dir.to_string_lossy()
                 .contains("Library/Application Support/FluidAudio/Models"),
             "{dir:?} is not FluidAudio's ASR root"
         );
+    }
+
+    /// A machine with nothing staged yet gets one tree: the injected root and the directory
+    /// we report must be the same decision, or `kesha install` stages voice packs into a
+    /// directory FluidAudio never reads and re-fetches the bundle anyway (#688).
+    #[test]
+    fn a_missing_bundle_lands_under_the_kesha_cache() {
+        let _lock = crate::util::test_env::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::util::test_env::EnvGuard::set(
+            "KESHA_CACHE_DIR",
+            tmp.path().to_str().expect("utf-8 temp path"),
+        );
+
+        let legacy = PathBuf::from("/nonexistent/FluidAudio/Models/parakeet-tdt-0.6b-v3");
+        let at = fluidaudio_location(&legacy, false, "parakeet-tdt-0.6b-v3");
+
+        let root = at
+            .root
+            .as_ref()
+            .expect("a missing bundle must inject a root");
+        assert_eq!(root, &tmp.path().join("fluidaudio"));
+        assert_eq!(
+            at.dir,
+            root.join("parakeet-tdt-0.6b-v3"),
+            "the reported directory must be where the injected root puts it"
+        );
+    }
+
+    /// The whole point of the read-fallback: an existing install holds ~2 GB under
+    /// FluidAudio's own defaults, and injecting a root would re-download all of it (#688).
+    #[test]
+    fn an_existing_bundle_stays_put_and_injects_no_root() {
+        let _lock = crate::util::test_env::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::util::test_env::EnvGuard::set(
+            "KESHA_CACHE_DIR",
+            tmp.path().to_str().expect("utf-8 temp path"),
+        );
+
+        let legacy = PathBuf::from("/somewhere/FluidAudio/Models/parakeet-tdt-0.6b-v3");
+        let at = fluidaudio_location(&legacy, true, "parakeet-tdt-0.6b-v3");
+
+        assert_eq!(at.dir, legacy);
+        assert!(
+            at.root.is_none(),
+            "a usable legacy bundle must keep FluidAudio's defaults rather than relocate"
+        );
+    }
+
+    /// Every subsystem appends its own repo folder to the same base, so they end up as
+    /// siblings under one root rather than three home-directory trees.
+    #[test]
+    fn subsystems_share_one_root_as_siblings() {
+        let _lock = crate::util::test_env::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::util::test_env::EnvGuard::set(
+            "KESHA_CACHE_DIR",
+            tmp.path().to_str().expect("utf-8 temp path"),
+        );
+
+        let missing = PathBuf::from("/nonexistent");
+        let asr = fluidaudio_location(&missing, false, "parakeet-tdt-0.6b-v3");
+        let kokoro = fluidaudio_location(&missing, false, "kokoro-82m-coreml");
+        let sortformer = fluidaudio_location(&missing, false, "fluidaudio-rs/SortformerCompiled");
+
+        assert_eq!(asr.root, kokoro.root);
+        assert_eq!(kokoro.root, sortformer.root);
+        assert_eq!(asr.dir.parent(), kokoro.dir.parent());
     }
 
     /// An interrupted FluidAudio fetch leaves the directory present but partial.

@@ -3,9 +3,13 @@ import { join } from "path";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import { isDarwinArm64 } from "./fluid-kokoro-cache";
 import { engineTarget } from "./engine-targets";
+import { keshaCacheDir } from "./paths";
 
+// Says nothing about location: since #688 the bundle may sit inside the Kesha cache or in
+// FluidAudio's own tree, and either way it is the backend that fetches it, not the pinned
+// downloader — which is what the note is actually warning about.
 export const FLUID_ASR_CACHE_NOTE =
-  "required for speech-to-text; fetched by the backend during warm-up, outside Kesha's model cache";
+  "required for speech-to-text; fetched by the backend during warm-up, not by Kesha's pinned downloader";
 
 /**
  * Which ASR layout applies. The reported backend is authoritative; when the capabilities
@@ -30,9 +34,10 @@ export interface FluidAsrCacheInfo {
 /**
  * FluidAudio loads ASR from `<ApplicationSupport>/FluidAudio/Models/<repo folder>`,
  * and that folder name has the `-coreml` suffix stripped — the `…-v3-coreml` sibling
- * that also appears on disk is not what it reads (#684).
+ * that also appears on disk is not what it reads (#684). This is the location FluidAudio
+ * picks unaided, which #688 keeps as a read-fallback.
  */
-export function fluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
+export function legacyFluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
   return join(
     homeDir,
     "Library",
@@ -41,6 +46,21 @@ export function fluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
     "Models",
     "parakeet-tdt-0.6b-v3",
   );
+}
+
+/**
+ * Where the Parakeet bundle actually is. Mirrors `models.rs::fluidaudio_asr_location`: a
+ * complete legacy bundle keeps its place so an upgrade never re-downloads ~460 MB, and
+ * anything else lives under the Kesha cache, where the engine roots a fresh install (#688).
+ */
+export function fluidAsrCachePath(
+  homeDir = diagnosticHomeDir(),
+  cacheRoot = keshaCacheDir(),
+): string {
+  const legacy = legacyFluidAsrCachePath(homeDir);
+  return fluidAsrCacheReady(legacy)
+    ? legacy
+    : join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3");
 }
 
 /**
@@ -77,10 +97,11 @@ export function fluidAsrCacheInfo(
     platform?: typeof process.platform;
     arch?: typeof process.arch;
     homeDir?: string;
+    cacheRoot?: string;
   } = {},
 ): FluidAsrCacheInfo {
   const supported = isDarwinArm64(options.platform, options.arch);
-  const path = fluidAsrCachePath(options.homeDir);
+  const path = fluidAsrCachePath(options.homeDir, options.cacheRoot);
 
   return {
     supported,

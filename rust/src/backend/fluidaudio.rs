@@ -25,7 +25,8 @@ pub struct FluidAudioBackend {
 
 impl FluidAudioBackend {
     pub fn new() -> Result<Self> {
-        let audio = FluidAudio::new().context("failed to initialize FluidAudio bridge")?;
+        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location())
+            .context("failed to initialize FluidAudio bridge")?;
         audio
             .init_asr()
             .context("failed to initialize FluidAudio ASR (first run compiles models for ANE)")?;
