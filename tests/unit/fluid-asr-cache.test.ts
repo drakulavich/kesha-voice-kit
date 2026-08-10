@@ -202,20 +202,26 @@ describe("Rust/TS FluidAudio contract agreement", () => {
     return [...block[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
   }
 
+  // Reads the value, not the expression using it: matching `.join("…")` broke on refactors.
+  function rustStr(constName: string): string {
+    const block = rust.match(new RegExp(`const ${constName}: &str = "([^"]+)"`));
+    if (!block) throw new Error(`${constName} not found in rust/src/models.rs`);
+    return block[1]!;
+  }
+
   test("required entry lists match", () => {
     expect(rustList("FLUID_ASR_REQUIRED").sort()).toEqual([...FLUID_ASR_REQUIRED].sort());
   });
 
   test("cache directory name matches", () => {
-    expect(rust).toContain(`.join("${basename(legacyFluidAsrCachePath("/tmp/home"))}")`);
+    expect(rustStr("FLUID_ASR_REPO_DIR")).toBe(basename(legacyFluidAsrCachePath("/tmp/home")));
   });
 
   // Both sides derive the relocated bundle from the cache root; a rename on one side alone
   // would point doctor at a directory the engine never writes (#688).
   test("relocated bundle path matches", () => {
-    expect(rust).toContain(`cache_dir().join("fluidaudio")`);
     expect(fluidAsrCachePath("/tmp/home", "/tmp/cache")).toBe(
-      join("/tmp/cache", "fluidaudio", "parakeet-tdt-0.6b-v3"),
+      join("/tmp/cache", rustStr("FLUIDAUDIO_ROOT_DIR"), rustStr("FLUID_ASR_REPO_DIR")),
     );
   });
 });

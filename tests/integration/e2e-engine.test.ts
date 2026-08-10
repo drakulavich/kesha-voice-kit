@@ -342,11 +342,12 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout);
     expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed[0].text.length).toBeGreaterThan(0);
-    expect(parsed[0].lang).toBeDefined();
-    expect(parsed[0].textLanguage).toBeDefined();
-    expect(parsed[0].textLanguage.code).toBeDefined();
-    expect(parsed[0].textLanguage.confidence).toBeGreaterThan(0);
+    // Backend-stable word: CoreML and ONNX disagree on "сообщения"/"сообщение" for this clip.
+    expect(parsed[0].text).toContain("транскрипцией");
+    expect(parsed[0].lang).toBe("ru");
+    expect(parsed[0].textLanguage.code).toBe("ru");
+    expect(parsed[0].textLanguage.confidence).toBeGreaterThan(0.5);
+    expect(parsed[0].textLanguage.confidence).toBeLessThanOrEqual(1);
   }, 60_000);
 
   test("kesha --json --timestamps includes transcript segments", async () => {
@@ -361,12 +362,13 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout);
     expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed[0].text.length).toBeGreaterThan(0);
+    expect(parsed[0].text).toContain("email");
     expect(Array.isArray(parsed[0].segments)).toBe(true);
     if (parsed[0].segments.length > 0) {
       expect(parsed[0].segments[0].start).toBeGreaterThanOrEqual(0);
       expect(parsed[0].segments[0].end).toBeGreaterThan(parsed[0].segments[0].start);
-      expect(parsed[0].segments[0].text.length).toBeGreaterThan(0);
+      // The segment texts must reconstruct the transcript, not merely be non-empty.
+      expect(parsed[0].segments.map((s: { text: string }) => s.text).join(" ")).toBe(parsed[0].text);
     }
   }, 60_000);
 
@@ -413,7 +415,7 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].file).toBe(FIXTURE_RU);
-    expect(parsed[0].text.length).toBeGreaterThan(0);
+    expect(parsed[0].text).toContain("транскрипцией");
   }, 60_000);
 
   test("--toon output decodes to the same shape as --json (#138)", async () => {
@@ -438,10 +440,10 @@ describe.skipIf(!engineInstalled)("e2e-lang-detection", () => {
     const { stdout, exitCode } = await runCli(["--json", FIXTURE_RU]);
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout);
-    if (parsed[0].audioLanguage) {
-      expect(parsed[0].audioLanguage.code).toBeDefined();
-      expect(parsed[0].audioLanguage.confidence).toBeGreaterThan(0);
-    }
+    // Guarding the body on `if (audioLanguage)` made the named contract a silent pass.
+    expect(parsed[0].audioLanguage.code).toBe("ru");
+    expect(parsed[0].audioLanguage.confidence).toBeGreaterThan(0);
+    expect(parsed[0].audioLanguage.confidence).toBeLessThanOrEqual(1);
   }, 60_000);
 
   test("--verbose shows audio language when detected", async () => {
