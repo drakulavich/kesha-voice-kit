@@ -104,12 +104,13 @@ output).
 - THEN stdout is a TOON document that `@toon-format/toon`'s `decode()` turns
   back into the same result array `--json` would have printed
 
-#### Scenario: JSON error reporting opt-in
+#### Scenario: Structured error reporting opt-in
 
 - GIVEN `b.ogg` is missing
-- WHEN Ira runs `kesha --json --include-errors a.ogg b.ogg`
+- WHEN Ira runs `kesha --json --include-errors a.ogg b.ogg` (or the same with
+  `--toon`)
 - THEN stdout is `{ "results": [...], "errors": [...] }` where the error record
-  for `b.ogg` carries a stable error code
+  for `b.ogg` carries a stable error code, TOON encoding the same envelope
 - AND without `--include-errors` stdout would be the plain results array
   holding only `a.ogg`
 
@@ -137,7 +138,8 @@ is the opt-in that still reports those failures on stdout.
 #### Scenario: Sona wants the failures on stdout anyway
 
 - GIVEN neither `a.ogg` nor `b.ogg` exists
-- WHEN Sona runs `kesha --json --include-errors a.ogg b.ogg`
+- WHEN Sona runs `kesha --json --include-errors a.ogg b.ogg` (or the same with
+  `--toon`)
 - THEN stdout is `{ "results": [], "errors": [...] }` with a record per file
 - AND the process exits 1
 
@@ -154,7 +156,7 @@ with a stderr message when the request is contradictory.
 
 The rejected combinations are: `--json` with `--toon`; `--format transcript`
 combined with `--json` or `--toon`; `--timestamps` or `--speakers` without
-`--json`/`--toon`; `--include-errors` without `--json`; `--vad` with
+`--json`/`--toon`; `--include-errors` without `--json`/`--toon`; `--vad` with
 `--no-vad`; an unknown `--format` value.
 
 #### Scenario: Both JSON and TOON requested

@@ -310,6 +310,12 @@ describe("CLI contracts", () => {
         stderr: ["--speakers requires --json"],
       },
       {
+        name: "include-errors requires a structured format",
+        args: ["--include-errors", "a.wav"],
+        exitCode: 2,
+        stderr: ["--include-errors requires --json"],
+      },
+      {
         name: "vad flags are mutually exclusive",
         args: ["--vad", "--no-vad", "a.wav"],
         exitCode: 2,
@@ -484,6 +490,73 @@ describe("CLI contracts", () => {
       { file: "a.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
       { file: "b.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
     ]);
+  });
+
+  test("--toon --include-errors reports an all-failed batch structurally (#839)", async () => {
+    const run = await runCli(["--toon", "--include-errors", "a.wav", "b.wav"], {
+      env: isolatedEnv(),
+    });
+
+    expectContract(run, { exitCode: 1 });
+    const { decode: decodeToon } = await import("@toon-format/toon");
+    expect(decodeToon(run.stdout)).toEqual({
+      results: [],
+      errors: [
+        { file: "a.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
+        { file: "b.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
+      ],
+    });
+  });
+
+  test("--toon --include-errors carries results and errors together on a partial failure (#839)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-toon-partial-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+    };
+
+    const run = await runCli(["--toon", "--include-errors", mediaPath, "missing.wav"], { env });
+    expectContract(run, {
+      exitCode: 1,
+      stderrContains: ["missing.wav: File not found"],
+      stdoutNotContains: ["Transcribing", "Transcribed"],
+    });
+
+    const { decode: decodeToon } = await import("@toon-format/toon");
+    const decoded = decodeToon(run.stdout) as {
+      results: Array<Record<string, unknown>>;
+      errors: Array<Record<string, unknown>>;
+    };
+    expect(decoded.results).toHaveLength(1);
+    expect(decoded.results[0].file).toBe(mediaPath);
+    expect(decoded.errors).toEqual([
+      { file: "missing.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
+    ]);
+  });
+
+  test("--toon --include-errors keeps the envelope when nothing failed (#839)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-toon-envelope-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+    };
+
+    const run = await runCli(["--toon", "--include-errors", mediaPath], { env });
+    expectContract(run, { exitCode: 0 });
+
+    const { decode: decodeToon } = await import("@toon-format/toon");
+    const decoded = decodeToon(run.stdout) as {
+      results: Array<Record<string, unknown>>;
+      errors: Array<Record<string, unknown>>;
+    };
+    expect(decoded.results).toHaveLength(1);
+    expect(decoded.errors).toEqual([]);
   });
 
   test("a partial failure still prints the results array for the files that succeeded", async () => {

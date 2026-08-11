@@ -156,7 +156,7 @@ All of these install the Bun CLI wrapper; engine + models still download explici
 - [Product positioning](docs/product-positioning.md) — supported workflows, non-goals, maturity labels, platform matrix.
 - [Changelog](CHANGELOG.md) — every release, with the behaviour changes spelled out.
 - **Diagnostics:** `kesha doctor`, `kesha support-bundle` (redacted `.tar.gz` for issues), and `kesha logs` produce local, content-free diagnostics — see [docs/diagnostic-logs.md](docs/diagnostic-logs.md). Every failure prints a stable `error [CODE]: …` line and a documented [process exit code](docs/errors.md#process-exit-codes).
-- **Scripting & CI:** `--json` (or `--toon`) for machine-readable output, `--json --include-errors` to get per-file failures on stdout alongside the results, `--quiet`/`-q` to silence progress, and `--no-color` (or `NO_COLOR=1`) for plain logs. Colors switch off automatically when `CI=true`.
+- **Scripting & CI:** `--json` (or `--toon`) for machine-readable output, `--include-errors` (with either) to get per-file failures on stdout alongside the results, `--quiet`/`-q` to silence progress, and `--no-color` (or `NO_COLOR=1`) for plain logs. Colors switch off automatically when `CI=true`.
 - **Privacy / Local Stats:** Stats are **off by default** and fully local. Opt in with `kesha stats enable` to record content-free operational metrics in a local SQLite database — never networked, never storing audio, transcripts, text, or paths. Full commands & lifecycle: [docs/local-stats.md](docs/local-stats.md).
 
 ## Contributing
