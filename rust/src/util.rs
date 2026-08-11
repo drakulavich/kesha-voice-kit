@@ -3,7 +3,7 @@
 /// Index of the largest f32 in a slice. Ties pick the lowest index.
 ///
 /// Only the ONNX ASR backend (`backend::onnx`, Parakeet TDT) uses this today;
-/// the ByT5 G2P consumer was removed in #213. The gate mirrors that module's
+/// the ByT5 G2P consumer was removed in #214. The gate mirrors that module's
 /// own `#[cfg(all(feature = "onnx", not(feature = "coreml")))]` in
 /// `backend/mod.rs` exactly: with both `onnx` and `coreml` enabled the ONNX
 /// backend is cfg'd out, so gating on `onnx` alone would compile `argmax` with

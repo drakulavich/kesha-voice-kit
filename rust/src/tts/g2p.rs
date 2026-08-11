@@ -1,6 +1,6 @@
 //! Grapheme-to-phoneme dispatch.
 //!
-//! Post #213: English uses our G2P (misaki-rs embedded lexicon + POS).
+//! Post #211: English uses our G2P (misaki-rs embedded lexicon + POS).
 //! Russian routes through Vosk's internal G2P inside `tts::vosk`.
 //! Romance languages (es/fr/it/pt) route through CharsiuG2P (ONNX ByT5-tiny)
 //! after text normalisation (#212).

@@ -60,7 +60,7 @@ issue/PR that drove it). Newest concerns first within each section.
   `macos-*` → an AVSpeech Swift sidecar (zero model download).
 - **Rationale:** best-in-class small models per language plus a zero-install OS option
   on macOS. Prefix routing keeps the selection explicit and testable.
-- **Status:** active ([#141] AVSpeech sidecar, [#213] Vosk-TTS).
+- **Status:** active ([#141] AVSpeech sidecar, [#214] Vosk-TTS).
 
 ### Default voices must be male
 - **Decision:** every language's default voice is male (`en-am_michael`,
@@ -159,7 +159,6 @@ issue/PR that drove it). Newest concerns first within each section.
 [#207]: https://github.com/drakulavich/kesha-voice-kit/issues/207
 [#210]: https://github.com/drakulavich/kesha-voice-kit/issues/210
 [#211]: https://github.com/drakulavich/kesha-voice-kit/pull/211
-[#213]: https://github.com/drakulavich/kesha-voice-kit/issues/213
 [#214]: https://github.com/drakulavich/kesha-voice-kit/pull/214
 [#223]: https://github.com/drakulavich/kesha-voice-kit/issues/223
 [#242]: https://github.com/drakulavich/kesha-voice-kit/issues/242

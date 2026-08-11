@@ -150,7 +150,7 @@ fn resolves_from_cache_when_installed() {
         eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
         return;
     };
-    // misaki-rs is embedded — no G2P model cache required post-#213.
+    // misaki-rs is embedded — no G2P model cache required post-#211.
     let tmp = tempfile::tempdir().unwrap();
     let voices_dir = tmp.path().join("models/kokoro-82m/voices");
     std::fs::create_dir_all(&voices_dir).unwrap();

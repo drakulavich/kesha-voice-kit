@@ -26,7 +26,7 @@ Output format: WAV (default, mono float32 — 24 kHz for Kokoro, 22.05 kHz for V
 ```bash
 kesha install --tts              # English only (~326 MB on Linux/Windows; on macOS FluidAudio fetches its own models during warm-up)
 kesha install --tts en ru        # English + Russian (~326 MB + ~890 MB)
-kesha install --tts es fr it pt  # Romance languages (shared ~30 MB CharsiuG2P ONNX pack + voice files)
+kesha install --tts es fr it pt  # Romance languages (shared ~100 MB CharsiuG2P ONNX pack + voice files)
 ```
 
 **Platform availability:**

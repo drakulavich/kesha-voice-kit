@@ -15,9 +15,9 @@
     { "relPath": "models/silero-vad/silero_vad.onnx", "sizeBytes": 2327524 }
   ],
   "g2pCharsiu": [
-    { "relPath": "models/g2p/byt5-tiny/encoder_model.onnx", "sizeBytes": 12478704 },
-    { "relPath": "models/g2p/byt5-tiny/decoder_model.onnx", "sizeBytes": 11983268 },
-    { "relPath": "models/g2p/byt5-tiny/decoder_with_past_model.onnx", "sizeBytes": 5427260 }
+    { "relPath": "models/g2p/byt5-tiny/encoder_model.onnx", "sizeBytes": 57234020 },
+    { "relPath": "models/g2p/byt5-tiny/decoder_model.onnx", "sizeBytes": 26118052 },
+    { "relPath": "models/g2p/byt5-tiny/decoder_with_past_model.onnx", "sizeBytes": 22960684 }
   ],
   "kokoroGraph": { "relPath": "models/kokoro-82m/model.onnx", "sizeBytes": 325532387 },
   "kokoroVoices": {
