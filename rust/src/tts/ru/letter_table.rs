@@ -11,6 +11,8 @@
 //! (e.g. США → "сэ шэ а", ФСБ → "эф эс бэ", ЕС → "е эс").
 //! Some tokens use whole-acronym forms because Vosk pronounces those chunks
 //! more naturally than naive per-character expansion (АЭС, ЦСКА).
+//! Digits carry their number names so `<say-as characters>405</say-as>` reads
+//! «четыре ноль пять» rather than reaching Vosk's G2P and vanishing (#891).
 
 const LETTERS: &[(char, &str)] = &[
     ('а', "а"),
@@ -46,6 +48,16 @@ const LETTERS: &[(char, &str)] = &[
     ('э', "э"),
     ('ю', "ю"),
     ('я', "я"),
+    ('0', "ноль"),
+    ('1', "один"),
+    ('2', "два"),
+    ('3', "три"),
+    ('4', "четыре"),
+    ('5', "пять"),
+    ('6', "шесть"),
+    ('7', "семь"),
+    ('8', "восемь"),
+    ('9', "девять"),
 ];
 
 /// Expand `input` to space-separated Russian letter names.
@@ -149,13 +161,20 @@ mod tests {
     fn non_cyrillic_passes_through() {
         // The matcher (T4) won't pass non-Cyrillic to us; this is a sanity guard
         // for explicit <say-as> with mixed input.
-        assert_eq!(expand_chars("AБ1"), "A бэ 1");
+        assert_eq!(expand_chars("AБ1"), "A бэ один");
     }
 
     #[test]
     fn pure_non_cyrillic_passes_through_without_leading_space() {
         assert_eq!(expand_chars("---"), "---");
-        assert_eq!(expand_chars("123"), "123");
+    }
+
+    #[test]
+    fn digits_are_read_out_one_by_one() {
+        // Was a passthrough until #891: raw digits reach Vosk's G2P and are
+        // dropped, so <say-as characters>405</say-as> used to fall silent.
+        assert_eq!(expand_chars("123"), "один два три");
+        assert_eq!(expand_chars("405"), "четыре ноль пять");
     }
 
     #[test]

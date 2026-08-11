@@ -1,21 +1,35 @@
 //! Russian-specific text normalization for the Vosk-TTS path.
 //!
-//! Two responsibilities — both pure text-in / text-out:
+//! Three responsibilities — all pure text-in / text-out:
 //! - `letter_table::expand_chars` — letter-by-letter spelling for `<say-as interpret-as="characters">`.
 //! - `acronym::expand_acronyms` — auto-detect all-uppercase Cyrillic acronyms in plain text.
+//! - `numbers::verbalize` — digits to words, which Vosk's G2P cannot do itself (#891).
 //!
 //! `normalize_segments` routes [`crate::tts::ssml::Segment`] values through the appropriate primitive.
 
 pub(super) mod acronym;
 pub(super) mod letter_table;
+pub(super) mod numbers;
+
+use std::borrow::Cow;
 
 use crate::tts::ssml::Segment;
 
-/// Auto-expand all-uppercase Cyrillic acronyms in plain text. Used by the
-/// non-SSML Vosk path; the SSML path goes through `normalize_segments`
-/// instead so it can also handle `Segment::Spell`.
-pub fn expand_text(text: &str) -> String {
-    acronym::expand_acronyms(text)
+/// Normalize plain text for Vosk: numbers always become words, acronyms are
+/// spelled out only when `expand_abbrev` is set. Used by the non-SSML path;
+/// the SSML path goes through `normalize_segments` instead so it can also
+/// handle `Segment::Spell`.
+///
+/// Digits are not an abbreviation feature — `--no-expand-abbrev` suppresses
+/// letter-spelling, never number verbalization, because raw digits reach
+/// Vosk's G2P and are dropped in silence (#891).
+pub fn expand_text(text: &str, expand_abbrev: bool) -> String {
+    let expanded: Cow<'_, str> = if expand_abbrev {
+        Cow::Owned(acronym::expand_acronyms(text))
+    } else {
+        Cow::Borrowed(text)
+    };
+    numbers::verbalize(&expanded)
 }
 
 /// Normalize a segment list for the Russian Vosk path.
@@ -54,7 +68,18 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
             },
             other => other,
         })
+        .map(verbalize_numbers)
         .collect()
+}
+
+/// Runs after the per-variant arms so no `Text` escapes with digits in it,
+/// whichever arm produced it (#891). `Spell` has already read its digits out
+/// one by one via the letter table, so this only ever sees prose numbers.
+fn verbalize_numbers(seg: Segment) -> Segment {
+    match seg {
+        Segment::Text(t) => Segment::Text(numbers::verbalize(&t)),
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -66,7 +91,11 @@ mod tests {
     fn plain_text_path_verbalizes_digits() {
         // #891: bare digits reach Vosk's G2P and are silently dropped —
         // `kesha say "Кабинет 405."` speaks "Кабинет".
-        assert_eq!(expand_text("Кабинет 405."), "Кабинет четыреста пять.");
+        assert_eq!(expand_text("Кабинет 405.", true), "Кабинет четыреста пять.");
+        assert_eq!(
+            expand_text("Кабинет 405.", false),
+            "Кабинет четыреста пять."
+        );
     }
 
     #[test]
@@ -74,7 +103,58 @@ mod tests {
         // Number verbalization is not an abbreviation feature: --no-expand-abbrev
         // suppresses acronym spelling, never digits (#891).
         let out = normalize_segments(vec![Segment::Text("Кабинет 405.".to_string())], false);
-        assert_eq!(out, vec![Segment::Text("Кабинет четыреста пять.".to_string())]);
+        assert_eq!(
+            out,
+            vec![Segment::Text("Кабинет четыреста пять.".to_string())]
+        );
+    }
+
+    #[test]
+    fn spelled_digits_are_not_re_read_as_a_cardinal() {
+        // <say-as characters>405</say-as> asked for digit-by-digit; the
+        // number pass must find nothing left to do (#891).
+        let out = normalize_segments(vec![Segment::Spell("405".to_string())], false);
+        assert_eq!(out, vec![Segment::Text("четыре ноль пять".to_string())]);
+    }
+
+    #[test]
+    fn acronyms_and_numbers_compose_in_one_pass() {
+        // The two rewrites read disjoint token shapes, so neither can eat the
+        // other's input — but «МФЦ 405» is the case that proves it.
+        assert_eq!(expand_text("МФЦ 405", true), "эм эф цэ четыреста пять");
+        assert_eq!(expand_text("МФЦ 405", false), "МФЦ четыреста пять");
+        // A `+` stress marker is not a digit run and must survive untouched.
+        assert_eq!(expand_text("д+ома 405", false), "д+ома четыреста пять");
+    }
+
+    #[test]
+    fn emphasis_content_is_verbalized_like_any_other_text() {
+        let out = normalize_segments(
+            vec![Segment::Emphasis {
+                content: "405".to_string(),
+                suppress: true,
+            }],
+            false,
+        );
+        assert_eq!(out, vec![Segment::Text("четыреста пять".to_string())]);
+    }
+
+    #[test]
+    fn prosody_rate_recurses_number_verbalization_inside() {
+        let out = normalize_segments(
+            vec![Segment::ProsodyRate {
+                rate: 0.75,
+                content: vec![Segment::Text("кабинет 405".to_string())],
+            }],
+            false,
+        );
+        assert_eq!(
+            out,
+            vec![Segment::ProsodyRate {
+                rate: 0.75,
+                content: vec![Segment::Text("кабинет четыреста пять".to_string())],
+            }]
+        );
     }
 
     #[test]

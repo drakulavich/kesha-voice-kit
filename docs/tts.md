@@ -130,6 +130,19 @@ The rule fires when the token is length ≤ 2 (`ИП` → "и пэ"), has 0 vowe
 
 Opt-out per call with `--no-expand-abbrev`. `<say-as interpret-as="characters">…</say-as>` always wins. Engine reports `tts.ru_acronym_expansion: true`. Closes [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
 
+## Russian numbers
+
+Vosk's G2P has no reading for digits — it drops them without a sound, so `Кабинет 405.` used to be spoken as `Кабинет.` For `ru-vosk-*` voices every number is now rewritten to words before synthesis:
+
+```bash
+kesha say --voice ru-vosk-m02 'Встреча 25 декабря 2026 года, в 14:30, кабинет 405.'
+# audible: "…двадцать пятого декабря две тысячи двадцать шестого года, в четырнадцать тридцать, кабинет четыреста пять"
+```
+
+Russian numerals decline, and the engine only claims the cases it can read off the neighbouring word: a day before a genitive month (`25 декабря` → «двадцать пятого»), a year before `год`/`года`/`году` (`2026 года` → «две тысячи двадцать шестого»), and `HH:MM` clock times. Everything else is a nominative cardinal, so `в 405 кабинете` is spoken «в четыреста пять кабинете» — the wrong case, but audible. Decimals and ranges read their digit groups separately (`3,5` → «три,пять», `10-15` → «десять-пятнадцать»), runs of ten digits or more read digit-by-digit (phone numbers, ids), and `<say-as interpret-as="characters">405</say-as>` reads «четыре ноль пять».
+
+This is not an abbreviation feature: `--no-expand-abbrev` suppresses letter-spelling only, never number verbalization. Closes [#891](https://github.com/drakulavich/kesha-voice-kit/issues/891).
+
 ## Russian word stress (`<emphasis>`)
 
 For `ru-vosk-*` voices, `<emphasis>` lets you place the stress on a specific vowel by prepending `+` to it. Vosk-TTS honors the marker as a stress hint when it shifts stress AWAY from the model's default first-syllable behavior:
