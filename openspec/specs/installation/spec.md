@@ -302,6 +302,11 @@ additive and idempotent: an asset already present and matching its Pinned hash
 is not downloaded again. Russian is unaffected — Vosk-TTS installs into the
 Model cache on every platform.
 
+One asset group is deliberately excluded: the Mandarin jieba HMM tables, which
+upstream never published. Segmentation falls back to FMM without them, so their
+absence degrades quality rather than blocking synthesis, and the pre-synthesis
+asset check SHALL NOT require them.
+
 #### Scenario: Maks installs Mandarin TTS on Apple Silicon
 
 - GIVEN the machine is darwin-arm64
@@ -338,10 +343,12 @@ Model cache on every platform.
 > pinned because `G2PModel.shared` resolves it itself (fluidaudio-rs 4e488d7,
 > still true at upstream 0.15.5). `ANE_ZH_FILES` carries `g2pw/g2pw.mlmodelc`
 > because upstream's `requiredModelsZh` checks the whole set before loading
-> anything, even though the disambiguator cannot activate at this pin; the
-> jieba HMM tables are deliberately not staged and segmentation falls back to
-> FMM. `--plan` and `kesha doctor` render these sets from
-> `src/kokoro-ane.ts::kokoroAneComponents` (#823, #828, #831).*
+> anything, even though the disambiguator cannot activate at this pin.
+> `--plan` and `kesha doctor` preview only the English ANE chain and the
+> shared G2P set, via `src/kokoro-ane.ts::kokoroAneComponents`; the Mandarin
+> bundle is excluded there on purpose, since `--tts zh` is a separate opt-in
+> and its bytes already appear under the cache report's Kokoro ANE root
+> (#823, #828, #831).*
 
 ### Requirement: VAD and Diarize install are separate opt-in flags
 

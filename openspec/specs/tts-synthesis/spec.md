@@ -225,8 +225,9 @@ the first few missing paths so the gap is identifiable, and the refusal exits 4
   and hints `kesha install --tts zh`
 - AND the process exits 4 without downloading anything
 
-> *Technical Note — model presence gates: `rust/src/tts/voices.rs:192-204`
-> (ONNX Kokoro), `:307-313` (Vosk). `macos-*` voices need no model download.
+> *Technical Note — model presence gates:
+> `rust/src/tts/voices.rs::build_kokoro_voice` (ONNX Kokoro) and
+> `::resolve_vosk_ru` (Vosk). `macos-*` voices need no model download.
 > The darwin-arm64 pre-check is `rust/src/models.rs::missing_kokoro_assets`,
 > called from `tts/fluid_kokoro.rs::with_kokoro` alongside
 > `fluidaudio_rs::set_offline_mode(true)` — two defences because neither covers
@@ -561,11 +562,19 @@ still exit 0.
 
 ### Requirement: Exit codes distinguish failure classes
 
-`kesha say` SHALL exit 0 on success, 1 when the voice is unknown or its model
-is not installed, 2 for invalid input (bad flags, empty text, malformed
-flag combinations), 4 for synthesis/SSML/internal failures, and 5 when the
-text exceeds the length limit. The CLI SHALL propagate the Engine's exit code
-unchanged (`SayError.exitCode`); CLI-side pre-checks use the same map.
+`kesha say` SHALL exit 0 on success, 1 when voice resolution rejects the
+request, 2 for invalid input (bad flags, empty text, malformed flag
+combinations), 4 for synthesis-time failures, and 5 when the text exceeds the
+length limit. The CLI SHALL propagate the Engine's exit code unchanged
+(`SayError.exitCode`); CLI-side pre-checks use the same map.
+
+Exit 1 SHALL cover the checks that run while the Voice id is resolved: an
+unknown voice, and a model absent from the Model cache on the paths the cache
+gates (ONNX Kokoro, Vosk). Exit 4 SHALL cover every coded failure raised once
+resolution has succeeded, including the darwin-arm64 FluidAudio asset
+pre-check, which reports `E_MODEL_MISSING` from synthesis rather than from
+resolution. The Error code says what went wrong and the exit code says how far
+the run got, so the same `E_MODEL_MISSING` legitimately appears with either.
 
 #### Scenario: Exit-code contract in a script
 
@@ -580,15 +589,17 @@ unchanged (`SayError.exitCode`); CLI-side pre-checks use the same map.
 - THEN the CLI reports the stderr text and exits with the Engine's nonzero
   code, or 4 for non-SayError internal failures
 
-> *Technical Note — Engine map: `rust/src/cli/say.rs:132-138`
-> (`exit_code_for_tts_err`: `EmptyText` → 2, `TextTooLong` → 5,
-> `SynthesisFailed`/`Coded` → 4); voice resolution failures return 1 directly
-> (`rust/src/cli/say.rs:228-235`); format/flag errors return 2
-> (`:169-183`, `:220-226`). CLI side: `SayError` carries the Engine exit code
-> (`src/cli/say.ts:289-292`); pre-flight checks exit 2
-> (`src/cli/say.ts:62-101,204-207`) and 5 (`src/synth.ts:117-125`).
-> `E_SSML_INVALID`, `E_SSML_UNSUPPORTED`, and `E_SCRIPT_UNSUPPORTED` all
-> surface as `Coded` → exit 4.*
+> *Technical Note — Engine map: `rust/src/cli/say.rs::exit_code_for_tts_err`
+> (`EmptyText` → 2, `TextTooLong` → 5, `SynthesisFailed`/`Coded` → 4). Voice
+> resolution failures return 1 from `cli/say.rs::resolve_voice`, which is where
+> the `ModelMissing` bails in `tts/voices.rs::build_kokoro_voice` (ONNX Kokoro)
+> and `::resolve_vosk_ru` surface; `--model`/`--voice-file` and output-format
+> errors return 2 from `resolve_voice` and `cli/say.rs::run`.
+> `E_SSML_INVALID`, `E_SSML_UNSUPPORTED`, `E_SCRIPT_UNSUPPORTED`, and the
+> darwin-arm64 late `E_MODEL_MISSING` from `models::missing_kokoro_assets` all
+> reach the caller as `TtsError::Coded` → exit 4. CLI side: `SayError` carries
+> the Engine exit code, and `src/synth.ts::say` pre-checks empty text (2) and
+> the length limit (5).*
 
 ## Open Issues
 
