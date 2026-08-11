@@ -35,7 +35,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
     );
   });
 
-  it("falls back to ru-vosk-m02 for Russian on non-darwin (Vosk replaces Piper-ruslan, #213)", () => {
+  it("falls back to ru-vosk-m02 for Russian on non-darwin (Vosk replaces Piper-ruslan, #214)", () => {
     expect(pickVoiceForLang("ru", 0.95, "linux")).toBe("ru-vosk-m02");
     expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-vosk-m02");
   });

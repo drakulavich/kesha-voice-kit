@@ -310,7 +310,7 @@ fn multilang_voice(lang: &str) -> Option<ModelFile> {
 /// language is selected; G2P only if a multilingual lang (es/fr/it/pt) is
 /// selected; per-language voices added individually.
 ///
-/// An English-only install skips the ~30 MB CharsiuG2P pack and a Russian-only
+/// An English-only install skips the ~100 MB CharsiuG2P pack and a Russian-only
 /// install skips Kokoro entirely. Consumed by [`download_tts`].
 #[cfg(all(
     feature = "tts",
@@ -1649,7 +1649,7 @@ pub const VOSK_RU_FILES: &[ModelFile] = &[
     // removed: README.md (drakulavich/vosk-tts-ru-0.9-multi) — not opened at
     // runtime; pinning its SHA forced a manifest bump on every upstream
     // doc copy-edit. CharsiuG2P entries (3 byt5-tiny ONNX) were also
-    // removed in PR #213 — Russian uses vosk-tts internal G2P now.
+    // removed in PR #214 — Russian uses vosk-tts internal G2P now.
 ];
 
 pub fn cache_dir() -> PathBuf {

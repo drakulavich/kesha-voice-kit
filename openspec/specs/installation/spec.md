@@ -273,7 +273,7 @@ already installed leaves English in place.
 
 > *Technical Note — sources: `src/cli/install.ts::resolveTtsLangs`,
 > `src/install-plan.ts` (KOKORO_GRAPH_FILE ~325 MB, per-language KOKORO_VOICE_FILES
-> ~522 KB each, VOSK_RU_FILES ~937 MB total, G2P_CHARSIU_FILES ~30 MB for es/fr/it/pt
+> ~522 KB each, VOSK_RU_FILES ~937 MB total, G2P_CHARSIU_FILES ~100 MB for es/fr/it/pt
 > on ONNX). Supported language list comes from `getEngineCapabilities()` when the
 > Engine is already installed; when it is not, `src/cli/install.ts::installableTtsLangs`
 > supplies the platform's static set — `["en", "es", "fr", "it", "pt", "ru"]` plus
