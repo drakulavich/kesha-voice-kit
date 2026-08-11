@@ -2068,7 +2068,7 @@ mod manifest_tests {
     #[test]
     fn write_verified_places_good_bytes_at_target() -> Result<()> {
         let target = write_verified_target("ok.bin");
-        write_verified(&mut &b"hello world"[..], &target, "ok.bin", HELLO_SHA)?;
+        write_verified(&mut &b"hello world"[..], &target, "ok.bin", HELLO_SHA, None)?;
         assert_eq!(fs::read(&target)?, b"hello world");
         let _ = fs::remove_file(&target);
         Ok(())
@@ -2080,7 +2080,13 @@ mod manifest_tests {
     fn write_verified_replaces_existing_target() -> Result<()> {
         let target = write_verified_target("replace.bin");
         fs::write(&target, b"previous verified weights")?;
-        write_verified(&mut &b"hello world"[..], &target, "replace.bin", HELLO_SHA)?;
+        write_verified(
+            &mut &b"hello world"[..],
+            &target,
+            "replace.bin",
+            HELLO_SHA,
+            None,
+        )?;
         assert_eq!(fs::read(&target)?, b"hello world");
         assert!(!staging_path(&target).exists());
         let _ = fs::remove_file(&target);
@@ -2095,6 +2101,7 @@ mod manifest_tests {
             &target,
             "mismatch.bin",
             HELLO_SHA,
+            None,
         )
         .expect_err("wrong hash must fail");
         assert!(err.to_string().contains("sha256 mismatch"), "{err}");
@@ -2111,6 +2118,7 @@ mod manifest_tests {
             &target,
             "refresh.bin",
             HELLO_SHA,
+            None,
         )
         .expect_err("mid-stream read error must fail");
         assert!(err.to_string().contains("refresh.bin"), "{err}");
@@ -3035,6 +3043,9 @@ fn download_with_retries(url: &str, f: &ModelFile, target: &Path) -> Result<()> 
                 attempt += 1;
             }
             Err(fail) => {
+                // The budget is spent, and the pid suffix means no later
+                // process could claim this prefix anyway (#889).
+                let _ = fs::remove_file(staging_path(target));
                 return Err(fail
                     .err
                     .context(format!("{} failed after {attempt} attempt(s)", f.rel_path)));
@@ -3086,24 +3097,40 @@ fn download_attempt(
     let _in_flight = InFlight::new();
     with_stderr(|| eprintln!("GET {}", f.rel_path));
 
+    // Whatever an earlier attempt managed to stage is the prefix this one
+    // resumes from (#889).
+    let part = staging_path(target);
+    let staged = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+
     // Status is inspected here rather than raised by ureq so a 429's
     // `Retry-After` header survives into the backoff decision (#724).
     //
     // ureq ships no timeouts by default, so without these a host that accepts
-    // the connection and then goes quiet hangs the install forever. The body is
-    // deliberately left unbounded: the 2.4GB encoder legitimately streams for
-    // hours on a slow link, and a deadline loose enough to survive that would
-    // not catch a stall anyway.
-    let response = match ureq::get(url)
+    // the connection and then goes quiet hangs the install forever. Measured on
+    // ureq 3.3 (#889): `timeout_recv_response` is anchored at headers-received
+    // and `RecvBody` inherits it, so it caps the *whole body* at 30s per
+    // attempt rather than detecting a stall. `timeout_recv_body` stays unset
+    // because ureq takes the minimum of the two — setting it can only tighten
+    // that cap, never lift it. Range-resume is what makes the cap survivable:
+    // every attempt keeps the bytes it did receive.
+    //
+    // `identity` because a `Range` addresses the encoded representation: mixing
+    // a decompressed prefix with an encoded remainder would corrupt the
+    // assembly, and ureq strips `content-encoding` after decoding so the
+    // response cannot be inspected for it afterwards.
+    let mut request = ureq::get(url)
         .config()
         .http_status_as_error(false)
+        .accept_encoding("identity")
         .timeout_resolve(Some(Duration::from_secs(10)))
         .timeout_connect(Some(Duration::from_secs(10)))
         .timeout_send_request(Some(Duration::from_secs(10)))
         .timeout_recv_response(Some(Duration::from_secs(30)))
-        .build()
-        .call()
-    {
+        .build();
+    if staged > 0 {
+        request = request.header("range", format!("bytes={staged}-"));
+    }
+    let response = match request.call() {
         Ok(response) => response,
         Err(e) => {
             return Err(AttemptFailure {
@@ -3116,6 +3143,17 @@ fn download_attempt(
     };
 
     let status = response.status().as_u16();
+    // The partial outgrew the artifact — an upstream rehost, or a download that
+    // finished but never got renamed. Neither is a resume point.
+    if staged > 0 && status == 416 {
+        let _ = fs::remove_file(&part);
+        return Err(AttemptFailure {
+            err: model_download_error(format!("GET {url} ({}): HTTP {status}", f.rel_path)),
+            reason: "stale partial discarded".to_string(),
+            retry_after: None,
+            max_attempts: MAX_DOWNLOAD_ATTEMPTS,
+        });
+    }
     if !response.status().is_success() {
         let retry_after = response
             .headers()
@@ -3134,6 +3172,10 @@ fn download_attempt(
         });
     }
 
+    // A server is free to ignore `Range` and answer 200 with the whole body;
+    // appending that onto a partial would corrupt the assembly.
+    let resume = if status == 206 { staged } else { 0 };
+
     // Not the raw header — that one reports the compressed size when decompression is active.
     let total = response.body().content_length().unwrap_or(0);
     let mut reader = TrackedStream {
@@ -3142,11 +3184,18 @@ fn download_attempt(
     };
     let streamed = if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
         let mut reader = ProgressReader::new(&mut reader, total);
-        write_verified(&mut reader, target, f.rel_path, f.sha256)
+        write_verified(&mut reader, target, f.rel_path, f.sha256, Some(resume))
     } else {
-        write_verified(&mut reader, target, f.rel_path, f.sha256)
+        write_verified(&mut reader, target, f.rel_path, f.sha256, Some(resume))
     };
-    streamed.map_err(|err| stream_failure(err, reader.read_failed))
+    streamed.map_err(|err| {
+        // Only a stalled body leaves a prefix the next attempt can resume from;
+        // a hash mismatch above all must not survive to be appended to (#174).
+        if !reader.read_failed {
+            let _ = fs::remove_file(&part);
+        }
+        stream_failure(err, reader.read_failed)
+    })
 }
 
 /// Classifies a failed `write_verified`. A truncated stream deserves another go;
@@ -3345,24 +3394,36 @@ impl<R> Drop for ProgressReader<R> {
 }
 
 /// Stream `reader` into `target` atomically: bytes land in a per-process
-/// `.part.<pid>` sibling, the hash is checked there, and only a verified file
-/// is renamed into place. An interrupted or corrupt download therefore never
-/// leaves bytes at `target` for the existence-only cache probes to resurrect
-/// later (#174), and a failure never disturbs an existing `target` (a
-/// concurrent installer's verified rename, or the pre-refresh copy under
-/// `--no-cache`). The pid suffix keeps two concurrent installers off each
-/// other's staging file; whichever verified rename lands last wins.
+/// `.part.<pid>` sibling, the hash is checked over that whole assembled file,
+/// and only a verified file is renamed into place. An interrupted or corrupt
+/// download therefore never leaves bytes at `target` for the existence-only
+/// cache probes to resurrect later (#174), and a failure never disturbs an
+/// existing `target` (a concurrent installer's verified rename, or the
+/// pre-refresh copy under `--no-cache`). The pid suffix keeps two concurrent
+/// installers off each other's staging file; whichever verified rename lands
+/// last wins.
+///
+/// `resume` says who owns the staging file on failure: `Some(n)` appends after
+/// `n` bytes already staged (`Some(0)` truncates) and leaves whatever landed
+/// for the caller to resume from with `Range`; `None` writes fresh and clears
+/// the staging file itself (#889).
 fn write_verified<R: io::Read>(
     reader: &mut R,
     target: &Path,
     rel_path: &str,
     expected_sha: &str,
+    resume: Option<u64>,
 ) -> Result<()> {
     let part = staging_path(target);
 
     let result = (|| -> Result<()> {
-        let mut out =
-            fs::File::create(&part).with_context(|| format!("create {}", part.display()))?;
+        let mut out = match resume {
+            Some(n) if n > 0 => fs::OpenOptions::new()
+                .append(true)
+                .open(&part)
+                .with_context(|| format!("append {}", part.display()))?,
+            _ => fs::File::create(&part).with_context(|| format!("create {}", part.display()))?,
+        };
         io::copy(reader, &mut out)
             .with_context(|| format!("download {rel_path}"))
             .coded(ErrorCode::ModelDownload)?;
@@ -3387,7 +3448,7 @@ fn write_verified<R: io::Read>(
         fs::rename(&part, target).with_context(|| format!("rename {}", target.display()))
     })();
 
-    if result.is_err() {
+    if result.is_err() && resume.is_none() {
         // Best-effort: drop this process's staging file only — `target` is
         // either absent or a file another writer legitimately owns.
         let _ = fs::remove_file(&part);
