@@ -32,6 +32,9 @@ export async function probeExecutable(
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
+      // Nothing this probe runs reads a `KESHA_*` today; it is passed so every engine spawn
+      // resolves env the same way and the #874/#876 class cannot come back here (#876).
+      env: process.env,
     });
   } catch (err) {
     return { status: "unusable", detail: errorMessage(err) };

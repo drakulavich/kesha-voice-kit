@@ -41,11 +41,11 @@ function shQuote(value: string): string {
 /**
  * A shell stub answering the three things `installEngine` asks of a real engine:
  * `--capabilities-json`, `install`, and `say` (the Kokoro warmup). Each invocation appends
- * its argv to `argvLog`, so a test can state what the engine was asked to do.
+ * its argv to `argvLog` and the cache dir it was handed to `envLog`, so a test can state
+ * both what the engine was asked to do and which cache it would have acted on.
  *
- * The log path is baked into the script rather than read from the environment: Bun.spawn
- * snapshots the environment at process start, so a `process.env` key set inside a test never
- * reaches the child.
+ * Both log paths are baked into the script rather than read from the environment, so the
+ * stub never depends on the env-forwarding it is used to verify (#876).
  */
 function engineScript({ caps = PLAIN_CAPS, installExit = 0, sayExit = 0 }: EngineStub = {}): string {
   const capsCase = caps
@@ -54,6 +54,7 @@ function engineScript({ caps = PLAIN_CAPS, installExit = 0, sayExit = 0 }: Engin
   return (
     `#!/bin/sh\n` +
     `echo "$*" >> ${shQuote(argvLog)}\n` +
+    `echo "$1 KESHA_CACHE_DIR=\${KESHA_CACHE_DIR:-UNSET}" >> ${shQuote(envLog)}\n` +
     `case "$1" in\n` +
     capsCase +
     `  install) exit ${installExit} ;;\n` +
@@ -67,6 +68,7 @@ const savedFetch = globalThis.fetch;
 const tempDirs: string[] = [];
 let releaseCacheIsolation: () => void = () => {};
 let argvLog = "";
+let envLog = "";
 
 const posixTest = process.platform === "win32" ? test.skip : test;
 /** The Kokoro warmup and the sidecars only ever run on darwin-arm64. */
@@ -77,6 +79,7 @@ beforeEach(() => {
   const dir = mkdtempSync(join(tmpdir(), "kesha-argv-log-"));
   tempDirs.push(dir);
   argvLog = join(dir, "argv.log");
+  envLog = join(dir, "env.log");
 });
 
 afterEach(() => {
@@ -96,6 +99,12 @@ afterEach(() => {
 function engineInvocations(): string[] {
   if (!existsSync(argvLog)) return [];
   return readFileSync(argvLog, "utf8").split("\n").filter(Boolean);
+}
+
+/** The cache dir each stub invocation was actually handed, as `<subcommand> KESHA_CACHE_DIR=<value>`. */
+function engineCacheSightings(): string[] {
+  if (!existsSync(envLog)) return [];
+  return readFileSync(envLog, "utf8").split("\n").filter(Boolean);
 }
 
 /** Stages a cache-valid install: right version, runnable engine, healthy sidecars. */
@@ -181,6 +190,20 @@ describe("an install only ever writes where it was pointed (#796)", () => {
     ).not.toThrow();
   });
 
+  // The half the binary-path check could not see: isolating only KESHA_ENGINE_BIN satisfied
+  // the guard while `kesha-engine install` still wrote models to the real cache (#876).
+  posixTest("an isolated binary with a real model cache is refused too", () => {
+    const saved = process.env.KESHA_CACHE_DIR;
+    delete process.env.KESHA_CACHE_DIR;
+    try {
+      const isolatedBin = join(tmpdir(), "kesha-isolated-bin", "kesha-engine");
+      expect(() => assertNotRealCacheUnderTest(isolatedBin)).toThrow(/download models into/);
+    } finally {
+      if (saved === undefined) delete process.env.KESHA_CACHE_DIR;
+      else process.env.KESHA_CACHE_DIR = saved;
+    }
+  });
+
   // The guard must not cost a real user their install: outside `bun test` it is inert, even
   // for the very path it refuses under one.
   posixTest("outside a test run the real cache is allowed", () => {
@@ -193,6 +216,36 @@ describe("an install only ever writes where it was pointed (#796)", () => {
       else process.env.NODE_ENV = saved;
     }
   });
+});
+
+/**
+ * `Bun.spawnSync`/`Bun.spawn` snapshot the environment at process start unless an `env` is
+ * passed, and `kesha-engine install` is the child that decides where multi-GB model
+ * downloads land — it resolves them from `KESHA_CACHE_DIR` (`rust/src/models.rs`).
+ *
+ * `isolateEngineCache()` sets that variable *after* startup, so under snapshot semantics a
+ * test believed it was isolated while the model half of that isolation silently did not
+ * reach the child. The #796 guard did not catch it either: it checks the resolved binary
+ * path, which an isolated `KESHA_ENGINE_BIN` satisfies on its own (#876).
+ */
+describe("the engine children see the cache dir the parent resolved (#876)", () => {
+  posixTest("the model install is handed the cache dir set after startup", async () => {
+    stageInstalledEngine("kesha-install-env-");
+
+    await installEngine();
+
+    expect(engineCacheSightings()).toContain(
+      `install KESHA_CACHE_DIR=${process.env.KESHA_CACHE_DIR}`,
+    );
+  }, 30_000);
+
+  darwinArmTest("the Kokoro warm-up is handed the same cache dir", async () => {
+    stageInstalledEngine("kesha-warmup-env-");
+
+    await installEngine({ ttsLangs: ["en"] });
+
+    expect(engineCacheSightings()).toContain(`say KESHA_CACHE_DIR=${process.env.KESHA_CACHE_DIR}`);
+  }, 30_000);
 });
 
 describe("capabilities gate the flags forwarded to the engine (#772)", () => {

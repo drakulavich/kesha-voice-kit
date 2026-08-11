@@ -12,6 +12,7 @@ import { engineFunctionalHealth, probeExecutable } from "./engine-health";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
+import { keshaCacheDir } from "./paths";
 import { streamResponseToFile } from "./progress";
 import {
   readInstalledEngineVersion,
@@ -234,6 +235,9 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
     {
       stdout: "ignore",
       stderr: "pipe",
+      // Resolves the voice from the Model cache, so it needs the same runtime
+      // `KESHA_CACHE_DIR` the install itself was given (#876).
+      env: process.env,
     },
   );
 
@@ -554,9 +558,13 @@ function runEngineModelInstall(
     diarize: options.diarize,
   });
   // #680: piping buffers the child until exit, so multi-GB downloads looked hung.
+  // `env` is load-bearing, not tidiness: this child resolves the model destination from
+  // `KESHA_CACHE_DIR`, and without it Bun's startup snapshot sends a redirected install
+  // to the real `~/.cache/kesha` anyway (#876).
   const proc = Bun.spawnSync([binPath, ...installArgs], {
     stdout: "inherit",
     stderr: "inherit",
+    env: process.env,
   });
 
   if (proc.exitCode !== 0) {
@@ -572,18 +580,33 @@ function runEngineModelInstall(
  *
  * Redirecting `KESHA_ENGINE_BIN`/`KESHA_CACHE_DIR` is opt-in per test, so a suite that forgets
  * it overwrites a real multi-GB install with a stub — and does it silently. Bun sets
- * `NODE_ENV=test` only under `bun test`, so this fires exactly there and nowhere else; it is
- * checked against `homedir()` rather than `keshaCacheDir()` so an isolated cache never trips it.
+ * `NODE_ENV=test` only under `bun test`, so this fires exactly there and nowhere else; the
+ * refused location is always derived from `homedir()`, so an isolated cache never trips it.
+ *
+ * Both destinations are checked because different variables redirect them: an isolated
+ * `KESHA_ENGINE_BIN` satisfied the binary half on its own while the models still downloaded
+ * into the real cache (#876).
  */
 export function assertNotRealCacheUnderTest(binPath: string): void {
   if (process.env.NODE_ENV !== "test") return;
   const realCache = resolve(join(homedir(), ".cache", "kesha"));
-  if (!resolve(binPath).startsWith(realCache + sep)) return;
+  const insideRealCache = (path: string): boolean => {
+    const resolved = resolve(path);
+    return resolved === realCache || resolved.startsWith(realCache + sep);
+  };
+
+  const offender = insideRealCache(binPath)
+    ? { what: `install the engine into ${binPath}`, fix: "KESHA_ENGINE_BIN to a temp path" }
+    : insideRealCache(keshaCacheDir())
+      ? { what: `download models into ${keshaCacheDir()}`, fix: "KESHA_CACHE_DIR to a temp dir" }
+      : null;
+  if (!offender) return;
+
   throw new Error(
-    `Refusing to install the engine into ${binPath} during a test run: that is the real ` +
+    `Refusing to ${offender.what} during a test run: that is the real ` +
       "per-user cache, and writing there destroys the developer's install (#796).\n" +
       "  Fix: call isolateEngineCache() from tests/helpers/fake-engine.ts in beforeEach, or set " +
-      "KESHA_ENGINE_BIN to a temp path.\n" +
+      `${offender.fix}.\n` +
       "  If this is not a test run, unset NODE_ENV — Bun sets NODE_ENV=test under `bun test`.",
   );
 }
