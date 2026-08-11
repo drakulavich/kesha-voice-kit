@@ -29,3 +29,7 @@ skills-lock.json
 reports/
 mutants.out/
 mutants.out.old/
+
+# CI-only model cache: workspace-relative so one cross-OS entry serves Linux and Windows (#860).
+.kesha-ci-cache/
+.kesha-ci-cache-probe/

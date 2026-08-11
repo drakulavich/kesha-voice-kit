@@ -158,7 +158,7 @@ jobs:
 
   kesha-models:
     name: Kesha models
-    # The smoke lanes read `kesha-models-tts-v2` restore-only, so without this seed they
+    # The smoke lanes read `kesha-models-tts-v3` restore-only, so without this seed they
     # cold-download ~2.8 GB every run; with it, one main-scoped copy serves every PR.
     #
     # Linux only, and one entry for both platforms (#860). Everything under `models/` is a
@@ -166,8 +166,16 @@ jobs:
     # trees were byte-identical and the pair cost 5277 MB to hold the same bytes twice. The
     # ONLY platform-specific content is `engine/` — dropped below — and `fluidaudio/`, which
     # exists on coreml builds alone and so never lands here.
+    #
+    # `path:` is workspace-relative and must stay that way. A cross-OS archive stores members
+    # relative to GITHUB_WORKSPACE and extracts them the same way, with no remap to the
+    # consumer's home: `~/.cache/kesha` saved here would land beside the Windows workspace
+    # root instead of in %USERPROFILE%, and still report a cache hit. `cross-os-cache-probe.yml`
+    # is the executable proof, and actions/cache's own tips-and-workarounds says the same.
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-ci-cache
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -176,8 +184,8 @@ jobs:
         id: probe
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/kesha
-          key: kesha-models-tts-v2
+          path: .kesha-ci-cache
+          key: kesha-models-tts-v3
           enableCrossOsArchive: true
           lookup-only: true
 
@@ -199,13 +207,13 @@ jobs:
         if: steps.probe.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          rm -rf ~/.cache/kesha/engine
-          test ! -e ~/.cache/kesha/engine
+          rm -rf "$KESHA_CACHE_DIR/engine"
+          test ! -e "$KESHA_CACHE_DIR/engine"
 
       - name: Save models
         if: steps.probe.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/kesha
-          key: kesha-models-tts-v2
+          path: .kesha-ci-cache
+          key: kesha-models-tts-v3
           enableCrossOsArchive: true

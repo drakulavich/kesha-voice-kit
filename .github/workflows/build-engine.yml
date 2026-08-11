@@ -114,6 +114,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
       # Points the CLI at the staged artifact for the pre-upload smoke, as release-branch-engine-smoke does (#671).
       KESHA_ENGINE_BIN: ${{ github.workspace }}/${{ matrix.binary }}
+      KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-ci-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
@@ -309,10 +310,8 @@ jobs:
         if: matrix.os != 'macos-14'
         uses: ./.github/actions/install-kesha-backend
         with:
-          cache-path: |
-            ~/.cache/kesha
-          cache-key: kesha-models-tts-v2
-          cache-restore-keys: kesha-models-tts-
+          cache-path: .kesha-ci-cache
+          cache-key: kesha-models-tts-v3
           cache-cross-os: "true"
           ffmpeg-provider: skip
           install-args: --tts en
@@ -402,9 +401,10 @@ jobs:
           '
 
       # FluidAudio owns `~/.cache/fluidaudio` — the ANE voice packs install stages, plus the bundle it self-fetches.
-      # Left out of the `kesha-models-tts-v2` share on purpose: this row caches a second path the other
-      # lanes do not, so it cannot read their entry. `macOS-kesha-models-tts-*` has never been written by
-      # anything, so this row has always cold-downloaded and still does — tracked separately (#860).
+      # Left out of the `kesha-models-tts-v3` share on purpose: this row caches a second path the other
+      # lanes do not, so it cannot read their entry. Staying per-OS also keeps it off the cross-OS rules —
+      # a same-OS archive restores to the home dir it was saved from. `macOS-kesha-models-tts-*` has never
+      # been written by anything, so this row has always cold-downloaded and still does (#860).
       - name: 🔊 Install English TTS models
         uses: ./.github/actions/install-kesha-backend
         with:

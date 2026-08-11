@@ -1,0 +1,135 @@
+name: "🧭 Cross-OS cache probe"
+
+# Proves, in bytes rather than in prose, where a cross-OS cache entry lands on Windows.
+#
+# `kesha-models-tts-v3` is one entry shared by the Linux and Windows model lanes (#860). That only
+# works because its `path:` is workspace-relative. A cross-OS archive stores members relative to
+# GITHUB_WORKSPACE and extracts them the same way, with no remap to the consumer's home — so a
+# `~/.cache/kesha` entry saved on Linux extracts beside the Windows workspace root, nowhere near
+# %USERPROFILE%, **while still reporting a cache hit**. The lane would then cold-download 2.8 GB
+# behind a green "Cache restored from key" line: the dedup silently buys nothing on half the target.
+#
+# Two arms, one run, so the contrast is evidence and not an argument:
+#   workspace-relative → the file MUST be under the Windows workspace
+#   home-anchored      → the file MUST NOT be under the Windows home
+# Both restores are asserted to HIT first, which is the whole point: a hit says nothing about placement.
+#
+# Entries are a few bytes and deleted at the end, so this never competes for the 10 GB budget.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/cross-os-cache-probe.yml
+      - .github/workflows/cache-seed.yml
+      - .github/actions/install-kesha-backend/action.yml
+      - .github/scripts/assert-cross-os-cache.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORKSPACE_KEY: kesha-crossos-probe-workspace-${{ github.run_id }}-${{ github.run_attempt }}
+  HOME_KEY: kesha-crossos-probe-home-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  save-linux:
+    name: Save both probe entries (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Relative, not $GITHUB_WORKSPACE: under Git Bash that variable carries backslashes, which
+      # bash mangles inside quotes. Every step already runs with the workspace as its cwd.
+      - name: Stage both probe trees
+        shell: bash
+        run: |
+          mkdir -p .kesha-ci-cache-probe ~/.kesha-probe-home
+          printf kesha-cross-os-probe > .kesha-ci-cache-probe/probe.txt
+          printf kesha-cross-os-probe > ~/.kesha-probe-home/probe.txt
+
+      - name: Save the workspace-relative entry
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .kesha-ci-cache-probe
+          key: ${{ env.WORKSPACE_KEY }}
+          enableCrossOsArchive: true
+
+      - name: Save the home-anchored entry
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.kesha-probe-home
+          key: ${{ env.HOME_KEY }}
+          enableCrossOsArchive: true
+
+  restore-windows:
+    name: Restore both on windows and check placement
+    needs: save-linux
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore the workspace-relative entry
+        id: workspace
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .kesha-ci-cache-probe
+          key: ${{ env.WORKSPACE_KEY }}
+          enableCrossOsArchive: true
+
+      - name: Restore the home-anchored entry
+        id: home
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.kesha-probe-home
+          key: ${{ env.HOME_KEY }}
+          enableCrossOsArchive: true
+
+      # Both must hit, or the placement assertions below would pass for the wrong reason.
+      - name: Both entries must report a cache hit
+        shell: bash
+        env:
+          WORKSPACE_HIT: ${{ steps.workspace.outputs.cache-hit }}
+          HOME_HIT: ${{ steps.home.outputs.cache-hit }}
+        run: |
+          echo "workspace-relative hit=$WORKSPACE_HIT   home-anchored hit=$HOME_HIT"
+          test "$WORKSPACE_HIT" = "true" && test "$HOME_HIT" = "true"
+
+      - name: Show where each archive actually landed
+        shell: bash
+        run: |
+          echo "cwd=$(pwd)  home=$HOME"
+          find . "$HOME" -maxdepth 6 -name probe.txt 2>/dev/null || true
+
+      - name: The workspace-relative entry lands in the workspace
+        shell: bash
+        run: bash .github/scripts/assert-cross-os-cache.sh present .kesha-ci-cache-probe/probe.txt workspace-relative
+
+      - name: The home-anchored entry does not land in the home dir
+        shell: bash
+        run: bash .github/scripts/assert-cross-os-cache.sh absent "$HOME/.kesha-probe-home/probe.txt" home-anchored
+
+  cleanup:
+    name: Delete the probe entries
+    needs: restore-windows
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Drop both keys
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          for key in "$WORKSPACE_KEY" "$HOME_KEY"; do
+            gh api --method DELETE "/repos/$REPO/actions/caches?key=$key" || echo "no entry for $key"
+          done
