@@ -114,3 +114,22 @@ exit 2
   chmodSync(path, 0o755);
   return path;
 }
+
+/**
+ * A stub engine that echoes the environment it was handed, for asserting what a spawned
+ * child actually inherits (#874).
+ *
+ * Runs under `bun` instead of a shell script so it executes on Windows too: an
+ * extensionless `#!/bin/sh` file is not executable there, which is why the other
+ * stub-driven tests in this suite are win32-skipped. Returns the argv pair rather than a
+ * path, because the interpreter is the binary and the script is its argument.
+ */
+export function envEchoEngine(vars: string[]): { binPath: string; args: string[] } {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-env-echo-"));
+  const script = join(dir, "echo-env.js");
+  writeFileSync(
+    script,
+    `for (const v of ${JSON.stringify(vars)}) console.log(v + "=" + (process.env[v] ?? "UNSET"));\n`,
+  );
+  return { binPath: process.execPath, args: [script] };
+}

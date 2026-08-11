@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
-import { saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
+import { envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
 import {
   detectTextLanguageEngine,
@@ -480,17 +480,9 @@ describe("text language detection degrades loudly (#770)", () => {
  * parent and not the engine (#874).
  */
 describe("engine subprocess env", () => {
-  const echoEngine = (vars: string[]) => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-env-echo-"));
-    const binPath = join(dir, "kesha-engine");
-    const body = vars.map((v) => `echo ${v}=\${${v}:-UNSET}`).join("\n");
-    writeFileSync(binPath, `#!/bin/sh\n${body}\n`);
-    chmodSync(binPath, 0o755);
-    return binPath;
-  };
-
-  const readStdout = async (binPath: string) => {
-    const proc = spawnEngineProcess(binPath, [], spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]));
+  const readStdout = async (vars: string[]) => {
+    const { binPath, args } = envEchoEngine(vars);
+    const proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]));
     return (await new Response(proc.stdout as ReadableStream).text()).trim();
   };
 
@@ -500,7 +492,7 @@ describe("engine subprocess env", () => {
     try {
       process.env.KESHA_CACHE_DIR = "/tmp/kesha-env-probe-cache";
       applyColorEnv(true);
-      const out = await readStdout(echoEngine(["KESHA_CACHE_DIR", "NO_COLOR"]));
+      const out = await readStdout(["KESHA_CACHE_DIR", "NO_COLOR"]);
       expect(out).toContain("KESHA_CACHE_DIR=/tmp/kesha-env-probe-cache");
       expect(out).toContain("NO_COLOR=1");
     } finally {
