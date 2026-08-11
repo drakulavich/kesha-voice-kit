@@ -523,6 +523,21 @@ mod tests {
         assert_eq!(r.espeak_lang(), "");
     }
 
+    /// Through the accessor rather than the variant field: `say` hands this tag to
+    /// G2P, so an empty string phonemises an English voice as the default language.
+    #[test]
+    fn espeak_lang_reports_the_kokoro_language_tag() {
+        let tmp = tempfile::tempdir().unwrap();
+        #[cfg(not(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        )))]
+        populate_cache(tmp.path());
+        let r = resolve_voice(tmp.path(), "en-am_michael").unwrap();
+        assert_eq!(r.espeak_lang(), "en-us");
+    }
+
     #[test]
     fn resolve_vosk_ru_all_speaker_ids() {
         let tmp = tempfile::tempdir().unwrap();
