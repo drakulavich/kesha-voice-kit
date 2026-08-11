@@ -513,6 +513,39 @@ mod tests {
     }
 
     #[test]
+    fn durations_and_ages_keep_their_cardinal() {
+        // A duration's bare cardinal is already correct; the year rule must not claim it.
+        assert_eq!(verbalize("2 года"), "два года");
+        assert_eq!(verbalize("1 год"), "один год");
+        assert_eq!(verbalize("21 год"), "двадцать один год");
+        assert_eq!(verbalize("22 года"), "двадцать два года");
+        assert_eq!(verbalize("ему 3 года"), "ему три года");
+    }
+
+    #[test]
+    fn year_ordinal_starts_at_the_calendar_range() {
+        assert_eq!(verbalize("999 года"), "девятьсот девяносто девять года");
+        assert_eq!(verbalize("1000 года"), "тысячного года");
+        // A duration never takes prepositional «году», so it reads as a year at any magnitude.
+        assert_eq!(
+            verbalize("в 988 году"),
+            "в девятьсот восемьдесят восьмом году"
+        );
+        assert_eq!(verbalize("в 21 году"), "в двадцать первом году");
+    }
+
+    #[test]
+    fn rewritten_runs_do_not_glue_onto_letters() {
+        // «2026г.» is ordinary shorthand; unglued it reaches Vosk as «шестьг».
+        assert_eq!(verbalize("2026г"), "две тысячи двадцать шесть г");
+        assert_eq!(verbalize("3D"), "три D");
+        assert_eq!(verbalize("A4"), "A четыре");
+        // Non-letter neighbours keep their tight spacing.
+        assert_eq!(verbalize("10-15"), "десять-пятнадцать");
+        assert_eq!(verbalize("№7"), "№семь");
+    }
+
+    #[test]
     fn times_read_as_hour_then_minute() {
         assert_eq!(verbalize("14:30"), "четырнадцать тридцать");
         assert_eq!(verbalize("в 14:00"), "в четырнадцать ноль ноль");
