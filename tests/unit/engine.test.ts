@@ -3,7 +3,8 @@ import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
-import { writeTranscribingEngine } from "../helpers/fake-engine";
+import { envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
+import { applyColorEnv } from "../../src/cli/context";
 import {
   detectTextLanguageEngine,
   parseLangResult,
@@ -12,6 +13,7 @@ import {
   preflightTranscribeEngineItn,
   preflightTranscribeEngineWithSegments,
   recordEngine,
+  spawnEngineProcess,
   spawnStdioWithDebugFd,
   textLangFailureWarning,
   transcribeEngine,
@@ -468,5 +470,35 @@ describe("text language detection degrades loudly (#770)", () => {
 
     const warned = captured.some((line) => line.includes("Text language detection failed"));
     expect(warned).toBe(process.platform === "darwin");
+  });
+});
+
+/**
+ * `Bun.spawn` snapshots `process.env` at process start unless an `env` is passed,
+ * so a value the CLI resolves at runtime — `NO_COLOR` from `--no-color`
+ * (`src/cli/context.ts::applyColorEnv`), or a `KESHA_*` override — reached the
+ * parent and not the engine (#874).
+ */
+describe("engine subprocess env", () => {
+  const readStdout = async (vars: string[]) => {
+    const { binPath, args } = envEchoEngine(vars);
+    const proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]));
+    return (await new Response(proc.stdout as ReadableStream).text()).trim();
+  };
+
+  test("forwards env resolved after startup, not the startup snapshot", async () => {
+    const restore = saveEngineEnv();
+    const savedNoColor = process.env.NO_COLOR;
+    try {
+      process.env.KESHA_CACHE_DIR = "/tmp/kesha-env-probe-cache";
+      applyColorEnv(true);
+      const out = await readStdout(["KESHA_CACHE_DIR", "NO_COLOR"]);
+      expect(out).toContain("KESHA_CACHE_DIR=/tmp/kesha-env-probe-cache");
+      expect(out).toContain("NO_COLOR=1");
+    } finally {
+      restore();
+      if (savedNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = savedNoColor;
+    }
   });
 });

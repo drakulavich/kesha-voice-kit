@@ -101,7 +101,10 @@ export function spawnEngineProcess(
   stdio: ReturnType<typeof spawnStdioWithDebugFd>,
 ): ReturnType<typeof Bun.spawn> {
   try {
-    return Bun.spawn([binPath, ...args], { detached: true, stdio });
+    // Bun snapshots `process.env` at startup unless `env` is passed, so anything the CLI
+    // resolves at runtime — `NO_COLOR` from `--no-color`, a `KESHA_*` override — reached the
+    // parent and not the engine (#874).
+    return Bun.spawn([binPath, ...args], { detached: true, stdio, env: process.env });
   } catch (err) {
     throw new Error(
       `error [${TS_NATIVE_CODES.ENGINE_SPAWN}]: failed to launch kesha-engine at ${binPath}: ` +
