@@ -25,7 +25,11 @@ export function formatPercentProgress(label: string, percent: number): string {
   return `${label}  [${bar(pct)}] ${pct}%`;
 }
 
-function estimatePercent(elapsedMs: number, estimatedTotalMs: number): number {
+/**
+ * Time-based estimate for work that reports no progress of its own: 0 before it starts,
+ * then 1..99 — never 100, which only `finish` may claim. Exported for the test.
+ */
+export function estimatePercent(elapsedMs: number, estimatedTotalMs: number): number {
   if (elapsedMs <= 0) return 0;
   const targetMs = Math.max(1, estimatedTotalMs);
   return Math.max(1, Math.min(99, Math.floor((elapsedMs / targetMs) * 99)));

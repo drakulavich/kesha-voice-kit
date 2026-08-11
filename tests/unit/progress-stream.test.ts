@@ -277,3 +277,56 @@ describe("applyBackpressure honours the FileSink contract (#669)", () => {
     expect(sink.flushes).toBe(0);
   });
 });
+
+describe("the sweep only claims its own destination's staging", () => {
+  // One `kesha install` downloads the engine and both sidecars into the same bin dir, so a
+  // sweep keyed on the directory rather than the destination would eat a sibling's staging.
+  posixTest("a stale staging file belonging to another download is left alone", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-sibling-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+      const sibling = join(dir, "kesha-textlang.part.4242.0");
+      const dayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      writeFileSync(sibling, "another asset's orphan");
+      utimesSync(sibling, dayAgo, dayAgo);
+
+      await streamResponseToFile(responseOf("engine bytes"), dest, "payload");
+
+      expect(readFileSync(sibling, "utf8")).toBe("another asset's orphan");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixTest("an unrelated stale file next to the destination is left alone", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-unrelated-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+      const bystander = join(dir, "kesha-engine.version");
+      const dayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      writeFileSync(bystander, "1.24.9\n");
+      utimesSync(bystander, dayAgo, dayAgo);
+
+      await streamResponseToFile(responseOf("engine bytes"), dest, "payload");
+
+      expect(readFileSync(bystander, "utf8")).toBe("1.24.9\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a download with nothing to stream fails with a fix", () => {
+  test("an empty response body names the label and what to do", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stream-empty-"));
+    try {
+      const dest = join(dir, "kesha-engine");
+      const promise = streamResponseToFile(new Response(null), dest, "kesha-engine binary");
+      await expect(promise).rejects.toThrow("empty response for kesha-engine binary");
+      await expect(promise).rejects.toThrow("Try again");
+      expect(readdirSync(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
