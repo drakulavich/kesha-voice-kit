@@ -217,3 +217,77 @@ jobs:
           path: .kesha-ci-cache
           key: kesha-models-tts-v3
           enableCrossOsArchive: true
+
+  kesha-models-darwin:
+    name: Kesha models (darwin TTS)
+    # The writer `macOS-kesha-models-tts-v1` never had. `darwin-synthesis-smoke` restores that key
+    # restore-only and gates every engine tag (#819), so without this job it cold-downloaded the whole
+    # model set from Hugging Face on each tag build — 23 of 29 historical failures on that lane were HF
+    # network errors at exactly the fetch step (#877). The schedule above is what keeps it warm between
+    # releases; a release-only lane would otherwise be evicted long before the next tag.
+    #
+    # A separate entry from `kesha-models-tts-v3`, not an oversight: a darwin build stages FluidAudio
+    # ANE bundles the ONNX lanes never fetch, and Kokoro's G2P assets live under `~/.cache/fluidaudio`,
+    # a path upstream pins and `KESHA_CACHE_DIR` cannot move (#688). So this entry is home-relative and
+    # same-OS by construction — no `enableCrossOsArchive`, and none of the #860 remap rules apply,
+    # because a same-OS archive restores to the home directory it was saved from.
+    #
+    # Runner matched to the consumer's `macos-15`: the payload is data, but the smoke below runs the
+    # same CoreML path that lane does, and only there is it evidence.
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      # FluidAudio reports CoreML failures on stdout, which the bridge guard discards (#678).
+      KESHA_DEBUG: "1"
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Probe cache
+        id: probe
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/kesha
+            ~/.cache/fluidaudio
+          key: ${{ runner.os }}-kesha-models-tts-v1
+          lookup-only: true
+
+      - name: 🍞 Setup Bun workspace
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-bun
+
+      # No cache inputs: the probe above already decided, and the save below is this job's own step.
+      - name: Populate models
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: ./.github/actions/install-kesha-backend
+        with:
+          ffmpeg-provider: skip
+          install-args: --tts en
+
+      # `install` exits 0 on a failed warm-up and the exact key is immutable, so a partial save would
+      # poison every later tag build instead of being repaired (#675). Synthesising is the consumer's
+      # own check, run before the bytes are archived. The short sentence is load-bearing: a hosted
+      # runner has no ANE, and its CPU CoreML takes SIGBUS on longer shapes (#742).
+      - name: Verify the bundle synthesises before saving
+        if: steps.probe.outputs.cache-hit != 'true'
+        shell: bash
+        run: bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." synthesis-smoke
+
+      # The consumer stages its freshly built engine and sidecar from the build artifacts, so a
+      # published binary here is dead weight — and at tag time, the previous version's.
+      - name: Drop the engine before saving
+        if: steps.probe.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          rm -rf ~/.cache/kesha/engine
+          test ! -e ~/.cache/kesha/engine
+
+      - name: Save models
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/kesha
+            ~/.cache/fluidaudio
+          key: ${{ runner.os }}-kesha-models-tts-v1

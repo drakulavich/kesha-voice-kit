@@ -403,8 +403,9 @@ jobs:
       # FluidAudio owns `~/.cache/fluidaudio` — the ANE voice packs install stages, plus the bundle it self-fetches.
       # Left out of the `kesha-models-tts-v3` share on purpose: this row caches a second path the other
       # lanes do not, so it cannot read their entry. Staying per-OS also keeps it off the cross-OS rules —
-      # a same-OS archive restores to the home dir it was saved from. `macOS-kesha-models-tts-*` has never
-      # been written by anything, so this row has always cold-downloaded and still does (#860).
+      # a same-OS archive restores to the home dir it was saved from. cache-seed.yml's `kesha-models-darwin`
+      # is the only writer of this key; path, key and archive mode must stay identical on both sides or
+      # the restore silently misses, which is how it went a year cold-downloading (#877).
       - name: 🔊 Install English TTS models
         uses: ./.github/actions/install-kesha-backend
         with:
