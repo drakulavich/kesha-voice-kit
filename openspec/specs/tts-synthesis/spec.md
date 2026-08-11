@@ -382,8 +382,12 @@ and are not on the Russian stop-list. Spanish/French/Italian/Portuguese:
 integers 0–999,999 are expanded to words and 2–5-character uppercase acronyms
 are letter-spelled with that language's letter names, with per-language
 stop-lists exempting word-acronyms. `--no-expand-abbrev` SHALL disable the
-automatic letter-spelling for English and Russian — but the English IPA lexicon
-still fires, and `<say-as interpret-as="characters">` still works.
+automatic letter-spelling for Russian and for English on ONNX Kokoro builds —
+but the English IPA lexicon still fires, and `<say-as interpret-as="characters">`
+still works. On every other path — FluidAudio Kokoro, `macos-*` AVSpeech, and
+the Romance normalizer that runs inside CharsiuG2P — expansion belongs to an
+engine that offers no suppression knob, and the Engine SHALL warn on stderr
+rather than accept the flag silently.
 
 #### Scenario: English initialism is letter-spelled, lexicon word is not
 
@@ -415,6 +419,15 @@ still fires, and `<say-as interpret-as="characters">` still works.
 - WHEN Sona runs `kesha say --no-expand-abbrev "EPAM hired IBM"`
 - THEN `IBM` passes through unspelled
 - AND `EPAM` still uses its IPA lexicon pronunciation
+
+#### Scenario: --no-expand-abbrev on an engine that cannot honor it warns
+
+- GIVEN the released darwin-arm64 build, whose `en-*` voices run on FluidAudio
+- WHEN Sona runs `kesha say --voice en-am_michael --no-expand-abbrev "IBM"`
+- THEN `IBM` is still spelled letter by letter, because the initialism rule
+  lives inside FluidAudio's G2P
+- AND the Engine warns on stderr that the flag has no effect on this voice,
+  naming where it does apply
 
 #### Scenario: --no-expand-abbrev on an old engine warns instead of lying
 

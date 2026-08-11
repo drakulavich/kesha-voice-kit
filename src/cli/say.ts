@@ -288,8 +288,10 @@ export const sayCommand = defineCommand({
     "no-expand-abbrev": {
       type: "boolean",
       description:
-        "Disable Russian acronym auto-expansion (ВОЗ → 'вэ о зэ') for ru-vosk-* voices. " +
-        "<say-as interpret-as='characters'> still works. Applies to Russian (ru-vosk-*) and English (en-*) voices.",
+        "Disable acronym auto-expansion on ru-vosk-* voices (ВОЗ → 'вэ о зэ') and English on ONNX engine builds " +
+        "(FBI → 'ef bee eye'). No effect on macOS arm64 FluidAudio, macos-* or non-English voices, which spell " +
+        "initialisms in their own G2P; the engine warns when the flag is ignored. " +
+        "<say-as interpret-as='characters'> still works.",
     },
     verbose: {
       type: "boolean",

@@ -67,6 +67,22 @@ fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     clamped
 }
 
+pub(crate) const WARN_EXPAND_ABBREV_IGNORED: &str = "no-expand-abbrev-ignored";
+
+/// `--no-expand-abbrev` is accepted on every voice but only Vosk and the
+/// English Kokoro path can act on it; the rest spell initialisms inside their
+/// own G2P with no opt-out, so the request is announced rather than dropped (#842).
+fn warn_expand_abbrev_ignored(engine: &str) {
+    crate::tts::warn::warn_once(
+        WARN_EXPAND_ABBREV_IGNORED,
+        &format!(
+            "--no-expand-abbrev has no effect with {engine}: acronym expansion is suppressible \
+             only for ru-vosk-* voices and English on ONNX Kokoro builds. Synthesizing with the \
+             engine's own initialism handling instead."
+        ),
+    );
+}
+
 /// Synthesize speech and return WAV bytes (mono float32; sample rate depends on engine).
 ///
 /// Loads the ONNX session fresh on each call (~100-800ms); callers that synthesize
@@ -96,10 +112,16 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             target_arch = "aarch64"
         ))]
         EngineChoice::FluidKokoro { voice_id, speed } => {
+            if !opts.expand_abbrev {
+                warn_expand_abbrev_ignored("FluidAudio Kokoro voices");
+            }
             say_fluid_kokoro(opts.text, voice_id, speed, opts.format, opts.ssml)
         }
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { voice_id, speed } => {
+            if !opts.expand_abbrev {
+                warn_expand_abbrev_ignored("macos-* AVSpeech voices");
+            }
             say_avspeech(opts.text, voice_id, speed, opts.format, opts.ssml)
         }
         EngineChoice::Vosk {
@@ -244,6 +266,11 @@ pub(crate) fn say_kokoro(
     ssml: bool,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
+    // Non-English Kokoro goes straight to CharsiuG2P, which never sees the
+    // segment normalizer that would honor the flag.
+    if !expand_abbrev && !en::is_en(lang) {
+        warn_expand_abbrev_ignored("non-English Kokoro voices");
+    }
     let segments = if ssml {
         let segments = ssml::parse(text).map_err(|e| TtsError::Coded {
             code: crate::errors::code_of(&e),
@@ -794,6 +821,47 @@ mod tests {
         // Idempotent: a second clamp doesn't change set membership.
         let _ = super::compose_rate(0.1, 0.1); // 0.01 → 0.5 (clamp low)
         assert!(crate::tts::warn::was_warned("compose-rate-clamped"));
+    }
+
+    /// #842: `--no-expand-abbrev` reaches the engine on every voice, but only
+    /// Vosk and the English Kokoro path can act on it. Ignoring it in silence
+    /// is what made `--help` unfalsifiable, so the ignored case must warn.
+    #[test]
+    fn no_expand_abbrev_warns_when_kokoro_cannot_honor_it() {
+        let _ = say_kokoro(
+            &mut sessions::TtsSessions::default(),
+            "hola",
+            "es",
+            Path::new("/nonexistent/kokoro/model.onnx"),
+            Path::new("/nonexistent/kokoro/voice.bin"),
+            1.0,
+            OutputFormat::Wav,
+            false,
+            false,
+        );
+        assert!(
+            crate::tts::warn::was_warned(WARN_EXPAND_ABBREV_IGNORED),
+            "a non-English Kokoro voice cannot suppress expansion and must say so"
+        );
+    }
+
+    #[test]
+    fn no_expand_abbrev_stays_quiet_on_the_english_kokoro_path() {
+        let _ = say_kokoro(
+            &mut sessions::TtsSessions::default(),
+            "FBI",
+            "en",
+            Path::new("/nonexistent/kokoro/model.onnx"),
+            Path::new("/nonexistent/kokoro/voice.bin"),
+            1.0,
+            OutputFormat::Wav,
+            false,
+            false,
+        );
+        assert!(
+            !crate::tts::warn::was_warned(WARN_EXPAND_ABBREV_IGNORED),
+            "English on Kokoro honors the flag; warning there would be the opposite lie"
+        );
     }
 
     /// Records every synthesized utterance and returns one sentinel sample
