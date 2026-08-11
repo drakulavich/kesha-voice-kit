@@ -6,6 +6,7 @@ import {
   buildDiagnosticLogLine,
   createDiagnosticLogSession,
   getDiagnosticLogStatus,
+  humanBytes,
   readDiagnosticLogTail,
   resetDiagnosticLogs,
   resolveDiagnosticLogPath,
@@ -212,5 +213,190 @@ describe("diagnostic log storage", () => {
     for (const line of tail?.contents.trim().split("\n") ?? []) {
       expect(() => JSON.parse(line)).not.toThrow();
     }
+  });
+});
+
+describe("humanBytes", () => {
+  test("stays in bytes below the first threshold", () => {
+    expect(humanBytes(0)).toBe("0 B");
+    expect(humanBytes(1023)).toBe("1023 B");
+  });
+
+  test("switches unit exactly at each 1024 boundary", () => {
+    expect(humanBytes(1024)).toBe("1.0 KB");
+    expect(humanBytes(1024 * 1024)).toBe("1.0 MB");
+    expect(humanBytes(1024 ** 3)).toBe("1.0 GB");
+    expect(humanBytes(1024 ** 4)).toBe("1.0 TB");
+  });
+
+  // A decimal on a four-digit number is noise; below ten it is the whole signal.
+  test("drops the decimal once the value reaches ten", () => {
+    expect(humanBytes(9.5 * 1024)).toBe("9.5 KB");
+    expect(humanBytes(10 * 1024)).toBe("10 KB");
+    expect(humanBytes(512 * 1024)).toBe("512 KB");
+  });
+
+  test("stops at the largest unit it knows rather than inventing one", () => {
+    expect(humanBytes(5 * 1024 ** 5)).toBe("5120 TB");
+  });
+});
+
+describe("a corrupt state file cannot break logging", () => {
+  const defaults = { maxBytes: 10 * 1024 * 1024, retain: 5 };
+
+  for (const [shape, written] of [
+    ["a zero limit", { mode: "on", maxBytes: 0, retain: 0 }],
+    ["a negative limit", { mode: "on", maxBytes: -1, retain: -5 }],
+    ["a fractional limit", { mode: "on", maxBytes: 1.5, retain: 2.5 }],
+    ["a stringified limit", { mode: "on", maxBytes: "1048576", retain: "3" }],
+    ["missing limits", { mode: "on" }],
+  ] as const) {
+    test(`${shape} falls back to the defaults`, () => {
+      writeFileSync(join(dir, "diagnostic-logs.json"), JSON.stringify(written));
+
+      const status = getDiagnosticLogStatus();
+
+      expect(status.mode).toBe("on");
+      expect(status.maxBytes).toBe(defaults.maxBytes);
+      expect(status.retain).toBe(defaults.retain);
+    });
+  }
+
+  test("an unreadable state file leaves the mode at its default", () => {
+    writeFileSync(join(dir, "diagnostic-logs.json"), "{ not json");
+
+    const status = getDiagnosticLogStatus();
+
+    expect(status.mode).toBe("retain-on-failure");
+    expect(status.maxBytes).toBe(defaults.maxBytes);
+  });
+});
+
+describe("rotation keeps the newest history and drops the oldest", () => {
+  function writeEvents(count: number, prefix: string) {
+    for (let i = 0; i < count; i++) {
+      expect(
+        createDiagnosticLogSession().event("rotation.test", {
+          runId: `${prefix}-${i}`,
+          bucket: "aaaaaaaaaaaaaaaaaaaa",
+        }),
+      ).toBe(true);
+    }
+  }
+
+  test("the history is exactly `retain` files, newest first", () => {
+    writeFileSync(
+      join(dir, "diagnostic-logs.json"),
+      JSON.stringify({ mode: "on", maxBytes: 180, retain: 2 }),
+    );
+
+    writeEvents(3, "older");
+    writeEvents(3, "newer");
+
+    const status = getDiagnosticLogStatus();
+    expect(status.rotatedFiles).toEqual(["kesha.1.ndjson", "kesha.2.ndjson"]);
+    expect(existsSync(join(dir, "kesha.3.ndjson"))).toBe(false);
+
+    const first = readFileSync(join(dir, "kesha.1.ndjson"), "utf8");
+    const second = readFileSync(join(dir, "kesha.2.ndjson"), "utf8");
+    expect(first).toContain("newer-");
+    expect(second).not.toContain("newer-2");
+  });
+});
+
+describe("the tail says whether it dropped anything", () => {
+  test("a log smaller than the window comes back whole and untruncated", () => {
+    const body = `${JSON.stringify({ event: "command.start", runId: "only" })}\n`;
+    writeFileSync(resolveDiagnosticLogPath(), body);
+
+    const tail = readDiagnosticLogTail(64 * 1024);
+
+    expect(tail?.truncated).toBe(false);
+    expect(tail?.contents).toBe(body);
+    expect(tail?.sizeBytes).toBe(body.length);
+  });
+
+  test("an absent log is null rather than an empty tail", () => {
+    expect(readDiagnosticLogTail()).toBeNull();
+  });
+});
+
+describe("the log inventory is the log's own files, in rotation order", () => {
+  test("double-digit rotations sort after single-digit ones", () => {
+    for (const i of [1, 2, 10, 11, 3]) {
+      writeFileSync(join(dir, `kesha.${i}.ndjson`), `rotation ${i}\n`);
+    }
+
+    expect(getDiagnosticLogStatus().rotatedFiles).toEqual([
+      "kesha.1.ndjson",
+      "kesha.2.ndjson",
+      "kesha.3.ndjson",
+      "kesha.10.ndjson",
+      "kesha.11.ndjson",
+    ]);
+  });
+
+  test("neighbours in the log directory are not counted as history", () => {
+    writeFileSync(join(dir, "kesha.1.ndjson"), "rotation\n");
+    for (const stranger of ["kesha.ndjson", "kesha.x.ndjson", "kesha.1.ndjson.bak", "notes.txt"]) {
+      writeFileSync(join(dir, stranger), "not history\n");
+    }
+
+    expect(getDiagnosticLogStatus().rotatedFiles).toEqual(["kesha.1.ndjson"]);
+  });
+
+  test("the reported total covers the rotated files too", () => {
+    writeFileSync(resolveDiagnosticLogPath(), "a".repeat(10));
+    writeFileSync(join(dir, "kesha.1.ndjson"), "b".repeat(20));
+    writeFileSync(join(dir, "kesha.2.ndjson"), "c".repeat(30));
+
+    const status = getDiagnosticLogStatus();
+    expect(status.activeSizeBytes).toBe(10);
+    expect(status.totalSizeBytes).toBe(60);
+  });
+});
+
+describe("event names are constrained like field names", () => {
+  for (const event of ["Command.Start", "command..start", "1command", "command.start.", "command start", ""]) {
+    test(`"${event}" is refused`, () => {
+      expect(() => buildDiagnosticLogLine(event, {})).toThrow("unsafe diagnostic event name");
+    });
+  }
+
+  test("a dotted lowercase name is accepted", () => {
+    const payload = JSON.parse(new TextDecoder().decode(buildDiagnosticLogLine("engine.exit2", {})));
+    expect(payload.event).toBe("engine.exit2");
+  });
+});
+
+describe("a buffered session only spends the disk it has to", () => {
+  test("a failed run with nothing buffered writes no file", () => {
+    setDiagnosticLogMode("retain-on-failure");
+    resetDiagnosticLogs();
+
+    expect(createDiagnosticLogSession().finish("failed")).toBe(false);
+    expect(existsSync(resolveDiagnosticLogPath())).toBe(false);
+  });
+
+  test("a successful run discards its buffer without writing", () => {
+    setDiagnosticLogMode("retain-on-failure");
+    resetDiagnosticLogs();
+
+    const session = createDiagnosticLogSession();
+    expect(session.event("command.start", { command: "transcribe" })).toBe(true);
+    expect(session.finish("success")).toBe(false);
+    expect(existsSync(resolveDiagnosticLogPath())).toBe(false);
+  });
+
+  test("turning logging off mid-run drops the buffer instead of flushing it", () => {
+    setDiagnosticLogMode("retain-on-failure");
+    resetDiagnosticLogs();
+
+    const session = createDiagnosticLogSession();
+    expect(session.event("command.start", { command: "transcribe" })).toBe(true);
+    setDiagnosticLogMode("off");
+
+    expect(session.finish("failed")).toBe(false);
+    expect(existsSync(resolveDiagnosticLogPath())).toBe(false);
   });
 });
