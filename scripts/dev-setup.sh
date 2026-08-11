@@ -42,6 +42,15 @@ else
   missing_system=1
 fi
 
+# just: every `make` target now delegates to a justfile recipe (#797), so a
+# checkout without it can run the direct `bun run …` scripts and nothing else.
+if have just; then
+  ok "just ($(just --version | awk '{print $2}'))"
+else
+  todo "just missing — cargo install --locked just  (the task runner behind make/just recipes)"
+  missing_system=1
+fi
+
 # --- System libraries the Rust build needs (guide only) ---
 bold "System libraries (Rust build deps)"
 
