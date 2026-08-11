@@ -280,6 +280,76 @@ already installed leaves English in place.
 > `hi`, `ja`, `zh` on darwin-arm64 — so a bad code is rejected before anything downloads.
 > The Engine re-validates authoritatively at download time.*
 
+### Requirement: On darwin-arm64, `--tts` stages FluidAudio's Kokoro assets outside the Model cache
+
+On darwin-arm64 `kesha install --tts` SHALL stage every asset first synthesis
+would otherwise fetch, verified against the same Pinned hashes as any other
+model. The non-Russian voices there are served by FluidAudio's CoreML/ANE
+bundles, which upstream reads from directories of its own choosing rather than
+from the Model cache, so the assets are staged into those directories:
+
+- for any of `en`, `es`, `fr`, `hi`, `it`, `ja`, `pt` — the English ANE model
+  chain with its vocab and bundled voice pack, the requested languages' voice
+  packs, and the shared BART G2P bundle with the Misaki lexicon;
+- for `zh` — the Mandarin ANE bundle with its voice packs and its pinyin
+  dictionaries.
+
+The ANE chain and the Mandarin bundle SHALL follow whichever models root the
+Engine points FluidAudio at, so relocating the root relocates the staged
+assets. The shared G2P assets SHALL be staged to the fixed path upstream's
+singleton resolves for itself, which no models root can move. Staging SHALL be
+additive and idempotent: an asset already present and matching its Pinned hash
+is not downloaded again. Russian is unaffected — Vosk-TTS installs into the
+Model cache on every platform.
+
+One asset group is deliberately excluded: the Mandarin jieba HMM tables, which
+upstream never published. Segmentation falls back to FMM without them, so their
+absence degrades quality rather than blocking synthesis, and the pre-synthesis
+asset check SHALL NOT require them.
+
+#### Scenario: Maks installs Mandarin TTS on Apple Silicon
+
+- GIVEN the machine is darwin-arm64
+- WHEN Maks runs `kesha install --tts zh`
+- THEN the Mandarin ANE bundle, the `zh` voice packs, and the pinyin
+  dictionaries are downloaded, hash-verified, and staged into FluidAudio's
+  Mandarin bundle directory
+- AND the process exits 0
+- AND a later `kesha say --voice zh-zm_050` synthesizes without downloading
+  anything
+
+#### Scenario: A second language install leaves the first in place
+
+- GIVEN `kesha install --tts en` has already staged the English chain
+- WHEN Maks runs `kesha install --tts zh`
+- THEN the English assets are left in place and the Mandarin ones are added
+- AND the process exits 0
+
+#### Scenario: Russian-only install stages nothing into FluidAudio
+
+- GIVEN the machine is darwin-arm64
+- WHEN Ira runs `kesha install --tts ru`
+- THEN the Vosk-TTS files land in the Model cache
+- AND no FluidAudio Kokoro asset is downloaded or staged
+
+> *Technical Note — sources: `rust/src/models.rs::download_tts` calls
+> `stage_fluidaudio_kokoro_assets` (manifests `ANE_EN_FILES`,
+> `KOKORO_G2P_FILES`, `ANE_ZH_FILES`, `ANE_ZH_G2P_ASSETS`; the English variant
+> serves `ANE_ENGLISH_VARIANT_LANGS` = en/es/fr/hi/it/ja/pt) and
+> `stage_ane_kokoro_voices` (`ANE_KOKORO_VOICES`, #475), both under
+> `cfg(all(system_kokoro, macos, aarch64))`. Directories:
+> `fluidaudio_ane_kokoro_dir()` and `fluidaudio_ane_zh_kokoro_dir()`, which sit
+> under `fluidaudio_kokoro_location()`, and `fluidaudio_kokoro_g2p_dir()`,
+> pinned because `G2PModel.shared` resolves it itself (fluidaudio-rs 4e488d7,
+> still true at upstream 0.15.5). `ANE_ZH_FILES` carries `g2pw/g2pw.mlmodelc`
+> because upstream's `requiredModelsZh` checks the whole set before loading
+> anything, even though the disambiguator cannot activate at this pin.
+> `--plan` and `kesha doctor` preview only the English ANE chain and the
+> shared G2P set, via `src/kokoro-ane.ts::kokoroAneComponents`; the Mandarin
+> bundle is excluded there on purpose, since `--tts zh` is a separate opt-in
+> and its bytes already appear under the cache report's Kokoro ANE root
+> (#823, #828, #831).*
+
 ### Requirement: VAD and Diarize install are separate opt-in flags
 
 The CLI SHALL install the Silero VAD model only when `--vad` is passed (~2.3 MB).

@@ -190,7 +190,19 @@ French voice exists.
 
 Synthesis SHALL fail loudly — never download — when the required TTS model is
 not in the Model cache. The failure carries Error code `E_MODEL_MISSING` and an
-actionable `kesha install --tts` hint, and exits 1.
+actionable `kesha install --tts` hint, and exits 1 — the voice is rejected
+while it is being resolved, before synthesis starts.
+
+On darwin-arm64 the FluidAudio Kokoro voices are not gated by the Model cache,
+so the guarantee rests on a check of its own: before the FluidAudio bridge is
+initialized, synthesis SHALL confirm that every asset the requested voice needs
+— its bundle's model chain, that voice's own pack, and the variant's G2P assets
+— is already on disk, and refuse with `E_MODEL_MISSING` when any is absent.
+Refusing up front is what makes the rule hold there, because upstream's asset
+downloader consults no offline switch and would otherwise fetch a voice pack
+that `kesha install --tts <other-lang>` never staged. The message SHALL name
+the first few missing paths so the gap is identifiable, and the refusal exits 4
+(the `kesha say` code for a coded synthesis failure), not 1.
 
 #### Scenario: Synthesis with installed models stays offline
 
@@ -206,9 +218,29 @@ actionable `kesha install --tts` hint, and exits 1.
   with Error code `E_MODEL_MISSING`
 - AND the process exits 1 without downloading anything
 
-> *Technical Note — model presence gates: `rust/src/tts/voices.rs:192-204`
-> (ONNX Kokoro), `:307-313` (Vosk). `macos-*` voices need no model download;
-> FluidAudio Kokoro voices are fetched only by `kesha install --tts`.*
+#### Scenario: Mandarin voice on an English-only Apple Silicon install
+
+- GIVEN a darwin-arm64 machine where only `kesha install --tts en` has run
+- WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
+- THEN stderr carries Error code `E_MODEL_MISSING`, names missing asset paths,
+  and hints `kesha install --tts zh`
+- AND the process exits 4 without downloading anything
+
+> *Technical Note — model presence gates:
+> `rust/src/tts/voices.rs::build_kokoro_voice` (ONNX Kokoro) and
+> `::resolve_vosk_ru` (Vosk). `macos-*` voices need no model download.
+> The darwin-arm64 pre-check is `rust/src/models.rs::missing_kokoro_assets`,
+> called from `tts/fluid_kokoro.rs::with_kokoro` alongside
+> `fluidaudio_rs::set_offline_mode(true)` — two defences because neither covers
+> the other: the flag stops upstream's repo downloads but not its
+> `AssetDownloader` (#823). Its required set is derived from the same staging
+> manifests the install uses, so a manifest change cannot leave the check
+> behind. The error is a `CodedError { ModelMissing }` that reaches the caller
+> as `TtsError::Coded`, hence exit 4 rather than the 1 a voice-resolution
+> failure returns; a file that exists but is truncated slips past and surfaces
+> as the same message from FluidAudio's `AssetsUnavailable`. What install
+> stages: installation spec, "On darwin-arm64, `--tts` stages FluidAudio's
+> Kokoro assets outside the Model cache".*
 
 ### Requirement: Output formats — wav, ogg-opus, flac
 
@@ -495,8 +527,10 @@ stderr note, because the upstream CharsiuG2P export has no Castilian θ tag.
 > degrade decision (#511 Phase-0 spike found no working θ tag in the klebster
 > CharsiuG2P export): `rust/src/tts/charsiu/mod.rs:46-110`; `es-ES` is detected
 > by `is_castilian_region` while `es`/`es-419`/`es-MX` use the LatAm tag
-> directly. zh voices are fetched by FluidAudio's own `ANE-zh/` bundle, not
-> staged in `rust/src/models.rs`.*
+> directly. zh runs off FluidAudio's separate Mandarin (`ANE-zh/`) bundle,
+> which `kesha install --tts zh` stages like every other model — voice packs
+> and pinyin dictionaries included (`rust/src/models.rs::ANE_ZH_FILES`,
+> `ANE_ZH_G2P_ASSETS`, #823).*
 
 ### Requirement: List installed voices
 
@@ -529,11 +563,19 @@ still exit 0.
 
 ### Requirement: Exit codes distinguish failure classes
 
-`kesha say` SHALL exit 0 on success, 1 when the voice is unknown or its model
-is not installed, 2 for invalid input (bad flags, empty text, malformed
-flag combinations), 4 for synthesis/SSML/internal failures, and 5 when the
-text exceeds the length limit. The CLI SHALL propagate the Engine's exit code
-unchanged (`SayError.exitCode`); CLI-side pre-checks use the same map.
+`kesha say` SHALL exit 0 on success, 1 when voice resolution rejects the
+request, 2 for invalid input (bad flags, empty text, malformed flag
+combinations), 4 for synthesis-time failures, and 5 when the text exceeds the
+length limit. The CLI SHALL propagate the Engine's exit code unchanged
+(`SayError.exitCode`); CLI-side pre-checks use the same map.
+
+Exit 1 SHALL cover the checks that run while the Voice id is resolved: an
+unknown voice, and a model absent from the Model cache on the paths the cache
+gates (ONNX Kokoro, Vosk). Exit 4 SHALL cover every coded failure raised once
+resolution has succeeded, including the darwin-arm64 FluidAudio asset
+pre-check, which reports `E_MODEL_MISSING` from synthesis rather than from
+resolution. The Error code says what went wrong and the exit code says how far
+the run got, so the same `E_MODEL_MISSING` legitimately appears with either.
 
 #### Scenario: Exit-code contract in a script
 
@@ -548,15 +590,17 @@ unchanged (`SayError.exitCode`); CLI-side pre-checks use the same map.
 - THEN the CLI reports the stderr text and exits with the Engine's nonzero
   code, or 4 for non-SayError internal failures
 
-> *Technical Note — Engine map: `rust/src/cli/say.rs:132-138`
-> (`exit_code_for_tts_err`: `EmptyText` → 2, `TextTooLong` → 5,
-> `SynthesisFailed`/`Coded` → 4); voice resolution failures return 1 directly
-> (`rust/src/cli/say.rs:228-235`); format/flag errors return 2
-> (`:169-183`, `:220-226`). CLI side: `SayError` carries the Engine exit code
-> (`src/cli/say.ts:289-292`); pre-flight checks exit 2
-> (`src/cli/say.ts:62-101,204-207`) and 5 (`src/synth.ts:117-125`).
-> `E_SSML_INVALID`, `E_SSML_UNSUPPORTED`, and `E_SCRIPT_UNSUPPORTED` all
-> surface as `Coded` → exit 4.*
+> *Technical Note — Engine map: `rust/src/cli/say.rs::exit_code_for_tts_err`
+> (`EmptyText` → 2, `TextTooLong` → 5, `SynthesisFailed`/`Coded` → 4). Voice
+> resolution failures return 1 from `cli/say.rs::resolve_voice`, which is where
+> the `ModelMissing` bails in `tts/voices.rs::build_kokoro_voice` (ONNX Kokoro)
+> and `::resolve_vosk_ru` surface; `--model`/`--voice-file` and output-format
+> errors return 2 from `resolve_voice` and `cli/say.rs::run`.
+> `E_SSML_INVALID`, `E_SSML_UNSUPPORTED`, `E_SCRIPT_UNSUPPORTED`, and the
+> darwin-arm64 late `E_MODEL_MISSING` from `models::missing_kokoro_assets` all
+> reach the caller as `TtsError::Coded` → exit 4. CLI side: `SayError` carries
+> the Engine exit code, and `src/synth.ts::say` pre-checks empty text (2) and
+> the length limit (5).*
 
 ## Open Issues
 
