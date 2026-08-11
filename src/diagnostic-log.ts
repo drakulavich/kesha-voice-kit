@@ -27,8 +27,9 @@ const SAFE_STRING_VALUE = /^[A-Za-z0-9_.@+-]{1,120}$/;
 const SAFE_EVENT = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/;
 const DISALLOWED_FIELD_NAME =
   /(?:path|file|filename|basename|message|text|transcript|stdout|stderr|env|token|secret|password|key|url|prompt|content|raw)/i;
+// Only sees values SAFE_STRING_VALUE accepted, so a URI-scheme arm here could never fire (#900).
 const UNSAFE_STRING_VALUE =
-  /(?:[\\/]|^[A-Za-z][A-Za-z0-9+.-]*:|[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:aac|aiff?|caf|flac|m4a|m4v|mov|mp3|mp4|ogg|opus|wav|webm|wma)\b|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b)/i;
+  /(?:[\\/]|[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:aac|aiff?|caf|flac|m4a|m4v|mov|mp3|mp4|ogg|opus|wav|webm|wma)\b|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b)/i;
 const RESERVED_FIELD_NAMES = new Set(["ts", "level", "event", "app_version", "pid"]);
 
 export type DiagnosticLogValue = string | number | boolean | null;

@@ -400,3 +400,21 @@ describe("a buffered session only spends the disk it has to", () => {
     expect(existsSync(resolveDiagnosticLogPath())).toBe(false);
   });
 });
+
+// Pins the behaviour that made the URI-scheme arm of UNSAFE_STRING_VALUE unreachable: a colon
+// never survives SAFE_STRING_VALUE, so a scheme is rejected one condition earlier (#897 review).
+describe("a scheme-shaped value is refused whatever matches it", () => {
+  for (const value of ["mailto:alice", "data:abc", "file:notes", "x:y", "custom+scheme:1", "a:"]) {
+    test(`"${value}" is refused`, () => {
+      expect(() => buildDiagnosticLogLine("privacy.scheme", { endpoint: value })).toThrow(
+        "unsafe diagnostic string field",
+      );
+    });
+  }
+
+  test("the colon is what disqualifies it, not the word before it", () => {
+    expect(() =>
+      buildDiagnosticLogLine("privacy.scheme", { endpoint: "mailto" }),
+    ).not.toThrow();
+  });
+});
