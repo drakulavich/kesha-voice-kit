@@ -4,6 +4,10 @@ FEATURES := "tts,system_kokoro,system_diarize"
 FILE := ""
 TAG := ""
 ALL := ""
+# Two seam_long_form tests cost 60-120 s each and only exercise transcribe/, so every mutant
+# outside it pays ~50 s for nothing. TEST_FILTER="" runs everything (nextest rejects an empty
+# filterset, so the recipe substitutes all()) — use it when mutating transcribe/ itself.
+TEST_FILTER := "not test(seam_long_form)"
 
 # Show available recipes
 default:
@@ -83,10 +87,14 @@ verify-darwin-full:
 # `--in-place` is not optional: models.rs include_str!s a file above the crate, so the copy build fails.
 # Mutation-test one engine file, e.g. just FILE=src/errors.rs mutants-rust
 mutants-rust:
-    @test -n "{{ FILE }}" || { echo "usage: just FILE=src/<file>.rs [FEATURES=<set>] mutants-rust" >&2; exit 2; }
+    @test -n "{{ FILE }}" || { echo "usage: just FILE=src/<file>.rs [FEATURES=<set>] [TEST_FILTER=<expr>] mutants-rust" >&2; exit 2; }
     @command -v cargo-mutants >/dev/null || { echo "install it: cargo install --locked cargo-mutants" >&2; exit 2; }
     @git diff --quiet -- rust || { echo "rust/ has uncommitted changes; --in-place mutates the tree" >&2; exit 2; }
-    cd rust && cargo mutants --in-place -f {{ FILE }} --features {{ FEATURES }}
+    cd rust && cargo mutants --in-place -f {{ FILE }} --features {{ FEATURES }} -- -E '{{ if TEST_FILTER == "" { "all()" } else { TEST_FILTER } }}'
+
+# Mutation-test TypeScript sources against whichever suites import them, e.g. just mutants-ts src/engine.ts
+mutants-ts *FILES:
+    bun scripts/mutants-ts.ts {{ FILES }}
 
 # Run smoke tests against fixtures
 smoke-test:
