@@ -311,8 +311,9 @@ jobs:
         with:
           cache-path: |
             ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-models-tts-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          cache-key: kesha-models-tts-v2
+          cache-restore-keys: kesha-models-tts-
+          cache-cross-os: "true"
           ffmpeg-provider: skip
           install-args: --tts en
           cache-write: "false"
@@ -401,6 +402,9 @@ jobs:
           '
 
       # FluidAudio owns `~/.cache/fluidaudio` — the ANE voice packs install stages, plus the bundle it self-fetches.
+      # Left out of the `kesha-models-tts-v2` share on purpose: this row caches a second path the other
+      # lanes do not, so it cannot read their entry. `macOS-kesha-models-tts-*` has never been written by
+      # anything, so this row has always cold-downloaded and still does — tracked separately (#860).
       - name: 🔊 Install English TTS models
         uses: ./.github/actions/install-kesha-backend
         with:

@@ -493,8 +493,9 @@ jobs:
         with:
           cache-path: |
             ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-models-tts-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          cache-key: kesha-models-tts-v2
+          cache-restore-keys: kesha-models-tts-
+          cache-cross-os: "true"
           ffmpeg-provider: apt
           install-args: --tts en
           engine-dir: ~/.cache/kesha/engine
@@ -547,8 +548,9 @@ jobs:
         with:
           cache-path: |
             ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-models-tts-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          cache-key: kesha-models-tts-v2
+          cache-restore-keys: kesha-models-tts-
+          cache-cross-os: "true"
           ffmpeg-provider: skip
           install-args: --tts en
           engine-dir: ~/.cache/kesha/engine
@@ -676,8 +678,9 @@ jobs:
         with:
           cache-path: |
             ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-models-tts-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          cache-key: kesha-models-tts-v2
+          cache-restore-keys: kesha-models-tts-
+          cache-cross-os: "true"
           ffmpeg-provider: ${{ matrix.ffmpeg-provider }}
           install-args: --onnx --tts en
           cache-write: "false"
