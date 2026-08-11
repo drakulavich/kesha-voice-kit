@@ -119,13 +119,16 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
     f()
 }
 
-/// Where FluidAudio's stdout chatter goes for the duration of a one-shot call:
+/// Where FluidAudio's stdout chatter goes while a silencing guard is held:
 /// `/dev/null` normally, stderr under `KESHA_DEBUG`.
 ///
 /// CoreML reports real failures — the ANE-less prepare error and the E5RT
 /// exceptions behind it (#678) — on stdout, so discarding it unconditionally
 /// makes those failures unreadable exactly where they matter: a CI runner you
-/// cannot attach to.
+/// cannot attach to. The ASR path is the same story: the bridge collapses every
+/// `transcribeSamples` throw to a bare "Transcription failed" and prints the
+/// underlying error with Swift `print`, so /dev/null is where #841's warm-cache
+/// flake diagnosis went.
 ///
 /// Scope of what this changes, precisely: only where fd 1 points *while the
 /// guard is held*. Callers write their payload after it returns, so the
@@ -134,8 +137,12 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
 /// background CoreML print landing on real stdout after the guard restores
 /// fd 1, which can still corrupt a streamed WAV. That is unchanged either way,
 /// since `/dev/null` does not catch a post-restore print either.
-#[cfg(any(feature = "system_kokoro", feature = "system_diarize"))]
-fn oneshot_sink() -> Option<OwnedFd> {
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+pub(crate) fn oneshot_sink() -> Option<OwnedFd> {
     use std::os::fd::FromRawFd;
 
     if crate::debug::enabled() {
@@ -258,18 +265,60 @@ mod tests {
     use std::io::{Read, Seek};
     use std::os::fd::{AsRawFd, OwnedFd};
 
-    /// Restores the test's original fd 1 even when an assert panics — under a
+    /// Restores the test's original fd even when an assert panics — under a
     /// single-process `cargo test --lib` run a leaked redirect would misdirect
     /// other tests' output.
-    struct RestoreStdout(std::os::fd::RawFd);
-    impl Drop for RestoreStdout {
+    struct RestoreFd {
+        saved: std::os::fd::RawFd,
+        target: std::os::fd::RawFd,
+    }
+    impl Drop for RestoreFd {
         fn drop(&mut self) {
-            // SAFETY: self.0 is the dup of the original fd 1 we own.
+            // SAFETY: self.saved is the dup of the original fd we own.
             unsafe {
-                libc::dup2(self.0, libc::STDOUT_FILENO);
-                libc::close(self.0);
+                libc::dup2(self.saved, self.target);
+                libc::close(self.saved);
             }
         }
+    }
+
+    /// #841: the bridge collapses every transcribe throw to "Transcription
+    /// failed" and prints the real error with Swift `print`, so `KESHA_DEBUG`
+    /// has to land that stdout on stderr — the coreml-regression lane sets it
+    /// for exactly this, and /dev/null would keep the flake undiagnosable.
+    #[cfg(any(
+        feature = "coreml",
+        feature = "system_kokoro",
+        feature = "system_diarize"
+    ))]
+    #[test]
+    fn debug_routes_silenced_chatter_to_stderr() {
+        std::env::set_var("KESHA_DEBUG", "1");
+        let mut capture = tempfile::tempfile().expect("capture tempfile");
+        let saved_real = unsafe { libc::dup(libc::STDERR_FILENO) };
+        assert!(saved_real >= 0, "dup stderr failed");
+        let _restore = RestoreFd {
+            saved: saved_real,
+            target: libc::STDERR_FILENO,
+        };
+        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDERR_FILENO) } >= 0);
+
+        // Taken after the redirect: the sink dups whatever fd 2 points at now.
+        let sink = oneshot_sink();
+        with_silenced_stdout(sink.as_ref(), || {
+            // SAFETY: NUL-terminated literal; printf buffers via C stdio,
+            // exactly like the Swift bridge's print.
+            unsafe { libc::printf(c"Transcribe samples error: simulated\n".as_ptr()) };
+        });
+        drop(_restore);
+
+        let mut contents = String::new();
+        capture.rewind().unwrap();
+        capture.read_to_string(&mut contents).unwrap();
+        assert!(
+            contents.contains("Transcribe samples error"),
+            "KESHA_DEBUG must route FluidAudio's stdout chatter to stderr, got {contents:?}"
+        );
     }
 
     /// #543: a C-stdio write buffered inside the guarded scope (a Swift
@@ -282,7 +331,10 @@ mod tests {
         let mut capture = tempfile::tempfile().expect("capture tempfile");
         let saved_real = unsafe { libc::dup(libc::STDOUT_FILENO) };
         assert!(saved_real >= 0, "dup stdout failed");
-        let _restore = RestoreStdout(saved_real);
+        let _restore = RestoreFd {
+            saved: saved_real,
+            target: libc::STDOUT_FILENO,
+        };
         assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
 
         let devnull = std::fs::OpenOptions::new()
@@ -328,7 +380,10 @@ mod tests {
         let mut capture = tempfile::tempfile().expect("capture tempfile");
         let saved_real = unsafe { libc::dup(libc::STDOUT_FILENO) };
         assert!(saved_real >= 0, "dup stdout failed");
-        let _restore = RestoreStdout(saved_real);
+        let _restore = RestoreFd {
+            saved: saved_real,
+            target: libc::STDOUT_FILENO,
+        };
         assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
 
         {
