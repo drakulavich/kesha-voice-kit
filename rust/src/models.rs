@@ -3094,10 +3094,12 @@ const BODY_STALL_BUDGET: Duration = Duration::from_secs(30);
 /// deadline and nothing else bounds it, so deleting that line would silently
 /// unbound the header wait (#893).
 ///
-/// `stall_budget` is meant to abort a body that has gone silent, but
-/// `timeout_recv_response` is stamped at headers-received and `RecvBody`
-/// inherits it, so today it caps the *whole body* instead — which is what makes
-/// a 654MB artifact unreachable on a slow link (#776).
+/// `stall_budget` is a *rolling* window: `RecvBody` inherits only
+/// `RecvResponse`, so leaving the latter unset re-arms the deadline on every
+/// read and the body aborts on silence rather than on elapsed time. Setting
+/// `timeout_recv_response` again would cap the whole body instead — ureq takes
+/// the minimum — which is what put a 654MB artifact out of reach on a slow link
+/// (#776, #893).
 ///
 /// Status is inspected by the caller rather than raised by ureq so a 429's
 /// `Retry-After` header survives into the backoff decision (#724). `identity`
@@ -3120,7 +3122,7 @@ fn download_request(
         .timeout_resolve(Some(header_budget))
         .timeout_connect(Some(header_budget))
         .timeout_send_request(Some(header_budget))
-        .timeout_recv_response(Some(stall_budget))
+        .timeout_recv_body(Some(stall_budget))
         .build()
 }
 
@@ -4605,7 +4607,11 @@ mod retry_tests {
     /// per-attempt cap, which is why five retries from byte 0 could never
     /// finish a 654MB file (#776). The second arm pins the other half: ureq
     /// takes the *minimum* of the two deadlines, so a generous
-    /// `timeout_recv_body` cannot loosen the cap, which is why it stays unset.
+    /// `timeout_recv_body` cannot loosen the cap.
+    ///
+    /// `download_request` dropped `timeout_recv_response` for exactly this
+    /// reason (#893), so this now characterizes a config we no longer ship —
+    /// which is the point. It is what goes red if anyone puts that knob back.
     ///
     /// Unix only, and that is itself the finding: this same probe on
     /// windows-latest received the whole body well past the deadline, which is
