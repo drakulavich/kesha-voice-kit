@@ -75,15 +75,15 @@ issue/PR that drove it). Newest concerns first within each section.
   and Vosk-TTS internals (BERT prosody + dictionary) for Russian ([#214]). No system deps.
   The Romance languages go through CharsiuG2P (ONNX ByT5-tiny) on ONNX builds and
   FluidAudio's own G2P on darwin-arm64 `system_kokoro` ([#509]).
-- **Context / pivots:** CharsiuG2P ([#123]) replaced espeak-ng ([#210]), then both were
-  dropped in [#214] once English had moved to `misaki-rs` ([#211]) and Russian to Vosk,
-  leaving CharsiuG2P with no callers. espeak-ng turned out to be dynamic-link-only in
-  `espeakng-sys`, which conflicted with the static-binary distribution model ([#124]);
-  CharsiuG2P had no such problem and came back in [#509] as the only ONNX-buildable G2P
-  for es/fr/it/pt.
+- **Context / pivots:** CharsiuG2P ([#123]) replaced espeak-ng, which then came back for
+  Russian under Piper ([#210]); [#214] dropped both — by then English had moved to
+  `misaki-rs` ([#211]) and Russian to Vosk, leaving CharsiuG2P with no callers. espeak-ng
+  turned out to be dynamic-link-only in `espeakng-sys`, which conflicted with the
+  static-binary distribution model ([#124]); CharsiuG2P had no such problem and came back
+  in [#509] as the only ONNX-buildable G2P for es/fr/it/pt.
 - **Rationale:** ship a self-contained binary with no runtime system dependencies; the
   embedded lexicon path is reproducible and matches the Kokoro-trained inventory, and a
-  downloaded ~30 MB ONNX pack keeps the Romance languages inside that rule.
+  downloaded ~100 MB ONNX pack keeps the Romance languages inside that rule.
 - **Status:** active; espeak-ng retired, CharsiuG2P live for es/fr/it/pt only.
 
 ### TTS engine pivot: Silero → Piper → (removed)
