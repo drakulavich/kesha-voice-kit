@@ -3,8 +3,9 @@
 //! A leaf failure attaches a code via [`coded_bail!`] or [`CodedContext::coded`].
 //! The code rides in the `anyhow` chain inside a [`CodedError`]; the top-level
 //! [`report`] walks the chain, prints `error [CODE]: <message>` to stderr, and
-//! returns the process exit code. See
-//! `docs/superpowers/specs/2026-05-30-structured-error-taxonomy-design.md`.
+//! returns the process exit code. An uncoded error falls back to `E_INTERNAL`,
+//! so the `error [CODE]:` contract holds even on paths not individually coded.
+//! User-facing registry: `docs/errors.md`.
 
 use serde::Serialize;
 

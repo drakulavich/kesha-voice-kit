@@ -1,7 +1,7 @@
 # Clawhub skill bundle — publish only skill-facing files.
 #
-# Without this, `clawhub publish .` ships all 96 text files in the repo
-# (CLAUDE.md, docs/superpowers/, src/**, tests/**, rust/**, etc.) as one
+# Without this, `clawhub publish .` ships every text file in the repo
+# (CLAUDE.md, docs/**, src/**, tests/**, rust/**, etc.) as one
 # skill package. Peer skills (tg-voice-whisper, voice-transcribe) ship
 # just SKILL.md.
 

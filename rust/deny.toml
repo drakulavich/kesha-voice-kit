@@ -1,5 +1,6 @@
 # cargo-deny policy. Run `cd rust && cargo deny check` locally before pushing.
-# See docs/superpowers/specs/2026-05-25-security-ci-gates-design.md.
+# Enforced by the `cargo-deny` job in .github/workflows/security.yml; every
+# policy choice below carries its reason inline.
 
 [advisories]
 # RUSTSEC advisory DB. Unfixable transitive CVEs go in `ignore` below, each

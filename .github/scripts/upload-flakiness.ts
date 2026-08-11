@@ -8,7 +8,9 @@
  * `macos-latest` produced five environments in 90 days (15.7.4, 15.7.5, 15.7.7,
  * 26.4, 26.5.2), each starting from empty history — which makes rare-flake
  * detection impossible. Truncating to major.minor before upload stops the
- * patch-level forks. Design: docs/superpowers/specs/2026-08-04-flakiness-signal-landing-design.md
+ * patch-level forks. Forward-only: `26.5` is a *new* environment, so the
+ * existing `26.5.2` rows do not migrate into it. Ubuntu and Windows are left
+ * alone because their reported versions have not drifted.
  *
  * Usage: bun .github/scripts/upload-flakiness.ts <junit-path> <category> [project]
  */
