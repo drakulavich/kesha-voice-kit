@@ -7,7 +7,6 @@
 //! - [`say_kokoro`] / [`say_vosk`] — the same per-engine dispatch with the
 //!   caller's cached sessions injected (the `--stdin-loop` path, #213)
 
-use std::borrow::Cow;
 use std::path::Path;
 use std::time::Instant;
 
@@ -639,13 +638,9 @@ fn say_with_vosk(
     format: OutputFormat,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
-    let normalized: Cow<'_, str> = if expand_abbrev {
-        Cow::Owned(ru::expand_text(text))
-    } else {
-        Cow::Borrowed(text)
-    };
+    let normalized = ru::expand_text(text, expand_abbrev);
     let (audio, sample_rate) = vosk
-        .infer(model_dir, normalized.as_ref(), speaker_id, speed)
+        .infer(model_dir, &normalized, speaker_id, speed)
         .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     encode_or_fail(&audio, sample_rate, format)
 }
