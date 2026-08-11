@@ -195,14 +195,16 @@ jobs:
       # release-smoke gate), but `--all-targets` clippy at least type-checks
       # and lints the test code + the install-time voice-pack staging so a
       # darwin-only break is caught before a release tag builds it.
+      # The feature set lives in the `verify-darwin-full` recipe, so CI and the local
+      # gate cannot drift apart (#797) — hence a `just` on PATH for this lane.
+      - uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        if: matrix.os == 'macos-14'
+        with:
+          tool: just@1.58.0
       - name: Lint darwin release feature set (incl. system_kokoro)
         if: matrix.os == 'macos-14'
         shell: bash
-        run: |
-          cd rust
-          cargo clippy --all-targets \
-            --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
-            --no-default-features -- -D warnings
+        run: just verify-darwin-full
 
       # No model cache on this lane at all: the Kokoro stand-in is committed,
       # CharsiuG2P is covered once on the Linux coverage lane rather than three
