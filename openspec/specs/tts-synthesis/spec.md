@@ -192,6 +192,17 @@ Synthesis SHALL fail loudly — never download — when the required TTS model i
 not in the Model cache. The failure carries Error code `E_MODEL_MISSING` and an
 actionable `kesha install --tts` hint, and exits 1.
 
+On darwin-arm64 the FluidAudio Kokoro voices are not gated by the Model cache,
+so the guarantee rests on a check of its own: before the FluidAudio bridge is
+initialized, synthesis SHALL confirm that every asset the requested voice needs
+— its bundle's model chain, that voice's own pack, and the variant's G2P assets
+— is already on disk, and refuse with `E_MODEL_MISSING` when any is absent.
+Refusing up front is what makes the rule hold there, because upstream's asset
+downloader consults no offline switch and would otherwise fetch a voice pack
+that `kesha install --tts <other-lang>` never staged. The message SHALL name
+the first few missing paths so the gap is identifiable, and the refusal exits 4
+(the `kesha say` code for a coded synthesis failure), not 1.
+
 #### Scenario: Synthesis with installed models stays offline
 
 - GIVEN the English Kokoro model is installed
@@ -206,9 +217,28 @@ actionable `kesha install --tts` hint, and exits 1.
   with Error code `E_MODEL_MISSING`
 - AND the process exits 1 without downloading anything
 
+#### Scenario: Mandarin voice on an English-only Apple Silicon install
+
+- GIVEN a darwin-arm64 machine where only `kesha install --tts en` has run
+- WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
+- THEN stderr carries Error code `E_MODEL_MISSING`, names missing asset paths,
+  and hints `kesha install --tts zh`
+- AND the process exits 4 without downloading anything
+
 > *Technical Note — model presence gates: `rust/src/tts/voices.rs:192-204`
-> (ONNX Kokoro), `:307-313` (Vosk). `macos-*` voices need no model download;
-> FluidAudio Kokoro voices are fetched only by `kesha install --tts`.*
+> (ONNX Kokoro), `:307-313` (Vosk). `macos-*` voices need no model download.
+> The darwin-arm64 pre-check is `rust/src/models.rs::missing_kokoro_assets`,
+> called from `tts/fluid_kokoro.rs::with_kokoro` alongside
+> `fluidaudio_rs::set_offline_mode(true)` — two defences because neither covers
+> the other: the flag stops upstream's repo downloads but not its
+> `AssetDownloader` (#823). Its required set is derived from the same staging
+> manifests the install uses, so a manifest change cannot leave the check
+> behind. The error is a `CodedError { ModelMissing }` that reaches the caller
+> as `TtsError::Coded`, hence exit 4 rather than the 1 a voice-resolution
+> failure returns; a file that exists but is truncated slips past and surfaces
+> as the same message from FluidAudio's `AssetsUnavailable`. What install
+> stages: installation spec, "On darwin-arm64, `--tts` stages FluidAudio's
+> Kokoro assets outside the Model cache".*
 
 ### Requirement: Output formats — wav, ogg-opus, flac
 
@@ -495,8 +525,10 @@ stderr note, because the upstream CharsiuG2P export has no Castilian θ tag.
 > degrade decision (#511 Phase-0 spike found no working θ tag in the klebster
 > CharsiuG2P export): `rust/src/tts/charsiu/mod.rs:46-110`; `es-ES` is detected
 > by `is_castilian_region` while `es`/`es-419`/`es-MX` use the LatAm tag
-> directly. zh voices are fetched by FluidAudio's own `ANE-zh/` bundle, not
-> staged in `rust/src/models.rs`.*
+> directly. zh runs off FluidAudio's separate Mandarin (`ANE-zh/`) bundle,
+> which `kesha install --tts zh` stages like every other model — voice packs
+> and pinyin dictionaries included (`rust/src/models.rs::ANE_ZH_FILES`,
+> `ANE_ZH_G2P_ASSETS`, #823).*
 
 ### Requirement: List installed voices
 

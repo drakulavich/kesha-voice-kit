@@ -37,7 +37,7 @@ verbatim; if you need a new term, add it here first.
 | **TOON** | Token-oriented object notation (`@toon-format/toon`): compact tabular encoding of the same data as `--json`, losslessly decodable. |
 | **Output format (TTS)** | One of **wav** (default, IEEE-float mono), **ogg-opus**, **flac**. |
 | **Install plan** | The dry-run preview (`--plan`) listing components, sizes, and cache status before any download. |
-| **Never-auto-download rule** | The Engine and models download only during explicit `kesha install` / `kesha init`; every other command fails with an actionable hint when something is missing. |
+| **Never-auto-download rule** | The Engine and models download only during explicit `kesha install` / `kesha init`; every other command fails with an actionable hint when something is missing. Where a third-party runtime would fetch on its own — FluidAudio Kokoro on darwin-arm64 — the rule is upheld by checking the assets are on disk before that runtime is handed anything. |
 | **Diagnostic log** | Privacy-safe local NDJSON event log managed by `kesha logs` (modes: off / on / retain-on-failure). No transcript content or file paths. |
 | **Stats DB** | Local SQLite database of anonymous performance metrics managed by `kesha stats`. |
 | **Support bundle** | Redacted `.tar.gz` diagnostics archive produced by `kesha support-bundle`. |
