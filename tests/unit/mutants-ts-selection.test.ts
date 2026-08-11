@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { selectCoveringTests, testFileCandidates } from "../../scripts/mutants-ts";
+import {
+  importedModules,
+  selectCoveringTests,
+  testFileCandidates,
+  toPosix,
+} from "../../scripts/mutants-ts";
 
 /**
  * Picking the wrong suites is the failure that matters here: stryker would report a healthy
@@ -72,6 +77,15 @@ describe("which suites are measured against a source", () => {
     expect(selectCoveringTests(["src/star.ts"], tests)).toEqual([
       "tests/unit/lazy.test.ts",
       "tests/unit/reexport.test.ts",
+    ]);
+  });
+
+  // Windows `path.relative` returns `src\engine`, which matches no import specifier (#897).
+  test("separators are normalised before anything is compared", () => {
+    expect(toPosix("tests\\unit\\engine.test.ts")).toBe("tests/unit/engine.test.ts");
+    expect(toPosix("tests/unit/engine.test.ts")).toBe("tests/unit/engine.test.ts");
+    expect(importedModules("tests/unit/say.test.ts", 'import { s } from "../../src/cli/say";')).toEqual([
+      "src/cli/say",
     ]);
   });
 

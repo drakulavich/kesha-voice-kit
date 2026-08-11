@@ -24,7 +24,7 @@ export function testFileCandidates(roots: string[] = TEST_ROOTS): string[] {
       return [];
     }
     return entries.flatMap((entry) => {
-      const path = join(dir, entry);
+      const path = toPosix(join(dir, entry));
       if (statSync(path).isDirectory()) return walk(path);
       return path.endsWith(".test.ts") ? [path] : [];
     });
@@ -33,6 +33,11 @@ export function testFileCandidates(roots: string[] = TEST_ROOTS): string[] {
 }
 
 const transpiler = new Bun.Transpiler({ loader: "ts" });
+
+/** Import specifiers are always `/`-separated; `path` on Windows is not. */
+export function toPosix(path: string): string {
+  return path.replaceAll("\\", "/");
+}
 
 /**
  * Resolved, extensionless module paths a test actually depends on. Parsed rather than
@@ -49,14 +54,14 @@ export function importedModules(testPath: string, text: string): string[] {
   return scanned
     .map(({ path }) => path)
     .filter((path) => path.startsWith("."))
-    .map((path) => relative(process.cwd(), resolve(dirname(testPath), path)).replace(/\.ts$/, ""));
+    .map((path) => toPosix(relative(process.cwd(), resolve(dirname(testPath), path))).replace(/\.ts$/, ""));
 }
 
 export function selectCoveringTests(
   sources: string[],
   tests: Array<{ path: string; text: string }>,
 ): string[] {
-  const wanted = new Set(sources.map((source) => source.replace(/\.ts$/, "")));
+  const wanted = new Set(sources.map((source) => toPosix(source).replace(/\.ts$/, "")));
   return tests
     .filter((test) => importedModules(test.path, test.text).some((mod) => wanted.has(mod)))
     .map((test) => test.path);
@@ -70,7 +75,7 @@ async function coveringTests(sources: string[]): Promise<string[]> {
 }
 
 async function main(argv: string[]): Promise<number> {
-  const sources = argv.map((arg) => relative(process.cwd(), resolve(arg)));
+  const sources = argv.map((arg) => toPosix(relative(process.cwd(), resolve(arg))));
   if (sources.length === 0) {
     console.error(USAGE);
     return 2;
