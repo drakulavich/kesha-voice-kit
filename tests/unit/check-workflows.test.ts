@@ -1,13 +1,15 @@
+import { readdirSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import {
   forbidLinuxPackaging,
+  requireBashOnWindowsRunSteps,
   requireDarwinSmokeCoversBothEngines,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
   requirePreUploadSynthesisSmoke,
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
-import { parseRepoYaml, readRepoFile } from "../helpers/repo";
+import { parseRepoYaml, readRepoFile, repoPath } from "../helpers/repo";
 
 const PATH = ".github/workflows/build-engine.yml";
 const CI = ".github/workflows/ci.yml";
@@ -270,5 +272,87 @@ describe("requirePactVerificationCoversEveryTarget", () => {
     expect(requirePactVerificationCoversEveryTarget(PACT, { jobs: { pact: {} } })[0]).toContain(
       "strategy.matrix.include",
     );
+  });
+});
+
+describe("requireBashOnWindowsRunSteps", () => {
+  const BARE = { name: "report", run: 'echo "target=$TARGET"' };
+  const smoke = (job: Record<string, unknown>, top: Record<string, unknown> = {}) => ({
+    ...top,
+    jobs: { smoke: { "runs-on": "windows-latest", steps: [BARE], ...job } },
+  });
+  const errorsFor = (document: unknown) => requireBashOnWindowsRunSteps(CI, document);
+
+  test("passes on every workflow in the repo", () => {
+    for (const file of readdirSync(repoPath(".github/workflows"))) {
+      const path = `.github/workflows/${file}`;
+      expect([path, requireBashOnWindowsRunSteps(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
+  });
+
+  test("fails when a windows job leaves a run step on the default shell", () => {
+    const errors = errorsFor(smoke({}));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("`smoke` step `report` runs on windows without `shell:`");
+  });
+
+  test("names an unnamed step by position", () => {
+    expect(errorsFor(smoke({ steps: [{ run: "ls" }] }))[0]).toContain("step 1");
+  });
+
+  test("passes when the step sets shell: bash", () => {
+    expect(errorsFor(smoke({ steps: [{ ...BARE, shell: "bash" }] }))).toEqual([]);
+  });
+
+  // An explicit non-bash shell is a decision; the trap this closes is the implicit pwsh default.
+  test("passes when the step opts into pwsh explicitly", () => {
+    expect(errorsFor(smoke({ steps: [{ name: "report", run: "Write-Host $env:TARGET", shell: "pwsh" }] }))).toEqual([]);
+  });
+
+  test("passes when the job defaults every run step to bash", () => {
+    expect(errorsFor(smoke({ defaults: { run: { shell: "bash" } } }))).toEqual([]);
+  });
+
+  test("passes when the workflow defaults every run step to bash", () => {
+    expect(errorsFor(smoke({}, { defaults: { run: { shell: "bash" } } }))).toEqual([]);
+  });
+
+  test("passes when the step carries the pwsh-ok marker", () => {
+    const run = "# pwsh-ok: this one really is PowerShell\nWrite-Host $env:TARGET";
+    expect(errorsFor(smoke({ steps: [{ name: "report", run }] }))).toEqual([]);
+  });
+
+  test("ignores steps that only `uses` an action", () => {
+    expect(errorsFor(smoke({ steps: [{ uses: "actions/checkout@3d3c42e" }] }))).toEqual([]);
+  });
+
+  test("passes when the job never touches windows", () => {
+    expect(errorsFor({ jobs: { smoke: { "runs-on": "ubuntu-latest", steps: [BARE] } } })).toEqual([]);
+  });
+
+  test("fails when a self-hosted label set names windows", () => {
+    expect(errorsFor(smoke({ "runs-on": ["self-hosted", "windows", "x64"] }))).toHaveLength(1);
+  });
+
+  const matrixJob = (matrix: unknown, runsOn = "${{ matrix.os }}") =>
+    smoke({ "runs-on": runsOn, strategy: { matrix } });
+
+  test("fails when a matrix list puts the job on windows", () => {
+    expect(errorsFor(matrixJob({ os: ["ubuntu-latest", "windows-latest"] }))).toHaveLength(1);
+  });
+
+  test("fails when a matrix include row puts the job on windows", () => {
+    const matrix = { include: [{ os: "ubuntu-latest" }, { os: "windows-latest", target: "win32-x64" }] };
+    expect(errorsFor(matrixJob(matrix))).toHaveLength(1);
+  });
+
+  // A cross-compile target naming windows does not move the job off its Linux runner.
+  test("resolves the key runs-on actually names", () => {
+    const matrix = { os: ["ubuntu-latest"], target: ["x86_64-pc-windows-gnu"] };
+    expect(errorsFor(matrixJob(matrix))).toEqual([]);
+  });
+
+  test("a matrix it cannot resolve is not treated as windows", () => {
+    expect(errorsFor(matrixJob({ os: "${{ fromJSON(needs.plan.outputs.os) }}" }))).toEqual([]);
   });
 });

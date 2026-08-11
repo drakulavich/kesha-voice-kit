@@ -39,7 +39,7 @@ function requirePinnedActions(path: string, contents: string): string[] {
   return errors;
 }
 
-type Step = { run?: unknown; uses?: unknown; if?: unknown; with?: { filters?: unknown } };
+type Step = { name?: unknown; run?: unknown; uses?: unknown; if?: unknown; shell?: unknown; with?: { filters?: unknown } };
 
 function jobSteps(document: unknown, job: string): Step[] | undefined {
   const steps = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs?.[job]?.steps;
@@ -220,6 +220,71 @@ export function requirePactVerificationCoversEveryTarget(path: string, document:
 }
 
 /**
+ * Fails when a job that lands on a Windows runner leaves a `run:` step on the runner default.
+ *
+ * That default is pwsh, where a brace block fails loudly but `"$TARGET"` expands to the empty
+ * string in silence — bash written into a pwsh step keeps running and reports success on nothing
+ * (#849, #850). Cron-only workflows never execute in PR CI, so this file is the only lane that
+ * sees them. An explicit `shell:` of any kind is a decision and passes; so does a `# pwsh-ok`
+ * marker in the script, for the step that means the default.
+ */
+type Job = {
+  "runs-on"?: unknown;
+  steps?: unknown[];
+  strategy?: { matrix?: unknown };
+  defaults?: { run?: { shell?: unknown } };
+};
+
+/** Every scalar reachable at `path`, descending into matrix lists on the way. */
+function valuesAt(node: unknown, path: string[]): string[] {
+  if (node === null || node === undefined) return [];
+  if (Array.isArray(node)) return node.flatMap((item) => valuesAt(item, path));
+  if (path.length === 0) return typeof node === "object" ? [] : [String(node)];
+  if (typeof node !== "object") return [];
+  return valuesAt((node as Record<string, unknown>)[path[0]], path.slice(1));
+}
+
+/** The concrete labels a `runs-on` can resolve to, substituting the matrix keys it names. */
+function runnerLabels(job: Job): string[] {
+  const runsOn = job["runs-on"];
+  const literals = [...valuesAt(runsOn, []), ...valuesAt((runsOn as { labels?: unknown })?.labels, [])];
+  return literals.flatMap((label) => {
+    const references = [...label.matchAll(/\$\{\{\s*matrix\.([\w.]+)\s*\}\}/g)];
+    if (references.length === 0) return [label];
+    const matrix = job.strategy?.matrix;
+    return references.flatMap((reference) => {
+      const key = reference[1].split(".");
+      return [...valuesAt(matrix, key), ...valuesAt((matrix as { include?: unknown })?.include, key)];
+    });
+  });
+}
+
+export function requireBashOnWindowsRunSteps(path: string, document: unknown): string[] {
+  const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
+  if (!jobs || typeof jobs !== "object") return [];
+
+  const workflowShell = (document as { defaults?: { run?: { shell?: unknown } } })?.defaults?.run?.shell;
+  const errors: string[] = [];
+
+  for (const [name, job] of Object.entries(jobs)) {
+    if (!Array.isArray(job?.steps)) continue;
+    if (!runnerLabels(job).some((label) => /windows/i.test(label))) continue;
+    if (typeof (job.defaults?.run?.shell ?? workflowShell) === "string") continue;
+
+    for (const [at, step] of (job.steps as Step[]).entries()) {
+      if (typeof step?.run !== "string" || typeof step.shell === "string") continue;
+      if (/(^|\n)\s*#\s*pwsh-ok\b/.test(step.run)) continue;
+      const label = typeof step.name === "string" ? `\`${step.name}\`` : `${at + 1}`;
+      errors.push(
+        `${path}: \`${name}\` step ${label} runs on windows without \`shell:\`; the default there is pwsh, where "$VAR" expands to empty in silence — set \`shell: bash\`, or \`# pwsh-ok\` in the script if it means pwsh (#850)`,
+      );
+    }
+  }
+
+  return errors;
+}
+
+/**
  * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
  * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
  * so an uncovered script means edits to a gate skip the tests that prove it works.
@@ -282,6 +347,7 @@ function checkFile(path: string, testedScripts: string[]): string[] {
       ...forbidLinuxPackaging(path, contents),
       ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
+      ...requireBashOnWindowsRunSteps(path, document),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
     ];
   } catch (err) {
