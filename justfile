@@ -45,7 +45,8 @@ preflight:
     #!/usr/bin/env bash
     set -euo pipefail
     git rev-parse --verify --quiet origin/main >/dev/null || { echo "preflight: no local origin/main to diff against — run: git fetch origin main" >&2; exit 2; }
-    changed="$( { git diff --name-only origin/main...HEAD; git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u )"
+    # --no-renames: with detection on, a file moved out of rust/ reports only its destination.
+    changed="$( { git diff --no-renames --name-only origin/main...HEAD; git diff --no-renames --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u )"
     rust=""; backend=""
     if [ -n "{{ ALL }}" ] || grep -q '^rust/' <<<"$changed"; then rust=1; fi
     if [ -n "{{ ALL }}" ] || grep -q '^rust/src/backend/' <<<"$changed"; then backend=1; fi
@@ -65,7 +66,8 @@ preflight:
 
     if [ -n "$backend" ]; then
       echo "==> CoreML build check"
-      (cd rust && cargo check --features coreml --no-default-features)
+      # --all-targets matches rust-test.yml's check so the #[cfg(feature = "coreml")] tests compile too (#708).
+      (cd rust && cargo check --features coreml --no-default-features --all-targets)
     else
       echo "==> CoreML check skipped: no rust/src/backend/ changes"
     fi

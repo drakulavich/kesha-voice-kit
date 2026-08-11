@@ -54,9 +54,9 @@ git worktree remove .worktrees/<slug> && git worktree prune
 
 ### VERIFY BEFORE PUSHING
 
-- `just preflight` before every push. The recipe is the single executable definition of the gate — TS always, the Rust gate when `rust/**` changed, the CoreML check when `rust/src/backend/**` changed; `just ALL=1 preflight` runs every gate regardless of the diff. Read it rather than reconstructing the commands.
+- `just preflight` before every push — the executable definition of the default gate: TS always, the Rust gate when `rust/**` changed, the CoreML check when `rust/src/backend/**` changed; `just ALL=1 preflight` runs every gate regardless of the diff. Read it rather than reconstructing the commands.
 - Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest_tests`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
-- Touching darwin-only code (`system_kokoro` / `system_diarize` / `system_text_lang`): `just verify-darwin-full`, the same recipe `rust-test.yml` runs. Nothing else compiles those paths locally, so a break there is otherwise invisible until CI.
+- `preflight` does **not** build the darwin feature set, so it goes green on code that never compiled: touching `rust/src/tts/**` or anything fluidaudio-rs-adjacent (`system_kokoro` / `system_diarize` / `system_text_lang`) also needs `just verify-darwin-full`, the recipe `rust-test.yml` runs.
 - Do NOT push broken code.
 
 Rust toolchain quirks (CI rustc drift, rustfmt, `protoc`) and language gotchas: `docs/runbooks/rust-gotchas.md`.
