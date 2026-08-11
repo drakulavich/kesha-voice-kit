@@ -70,15 +70,21 @@ issue/PR that drove it). Newest concerns first within each section.
   are chosen by ear from the `m_*` set, not alphabetically.
 - **Status:** active (hard rule).
 
-### G2P: CharsiuG2P → espeak-ng → embedded misaki-rs / Vosk internals
-- **Decision:** grapheme-to-phoneme now uses embedded `misaki-rs` for English ([#207])
-  and Vosk-TTS internals (BERT prosody + dictionary) for Russian ([#213]). No system deps.
-- **Context / pivots:** CharsiuG2P ([#123]) and espeak-ng ([#210]) were both tried and
-  removed in [#213]. espeak-ng turned out to be dynamic-link-only in `espeakng-sys`,
-  which conflicted with the static-binary distribution model ([#124]).
+### G2P: espeak-ng → CharsiuG2P → embedded misaki-rs / Vosk internals (+ CharsiuG2P for es/fr/it/pt)
+- **Decision:** grapheme-to-phoneme uses embedded `misaki-rs` for English ([#207])
+  and Vosk-TTS internals (BERT prosody + dictionary) for Russian ([#214]). No system deps.
+  The Romance languages go through CharsiuG2P (ONNX ByT5-tiny) on ONNX builds and
+  FluidAudio's own G2P on darwin-arm64 `system_kokoro` ([#509]).
+- **Context / pivots:** CharsiuG2P ([#123]) replaced espeak-ng ([#210]), then both were
+  dropped in [#214] once English had moved to `misaki-rs` ([#211]) and Russian to Vosk,
+  leaving CharsiuG2P with no callers. espeak-ng turned out to be dynamic-link-only in
+  `espeakng-sys`, which conflicted with the static-binary distribution model ([#124]);
+  CharsiuG2P had no such problem and came back in [#509] as the only ONNX-buildable G2P
+  for es/fr/it/pt.
 - **Rationale:** ship a self-contained binary with no runtime system dependencies; the
-  embedded lexicon path is reproducible and matches the Kokoro-trained inventory.
-- **Status:** active; CharsiuG2P + espeak-ng retired.
+  embedded lexicon path is reproducible and matches the Kokoro-trained inventory, and a
+  downloaded ~30 MB ONNX pack keeps the Romance languages inside that rule.
+- **Status:** active; espeak-ng retired, CharsiuG2P live for es/fr/it/pt only.
 
 ### TTS engine pivot: Silero → Piper → (removed)
 - **Decision:** the original spec assumed Silero TTS; it was dropped during the M3
@@ -152,9 +158,12 @@ issue/PR that drove it). Newest concerns first within each section.
 [#174]: https://github.com/drakulavich/kesha-voice-kit/issues/174
 [#207]: https://github.com/drakulavich/kesha-voice-kit/issues/207
 [#210]: https://github.com/drakulavich/kesha-voice-kit/issues/210
+[#211]: https://github.com/drakulavich/kesha-voice-kit/pull/211
 [#213]: https://github.com/drakulavich/kesha-voice-kit/issues/213
+[#214]: https://github.com/drakulavich/kesha-voice-kit/pull/214
 [#223]: https://github.com/drakulavich/kesha-voice-kit/issues/223
 [#242]: https://github.com/drakulavich/kesha-voice-kit/issues/242
 [#264]: https://github.com/drakulavich/kesha-voice-kit/issues/264
 [#291]: https://github.com/drakulavich/kesha-voice-kit/issues/291
 [#473]: https://github.com/drakulavich/kesha-voice-kit/issues/473
+[#509]: https://github.com/drakulavich/kesha-voice-kit/pull/509
