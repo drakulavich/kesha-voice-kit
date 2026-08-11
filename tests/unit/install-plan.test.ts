@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
 import { renderInstallPlan } from "../../src/install-plan";
 import { engineVersion } from "../../src/package-info";
+import modelPlan from "../../model-plan.json" with { type: "json" };
 
 const savedEnv = {
   HOME: process.env.HOME,
@@ -169,6 +170,110 @@ describe("renderInstallPlan", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("the plan's download economics", () => {
+  function withCache<T>(slug: string, run: (cacheRoot: string) => Promise<T>): Promise<T> {
+    const dir = mkdtempSync(join(tmpdir(), `kesha-install-plan-${slug}-`));
+    process.env.HOME = dir;
+    process.env.KESHA_CACHE_DIR = join(dir, "cache");
+    process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+    return run(join(dir, "cache")).finally(() => rmSync(dir, { recursive: true, force: true }));
+  }
+
+  function seed(cacheRoot: string, relPath: string, contents: string) {
+    const path = join(cacheRoot, relPath);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, contents);
+  }
+
+  const langIdBytes = modelPlan.langId.reduce((sum, f) => sum + f.sizeBytes, 0);
+  const status = (plan: string, component: string) =>
+    new RegExp(`${component}: [^(]+\\([^,]+, (\\w+),`).exec(plan)?.[1];
+  const total = (plan: string, label: string) => new RegExp(`${label}: (.+)`).exec(plan)?.[1];
+
+  // Explicit --coreml/--onnx must beat the probe, or the plan quotes 2.43 GB nobody downloads (#684).
+  test("the requested backend decides which ASR component is planned", async () => {
+    await withCache("backend", async () => {
+      const coreml = await renderInstallPlan({ backend: "coreml" });
+      expect(coreml).toContain("ASR Parakeet TDT v3 (CoreML): ~");
+      expect(coreml).toContain("FluidAudio cache");
+      expect(coreml).not.toMatch(/ASR Parakeet TDT v3: /);
+
+      const onnx = await renderInstallPlan({ backend: "onnx" });
+      expect(onnx).toMatch(/ASR Parakeet TDT v3: [^(]+\(\d+ bytes,/);
+      expect(onnx).not.toContain("(CoreML)");
+      expect(onnx).not.toContain("FluidAudio cache");
+    });
+  });
+
+  test("a component is cached only once every file is present and non-empty", async () => {
+    await withCache("cached", async (cacheRoot) => {
+      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
+        "needed",
+      );
+
+      for (const file of modelPlan.langId) seed(cacheRoot, file.relPath, "x");
+      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
+        "cached",
+      );
+
+      seed(cacheRoot, modelPlan.langId[0].relPath, "");
+      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
+        "needed",
+      );
+    });
+  });
+
+  test("a component quotes the sum of the files it covers", async () => {
+    await withCache("sizes", async () => {
+      const plan = await renderInstallPlan({ backend: "onnx" });
+      expect(plan).toContain(`Audio language ID ECAPA: `);
+      expect(plan).toContain(`(${langIdBytes} bytes,`);
+    });
+  });
+
+  test("the run total drops only for cache hits the run will actually reuse", async () => {
+    await withCache("totals", async (cacheRoot) => {
+      const cold = "Cold-cache Kesha-managed download";
+      const run = "Expected Kesha-managed network for this run";
+
+      const empty = await renderInstallPlan({ backend: "onnx" });
+      expect(total(empty, run)).toBe(total(empty, cold));
+
+      for (const file of modelPlan.langId) seed(cacheRoot, file.relPath, "x");
+      const warm = await renderInstallPlan({ backend: "onnx" });
+      expect(total(warm, cold)).toBe(total(empty, cold));
+      expect(total(warm, run)).not.toBe(total(warm, cold));
+
+      // --no-cache re-downloads the hit, so it counts against this run again.
+      const refresh = await renderInstallPlan({ backend: "onnx", noCache: true });
+      expect(total(refresh, run)).toBe(total(refresh, cold));
+    });
+  });
+
+  test("a bare plan promises nothing the flags did not ask for", async () => {
+    await withCache("bare", async () => {
+      const plan = await renderInstallPlan({ backend: "onnx" });
+      expect(plan).not.toContain("VAD Silero v5");
+      expect(plan).not.toContain("Diarization Sortformer");
+      expect(plan).not.toContain("TTS");
+      expect(plan).not.toContain("Warm-ups:");
+    });
+  });
+
+  // FluidAudio fetches its own bundle, so it cannot sit under a "Kesha-managed" total (#684).
+  test("a backend-fetched bundle is quoted apart from the managed totals", async () => {
+    await withCache("external", async () => {
+      const coreml = await renderInstallPlan({ backend: "coreml" });
+      const onnx = await renderInstallPlan({ backend: "onnx" });
+      const cold = "Cold-cache Kesha-managed download";
+
+      expect(coreml).toContain("Additionally fetched by the backend into its own cache: ~473 MB");
+      expect(onnx).not.toContain("Additionally fetched by the backend");
+      expect(total(coreml, cold)).not.toBe(total(onnx, cold));
+    });
   });
 });
 

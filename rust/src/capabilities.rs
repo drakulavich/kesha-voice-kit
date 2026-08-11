@@ -116,7 +116,18 @@ mod caps_tests {
         for f in &caps.features {
             assert!(seen.insert(f), "duplicate feature entry {f:?}");
         }
-        assert!(!caps.backend.is_empty(), "backend name must be reported");
+    }
+
+    /// The name must be the backend actually compiled in, not merely non-empty:
+    /// the CLI routes on this string and the two backends never coexist.
+    #[test]
+    fn backend_names_the_compiled_asr_path() {
+        let expected = if cfg!(feature = "coreml") {
+            "coreml"
+        } else {
+            "onnx"
+        };
+        assert_eq!(get_capabilities().backend, expected);
     }
 
     /// The flag must track the compiled streaming path, not the OS alone —
