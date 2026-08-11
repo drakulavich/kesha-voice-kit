@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "fs";
+import { chmodSync, mkdtempSync, mkdirSync, utimesSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
@@ -9,6 +9,7 @@ import {
   detectTextLanguageEngine,
   parseLangResult,
   getEngineBinPath,
+  getEngineCapabilities,
   preflightRecordLive,
   preflightTranscribeEngineItn,
   preflightTranscribeEngineWithSegments,
@@ -500,5 +501,151 @@ describe("engine subprocess env", () => {
       if (savedNoColor === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = savedNoColor;
     }
+  });
+});
+
+describe("the engine boundary refuses to pass a malformed reply through", () => {
+  function transcribingEngine(payload: string): string {
+    return writeTranscribingEngine("kesha-engine-malformed-", ["transcribe.segments"], `  printf '%s\\n' '${payload}'`);
+  }
+
+  function capabilitiesEngine(payload: string): string {
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-caps-")), "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${payload}'\n  exit 0\nfi\nexit 2\n`,
+    );
+    chmodSync(path, 0o755);
+    return path;
+  }
+
+  for (const [shape, payload] of [
+    ["no text field", '{"segments":[]}'],
+    ["a non-string text", '{"text":7,"segments":[]}'],
+    ["segments that are not an array", '{"text":"ok","segments":{}}'],
+    ["no segments field", '{"text":"ok"}'],
+  ] as const) {
+    fakeEngineTest(`${shape} is rejected, with the payload named`, async () => {
+      await withEngineEnv(transcribingEngine(payload), async () => {
+        await expect(transcribeEngineWithSegments("audio.wav")).rejects.toThrow(
+          `Invalid transcription JSON returned by kesha-engine: ${payload}`,
+        );
+      });
+    });
+  }
+
+  for (const [field, payload] of [
+    ["start", '{"text":"ok","segments":[{"start":"0","end":1,"text":"ok"}]}'],
+    ["end", '{"text":"ok","segments":[{"start":0,"end":null,"text":"ok"}]}'],
+    ["text", '{"text":"ok","segments":[{"start":0,"end":1,"text":7}]}'],
+  ] as const) {
+    fakeEngineTest(`a segment whose ${field} has the wrong type is rejected`, async () => {
+      await withEngineEnv(transcribingEngine(payload), async () => {
+        await expect(transcribeEngineWithSegments("audio.wav")).rejects.toThrow(
+          "Invalid transcription segment returned by kesha-engine",
+        );
+      });
+    });
+  }
+
+  // A speaker label is optional, so a bad one is dropped rather than failing the transcript.
+  fakeEngineTest("a non-numeric speaker is dropped instead of forwarded", async () => {
+    const payload = '{"text":"ok","segments":[{"start":0,"end":1,"text":"ok","speaker":"alice"}]}';
+    await withEngineEnv(transcribingEngine(payload), async () => {
+      const out = await transcribeEngineWithSegments("audio.wav");
+      expect(out.segments).toEqual([{ start: 0, end: 1, text: "ok" }]);
+    });
+  });
+
+  fakeEngineTest("a well-formed reply still arrives intact", async () => {
+    const payload = '{"text":"ok","segments":[{"start":0,"end":1.5,"text":"ok","speaker":2}]}';
+    await withEngineEnv(transcribingEngine(payload), async () => {
+      expect(await transcribeEngineWithSegments("audio.wav")).toEqual({
+        text: "ok",
+        segments: [{ start: 0, end: 1.5, text: "ok", speaker: 2 }],
+      });
+    });
+  });
+
+  // #647: a non-null return means "it described itself" — callers reach straight for .features.
+  for (const [shape, payload] of [
+    ["a JSON array", "[]"],
+    ["a JSON scalar", '"onnx"'],
+    ["null", "null"],
+    ["no protocolVersion", '{"backend":"onnx","features":[]}'],
+    ["a non-numeric protocolVersion", '{"protocolVersion":"3","backend":"onnx","features":[]}'],
+    ["a non-string backend", '{"protocolVersion":3,"backend":3,"features":[]}'],
+    ["features that are not an array", '{"protocolVersion":3,"backend":"onnx","features":"tts"}'],
+    ["a non-string among the features", '{"protocolVersion":3,"backend":"onnx","features":["tts",7]}'],
+  ] as const) {
+    fakeEngineTest(`capabilities carrying ${shape} read as no capabilities`, async () => {
+      await withEngineEnv(capabilitiesEngine(payload), async () => {
+        expect(await getEngineCapabilities()).toBeNull();
+      });
+    });
+  }
+
+  fakeEngineTest("well-formed capabilities are returned as they came", async () => {
+    await withEngineEnv(
+      capabilitiesEngine('{"protocolVersion":3,"backend":"onnx","features":["tts"]}'),
+      async () => {
+        expect(await getEngineCapabilities()).toMatchObject({
+          protocolVersion: 3,
+          backend: "onnx",
+          features: ["tts"],
+        });
+      },
+    );
+  });
+});
+
+describe("the capability probe stays in step with the installed binary", () => {
+  function capsEngine(dir: string, features: string[]): string {
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${JSON.stringify({ protocolVersion: 3, backend: "fake", features })}'\n  exit 0\nfi\nexit 2\n`,
+    );
+    chmodSync(path, 0o755);
+    return path;
+  }
+
+  // #248: `kesha install` overwrites the binary in place, so the path alone cannot key the cache.
+  fakeEngineTest("an in-place reinstall is not served from the cache", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-recache-"));
+    await withEngineEnv(capsEngine(dir, ["transcribe.segments"]), async () => {
+      expect((await getEngineCapabilities())?.features).toEqual(["transcribe.segments"]);
+
+      const path = capsEngine(dir, ["transcribe.segments", "transcribe.itn"]);
+      const later = new Date(Date.now() + 2000);
+      utimesSync(path, later, later);
+
+      expect((await getEngineCapabilities())?.features).toEqual([
+        "transcribe.segments",
+        "transcribe.itn",
+      ]);
+    });
+  });
+
+  fakeEngineTest("a missing binary reads as no capabilities rather than throwing", async () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "kesha-engine-absent-")), "kesha-engine");
+    await withEngineEnv(missing, async () => {
+      expect(await getEngineCapabilities()).toBeNull();
+    });
+  });
+
+  // Blank text has no language to detect; spending a subprocess on it would be pure latency.
+  fakeEngineTest("blank text resolves null while real text still reaches the engine", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-textlang-")), "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "detect-text-lang" ]; then\n  printf '%s\\n' '{"code":"ru","confidence":0.9}'\n  exit 0\nfi\nexit 2\n`,
+    );
+    chmodSync(path, 0o755);
+    await withEngineEnv(path, async () => {
+      expect(await detectTextLanguageEngine("привет")).toEqual({ code: "ru", confidence: 0.9 });
+      expect(await detectTextLanguageEngine("   \n\t ")).toBeNull();
+      expect(await detectTextLanguageEngine("")).toBeNull();
+    });
   });
 });
