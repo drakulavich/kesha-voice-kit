@@ -190,7 +190,8 @@ French voice exists.
 
 Synthesis SHALL fail loudly — never download — when the required TTS model is
 not in the Model cache. The failure carries Error code `E_MODEL_MISSING` and an
-actionable `kesha install --tts` hint, and exits 1.
+actionable `kesha install --tts` hint, and exits 1 — the voice is rejected
+while it is being resolved, before synthesis starts.
 
 On darwin-arm64 the FluidAudio Kokoro voices are not gated by the Model cache,
 so the guarantee rests on a check of its own: before the FluidAudio bridge is
