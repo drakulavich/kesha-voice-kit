@@ -317,7 +317,7 @@ jobs:
     # (`e2e-engine`, `mcp-e2e`, `say-e2e`) self-skip via
     # `describe.skipIf(!engineInstalled)` when no engine is present, so this
     # lane exercises only the fake/stub-based contract suites
-    # (`cli-contracts`, `e2e-cli`, `say`). No `kesha install`, no cache, no
+    # (`cli-contracts`, `say`). No `kesha install`, no cache, no
     # download — so it's safe on every PR including release/* branches
     # (no published-engine 404 risk without an install step). Real-engine
     # coverage lives in `integration-tests-full` below, gated to engine/model
