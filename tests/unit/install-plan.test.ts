@@ -40,9 +40,14 @@ describe("renderInstallPlan", () => {
       expect(output).toContain("Run: kesha install --tts en ru");
       if (process.platform === "darwin" && process.arch === "arm64") {
         expect(output).toContain("Warm-ups:");
-        expect(output).toContain("TTS Kokoro (ANE): FluidAudio CoreML in-engine");
-        expect(output).toContain(".cache/fluidaudio/Models/kokoro");
+        expect(output).toContain(
+          "TTS Kokoro (ANE): staged and hash-verified by `kesha install --tts`",
+        );
+        // Both staged sets, named where doctor names them (#831).
+        expect(output).toContain(join("fluidaudio", "kokoro-82m-coreml", "ANE"));
+        expect(output).toContain(join(".cache", "fluidaudio", "Models", "kokoro"));
         expect(output).toContain("outside Kesha's pinned model cache");
+        expect(output).toContain("first synthesis compiles, it does not download");
         expect(output).not.toContain("TTS Kokoro (ANE): 0 B");
       }
     } finally {

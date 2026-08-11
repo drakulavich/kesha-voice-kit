@@ -50,8 +50,25 @@ function legacyKokoroAneDir(homeDir: string): string {
 }
 
 /** Upstream pins `G2PModel.shared` to this path, so it is never re-rooted (#688). */
-function kokoroG2pDir(homeDir: string): string {
+export function kokoroG2pDir(homeDir = diagnosticHomeDir()): string {
   return join(homeDir, ".cache", "fluidaudio", "Models", "kokoro");
+}
+
+/**
+ * The Kokoro CoreML bundle root the engine reads. Mirrors
+ * `models.rs::fluidaudio_kokoro_location`: any entry at all keeps a legacy tree in use,
+ * everything else roots under the Kesha cache (#688).
+ */
+export function kokoroBundleRoot(options: FluidRootsOptions = {}): string {
+  const legacy = legacyKokoroAneDir(options.homeDir ?? diagnosticHomeDir());
+  return dirHasEntries(legacy)
+    ? legacy
+    : join(options.cacheRoot ?? keshaCacheDir(), "fluidaudio", "kokoro-82m-coreml");
+}
+
+/** Where `models.rs::stage_fluidaudio_kokoro_assets` puts the English ANE chain. */
+export function kokoroAneDir(options: FluidRootsOptions = {}): string {
+  return join(kokoroBundleRoot(options), "ANE");
 }
 
 /**
@@ -87,7 +104,6 @@ export function fluidSubsystemDirs(options: FluidRootsOptions = {}): FluidSubsys
   const cacheRoot = options.cacheRoot ?? keshaCacheDir();
   const modelsRoot = join(cacheRoot, "fluidaudio");
   const asrLegacy = legacyFluidAsrCachePath(homeDir);
-  const aneLegacy = legacyKokoroAneDir(homeDir);
   const sortformerLegacy = legacySortformerDir(homeDir);
 
   const at = (legacy: string, legacyReady: boolean, ...repoSubpath: string[]): string =>
@@ -99,10 +115,7 @@ export function fluidSubsystemDirs(options: FluidRootsOptions = {}): FluidSubsys
       path: at(asrLegacy, fluidAsrCacheReady(asrLegacy), "parakeet-tdt-0.6b-v3"),
     },
     { label: "VAD (Silero, FluidAudio)", path: fluidVadDir(homeDir) },
-    {
-      label: "TTS (Kokoro ANE)",
-      path: at(aneLegacy, dirHasEntries(aneLegacy), "kokoro-82m-coreml"),
-    },
+    { label: "TTS (Kokoro ANE)", path: kokoroBundleRoot({ homeDir, cacheRoot }) },
     { label: "TTS (Kokoro G2P)", path: kokoroG2pDir(homeDir) },
     {
       label: "Diarization (Sortformer)",

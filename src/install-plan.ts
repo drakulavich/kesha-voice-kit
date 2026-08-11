@@ -3,15 +3,11 @@ import { humanBytes } from "./format";
 import { dirname, join } from "path";
 import { getEngineBinPath, getEngineCapabilities } from "./engine";
 import { SIDECARS } from "./engine-install";
-import { engineTarget } from "./engine-targets";
+import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { engineVersion, packageVersion } from "./package-info";
-import {
-  FLUID_KOKORO_CACHE_NOTE,
-  fluidKokoroCachePath,
-  isDarwinArm64,
-} from "./fluid-kokoro-cache";
+import { KOKORO_ANE_NOTE, kokoroAneComponents } from "./kokoro-ane";
 import modelPlan from "../model-plan.json" with { type: "json" };
 import {
   FLUID_ASR_CACHE_NOTE,
@@ -250,9 +246,10 @@ function buildTtsComponents(
 
   if (isDarwinArm64()) {
     if (wantsAnyKokoro) {
+      const paths = kokoroAneComponents({ cacheRoot }).map((c) => c.path);
       warmups.push({
         name: "TTS Kokoro (ANE)",
-        note: `${FLUID_KOKORO_CACHE_NOTE} (${fluidKokoroCachePath()})`,
+        note: `${KOKORO_ANE_NOTE} (${paths.join(", ")})`,
       });
     }
   } else {
@@ -426,7 +423,7 @@ function renderBehaviorLines(ttsLangs: string[], wantsAnyKokoro: boolean): strin
   ];
   if (ttsLangs.length > 0 && wantsAnyKokoro && isDarwinArm64()) {
     lines.push(
-      "  - --tts also warms FluidAudio Kokoro CoreML; FluidAudio may download/compile its own Kokoro cache on first use.",
+      "  - --tts stages FluidAudio's Kokoro ANE assets during install, then warms the CoreML chain; first synthesis compiles, it does not download.",
     );
   }
   return lines;

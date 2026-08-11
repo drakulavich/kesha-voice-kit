@@ -9,8 +9,7 @@ import {
   type EngineCapabilities,
 } from "./engine";
 import { engineFunctionalHealth, probeExecutable } from "./engine-health";
-import { engineTarget } from "./engine-targets";
-import { isDarwinArm64 } from "./fluid-kokoro-cache";
+import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
 import { streamResponseToFile } from "./progress";
