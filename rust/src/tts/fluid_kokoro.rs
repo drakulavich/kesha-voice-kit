@@ -167,7 +167,7 @@ fn preset_name(units: KokoroComputeUnits) -> &'static str {
 /// Vocoder) on the Neural Engine, the all-fp32 Noise and Tail iSTFT on the GPU.
 /// That is the only placement that runs on every Apple Silicon generation — the
 /// prosody RNN aborts the GPU MPSGraph JIT (`GPURNNOps`) on M5, and the tail
-/// crashes `libBNNS` on CPU/ANE (FluidAudio #667, #717).
+/// crashes `libBNNS` on CPU/ANE (FluidAudio #667; kesha #717).
 ///
 /// The override exists for hosts with no usable ANE — notably a virtualised
 /// macOS guest such as a GitHub-hosted `macos-14` runner, where CoreML fails to
