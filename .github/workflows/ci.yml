@@ -123,6 +123,8 @@ jobs:
               - 'bun.lock'
               - 'tests/fixtures/**'
               - 'tests/integration/say-e2e.test.ts'
+              - 'tests/integration/mcp-synthesis-e2e.test.ts'
+              - 'src/mcp/**'
               - 'src/engine.ts'
               - 'src/synth.ts'
               - 'src/voice-routing.ts'
@@ -772,9 +774,12 @@ jobs:
           KOKORO_VOICE: ${{ github.workspace }}/tests/fixtures/mini-models/kokoro/am_michael.bin
           KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
           DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
+          # This lane stages the stand-in, so a self-skip here would be a green run of
+          # nothing — which is exactly how the MCP synthesis case stayed dormant (#857).
+          KESHA_REQUIRE_MODEL_TESTS: mini
         run: |
           mkdir -p test-results
-          bun test tests/integration/say-e2e.test.ts \
+          bun test tests/integration/say-e2e.test.ts tests/integration/mcp-synthesis-e2e.test.ts \
             --reporter=junit --reporter-outfile=test-results/tts-e2e.xml
 
       - name: 📊 Test summary
