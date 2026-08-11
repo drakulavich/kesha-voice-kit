@@ -163,12 +163,17 @@ fn preset_name(units: KokoroComputeUnits) -> &'static str {
 }
 
 /// Read [`COMPUTE_UNITS_ENV`], defaulting to FluidAudio's empirical per-stage
-/// mapping (Albert / PostAlbert / Alignment / Vocoder on the Neural Engine).
+/// mapping: the RNN-bearing stages (Albert / PostAlbert / Alignment / Prosody /
+/// Vocoder) on the Neural Engine, the all-fp32 Noise and Tail iSTFT on the GPU.
+/// That is the only placement that runs on every Apple Silicon generation — the
+/// prosody RNN aborts the GPU MPSGraph JIT (`GPURNNOps`) on M5, and the tail
+/// crashes `libBNNS` on CPU/ANE (FluidAudio #667; kesha #717).
 ///
 /// The override exists for hosts with no usable ANE — notably a virtualised
 /// macOS guest such as a GitHub-hosted `macos-14` runner, where CoreML fails to
 /// prepare exactly those stages ("Failed to prepare the model for predictions",
-/// #678). Real Apple Silicon should never set it.
+/// #678). Real Apple Silicon should never set it; `cpu-and-gpu` in particular
+/// moves the prosody RNN onto the GPU, which is the M5 abort above.
 fn compute_units_from_env() -> Result<KokoroComputeUnits> {
     // Unset and blank are the same case: GHA exports a conditional `env:` as "".
     let raw = std::env::var_os(COMPUTE_UNITS_ENV).unwrap_or_default();
