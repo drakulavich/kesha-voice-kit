@@ -43,6 +43,8 @@ jobs:
             # lands here even though it's a git-branch dep.
             coreml:
               - 'rust/src/backend/fluidaudio.rs'
+              # The lane's diagnostics ride KESHA_DEBUG's sink selection (#841).
+              - 'rust/src/fluid_stdout.rs'
               - 'rust/build.rs'
               - 'rust/Cargo.toml'
               - 'rust/Cargo.lock'
@@ -404,9 +406,14 @@ jobs:
   # Runs only when the regression surface changes (the `coreml` paths-filter:
   # the FluidAudio backend, the coreml feature wiring, or the fluidaudio-rs pin
   # in Cargo.lock) — not on every PR and not nightly. The CoreML Parakeet
-  # bundle is large but cached, so the fetch is a once-per-key seed. macos-14 is
-  # GitHub-hosted Apple Silicon with a real ANE, so no self-hosted runner is
-  # required.
+  # bundle is large but cached, so the fetch is a once-per-key seed.
+  #
+  # macos-14 is GitHub-hosted Apple Silicon, but it is an `Apple M1 (Virtual)` VM
+  # with **no** Neural Engine (#742 measured `ioreg -c AppleARMIODevice | grep -ci
+  # ane` at 0 there against 32 on a real M2), so the ANE-converted Parakeet chain
+  # actually executes through BNNS on the CPU. The guard still catches a
+  # fluidaudio-rs bump that drops the stateless-reset fix, which is what #592
+  # asked of it; it just does not exercise the ANE.
   coreml-regression:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.coreml == 'true'
@@ -415,6 +422,11 @@ jobs:
     env:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
       NEXTEST_PROFILE: ci
+      # The Swift bridge collapses every transcribe throw to "Transcription
+      # failed" and prints the real error with `print`, i.e. onto the stdout the
+      # backend silences. Debug routes that sink to stderr so #841's warm-cache
+      # failure names its own cause (#678 does the same for darwin synthesis).
+      KESHA_DEBUG: "1"
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -460,13 +472,13 @@ jobs:
           restore-keys: |
             parakeet-coreml-models-v2-${{ runner.os }}-
 
-      - name: 🧪 CoreML decoder-state regression (ANE)
+      - name: 🧪 CoreML decoder-state regression
         run: |
           cd rust
           cargo nextest run \
             --no-default-features --features coreml \
             --run-ignored all \
-            -E 'test(transcribe_samples_is_stateless_across_calls)'
+            -E 'test(transcribe_samples_is_stateless_across_calls) + test(debug_routes_silenced_chatter_to_stderr)'
 
       - name: 📤 Upload JUnit
         if: always()
