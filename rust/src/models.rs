@@ -4415,6 +4415,7 @@ mod retry_tests {
 
     /// Streams a complete `chunk * chunks` body, `gap_ms` apart, then closes.
     /// The socket never goes quiet before the last byte.
+    #[cfg(unix)]
     fn streaming_server(chunk: usize, chunks: usize, gap_ms: u64) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind streaming server");
         let base = format!("http://{}", listener.local_addr().expect("stub addr"));
@@ -4456,6 +4457,13 @@ mod retry_tests {
     /// finish a 654MB file (#776). The second arm pins the other half: ureq
     /// takes the *minimum* of the two deadlines, so a generous
     /// `timeout_recv_body` cannot loosen the cap, which is why it stays unset.
+    ///
+    /// Unix only, and that is itself the finding: this same probe on
+    /// windows-latest received the whole body well past the deadline, which is
+    /// why #776 reproduced on ubuntu while windows fetched the same file in
+    /// 86s. Asserting the windows behaviour would pin a platform bug, so this
+    /// pins the semantics the cap actually has where it is enforced (#893).
+    #[cfg(unix)]
     #[test]
     fn the_receive_deadline_caps_the_whole_body_not_just_a_stall() {
         const DEADLINE: Duration = Duration::from_millis(500);
