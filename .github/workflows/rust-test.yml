@@ -182,6 +182,7 @@ jobs:
       # coreml code because no PR CI job ever tried to build it.
       - name: Check coreml feature
         if: matrix.os == 'macos-14'
+        shell: bash
         # --all-targets so the `#[cfg(feature = "coreml")]` tests compile here too (#708).
         run: cd rust && cargo check --features coreml --no-default-features --all-targets
 
@@ -196,6 +197,7 @@ jobs:
       # darwin-only break is caught before a release tag builds it.
       - name: Lint darwin release feature set (incl. system_kokoro)
         if: matrix.os == 'macos-14'
+        shell: bash
         run: |
           cd rust
           cargo clippy --all-targets \

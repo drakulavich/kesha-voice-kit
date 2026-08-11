@@ -237,13 +237,16 @@ jobs:
 
       - name: 🔍 Type check
         if: matrix.os == 'ubuntu-latest'
+        shell: bash
         run: bunx tsc --noEmit
 
       - name: 🔢 Check version drift (package.json + Cargo.toml)
         if: matrix.os == 'ubuntu-latest'
+        shell: bash
         run: bun run check:versions
 
       - name: 🧪 Unit tests
+        shell: bash
         run: mkdir -p test-results && bun run test:unit --reporter=junit --reporter-outfile=test-results/unit-${{ matrix.os }}.xml
 
       - name: 📊 Test summary
@@ -628,6 +631,7 @@ jobs:
 
       - name: 🎧 Install system audio deps
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libopus-dev pkg-config

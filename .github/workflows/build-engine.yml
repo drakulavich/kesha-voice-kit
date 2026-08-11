@@ -181,6 +181,7 @@ jobs:
         run: node .github/scripts/set-cargo-version.mjs "${TAG_NAME#v}"
 
       - name: Build release binary
+        shell: bash
         run: cd rust && cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }} --no-default-features
       - name: Prepare artifact
         shell: bash
