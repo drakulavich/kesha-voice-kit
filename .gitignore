@@ -26,6 +26,7 @@ skills-lock.json
 
 # Mutation testing scratch (stryker sandbox, cargo-mutants output)
 .stryker-tmp/
+stryker.generated.*.json
 reports/
 mutants.out/
 mutants.out.old/

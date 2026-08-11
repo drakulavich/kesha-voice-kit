@@ -1,17 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import {
   importedModules,
+  rankCoveringTests,
+  reachableModules,
   selectCoveringTests,
+  takeNearestTiers,
   testFileCandidates,
   toPosix,
 } from "../../scripts/mutants-ts";
 
 /**
- * Picking the wrong suites is the failure that matters here: stryker would report a healthy
- * score for tests that never touch the file, which is worse than having no tool.
+ * Under `coverageAnalysis: "perTest"` a suite that never loads the mutant cannot kill it, so an
+ * extra suite costs runtime and nothing else. A missed one turns a killed mutant into a survivor
+ * — a gap reported where none exists. Selection therefore errs towards reaching too far.
  */
 describe("which suites are measured against a source", () => {
   const suite = (path: string, text: string) => ({ path, text });
+  const modules = (files: Record<string, string>) => (path: string) => files[path] ?? null;
+  const none = () => null;
 
   test("a suite that imports the source is selected", () => {
     const tests = [
@@ -19,7 +25,9 @@ describe("which suites are measured against a source", () => {
       suite("tests/unit/star.test.ts", 'import { star } from "../../src/star";'),
     ];
 
-    expect(selectCoveringTests(["src/engine.ts"], tests)).toEqual(["tests/unit/engine.test.ts"]);
+    expect(selectCoveringTests(["src/engine.ts"], tests, none)).toEqual([
+      "tests/unit/engine.test.ts",
+    ]);
   });
 
   // `src/engine` is a prefix of `src/engine-install`, so a substring match over-selects.
@@ -29,32 +37,56 @@ describe("which suites are measured against a source", () => {
       suite("tests/unit/engine-targets.test.ts", 'import { engineTarget } from "../../src/engine-targets";'),
     ];
 
-    expect(selectCoveringTests(["src/engine.ts"], tests)).toEqual([]);
+    expect(selectCoveringTests(["src/engine.ts"], tests, none)).toEqual([]);
   });
 
-  test("a nested source is matched by its full path", () => {
-    const tests = [
-      suite("tests/unit/say-cli.test.ts", 'import { sayCommand } from "../../src/cli/say";'),
-      suite("tests/unit/mcp-voices.test.ts", 'import { listVoices } from "../../src/mcp/voices";'),
-    ];
+  // src/cli.ts is a re-export shim, so cli.test.ts exercises src/cli/main.ts without naming it.
+  test("a source reached only through a re-export shim is still measured", () => {
+    const tests = [suite("tests/unit/cli.test.ts", 'import { createMainCommand } from "../../src/cli";')];
+    const files = modules({ "src/cli": 'export { createMainCommand } from "./cli/main";' });
 
-    expect(selectCoveringTests(["src/cli/say.ts"], tests)).toEqual(["tests/unit/say-cli.test.ts"]);
-    expect(selectCoveringTests(["src/mcp/voices.ts"], tests)).toEqual([
-      "tests/unit/mcp-voices.test.ts",
+    expect(selectCoveringTests(["src/cli/main.ts"], tests, files)).toEqual([
+      "tests/unit/cli.test.ts",
     ]);
   });
 
-  test("several sources contribute their suites once each", () => {
-    const tests = [
-      suite(
-        "tests/unit/both.test.ts",
-        'import { runEngine } from "../../src/engine";\nimport { formatBytes } from "../../src/progress";',
-      ),
-      suite("tests/unit/neither.test.ts", 'import { toToon } from "../../src/toon";'),
-    ];
+  test("a source reached through a test helper is still measured", () => {
+    const tests = [suite("tests/unit/gate.test.ts", 'import { gate } from "../helpers/model-gate";')];
+    const files = modules({
+      "tests/helpers/model-gate": 'import { probe } from "../../src/engine-health";',
+    });
 
-    expect(selectCoveringTests(["src/engine.ts", "src/progress.ts"], tests)).toEqual([
-      "tests/unit/both.test.ts",
+    expect(selectCoveringTests(["src/engine-health.ts"], tests, files)).toEqual([
+      "tests/unit/gate.test.ts",
+    ]);
+  });
+
+  test("the walk terminates on a cycle, and records how far each module is", () => {
+    const files = modules({
+      "src/a": 'import { b } from "./b";',
+      "src/b": 'import { a } from "./a";\nimport { c } from "./c";',
+      "src/c": "export const c = 1;",
+    });
+
+    expect(reachableModules("src/a.ts", files)).toEqual(
+      new Map([
+        ["src/b", 1],
+        ["src/c", 2],
+      ]),
+    );
+  });
+
+  // The Bun runner stops answering above ~30 suites, so the cap decides what gets measured.
+  test("direct importers outrank suites that only reach the source through a shim", () => {
+    const tests = [
+      suite("tests/unit/via-shim.test.ts", 'import { m } from "../../src/cli";'),
+      suite("tests/unit/direct.test.ts", 'import { m } from "../../src/cli/main";'),
+    ];
+    const files = modules({ "src/cli": 'export { m } from "./cli/main";' });
+
+    expect(rankCoveringTests(["src/cli/main.ts"], tests, files)).toEqual([
+      { path: "tests/unit/direct.test.ts", hops: 1 },
+      { path: "tests/unit/via-shim.test.ts", hops: 2 },
     ]);
   });
 
@@ -65,7 +97,7 @@ describe("which suites are measured against a source", () => {
       suite("tests/unit/real.test.ts", 'import { star } from "../../src/star";'),
     ];
 
-    expect(selectCoveringTests(["src/star.ts"], tests)).toEqual(["tests/unit/real.test.ts"]);
+    expect(selectCoveringTests(["src/star.ts"], tests, none)).toEqual(["tests/unit/real.test.ts"]);
   });
 
   test("dynamic imports and re-exports count as dependencies", () => {
@@ -74,7 +106,7 @@ describe("which suites are measured against a source", () => {
       suite("tests/unit/reexport.test.ts", 'export { star } from "../../src/star";'),
     ];
 
-    expect(selectCoveringTests(["src/star.ts"], tests)).toEqual([
+    expect(selectCoveringTests(["src/star.ts"], tests, none)).toEqual([
       "tests/unit/lazy.test.ts",
       "tests/unit/reexport.test.ts",
     ]);
@@ -83,17 +115,44 @@ describe("which suites are measured against a source", () => {
   // Windows `path.relative` returns `src\engine`, which matches no import specifier (#897).
   test("separators are normalised before anything is compared", () => {
     expect(toPosix("tests\\unit\\engine.test.ts")).toBe("tests/unit/engine.test.ts");
-    expect(toPosix("tests/unit/engine.test.ts")).toBe("tests/unit/engine.test.ts");
     expect(importedModules("tests/unit/say.test.ts", 'import { s } from "../../src/cli/say";')).toEqual([
       "src/cli/say",
     ]);
   });
 
-  test("the repository's own suites are discovered", () => {
+  // Integration suites spawn the CLI, and one of them in the set times out the dry run.
+  test("the repository's unit suites are discovered, and integration only on request", () => {
     const found = testFileCandidates();
 
     expect(found).toContain("tests/unit/engine.test.ts");
-    expect(found).toContain("tests/integration/cli-contracts.test.ts");
+    expect(found).not.toContain("tests/integration/cli-contracts.test.ts");
     expect(found.every((path) => path.endsWith(".test.ts"))).toBe(true);
+    expect(testFileCandidates(["tests/integration"])).toContain(
+      "tests/integration/cli-contracts.test.ts",
+    );
+  });
+});
+
+describe("how many suites the runner is given", () => {
+  const tier = (hops: number, count: number) =>
+    Array.from({ length: count }, (_, i) => ({ path: `t${hops}-${i}.test.ts`, hops }));
+
+  test("a whole tier is taken or none of it, so the score cannot depend on filename order", () => {
+    const ranked = [...tier(1, 3), ...tier(2, 20)];
+
+    expect(takeNearestTiers(ranked, 12)).toEqual(tier(1, 3));
+  });
+
+  test("further tiers are added while they fit", () => {
+    const ranked = [...tier(1, 3), ...tier(2, 4), ...tier(3, 30)];
+
+    expect(takeNearestTiers(ranked, 12)).toEqual([...tier(1, 3), ...tier(2, 4)]);
+  });
+
+  // Measuring the closest suites beats refusing to measure, even when that tier alone is over.
+  test("the nearest tier is kept even when it alone exceeds the budget", () => {
+    const ranked = tier(1, 40);
+
+    expect(takeNearestTiers(ranked, 12)).toEqual(tier(1, 40));
   });
 });
