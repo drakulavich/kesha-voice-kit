@@ -85,8 +85,7 @@ issue/PR that drove it). Newest concerns first within each section.
   spike because Silero ships PyTorch-only with no public ONNX export. Piper was adopted
   as the interim path and later removed in favor of the current Kokoro/Vosk/AVSpeech split.
 - **Rationale / lesson:** verify third-party model formats with a throwaway end-to-end
-  spike *before* committing a plan to them. See
-  `docs/superpowers/specs/2026-04-16-bidirectional-voice-design.md`.
+  spike *before* committing a plan to them — now a standing rule in CLAUDE.md.
 - **Status:** superseded by the three-engine split.
 
 ### Web-playable output: FLAC over MP3/AAC; OGG/Opus for messengers

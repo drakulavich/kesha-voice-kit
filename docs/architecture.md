@@ -1,8 +1,9 @@
 # Architecture
 
 A contributor's map of kesha-voice-kit: where code lives, what the boundaries
-are, and where to make changes. For the **why** behind specific designs, see the
-spec docs under [`docs/superpowers/specs/`](superpowers/specs/).
+are, and where to make changes. For what each capability is contracted to *do*,
+see the baseline specs under [`openspec/specs/`](../openspec/specs/); for the
+**why** behind specific designs, see [`docs/decision-log.md`](decision-log.md).
 
 ## Two-process model
 

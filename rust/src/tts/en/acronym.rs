@@ -8,9 +8,8 @@
 //! - **Letter-spell rule** — uppercase 2..=5 tokens NOT on `STOP_LIST` and
 //!   NOT in `IPA_LEXICON` get expanded letter-by-letter; gated by `auto_expand`.
 //! - **`STOP_LIST`** — natural-English caps words Kokoro handles via training;
-//!   passed through unchanged.
-//!
-//! Spec: `docs/superpowers/specs/2026-05-07-kokoro-en-acronym-expansion-design.md`.
+//!   passed through unchanged. Deliberately excludes AM/PM/TV/DC/CD/DVD, which
+//!   read better letter-by-letter; extend it when a mispronunciation is reported.
 
 use super::letter_table::expand_chars;
 use crate::tts::ssml::Segment;

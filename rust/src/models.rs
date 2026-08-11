@@ -1613,8 +1613,9 @@ pub fn incomplete_ane_bundle_names() -> Vec<String> {
 }
 
 /// Vosk-TTS multi-speaker Russian model, mirrored to HF at
-/// `drakulavich/vosk-tts-ru-0.9-multi`. Replaces Piper-ru per
-/// `docs/superpowers/specs/2026-04-27-vosk-ru-replacement-design.md`.
+/// `drakulavich/vosk-tts-ru-0.9-multi` (upstream ships a zip on alphacephei.com;
+/// the mirror is what the pinned hashes below are taken against). Replaced
+/// Piper-ru, which needed espeak-ng as a system dependency.
 /// SHA-256 pins computed from the HF mirror — see CLAUDE.md MODEL HASHES
 /// ARE PINNED rule.
 #[cfg(feature = "tts")]

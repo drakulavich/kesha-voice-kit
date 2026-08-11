@@ -1,8 +1,8 @@
 /**
  * Error-code taxonomy bridge. The engine is the source of truth for engine
  * codes (see `kesha-engine --error-codes-json`); these are the codes that
- * originate in TS, before/around the engine. See
- * `docs/superpowers/specs/2026-05-30-structured-error-taxonomy-design.md`.
+ * originate in TS, before/around the engine. User-facing registry:
+ * `docs/errors.md`.
  */
 
 /** Matches the engine's `error [CODE]:` line; CODE charset is constrained. */

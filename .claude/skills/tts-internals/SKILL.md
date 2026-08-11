@@ -59,8 +59,17 @@ script-g U+0261, NFD base+combining-tilde); locked by a zero-residual-OOV regres
 in es, etc.) via `tts::normalize::{numbers,acronyms}`. CharsiuG2P collapses raw digits;
 the normalizer runs first so digit sentences produce longer, correctly-paced audio.
 
-**IO contract and latency reference:** `docs/superpowers/specs/2026-04-22-onnx-g2p-spike.md`
-(PR #185) — verified ~36 ms/word on M2, byte-identical Rust↔Python IPA for es/fr/it/pt.
+**IO contract** (PR #185, verified against the pinned export). `encoder_model`: in
+`input_ids` int64 `[B,S]` + `attention_mask` int64 `[B,S]`, out `last_hidden_state`
+f32 `[B,S,256]`. `decoder_model` (step 0): in `input_ids` + `encoder_attention_mask`
++ `encoder_hidden_states`, out `logits` f32 `[B,S,384]` + 16 `present.{0..3}.{decoder,encoder}.{key,value}`
+f32 `[B,6,S,64]`. `decoder_with_past_model` (steps 1..N): in `input_ids` `[B,1]` +
+`encoder_attention_mask` + the 16 `past_key_values.*`, out `logits` `[B,1,384]` + only
+the 8 **decoder** presents — the encoder K/V are seeded once at step 0 and re-fed
+verbatim every step. Decode is greedy, stops on EOS, capped at 128 steps.
+Model is ByT5-tiny: `vocab_size` 384, `d_model` 256, 12 encoder / 4 decoder layers,
+6 heads. Measured ~36 ms/word single-thread on M2, byte-identical to the Python
+reference for es/fr/it/pt.
 
 ### Multilingual G2P (#511)
 
@@ -91,4 +100,4 @@ acceptably). The `.mandarin` variant fetches its own `ANE-zh/` bundle (nested
 
 ## History
 
-Original spec assumed Silero TTS; pivoted to Piper during M3 spike (Silero ships PyTorch-only, no public ONNX). See `docs/superpowers/specs/2026-04-16-bidirectional-voice-design.md`.
+Original spec assumed Silero TTS; pivoted to Piper during the M3 spike (Silero ships PyTorch-only, no public ONNX), and Piper was later dropped for the current Kokoro/Vosk/AVSpeech split. The lesson that stuck is CLAUDE.md's "verify third-party model formats with a spike".
