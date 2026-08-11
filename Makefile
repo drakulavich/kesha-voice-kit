@@ -3,45 +3,49 @@
 # here verbatim rather than round-tripping through a runner, and Phase 4 deletes them
 # along with this file. Everything else delegates, so `just --list` is the one index.
 
-.PHONY: dev-setup install check cli-fast coverage-ts coverage-rust test unit integration rust-test mutants-rust lint versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
+.PHONY: need-just dev-setup install check cli-fast coverage-ts coverage-rust test unit integration rust-test mutants-rust lint versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
 
-help:
+# Without this, a checkout lacking just gets a bare "make: just: No such file or directory".
+need-just:
+	@command -v just >/dev/null || { echo "just is required for this target: cargo install --locked just" >&2; exit 2; }
+
+help: need-just
 	@just --list
 
-dev-setup:
+dev-setup: need-just
 	just dev-setup
 
-test:
+test: need-just
 	just test
 
-check:
+check: need-just
 	just check
 
-coverage-ts:
+coverage-ts: need-just
 	just coverage-ts
 
-coverage-rust:
+coverage-rust: need-just
 	just coverage-rust
 
-rust-test:
+rust-test: need-just
 	just rust-test
 
-mutants-rust:
+mutants-rust: need-just
 	just $(if $(FILE),FILE='$(FILE)') $(if $(FEATURES),FEATURES='$(FEATURES)') mutants-rust
 
-smoke-test:
+smoke-test: need-just
 	just smoke-test
 
-smoke-test-tts:
+smoke-test-tts: need-just
 	just smoke-test-tts
 
-release-preflight:
+release-preflight: need-just
 	just release-preflight
 
-release:
+release: need-just
 	just release
 
-release-notes:
+release-notes: need-just
 	just $(if $(TAG),TAG='$(TAG)') release-notes
 
 # Direct package.json scripts — no justfile recipe exists for these on purpose.
