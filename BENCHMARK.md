@@ -150,7 +150,7 @@ Both engines preserve enough signal for downstream agents to act on the content 
 | macOS runtime dep | `espeak-ng` (brew) | `espeak-ng` (brew, ru only) | none |
 | TTS install size | ~150 MB | ~490 MB | ~990 MB |
 
-The "no system deps" brand promise is restored as of v1.5.0 — `kesha install --tts` is the only step. CharsiuG2P (ByT5-tiny ONNX) and the espeak-ng subprocess fallback were both removed in [#213](https://github.com/drakulavich/kesha-voice-kit/issues/213). The shipped pipeline (English misaki-rs + Russian Vosk-internal) is in-process; no subprocesses, no separate model files, no per-call session-load overhead.
+The "no system deps" brand promise is restored as of v1.5.0 — `kesha install --tts` is the only step. The espeak-ng subprocess fallback was retired in [#214](https://github.com/drakulavich/kesha-voice-kit/pull/214), which also dropped CharsiuG2P (ByT5-tiny ONNX) as it had no callers left. The English + Russian pipeline (misaki-rs + Vosk-internal) is in-process; no subprocesses, no separate model files, no per-call session-load overhead. CharsiuG2P returned in [#509](https://github.com/drakulavich/kesha-voice-kit/pull/509) for `es`/`fr`/`it`/`pt` on ONNX builds — a downloaded ~100 MB model pack pulled in by `kesha install --tts <langs>`, not a system dependency, and English/Russian never touch it.
 
 Out-of-vocabulary English words letter-spell via misaki's grapheme-rule fallback, which is good enough for ASR transcripts but occasionally awkward for proper nouns. Two ergonomic overrides:
 - `<phoneme alphabet="ipa" ph="...">` (v1.4.1+, [#193](https://github.com/drakulavich/kesha-voice-kit/issues/193)) — bypass G2P, feed IPA directly to Kokoro.
