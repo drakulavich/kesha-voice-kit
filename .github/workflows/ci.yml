@@ -479,6 +479,8 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-ci-cache
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -491,13 +493,12 @@ jobs:
       - name: 🔊 Install published Linux backend
         uses: ./.github/actions/install-kesha-backend
         with:
-          cache-path: |
-            ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-models-tts-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          cache-path: .kesha-ci-cache
+          cache-key: kesha-models-tts-v3
+          cache-cross-os: "true"
           ffmpeg-provider: apt
           install-args: --tts en
-          engine-dir: ~/.cache/kesha/engine
+          engine-dir: .kesha-ci-cache/engine
           install-log: kesha-install.log
           cache-write: "false"
 
@@ -533,6 +534,8 @@ jobs:
     runs-on: windows-latest
     # Higher than the Linux lane's 12: model downloads are slower on this runner.
     timeout-minutes: 20
+    env:
+      KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-ci-cache
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -545,13 +548,12 @@ jobs:
       - name: 🔊 Cold install the published Windows engine
         uses: ./.github/actions/install-kesha-backend
         with:
-          cache-path: |
-            ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-models-tts-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          cache-path: .kesha-ci-cache
+          cache-key: kesha-models-tts-v3
+          cache-cross-os: "true"
           ffmpeg-provider: skip
           install-args: --tts en
-          engine-dir: ~/.cache/kesha/engine
+          engine-dir: .kesha-ci-cache/engine
           install-log: kesha-install.log
           cache-write: "false"
 
@@ -613,6 +615,7 @@ jobs:
     timeout-minutes: ${{ matrix.timeout }}
     env:
       KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/${{ matrix.engine-bin }}
+      KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-ci-cache
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -674,10 +677,9 @@ jobs:
       - name: 🔊 Install models through local backend
         uses: ./.github/actions/install-kesha-backend
         with:
-          cache-path: |
-            ~/.cache/kesha
-          cache-key: ${{ runner.os }}-kesha-models-tts-v1
-          cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
+          cache-path: .kesha-ci-cache
+          cache-key: kesha-models-tts-v3
+          cache-cross-os: "true"
           ffmpeg-provider: ${{ matrix.ffmpeg-provider }}
           install-args: --onnx --tts en
           cache-write: "false"

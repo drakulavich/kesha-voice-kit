@@ -34,6 +34,10 @@ inputs:
     description: Set false so PR runs only read the cache; cache-seed.yml owns writing on main (#661)
     required: false
     default: "true"
+  cache-cross-os:
+    description: One OS-less entry shared by the Linux and Windows model lanes; must match on save and restore or the versions diverge and every read misses (#860)
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -45,6 +49,7 @@ runs:
         path: ${{ inputs.cache-path }}
         key: ${{ inputs.cache-key }}
         restore-keys: ${{ inputs.cache-restore-keys }}
+        enableCrossOsArchive: ${{ inputs.cache-cross-os == 'true' }}
 
     - name: 💾 Restore backend cache
       if: ${{ inputs.cache-path != '' && inputs.cache-write != 'true' }}
@@ -53,6 +58,7 @@ runs:
         path: ${{ inputs.cache-path }}
         key: ${{ inputs.cache-key }}
         restore-keys: ${{ inputs.cache-restore-keys }}
+        enableCrossOsArchive: ${{ inputs.cache-cross-os == 'true' }}
 
     # `!dir/sub` does NOT exclude children of an included dir (actions/toolkit#713), so purge explicitly.
     - name: 🧊 Force a cold engine download
