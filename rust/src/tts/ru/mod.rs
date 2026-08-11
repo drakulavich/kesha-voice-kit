@@ -63,6 +63,21 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn plain_text_path_verbalizes_digits() {
+        // #891: bare digits reach Vosk's G2P and are silently dropped —
+        // `kesha say "Кабинет 405."` speaks "Кабинет".
+        assert_eq!(expand_text("Кабинет 405."), "Кабинет четыреста пять.");
+    }
+
+    #[test]
+    fn text_segments_verbalize_digits_even_without_auto_expand() {
+        // Number verbalization is not an abbreviation feature: --no-expand-abbrev
+        // suppresses acronym spelling, never digits (#891).
+        let out = normalize_segments(vec![Segment::Text("Кабинет 405.".to_string())], false);
+        assert_eq!(out, vec![Segment::Text("Кабинет четыреста пять.".to_string())]);
+    }
+
+    #[test]
     fn spell_segment_becomes_text_via_letter_table() {
         let out = normalize_segments(vec![Segment::Spell("ВОЗ".to_string())], false);
         assert_eq!(out, vec![Segment::Text("вэ о зэ".to_string())]);
