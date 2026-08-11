@@ -26,6 +26,10 @@ use crate::tts::token::{for_each_token, split_punct, TokenEvent};
 /// token is a phone number or an id, which is how a Russian speaker reads it.
 const MAX_CARDINAL_DIGITS: usize = 9;
 
+/// Below this, `N год/года` is read as a duration («2 года») rather than a
+/// calendar year, so it keeps the cardinal that duration already wants.
+const MIN_CALENDAR_YEAR: u64 = 1000;
+
 const UNITS: [&str; 20] = [
     "ноль",
     "один",
@@ -331,15 +335,18 @@ fn time_words(core: &str) -> Option<String> {
 }
 
 /// The two contexts where the case is legible from the next word alone.
+/// `next` never crosses a segment boundary, so SSML that splits «25» from
+/// «декабря» loses the agreement and falls back to a nominative cardinal.
 fn contextual(core: &str, next: Option<&str>) -> Option<String> {
     let n = as_number(core)?;
     let next = split_punct(next?).1.to_lowercase();
     if (1..=31).contains(&n) && MONTHS_GENITIVE.contains(&next.as_str()) {
         return ordinal(n, Case::Gen);
     }
+    // Only «году» is unambiguous: a duration never takes the prepositional.
     let case = match next.as_str() {
-        "год" => Case::Nom,
-        "года" => Case::Gen,
+        "год" if n >= MIN_CALENDAR_YEAR => Case::Nom,
+        "года" if n >= MIN_CALENDAR_YEAR => Case::Gen,
         "году" => Case::Prep,
         _ => return None,
     };
@@ -360,24 +367,38 @@ fn run_to_words(run: &str) -> String {
 
 /// Fallback for tokens no pattern claimed: every maximal digit run becomes
 /// words in place, so «10-15» reads «десять-пятнадцать» and no digit survives.
+/// A run abutting a letter gains a space, or «2026г» would reach Vosk glued
+/// into the single token «шестьг»; other neighbours keep their tight spacing.
 fn digit_runs_to_words(s: &str) -> Cow<'_, str> {
     if !s.bytes().any(|b| b.is_ascii_digit()) {
         return Cow::Borrowed(s);
     }
     let mut out = String::with_capacity(s.len() * 4);
     let mut run = String::new();
+    let mut just_rewrote = false;
     for c in s.chars() {
         if c.is_ascii_digit() {
             run.push(c);
             continue;
         }
         if !run.is_empty() {
+            if out.ends_with(char::is_alphabetic) {
+                out.push(' ');
+            }
             out.push_str(&run_to_words(&run));
             run.clear();
+            just_rewrote = true;
         }
+        if just_rewrote && c.is_alphabetic() {
+            out.push(' ');
+        }
+        just_rewrote = false;
         out.push(c);
     }
     if !run.is_empty() {
+        if out.ends_with(char::is_alphabetic) {
+            out.push(' ');
+        }
         out.push_str(&run_to_words(&run));
     }
     Cow::Owned(out)
@@ -540,6 +561,9 @@ mod tests {
         assert_eq!(verbalize("2026г"), "две тысячи двадцать шесть г");
         assert_eq!(verbalize("3D"), "три D");
         assert_eq!(verbalize("A4"), "A четыре");
+        assert_eq!(verbalize("дом5дом"), "дом пять дом");
+        // Only the run's own edges gain a space — neighbouring letters stay one word.
+        assert_eq!(verbalize("ABC1"), "ABC один");
         // Non-letter neighbours keep their tight spacing.
         assert_eq!(verbalize("10-15"), "десять-пятнадцать");
         assert_eq!(verbalize("№7"), "№семь");
