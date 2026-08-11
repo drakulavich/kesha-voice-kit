@@ -21,7 +21,7 @@ complete -c kesha -n '__fish_use_subcommand' -l toon -d 'Output results as TOON 
 complete -c kesha -n '__fish_use_subcommand' -l timestamps -d 'Include timestamped transcript segments in JSON/TOON output'
 complete -c kesha -n '__fish_use_subcommand' -l speakers -d 'Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).'
 complete -c kesha -n '__fish_use_subcommand' -l itn -d 'Rewrite spoken-form numbers, money, dates and times to written form ("two hundred thirty two" -> "232"). English-only; other languages pass through unchanged.'
-complete -c kesha -n '__fish_use_subcommand' -l include-errors -d 'With --json, output { results, errors } so scripts can read per-file failures without parsing stderr'
+complete -c kesha -n '__fish_use_subcommand' -l include-errors -d 'With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr'
 complete -c kesha -n '__fish_use_subcommand' -l verbose -d 'Show language detection details'
 complete -c kesha -n '__fish_use_subcommand' -l format -r -d 'Output format: transcript | json | toon (long-form alias for --json / --toon)'
 complete -c kesha -n '__fish_use_subcommand' -l lang -r -d 'Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch'

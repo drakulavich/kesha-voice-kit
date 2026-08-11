@@ -266,7 +266,7 @@ OPTIONS
        --timestamps    Include timestamped transcript segments in JSON/TOON output (Default: false)
          --speakers    Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run \`kesha install --diarize\` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad). (Default: false)
               --itn    Rewrite spoken-form numbers, money, dates and times to written form ("two hundred thirty two" -> "232"). English-only; other languages pass through unchanged. (Default: false)
-   --include-errors    With --json, output { results, errors } so scripts can read per-file failures without parsing stderr (Default: false)
+   --include-errors    With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr (Default: false)
           --verbose    Show language detection details (Default: false)
   --format=<format>    Output format: transcript | json | toon (long-form alias for --json / --toon)
       --lang=<lang>    Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch
@@ -406,6 +406,17 @@ describe("TOON output (#138)", () => {
   test("ends with a trailing newline so it composes in pipelines", () => {
     const output = formatToonOutput([{ file: "a.ogg", text: "Hi", lang: "en" }]);
     expect(output.endsWith("\n")).toBe(true);
+  });
+
+  test("round-trips the error envelope through decode (#839)", () => {
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en" }];
+    const errors = [{ file: "b.ogg", code: "E_INPUT_NOT_FOUND", message: "File not found" }];
+    expect(decodeToon(formatToonOutput(results, errors))).toEqual({ results, errors });
+  });
+
+  test("keeps the envelope shape when there are no errors (#839)", () => {
+    const results = [{ file: "a.ogg", text: "Hello", lang: "en" }];
+    expect(decodeToon(formatToonOutput(results, []))).toEqual({ results, errors: [] });
   });
 });
 
@@ -690,7 +701,7 @@ describe("validateTranscribeArgs guards", () => {
     ).toBe("toon");
   });
 
-  test("--include-errors without --json is rejected", () => {
+  test("--include-errors without a machine-readable format is rejected", () => {
     expect(
       expectRejected({ "include-errors": true }, ["--include-errors"], okFmt()),
     ).toContain("--include-errors requires --json");
@@ -701,6 +712,16 @@ describe("validateTranscribeArgs guards", () => {
       expectAccepted({ "include-errors": true, json: true }, ["--include-errors", "--json"], okFmt(true))
         .outputFormat,
     ).toBe("json");
+  });
+
+  test("--include-errors with --toon is accepted (#839)", () => {
+    expect(
+      expectAccepted(
+        { "include-errors": true, toon: true },
+        ["--include-errors", "--toon"],
+        okFmt(false, true),
+      ).outputFormat,
+    ).toBe("toon");
   });
 
   test("--vad and --no-vad are mutually exclusive", () => {

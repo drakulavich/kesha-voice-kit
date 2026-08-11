@@ -206,7 +206,9 @@ Unsupported-on-platform language codes are rejected by the Engine.
 
 `toToon` SHALL accept a `TranscribeResult[]` and return a TOON-encoded string
 identical to what `kesha --toon` would produce. The string is losslessly
-decodable via `@toon-format/toon`'s `decode()` back to the same array.
+decodable via `@toon-format/toon`'s `decode()` back to the same array. An
+optional second argument (`TranscribeErrorRecord[]`) SHALL switch the output to
+the `{ results, errors }` envelope `kesha --toon --include-errors` prints.
 
 #### Scenario: Sona formats results for an LLM context window
 

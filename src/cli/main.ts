@@ -186,8 +186,8 @@ export function validateTranscribeArgs(
         "(VAD engages automatically for --speakers), or drop --speakers.",
     };
   }
-  if (args["include-errors"] && !wantsJson) {
-    return { ok: false, error: "--include-errors requires --json or --format json." };
+  if (args["include-errors"] && !(wantsJson || wantsToon)) {
+    return { ok: false, error: "--include-errors requires --json, --toon, or --format {json,toon}." };
   }
 
   const vadMode: ValidatedTranscribeArgs["vadMode"] = vad ? "on" : noVad ? "off" : "auto";
@@ -390,14 +390,14 @@ function writeOutput(
   format: ValidatedTranscribeArgs["outputFormat"],
   opts: { includeErrors: boolean; verbose: boolean },
 ): void {
-  const errorEnvelope = format === "json" && opts.includeErrors;
+  const errorEnvelope = (format === "json" || format === "toon") && opts.includeErrors;
   // #773: `[]` reads as "ran fine, nothing found" to a consumer ignoring the exit code.
   if (results.length === 0 && errors.length > 0 && !errorEnvelope) return;
 
   if (format === "json") {
     process.stdout.write(formatJsonOutput(results, opts.includeErrors ? errors : undefined));
   } else if (format === "toon") {
-    process.stdout.write(formatToonOutput(results));
+    process.stdout.write(formatToonOutput(results, opts.includeErrors ? errors : undefined));
   } else if (format === "transcript") {
     process.stdout.write(formatTranscriptOutput(results));
   } else if (opts.verbose) {
@@ -463,7 +463,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       },
       "include-errors": {
         type: "boolean",
-        description: "With --json, output { results, errors } so scripts can read per-file failures without parsing stderr",
+        description: "With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr",
         default: false,
       },
       verbose: {

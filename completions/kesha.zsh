@@ -29,7 +29,7 @@ _kesha() {
       '--timestamps[Include timestamped transcript segments in JSON/TOON output]' \
       '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).]' \
       '--itn[Rewrite spoken-form numbers, money, dates and times to written form ("two hundred thirty two" -> "232"). English-only; other languages pass through unchanged.]' \
-      '--include-errors[With --json, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
+      '--include-errors[With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
       '--verbose[Show language detection details]' \
       '--format=[Output format: transcript | json | toon (long-form alias for --json / --toon)]:format:' \
       '--lang=[Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch]:lang:' \
@@ -143,7 +143,7 @@ _kesha() {
       '--timestamps[Include timestamped transcript segments in JSON/TOON output]' \
       '--speakers[Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).]' \
       '--itn[Rewrite spoken-form numbers, money, dates and times to written form ("two hundred thirty two" -> "232"). English-only; other languages pass through unchanged.]' \
-      '--include-errors[With --json, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
+      '--include-errors[With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr]' \
       '--verbose[Show language detection details]' \
       '--format=[Output format: transcript | json | toon (long-form alias for --json / --toon)]:format:' \
       '--lang=[Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch]:lang:' \
