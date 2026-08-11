@@ -194,7 +194,7 @@ Opus bitrate in bits/sec (e.g. 32000). Only with \-\-format ogg\-opus.
 Opus encoder sample rate (8000/12000/16000/24000/48000). Only with \-\-format ogg\-opus.
 .TP
 .B \-\-no\-expand\-abbrev
-Disable Russian acronym auto\-expansion (ВОЗ → 'вэ о зэ') for ru\-vosk\-* voices. <say\-as interpret\-as='characters'> still works. Applies to Russian (ru\-vosk\-*) and English (en\-*) voices.
+Disable acronym auto\-expansion on ru\-vosk\-* voices (ВОЗ → 'вэ о зэ') and English on ONNX engine builds (FBI → 'ef bee eye'). No effect on macOS arm64 FluidAudio, macos\-* or non\-English voices, which spell initialisms in their own G2P; the engine warns when the flag is ignored. <say\-as interpret\-as='characters'> still works.
 .TP
 .B \-\-verbose
 Log TTS synthesis time to stderr

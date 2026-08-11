@@ -325,7 +325,7 @@ OPTIONS
             --format=<format>    Output format: wav (default), ogg-opus (Telegram-ready voice note), or flac (lossless, plays in all browsers incl. Safari). Inferred from --out extension when omitted.
           --bitrate=<bitrate>    Opus bitrate in bits/sec (e.g. 32000). Only with --format ogg-opus.
   --sample-rate=<sample_rate>    Opus encoder sample rate (8000/12000/16000/24000/48000). Only with --format ogg-opus.
-           --no-expand-abbrev    Disable Russian acronym auto-expansion (ВОЗ → 'вэ о зэ') for ru-vosk-* voices. <say-as interpret-as='characters'> still works. Applies to Russian (ru-vosk-*) and English (en-*) voices.
+           --no-expand-abbrev    Disable acronym auto-expansion on ru-vosk-* voices (ВОЗ → 'вэ о зэ') and English on ONNX engine builds (FBI → 'ef bee eye'). No effect on macOS arm64 FluidAudio, macos-* or non-English voices, which spell initialisms in their own G2P; the engine warns when the flag is ignored. <say-as interpret-as='characters'> still works.
                     --verbose    Log TTS synthesis time to stderr (Default: false)
                       --debug    Trace engine subprocess calls on stderr (or KESHA_DEBUG=1) (Default: false)`);
   });

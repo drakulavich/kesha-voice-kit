@@ -44,7 +44,10 @@ export interface SayOptions {
   /** Only valid with `format: "ogg-opus"`. Must be one of 8000, 12000, 16000, 24000, 48000. Default 24000. */
   sampleRate?: number;
   /**
-   * Disable acronym auto-expansion for `ru-vosk-*` and `en-*` voices.
+   * Disable acronym auto-expansion. Honored for `ru-vosk-*` voices and for
+   * `en-*` on ONNX engine builds; a no-op on FluidAudio Kokoro (the released
+   * darwin-arm64 binary), `macos-*` and non-English voices, where the engine
+   * owns initialism handling and warns on stderr instead (#842).
    * When true, passes `--no-expand-abbrev` to the engine (requires engine
    * capability `tts.ru_acronym_expansion` or `tts.en_acronym_expansion`).
    * On older engines that don't advertise the capability, the flag is

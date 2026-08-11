@@ -49,9 +49,11 @@ pub struct SayArgs {
     /// on stdout. See `docs/tts-stdin-loop.md`. Issue #213.
     #[arg(long = "stdin-loop", hide = true)]
     pub stdin_loop: bool,
-    /// Disable auto-expansion of Russian acronyms (e.g. ВОЗ → "вэ о зэ").
+    /// Disable acronym auto-expansion on `ru-vosk-*` voices (ВОЗ → "вэ о зэ")
+    /// and English on ONNX Kokoro builds (FBI → "ef bee eye"). No effect on
+    /// FluidAudio Kokoro, `macos-*` or non-English voices, which spell
+    /// initialisms in their own G2P; those paths warn on stderr instead (#842).
     /// `<say-as interpret-as="characters">` in SSML remains honored.
-    /// No effect for non-`ru-vosk-*` voices.
     #[arg(long = "no-expand-abbrev", default_value_t = false)]
     pub no_expand_abbrev: bool,
 }

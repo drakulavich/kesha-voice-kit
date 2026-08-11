@@ -101,6 +101,21 @@ kesha say --voice en-am_michael --no-expand-abbrev 'EPAM ...'
 
 `<say-as interpret-as="characters">…</say-as>` always wins — letter-spells via the embedded table regardless of `--no-expand-abbrev`. Engine reports `tts.en_acronym_expansion: true` in `--capabilities-json`. Closes [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
 
+### Where `--no-expand-abbrev` actually applies
+
+The flag is accepted on every voice, but only two paths can act on it — the rest spell initialisms inside an engine-owned G2P with no opt-out, and warn on stderr instead of ignoring the request in silence ([#842](https://github.com/drakulavich/kesha-voice-kit/issues/842)).
+
+| Voice | Engine | `--no-expand-abbrev` |
+| --- | --- | --- |
+| `ru-vosk-*` (every build) | Vosk-TTS | **honored** — suppresses the Cyrillic letter-spell rule ([#232](https://github.com/drakulavich/kesha-voice-kit/issues/232)) |
+| `en-*` on ONNX builds (Linux, Windows, macOS without `system_kokoro`) | ONNX Kokoro | **honored** — suppresses the letter-spell rule; `IPA_LEXICON` hits still fire |
+| `en-*` on the released darwin-arm64 build | FluidAudio Kokoro (ANE) | no-op — upstream `EnglishInitialisms` spells `FBI`/`IBM` in its own G2P and exposes no suppression knob. Per-word overrides go through the lexicon binding ([#818](https://github.com/drakulavich/kesha-voice-kit/issues/818)), which wins ahead of the initialism rule |
+| `es`/`fr`/`it`/`pt` on ONNX builds | ONNX Kokoro + CharsiuG2P | no-op — the Romance normalizer runs unconditionally inside G2P, before the segment pipeline that reads the flag |
+| `es`/`fr`/`it`/`pt`/`hi`/`ja`/`zh` on darwin-arm64 | FluidAudio Kokoro | no-op |
+| `macos-*` | AVSpeech | no-op — the Swift sidecar owns normalization |
+
+Because the released macOS binary compiles `system_kokoro`, the same `kesha say --voice en-am_michael --no-expand-abbrev` suppresses spelling on Linux and does not on an Apple Silicon Mac. The engine says so on stderr; audio is byte-identical either way there.
+
 ## Russian abbreviation auto-expansion
 
 For `ru-vosk-*` voices, `kesha say` detects all-uppercase Cyrillic acronyms (length 2–5) and reads them letter-by-letter when the token cannot be pronounced as a natural Russian syllable:

@@ -28,8 +28,9 @@
 //!
 //! All fields except `text` and `voice` are optional. `format` /
 //! `bitrate` / `sample_rate` mirror the CLI flags. `expand_abbrev`
-//! defaults to `true`; set to `false` to suppress Cyrillic acronym
-//! expansion for `ru-vosk-*` voices (mirrors `--no-expand-abbrev`).
+//! defaults to `true`; set to `false` to suppress acronym expansion on
+//! `ru-vosk-*` voices and English ONNX Kokoro (mirrors `--no-expand-abbrev`,
+//! including its per-engine no-ops — see `tts::say`).
 //!
 //! ## What this is NOT
 //!
@@ -83,9 +84,10 @@ struct LoopRequest {
     #[serde(default)]
     ssml: bool,
     /// Auto-expand all-uppercase acronyms before synth: Cyrillic on `ru-vosk-*`
-    /// (#232), Latin on `en-*` (#244). Defaults to `true` when absent so legacy
-    /// clients keep current behavior. Mirrors the CLI `--no-expand-abbrev` flag
-    /// (inverted). No effect for `macos-*` voices.
+    /// (#232), Latin on `en-*` ONNX Kokoro (#244). Defaults to `true` when
+    /// absent so legacy clients keep current behavior. Mirrors the CLI
+    /// `--no-expand-abbrev` flag (inverted); `false` is a no-op on FluidAudio
+    /// Kokoro, `macos-*` and non-English voices, which warn instead (#842).
     #[serde(default = "default_expand_abbrev")]
     expand_abbrev: bool,
 }

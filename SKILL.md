@@ -196,7 +196,7 @@ Format is also inferred from `--out` extension (`.ogg` / `.opus` / `.oga` → OG
 
 **Russian abbreviations** (`ru-vosk-*`): all-uppercase Cyrillic 2-5-char tokens auto-expand letter-by-letter when not pronounceable as a Russian syllable (ФСБ → "эф-эс-бэ", ВОЗ → "воз"). Disable with `--no-expand-abbrev`. See [docs/tts.md#russian-abbreviation-auto-expansion](docs/tts.md#russian-abbreviation-auto-expansion).
 
-**English acronyms** (`en-*`, Kokoro): three-table mechanism (letter-spell rule + STOP_LIST + IPA_LEXICON) auto-expands FBI → "ef bee eye" and gives EPAM/JSON/Anthropic the right IPA. Disable letter-spell with `--no-expand-abbrev`. See [docs/tts.md#english-acronym-auto-expansion](docs/tts.md#english-acronym-auto-expansion).
+**English acronyms** (`en-*`, Kokoro): three-table mechanism (letter-spell rule + STOP_LIST + IPA_LEXICON) auto-expands FBI → "ef bee eye" and gives EPAM/JSON/Anthropic the right IPA. Disable letter-spell with `--no-expand-abbrev` — honored on ONNX builds only; the released darwin-arm64 binary spells initialisms inside FluidAudio's own G2P and warns that the flag is a no-op ([#842](https://github.com/drakulavich/kesha-voice-kit/issues/842)). See [docs/tts.md#english-acronym-auto-expansion](docs/tts.md#english-acronym-auto-expansion).
 
 **Russian word stress** (`ru-vosk-*` only): `<emphasis>сл+ово</emphasis>` shifts stress to the vowel marked with `+`. `<emphasis level="none">сл+ово</emphasis>` strips the `+` (cancel inherited emphasis). Other voices (`en-*`, `macos-*`) silently strip the `+` and warn once per process. Auto-stress dictionary not provided — caller writes the `+` manually. Closes [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
 
