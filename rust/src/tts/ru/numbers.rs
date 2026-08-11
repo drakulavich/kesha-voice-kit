@@ -208,8 +208,9 @@ fn agreement(n: u64) -> usize {
     }
 }
 
-/// Cardinal in nominative, masculine where gender is free. Caller guarantees
-/// `n < 1_000_000_000`.
+/// Cardinal in nominative, masculine where gender is free. `run_to_words` caps
+/// what reaches here at `MAX_CARDINAL_DIGITS`, which is what keeps the hundreds
+/// index in range without a check on every call.
 fn cardinal(n: u64) -> String {
     if n == 0 {
         return UNITS[0].to_string();
