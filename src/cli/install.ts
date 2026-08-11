@@ -1,8 +1,7 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { installEngine } from "../engine-install";
-import { engineTarget } from "../engine-targets";
-import { isDarwinArm64 } from "../fluid-kokoro-cache";
+import { engineTarget, isDarwinArm64 } from "../engine-targets";
 import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from "../engine";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";

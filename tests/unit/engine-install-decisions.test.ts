@@ -16,7 +16,7 @@ import {
   installEngine,
   SIDECARS,
 } from "../../src/engine-install";
-import { isDarwinArm64 } from "../../src/fluid-kokoro-cache";
+import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
 import { isolateEngineCache } from "../helpers/fake-engine";
 

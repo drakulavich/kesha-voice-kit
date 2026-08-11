@@ -23,6 +23,8 @@ import { stageEngineHome } from "../helpers/fake-engine";
 import { createSupportBundle } from "../../src/support-bundle";
 import { engineVersion, packageName, packageVersion } from "../../src/package-info";
 import { enableStats } from "../../src/stats";
+import { isDarwinArm64 } from "../../src/engine-targets";
+import { KOKORO_ANE_EN_REQUIRED, KOKORO_G2P_REQUIRED } from "../../src/kokoro-ane";
 
 const fakeCapabilities = {
   protocolVersion: 2,
@@ -184,16 +186,22 @@ describe("collectDoctorReport", () => {
         },
       ]);
 
-      const fluidOptional = report.optionalComponents.find(
-        (component) => component.name === "FluidAudio Kokoro cache",
-      );
-      if (process.platform === "darwin" && process.arch === "arm64") {
-        expect(fluidOptional).toMatchObject({
+      const optional = Object.fromEntries(report.optionalComponents.map((c) => [c.name, c]));
+      if (isDarwinArm64()) {
+        // A tree predating #856: the G2P directory holds an old bundle and none of what
+        // `kesha install --tts` stages, so the row is incomplete rather than installed.
+        expect(optional["TTS (Kokoro G2P)"]).toMatchObject({
           path: "~/.cache/fluidaudio/Models/kokoro",
           exists: true,
+          missing: KOKORO_G2P_REQUIRED,
+        });
+        expect(optional["TTS (Kokoro ANE)"]).toMatchObject({
+          path: "~/.cache/kesha/fluidaudio/kokoro-82m-coreml/ANE",
+          exists: false,
         });
       } else {
-        expect(fluidOptional).toBeUndefined();
+        expect(optional["TTS (Kokoro G2P)"]).toBeUndefined();
+        expect(optional["TTS (Kokoro ANE)"]).toBeUndefined();
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -230,6 +238,44 @@ describe("collectDoctorReport", () => {
         join(dir, ".cache", "fluidaudio", "Models", "kokoro"),
       ]);
       expect(report.cache.grandTotalBytes).toBe(report.cache.totalBytes + root!.sizeBytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The point of the row is telling a whole install from a half one; "installed" for a
+  // directory that cannot synthesize is the false clean #831 set out to remove.
+  const darwinArmTest = isDarwinArm64() ? test : test.skip;
+  darwinArmTest("separates a complete Kokoro ANE staging from a partial one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-kokoro-ane-test-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+      process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+      const ane = join(dir, ".cache", "kesha", "fluidaudio", "kokoro-82m-coreml", "ANE");
+      const g2p = join(dir, ".cache", "fluidaudio", "Models", "kokoro");
+      for (const [root, required] of [
+        [ane, KOKORO_ANE_EN_REQUIRED],
+        [g2p, KOKORO_G2P_REQUIRED],
+      ] as const) {
+        for (const entry of required) {
+          mkdirSync(join(root, entry), { recursive: true });
+          writeFileSync(join(root, entry, "coremldata.bin"), "staged");
+        }
+      }
+
+      const whole = formatDoctorReport(await collectDoctorReport({ redact: false }));
+      expect(whole).toContain("TTS (Kokoro ANE): installed");
+      expect(whole).toContain("TTS (Kokoro G2P): installed");
+
+      rmSync(join(ane, KOKORO_ANE_EN_REQUIRED[0]!), { recursive: true, force: true });
+      const partial = formatDoctorReport(await collectDoctorReport({ redact: false }));
+      expect(partial).toContain(
+        `TTS (Kokoro ANE): incomplete - missing ${KOKORO_ANE_EN_REQUIRED[0]}; ` +
+          "re-run `kesha install --tts`",
+      );
+      expect(partial).toContain("TTS (Kokoro G2P): installed");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

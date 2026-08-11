@@ -31,6 +31,18 @@ const ENGINE_TARGETS: Record<string, EngineTarget> = {
   },
 };
 
+/**
+ * The one target whose engine links FluidAudio, so the only one with ANE Kokoro assets,
+ * Swift sidecars and diarization. Kept beside the target table because that is what makes
+ * it true — no build for another key ships those features.
+ */
+export function isDarwinArm64(
+  platform: string = process.platform,
+  arch: string = process.arch,
+): boolean {
+  return platform === "darwin" && arch === "arm64";
+}
+
 export function targetKey(platform: string = process.platform, arch: string = process.arch): string {
   return `${platform}-${arch}`;
 }

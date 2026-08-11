@@ -14,10 +14,7 @@ import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { engineVersion, packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
-import {
-  fluidKokoroCacheInfo,
-  type FluidKokoroCacheInfo,
-} from "./fluid-kokoro-cache";
+import { kokoroAneComponents } from "./kokoro-ane";
 import { isCoremlBackend } from "./fluid-asr-cache";
 import {
   fluidExternalRoots,
@@ -65,6 +62,8 @@ interface OptionalComponent extends PathSummary {
   note?: string;
   /** Binaries only: whether the file actually executes. Absent for model directories. */
   runnable?: boolean;
+  /** Staged asset sets only: required entries that are not on disk (#831). */
+  missing?: string[];
 }
 
 type DoctorDiagnosticLogStatus = DiagnosticLogStatus & { error?: string };
@@ -296,7 +295,7 @@ async function sidecarComponent(
 
 async function collectOptionalComponents(
   redact: boolean,
-  fluidKokoro: FluidKokoroCacheInfo,
+  homeDir?: string,
 ): Promise<OptionalComponent[]> {
   const cache = keshaCacheDir();
   const sidecarDir = dirname(getEngineBinPath());
@@ -316,17 +315,14 @@ async function collectOptionalComponents(
       note: "enabled with `kesha install --tts`",
       ...pathSummary(join(cache, "models/vosk-ru")),
     },
-    ...(fluidKokoro.supported
-      ? [
-          {
-            name: "FluidAudio Kokoro cache",
-            note: "darwin-arm64; managed by FluidAudio outside Kesha's pinned model cache",
-            path: fluidKokoro.path,
-            exists: fluidKokoro.exists,
-            sizeBytes: fluidKokoro.sizeBytes,
-          },
-        ]
-      : []),
+    ...kokoroAneComponents({ homeDir, cacheRoot: cache }).map((c) => ({
+      name: c.label,
+      note: c.note,
+      path: c.path,
+      exists: c.exists,
+      sizeBytes: c.sizeBytes,
+      missing: c.missing,
+    })),
     {
       // Diarization (#199) and Kokoro (#207) run in-engine now (native
       // fluidaudio-rs) — no Swift sidecar binaries. The Sortformer model is
@@ -399,7 +395,6 @@ export async function collectDoctorReport(
   options: DoctorOptions = {},
 ): Promise<DoctorReport> {
   const redact = options.redact === true;
-  const fluidKokoro = fluidKokoroCacheInfo();
   const engine = await collectEngine(redact);
   return {
     generatedAt: new Date().toISOString(),
@@ -412,7 +407,7 @@ export async function collectDoctorReport(
     },
     engine,
     cache: collectCache(redact, engine.capabilities?.backend, options.homeDir),
-    optionalComponents: await collectOptionalComponents(redact, fluidKokoro),
+    optionalComponents: await collectOptionalComponents(redact, options.homeDir),
     stats: collectStats(redact),
     diagnosticLogs: collectDiagnosticLogs(redact),
     env: collectEnv(redact),
@@ -421,7 +416,11 @@ export async function collectDoctorReport(
 
 function formatComponentState(component: OptionalComponent): string {
   if (!component.exists) return "missing";
-  return component.runnable === false ? CORRUPT_STATE : "installed";
+  if (component.runnable === false) return CORRUPT_STATE;
+  if (component.missing?.length) {
+    return `incomplete - missing ${component.missing.join(", ")}; re-run \`kesha install --tts\``;
+  }
+  return "installed";
 }
 
 function formatEngineBinaryState(engine: DoctorReport["engine"]): string {

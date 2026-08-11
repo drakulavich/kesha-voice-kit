@@ -6,7 +6,7 @@ import { getEngineBinaryName, installEngine, SIDECARS } from "../../src/engine-i
 import { installableTtsLangs, probeCapabilitiesForInstall, resolveTtsLangs } from "../../src/cli/install";
 import { engineFunctionalHealth, probeExecutable } from "../../src/engine-health";
 import { getEngineCapabilities } from "../../src/engine";
-import { isDarwinArm64 } from "../../src/fluid-kokoro-cache";
+import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
 import { isolateEngineCache } from "../helpers/fake-engine";
 

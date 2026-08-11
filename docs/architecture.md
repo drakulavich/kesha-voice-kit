@@ -75,7 +75,7 @@ are missing.
 | SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
 | Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
 | Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
-| Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | English by default; size differs per platform — preview: `kesha install --plan` | [FluidAudio Kokoro](https://github.com/FluidInference/FluidAudio) on darwin-arm64 (FluidAudio cache, not Kesha-verified); ONNX Kokoro elsewhere · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
+| Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | English by default; size differs per platform — preview: `kesha install --plan` | [FluidAudio Kokoro](https://github.com/FluidInference/FluidAudio) on darwin-arm64 (staged into FluidAudio's cache by `kesha install --tts`, hash-verified like every other pin since [#856](https://github.com/drakulavich/kesha-voice-kit/pull/856)); ONNX Kokoro elsewhere · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
 
 All models run through `kesha-engine` — a Rust binary using
 [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML) on Apple
