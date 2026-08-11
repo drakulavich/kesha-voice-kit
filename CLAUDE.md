@@ -54,9 +54,9 @@ git worktree remove .worktrees/<slug> && git worktree prune
 
 ### VERIFY BEFORE PUSHING
 
-- `bun test && bunx tsc --noEmit` before every push.
-- Rust changes: `make rust-test` (wraps `cargo nextest run --features tts`) plus `cargo fmt` and `cargo clippy --all-targets -- -D warnings`. Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest_tests`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
-- Backend module changes: also `cargo check --features coreml --no-default-features`.
+- `just preflight` before every push. The recipe is the single executable definition of the gate — TS always, the Rust gate when `rust/**` changed, the CoreML check when `rust/src/backend/**` changed; `just ALL=1 preflight` runs every gate regardless of the diff. Read it rather than reconstructing the commands.
+- Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest_tests`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
+- Touching darwin-only code (`system_kokoro` / `system_diarize` / `system_text_lang`): `just verify-darwin-full`, the same recipe `rust-test.yml` runs. Nothing else compiles those paths locally, so a break there is otherwise invisible until CI.
 - Do NOT push broken code.
 
 Rust toolchain quirks (CI rustc drift, rustfmt, `protoc`) and language gotchas: `docs/runbooks/rust-gotchas.md`.
