@@ -2068,7 +2068,7 @@ mod manifest_tests {
     #[test]
     fn write_verified_places_good_bytes_at_target() -> Result<()> {
         let target = write_verified_target("ok.bin");
-        write_verified(&mut &b"hello world"[..], &target, "ok.bin", HELLO_SHA)?;
+        write_verified(&mut &b"hello world"[..], &target, "ok.bin", HELLO_SHA, None)?;
         assert_eq!(fs::read(&target)?, b"hello world");
         let _ = fs::remove_file(&target);
         Ok(())
@@ -2080,7 +2080,13 @@ mod manifest_tests {
     fn write_verified_replaces_existing_target() -> Result<()> {
         let target = write_verified_target("replace.bin");
         fs::write(&target, b"previous verified weights")?;
-        write_verified(&mut &b"hello world"[..], &target, "replace.bin", HELLO_SHA)?;
+        write_verified(
+            &mut &b"hello world"[..],
+            &target,
+            "replace.bin",
+            HELLO_SHA,
+            None,
+        )?;
         assert_eq!(fs::read(&target)?, b"hello world");
         assert!(!staging_path(&target).exists());
         let _ = fs::remove_file(&target);
@@ -2095,6 +2101,7 @@ mod manifest_tests {
             &target,
             "mismatch.bin",
             HELLO_SHA,
+            None,
         )
         .expect_err("wrong hash must fail");
         assert!(err.to_string().contains("sha256 mismatch"), "{err}");
@@ -2111,6 +2118,7 @@ mod manifest_tests {
             &target,
             "refresh.bin",
             HELLO_SHA,
+            None,
         )
         .expect_err("mid-stream read error must fail");
         assert!(err.to_string().contains("refresh.bin"), "{err}");
@@ -3035,6 +3043,9 @@ fn download_with_retries(url: &str, f: &ModelFile, target: &Path) -> Result<()> 
                 attempt += 1;
             }
             Err(fail) => {
+                // The budget is spent, and the pid suffix means no later
+                // process could claim this prefix anyway (#889).
+                let _ = fs::remove_file(staging_path(target));
                 return Err(fail
                     .err
                     .context(format!("{} failed after {attempt} attempt(s)", f.rel_path)));
@@ -3086,24 +3097,40 @@ fn download_attempt(
     let _in_flight = InFlight::new();
     with_stderr(|| eprintln!("GET {}", f.rel_path));
 
+    // Whatever an earlier attempt managed to stage is the prefix this one
+    // resumes from (#889).
+    let part = staging_path(target);
+    let staged = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+
     // Status is inspected here rather than raised by ureq so a 429's
     // `Retry-After` header survives into the backoff decision (#724).
     //
     // ureq ships no timeouts by default, so without these a host that accepts
-    // the connection and then goes quiet hangs the install forever. The body is
-    // deliberately left unbounded: the 2.4GB encoder legitimately streams for
-    // hours on a slow link, and a deadline loose enough to survive that would
-    // not catch a stall anyway.
-    let response = match ureq::get(url)
+    // the connection and then goes quiet hangs the install forever. Measured on
+    // ureq 3.3 (#889): `timeout_recv_response` is anchored at headers-received
+    // and `RecvBody` inherits it, so it caps the *whole body* at 30s per
+    // attempt rather than detecting a stall. `timeout_recv_body` stays unset
+    // because ureq takes the minimum of the two — setting it can only tighten
+    // that cap, never lift it. Range-resume is what makes the cap survivable:
+    // every attempt keeps the bytes it did receive.
+    //
+    // `identity` because a `Range` addresses the encoded representation: mixing
+    // a decompressed prefix with an encoded remainder would corrupt the
+    // assembly, and ureq strips `content-encoding` after decoding so the
+    // response cannot be inspected for it afterwards.
+    let mut request = ureq::get(url)
         .config()
         .http_status_as_error(false)
+        .accept_encoding("identity")
         .timeout_resolve(Some(Duration::from_secs(10)))
         .timeout_connect(Some(Duration::from_secs(10)))
         .timeout_send_request(Some(Duration::from_secs(10)))
         .timeout_recv_response(Some(Duration::from_secs(30)))
-        .build()
-        .call()
-    {
+        .build();
+    if staged > 0 {
+        request = request.header("range", format!("bytes={staged}-"));
+    }
+    let response = match request.call() {
         Ok(response) => response,
         Err(e) => {
             return Err(AttemptFailure {
@@ -3116,6 +3143,17 @@ fn download_attempt(
     };
 
     let status = response.status().as_u16();
+    // The partial outgrew the artifact — an upstream rehost, or a download that
+    // finished but never got renamed. Neither is a resume point.
+    if staged > 0 && status == 416 {
+        let _ = fs::remove_file(&part);
+        return Err(AttemptFailure {
+            err: model_download_error(format!("GET {url} ({}): HTTP {status}", f.rel_path)),
+            reason: "stale partial discarded".to_string(),
+            retry_after: None,
+            max_attempts: MAX_DOWNLOAD_ATTEMPTS,
+        });
+    }
     if !response.status().is_success() {
         let retry_after = response
             .headers()
@@ -3134,6 +3172,10 @@ fn download_attempt(
         });
     }
 
+    // A server is free to ignore `Range` and answer 200 with the whole body;
+    // appending that onto a partial would corrupt the assembly.
+    let resume = if status == 206 { staged } else { 0 };
+
     // Not the raw header — that one reports the compressed size when decompression is active.
     let total = response.body().content_length().unwrap_or(0);
     let mut reader = TrackedStream {
@@ -3142,11 +3184,18 @@ fn download_attempt(
     };
     let streamed = if total >= PROGRESS_MIN_BYTES && io::IsTerminal::is_terminal(&io::stderr()) {
         let mut reader = ProgressReader::new(&mut reader, total);
-        write_verified(&mut reader, target, f.rel_path, f.sha256)
+        write_verified(&mut reader, target, f.rel_path, f.sha256, Some(resume))
     } else {
-        write_verified(&mut reader, target, f.rel_path, f.sha256)
+        write_verified(&mut reader, target, f.rel_path, f.sha256, Some(resume))
     };
-    streamed.map_err(|err| stream_failure(err, reader.read_failed))
+    streamed.map_err(|err| {
+        // Only a stalled body leaves a prefix the next attempt can resume from;
+        // a hash mismatch above all must not survive to be appended to (#174).
+        if !reader.read_failed {
+            let _ = fs::remove_file(&part);
+        }
+        stream_failure(err, reader.read_failed)
+    })
 }
 
 /// Classifies a failed `write_verified`. A truncated stream deserves another go;
@@ -3345,24 +3394,36 @@ impl<R> Drop for ProgressReader<R> {
 }
 
 /// Stream `reader` into `target` atomically: bytes land in a per-process
-/// `.part.<pid>` sibling, the hash is checked there, and only a verified file
-/// is renamed into place. An interrupted or corrupt download therefore never
-/// leaves bytes at `target` for the existence-only cache probes to resurrect
-/// later (#174), and a failure never disturbs an existing `target` (a
-/// concurrent installer's verified rename, or the pre-refresh copy under
-/// `--no-cache`). The pid suffix keeps two concurrent installers off each
-/// other's staging file; whichever verified rename lands last wins.
+/// `.part.<pid>` sibling, the hash is checked over that whole assembled file,
+/// and only a verified file is renamed into place. An interrupted or corrupt
+/// download therefore never leaves bytes at `target` for the existence-only
+/// cache probes to resurrect later (#174), and a failure never disturbs an
+/// existing `target` (a concurrent installer's verified rename, or the
+/// pre-refresh copy under `--no-cache`). The pid suffix keeps two concurrent
+/// installers off each other's staging file; whichever verified rename lands
+/// last wins.
+///
+/// `resume` says who owns the staging file on failure: `Some(n)` appends after
+/// `n` bytes already staged (`Some(0)` truncates) and leaves whatever landed
+/// for the caller to resume from with `Range`; `None` writes fresh and clears
+/// the staging file itself (#889).
 fn write_verified<R: io::Read>(
     reader: &mut R,
     target: &Path,
     rel_path: &str,
     expected_sha: &str,
+    resume: Option<u64>,
 ) -> Result<()> {
     let part = staging_path(target);
 
     let result = (|| -> Result<()> {
-        let mut out =
-            fs::File::create(&part).with_context(|| format!("create {}", part.display()))?;
+        let mut out = match resume {
+            Some(n) if n > 0 => fs::OpenOptions::new()
+                .append(true)
+                .open(&part)
+                .with_context(|| format!("append {}", part.display()))?,
+            _ => fs::File::create(&part).with_context(|| format!("create {}", part.display()))?,
+        };
         io::copy(reader, &mut out)
             .with_context(|| format!("download {rel_path}"))
             .coded(ErrorCode::ModelDownload)?;
@@ -3387,7 +3448,7 @@ fn write_verified<R: io::Read>(
         fs::rename(&part, target).with_context(|| format!("rename {}", target.display()))
     })();
 
-    if result.is_err() {
+    if result.is_err() && resume.is_none() {
         // Best-effort: drop this process's staging file only — `target` is
         // either absent or a file another writer legitimately owns.
         let _ = fs::remove_file(&part);
@@ -4077,13 +4138,13 @@ mod retry_tests {
         );
     }
 
-    /// Serves `responses` in order, one per connection, and reports how many
-    /// requests it answered. Each response must close the connection.
-    fn stub_server(responses: Vec<Vec<u8>>) -> (String, std::thread::JoinHandle<usize>) {
+    /// Serves `responses` in order, one per connection, and reports the request
+    /// head it answered each one with. Each response must close the connection.
+    fn stub_server(responses: Vec<Vec<u8>>) -> (String, std::thread::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
         let base = format!("http://{}", listener.local_addr().expect("stub addr"));
         let handle = std::thread::spawn(move || {
-            let mut served = 0;
+            let mut served = Vec::new();
             for response in responses {
                 let Ok((mut stream, _)) = listener.accept() else {
                     break;
@@ -4100,7 +4161,7 @@ mod retry_tests {
                     break;
                 }
                 let _ = stream.flush();
-                served += 1;
+                served.push(String::from_utf8_lossy(&request).to_lowercase());
             }
             served
         });
@@ -4176,7 +4237,7 @@ mod retry_tests {
             body
         );
         assert_eq!(
-            server.join().expect("stub server"),
+            server.join().expect("stub server").len(),
             3,
             "one 429, one redirect hop, one delivery"
         );
@@ -4198,7 +4259,11 @@ mod retry_tests {
         let rendered = format!("{err:#}");
         assert!(rendered.contains("HTTP 404"), "{rendered}");
         assert!(rendered.contains("after 1 attempt"), "{rendered}");
-        assert_eq!(server.join().expect("stub server"), 1, "404 never retries");
+        assert_eq!(
+            server.join().expect("stub server").len(),
+            1,
+            "404 never retries"
+        );
     }
 
     /// One file's fatal failure used to short-circuit rayon and could cancel a
@@ -4224,8 +4289,8 @@ mod retry_tests {
             fs::read(cache.0.join(ok_file.rel_path)).expect("sibling installed"),
             body
         );
-        assert_eq!(good.join().expect("good server"), 1);
-        assert_eq!(bad.join().expect("bad server"), 1);
+        assert_eq!(good.join().expect("good server").len(), 1);
+        assert_eq!(bad.join().expect("bad server").len(), 1);
     }
 
     #[test]
@@ -4246,8 +4311,8 @@ mod retry_tests {
         );
         assert!(rendered.contains(a.rel_path), "{rendered}");
         assert!(rendered.contains(b.rel_path), "{rendered}");
-        assert_eq!(first.join().expect("first server"), 1);
-        assert_eq!(second.join().expect("second server"), 1);
+        assert_eq!(first.join().expect("first server").len(), 1);
+        assert_eq!(second.join().expect("second server").len(), 1);
     }
 
     /// Retry wraps the request only. Bytes that do not match the pinned hash are
@@ -4266,7 +4331,7 @@ mod retry_tests {
         let err = download_verified(&cache.0, &file, false).expect_err("bad hash must fail");
 
         assert_eq!(code_of(&err), ErrorCode::CacheCorrupt);
-        assert_eq!(server.join().expect("stub server"), 1);
+        assert_eq!(server.join().expect("stub server").len(), 1);
         assert!(
             !cache.0.join(file.rel_path).exists(),
             "unverified bytes never land at the target"
@@ -4293,7 +4358,7 @@ mod retry_tests {
             fs::read(cache.0.join(file.rel_path)).expect("payload written"),
             body
         );
-        assert_eq!(server.join().expect("stub server"), 2);
+        assert_eq!(server.join().expect("stub server").len(), 2);
     }
 
     /// A staging path that cannot be opened stands in for any permanent local
@@ -4316,7 +4381,7 @@ mod retry_tests {
 
         let rendered = format!("{err:#}");
         assert!(rendered.contains("after 1 attempt"), "{rendered}");
-        assert_eq!(server.join().expect("stub server"), 1);
+        assert_eq!(server.join().expect("stub server").len(), 1);
     }
 
     #[test]
@@ -4343,8 +4408,317 @@ mod retry_tests {
             "{rendered}"
         );
         assert_eq!(
-            server.join().expect("stub server"),
+            server.join().expect("stub server").len(),
             MAX_DOWNLOAD_ATTEMPTS as usize
+        );
+    }
+
+    /// Streams a complete `chunk * chunks` body, `gap_ms` apart, then closes.
+    /// The socket never goes quiet before the last byte.
+    #[cfg(unix)]
+    fn streaming_server(chunk: usize, chunks: usize, gap_ms: u64) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind streaming server");
+        let base = format!("http://{}", listener.local_addr().expect("stub addr"));
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut request = Vec::new();
+            let mut buf = [0u8; 512];
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => request.extend_from_slice(&buf[..n]),
+                }
+            }
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                chunk * chunks
+            );
+            if stream.write_all(head.as_bytes()).is_err() {
+                return;
+            }
+            for _ in 0..chunks {
+                if stream.write_all(&vec![b'k'; chunk]).is_err() {
+                    return;
+                }
+                let _ = stream.flush();
+                std::thread::sleep(Duration::from_millis(gap_ms));
+            }
+        });
+        base
+    }
+
+    /// #780 inferred that the receive deadline detects a stall; #889 asked for
+    /// that measured, and it is the opposite. ureq stamps `RecvResponse` at
+    /// headers-received and `RecvBody` inherits that deadline, so a body still
+    /// arriving steadily is cut off the moment the clock runs out — an absolute
+    /// per-attempt cap, which is why five retries from byte 0 could never
+    /// finish a 654MB file (#776). The second arm pins the other half: ureq
+    /// takes the *minimum* of the two deadlines, so a generous
+    /// `timeout_recv_body` cannot loosen the cap, which is why it stays unset.
+    ///
+    /// Unix only, and that is itself the finding: this same probe on
+    /// windows-latest received the whole body well past the deadline, which is
+    /// why #776 reproduced on ubuntu while windows fetched the same file in
+    /// 86s. Asserting the windows behaviour would pin a platform bug, so this
+    /// pins the semantics the cap actually has where it is enforced (#893).
+    #[cfg(unix)]
+    #[test]
+    fn the_receive_deadline_caps_the_whole_body_not_just_a_stall() {
+        const DEADLINE: Duration = Duration::from_millis(500);
+        const CHUNK: usize = 64;
+        const CHUNKS: usize = 100;
+
+        for recv_body in [None, Some(Duration::from_secs(30))] {
+            let base = streaming_server(CHUNK, CHUNKS, 20);
+            let started = std::time::Instant::now();
+            let response = ureq::get(format!("{base}/payload.bin"))
+                .config()
+                .http_status_as_error(false)
+                .timeout_recv_response(Some(DEADLINE))
+                .timeout_recv_body(recv_body)
+                .build()
+                .call()
+                .expect("headers arrive promptly");
+
+            let mut sink = Vec::new();
+            let err = io::copy(&mut response.into_body().into_reader(), &mut sink)
+                .expect_err("the deadline must cut a body that is still flowing");
+            let elapsed = started.elapsed();
+
+            assert!(
+                sink.len() < CHUNK * CHUNKS,
+                "{recv_body:?}: the body finished, so nothing was capped"
+            );
+            assert!(
+                (DEADLINE..DEADLINE * 3).contains(&elapsed),
+                "{recv_body:?}: aborted after {elapsed:?}, deadline {DEADLINE:?}"
+            );
+            assert!(
+                err.to_string().to_lowercase().contains("timeout"),
+                "{recv_body:?}: {err}"
+            );
+        }
+    }
+
+    fn partial_response(body: &[u8], from: usize) -> Vec<u8> {
+        let mut out = format!(
+            "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\n\r\n",
+            body.len() - from,
+            from,
+            body.len() - 1,
+            body.len()
+        )
+        .into_bytes();
+        out.extend_from_slice(&body[from..]);
+        out
+    }
+
+    fn truncated_response(body: &[u8], cut: usize) -> Vec<u8> {
+        let mut out = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        out.extend_from_slice(&body[..cut]);
+        out
+    }
+
+    /// Plants the staging file a previous attempt would have left behind.
+    fn stage_partial(cache: &Path, file: &ModelFile, bytes: &[u8]) -> PathBuf {
+        let target = cache.join(file.rel_path);
+        fs::create_dir_all(target.parent().expect("target parent")).expect("create model dir");
+        fs::write(staging_path(&target), bytes).expect("plant partial");
+        target
+    }
+
+    /// The whole point of #889: a link that drops once per few hundred MB used
+    /// to make a 654MB file unreachable, because every retry restarted at zero.
+    #[test]
+    fn an_interrupted_download_resumes_from_the_bytes_already_staged() {
+        let body = b"kesha model bytes that outlive one attempt".to_vec();
+        let cut = 12;
+        let (base, server) = stub_server(vec![
+            truncated_response(&body, cut),
+            partial_response(&body, cut),
+        ]);
+        let cache = TempCache::new("resume");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            &body,
+        );
+
+        download_verified(&cache.0, &file, false).expect("the remainder must complete the file");
+
+        assert_eq!(
+            fs::read(cache.0.join(file.rel_path)).expect("payload written"),
+            body
+        );
+        let requests = server.join().expect("stub server");
+        assert_eq!(requests.len(), 2);
+        assert!(
+            !requests[0].contains("range:"),
+            "the first attempt asks for the whole file: {}",
+            requests[0]
+        );
+        assert!(
+            requests[1].contains(&format!("range: bytes={cut}-")),
+            "the retry must ask only for the remainder: {}",
+            requests[1]
+        );
+    }
+
+    /// HuggingFace answers `resolve/` with a 302 onto its CDN, so a `Range` that
+    /// does not survive the hop would resume nothing in production.
+    #[test]
+    fn a_resumed_range_survives_a_redirect() {
+        let body = b"kesha model bytes behind a redirect".to_vec();
+        let cut = 9;
+        let (base, server) = stub_server(vec![
+            header_only_response("HTTP/1.1 302 Found\r\nLocation: /payload.bin"),
+            partial_response(&body, cut),
+        ]);
+        let cache = TempCache::new("redirect-resume");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/resolve/payload.bin"),
+            &body,
+        );
+        stage_partial(&cache.0, &file, &body[..cut]);
+
+        download_verified(&cache.0, &file, false).expect("resume must survive the redirect");
+
+        assert_eq!(
+            fs::read(cache.0.join(file.rel_path)).expect("payload written"),
+            body
+        );
+        let requests = server.join().expect("stub server");
+        assert_eq!(requests.len(), 2);
+        assert!(
+            requests[1].contains(&format!("range: bytes={cut}-")),
+            "the redirected hop dropped the range: {}",
+            requests[1]
+        );
+    }
+
+    /// A mirror is just another host, and the pinned hash is what keeps it safe
+    /// either way (#121) — resume must not be HuggingFace-shaped.
+    #[test]
+    fn a_mirrored_download_resumes_the_same_way() {
+        let body = b"kesha model bytes from a mirror".to_vec();
+        let cut = 7;
+        let (base, server) = stub_server(vec![
+            truncated_response(&body, cut),
+            partial_response(&body, cut),
+        ]);
+        let _guard = crate::util::test_env::EnvGuard::set("KESHA_MODEL_MIRROR", &base);
+        let cache = TempCache::new("mirror-resume");
+        let file = model_file(
+            "models/retry/payload.bin",
+            "https://huggingface.co/payload.bin".to_string(),
+            &body,
+        );
+
+        download_verified(&cache.0, &file, false).expect("the mirror must resume too");
+
+        assert_eq!(
+            fs::read(cache.0.join(file.rel_path)).expect("payload written"),
+            body
+        );
+        let requests = server.join().expect("stub server");
+        assert!(
+            requests[1].contains(&format!("range: bytes={cut}-")),
+            "{}",
+            requests[1]
+        );
+    }
+
+    /// A server free to ignore `Range` answers 200 with the whole body. Appending
+    /// that onto a partial would corrupt the file, so the staging file restarts.
+    #[test]
+    fn a_server_that_ignores_the_range_restarts_instead_of_appending() {
+        let body = b"kesha model bytes".to_vec();
+        let (base, server) = stub_server(vec![ok_response(&body)]);
+        let cache = TempCache::new("ignored-range");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            &body,
+        );
+        let target = stage_partial(&cache.0, &file, b"stale prefix");
+
+        download_verified(&cache.0, &file, false).expect("a 200 must restart cleanly");
+
+        assert_eq!(
+            fs::read(&target).expect("payload written"),
+            body,
+            "an ignored range must not be appended onto"
+        );
+        let requests = server.join().expect("stub server");
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].contains("range: bytes=12-"), "{}", requests[0]);
+    }
+
+    /// A partial longer than the artifact — an upstream rehost, or a file the
+    /// last run finished but never renamed — is unusable, not fatal.
+    #[test]
+    fn a_range_past_the_end_discards_the_partial_and_starts_over() {
+        let body = b"kesha model bytes".to_vec();
+        let (base, server) = stub_server(vec![
+            header_only_response("HTTP/1.1 416 Range Not Satisfiable"),
+            ok_response(&body),
+        ]);
+        let cache = TempCache::new("range-past-end");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            &body,
+        );
+        let target = stage_partial(&cache.0, &file, &vec![b'x'; 999]);
+
+        download_verified(&cache.0, &file, false).expect("a stale partial must not strand a file");
+
+        assert_eq!(fs::read(&target).expect("payload written"), body);
+        let requests = server.join().expect("stub server");
+        assert_eq!(requests.len(), 2);
+        assert!(
+            !requests[1].contains("range:"),
+            "the discarded partial must be re-fetched whole: {}",
+            requests[1]
+        );
+    }
+
+    /// Resume changes where the bytes come from, never what proves them: the
+    /// hash is taken over the assembled file, so a bad prefix is still rejected
+    /// on the first attempt (#174).
+    #[test]
+    fn a_resume_onto_corrupt_bytes_still_fails_the_pinned_hash() {
+        let body = b"kesha model bytes".to_vec();
+        let cut = 6;
+        let (base, server) = stub_server(vec![partial_response(&body, cut)]);
+        let cache = TempCache::new("bad-resume");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            &body,
+        );
+        let target = stage_partial(&cache.0, &file, b"XXXXXX");
+
+        let err =
+            download_verified(&cache.0, &file, false).expect_err("a bad prefix must not install");
+
+        assert_eq!(code_of(&err), ErrorCode::CacheCorrupt);
+        assert!(!target.exists(), "unverified bytes never reach the target");
+        assert!(
+            !staging_path(&target).exists(),
+            "a mismatched assembly is not a resume point"
+        );
+        assert_eq!(
+            server.join().expect("stub server").len(),
+            1,
+            "a hash mismatch is never retried"
         );
     }
 }
