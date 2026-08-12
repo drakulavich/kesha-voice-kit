@@ -14,10 +14,10 @@ const MD = "CLAUDE.md";
 const YML = ".github/workflows/rust-test.yml";
 
 const recipe = (doc: string | null, isPrivate = false) => ({ doc, private: isPrivate });
-const dump = (recipes: Record<string, unknown>, aliases: Record<string, unknown> = {}) => ({
-  recipes,
-  aliases,
-});
+const dump = (
+  recipes: Record<string, ReturnType<typeof recipe>>,
+  aliases: Record<string, unknown> = {},
+) => ({ recipes, aliases });
 
 const names = (path: string, contents: string) => referencedRecipes(path, contents).map((r) => r.recipe);
 
