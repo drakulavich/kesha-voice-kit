@@ -302,19 +302,31 @@ describe("the live bar cleans up after itself", () => {
   });
 });
 
-/** The sizeless fallback reports through `log`, which splits across console.log/error. */
+/** The sizeless fallback reports the "Downloading" line via `log.progress`
+ * (process.stderr.write) and the "Downloaded" line via `log.success`
+ * (console.log), so capture both sinks. */
 function withCapturedLog(fn: () => void): string {
-  const saved = { log: console.log, error: console.error, isTTY: process.stderr.isTTY };
+  const saved = {
+    log: console.log,
+    error: console.error,
+    write: process.stderr.write,
+    isTTY: process.stderr.isTTY,
+  };
   const lines: string[] = [];
   const collect = (...args: unknown[]) => void lines.push(args.join(" "));
   try {
     Object.defineProperty(process.stderr, "isTTY", { value: false, configurable: true });
     console.log = collect;
     console.error = collect;
+    process.stderr.write = ((chunk: string) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
     fn();
   } finally {
     console.log = saved.log;
     console.error = saved.error;
+    process.stderr.write = saved.write;
     Object.defineProperty(process.stderr, "isTTY", { value: saved.isTTY, configurable: true });
   }
   return lines.join("\n");

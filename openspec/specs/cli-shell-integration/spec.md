@@ -278,12 +278,13 @@ filtering.
 - THEN `jq` receives clean JSON on stdin with no interleaved progress text
 - AND stderr carries any spinner or warning lines
 
-> *Technical Note — `log.info`, `log.success`, and `log.progress` use
-> `console.log` (stdout); `log.warn`, `log.error`, and `log.status` use
+> *Technical Note — `log.info` and `log.success` use `console.log` (stdout);
+> `log.warn`, `log.error`, `log.status`, and `log.progress` use
 > `process.stderr.write` to avoid Bun's startup-frozen TTY auto-red that
-> `console.error` would apply. `log.progress` (stdout) is used only in install
-> flows (`src/progress.ts:146`, `src/engine-install.ts`), which produce no
-> machine-readable stdout result. Source: `src/log.ts:46-68`.*
+> `console.error` would apply. `log.progress` is used only in install flows
+> (`src/progress.ts`, `src/engine-install.ts`); it writes to stderr (#945) so
+> that no non-result output reaches stdout even once install grows a
+> machine-readable mode. Source: `src/log.ts:46-68`.*
 
 ### Requirement: Directory arguments are rejected before work starts
 When a positional argument is a directory, the CLI SHALL print `<path>: is a directory (expected an audio file)` and exit 1 before any progress output or engine spawn.
@@ -308,10 +309,6 @@ When the first positional token is not a file and not a known subcommand, the CL
 - `--no-color` is not forwarded to the Engine subprocess explicitly; it relies
   on `process.env.NO_COLOR` propagation. If the Engine is spawned via a shell
   wrapper that resets the environment, the Engine may still produce ANSI codes.
-- Install-flow progress lines (`log.progress`) print to stdout, not stderr.
-  Harmless today because install has no machine-readable stdout, but it breaks
-  the corpus-wide "progress goes to stderr" intuition — candidate for moving to
-  `log.status` (stderr).
 - There is no `--color` flag to force color on when stdout is not a TTY (e.g.
   inside tmux with `TERM=dumb`); `FORCE_COLOR` from picocolors is the current
   workaround.

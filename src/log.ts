@@ -47,9 +47,11 @@ export const log = {
   success: (msg: string) => console.log(colors.green(msg)),
   // `--quiet` (#526) silences status/progress chatter; warnings and errors
   // always print, and results are written straight to stdout (not via log.*).
+  // STDERR, not stdout: progress is not a result — the install flow's only
+  // caller must not collide with a future `install --json` deliverable (#945).
   progress: (msg: string) => {
     if (log.quietEnabled) return;
-    console.log(colors.cyan(msg));
+    process.stderr.write(colors.cyan(msg) + "\n");
   },
   // stderr via process.stderr.write (not console.error): Bun auto-colors
   // console.error red in a TTY, and that decision is frozen at startup — it
