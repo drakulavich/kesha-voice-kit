@@ -45,17 +45,21 @@ Specs reference these named personas instead of a generic "user":
 | Spec | Covers |
 |---|---|
 | [transcription](transcription/spec.md) | Default `kesha <file>` command: batch, output formats, VAD, exit codes |
+| [audio-ingest](audio-ingest/spec.md) | Decode, mono mix, 16 kHz resample, duration probes, input rejection |
 | [speaker-diarization](speaker-diarization/spec.md) | `--speakers` labels on transcription segments |
 | [language-detection](language-detection/spec.md) | Audio and text language identification |
 | [tts-synthesis](tts-synthesis/spec.md) | `kesha say`: voices, engines, formats, SSML, normalization |
 | [installation](installation/spec.md) | `kesha install` / `kesha init`: engine + model downloads, integrity |
 | [release-channels](release-channels/spec.md) | Stable vs alpha: tag grammar, opt-in install, derived versions, shared publish path, 30-day prune |
+| [cli-distribution](cli-distribution/spec.md) | How `kesha` itself is installed: npm, Homebrew, `.deb`/`.rpm`, container, Nix |
 | [audio-recording](audio-recording/spec.md) | `kesha record`: microphone capture to WAV |
 | [diagnostics](diagnostics/spec.md) | `doctor`, `status`, `logs`, `stats`, `support-bundle` |
-| [cli-shell-integration](cli-shell-integration/spec.md) | Global flags, color/quiet rules, completions, manpage |
+| [cli-shell-integration](cli-shell-integration/spec.md) | Global flags, `--version`/`--help`, color/quiet rules, completions, manpage |
+| [process-lifecycle](process-lifecycle/spec.md) | Interruption, Engine process-tree termination, signal exit codes |
 | [mcp-server](mcp-server/spec.md) | `kesha mcp`: MCP tools and audio resources |
 | [programmatic-api](programmatic-api/spec.md) | `@drakulavich/kesha-voice-kit/core` exports |
 | [engine-contract](engine-contract/spec.md) | CLI ↔ `kesha-engine` boundary: capabilities, error codes, env vars |
+| [openclaw-plugin](openclaw-plugin/spec.md) | Bundled OpenClaw plugin: CLI-subprocess transcription for agents |
 | [raycast-extension](raycast-extension/spec.md) | Raycast **Dictate to Clipboard**: recording lifecycle, idle auto-stop, clipboard |
 
 ## Validation

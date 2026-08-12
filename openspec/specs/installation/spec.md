@@ -666,6 +666,58 @@ install proceeds without it.
 > `@clack/prompts::multiselect` with `required: false` (no-selection = skip TTS).
 > TTY check: `process.stdin.isTTY === true && process.stdout.isTTY === true`.*
 
+### Requirement: The star prompt is gated to meaningful version bumps and bounded in time
+
+After a successful install the CLI MAY print an invitation to star the repository, and SHALL show it only on a first install or a major/minor bump — never on a patch-only bump — and SHALL bound how long it waits on any external probe before printing.
+
+#### Scenario: Maks installs for the first time
+
+- GIVEN Maks has never installed Kesha
+- WHEN `kesha install` finishes successfully
+- THEN the invitation is printed once
+- AND running `kesha install` again for the same version prints nothing
+
+#### Scenario: Ira upgrades by a patch version in CI
+
+- GIVEN a previous install recorded version `1.28.0`
+- WHEN Ira installs `1.28.1`
+- THEN no invitation is printed, because a patch bump is not a meaningful bump
+
+#### Scenario: The environment cannot be probed
+
+- GIVEN `gh` is absent, unauthenticated, or wedged
+- WHEN the invitation would be shown
+- THEN the plain invitation is printed anyway, without waiting indefinitely on
+  the probe
+- AND the install still exits 0
+
+#### Scenario: The marker cannot be written
+
+- GIVEN the engine directory is read-only, so the marker write fails
+- WHEN the invitation is shown
+- THEN the install still succeeds, and the next install for the same version
+  prompts again, because nothing recorded that it already asked
+
+#### Scenario: The repository is already starred
+
+- GIVEN an authenticated `gh` reports the repository is already starred
+- WHEN the invitation would be shown
+- THEN nothing is printed, and the slot is still consumed so the same version
+  never asks again
+
+> *Technical Note — `maybeAskForStar` (`src/star.ts:62`) is called after
+> `installEngine` succeeds (`src/cli/install.ts:239`).
+> `shouldShowStarPrompt` (`src/star.ts:42`) returns true for an absent marker
+> and for a major-or-minor increase only. The marker is `<engine-bin>.star-seen`
+> (`src/star.ts:16`) and is written *before* printing, so one run never prompts
+> twice and a write failure is non-fatal. `GH_PROBE_TIMEOUT_MS` is 2 000 ms
+> (`src/star.ts:6`), sized to clear a healthy `gh auth status` (0.77–1.21 s
+> measured) but not a wedged one that blocked install 11–25 s (#810). Only the
+> marker write is guarded (`src/star.ts:85`); the call sits inside
+> `performInstall`'s `try` (`src/cli/install.ts:239`), so anything else it
+> throws lands in the catch that exits 1 — see Open Issues. Covered by
+> `tests/unit/star.test.ts`.*
+
 ### Requirement: Install cost is stated before download
 User-facing install documentation SHALL state the approximate download/disk cost of `kesha install` (~2.7 GB) and the quiet-progress behavior of the model step next to the command itself, and SHALL present `kesha install --plan` (exact sizes, downloads nothing) and `kesha status --disk` as the user-facing cost-inspection commands.
 
@@ -684,3 +736,9 @@ Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL m
 
 - `kesha record` has no Windows or Linux microphone capture; `record.rs` gates capture on
   macOS and the README directs other platforms to pass an existing audio file.
+- **A star prompt failure can fail an install that already succeeded.**
+  `maybeAskForStar` runs inside `performInstall`'s `try` after the engine is on
+  disk, and only its marker write is guarded. A throw from `Bun.which`, either
+  `gh` spawn, or the logger reaches the catch, which reports the install as
+  `failed` and exits 1 — after every byte was downloaded and verified. The
+  prompt is cosmetic and should not be able to do that.
