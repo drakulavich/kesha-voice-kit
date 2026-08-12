@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSilenceTracker,
   normalizeTranscribeResult,
+  staleRecordingDirs,
   startDictationSession,
   startTranscribingTimer,
 } from "../src/lib/dictation-controller";
@@ -349,10 +350,16 @@ describe("dictation controller", () => {
 
     session.cancelTranscription();
     expect(transcriberStop).toHaveBeenCalled();
-    expect(states.at(-1)).toEqual({
+    const cancelled = states.at(-1);
+    expect(cancelled).toMatchObject({
       status: "error",
       message: "Transcription cancelled.",
     });
+    // Cancelling after capture keeps the recording and names it (#944).
+    expect(cancelled?.status === "error" && cancelled.hint).toContain(
+      "/tmp/session/dictation.wav",
+    );
+    expect(deps.cleanupTempDir).not.toHaveBeenCalled();
 
     transcriber.resolve("ignored");
     await session.done;
@@ -378,11 +385,16 @@ describe("dictation controller", () => {
     await session.done;
 
     expect(deps.startTranscriber).not.toHaveBeenCalled();
-    expect(states.at(-1)).toEqual({
+    const cancelled = states.at(-1);
+    expect(cancelled).toMatchObject({
       status: "error",
       message: "Transcription cancelled.",
     });
-    expect(deps.cleanupTempDir).toHaveBeenCalledWith("/tmp/session");
+    // The audio was already captured, so cancelling keeps it (#944).
+    expect(cancelled?.status === "error" && cancelled.hint).toContain(
+      "/tmp/session/dictation.wav",
+    );
+    expect(deps.cleanupTempDir).not.toHaveBeenCalled();
   });
 
   it("clears the idle state through the session when speech resumes", async () => {
@@ -565,6 +577,41 @@ describe("dictation controller", () => {
     );
   });
 
+  it("keeps the recording when the user cancels transcription after capture (#944)", async () => {
+    const transcriber = deferred<string>();
+    const deps = createDeps({
+      startTranscriber: vi.fn(() => ({
+        done: transcriber.promise,
+        stop: vi.fn(() => transcriber.reject(new Error("killed"))),
+      })),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await waitFor(() => expect(deps.states.at(-1)?.status).toBe("transcribing"));
+
+    session.cancelTranscription();
+    await session.done;
+
+    expect(deps.cleanupTempDir).not.toHaveBeenCalled();
+    const last = deps.states.at(-1);
+    expect(last).toMatchObject({
+      status: "error",
+      message: "Transcription cancelled.",
+    });
+    expect(last?.status === "error" && last.hint).toContain(
+      'kesha "/tmp/session/dictation.wav"',
+    );
+  });
+
+  it("prunes stale recordings on session start (#944)", async () => {
+    const deps = createDeps();
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.pruneOldRecordings).toHaveBeenCalled();
+  });
+
   it("does not warn about no signal once a meter sample has been seen", async () => {
     let clock = 0;
     let emit!: (patch: RecordingPatch) => void;
@@ -745,6 +792,29 @@ describe("createSilenceTracker", () => {
   });
 });
 
+describe("staleRecordingDirs", () => {
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const now = 1_000_000_000_000;
+
+  it("selects only dictation temp dirs older than a week (#944)", () => {
+    const entries = [
+      { name: "raycast-kesha-dictate-old", mtimeMs: now - WEEK_MS - 1 },
+      { name: "raycast-kesha-dictate-fresh", mtimeMs: now - 1_000 },
+      { name: "some-other-temp-dir", mtimeMs: now - WEEK_MS - 10_000 },
+    ];
+    expect(staleRecordingDirs(entries, now)).toEqual([
+      "raycast-kesha-dictate-old",
+    ]);
+  });
+
+  it("keeps a dictation temp dir exactly at the age boundary", () => {
+    const entries = [
+      { name: "raycast-kesha-dictate-edge", mtimeMs: now - WEEK_MS },
+    ];
+    expect(staleRecordingDirs(entries, now)).toEqual([]);
+  });
+});
+
 describe("normalizeTranscribeResult", () => {
   it("trims plain kesha stdout and rejects empty transcripts", () => {
     expect(normalizeTranscribeResult("/tmp/a.wav", " hello \n")).toEqual({
@@ -817,6 +887,7 @@ function createDeps(
       resolvedTask(Promise.resolve(" hello world\n")),
     ),
     isSilentAudio: vi.fn(async () => false),
+    pruneOldRecordings: vi.fn(async () => undefined),
     copyToClipboard: vi.fn(async () => undefined),
     showToast: vi.fn(async (toast) => {
       toasts.push(toast);

@@ -252,11 +252,13 @@ Transcription command on the recorded file and reading its stdout. It SHALL
 abandon a Transcription that has not finished within a timeout that scales with
 the length of the recording — a fixed floor plus a per-second allowance — so a
 recording made at the default `maxSeconds` cannot fail Transcription purely
-because of the timeout. When the timeout does fire, or the Transcription fails
-for any other reason after the audio was captured, the recording SHALL be kept
-and its path named in the Error so it can be transcribed from the CLI. A
-non-zero Exit code SHALL be surfaced using the CLI's own stderr text so the
-Engine's Error code and hint reach Maks unedited.
+because of the timeout. Once the audio has been captured, the recording SHALL be
+kept — and its path named in the Error — whenever Transcription does not deliver
+a transcript, whether it times out, fails for any other reason, or Maks cancels
+it, so the recording is never lost to anything but a successful transcript. A
+kept recording left by an earlier session SHALL be pruned once it is older than
+a week. A non-zero Exit code SHALL be surfaced using the CLI's own stderr text
+so the Engine's Error code and hint reach Maks unedited.
 
 #### Scenario: Maks dictates a short note
 
@@ -289,6 +291,13 @@ Engine's Error code and hint reach Maks unedited.
   out after N seconds.` for that recording's timeout
 - AND the recorded audio is kept, and the Error hint names its path and a
   `kesha "<path>"` command to transcribe it manually
+
+#### Scenario: Maks cancels a long transcription
+
+- GIVEN a Transcription running on an already-captured recording
+- WHEN Maks cancels it, or the view is dismissed
+- THEN the recording is kept rather than deleted, and — when a view is still
+  shown — the Error names its path and the `kesha "<path>"` command
 
 > *Technical Note — the timeout is `transcribeTimeoutMs(recordingSeconds)`:
 > `raycast/src/lib/dictation-config.ts` (`TRANSCRIBE_TIMEOUT_FLOOR_MS = 60_000`

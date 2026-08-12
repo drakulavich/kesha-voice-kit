@@ -62,6 +62,7 @@ export interface DictationControllerDeps {
   preflight: (kesha: KeshaSpawn) => Promise<EnginePreflightResult>;
   createTempDir: () => Promise<string>;
   cleanupTempDir: (tempDir: string) => Promise<void>;
+  pruneOldRecordings: () => Promise<void>;
   startRecordingMonitor: (
     onPatch: (patch: RecordingPatch) => void,
   ) => () => void;

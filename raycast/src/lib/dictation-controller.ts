@@ -1,5 +1,5 @@
 import { join, basename } from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
   IDLE_STOP_GRACE_MS,
@@ -59,10 +59,22 @@ export function startDictationSession(
       cancelled = true;
       transcriber?.stop();
       stopTranscribeTimer?.();
-      setState({ status: "error", message: "Transcription cancelled." });
+      // A deliberate cancel of transcription must not cost the recording once
+      // it has been captured — keep it and name it, same as a failure (#944).
+      if (audioCaptured && audioPath) {
+        keepAudio = true;
+        setState({
+          status: "error",
+          message: "Transcription cancelled.",
+          hint: keptAudioHint(audioPath),
+        });
+      } else {
+        setState({ status: "error", message: "Transcription cancelled." });
+      }
     },
     cancel: () => {
       cancelled = true;
+      if (audioCaptured) keepAudio = true;
       recorder?.stop();
       transcriber?.stop();
       stopMonitoring?.();
@@ -75,6 +87,9 @@ export function startDictationSession(
   return session;
 
   async function run() {
+    // Best-effort sweep of recordings kept by earlier failed sessions (#944);
+    // fire-and-forget so it never delays the microphone.
+    void deps.pruneOldRecordings();
     try {
       const maxSeconds = parseMaxSeconds(prefs.maxRecordingSeconds);
       const kesha = await deps.resolveKesha(prefs.keshaBinPath);
@@ -118,7 +133,10 @@ export function startDictationSession(
 
       await deliverTranscript(result);
     } catch (err: unknown) {
-      if (cancelled) return;
+      if (cancelled) {
+        if (audioCaptured) keepAudio = true;
+        return;
+      }
       keepAudio = audioCaptured;
       await deps.showToast({ style: "failure", title: "Dictation failed" });
       setState({
@@ -274,6 +292,58 @@ export function keptAudioHint(audioPath: string): string {
   ].join("\n");
 }
 
+const RECORDING_TEMP_PREFIX = "raycast-kesha-dictate-";
+const RECORDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// A recording kept after a failed session (#944) has no owner to delete it, so
+// prune week-old ones on the next start — the raycast analog of the engine's
+// recovery-WAV prune (#965). The age cut protects a concurrent session's
+// fresh temp dir.
+export function staleRecordingDirs(
+  entries: { name: string; mtimeMs: number }[],
+  nowMs: number,
+  maxAgeMs: number = RECORDING_MAX_AGE_MS,
+): string[] {
+  return entries
+    .filter(
+      (entry) =>
+        entry.name.startsWith(RECORDING_TEMP_PREFIX) &&
+        nowMs - entry.mtimeMs > maxAgeMs,
+    )
+    .map((entry) => entry.name);
+}
+
+async function pruneOldRecordings(): Promise<void> {
+  const base = tmpdir();
+  let names: string[];
+  try {
+    names = await readdir(base);
+  } catch {
+    return;
+  }
+  const candidates = names.filter((name) =>
+    name.startsWith(RECORDING_TEMP_PREFIX),
+  );
+  const entries = await Promise.all(
+    candidates.map(async (name) => {
+      try {
+        const info = await stat(join(base, name));
+        return { name, mtimeMs: info.mtimeMs };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const present = entries.filter(
+    (entry): entry is { name: string; mtimeMs: number } => entry !== null,
+  );
+  await Promise.all(
+    staleRecordingDirs(present, Date.now()).map((name) =>
+      rm(join(base, name), { recursive: true, force: true }),
+    ),
+  );
+}
+
 // Each reason has a different remedy, so the headline tracks it, not just the hint (#647).
 function preflightMessage(reason: EnginePreflightResult["reason"]): string {
   switch (reason) {
@@ -297,8 +367,9 @@ export function createDefaultDictationDeps(
     ...adapter,
     resolveKesha: resolveKeshaBin,
     preflight: defaultPreflight,
-    createTempDir: () => mkdtemp(join(tmpdir(), "raycast-kesha-dictate-")),
+    createTempDir: () => mkdtemp(join(tmpdir(), RECORDING_TEMP_PREFIX)),
     cleanupTempDir: (dir) => rm(dir, { recursive: true, force: true }),
+    pruneOldRecordings,
     startRecordingMonitor,
     startRecorder: (kesha, audioPath, maxSeconds) =>
       startKeshaRecorder(kesha, audioPath, maxSeconds),
