@@ -1418,6 +1418,12 @@ pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<
     target_arch = "aarch64"
 ))]
 pub fn missing_kokoro_assets(lang: &str, voice: &str) -> Vec<PathBuf> {
+    // The empty returns below ("nothing missing") are safe ONLY because the same
+    // null-home that unresolves these dirs also unresolves fluidaudio_kokoro_location,
+    // so synthesis bails with E_INTERNAL before this preflight's result is trusted. A
+    // future path that reached here with a resolvable bundle dir but no home would turn
+    // "couldn't find the dir" into "no missing assets" — a silent auto-download, the
+    // exact thing the no-auto-download rule forbids. Keep the home requirement upstream (#953).
     if lang == "zh" {
         let Ok(zh) = fluidaudio_ane_zh_kokoro_dir() else {
             return Vec::new();
