@@ -49,6 +49,7 @@ Specs reference these named personas instead of a generic "user":
 | [language-detection](language-detection/spec.md) | Audio and text language identification |
 | [tts-synthesis](tts-synthesis/spec.md) | `kesha say`: voices, engines, formats, SSML, normalization |
 | [installation](installation/spec.md) | `kesha install` / `kesha init`: engine + model downloads, integrity |
+| [release-channels](release-channels/spec.md) | Stable vs alpha: tag grammar, opt-in install, derived versions, shared publish path, 30-day prune |
 | [audio-recording](audio-recording/spec.md) | `kesha record`: microphone capture to WAV |
 | [diagnostics](diagnostics/spec.md) | `doctor`, `status`, `logs`, `stats`, `support-bundle` |
 | [cli-shell-integration](cli-shell-integration/spec.md) | Global flags, color/quiet rules, completions, manpage |
