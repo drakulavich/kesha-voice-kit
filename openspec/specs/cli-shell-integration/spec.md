@@ -203,6 +203,59 @@ and exit 0. No arguments are accepted.
 > via `new URL("../../man/kesha.1", import.meta.url)`. Written directly to
 > `process.stdout` — no colorization.*
 
+### Requirement: `--version` prints the CLI version and nothing else
+
+The CLI SHALL print its own version — the version of the installed CLI package, not the Engine's — to stdout as a bare SemVer string, write nothing to stderr, and exit 0.
+
+#### Scenario: Ira pins a version in a CI script
+
+- WHEN Ira runs `kesha --version`
+- THEN stdout is a bare SemVer string such as `1.28.0`, optionally with a
+  prerelease suffix
+- AND stderr is empty
+- AND the process exits 0
+
+#### Scenario: The Engine is not installed
+
+- GIVEN no Engine binary is present
+- WHEN Ira runs `kesha --version`
+- THEN it still prints the CLI version and exits 0, because the CLI version does
+  not depend on the Engine
+
+> *Technical Note — citty renders `meta.version`, set from `packageVersion`
+> (`src/cli/main.ts:412-416`), which reads `package.json#version` via
+> `src/package-info.ts`. The Pinned Engine version is a separate field and is
+> surfaced by `kesha status`, not here. Asserted by the "entrypoint help,
+> version, and empty invocation keep stable stream contracts" test in
+> `tests/integration/cli-contracts.test.ts`.*
+
+### Requirement: `--help` and a bare invocation both print usage, and differ only in Exit code
+
+The CLI SHALL print usage listing the transcription form and every subcommand to stdout with an empty stderr, exiting 0 when help was asked for and 1 when the CLI was invoked with no arguments at all.
+
+#### Scenario: Maks asks what the CLI can do
+
+- WHEN Maks runs `kesha --help`
+- THEN stdout names the product, the transcription form, and the subcommands
+  with their flags
+- AND stderr is empty
+- AND the process exits 0
+
+#### Scenario: Ira invokes the CLI with no arguments in a script
+
+- WHEN `kesha` runs with no arguments
+- THEN stdout carries the usage block, starting with the
+  `kesha <audio_file> [audio_file ...]` form and listing every subcommand
+- AND stderr is empty
+- AND the process exits 1, so a script that lost its argument fails rather than
+  silently succeeding
+
+> *Technical Note — the no-argument usage block is
+> `src/cli/main.ts:533-547`, printed with `log.info` (stdout) followed by
+> `process.exit(1)`. `--help` is citty's own renderer over the command's `meta`
+> and `args`. Both stream contracts are asserted in
+> `tests/integration/cli-contracts.test.ts`.*
+
 ### Requirement: Result-producing commands follow the stdout-purity principle
 
 The CLI SHALL write only the primary result to stdout for commands whose
@@ -254,3 +307,8 @@ When the first positional token is not a file and not a known subcommand, the CL
 - There is no `--color` flag to force color on when stdout is not a TTY (e.g.
   inside tmux with `TERM=dumb`); `FORCE_COLOR` from picocolors is the current
   workaround.
+- `kesha completions` and `kesha manpage` both resolve their file relative to
+  `import.meta.url`, which does not survive the `bun build --compile` step the
+  `.deb`/`.rpm` are built with, so on that install path both crash with an
+  unhandled `ENOENT` instead of printing or failing cleanly. Reproduction and
+  scope: [cli-distribution](../cli-distribution/spec.md), Open Issues.

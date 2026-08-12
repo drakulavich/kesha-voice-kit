@@ -666,6 +666,48 @@ install proceeds without it.
 > `@clack/prompts::multiselect` with `required: false` (no-selection = skip TTS).
 > TTY check: `process.stdin.isTTY === true && process.stdout.isTTY === true`.*
 
+### Requirement: The star prompt appears at most once per meaningful version, and never blocks
+
+After a successful install the CLI MAY print a one-time invitation to star the repository, and SHALL show it at most once for a given CLI version, only on a first install or a major/minor bump, never on a patch-only bump, and never in a way that blocks or fails the install.
+
+#### Scenario: Maks installs for the first time
+
+- GIVEN Maks has never installed Kesha
+- WHEN `kesha install` finishes successfully
+- THEN the invitation is printed once
+- AND running `kesha install` again for the same version prints nothing
+
+#### Scenario: Ira upgrades by a patch version in CI
+
+- GIVEN a previous install recorded version `1.28.0`
+- WHEN Ira installs `1.28.1`
+- THEN no invitation is printed, because a patch bump is not a meaningful bump
+
+#### Scenario: The environment cannot be probed
+
+- GIVEN `gh` is absent, unauthenticated, or wedged
+- WHEN the invitation would be shown
+- THEN the plain invitation is printed anyway, without waiting indefinitely on
+  the probe
+- AND the install still exits 0
+
+#### Scenario: The repository is already starred
+
+- GIVEN an authenticated `gh` reports the repository is already starred
+- WHEN the invitation would be shown
+- THEN nothing is printed, and the slot is still consumed so the same version
+  never asks again
+
+> *Technical Note — `maybeAskForStar` (`src/star.ts:62`) is called after
+> `installEngine` succeeds (`src/cli/install.ts:239`).
+> `shouldShowStarPrompt` (`src/star.ts:42`) returns true for an absent marker
+> and for a major-or-minor increase only. The marker is `<engine-bin>.star-seen`
+> (`src/star.ts:16`) and is written *before* printing, so one run never prompts
+> twice and a write failure is non-fatal. `GH_PROBE_TIMEOUT_MS` is 2 000 ms
+> (`src/star.ts:6`), sized to clear a healthy `gh auth status` (0.77–1.21 s
+> measured) but not a wedged one that blocked install 11–25 s (#810). Covered by
+> `tests/unit/star.test.ts`.*
+
 ### Requirement: Install cost is stated before download
 User-facing install documentation SHALL state the approximate download/disk cost of `kesha install` (~2.7 GB) and the quiet-progress behavior of the model step next to the command itself, and SHALL present `kesha install --plan` (exact sizes, downloads nothing) and `kesha status --disk` as the user-facing cost-inspection commands.
 
