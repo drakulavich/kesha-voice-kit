@@ -493,6 +493,92 @@ mod tests {
         );
     }
 
+    /// The whole point of the spill: a session killed outright (SIGKILL, panic,
+    /// power loss) never runs `finish`, and the file left behind must still be
+    /// audio somebody can transcribe — not a header claiming zero samples.
+    #[test]
+    fn a_spill_that_was_never_finished_still_decodes_as_a_wav() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("live-crashed.wav");
+        let mut spill = SpillWav::create(&path, 16_000).unwrap();
+        spill.push(&vec![0.25f32; SPILL_SYNC_SAMPLES as usize]).unwrap();
+        spill.push(&vec![0.5f32; 100]).unwrap();
+        drop(spill);
+
+        let reader = hound::WavReader::open(&path).unwrap();
+        assert_eq!(reader.spec().sample_rate, 16_000);
+        let samples = reader
+            .into_samples::<f32>()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(samples.len(), SPILL_SYNC_SAMPLES as usize);
+        assert!(samples.iter().all(|s| *s == 0.25));
+    }
+
+    #[test]
+    fn a_finished_spill_contains_every_pushed_sample() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("live-done.wav");
+        let mut spill = SpillWav::create(&path, 48_000).unwrap();
+        spill.push(&[0.1, 0.2]).unwrap();
+        spill.push(&[0.3]).unwrap();
+        spill.finish().unwrap();
+
+        let reader = hound::WavReader::open(&path).unwrap();
+        assert_eq!(reader.spec().sample_rate, 48_000);
+        let samples = reader
+            .into_samples::<f32>()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(samples, vec![0.1, 0.2, 0.3]);
+    }
+
+    #[test]
+    fn discarding_a_spill_removes_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("live-discard.wav");
+        let mut spill = SpillWav::create(&path, 16_000).unwrap();
+        spill.push(&[0.0; 4]).unwrap();
+        spill.discard();
+        assert!(!path.exists(), "a completed session must not leave a spill behind");
+    }
+
+    #[test]
+    fn pruning_removes_stale_spills_and_keeps_fresh_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let stale = dir.path().join("live-1000-1.wav");
+        let fresh = dir.path().join("live-2000-2.wav");
+        let unrelated = dir.path().join("keepme.wav");
+        for path in [&stale, &fresh, &unrelated] {
+            std::fs::write(path, b"x").unwrap();
+        }
+        let long_ago = std::time::SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 30);
+        std::fs::File::options()
+            .write(true)
+            .open(&stale)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+
+        prune_stale_spills(dir.path(), Duration::from_secs(60 * 60 * 24 * 7));
+
+        assert!(!stale.exists(), "a spill past the retention window must be pruned");
+        assert!(fresh.exists(), "a spill inside the retention window must survive");
+        assert!(unrelated.exists(), "pruning must only touch files it wrote");
+    }
+
+    /// Without a handler these signals kill the process outright, taking the
+    /// in-memory transcript with them (#962).
+    #[test]
+    fn a_caught_sigint_is_recorded_instead_of_killing_the_process() {
+        assert_eq!(interrupt::caught(), None);
+        interrupt::install();
+        // SAFETY: raise delivers SIGINT to this process, where the handler
+        // installed above stores it in an atomic and returns.
+        assert_eq!(unsafe { libc::raise(libc::SIGINT) }, 0);
+        assert_eq!(interrupt::caught(), Some(libc::SIGINT));
+    }
+
     #[test]
     fn mix_frame_to_mono_averages_input_channels() {
         assert_eq!(mix_frame_to_mono(&[1.0, -1.0]), 0.0);
