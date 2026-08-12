@@ -28,12 +28,17 @@ fn run_live(max_duration: Duration) -> Result<()> {
     // model teardown after the session drops — which a scoped guard cannot cover.
     // fd 1 stays shielded for the whole session; see `fluid_stdout::StdoutShield`.
     let shield = crate::fluid_stdout::StdoutShield::new();
-    let transcript = crate::record::record_default_input_live(max_duration)?;
-    let transcript = transcript.trim();
+    let outcome = crate::record::record_default_input_live(max_duration)?;
+    let transcript = outcome.transcript.trim();
     if transcript.is_empty() {
         eprintln!("No speech detected.");
     } else {
         shield.write_stdout(format!("{transcript}\n").as_bytes())?;
+    }
+    if let Some(signal) = outcome.interrupted_by {
+        // The transcript is out; report the cancellation the way a shell reads
+        // one so a caller can tell it apart from a run that reached its end.
+        std::process::exit(128 + signal);
     }
     Ok(())
 }

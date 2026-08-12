@@ -37,6 +37,8 @@ const FACT_CHUNK_HEADER: u32 = 8;
 const FACT_CHUNK_SIZE: u32 = 4;
 #[cfg(any(target_os = "macos", test))]
 const DATA_CHUNK_HEADER: u32 = 8;
+#[cfg(any(target_os = "macos", test))]
+const WAV_HEADER_LEN: usize = 58;
 
 /// Capabilities flag for `kesha record --live`; the CLI checks it before
 /// forwarding the flag.
@@ -126,13 +128,23 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
     })
 }
 
+/// What a live session produced, and whether a signal ended it.
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+pub struct LiveOutcome {
+    pub transcript: String,
+    /// The signal that stopped the session, when one did. The transcript is
+    /// still whatever was captured up to that point (#962).
+    pub interrupted_by: Option<i32>,
+}
+
 /// Captures the default microphone and transcribes it through a streaming ASR
-/// session, returning the transcript. Nothing is written to disk.
+/// session. The audio is spilled to a recovery WAV as it arrives, kept only
+/// when the session did not end normally.
 ///
 /// Feeding happens here, on the thread draining the sample channel — never in
 /// the CPAL callback, which stays a convert-and-send as in the WAV path.
 #[cfg(all(feature = "coreml", target_os = "macos"))]
-pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
+pub fn record_default_input_live(max_duration: Duration) -> Result<LiveOutcome> {
     if max_duration.is_zero() {
         anyhow::bail!("--max-seconds must be greater than 0");
     }
@@ -140,11 +152,14 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
     let input = open_default_input()?;
     let sample_rate = input.config.sample_rate.0;
 
+    interrupt::install();
+
     eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
     let mut feed = LiveFeed {
         session: crate::streaming_asr::StreamingAsrSession::start(sample_rate)?,
         mono: Vec::new(),
         input_channels: input.config.channels,
+        spill: open_recovery_spill(sample_rate),
     };
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(LIVE_QUEUE_BUFFERS);
@@ -166,7 +181,10 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
     stream
         .play()
         .context("failed to start microphone recording")?;
-    eprintln!("Listening ({sample_rate} Hz)... transcript prints when recording stops.");
+    eprintln!(
+        "Listening ({sample_rate} Hz)... transcript prints when recording stops; \
+         Ctrl-C stops and still prints."
+    );
 
     feed.listen(&sample_rx, &stop_rx, max_duration)?;
 
@@ -175,7 +193,52 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<String> {
     feed.drain(&sample_rx)?;
 
     warn_dropped_buffers(dropped.load(std::sync::atomic::Ordering::Relaxed));
-    feed.finish()
+
+    let interrupted_by = interrupt::caught();
+    let spill = feed.spill.take();
+    let finished = feed.finish();
+    settle_recovery_spill(spill, finished.is_ok() && interrupted_by.is_none());
+    Ok(LiveOutcome {
+        transcript: finished?,
+        interrupted_by,
+    })
+}
+
+/// A missing spill must never cost the session it exists to protect, so a
+/// failure here is loud but not fatal.
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+fn open_recovery_spill(sample_rate: u32) -> Option<spill::SpillWav> {
+    let dir = spill::recovery_dir();
+    spill::prune_stale_spills(&dir, spill::RETENTION);
+    match spill::SpillWav::create(&spill::spill_path(&dir), sample_rate) {
+        Ok(spill) => {
+            eprintln!(
+                "Recovery audio: {} (removed when the transcript prints).",
+                spill.path().display()
+            );
+            Some(spill)
+        }
+        Err(err) => {
+            eprintln!("warning: this session has no recovery audio: {err:#}");
+            None
+        }
+    }
+}
+
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+fn settle_recovery_spill(spill: Option<spill::SpillWav>, ended_normally: bool) {
+    let Some(mut spill) = spill else { return };
+    if ended_normally {
+        spill.discard();
+        return;
+    }
+    if let Err(err) = spill.flush() {
+        eprintln!("warning: recovery audio may be truncated: {err:#}");
+    }
+    eprintln!(
+        "Recovery audio kept: {0} — transcribe it with `kesha {0}`.",
+        spill.path().display()
+    );
 }
 
 /// `mono` is per-call scratch, not accumulated audio as in the WAV path.
@@ -184,18 +247,31 @@ struct LiveFeed {
     session: crate::streaming_asr::StreamingAsrSession,
     mono: Vec<f32>,
     input_channels: u16,
+    spill: Option<spill::SpillWav>,
 }
 
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 impl LiveFeed {
     fn feed(&mut self, interleaved: &[f32]) -> Result<()> {
-        self.mono.clear();
-        self.mono.extend(
+        let Self {
+            session,
+            mono,
+            input_channels,
+            spill,
+        } = self;
+        mono.clear();
+        mono.extend(
             interleaved
-                .chunks_exact(usize::from(self.input_channels))
+                .chunks_exact(usize::from(*input_channels))
                 .map(|frame| mix_frame_to_mono(frame).clamp(-1.0, 1.0)),
         );
-        self.session.feed(&self.mono)
+        if let Some(active) = spill.as_mut() {
+            if let Err(err) = active.push(mono) {
+                eprintln!("warning: recovery audio stopped early: {err:#}");
+                *spill = None;
+            }
+        }
+        session.feed(mono)
     }
 
     fn listen(
@@ -208,7 +284,10 @@ impl LiveFeed {
         let mut announced = 0u64;
         let tick = io::stderr().is_terminal();
         loop {
-            if stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration {
+            if stop_rx.try_recv().is_ok()
+                || started.elapsed() >= max_duration
+                || interrupt::caught().is_some()
+            {
                 break;
             }
             match sample_rx.recv_timeout(Duration::from_millis(100)) {
@@ -401,48 +480,226 @@ fn wav_sizes_for_sample_count(sample_count: usize) -> Result<(u32, u32, u32)> {
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn write_plain_mono_float_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create output directory: {}", parent.display()))?;
-    }
+fn wav_header_bytes(sample_rate: u32, sample_count: usize) -> Result<Vec<u8>> {
+    let (sample_count, data_size, total_size) = wav_sizes_for_sample_count(sample_count)?;
+    let byte_rate = sample_rate
+        .checked_mul(u32::from(OUTPUT_CHANNELS) * BYTES_PER_SAMPLE)
+        .ok_or_else(|| anyhow::anyhow!("WAV byte rate overflow"))?;
+    let block_align = OUTPUT_CHANNELS * (BITS_PER_SAMPLE / 8);
 
-    let (sample_count, data_size, total_size) = wav_sizes_for_sample_count(samples.len())?;
+    let mut header = Vec::with_capacity(WAV_HEADER_LEN);
+    header.extend_from_slice(b"RIFF");
+    header.extend_from_slice(&total_size.to_le_bytes());
+    header.extend_from_slice(b"WAVE");
+
+    header.extend_from_slice(b"fmt ");
+    header.extend_from_slice(&FMT_CHUNK_SIZE.to_le_bytes());
+    header.extend_from_slice(&FORMAT_IEEE_FLOAT.to_le_bytes());
+    header.extend_from_slice(&OUTPUT_CHANNELS.to_le_bytes());
+    header.extend_from_slice(&sample_rate.to_le_bytes());
+    header.extend_from_slice(&byte_rate.to_le_bytes());
+    header.extend_from_slice(&block_align.to_le_bytes());
+    header.extend_from_slice(&BITS_PER_SAMPLE.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+
+    header.extend_from_slice(b"fact");
+    header.extend_from_slice(&FACT_CHUNK_SIZE.to_le_bytes());
+    header.extend_from_slice(&sample_count.to_le_bytes());
+
+    header.extend_from_slice(b"data");
+    header.extend_from_slice(&data_size.to_le_bytes());
+
+    debug_assert_eq!(header.len(), WAV_HEADER_LEN);
+    Ok(header)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn create_parent_dir(path: &Path) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create output directory: {}", parent.display()))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn write_plain_mono_float_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {
+    let header = wav_header_bytes(sample_rate, samples.len())?;
+    create_parent_dir(path)?;
 
     let mut file = std::io::BufWriter::new(
         std::fs::File::create(path)
             .with_context(|| format!("failed to create WAV recording: {}", path.display()))?,
     );
-
-    file.write_all(b"RIFF")?;
-    file.write_all(&total_size.to_le_bytes())?;
-    file.write_all(b"WAVE")?;
-
-    file.write_all(b"fmt ")?;
-    file.write_all(&FMT_CHUNK_SIZE.to_le_bytes())?;
-    file.write_all(&FORMAT_IEEE_FLOAT.to_le_bytes())?;
-    file.write_all(&OUTPUT_CHANNELS.to_le_bytes())?;
-    file.write_all(&sample_rate.to_le_bytes())?;
-    let byte_rate = sample_rate
-        .checked_mul(u32::from(OUTPUT_CHANNELS) * BYTES_PER_SAMPLE)
-        .ok_or_else(|| anyhow::anyhow!("WAV byte rate overflow"))?;
-    file.write_all(&byte_rate.to_le_bytes())?;
-    let block_align = OUTPUT_CHANNELS * (BITS_PER_SAMPLE / 8);
-    file.write_all(&block_align.to_le_bytes())?;
-    file.write_all(&BITS_PER_SAMPLE.to_le_bytes())?;
-    file.write_all(&0_u16.to_le_bytes())?;
-
-    file.write_all(b"fact")?;
-    file.write_all(&FACT_CHUNK_SIZE.to_le_bytes())?;
-    file.write_all(&sample_count.to_le_bytes())?;
-
-    file.write_all(b"data")?;
-    file.write_all(&data_size.to_le_bytes())?;
+    file.write_all(&header)?;
     for sample in samples {
         file.write_all(&sample.to_le_bytes())?;
     }
     file.flush()?;
     Ok(())
+}
+
+/// Audio a `--live` session leaves on disk so an interruption is recoverable.
+///
+/// `--live` streams the microphone through an in-memory ASR session and prints
+/// the transcript only at the end, so before #962 a Ctrl-C, a SIGTERM, a crash
+/// or a caller's timeout took the audio and the transcript together — nothing
+/// on disk to retry against, and the more successful the dictation the more was
+/// lost. The spill is written as the samples arrive.
+#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+mod spill {
+    use std::io::{Seek, SeekFrom, Write};
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use anyhow::{Context, Result};
+
+    use super::{create_parent_dir, wav_header_bytes};
+
+    /// How much audio a `kill -9` can cost: the RIFF size fields are rewritten
+    /// once per this many samples, and a reader only sees what they claim. The
+    /// spill runs at the device rate, so this is ~0.33 s on a 48 kHz mic.
+    pub(super) const SYNC_SAMPLES: usize = 16_000;
+    pub(super) const RETENTION: Duration = Duration::from_secs(60 * 60 * 24 * 7);
+    const PREFIX: &str = "live-";
+
+    /// A WAV that is readable *before* it is finished, unlike
+    /// [`super::write_plain_mono_float_wav`], which needs the whole recording up
+    /// front to size the header.
+    pub(super) struct SpillWav {
+        file: std::fs::File,
+        path: PathBuf,
+        sample_rate: u32,
+        written: usize,
+        synced: usize,
+    }
+
+    impl SpillWav {
+        pub(super) fn create(path: &Path, sample_rate: u32) -> Result<Self> {
+            create_parent_dir(path)?;
+            let mut file = std::fs::File::create(path)
+                .with_context(|| format!("failed to create recovery WAV: {}", path.display()))?;
+            file.write_all(&wav_header_bytes(sample_rate, 0)?)
+                .with_context(|| format!("failed to start recovery WAV: {}", path.display()))?;
+            Ok(Self {
+                file,
+                path: path.to_path_buf(),
+                sample_rate,
+                written: 0,
+                synced: 0,
+            })
+        }
+
+        pub(super) fn path(&self) -> &Path {
+            &self.path
+        }
+
+        pub(super) fn push(&mut self, samples: &[f32]) -> Result<()> {
+            let mut bytes = Vec::with_capacity(samples.len() * 4);
+            for sample in samples {
+                bytes.extend_from_slice(&sample.to_le_bytes());
+            }
+            self.file.write_all(&bytes).with_context(|| {
+                format!("failed to append to recovery WAV: {}", self.path.display())
+            })?;
+            self.written += samples.len();
+            if self.written - self.synced >= SYNC_SAMPLES {
+                self.flush()?;
+            }
+            Ok(())
+        }
+
+        /// Rewrites the RIFF sizes so anything opening the file right now reads
+        /// every sample written so far.
+        pub(super) fn flush(&mut self) -> Result<()> {
+            let header = wav_header_bytes(self.sample_rate, self.written)?;
+            let mut rewrite = || -> std::io::Result<()> {
+                self.file.seek(SeekFrom::Start(0))?;
+                self.file.write_all(&header)?;
+                self.file.seek(SeekFrom::End(0))?;
+                self.file.flush()
+            };
+            rewrite().with_context(|| {
+                format!(
+                    "failed to update recovery WAV header: {}",
+                    self.path.display()
+                )
+            })?;
+            self.synced = self.written;
+            Ok(())
+        }
+
+        pub(super) fn discard(self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    /// Under the Kesha cache, so `KESHA_CACHE_DIR` relocates recovery audio with
+    /// everything else the tool owns.
+    pub(super) fn recovery_dir() -> PathBuf {
+        crate::models::cache_dir().join("recordings")
+    }
+
+    pub(super) fn spill_path(dir: &Path) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|since| since.as_secs())
+            .unwrap_or_default();
+        dir.join(format!("{PREFIX}{stamp}-{}.wav", std::process::id()))
+    }
+
+    /// Recovery audio is only useful until the user has moved on, and a spill is
+    /// megabytes per minute; anything older than `max_age` goes at session start.
+    pub(super) fn prune_stale_spills(dir: &Path, max_age: Duration) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let now = SystemTime::now();
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if !name.starts_with(PREFIX) || !name.ends_with(".wav") {
+                continue;
+            }
+            let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) else {
+                continue;
+            };
+            if now.duration_since(modified).is_ok_and(|age| age > max_age) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+/// Catches SIGINT/SIGTERM so `--live` can finish the session it is holding
+/// rather than die with the transcript still in memory (#962). Raycast (#947)
+/// cancels with exactly this ladder.
+#[cfg(any(all(feature = "coreml", target_os = "macos"), all(unix, test)))]
+mod interrupt {
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    static CAUGHT: AtomicI32 = AtomicI32::new(0);
+
+    extern "C" fn on_signal(sig: libc::c_int) {
+        CAUGHT.store(sig, Ordering::Relaxed);
+    }
+
+    pub(super) fn install() {
+        for sig in [libc::SIGINT, libc::SIGTERM] {
+            // SAFETY: the handler stores to an atomic and returns, which is the
+            // async-signal-safe subset; nothing else runs on the signal stack.
+            unsafe { libc::signal(sig, on_signal as *const () as libc::sighandler_t) };
+        }
+    }
+
+    /// Sticky: the capture loop polls it, and the caller reads it again after
+    /// the session has been drained and finished.
+    pub(super) fn caught() -> Option<i32> {
+        match CAUGHT.load(Ordering::Relaxed) {
+            0 => None,
+            sig => Some(sig),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -500,8 +757,8 @@ mod tests {
     fn a_spill_that_was_never_finished_still_decodes_as_a_wav() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("live-crashed.wav");
-        let mut spill = SpillWav::create(&path, 16_000).unwrap();
-        spill.push(&vec![0.25f32; SPILL_SYNC_SAMPLES as usize]).unwrap();
+        let mut spill = spill::SpillWav::create(&path, 16_000).unwrap();
+        spill.push(&vec![0.25f32; spill::SYNC_SAMPLES]).unwrap();
         spill.push(&vec![0.5f32; 100]).unwrap();
         drop(spill);
 
@@ -511,7 +768,7 @@ mod tests {
             .into_samples::<f32>()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        assert_eq!(samples.len(), SPILL_SYNC_SAMPLES as usize);
+        assert_eq!(samples.len(), spill::SYNC_SAMPLES);
         assert!(samples.iter().all(|s| *s == 0.25));
     }
 
@@ -519,10 +776,10 @@ mod tests {
     fn a_finished_spill_contains_every_pushed_sample() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("live-done.wav");
-        let mut spill = SpillWav::create(&path, 48_000).unwrap();
+        let mut spill = spill::SpillWav::create(&path, 48_000).unwrap();
         spill.push(&[0.1, 0.2]).unwrap();
         spill.push(&[0.3]).unwrap();
-        spill.finish().unwrap();
+        spill.flush().unwrap();
 
         let reader = hound::WavReader::open(&path).unwrap();
         assert_eq!(reader.spec().sample_rate, 48_000);
@@ -537,10 +794,49 @@ mod tests {
     fn discarding_a_spill_removes_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("live-discard.wav");
-        let mut spill = SpillWav::create(&path, 16_000).unwrap();
+        let mut spill = spill::SpillWav::create(&path, 16_000).unwrap();
         spill.push(&[0.0; 4]).unwrap();
         spill.discard();
-        assert!(!path.exists(), "a completed session must not leave a spill behind");
+        assert!(
+            !path.exists(),
+            "a completed session must not leave a spill behind"
+        );
+    }
+
+    /// Recovery audio has to be somewhere a user can be told about and a
+    /// relocated cache has to take it along.
+    #[test]
+    fn recovery_audio_lives_under_the_kesha_cache() {
+        let _lock = crate::util::test_env::lock();
+        let _guard =
+            crate::util::test_env::EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-962-cache");
+        assert_eq!(
+            spill::recovery_dir(),
+            std::path::PathBuf::from("/tmp/kesha-962-cache/recordings")
+        );
+    }
+
+    /// The names a session writes and the names pruning recognises are two
+    /// halves of one contract; drift between them leaks spills forever.
+    #[test]
+    fn a_spill_is_named_where_pruning_will_find_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = spill::spill_path(dir.path());
+        let mut spill = spill::SpillWav::create(&path, 16_000).unwrap();
+        spill.push(&[0.0; 4]).unwrap();
+        assert_eq!(spill.path(), path);
+        drop(spill);
+
+        let long_ago = std::time::SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 30);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+        spill::prune_stale_spills(dir.path(), spill::RETENTION);
+
+        assert!(!path.exists(), "pruning did not recognise a name it wrote");
     }
 
     #[test]
@@ -560,16 +856,23 @@ mod tests {
             .set_modified(long_ago)
             .unwrap();
 
-        prune_stale_spills(dir.path(), Duration::from_secs(60 * 60 * 24 * 7));
+        spill::prune_stale_spills(dir.path(), spill::RETENTION);
 
-        assert!(!stale.exists(), "a spill past the retention window must be pruned");
-        assert!(fresh.exists(), "a spill inside the retention window must survive");
+        assert!(
+            !stale.exists(),
+            "a spill past the retention window must be pruned"
+        );
+        assert!(
+            fresh.exists(),
+            "a spill inside the retention window must survive"
+        );
         assert!(unrelated.exists(), "pruning must only touch files it wrote");
     }
 
     /// Without a handler these signals kill the process outright, taking the
     /// in-memory transcript with them (#962).
     #[test]
+    #[cfg(unix)]
     fn a_caught_sigint_is_recorded_instead_of_killing_the_process() {
         assert_eq!(interrupt::caught(), None);
         interrupt::install();

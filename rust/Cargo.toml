@@ -20,10 +20,7 @@ test = false
 [features]
 default = ["onnx", "tts"]
 # ASR backend selection. Language detection always uses ONNX regardless.
-# `libc` is used by the coreml backend to silence FluidAudio's stdout during
-# transcribe calls — without it, the Swift-side `print("Transcribe error:
-# invalidAudioData")` (see #259) interleaves with kesha-engine's JSON output.
-coreml = ["dep:fluidaudio-rs", "dep:libc"]
+coreml = ["dep:fluidaudio-rs"]
 onnx = []
 tts = ["dep:thiserror", "dep:ssml-parser", "dep:opusic-sys", "dep:ogg", "dep:flacenc"]
 # macOS-only AVSpeechSynthesizer backend for `macos-*` voices (#141).
@@ -33,10 +30,10 @@ system_tts = ["tts"]
 # macOS arm64 Kokoro via FluidAudio (native fluidaudio-rs binding). Keeps
 # Linux/Windows on the existing ONNX Kokoro path; darwin-arm64 release builds
 # use the ANE for English TTS.
-system_kokoro = ["tts", "dep:fluidaudio-rs", "dep:libc"]
+system_kokoro = ["tts", "dep:fluidaudio-rs"]
 # darwin-arm64 speaker diarization via FluidAudio (#199), through the native
 # fluidaudio-rs `diarize_file_with_models` (pre-staged model, no download).
-system_diarize = ["dep:fluidaudio-rs", "dep:libc"]
+system_diarize = ["dep:fluidaudio-rs"]
 # macOS-only fast-path for `detect-text-lang`: precompiled NLLanguageRecognizer
 # sidecar replacing the per-call `swift -e` shell-out. Opt-in — requires
 # `swiftc` at build time (build.rs::build_text_lang_helper). When off, the
@@ -101,7 +98,10 @@ ssml-parser = { version = "0.1", optional = true }
 opusic-sys = { version = "0.7", optional = true }
 ogg = { version = "0.9", optional = true }
 
-libc = { version = "0.2", optional = true }
+# Silences FluidAudio's stdout around CoreML calls (#259) and installs the
+# `record --live` interrupt handler (#962). Unconditional so the handler — and
+# its test — compile in the default feature set the every-PR lane runs.
+libc = "0.2"
 # Keep G2P dependency changes explicit; intentional bumps should review the
 # source-level routing/shape smoke tests instead of relying on transitive drift.
 misaki-rs = { version = "=0.3.0", default-features = false }

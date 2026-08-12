@@ -443,6 +443,14 @@ export async function preflightRecordLive(): Promise<void> {
 /** Either capture to a WAV or transcribe live — the Engine rejects both at once. */
 export type RecordTarget = { live: true } | { live?: false; out: string };
 
+/**
+ * A live session catches SIGINT/SIGTERM, prints the transcript it has and then
+ * exits 128+signal, so these two codes mean the run succeeded and was cancelled
+ * — not that it failed (#962). `--out` installs no handler, so a signalled
+ * capture really did lose its recording and still reports as a failure.
+ */
+const SIGNALLED_LIVE_EXIT_CODES = new Set([130, 143]);
+
 export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
   const binPath = getEngineBinPath();
   const args = target.live
@@ -459,7 +467,7 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
     tree.dispose();
   }
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
-  if (exitCode !== 0) {
+  if (exitCode !== 0 && !(target.live && SIGNALLED_LIVE_EXIT_CODES.has(exitCode))) {
     throw new Error(`kesha-engine record exited with code ${exitCode}`);
   }
 }
