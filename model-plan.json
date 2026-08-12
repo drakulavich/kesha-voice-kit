@@ -36,8 +36,8 @@
   ],
   "diarize": [
     { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Manifest.json", "sizeBytes": 617 },
-    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel", "sizeBytes": 7080357 },
-    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin", "sizeBytes": 5930400 },
-    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin", "sizeBytes": 232161600 }
+    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel", "sizeBytes": 856521 },
+    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin", "sizeBytes": 8948544 },
+    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin", "sizeBytes": 235580992 }
   ]
 }

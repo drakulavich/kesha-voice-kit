@@ -1,0 +1,97 @@
+name: "📏 Model-Plan Size Canary"
+
+# Provider verification for the sizes `kesha install --plan` quotes (#920).
+#
+# The plan's `sizeBytes` are hand-written, and until now nothing could falsify one:
+# `models::manifest_tests::install_plan_model_paths_match_runtime_manifests` compares
+# `relPath` and stops there, because an offline test cannot know what a URL serves.
+# That is how #509 shipped CharsiuG2P as "28.5 MB" against a 101 MB download and how
+# it survived two months until a human noticed (#887, #896).
+#
+# So this job asks the only question that settles it: for every entry in
+# model-plan.json, does the pinned URL serve exactly the recorded number of bytes?
+# HEAD requests only — no downloads, no cache writes, seconds of runtime.
+#
+# Exact match is the bar. Sizes are pinned like the SHA-256s beside them, and a
+# "close enough" tolerance would have passed the 72.9 MB under-report that started
+# this. `KESHA_MODEL_MIRROR` is not honoured: the subject is upstream truth.
+#
+# FIXING A FAILURE. Drift means the recorded number is wrong, not the file — the URLs
+# carry pinned hashes, so weights that actually changed fail `download_verified` long
+# before they reach a user. Correct `sizeBytes` in model-plan.json from the live figure
+# the log prints. If the hash moved too, that is a model bump: use the verify-pin-bump
+# skill instead, and update both.
+
+on:
+  schedule:
+    # Weekly, clear of the capability pact (05:00), the mini-model pact (08:00) and the
+    # real-model canary (11:00) — though this one downloads nothing and contends with none.
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  sizes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      # Tee'd because the issue body quotes the per-file figures; pipefail keeps the
+      # step's own outcome, which the report and fail steps below both read.
+      - name: 📏 Compare every recorded size against its pinned URL
+        id: check
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          bun .github/scripts/check-model-plan-sizes.ts 2>&1 | tee /tmp/model-plan-sizes.log
+
+      - name: 📣 Report a mis-sized plan (scheduled only)
+        if: github.event_name == 'schedule' && steps.check.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          {
+            echo "## model-plan.json no longer matches the bytes upstream serves"
+            echo
+            echo "Read the log below before acting — the step fails for three different reasons:"
+            echo
+            echo "- **A recorded size is wrong.** Lines beginning \`DRIFT\` name the file, the"
+            echo "  recorded and live byte counts, and the delta. \`kesha install --plan\` is"
+            echo "  quoting that number to users. Correct \`sizeBytes\` in model-plan.json from"
+            echo "  the live figure; it is the truth by construction."
+            echo "- **A plan entry has no URL.** The run stopped before any request, naming the"
+            echo "  entries it could not resolve. Either rust/src/models.rs dropped the file, or"
+            echo "  \`.github/scripts/check-model-plan-sizes.ts\` stopped being able to read it."
+            echo "- **The sizes could not be checked.** Lines beginning \`UNCHECKED\` mean no"
+            echo "  Content-Length came back. The plan is not implicated; the run proved nothing"
+            echo "  about those entries either way."
+            echo
+            echo '```'
+            cat /tmp/model-plan-sizes.log
+            echo '```'
+            echo
+            echo "Workflow run: $RUN_URL"
+          } > /tmp/model-plan-body.md
+          bash .github/scripts/upsert-audit-issue.sh /tmp/model-plan-body.md "Install plan sizes drifted from upstream" pact-drift
+
+      - name: ❌ Fail a mis-sized plan
+        if: steps.check.outcome == 'failure'
+        shell: bash
+        run: exit 1
