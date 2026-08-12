@@ -50,7 +50,7 @@ function spawnCli(args: string[], extraEnv: Record<string, string> = {}) {
 }
 
 describe("kesha say e2e", () => {
-  it.skipIf(!SPIKE_AVAILABLE)(
+  it(
     "produces valid WAV for 'Hello' via full CLI pipeline",
     async () => {
       const proc = spawnCli(["say", "Hello"]);
@@ -65,7 +65,7 @@ describe("kesha say e2e", () => {
     60_000,
   );
 
-  it.skipIf(!SPIKE_AVAILABLE)(
+  it(
     "writes WAV to --out file",
     async () => {
       const outPath = `/tmp/kesha-e2e-out-${Date.now()}.wav`;
@@ -81,7 +81,7 @@ describe("kesha say e2e", () => {
   // violated Fowler's "mock only at trust boundaries" rule — see #161). The
   // real contract is "KESHA_DEBUG=1 → [debug] traces on stderr; otherwise
   // silent"; verify it by spawning the CLI and grepping stderr.
-  it.skipIf(!SPIKE_AVAILABLE)(
+  it(
     "KESHA_DEBUG=1 emits [debug] traces on stderr",
     async () => {
       const outPath = `/tmp/kesha-debug-${Date.now()}.wav`;
