@@ -19,9 +19,8 @@ job, and no distribution path changes that.
   Never-auto-download rule holds across all of them.
 - Choosing which Engine release a CLI resolves — that is the Pinned Engine
   version, specified in [installation](../installation/spec.md).
-- Which version reaches which Channel, and when. Release-lane mechanics are
-  proposed by the in-flight `alpha-release-channel` change and have no baseline
-  capability yet — see Open Issues.
+- Which version reaches which Channel, and when — see
+  [release-channels](../release-channels/spec.md).
 - The shape of the `./core` exports map — see
   [programmatic-api](../programmatic-api/spec.md).
 - Publishing the OpenClaw plugin to ClawHub — see
@@ -343,12 +342,12 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
 - No test asserts that the Homebrew, Linux-package, container, and Nix paths
   produce the same CLI version — the "same contents everywhere" requirement is
   held by construction, not by a gate.
-- **There is no baseline capability for release channels**, yet this spec's
-  Non-Goals and the Glossary's Channel / Alpha / Prerelease entries both lean on
-  one. The in-flight `alpha-release-channel` change proposes a `release-channels`
-  capability; until it is archived into `openspec/specs/`, tag grammar, dist-tag
-  handling, provenance, and the independent CLI/Engine versioning scheme have no
-  baseline home. This is a corpus gap, not a reading-order preference.
+- The independent CLI/Engine versioning scheme — why `package.json#version` may
+  lead `keshaEngine.version`, and the `check:versions` rules that hold them
+  together — has no baseline home. [release-channels](../release-channels/spec.md)
+  covers tag grammar and channels; [installation](../installation/spec.md)
+  covers what an install resolves; neither states the versioning contract
+  itself, which is only in CLAUDE.md and the gate script.
 - `nix build .#kesha` cannot succeed as committed (`lib.fakeHash`), so the CLI
   half of the flake is documented-but-unbuildable. `docs/nix-install.md` and the
   README both present `nix run` as a working install path.
