@@ -1,13 +1,17 @@
 import { defineCommand } from "citty";
 import { log } from "../log";
+// Inlined because import.meta.url escapes the embedded filesystem in the compiled .deb/.rpm binary (#914).
+import bashCompletions from "../../completions/kesha.bash" with { type: "text" };
+import zshCompletions from "../../completions/kesha.zsh" with { type: "text" };
+import fishCompletions from "../../completions/kesha.fish" with { type: "text" };
 
-const SHELL_FILES = {
-  bash: "kesha.bash",
-  zsh: "kesha.zsh",
-  fish: "kesha.fish",
+const SHELL_SCRIPTS = {
+  bash: bashCompletions,
+  zsh: zshCompletions,
+  fish: fishCompletions,
 } as const;
 
-type Shell = keyof typeof SHELL_FILES;
+type Shell = keyof typeof SHELL_SCRIPTS;
 
 interface CompletionsCommandArgs {
   shell?: string;
@@ -35,7 +39,6 @@ export const completionsCommand = defineCommand({
       log.error("usage: kesha completions <bash|zsh|fish>");
       process.exit(2);
     }
-    const file = new URL(`../../completions/${SHELL_FILES[shell]}`, import.meta.url);
-    process.stdout.write(await Bun.file(file).text());
+    process.stdout.write(SHELL_SCRIPTS[shell]);
   },
 });
