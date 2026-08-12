@@ -108,8 +108,9 @@ mod tests {
 
     /// #841: the warm-cache flake fails ~20 s in with a bare "Transcription
     /// failed" on a cleanly restored bundle, and a same-SHA rerun goes green —
-    /// so the failing run is the only place the evidence will ever exist.
-    /// Renders on panic, silent on a passing run.
+    /// so the failing attempt is the only place the evidence will ever exist.
+    /// Renders on panic; the retry below renders it by hand, so an attempt that
+    /// fails and then recovers still files its dump.
     struct FailureDump {
         first_call: Option<String>,
     }
@@ -166,6 +167,43 @@ mod tests {
         out.push_str(&fingerprint(&loc.dir));
         out.push_str("──── end #841 diagnostics ────");
         out
+    }
+
+    /// Whether a failed `transcribe_samples` earns one more attempt. Matched on
+    /// `E5RT` plus the timeout wording rather than on the op name all five #841
+    /// dumps carry (`Encoder_main__Op3_Cast`): op names are regenerated when the
+    /// model is, while an Espresso async task timing out is the class the
+    /// evidence names, and no other CoreML failure here carries one — the
+    /// diarization teardown print is `E5RT encountered an STL exception`.
+    fn is_transient_e5rt_timeout(bridge_output: &str) -> bool {
+        bridge_output.contains("E5RT") && bridge_output.contains("has timed out")
+    }
+
+    /// The Swift bridge collapses every `transcribeSamples` throw to a bare
+    /// "Transcription failed" and prints CoreML's real error with `print`, so the
+    /// only place a failure names its own cause is the stdout `transcribe_samples`
+    /// silences. Swapping the backend's sink for a temp file is what puts that
+    /// text within reach of the retry gate; it is echoed to stderr either way, so
+    /// the log still gets what `KESHA_DEBUG` used to route there.
+    fn transcribe_capturing_bridge_output(
+        be: &mut FluidAudioBackend,
+        samples: &[f32],
+    ) -> (Result<TranscriptionChunk>, String) {
+        use std::io::{Read as _, Seek as _};
+
+        let mut capture = tempfile::tempfile().expect("capture tempfile");
+        let sink = capture.try_clone().ok().map(OwnedFd::from);
+        let restore = std::mem::replace(&mut be.sink, sink);
+        let result = be.transcribe_samples(samples);
+        be.sink = restore;
+
+        let mut bridge_output = String::new();
+        let _ = capture.rewind();
+        let _ = capture.read_to_string(&mut bridge_output);
+        if !bridge_output.is_empty() {
+            eprint!("{bridge_output}");
+        }
+        (result, bridge_output)
     }
 
     /// Hashing all 446 MB every run is too dear; the manifests, vocab and
@@ -394,10 +432,21 @@ mod tests {
         // Declared first so it drops last — after the backend's CoreML teardown.
         let mut dump = FailureDump { first_call: None };
         let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
-        let first = be
-            .transcribe_samples(&samples)
-            .expect("first transcribe_samples")
-            .text;
+
+        // #841: five instrumented dumps, one shape — the *first* call times out
+        // inside CoreML ~20 s in on a virtualized runner with no ANE, and the
+        // same SHA goes green on rerun. Since this job is the #592 pin-bump
+        // guard, every occurrence spent a human on that rerun. One retry, scoped
+        // to that signature: a real regression is deterministic and fails both
+        // attempts, and the diagnostics still print per attempt, so the issue
+        // keeps collecting evidence from a run that no longer goes red.
+        let (mut outcome, bridge_output) = transcribe_capturing_bridge_output(&mut be, &samples);
+        if outcome.is_err() && is_transient_e5rt_timeout(&bridge_output) {
+            eprintln!("{}", render_diagnostics(None));
+            eprintln!("#841: first transcribe_samples hit CoreML's async timeout — retrying once");
+            outcome = transcribe_capturing_bridge_output(&mut be, &samples).0;
+        }
+        let first = outcome.expect("first transcribe_samples").text;
         dump.first_call = Some(first.clone());
         let second = be
             .transcribe_samples(&samples)

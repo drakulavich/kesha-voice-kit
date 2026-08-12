@@ -482,7 +482,7 @@ jobs:
           cargo nextest run \
             --no-default-features --features coreml \
             --run-ignored all \
-            -E 'test(transcribe_samples_is_stateless_across_calls) + test(debug_routes_silenced_chatter_to_stderr)'
+            -E 'test(transcribe_samples_is_stateless_across_calls) + test(debug_routes_silenced_chatter_to_stderr) + test(only_the_coreml_async_timeout_reads_as_transient)'
 
       - name: 📤 Upload JUnit
         if: always()
