@@ -3082,6 +3082,50 @@ fn model_download_error(message: String) -> anyhow::Error {
     })
 }
 
+const HEADER_BUDGET: Duration = Duration::from_secs(10);
+const BODY_STALL_BUDGET: Duration = Duration::from_secs(30);
+
+/// The request policy every download attempt runs under. ureq ships no timeouts
+/// at all, so without these a host that accepts the connection and then goes
+/// quiet hangs the install forever.
+///
+/// `header_budget` is what bounds the wait for response headers, and it rides on
+/// `timeout_send_request`: `RecvResponse` inherits `SendRequest`'s absolute
+/// deadline and nothing else bounds it, so deleting that line would silently
+/// unbound the header wait (#893).
+///
+/// `stall_budget` is a *rolling* window: `RecvBody` inherits only
+/// `RecvResponse`, so leaving the latter unset re-arms the deadline on every
+/// read and the body aborts on silence rather than on elapsed time. Setting
+/// `timeout_recv_response` again would cap the whole body instead — ureq takes
+/// the minimum — which is what put a 654MB artifact out of reach on a slow link
+/// (#776, #893).
+///
+/// Status is inspected by the caller rather than raised by ureq so a 429's
+/// `Retry-After` header survives into the backoff decision (#724). `identity`
+/// because a `Range` addresses the encoded representation: mixing a decompressed
+/// prefix with an encoded remainder would corrupt the assembly, and ureq strips
+/// `content-encoding` after decoding so the response cannot be inspected for it
+/// afterwards.
+///
+/// Both budgets are parameters so tests can drive the real policy at a scaled
+/// deadline instead of waiting out the production one.
+fn download_request(
+    url: &str,
+    header_budget: Duration,
+    stall_budget: Duration,
+) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
+    ureq::get(url)
+        .config()
+        .http_status_as_error(false)
+        .accept_encoding("identity")
+        .timeout_resolve(Some(header_budget))
+        .timeout_connect(Some(header_budget))
+        .timeout_send_request(Some(header_budget))
+        .timeout_recv_body(Some(stall_budget))
+        .build()
+}
+
 /// One GET plus its verified stream to disk. Every failure path reports whether
 /// it is worth retrying; the caller owns the backoff.
 ///
@@ -3102,31 +3146,7 @@ fn download_attempt(
     let part = staging_path(target);
     let staged = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
 
-    // Status is inspected here rather than raised by ureq so a 429's
-    // `Retry-After` header survives into the backoff decision (#724).
-    //
-    // ureq ships no timeouts by default, so without these a host that accepts
-    // the connection and then goes quiet hangs the install forever. Measured on
-    // ureq 3.3 (#889): `timeout_recv_response` is anchored at headers-received
-    // and `RecvBody` inherits it, so it caps the *whole body* at 30s per
-    // attempt rather than detecting a stall. `timeout_recv_body` stays unset
-    // because ureq takes the minimum of the two — setting it can only tighten
-    // that cap, never lift it. Range-resume is what makes the cap survivable:
-    // every attempt keeps the bytes it did receive.
-    //
-    // `identity` because a `Range` addresses the encoded representation: mixing
-    // a decompressed prefix with an encoded remainder would corrupt the
-    // assembly, and ureq strips `content-encoding` after decoding so the
-    // response cannot be inspected for it afterwards.
-    let mut request = ureq::get(url)
-        .config()
-        .http_status_as_error(false)
-        .accept_encoding("identity")
-        .timeout_resolve(Some(Duration::from_secs(10)))
-        .timeout_connect(Some(Duration::from_secs(10)))
-        .timeout_send_request(Some(Duration::from_secs(10)))
-        .timeout_recv_response(Some(Duration::from_secs(30)))
-        .build();
+    let mut request = download_request(url, HEADER_BUDGET, BODY_STALL_BUDGET);
     if staged > 0 {
         request = request.header("range", format!("bytes={staged}-"));
     }
@@ -4413,9 +4433,22 @@ mod retry_tests {
         );
     }
 
+    /// Reads the request line and headers off `stream`, returning false if the
+    /// peer hung up first.
+    fn read_request(stream: &mut std::net::TcpStream) -> bool {
+        let mut request = Vec::new();
+        let mut buf = [0u8; 512];
+        while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return false,
+                Ok(n) => request.extend_from_slice(&buf[..n]),
+            }
+        }
+        true
+    }
+
     /// Streams a complete `chunk * chunks` body, `gap_ms` apart, then closes.
     /// The socket never goes quiet before the last byte.
-    #[cfg(unix)]
     fn streaming_server(chunk: usize, chunks: usize, gap_ms: u64) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind streaming server");
         let base = format!("http://{}", listener.local_addr().expect("stub addr"));
@@ -4423,13 +4456,8 @@ mod retry_tests {
             let Ok((mut stream, _)) = listener.accept() else {
                 return;
             };
-            let mut request = Vec::new();
-            let mut buf = [0u8; 512];
-            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                match stream.read(&mut buf) {
-                    Ok(0) | Err(_) => return,
-                    Ok(n) => request.extend_from_slice(&buf[..n]),
-                }
+            if !read_request(&mut stream) {
+                return;
             }
             let head = format!(
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -4449,6 +4477,129 @@ mod retry_tests {
         base
     }
 
+    /// Promises `promised` bytes, sends `sent` of them, then holds the socket
+    /// open and quiet for `silence_ms` without ever closing it.
+    fn stalling_server(sent: usize, promised: usize, silence_ms: u64) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind stalling server");
+        let base = format!("http://{}", listener.local_addr().expect("stub addr"));
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            if !read_request(&mut stream) {
+                return;
+            }
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {promised}\r\nConnection: close\r\n\r\n"
+            );
+            if stream.write_all(head.as_bytes()).is_err() {
+                return;
+            }
+            if stream.write_all(&vec![b'k'; sent]).is_err() {
+                return;
+            }
+            let _ = stream.flush();
+            std::thread::sleep(Duration::from_millis(silence_ms));
+        });
+        base
+    }
+
+    /// Accepts the connection, reads the request, and never answers it.
+    fn silent_server(silence_ms: u64) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind silent server");
+        let base = format!("http://{}", listener.local_addr().expect("stub addr"));
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let _ = read_request(&mut stream);
+            std::thread::sleep(Duration::from_millis(silence_ms));
+        });
+        base
+    }
+
+    /// The regression #893 exists for: a link slower than the receive window was
+    /// cut mid-stream no matter how many times it retried, which is what put a
+    /// 654MB artifact out of reach on ubuntu and macOS (#776). The stall budget
+    /// is rolling, so a body that keeps arriving keeps its window alive.
+    #[test]
+    fn a_steady_body_outlasting_the_stall_budget_completes() {
+        const BUDGET: Duration = Duration::from_millis(500);
+        const CHUNK: usize = 64;
+        const CHUNKS: usize = 60;
+
+        let base = streaming_server(CHUNK, CHUNKS, 20);
+        let started = std::time::Instant::now();
+        let response = download_request(&format!("{base}/payload.bin"), BUDGET, BUDGET)
+            .call()
+            .expect("headers arrive promptly");
+
+        let mut sink = Vec::new();
+        io::copy(&mut response.into_body().into_reader(), &mut sink)
+            .expect("a body that never goes silent must not be cut");
+
+        assert_eq!(sink.len(), CHUNK * CHUNKS);
+        assert!(
+            started.elapsed() > BUDGET,
+            "the body finished inside the budget, so nothing was proven"
+        );
+    }
+
+    /// The other half of the swap: the budget must still fire on a body that
+    /// really has stopped, and leave the prefix behind for #889's resume.
+    #[test]
+    fn a_body_that_goes_silent_is_cut_at_the_stall_budget() {
+        const BUDGET: Duration = Duration::from_millis(500);
+        const SENT: usize = 64;
+
+        let base = stalling_server(SENT, SENT * 4, 5_000);
+        let started = std::time::Instant::now();
+        let response = download_request(&format!("{base}/payload.bin"), BUDGET, BUDGET)
+            .call()
+            .expect("headers arrive promptly");
+
+        let mut sink = Vec::new();
+        let err = io::copy(&mut response.into_body().into_reader(), &mut sink)
+            .expect_err("a body that stopped arriving must be cut");
+        let elapsed = started.elapsed();
+
+        assert_eq!(sink.len(), SENT, "the prefix must survive for resume");
+        assert!(
+            (BUDGET..BUDGET * 4).contains(&elapsed),
+            "aborted after {elapsed:?}, budget {BUDGET:?}"
+        );
+        assert!(err.to_string().to_lowercase().contains("timeout"), "{err}");
+    }
+
+    /// The coupling the swap rests on. With the body budget generous, the only
+    /// thing that can still cut a host which accepts and never answers is
+    /// `timeout_send_request`; without this test, dropping that line would
+    /// reintroduce an unbounded hang with nothing going red (#893).
+    #[test]
+    fn a_host_that_never_answers_is_cut_by_the_header_budget() {
+        const BUDGET: Duration = Duration::from_millis(500);
+
+        let base = silent_server(5_000);
+        let started = std::time::Instant::now();
+        let err = download_request(
+            &format!("{base}/payload.bin"),
+            BUDGET,
+            Duration::from_secs(30),
+        )
+        .call()
+        .expect_err("a host that never answers must be cut");
+        let elapsed = started.elapsed();
+
+        assert!(
+            (BUDGET..BUDGET * 4).contains(&elapsed),
+            "aborted after {elapsed:?}, budget {BUDGET:?}"
+        );
+        assert!(
+            matches!(err, ureq::Error::Timeout(ureq::Timeout::SendRequest)),
+            "{err}"
+        );
+    }
+
     /// #780 inferred that the receive deadline detects a stall; #889 asked for
     /// that measured, and it is the opposite. ureq stamps `RecvResponse` at
     /// headers-received and `RecvBody` inherits that deadline, so a body still
@@ -4456,7 +4607,11 @@ mod retry_tests {
     /// per-attempt cap, which is why five retries from byte 0 could never
     /// finish a 654MB file (#776). The second arm pins the other half: ureq
     /// takes the *minimum* of the two deadlines, so a generous
-    /// `timeout_recv_body` cannot loosen the cap, which is why it stays unset.
+    /// `timeout_recv_body` cannot loosen the cap.
+    ///
+    /// `download_request` dropped `timeout_recv_response` for exactly this
+    /// reason (#893), so this now characterizes a config we no longer ship —
+    /// which is the point. It is what goes red if anyone puts that knob back.
     ///
     /// Unix only, and that is itself the finding: this same probe on
     /// windows-latest received the whole body well past the deadline, which is
