@@ -3,6 +3,8 @@ use serde::Serialize;
 // Mirror runtime gate: system_diarize on Linux has no code path; advertising without it would lie.
 #[cfg(all(feature = "system_diarize", target_os = "macos"))]
 use crate::transcribe::TRANSCRIBE_DIARIZE_FEATURE;
+#[cfg(all(feature = "onnx", not(feature = "coreml")))]
+use crate::transcribe::TRANSCRIBE_WORDS_FEATURE;
 use crate::transcribe::{TRANSCRIBE_ITN_FEATURE, TRANSCRIBE_SEGMENTS_FEATURE};
 
 #[derive(Serialize)]
@@ -61,6 +63,11 @@ pub fn get_capabilities() -> Capabilities {
 
     #[cfg(all(feature = "system_diarize", target_os = "macos"))]
     features.push(TRANSCRIBE_DIARIZE_FEATURE);
+
+    // Mirrors `create_backend`: only the ONNX decoder keeps per-token emission
+    // frames, so a CoreML build emits segments without `words` (#720).
+    #[cfg(all(feature = "onnx", not(feature = "coreml")))]
+    features.push(TRANSCRIBE_WORDS_FEATURE);
 
     #[cfg(feature = "tts")]
     let tts = Some(TtsCapabilities {
@@ -128,6 +135,21 @@ mod caps_tests {
             "onnx"
         };
         assert_eq!(get_capabilities().backend, expected);
+    }
+
+    /// Only the ONNX decoder retains per-token emission frames, so the flag
+    /// must track the compiled backend — a CoreML build emitting it would
+    /// promise a `words` key that never appears (#720).
+    #[test]
+    fn transcribe_words_is_advertised_only_where_the_backend_produces_it() {
+        let advertised = get_capabilities()
+            .features
+            .contains(&crate::transcribe::TRANSCRIBE_WORDS_FEATURE);
+        let servable = cfg!(all(feature = "onnx", not(feature = "coreml")));
+        assert_eq!(
+            advertised, servable,
+            "transcribe.words advertisement diverged from the compiled ASR backend"
+        );
     }
 
     /// The flag must track the compiled streaming path, not the OS alone —

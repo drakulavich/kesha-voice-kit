@@ -31,9 +31,31 @@ export const RECORD_LIVE_FEATURE = "record.live";
  */
 export const TRANSCRIBE_ITN_FEATURE = "transcribe.itn";
 
+/**
+ * Capability-flag string for per-word timings inside timestamped segments.
+ * Backend-gated: ONNX builds advertise it, CoreML builds don't (#720).
+ * Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_WORDS_FEATURE`.
+ */
+export const TRANSCRIBE_WORDS_FEATURE = "transcribe.words";
+
 export interface LangDetectResult {
   code: string;
   confidence: number;
+}
+
+/**
+ * One word of a segment, on the same file-relative clock as the segment, so a
+ * word span always lies inside its segment.
+ *
+ * Times come from the ASR's own frame grid: they are quantised to 0.08 s, and
+ * `end` is a per-token duration prediction rather than the next word's `start`,
+ * so consecutive spans may overlap and do not partition the segment. `word` is
+ * what the decoder emitted, punctuation attached (#720).
+ */
+export interface WordTiming {
+  word: string;
+  start: number;
+  end: number;
 }
 
 export interface TranscriptionSegment {
@@ -42,6 +64,8 @@ export interface TranscriptionSegment {
   text: string;
   /** Speaker cluster id when `--speakers` was requested (#199). */
   speaker?: number;
+  /** Per-word timings; absent on engines without `transcribe.words` (#720). */
+  words?: WordTiming[];
 }
 
 export interface TranscriptionOutput {

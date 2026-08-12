@@ -862,6 +862,7 @@ mod tests {
             end,
             text: text.into(),
             speaker: None,
+            words: None,
         }
     }
     fn span(start: f32, end: f32, speaker: u32) -> DiarizeSpan {
