@@ -96,6 +96,13 @@ pub fn format_from_extension(ext: &str) -> Option<OutputFormat> {
 /// resampler init).
 #[cfg(feature = "tts")]
 pub fn encode(samples: &[f32], src_rate: u32, fmt: OutputFormat) -> anyhow::Result<Vec<u8>> {
+    // The one home for the full-scale bound; every format mishandles ±1.0 overflow differently (#718).
+    let bounded: std::borrow::Cow<[f32]> = if samples.iter().any(|s| !(-1.0..=1.0).contains(s)) {
+        std::borrow::Cow::Owned(samples.iter().map(|s| s.clamp(-1.0, 1.0)).collect())
+    } else {
+        std::borrow::Cow::Borrowed(samples)
+    };
+    let samples = &bounded[..];
     match fmt {
         OutputFormat::Wav => wav::encode_wav(samples, src_rate),
         OutputFormat::OggOpus {
@@ -122,7 +129,7 @@ fn encode_flac(samples: &[f32], src_rate: u32) -> anyhow::Result<Vec<u8>> {
     // f32 [-1.0, 1.0] -> signed 16-bit PCM, held in i32 as flacenc expects.
     let pcm: Vec<i32> = samples
         .iter()
-        .map(|&s| (s.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i32)
+        .map(|&s| (s * f32::from(i16::MAX)).round() as i32)
         .collect();
 
     let config = flacenc::config::Encoder::default()
@@ -461,6 +468,41 @@ fn build_opus_tags() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every format bounds its input to full scale, so `encode` cannot tell an
+    /// out-of-range sample from its clamped equivalent — asserted as byte
+    /// equality rather than by decoding, which keeps it true for the lossy arm
+    /// too (the Ogg serial is fixed for exactly this reason).
+    ///
+    /// Since #718 the ANE Kokoro path ships the model's native level, which
+    /// upstream's 1.5× COLA tail can push past ±1.0. WAV wraps in anything
+    /// converting to fixed point; FLAC quantizes to i16; and libopus documents
+    /// that beyond ±1.0 "will be clipped by decoders using the integer API"
+    /// (`opus.h:312`) — so the bound belongs above all three, not in one of them.
+    #[cfg(feature = "tts")]
+    #[test]
+    fn every_format_bounds_samples_to_full_scale() {
+        let hot: Vec<f32> = (0..2400)
+            .map(|i| (i as f32 * 0.1).sin() * 2.5)
+            .chain([-7.0, f32::MAX, 7.0])
+            .collect();
+        let bounded: Vec<f32> = hot.iter().map(|s| s.clamp(-1.0, 1.0)).collect();
+
+        for fmt in [
+            OutputFormat::Wav,
+            OutputFormat::Flac,
+            OutputFormat::ogg_opus_default(),
+        ] {
+            let from_hot = encode(&hot, 24_000, fmt).unwrap_or_else(|e| panic!("{fmt:?}: {e}"));
+            let from_bounded =
+                encode(&bounded, 24_000, fmt).unwrap_or_else(|e| panic!("{fmt:?}: {e}"));
+            assert_eq!(
+                from_hot, from_bounded,
+                "{fmt:?} encoded out-of-range samples differently from their clamped \
+                 equivalent, so they reached the encoder unbounded"
+            );
+        }
+    }
 
     #[cfg(feature = "tts")]
     #[test]

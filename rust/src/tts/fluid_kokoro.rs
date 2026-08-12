@@ -17,8 +17,8 @@ use fluidaudio_rs::{FluidAudio, KokoroComputeUnits};
 use crate::coded_bail;
 use crate::errors::ErrorCode;
 
-/// FluidAudio Kokoro native output rate (24 kHz mono, 16-bit PCM). Used to size
-/// SSML `<break>` silence buffers when the segment walker stitches audio.
+/// FluidAudio Kokoro native output rate (24 kHz mono f32). Used to size SSML
+/// `<break>` silence buffers when the segment walker stitches audio.
 pub const SAMPLE_RATE: u32 = 24_000;
 
 #[derive(Clone, Copy)]

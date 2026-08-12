@@ -64,11 +64,8 @@ pub fn encode_wav(samples: &[f32], sample_rate: u32) -> anyhow::Result<Vec<u8>> 
 
     buf.extend_from_slice(b"data");
     buf.extend_from_slice(&data_size.to_le_bytes());
-    // Bounded here rather than at each engine: since #718 the ANE Kokoro path
-    // ships the model's native level, which upstream's 1.5x COLA tail can push
-    // past full scale, and anything converting to fixed point downstream wraps.
     for s in samples {
-        buf.write_all(&s.clamp(-1.0, 1.0).to_le_bytes())?;
+        buf.write_all(&s.to_le_bytes())?;
     }
 
     Ok(buf)
@@ -110,27 +107,19 @@ mod tests {
         );
     }
 
-    /// Since #718 the ANE Kokoro path emits the model's native level instead of
-    /// audio peak-normalized to 0 dBFS, so samples outside full scale reach this
-    /// writer for the first time (upstream's 1.5× COLA tail on English/Mandarin
-    /// can put hot content there). Float WAV has no headroom limit, but anything
-    /// converting to fixed point on the way to a speaker wraps instead of
-    /// distorting, so the writer bounds them. In-range samples must survive
-    /// bit-exact — a clamp that touches them is a level change, not a guard.
+    /// In-range samples reach the file bit-exact. `encode` bounds out-of-range
+    /// input before this writer sees it (#718), so anything altered here would
+    /// be a level change rather than a guard.
     #[test]
-    fn clamps_samples_outside_full_scale() {
-        let samples = [-2.5_f32, -1.0, -0.5, 0.0, 0.25, 1.0, 1.5, f32::MAX];
+    fn writes_in_range_samples_bit_exact() {
+        let samples = [-1.0_f32, -0.5, 0.0, 0.25, 1.0];
         let wav = encode_wav(&samples, 24_000).unwrap();
         let read_back: Vec<f32> = hound::WavReader::new(std::io::Cursor::new(&wav))
             .unwrap()
             .into_samples::<f32>()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        assert_eq!(
-            read_back,
-            vec![-1.0, -1.0, -0.5, 0.0, 0.25, 1.0, 1.0, 1.0],
-            "samples must be bounded to [-1.0, 1.0] without disturbing in-range values"
-        );
+        assert_eq!(read_back, samples.to_vec());
     }
 
     #[test]
