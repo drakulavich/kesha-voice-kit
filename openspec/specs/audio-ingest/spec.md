@@ -131,17 +131,21 @@ The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` 
 
 > *Technical Note — `open_format` (`rust/src/audio.rs:51-63`) maps
 > `io::ErrorKind::NotFound` to `ErrorCode::InputNotFound` and every other open
-> failure to `ErrorCode::BadAudio`. The remaining ingest failures are tagged
-> `ErrorCode::BadAudio` via `CodedContext::coded`: unsupported format (`:78`),
-> no supported audio tracks (`:85`), unknown sample rate (`:101`), unsupported
-> codec (`:108`), and hard decode faults (`:119`, `:137`). No ingest failure
-> falls through to `code_of`'s `ErrorCode::Internal` default
+> failure to `ErrorCode::BadAudio`. Every remaining ingest failure is tagged
+> `ErrorCode::BadAudio`: unsupported format (`:78`), no supported audio tracks
+> (`:85`), unknown sample rate (`:101`), unsupported codec (`:108`) and hard
+> decode faults (`:119`, `:137`) via `CodedContext::coded`, and the
+> decoded-nothing guard in `measure_duration_seconds` via `coded_bail!`. No
+> ingest failure falls through to `code_of`'s `ErrorCode::Internal` default
 > (`rust/src/errors.rs:193-197`). `E_BAD_AUDIO` is in the taxonomy printed by
 > `--error-codes-json` and mirrored TS-side in `src/error-codes.ts`; its
-> category is `Input` (`rust/src/errors.rs:266-267`). Only the unsupported-format
-> branch has a real-input regression test (`rust/tests/audio_format.rs`); the
-> other three take the identical change but need a demuxable-yet-unusable
-> container no tiny deterministic fixture can synthesise.*
+> category is `Input` (`rust/src/errors.rs:266-267`). Real-input regression
+> tests cover unsupported format, no audio tracks (a video-only MP4) and
+> unsupported codec (ALAC in M4A) in `rust/tests/audio_format.rs`; the unknown
+> sample-rate branch and the decoded-nothing guard take the identical change
+> but have no cheap deterministic fixture — a container that demuxes yet
+> reports no sample rate, or decodes to zero frames without first failing an
+> earlier arm, needs an encoder toolchain to synthesise.*
 
 ### Requirement: Recoverable decode faults are skipped, unrecoverable ones stop the read
 

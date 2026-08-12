@@ -12,6 +12,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::{Hint, Probe};
 
+use crate::coded_bail;
 use crate::errors::{CodedContext, ErrorCode};
 
 pub(crate) const TARGET_SAMPLE_RATE: u32 = 16000;
@@ -299,11 +300,13 @@ pub fn measure_duration_seconds(path: &str) -> Result<f32> {
     let mut decoded_samples = 0usize;
     let (sample_rate, channels) = decode_packets(path, |samples| decoded_samples += samples.len())?;
     let frames = decoded_samples / channels.max(1);
-    anyhow::ensure!(
-        frames > 0 && sample_rate > 0,
-        "decoded no audio frames from: {path} (the container may be truncated or hold only metadata); \
-         re-export the file or transcribe without timestamps"
-    );
+    if frames == 0 || sample_rate == 0 {
+        coded_bail!(
+            ErrorCode::BadAudio,
+            "decoded no audio frames from: {path} (the container may be truncated or hold only metadata); \
+             re-export the file or transcribe without timestamps"
+        );
+    }
     Ok(frames as f32 / sample_rate as f32)
 }
 
