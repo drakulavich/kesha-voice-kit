@@ -41,15 +41,14 @@ The root checkout stays on `main`: shared coordination state, not an edit surfac
 
 Fixtures, benchmark audio, and `docs/assets/` are **Git LFS**-tracked (`.gitattributes`). Run `git lfs pull` in a fresh checkout — without it those files are pointer stubs, not audio, and tests fail in confusing ways.
 
-Branch off fresh `origin/main` (local `main` may be stale):
+Branch off fresh `origin/main` (local `main` may be stale) — the recipes do the fetch and refuse to run from anywhere but the root checkout, so cleanup cannot delete the tree it is standing in:
 
 ```bash
-git fetch origin main
-git worktree add .worktrees/<slug> -b <branch> origin/main
-cd .worktrees/<slug>          # edit, test, commit here
+just worktree <slug> [<branch>]   # branch defaults to the slug
+cd .worktrees/<slug>              # edit, test, commit here
 gh pr create --base main --head <branch>
-cd -                          # cleanup runs from the root checkout, not the worktree
-git worktree remove .worktrees/<slug> && git worktree prune
+cd -                              # cleanup runs from the root checkout, not the worktree
+just worktree-rm <slug>
 ```
 
 ### VERIFY BEFORE PUSHING

@@ -1,7 +1,7 @@
 ---
 description: Land a green PR — verify CI+Greptile on head SHA, confirm issue linkage, merge, and clean up the worktree.
 argument-hint: "[pr-number] (defaults to the current branch's PR)"
-allowed-tools: Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr merge:*), Bash(gh issue view:*), Bash(gh issue close:*), Bash(git worktree:*), Bash(git rev-parse:*)
+allowed-tools: Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr merge:*), Bash(gh issue view:*), Bash(gh issue close:*), Bash(just:*), Bash(git rev-parse:*)
 ---
 
 Finish and merge a PR safely, enforcing the repo's review gate, issue-linkage, and worktree-cleanup rules. **Do not merge** unless CI and Greptile are both green on the latest head SHA.
@@ -28,9 +28,9 @@ Arguments: `$ARGUMENTS` → optional PR number (defaults to the current branch's
    gh pr merge <PR_N> -R drakulavich/kesha-voice-kit --squash --delete-branch
    ```
 
-5. **Clean up the worktree** for the merged branch (from the root checkout):
+5. **Clean up the worktree** for the merged branch — from the root checkout, which the recipe enforces:
    ```bash
-   git worktree remove .worktrees/<slug> && git worktree prune
+   just worktree-rm <slug>
    ```
 
 6. **Verify the issue actually closed** (auto-close can lag for partial links). If it should be closed but isn't (`<ISSUE_N>` is the issue, `<PR_N>` is the PR that landed it):

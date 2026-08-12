@@ -27,17 +27,18 @@ coverage-ts: need-just
 coverage-rust: need-just
 	just coverage-rust
 
+# make cannot forward a trailing filter (it reads one as another goal) — use `just rust-test <filter>`.
 rust-test: need-just
 	just rust-test
 
 mutants-rust: need-just
-	just $(if $(FILE),FILE='$(FILE)') $(if $(FEATURES),FEATURES='$(FEATURES)') mutants-rust
+	just $(if $(FEATURES),FEATURES='$(FEATURES)') mutants-rust $(FILE)
 
 smoke-test: need-just
 	just smoke-test
 
 smoke-test-tts: need-just
-	just smoke-test-tts
+	just TTS=1 smoke-test
 
 release-preflight: need-just
 	just release-preflight
@@ -46,7 +47,7 @@ release: need-just
 	just release
 
 release-notes: need-just
-	just $(if $(TAG),TAG='$(TAG)') release-notes
+	just release-notes $(TAG)
 
 # Direct package.json scripts — no justfile recipe exists for these on purpose.
 install:

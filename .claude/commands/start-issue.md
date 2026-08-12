@@ -1,7 +1,7 @@
 ---
 description: Pick up a GitHub issue — tag it WIP and spin up a worktree off fresh origin/main.
 argument-hint: "<issue-number> [slug]"
-allowed-tools: Bash(gh issue view:*), Bash(gh issue edit:*), Bash(gh label create:*), Bash(gh label list:*), Bash(git fetch:*), Bash(git worktree:*)
+allowed-tools: Bash(gh issue view:*), Bash(gh issue edit:*), Bash(gh label create:*), Bash(gh label list:*), Bash(just:*)
 ---
 
 Start work on a GitHub issue, following the repo's "FLAG ACTIVE WORK WITH A WIP LABEL" and worktree rules in one step.
@@ -23,10 +23,9 @@ Arguments: `$ARGUMENTS` → first token is the issue number (required), optional
    gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP
    ```
 
-3. Create the worktree off **fresh** `origin/main` (never local main, never the root checkout):
+3. Create the worktree from the root checkout — the recipe fetches `origin/main` and branches off it, never off local main:
    ```bash
-   git fetch origin main
-   git worktree add .worktrees/<slug> -b fix/issue-<N> origin/main
+   just worktree <slug> fix/issue-<N>
    ```
    Pick a descriptive branch prefix (`fix/`, `feat/`, `chore/`) based on the issue type.
 

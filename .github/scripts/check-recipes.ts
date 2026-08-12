@@ -22,7 +22,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-type Recipe = { doc?: string | null; private?: boolean };
+type Recipe = {
+  doc?: string | null;
+  private?: boolean;
+  parameters?: { name?: string }[];
+  body?: unknown;
+};
 export type JustDump = { recipes?: Record<string, Recipe>; aliases?: Record<string, unknown> };
 
 const SWEPT_ROOT_FILES = ["README.md", "CONTRIBUTING.md", "CLAUDE.md"];
@@ -125,6 +130,33 @@ export function unknownReferences(path: string, contents: string, known: Set<str
     );
 }
 
+function interpolatedNames(body: unknown): string[] {
+  if (!Array.isArray(body)) return [];
+  if (body[0] === "variable" && typeof body[1] === "string") return [body[1]];
+  return body.flatMap(interpolatedNames);
+}
+
+/**
+ * `{{ slug }}` is substituted into the recipe *text*, which the shell then parses — so quoting it
+ * as `"{{ slug }}"` survives spaces and nothing else, and a caller passing `x"; rm -rf ~; #` gets
+ * their payload run. This is #291's GHA `run:` class one layer down. The fix is `[positional-arguments]`
+ * plus `"$1"`, where the shell receives the value as data it never re-parses.
+ */
+export function interpolatedParameters(dump: JustDump): string[] {
+  return Object.entries(dump.recipes ?? {}).flatMap(([name, recipe]) => {
+    const parameters = new Set((recipe.parameters ?? []).map((p) => p.name));
+    const offenders = [...new Set(interpolatedNames(recipe.body))]
+      .filter((used) => parameters.has(used))
+      .sort();
+    if (offenders.length === 0) return [];
+    return [
+      `justfile: recipe \`${name}\` interpolates ${offenders.map((o) => `{{ ${o} }}`).join(", ")} ` +
+        `into its body, so a caller's shell metacharacters are parsed as code — add ` +
+        `[positional-arguments] and read the value as "$1" instead (#907)`,
+    ];
+  });
+}
+
 export function undocumentedRecipes(dump: JustDump): string[] {
   return Object.entries(dump.recipes ?? {})
     .filter(([, recipe]) => !recipe.private && !recipe.doc)
@@ -163,6 +195,7 @@ function main(): void {
 
   const errors = [
     ...undocumentedRecipes(dump),
+    ...interpolatedParameters(dump),
     ...sweptFiles(root).flatMap((path) =>
       unknownReferences(path, readFileSync(join(root, path), "utf8"), known),
     ),

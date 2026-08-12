@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   commandLines,
+  interpolatedParameters,
   isSwept,
+  type JustDump,
   knownRecipeNames,
   referencedRecipes,
   sweptFiles,
@@ -15,9 +17,9 @@ const YML = ".github/workflows/rust-test.yml";
 
 const recipe = (doc: string | null, isPrivate = false) => ({ doc, private: isPrivate });
 const dump = (
-  recipes: Record<string, ReturnType<typeof recipe>>,
+  recipes: NonNullable<JustDump["recipes"]>,
   aliases: Record<string, unknown> = {},
-) => ({ recipes, aliases });
+): JustDump => ({ recipes, aliases });
 
 const names = (path: string, contents: string) => referencedRecipes(path, contents).map((r) => r.recipe);
 
@@ -187,11 +189,55 @@ describe("sweptFiles", () => {
   });
 });
 
+// `{{ slug }}` is substituted into the recipe text before the shell parses it, so a caller's
+// metacharacters run: `just worktree 'x"; rm -rf ~; #'` executed the payload until #907.
+describe("interpolatedParameters", () => {
+  const withBody = (parameters: string[], body: unknown[]) => ({
+    doc: "d",
+    parameters: parameters.map((name) => ({ name })),
+    body,
+  });
+  const addSlug = ['git worktree add ".worktrees/', [["variable", "slug"]], '"'];
+
+  test("flags a parameter substituted into the recipe body", () => {
+    const errors = interpolatedParameters(dump({ worktree: withBody(["slug"], [addSlug]) }));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("`worktree` interpolates {{ slug }}");
+  });
+
+  test("passes when the body binds the parameter positionally instead", () => {
+    const positional = [['git worktree add ".worktrees/$1"']];
+    expect(interpolatedParameters(dump({ worktree: withBody(["slug"], positional) }))).toEqual([]);
+  });
+
+  test("a justfile variable is not a parameter, so interpolating it is not this bug", () => {
+    const body = [["kesha install ", [["variable", "TTS_FLAG"]]]];
+    expect(interpolatedParameters(dump({ "smoke-test": withBody([], body) }))).toEqual([]);
+  });
+
+  test("finds an interpolation nested anywhere in the body", () => {
+    const shebang = [["#!/usr/bin/env bash"], ["set -euo pipefail"], addSlug];
+    expect(interpolatedParameters(dump({ worktree: withBody(["slug"], shebang) }))).toHaveLength(1);
+  });
+
+  test("names every offending parameter once, however often it appears", () => {
+    const body = [addSlug, ["-b ", [["variable", "branch"]]], addSlug];
+    const errors = interpolatedParameters(dump({ worktree: withBody(["slug", "branch"], body) }));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("{{ branch }}, {{ slug }}");
+  });
+});
+
 // The gate's own subject matter: the extractor must find the real references and no English ones.
 describe("the repository's own references", () => {
-  test("CLAUDE.md points at the recipes the pre-push gate is made of", () => {
+  test("CLAUDE.md spells its executable rituals as recipes, not as shell to copy", () => {
     const found = new Set(names("CLAUDE.md", readRepoFile("CLAUDE.md")));
-    expect([...found].sort()).toEqual(["preflight", "verify-darwin-full"]);
+    expect([...found].sort()).toEqual([
+      "preflight",
+      "verify-darwin-full",
+      "worktree",
+      "worktree-rm",
+    ]);
   });
 
   test("rust-test.yml calls verify-darwin-full rather than repeating its flags", () => {
