@@ -243,6 +243,68 @@ mod tests {
         }
     }
 
+    #[derive(Debug, PartialEq, Eq)]
+    enum AneGate {
+        Run,
+        Skip,
+        Absent,
+    }
+
+    /// `KESHA_REQUIRE_ANE_TESTS` names what the lane promised, the way
+    /// `KESHA_REQUIRE_MODEL_TESTS` does for weights: unset/empty/`0` lets an
+    /// ANE-less host skip, anything else turns that absence into a failure.
+    fn ane_gate(ane_lines: usize, required: Option<&str>) -> AneGate {
+        match (ane_lines, required) {
+            (0, None | Some("") | Some("0")) => AneGate::Skip,
+            (0, Some(_)) => AneGate::Absent,
+            _ => AneGate::Run,
+        }
+    }
+
+    /// #841: CoreML falls back off the ANE on a virtualized runner and the encoder's first
+    /// call times out at random, so this guard went red on PRs that could not have broken it.
+    fn skip_without_ane(test: &str) -> bool {
+        match ane_gate(
+            ane_lines(),
+            std::env::var("KESHA_REQUIRE_ANE_TESTS").ok().as_deref(),
+        ) {
+            AneGate::Run => false,
+            AneGate::Skip => {
+                eprintln!(
+                    "SKIP {test}: no Apple Neural Engine on this host ({}), so this guard did \
+                     not run — set KESHA_REQUIRE_ANE_TESTS=1 on a lane that promises one (#841)",
+                    probe("sysctl", &["-n", "hw.model"]).trim()
+                );
+                true
+            }
+            AneGate::Absent => panic!(
+                "KESHA_REQUIRE_ANE_TESTS is set but this host reports no Apple Neural Engine \
+                 ({}) — the lane promised hardware it does not have (#841)",
+                probe("sysctl", &["-n", "hw.model"]).trim()
+            ),
+        }
+    }
+
+    #[test]
+    fn a_host_with_a_neural_engine_runs_whatever_the_lane_asked_for() {
+        assert_eq!(ane_gate(32, None), AneGate::Run);
+        assert_eq!(ane_gate(32, Some("1")), AneGate::Run);
+    }
+
+    #[test]
+    fn a_host_without_one_skips_unless_the_lane_promised_it() {
+        assert_eq!(ane_gate(0, None), AneGate::Skip);
+        assert_eq!(ane_gate(0, Some("")), AneGate::Skip);
+        assert_eq!(ane_gate(0, Some("0")), AneGate::Skip);
+    }
+
+    /// Skipping is right for a runner that never had one; it would be a lie for a lane that
+    /// promised one, which is the only way this guard reports coverage it never had.
+    #[test]
+    fn a_lane_that_promised_one_fails_rather_than_passing_vacuously() {
+        assert_eq!(ane_gate(0, Some("1")), AneGate::Absent);
+    }
+
     /// Mirrors #742's `ioreg -c AppleARMIODevice | grep -ci ane` so the numbers
     /// in that thread and this dump are comparable.
     fn ane_lines() -> usize {
@@ -354,6 +416,9 @@ mod tests {
     #[test]
     #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
     fn transcribe_samples_is_stateless_across_calls() {
+        if skip_without_ane("transcribe_samples_is_stateless_across_calls") {
+            return;
+        }
         let wav = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../tests/fixtures/benchmark-en/03-review-pull-request.ogg"
@@ -406,6 +471,9 @@ mod tests {
     #[test]
     #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
     fn real_speech_yields_words_the_segmenting_paths_will_accept() {
+        if skip_without_ane("real_speech_yields_words_the_segmenting_paths_will_accept") {
+            return;
+        }
         let wav = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../tests/fixtures/benchmark-en/01-check-email.ogg"
