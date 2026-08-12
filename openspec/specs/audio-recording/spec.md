@@ -292,4 +292,4 @@ parsing.
   capability probe regardless, for every older CLI in the wild.
 - An interrupted `--live` session yields nothing: there is no intermediate
   artifact, so a killed process loses the audio and the transcript together.
-  The `--out` path at least leaves the WAV.
+  The `--out` path at least leaves the WAV. Tracked as #962.
