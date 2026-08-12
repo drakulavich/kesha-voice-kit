@@ -47,7 +47,9 @@ use std::process::Command;
 /// skip rather than fail. The model graph is a `.mlmodelc` bundle; the voice
 /// pack is the flat `<voice>.bin` `stage_ane_kokoro_voices` writes.
 fn ane_kokoro_ready() -> bool {
-    let ane = kesha_engine::models::fluidaudio_ane_kokoro_dir();
+    let Ok(ane) = kesha_engine::models::fluidaudio_ane_kokoro_dir() else {
+        return false;
+    };
     let model_graph = ane.join("KokoroVocoder.mlmodelc");
     let voice = ane.join("am_michael.bin");
     model_graph.exists() && voice.exists()

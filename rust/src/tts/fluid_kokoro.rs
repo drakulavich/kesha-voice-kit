@@ -276,7 +276,7 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
         return Err(missing_assets_error(lang, &missing));
     }
     crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
-        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_kokoro_location())
+        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_kokoro_location()?)
             .context("init FluidAudio bridge")?;
         audio
             .init_kokoro_with_compute_units(voice_id, lang, compute_units)
@@ -579,7 +579,10 @@ mod tests {
     /// exists after `kesha install --tts`.
     #[test]
     fn the_ane_vocab_agrees_with_the_onnx_fixture() {
-        let staged = crate::models::fluidaudio_ane_kokoro_dir().join("vocab.json");
+        let Ok(ane_dir) = crate::models::fluidaudio_ane_kokoro_dir() else {
+            return;
+        };
+        let staged = ane_dir.join("vocab.json");
         let Ok(ane_json) = std::fs::read_to_string(&staged) else {
             return;
         };

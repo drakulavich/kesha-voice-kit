@@ -186,7 +186,8 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
         None,
     )?;
     let resolved =
-        tts::voices::resolve_voice(&models::cache_dir(), &req.voice).map_err(|e| e.to_string())?;
+        tts::voices::resolve_voice(&models::cache_dir().map_err(|e| e.to_string())?, &req.voice)
+            .map_err(|e| e.to_string())?;
     let espeak_lang: &str = req
         .lang
         .as_deref()

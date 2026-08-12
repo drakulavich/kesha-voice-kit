@@ -173,8 +173,8 @@ describe("Rust/TS Kokoro ANE manifest agreement", () => {
 
   // Both groups are staged by the same call; a rename there would strand the probe.
   test("both groups are still what `kesha install --tts` stages", () => {
-    expect(rust).toContain("stage_into(&fluidaudio_ane_kokoro_dir(), ANE_EN_FILES, no_cache)?;");
-    expect(rust).toContain("stage_into(&fluidaudio_kokoro_g2p_dir(), KOKORO_G2P_FILES, no_cache)?;");
-    expect(rust).toContain(`fluidaudio_kokoro_cache_dir().join("ANE")`);
+    expect(rust).toContain("stage_into(&fluidaudio_ane_kokoro_dir()?, ANE_EN_FILES, no_cache)?;");
+    expect(rust).toContain("stage_into(&fluidaudio_kokoro_g2p_dir()?, KOKORO_G2P_FILES, no_cache)?;");
+    expect(rust).toContain(`fluidaudio_kokoro_cache_dir()?.join("ANE")`);
   });
 });

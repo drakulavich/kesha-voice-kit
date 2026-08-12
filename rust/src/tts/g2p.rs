@@ -30,7 +30,7 @@ pub fn text_to_ipa_cached(
     let base = crate::tts::charsiu::base_lang(&lower);
     if matches!(base, "es" | "fr" | "it" | "pt") {
         crate::dtrace!("g2p::route lang={lang} backend=charsiu text_chars={text_chars}");
-        let dir = crate::models::cache_dir().join("models/g2p/byt5-tiny");
+        let dir = crate::models::cache_dir()?.join("models/g2p/byt5-tiny");
         check_charsiu_files(&dir)?;
         let ipa = charsiu.to_ipa(&dir, text, &lower)?;
         crate::dtrace!("g2p::result ipa_chars={}", ipa.chars().count());

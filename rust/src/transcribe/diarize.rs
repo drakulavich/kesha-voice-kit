@@ -401,9 +401,10 @@ fn spawn_worker(
         // handled by `StdoutShield` at the CLI layer (fd 1 stays redirected past exit). (#259/#397/#434)
         let result = crate::fluid_stdout::with_silenced_stdout_oneshot(
             || -> Result<Option<Vec<DiarizeSpan>>> {
-                let audio =
-                    crate::models::fluidaudio_bridge(&crate::models::fluidaudio_diarize_location())
-                        .context("failed to initialize FluidAudio bridge")?;
+                let audio = crate::models::fluidaudio_bridge(
+                    &crate::models::fluidaudio_diarize_location()?,
+                )
+                .context("failed to initialize FluidAudio bridge")?;
                 let mut on_event = |event: DiarizeEvent| {
                     let _ = progress_tx.send(match event {
                         DiarizeEvent::ModelReady => WorkerEvent::ModelReady,

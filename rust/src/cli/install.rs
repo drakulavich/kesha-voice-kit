@@ -66,7 +66,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
     // first real `kesha audio.ogg` is fast. CoreML cache is keyed by (model bytes, signing
     // identity) and survives process exit; survives re-runs until next `kesha install` re-signs (#295).
     if !no_warmup {
-        let asr_dir = models::model_dir(models::ModelKind::Asr)
+        let asr_dir = models::model_dir(models::ModelKind::Asr)?
             .to_string_lossy()
             .into_owned();
         let cost_hint = if cfg!(feature = "coreml") {
@@ -92,13 +92,14 @@ pub fn run(args: InstallArgs) -> Result<()> {
     // Non-fatal: matches ASR warm-up above.
     #[cfg(feature = "system_diarize")]
     if diarize && !no_warmup && models::is_cached(models::ModelKind::Diarize) {
-        let diarize_pkg = models::model_dir(models::ModelKind::Diarize);
+        let diarize_pkg = models::model_dir(models::ModelKind::Diarize)?;
+        let diarize_loc = models::fluidaudio_diarize_location()?;
         eprintln!(
             "Warming up diarization model (one-time compile ~1-2 min on first install, ~4 s after)..."
         );
         let t = std::time::Instant::now();
         let result = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
-            models::fluidaudio_bridge(&models::fluidaudio_diarize_location())
+            models::fluidaudio_bridge(&diarize_loc)
                 .and_then(|fa| fa.compile_diarization_model(&diarize_pkg))
         });
         match result {

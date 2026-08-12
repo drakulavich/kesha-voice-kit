@@ -1089,8 +1089,8 @@ pub const FLUIDAUDIO_ROOT_DIR: &str = "fluidaudio";
 /// FluidAudio's repo folder for the Parakeet bundle, mirrored TS-side the same way (#684).
 pub const FLUID_ASR_REPO_DIR: &str = "parakeet-tdt-0.6b-v3";
 
-pub fn fluidaudio_models_root() -> PathBuf {
-    cache_dir().join(FLUIDAUDIO_ROOT_DIR)
+pub fn fluidaudio_models_root() -> Result<PathBuf> {
+    Ok(cache_dir()?.join(FLUIDAUDIO_ROOT_DIR))
 }
 
 /// Resolve one subsystem, preferring a legacy location that already holds a usable bundle.
@@ -1107,18 +1107,18 @@ pub fn fluidaudio_location(
     legacy: &Path,
     legacy_ready: bool,
     repo_subpath: &str,
-) -> FluidAudioLocation {
+) -> Result<FluidAudioLocation> {
     if legacy_ready {
-        return FluidAudioLocation {
+        return Ok(FluidAudioLocation {
             dir: legacy.to_path_buf(),
             root: None,
-        };
+        });
     }
-    let root = fluidaudio_models_root();
-    FluidAudioLocation {
+    let root = fluidaudio_models_root()?;
+    Ok(FluidAudioLocation {
         dir: root.join(repo_subpath),
         root: Some(root),
-    }
+    })
 }
 
 /// Open a FluidAudio bridge honouring `at`. Routing every construction site through this
@@ -1166,10 +1166,11 @@ pub fn stale_legacy_notice(
     if legacy_ready || !dir_has_entries(legacy) || latched.swap(true, Ordering::Relaxed) {
         return None;
     }
+    let root = fluidaudio_models_root().ok()?;
     Some(format!(
         "warning: legacy FluidAudio bundle at {} is no longer read (incomplete, or superseded by a model-set change); models now load from {}, so the old directory can be deleted",
         legacy.display(),
-        fluidaudio_models_root().display()
+        root.display()
     ))
 }
 
@@ -1181,8 +1182,8 @@ pub fn stale_legacy_notice(
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-pub fn fluidaudio_kokoro_cache_dir() -> PathBuf {
-    fluidaudio_kokoro_location().dir
+pub fn fluidaudio_kokoro_cache_dir() -> Result<PathBuf> {
+    Ok(fluidaudio_kokoro_location()?.dir)
 }
 
 /// FluidAudio's Kokoro ANE voice-pack cache directory. FluidAudio 0.15.5 reads voice packs
@@ -1195,8 +1196,8 @@ pub fn fluidaudio_kokoro_cache_dir() -> PathBuf {
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
-    fluidaudio_kokoro_cache_dir().join("ANE")
+pub fn fluidaudio_ane_kokoro_dir() -> Result<PathBuf> {
+    Ok(fluidaudio_kokoro_cache_dir()?.join("ANE"))
 }
 
 /// FluidAudio's Mandarin (`ANE-zh/`) bundle directory, the Kokoro sibling of
@@ -1206,8 +1207,8 @@ pub fn fluidaudio_ane_kokoro_dir() -> PathBuf {
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-pub fn fluidaudio_ane_zh_kokoro_dir() -> PathBuf {
-    fluidaudio_kokoro_cache_dir().join("ANE-zh")
+pub fn fluidaudio_ane_zh_kokoro_dir() -> Result<PathBuf> {
+    Ok(fluidaudio_kokoro_cache_dir()?.join("ANE-zh"))
 }
 
 /// Where the shared BART G2P bundle and the Misaki lexicon must be staged.
@@ -1222,13 +1223,12 @@ pub fn fluidaudio_ane_zh_kokoro_dir() -> PathBuf {
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-pub fn fluidaudio_kokoro_g2p_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("cannot determine home directory")
+pub fn fluidaudio_kokoro_g2p_dir() -> Result<PathBuf> {
+    Ok(require_home_dir()?
         .join(".cache")
         .join("fluidaudio")
         .join("Models")
-        .join("kokoro")
+        .join("kokoro"))
 }
 
 /// Where FluidAudio's Kokoro CoreML bundles live, and the root that puts them there.
@@ -1237,8 +1237,8 @@ pub fn fluidaudio_kokoro_g2p_dir() -> PathBuf {
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-pub fn fluidaudio_kokoro_location() -> FluidAudioLocation {
-    let legacy = legacy_fluidaudio_kokoro_cache_dir();
+pub fn fluidaudio_kokoro_location() -> Result<FluidAudioLocation> {
+    let legacy = legacy_fluidaudio_kokoro_cache_dir()?;
     let staged = dir_has_entries(&legacy);
     fluidaudio_location(&legacy, staged, "kokoro-82m-coreml")
 }
@@ -1250,27 +1250,26 @@ pub fn fluidaudio_kokoro_location() -> FluidAudioLocation {
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-fn legacy_fluidaudio_kokoro_cache_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("cannot determine home directory")
+fn legacy_fluidaudio_kokoro_cache_dir() -> Result<PathBuf> {
+    Ok(require_home_dir()?
         .join(".cache")
         .join("fluidaudio")
         .join("Models")
-        .join("kokoro-82m-coreml")
+        .join("kokoro-82m-coreml"))
 }
 
 /// FluidAudio's ASR bundle directory — the one `AsrModels` loads from, wherever that
 /// currently is. See [`fluidaudio_asr_location`] for which of the two it can be.
 #[cfg(feature = "coreml")]
-pub fn fluidaudio_asr_dir() -> PathBuf {
-    fluidaudio_asr_location().dir
+pub fn fluidaudio_asr_dir() -> Result<PathBuf> {
+    Ok(fluidaudio_asr_location()?.dir)
 }
 
 /// Where the Parakeet bundle lives, and the root that puts it there.
 #[cfg(feature = "coreml")]
-pub fn fluidaudio_asr_location() -> FluidAudioLocation {
+pub fn fluidaudio_asr_location() -> Result<FluidAudioLocation> {
     static ANNOUNCED: AtomicBool = AtomicBool::new(false);
-    let legacy = legacy_fluidaudio_asr_dir();
+    let legacy = legacy_fluidaudio_asr_dir()?;
     let complete = fluidaudio_asr_ready_in(&legacy);
     if let Some(notice) = stale_legacy_notice(&legacy, complete, &ANNOUNCED) {
         with_stderr(|| eprintln!("{notice}"));
@@ -1285,34 +1284,32 @@ pub fn fluidaudio_asr_location() -> FluidAudioLocation {
 /// Keying on the `…-v3-coreml` sibling that also exists on disk would report a healthy
 /// install as broken (#684).
 #[cfg(feature = "coreml")]
-fn legacy_fluidaudio_asr_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("cannot determine home directory")
+fn legacy_fluidaudio_asr_dir() -> Result<PathBuf> {
+    Ok(require_home_dir()?
         .join("Library")
         .join("Application Support")
         .join("FluidAudio")
         .join("Models")
-        .join(FLUID_ASR_REPO_DIR)
+        .join(FLUID_ASR_REPO_DIR))
 }
 
 /// Where `fluidaudio-rs` keeps compiled Sortformer `.mlmodelc` bundles, and the root that
 /// puts them there. Relocating this costs a ~100 s ANE recompile rather than a download, but
 /// the fallback rule is the same: an existing cache stays where it is.
 #[cfg(feature = "system_diarize")]
-pub fn fluidaudio_diarize_location() -> FluidAudioLocation {
-    let legacy = legacy_sortformer_compiled_dir();
+pub fn fluidaudio_diarize_location() -> Result<FluidAudioLocation> {
+    let legacy = legacy_sortformer_compiled_dir()?;
     let compiled = dir_has_entries(&legacy);
     fluidaudio_location(&legacy, compiled, "fluidaudio-rs/SortformerCompiled")
 }
 
 #[cfg(feature = "system_diarize")]
-fn legacy_sortformer_compiled_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("cannot determine home directory")
+fn legacy_sortformer_compiled_dir() -> Result<PathBuf> {
+    Ok(require_home_dir()?
         .join("Library")
         .join("Application Support")
         .join("fluidaudio-rs")
-        .join("SortformerCompiled")
+        .join("SortformerCompiled"))
 }
 
 /// What FluidAudio's own `modelsExist` requires. The encoder is pinned to int8
@@ -1336,7 +1333,7 @@ const FLUID_ASR_REQUIRED: &[&str] = &[
 /// no-auto-download rule exists to prevent (#684).
 #[cfg(feature = "coreml")]
 pub fn fluidaudio_asr_ready() -> bool {
-    fluidaudio_asr_ready_in(&fluidaudio_asr_dir())
+    fluidaudio_asr_dir().is_ok_and(|d| fluidaudio_asr_ready_in(&d))
 }
 
 #[cfg(feature = "coreml")]
@@ -1360,7 +1357,7 @@ pub fn stage_ane_kokoro_voices(langs: &[&str], no_cache: bool) -> Result<()> {
     if manifest.is_empty() {
         return Ok(());
     }
-    let ane_dir = fluidaudio_ane_kokoro_dir();
+    let ane_dir = fluidaudio_ane_kokoro_dir()?;
     fs::create_dir_all(&ane_dir)
         .with_context(|| format!("create FluidAudio ANE dir {}", ane_dir.display()))?;
     parallel_download(&ane_dir, &manifest, no_cache)
@@ -1392,11 +1389,11 @@ const ANE_ENGLISH_VARIANT_LANGS: &[&str] = &["en", "es", "fr", "hi", "it", "ja",
 ))]
 pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<()> {
     if langs.iter().any(|l| ANE_ENGLISH_VARIANT_LANGS.contains(l)) {
-        stage_into(&fluidaudio_ane_kokoro_dir(), ANE_EN_FILES, no_cache)?;
-        stage_into(&fluidaudio_kokoro_g2p_dir(), KOKORO_G2P_FILES, no_cache)?;
+        stage_into(&fluidaudio_ane_kokoro_dir()?, ANE_EN_FILES, no_cache)?;
+        stage_into(&fluidaudio_kokoro_g2p_dir()?, KOKORO_G2P_FILES, no_cache)?;
     }
     if langs.contains(&"zh") {
-        let zh = fluidaudio_ane_zh_kokoro_dir();
+        let zh = fluidaudio_ane_zh_kokoro_dir()?;
         stage_into(&zh, ANE_ZH_FILES, no_cache)?;
         stage_into(&zh, ANE_ZH_G2P_ASSETS, no_cache)?;
     }
@@ -1422,15 +1419,15 @@ pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<
 ))]
 pub fn missing_kokoro_assets(lang: &str, voice: &str) -> Vec<PathBuf> {
     if lang == "zh" {
-        let zh = fluidaudio_ane_zh_kokoro_dir();
+        let Ok(zh) = fluidaudio_ane_zh_kokoro_dir() else {
+            return Vec::new();
+        };
         missing_kokoro_assets_in(&zh, &zh, lang, voice)
     } else {
-        missing_kokoro_assets_in(
-            &fluidaudio_ane_kokoro_dir(),
-            &fluidaudio_kokoro_g2p_dir(),
-            lang,
-            voice,
-        )
+        let (Ok(ane), Ok(g2p)) = (fluidaudio_ane_kokoro_dir(), fluidaudio_kokoro_g2p_dir()) else {
+            return Vec::new();
+        };
+        missing_kokoro_assets_in(&ane, &g2p, lang, voice)
     }
 }
 
@@ -1593,7 +1590,7 @@ fn purge_incomplete_ane_bundles_in(kokoro_dir: &Path) -> Result<()> {
     target_arch = "aarch64"
 ))]
 pub fn purge_incomplete_ane_bundles() -> Result<()> {
-    purge_incomplete_ane_bundles_in(&fluidaudio_kokoro_cache_dir())
+    purge_incomplete_ane_bundles_in(&fluidaudio_kokoro_cache_dir()?)
 }
 
 /// Names of the incomplete bundles currently in the cache, for the hint
@@ -1605,7 +1602,10 @@ pub fn purge_incomplete_ane_bundles() -> Result<()> {
     target_arch = "aarch64"
 ))]
 pub fn incomplete_ane_bundle_names() -> Vec<String> {
-    incomplete_ane_bundles_in(&fluidaudio_kokoro_cache_dir())
+    let Ok(dir) = fluidaudio_kokoro_cache_dir() else {
+        return Vec::new();
+    };
+    incomplete_ane_bundles_in(&dir)
         .unwrap_or_default()
         .iter()
         .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
@@ -1652,19 +1652,87 @@ pub const VOSK_RU_FILES: &[ModelFile] = &[
     // removed in PR #214 — Russian uses vosk-tts internal G2P now.
 ];
 
-pub fn cache_dir() -> PathBuf {
+pub fn cache_dir() -> Result<PathBuf> {
     cache_dir_from(std::env::var("KESHA_CACHE_DIR").ok(), dirs::home_dir())
-        .expect("cannot determine home directory")
 }
 
 /// The cache root from its two inputs, split out so the null-home path is
-/// unit-testable without an unsettable process environment (#953).
-fn cache_dir_from(env_cache: Option<String>, home: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+/// unit-testable without an unsettable process environment (#953). A set
+/// `KESHA_CACHE_DIR` wins even with no resolvable home; otherwise a missing
+/// home is a coded `E_INTERNAL` naming the escape hatch, never a panic past
+/// the `error [CODE]:` contract.
+fn cache_dir_from(env_cache: Option<String>, home: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(p) = env_cache {
         return Ok(PathBuf::from(p));
     }
-    let home = home.expect("cannot determine home directory");
+    let Some(home) = home else {
+        coded_bail!(
+            ErrorCode::Internal,
+            "cannot determine home directory; set $HOME, or set KESHA_CACHE_DIR to an explicit cache path"
+        );
+    };
     Ok(home.join(".cache").join("kesha"))
+}
+
+/// The home directory, or a coded `E_INTERNAL` naming the `$HOME` remedy. The
+/// FluidAudio caches below hardcode `~/.cache/fluidaudio` / `~/Library/...`, so
+/// `KESHA_CACHE_DIR` cannot relocate them — the hint must not offer it (#953).
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+fn require_home_dir() -> Result<PathBuf> {
+    require_home(dirs::home_dir())
+}
+
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+fn require_home(home: Option<PathBuf>) -> Result<PathBuf> {
+    let Some(home) = home else {
+        coded_bail!(
+            ErrorCode::Internal,
+            "cannot determine home directory; set $HOME"
+        );
+    };
+    Ok(home)
+}
+
+#[cfg(all(
+    test,
+    any(
+        feature = "coreml",
+        feature = "system_kokoro",
+        feature = "system_diarize"
+    )
+))]
+mod require_home_tests {
+    use super::*;
+
+    // #953: the FluidAudio caches are not KESHA_CACHE_DIR-relocatable, so a null
+    // home is coded E_INTERNAL whose hint names only $HOME.
+    #[test]
+    fn require_home_null_is_coded_internal_without_cache_dir_hint() {
+        let err = require_home(None).unwrap_err();
+        assert_eq!(code_of(&err), ErrorCode::Internal);
+        let msg = format!("{err:#}");
+        assert!(msg.contains("$HOME"), "message must name $HOME: {msg}");
+        assert!(
+            !msg.contains("KESHA_CACHE_DIR"),
+            "these paths are not KESHA_CACHE_DIR-relocatable: {msg}"
+        );
+    }
+
+    #[test]
+    fn require_home_passes_through_a_resolved_home() {
+        assert_eq!(
+            require_home(Some(PathBuf::from("/home/u"))).unwrap(),
+            PathBuf::from("/home/u")
+        );
+    }
 }
 
 /// Optional HuggingFace mirror base URL. Respects `KESHA_MODEL_MIRROR` (#121).
@@ -1756,8 +1824,8 @@ impl ModelKind {
 
 /// Absolute path to a kind's directory under the active cache (honours
 /// `KESHA_CACHE_DIR`).
-pub fn model_dir(kind: ModelKind) -> PathBuf {
-    model_dir_at(kind, &cache_dir())
+pub fn model_dir(kind: ModelKind) -> Result<PathBuf> {
+    Ok(model_dir_at(kind, &cache_dir()?))
 }
 
 /// Same as [`model_dir`] but with a caller-supplied cache root — for the
@@ -1769,7 +1837,7 @@ pub fn model_dir_at(kind: ModelKind, cache_root: &Path) -> PathBuf {
 
 /// True iff `kind`'s required files are present under the active cache.
 pub fn is_cached(kind: ModelKind) -> bool {
-    is_cached_in(kind, &model_dir(kind))
+    model_dir(kind).is_ok_and(|d| is_cached_in(kind, &d))
 }
 
 /// True iff `kind` is usable. `dir` is the Kesha cache location; the coreml `Asr`
@@ -1833,7 +1901,7 @@ fn has_all_files(dir: &Path, files: &[ModelFile]) -> bool {
 }
 
 pub fn install(no_cache: bool) -> Result<()> {
-    let cache = cache_dir();
+    let cache = cache_dir()?;
 
     // Every install repairs the ANE cache, not just `--tts`: a user who already had
     // TTS and only upgrades the engine still carries the incomplete bundle (#709).
@@ -1852,7 +1920,7 @@ pub fn install(no_cache: bool) -> Result<()> {
     let manifest: Vec<&ModelFile> = LANG_ID_FILES.iter().collect();
     parallel_download(&cache, &manifest, no_cache)?;
 
-    cleanup_legacy();
+    cleanup_legacy(&cache);
     Ok(())
 }
 
@@ -2743,7 +2811,7 @@ mod tts_tests {
     fn cache_dir_honors_env_var() {
         let _lock = crate::util::test_env::lock();
         let guard = EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-test-xyz");
-        assert_eq!(cache_dir(), PathBuf::from("/tmp/kesha-test-xyz"));
+        assert_eq!(cache_dir().unwrap(), PathBuf::from("/tmp/kesha-test-xyz"));
         drop(guard);
     }
 
@@ -2910,7 +2978,7 @@ pub fn download_diarize(no_cache: bool) -> Result<()> {
 
 /// Hash-verified parallel download of a static manifest into the cache dir.
 fn download_manifest(files: &[ModelFile], no_cache: bool) -> Result<()> {
-    let cache = cache_dir();
+    let cache = cache_dir()?;
     let refs: Vec<&ModelFile> = files.iter().collect();
     parallel_download(&cache, &refs, no_cache)
 }
@@ -2990,7 +3058,7 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
         target_arch = "aarch64"
     )))]
     {
-        let cache = cache_dir();
+        let cache = cache_dir()?;
         let mut manifest = kokoro_manifest_for(langs);
         if langs.contains(&"ru") {
             manifest.extend_from_slice(VOSK_RU_FILES);
@@ -3526,8 +3594,7 @@ fn compute_sha256(path: &Path) -> Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn cleanup_legacy() {
-    let cache = cache_dir();
+fn cleanup_legacy(cache: &Path) {
     let old_onnx = cache.join("v3");
     if old_onnx.exists() {
         eprintln!("Cleaning up legacy ONNX models...");
@@ -3539,7 +3606,7 @@ fn cleanup_legacy() {
         let _ = fs::remove_file(&old_swift);
     }
     #[cfg(unix)]
-    cleanup_orphan_staging(&cache);
+    cleanup_orphan_staging(cache);
 }
 
 /// Age threshold for orphaned download staging. A SIGKILLed download leaves
@@ -3653,7 +3720,7 @@ mod characterization_tests {
     #[test]
     #[cfg(feature = "coreml")]
     fn fluidaudio_asr_dir_is_the_directory_fluidaudio_loads_from() {
-        let dir = legacy_fluidaudio_asr_dir();
+        let dir = legacy_fluidaudio_asr_dir().unwrap();
         assert!(dir.ends_with("parakeet-tdt-0.6b-v3"), "{dir:?}");
         assert!(
             dir.to_string_lossy()
@@ -3675,7 +3742,7 @@ mod characterization_tests {
         );
 
         let legacy = PathBuf::from("/nonexistent/FluidAudio/Models/parakeet-tdt-0.6b-v3");
-        let at = fluidaudio_location(&legacy, false, "parakeet-tdt-0.6b-v3");
+        let at = fluidaudio_location(&legacy, false, "parakeet-tdt-0.6b-v3").unwrap();
 
         let root = at
             .root
@@ -3701,7 +3768,7 @@ mod characterization_tests {
         );
 
         let legacy = PathBuf::from("/somewhere/FluidAudio/Models/parakeet-tdt-0.6b-v3");
-        let at = fluidaudio_location(&legacy, true, "parakeet-tdt-0.6b-v3");
+        let at = fluidaudio_location(&legacy, true, "parakeet-tdt-0.6b-v3").unwrap();
 
         assert_eq!(at.dir, legacy);
         assert!(
@@ -3722,9 +3789,10 @@ mod characterization_tests {
         );
 
         let missing = PathBuf::from("/nonexistent");
-        let asr = fluidaudio_location(&missing, false, "parakeet-tdt-0.6b-v3");
-        let kokoro = fluidaudio_location(&missing, false, "kokoro-82m-coreml");
-        let sortformer = fluidaudio_location(&missing, false, "fluidaudio-rs/SortformerCompiled");
+        let asr = fluidaudio_location(&missing, false, "parakeet-tdt-0.6b-v3").unwrap();
+        let kokoro = fluidaudio_location(&missing, false, "kokoro-82m-coreml").unwrap();
+        let sortformer =
+            fluidaudio_location(&missing, false, "fluidaudio-rs/SortformerCompiled").unwrap();
 
         assert_eq!(asr.root, kokoro.root);
         assert_eq!(kokoro.root, sortformer.root);
