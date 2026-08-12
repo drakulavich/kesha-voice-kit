@@ -403,6 +403,32 @@ describe("TOON output (#138)", () => {
     expect(decoded).toEqual(input);
   });
 
+  /** #720: `words` is the first doubly-nested array in the payload — segments inside
+   * a result, words inside a segment. TOON's tabular encoding treats that shape
+   * differently from the flat rows every other test here covers. */
+  test("round-trips segments carrying word timings", () => {
+    const input = [
+      {
+        file: "a.ogg",
+        text: "Hello world",
+        lang: "en",
+        segments: [
+          {
+            start: 0,
+            end: 1.25,
+            text: "Hello world",
+            words: [
+              { word: "Hello", start: 0, end: 0.4 },
+              { word: "world", start: 0.4, end: 1.2 },
+            ],
+          },
+        ],
+      },
+    ];
+    expect(decodeToon(formatToonOutput(input))).toEqual(input);
+    expect(JSON.parse(formatJsonOutput(input))).toEqual(input);
+  });
+
   test("ends with a trailing newline so it composes in pipelines", () => {
     const output = formatToonOutput([{ file: "a.ogg", text: "Hi", lang: "en" }]);
     expect(output.endsWith("\n")).toBe(true);

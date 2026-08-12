@@ -51,6 +51,9 @@ export interface LangDetectResult {
  * `end` is a per-token duration prediction rather than the next word's `start`,
  * so consecutive spans may overlap and do not partition the segment. `word` is
  * what the decoder emitted, punctuation attached (#720).
+ *
+ * `end >= start`, not `end > start` — a word clipped at the segment boundary can
+ * be zero-width, because the duration head can predict past the end of its audio.
  */
 export interface WordTiming {
   word: string;
@@ -347,6 +350,28 @@ export async function transcribeEngine(
   return stdout;
 }
 
+/**
+ * Validate an engine-supplied `words` array, or return `undefined` when the key is
+ * absent or malformed. Unlike `start`/`end`/`text`, a garbled optional enrichment
+ * must not cost the caller their transcript, so this drops rather than throws (#720).
+ */
+function parseWordTimings(raw: unknown): WordTiming[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const words: WordTiming[] = [];
+  for (const entry of raw) {
+    const w = entry as Record<string, unknown> | null;
+    if (
+      typeof w?.word !== "string" ||
+      typeof w.start !== "number" ||
+      typeof w.end !== "number"
+    ) {
+      return undefined;
+    }
+    words.push({ word: w.word, start: w.start, end: w.end });
+  }
+  return words;
+}
+
 function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
   const parsed = JSON.parse(stdout);
   if (typeof parsed?.text !== "string" || !Array.isArray(parsed?.segments)) {
@@ -364,6 +389,8 @@ function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
     }
     const out: TranscriptionSegment = { start: s.start, end: s.end, text: s.text };
     if (typeof s.speaker === "number") out.speaker = s.speaker;
+    const words = parseWordTimings(s.words);
+    if (words) out.words = words;
     return out;
   });
 

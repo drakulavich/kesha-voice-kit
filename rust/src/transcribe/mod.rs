@@ -126,6 +126,11 @@ impl Default for VadMode {
 /// than the next word's `start`: consecutive spans may overlap and are not a
 /// partition of the segment. `word` is what the decoder emitted, punctuation
 /// attached, so the count needn't match the words a human hears (#720).
+///
+/// `end >= start`, not `end > start`: the duration head can predict past the end
+/// of the audio it was given, and clipping that back to the segment boundary can
+/// leave a zero-width span there. Widening it would invent a time and dropping it
+/// would break the one-word-per-text-word correspondence the seam trim relies on.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WordTiming {
     pub word: String,
@@ -676,11 +681,13 @@ where
                 // The trim drops whole words off the front; words are one per
                 // whitespace-separated word of the same text, so the same count
                 // comes off the front of the timings or the two disagree (#720).
-                let dropped = full
-                    .split_whitespace()
-                    .count()
-                    .saturating_sub(trimmed.split_whitespace().count());
-                let words = chunk.words.map(|w| w.into_iter().skip(dropped).collect());
+                let kept_words = trimmed.split_whitespace().count();
+                let dropped = full.split_whitespace().count().saturating_sub(kept_words);
+                let words = chunk.words.and_then(|w| {
+                    let rest: Vec<WordTiming> = w.into_iter().skip(dropped).collect();
+                    // If that invariant ever breaks, absent beats misaligned (as `--itn`).
+                    (rest.len() == kept_words).then_some(rest)
+                });
                 out.push(TranscriptionSegment {
                     start: window.output_start_s,
                     end: window.output_end_s,
@@ -1624,6 +1631,22 @@ mod tests {
                 "{seg:?}: words and text disagree"
             );
         }
+    }
+
+    /// Nothing downstream re-checks that words and text line up, so a backend
+    /// whose words did not group one-per-word must lose them here, not ship a
+    /// silently shifted list.
+    #[test]
+    fn chunked_segments_drop_words_that_do_not_line_up_with_the_text() {
+        let samples = vec![0.0_f32; 30];
+        let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
+            Ok(chunk_with_words(
+                "alpha beta gamma",
+                &[("alphabeta", 0.0, 0.4), ("gamma", 0.4, 0.8)],
+            ))
+        })
+        .unwrap();
+        assert!(segs[0].words.is_none(), "{:?}", segs[0]);
     }
 
     /// CoreML cannot produce words today; `None` must survive the segmenting

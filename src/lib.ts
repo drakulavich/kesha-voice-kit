@@ -7,7 +7,7 @@ import {
 import { downloadEngine } from "./engine-install";
 
 export type { TranscribeOptions };
-export type { TranscriptionOutput, TranscriptionSegment } from "./engine";
+export type { TranscriptionOutput, TranscriptionSegment, WordTiming } from "./engine";
 export { downloadEngine as downloadModel };
 export { say, type SayOptions, SayError } from "./synth";
 
