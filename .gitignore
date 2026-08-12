@@ -23,6 +23,9 @@ result
 .codegraph/
 .codex/
 skills-lock.json
+# repowise keeps a multi-MB local index here; only the PR-bot config is shared.
+.repowise/*
+!.repowise/bot.yaml
 
 # Mutation testing scratch (stryker sandbox, cargo-mutants output)
 .stryker-tmp/

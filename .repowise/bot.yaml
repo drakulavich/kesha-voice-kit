@@ -1,0 +1,6 @@
+# Every PR here is agent-authored, so the AI share of any regression is the
+# larger one by construction and the finding names nothing to fix. Waived by
+# the owner on #770, #784, #812, #892, #905 before being turned off in #918.
+# The other gate rules, the health delta and the PR comment all stay on.
+health_gate:
+  block_ai_regression: false
