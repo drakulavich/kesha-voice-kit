@@ -103,7 +103,12 @@ describe("star-seen marker file", () => {
 describe("maybeAskForStar — orchestration", () => {
   function captureLog() {
     const lines: string[] = [];
-    return { log: { info: (m: string) => lines.push(m) }, lines };
+    const warnings: string[] = [];
+    return {
+      log: { info: (m: string) => lines.push(m), warn: (m: string) => warnings.push(m) },
+      lines,
+      warnings,
+    };
   }
 
   // gh shim factory — `auth` is the first argv when checking auth status,
@@ -192,5 +197,64 @@ describe("maybeAskForStar — orchestration", () => {
     const out = lines.join("\n");
     expect(out).toContain("⭐ If you enjoy Kesha Voice Kit");
     expect(out).toContain("gh api -X PUT /user/starred");
+  });
+});
+
+describe("maybeAskForStar — cosmetic prompt never fails the install (#936)", () => {
+  function captureLog() {
+    const lines: string[] = [];
+    const warnings: string[] = [];
+    return {
+      log: { info: (m: string) => lines.push(m), warn: (m: string) => warnings.push(m) },
+      lines,
+      warnings,
+    };
+  }
+
+  test("a throwing `which` probe is swallowed to a warning, never propagated", async () => {
+    const binPath = mkTmpBinPath();
+    const { log, warnings } = captureLog();
+    const shims = {
+      which: () => {
+        throw new Error("which blew up");
+      },
+    };
+    await expect(maybeAskForStar(binPath, "1.2.0", log, shims)).resolves.toBeUndefined();
+    expect(warnings.join("\n")).toContain("which blew up");
+  });
+
+  test("a throwing `gh` spawn is swallowed, never propagated", async () => {
+    const binPath = mkTmpBinPath();
+    const { log } = captureLog();
+    const shims = {
+      which: () => "/fake/gh",
+      spawn: () => {
+        throw new Error("spawn blew up");
+      },
+    };
+    await expect(maybeAskForStar(binPath, "1.2.0", log, shims)).resolves.toBeUndefined();
+  });
+
+  test("a throwing logger is swallowed, never propagated", async () => {
+    const binPath = mkTmpBinPath();
+    const log = {
+      info: () => {
+        throw new Error("logger blew up");
+      },
+      warn: () => {},
+    };
+    const shims = { which: () => null };
+    await expect(maybeAskForStar(binPath, "1.2.0", log, shims)).resolves.toBeUndefined();
+  });
+
+  test("marker write failure skips the prompt entirely (no nag on a read-only dir)", async () => {
+    // Parent directory does not exist, so writeStarSeen throws. The prompt must
+    // not print as if the slot were consumed, and the call must not throw.
+    const binPath = join(tmpdir(), "kesha-star-nonexistent-dir-936", "kesha-engine");
+    const { log, lines, warnings } = captureLog();
+    const shims = { which: () => null };
+    await expect(maybeAskForStar(binPath, "1.2.0", log, shims)).resolves.toBeUndefined();
+    expect(lines).toEqual([]);
+    expect(warnings).toEqual([]);
   });
 });
