@@ -320,9 +320,16 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
 - The Homebrew formula in `packaging/homebrew/Formula/kesha-voice-kit.rb` is a
   template kept in this repository; the tap that users install from is
   `drakulavich/homebrew-tap`, updated by `.github/workflows/homebrew-tap.yml`
-  on `release: published`. The in-repo copy pins an older version
-  (`v1.18.0`) than the current CLI, and nothing fails when it goes stale —
-  there is no check that the in-repo template and the published tap agree.
+  on `release: published`. The in-repo copy pins an older version than the
+  current CLI, and nothing fails when it goes stale — there is no check that the
+  in-repo template and the published tap agree. This is not cosmetic: the
+  `homebrew-formula` CI lane builds **the pinned tarball**, not the working
+  tree, so it reviews a released tree while the formula around it is the
+  proposed one. #915 hit exactly that — an install block staging `completions`
+  and `man` against a pin (`v1.18.0`) predating both directories (added in
+  v1.18.4, #388) — and had to repin to `v1.24.7`, the newest tag that carries
+  them *and* whose `package.json#version` equals its tag name, which the
+  formula's own `--version` assertion requires.
 - `homebrew-tap.yml` fires on every published release, including Engine
   releases that publish no CLI version (see CLAUDE.md, "un-drafting an engine
   tag still fires 🍺 Homebrew Tap"). The lane's own skip logic is the only thing
