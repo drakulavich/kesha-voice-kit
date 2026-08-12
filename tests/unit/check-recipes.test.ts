@@ -233,7 +233,12 @@ describe("the repository's own references", () => {
   test("CLAUDE.md spells its executable rituals as recipes, not as shell to copy", () => {
     const found = new Set(names("CLAUDE.md", readRepoFile("CLAUDE.md")));
     expect([...found].sort()).toEqual([
+      "dev-setup",
       "preflight",
+      "release",
+      "rust-test",
+      "smoke-test",
+      "test",
       "verify-darwin-full",
       "worktree",
       "worktree-rm",

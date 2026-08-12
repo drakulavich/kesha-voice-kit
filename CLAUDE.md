@@ -156,7 +156,7 @@ CLI (`package.json#version`) and engine (`package.json#keshaEngine.version` + `r
 Three invariants worth knowing before you touch a release:
 
 - **Tag names are one-use.** GitHub reserves them permanently — a broken release means a new patch tag, never a "test" tag.
-- **Publishing is effectively permanent, and un-drafting an engine tag still fires `🍺 Homebrew Tap`.** It does not reach npm — only `-cli` does. Validate the draft binary first with authenticated `gh release download` (draft asset URLs 404 for anonymous clients, so `curl` / `make smoke-test` can false-green through an old global shim) and exercise it end-to-end.
+- **Publishing is effectively permanent, and un-drafting an engine tag still fires `🍺 Homebrew Tap`.** It does not reach npm — only `-cli` does. Validate the draft binary first with authenticated `gh release download` (draft asset URLs 404 for anonymous clients, so `curl` / `just smoke-test` can false-green through an old global shim) and exercise it end-to-end.
 - **`integration-tests-full` skips on `release/*`** via `!startsWith(github.head_ref, 'release/')` — that is the job which downloads the *published* engine, whose tag doesn't exist yet on a release PR. The lighter `integration-tests` job carries no such guard and is safe there. Don't remove the filter; reuse it for new engine-downloading jobs.
 
 Full procedure, `bun link` gotchas, and re-review mechanics: the **`release-mechanics`** skill (loads on demand). To cut one, invoke **`release-engine`** (engine, bare `vX.Y.Z`) or **`release-cli`** (CLI to npm, `vX.Y.Z-cli`); a full ship is the engine first, then the CLI that carries its pin.
@@ -165,12 +165,14 @@ Full procedure, `bun link` gotchas, and re-review mechanics: the **`release-mech
 
 ```bash
 bun install                    # Install dependencies
-make test                      # Bun unit + integration tests
-make rust-test                 # Rust tests via nextest (matches CI)
-make lint                      # Type check
-make smoke-test                # Link + install + run against fixtures
-make release                   # alias for release-preflight: lint + versions + test + smoke-test
+just test                      # Bun unit + integration tests
+just rust-test                 # Rust tests via nextest (matches CI)
+bun run lint                   # Type check
+just smoke-test                # Link + install + run against fixtures
+just release                   # alias for release-preflight: lint + versions + test + smoke-test
 ```
+
+`just` with no args lists every recipe; `just` is installed by `just dev-setup` (or `cargo install --locked just`).
 
 A Nix flake is an alternate reproducible build path (`nix run .#kesha`, `nix build .#kesha-engine`) on `aarch64-darwin` / `x86_64-linux`. It is not a CI gate.
 

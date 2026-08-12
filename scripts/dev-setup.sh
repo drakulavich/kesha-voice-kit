@@ -7,7 +7,7 @@
 # on your behalf — for missing system packages it prints the exact command for
 # YOUR platform and leaves it to you. Idempotent: safe to re-run.
 #
-# Usage: make dev-setup   (or: bash scripts/dev-setup.sh)
+# Usage: just dev-setup   (or: bash scripts/dev-setup.sh)
 set -uo pipefail
 
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
@@ -42,12 +42,13 @@ else
   missing_system=1
 fi
 
-# just: every `make` target now delegates to a justfile recipe (#797), so a
-# checkout without it can run the direct `bun run …` scripts and nothing else.
+# just: the task runner (#797 retired the Makefile). Recipes like `just preflight`,
+# `just rust-test` and `just smoke-test` are the canonical entry points, so it is a
+# hard requirement — same as bun and cargo above.
 if have just; then
   ok "just ($(just --version | awk '{print $2}'))"
 else
-  todo "just missing — cargo install --locked just  (the task runner behind make/just recipes)"
+  todo "just missing — cargo install --locked just  (the task runner; see justfile)"
   missing_system=1
 fi
 
@@ -153,9 +154,9 @@ run "Models are install-only: kesha install  (+ --tts / --vad / --diarize)"
 
 echo
 if [ "$missing_system" -eq 0 ]; then
-  bold "All toolchains + system libraries present. Try: make cli-fast"
+  bold "All toolchains + system libraries present. Try: bun run check"
 else
-  bold "Install the TODO items above, then re-run: make dev-setup"
+  bold "Install the TODO items above, then re-run: bash scripts/dev-setup.sh"
 fi
 # Always exit 0 — this is a guide, not a gate.
 exit 0

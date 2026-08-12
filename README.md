@@ -163,7 +163,7 @@ All of these install the Bun CLI wrapper; engine + models still download explici
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), the [Roadmap](ROADMAP.md) (Now / Next / Later), and the [Decision log](docs/decision-log.md) (why platform/model choices were made — and reversed). Dev setup: `make dev-setup` (Bun, Rust, nextest, platform libs).
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [Roadmap](ROADMAP.md) (Now / Next / Later), and the [Decision log](docs/decision-log.md) (why platform/model choices were made — and reversed). Dev setup: `just dev-setup` (Bun, Rust, nextest, platform libs).
 
 ## License
 
