@@ -186,14 +186,14 @@ fn say_fluid_kokoro(
     if ssml {
         return synth_segments_fluid_kokoro(text, voice_id, speed, format);
     }
-    let wav_bytes =
+    let (samples, sample_rate) =
         super::fluid_kokoro::synthesize(text, voice_id, speed).map_err(|e| TtsError::Coded {
             // Preserve a precise code from the engine chain (e.g.
             // ScriptUnsupported for native-script input).
             code: crate::errors::code_of(&e),
             message: format!("fluid-kokoro: {e}"),
         })?;
-    transcode_to(&wav_bytes, format)
+    encode_or_fail(&samples, sample_rate, format)
 }
 
 /// AVSpeech arm: does its own G2P + synthesis inside Swift; rejects SSML (#141).
@@ -728,15 +728,7 @@ fn encode_or_fail(
 /// the #245 plain-IEEE-float guarantee that `tts::wav` exists to hold.
 // `test` joins the gate so the #826 regression test runs in the default
 // `--features tts` lane, not only under the darwin sidecar features.
-#[cfg(any(
-    test,
-    all(feature = "system_tts", target_os = "macos"),
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )
-))]
+#[cfg(any(test, all(feature = "system_tts", target_os = "macos")))]
 fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsError> {
     let reader = hound::WavReader::new(std::io::Cursor::new(wav_bytes))
         .map_err(|e| TtsError::SynthesisFailed(format!("sidecar wav decode: {e}")))?;
@@ -746,18 +738,10 @@ fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsEr
     encode_or_fail(&samples, spec.sample_rate, format)
 }
 
-/// Mix WAV samples to mono f32. Generic because the sidecars disagree:
-/// FluidAudio Kokoro emits 16-bit PCM at 24 kHz, AVSpeech float32 at whatever
-/// rate the chosen system voice renders at.
-#[cfg(any(
-    test,
-    all(feature = "system_tts", target_os = "macos"),
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )
-))]
+/// Mix WAV samples to mono f32. Generic because AVSpeech renders float32 at
+/// whatever rate the chosen system voice runs at, and the tests feed it 16-bit
+/// PCM.
+#[cfg(any(test, all(feature = "system_tts", target_os = "macos")))]
 fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow::Result<Vec<f32>> {
     let spec = reader.spec();
     let channels = spec.channels as usize;
