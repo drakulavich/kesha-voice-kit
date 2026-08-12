@@ -121,7 +121,13 @@ export async function maybeAskForStar(
     log.info("  https://github.com/drakulavich/kesha-voice-kit");
     log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
   } catch (err) {
-    // A cosmetic prompt must never fail a completed, verified install (#936).
-    log.warn?.(`Skipping the star prompt: ${errorMessage(err)}`);
+    // A cosmetic prompt must never fail a completed, verified install (#936) —
+    // and neither may its own failure-to-log: log.warn is process.stderr.write,
+    // which re-throws on a dying stderr (EPIPE), so the swallow is guarded too.
+    try {
+      log.warn?.(`Skipping the star prompt: ${errorMessage(err)}`);
+    } catch {
+      /* Nothing left to do — the prompt is cosmetic. */
+    }
   }
 }
