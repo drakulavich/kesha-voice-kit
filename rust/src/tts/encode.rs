@@ -259,8 +259,10 @@ impl Drop for OpusEncoder {
 /// Resolve a libopus error code to its static message string.
 #[cfg(feature = "tts")]
 fn opus_err_str(code: core::ffi::c_int) -> String {
-    // SAFETY: opus_strerror returns a non-null static NUL-terminated C string for any code.
-    unsafe { core::ffi::CStr::from_ptr(opusic_sys::opus_strerror(code)) }
+    // SAFETY: opus_strerror accepts any c_int, returning a message for unknown codes.
+    let msg = unsafe { opusic_sys::opus_strerror(code) };
+    // SAFETY: that pointer is non-null and points at a static NUL-terminated C string.
+    unsafe { core::ffi::CStr::from_ptr(msg) }
         .to_string_lossy()
         .into_owned()
 }

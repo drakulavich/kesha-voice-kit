@@ -1130,9 +1130,7 @@ mod tests {
     fn compute_units_default_to_all_and_reject_junk() {
         let _guard = crate::util::test_env::lock();
 
-        unsafe {
-            std::env::remove_var(COMPUTE_UNITS_ENV);
-        }
+        let _unset = crate::util::test_env::EnvGuard::unset(COMPUTE_UNITS_ENV);
         assert_eq!(compute_units_from_env().unwrap(), DiarizeComputeUnits::All);
 
         let _env = crate::util::test_env::EnvGuard::set(COMPUTE_UNITS_ENV, "CPU-Only");
@@ -1151,9 +1149,7 @@ mod tests {
     fn total_timeout_is_opt_in() {
         let _guard = crate::util::test_env::lock();
 
-        unsafe {
-            std::env::remove_var(TOTAL_TIMEOUT_ENV);
-        }
+        let _unset = crate::util::test_env::EnvGuard::unset(TOTAL_TIMEOUT_ENV);
         assert_eq!(total_timeout_from_env().unwrap(), None);
 
         let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, "3600");
@@ -1189,9 +1185,7 @@ mod tests {
     fn load_budget_is_overridable_but_never_zero() {
         let _guard = crate::util::test_env::lock();
 
-        unsafe {
-            std::env::remove_var(LOAD_TIMEOUT_ENV);
-        }
+        let _unset = crate::util::test_env::EnvGuard::unset(LOAD_TIMEOUT_ENV);
         assert_eq!(
             load_budget_from_env().unwrap(),
             Duration::from_secs(MODEL_LOAD_BUDGET_SECS)

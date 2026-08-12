@@ -18,13 +18,27 @@
 use std::io::Write;
 use std::os::fd::OwnedFd;
 
+/// `dup` a descriptor into an owned handle, or `None` when the call failed.
+/// Every caller here treats failure as best-effort: run unguarded rather than
+/// point fd 1 somewhere it cannot be recovered from.
+fn dup_owned(fd: std::os::fd::RawFd) -> Option<OwnedFd> {
+    use std::os::fd::FromRawFd;
+    // SAFETY: dup either returns a fresh descriptor this process owns, or -1.
+    let raw = unsafe { libc::dup(fd) };
+    if raw < 0 {
+        return None;
+    }
+    // SAFETY: raw came from the dup above, so OwnedFd is its sole owner and closes it on drop.
+    Some(unsafe { OwnedFd::from_raw_fd(raw) })
+}
+
 /// Run `f` with the process's stdout temporarily redirected to `devnull`.
 /// Restoring stdout in a `Drop` impl keeps the redirect short-lived even if `f`
 /// panics. `devnull` is a caller-owned fd (the ASR hot path caches one on the
 /// backend); passing `None` runs `f` with stdout untouched (best-effort fallback
 /// when opening /dev/null failed).
 pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce() -> R) -> R {
-    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::fd::AsRawFd;
 
     struct StdoutGuard {
         saved: Option<OwnedFd>,
@@ -75,18 +89,8 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
         }
     }
 
-    // SAFETY: dup(STDOUT) returns a fresh fd we own; OwnedFd takes
-    // responsibility for closing it on drop. dup failure is best-effort —
-    // we just run f without a guard, never worse than the pre-#259
-    // behaviour.
-    let saved: Option<OwnedFd> = unsafe {
-        let raw = libc::dup(libc::STDOUT_FILENO);
-        if raw < 0 {
-            None
-        } else {
-            Some(OwnedFd::from_raw_fd(raw))
-        }
-    };
+    // A failed dup is best-effort: run f unguarded, never worse than pre-#259 behaviour.
+    let saved = dup_owned(libc::STDOUT_FILENO);
     let have_save = saved.is_some();
     let _guard = StdoutGuard { saved };
 
@@ -143,13 +147,9 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
     feature = "system_diarize"
 ))]
 pub(crate) fn oneshot_sink() -> Option<OwnedFd> {
-    use std::os::fd::FromRawFd;
-
     if crate::debug::enabled() {
-        // SAFETY: dup(STDERR) hands back a fresh fd that OwnedFd will close.
-        let raw = unsafe { libc::dup(libc::STDERR_FILENO) };
-        if raw >= 0 {
-            return Some(unsafe { OwnedFd::from_raw_fd(raw) });
+        if let Some(stderr) = dup_owned(libc::STDERR_FILENO) {
+            return Some(stderr);
         }
     }
     std::fs::OpenOptions::new()
@@ -206,19 +206,11 @@ pub(crate) struct StdoutShield {
 ))]
 impl StdoutShield {
     pub(crate) fn new() -> Self {
-        use std::os::fd::{AsRawFd, FromRawFd};
+        use std::os::fd::AsRawFd;
 
-        // SAFETY: dup(STDOUT) returns a fresh fd we own; File takes ownership and
-        // closes it on drop. The original stdout (the pipe the parent reads) stays
-        // referenced by this dup.
-        let real_stdout: Option<std::fs::File> = unsafe {
-            let raw = libc::dup(libc::STDOUT_FILENO);
-            if raw < 0 {
-                None
-            } else {
-                Some(std::fs::File::from_raw_fd(raw))
-            }
-        };
+        // The original stdout — the pipe the parent reads — stays referenced by this dup.
+        let real_stdout: Option<std::fs::File> =
+            dup_owned(libc::STDOUT_FILENO).map(std::fs::File::from);
 
         // Only redirect fd 1 if we actually saved the real stdout — otherwise we'd
         // point fd 1 at /dev/null with no way to emit the payload.
@@ -275,11 +267,33 @@ mod tests {
     impl Drop for RestoreFd {
         fn drop(&mut self) {
             // SAFETY: self.saved is the dup of the original fd we own.
-            unsafe {
-                libc::dup2(self.saved, self.target);
-                libc::close(self.saved);
-            }
+            unsafe { libc::dup2(self.saved, self.target) };
+            // SAFETY: dup2 kept its own reference on the target, so this drops only our copy.
+            unsafe { libc::close(self.saved) };
         }
+    }
+
+    /// Point `target` at `capture`, handing back the guard that puts it back.
+    fn redirect(target: std::os::fd::RawFd, capture: &std::fs::File) -> RestoreFd {
+        let saved = dup_owned(target).expect("dup the fd under test");
+        // SAFETY: dup2 atomically replaces target with a duplicate of the capture file.
+        assert!(unsafe { libc::dup2(capture.as_raw_fd(), target) } >= 0);
+        RestoreFd {
+            saved: std::os::fd::IntoRawFd::into_raw_fd(saved),
+            target,
+        }
+    }
+
+    /// Write through C stdio, the way the FluidAudio bridge and the Espresso
+    /// runtime do — buffered, so the guard's flush ordering is what is on test.
+    fn c_print(msg: &core::ffi::CStr) {
+        // SAFETY: msg is a NUL-terminated C string and the format string takes no arguments.
+        unsafe { libc::printf(msg.as_ptr()) };
+    }
+
+    fn c_flush() {
+        // SAFETY: fflush(NULL) flushes every open C output stream and borrows nothing.
+        unsafe { libc::fflush(std::ptr::null_mut()) };
     }
 
     /// #841: the bridge collapses every transcribe throw to "Transcription
@@ -295,20 +309,12 @@ mod tests {
     fn debug_routes_silenced_chatter_to_stderr() {
         std::env::set_var("KESHA_DEBUG", "1");
         let mut capture = tempfile::tempfile().expect("capture tempfile");
-        let saved_real = unsafe { libc::dup(libc::STDERR_FILENO) };
-        assert!(saved_real >= 0, "dup stderr failed");
-        let _restore = RestoreFd {
-            saved: saved_real,
-            target: libc::STDERR_FILENO,
-        };
-        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDERR_FILENO) } >= 0);
+        let _restore = redirect(libc::STDERR_FILENO, &capture);
 
         // Taken after the redirect: the sink dups whatever fd 2 points at now.
         let sink = oneshot_sink();
         with_silenced_stdout(sink.as_ref(), || {
-            // SAFETY: NUL-terminated literal; printf buffers via C stdio,
-            // exactly like the Swift bridge's print.
-            unsafe { libc::printf(c"Transcribe samples error: simulated\n".as_ptr()) };
+            c_print(c"Transcribe samples error: simulated\n");
         });
         drop(_restore);
 
@@ -329,13 +335,7 @@ mod tests {
     #[test]
     fn silenced_scope_discards_buffered_c_stdio_before_restore() {
         let mut capture = tempfile::tempfile().expect("capture tempfile");
-        let saved_real = unsafe { libc::dup(libc::STDOUT_FILENO) };
-        assert!(saved_real >= 0, "dup stdout failed");
-        let _restore = RestoreFd {
-            saved: saved_real,
-            target: libc::STDOUT_FILENO,
-        };
-        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
+        let _restore = redirect(libc::STDOUT_FILENO, &capture);
 
         let devnull = std::fs::OpenOptions::new()
             .write(true)
@@ -343,15 +343,10 @@ mod tests {
             .ok()
             .map(OwnedFd::from);
         with_silenced_stdout(devnull.as_ref(), || {
-            // SAFETY: NUL-terminated literal; printf buffers via C stdio,
-            // exactly like the Swift bridge's print.
-            unsafe { libc::printf(c"leaky diagnostics\n".as_ptr()) };
+            c_print(c"leaky diagnostics\n");
         });
-        // SAFETY: same as above; the post-guard write must reach real stdout.
-        unsafe {
-            libc::printf(c"after guard\n".as_ptr());
-            libc::fflush(std::ptr::null_mut());
-        }
+        c_print(c"after guard\n");
+        c_flush();
         drop(_restore);
 
         let mut contents = String::new();
@@ -378,33 +373,19 @@ mod tests {
     #[test]
     fn shield_holds_fd1_through_drop() {
         let mut capture = tempfile::tempfile().expect("capture tempfile");
-        let saved_real = unsafe { libc::dup(libc::STDOUT_FILENO) };
-        assert!(saved_real >= 0, "dup stdout failed");
-        let _restore = RestoreFd {
-            saved: saved_real,
-            target: libc::STDOUT_FILENO,
-        };
-        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
+        let _restore = redirect(libc::STDOUT_FILENO, &capture);
 
         {
             let shield = StdoutShield::new();
-            // SAFETY: NUL-terminated literals; printf goes through C stdio, like
-            // the Espresso runtime's own prints.
-            unsafe {
-                libc::printf(c"E5RT between calls\n".as_ptr());
-                libc::fflush(std::ptr::null_mut());
-            }
+            c_print(c"E5RT between calls\n");
+            c_flush();
             shield.write_stdout(b"transcript\n").expect("write payload");
-            unsafe {
-                libc::printf(c"E5RT at teardown\n".as_ptr());
-                libc::fflush(std::ptr::null_mut());
-            }
+            c_print(c"E5RT at teardown\n");
+            c_flush();
         }
-        // SAFETY: as above; fires after the shield dropped, as a teardown print can.
-        unsafe {
-            libc::printf(c"E5RT after drop\n".as_ptr());
-            libc::fflush(std::ptr::null_mut());
-        }
+        // Fires after the shield dropped, as a CoreML teardown print can.
+        c_print(c"E5RT after drop\n");
+        c_flush();
         drop(_restore);
 
         let mut contents = String::new();
