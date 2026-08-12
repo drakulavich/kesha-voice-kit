@@ -507,6 +507,64 @@ describe("dictation controller", () => {
     expect(deps.startTranscriber).toHaveBeenCalled();
   });
 
+  it("scales the transcription timeout to the recording length, not a fixed 60 s (#944)", async () => {
+    let clock = 0;
+    const recorder = deferred<void>();
+    const deps = createDeps({
+      now: () => clock,
+      startRecorder: vi.fn(() => resolvedTask(recorder.promise)),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await waitFor(() => expect(deps.startRecorder).toHaveBeenCalled());
+
+    clock = 120_000; // 120 s captured before the recorder resolves
+    recorder.resolve();
+    await session.done;
+
+    // floor 60 s + 120 s * 2 s/s = 300 s, five times the old fixed cap.
+    const transcribing = deps.states.find(
+      (state) => state.status === "transcribing",
+    );
+    expect(transcribing).toMatchObject({
+      status: "transcribing",
+      timeoutSeconds: 300,
+    });
+    expect(deps.startTranscriber).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("dictation.wav"),
+      300_000,
+    );
+  });
+
+  it("keeps the recording and names it when transcription fails (#944)", async () => {
+    const deps = createDeps({
+      startTranscriber: vi.fn(() =>
+        resolvedTask(
+          Promise.reject(
+            new Error("kesha transcription timed out after 300 seconds."),
+          ),
+        ),
+      ),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.cleanupTempDir).not.toHaveBeenCalled();
+    const last = deps.states.at(-1);
+    expect(last).toMatchObject({
+      status: "error",
+      message: "kesha transcription timed out after 300 seconds.",
+    });
+    expect(last?.status === "error" && last.hint).toContain(
+      "/tmp/session/dictation.wav",
+    );
+    expect(last?.status === "error" && last.hint).toContain(
+      'kesha "/tmp/session/dictation.wav"',
+    );
+  });
+
   it("does not warn about no signal once a meter sample has been seen", async () => {
     let clock = 0;
     let emit!: (patch: RecordingPatch) => void;

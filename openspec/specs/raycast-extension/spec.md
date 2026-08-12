@@ -245,13 +245,18 @@ spending time on a Transcription that would return nothing.
 > Unrecognised formats return "not silent" so the check can never block a valid
 > recording (line 29).*
 
-### Requirement: Transcription runs through the CLI and times out after 60 s
+### Requirement: Transcription runs through the CLI and times out proportionally to the recording length
 
 The extension SHALL obtain the transcript by running the CLI's default
 Transcription command on the recorded file and reading its stdout. It SHALL
-abandon a Transcription that has not finished within 60 seconds and report the
-timeout. A non-zero Exit code SHALL be surfaced using the CLI's own stderr text
-so the Engine's Error code and hint reach Maks unedited.
+abandon a Transcription that has not finished within a timeout that scales with
+the length of the recording — a fixed floor plus a per-second allowance — so a
+recording made at the default `maxSeconds` cannot fail Transcription purely
+because of the timeout. When the timeout does fire, or the Transcription fails
+for any other reason after the audio was captured, the recording SHALL be kept
+and its path named in the Error so it can be transcribed from the CLI. A
+non-zero Exit code SHALL be surfaced using the CLI's own stderr text so the
+Engine's Error code and hint reach Maks unedited.
 
 #### Scenario: Maks dictates a short note
 
@@ -268,20 +273,35 @@ so the Engine's Error code and hint reach Maks unedited.
 - THEN the view shows the CLI's own stderr message, hint included
 - AND the extension does not attempt any download of its own
 
+#### Scenario: A long recording gets a proportional timeout
+
+- GIVEN a recording captured over 120 seconds
+- WHEN Transcription starts
+- THEN the timeout is the floor plus 120 × the per-second allowance, not a
+  fixed 60 seconds
+- AND the visible Transcription timeout reflects that scaled value
+
 #### Scenario: Transcription hangs
 
-- GIVEN a Transcription that produces no result for 60 seconds
+- GIVEN a Transcription that produces no result before its scaled timeout
 - WHEN the timeout expires
 - THEN the process is terminated and the view shows `kesha transcription timed
-  out after 60 seconds.`
+  out after N seconds.` for that recording's timeout
+- AND the recorded audio is kept, and the Error hint names its path and a
+  `kesha "<path>"` command to transcribe it manually
 
-> *Technical Note — `TRANSCRIBE_TIMEOUT_MS = 60_000`:
-> `raycast/src/lib/dictation-config.ts` lines 7–8. Spawn, capture, timeout and
-> force-kill: `startKeshaTranscriber` in `raycast/src/lib/process-tasks.ts`
-> lines 112–168 (SIGTERM at the timeout, SIGKILL 3 s later, lines 136–145).
-> stderr is preferred over a synthetic message on non-zero exit, lines 156–160.
-> Buffers are tail-capped — 16 MiB stdout, 8 000 characters of stderr — by
-> `capTail` lines 23–25.*
+> *Technical Note — the timeout is `transcribeTimeoutMs(recordingSeconds)`:
+> `raycast/src/lib/dictation-config.ts` (`TRANSCRIBE_TIMEOUT_FLOOR_MS = 60_000`
+> plus `TRANSCRIBE_TIMEOUT_PER_SECOND_MS = 2_000`, derivation in the file
+> comment against BENCHMARK.md's ONNX-CPU real-time factors). Recording length
+> is the recorder's wall-clock duration, captured in `recordPhase`. Spawn,
+> capture, timeout and force-kill: `startKeshaTranscriber` in
+> `raycast/src/lib/process-tasks.ts` (SIGTERM at the timeout, SIGKILL 3 s
+> later). On any post-capture failure the temp WAV is preserved instead of
+> cleaned up and its path is surfaced via `keptAudioHint`
+> (`raycast/src/lib/dictation-controller.ts`). stderr is preferred over a
+> synthetic message on non-zero exit. Buffers are tail-capped — 16 MiB stdout,
+> 8 000 characters of stderr — by `capTail`.*
 
 ### Requirement: A successful transcript is copied to the clipboard; an empty one is an error
 
@@ -529,10 +549,6 @@ When the signal meter delivers no sample within a short window (~8 s) of recordi
 
 ## Open Issues
 
-- Recording is capped by `--max-seconds` but Transcription is capped at a fixed
-  60 s, and the two are unrelated: a 300 s recording of dense speech can exceed
-  the Transcription timeout on a cold Engine and fail after the audio is already
-  captured. The timeout is not user-configurable.
 - The Signal meter runs a Swift snippet through `/usr/bin/swift`, which requires
   Xcode or the Command Line Tools. On a machine without them the meter reports
   itself unavailable — correct behaviour, but the message does not say why, so

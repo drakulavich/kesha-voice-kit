@@ -73,6 +73,7 @@ export interface DictationControllerDeps {
   startTranscriber: (
     kesha: KeshaSpawn,
     audioPath: string,
+    timeoutMs: number,
   ) => RunningTask<string>;
   isSilentAudio: (audioPath: string) => Promise<boolean>;
   copyToClipboard: (text: string) => Promise<void>;

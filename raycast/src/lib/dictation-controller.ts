@@ -6,7 +6,7 @@ import {
   IDLE_WARN_MS,
   NO_SIGNAL_TIMEOUT_MS,
   parseMaxSeconds,
-  TRANSCRIBE_TIMEOUT_SECONDS,
+  transcribeTimeoutMs,
 } from "./dictation-config";
 import {
   notFoundMessage,
@@ -40,6 +40,10 @@ export function startDictationSession(
   let cancelled = false;
   let stopRequested = false;
   let tempDir: string | null = null;
+  let audioPath: string | null = null;
+  let recordedSeconds = 0;
+  let audioCaptured = false;
+  let keepAudio = false;
   let stopMonitoring: (() => void) | null = null;
   let recorder: RunningTask<void> | null = null;
   let transcriber: RunningTask<string> | null = null;
@@ -95,7 +99,7 @@ export function startDictationSession(
       if (cancelled) return;
 
       tempDir = await deps.createTempDir();
-      const audioPath = join(tempDir, "dictation.wav");
+      audioPath = join(tempDir, "dictation.wav");
 
       if (!(await recordPhase(kesha, audioPath, maxSeconds))) return;
 
@@ -105,20 +109,28 @@ export function startDictationSession(
         );
       }
 
+      // Past the silence check the temp WAV holds real speech: a transcription
+      // failure below must keep it, not discard it (#944).
+      audioCaptured = true;
+
       const result = await transcribePhase(kesha, audioPath);
       if (!result || cancelled) return;
 
       await deliverTranscript(result);
     } catch (err: unknown) {
       if (cancelled) return;
+      keepAudio = audioCaptured;
       await deps.showToast({ style: "failure", title: "Dictation failed" });
       setState({
         status: "error",
         message: err instanceof Error ? err.message : String(err),
+        hint: keepAudio && audioPath ? keptAudioHint(audioPath) : undefined,
       });
     } finally {
       releaseResources();
-      if (tempDir) await deps.cleanupTempDir(tempDir);
+      // Keep the recording when transcription failed so it can be recovered
+      // from the CLI; otherwise the private temp dir is cleaned up (#944).
+      if (tempDir && !keepAudio) await deps.cleanupTempDir(tempDir);
     }
   }
 
@@ -187,9 +199,13 @@ export function startDictationSession(
     }
 
     recorder = deps.startRecorder(kesha, audioPath, maxSeconds);
+    const recorderStartedAt = now();
     try {
       await recorder.done;
     } finally {
+      // Wall-clock capture length ≈ audio duration; it feeds the scaled
+      // transcription timeout so a long recording keeps proportional room (#944).
+      recordedSeconds = Math.max(0, (now() - recorderStartedAt) / 1000);
       recorder = null;
       stopMonitoring?.();
       stopMonitoring = null;
@@ -201,10 +217,11 @@ export function startDictationSession(
     kesha: KeshaSpawn,
     audioPath: string,
   ): Promise<TranscribeResult | null> {
+    const timeoutMs = transcribeTimeoutMs(recordedSeconds);
     setState({
       status: "transcribing",
       elapsedSeconds: 0,
-      timeoutSeconds: TRANSCRIBE_TIMEOUT_SECONDS,
+      timeoutSeconds: Math.round(timeoutMs / 1000),
     });
     await deps.showToast({
       style: "animated",
@@ -214,7 +231,7 @@ export function startDictationSession(
     if (cancelled) return null;
 
     stopTranscribeTimer = startTranscribingTimer(setState);
-    transcriber = deps.startTranscriber(kesha, audioPath);
+    transcriber = deps.startTranscriber(kesha, audioPath, timeoutMs);
     const result = normalizeTranscribeResult(audioPath, await transcriber.done);
     stopTranscribeTimer?.();
     stopTranscribeTimer = null;
@@ -248,6 +265,15 @@ export function startDictationSession(
   }
 }
 
+// Names the surviving recording and a copy-paste CLI command so a failed
+// transcription is recoverable instead of lost (#944).
+export function keptAudioHint(audioPath: string): string {
+  return [
+    `Your recording was kept at ${audioPath}`,
+    `Transcribe it from a terminal with: kesha "${audioPath}"`,
+  ].join("\n");
+}
+
 // Each reason has a different remedy, so the headline tracks it, not just the hint (#647).
 function preflightMessage(reason: EnginePreflightResult["reason"]): string {
   switch (reason) {
@@ -276,8 +302,8 @@ export function createDefaultDictationDeps(
     startRecordingMonitor,
     startRecorder: (kesha, audioPath, maxSeconds) =>
       startKeshaRecorder(kesha, audioPath, maxSeconds),
-    startTranscriber: (kesha, audioPath) =>
-      startKeshaTranscriber(kesha, audioPath),
+    startTranscriber: (kesha, audioPath, timeoutMs) =>
+      startKeshaTranscriber(kesha, audioPath, timeoutMs),
     isSilentAudio: isSilentWavFile,
   };
 }

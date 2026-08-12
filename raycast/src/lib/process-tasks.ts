@@ -1,10 +1,6 @@
 import { spawn as defaultSpawn } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { KeshaSpawn } from "./kesha-bin";
-import {
-  TRANSCRIBE_TIMEOUT_MS,
-  TRANSCRIBE_TIMEOUT_SECONDS,
-} from "./dictation-config";
 import type { RunningTask } from "./dictation-types";
 
 type SpawnFn = (
@@ -112,12 +108,14 @@ export function startKeshaRecorder(
 export function startKeshaTranscriber(
   kesha: KeshaSpawn,
   audioPath: string,
+  timeoutMs: number,
   deps: ProcessTaskDeps = {},
 ): RunningTask<string> {
   const spawn = deps.spawn ?? defaultSpawn;
   const kill = deps.kill ?? killProcessGroup;
   const schedule = deps.setTimeout ?? setTimeout;
   const unschedule = deps.clearTimeout ?? clearTimeout;
+  const timeoutSeconds = Math.round(timeoutMs / 1000);
   const proc = spawn(kesha.command, [...kesha.prefixArgs, audioPath], {
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
@@ -136,12 +134,12 @@ export function startKeshaTranscriber(
   const timeout = schedule(() => {
     timedOut = true;
     kill(proc, "SIGTERM");
-  }, TRANSCRIBE_TIMEOUT_MS);
+  }, timeoutMs);
   timeout.unref?.();
 
   const forceKill = schedule(() => {
     if (proc.exitCode == null) kill(proc, "SIGKILL");
-  }, TRANSCRIBE_TIMEOUT_MS + 3000);
+  }, timeoutMs + 3000);
   forceKill.unref?.();
 
   return {
@@ -150,7 +148,7 @@ export function startKeshaTranscriber(
       .then((exitCode) => {
         if (timedOut) {
           throw new Error(
-            `kesha transcription timed out after ${TRANSCRIBE_TIMEOUT_SECONDS} seconds.`,
+            `kesha transcription timed out after ${timeoutSeconds} seconds.`,
           );
         }
         if (exitCode !== 0) {

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MAX_SECONDS,
   MAX_ALLOWED_SECONDS,
+  TRANSCRIBE_TIMEOUT_FLOOR_MS,
+  TRANSCRIBE_TIMEOUT_PER_SECOND_MS,
   parseMaxSeconds,
+  transcribeTimeoutMs,
 } from "../src/lib/dictation-config";
 
 describe("parseMaxSeconds", () => {
@@ -31,5 +34,32 @@ describe("parseMaxSeconds", () => {
         `Max recording seconds must be an integer between 1 and ${MAX_ALLOWED_SECONDS}.`,
       );
     }
+  });
+});
+
+describe("transcribeTimeoutMs", () => {
+  it("gives a short recording only the floor (#944)", () => {
+    expect(transcribeTimeoutMs(0)).toBe(TRANSCRIBE_TIMEOUT_FLOOR_MS);
+    expect(transcribeTimeoutMs(30)).toBe(
+      TRANSCRIBE_TIMEOUT_FLOOR_MS + 30 * TRANSCRIBE_TIMEOUT_PER_SECOND_MS,
+    );
+  });
+
+  it("scales past the old fixed 60 s cap for a default-length recording (#944)", () => {
+    // A 300 s recording at DEFAULTS used to outrun the fixed 60 000 ms cap.
+    const scaled = transcribeTimeoutMs(DEFAULT_MAX_SECONDS);
+    expect(scaled).toBe(
+      TRANSCRIBE_TIMEOUT_FLOOR_MS +
+        DEFAULT_MAX_SECONDS * TRANSCRIBE_TIMEOUT_PER_SECOND_MS,
+    );
+    expect(scaled).toBeGreaterThan(60_000);
+  });
+
+  it("rounds fractional recording seconds up and never falls below the floor", () => {
+    expect(transcribeTimeoutMs(1.2)).toBe(
+      TRANSCRIBE_TIMEOUT_FLOOR_MS + 2 * TRANSCRIBE_TIMEOUT_PER_SECOND_MS,
+    );
+    expect(transcribeTimeoutMs(-5)).toBe(TRANSCRIBE_TIMEOUT_FLOOR_MS);
+    expect(transcribeTimeoutMs(Number.NaN)).toBe(TRANSCRIBE_TIMEOUT_FLOOR_MS);
   });
 });
