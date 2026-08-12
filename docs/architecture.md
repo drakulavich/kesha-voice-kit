@@ -210,8 +210,8 @@ pre-#688 install also `~/Library/Application Support/FluidAudio`,
 ## Build, test & release
 
 - **TS tests:** `tests/unit/` + `tests/integration/`, run with `bun test` /
-  `make test`.
-- **Rust tests:** `cargo nextest run --features tts` / `make rust-test`; nextest
+  `just test`.
+- **Rust tests:** `cargo nextest run --features tts` / `just rust-test`; nextest
   integration binaries live in `rust/tests/`. Never plain `cargo test` (CI uses
   nextest) except `cargo test --doc`.
 - **CI:** `ci.yml` (TS units + integration + type check), `rust-test.yml`
@@ -240,8 +240,8 @@ pre-#688 install also `~/Library/Application Support/FluidAudio`,
 | If you're changing… | Touch | Verify with |
 |---|---|---|
 | A CLI flag / output format | `src/cli.ts`, `src/cli/*`, `src/format.ts` | `bun test && bunx tsc --noEmit` |
-| ASR pipeline | `rust/src/backend/`, `rust/src/transcribe/` | `make rust-test` + `cargo check --features coreml --no-default-features` |
-| A TTS voice/engine | `rust/src/tts/`, `src/voice-routing.ts` | `make rust-test`; `cargo nextest run --features tts tts_` |
+| ASR pipeline | `rust/src/backend/`, `rust/src/transcribe/` | `just rust-test` + `cargo check --features coreml --no-default-features` |
+| A TTS voice/engine | `rust/src/tts/`, `src/voice-routing.ts` | `just rust-test`; `cargo nextest run --features tts tts_` |
 | A model version/pin | `rust/src/models.rs` | `verify-pin-bump` skill; `cargo test models::manifest_tests` |
 | Shell completions / manpage | regenerate, don't hand-edit | `bun run generate:shell-artifacts` |
 | A GitHub workflow | `.github/workflows/*` | `bun run check:workflows` + `actionlint` |

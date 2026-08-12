@@ -9,7 +9,7 @@ description: Use when touching anything release-shaped — version bumps, tags, 
 
 `package.json#version` (CLI) and `package.json#keshaEngine.version` (engine, mirrored in `rust/Cargo.toml`) are decoupled. `src/engine-install.ts` downloads `v${keshaEngine.version}` with fallback to `package.json#version`.
 
-Version drift gate: `bun .github/scripts/check-versions.ts` (`bun run check:versions` / `make versions`, CI "🔢 Check version drift") enforces:
+Version drift gate: `bun .github/scripts/check-versions.ts` (`bun run check:versions`, CI "🔢 Check version drift") enforces:
 
 1. `keshaEngine.version === rust/Cargo.toml#version` — one engine version stored twice; drift makes `kesha install` fetch the wrong source/release.
 2. `package.json#version >= keshaEngine.version` — CLI may lead for CLI-only patches, never lag.
@@ -78,7 +78,7 @@ Two things do *not* go through this lane. A **beta marker** (`vX.Y.Z-beta.N-cli`
      kesha-engine-darwin-arm64
    ```
 
-6. Treat `make smoke-test` as a local sanity check only; it can run the old globally installed CLI/engine. The release gate is draft-asset validation.
+6. Treat `just smoke-test` as a local sanity check only; it can run the old globally installed CLI/engine. The release gate is draft-asset validation.
 7. Publish: `gh release edit vX.Y.Z --draft=false`. A bare engine tag reaches **no npm package** — `npm-publish.yml` skips its publish job on `engine_only` (#729) — but it does fire `🍺 Homebrew Tap`. The CLI arrives with its own `-cli` marker; see the `release-cli` skill.
 8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo. CLI-only marker releases skip Homebrew. **Engine releases no longer attach Linux `.deb`/`.rpm`**: those packages carry `package.json#version`, which `main` holds ahead of npm since #691, so naming them on an engine tag meant naming a CLI version npm had not published. The gate that checked this (`assert-npm-published.mjs`) made stable engine tags unreleasable and is gone. They ship from the stable `-cli` marker instead (#728) — the package *is* the CLI — which is the one release that publishes the same version to npm in the same run; `linux-packages.yml` keeps building and smoke-installing the pair on `main` as CI. `check-workflows.ts` holds both halves: `forbidLinuxPackaging` keeps them off engine tags, `requireNpmPublishAfterPackaging` keeps the `-cli` lane's npm publish downstream of the packaging job.
 
@@ -175,11 +175,11 @@ GitHub's immutable-releases permanently reserves tag names after publish. **Brok
 
 ## DRAFT RELEASE ASSET URLS ARE 404 TO ANONYMOUS CLIENTS — USE `gh release download`
 
-`build-engine.yml` creates a draft release with 3 platform binaries. Draft asset URLs 404 for unauthenticated clients, so `curl`, `kesha install`, and anonymous `make smoke-test` cannot validate the draft. Authenticated `gh release download vX.Y.Z -p "..." -D <dir>` works on drafts and is the pre-undraft release gate; `make smoke-test` is only a post-undraft sanity check, but post-#291 un-draft also triggers npm publish.
+`build-engine.yml` creates a draft release with 3 platform binaries. Draft asset URLs 404 for unauthenticated clients, so `curl`, `kesha install`, and anonymous `just smoke-test` cannot validate the draft. Authenticated `gh release download vX.Y.Z -p "..." -D <dir>` works on drafts and is the pre-undraft release gate; `just smoke-test` is only a post-undraft sanity check, but post-#291 un-draft also triggers npm publish.
 
-## `make smoke-test` ALONE DOES NOT VALIDATE A NEW ENGINE — `gh release download` THE DRAFT BINARY AND EXERCISE IT BEFORE `gh release edit --draft=false`
+## `just smoke-test` ALONE DOES NOT VALIDATE A NEW ENGINE — `gh release download` THE DRAFT BINARY AND EXERCISE IT BEFORE `gh release edit --draft=false`
 
-`make smoke-test` runs `bun link @drakulavich/kesha-voice-kit`, `kesha install`, then `bun scripts/smoke-test.ts`, but a prior `bun add -g` can leave the old global shim in front. Then `kesha --version` and `kesha install` exercise the previous CLI/engine and produce a false-green "6/6 passed". v1.5.0 hit this: `--capabilities-json` passed, Kokoro synth crashed (`Invalid input name: tokens`), and local smoke still routed through v1.4.4 CLI + v1.4.1 engine.
+`just smoke-test` runs `bun link @drakulavich/kesha-voice-kit`, `kesha install`, then `bun scripts/smoke-test.ts`, but a prior `bun add -g` can leave the old global shim in front. Then `kesha --version` and `kesha install` exercise the previous CLI/engine and produce a false-green "6/6 passed". v1.5.0 hit this: `--capabilities-json` passed, Kokoro synth crashed (`Invalid input name: tokens`), and local smoke still routed through v1.4.4 CLI + v1.4.1 engine.
 
 Before `gh release edit --draft=false`, always validate the draft binary directly with authenticated `gh release download`, not `curl` (drafts 404 anonymously). Un-draft starts `📦 npm Publish` within ~60 s; npm unpublish is limited/noisy, and #291's Greptile review flagged this ordering.
 

@@ -118,7 +118,7 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 ./node_modules/.bin/kesha <repo>/tests/fixtures/benchmark/09-ustanovi-poka-klod-kod.ogg
 ```
 
-**`make smoke-test` can false-green here.** It runs whatever `kesha` resolves to, and a previously `bun add -g`'d install outranks `bun link`; if its output prints an older version, it tested an older CLI and proves nothing about this release.
+**`just smoke-test` can false-green here.** It runs whatever `kesha` resolves to, and a previously `bun add -g`'d install outranks `bun link`; if its output prints an older version, it tested an older CLI and proves nothing about this release.
 
 ### Step 6 — Re-lead the base version on `main`
 

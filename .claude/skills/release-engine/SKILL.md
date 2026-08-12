@@ -43,7 +43,7 @@ gh run list --workflow rust-test.yml --branch main --limit 1
 cargo fmt --check --manifest-path rust/Cargo.toml
 cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 cargo check --manifest-path rust/Cargo.toml --features coreml --no-default-features
-make rust-test
+just rust-test
 bunx tsc --noEmit && bun test && bun run check:versions
 ```
 
@@ -86,7 +86,7 @@ Expect `Darwin synthesis smoke (advisory)` to fail — it is `continue-on-error`
 
 ### Step 4 — Validate the draft before publishing
 
-Draft asset URLs return **404 to unauthenticated clients**, so `curl` and `make smoke-test` can false-green through a stale global install. Download with `gh`:
+Draft asset URLs return **404 to unauthenticated clients**, so `curl` and `just smoke-test` can false-green through a stale global install. Download with `gh`:
 
 ```bash
 gh release download vX.Y.Z -p 'kesha-engine-darwin-arm64' -p 'SHA256SUMS' -p 'kesha-release-manifest.json'
@@ -120,7 +120,7 @@ Un-drafting a **bare** engine tag publishes nothing to npm — `npm-publish.yml`
 
 ### Step 6 — Verify against the published release
 
-**`make smoke-test` is not sufficient on its own.** It runs whatever `kesha` resolves to, and a previously `bun add -g`'d install outranks `bun link` — a run that prints an old version tested an old CLI. Verify the real artifact in an isolated path:
+**`just smoke-test` is not sufficient on its own.** It runs whatever `kesha` resolves to, and a previously `bun add -g`'d install outranks `bun link` — a run that prints an old version tested an old CLI. Verify the real artifact in an isolated path:
 
 ```bash
 SMOKE=$(mktemp -d) && export KESHA_ENGINE_BIN="$SMOKE/kesha-engine"

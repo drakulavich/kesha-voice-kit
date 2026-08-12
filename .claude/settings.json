@@ -37,13 +37,7 @@
       "Bash(tail *)",
       "Bash(wc *)",
       "Bash(grep *)",
-      "Bash(just:*)",
-      "Bash(make test)",
-      "Bash(make lint)",
-      "Bash(make unit)",
-      "Bash(make integration)",
-      "Bash(make smoke-test)",
-      "Bash(make release)"
+      "Bash(just:*)"
     ]
   },
   "hooks": {

@@ -7,10 +7,10 @@ Thanks for your interest in `@drakulavich/kesha-voice-kit`!
 ```bash
 git clone https://github.com/drakulavich/kesha-voice-kit.git
 cd kesha-voice-kit
-make dev-setup           # checks toolchains/system deps, runs safe local setup
+just dev-setup           # checks toolchains/system deps, runs safe local setup
 ```
 
-`make dev-setup` is the one-command bootstrap: it auto-runs the safe,
+`just dev-setup` is the one-command bootstrap: it auto-runs the safe,
 project-local steps (`bun install`, `bun link`, `git lfs pull`, and installs
 `cargo-nextest`) and **checks** for the system dependencies the Rust build needs
 (`protoc`, `libopus` + `pkg-config`, `libclang` on Linux, `git-lfs`), printing
@@ -65,14 +65,14 @@ where tests live, and a "where to change X" table.
 ## Development
 
 ```bash
-make cli-fast       # typecheck + version drift + deterministic CLI tests
-make test           # bun unit + integration tests
-make lint           # bunx tsc --noEmit
-make smoke-test     # bun link → kesha install → run against fixtures
-make release        # lint + test + smoke-test
+bun run check       # typecheck + version drift + deterministic CLI tests
+just test           # bun unit + integration tests
+bun run lint        # bunx tsc --noEmit
+just smoke-test     # bun link → kesha install → run against fixtures
+just release        # lint + test + smoke-test
 ```
 
-Use `bun run check` or `make cli-fast` for a quick local confidence pass before
+Use `bun run check` for a quick local confidence pass before
 opening small CLI-only PRs. It avoids the engine-backed E2E lanes while still
 covering command routing, stdout/stderr contracts, help goldens, and wrapper
 validation.
@@ -141,7 +141,7 @@ kesha-voice-kit/
 ## Pull requests
 
 - Branch from `main`. Don't pile unrelated changes into one PR.
-- Run `make test && make lint` before pushing. For Rust changes, also `cd
+- Run `just test && bun run lint` before pushing. For Rust changes, also `cd
   rust && cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test`.
 - CI must pass before merging. `main` is protected.
 - Squash-merge preferred. Greptile reviews are advisory but their P1/P2
