@@ -36,9 +36,9 @@ pub const TRANSCRIBE_DIARIZE_FEATURE: &str = "transcribe.diarize";
 pub const TRANSCRIBE_ITN_FEATURE: &str = "transcribe.itn";
 
 /// Capability flag for per-word timings inside `--json --timestamps` segments.
-/// Backend-gated: only the ONNX TDT decoder retains the emission frame of each
-/// token today, so CoreML builds omit both the flag and the `words` key (#720).
-#[cfg_attr(feature = "coreml", allow(dead_code))]
+/// Backend-gated rather than platform-gated: both TDT decoders keep the emission
+/// frame of each token, so every published binary carries it — but a segment can
+/// still omit `words` (`--itn` rewrote it, or the words did not line up) (#720).
 pub const TRANSCRIBE_WORDS_FEATURE: &str = "transcribe.words";
 
 /// Duration at which the `Auto` VAD mode flips to VAD preprocessing.
@@ -1649,8 +1649,9 @@ mod tests {
         assert!(segs[0].words.is_none(), "{:?}", segs[0]);
     }
 
-    /// CoreML cannot produce words today; `None` must survive the segmenting
-    /// paths as absence rather than becoming an empty list (#720).
+    /// A backend that produced no words for a slice reports `None`, and that must
+    /// survive the segmenting paths as absence rather than becoming an empty
+    /// list — the two mean different things to a caller (#720).
     #[test]
     fn segments_omit_words_when_the_backend_has_none() {
         let samples = vec![0.0_f32; 16_000 * 2];

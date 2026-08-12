@@ -13,6 +13,7 @@ pub mod onnx;
 ///
 /// Times are relative to the *slice* handed to the backend, not to the file; the
 /// caller owns the offset.
+#[derive(Debug)]
 pub struct TranscriptionChunk {
     pub text: String,
     pub words: Option<Vec<WordTiming>>,
