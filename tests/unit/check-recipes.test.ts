@@ -189,9 +189,14 @@ describe("sweptFiles", () => {
 
 // The gate's own subject matter: the extractor must find the real references and no English ones.
 describe("the repository's own references", () => {
-  test("CLAUDE.md points at the recipes the pre-push gate is made of", () => {
+  test("CLAUDE.md spells its executable rituals as recipes, not as shell to copy", () => {
     const found = new Set(names("CLAUDE.md", readRepoFile("CLAUDE.md")));
-    expect([...found].sort()).toEqual(["preflight", "verify-darwin-full"]);
+    expect([...found].sort()).toEqual([
+      "preflight",
+      "verify-darwin-full",
+      "worktree",
+      "worktree-rm",
+    ]);
   });
 
   test("rust-test.yml calls verify-darwin-full rather than repeating its flags", () => {
