@@ -394,4 +394,55 @@ mod tests {
             "second call collapsed to a degenerate prefix: {second:?}"
         );
     }
+
+    /// `chunk_from`'s alignment gate is exercised above against hand-built
+    /// timings; this is the half no unit test can reach — that FluidAudio's own
+    /// grouping actually satisfies it on real speech, so the gate passes words
+    /// through rather than silently dropping every one of them (#720).
+    ///
+    /// Deliberately outside `coreml-regression`'s two-test allowlist in
+    /// `rust-test.yml`: that job runs on a virtualized runner with no Neural
+    /// Engine, and this needs a real one.
+    #[test]
+    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    fn real_speech_yields_words_the_segmenting_paths_will_accept() {
+        let wav = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/benchmark-en/01-check-email.ogg"
+        );
+        let bytes = std::fs::read(wav).expect("read sentence fixture");
+        assert!(
+            !bytes.starts_with(b"version https://git-lfs"),
+            "fixture is an unmaterialized Git LFS pointer — run `git lfs pull` before this test"
+        );
+        let samples = crate::audio::load_audio(wav).expect("decode sentence fixture");
+
+        let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
+        let chunk = be
+            .transcribe_samples(&samples)
+            .expect("transcribe_samples with words");
+        let words = chunk
+            .words
+            .as_ref()
+            .unwrap_or_else(|| panic!("words dropped for real speech: {chunk:?}"));
+
+        assert_eq!(
+            words.iter().map(|w| w.word.as_str()).collect::<Vec<_>>(),
+            chunk.text.split_whitespace().collect::<Vec<_>>()
+        );
+
+        // Slice-local and in order: `words_onto_segment` owns the file offset, so
+        // a backend that pre-offset them would break every segmenting path.
+        let mut previous = f32::NEG_INFINITY;
+        for w in words {
+            assert!(w.start >= previous, "starts went backwards at {w:?}");
+            assert!(w.end >= w.start, "{w:?} ends before it starts");
+            previous = w.start;
+        }
+        assert!(
+            words[0].start < 1.0,
+            "first word starts at {:.2}s — times look file-relative, not slice-local",
+            words[0].start
+        );
+    }
 }
