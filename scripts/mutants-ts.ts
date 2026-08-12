@@ -4,16 +4,9 @@ import { dirname, join, relative, resolve } from "path";
 // @ts-expect-error stryker.conf.mjs is untyped JS config; reading it keeps one source of truth.
 import baseConfig from "../stryker.conf.mjs";
 
-// Integration suites spawn the CLI and the engine, and a dry run including one of them times
-// out however few suites there are — measured on src/engine.ts with four. Opt in with
-// --with-integration when the source is only exercised across that boundary.
+// Integration suites spawn the CLI and the engine, which costs minutes rather than seconds.
 const TEST_ROOTS = ["tests/unit"];
 const INTEGRATION_ROOT = "tests/integration";
-// The Bun runner's dry run stops answering on a large set — the limit stryker.conf.mjs
-// documents, met from the other side. It is cost- rather than count-shaped: 12 light suites
-// ran, 15 engine-spawning ones did not, and neither timeoutMS, dryRunTimeoutMinutes nor
-// bun.timeout moves it. Suites are added a hop-tier at a time while the total fits.
-const MAX_SUITES = 12;
 const GENERATED_CONFIG = `stryker.generated.${process.pid}.json`;
 
 const USAGE = [
@@ -97,7 +90,7 @@ export function reachableModules(
 
 /**
  * Covering suites, nearest first: a direct importer ranks above one that only reaches the
- * source through a shim. The order is what makes the cap in `main` defensible.
+ * source through a shim. The order is what the run reports, not what it selects.
  */
 export function rankCoveringTests(
   sources: string[],
@@ -116,23 +109,6 @@ export function rankCoveringTests(
       return hops.length === 0 ? [] : [{ path: test.path, hops: Math.min(...hops) }];
     })
     .sort((a, b) => a.hops - b.hops || a.path.localeCompare(b.path));
-}
-
-/**
- * Whole hop-tiers while they fit: mixing half of a tier in would make the reported score depend
- * on filename order. Always yields the nearest tier, even when that one alone is over budget —
- * measuring the closest suites beats refusing to measure.
- */
-export function takeNearestTiers<T extends { hops: number }>(ranked: T[], max: number): T[] {
-  const kept: T[] = [];
-  for (let i = 0; i < ranked.length; ) {
-    const hops = ranked[i]!.hops;
-    const tier = ranked.slice(i).filter((test) => test.hops === hops);
-    if (kept.length > 0 && kept.length + tier.length > max) break;
-    kept.push(...tier);
-    i += tier.length;
-  }
-  return kept;
 }
 
 export function selectCoveringTests(
@@ -195,17 +171,9 @@ async function main(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const kept = takeNearestTiers(ranked, MAX_SUITES);
-  const testFiles = kept.map((test) => test.path);
+  const testFiles = ranked.map((test) => test.path);
   console.error(`mutating ${sources.join(", ")} against ${testFiles.length} suite(s):`);
-  for (const test of kept) console.error(`  ${test.path}${test.hops > 1 ? ` (${test.hops} hops)` : ""}`);
-  const dropped = ranked.slice(kept.length);
-  if (dropped.length > 0) {
-    console.error(
-      `not measured: ${dropped.length} further suite(s) reach these sources, but the Bun runner's dry run stops answering on a set this size. A survivor below may still be killed by:`,
-    );
-    for (const test of dropped) console.error(`  ${test.path} (${test.hops} hops)`);
-  }
+  for (const test of ranked) console.error(`  ${test.path}${test.hops > 1 ? ` (${test.hops} hops)` : ""}`);
 
   // Written beside stryker.conf.mjs on purpose: `ignorePatterns` resolve against the config's
   // directory, and a config outside the repo root sends the sandbox copy into rust/target.
