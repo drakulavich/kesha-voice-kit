@@ -9,6 +9,37 @@
 //! is wired so AAC-in-M4A probes succeed.
 
 use kesha_engine::audio;
+use kesha_engine::errors::{code_of, ErrorCode};
+
+// #935: an unreadable container is the user's input, not an Engine fault, so
+// ingest must code it `E_BAD_AUDIO` rather than falling back to `E_INTERNAL`.
+// This drives the real `open_format` path (site rust/src/audio.rs:78) with a
+// non-container; the sibling sites :85/:101/:108 take the identical
+// `.coded(ErrorCode::BadAudio)` change but need a demuxable-yet-unusable
+// container (video-only track, header without a sample rate, undecodable
+// codec) that can't be synthesised as a tiny deterministic fixture.
+#[test]
+fn unsupported_container_is_coded_bad_audio_not_internal() {
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-badaudio-code-")
+        .suffix(".bin")
+        .tempfile()
+        .unwrap();
+    std::fs::write(tmp.path(), b"not an audio file at all").unwrap();
+    let path = tmp.path().to_str().unwrap();
+
+    let err = audio::ensure_audio_track(path).expect_err("non-container must fail");
+    assert_eq!(
+        code_of(&err),
+        ErrorCode::BadAudio,
+        "unreadable input must be E_BAD_AUDIO, got {:?}: {err:#}",
+        code_of(&err)
+    );
+
+    // The same path reached through the decode entry point must agree.
+    let err = audio::load_audio(path).expect_err("decoding a non-container must fail");
+    assert_eq!(code_of(&err), ErrorCode::BadAudio, "{err:#}");
+}
 
 #[test]
 fn ensure_audio_track_bails_on_unsupported_container() {

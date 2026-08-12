@@ -46,8 +46,8 @@ The Engine SHALL decode every supported container in-process and SHALL NOT depen
 - WHEN Ira transcribes it
 - THEN the Engine fails with a message naming the file
 - AND no external process is spawned to try again
-- AND the Error code is `E_INTERNAL`, because that failure carries no explicit
-  code — see Open Issues
+- AND the Error code is `E_BAD_AUDIO`, because an undecodable container is the
+  user's input, not an Engine fault
 
 > *Technical Note — `rust/src/audio.rs:19-24` registers symphonia's enabled
 > codecs plus `symphonia_adapter_libopus::OpusDecoder`; `open_format`
@@ -106,7 +106,7 @@ Every transcription entry point SHALL validate that the input is a supported con
 
 ### Requirement: A missing input is distinguished from an unreadable one
 
-The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` Error code, and a path that exists but cannot be **opened**, or whose packet stream raises a hard **decode** fault, with `E_BAD_AUDIO`, so a caller can tell a typo from an unreadable file without parsing prose. Failures raised anywhere else in ingest carry no explicit code — see Open Issues.
+The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` Error code, and a path that exists but is otherwise unreadable — it cannot be **opened**, carries no container the Engine can demux, holds no supported audio track, declares no sample rate, uses a codec the Engine cannot decode, or raises a hard **decode** fault — with `E_BAD_AUDIO`, so a caller can tell a typo from an unreadable file without parsing prose, and never sees `E_INTERNAL` for input the Engine simply cannot read.
 
 #### Scenario: Ira mistypes a filename in a batch
 
@@ -126,21 +126,22 @@ The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` 
 
 - GIVEN a container the Engine can demux carrying a codec it has no decoder for
 - WHEN Ira transcribes it
-- THEN the failure carries `E_INTERNAL`, not `E_BAD_AUDIO`, because that branch
-  is uncoded — the taxonomy and the code disagree here
+- THEN the failure carries `E_BAD_AUDIO`, because the audio inside is unusable —
+  the user's input, not an Engine fault
 
 > *Technical Note — `open_format` (`rust/src/audio.rs:51-63`) maps
 > `io::ErrorKind::NotFound` to `ErrorCode::InputNotFound` and every other open
-> failure to `ErrorCode::BadAudio`; hard decode faults are tagged
-> `ErrorCode::BadAudio` at `rust/src/audio.rs:119` and `:137`. Everything raised
-> with a bare `with_context` — unsupported format (`:78`), no supported audio
-> tracks (`:85`), unknown sample rate (`:101`), unsupported codec (`:108`) —
-> stays uncoded, and `code_of` falls back to `ErrorCode::Internal`
-> (`rust/src/errors.rs:193-197`, asserted by
-> `code_of_falls_back_to_internal_for_uncoded`). The coded pair is in the
-> taxonomy printed by `--error-codes-json` and mirrored TS-side in
-> `src/error-codes.ts`; their category is `Input`
-> (`rust/src/errors.rs:266-267`).*
+> failure to `ErrorCode::BadAudio`. The remaining ingest failures are tagged
+> `ErrorCode::BadAudio` via `CodedContext::coded`: unsupported format (`:78`),
+> no supported audio tracks (`:85`), unknown sample rate (`:101`), unsupported
+> codec (`:108`), and hard decode faults (`:119`, `:137`). No ingest failure
+> falls through to `code_of`'s `ErrorCode::Internal` default
+> (`rust/src/errors.rs:193-197`). `E_BAD_AUDIO` is in the taxonomy printed by
+> `--error-codes-json` and mirrored TS-side in `src/error-codes.ts`; its
+> category is `Input` (`rust/src/errors.rs:266-267`). Only the unsupported-format
+> branch has a real-input regression test (`rust/tests/audio_format.rs`); the
+> other three take the identical change but need a demuxable-yet-unusable
+> container no tiny deterministic fixture can synthesise.*
 
 ### Requirement: Recoverable decode faults are skipped, unrecoverable ones stop the read
 
@@ -259,16 +260,6 @@ Audio Language detection SHALL be answered from a bounded leading prefix of the 
   buffer unchanged (`rust/src/audio.rs:159-167`, covered by a unit test that
   asserts it does not panic). That is a defensive path, not a specified
   behaviour — what a zero-channel container *should* produce is undecided.
-- **Four of the six ingest failure modes report `E_INTERNAL`.** Unsupported
-  format, no supported audio tracks, unknown sample rate, and unsupported codec
-  are raised with a bare `with_context`, so `code_of` falls back to
-  `ErrorCode::Internal` — a code whose own title is "Unexpected internal error"
-  and whose category is `Internal`, for four failures that are squarely the
-  user's input. `E_BAD_AUDIO` exists and is applied only to open and hard-decode
-  failures. A caller cannot currently distinguish "your file is not audio I can
-  read" from "the Engine has a bug". These almost certainly all want
-  `E_BAD_AUDIO`; changing them is a taxonomy change, not a spec change, so it is
-  recorded here rather than asserted above.
 - The set of supported containers is inherited from symphonia's enabled feature
   set plus the Opus adapter. No test pins that list, so a dependency bump could
   silently add or drop a container.

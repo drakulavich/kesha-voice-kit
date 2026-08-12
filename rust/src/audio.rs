@@ -75,14 +75,16 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
-        .with_context(|| format!("unsupported audio format: {path}"))?;
+        .with_context(|| format!("unsupported audio format: {path}"))
+        .coded(ErrorCode::BadAudio)?;
 
     let track = probed
         .format
         .tracks()
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-        .with_context(|| format!("no supported audio tracks in: {path}"))?;
+        .with_context(|| format!("no supported audio tracks in: {path}"))
+        .coded(ErrorCode::BadAudio)?;
 
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
@@ -98,14 +100,16 @@ fn decode_packets<F: FnMut(&[f32])>(path: &str, mut on_samples: F) -> Result<(u3
 
     let sample_rate = codec_params
         .sample_rate
-        .with_context(|| format!("unknown sample rate in: {path}"))?;
+        .with_context(|| format!("unknown sample rate in: {path}"))
+        .coded(ErrorCode::BadAudio)?;
     let channels = codec_params.channels.map(|c| c.count()).unwrap_or(1);
 
     let dec_opts = DecoderOptions::default();
     let codec_registry = get_codec_registry();
     let mut decoder = codec_registry
         .make(&codec_params, &dec_opts)
-        .with_context(|| format!("unsupported codec in: {path}"))?;
+        .with_context(|| format!("unsupported codec in: {path}"))
+        .coded(ErrorCode::BadAudio)?;
 
     let mut sample_buf: Option<SampleBuffer<f32>> = None;
 
