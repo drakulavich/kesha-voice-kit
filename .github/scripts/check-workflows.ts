@@ -39,7 +39,14 @@ function requirePinnedActions(path: string, contents: string): string[] {
   return errors;
 }
 
-type Step = { name?: unknown; run?: unknown; uses?: unknown; if?: unknown; shell?: unknown; with?: { filters?: unknown } };
+type Step = {
+  name?: unknown;
+  run?: unknown;
+  uses?: unknown;
+  if?: unknown;
+  shell?: unknown;
+  with?: { filters?: unknown } & Record<string, unknown>;
+};
 
 function jobSteps(document: unknown, job: string): Step[] | undefined {
   const steps = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs?.[job]?.steps;
@@ -285,6 +292,81 @@ export function requireBashOnWindowsRunSteps(path: string, document: unknown): s
 }
 
 /**
+ * Fails when a restore-only model cache has no writer, or has one that disagrees about the entry.
+ *
+ * `cache-write: "false"` hands the whole responsibility for an entry to cache-seed.yml (#661). Nothing
+ * connected the two halves, so `macOS-kesha-models-tts-v1` was restored by the release-gating darwin
+ * smoke for months while no job ever wrote it — a silent cold download, not a failure (#877). The path
+ * set and archive mode are compared too: a reader whose path set differs from the writer's misses every
+ * time and looks exactly the same from the outside (#860).
+ */
+type CacheEntry = { key: string; paths: string[]; crossOs: boolean };
+
+const cachePaths = (value: unknown): string[] =>
+  String(value ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+const describeEntry = (entry: CacheEntry) =>
+  `path ${JSON.stringify(entry.paths)}${entry.crossOs ? " (cross-OS)" : ""}`;
+
+/** Every exact key cache-seed.yml saves, with the path set and archive mode it saves under. */
+export function collectCacheWriters(document: unknown): CacheEntry[] {
+  const jobs = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs ?? {};
+  return Object.values(jobs).flatMap((job) =>
+    (Array.isArray(job?.steps) ? (job.steps as Step[]) : [])
+      .filter((step) => typeof step?.uses === "string" && step.uses.startsWith("actions/cache/save"))
+      .map((step) => ({
+        key: String(step.with?.key ?? ""),
+        paths: cachePaths(step.with?.path),
+        crossOs: String(step.with?.enableCrossOsArchive ?? false) === "true",
+      })),
+  );
+}
+
+export function requireRestoreOnlyCachesHaveAWriter(
+  path: string,
+  document: unknown,
+  writers: CacheEntry[],
+): string[] {
+  const jobs = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs;
+  if (!jobs || typeof jobs !== "object") return [];
+
+  const errors: string[] = [];
+  for (const [name, job] of Object.entries(jobs)) {
+    if (!Array.isArray(job?.steps)) continue;
+    for (const step of job.steps as Step[]) {
+      if (step?.uses !== "./.github/actions/install-kesha-backend") continue;
+      if (String(step.with?.["cache-write"] ?? "true") !== "false") continue;
+
+      const reader: CacheEntry = {
+        key: String(step.with?.["cache-key"] ?? ""),
+        paths: cachePaths(step.with?.["cache-path"]),
+        crossOs: String(step.with?.["cache-cross-os"] ?? false) === "true",
+      };
+      const writer = writers.find((entry) => entry.key === reader.key);
+      if (!writer) {
+        errors.push(
+          `${path}: \`${name}\` restores \`${reader.key}\` with cache-write false, but no cache-seed.yml job saves that key — it can only ever cold-download (#877)`,
+        );
+        continue;
+      }
+      if (
+        writer.paths.join("\n") !== reader.paths.join("\n") ||
+        writer.crossOs !== reader.crossOs
+      ) {
+        errors.push(
+          `${path}: \`${name}\` restores \`${reader.key}\` at ${describeEntry(reader)}, but cache-seed.yml saves it at ${describeEntry(writer)}; a restore that disagrees with its writer never hits (#877)`,
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
  * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
  * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
  * so an uncovered script means edits to a gate skip the tests that prove it works.
@@ -336,7 +418,7 @@ function describeUnreadable(path: string, err: unknown): string {
   return `${path}: ${err instanceof Error ? err.message : String(err)}`;
 }
 
-function checkFile(path: string, testedScripts: string[]): string[] {
+function checkFile(path: string, testedScripts: string[], cacheWriters: CacheEntry[]): string[] {
   try {
     const contents = readFileSync(path, "utf8");
     const document = parse(contents);
@@ -348,12 +430,15 @@ function checkFile(path: string, testedScripts: string[]): string[] {
       ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
+      ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
     ];
   } catch (err) {
     return [describeUnreadable(path, err)];
   }
 }
+
+const SEED_WORKFLOW = ".github/workflows/cache-seed.yml";
 
 function main(): void {
   const files = dirs.flatMap((dir) => collectYamlFiles(dir)).sort();
@@ -363,7 +448,11 @@ function main(): void {
   }
 
   const testedScripts = collectTestedScripts();
-  const errors = files.flatMap((path) => checkFile(path, testedScripts));
+  // A missing seed workflow leaves every restore-only lane unwritten, which is the failure to report.
+  const cacheWriters = existsSync(SEED_WORKFLOW)
+    ? collectCacheWriters(parse(readFileSync(SEED_WORKFLOW, "utf8")))
+    : [];
+  const errors = files.flatMap((path) => checkFile(path, testedScripts, cacheWriters));
   for (const error of errors) console.error(error);
 
   if (errors.length > 0) {

@@ -1,8 +1,10 @@
 import { readdirSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import {
+  collectCacheWriters,
   forbidLinuxPackaging,
   requireBashOnWindowsRunSteps,
+  requireRestoreOnlyCachesHaveAWriter,
   requireDarwinSmokeCoversBothEngines,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
@@ -354,5 +356,68 @@ describe("requireBashOnWindowsRunSteps", () => {
 
   test("a matrix it cannot resolve is not treated as windows", () => {
     expect(errorsFor(matrixJob({ os: "${{ fromJSON(needs.plan.outputs.os) }}" }))).toEqual([]);
+  });
+});
+
+describe("requireRestoreOnlyCachesHaveAWriter", () => {
+  const SEED = ".github/workflows/cache-seed.yml";
+  const writers = collectCacheWriters(parseRepoYaml(SEED));
+
+  const reader = (inputs: Record<string, string>) =>
+    job("smoke", [
+      { name: "install", uses: "./.github/actions/install-kesha-backend", with: { "cache-write": "false", ...inputs } },
+    ]);
+  const MODELS = { "cache-key": "models-v1", "cache-path": "~/.cache/kesha\n~/.cache/fluidaudio\n" };
+  const seeded = [{ key: "models-v1", paths: ["~/.cache/kesha", "~/.cache/fluidaudio"], crossOs: false }];
+  const errorsFor = (document: unknown, entries = seeded) =>
+    requireRestoreOnlyCachesHaveAWriter(CI, document, entries);
+
+  test("every restore-only lane in the repo has a matching writer", () => {
+    for (const file of readdirSync(repoPath(".github/workflows"))) {
+      const path = `.github/workflows/${file}`;
+      const errors = requireRestoreOnlyCachesHaveAWriter(path, parseRepoYaml(path), writers);
+      expect([path, errors]).toEqual([path, []]);
+    }
+  });
+
+  test("passes when the reader and the seed agree", () => {
+    expect(errorsFor(reader(MODELS))).toEqual([]);
+  });
+
+  test("fails when no seed job writes the key it restores", () => {
+    const errors = errorsFor(reader({ ...MODELS, "cache-key": "models-v2" }));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("no cache-seed.yml job saves that key");
+  });
+
+  test("fails when the seed saves a different path set", () => {
+    const errors = errorsFor(reader({ ...MODELS, "cache-path": "~/.cache/kesha" }));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("never hits");
+  });
+
+  test("fails when the two halves disagree about the cross-OS archive", () => {
+    expect(errorsFor(reader({ ...MODELS, "cache-cross-os": "true" }))).toHaveLength(1);
+  });
+
+  // A lane that seeds itself owns its entry; the rule is about handing that job to cache-seed.yml.
+  test("ignores a lane that still writes its own cache", () => {
+    const document = reader({ ...MODELS, "cache-write": "${{ github.event_name != 'pull_request' }}" });
+    expect(errorsFor(document)).toEqual([]);
+  });
+
+  test("collectCacheWriters reads a multi-line path block and the cross-OS flag", () => {
+    const save = job("seed", [
+      {
+        uses: "actions/cache/save@55cc834",
+        with: { path: ".kesha-ci-cache\n", key: "models-v3", enableCrossOsArchive: true },
+      },
+    ]);
+    expect(collectCacheWriters(save)).toEqual([{ key: "models-v3", paths: [".kesha-ci-cache"], crossOs: true }]);
+  });
+
+  test("a restore step is not a writer", () => {
+    const restore = job("seed", [{ uses: "actions/cache/restore@55cc834", with: { path: "x", key: "models-v3" } }]);
+    expect(collectCacheWriters(restore)).toEqual([]);
   });
 });
