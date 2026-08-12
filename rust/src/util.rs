@@ -48,14 +48,16 @@ pub mod test_env {
     impl EnvGuard {
         pub fn set(key: &'static str, val: &str) -> Self {
             let original = std::env::var(key).ok();
-            // SAFETY: the caller holds [`lock`], so no other test thread touches the environment.
+            // SAFETY: callers must hold [`lock`], which serializes every env-mutating
+            // test in the crate. #954 tracks making that a type-level requirement.
             unsafe { std::env::set_var(key, val) };
             Self { key, original }
         }
 
         pub fn unset(key: &'static str) -> Self {
             let original = std::env::var(key).ok();
-            // SAFETY: the caller holds [`lock`], so no other test thread touches the environment.
+            // SAFETY: callers must hold [`lock`], which serializes every env-mutating
+            // test in the crate. #954 tracks making that a type-level requirement.
             unsafe { std::env::remove_var(key) };
             Self { key, original }
         }
@@ -65,9 +67,9 @@ pub mod test_env {
         fn drop(&mut self) {
             // Locals drop in reverse order, so a test that took [`lock`] first still holds it here.
             match &self.original {
-                // SAFETY: restoration is serialized by that still-held lock, like the set was.
+                // SAFETY: restoration runs under that still-held lock, like the set did.
                 Some(v) => unsafe { std::env::set_var(self.key, v) },
-                // SAFETY: restoration is serialized by that still-held lock, like the unset was.
+                // SAFETY: restoration runs under that still-held lock, like the unset did.
                 None => unsafe { std::env::remove_var(self.key) },
             }
         }

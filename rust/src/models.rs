@@ -4768,6 +4768,7 @@ mod retry_tests {
             truncated_response(&body, cut),
             partial_response(&body, cut),
         ]);
+        let _lock = crate::util::test_env::lock();
         let _guard = crate::util::test_env::EnvGuard::set("KESHA_MODEL_MIRROR", &base);
         let cache = TempCache::new("mirror-resume");
         let file = model_file(
