@@ -869,6 +869,64 @@ mod tests {
         assert!(unrelated.exists(), "pruning must only touch files it wrote");
     }
 
+    fn spill_holding_audio(dir: &std::path::Path) -> (spill::SpillWav, std::path::PathBuf) {
+        let path = spill::spill_path(dir);
+        let mut spill = spill::SpillWav::create(&path, 16_000).unwrap();
+        spill.push(&[0.25; 8]).unwrap();
+        (spill, path)
+    }
+
+    fn broken_pipe() -> anyhow::Error {
+        std::io::Error::from(std::io::ErrorKind::BrokenPipe).into()
+    }
+
+    /// The killer path: the engine is spawned detached, so an orphaned session
+    /// never sees the terminal's SIGHUP. It records to `--max-seconds`, finishes
+    /// cleanly, sees no signal — and only then does the write to the dead
+    /// terminal fail. Deleting the spill any earlier loses both artifacts in
+    /// exactly the case the recovery WAV exists for (#962).
+    #[test]
+    fn a_spill_survives_a_transcript_that_could_not_be_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let (spill, path) = spill_holding_audio(dir.path());
+
+        let err = deliver_and_settle(Ok("hello".to_string()), None, Some(spill), |_| {
+            Err(broken_pipe())
+        })
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("broken pipe"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            path.exists(),
+            "the only copy of the audio was deleted before the transcript was delivered"
+        );
+    }
+
+    #[test]
+    fn a_delivered_transcript_takes_the_spill_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (spill, path) = spill_holding_audio(dir.path());
+
+        let transcript =
+            deliver_and_settle(Ok("hello".to_string()), None, Some(spill), |_| Ok(())).unwrap();
+
+        assert_eq!(transcript, "hello");
+        assert!(!path.exists(), "a delivered session must leave nothing behind");
+    }
+
+    #[test]
+    fn an_interrupted_session_keeps_its_spill_even_once_delivered() {
+        let dir = tempfile::tempdir().unwrap();
+        let (spill, path) = spill_holding_audio(dir.path());
+
+        deliver_and_settle(Ok("hello".to_string()), Some(2), Some(spill), |_| Ok(())).unwrap();
+
+        assert!(path.exists(), "a cancelled session keeps its audio");
+    }
+
     /// Without a handler these signals kill the process outright, taking the
     /// in-memory transcript with them (#962).
     #[test]
