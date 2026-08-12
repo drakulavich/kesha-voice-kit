@@ -1653,13 +1653,18 @@ pub const VOSK_RU_FILES: &[ModelFile] = &[
 ];
 
 pub fn cache_dir() -> PathBuf {
-    if let Ok(p) = std::env::var("KESHA_CACHE_DIR") {
-        return PathBuf::from(p);
-    }
-    dirs::home_dir()
+    cache_dir_from(std::env::var("KESHA_CACHE_DIR").ok(), dirs::home_dir())
         .expect("cannot determine home directory")
-        .join(".cache")
-        .join("kesha")
+}
+
+/// The cache root from its two inputs, split out so the null-home path is
+/// unit-testable without an unsettable process environment (#953).
+fn cache_dir_from(env_cache: Option<String>, home: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    if let Some(p) = env_cache {
+        return Ok(PathBuf::from(p));
+    }
+    let home = home.expect("cannot determine home directory");
+    Ok(home.join(".cache").join("kesha"))
 }
 
 /// Optional HuggingFace mirror base URL. Respects `KESHA_MODEL_MIRROR` (#121).
@@ -2740,6 +2745,30 @@ mod tts_tests {
         let guard = EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-test-xyz");
         assert_eq!(cache_dir(), PathBuf::from("/tmp/kesha-test-xyz"));
         drop(guard);
+    }
+
+    // #953: a null home must surface as a coded E_INTERNAL naming KESHA_CACHE_DIR,
+    // not a panic past the `error [CODE]:` contract.
+    #[test]
+    fn cache_dir_from_null_home_is_coded_internal() {
+        let err = cache_dir_from(None, None).unwrap_err();
+        assert_eq!(code_of(&err), ErrorCode::Internal);
+        assert!(
+            format!("{err:#}").contains("KESHA_CACHE_DIR"),
+            "message must name the escape hatch: {err:#}"
+        );
+    }
+
+    #[test]
+    fn cache_dir_from_env_wins_without_home() {
+        let dir = cache_dir_from(Some("/tmp/x".into()), None).unwrap();
+        assert_eq!(dir, PathBuf::from("/tmp/x"));
+    }
+
+    #[test]
+    fn cache_dir_from_derives_under_home() {
+        let dir = cache_dir_from(None, Some(PathBuf::from("/home/u"))).unwrap();
+        assert_eq!(dir, PathBuf::from("/home/u/.cache/kesha"));
     }
 
     use crate::util::test_env::EnvGuard;
