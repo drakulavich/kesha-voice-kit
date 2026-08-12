@@ -1,9 +1,10 @@
 use std::os::fd::OwnedFd;
 
 use anyhow::{Context, Result};
-use fluidaudio_rs::FluidAudio;
+use fluidaudio_rs::{AsrWordTiming, FluidAudio};
 
 use crate::fluid_stdout::with_silenced_stdout;
+use crate::transcribe::WordTiming;
 
 use super::{TranscribeBackend, TranscriptionChunk};
 
@@ -38,26 +39,53 @@ impl FluidAudioBackend {
 }
 
 impl TranscribeBackend for FluidAudioBackend {
-    /// No `words`: the bridge's `transcribe_file` returns text only, so the
-    /// per-token timings FluidAudio computes never cross the FFI boundary (#720).
     fn transcribe(&mut self, audio_path: &str) -> Result<TranscriptionChunk> {
-        let result = self
+        let (result, words) = self
             .audio
-            .transcribe_file(audio_path)
+            .transcribe_file_with_words(audio_path)
             .context("FluidAudio transcription failed")?;
-        Ok(result.text.into())
+        Ok(chunk_from(result.text, words))
     }
 
     /// stdout is silenced for the call: even with padding, upstream prints
     /// would corrupt `--json` output (#259).
     fn transcribe_samples(&mut self, samples: &[f32]) -> Result<TranscriptionChunk> {
         let padded = pad_to_min(samples, MIN_SAMPLES);
-        let result = with_silenced_stdout(self.sink.as_ref(), || {
-            self.audio.transcribe_samples(&padded)
+        let (result, words) = with_silenced_stdout(self.sink.as_ref(), || {
+            self.audio.transcribe_samples_with_words(&padded)
         })
         .context("FluidAudio sample transcription failed")?;
-        Ok(result.text.into())
+        Ok(chunk_from(result.text, words))
     }
+}
+
+/// Pair a transcript with the timings FluidAudio grouped for it, keeping them
+/// only when they *are* the transcript's words — one entry per whitespace-
+/// separated word, same spelling, same order.
+///
+/// Both sides come from one decode, so they agree in practice; the check is here
+/// because nothing downstream re-verifies it. The segmenting paths address words
+/// positionally (the fixed-window seam drops them by count), so a grouping that
+/// ever disagreed would silently name words the text does not have. Absent beats
+/// misaligned — that is also why no timings at all reads as `None` rather than
+/// an empty list, which is reserved for nothing (#720).
+fn chunk_from(text: String, words: Vec<AsrWordTiming>) -> TranscriptionChunk {
+    let aligned = !words.is_empty()
+        && words
+            .iter()
+            .map(|w| w.word.as_str())
+            .eq(text.split_whitespace());
+    let words = aligned.then(|| {
+        words
+            .into_iter()
+            .map(|w| WordTiming {
+                word: w.word,
+                start: w.start,
+                end: w.end,
+            })
+            .collect()
+    });
+    TranscriptionChunk { text, words }
 }
 
 /// Returns a borrowed `Cow` so already-long-enough inputs don't allocate.
@@ -230,6 +258,67 @@ mod tests {
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>()
             .join(" | ")
+    }
+
+    fn timing(word: &str, start: f32, end: f32) -> AsrWordTiming {
+        AsrWordTiming {
+            word: word.to_string(),
+            start,
+            end,
+        }
+    }
+
+    #[test]
+    fn words_reach_the_chunk_on_the_slice_clock() {
+        let chunk = chunk_from(
+            "Hello world.".into(),
+            vec![timing("Hello", 0.0, 0.4), timing("world.", 0.4, 0.88)],
+        );
+        assert_eq!(
+            chunk.words.expect("words survive"),
+            vec![
+                WordTiming {
+                    word: "Hello".into(),
+                    start: 0.0,
+                    end: 0.4
+                },
+                WordTiming {
+                    word: "world.".into(),
+                    start: 0.4,
+                    end: 0.88
+                },
+            ]
+        );
+    }
+
+    /// The segmenting paths trust word *n* to be text word *n* — the fixed-window
+    /// seam drops timings by count, and nothing downstream re-checks. So a
+    /// grouping that disagrees with the transcript has to lose its words here
+    /// rather than ship spans naming words the text doesn't have (#720).
+    #[test]
+    fn words_that_disagree_with_the_transcript_are_dropped() {
+        let chunk = chunk_from(
+            "Hello there world.".into(),
+            vec![timing("Hello", 0.0, 0.4), timing("world.", 0.4, 0.88)],
+        );
+        assert!(chunk.words.is_none(), "{chunk:?}");
+    }
+
+    /// A model that returned no timings at all must read as "none", not as an
+    /// empty list — the `transcribe.words` capability is what says whether the
+    /// build can produce them, and `Some(vec![])` would muddy that.
+    #[test]
+    fn no_timings_at_all_is_absent_rather_than_empty() {
+        let chunk = chunk_from("Hello world.".into(), vec![]);
+        assert!(chunk.words.is_none(), "{chunk:?}");
+    }
+
+    /// Silence transcribes to an empty string with no timings; that pairing is
+    /// consistent, but there is no segment to hang words on either way.
+    #[test]
+    fn empty_transcript_carries_no_words() {
+        let chunk = chunk_from(String::new(), vec![]);
+        assert!(chunk.words.is_none(), "{chunk:?}");
     }
 
     #[test]

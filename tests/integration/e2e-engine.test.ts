@@ -274,7 +274,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     const capsRun = await runEngine(["--capabilities-json"]);
     const caps = JSON.parse(capsRun.stdout);
     const advertises = caps.features.includes(TRANSCRIBE_WORDS_FEATURE);
-    // The flag is backend-gated, so a CoreML engine must omit both it and the key.
+    // The flag is backend-gated, so an engine without one must omit the key too.
     if (!advertises) {
       const { stdout } = await runEngine(["transcribe", FIXTURE_EN, "--json"]);
       expect(JSON.parse(stdout).segments[0]?.words).toBeUndefined();
