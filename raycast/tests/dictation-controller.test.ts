@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSilenceTracker,
   normalizeTranscribeResult,
+  pruneOldRecordings,
   staleRecordingDirs,
   startDictationSession,
   startTranscribingTimer,
@@ -612,6 +613,41 @@ describe("dictation controller", () => {
     expect(deps.pruneOldRecordings).toHaveBeenCalled();
   });
 
+  it("keeps the recording when the view is dismissed after transcription starts (#944)", async () => {
+    const transcriber = deferred<string>();
+    const deps = createDeps({
+      startTranscriber: vi.fn(() => ({
+        done: transcriber.promise,
+        stop: vi.fn(() => transcriber.reject(new Error("killed"))),
+      })),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await waitFor(() => expect(deps.states.at(-1)?.status).toBe("transcribing"));
+
+    session.cancel();
+    await session.done;
+
+    expect(deps.cleanupTempDir).not.toHaveBeenCalled();
+  });
+
+  it("keeps a finished recording when dismissed during the silence read (#944)", async () => {
+    const silence = deferred<boolean>();
+    const deps = createDeps({
+      isSilentAudio: vi.fn(() => silence.promise),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await waitFor(() => expect(deps.isSilentAudio).toHaveBeenCalled());
+
+    // The WAV is already on disk; dismissing mid-read must not delete it.
+    session.cancel();
+    silence.resolve(false);
+    await session.done;
+
+    expect(deps.cleanupTempDir).not.toHaveBeenCalled();
+  });
+
   it("does not warn about no signal once a meter sample has been seen", async () => {
     let clock = 0;
     let emit!: (patch: RecordingPatch) => void;
@@ -812,6 +848,42 @@ describe("staleRecordingDirs", () => {
       { name: "raycast-kesha-dictate-edge", mtimeMs: now - WEEK_MS },
     ];
     expect(staleRecordingDirs(entries, now)).toEqual([]);
+  });
+});
+
+describe("pruneOldRecordings", () => {
+  const now = 2_000_000_000_000;
+
+  it("removes week-old dictation temps and spares fresh and unrelated ones (#944)", async () => {
+    const removed: string[] = [];
+    await pruneOldRecordings({
+      baseDir: "/tmp",
+      now: () => now,
+      readdir: async () => [
+        "raycast-kesha-dictate-old",
+        "raycast-kesha-dictate-fresh",
+        "unrelated-dir",
+      ],
+      stat: async (path) => ({
+        mtimeMs: path.includes("old")
+          ? now - 8 * 24 * 60 * 60 * 1000
+          : now - 60_000,
+      }),
+      rm: async (path) => {
+        removed.push(path);
+      },
+    });
+    expect(removed).toEqual(["/tmp/raycast-kesha-dictate-old"]);
+  });
+
+  it("swallows a readdir failure instead of throwing", async () => {
+    await expect(
+      pruneOldRecordings({
+        readdir: async () => {
+          throw new Error("EACCES");
+        },
+      }),
+    ).resolves.toBeUndefined();
   });
 });
 

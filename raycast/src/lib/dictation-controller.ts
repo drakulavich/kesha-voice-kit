@@ -42,7 +42,12 @@ export function startDictationSession(
   let tempDir: string | null = null;
   let audioPath: string | null = null;
   let recordedSeconds = 0;
-  let audioCaptured = false;
+  // captureComplete latches when recordPhase returns — the WAV exists on disk
+  // from that instant, before the multi-second silence read — so a dismiss or
+  // failure during that read still keeps it. confirmedSilent is the separate
+  // decision that a recording proven silent may be deleted (#944).
+  let captureComplete = false;
+  let confirmedSilent = false;
   let keepAudio = false;
   let stopMonitoring: (() => void) | null = null;
   let recorder: RunningTask<void> | null = null;
@@ -61,7 +66,7 @@ export function startDictationSession(
       stopTranscribeTimer?.();
       // A deliberate cancel of transcription must not cost the recording once
       // it has been captured — keep it and name it, same as a failure (#944).
-      if (audioCaptured && audioPath) {
+      if (captureComplete && audioPath) {
         keepAudio = true;
         setState({
           status: "error",
@@ -74,7 +79,7 @@ export function startDictationSession(
     },
     cancel: () => {
       cancelled = true;
-      if (audioCaptured) keepAudio = true;
+      if (captureComplete) keepAudio = true;
       recorder?.stop();
       transcriber?.stop();
       stopMonitoring?.();
@@ -118,15 +123,16 @@ export function startDictationSession(
 
       if (!(await recordPhase(kesha, audioPath, maxSeconds))) return;
 
+      // The WAV is on disk now; a dismiss or failure past this point — even
+      // during the silence read below — must not discard it (#944).
+      captureComplete = true;
+
       if (await deps.isSilentAudio(audioPath)) {
+        confirmedSilent = true;
         throw new Error(
           "Recorded audio is silent. Check macOS Microphone permission for Raycast and the selected input device.",
         );
       }
-
-      // Past the silence check the temp WAV holds real speech: a transcription
-      // failure below must keep it, not discard it (#944).
-      audioCaptured = true;
 
       const result = await transcribePhase(kesha, audioPath);
       if (!result || cancelled) return;
@@ -134,10 +140,12 @@ export function startDictationSession(
       await deliverTranscript(result);
     } catch (err: unknown) {
       if (cancelled) {
-        if (audioCaptured) keepAudio = true;
+        if (captureComplete) keepAudio = true;
         return;
       }
-      keepAudio = audioCaptured;
+      // A recording proven silent is worthless — delete it; any other
+      // post-capture failure keeps the recording for recovery (#944).
+      keepAudio = captureComplete && !confirmedSilent;
       await deps.showToast({ style: "failure", title: "Dictation failed" });
       setState({
         status: "error",
@@ -313,11 +321,32 @@ export function staleRecordingDirs(
     .map((entry) => entry.name);
 }
 
-async function pruneOldRecordings(): Promise<void> {
-  const base = tmpdir();
+export interface PruneRecordingsDeps {
+  baseDir?: string;
+  readdir?: (dir: string) => Promise<string[]>;
+  stat?: (path: string) => Promise<{ mtimeMs: number }>;
+  rm?: (
+    path: string,
+    options: { recursive: boolean; force: boolean },
+  ) => Promise<void>;
+  now?: () => number;
+}
+
+export async function pruneOldRecordings(
+  deps: PruneRecordingsDeps = {},
+): Promise<void> {
+  const base = deps.baseDir ?? tmpdir();
+  const readdirFn = deps.readdir ?? ((dir: string) => readdir(dir));
+  const statFn = deps.stat ?? ((path: string) => stat(path));
+  const rmFn =
+    deps.rm ??
+    ((path: string, options: { recursive: boolean; force: boolean }) =>
+      rm(path, options));
+  const nowMs = (deps.now ?? Date.now)();
+
   let names: string[];
   try {
-    names = await readdir(base);
+    names = await readdirFn(base);
   } catch {
     return;
   }
@@ -327,7 +356,7 @@ async function pruneOldRecordings(): Promise<void> {
   const entries = await Promise.all(
     candidates.map(async (name) => {
       try {
-        const info = await stat(join(base, name));
+        const info = await statFn(join(base, name));
         return { name, mtimeMs: info.mtimeMs };
       } catch {
         return null;
@@ -338,8 +367,8 @@ async function pruneOldRecordings(): Promise<void> {
     (entry): entry is { name: string; mtimeMs: number } => entry !== null,
   );
   await Promise.all(
-    staleRecordingDirs(present, Date.now()).map((name) =>
-      rm(join(base, name), { recursive: true, force: true }),
+    staleRecordingDirs(present, nowMs).map((name) =>
+      rmFn(join(base, name), { recursive: true, force: true }),
     ),
   );
 }
@@ -369,7 +398,7 @@ export function createDefaultDictationDeps(
     preflight: defaultPreflight,
     createTempDir: () => mkdtemp(join(tmpdir(), RECORDING_TEMP_PREFIX)),
     cleanupTempDir: (dir) => rm(dir, { recursive: true, force: true }),
-    pruneOldRecordings,
+    pruneOldRecordings: () => pruneOldRecordings(),
     startRecordingMonitor,
     startRecorder: (kesha, audioPath, maxSeconds) =>
       startKeshaRecorder(kesha, audioPath, maxSeconds),
