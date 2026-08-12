@@ -247,6 +247,24 @@ describe("maybeAskForStar — cosmetic prompt never fails the install (#936)", (
     await expect(maybeAskForStar(binPath, "1.2.0", log, shims)).resolves.toBeUndefined();
   });
 
+  test("a throwing warn in the swallow path is itself swallowed (dying stderr, EPIPE)", async () => {
+    // The catch is part of the never-throw contract: log.warn is
+    // process.stderr.write in production, which re-throws on a broken pipe.
+    const binPath = mkTmpBinPath();
+    const log = {
+      info: () => {},
+      warn: () => {
+        throw new Error("EPIPE");
+      },
+    };
+    const shims = {
+      which: () => {
+        throw new Error("which blew up");
+      },
+    };
+    await expect(maybeAskForStar(binPath, "1.2.0", log, shims)).resolves.toBeUndefined();
+  });
+
   test("marker write failure skips the prompt entirely (no nag on a read-only dir)", async () => {
     // Parent directory does not exist, so writeStarSeen throws. The prompt must
     // not print as if the slot were consumed, and the call must not throw.
