@@ -107,6 +107,21 @@ mod tests {
         );
     }
 
+    /// In-range samples reach the file bit-exact. `encode` bounds out-of-range
+    /// input before this writer sees it (#718), so anything altered here would
+    /// be a level change rather than a guard.
+    #[test]
+    fn writes_in_range_samples_bit_exact() {
+        let samples = [-1.0_f32, -0.5, 0.0, 0.25, 1.0];
+        let wav = encode_wav(&samples, 24_000).unwrap();
+        let read_back: Vec<f32> = hound::WavReader::new(std::io::Cursor::new(&wav))
+            .unwrap()
+            .into_samples::<f32>()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(read_back, samples.to_vec());
+    }
+
     #[test]
     fn data_chunk_size_matches_sample_count() {
         let samples = vec![0.0_f32; 1000];

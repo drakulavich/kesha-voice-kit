@@ -17,8 +17,8 @@ use fluidaudio_rs::{FluidAudio, KokoroComputeUnits};
 use crate::coded_bail;
 use crate::errors::ErrorCode;
 
-/// FluidAudio Kokoro native output rate (24 kHz mono, 16-bit PCM). Used to size
-/// SSML `<break>` silence buffers when the segment walker stitches audio.
+/// FluidAudio Kokoro native output rate (24 kHz mono f32). Used to size SSML
+/// `<break>` silence buffers when the segment walker stitches audio.
 pub const SAMPLE_RATE: u32 = 24_000;
 
 #[derive(Clone, Copy)]
@@ -309,16 +309,21 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
 
 /// Synthesize `text` with FluidAudio Kokoro (CoreML/ANE) via the native
 /// `fluidaudio-rs` binding. `voice_id` is the bare FluidAudio voice (e.g.
-/// `am_michael`). Returns a complete WAV byte buffer (24 kHz mono, 16-bit PCM);
-/// `tts::say::transcode_to` decodes/re-encodes it for the requested format.
-pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<Vec<u8>> {
+/// `am_michael`). Returns the chain's raw mono f32 samples and their rate, at
+/// the model's native level.
+///
+/// The samples come from `synthesizeDetailed` rather than FluidAudio's WAV
+/// wrapper, which peak-normalizes English and Mandarin to 0 dBFS irreversibly
+/// (#718). That also keeps the audio in f32 end to end instead of round-tripping
+/// through the wrapper's 16-bit PCM.
+pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<(Vec<f32>, u32)> {
     if text.is_empty() {
         anyhow::bail!("fluid-kokoro: text is empty");
     }
     ensure_script_supported(voice_id, text)?;
     with_kokoro(voice_id, |audio| {
         audio
-            .synthesize_kokoro(text, voice_id, speed)
+            .synthesize_kokoro_samples(text, voice_id, speed)
             .context("FluidAudio Kokoro synthesis")
     })
 }
@@ -348,46 +353,7 @@ pub fn synthesize_pcm(text: &str, voice_id: &str, speed: f32) -> Result<Vec<f32>
     if !text.chars().any(char::is_alphanumeric) {
         return Ok(Vec::new());
     }
-    ensure_script_supported(voice_id, text)?;
-    let wav = with_kokoro(voice_id, |audio| {
-        audio
-            .synthesize_kokoro(text, voice_id, speed)
-            .context("FluidAudio Kokoro synthesis")
-    })?;
-    wav_to_f32(&wav)
-}
-
-/// Decode a FluidAudio Kokoro WAV buffer (24 kHz, 16-bit PCM) into f32 samples
-/// normalized to `[-1.0, 1.0]`. FluidAudio emits mono today, but we downmix any
-/// multi-channel buffer to mono rather than trusting that — an interleaved
-/// stereo buffer left as-is would silently double the sample count and corrupt
-/// the SSML walker's duration/`<break>` math. Mirrors `tts::say::wav_to_mono_f32`.
-fn wav_to_f32(wav: &[u8]) -> Result<Vec<f32>> {
-    let reader =
-        hound::WavReader::new(std::io::Cursor::new(wav)).context("decode FluidAudio Kokoro WAV")?;
-    let spec = reader.spec();
-    let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Int => {
-            let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
-            reader
-                .into_samples::<i32>()
-                .map(|s| s.map(|v| v as f32 / max))
-                .collect::<std::result::Result<Vec<f32>, _>>()
-                .context("read FluidAudio Kokoro PCM samples")?
-        }
-        hound::SampleFormat::Float => reader
-            .into_samples::<f32>()
-            .collect::<std::result::Result<Vec<f32>, _>>()
-            .context("read FluidAudio Kokoro float samples")?,
-    };
-    let channels = spec.channels as usize;
-    if channels <= 1 {
-        return Ok(samples);
-    }
-    Ok(samples
-        .chunks_exact(channels)
-        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
-        .collect())
+    Ok(synthesize(text, voice_id, speed)?.0)
 }
 
 #[cfg(test)]
@@ -632,15 +598,25 @@ mod tests {
         );
     }
 
+    /// English comes back at the model's native level, not peak-normalized to
+    /// 0 dBFS (#718). A peak of exactly 1.0 means the WAV wrapper's slam is back
+    /// in the path — which is unrecoverable downstream, so this is the only place
+    /// it can be caught. Needs the ANE bundle, so it self-reports rather than
+    /// running everywhere.
     #[test]
     #[ignore = "needs `kesha install --tts en`; run locally on darwin-arm64"]
-    fn synthesize_returns_wav() {
-        let wav = synthesize("Hello world", "am_michael", 1.0).expect("synth");
+    fn synthesize_returns_samples_at_the_native_level() {
+        let (samples, sample_rate) = synthesize("Hello world", "am_michael", 1.0).expect("synth");
+        assert_eq!(sample_rate, SAMPLE_RATE);
         assert!(
-            wav.len() > 1000,
-            "expected a non-trivial WAV, got {}",
-            wav.len()
+            samples.len() > 1000,
+            "expected non-trivial audio, got {} samples",
+            samples.len()
         );
-        assert_eq!(&wav[..4], b"RIFF", "expected a RIFF/WAVE header");
+        let peak = samples.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+        assert!(
+            peak > 0.0 && (peak - 1.0).abs() > 1e-3,
+            "peak {peak} — the 0 dBFS peak normalization is back in the path"
+        );
     }
 }
