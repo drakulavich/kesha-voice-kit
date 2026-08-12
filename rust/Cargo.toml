@@ -114,6 +114,17 @@ cpal = "0.15"
 [dev-dependencies]
 tempfile = "3"
 
+# Levels here also reach `cargo build`/`cargo test`/rust-analyzer; ci.yml's `-- -D warnings` only covers what CI runs.
+[lints.rust]
+# Edition-2024 default adopted early: no unsafe op outside an explicit block.
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+# Makes the existing SAFETY-comment discipline a build gate, not a review habit.
+undocumented_unsafe_blocks = "deny"
+# One op per block, so a SAFETY comment cannot silently start covering a second call.
+multiple_unsafe_ops_per_block = "deny"
+
 [profile.release]
 lto = true
 strip = true
