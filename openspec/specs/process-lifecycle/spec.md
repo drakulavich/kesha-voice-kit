@@ -7,9 +7,12 @@ those runs take minutes. This spec covers what happens when such a run is
 interrupted: which processes are terminated, how long they are given, what exit
 code the CLI reports, and what a caller who cancels programmatically observes.
 
-Every command that spawns the Engine registers it, so this coverage is uniform:
-the two-hour transcription and the near-instant `--list-voices` listing are
-terminated the same way when interrupted.
+Every Engine subprocess started through the shared `spawnEngineProcess` helper
+registers itself, so this coverage is uniform across them: the two-hour
+transcription and the near-instant `--list-voices` listing are terminated the
+same way when interrupted. A few direct `Bun.spawn` paths outside that helper —
+the darwin Kokoro warmup, the model install, and the `--version` probe — do not,
+and are listed under Open Issues.
 
 Ira runs batches in CI where a job cancellation must not leave a model-loading
 Engine holding a runner's CPU. Maks presses Ctrl-C on a long meeting
@@ -31,9 +34,9 @@ her agent and needs a distinguishable outcome rather than an empty transcript.
 
 ## Requirements
 
-### Requirement: An interrupted command terminates the Engine subprocess and reports the signal in its Exit code
+### Requirement: An interrupted command terminates its registered Engine subprocess and reports the signal in its Exit code
 
-When the CLI receives an interrupt or termination signal while an Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination — rather than with the command's own success or failure code. Every command that spawns the Engine registers it, so this holds for transcription, Language detection, synthesis, recording, and both `--list-voices` listings — the CLI command's and the MCP server's — alike.
+When the CLI receives an interrupt or termination signal while a registered Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination — rather than with the command's own success or failure code. Every `spawnEngineProcess` call site registers, so this holds for transcription, Language detection, synthesis, recording, and both `--list-voices` listings — the CLI command's and the MCP server's — alike; the direct `Bun.spawn` warmup, install, and probe paths do not (see Open Issues).
 
 #### Scenario: Maks interrupts a long transcription
 
@@ -178,3 +181,12 @@ When a caller of the Core API cancels an in-flight call, the call SHALL fail wit
 - The Windows path spawns `taskkill` and does not wait for it, so on Windows the
   tree kill is fire-and-forget; nothing verifies it completed before the CLI
   exits.
+- Three Engine spawns bypass `spawnEngineProcess` and so never register:
+  `warmDarwinKokoro` (`src/engine-install.ts:214`, a darwin Kokoro warmup that
+  can run for up to 180 s and is not detached), `runEngineModelInstall`
+  (`src/engine-install.ts:548`, a `spawnSync` install in the CLI's own process
+  group) and `probeExecutable` (`src/engine-health.ts:23`, a short `--version`
+  probe with its own kill timer). Interrupting during one leaves that Engine to
+  the shell rather than the CLI. #939 fixed the two `spawnEngineProcess` bypasses
+  (`--list-voices`, CLI and MCP); these direct-`Bun.spawn` paths are a separate,
+  unaddressed gap.
