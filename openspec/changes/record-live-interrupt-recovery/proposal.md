@@ -28,7 +28,7 @@ Two independent safety nets, because they fail in different ways:
   the transcript it has to stdout as usual, and exits `128 + signal`. A
   cancellation now yields the words spoken up to that moment.
 - **The audio is spilled to a recovery WAV while it streams.** This is what
-  survives what a handler cannot — `SIGKILL`, a panic, power loss. The file is
+  survives what a handler cannot — `SIGKILL`, a panic, a crash. The file is
   written incrementally with its RIFF sizes refreshed roughly once a second, so
   a hard kill leaves readable audio rather than a header claiming zero samples.
   It is removed when the transcript prints normally, and kept (and named on

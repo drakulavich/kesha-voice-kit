@@ -138,21 +138,27 @@ pub struct LiveOutcome {
 }
 
 /// Captures the default microphone and transcribes it through a streaming ASR
-/// session. The audio is spilled to a recovery WAV as it arrives, kept only
-/// when the session did not end normally.
+/// session, handing the transcript to `deliver`. The audio is spilled to a
+/// recovery WAV as it arrives and dropped only once `deliver` has confirmed the
+/// transcript landed.
 ///
 /// Feeding happens here, on the thread draining the sample channel — never in
 /// the CPAL callback, which stays a convert-and-send as in the WAV path.
 #[cfg(all(feature = "coreml", target_os = "macos"))]
-pub fn record_default_input_live(max_duration: Duration) -> Result<LiveOutcome> {
+pub fn record_default_input_live(
+    max_duration: Duration,
+    deliver: impl FnOnce(&str) -> Result<()>,
+) -> Result<LiveOutcome> {
     if max_duration.is_zero() {
         anyhow::bail!("--max-seconds must be greater than 0");
     }
 
+    // Before CPAL opens the device and spawns its threads: POSIX does not
+    // promise `signal` is thread-safe.
+    interrupt::install();
+
     let input = open_default_input()?;
     let sample_rate = input.config.sample_rate.0;
-
-    interrupt::install();
 
     eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
     let mut feed = LiveFeed {
@@ -196,12 +202,36 @@ pub fn record_default_input_live(max_duration: Duration) -> Result<LiveOutcome> 
 
     let interrupted_by = interrupt::caught();
     let spill = feed.spill.take();
-    let finished = feed.finish();
-    settle_recovery_spill(spill, finished.is_ok() && interrupted_by.is_none());
+    let transcript = deliver_and_settle(feed.finish(), interrupted_by, spill, deliver)?;
     Ok(LiveOutcome {
-        transcript: finished?,
+        transcript,
         interrupted_by,
     })
+}
+
+/// Hands the transcript to `deliver`, then decides the spill's fate from
+/// whether it actually landed.
+///
+/// The spill is the only copy of the audio until the bytes have left the
+/// process, and delivery is where a live session fails most quietly: the engine
+/// is spawned detached, so an orphaned session never sees the terminal's
+/// SIGHUP — it records to `--max-seconds`, finishes cleanly, and only then does
+/// the write to the closed terminal fail with EIO. A pipe consumer that exits
+/// early fails the same way with EPIPE. Settling on `finish` alone deleted the
+/// audio in exactly those cases (#962).
+#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+fn deliver_and_settle(
+    finished: Result<String>,
+    interrupted_by: Option<i32>,
+    spill: Option<spill::SpillWav>,
+    deliver: impl FnOnce(&str) -> Result<()>,
+) -> Result<String> {
+    let delivered = finished.and_then(|transcript| match deliver(transcript.trim()) {
+        Ok(()) => Ok(transcript),
+        Err(err) => Err(err),
+    });
+    settle_recovery_spill(spill, delivered.is_ok() && interrupted_by.is_none());
+    delivered
 }
 
 /// A missing spill must never cost the session it exists to protect, so a
@@ -213,7 +243,7 @@ fn open_recovery_spill(sample_rate: u32) -> Option<spill::SpillWav> {
     match spill::SpillWav::create(&spill::spill_path(&dir), sample_rate) {
         Ok(spill) => {
             eprintln!(
-                "Recovery audio: {} (removed when the transcript prints).",
+                "Recovery audio: {} (removed once the transcript is delivered).",
                 spill.path().display()
             );
             Some(spill)
@@ -225,7 +255,7 @@ fn open_recovery_spill(sample_rate: u32) -> Option<spill::SpillWav> {
     }
 }
 
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
 fn settle_recovery_spill(spill: Option<spill::SpillWav>, ended_normally: bool) {
     let Some(mut spill) = spill else { return };
     if ended_normally {
@@ -546,6 +576,10 @@ fn write_plain_mono_float_wav(path: &Path, sample_rate: u32, samples: &[f32]) ->
 /// or a caller's timeout took the audio and the transcript together — nothing
 /// on disk to retry against, and the more successful the dictation the more was
 /// lost. The spill is written as the samples arrive.
+///
+/// It protects against process death, where the page cache outlives the writer.
+/// Nothing here `fsync`s, so a machine that loses power can persist the rewritten
+/// sizes ahead of the data they describe.
 #[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
 mod spill {
     use std::io::{Seek, SeekFrom, Write};
@@ -680,24 +714,42 @@ mod interrupt {
 
     static CAUGHT: AtomicI32 = AtomicI32::new(0);
 
+    /// Restores the default disposition on the way out, so a second Ctrl-C
+    /// kills a session whose `finish` has wedged instead of being swallowed.
     extern "C" fn on_signal(sig: libc::c_int) {
         CAUGHT.store(sig, Ordering::Relaxed);
+        // SAFETY: `signal` is on POSIX's async-signal-safe list, and SIG_DFL
+        // installs no handler of ours to run.
+        unsafe { libc::signal(sig, libc::SIG_DFL) };
     }
 
     pub(super) fn install() {
+        CAUGHT.store(0, Ordering::Relaxed);
         for sig in [libc::SIGINT, libc::SIGTERM] {
-            // SAFETY: the handler stores to an atomic and returns, which is the
-            // async-signal-safe subset; nothing else runs on the signal stack.
+            // SAFETY: the handler stores to an atomic and re-arms the default
+            // disposition, both async-signal-safe; nothing else runs there.
             unsafe { libc::signal(sig, on_signal as *const () as libc::sighandler_t) };
         }
     }
 
-    /// Sticky: the capture loop polls it, and the caller reads it again after
-    /// the session has been drained and finished.
+    /// Sticky until the next [`install`]: the capture loop polls it, and the
+    /// caller reads it again after the session has been drained and finished.
     pub(super) fn caught() -> Option<i32> {
         match CAUGHT.load(Ordering::Relaxed) {
             0 => None,
             sig => Some(sig),
+        }
+    }
+
+    /// Leaves neither a handler nor a set flag behind, so a plain `cargo test`
+    /// run — which shares one process across tests, unlike nextest — is not
+    /// poisoned by the test that raises a signal.
+    #[cfg(test)]
+    pub(super) fn reset() {
+        CAUGHT.store(0, Ordering::Relaxed);
+        for sig in [libc::SIGINT, libc::SIGTERM] {
+            // SAFETY: SIG_DFL installs no handler; see `install`.
+            unsafe { libc::signal(sig, libc::SIG_DFL) };
         }
     }
 }
@@ -750,9 +802,9 @@ mod tests {
         );
     }
 
-    /// The whole point of the spill: a session killed outright (SIGKILL, panic,
-    /// power loss) never runs `finish`, and the file left behind must still be
-    /// audio somebody can transcribe — not a header claiming zero samples.
+    /// The whole point of the spill: a session killed outright (SIGKILL, panic)
+    /// never runs `finish`, and the file left behind must still be audio
+    /// somebody can transcribe — not a header claiming zero samples.
     #[test]
     fn a_spill_that_was_never_finished_still_decodes_as_a_wav() {
         let dir = tempfile::tempdir().unwrap();
@@ -914,7 +966,10 @@ mod tests {
             deliver_and_settle(Ok("hello".to_string()), None, Some(spill), |_| Ok(())).unwrap();
 
         assert_eq!(transcript, "hello");
-        assert!(!path.exists(), "a delivered session must leave nothing behind");
+        assert!(
+            !path.exists(),
+            "a delivered session must leave nothing behind"
+        );
     }
 
     #[test]
@@ -928,16 +983,35 @@ mod tests {
     }
 
     /// Without a handler these signals kill the process outright, taking the
-    /// in-memory transcript with them (#962).
+    /// in-memory transcript with them (#962). The handler must also stand down
+    /// afterwards, or a session whose `finish` wedged would swallow every
+    /// further Ctrl-C.
     #[test]
     #[cfg(unix)]
-    fn a_caught_sigint_is_recorded_instead_of_killing_the_process() {
-        assert_eq!(interrupt::caught(), None);
+    fn a_caught_sigint_is_recorded_and_re_arms_the_default() {
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                interrupt::reset();
+            }
+        }
+        let _restore = Restore;
+
         interrupt::install();
+        assert_eq!(interrupt::caught(), None);
         // SAFETY: raise delivers SIGINT to this process, where the handler
         // installed above stores it in an atomic and returns.
         assert_eq!(unsafe { libc::raise(libc::SIGINT) }, 0);
         assert_eq!(interrupt::caught(), Some(libc::SIGINT));
+
+        // SAFETY: reads back the disposition the handler left; SIG_DFL installs
+        // no handler of ours.
+        let previous = unsafe { libc::signal(libc::SIGINT, libc::SIG_DFL) };
+        assert_eq!(
+            previous,
+            libc::SIG_DFL,
+            "a second Ctrl-C must reach a wedged session, not be swallowed"
+        );
     }
 
     #[test]

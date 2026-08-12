@@ -97,11 +97,12 @@ written: its RIFF size fields are refreshed as capture proceeds, so a process
 killed outright leaves a valid WAV rather than a header claiming no samples.
 At most the audio since the last refresh may be missing.
 
-The recovery WAV SHALL be deleted when the transcript prints after a normal
-stop, and SHALL be kept — with its path named on stderr — whenever the session
-was interrupted or transcription failed. Its path SHALL be printed on stderr
-when the session starts, so it is discoverable even by a user whose process was
-killed without warning.
+The recovery WAV SHALL be deleted only once the transcript has been **delivered**
+— the write to stdout returned successfully — after a stop that saw no signal.
+It SHALL be kept, with its path named on stderr, whenever the session was
+interrupted, transcription failed, or the transcript could not be written. Its
+path SHALL be printed on stderr when the session starts, so it is discoverable
+even by a user whose process was killed without warning.
 
 Recovery WAVs SHALL live under the Kesha cache (`recordings/`), following
 `KESHA_CACHE_DIR`, and those older than seven days SHALL be pruned when a live
@@ -116,6 +117,16 @@ on stderr and SHALL NOT abort the session it exists to protect.
 - THEN the recovery WAV named on stderr at session start is a readable mono WAV
   holding what she said
 - AND `kesha <that path>` transcribes it
+
+#### Scenario: the terminal is gone by the time the transcript is ready
+
+- GIVEN Maks starts `kesha record --live` and closes the terminal window, and
+  the Engine — spawned detached — keeps recording to `--max-seconds` because no
+  SIGHUP ever reaches it
+- WHEN the session finishes and the write to the closed terminal fails
+- THEN the recovery WAV is kept rather than deleted, because the transcript
+  never reached anyone
+- AND the same holds when a pipe consumer exits before the recording stops
 
 #### Scenario: a normal session leaves nothing behind
 
@@ -134,7 +145,11 @@ on stderr and SHALL NOT abort the session it exists to protect.
 > same plain `WAVE_FORMAT_IEEE_FLOAT` mono layout as `--out`, sharing
 > `wav_header_bytes`, and rewrites the RIFF/`fact`/`data` sizes every
 > `SYNC_SAMPLES` (16 000, ~0.33 s at a 48 kHz device) — which is the bound on
-> what a `kill -9` costs.
+> what a `kill -9` costs. The guarantee covers process death, where the page
+> cache stays coherent, not machine death: nothing here `fsync`s, so a power cut
+> could persist the header ahead of the data it describes.
 > Spilled samples are the mixed-to-mono, device-rate ones, taken before the
 > session's resample to 16 kHz, so the recovery audio is full fidelity.
-> Directory: `models::cache_dir().join("recordings")`; retention: 7 days.*
+> Directory: `models::cache_dir().join("recordings")`; retention: 7 days.
+> The keep/delete decision is `record::deliver_and_settle`, which runs *after*
+> the stdout write and reads its result.*

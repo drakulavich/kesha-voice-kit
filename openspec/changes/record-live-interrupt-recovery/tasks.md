@@ -8,10 +8,10 @@
 
 ## 2. Engine: finishing on a signal
 
-- [x] 2.1 `record::interrupt`: `libc::signal` for SIGINT/SIGTERM, handler stores to an `AtomicI32` and nothing else
+- [x] 2.1 `record::interrupt`: `libc::signal` for SIGINT/SIGTERM, handler stores to an `AtomicI32` and re-arms `SIG_DFL` so a second Ctrl-C reaches a wedged session; `install` clears the flag and runs before CPAL spawns threads
 - [x] 2.2 The capture loop polls it alongside the stdin-EOF and `--max-seconds` stops
 - [x] 2.3 `record_default_input_live` returns `LiveOutcome { transcript, interrupted_by }`
-- [x] 2.4 Keep the spill when interrupted or when `finish` failed; discard it on a normal stop
+- [x] 2.4 `deliver_and_settle`: keep the spill until the transcript write has returned Ok, and on any signal — a detached session outlives the terminal, so `finish().is_ok()` is not delivery (grok P2)
 - [x] 2.5 `cli::record::run_live` exits `128 + signal` after writing the transcript
 
 ## 3. CLI
@@ -25,7 +25,8 @@
 - [x] 4.2 A finished spill holds every pushed sample
 - [x] 4.3 `discard` removes the file
 - [x] 4.4 Pruning drops stale spills, keeps fresh ones, and ignores files it did not write
-- [x] 4.5 A raised SIGINT is recorded instead of killing the process
+- [x] 4.5 A raised SIGINT is recorded instead of killing the process, and leaves `SIG_DFL` behind
+- [x] 4.7 The spill survives a transcript that could not be written; a delivered one takes it away; an interrupted one keeps it
 - [x] 4.6 TS: `recordEngine` resolves on 130/143 for `--live`, rejects them for `--out`
 
 ## 5. Verification
