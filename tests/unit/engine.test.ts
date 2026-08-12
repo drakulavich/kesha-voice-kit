@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, mkdirSync, utimesSync, writeFileSync } from "fs
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
+import { readRepoFile } from "../helpers/repo";
 import { envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
 import {
@@ -635,6 +636,30 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     ["a non-string backend", '{"protocolVersion":3,"backend":3,"features":[]}'],
     ["features that are not an array", '{"protocolVersion":3,"backend":"onnx","features":"tts"}'],
     ["a non-string among the features", '{"protocolVersion":3,"backend":"onnx","features":["tts",7]}'],
+    // #928: `.tts.languages` is dereferenced as an array by init and install, so a present-but-
+    // wrong tts is an engine that failed to describe itself, not one without TTS.
+    ["a tts key that is not an object", '{"protocolVersion":3,"backend":"onnx","features":[],"tts":"yes"}'],
+    ["an explicitly null tts key", '{"protocolVersion":3,"backend":"onnx","features":[],"tts":null}'],
+    [
+      "tts languages that are not an array",
+      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":{}}}',
+    ],
+    [
+      "a tts language with no code",
+      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":[{}]}}',
+    ],
+    [
+      "a non-string code on a tts language",
+      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":[{"code":123,"engines":["kokoro"]}]}}',
+    ],
+    [
+      "a tts language with no engines",
+      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":[{"code":"en"}]}}',
+    ],
+    [
+      "a non-string among a tts language's engines",
+      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":[{"code":"en","engines":[7]}]}}',
+    ],
   ] as const) {
     fakeEngineTest(`capabilities carrying ${shape} read as no capabilities`, async () => {
       await withEngineEnv(capabilitiesEngine(payload), async () => {
@@ -655,6 +680,34 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
       },
     );
   });
+
+  fakeEngineTest("an advertised tts language list survives the probe", async () => {
+    const payload =
+      '{"protocolVersion":3,"backend":"onnx","features":["tts"],"tts":{"languages":[{"code":"en","engines":["kokoro"]},{"code":"ru","engines":["vosk"]}]}}';
+    await withEngineEnv(capabilitiesEngine(payload), async () => {
+      const caps = await getEngineCapabilities();
+      expect(caps?.tts?.languages).toEqual([
+        { code: "en", engines: ["kokoro"] },
+        { code: "ru", engines: ["vosk"] },
+      ]);
+    });
+  });
+
+  // Validation strict enough to reject a published binary would take init's language list with it (#928).
+  for (const key of ["darwin-arm64", "linux-x64", "win32-x64"] as const) {
+    fakeEngineTest(`the recorded ${key} pact still reads as capabilities`, async () => {
+      const recorded = JSON.parse(readRepoFile(`tests/fixtures/capabilities/${key}.json`));
+      await withEngineEnv(capabilitiesEngine(JSON.stringify(recorded)), async () => {
+        const caps = await getEngineCapabilities();
+        expect(caps).toMatchObject({
+          protocolVersion: recorded.protocolVersion,
+          backend: recorded.backend,
+          features: recorded.features,
+        });
+        expect(caps?.tts?.languages).toEqual(recorded.tts?.languages);
+      });
+    });
+  }
 });
 
 describe("the capability probe stays in step with the installed binary", () => {
