@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { tryParseSemver } from "./semver.mjs";
+import { errorMessage } from "./error-utils";
 
 // Clears a healthy `gh auth status` (0.77-1.21 s measured) but not a wedged one, which
 // blocked install 11-25 s; Bun kills at the budget and reports exitCode null (#810).
@@ -55,59 +56,72 @@ export function hasStarMarker(binPath: string): boolean {
 
 /**
  * Prompt the user to star the repo on first install and major/minor bumps.
- * Marker is written before printing so a single run never prompts twice.
+ *
+ * Best-effort and never-throw: the prompt is cosmetic, so any failure — a
+ * throwing `Bun.which`, either `gh` probe, or the logger — is swallowed to a
+ * warning and never fails a completed install (#936). The marker is written
+ * before printing so a single run never prompts twice; when the marker cannot
+ * be written the prompt is skipped entirely, so a read-only engine directory
+ * never nags on every install.
  * `shims` injects deterministic `which`/`spawn` for tests — Bun.which()
  * caches PATH at process start, so env-swapping in tests doesn't work.
  */
 export async function maybeAskForStar(
   binPath: string,
   currentVersion: string | null,
-  log: { info: (msg: string) => void },
+  log: { info: (msg: string) => void; warn?: (msg: string) => void },
   shims?: {
     which?: (name: string) => string | null;
     spawn?: (cmd: string[]) => { exitCode: number | null };
   },
 ): Promise<void> {
-  const which = shims?.which ?? ((n: string) => Bun.which(n));
-  const spawn =
-    shims?.spawn ??
-    ((cmd: string[]) =>
-      Bun.spawnSync(cmd, {
-        stdout: "ignore",
-        stderr: "ignore",
-        timeout: GH_PROBE_TIMEOUT_MS,
-      }));
-  if (!currentVersion) return;
-  const seen = readStarSeen(binPath);
-  if (!shouldShowStarPrompt(currentVersion, seen)) {
-    return;
-  }
   try {
-    writeStarSeen(binPath, currentVersion);
-  } catch {
-    /* Non-fatal — falling through to the prompt is still OK. */
-  }
+    const which = shims?.which ?? ((n: string) => Bun.which(n));
+    const spawn =
+      shims?.spawn ??
+      ((cmd: string[]) =>
+        Bun.spawnSync(cmd, {
+          stdout: "ignore",
+          stderr: "ignore",
+          timeout: GH_PROBE_TIMEOUT_MS,
+        }));
+    if (!currentVersion) return;
+    const seen = readStarSeen(binPath);
+    if (!shouldShowStarPrompt(currentVersion, seen)) {
+      return;
+    }
+    try {
+      writeStarSeen(binPath, currentVersion);
+    } catch {
+      // Couldn't record that we asked — skip the prompt so a read-only engine
+      // directory never nags on every install (#936).
+      return;
+    }
 
-  // Marker recorded — every return below must print, except "already starred".
-  const printBasicPrompt = () => {
-    log.info("\nIf you enjoy Kesha Voice Kit, consider starring the repo:");
+    // Marker recorded — every return below must print, except "already starred".
+    const printBasicPrompt = () => {
+      log.info("\nIf you enjoy Kesha Voice Kit, consider starring the repo:");
+      log.info("  https://github.com/drakulavich/kesha-voice-kit");
+    };
+
+    const gh = which("gh");
+    if (!gh) {
+      printBasicPrompt();
+      return;
+    }
+    const authCheck = spawn([gh, "auth", "status"]);
+    if (authCheck.exitCode !== 0) {
+      // Unauthenticated — can't check star status; still print so the slot isn't silently consumed.
+      printBasicPrompt();
+      return;
+    }
+    const starred = spawn([gh, "api", "user/starred/drakulavich/kesha-voice-kit"]);
+    if (starred.exitCode === 0) return; // already starred — slot consumed by verification
+    log.info("\n⭐ If you enjoy Kesha Voice Kit, star it on GitHub:");
     log.info("  https://github.com/drakulavich/kesha-voice-kit");
-  };
-
-  const gh = which("gh");
-  if (!gh) {
-    printBasicPrompt();
-    return;
+    log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
+  } catch (err) {
+    // A cosmetic prompt must never fail a completed, verified install (#936).
+    log.warn?.(`Skipping the star prompt: ${errorMessage(err)}`);
   }
-  const authCheck = spawn([gh, "auth", "status"]);
-  if (authCheck.exitCode !== 0) {
-    // Unauthenticated — can't check star status; still print so the slot isn't silently consumed.
-    printBasicPrompt();
-    return;
-  }
-  const starred = spawn([gh, "api", "user/starred/drakulavich/kesha-voice-kit"]);
-  if (starred.exitCode === 0) return; // already starred — slot consumed by verification
-  log.info("\n⭐ If you enjoy Kesha Voice Kit, star it on GitHub:");
-  log.info("  https://github.com/drakulavich/kesha-voice-kit");
-  log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
 }
