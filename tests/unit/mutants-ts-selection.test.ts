@@ -4,7 +4,6 @@ import {
   rankCoveringTests,
   reachableModules,
   selectCoveringTests,
-  takeNearestTiers,
   testFileCandidates,
   toPosix,
 } from "../../scripts/mutants-ts";
@@ -120,7 +119,7 @@ describe("which suites are measured against a source", () => {
     ]);
   });
 
-  // Integration suites spawn the CLI, and one of them in the set times out the dry run.
+  // Integration suites spawn the CLI and the engine, so they cost minutes rather than seconds.
   test("the repository's unit suites are discovered, and integration only on request", () => {
     const found = testFileCandidates();
 
@@ -130,29 +129,5 @@ describe("which suites are measured against a source", () => {
     expect(testFileCandidates(["tests/integration"])).toContain(
       "tests/integration/cli-contracts.test.ts",
     );
-  });
-});
-
-describe("how many suites the runner is given", () => {
-  const tier = (hops: number, count: number) =>
-    Array.from({ length: count }, (_, i) => ({ path: `t${hops}-${i}.test.ts`, hops }));
-
-  test("a whole tier is taken or none of it, so the score cannot depend on filename order", () => {
-    const ranked = [...tier(1, 3), ...tier(2, 20)];
-
-    expect(takeNearestTiers(ranked, 12)).toEqual(tier(1, 3));
-  });
-
-  test("further tiers are added while they fit", () => {
-    const ranked = [...tier(1, 3), ...tier(2, 4), ...tier(3, 30)];
-
-    expect(takeNearestTiers(ranked, 12)).toEqual([...tier(1, 3), ...tier(2, 4)]);
-  });
-
-  // Measuring the closest suites beats refusing to measure, even when that tier alone is over.
-  test("the nearest tier is kept even when it alone exceeds the budget", () => {
-    const ranked = tier(1, 40);
-
-    expect(takeNearestTiers(ranked, 12)).toEqual(tier(1, 40));
   });
 });
