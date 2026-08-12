@@ -84,6 +84,11 @@ jobs:
               - '.github/actions/**'
               # 16 of these scripts have unit tests; without this a script-only edit skips the tests that cover it (check-workflows.ts enforces it).
               - '.github/scripts/**'
+              # The two halves of the install-plan join (#920): the size canary's unit test
+              # asserts every plan entry still resolves to a URL in the manifest, and a change
+              # to either file alone would otherwise never run it.
+              - 'model-plan.json'
+              - 'rust/src/models.rs'
             integration:
               - 'src/**'
               - 'tests/integration/**'
