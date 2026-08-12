@@ -30,16 +30,30 @@ root-checkout-only:
       exit 2
     fi
 
+# Interpolating this pattern is safe where interpolating a slug is not: it is a justfile literal,
+# never a caller's value. It keeps the slug a single path component, so `../..` cannot escape
+# .worktrees/ and land an edit surface outside the rule this whole section exists to enforce.
+SLUG_PATTERN := "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+
 # `git worktree add -b` refuses an existing branch on its own, so there is no clobber to guard.
+# The branch needs no pattern of its own — git rejects a malformed ref name.
 # Branch off fresh origin/main into .worktrees/<slug>: just worktree <slug> [branch]
+[positional-arguments]
 worktree slug branch=slug: root-checkout-only
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "$1" =~ {{ SLUG_PATTERN }} ]] || { echo "refusing: slug must match {{ SLUG_PATTERN }}, got: $1" >&2; exit 2; }
     git fetch origin main
-    git worktree add ".worktrees/{{ slug }}" -b "{{ branch }}" origin/main
-    @echo "==> cd .worktrees/{{ slug }} — edit, test, commit and open the PR from there"
+    git worktree add ".worktrees/$1" -b "$2" origin/main
+    echo "==> cd .worktrees/$1 — edit, test, commit and open the PR from there"
 
 # Remove a merged worktree and prune its metadata: just worktree-rm <slug>
+[positional-arguments]
 worktree-rm slug: root-checkout-only
-    git worktree remove ".worktrees/{{ slug }}"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "$1" =~ {{ SLUG_PATTERN }} ]] || { echo "refusing: slug must match {{ SLUG_PATTERN }}, got: $1" >&2; exit 2; }
+    git worktree remove ".worktrees/$1"
     git worktree prune
 
 # Run all tests
@@ -114,15 +128,19 @@ verify-darwin-full:
         --no-default-features -- -D warnings
 
 # `--in-place` is not optional: models.rs include_str!s a file above the crate, so the copy build fails.
+# FEATURES and TEST_FILTER stay interpolated: they are set by whoever types the command, while
+# FILE is the argument a script or agent passes through.
 # Mutation-test one engine file, e.g. just mutants-rust src/errors.rs
+[positional-arguments]
 mutants-rust FILE:
     @command -v cargo-mutants >/dev/null || { echo "install it: cargo install --locked cargo-mutants" >&2; exit 2; }
     @git diff --quiet -- rust || { echo "rust/ has uncommitted changes; --in-place mutates the tree" >&2; exit 2; }
-    cd rust && cargo mutants --in-place -f {{ FILE }} --features {{ FEATURES }} -- -E '{{ if TEST_FILTER == "" { "all()" } else { TEST_FILTER } }}'
+    cd rust && cargo mutants --in-place -f "$1" --features {{ FEATURES }} -- -E '{{ if TEST_FILTER == "" { "all()" } else { TEST_FILTER } }}'
 
 # Mutation-test TypeScript sources against whichever suites import them, e.g. just mutants-ts src/engine.ts
+[positional-arguments]
 mutants-ts *FILES:
-    bun scripts/mutants-ts.ts {{ FILES }}
+    bun scripts/mutants-ts.ts "$@"
 
 # Run smoke tests against fixtures; just TTS=1 smoke-test covers the TTS fixtures too
 smoke-test:
@@ -137,5 +155,6 @@ release-preflight: check smoke-test
 alias release := release-preflight
 
 # Print an existing release body: just release-notes vX.Y.Z
+[positional-arguments]
 release-notes TAG:
-    gh release view "{{ TAG }}" --json body --jq .body
+    gh release view "$1" --json body --jq .body

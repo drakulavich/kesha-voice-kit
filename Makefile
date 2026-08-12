@@ -27,6 +27,7 @@ coverage-ts: need-just
 coverage-rust: need-just
 	just coverage-rust
 
+# make cannot forward a trailing filter (it reads one as another goal) — use `just rust-test <filter>`.
 rust-test: need-just
 	just rust-test
 
