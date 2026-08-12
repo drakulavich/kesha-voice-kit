@@ -666,9 +666,9 @@ install proceeds without it.
 > `@clack/prompts::multiselect` with `required: false` (no-selection = skip TTS).
 > TTY check: `process.stdin.isTTY === true && process.stdout.isTTY === true`.*
 
-### Requirement: The star prompt appears at most once per meaningful version, and never blocks
+### Requirement: The star prompt is gated to meaningful version bumps and bounded in time
 
-After a successful install the CLI MAY print a one-time invitation to star the repository, and SHALL show it at most once for a given CLI version, only on a first install or a major/minor bump, never on a patch-only bump, and never in a way that blocks or fails the install.
+After a successful install the CLI MAY print an invitation to star the repository, and SHALL show it only on a first install or a major/minor bump — never on a patch-only bump — and SHALL bound how long it waits on any external probe before printing.
 
 #### Scenario: Maks installs for the first time
 
@@ -691,6 +691,13 @@ After a successful install the CLI MAY print a one-time invitation to star the r
   the probe
 - AND the install still exits 0
 
+#### Scenario: The marker cannot be written
+
+- GIVEN the engine directory is read-only, so the marker write fails
+- WHEN the invitation is shown
+- THEN the install still succeeds, and the next install for the same version
+  prompts again, because nothing recorded that it already asked
+
 #### Scenario: The repository is already starred
 
 - GIVEN an authenticated `gh` reports the repository is already starred
@@ -705,7 +712,10 @@ After a successful install the CLI MAY print a one-time invitation to star the r
 > (`src/star.ts:16`) and is written *before* printing, so one run never prompts
 > twice and a write failure is non-fatal. `GH_PROBE_TIMEOUT_MS` is 2 000 ms
 > (`src/star.ts:6`), sized to clear a healthy `gh auth status` (0.77–1.21 s
-> measured) but not a wedged one that blocked install 11–25 s (#810). Covered by
+> measured) but not a wedged one that blocked install 11–25 s (#810). Only the
+> marker write is guarded (`src/star.ts:85`); the call sits inside
+> `performInstall`'s `try` (`src/cli/install.ts:239`), so anything else it
+> throws lands in the catch that exits 1 — see Open Issues. Covered by
 > `tests/unit/star.test.ts`.*
 
 ### Requirement: Install cost is stated before download
@@ -726,3 +736,9 @@ Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL m
 
 - `kesha record` has no Windows or Linux microphone capture; `record.rs` gates capture on
   macOS and the README directs other platforms to pass an existing audio file.
+- **A star prompt failure can fail an install that already succeeded.**
+  `maybeAskForStar` runs inside `performInstall`'s `try` after the engine is on
+  disk, and only its marker write is guarded. A throw from `Bun.which`, either
+  `gh` spawn, or the logger reaches the catch, which reports the install as
+  `failed` and exits 1 — after every byte was downloaded and verified. The
+  prompt is cosmetic and should not be able to do that.

@@ -229,32 +229,40 @@ The CLI SHALL print its own version — the version of the installed CLI package
 > version, and empty invocation keep stable stream contracts" test in
 > `tests/integration/cli-contracts.test.ts`.*
 
-### Requirement: `--help` and a bare invocation both print usage, and differ only in Exit code
+### Requirement: `--help` and a bare invocation both print usage to stdout, and differ in Exit code
 
-The CLI SHALL print usage listing the transcription form and every subcommand to stdout with an empty stderr, exiting 0 when help was asked for and 1 when the CLI was invoked with no arguments at all.
+The CLI SHALL print usage to stdout with an empty stderr in both cases, exiting 0 when help was asked for and 1 when the CLI was invoked with no arguments at all, so a script that lost its argument fails rather than silently succeeding.
 
 #### Scenario: Maks asks what the CLI can do
 
 - WHEN Maks runs `kesha --help`
-- THEN stdout names the product, the transcription form, and the subcommands
-  with their flags
+- THEN stdout names the product, the transcription form, and the flags of the
+  top-level transcription command
 - AND stderr is empty
 - AND the process exits 0
 
 #### Scenario: Ira invokes the CLI with no arguments in a script
 
 - WHEN `kesha` runs with no arguments
-- THEN stdout carries the usage block, starting with the
-  `kesha <audio_file> [audio_file ...]` form and listing every subcommand
+- THEN stdout carries a usage block starting with the
+  `kesha <audio_file> [audio_file ...]` form
 - AND stderr is empty
-- AND the process exits 1, so a script that lost its argument fails rather than
-  silently succeeding
+- AND the process exits 1
 
-> *Technical Note — the no-argument usage block is
+#### Scenario: A subcommand exists but the usage block does not name it
+
+- GIVEN a subcommand the hard-coded usage block omits
+- WHEN Ira reads that block to discover the command set
+- THEN the subcommand is still dispatchable, and still absent from the listing
+  — the block is maintained by hand and drifts (see Open Issues)
+
+> *Technical Note — the no-argument usage block is a hand-maintained string at
 > `src/cli/main.ts:533-547`, printed with `log.info` (stdout) followed by
-> `process.exit(1)`. `--help` is citty's own renderer over the command's `meta`
-> and `args`. Both stream contracts are asserted in
-> `tests/integration/cli-contracts.test.ts`.*
+> `process.exit(1)`; it lists ten subcommands and omits `init` and `mcp`, both
+> of which `SUBCOMMANDS` in `src/cli/dispatch.ts:10-23` dispatches. `--help` is
+> citty's own renderer over the main command's `meta` and `args`, so it shows
+> the transcription flags, not each subcommand's. Both stream contracts are
+> asserted in `tests/integration/cli-contracts.test.ts`.*
 
 ### Requirement: Result-producing commands follow the stdout-purity principle
 
@@ -307,6 +315,11 @@ When the first positional token is not a file and not a known subcommand, the CL
 - There is no `--color` flag to force color on when stdout is not a TTY (e.g.
   inside tmux with `TERM=dumb`); `FORCE_COLOR` from picocolors is the current
   workaround.
+- The bare-invocation usage block omits `init` and `mcp` — two dispatchable
+  subcommands, one of them the command interactive missing-model errors
+  recommend ([installation](../installation/spec.md), "Documented install entry
+  points match interactive hints"). Nothing keeps the hand-written list and
+  `SUBCOMMANDS` in sync, so it will drift again.
 - `kesha completions` and `kesha manpage` both resolve their file relative to
   `import.meta.url`, which does not survive the `bun build --compile` step the
   `.deb`/`.rpm` are built with, so on that install path both crash with an

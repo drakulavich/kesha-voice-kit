@@ -19,8 +19,9 @@ job, and no distribution path changes that.
   Never-auto-download rule holds across all of them.
 - Choosing which Engine release a CLI resolves — that is the Pinned Engine
   version, specified in [installation](../installation/spec.md).
-- Which version reaches which Channel, and when. Release-lane mechanics live in
-  the release-channels capability.
+- Which version reaches which Channel, and when. Release-lane mechanics are
+  proposed by the in-flight `alpha-release-channel` change and have no baseline
+  capability yet — see Open Issues.
 - The shape of the `./core` exports map — see
   [programmatic-api](../programmatic-api/spec.md).
 - Publishing the OpenClaw plugin to ClawHub — see
@@ -122,9 +123,9 @@ The CLI package SHALL declare no `postinstall` or equivalent lifecycle script, s
 > in `package.json#files` so `kesha install --plan` can size the download
 > without the Engine present.*
 
-### Requirement: The published file list carries runtime assets and excludes test sources
+### Requirement: Every payload carries the assets the CLI loads, and no test sources
 
-The CLI package SHALL publish everything the CLI reads at runtime — the entry point, sources, shell completion scripts, the man page, the install plan metadata, and the OpenClaw plugin files — and SHALL exclude test sources.
+Each distribution path SHALL stage every asset the CLI loads at startup — the entry point, sources, shell completion scripts, the man page, the install plan metadata, and the OpenClaw plugin files — and SHALL exclude test sources. A payload that stages the sources without the assets beside them is incomplete, not merely reduced: the commands that need them fail.
 
 #### Scenario: Maks prints completions from a global install
 
@@ -132,6 +133,14 @@ The CLI package SHALL publish everything the CLI reads at runtime — the entry 
 - WHEN Maks runs `kesha completions zsh` and `kesha manpage`
 - THEN both print their bundled files, because `completions/` and `man/` ship
   in the package and are resolved relative to the installed sources
+
+#### Scenario: A payload stages the sources but not the assets
+
+- GIVEN a payload that stages `bin/` and `src/` without `completions/` and
+  `man/`
+- WHEN a user runs `kesha completions bash` or `kesha manpage` from it
+- THEN the command fails rather than printing, because the asset is not on disk
+  where the source expects it
 
 #### Scenario: A script names a repository path that is not published
 
@@ -144,7 +153,9 @@ The CLI package SHALL publish everything the CLI reads at runtime — the entry 
 > `tsconfig.json`, `openclaw.plugin.json`, `openclaw-plugin.cjs`, two docs
 > pages, `SKILL.md`, `LICENSE`, `NOTICES.md`, `README.md`, and the
 > `!src/__tests__` exclusion. `tests/unit/package-metadata.test.ts` covers the
-> `model-plan.json` entry and the script-path existence check.*
+> `model-plan.json` entry and the script-path existence check. Until #915 the
+> npm package was the **only** payload that satisfied this requirement — see
+> Open Issues.*
 
 ### Requirement: Linux packages install one command and its documentation
 
@@ -203,29 +214,35 @@ The published container image SHALL run the CLI as a non-root user, resolve the 
 > and on `v*` tags excluding `v*-alpha*`. `compose.yml` mirrors the same mount
 > layout; usage is documented in `docs/docker.md`.*
 
-### Requirement: The Nix flake builds the CLI and the Engine from source
+### Requirement: The Nix flake is an alternate build path, and never a release gate
 
-The Nix flake SHALL expose the CLI and a from-source Engine build for `aarch64-darwin` and `x86_64-linux`, with the CLI pointed at the Engine the same flake built. It is an alternate reproducible path, not a release gate — no published artifact depends on it.
+The Nix flake SHALL define the CLI and a from-source Engine build for `aarch64-darwin` and `x86_64-linux`, with the CLI pointed at the Engine the same flake built. No published artifact SHALL depend on it, so a flake that does not build blocks nothing.
 
-#### Scenario: Maks runs Kesha through Nix without an npm install
+#### Scenario: Maks builds the Engine through Nix
 
 - GIVEN Maks has Nix with flakes enabled on Apple Silicon
-- WHEN Maks runs `nix run github:drakulavich/kesha-voice-kit -- install`
-- THEN the CLI runs against the Engine built by the flake rather than a
-  downloaded release binary
+- WHEN Maks runs `nix build .#kesha-engine`
+- THEN the Engine is built from source, carrying the Pinned Engine version in
+  a file beside the binary
 
-#### Scenario: The flake fails to evaluate
+#### Scenario: The CLI derivation cannot build
 
-- WHEN the flake breaks on a supported system
-- THEN no release lane fails as a result, because no published artifact is built
-  through it
+- GIVEN the CLI's dependency derivation carries a placeholder output hash that
+  no one has populated
+- WHEN a user runs `nix run` or `nix build .#kesha`
+- THEN it fails with a hash mismatch, and the documented recovery is to read the
+  real hash out of that error and paste it in
+- AND no release lane fails as a result
 
 > *Technical Note — `flake.nix` exposes `packages.kesha` and
 > `packages.kesha-engine`; `kesha-engine` is built with naersk and records
 > `package.json#keshaEngine.version` into `bin/kesha-engine.version`
 > (`flake.nix:144-167`), and the `kesha` wrapper sets `KESHA_ENGINE_BIN` to it
-> (`flake.nix:280`). Usage: `docs/nix-install.md`. CLAUDE.md states explicitly
-> that the flake is not a CI gate.*
+> (`flake.nix:280`). `keshaNodeModules.outputHash` is `lib.fakeHash`
+> (`flake.nix:230`), and the comment above it (`flake.nix:188-205`) states
+> plainly that `packages.default`, `apps.default`, and the README's `nix run` /
+> `nix profile install` snippets all fail until it is populated. Usage:
+> `docs/nix-install.md`. CLAUDE.md states the flake is not a CI gate.*
 
 ### Requirement: The MCP registry manifest names a published CLI version
 
@@ -279,20 +296,27 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
 
 ## Open Issues
 
-- **`kesha completions` and `kesha manpage` are broken on the Linux-package
-  path.** Both read their file relative to `import.meta.url`
-  (`src/cli/completions.ts:38`, `src/cli/manpage.ts:9`), which in a
-  `bun build --compile` binary resolves outside the embedded filesystem. Every
-  other path ships the sources, so only the `.deb`/`.rpm` is affected.
-  Reproduced against this commit by compiling `./bin/kesha.js` for the host and
-  running both commands: each dies with an unhandled `ENOENT` for
-  `/completions/kesha.bash` and `/man/kesha.1` respectively, printing a stack
-  trace and exiting 1 — not the exit-2 usage error
-  [cli-shell-integration](../cli-shell-integration/spec.md) specifies for bad
-  input, and not a message a user can act on. `model-plan.json` is unaffected
-  because it is a static import, and `kesha install --plan` was verified working
-  in the same binary. Needs a GitHub issue; the fix is to embed both assets
-  rather than resolve them at runtime.
+- **`kesha completions` and `kesha manpage` are broken on four of the five
+  paths** (#914, fixed by #915). Both read their file relative to
+  `import.meta.url` (`src/cli/completions.ts:38`, `src/cli/manpage.ts:9`), which
+  fails two different ways:
+  - In the `.deb`/`.rpm`'s `bun build --compile` binary the path resolves
+    outside the embedded filesystem. Reproduced by compiling `./bin/kesha.js`
+    for the host: an unhandled `ENOENT` for `/completions/kesha.bash` and
+    `/man/kesha.1`, stack trace, exit 1 — not the exit-2 usage error
+    [cli-shell-integration](../cli-shell-integration/spec.md) specifies, and not
+    a message a user can act on.
+  - Homebrew, the container image, and Nix stage `bin` and `src` **without**
+    `completions/` or `man/` (`packaging/homebrew/Formula/kesha-voice-kit.rb:11`,
+    `Dockerfile:11`, `flake.nix:248` and `:266`), so the file the source looks
+    for is simply absent. Reproduced by staging exactly `bin src package.json
+    bun.lock tsconfig.json` and running both commands.
+
+  Only the npm CLI package and a repository checkout ever worked.
+  `model-plan.json` is unaffected because it is a static import, and
+  `kesha install --plan` was verified working in the compiled binary. An earlier
+  revision of this spec claimed only the Linux packages were affected; that was
+  wrong, and Codex review caught it.
 - The Homebrew formula in `packaging/homebrew/Formula/kesha-voice-kit.rb` is a
   template kept in this repository; the tap that users install from is
   `drakulavich/homebrew-tap`, updated by `.github/workflows/homebrew-tap.yml`
@@ -312,3 +336,12 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
 - No test asserts that the Homebrew, Linux-package, container, and Nix paths
   produce the same CLI version — the "same contents everywhere" requirement is
   held by construction, not by a gate.
+- **There is no baseline capability for release channels**, yet this spec's
+  Non-Goals and the Glossary's Channel / Alpha / Prerelease entries both lean on
+  one. The in-flight `alpha-release-channel` change proposes a `release-channels`
+  capability; until it is archived into `openspec/specs/`, tag grammar, dist-tag
+  handling, provenance, and the independent CLI/Engine versioning scheme have no
+  baseline home. This is a corpus gap, not a reading-order preference.
+- `nix build .#kesha` cannot succeed as committed (`lib.fakeHash`), so the CLI
+  half of the flake is documented-but-unbuildable. `docs/nix-install.md` and the
+  README both present `nix run` as a working install path.

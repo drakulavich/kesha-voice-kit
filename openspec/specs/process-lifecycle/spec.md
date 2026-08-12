@@ -7,6 +7,9 @@ those runs take minutes. This spec covers what happens when such a run is
 interrupted: which processes are terminated, how long they are given, what exit
 code the CLI reports, and what a caller who cancels programmatically observes.
 
+It covers the spawns that opt in by registering themselves. Two short-lived
+spawns do not, and are listed under Open Issues rather than quietly implied.
+
 Ira runs batches in CI where a job cancellation must not leave a model-loading
 Engine holding a runner's CPU. Maks presses Ctrl-C on a long meeting
 transcription and expects his terminal back. Sona cancels an in-flight call from
@@ -27,9 +30,9 @@ her agent and needs a distinguishable outcome rather than an empty transcript.
 
 ## Requirements
 
-### Requirement: An interrupted command terminates the Engine and reports the signal in its Exit code
+### Requirement: An interrupted command terminates the registered Engine subprocess and reports the signal in its Exit code
 
-When the CLI receives an interrupt or termination signal while an Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination — rather than with the command's own success or failure code.
+When the CLI receives an interrupt or termination signal while a registered Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination — rather than with the command's own success or failure code. Transcription, Language detection, synthesis, and recording register; the two `--list-voices` spawns do not (see Open Issues).
 
 #### Scenario: Maks interrupts a long transcription
 
@@ -173,3 +176,11 @@ When a caller of the Core API cancels an in-flight call, the call SHALL fail wit
 - The Windows path spawns `taskkill` and does not wait for it, so on Windows the
   tree kill is fire-and-forget; nothing verifies it completed before the CLI
   exits.
+- **Two Engine spawns never register.** `kesha say --list-voices`
+  (`src/cli/say.ts:315`) and the MCP `listVoices` (`src/mcp/voices.ts:115`) both
+  call `spawnEngineProcess` directly and await it without
+  `registerProcessTree`, so they join no process tree and install no signal
+  handler of their own. Interrupting either leaves the Engine to be reaped by
+  the shell rather than terminated by the CLI. Both are short-lived, which is
+  presumably why it never surfaced — but "short-lived" is not the contract this
+  spec states, and an Engine cold-load can take seconds.

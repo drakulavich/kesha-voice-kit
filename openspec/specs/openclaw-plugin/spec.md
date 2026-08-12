@@ -96,7 +96,7 @@ The plugin SHALL require that the CLI, Engine, and models are already installed,
 
 ### Requirement: A failed transcription yields an empty transcript rather than a raised error
 
-The plugin SHALL absorb every failure — spawn failure, non-zero exit, timeout, unparseable output — and return an empty transcript, so a bad audio message cannot crash the agent's message handling.
+The plugin SHALL absorb every failure that occurs once transcription has started — spawn failure, non-zero exit, timeout, unparseable output — and return an empty transcript, so a bad audio message cannot crash the agent's message handling. Failures before that point are not absorbed (see Open Issues).
 
 #### Scenario: The CLI exits non-zero on a corrupt attachment
 
@@ -112,11 +112,13 @@ The plugin SHALL absorb every failure — spawn failure, non-zero exit, timeout,
 - THEN the subprocess is stopped and the plugin returns an empty transcript
 - AND a caller-supplied timeout is honoured in place of the default
 
-> *Technical Note — every failure branch in `openclaw-plugin.cjs:50-70` returns
-> `{ text: "" }`; the `finally` block unlinks the temporary file best-effort.
-> `DEFAULT_TIMEOUT_MS` is 60 000 and is overridden by `req.timeoutMs`
-> (`:30`, `:50`). This deliberately trades the corpus-wide "never swallow
-> errors" rule for host stability — see Open Issues.*
+> *Technical Note — every failure branch inside the `try` at
+> `openclaw-plugin.cjs:45-70` returns `{ text: "" }`; the `finally` block
+> unlinks the temporary file best-effort. `DEFAULT_TIMEOUT_MS` is 60 000
+> (`:29`) and is overridden by `req.timeoutMs` (`:48`). The `try` opens at `:45`
+> — after the write at `:43` — so the write is outside it. This deliberately
+> trades the corpus-wide "never swallow errors" rule for host stability — see
+> Open Issues.*
 
 ### Requirement: Temporary audio never outlives the request
 
@@ -127,14 +129,17 @@ The plugin SHALL write the audio it was handed to a per-request temporary file u
 - WHEN the plugin finishes a successful transcription
 - THEN the temporary audio file no longer exists
 
-#### Scenario: Two messages are transcribed concurrently
+#### Scenario: Two messages arrive in the same millisecond
 
-- GIVEN two requests are in flight in the same host process
-- WHEN both write temporary files
-- THEN their paths differ, so neither overwrites or deletes the other's audio
+- GIVEN two requests with the same file extension start within one millisecond
+  in the same host process
+- WHEN both compose their temporary path
+- THEN the paths collide, and one request overwrites the other's audio and
+  deletes the file the other is still using — the name carries no per-request
+  uniqueness beyond the clock (see Open Issues)
 
-> *Technical Note — `tempAudioPath` (`openclaw-plugin.cjs:33`) composes
-> `kesha-<pid>-<timestamp><ext>` under `os.tmpdir()`. Deletion happens in the
+> *Technical Note — `tempAudioPath` (`openclaw-plugin.cjs:32`) composes
+> `kesha-<pid>-<Date.now()><ext>` under `os.tmpdir()`. Deletion happens in the
 > `finally` of `transcribeAudio` and swallows its own error.*
 
 ### Requirement: The plugin source carries no token that trips the host's scanner
@@ -199,6 +204,16 @@ Publishing the plugin to the OpenClaw registry SHALL be its own deliberate step,
   swallow errors; never return success on failure" rule. An empty transcript is
   indistinguishable from silence that genuinely transcribed to nothing, so a
   misconfigured install looks like a quiet user.
+- **The temporary write is outside the `try`.** `fs.writeFileSync` runs at
+  `openclaw-plugin.cjs:43` and the `try` opens at `:45`, so a full disk, a
+  read-only or missing `os.tmpdir()`, or a permission error throws straight into
+  the host — the one failure the absorb-everything contract does not cover, and
+  the one most likely to hit every request rather than one.
+- **Temporary paths are not collision-safe.** `kesha-<pid>-<Date.now()><ext>`
+  repeats for two same-extension requests in the same millisecond in one
+  process. `Date.now()` has millisecond resolution and OpenClaw can hand the
+  provider concurrent messages; the `finally` then deletes a file the other
+  request may still be reading. A counter or `randomUUID()` would close it.
 - `openclaw.plugin.json` advertises "25 languages" and "~19x faster than
   Whisper" independently of the README and `server.json`. Nothing keeps those
   claims in sync when the supported-language set changes.
