@@ -23,6 +23,17 @@ ru-vosk-f01:    "Тестовая фраза для проверки женск�
 
 Each phrase is short enough for fast iteration but long enough that a broken pipeline produces obviously wrong stats (silence, single-sample buffers, wrong rate).
 
+### ANE arm (darwin-arm64 only)
+
+The corpus above runs on an `onnx,tts` binary, which never touches the FluidAudio/ANE Kokoro path. That path is a separate binary and a separate arm:
+
+```text
+en-am_michael:  "Hello, world. This is a test."
+zh-zm_050:      "你好，世界。这是一个测试。"
+```
+
+English and Mandarin are the two KokoroAne variants that were peak-normalized to 0 dBFS before #718; Japanese was already native upstream and `ja-*` rejects native-script input anyway (#492), so it is not in the corpus.
+
 ## Procedure
 
 ### Step 1: Verify engine + cache are ready
@@ -33,6 +44,16 @@ test -d ~/.cache/kesha/models/vosk-ru || echo "WARN: vosk-ru not cached — ru t
 test -d ~/.cache/kesha/models/kokoro-82m || echo "WARN: kokoro not cached — en tests will skip"
 ```
 
+The ANE arm needs its own binary, built with the darwin release feature set:
+
+```bash
+cd rust && cargo build --release --no-default-features \
+    --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
+    --target-dir target/ane 2>&1 | tail -3
+```
+
+It also needs the ANE bundle staged by `kesha install --tts`, which is multi-GB and lives in one of two cache trees depending on whether the #688 migration has run — so do **not** probe for a path. Attempt the synthesis and read the engine's answer: it refuses with `E_MODEL_MISSING` rather than downloading anything, and that is the skip signal for this arm. Never run `kesha install --tts` to satisfy it.
+
 ### Step 2: Synthesize each corpus entry
 
 For each `voice → text`:
@@ -42,7 +63,12 @@ KESHA_CACHE_DIR=~/.cache/kesha ./rust/target/release/kesha-engine say \
     --voice <voice> "<text>" > "/tmp/aqc-<slug>.wav" 2>"/tmp/aqc-<slug>.err"
 ```
 
-Capture exit code; non-zero is a failure.
+Capture exit code; non-zero is a failure. The ANE arm is the same call against the other binary:
+
+```bash
+./rust/target/ane/release/kesha-engine say \
+    --voice <voice> "<text>" > "/tmp/aqc-ane-<slug>.wav" 2>"/tmp/aqc-ane-<slug>.err"
+```
 
 ### Step 3: Read WAV header (no external deps)
 
@@ -87,7 +113,13 @@ If the file uses IEEE_FLOAT (audio_format=3, common for our pipeline), `wave` re
 | Peak | < 0.999 | `clipping (peak ≥ 0.999)` |
 | Silence ratio | < 0.7 | `≥70% silent frames` |
 
-(Sample-rate expectations come from `vosk::SAMPLE_RATE = 22050` and `kokoro::SAMPLE_RATE = 24000`. If a future engine bumps these, update the table.)
+(Sample-rate expectations come from `vosk::SAMPLE_RATE = 22050` and `kokoro::SAMPLE_RATE = 24000`. If a future engine bumps these, update the table. The ANE arm is 24000 for both voices.)
+
+#### The peak check on the ANE arm
+
+Before #718 the ANE path peak-normalized English and Mandarin, so every one of its WAVs peaked at exactly full scale and `peak < 0.999` would have failed by construction. Since #718 it ships the model's native level, which makes that row a real clipping check on this arm — and a peak of ≈1.000 now means something specific: either the 0 dBFS slam is back in the path (a fork or pin regression) or `tts::wav`'s clamp is absorbing genuinely hot content. Report which by counting the samples at ±1.0: a single clamped sample is the slam's signature, a run of them is clipping.
+
+Per-voice expected peak windows are **not pinned yet** — no ANE-installed host has run this arm. The first run on one records its measured peak/RMS per voice here, and only then can a drift threshold be set. Do not invent a window from the ONNX arm's numbers: the two backends are different weights through different G2P and their levels are not interchangeable.
 
 ### Step 5: Report
 
@@ -101,8 +133,9 @@ Format:
 ❌ ru-vosk-m02 "Привет, мир. Это тест." — RMS 0.002 (near silent)
 ✅ ru-vosk-m02 "Привет, как дела? Это тест..." — 22050 Hz, 1.96s, RMS 0.118, peak 0.88
 ⏭ ru-vosk-f01 — vosk-ru not cached, skipped
+⏭ ANE arm — ANE bundle not staged, skipped
 
-Verdict: 3 PASS, 1 FAIL, 1 SKIP
+Verdict: 3 PASS, 1 FAIL, 2 SKIP
 
 Failures:
   ru-vosk-m02 #1: RMS 0.002 (threshold > 0.005). Stderr tail:
@@ -129,3 +162,4 @@ Exit non-zero only if at least one PASS was attempted and a hard failure occurre
 - Pre-release gate (called by `release-engine` skill).
 - After bumping a model SHA pin (called by `verify-pin-bump` skill on Step 8).
 - After a Cargo.toml dep bump that touches `ort`, `vosk-tts-rs`, `misaki-rs`, or any TTS-adjacent crate.
+- After a `fluidaudio-rs` rev bump — the ANE arm is the only check that would catch upstream re-slamming levels or changing the KokoroAne chain's output.
