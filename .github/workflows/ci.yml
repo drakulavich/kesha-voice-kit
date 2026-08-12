@@ -41,6 +41,7 @@ jobs:
       openspec: ${{ steps.filter.outputs.openspec }}
       nix: ${{ steps.filter.outputs.nix }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      recipes: ${{ steps.filter.outputs.recipes }}
       homebrew: ${{ steps.filter.outputs.homebrew }}
     steps:
       - name: 📥 Checkout
@@ -153,6 +154,18 @@ jobs:
               - 'bun.lock'
               # The file check:engine-targets guards; without it a size edit never runs the check.
               - 'src/engine-targets.ts'
+            # check:recipes reads the justfile on one side and the prose on the other, so either
+            # side moving has to re-run it — renaming a recipe and citing a recipe are the same bug.
+            recipes:
+              - 'justfile'
+              - 'README.md'
+              - 'CONTRIBUTING.md'
+              - 'CLAUDE.md'
+              - 'docs/**'
+              - '.claude/**'
+              - '.github/workflows/**'
+              - '.github/scripts/check-recipes.ts'
+              - 'package.json'
             homebrew:
               - 'packaging/homebrew/Formula/**'
               - 'docs/homebrew.md'
@@ -162,7 +175,9 @@ jobs:
     needs: changes
     # `schedule` so a release published after the last workflow change still gets its assets
     # verified within a day, rather than waiting for someone to touch a workflow file.
-    if: needs.changes.outputs.workflows == 'true' || github.event_name == 'schedule'
+    if: >-
+      needs.changes.outputs.workflows == 'true' || needs.changes.outputs.recipes == 'true'
+      || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
@@ -171,8 +186,17 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
+      # check:recipes parses `just --dump`; without a `just` here it fails loudly rather than
+      # skipping, which is the point — a silently-skipped gate is the drift it exists to catch.
+      - uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: just@1.58.0
+
       - name: 🔍 Check workflow YAML
         run: bun run check:workflows
+
+      - name: 📖 Check just recipe references
+        run: bun run check:recipes
 
       - name: 🧾 Check release manifest metadata
         run: bun run check:release-manifest

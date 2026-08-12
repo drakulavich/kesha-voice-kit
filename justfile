@@ -26,6 +26,7 @@ test:
 check:
     bun run lint
     bun run check:versions
+    bun run check:recipes
     {{ just_executable() }} test
 
 # Run Bun coverage and enforce TS coverage gates
