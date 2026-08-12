@@ -5,7 +5,7 @@ use fluidaudio_rs::FluidAudio;
 
 use crate::fluid_stdout::with_silenced_stdout;
 
-use super::TranscribeBackend;
+use super::{TranscribeBackend, TranscriptionChunk};
 
 /// FluidAudio's CoreML ASR rejects clips shorter than ~1s (returns
 /// `invalidAudioData` and prints the error to stdout — see #259).
@@ -38,23 +38,25 @@ impl FluidAudioBackend {
 }
 
 impl TranscribeBackend for FluidAudioBackend {
-    fn transcribe(&mut self, audio_path: &str) -> Result<String> {
+    /// No `words`: the bridge's `transcribe_file` returns text only, so the
+    /// per-token timings FluidAudio computes never cross the FFI boundary (#720).
+    fn transcribe(&mut self, audio_path: &str) -> Result<TranscriptionChunk> {
         let result = self
             .audio
             .transcribe_file(audio_path)
             .context("FluidAudio transcription failed")?;
-        Ok(result.text)
+        Ok(result.text.into())
     }
 
     /// stdout is silenced for the call: even with padding, upstream prints
     /// would corrupt `--json` output (#259).
-    fn transcribe_samples(&mut self, samples: &[f32]) -> Result<String> {
+    fn transcribe_samples(&mut self, samples: &[f32]) -> Result<TranscriptionChunk> {
         let padded = pad_to_min(samples, MIN_SAMPLES);
         let result = with_silenced_stdout(self.sink.as_ref(), || {
             self.audio.transcribe_samples(&padded)
         })
         .context("FluidAudio sample transcription failed")?;
-        Ok(result.text)
+        Ok(result.text.into())
     }
 }
 
@@ -282,11 +284,13 @@ mod tests {
         let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
         let first = be
             .transcribe_samples(&samples)
-            .expect("first transcribe_samples");
+            .expect("first transcribe_samples")
+            .text;
         dump.first_call = Some(first.clone());
         let second = be
             .transcribe_samples(&samples)
-            .expect("second transcribe_samples");
+            .expect("second transcribe_samples")
+            .text;
 
         assert!(
             !first.trim().is_empty(),

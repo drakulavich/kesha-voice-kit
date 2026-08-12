@@ -338,6 +338,64 @@ describe("engine", () => {
     );
   });
 
+  /** #720: the parser rebuilds each segment field by field, so a new key is lost unless
+   * it is copied — and every user path (`--json --timestamps`, `--toon`,
+   * `transcribeWithSegments`, MCP) reads the transcript through here. */
+  fakeEngineTest("transcribeEngineWithSegments forwards word timings", async () => {
+    const payload = JSON.stringify({
+      text: "hello world",
+      segments: [
+        {
+          start: 0,
+          end: 1,
+          text: "hello world",
+          words: [
+            { word: "hello", start: 0, end: 0.4 },
+            { word: "world", start: 0.4, end: 0.96 },
+          ],
+        },
+      ],
+    });
+    const engine = writeTranscribingEngine(
+      "kesha-engine-words-",
+      ["transcribe.segments", "transcribe.words"],
+      `  printf '%s\\n' '${payload}'`,
+    );
+    await withEngineEnv(engine, async () => {
+      const out = await transcribeEngineWithSegments("audio.wav");
+      expect(out.segments[0]!.words).toEqual([
+        { word: "hello", start: 0, end: 0.4 },
+        { word: "world", start: 0.4, end: 0.96 },
+      ]);
+    });
+  });
+
+  /** An engine without the capability sends no key; the parser must not invent one. */
+  fakeEngineTest("transcribeEngineWithSegments leaves words undefined when absent", async () => {
+    await withEngineEnv(fakeEngine(["transcribe.segments"]), async () => {
+      const out = await transcribeEngineWithSegments("audio.wav");
+      expect(out.segments[0]!.words).toBeUndefined();
+    });
+  });
+
+  /** A malformed `words` is a bad enrichment, not a bad transcript: drop it, keep the text.
+   * Throwing would make a garbled optional field cost the user their transcription. */
+  fakeEngineTest("transcribeEngineWithSegments drops malformed word timings", async () => {
+    for (const words of ['"not-an-array"', '[{"word":"hi","start":"0","end":1}]', "[{}]", "[null]"]) {
+      const payload = `{"text":"hi","segments":[{"start":0,"end":1,"text":"hi","words":${words}}]}`;
+      const engine = writeTranscribingEngine(
+        "kesha-engine-badwords-",
+        ["transcribe.segments", "transcribe.words"],
+        `  printf '%s\\n' '${payload}'`,
+      );
+      await withEngineEnv(engine, async () => {
+        const out = await transcribeEngineWithSegments("audio.wav");
+        expect(out.text).toBe("hi");
+        expect(out.segments[0]!.words).toBeUndefined();
+      });
+    }
+  });
+
   fakeEngineTest("transcribeEngine surfaces E_ENGINE_SPAWN instead of a raw spawn exception", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-engine-not-exec-"));
     const notExecutable = join(dir, "kesha-engine");

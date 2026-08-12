@@ -5,7 +5,9 @@ import {
   TRANSCRIBE_SEGMENTS_FEATURE,
   TRANSCRIBE_DIARIZE_FEATURE,
   TRANSCRIBE_ITN_FEATURE,
+  TRANSCRIBE_WORDS_FEATURE,
 } from "../../src/engine";
+import type { WordTiming } from "../../src/engine";
 
 const CWD = import.meta.dir + "/../..";
 const FIXTURE_RU = "tests/fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";
@@ -267,6 +269,64 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       expect(parsed.segments[0].text.length).toBeGreaterThan(0);
     }
   }, 60_000);
+
+  test("word timings track real speech and stay inside their segment (#720)", async () => {
+    const capsRun = await runEngine(["--capabilities-json"]);
+    const caps = JSON.parse(capsRun.stdout);
+    const advertises = caps.features.includes(TRANSCRIBE_WORDS_FEATURE);
+    // The flag is backend-gated, so a CoreML engine must omit both it and the key.
+    if (!advertises) {
+      const { stdout } = await runEngine(["transcribe", FIXTURE_EN, "--json"]);
+      expect(JSON.parse(stdout).segments[0]?.words).toBeUndefined();
+      console.warn(`engine lacks ${TRANSCRIBE_WORDS_FEATURE}; skipping word-timing e2e`);
+      return;
+    }
+
+    const { stdout, exitCode } = await runEngine(["transcribe", FIXTURE_EN, "--json"]);
+    expect(exitCode).toBe(0);
+    const segment = JSON.parse(stdout).segments[0];
+    const words: WordTiming[] = segment.words;
+    expect(words.length).toBe(segment.text.split(/\s+/).length);
+
+    for (const w of words) {
+      // `end >= start`: a word clipped at the segment boundary can be zero-width.
+      expect(w.end).toBeGreaterThanOrEqual(w.start);
+      expect(w.start).toBeGreaterThanOrEqual(segment.start);
+      expect(w.end).toBeLessThanOrEqual(segment.end);
+    }
+    for (let i = 1; i < words.length; i++) {
+      expect(words[i]!.start).toBeGreaterThanOrEqual(words[i - 1]!.start);
+    }
+    // Interpolating across the segment would put every word the same distance
+    // apart; real per-word durations do not.
+    const gaps = words.slice(1).map((w, i) => w.start - words[i]!.start);
+    expect(new Set(gaps.map((g) => g.toFixed(2))).size).toBeGreaterThan(1);
+  }, 120_000);
+
+  /** The engine-direct case above cannot see the TS parser, which rebuilds every
+   * segment field by field — this walks the path a user actually types (#720). */
+  test("kesha --json --timestamps carries word timings through the CLI (#720)", async () => {
+    const capsRun = await runEngine(["--capabilities-json"]);
+    const caps = JSON.parse(capsRun.stdout);
+
+    const { stdout, exitCode } = await runCli(["--json", "--timestamps", FIXTURE_EN]);
+    expect(exitCode).toBe(0);
+    const segment = JSON.parse(stdout)[0].segments[0];
+
+    if (!caps.features.includes(TRANSCRIBE_WORDS_FEATURE)) {
+      expect(segment.words).toBeUndefined();
+      console.warn(`engine lacks ${TRANSCRIBE_WORDS_FEATURE}; skipping CLI word-timing e2e`);
+      return;
+    }
+
+    const words: WordTiming[] = segment.words;
+    expect(words.length).toBe(segment.text.split(/\s+/).length);
+    expect(words.map((w) => w.word).join(" ")).toBe(segment.text);
+    for (const w of words) {
+      expect(w.start).toBeGreaterThanOrEqual(segment.start);
+      expect(w.end).toBeLessThanOrEqual(segment.end);
+    }
+  }, 120_000);
 
   test("--itn keeps --json --timestamps output well-formed (#710)", async () => {
     const capsRun = await runEngine(["--capabilities-json"]);

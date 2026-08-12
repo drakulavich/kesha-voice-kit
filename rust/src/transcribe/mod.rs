@@ -12,6 +12,7 @@ use std::time::Instant;
 
 use crate::audio;
 use crate::backend;
+use crate::backend::TranscriptionChunk;
 use crate::coded_bail;
 use crate::errors::ErrorCode;
 use crate::models;
@@ -33,6 +34,12 @@ pub const TRANSCRIBE_DIARIZE_FEATURE: &str = "transcribe.diarize";
 /// is pure Rust and behaves identically on CoreML and ONNX, so the flag exists
 /// for engine-version skew only (#710).
 pub const TRANSCRIBE_ITN_FEATURE: &str = "transcribe.itn";
+
+/// Capability flag for per-word timings inside `--json --timestamps` segments.
+/// Backend-gated: only the ONNX TDT decoder retains the emission frame of each
+/// token today, so CoreML builds omit both the flag and the `words` key (#720).
+#[cfg_attr(feature = "coreml", allow(dead_code))]
+pub const TRANSCRIBE_WORDS_FEATURE: &str = "transcribe.words";
 
 /// Duration at which the `Auto` VAD mode flips to VAD preprocessing.
 /// Voice messages (<30 s) and short clips don't benefit; meetings and
@@ -111,6 +118,26 @@ impl Default for VadMode {
     }
 }
 
+/// One word of a segment, on the same file-relative clock as
+/// [`TranscriptionSegment::start`] — a word span always lies inside its segment.
+///
+/// Times come from the ASR's own frame grid, so they are quantised to that grid
+/// (0.08 s on Parakeet TDT) and `end` is a per-token duration prediction rather
+/// than the next word's `start`: consecutive spans may overlap and are not a
+/// partition of the segment. `word` is what the decoder emitted, punctuation
+/// attached, so the count needn't match the words a human hears (#720).
+///
+/// `end >= start`, not `end > start`: the duration head can predict past the end
+/// of the audio it was given, and clipping that back to the segment boundary can
+/// leave a zero-width span there. Widening it would invent a time and dropping it
+/// would break the one-word-per-text-word correspondence the seam trim relies on.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WordTiming {
+    pub word: String,
+    pub start: f32,
+    pub end: f32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct TranscriptionSegment {
     pub start: f32,
@@ -122,6 +149,11 @@ pub struct TranscriptionSegment {
     /// invocation; not stable across files.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speaker: Option<u32>,
+    /// Per-word timings, absent on backends that cannot produce them. Never
+    /// `null` and never `[]` for "unsupported" — the `transcribe.words`
+    /// capability says whether this build can emit it at all (#720).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub words: Option<Vec<WordTiming>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -400,7 +432,8 @@ fn transcribe_plain(
 ) -> Result<TranscriptionOutput> {
     let mut be = create_timed_backend(model_dir)?;
     let t1 = Instant::now();
-    let text = be.transcribe(audio_path)?;
+    let chunk = be.transcribe(audio_path)?;
+    let text = chunk.text;
     dtrace!(
         "asr::transcribe.end dt={}ms chars={}",
         t1.elapsed().as_millis(),
@@ -410,7 +443,7 @@ fn transcribe_plain(
     // they skip duration resolution and its decode fallback entirely.
     let segments = if timestamps_required && !text.trim().is_empty() {
         let dur = resolve_segment_duration(audio_path, duration)?;
-        single_segment(0.0, dur, &text)
+        single_segment(0.0, dur, &text, chunk.words)
     } else {
         vec![]
     };
@@ -510,11 +543,12 @@ fn transcribe_via_vad(
                 );
             }
         }
-        let text = be.transcribe_samples(&samples)?;
+        let chunk = be.transcribe_samples(&samples)?;
+        let text = chunk.text;
         // Reuse the duration we already computed for the dtrace above
         // (Greptile follow-up on #282 — was a redundant float divide).
         return Ok(TranscriptionOutput {
-            segments: single_segment(0.0, total_secs, &text),
+            segments: single_segment(0.0, total_secs, &text, chunk.words),
             text,
         });
     }
@@ -544,7 +578,7 @@ fn build_vad_output_segments<F>(
     mut transcribe_span: F,
 ) -> Vec<TranscriptionSegment>
 where
-    F: FnMut(&[f32]) -> Result<String>,
+    F: FnMut(&[f32]) -> Result<TranscriptionChunk>,
 {
     let mut out = Vec::with_capacity(spans.len());
     for &(start_s, end_s) in spans {
@@ -556,7 +590,8 @@ where
         let slice = &samples[start..end];
         let t = Instant::now();
         match transcribe_span(slice) {
-            Ok(text) => {
+            Ok(chunk) => {
+                let text = chunk.text;
                 dtrace!(
                     "vad::segment dt={}ms range={:.2}-{:.2}s chars={}",
                     t.elapsed().as_millis(),
@@ -571,6 +606,7 @@ where
                         end: end_s,
                         text: trimmed.to_string(),
                         speaker: None,
+                        words: words_onto_segment(chunk.words, start_s, start_s, end_s),
                     });
                 }
             }
@@ -591,7 +627,7 @@ fn transcribe_chunked_samples<F>(
     transcribe_chunk: &mut F,
 ) -> Result<TranscriptionOutput>
 where
-    F: FnMut(&[f32]) -> Result<String>,
+    F: FnMut(&[f32]) -> Result<TranscriptionChunk>,
 {
     let segments = build_chunked_output_segments(
         samples,
@@ -612,7 +648,7 @@ fn build_chunked_output_segments<F>(
     mut transcribe_chunk: F,
 ) -> Result<Vec<TranscriptionSegment>>
 where
-    F: FnMut(&[f32]) -> Result<String>,
+    F: FnMut(&[f32]) -> Result<TranscriptionChunk>,
 {
     let windows = fixed_chunk_windows(samples.len(), sr, chunk_seconds, overlap_seconds);
     let mut out: Vec<TranscriptionSegment> = Vec::with_capacity(windows.len());
@@ -624,7 +660,8 @@ where
         let slice = &samples[window.input_start..window.input_end];
         let t = Instant::now();
         match transcribe_chunk(slice) {
-            Ok(text) => {
+            Ok(chunk) => {
+                let text = chunk.text;
                 dtrace!(
                     "chunked::segment dt={}ms range={:.2}-{:.2}s chars={}",
                     t.elapsed().as_millis(),
@@ -636,15 +673,32 @@ where
                 // window, and it was already trimmed back to the seam — so its
                 // tail is exactly the pre-seam text this chunk re-transcribes.
                 let previous = out.last().map(|s| s.text.as_str()).unwrap_or("");
-                let trimmed = trim_repeated_prefix(previous, text.trim(), seam_budget);
+                let full = text.trim();
+                let trimmed = trim_repeated_prefix(previous, full, seam_budget);
                 if trimmed.is_empty() {
                     continue;
                 }
+                // The trim drops whole words off the front; words are one per
+                // whitespace-separated word of the same text, so the same count
+                // comes off the front of the timings or the two disagree (#720).
+                let kept_words = trimmed.split_whitespace().count();
+                let dropped = full.split_whitespace().count().saturating_sub(kept_words);
+                let words = chunk.words.and_then(|w| {
+                    let rest: Vec<WordTiming> = w.into_iter().skip(dropped).collect();
+                    // If that invariant ever breaks, absent beats misaligned (as `--itn`).
+                    (rest.len() == kept_words).then_some(rest)
+                });
                 out.push(TranscriptionSegment {
                     start: window.output_start_s,
                     end: window.output_end_s,
                     text: trimmed.to_string(),
                     speaker: None,
+                    words: words_onto_segment(
+                        words,
+                        window.input_start as f32 / sr,
+                        window.output_start_s,
+                        window.output_end_s,
+                    ),
                 });
             }
             Err(e) => {
@@ -841,7 +895,12 @@ fn resolve_segment_duration(audio_path: &str, hint: Option<f32>) -> Result<f32> 
     }
 }
 
-fn single_segment(start: f32, end: f32, text: &str) -> Vec<TranscriptionSegment> {
+fn single_segment(
+    start: f32,
+    end: f32,
+    text: &str,
+    words: Option<Vec<WordTiming>>,
+) -> Vec<TranscriptionSegment> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return vec![];
@@ -851,7 +910,34 @@ fn single_segment(start: f32, end: f32, text: &str) -> Vec<TranscriptionSegment>
         end,
         text: trimmed.to_string(),
         speaker: None,
+        words: words_onto_segment(words, start, start, end),
     }]
+}
+
+/// Move slice-local word times onto the file clock and clamp them into the
+/// segment carrying them. Backends time words against the samples they were
+/// handed, so every segmenting path owes this offset; the clamp keeps the
+/// documented "a word span lies inside its segment" invariant true even when
+/// the TDT duration head over-predicts past the end of the slice (#720).
+fn words_onto_segment(
+    words: Option<Vec<WordTiming>>,
+    slice_start_s: f32,
+    seg_start_s: f32,
+    seg_end_s: f32,
+) -> Option<Vec<WordTiming>> {
+    words.map(|words| {
+        words
+            .into_iter()
+            .map(|w| {
+                let start = (w.start + slice_start_s).clamp(seg_start_s, seg_end_s);
+                WordTiming {
+                    word: w.word,
+                    start,
+                    end: (w.end + slice_start_s).clamp(start, seg_end_s),
+                }
+            })
+            .collect()
+    })
 }
 
 /// Probe audio duration for the `Auto` decision, gated on a cheap
@@ -1159,10 +1245,10 @@ mod tests {
         let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
             call += 1;
             match call {
-                1 => Ok("hello there over the wire".to_string()),
-                2 => Ok("there over the wire world".to_string()),
+                1 => Ok("hello there over the wire".to_string().into()),
+                2 => Ok("there over the wire world".to_string().into()),
                 3 => anyhow::bail!("synthetic chunk failure"),
-                4 => Ok("tail".to_string()),
+                4 => Ok("tail".to_string().into()),
                 _ => unreachable!(),
             }
         })
@@ -1201,9 +1287,9 @@ mod tests {
         let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
             call += 1;
             if call == 1 {
-                Ok("   ".to_string())
+                Ok("   ".to_string().into())
             } else {
-                Ok("spoken tail".to_string())
+                Ok("spoken tail".to_string().into())
             }
         })
         .unwrap();
@@ -1223,7 +1309,8 @@ mod tests {
                 2 => "привет".to_string(),
                 3 => "мир".to_string(),
                 _ => "конец".to_string(),
-            })
+            }
+            .into())
         })
         .expect("cyrillic transcripts must not panic while trimming overlap");
 
@@ -1244,7 +1331,8 @@ mod tests {
                 3 => "а потом обсудим план и на этом всё",
                 _ => "и на этом всё спасибо",
             }
-            .to_string())
+            .to_string()
+            .into())
         })
         .expect("cyrillic seams must splice");
 
@@ -1262,9 +1350,9 @@ mod tests {
 
     #[test]
     fn single_segment_trims_text_and_drops_empty() {
-        assert_eq!(single_segment(0.0, 1.0, "  hi  ")[0].text, "hi");
-        assert!(single_segment(0.0, 1.0, "  ").is_empty());
-        assert!(single_segment(0.0, 1.0, "").is_empty());
+        assert_eq!(single_segment(0.0, 1.0, "  hi  ", None)[0].text, "hi");
+        assert!(single_segment(0.0, 1.0, "  ", None).is_empty());
+        assert!(single_segment(0.0, 1.0, "", None).is_empty());
     }
 
     #[test]
@@ -1277,7 +1365,7 @@ mod tests {
         let mut call = 0;
         let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_slice| {
             call += 1;
-            Ok(format!("utterance {call}"))
+            Ok(format!("utterance {call}").into())
         });
         assert_eq!(segs.len(), 3);
         for s in &segs {
@@ -1300,9 +1388,9 @@ mod tests {
         let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_| {
             call += 1;
             if call == 2 {
-                Ok(String::new())
+                Ok(String::new().into())
             } else {
-                Ok("hello".to_string())
+                Ok("hello".to_string().into())
             }
         });
         assert_eq!(segs.len(), 2, "empty transcription should be skipped");
@@ -1316,7 +1404,9 @@ mod tests {
         // rather than panicking on the slice bounds.
         let spans = vec![(0.5, 0.5), (10.0, 11.0)];
         let samples = vec![0.0_f32; 16_000];
-        let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_| Ok("ignore".into()));
+        let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_| {
+            Ok(String::from("ignore").into())
+        });
         assert_eq!(segs.len(), 0);
     }
 
@@ -1431,6 +1521,147 @@ mod tests {
         assert_eq!(decide(VadMode::Auto, None, false), VadDecision::Plain);
     }
 
+    // ── word timings (#720) ──────────────────────────────────────────────────
+
+    fn chunk_with_words(text: &str, words: &[(&str, f32, f32)]) -> TranscriptionChunk {
+        TranscriptionChunk {
+            text: text.to_string(),
+            words: Some(
+                words
+                    .iter()
+                    .map(|&(word, start, end)| WordTiming {
+                        word: word.to_string(),
+                        start,
+                        end,
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    fn word_spans(segment: &TranscriptionSegment) -> Vec<(&str, f32, f32)> {
+        segment
+            .words
+            .as_ref()
+            .expect("segment carries words")
+            .iter()
+            .map(|w| {
+                let round = |v: f32| (v * 1000.0).round() / 1000.0;
+                (w.word.as_str(), round(w.start), round(w.end))
+            })
+            .collect()
+    }
+
+    /// Backends time words against the slice they were handed, so each VAD span
+    /// owes them its own start offset — otherwise every span reads from zero.
+    #[test]
+    fn vad_segments_put_words_on_the_file_clock() {
+        let spans = vec![(0.5, 1.5), (2.0, 3.5)];
+        let samples = vec![0.0_f32; 16_000 * 6];
+        let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_| {
+            Ok(chunk_with_words(
+                "one two",
+                &[("one", 0.0, 0.4), ("two", 0.4, 0.8)],
+            ))
+        });
+        assert_eq!(
+            word_spans(&segs[0]),
+            vec![("one", 0.5, 0.9), ("two", 0.9, 1.3)]
+        );
+        assert_eq!(
+            word_spans(&segs[1]),
+            vec![("one", 2.0, 2.4), ("two", 2.4, 2.8)]
+        );
+    }
+
+    /// The TDT duration head can predict past the end of the slice; a word
+    /// reaching outside the segment carrying it would break every consumer that
+    /// treats the segment as the bound.
+    #[test]
+    fn word_spans_stay_inside_their_segment() {
+        let spans = vec![(0.5, 1.0)];
+        let samples = vec![0.0_f32; 16_000 * 2];
+        let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_| {
+            Ok(chunk_with_words("late", &[("late", 0.4, 0.9)]))
+        });
+        assert_eq!(word_spans(&segs[0]), vec![("late", 0.9, 1.0)]);
+    }
+
+    /// The seam trim drops whole words off the front of a chunk's text; the
+    /// timings must lose exactly the same ones or words and text disagree.
+    #[test]
+    fn chunked_segments_drop_words_in_step_with_the_trimmed_seam() {
+        let samples = vec![0.0_f32; 30];
+        let mut call = 0usize;
+        let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
+            call += 1;
+            match call {
+                1 => Ok(chunk_with_words(
+                    "hello there over the wire",
+                    &[
+                        ("hello", 0.0, 0.2),
+                        ("there", 0.2, 0.4),
+                        ("over", 0.4, 0.6),
+                        ("the", 0.6, 0.7),
+                        ("wire", 0.7, 0.9),
+                    ],
+                )),
+                _ => Ok(chunk_with_words(
+                    "there over the wire world",
+                    &[
+                        ("there", 0.0, 0.2),
+                        ("over", 0.2, 0.4),
+                        ("the", 0.4, 0.5),
+                        ("wire", 0.5, 0.7),
+                        ("world", 0.7, 0.9),
+                    ],
+                )),
+            }
+        })
+        .unwrap();
+
+        assert_eq!(segs[1].text, "world");
+        // Window 2 starts at sample 8 of 10/s audio, so its slice-local 0.7 s
+        // is 1.5 s into the file.
+        assert_eq!(word_spans(&segs[1]), vec![("world", 1.5, 1.7)]);
+        for seg in &segs {
+            assert_eq!(
+                seg.words.as_ref().unwrap().len(),
+                seg.text.split_whitespace().count(),
+                "{seg:?}: words and text disagree"
+            );
+        }
+    }
+
+    /// Nothing downstream re-checks that words and text line up, so a backend
+    /// whose words did not group one-per-word must lose them here, not ship a
+    /// silently shifted list.
+    #[test]
+    fn chunked_segments_drop_words_that_do_not_line_up_with_the_text() {
+        let samples = vec![0.0_f32; 30];
+        let segs = build_chunked_output_segments(&samples, 10.0, 1.0, 0.2, |_slice| {
+            Ok(chunk_with_words(
+                "alpha beta gamma",
+                &[("alphabeta", 0.0, 0.4), ("gamma", 0.4, 0.8)],
+            ))
+        })
+        .unwrap();
+        assert!(segs[0].words.is_none(), "{:?}", segs[0]);
+    }
+
+    /// CoreML cannot produce words today; `None` must survive the segmenting
+    /// paths as absence rather than becoming an empty list (#720).
+    #[test]
+    fn segments_omit_words_when_the_backend_has_none() {
+        let samples = vec![0.0_f32; 16_000 * 2];
+        let segs = build_vad_output_segments(&[(0.0, 1.0)], &samples, 16_000.0, |_| {
+            Ok("spoken".to_string().into())
+        });
+        assert!(segs[0].words.is_none());
+        let json = serde_json::to_string(&segs[0]).unwrap();
+        assert!(!json.contains("words"), "{json}");
+    }
+
     #[test]
     fn transcription_segment_speaker_field_omits_when_none() {
         let s = TranscriptionSegment {
@@ -1438,6 +1669,7 @@ mod tests {
             end: 1.0,
             text: "hi".into(),
             speaker: None,
+            words: None,
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(
@@ -1470,12 +1702,14 @@ mod tests {
                     end: 1.0,
                     text: "twenty".into(),
                     speaker: None,
+                    words: None,
                 },
                 TranscriptionSegment {
                     start: 1.0,
                     end: 2.0,
                     text: "one".into(),
                     speaker: None,
+                    words: None,
                 },
             ],
         };
@@ -1507,6 +1741,7 @@ mod tests {
                     end: 1.0,
                     text: "forty two".into(),
                     speaker: Some(3),
+                    words: None,
                 }],
             },
             true,
@@ -1831,7 +2066,7 @@ mod tests {
         let mut call = 0usize;
         let segs = build_chunked_output_segments(&samples, 16_000.0, 10.0, 5.0, |_slice| {
             call += 1;
-            Ok(format!("alpha{call} beta{call} gamma{call} delta{call}"))
+            Ok(format!("alpha{call} beta{call} gamma{call} delta{call}").into())
         })
         .unwrap();
         assert!(
@@ -1885,6 +2120,7 @@ mod tests {
                 end: 1.5,
                 text: "hello world".to_string(),
                 speaker: Some(1),
+                words: None,
             }],
         };
         let json = serde_json::to_string(&original).expect("serialise");
@@ -1910,12 +2146,14 @@ mod tests {
                 end: 1.0,
                 text: "foo".to_string(),
                 speaker: None,
+                words: None,
             },
             TranscriptionSegment {
                 start: 1.0,
                 end: 2.0,
                 text: "bar".to_string(),
                 speaker: None,
+                words: None,
             },
         ];
         assert_eq!(join_segment_texts(&segs), "foo bar");
@@ -2081,10 +2319,10 @@ mod seam_long_form {
         let mut reference: Vec<String> = Vec::new();
         for name in FIXTURES {
             let utterance = fixture(name);
-            reference.extend(keys(&be.transcribe_samples(&utterance).unwrap()));
+            reference.extend(keys(&be.transcribe_samples(&utterance).unwrap().text));
             samples.extend_from_slice(&utterance);
         }
-        let single = keys(&be.transcribe_samples(&samples).unwrap());
+        let single = keys(&be.transcribe_samples(&samples).unwrap().text);
         eprintln!(
             "seam audit: {:.1}s of speech, {} reference words, {} single-pass words",
             samples.len() as f32 / SR,
@@ -2119,11 +2357,11 @@ mod seam_long_form {
         let mut reference: Vec<String> = Vec::new();
         for name in FIXTURES {
             let utterance = fixture(name);
-            reference.extend(keys(&be.transcribe_samples(&utterance).unwrap()));
+            reference.extend(keys(&be.transcribe_samples(&utterance).unwrap().text));
             samples.extend_from_slice(&utterance);
             samples.extend_from_slice(&gap);
         }
-        let single = keys(&be.transcribe_samples(&samples).unwrap());
+        let single = keys(&be.transcribe_samples(&samples).unwrap().text);
 
         audit(
             &mut be,

@@ -7,14 +7,20 @@ use ort::value::Value;
 
 use crate::audio;
 use crate::errors::{CodedContext, ErrorCode};
+use crate::transcribe::WordTiming;
 use crate::util::argmax;
 
-use super::TranscribeBackend;
+use super::{TranscribeBackend, TranscriptionChunk};
 
 const DECODER_LAYERS: usize = 2;
 const DECODER_HIDDEN: usize = 640;
 const MAX_TOKENS_PER_STEP: usize = 10;
 const DEFAULT_BEAM_WIDTH: usize = 4;
+
+/// Parakeet's encoder subsamples the 10 ms mel hop 8×, so one encoder frame —
+/// the unit `Beam.t` counts in — is 80 ms. Matches the `secondsPerEncoderFrame`
+/// FluidAudio derives word times from on the CoreML path (#720).
+const SECONDS_PER_ENCODER_FRAME: f32 = 0.08;
 
 pub struct OnnxBackend {
     preprocessor: Session,
@@ -198,7 +204,7 @@ impl OnnxBackend {
         encoder_data: &[f32],
         encoder_dim: usize,
         encoder_length: usize,
-    ) -> Result<Vec<usize>> {
+    ) -> Result<Vec<TokenTiming>> {
         let blank_id = self.blank_id;
         let vocab_size = self.vocab.len();
         beam_search(
@@ -217,12 +223,12 @@ impl OnnxBackend {
 }
 
 impl TranscribeBackend for OnnxBackend {
-    fn transcribe(&mut self, audio_path: &str) -> Result<String> {
+    fn transcribe(&mut self, audio_path: &str) -> Result<TranscriptionChunk> {
         let audio_samples = audio::load_audio(audio_path)?;
         self.transcribe_samples(&audio_samples)
     }
 
-    fn transcribe_samples(&mut self, audio_samples: &[f32]) -> Result<String> {
+    fn transcribe_samples(&mut self, audio_samples: &[f32]) -> Result<TranscriptionChunk> {
         if audio_samples.len() < 1600 {
             anyhow::bail!(
                 "Audio too short: {} samples ({:.2}s) — minimum is 0.1s (1600 samples at 16kHz)",
@@ -239,16 +245,67 @@ impl TranscribeBackend for OnnxBackend {
         let encoder_dim = logits_shape[1];
         let encoder_length = encoded_lengths[0].min(logits_shape[2]);
 
-        let token_ids = self.beam_decode(&logits_data, encoder_dim, encoder_length)?;
-        let text = self.detokenize(&token_ids);
+        let timings = self.beam_decode(&logits_data, encoder_dim, encoder_length)?;
+        let ids: Vec<usize> = timings.iter().map(|t| t.id).collect();
+        let text = self.detokenize(&ids);
+        let words = group_words(&self.vocab, &timings);
 
-        Ok(text)
+        Ok(TranscriptionChunk {
+            text,
+            words: Some(words),
+        })
     }
 }
 
 // ---------------------------------------------------------------------------
 // Pure helpers (no Session access)
 // ---------------------------------------------------------------------------
+
+/// A decoded token with the encoder frames it was emitted over: `start_frame`
+/// is the frame the decoder was on, `end_frame` adds the TDT duration head's
+/// prediction. `end_frame == start_frame` when the model predicted duration 0
+/// (another token on the same frame).
+#[derive(Debug, Clone, PartialEq)]
+struct TokenTiming {
+    id: usize,
+    start_frame: usize,
+    end_frame: usize,
+}
+
+/// Group decoded tokens into words on the SentencePiece `▁` boundary.
+///
+/// Yields exactly one word per whitespace-separated word of
+/// [`detokenize`]'s output over the same tokens, so callers can drop words in
+/// step with a trimmed text prefix. Word `end` is floored one frame past
+/// `start`, so a span is never empty even when the duration head predicts 0.
+fn group_words(vocab: &[String], timings: &[TokenTiming]) -> Vec<WordTiming> {
+    let mut out: Vec<WordTiming> = Vec::new();
+    for t in timings {
+        let Some(piece) = vocab.get(t.id) else {
+            continue;
+        };
+        let start = t.start_frame as f32 * SECONDS_PER_ENCODER_FRAME;
+        let end = t.end_frame.max(t.start_frame + 1) as f32 * SECONDS_PER_ENCODER_FRAME;
+        for (i, part) in piece.replace('\u{2581}', " ").split(' ').enumerate() {
+            if i > 0 || out.is_empty() {
+                out.push(WordTiming {
+                    word: String::new(),
+                    start,
+                    end,
+                });
+            } else if part.is_empty() {
+                // A word-initial `▁token` splits as ["", "token"]: the empty
+                // head belongs to no word and must not stretch the last one.
+                continue;
+            }
+            let word = out.last_mut().expect("pushed above when empty");
+            word.word.push_str(part);
+            word.end = word.end.max(end);
+        }
+    }
+    out.retain(|w| !w.word.is_empty());
+    out
+}
 
 fn detokenize(vocab: &[String], token_ids: &[usize]) -> String {
     let text: String = token_ids
@@ -318,7 +375,7 @@ fn beam_search<F>(
     blank_id: usize,
     vocab_size: usize,
     mut step: F,
-) -> Result<Vec<usize>>
+) -> Result<Vec<TokenTiming>>
 where
     F: FnMut(&[f32], i32, &[f32], &[f32]) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)>,
 {
@@ -329,7 +386,7 @@ where
     let state_size = DECODER_LAYERS * DECODER_HIDDEN;
 
     struct Beam {
-        tokens: Vec<usize>,
+        tokens: Vec<TokenTiming>,
         score: f32,
         last_token: i32,
         state1: Vec<f32>,
@@ -393,7 +450,14 @@ where
             // Top-K non-blank tokens
             for token_id in top_k_indices(token_logits, DEFAULT_BEAM_WIDTH, blank_id) {
                 let mut tokens = beam.tokens.clone();
-                tokens.push(token_id);
+                // The token is emitted while decoding frame `beam.t`, and the TDT
+                // duration head predicts how many frames it covers — the same two
+                // numbers FluidAudio turns into word times on CoreML (#720).
+                tokens.push(TokenTiming {
+                    id: token_id,
+                    start_frame: beam.t,
+                    end_frame: beam.t + duration,
+                });
                 candidates.push(Beam {
                     tokens,
                     score: beam.score + token_logits[token_id],
@@ -505,6 +569,90 @@ mod tests {
         assert_eq!(detokenize(&vocab, &[0, 99, 1]), "ab");
     }
 
+    fn timed(ids_and_frames: &[(usize, usize, usize)]) -> Vec<TokenTiming> {
+        ids_and_frames
+            .iter()
+            .map(|&(id, start_frame, end_frame)| TokenTiming {
+                id,
+                start_frame,
+                end_frame,
+            })
+            .collect()
+    }
+
+    fn spans(words: &[WordTiming]) -> Vec<(&str, f32, f32)> {
+        words
+            .iter()
+            .map(|w| {
+                let round = |v: f32| (v * 1000.0).round() / 1000.0;
+                (w.word.as_str(), round(w.start), round(w.end))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn group_words_spans_the_frames_its_tokens_were_emitted_over() {
+        let vocab = vocab_of(&["\u{2581}hel", "lo", "\u{2581}world"]);
+        let words = group_words(&vocab, &timed(&[(0, 0, 2), (1, 2, 5), (2, 6, 9)]));
+        assert_eq!(
+            spans(&words),
+            vec![("hello", 0.0, 0.4), ("world", 0.48, 0.72)]
+        );
+    }
+
+    #[test]
+    fn group_words_gives_zero_duration_tokens_a_one_frame_span() {
+        // A duration-0 prediction means "another token on this frame"; a word
+        // built only from those would otherwise get start == end.
+        let vocab = vocab_of(&["\u{2581}hi"]);
+        let words = group_words(&vocab, &timed(&[(0, 3, 3)]));
+        assert_eq!(words.len(), 1);
+        assert!(
+            words[0].end > words[0].start,
+            "{:?} is an empty span",
+            words[0]
+        );
+    }
+
+    /// The fixed-window path drops words in step with the text prefix its seam
+    /// trim removed, which only works if the two agree on what a word is.
+    #[test]
+    fn group_words_yields_one_word_per_detokenized_word() {
+        let cases: &[&[&str]] = &[
+            &["\u{2581}hel", "lo", "\u{2581}world"],
+            &["mid", "\u{2581}word", "\u{2581}start"],
+            &["\u{2581}", "\u{2581}a", "b", "\u{2581}", "\u{2581}c"],
+            &["\u{2581}solo"],
+        ];
+        for tokens in cases {
+            let vocab = vocab_of(tokens);
+            let ids: Vec<usize> = (0..vocab.len()).collect();
+            let timings = timed(&ids.iter().map(|&i| (i, i, i + 1)).collect::<Vec<_>>());
+            let text = detokenize(&vocab, &ids);
+            let words = group_words(&vocab, &timings);
+            assert_eq!(
+                words.len(),
+                text.split_whitespace().count(),
+                "{tokens:?} → text {text:?}, words {words:?}"
+            );
+            assert_eq!(
+                words.iter().map(|w| w.word.as_str()).collect::<Vec<_>>(),
+                text.split_whitespace().collect::<Vec<_>>(),
+                "{tokens:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn group_words_skips_out_of_range_ids_like_detokenize_does() {
+        let vocab = vocab_of(&["\u{2581}a", "\u{2581}b"]);
+        let words = group_words(&vocab, &timed(&[(0, 0, 1), (99, 1, 2), (1, 2, 3)]));
+        assert_eq!(
+            words.iter().map(|w| w.word.as_str()).collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+    }
+
     #[test]
     fn top_k_basic() {
         let arr = [0.1f32, 0.5, 0.3, 0.9, 0.2];
@@ -586,11 +734,27 @@ mod tests {
 
     #[test]
     fn beam_search_emits_best_token_per_frame() {
-        // Token 2 wins each frame with duration argmax 1 → one token per frame.
+        // Token 2 wins each frame with duration argmax 1 → one token per frame,
+        // each carrying the frame it was emitted on and the frame the duration
+        // head says it runs to.
         let encoder = vec![0.0f32; 2];
         let step = fixed_step(vec![0.0, 1.0, 10.0, 0.0], vec![0.0, 10.0]);
         let out = beam_search(&encoder, 1, 2, 0, 4, step).unwrap();
-        assert_eq!(out, vec![2, 2]);
+        assert_eq!(
+            out,
+            vec![
+                TokenTiming {
+                    id: 2,
+                    start_frame: 0,
+                    end_frame: 1
+                },
+                TokenTiming {
+                    id: 2,
+                    start_frame: 1,
+                    end_frame: 2
+                },
+            ]
+        );
     }
 
     #[test]
@@ -607,7 +771,11 @@ mod tests {
         .unwrap();
         let max_steps = 2 * MAX_TOKENS_PER_STEP;
         assert_eq!(out.len(), max_steps, "one token per budgeted step");
-        assert!(out.iter().all(|&t| t == 1), "{out:?}");
+        assert!(
+            out.iter()
+                .all(|t| t.id == 1 && t.start_frame == 0 && t.end_frame == 0),
+            "{out:?}"
+        );
         assert!(
             calls <= max_steps * DEFAULT_BEAM_WIDTH,
             "step ran {calls} times"

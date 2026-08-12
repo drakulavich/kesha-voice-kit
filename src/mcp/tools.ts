@@ -105,6 +105,10 @@ export function registerTools(server: McpServer): void {
             start: z.number(),
             end: z.number(),
             speaker: z.number().optional(),
+            // Absent on engines without `transcribe.words` — CoreML today (#720).
+            words: z
+              .array(z.object({ word: z.string(), start: z.number(), end: z.number() }))
+              .optional(),
           }),
         ),
       },

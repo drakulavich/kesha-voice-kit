@@ -13,7 +13,13 @@ pub fn normalize_output(mut output: TranscriptionOutput) -> TranscriptionOutput 
         return output;
     }
     for segment in &mut output.segments {
-        segment.text = normalize_text(&segment.text);
+        let normalized = normalize_text(&segment.text);
+        // Rewriting "thirty two" as "32" leaves the word timings describing
+        // words the text no longer contains; absent beats misaligned (#720).
+        if normalized != segment.text {
+            segment.words = None;
+        }
+        segment.text = normalized;
     }
     output.text = join_segment_texts(&output.segments);
     output
@@ -165,6 +171,7 @@ mod tests {
             end,
             text: text.to_string(),
             speaker: None,
+            words: None,
         }
     }
 
@@ -206,6 +213,44 @@ mod tests {
     #[test]
     fn normalizes_english_inside_mixed_script_text() {
         assert_eq!(normalize_text("hello мир two hundred"), "hello мир 200");
+    }
+
+    /// "thirty two" → "32" leaves word timings naming words the text no longer
+    /// has. Dropping them is honest; keeping them would silently misalign (#720).
+    #[test]
+    fn drops_word_timings_only_from_segments_it_rewrote() {
+        let with_words = |start, end, text: &str| TranscriptionSegment {
+            words: Some(
+                text.split_whitespace()
+                    .enumerate()
+                    .map(|(i, w)| crate::transcribe::WordTiming {
+                        word: w.to_string(),
+                        start: start + i as f32 * 0.1,
+                        end: start + i as f32 * 0.1 + 0.1,
+                    })
+                    .collect(),
+            ),
+            ..segment(start, end, text)
+        };
+        let out = normalize_output(TranscriptionOutput {
+            text: String::new(),
+            segments: vec![
+                with_words(0.0, 1.5, "we merged forty two patches"),
+                with_words(2.0, 3.0, "nothing to rewrite here"),
+            ],
+        });
+
+        assert_eq!(out.segments[0].text, "we merged 42 patches");
+        assert!(out.segments[0].words.is_none());
+        assert_eq!(
+            out.segments[1]
+                .words
+                .as_ref()
+                .map(|w| w.len())
+                .unwrap_or_default(),
+            4,
+            "an untouched segment keeps its words"
+        );
     }
 
     #[test]
