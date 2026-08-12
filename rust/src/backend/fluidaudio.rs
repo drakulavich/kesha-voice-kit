@@ -345,6 +345,29 @@ mod tests {
         assert!(out.iter().all(|&v| v == 0.0));
     }
 
+    /// #841's retry gate: only CoreML's async-task timeout earns a second
+    /// attempt. Every other bridge failure — including the other `E5RT` class
+    /// this codebase already documents — must still fail on the first one.
+    #[test]
+    fn only_the_coreml_async_timeout_reads_as_transient() {
+        assert!(is_transient_e5rt_timeout(
+            r#"Transcribe samples with words error: Error Domain=com.apple.CoreML Code=0 "Unable to compute the asynchronous prediction using ML Program. It can be an invalid input data or broken/unsupported model." UserInfo={NSUnderlyingError=0x600000ee0e70 {Error Domain=com.apple.CoreML Code=0 "E5RT: Submit Async failed for [2:1]: Async task: Encoder_main__Op3_Cast has timed out. @ CancelTimedOutAsyncTask_block_invoke (10)"}}"#
+        ));
+
+        for other in [
+            "",
+            "Swift bridge error: Transcription failed",
+            "E5RT encountered an STL exception. msg = unordered_map::at: key not found.",
+            "Transcribe error: invalidAudioData",
+            r#"Error Domain=com.apple.CoreML Code=0 "Unable to compute the asynchronous prediction using ML Program. It can be an invalid input data or broken/unsupported model.""#,
+        ] {
+            assert!(
+                !is_transient_e5rt_timeout(other),
+                "{other:?} must fail the test outright, not be retried"
+            );
+        }
+    }
+
     // Regression: the VAD/chunked paths call `transcribe_samples` once per
     // segment on a single backend instance. Before fluidaudio-rs carried the
     // upstream TDT stateless-reset fix (FluidInference/fluidaudio-rs#15), the
