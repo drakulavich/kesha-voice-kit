@@ -372,7 +372,7 @@ function parseWordTimings(raw: unknown): WordTiming[] | undefined {
   return words;
 }
 
-function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
+export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
   const parsed = JSON.parse(stdout);
   if (typeof parsed?.text !== "string" || !Array.isArray(parsed?.segments)) {
     throw new Error("Invalid transcription JSON returned by kesha-engine");

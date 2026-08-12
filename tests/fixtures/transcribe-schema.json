@@ -1,0 +1,41 @@
+{
+  "segments": [
+    {
+      "end": 1.5,
+      "speaker": 0,
+      "start": 0.0,
+      "text": "hello world",
+      "words": [
+        {
+          "end": 0.75,
+          "start": 0.0,
+          "word": "hello"
+        },
+        {
+          "end": 1.5,
+          "start": 0.75,
+          "word": "world"
+        }
+      ]
+    },
+    {
+      "end": 3.0,
+      "speaker": 1,
+      "start": 1.5,
+      "text": "goodbye now",
+      "words": [
+        {
+          "end": 2.25,
+          "start": 1.5,
+          "word": "goodbye"
+        },
+        {
+          "end": 3.0,
+          "start": 2.25,
+          "word": "now"
+        }
+      ]
+    }
+  ],
+  "text": "hello world goodbye now"
+}
