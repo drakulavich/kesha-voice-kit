@@ -328,7 +328,8 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
   and `man` against a pin (`v1.18.0`) predating both directories (added in
   v1.18.4, #388) — and had to repin to `v1.24.7`, the newest tag that carries
   them *and* whose `package.json#version` equals its tag name, which the
-  formula's own `--version` assertion requires.
+  formula's own `--version` assertion requires. The repin fixes that instance
+  and nothing structural; tracked as #924.
 - `homebrew-tap.yml` fires on every published release, including Engine
   releases that publish no CLI version (see CLAUDE.md, "un-drafting an engine
   tag still fires 🍺 Homebrew Tap"). The lane's own skip logic is the only thing
