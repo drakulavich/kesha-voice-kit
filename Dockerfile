@@ -10,6 +10,8 @@ RUN bun install --frozen-lockfile --production --ignore-scripts
 
 COPY bin ./bin
 COPY src ./src
+COPY completions ./completions
+COPY man ./man
 COPY tests/fixtures/benchmark ./fixtures/benchmark
 COPY tests/fixtures/benchmark-en ./fixtures/benchmark-en
 COPY BENCHMARK.md LICENSE NOTICES.md README.md SKILL.md ./

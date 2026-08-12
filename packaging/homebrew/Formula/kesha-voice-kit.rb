@@ -8,7 +8,7 @@ class KeshaVoiceKit < Formula
   depends_on "oven-sh/bun/bun"
 
   def install
-    libexec.install "bin", "src", "package.json", "bun.lock", "tsconfig.json"
+    libexec.install "bin", "src", "completions", "man", "package.json", "bun.lock", "tsconfig.json"
     libexec.install "openclaw.plugin.json", "openclaw-plugin.cjs"
     libexec.install "LICENSE", "NOTICES.md", "README.md"
 
