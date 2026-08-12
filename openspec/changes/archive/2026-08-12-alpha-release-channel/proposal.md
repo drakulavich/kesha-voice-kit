@@ -1,3 +1,8 @@
+> **Archive note (2026-08-12):** Archived with tasks 6.11 and 11.1 unverified — the
+> label-on-merge automatic trigger was accepted on the strength of the dispatch-path proof
+> (1.27.0-alpha.1) and the engine-alpha end-to-end run; these two live-fire boxes await
+> natural exercise on the next labelled CLI PR.
+
 ## Why
 
 Today the only way to exercise a change end to end is to cut a stable release: bump versions by hand, push a tag, wait for a draft, un-draft it, and accept that the tag name is burned forever and the npm publish is irreversible. That cost means changes reach a real install only in batches, and the release path itself — the part most likely to break — is exercised once per release rather than continuously.
