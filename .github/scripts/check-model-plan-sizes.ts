@@ -194,7 +194,9 @@ export async function liveSize(
         headers: { "accept-encoding": "identity" },
         signal: AbortSignal.timeout(30_000),
       });
-      if (res.ok) return contentLength(res.headers);
+      // Retried like a dropped connection: a CDN omitting Content-Length intermittently would otherwise spend its one attempt and file the drift issue.
+      const bytes = res.ok ? contentLength(res.headers) : null;
+      if (bytes !== null) return bytes;
     } catch {
       // Swallowed so the loop can retry; a transient blip must never read as a wrong size.
     }

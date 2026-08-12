@@ -13,6 +13,9 @@ import modelPlan from "../../model-plan.json" with { type: "json" };
 
 const repoRoot = join(import.meta.dir, "..", "..");
 
+const realManifestUrls = () =>
+  parseManifestUrls(readFileSync(join(repoRoot, "rust", "src", "models.rs"), "utf8"));
+
 describe("flattenPlan", () => {
   test("reads arrays, single files and per-language maps alike", () => {
     const entries = flattenPlan({
@@ -88,10 +91,25 @@ describe("parseManifestUrls", () => {
   });
 
   test("resolves a url for every model-plan.json entry against the real manifest", () => {
-    const urls = parseManifestUrls(readFileSync(join(repoRoot, "rust", "src", "models.rs"), "utf8"));
-
-    const unresolved = flattenPlan(modelPlan).filter((entry) => !urls.has(entry.relPath));
+    const unresolved = flattenPlan(modelPlan).filter((entry) => !realManifestUrls().has(entry.relPath));
     expect(unresolved.map((entry) => entry.relPath)).toEqual([]);
+  });
+
+  // Presence alone passes on a parser emitting a truncated or wrong-host URL; the weekly HEAD would then read that as a size mismatch, not a parse bug.
+  test("reads the real manifest's urls byte-exact, not merely non-empty", () => {
+    const urls = realManifestUrls();
+
+    expect(urls.get("models/parakeet-tdt-v3/vocab.txt")).toBe(
+      "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
+    );
+    expect(urls.get("models/kokoro-82m/voices/am_michael.bin")).toBe(
+      "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
+    );
+    expect(
+      urls.get("models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin"),
+    ).toBe(
+      "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
+    );
   });
 });
 
@@ -194,6 +212,16 @@ describe("liveSize", () => {
     };
 
     expect(await liveSize(url, { fetchImpl: flaky, backoffMs: 0 })).toBe(646);
+  });
+
+  test("retries a 200 that carries no usable length, not just a dropped connection", async () => {
+    let calls = 0;
+    const omitsLengthOnce: FetchLike = async () => {
+      calls += 1;
+      return new Response(null, { headers: calls === 1 ? {} : { "content-length": "2327524" } });
+    };
+
+    expect(await liveSize(url, { fetchImpl: omitsLengthOnce, backoffMs: 0 })).toBe(2327524);
   });
 
   test("gives up rather than guessing when the host keeps failing", async () => {
