@@ -2,34 +2,42 @@
 
 ## Purpose
 
-`kesha record` captures microphone audio to a WAV file so Maks can record a
-voice note or meeting directly from the command line, then immediately pipe it
-into `kesha` for transcription. The recording is entirely local: the Engine
-opens the default system microphone via CPAL, mixes all input channels to
-mono, and writes an IEEE-float 32-bit WAV at the device's native sample rate.
+`kesha record` captures the microphone, in one of two modes. With `--out` it
+writes a WAV file so Maks can record a voice note or meeting and pipe it into
+`kesha` for Transcription. With `--live` it transcribes as it captures and
+prints the transcript instead, skipping the file entirely. Both are entirely
+local: the Engine opens the default system microphone via CPAL and mixes all
+input channels to mono.
 
 ## Non-Goals
 
 - `kesha record` is macOS-only. Linux and Windows receive a clear
-  `E_UNSUPPORTED_PLATFORM` error.
+  `E_UNSUPPORTED_PLATFORM` error. `--live` narrows further — it needs a CoreML
+  Engine on Apple Silicon.
 - Device selection is not supported; only the OS default input device is used.
-- Live streaming of audio to stdout is not supported; the WAV is written when
-  recording stops.
-- No transcription or language detection is performed during recording;
-  `kesha record` is a capture-only command.
-- The output sample rate is whatever the device reports; no resampling is
-  applied by the recorder itself.
+- Raw audio is never streamed to stdout. `--out` writes the WAV when recording
+  stops; `--live` puts a transcript on stdout, not samples.
+- `--live` emits no partial transcripts. The streaming ASR session consumes
+  audio incrementally, but the transcript is printed once, when recording stops.
+- Language detection is not performed in either mode.
+- With `--out`, the sample rate is whatever the device reports and the recorder
+  applies no resampling. `--live` resamples to 16 kHz in flight, because that is
+  what the ASR model consumes.
 ## Requirements
-### Requirement: --out is required
+### Requirement: `--live` and `--out` are mutually exclusive, and one is required
 
-The CLI SHALL reject invocations that omit `--out` and exit 2 with a message
-naming the missing flag. The exit 2 happens in the CLI before the Engine is
-spawned.
+The CLI SHALL reject an invocation that passes both `--live` and `--out`, and SHALL reject one that passes neither, exiting 2 in both cases before the Engine is spawned. `--out` alone and `--live` alone are each complete invocations.
 
-#### Scenario: Ira forgets --out
+#### Scenario: Ira passes both flags
 
-- WHEN Ira runs `kesha record`
-- THEN the CLI prints `kesha record requires --out <path>.` to stderr
+- WHEN Ira runs `kesha record --live --out note.wav`
+- THEN the CLI prints an error stating the two flags cannot be combined
+- AND the process exits 2 without spawning the Engine
+
+#### Scenario: Maks passes neither
+
+- WHEN Maks runs `kesha record`
+- THEN the CLI prints `kesha record requires --out <path> (or --live).`
 - AND the process exits 2
 
 #### Scenario: Maks records to a specific path
@@ -39,8 +47,80 @@ spawned.
 - THEN recording begins immediately and `standup.wav` is created when it stops
 - AND the process exits 0
 
-> *Technical Note — validation: `resolveRecordArgs` in
-> `src/cli/record.ts` lines 18–38. Exit 2: `src/cli/record.ts` line 68.*
+#### Scenario: `--live` alone is accepted
+
+- WHEN Maks runs `kesha record --live --max-seconds 30`
+- THEN argument resolution succeeds and the Engine is spawned in live mode
+
+> *Technical Note — `resolveRecordArgs` in `src/cli/record.ts` returns a
+> discriminated result carrying either `out` or `live`, so the two cannot both
+> be set downstream.*
+
+### Requirement: `--live` transcribes the microphone without writing a file
+
+`kesha record --live` SHALL capture the default microphone and transcribe it through a streaming ASR session, printing the final transcript to stdout when recording stops. No WAV file SHALL be written. Progress and errors go to stderr so stdout carries the transcript and nothing else.
+
+Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapsed, or stdin EOF.
+
+#### Scenario: Maks dictates a note straight to text
+
+- GIVEN a CoreML Engine on darwin-arm64 with the ASR model cached
+- WHEN Maks runs `kesha record --live --max-seconds 10` and speaks a sentence
+- THEN stdout contains the transcript of what he said and nothing else
+- AND no file is created
+- AND the process exits 0
+
+#### Scenario: Sona pipes the transcript into another tool
+
+- GIVEN Sona runs `kesha record --live --max-seconds 5 | wc -w`
+- WHEN stdin EOF stops the recording
+- THEN the word count reflects only the transcript
+- AND no progress text has leaked into the pipe
+
+#### Scenario: nothing was said
+
+- GIVEN Maks runs `kesha record --live --max-seconds 5` and stays silent
+- THEN stdout is empty — not a blank line
+- AND stderr says no speech was detected
+- AND the process exits 0 rather than reporting a failure
+
+> *Technical Note — the streaming session is `StreamingAsrSession` in
+> `rust/src/streaming_asr.rs`, compiled only under
+> `all(feature = "coreml", target_os = "macos")`. Its `finish` consumes `self`
+> and `start` re-runs `init_streaming_asr()`, because `SlidingWindowAsrManager`
+> does not reset between sessions and a reused manager returns the previous
+> session's transcript for any input, including silence. Every FluidAudio call
+> is wrapped in `fluid_stdout::with_silenced_stdout` (#259). The live capture
+> loop is `record_default_input_live` in `rust/src/record.rs`, sharing
+> `build_input_stream`, `mix_frame_to_mono` and `spawn_stdin_stop_thread` with
+> the WAV path.*
+
+### Requirement: `--live` requires an Engine that advertises `record.live`
+
+The CLI SHALL check the Engine's Capabilities for the `record.live` feature flag before spawning, and SHALL refuse `--live` with a message naming the platform requirement and pointing at the capture-then-transcribe alternative when the flag is absent. The flag SHALL NOT be forwarded to an Engine that does not advertise it.
+
+#### Scenario: Ira runs `--live` against a Linux ONNX Engine
+
+- GIVEN the installed Engine does not advertise `record.live`
+- WHEN Ira runs `kesha record --live`
+- THEN the CLI reports that live transcription requires a CoreML Engine on
+  Apple Silicon, and names `kesha record --out … && kesha …` as the way to get
+  a transcript on this platform
+- AND the process exits 1 without spawning the Engine
+
+#### Scenario: capabilities cannot be read
+
+- GIVEN the Engine is installed but `--capabilities-json` fails
+- WHEN Maks runs `kesha record --live`
+- THEN the CLI refuses rather than forwarding `--live` on the assumption that
+  it is supported
+
+> *Technical Note — flag: `RECORD_LIVE_FEATURE = "record.live"` in
+> `src/engine.ts`, checked by `preflightRecordLive`. Mirrors the
+> `transcribe.diarize` gate. The Engine-side `cfg` gate is the second line of
+> defence: a build without the streaming session rejects `--live` with
+> `error [E_UNSUPPORTED_PLATFORM]` and exit 1, naming the two-step alternative —
+> the same shape `record` already uses on Linux.*
 
 ### Requirement: --max-seconds defaults to 120 and must be 1–3600
 
@@ -142,9 +222,9 @@ first. If stdin is a terminal, the EOF stop is not available; only
 > not a terminal (`!io::stdin().is_terminal()`). Max-seconds check:
 > `rust/src/record.rs` lines 96 and 106.*
 
-### Requirement: Output is a WAV file — IEEE-float 32-bit mono at native device rate
+### Requirement: `--out` produces a WAV file — IEEE-float 32-bit mono at native device rate
 
-The Engine SHALL write the recording as a RIFF WAV file with format tag
+With `--out`, the Engine SHALL write the recording as a RIFF WAV file with format tag
 `0x0003` (IEEE float), 1 channel, 32 bits per sample, at the native device
 sample rate. The file SHALL include a `fact` chunk as required by the
 IEEE-float WAV format. Parent directories are created if they do not exist.
@@ -168,9 +248,9 @@ IEEE-float WAV format. Parent directories are created if they do not exist.
 > layout that does not apply to mono files. `fact` chunk is always written.
 > Source: `write_plain_mono_float_wav` in `rust/src/record.rs` lines 234–276.*
 
-### Requirement: Success message on stderr names recording details
+### Requirement: `--out` prints a success message on stderr naming recording details
 
-When recording completes successfully, the Engine SHALL print a single line to
+When a capture-to-WAV recording completes successfully, the Engine SHALL print a single line to
 stderr of the form:
 
 ```
@@ -202,6 +282,14 @@ parsing.
 
 - Device selection (`--device`) is not implemented; only the OS default input
   is used. Feature request tracked separately.
-- The output sample rate is device-native (commonly 44100 Hz or 48000 Hz).
+- With `--out` the sample rate is device-native (commonly 44100 Hz or 48000 Hz).
   The transcription pipeline resamples to 16 kHz internally; no explicit
   `--rate` flag exists on `kesha record`.
+- `--live` is unreleased. It is on `main` only — no release tag contains #757,
+  and the Pinned Engine version is older — so nothing a user installs today
+  advertises `record.live`. Anything adopting it, the Raycast extension
+  included (#947), is blocked on a CLI + Engine release and needs the
+  capability probe regardless, for every older CLI in the wild.
+- An interrupted `--live` session yields nothing: there is no intermediate
+  artifact, so a killed process loses the audio and the transcript together.
+  The `--out` path at least leaves the WAV.

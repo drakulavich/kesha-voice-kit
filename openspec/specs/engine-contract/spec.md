@@ -263,7 +263,9 @@ spawn time (inheriting `process.env` from the CLI).
 > | `KESHA_MODEL_MIRROR` | Engine | Rewrite HuggingFace download base URLs; GitHub release URLs are never rewritten. Safe because of Pinned hashes (`rust/src/models.rs:628`). |
 > | `KESHA_DEBUG` | CLI + Engine | Enable debug trace output. Falsey values: `""`, `"0"`, `"false"`, `"no"`, `"off"` (case-insensitive). Truthy: any other non-empty value. CLI: `src/log.ts:30`. Engine: `rust/src/debug.rs:57`. |
 > | `KESHA_DEBUG_FD` | CLI + Engine | Forward a file descriptor number to the Engine for NDJSON debug event output. Values 0/1/2 are rejected (covered by stdin/stdout/stderr). Values above 1024 (`MAX_FORWARDED_FD`) are rejected. Must be a non-negative integer ≥ 3. CLI: `src/engine.ts:92`. Engine: `rust/src/debug.rs:159`. |
-> | `KESHA_DIARIZE_TIMEOUT_SECS` | Engine | Override the adaptive diarization timeout (seconds). CLI checks `KESHA_DIARIZE_MODEL_PATH` before spawn. Engine: `rust/src/transcribe/diarize.rs:103`. |
+> | `KESHA_DIARIZE_TIMEOUT_SECS` | Engine | Cap total diarization wall time (seconds). It can only cut a run short — the phase budgets still apply, so it never widens one. Unset or empty means no overall cap; any other non-positive or unparseable value fails with `E_INVALID_ARG` rather than silently removing the cap. Engine: `rust/src/transcribe/diarize.rs`. |
+> | `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` | Engine | Replace the 300 s budget for the CoreML model load (seconds), for a host whose cold ANE compile is legitimately slower. Does not affect the other phases. Unset or empty keeps the default; any other non-positive or unparseable value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
+> | `KESHA_DIARIZE_COMPUTE_UNITS` | Engine | CoreML compute units for the Sortformer model: `all` (default), `cpu-and-ane`, `cpu-and-gpu`, `cpu-only`. An unrecognised value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
 > | `KESHA_DIARIZE_MODEL_PATH` | CLI + Engine | Override the Sortformer model path. CLI: `src/engine.ts:212`. Engine: `rust/src/transcribe/mod.rs:747`. |
 > | `KESHA_STATS_DB` | CLI | Override the Stats DB path (`src/stats.ts:580`). |
 > | `KESHA_LOG_DIR` | CLI | Override the Diagnostic log directory (`src/diagnostic-log.ts:73`). |
@@ -318,6 +320,71 @@ stale feature flags after an upgrade.
 > `{ binPath, mtime }`. `statSync(binPath).mtimeMs` at `src/engine.ts:368`;
 > `statSync` throwing (missing binary) causes `getEngineCapabilities` to
 > return `null`.*
+
+### Requirement: The written-form pass is advertised and validated, never forwarded blind
+
+Capabilities JSON SHALL advertise the Engine's support for the written-form Transcription
+pass, and the CLI SHALL validate the request against Capabilities JSON before spawning the
+Engine.
+
+An Engine that does not advertise it SHALL cause the request to fail with the action that
+resolves it, on every Transcription path — not only the timestamped one.
+
+#### Scenario: Sona inspects a current Engine
+
+- GIVEN an Engine built from this change
+- WHEN Sona reads its Capabilities JSON
+- THEN the feature list contains the written-form pass entry
+- AND it is present regardless of which Backend the Engine was compiled with
+
+#### Scenario: Ira runs a new CLI against an Engine installed months ago
+
+- GIVEN an installed Engine whose Capabilities JSON omits the entry
+- WHEN Ira transcribes with the written-form pass requested
+- THEN the command fails before the Engine is spawned
+- AND the message names upgrading the Engine as the action
+
+#### Scenario: the stale Engine is used without the pass
+
+- GIVEN the same installed Engine
+- WHEN Ira transcribes without requesting the pass
+- THEN Transcription succeeds as before
+
+> *Technical Note — feature string `transcribe.itn`, declared once as
+> `TRANSCRIBE_ITN_FEATURE` in `rust/src/transcribe/mod.rs` beside
+> `TRANSCRIBE_SEGMENTS_FEATURE` and pushed unconditionally in
+> `rust/src/capabilities.rs:34`, mirrored in `src/engine.ts:15`. Unlike
+> `transcribe.diarize` this is not Backend-gated: the pass is pure Rust and behaves
+> identically on CoreML and ONNX, so the gate exists for Engine-version skew only.
+> The check is hoisted above the `timestamps || speakers` short-circuit in
+> `src/transcribe.ts:42`, because the pass is meaningful with plain text output.*
+
+### Requirement: `record.live` is advertised only by Engines that can serve it
+
+The Engine SHALL include `record.live` in the `features` array of
+`--capabilities-json` when, and only when, it was compiled with the CoreML
+backend on macOS. On every other build the flag SHALL be absent from the array
+rather than present-and-false, matching how the feature vector already treats
+`transcribe.diarize` and `detect-text-lang`.
+
+#### Scenario: Maks probes a CoreML Engine on Apple Silicon
+
+- WHEN Maks runs `kesha-engine --capabilities-json`
+- THEN `features` contains `"record.live"` alongside `"transcribe"`
+- AND `backend` is `"coreml"`
+
+#### Scenario: Ira probes the Linux ONNX Engine
+
+- WHEN Ira runs `kesha-engine --capabilities-json` on the Linux build
+- THEN `features` does not contain `"record.live"`
+- AND the JSON is otherwise unchanged from today
+
+> *Technical Note — the push is gated on
+> `#[cfg(all(feature = "coreml", target_os = "macos"))]` in
+> `rust/src/capabilities.rs`, mirroring the runtime gate exactly so the
+> advertisement cannot outlive the code path. `protocolVersion` stays 3:
+> adding a feature string is additive and the existing flag-checking contract
+> covers it.*
 
 ### Requirement: Engine spawn failures surface as E_ENGINE_SPAWN
 Any failure to launch the `kesha-engine` binary (missing file, permission denied) SHALL surface to the user as `error [E_ENGINE_SPAWN]` including the attempted binary path, the underlying cause, and a recovery hint (`kesha install`, or `KESHA_ENGINE_BIN` when set). Raw `posix_spawn`/ENOENT exceptions MUST NOT escape to the user.
