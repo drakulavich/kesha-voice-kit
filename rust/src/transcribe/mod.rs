@@ -311,7 +311,7 @@ pub fn transcribe_with_options(
         );
     }
 
-    let vad_dir = models::model_dir(models::ModelKind::Vad)
+    let vad_dir = models::model_dir(models::ModelKind::Vad)?
         .to_string_lossy()
         .into_owned();
     let vad_installed = models::is_cached(models::ModelKind::Vad);
@@ -1004,7 +1004,7 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
         );
     }
 
-    let default = crate::models::model_dir(crate::models::ModelKind::Diarize);
+    let default = crate::models::model_dir(crate::models::ModelKind::Diarize)?;
     if crate::models::is_cached(crate::models::ModelKind::Diarize) {
         return Ok(default);
     }
@@ -1024,7 +1024,7 @@ fn ensure_asr_installed() -> Result<String> {
              Please run: kesha install"
         );
     }
-    Ok(models::model_dir(models::ModelKind::Asr)
+    Ok(models::model_dir(models::ModelKind::Asr)?
         .to_string_lossy()
         .into_owned())
 }
@@ -2196,6 +2196,7 @@ mod seam_long_form {
             return None;
         }
         let dir = models::model_dir(models::ModelKind::Asr)
+            .expect("resolve ASR model dir")
             .to_string_lossy()
             .into_owned();
         Some(backend::create_backend(&dir).expect("create ASR backend"))

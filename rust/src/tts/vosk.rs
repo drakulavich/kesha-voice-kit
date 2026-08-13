@@ -102,7 +102,8 @@ mod tests {
         if !ci_true_or_skip("synth_short_phrase_produces_audio") {
             return;
         }
-        let dir = crate::models::model_dir(crate::models::ModelKind::VoskRu);
+        let dir = crate::models::model_dir(crate::models::ModelKind::VoskRu)
+            .expect("resolve vosk model dir");
         if !crate::models::is_cached(crate::models::ModelKind::VoskRu) {
             // This is the only consumer of the ~935 MB bundle, so a silent skip
             // here is how CI would lose Russian synthesis coverage without any

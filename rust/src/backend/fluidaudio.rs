@@ -26,7 +26,7 @@ pub struct FluidAudioBackend {
 
 impl FluidAudioBackend {
     pub fn new() -> Result<Self> {
-        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location())
+        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location()?)
             .context("failed to initialize FluidAudio bridge")?;
         audio
             .init_asr()
@@ -123,8 +123,14 @@ mod tests {
     }
 
     fn render_diagnostics(first_call: Option<&str>) -> String {
-        let loc = crate::models::fluidaudio_asr_location();
         let mut out = String::from("\n──── #841 coreml-regression diagnostics ────\n");
+        let loc = match crate::models::fluidaudio_asr_location() {
+            Ok(loc) => loc,
+            Err(e) => {
+                let _ = writeln!(out, "bundle dir : unavailable ({e:#})");
+                return out;
+            }
+        };
         let _ = writeln!(out, "bundle dir : {}", loc.dir.display());
         let _ = writeln!(
             out,

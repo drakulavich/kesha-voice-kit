@@ -23,7 +23,7 @@ pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
         );
     }
 
-    let dir = models::model_dir(models::ModelKind::LangId);
+    let dir = models::model_dir(models::ModelKind::LangId)?;
 
     // Load ONNX session
     let mut session = ort::session::Session::builder()
