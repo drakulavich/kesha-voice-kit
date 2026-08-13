@@ -9,6 +9,76 @@
 //! is wired so AAC-in-M4A probes succeed.
 
 use kesha_engine::audio;
+use kesha_engine::errors::{code_of, ErrorCode};
+
+fn fixture(name: &str) -> String {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name)
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+// #935: an unreadable container is the user's input, not an Engine fault, so
+// ingest must code it `E_BAD_AUDIO` rather than falling back to `E_INTERNAL`.
+// This drives the real `open_format` path (site rust/src/audio.rs:78) with a
+// non-container. `code_of` returned `Internal` before the fix.
+#[test]
+fn unsupported_container_is_coded_bad_audio_not_internal() {
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-badaudio-code-")
+        .suffix(".bin")
+        .tempfile()
+        .unwrap();
+    std::fs::write(tmp.path(), b"not an audio file at all").unwrap();
+    let path = tmp.path().to_str().unwrap();
+
+    let err = audio::ensure_audio_track(path).expect_err("non-container must fail");
+    assert_eq!(
+        code_of(&err),
+        ErrorCode::BadAudio,
+        "unreadable input must be E_BAD_AUDIO, got {:?}: {err:#}",
+        code_of(&err)
+    );
+
+    // The same path reached through the decode entry point must agree.
+    let err = audio::load_audio(path).expect_err("decoding a non-container must fail");
+    assert_eq!(code_of(&err), ErrorCode::BadAudio, "{err:#}");
+}
+
+// #935 site :85 — a container the Engine demuxes but that carries no audio
+// track (video-only MP4) is the user's input. `code_of` returned `Internal`
+// before the fix. Fixture: `ffmpeg -f lavfi -i color=black:s=16x16:d=0.1
+// -c:v mpeg4 -an video-only.mp4` (895 bytes, no audio stream).
+#[test]
+fn video_only_container_is_coded_bad_audio() {
+    let path = fixture("video-only.mp4");
+    let err = audio::ensure_audio_track(&path).expect_err("a video-only container must fail");
+    assert_eq!(code_of(&err), ErrorCode::BadAudio, "{err:#}");
+    assert!(
+        format!("{err:#}").contains("no supported audio tracks"),
+        "expected the no-tracks arm, got: {err:#}"
+    );
+}
+
+// #935 site :108 — a container the Engine demuxes carrying a codec it has no
+// decoder for (ALAC in M4A: symphonia recognises the codec but ships no ALAC
+// decoder) is the user's input. `code_of` returned `Internal` before the fix.
+// Fixture: `ffmpeg -f lavfi -i sine=440:d=0.1:r=16000 -c:a alac alac.m4a`.
+#[test]
+fn undecodable_codec_is_coded_bad_audio() {
+    let path = fixture("alac.m4a");
+    // The container opens (the track is real), so the failure surfaces at decode.
+    audio::ensure_audio_track(&path).expect("ALAC container opens; the track is valid");
+    let err = audio::load_audio(&path).expect_err("an undecodable codec must fail");
+    assert_eq!(code_of(&err), ErrorCode::BadAudio, "{err:#}");
+    assert!(
+        format!("{err:#}").contains("unsupported codec"),
+        "expected the codec arm, got: {err:#}"
+    );
+}
 
 #[test]
 fn ensure_audio_track_bails_on_unsupported_container() {
