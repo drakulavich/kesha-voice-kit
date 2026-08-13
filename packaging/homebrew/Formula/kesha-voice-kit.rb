@@ -1,7 +1,8 @@
 class KeshaVoiceKit < Formula
   desc "Local speech-to-text, text-to-speech, and language detection toolkit"
   homepage "https://github.com/drakulavich/kesha-voice-kit"
-  # Release rewrites this pin, but ci.yml's homebrew-formula lane builds it — it must carry every path install stages.
+  # Release rewrites this pin; CI's homebrew-formula lane instead builds a git-archive of HEAD,
+  # so `install` must stage only paths that exist in the working tree (#924).
   url "https://github.com/drakulavich/kesha-voice-kit/archive/refs/tags/v1.24.7.tar.gz"
   sha256 "92531aaad3537b8e27322f425d8af9fa3fc8cb9592796893155c6bed0ef90b67"
   license "MIT"

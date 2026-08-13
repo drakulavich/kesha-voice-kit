@@ -175,6 +175,7 @@ jobs:
               - 'packaging/homebrew/Formula/**'
               - 'docs/homebrew.md'
               - '.github/workflows/ci.yml'
+              - '.github/scripts/stage-homebrew-worktree-formula.mjs'
 
   workflow-lint:
     needs: changes
@@ -231,15 +232,20 @@ jobs:
           brew trust oven-sh/bun
 
       - name: 🧪 Create local test tap
+        run: brew tap-new local/kesha
+
+      - name: 🔍 Audit formula (as published)
         run: |
-          brew tap-new local/kesha
           cp packaging/homebrew/Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/kesha-voice-kit.rb"
+          brew audit --strict --formula local/kesha/kesha-voice-kit
+
+      - name: 🌳 Stage formula against the working tree
+        # #924: build a git-archive of HEAD instead of the pinned release tarball, so the
+        # install block is exercised against the checkout under review, not a released tree.
+        run: node .github/scripts/stage-homebrew-worktree-formula.mjs --tap-dir "$(brew --repository local/kesha)" --archive "$RUNNER_TEMP/kesha-worktree.tar.gz"
 
       - name: 📦 Install formula
         run: brew install --build-from-source local/kesha/kesha-voice-kit
-
-      - name: 🔍 Audit formula
-        run: brew audit --strict --formula local/kesha/kesha-voice-kit
 
       - name: 🚬 Test formula
         run: brew test local/kesha/kesha-voice-kit
