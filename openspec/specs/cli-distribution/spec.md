@@ -215,7 +215,7 @@ The published container image SHALL run the CLI as a non-root user, resolve the 
 
 ### Requirement: The Nix flake is an alternate build path, and never a release gate
 
-The Nix flake SHALL define the CLI and a from-source Engine build for `aarch64-darwin` and `x86_64-linux`, with the CLI pointed at the Engine the same flake built. No published artifact SHALL depend on it, so a flake that does not build blocks nothing.
+The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `x86_64-linux`, and MAY define the CLI pointed at the Engine the same flake built. Only the Engine derivation (`.#kesha-engine`) SHALL be presented as a usable Nix path; the CLI derivation (`.#kesha`) SHALL NOT be documented as a working install method while its dependency derivation's output hash is an unpopulated placeholder. No published artifact SHALL depend on the flake, so a flake that does not build blocks nothing.
 
 #### Scenario: Maks builds the Engine through Nix
 
@@ -224,13 +224,16 @@ The Nix flake SHALL define the CLI and a from-source Engine build for `aarch64-d
 - THEN the Engine is built from source, carrying the Pinned Engine version in
   a file beside the binary
 
-#### Scenario: The CLI derivation cannot build
+#### Scenario: The CLI Nix path is not presented as an install method
 
 - GIVEN the CLI's dependency derivation carries a placeholder output hash that
-  no one has populated
-- WHEN a user runs `nix run` or `nix build .#kesha`
-- THEN it fails with a hash mismatch, and the documented recovery is to read the
-  real hash out of that error and paste it in
+  no one has populated, so `nix run` / `nix build .#kesha` fail with a hash
+  mismatch
+- WHEN a user reads the README or `docs/nix-install.md`
+- THEN no doc presents `nix run` / `nix profile install .#kesha` as a working
+  install method — the only documented Nix path is `nix build .#kesha-engine`
+- AND the flake still exposes `.#kesha`, so a maintainer with Nix can populate
+  the hash (or adopt `bun2nix`) and re-document the CLI path
 - AND no release lane fails as a result
 
 > *Technical Note — `flake.nix` exposes `packages.kesha` and
@@ -239,9 +242,12 @@ The Nix flake SHALL define the CLI and a from-source Engine build for `aarch64-d
 > (`flake.nix:144-167`), and the `kesha` wrapper sets `KESHA_ENGINE_BIN` to it
 > (`flake.nix:280`). `keshaNodeModules.outputHash` is `lib.fakeHash`
 > (`flake.nix:230`), and the comment above it (`flake.nix:188-205`) states
-> plainly that `packages.default`, `apps.default`, and the README's `nix run` /
-> `nix profile install` snippets all fail until it is populated. Usage:
-> `docs/nix-install.md`. CLAUDE.md states the flake is not a CI gate.*
+> plainly that `packages.default`, `apps.default`, and any `nix run` /
+> `nix profile install .#kesha` invocation fail until it is populated — so the
+> docs (README "Other install methods", `docs/nix-install.md`) present only
+> `nix build .#kesha-engine` as usable and mark the CLI path as not yet
+> available (#946). CLAUDE.md states the flake is not a CI gate; `nix-build` in
+> `ci.yml` builds `.#kesha-engine` only, on push.*
 
 ### Requirement: The MCP registry manifest names a published CLI version
 
@@ -349,6 +355,10 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
   covers tag grammar and channels; [installation](../installation/spec.md)
   covers what an install resolves; neither states the versioning contract
   itself, which is only in CLAUDE.md and the gate script.
-- `nix build .#kesha` cannot succeed as committed (`lib.fakeHash`), so the CLI
-  half of the flake is documented-but-unbuildable. `docs/nix-install.md` and the
-  README both present `nix run` as a working install path.
+- `nix build .#kesha` still cannot succeed as committed (`lib.fakeHash`), so the
+  CLI half of the flake remains unbuildable until a maintainer with Nix populates
+  the hash. The user-facing discrepancy is resolved (#946): neither the README
+  nor `docs/nix-install.md` presents `nix run` / `nix profile install .#kesha` as
+  a working install path anymore — both document only `nix build .#kesha-engine`
+  and mark the CLI path as not yet available. Populating the hash (or adopting
+  `bun2nix`) and re-documenting the CLI path is the remaining follow-up.

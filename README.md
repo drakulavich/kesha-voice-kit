@@ -45,7 +45,7 @@ kesha audio.ogg                                 # transcript to stdout
 
 `kesha install` pulls ~2.5 GB on Linux/Windows and ~0.6 GB on Apple Silicon, whose CoreML engine reads a smaller model set. It is always explicit — nothing downloads behind your back — and the model step has no progress bar, so expect a few quiet minutes. If `bun --version` fails right after step 1, reload your PATH: `exec $SHELL -l`.
 
-Prefer Homebrew, Docker, or Nix? See [Other install methods](#other-install-methods).
+Prefer Homebrew or Docker? See [Other install methods](#other-install-methods).
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
 
 ### Platform support
@@ -135,12 +135,12 @@ Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md). The C
 
 ## Other install methods
 
-All of these install the Bun CLI wrapper; engine + models still download explicitly via `kesha install`.
+All of these install the Bun CLI wrapper; engine + models still download explicitly via `kesha install`. (Nix is the exception — it currently builds only the engine from source; see below.)
 
 - **Homebrew** — `brew install drakulavich/tap/kesha-voice-kit` · [docs/homebrew.md](docs/homebrew.md)
 - **Linux packages** (`.deb`/`.rpm`, x64) — published on CLI releases, see [docs/linux-packages.md](docs/linux-packages.md)
 - **Docker** (GHCR image) — [docs/docker.md](docs/docker.md)
-- **Nix** (`aarch64-darwin` / `x86_64-linux`) — `nix run github:drakulavich/kesha-voice-kit -- install` · [docs/nix-install.md](docs/nix-install.md)
+- **Nix** (`aarch64-darwin` / `x86_64-linux`) — builds the engine from source (`nix build github:drakulavich/kesha-voice-kit#kesha-engine`). The full `kesha` CLI via `nix run` / `nix profile install` is **not yet available** — it needs a maintainer with Nix to populate a build hash ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)). · [docs/nix-install.md](docs/nix-install.md)
 - **Shell completions + manpage** — `kesha completions bash|zsh|fish` and `kesha manpage` print the packaged files to install wherever your shell expects them.
 
 ## Integrations
