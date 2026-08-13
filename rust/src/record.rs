@@ -238,7 +238,13 @@ fn deliver_and_settle(
 /// failure here is loud but not fatal.
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 fn open_recovery_spill(sample_rate: u32) -> Option<spill::SpillWav> {
-    let dir = spill::recovery_dir();
+    let dir = match spill::recovery_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("warning: this session has no recovery audio: {err:#}");
+            return None;
+        }
+    };
     spill::prune_stale_spills(&dir, spill::RETENTION);
     match spill::SpillWav::create(&spill::spill_path(&dir), sample_rate) {
         Ok(spill) => {
@@ -670,8 +676,8 @@ mod spill {
 
     /// Under the Kesha cache, so `KESHA_CACHE_DIR` relocates recovery audio with
     /// everything else the tool owns.
-    pub(super) fn recovery_dir() -> PathBuf {
-        crate::models::cache_dir().join("recordings")
+    pub(super) fn recovery_dir() -> Result<PathBuf> {
+        Ok(crate::models::cache_dir()?.join("recordings"))
     }
 
     pub(super) fn spill_path(dir: &Path) -> PathBuf {
@@ -863,7 +869,7 @@ mod tests {
         let _guard =
             crate::util::test_env::EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-962-cache");
         assert_eq!(
-            spill::recovery_dir(),
+            spill::recovery_dir().unwrap(),
             std::path::PathBuf::from("/tmp/kesha-962-cache/recordings")
         );
     }
