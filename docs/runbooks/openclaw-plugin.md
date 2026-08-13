@@ -8,7 +8,9 @@
 
 The plugin lives in `openclaw.plugin.json` + `openclaw-plugin.cjs` (+ `package.json#openclaw.extensions`).
 
-**How audio transcription actually works in OpenClaw:** the `type: "cli"` path in `tools.media.audio.models` — NOT `registerMediaUnderstandingProvider` (that path requires API keys via `requireApiKey()` and silently fails for local CLI tools). The plugin registers a `MediaUnderstandingProvider` for discoverability (`openclaw plugins inspect` shows `Shape: plain-capability`), but the actual transcription routes through `runCliEntry`, which spawns `kesha {{MediaPath}}` and captures bare transcript stdout.
+**How audio transcription actually works in OpenClaw:** the `type: "cli"` path in `tools.media.audio.models` — NOT `registerMediaUnderstandingProvider`. OpenClaw only routes audio to a media-understanding provider once model auth resolves for it (`hasProviderAuthAvailable`, ultimately an API key); a local, keyless CLI cannot satisfy that on any sane config, so the provider is never selected to run. The actual transcription routes through OpenClaw's `type: "cli"` handler, which runs `kesha {{MediaPath}}` and captures bare transcript stdout.
+
+The plugin still registers a `MediaUnderstandingProvider` — **declaration-only, for discoverability** (`openclaw plugins inspect` shows `Shape: plain-capability`, driven by the provider id being present, not by any handler). It carries no `transcribeAudio` handler: the ~45-line spawn/temp-file/parse/timeout/cleanup body was retired in #933 because the documented config never reaches it. If a future OpenClaw release makes a keyless local provider selectable, re-add the handler then — don't restore dead code speculatively.
 
 Recommended user config:
 ```json5
@@ -30,8 +32,8 @@ Recommended user config:
 This is a documented user-config default, not a plugin manifest patch.
 
 **Scanner rules:**
-- OpenClaw's `dangerous-exec` scanner fires when a file contains BOTH a `spawn(`/`exec(`-style call AND the substring for the forbidden module name. **Comments count** — it's a naive regex, not AST-aware.
-- Split the module specifier across `+` so the forbidden substring is absent from the source. Never name trigger tokens anywhere in `openclaw-plugin.cjs` — not even in comments.
+- OpenClaw's `dangerous-exec` scanner fires when a file contains BOTH a `spawn(`/`exec(`-style call AND the substring for the forbidden module name. **Comments count** — it's a naive regex, not AST-aware. Local `openclaw plugins install` no longer runs this block (as of OpenClaw `2026.7.1-2`); the regex now lives in ClawHub's registry scan and `openclaw security audit`, which is why the source-level prohibition still matters.
+- Since #933 the entry module holds no subprocess call at all, so the rule cannot fire — but the prohibition stands for future edits: never name the forbidden module name or a bare command-running call anywhere in `openclaw-plugin.cjs`, not even in comments. If you ever re-add a subprocess call, split the module specifier across `+` so the forbidden substring stays out of the source.
 - `--force` flag overwrites existing installs. `openclaw plugins uninstall` is interactive (no `--yes`).
 
 **Manifest:** required fields are `id` + `configSchema` (proper JSON Schema shape). `configPatch` is NOT a valid field — the loader silently discards it.
