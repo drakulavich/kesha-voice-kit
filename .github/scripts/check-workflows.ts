@@ -372,6 +372,34 @@ export function requireRestoreOnlyCachesHaveAWriter(
  * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
  * so an uncovered script means edits to a gate skip the tests that prove it works.
  */
+/**
+ * A job that runs `bun test` without installing dependencies first passes until a test reaches
+ * for one — `tests/helpers/repo.ts` importing `yaml` broke the alpha lane's derivation gate long
+ * after the step was written, and only on the runs that actually cut an alpha (#993).
+ */
+export function requireDepsBeforeBunTest(path: string, document: unknown): string[] {
+  const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
+  if (!jobs || typeof jobs !== "object") return [];
+
+  const installs = (step: Step) =>
+    (typeof step?.run === "string" && /\bbun install\b/.test(step.run)) ||
+    (typeof step?.uses === "string" && step.uses.endsWith("/actions/setup-bun"));
+
+  const errors: string[] = [];
+  for (const [name, job] of Object.entries(jobs)) {
+    const steps = Array.isArray(job?.steps) ? (job.steps as Step[]) : [];
+    let installed = false;
+    for (const step of steps) {
+      if (installs(step)) installed = true;
+      else if (!installed && runsMatching([step], /^\s*bun (test|run test)\b/m).length > 0) {
+        errors.push(`${path}: job \`${name}\` runs \`bun test\` without installing dependencies first`);
+        break;
+      }
+    }
+  }
+  return errors;
+}
+
 export function requireTestedScriptsInCodeFilter(
   path: string,
   document: unknown,
@@ -433,6 +461,7 @@ function checkFile(path: string, testedScripts: string[], cacheWriters: CacheEnt
       ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
+      ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
     ];
