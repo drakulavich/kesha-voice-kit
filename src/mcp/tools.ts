@@ -6,6 +6,7 @@ import { basename, isAbsolute, join } from "path";
 import { transcribe, transcribeWithTimestamps } from "../lib";
 import { listVoices, aggregateLanguages } from "./voices";
 import { say, type SayFormat } from "../synth";
+import { DEFAULT_VOICE_ID, resolveSayVoice } from "../voice-routing";
 import { allocAudioPath, audioDir } from "./audio-output";
 
 export function registerTools(server: McpServer): void {
@@ -64,13 +65,16 @@ export function registerTools(server: McpServer): void {
       const fmt: SayFormat = format ?? "wav";
       const outPath = allocAudioPath(fmt);
       try {
-        await say({ text, voice, rate, format: fmt, out: outPath });
+        // Resolve before spawning and pass the id explicitly: an MCP caller has no stderr to
+        // read, so the voice it is told is the only record of what spoke (#942). Naming the
+        // engine's own default is the same resolution it would make from a bare `say`.
+        const resolvedVoice = (await resolveSayVoice(voice, undefined, text)) ?? DEFAULT_VOICE_ID;
+        await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath });
         chmodSync(outPath, 0o600);
         const bytes = statSync(outPath).size;
         const file = basename(outPath);
         const uri = `kesha-audio://${file}`;
         const mimeType = mimeForExt(file);
-        const resolvedVoice = voice ?? "(auto)";
         return {
           content: [
             { type: "resource_link" as const, uri, name: file, mimeType },

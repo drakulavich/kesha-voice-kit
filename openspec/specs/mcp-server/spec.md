@@ -97,7 +97,9 @@ The tool SHALL:
 3. Return a `resource_link` content item with URI `kesha-audio://<filename>`
    and a text summary of the synthesis.
 4. Return `structuredContent` with `uri`, `path`, `format`, `voice`, and
-   `bytes`.
+   `bytes`. `voice` SHALL be the Voice id that actually synthesized the audio —
+   the caller's when one was given, the auto-routed one otherwise — and SHALL be
+   valid input to a follow-up call, never a placeholder.
 
 `annotations.readOnlyHint` is `false`.
 
@@ -119,15 +121,26 @@ The tool SHALL:
 #### Scenario: Voice omitted — auto-route applies
 
 - WHEN Sona calls `synthesize_speech` with `{ text: "Hello" }` and no `voice`
-- THEN `structuredContent.voice` is `"(auto)"`
-- AND synthesis succeeds using the Default voice
+- THEN the text's language is detected and routed to that language's default
+  voice, exactly as `kesha say` routes it
+- AND `structuredContent.voice` is that Voice id (`en-am_michael` here)
 
-> *Technical Note — `synthesize_speech` registered at `src/mcp/tools.ts:35`.
-> Rate validation at `src/mcp/tools.ts:61`. `allocAudioPath` in
+#### Scenario: Voice omitted and the language does not route
+
+- GIVEN text-language detection is unavailable, or the detected language has no
+  voice on this build
+- WHEN Sona calls `synthesize_speech` with no `voice`
+- THEN synthesis uses the Engine's default voice
+- AND `structuredContent.voice` names that voice rather than a placeholder
+
+> *Technical Note — `synthesize_speech` registered at `src/mcp/tools.ts:36`.
+> Rate validation at `src/mcp/tools.ts:62`. `allocAudioPath` in
 > `src/mcp/audio-output.ts:25` creates `<tmpdir>/kesha-mcp/` with mode
 > `0o700` and names the file `<uuid>.<ext>`. `chmodSync(outPath, 0o600)` at
-> `src/mcp/tools.ts:69`. Resolved voice shows `"(auto)"` when `voice` was
-> omitted (`src/mcp/tools.ts:73`).*
+> `src/mcp/tools.ts:73`. The voice is resolved before the engine is spawned by
+> `resolveSayVoice` (`src/voice-routing.ts`) — the same function `kesha say`
+> uses — falling back to `DEFAULT_VOICE_ID`, and passed to the engine
+> explicitly so the reported id is the one that spoke (#942).*
 
 ### Requirement: `list_voices` returns installed voice metadata
 
@@ -252,10 +265,6 @@ The `transcribe_audio` tool SHALL document that paths resolve against the MCP se
 
 ## Open Issues
 
-- `synthesize_speech` returns `voice: "(auto)"` in `structuredContent` when no
-  voice is given, making it impossible for the caller to know which voice was
-  actually used; the engine could return the resolved Voice id in a future
-  protocol revision.
 - `transcribe_audio` does not expose a `lang` hint parameter; callers cannot
   influence language detection or trigger the expected-language mismatch warning
   via MCP.

@@ -1,3 +1,13 @@
+import { detectTextLanguageEngine } from "./engine";
+
+/**
+ * The voice the engine falls back to when `say` is given no `--voice`
+ * (`tts::voices::DEFAULT_VOICE_ID`, rust/src/tts/voices.rs). Callers that must
+ * report the voice actually used name it explicitly rather than let the engine
+ * pick silently.
+ */
+export const DEFAULT_VOICE_ID = "en-am_michael";
+
 /**
  * Darwin defaults to AVSpeech Milena — zero install, no model download required.
  * Linux/Windows fall through to Vosk-TTS `ru-vosk-m02` (male, per CLAUDE.md
@@ -44,7 +54,7 @@ export function pickVoiceForLang(
   const baseCode = code.toLowerCase().split(/[-_]/, 1)[0] ?? "";
   switch (baseCode) {
     case "en":
-      return "en-am_michael";
+      return DEFAULT_VOICE_ID;
     case "ru":
       return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-vosk-m02";
     default:
@@ -52,4 +62,31 @@ export function pickVoiceForLang(
       // ONNX: es/fr/it/pt via CharsiuG2P; hi/ja/zh have no ONNX pack → undefined.
       return ONNX_KOKORO_DEFAULTS[baseCode];
   }
+}
+
+async function autoRouteVoice(text: string): Promise<string | undefined> {
+  if (!text) return undefined;
+  const detected = await detectTextLanguageEngine(text);
+  return pickVoiceForLang(detected?.code, detected?.confidence ?? 0);
+}
+
+/**
+ * Resolve the voice for a synthesis request. Precedence: explicit voice >
+ * explicit language hint (route by the stated language, skipping detection —
+ * also the path on Linux/Windows where text-language detection is unavailable) >
+ * macOS text-language auto-detection > engine default (`undefined`). A language
+ * hint the build has no voice for resolves to `undefined` (engine default)
+ * rather than re-running detection — the user stated the language explicitly.
+ *
+ * Every caller that synthesizes routes through here; the MCP server reports what
+ * it returns as the voice used, so a second routing path would be a second answer.
+ */
+export async function resolveSayVoice(
+  explicitVoice: string | undefined,
+  langHint: string | undefined,
+  text: string,
+): Promise<string | undefined> {
+  if (explicitVoice !== undefined) return explicitVoice;
+  if (langHint !== undefined) return pickVoiceForLang(langHint, 1);
+  return autoRouteVoice(text);
 }

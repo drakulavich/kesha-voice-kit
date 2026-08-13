@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveSayVoice } from "../../src/cli/say";
+import { resolveSayVoice } from "../../src/voice-routing";
 
 // resolveSayVoice precedence: --voice > --lang (route by stated language,
 // skip detection) > macOS auto-detect > engine default (undefined).

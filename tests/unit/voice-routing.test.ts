@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pickVoiceForLang } from "../../src/voice-routing";
+import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
 
 const MODELS_RS = readFileSync(
   join(import.meta.dir, "..", "..", "rust", "src", "models.rs"),
@@ -189,5 +189,18 @@ describe("pickVoiceForLang (auto-routing)", () => {
   it("returns undefined when code is missing", () => {
     expect(pickVoiceForLang(undefined, 0.95)).toBeUndefined();
     expect(pickVoiceForLang("", 0.95)).toBeUndefined();
+  });
+});
+
+describe("DEFAULT_VOICE_ID", () => {
+  // The MCP server names this voice when routing declines, and reports it as the one that
+  // spoke (#942). If the engine's own fallback moves, that report becomes a lie.
+  it("matches the engine's fallback voice", () => {
+    const voicesRs = readFileSync(
+      join(import.meta.dir, "..", "..", "rust", "src", "tts", "voices.rs"),
+      "utf8",
+    );
+    const engineDefault = voicesRs.match(/DEFAULT_VOICE_ID:\s*&str\s*=\s*"([^"]+)"/)?.[1];
+    expect(engineDefault).toBe(DEFAULT_VOICE_ID);
   });
 });
