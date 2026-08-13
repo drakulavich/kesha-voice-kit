@@ -31,16 +31,22 @@ contract used by the Bun and Docker install paths.
 ## Maintainer Validation
 
 The source formula remains in this repository and is mirrored into
-`drakulavich/homebrew-tap` for users. To validate formula edits before a
-release:
+`drakulavich/homebrew-tap` for users. Its committed `url`/`sha256` name the real
+release tarball. CI's `homebrew-formula` lane does **not** trust that pin: it
+stages a throwaway tap copy whose `url` is a `git archive` of HEAD, so the
+install block is exercised against the checkout under review rather than a
+released tree (#924). To validate formula edits against HEAD locally the same
+way CI does:
 
 ```bash
 brew tap oven-sh/bun
 brew tap-new local/tap
-cp packaging/homebrew/Formula/kesha-voice-kit.rb "$(brew --repository local/tap)/Formula/"
-brew install local/tap/kesha-voice-kit
+node .github/scripts/stage-homebrew-worktree-formula.mjs \
+  --tap-dir "$(brew --repository local/tap)" \
+  --archive "$(mktemp -d)/kesha-worktree.tar.gz"
+brew install --build-from-source local/tap/kesha-voice-kit
 brew test local/tap/kesha-voice-kit
-brew audit --strict --formula local/tap/kesha-voice-kit
+brew audit --strict --formula "$(brew --repository local/tap)/Formula/kesha-voice-kit.rb"
 ```
 
 The public tap itself can be validated with:
