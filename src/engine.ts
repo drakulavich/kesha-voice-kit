@@ -564,12 +564,38 @@ export async function getEngineCapabilities(
   }
 }
 
-// A non-null return must mean "it described itself" — callers reach straight for `.features.join()` (#647).
+function parseTtsLanguages(raw: unknown): TtsLanguageCapability[] | null {
+  const languages = (raw as { languages?: unknown } | null | undefined)?.languages;
+  if (!Array.isArray(languages)) return null;
+  const out: TtsLanguageCapability[] = [];
+  for (const entry of languages) {
+    const l = entry as Record<string, unknown> | null;
+    if (typeof l?.code !== "string") return null;
+    if (!Array.isArray(l.engines) || l.engines.some((e) => typeof e !== "string")) return null;
+    out.push({ code: l.code, engines: l.engines as string[] });
+  }
+  return out;
+}
+
+// A non-null return must mean "it described itself" — callers reach straight for `.features.join()` (#647)
+// and `.tts.languages.map()`, so every field is checked and rebuilt rather than cast. A `tts` key that is
+// present and malformed is an engine that failed to describe itself, not one without TTS (#928): the
+// engine omits the key entirely when the feature is absent, so dropping it would forge that answer.
 function parseCapabilities(parsed: unknown): EngineCapabilities | null {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const { protocolVersion, backend, features } = parsed as Record<string, unknown>;
+  const { protocolVersion, backend, features, tts } = parsed as Record<string, unknown>;
   if (typeof protocolVersion !== "number") return null;
   if (typeof backend !== "string") return null;
   if (!Array.isArray(features) || features.some((f) => typeof f !== "string")) return null;
-  return parsed as EngineCapabilities;
+  const capabilities: EngineCapabilities = {
+    protocolVersion,
+    backend,
+    features: features as string[],
+  };
+  if (tts !== undefined) {
+    const languages = parseTtsLanguages(tts);
+    if (!languages) return null;
+    capabilities.tts = { languages };
+  }
+  return capabilities;
 }
