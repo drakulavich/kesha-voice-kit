@@ -66,6 +66,11 @@ status that lets scripts branch without parsing stderr:
 | `2` | Invalid arguments or usage (mutually-exclusive flags, a bad `--format`, empty `say` text, …). |
 | `4` | Unexpected/uncoded internal failure. |
 | `5` | `kesha say` text exceeds the length limit. |
+| `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run; the engine subprocess was terminated. |
+| `143` | Terminated — a `SIGTERM` reached the CLI mid-run (a cancelled CI job, a stopped container); the engine subprocess was terminated. |
+
+`130` and `143` mean the run was **cancelled**, not that it failed: a wrapper
+that treats every non-zero status as a crash will misreport a cancellation.
 
 `kesha say` and other engine-backed commands may also exit with the **engine's
 own** non-zero status when the engine itself fails. For fine-grained handling,

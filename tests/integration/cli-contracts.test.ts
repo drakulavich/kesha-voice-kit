@@ -228,6 +228,24 @@ process.exit(2);
   return enginePath;
 }
 
+function createHangingTranscribeEngine(dir: string, enginePidPath: string): string {
+  const enginePath = join(dir, "kesha-engine-transcribe-hang");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "transcribe") {
+  await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
+  await new Promise(() => {});
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
 function createListVoicesHangEngine(dir: string, enginePidPath: string): string {
   const enginePath = join(dir, "kesha-engine-listvoices-hang");
   writeFileSync(
@@ -1031,6 +1049,43 @@ describe("CLI contracts", () => {
     expect(exitCode).toBe(130);
     expect(await waitForPidExit(enginePid)).toBe(true);
   });
+
+  // The interrupted file counts as a failure, so the signal's code has to beat the batch's
+  // own exit(1) (src/cli/main.ts) for these to hold — that ordering is what they measure.
+  for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
+    test(`${signal} mid-transcription exits ${exitCode} and leaves no engine running`, async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir(`kesha-cli-contract-${signal.toLowerCase()}-exit-`);
+      const enginePidPath = join(dir, "engine.pid");
+      const enginePath = createHangingTranscribeEngine(dir, enginePidPath);
+      const mediaPath = join(dir, "meeting.ogg");
+      writeFileSync(mediaPath, "fake media");
+
+      const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", mediaPath], {
+        cwd: DEFAULT_CWD,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          NO_COLOR: "1",
+          FORCE_COLOR: "0",
+          ...isolatedEnv(dir),
+          KESHA_ENGINE_BIN: enginePath,
+        },
+      });
+      const drained = Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      const enginePid = await waitForPidFile(enginePidPath);
+
+      proc.kill(signal);
+
+      const [, actualExitCode] = await Promise.all([drained, proc.exited]);
+      expect(actualExitCode).toBe(exitCode);
+      expect(await waitForPidExit(enginePid)).toBe(true);
+    });
+  }
 
   test("early transcription failure does not start audio language detection", async () => {
     if (process.platform === "win32") return;
