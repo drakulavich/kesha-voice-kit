@@ -6,6 +6,7 @@ import {
   requireBashOnWindowsRunSteps,
   requireRestoreOnlyCachesHaveAWriter,
   requireDarwinSmokeCoversBothEngines,
+  requireDepsBeforeBunTest,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
   requirePreUploadSynthesisSmoke,
@@ -419,5 +420,44 @@ describe("requireRestoreOnlyCachesHaveAWriter", () => {
   test("a restore step is not a writer", () => {
     const restore = job("seed", [{ uses: "actions/cache/restore@55cc834", with: { path: "x", key: "models-v3" } }]);
     expect(collectCacheWriters(restore)).toEqual([]);
+  });
+});
+
+describe("requireDepsBeforeBunTest", () => {
+  const TEST = { name: "test", run: "bun test tests/unit/derive-alpha-version.test.ts" };
+  const INSTALL = { name: "install", run: "bun install --frozen-lockfile" };
+  const SETUP = { uses: "./.github/actions/setup-bun" };
+
+  test("passes on every workflow in the repo", () => {
+    for (const path of readdirSync(repoPath(".github/workflows")).map((f) => `.github/workflows/${f}`)) {
+      expect(requireDepsBeforeBunTest(path, parseRepoYaml(path))).toEqual([]);
+    }
+  });
+
+  test("fails when a job runs bun test without installing dependencies", () => {
+    const errors = requireDepsBeforeBunTest(PATH, job("decide", [TEST]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("runs `bun test` without installing dependencies first");
+  });
+
+  test("fails when the install runs after the tests", () => {
+    expect(requireDepsBeforeBunTest(PATH, job("decide", [TEST, INSTALL]))).toHaveLength(1);
+  });
+
+  test("accepts a bun install step before it", () => {
+    expect(requireDepsBeforeBunTest(PATH, job("decide", [INSTALL, TEST]))).toEqual([]);
+  });
+
+  test("accepts the setup-bun composite, which installs", () => {
+    expect(requireDepsBeforeBunTest(PATH, job("decide", [SETUP, TEST]))).toEqual([]);
+  });
+
+  test("an install in another job does not count", () => {
+    const document = { jobs: { setup: { steps: [INSTALL] }, decide: { steps: [TEST] } } };
+    expect(requireDepsBeforeBunTest(PATH, document)).toHaveLength(1);
+  });
+
+  test("ignores a mention that is not a run", () => {
+    expect(requireDepsBeforeBunTest(PATH, job("decide", [{ name: "x", run: 'echo "bun test"' }]))).toEqual([]);
   });
 });
