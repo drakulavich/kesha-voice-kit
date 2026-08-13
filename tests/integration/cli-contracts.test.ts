@@ -405,7 +405,7 @@ describe("CLI contracts", () => {
   test("a directory positional is rejected before any progress output or engine spawn", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-");
     const enginePath = createFailingEngine(dir);
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
     };
@@ -650,7 +650,7 @@ describe("CLI contracts", () => {
     writeFileSync(mediaPath, "fake media");
     const diarizeError =
       "speaker diarization failed\n\nCaused by:\n    kesha-diarize timed out after 600s for 12894s audio; try splitting the file or set KESHA_DIARIZE_TIMEOUT_SECS=1200 (or larger):";
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
       KESHA_FAKE_TRANSCRIBE_ERROR: diarizeError,
@@ -686,7 +686,7 @@ describe("CLI contracts", () => {
     // E_DIARIZE_TIMEOUT is retryable — the CLI must not collapse it to E_TRANSCRIBE_FAILED.
     const codedError =
       "error [E_DIARIZE_TIMEOUT]: speaker diarization timed out after 30s for 4s of audio";
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
       KESHA_FAKE_TRANSCRIBE_ERROR: codedError,
@@ -715,7 +715,7 @@ describe("CLI contracts", () => {
     const enginePath = createFakeEngine(dir);
     const mediaPath = join(dir, "workshop.mp4");
     writeFileSync(mediaPath, "fake media");
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
     };
@@ -788,7 +788,7 @@ describe("CLI contracts", () => {
     const enginePath = createFakeEngine(dir);
     const mediaPath = join(dir, "recording");
     writeFileSync(mediaPath, "fake media");
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
     };
@@ -828,7 +828,7 @@ describe("CLI contracts", () => {
     const enginePath = createFakeEngine(dir);
     markFakeEngineInstalled(enginePath);
     const installArgsPath = join(dir, "install-args.json");
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
       KESHA_FAKE_INSTALL_ARGS_PATH: installArgsPath,
@@ -916,7 +916,7 @@ describe("CLI contracts", () => {
     const dir = makeTempDir("kesha-cli-contract-install-diagnostic-failure-");
     const enginePath = createFakeEngine(dir);
     markFakeEngineInstalled(enginePath);
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
       KESHA_FAKE_INSTALL_ERROR: `fake model install failed in ${dir}`,
@@ -947,7 +947,7 @@ describe("CLI contracts", () => {
     const mediaPath = join(dir, "meeting.mp4");
     const detectLangMarker = join(dir, "detect-lang-called");
     writeFileSync(mediaPath, "fake media");
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
       KESHA_FAKE_DETECT_LANG_MARKER: detectLangMarker,
@@ -1101,7 +1101,7 @@ describe("CLI contracts", () => {
   test("read-only planning and stats commands keep user data on stdout", async () => {
     const dir = makeTempDir("kesha-cli-contract-readonly-");
     const enginePath = createFailingEngine(dir);
-    const env: Record<string, string> = {
+    const env = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
     };
