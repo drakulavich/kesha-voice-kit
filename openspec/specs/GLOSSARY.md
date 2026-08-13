@@ -21,7 +21,7 @@ verbatim; if you need a new term, add it here first.
 | **CLI package** | The npm tarball `@drakulavich/kesha-voice-kit`: the `kesha` entry point plus its TypeScript sources, run by Bun with no build step. Every distribution path unwraps this same package. |
 | **Distribution path** | A supported way to get the CLI onto a machine: the npm CLI package, the Homebrew formula, the `.deb`/`.rpm` Linux packages, the GHCR container image, or the Nix flake. None of them installs the Engine. |
 | **MCP registry manifest** | `server.json` — the manifest that advertises the CLI package to MCP clients; its version is held equal to the CLI's by the drift gate. |
-| **OpenClaw plugin** | The plugin shipped inside the CLI package (`openclaw.plugin.json` + `openclaw-plugin.cjs`) that lets an OpenClaw agent transcribe voice messages by running the `kesha` CLI as a subprocess. |
+| **OpenClaw plugin** | The plugin shipped inside the CLI package (`openclaw.plugin.json` + `openclaw-plugin.cjs`) that declares a discoverable audio provider so an OpenClaw agent can transcribe voice messages; the transcript is produced by OpenClaw's configured `type: "cli"` path running the `kesha` CLI, not by the plugin. |
 | **Audio ingest** | Opening an audio file and turning it into what a model consumes: decode (symphonia + rubato, never `ffmpeg`), mix to mono, resample to 16 kHz. |
 | **Process tree** | An Engine subprocess together with any Sidecar it spawned; interruption terminates the tree, not just the direct child. |
 | **Star prompt** | The one-time post-install invitation to star the repository, shown on a first install or a major/minor bump and gated by a marker file beside the Engine binary. |

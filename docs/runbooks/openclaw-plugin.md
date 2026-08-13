@@ -32,7 +32,7 @@ Recommended user config:
 This is a documented user-config default, not a plugin manifest patch.
 
 **Scanner rules:**
-- OpenClaw's `dangerous-exec` scanner fires when a file contains BOTH a `spawn(`/`exec(`-style call AND the substring for the forbidden module name. **Comments count** — it's a naive regex, not AST-aware.
+- OpenClaw's `dangerous-exec` scanner fires when a file contains BOTH a `spawn(`/`exec(`-style call AND the substring for the forbidden module name. **Comments count** — it's a naive regex, not AST-aware. Local `openclaw plugins install` no longer runs this block (as of OpenClaw `2026.7.1-2`); the regex now lives in ClawHub's registry scan and `openclaw security audit`, which is why the source-level prohibition still matters.
 - Since #933 the entry module holds no subprocess call at all, so the rule cannot fire — but the prohibition stands for future edits: never name the forbidden module name or a bare command-running call anywhere in `openclaw-plugin.cjs`, not even in comments. If you ever re-add a subprocess call, split the module specifier across `+` so the forbidden substring stays out of the source.
 - `--force` flag overwrites existing installs. `openclaw plugins uninstall` is interactive (no `--yes`).
 

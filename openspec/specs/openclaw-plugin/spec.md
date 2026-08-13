@@ -108,20 +108,21 @@ The plugin SHALL contain no install or download code path, so it cannot fetch th
 > comment of `openclaw-plugin.cjs` and in `docs/openclaw.md`. The entry module
 > holds no runtime behaviour beyond the provider declaration.*
 
-### Requirement: The plugin source carries no token that trips the host's scanner
+### Requirement: The plugin source carries no token that trips the `dangerous-exec` scanner
 
-The plugin entry module SHALL NOT contain the substrings OpenClaw's `dangerous-exec` scanner treats as forbidden, anywhere in the file — comments included — because the scanner matches raw text rather than parsed code, and a match blocks installation of an otherwise legitimate local-CLI wrapper.
+The plugin entry module SHALL NOT contain the substrings OpenClaw's `dangerous-exec` scanner treats as forbidden, anywhere in the file — comments included — because the scanner matches raw text rather than parsed code, and a match trips ClawHub's registry scan and `openclaw security audit` for an otherwise legitimate local-CLI wrapper.
 
-#### Scenario: Maks installs the published plugin
+#### Scenario: ClawHub scans the published plugin
 
-- WHEN OpenClaw scans the entry module during installation
-- THEN no rule fires and the plugin installs
+- WHEN ClawHub's registry scan (and `openclaw security audit`) checks the entry
+  module
+- THEN no rule fires and the plugin passes
 
 #### Scenario: An edit names the forbidden module in a comment
 
 - WHEN a comment in the entry module spells the forbidden module name
-- THEN the scanner fires even though the code is unchanged, and the plugin is
-  blocked
+- THEN ClawHub's registry scan and `openclaw security audit` flag it even though
+  the code is unchanged
 
 > *Technical Note — since #933 the entry module holds no subprocess call, so the
 > `dangerous-exec` rule (a bare command-running call AND the forbidden module
@@ -170,7 +171,7 @@ Publishing the plugin to the OpenClaw registry SHALL be its own deliberate step,
   audio provider, no `transcribeAudio` handler), and reproduces OpenClaw's
   `dangerous-exec` rule to confirm the source does not trip it. It does not
   install the plugin into a real OpenClaw and assert the live `plugins inspect`
-  shape, and it couples to OpenClaw's current scanner regex — tracked in #928.
+  shape, and it couples to OpenClaw's current scanner regex — tracked in #934.
 - `openclaw.plugin.json` advertises "25 languages" and "~19x faster than
   Whisper" independently of the README and `server.json`. Nothing keeps those
   claims in sync when the supported-language set changes.
