@@ -9,27 +9,50 @@
 
 use serde::Serialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorCode {
-    InputNotFound,
-    BadAudio,
-    ModelMissing,
-    ModelDownload,
-    CacheCorrupt,
-    ModelLoad,
-    UnsupportedPlatform,
-    SidecarMissing,
-    NoBackend,
-    TextEmpty,
-    TextTooLong,
-    VoiceUnknown,
-    SsmlInvalid,
-    SsmlUnsupported,
-    ScriptUnsupported,
-    TranscribeFailed,
-    DiarizeTimeout,
-    InvalidArg,
-    Internal,
+/// Declare the `ErrorCode` enum, its `ALL` slice, and `as_str` from one
+/// variant→code-string list so a new variant cannot silently vanish from
+/// `ALL` (and thus from `--error-codes-json`, `kesha doctor`, and the
+/// docs-drift check). `title`/`category`/`retryable` stay ordinary exhaustive
+/// matches below — the compiler already forces those updated.
+macro_rules! error_codes {
+    ($($variant:ident => $code:literal),+ $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum ErrorCode {
+            $($variant),+
+        }
+
+        impl ErrorCode {
+            pub const ALL: &'static [ErrorCode] = &[$(ErrorCode::$variant),+];
+
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(ErrorCode::$variant => $code),+
+                }
+            }
+        }
+    };
+}
+
+error_codes! {
+    InputNotFound => "E_INPUT_NOT_FOUND",
+    BadAudio => "E_BAD_AUDIO",
+    ModelMissing => "E_MODEL_MISSING",
+    ModelDownload => "E_MODEL_DOWNLOAD",
+    CacheCorrupt => "E_CACHE_CORRUPT",
+    ModelLoad => "E_MODEL_LOAD",
+    UnsupportedPlatform => "E_UNSUPPORTED_PLATFORM",
+    SidecarMissing => "E_SIDECAR_MISSING",
+    NoBackend => "E_NO_BACKEND",
+    TextEmpty => "E_TEXT_EMPTY",
+    TextTooLong => "E_TEXT_TOO_LONG",
+    VoiceUnknown => "E_VOICE_UNKNOWN",
+    SsmlInvalid => "E_SSML_INVALID",
+    SsmlUnsupported => "E_SSML_UNSUPPORTED",
+    ScriptUnsupported => "E_SCRIPT_UNSUPPORTED",
+    TranscribeFailed => "E_TRANSCRIBE_FAILED",
+    DiarizeTimeout => "E_DIARIZE_TIMEOUT",
+    InvalidArg => "E_INVALID_ARG",
+    Internal => "E_INTERNAL",
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -44,52 +67,6 @@ pub enum Category {
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 19] = [
-        ErrorCode::InputNotFound,
-        ErrorCode::BadAudio,
-        ErrorCode::ModelMissing,
-        ErrorCode::ModelDownload,
-        ErrorCode::CacheCorrupt,
-        ErrorCode::ModelLoad,
-        ErrorCode::UnsupportedPlatform,
-        ErrorCode::SidecarMissing,
-        ErrorCode::NoBackend,
-        ErrorCode::TextEmpty,
-        ErrorCode::TextTooLong,
-        ErrorCode::VoiceUnknown,
-        ErrorCode::SsmlInvalid,
-        ErrorCode::SsmlUnsupported,
-        ErrorCode::ScriptUnsupported,
-        ErrorCode::TranscribeFailed,
-        ErrorCode::DiarizeTimeout,
-        ErrorCode::InvalidArg,
-        ErrorCode::Internal,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ErrorCode::InputNotFound => "E_INPUT_NOT_FOUND",
-            ErrorCode::BadAudio => "E_BAD_AUDIO",
-            ErrorCode::ModelMissing => "E_MODEL_MISSING",
-            ErrorCode::ModelDownload => "E_MODEL_DOWNLOAD",
-            ErrorCode::CacheCorrupt => "E_CACHE_CORRUPT",
-            ErrorCode::ModelLoad => "E_MODEL_LOAD",
-            ErrorCode::UnsupportedPlatform => "E_UNSUPPORTED_PLATFORM",
-            ErrorCode::SidecarMissing => "E_SIDECAR_MISSING",
-            ErrorCode::NoBackend => "E_NO_BACKEND",
-            ErrorCode::TextEmpty => "E_TEXT_EMPTY",
-            ErrorCode::TextTooLong => "E_TEXT_TOO_LONG",
-            ErrorCode::VoiceUnknown => "E_VOICE_UNKNOWN",
-            ErrorCode::SsmlInvalid => "E_SSML_INVALID",
-            ErrorCode::SsmlUnsupported => "E_SSML_UNSUPPORTED",
-            ErrorCode::ScriptUnsupported => "E_SCRIPT_UNSUPPORTED",
-            ErrorCode::TranscribeFailed => "E_TRANSCRIBE_FAILED",
-            ErrorCode::DiarizeTimeout => "E_DIARIZE_TIMEOUT",
-            ErrorCode::InvalidArg => "E_INVALID_ARG",
-            ErrorCode::Internal => "E_INTERNAL",
-        }
-    }
-
     pub fn title(self) -> &'static str {
         match self {
             ErrorCode::InputNotFound => "Input file not found",
