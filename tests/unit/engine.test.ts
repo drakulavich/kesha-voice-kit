@@ -430,6 +430,43 @@ describe("engine", () => {
     });
   });
 
+  /**
+   * A live session that catches SIGINT/SIGTERM prints the transcript it has and
+   * then exits 128+signal, so treating those two codes as a failure would put an
+   * error line under a transcript that arrived intact (#962).
+   */
+  fakeEngineTest("recordEngine accepts a live session that stopped on a signal", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-record-signal-"));
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(enginePath, "#!/bin/sh\nexit ${KESHA_TEST_RECORD_EXIT:-0}\n");
+    chmodSync(enginePath, 0o755);
+    await withEngineEnv(enginePath, async () => {
+      for (const code of ["130", "143"]) {
+        process.env.KESHA_TEST_RECORD_EXIT = code;
+        await expect(recordEngine({ live: true }, 10)).resolves.toBeUndefined();
+      }
+      process.env.KESHA_TEST_RECORD_EXIT = "1";
+      await expect(recordEngine({ live: true }, 10)).rejects.toThrow(/exited with code 1/);
+      await expect(recordEngine({ out: join(dir, "out.wav") }, 10)).rejects.toThrow(
+        /exited with code 1/,
+      );
+    });
+    delete process.env.KESHA_TEST_RECORD_EXIT;
+  });
+
+  /** A capture-to-WAV run has no signal handler, so a signalled exit really is a lost recording. */
+  fakeEngineTest("recordEngine still reports a signalled capture-to-WAV run as a failure", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-record-wav-signal-"));
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(enginePath, "#!/bin/sh\nexit 130\n");
+    chmodSync(enginePath, 0o755);
+    await withEngineEnv(enginePath, async () => {
+      await expect(recordEngine({ out: join(dir, "out.wav") }, 10)).rejects.toThrow(
+        /exited with code 130/,
+      );
+    });
+  });
+
   fakeEngineTest("abort terminates the spawned engine process tree", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-engine-tree-"));
     const helperPidFile = join(dir, "helper.pid");
