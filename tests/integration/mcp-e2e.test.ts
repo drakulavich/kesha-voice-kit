@@ -32,6 +32,6 @@ describe.skipIf(!engineInstalled)("mcp e2e", () => {
     const res = await cl.callTool({ name: "transcribe_audio", arguments: { path: FIXTURE_RU } });
     expect(res.isError).toBeUndefined();
     // Backend-stable word: CoreML and ONNX disagree on "сообщения"/"сообщение" for this clip.
-    expect((res.content as Array<{ text: string }>)[0].text).toContain("транскрипцией");
+    expect((res.content as Array<{ text: string }>)[0]?.text).toContain("транскрипцией");
   }, 60_000);
 });

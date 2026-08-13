@@ -20,7 +20,7 @@ describeOrSkip("error-code drift", () => {
 
     const doc = readFileSync(join(import.meta.dir, "../../docs/errors.md"), "utf8");
     const documented = new Set<string>();
-    for (const m of doc.matchAll(/`(E_[A-Z0-9_]+)`/g)) documented.add(m[1]);
+    for (const m of doc.matchAll(/`(E_[A-Z0-9_]+)`/g)) if (m[1]) documented.add(m[1]);
 
     // Named both ways: a set-membership assertion only reports "false is not true".
     expect([...known].filter((c) => !documented.has(c)).sort()).toEqual([]);

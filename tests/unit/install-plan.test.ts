@@ -219,7 +219,9 @@ describe("the plan's download economics", () => {
         "cached",
       );
 
-      seed(cacheRoot, modelPlan.langId[0].relPath, "");
+      const firstLangId = modelPlan.langId[0];
+      if (!firstLangId) throw new Error("model-plan.json langId is empty — fixture invariant broken");
+      seed(cacheRoot, firstLangId.relPath, "");
       expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
         "needed",
       );

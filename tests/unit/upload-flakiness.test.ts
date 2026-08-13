@@ -39,7 +39,7 @@ describe("normaliseReport", () => {
   test("preserves the untruncated version in metadata", () => {
     const report = { environments: [macos("26.5.2")] };
     normaliseReport(report);
-    expect(report.environments[0].metadata).toEqual({ osVersionFull: "26.5.2" });
+    expect(report.environments[0]?.metadata).toEqual({ osVersionFull: "26.5.2" });
   });
 
   test("matches osName case-insensitively", () => {
@@ -57,7 +57,7 @@ describe("normaliseReport", () => {
     const { normalised, skipped } = normaliseReport(report, "linux");
     expect(normalised).toBe(0);
     expect(skipped).toBe(2);
-    expect(report.environments[1].systemData.osVersion).toBe("10.0.26100");
+    expect(report.environments[1]?.systemData.osVersion).toBe("10.0.26100");
   });
 
   test("throws when running on darwin but nothing was labelled macos", () => {

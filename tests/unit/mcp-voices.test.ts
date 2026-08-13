@@ -66,10 +66,10 @@ describe("parseVoiceLines", () => {
 
   test("malformed en- id falls through to unknown", () => {
     const [v] = parseVoiceLines("en-zzz");
-    expect(v.modelId).toBe("unknown");
-    expect(v.modelName).toBe("Unknown");
-    expect(v.gender).toBeNull();
-    expect(v.languageCode).toBe("");
+    expect(v?.modelId).toBe("unknown");
+    expect(v?.modelName).toBe("Unknown");
+    expect(v?.gender).toBeNull();
+    expect(v?.languageCode).toBe("");
   });
 
   test("maps multilingual Kokoro ids", () => {

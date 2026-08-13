@@ -64,8 +64,8 @@ function parseVoiceInfo(id: string): VoiceInfo {
 
   const kokoro = id.match(/^(es|fr|hi|it|ja|pt|zh)-([a-z][fm]_.+)$/);
   if (kokoro) {
-    const languageCode = kokoro[1];
-    const bareVoice = kokoro[2];
+    const languageCode = kokoro[1] ?? "";
+    const bareVoice = kokoro[2] ?? "";
     const genderChar = bareVoice[1];
     const gender: "male" | "female" = genderChar === "f" ? "female" : "male";
     return {

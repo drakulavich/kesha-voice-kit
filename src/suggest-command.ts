@@ -7,7 +7,7 @@ export function suggestCommand(input: string, commands: string[]): string | null
   const lowerCommands = commands.map((c) => c.toLowerCase());
 
   const exactIdx = lowerCommands.indexOf(lowerInput);
-  if (exactIdx !== -1) return commands[exactIdx];
+  if (exactIdx !== -1) return commands[exactIdx] ?? null;
 
   const match = closest(lowerInput, lowerCommands);
   const dist = distance(lowerInput, match);
@@ -17,5 +17,5 @@ export function suggestCommand(input: string, commands: string[]): string | null
   if (dist > maxDist) return null;
 
   const idx = lowerCommands.indexOf(match);
-  return commands[idx];
+  return commands[idx] ?? null;
 }

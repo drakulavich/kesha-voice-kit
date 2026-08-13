@@ -1,8 +1,9 @@
 import type { TranscribeErrorRecord, TranscribeJsonOutput, TranscribeResult } from "./types";
 
 export function formatTextOutput(results: TranscribeResult[]): string {
-  if (results.length === 1) {
-    return results[0].text + "\n";
+  const [first] = results;
+  if (first && results.length === 1) {
+    return first.text + "\n";
   }
   return results
     .map((r, i) => (i > 0 ? "\n" : "") + `=== ${r.file} ===\n${r.text}\n`)

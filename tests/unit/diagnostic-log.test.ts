@@ -132,8 +132,8 @@ describe("diagnostic log storage", () => {
 
     const lines = readFileSync(resolveDiagnosticLogPath(), "utf8").trim().split("\n");
     expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0]).event).toBe("command.start");
-    expect(JSON.parse(lines[1]).exitCode).toBe(42);
+    expect(JSON.parse(lines[0] ?? "").event).toBe("command.start");
+    expect(JSON.parse(lines[1] ?? "").exitCode).toBe(42);
   });
 
   test("retain-on-failure session finish is terminal", () => {
@@ -147,7 +147,7 @@ describe("diagnostic log storage", () => {
 
     const lines = readFileSync(resolveDiagnosticLogPath(), "utf8").trim().split("\n");
     expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0]).runId).toBe("fail-once");
+    expect(JSON.parse(lines[0] ?? "").runId).toBe("fail-once");
 
     const success = createDiagnosticLogSession();
     expect(success.event("command.start", { command: "transcribe", runId: "success-first" })).toBe(true);

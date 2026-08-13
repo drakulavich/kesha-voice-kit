@@ -90,8 +90,8 @@ describe("stats storage", () => {
     expect(week.inputBytes).toBe(1024);
     expect(week.sttTimeMs).toBeGreaterThanOrEqual(0);
     expect(errors).toHaveLength(1);
-    expect(errors[0].message).not.toContain(statsDir());
-    expect(errors[0].message).not.toContain("secret.ogg");
+    expect(errors[0]?.message).not.toContain(statsDir());
+    expect(errors[0]?.message).not.toContain("secret.ogg");
   });
 
   test("recorder is a no-op when disabled", async () => {
@@ -488,8 +488,8 @@ describe("week summary aggregation", () => {
     const summary = getWeekSummary(NOW);
     expect(summary.slowestRuns).toHaveLength(1);
     const run = summary.slowestRuns[0];
-    expect(run.durationMs).toBe(0);
-    expect(run.stages).toEqual([
+    expect(run?.durationMs).toBe(0);
+    expect(run?.stages).toEqual([
       { stage: "transcribe", durationMs: 900, status: "failed" },
       { stage: "decode", durationMs: 200, status: "success" },
       { stage: "lang_id_audio", durationMs: 200, status: "success" },
@@ -973,7 +973,7 @@ describe("stats export contracts", () => {
     });
 
     const lines = exportStats("csv").trim().split("\n");
-    const header = lines[0].split(",");
+    const header = (lines[0] ?? "").split(",");
     const runRow = lines.find((line) => line.startsWith("runs,"))!.split(",");
 
     expect(runRow).toHaveLength(header.length);

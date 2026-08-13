@@ -600,7 +600,7 @@ describe("collectStatus disk accounting (#647)", () => {
       const engineBytes = statSync(binPath).size + 32;
 
       expect(disk.components.map((c) => c.label)).toEqual(["Engine", "TTS (Kokoro)"]);
-      expect(disk.components[0].sizeBytes).toBe(engineBytes);
+      expect(disk.components[0]?.sizeBytes).toBe(engineBytes);
       expect(disk.componentTotalBytes).toBe(engineBytes + 64);
       // The engine lives under the cache, so its bytes are counted once, not twice.
       expect(disk.totalBytes).toBe(engineBytes + 64);

@@ -1139,7 +1139,7 @@ function elapsedMs(startedAt: string, finishedAt: string | null): number | null 
 function percentile(sortedDurations: number[], p: number): number {
   if (sortedDurations.length === 0) return 0;
   const index = Math.min(sortedDurations.length - 1, Math.max(0, Math.ceil((p / 100) * sortedDurations.length) - 1));
-  return sortedDurations[index];
+  return sortedDurations[index] ?? 0;
 }
 
 function sizeBucket(sizeBytes: number | null): string {

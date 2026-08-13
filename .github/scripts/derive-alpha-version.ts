@@ -66,9 +66,10 @@ export function assertBaseLeadsPublished(channel: Channel, base: string, tags: s
   let highest: { raw: string; version: ReturnType<typeof parseSemver> } | undefined;
   for (const tag of tags) {
     const match = shape.exec(tag.trim());
-    if (!match) continue;
-    const version = parseSemver(match[1], "published stable");
-    if (!highest || cmp(version, highest.version) > 0) highest = { raw: match[1], version };
+    const captured = match?.[1];
+    if (!captured) continue;
+    const version = parseSemver(captured, "published stable");
+    if (!highest || cmp(version, highest.version) > 0) highest = { raw: captured, version };
   }
   if (!highest) return;
   if (cmp(parseSemver(base, "alpha base"), highest.version) > 0) return;

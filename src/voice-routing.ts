@@ -41,7 +41,7 @@ export function pickVoiceForLang(
   arch: NodeJS.Architecture = process.arch,
 ): string | undefined {
   if (!code || confidence < 0.5) return undefined;
-  const baseCode = code.toLowerCase().split(/[-_]/, 1)[0];
+  const baseCode = code.toLowerCase().split(/[-_]/, 1)[0] ?? "";
   switch (baseCode) {
     case "en":
       return "en-am_michael";
