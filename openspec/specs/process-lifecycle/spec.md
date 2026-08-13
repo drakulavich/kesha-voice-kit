@@ -51,6 +51,7 @@ When the CLI receives an interrupt or termination signal while a registered Engi
 - GIVEN Ira's pipeline sends a termination signal to `kesha` mid-batch
 - WHEN the signal arrives
 - THEN the Engine subprocess is terminated and the CLI exits 143
+- AND no Engine process is left running
 
 #### Scenario: A signal arrives when nothing is running
 
@@ -65,7 +66,9 @@ When the CLI receives an interrupt or termination signal while a registered Engi
 > `terminateActiveProcessTrees` (`:109`) sets `process.exitCode`, signals every
 > registered process, then schedules the actual `process.exit`. With no active
 > processes the delay is `SIGNAL_EXIT_BUFFER_MS` (50 ms) instead of the full
-> grace window. These codes extend the Exit code taxonomy in the Glossary.*
+> grace window. These codes extend the Exit code taxonomy in the Glossary, and
+> `docs/errors.md` lists them for callers scripting the CLI. Both signals are
+> asserted end to end in `tests/integration/cli-contracts.test.ts` (#940).*
 
 ### Requirement: Termination targets the whole process tree, not just the direct child
 
@@ -166,9 +169,6 @@ When a caller of the Core API cancels an in-flight call, the call SHALL fail wit
 
 ## Open Issues
 
-- Exit codes 130 and 143 are not documented in `docs/errors.md` alongside 0/1/2
-  (and `say`'s 4/5), and the Glossary's Exit code entry did not list them before
-  this spec. Nothing tests them end to end.
 - The abort path (`opts.signal`) is reachable only from the Core API; no CLI
   flag or timeout wires an `AbortSignal` into a run. The Raycast extension gets
   its cancellation by killing the CLI process instead, which lands on the signal
