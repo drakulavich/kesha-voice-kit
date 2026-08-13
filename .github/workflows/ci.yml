@@ -175,6 +175,7 @@ jobs:
               - 'packaging/homebrew/Formula/**'
               - 'docs/homebrew.md'
               - '.github/workflows/ci.yml'
+              - '.github/scripts/stage-homebrew-worktree-formula.mjs'
 
   workflow-lint:
     needs: changes
