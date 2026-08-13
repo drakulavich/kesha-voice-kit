@@ -249,20 +249,23 @@ The CLI SHALL print usage to stdout with an empty stderr in both cases, exiting 
 - AND stderr is empty
 - AND the process exits 1
 
-#### Scenario: A subcommand exists but the usage block does not name it
+#### Scenario: The usage block names every dispatchable subcommand
 
-- GIVEN a subcommand the hard-coded usage block omits
-- WHEN Ira reads that block to discover the command set
-- THEN the subcommand is still dispatchable, and still absent from the listing
-  — the block is maintained by hand and drifts (see Open Issues)
+- GIVEN every subcommand `SUBCOMMANDS` dispatches
+- WHEN Ira reads the bare-invocation block to discover the command set
+- THEN each dispatchable subcommand — including `init` and `mcp` — is named in
+  the listing
+- AND adding a subcommand without listing it fails a unit test (#938)
 
-> *Technical Note — the no-argument usage block is a hand-maintained string at
-> `src/cli/main.ts:533-547`, printed with `log.info` (stdout) followed by
-> `process.exit(1)`; it lists ten subcommands and omits `init` and `mcp`, both
-> of which `SUBCOMMANDS` in `src/cli/dispatch.ts:10-23` dispatches. `--help` is
-> citty's own renderer over the main command's `meta` and `args`, so it shows
-> the transcription flags, not each subcommand's. Both stream contracts are
-> asserted in `tests/integration/cli-contracts.test.ts`.*
+> *Technical Note — the no-argument usage block is a hand-maintained string,
+> `USAGE_MESSAGE` in `src/cli/dispatch.ts`, co-located with the `SUBCOMMANDS`
+> registry it must mirror; `src/cli/main.ts` prints it with `log.info` (stdout)
+> followed by `process.exit(1)`. `tests/unit/dispatch.test.ts` iterates
+> `SUBCOMMAND_NAMES` and asserts each appears in `USAGE_MESSAGE`, so the two
+> lists can no longer drift apart (#938). `--help` is citty's own renderer over
+> the main command's `meta` and `args`, so it shows the transcription flags, not
+> each subcommand's. Both stream contracts are asserted in
+> `tests/integration/cli-contracts.test.ts`.*
 
 ### Requirement: Result-producing commands follow the stdout-purity principle
 
@@ -312,11 +315,6 @@ When the first positional token is not a file and not a known subcommand, the CL
 - There is no `--color` flag to force color on when stdout is not a TTY (e.g.
   inside tmux with `TERM=dumb`); `FORCE_COLOR` from picocolors is the current
   workaround.
-- The bare-invocation usage block omits `init` and `mcp` — two dispatchable
-  subcommands, one of them the command interactive missing-model errors
-  recommend ([installation](../installation/spec.md), "Documented install entry
-  points match interactive hints"). Nothing keeps the hand-written list and
-  `SUBCOMMANDS` in sync, so it will drift again.
 - `kesha completions` and `kesha manpage` both resolve their file relative to
   `import.meta.url`, which does not survive the `bun build --compile` step the
   `.deb`/`.rpm` are built with, so on that install path both crash with an

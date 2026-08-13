@@ -22,6 +22,26 @@ const SUBCOMMANDS: Record<string, CommandLoader> = {
   mcp: async () => (await import("./mcp")).mcpCommand,
 };
 
+export const SUBCOMMAND_NAMES = Object.keys(SUBCOMMANDS);
+
+// Hand-curated ordering and per-command argument hints; every key in SUBCOMMANDS
+// must appear here, guarded at the observable layer by the bare-invocation case in
+// tests/integration/cli-contracts.test.ts (#938).
+export const USAGE_MESSAGE =
+  "Usage: kesha <audio_file> [audio_file ...]\n" +
+  "       kesha completions <bash|zsh|fish>\n" +
+  "       kesha doctor [--json] [--redact]\n" +
+  "       kesha init [--yes]\n" +
+  "       kesha install [--no-cache]\n" +
+  "       kesha logs [enable|disable|mode|status|path|reset]\n" +
+  "       kesha manpage\n" +
+  "       kesha mcp\n" +
+  "       kesha record --out path.wav [--max-seconds 120]\n" +
+  "       kesha status\n" +
+  "       kesha say <text>\n" +
+  "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +
+  "       kesha support-bundle [--output path.tar.gz]";
+
 function isPathLike(arg: string): boolean {
   return arg.includes(".") || arg.includes("/") || existsSync(arg);
 }
@@ -73,7 +93,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   applyCliContext(context);
 
   const [firstArg, ...restArgs] = context.rawArgs;
-  const subcommandKeys = Object.keys(SUBCOMMANDS);
+  const subcommandKeys = SUBCOMMAND_NAMES;
 
   switch (classifyFirstArg(firstArg, subcommandKeys)) {
     case "subcommand":

@@ -21,6 +21,7 @@ import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../proces
 import type { TranscriptionSegment } from "../types";
 import { diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandSession } from "./command-session";
+import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
 import { ENGINE_CODES, extractEngineErrorCode, TS_NATIVE_CODES } from "../error-codes";
 
@@ -429,6 +430,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         "  install    Download engine and models.\n" +
         "  logs       Manage local privacy-safe diagnostic logs.\n" +
         "  manpage    Print the kesha(1) manpage.\n" +
+        "  mcp        Run an MCP server over stdio.\n" +
         "  record     Record microphone audio to a WAV file.\n" +
         "  status     Inspect installed backend.\n" +
         "  say        Synthesize speech from text.\n" +
@@ -531,19 +533,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       const { vadMode, outputFormat } = validated;
 
       if (files.length === 0) {
-        log.info(
-          "Usage: kesha <audio_file> [audio_file ...]\n" +
-            "       kesha completions <bash|zsh|fish>\n" +
-            "       kesha doctor [--json] [--redact]\n" +
-            "       kesha install [--no-cache]\n" +
-            "       kesha logs [enable|disable|mode|status|path|reset]\n" +
-            "       kesha manpage\n" +
-            "       kesha record --out path.wav [--max-seconds 120]\n" +
-            "       kesha status\n" +
-            "       kesha say <text>\n" +
-            "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +
-            "       kesha support-bundle [--output path.tar.gz]",
-        );
+        log.info(USAGE_MESSAGE);
         process.exit(1);
       }
 
