@@ -16,14 +16,7 @@ const MAX_SECONDS: f32 = 10.0;
 pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
     audio::ensure_audio_track(audio_path)?;
 
-    if !models::is_cached(models::ModelKind::LangId) {
-        coded_bail!(
-            ErrorCode::ModelMissing,
-            "Lang-ID model not installed. Run: kesha install"
-        );
-    }
-
-    let dir = models::model_dir(models::ModelKind::LangId)?;
+    let dir = lang_id_model_dir(models::cache_dir())?;
 
     // Load ONNX session
     let mut session = ort::session::Session::builder()
@@ -72,9 +65,25 @@ pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
     })
 }
 
+/// The lang-id model dir, or the reason there isn't one. Takes the cache-root
+/// resolution rather than reading it, so the null-home failure #953 coded as
+/// `E_INTERNAL` stays an environment error instead of being reported as a
+/// missing model (#969) — and so that ordering is testable.
+fn lang_id_model_dir(cache: Result<std::path::PathBuf>) -> Result<std::path::PathBuf> {
+    let dir = models::model_dir_at(models::ModelKind::LangId, &cache?);
+    if !models::is_cached_in(models::ModelKind::LangId, &dir) {
+        coded_bail!(
+            ErrorCode::ModelMissing,
+            "Lang-ID model not installed. Run: kesha install"
+        );
+    }
+    Ok(dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::code_of;
 
     #[test]
     fn missing_audio_fails_before_model_lookup() {
@@ -86,6 +95,24 @@ mod tests {
         assert!(
             !msg.contains("Lang-ID model not installed"),
             "input validation must happen before model lookup, got: {msg}"
+        );
+    }
+
+    // #969: no resolvable home means we cannot tell whether the model is there,
+    // so the verdict is the environment failure, never "install the model".
+    #[test]
+    fn unresolvable_home_is_coded_internal_not_model_missing() {
+        let err = lang_id_model_dir(models::cache_dir_from(None, None))
+            .expect_err("a null home cannot yield a lang-id model dir");
+        assert_eq!(code_of(&err), ErrorCode::Internal);
+        let msg = format!("{err:#}");
+        assert!(
+            !msg.contains("not installed"),
+            "a home failure must not be reported as a missing model: {msg}"
+        );
+        assert!(
+            msg.contains("KESHA_CACHE_DIR"),
+            "message must name the escape hatch: {msg}"
         );
     }
 }

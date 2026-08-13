@@ -321,7 +321,7 @@ pub fn transcribe_with_options(
         mode
     };
 
-    let model_dir = ensure_asr_installed()?;
+    let model_dir = ensure_asr_installed(models::cache_dir())?;
 
     // `Auto` needs a duration probe for routing. `Off` probes too so explicit
     // full-file ASR can fail before loading a backend for media beyond the
@@ -1016,17 +1016,18 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
     )
 }
 
-/// Returns the cached ASR model dir or bails with the install hint.
-fn ensure_asr_installed() -> Result<String> {
-    if !models::is_cached(models::ModelKind::Asr) {
+/// Returns the cached ASR model dir or bails with the install hint. Takes the
+/// cache-root resolution rather than reading it, so a null home surfaces as the
+/// coded `E_INTERNAL` #953 established instead of "no models installed" (#969).
+fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<String> {
+    let dir = models::model_dir_at(models::ModelKind::Asr, &cache?);
+    if !models::is_cached_in(models::ModelKind::Asr, &dir) {
         anyhow::bail!(
             "Error: No transcription models installed\n\n\
              Please run: kesha install"
         );
     }
-    Ok(models::model_dir(models::ModelKind::Asr)?
-        .to_string_lossy()
-        .into_owned())
+    Ok(dir.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]
@@ -1808,6 +1809,24 @@ mod tests {
         assert!(
             !msg.contains("No transcription models installed"),
             "diarization preflight must happen before ASR install lookup, got: {msg}"
+        );
+    }
+
+    // #969: with no resolvable home the ASR gate cannot know whether the models
+    // are installed — reporting them missing sends the user to a fix that isn't one.
+    #[test]
+    fn asr_gate_reports_unresolvable_home_as_internal() {
+        let err = ensure_asr_installed(models::cache_dir_from(None, None))
+            .expect_err("a null home cannot yield an ASR model dir");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::Internal);
+        let msg = format!("{err:#}");
+        assert!(
+            !msg.contains("No transcription models installed"),
+            "a home failure must not be reported as a missing model: {msg}"
+        );
+        assert!(
+            msg.contains("KESHA_CACHE_DIR"),
+            "message must name the escape hatch: {msg}"
         );
     }
 

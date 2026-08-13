@@ -1667,7 +1667,7 @@ pub fn cache_dir() -> Result<PathBuf> {
 /// `KESHA_CACHE_DIR` wins even with no resolvable home; otherwise a missing
 /// home is a coded `E_INTERNAL` naming the escape hatch, never a panic past
 /// the `error [CODE]:` contract.
-fn cache_dir_from(env_cache: Option<String>, home: Option<PathBuf>) -> Result<PathBuf> {
+pub(crate) fn cache_dir_from(env_cache: Option<String>, home: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(p) = env_cache {
         return Ok(PathBuf::from(p));
     }
