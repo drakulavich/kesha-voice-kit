@@ -430,6 +430,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         "  install    Download engine and models.\n" +
         "  logs       Manage local privacy-safe diagnostic logs.\n" +
         "  manpage    Print the kesha(1) manpage.\n" +
+        "  mcp        Run an MCP server over stdio.\n" +
         "  record     Record microphone audio to a WAV file.\n" +
         "  status     Inspect installed backend.\n" +
         "  say        Synthesize speech from text.\n" +

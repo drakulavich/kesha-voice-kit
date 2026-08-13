@@ -25,7 +25,8 @@ const SUBCOMMANDS: Record<string, CommandLoader> = {
 export const SUBCOMMAND_NAMES = Object.keys(SUBCOMMANDS);
 
 // Hand-curated ordering and per-command argument hints; every key in SUBCOMMANDS
-// must appear here, guarded by tests/unit/dispatch.test.ts (#938).
+// must appear here, guarded at the observable layer by the bare-invocation case in
+// tests/integration/cli-contracts.test.ts (#938).
 export const USAGE_MESSAGE =
   "Usage: kesha <audio_file> [audio_file ...]\n" +
   "       kesha completions <bash|zsh|fish>\n" +

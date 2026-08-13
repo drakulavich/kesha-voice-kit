@@ -251,6 +251,7 @@ Commands:
   install    Download engine and models.
   logs       Manage local privacy-safe diagnostic logs.
   manpage    Print the kesha(1) manpage.
+  mcp        Run an MCP server over stdio.
   record     Record microphone audio to a WAV file.
   status     Inspect installed backend.
   say        Synthesize speech from text.

@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { engineVersion } from "../../src/package-info";
+import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
   DEFAULT_TIMEOUT_MS,
@@ -291,9 +292,17 @@ describe("CLI contracts", () => {
     const empty = await runCli([]);
     expectContract(empty, {
       exitCode: 1,
-      stdoutContains: ["Usage: kesha <audio_file>", "kesha logs", "kesha stats", "kesha support-bundle"],
+      stdoutContains: ["Usage: kesha <audio_file>"],
       stderrEmpty: true,
     });
+    // #938 drift guard, at the observable layer: every dispatchable subcommand must
+    // surface in the bare-invocation usage the user actually sees. Coupling the loop
+    // to SUBCOMMAND_NAMES makes adding a command without listing it fail here; the
+    // per-name line anchor (leading whitespace, then `kesha <name>` followed by a
+    // space or end of line) stops a shorter name from prefix-matching a longer one.
+    for (const name of SUBCOMMAND_NAMES) {
+      expect(empty.stdout).toMatch(new RegExp(`^\\s+kesha ${name}( |$)`, "m"));
+    }
   });
 
   test("validation errors are stderr-only and exit with the documented codes", async () => {
