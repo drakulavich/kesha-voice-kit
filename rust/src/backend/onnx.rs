@@ -229,13 +229,7 @@ impl TranscribeBackend for OnnxBackend {
     }
 
     fn transcribe_samples(&mut self, audio_samples: &[f32]) -> Result<TranscriptionChunk> {
-        if audio_samples.len() < 1600 {
-            anyhow::bail!(
-                "Audio too short: {} samples ({:.2}s) — minimum is 0.1s (1600 samples at 16kHz)",
-                audio_samples.len(),
-                audio_samples.len() as f64 / 16000.0
-            );
-        }
+        super::ensure_transcribable(audio_samples)?;
 
         let (features_data, features_lens) = self.preprocess(audio_samples)?;
         let (logits_data, logits_shape, encoded_lengths) =

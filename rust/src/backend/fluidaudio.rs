@@ -8,8 +8,8 @@ use crate::transcribe::WordTiming;
 
 use super::{TranscribeBackend, TranscriptionChunk};
 
-/// FluidAudio's CoreML ASR rejects clips shorter than ~1s (returns
-/// `invalidAudioData` and prints the error to stdout — see #259).
+/// FluidAudio's CoreML ASR rejects clips shorter than ~0.25 s (returns
+/// `invalidAudioData` and prints the error to stdout — #259, measured in #995).
 /// VAD spans frequently produce sub-second segments at speech onsets /
 /// offsets, so we pad them with trailing silence before handing to
 /// `transcribe_file`. 1.5 s @ 16 kHz = 24 000 samples; well above the
@@ -39,12 +39,21 @@ impl FluidAudioBackend {
 }
 
 impl TranscribeBackend for FluidAudioBackend {
+    /// stdout stays silenced: a file FluidAudio rejects prints there, and the fallback
+    /// below can still return a transcript, whose `--json` that chatter would corrupt.
     fn transcribe(&mut self, audio_path: &str) -> Result<TranscriptionChunk> {
-        let (result, words) = self
-            .audio
-            .transcribe_file_with_words(audio_path)
-            .context("FluidAudio transcription failed")?;
-        Ok(chunk_from(result.text, words))
+        let attempt = with_silenced_stdout(self.sink.as_ref(), || {
+            self.audio.transcribe_file_with_words(audio_path)
+        });
+        match attempt {
+            Ok((result, words)) => Ok(chunk_from(result.text, words)),
+            // FluidAudio refuses a file below ~0.25 s; the padding path serves it, and load_audio names a real fault better (#995).
+            Err(_) => {
+                let samples = crate::audio::load_audio(audio_path)?;
+                super::ensure_transcribable(&samples)?;
+                self.transcribe_samples(&samples)
+            }
+        }
     }
 
     /// stdout is silenced for the call: even with padding, upstream prints
@@ -411,6 +420,38 @@ mod tests {
         let out = pad_to_min(&[], MIN_SAMPLES);
         assert_eq!(out.len(), MIN_SAMPLES);
         assert!(out.iter().all(|&v| v == 0.0));
+    }
+
+    // Regression: below FluidAudio's ~0.25 s floor this was E_INTERNAL; ONNX transcribes it (#995).
+    #[test]
+    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    fn a_sub_second_file_transcribes_instead_of_erroring() {
+        if skip_without_ane("a_sub_second_file_transcribes_instead_of_erroring") {
+            return;
+        }
+        let short = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tone-150ms.wav");
+        let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
+        be.transcribe(short)
+            .expect("a 0.15 s file must transcribe, not fail as invalid audio data");
+    }
+
+    // A file no backend can transcribe is the caller's, not an engine fault (#995).
+    #[test]
+    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    fn an_undecodable_file_is_coded_bad_audio() {
+        if skip_without_ane("an_undecodable_file_is_coded_bad_audio") {
+            return;
+        }
+        let alac = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/alac.m4a");
+        let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
+        let err = be
+            .transcribe(alac)
+            .expect_err("ALAC has no symphonia decoder");
+        assert_eq!(
+            crate::errors::code_of(&err),
+            crate::errors::ErrorCode::BadAudio,
+            "{err:#}"
+        );
     }
 
     // Regression: the VAD/chunked paths call `transcribe_samples` once per
