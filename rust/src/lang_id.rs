@@ -115,4 +115,19 @@ mod tests {
             "message must name the escape hatch: {msg}"
         );
     }
+
+    // The other half of #969: a cache root that resolves fine but holds no
+    // weights is still the user's missing model, not an environment failure.
+    #[test]
+    fn resolved_cache_without_model_stays_model_missing() {
+        let tmp = tempfile::tempdir().expect("temp cache root");
+        let err = lang_id_model_dir(Ok(tmp.path().to_path_buf()))
+            .expect_err("an empty cache root holds no lang-id model");
+        assert_eq!(code_of(&err), ErrorCode::ModelMissing);
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("kesha install"),
+            "message must keep the install hint: {msg}"
+        );
+    }
 }

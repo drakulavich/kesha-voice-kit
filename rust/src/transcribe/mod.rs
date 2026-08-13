@@ -1830,6 +1830,27 @@ mod tests {
         );
     }
 
+    // The other half of #969: a cache root that resolves fine but holds no
+    // weights is still the install hint, not an environment failure. CoreML is
+    // excluded because there `is_cached_in(Asr, …)` ignores the dir and probes
+    // FluidAudio's own cache, so a staged ANE machine would see no error at all.
+    #[cfg(not(feature = "coreml"))]
+    #[test]
+    fn asr_gate_reports_resolved_cache_without_model_as_missing() {
+        let tmp = tempfile::tempdir().expect("temp cache root");
+        let err = ensure_asr_installed(Ok(tmp.path().to_path_buf()))
+            .expect_err("an empty cache root holds no ASR model");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("No transcription models installed") && msg.contains("kesha install"),
+            "an absent model must keep the install hint: {msg}"
+        );
+        assert!(
+            !msg.contains("KESHA_CACHE_DIR"),
+            "a resolved cache must not be reported as a home failure: {msg}"
+        );
+    }
+
     // ── seam splice: one test per failure shape upstream FluidAudio hit ─────
 
     /// Budget for a 5 s overlap, matching the production chunker.
