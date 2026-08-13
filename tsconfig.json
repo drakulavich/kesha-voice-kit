@@ -6,6 +6,12 @@
     "resolveJsonModule": true,
     "types": ["bun-types"],
     "strict": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noImplicitOverride": true,
     "skipLibCheck": true,
     "noEmit": true
   },
