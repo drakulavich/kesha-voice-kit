@@ -668,7 +668,7 @@ install proceeds without it.
 
 ### Requirement: The star prompt is gated to meaningful version bumps and bounded in time
 
-After a successful install the CLI MAY print an invitation to star the repository, and SHALL show it only on a first install or a major/minor bump — never on a patch-only bump — and SHALL bound how long it waits on any external probe before printing.
+After a successful install the CLI MAY print an invitation to star the repository, and SHALL show it only on a first install or a major/minor bump — never on a patch-only bump — and SHALL bound how long it waits on any external probe before printing. The prompt is cosmetic and SHALL never fail the install: any error it raises — a failed probe, spawn, or logger — is swallowed and the install still exits 0.
 
 #### Scenario: Maks installs for the first time
 
@@ -694,9 +694,17 @@ After a successful install the CLI MAY print an invitation to star the repositor
 #### Scenario: The marker cannot be written
 
 - GIVEN the engine directory is read-only, so the marker write fails
-- WHEN the invitation is shown
-- THEN the install still succeeds, and the next install for the same version
-  prompts again, because nothing recorded that it already asked
+- WHEN the invitation would be shown
+- THEN nothing is printed and the install still succeeds, because the prompt is
+  skipped when it cannot be recorded, so a read-only directory never nags
+
+#### Scenario: The star prompt throws after a completed install
+
+- GIVEN the engine and models are downloaded and verified on disk
+- AND the star prompt raises — `Bun.which`, either `gh` spawn, or the logger throws
+- WHEN `maybeAskForStar` runs
+- THEN the throw is swallowed to a warning, the install is recorded as
+  `success`, and the CLI exits 0
 
 #### Scenario: The repository is already starred
 
@@ -712,11 +720,12 @@ After a successful install the CLI MAY print an invitation to star the repositor
 > (`src/star.ts:16`) and is written *before* printing, so one run never prompts
 > twice and a write failure is non-fatal. `GH_PROBE_TIMEOUT_MS` is 2 000 ms
 > (`src/star.ts:6`), sized to clear a healthy `gh auth status` (0.77–1.21 s
-> measured) but not a wedged one that blocked install 11–25 s (#810). Only the
-> marker write is guarded (`src/star.ts:85`); the call sits inside
-> `performInstall`'s `try` (`src/cli/install.ts:239`), so anything else it
-> throws lands in the catch that exits 1 — see Open Issues. Covered by
-> `tests/unit/star.test.ts`.*
+> measured) but not a wedged one that blocked install 11–25 s (#810).
+> `maybeAskForStar` is total: its whole body sits in a try that swallows any
+> throw to `log.warn`, so a failing probe, spawn, or logger cannot escape into
+> `performInstall`'s catch (#936). A marker-write failure returns without
+> printing, so a read-only engine directory is silently skipped rather than
+> nagging every install. Covered by `tests/unit/star.test.ts`.*
 
 ### Requirement: Install cost is stated before download
 User-facing install documentation SHALL state the approximate download/disk cost of `kesha install` (~2.7 GB) and the quiet-progress behavior of the model step next to the command itself, and SHALL present `kesha install --plan` (exact sizes, downloads nothing) and `kesha status --disk` as the user-facing cost-inspection commands.
@@ -736,9 +745,3 @@ Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL m
 
 - `kesha record` has no Windows or Linux microphone capture; `record.rs` gates capture on
   macOS and the README directs other platforms to pass an existing audio file.
-- **A star prompt failure can fail an install that already succeeded.**
-  `maybeAskForStar` runs inside `performInstall`'s `try` after the engine is on
-  disk, and only its marker write is guarded. A throw from `Bun.which`, either
-  `gh` spawn, or the logger reaches the catch, which reports the install as
-  `failed` and exits 1 — after every byte was downloaded and verified. The
-  prompt is cosmetic and should not be able to do that.
