@@ -1,5 +1,10 @@
 import { describe, test, expect } from "bun:test";
-import { classifyFirstArg, unknownCommandMessages } from "../../src/cli/dispatch";
+import {
+  classifyFirstArg,
+  unknownCommandMessages,
+  SUBCOMMAND_NAMES,
+  USAGE_MESSAGE,
+} from "../../src/cli/dispatch";
 
 // ---------------------------------------------------------------------------
 // classifyFirstArg
@@ -48,6 +53,12 @@ describe("classifyFirstArg — unknown (typo detection)", () => {
 
   test("empty string → 'main' (falsy guard at top of function)", () => {
     expect(classifyFirstArg("", KNOWN)).toBe("main");
+  });
+});
+
+describe("bare-invocation usage block names every dispatchable subcommand (#938)", () => {
+  test.each(SUBCOMMAND_NAMES)("usage block lists 'kesha %s'", (name) => {
+    expect(USAGE_MESSAGE).toContain(`kesha ${name}`);
   });
 });
 
