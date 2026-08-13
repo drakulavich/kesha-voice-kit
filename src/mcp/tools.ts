@@ -6,6 +6,7 @@ import { basename, isAbsolute, join } from "path";
 import { transcribe, transcribeWithTimestamps } from "../lib";
 import { listVoices, aggregateLanguages } from "./voices";
 import { say, type SayFormat } from "../synth";
+import { DEFAULT_VOICE_ID, resolveSayVoice } from "../voice-routing";
 import { allocAudioPath, audioDir } from "./audio-output";
 
 export function registerTools(server: McpServer): void {
@@ -64,13 +65,14 @@ export function registerTools(server: McpServer): void {
       const fmt: SayFormat = format ?? "wav";
       const outPath = allocAudioPath(fmt);
       try {
-        await say({ text, voice, rate, format: fmt, out: outPath });
+        // An MCP caller has no stderr to read: the voice it is told is its only record (#942).
+        const resolvedVoice = (await resolveSayVoice(voice, undefined, text)) ?? DEFAULT_VOICE_ID;
+        await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath });
         chmodSync(outPath, 0o600);
         const bytes = statSync(outPath).size;
         const file = basename(outPath);
         const uri = `kesha-audio://${file}`;
         const mimeType = mimeForExt(file);
-        const resolvedVoice = voice ?? "(auto)";
         return {
           content: [
             { type: "resource_link" as const, uri, name: file, mimeType },

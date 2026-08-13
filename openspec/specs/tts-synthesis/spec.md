@@ -129,8 +129,9 @@ Voice id SHALL fail with `E_VOICE_UNKNOWN` and exit 1.
 - THEN the run fails with `E_VOICE_UNKNOWN` listing the supported prefixes
 - AND the process exits 1
 
-> *Technical Note — precedence: `src/cli/say.ts:27-35` (`resolveSayVoice`);
-> mapping: `src/voice-routing.ts:31-53` (`pickVoiceForLang`). The full map
+> *Technical Note — precedence: `src/voice-routing.ts:76-84` (`resolveSayVoice`,
+> shared with the MCP server since #942); mapping: `src/voice-routing.ts:42-60`
+> (`pickVoiceForLang`). The full map
 > (confidence < 0.5 → none; base code is lowercased and split on `-`/`_`):*
 >
 > | Detected/stated lang | darwin-arm64 | darwin-x64 (Intel macOS) | Linux / Windows |

@@ -1,7 +1,6 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import {
-  detectTextLanguageEngine,
   getEngineBinPath,
   isEngineInstalled,
   spawnEngineProcess,
@@ -12,33 +11,9 @@ import { registerProcessTree } from "../process-tree";
 import { log } from "../log";
 import { say, SayError, type SayFormat } from "../synth";
 import { artifactFromBytes, artifactFromFile, type StatsRecorder } from "../stats";
-import { pickVoiceForLang } from "../voice-routing";
+import { resolveSayVoice } from "../voice-routing";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandOutcome, type CommandSession } from "./command-session";
-
-async function autoRouteVoice(text: string): Promise<string | undefined> {
-  if (!text) return undefined;
-  const detected = await detectTextLanguageEngine(text);
-  return pickVoiceForLang(detected?.code, detected?.confidence ?? 0);
-}
-
-/**
- * Resolve the voice for `kesha say`. Precedence: explicit `--voice` > explicit
- * `--lang` (route by the stated language, skipping detection — also the path on
- * Linux/Windows where text-language detection is unavailable) > macOS
- * text-language auto-detection > engine default (`undefined`). A `--lang` the
- * build has no voice for resolves to `undefined` (engine default) rather than
- * re-running detection — the user stated the language explicitly.
- */
-export async function resolveSayVoice(
-  explicitVoice: string | undefined,
-  langHint: string | undefined,
-  text: string,
-): Promise<string | undefined> {
-  if (explicitVoice !== undefined) return explicitVoice;
-  if (langHint !== undefined) return pickVoiceForLang(langHint, 1);
-  return autoRouteVoice(text);
-}
 
 async function resolveText(inline: string | undefined): Promise<string> {
   if (inline !== undefined && inline.length > 0) return inline;

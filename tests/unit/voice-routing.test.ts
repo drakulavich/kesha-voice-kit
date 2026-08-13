@@ -1,12 +1,15 @@
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pickVoiceForLang } from "../../src/voice-routing";
+import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
 
-const MODELS_RS = readFileSync(
-  join(import.meta.dir, "..", "..", "rust", "src", "models.rs"),
-  "utf8",
-).replace(/\r\n/g, "\n");
+const rustSource = (...parts: string[]) =>
+  readFileSync(join(import.meta.dir, "..", "..", "rust", "src", ...parts), "utf8").replace(
+    /\r\n/g,
+    "\n",
+  );
+
+const MODELS_RS = rustSource("models.rs");
 
 // Parsed, not copied: a language added to tts_languages() alone must turn these guards red (#769).
 function advertisedTtsLangs(): { systemKokoro: string[]; onnx: string[] } {
@@ -189,5 +192,23 @@ describe("pickVoiceForLang (auto-routing)", () => {
   it("returns undefined when code is missing", () => {
     expect(pickVoiceForLang(undefined, 0.95)).toBeUndefined();
     expect(pickVoiceForLang("", 0.95)).toBeUndefined();
+  });
+});
+
+// The MCP server names this voice when routing declines, and reports it as the one that
+// spoke (#942). Two things have to hold for that report to stay true, so both are parsed
+// out of the Rust source rather than copied: the constant's value, and the fact that
+// `kesha-engine say` still applies *that* constant when no --voice reaches it.
+describe("DEFAULT_VOICE_ID", () => {
+  it("matches the engine's fallback voice", () => {
+    const engineDefault = rustSource("tts", "voices.rs").match(
+      /DEFAULT_VOICE_ID:\s*&str\s*=\s*"([^"]+)"/,
+    )?.[1];
+    expect(engineDefault).toBe(DEFAULT_VOICE_ID);
+  });
+
+  it("is what the engine's own say applies when no voice reaches it", () => {
+    const fallback = rustSource("cli", "say.rs").match(/voice_id\.unwrap_or\(([^)]*)\)/)?.[1];
+    expect(fallback).toBe("tts::voices::DEFAULT_VOICE_ID");
   });
 });
