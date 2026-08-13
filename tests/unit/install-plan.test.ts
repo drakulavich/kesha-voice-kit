@@ -219,7 +219,7 @@ describe("the plan's download economics", () => {
         "cached",
       );
 
-      seed(cacheRoot, modelPlan.langId[0].relPath, "");
+      seed(cacheRoot, modelPlan.langId[0]?.relPath ?? "", "");
       expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
         "needed",
       );

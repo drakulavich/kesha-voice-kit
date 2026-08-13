@@ -30,7 +30,7 @@ function requirePinnedActions(path: string, contents: string): string[] {
 
   for (const match of contents.matchAll(actionPattern)) {
     const reference = match[1];
-    if (reference.startsWith("./") || reference.startsWith("docker://")) continue;
+    if (!reference || reference.startsWith("./") || reference.startsWith("docker://")) continue;
     if (!/@[0-9a-f]{40}$/i.test(reference)) {
       errors.push(`${path}: external action must be pinned to a full commit SHA: ${reference}`);
     }
@@ -103,7 +103,7 @@ export function requireDarwinSmokeCoversBothEngines(path: string, document: unkn
   if (!steps) return [`${path}: expected a \`${job}\` job with steps`];
 
   const smokes = runsMatching(steps, /^\s*bun\s+\S*smoke-synthesis\.ts\b/m);
-  const isAvspeech = (at: number) => /--voice\s+macos-/.test(String(steps[at].run));
+  const isAvspeech = (at: number) => /--voice\s+macos-/.test(String(steps[at]?.run));
   const avspeech = smokes.find(isAvspeech);
   const kokoro = smokes.some((at) => !isAvspeech(at));
 
@@ -111,14 +111,15 @@ export function requireDarwinSmokeCoversBothEngines(path: string, document: unkn
   if (!kokoro) {
     errors.push(`${path}: \`${job}\` must synthesise through Kokoro — a smoke-synthesis.ts run on a non-\`macos-*\` voice (#678)`);
   }
-  if (avspeech === undefined) {
+  const avspeechStep = avspeech === undefined ? undefined : steps[avspeech];
+  if (avspeechStep === undefined) {
     errors.push(`${path}: \`${job}\` must synthesise through the AVSpeech sidecar — a smoke-synthesis.ts run with \`--voice macos-*\` (#678)`);
     return errors;
   }
-  if (/--text\b/.test(String(steps[avspeech].run))) {
+  if (/--text\b/.test(String(avspeechStep.run))) {
     errors.push(`${path}: \`${job}\`'s AVSpeech arm must carry the default pangram, not a \`--text\` override — it is the only long-utterance darwin coverage (#678)`);
   }
-  if (!/!\s*cancelled\(\)/.test(condition(steps[avspeech]))) {
+  if (!/!\s*cancelled\(\)/.test(condition(avspeechStep))) {
     errors.push(`${path}: \`${job}\`'s AVSpeech arm needs \`if: \${{ !cancelled() }}\`, or a red Kokoro arm hides whether the sidecar works (#678)`);
   }
   return errors;
@@ -248,7 +249,7 @@ function valuesAt(node: unknown, path: string[]): string[] {
   if (Array.isArray(node)) return node.flatMap((item) => valuesAt(item, path));
   if (path.length === 0) return typeof node === "object" ? [] : [String(node)];
   if (typeof node !== "object") return [];
-  return valuesAt((node as Record<string, unknown>)[path[0]], path.slice(1));
+  return valuesAt((node as Record<string, unknown>)[path[0] ?? ""], path.slice(1));
 }
 
 /** The concrete labels a `runs-on` can resolve to, substituting the matrix keys it names. */
@@ -260,7 +261,7 @@ function runnerLabels(job: Job): string[] {
     if (references.length === 0) return [label];
     const matrix = job.strategy?.matrix;
     return references.flatMap((reference) => {
-      const key = reference[1].split(".");
+      const key = (reference[1] ?? "").split(".");
       return [...valuesAt(matrix, key), ...valuesAt((matrix as { include?: unknown })?.include, key)];
     });
   });
@@ -401,7 +402,9 @@ function collectTestedScripts(): string[] {
   const found = new Set<string>();
   for (const contents of tests) {
     for (const match of contents.matchAll(/\.github\/scripts\/([\w.-]+)/g)) {
-      for (const candidate of [match[1], `${match[1]}.ts`]) {
+      const name = match[1];
+      if (!name) continue;
+      for (const candidate of [name, `${name}.ts`]) {
         const file = join(".github/scripts", candidate);
         if (existsSync(file)) found.add(file);
       }

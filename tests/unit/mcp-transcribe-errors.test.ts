@@ -16,13 +16,13 @@ describe("transcribe_audio errors", () => {
   test("missing file returns isError, never throws protocol error", async () => {
     const res = await call("transcribe_audio", { path: "/no/such/file.wav" });
     expect(res.isError).toBe(true);
-    expect((res.content as Array<{ text: string }>)[0].text).toContain("File not found");
+    expect((res.content as Array<{ text: string }>)[0]?.text).toContain("File not found");
   });
 
   test("missing relative path explains cwd resolution and recommends absolute path", async () => {
     const res = await call("transcribe_audio", { path: "./no-such-file.wav" });
     expect(res.isError).toBe(true);
-    const text = (res.content as Array<{ text: string }>)[0].text;
+    const text = (res.content as Array<{ text: string }>)[0]?.text;
     expect(text).toContain("File not found");
     expect(text).toContain("relative paths resolve against the MCP server's working directory");
     expect(text).toContain(process.cwd());

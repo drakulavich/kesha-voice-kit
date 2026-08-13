@@ -42,7 +42,12 @@ function makeTempDir(prefix: string): string {
   return dir;
 }
 
-function isolatedEnv(dir = makeTempDir("kesha-cli-contract-")): Record<string, string> {
+function isolatedEnv(dir = makeTempDir("kesha-cli-contract-")): {
+  HOME: string;
+  KESHA_CACHE_DIR: string;
+  KESHA_LOG_DIR: string;
+  KESHA_STATS_DB: string;
+} {
   return {
     HOME: dir,
     KESHA_CACHE_DIR: join(dir, "cache"),
@@ -558,7 +563,7 @@ describe("CLI contracts", () => {
       errors: Array<Record<string, unknown>>;
     };
     expect(decoded.results).toHaveLength(1);
-    expect(decoded.results[0].file).toBe(mediaPath);
+    expect(decoded.results[0]?.file).toBe(mediaPath);
     expect(decoded.errors).toEqual([
       { file: "missing.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" },
     ]);
@@ -766,8 +771,8 @@ describe("CLI contracts", () => {
     });
     const { decode: decodeToon } = await import("@toon-format/toon");
     const decoded = decodeToon(toon.stdout) as Array<Record<string, unknown>>;
-    expect(decoded[0].text).toBe("Привет с воркшопа");
-    expect(decoded[0].lang).toBe("ru");
+    expect(decoded[0]?.text).toBe("Привет с воркшопа");
+    expect(decoded[0]?.lang).toBe("ru");
 
     const noVadJson = await runCli([mediaPath, "--json", "--no-vad"], { env });
     expectContract(noVadJson, {
@@ -855,7 +860,7 @@ describe("CLI contracts", () => {
       command: "install",
       status: "success",
     });
-    expect(typeof events[1].durationMs).toBe("number");
+    expect(typeof events[1]?.durationMs).toBe("number");
   });
 
   test("install keeps progress on stderr while --plan's deliverable stays on stdout (#945)", async () => {

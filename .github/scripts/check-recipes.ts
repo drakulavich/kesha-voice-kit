@@ -72,7 +72,7 @@ function markdownCommands(lines: string[]): CommandLine[] {
       found.push({ line: at + 1, text: raw });
       continue;
     }
-    for (const span of raw.matchAll(/`([^`]+)`/g)) found.push({ line: at + 1, text: span[1] });
+    for (const span of raw.matchAll(/`([^`]+)`/g)) found.push({ line: at + 1, text: span[1] ?? "" });
   }
   return found;
 }
@@ -93,7 +93,7 @@ function yamlRunCommands(lines: string[]): CommandLine[] {
     }
     const step = raw.match(/^\s*(?:-\s+)?run:\s*(.*)$/);
     if (!step) continue;
-    const value = step[1].trim();
+    const value = (step[1] ?? "").trim();
     if (value === "" || /^[|>][-+\d]*$/.test(value)) blockIndent = raw.indexOf("run:");
     else found.push({ line: at + 1, text: value });
   }
@@ -109,8 +109,9 @@ export function referencedRecipes(path: string, contents: string): Reference[] {
   const found: Reference[] = [];
   for (const { line, text } of commandLines(path, contents)) {
     for (const match of text.matchAll(INVOCATION)) {
-      if (!RECIPE_NAME.test(match[2])) continue;
-      found.push({ line, recipe: match[2], text: text.trim() });
+      const recipe = match[2];
+      if (!recipe || !RECIPE_NAME.test(recipe)) continue;
+      found.push({ line, recipe, text: text.trim() });
     }
   }
   return found;

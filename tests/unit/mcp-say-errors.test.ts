@@ -16,7 +16,7 @@ describe("synthesize_speech errors", () => {
   test("rate out of range or NaN is isError", async () => {
     const outOfRange = await call({ text: "hi", rate: 9 });
     expect(outOfRange.isError).toBe(true);
-    expect((outOfRange.content as Array<{ text: string }>)[0].text).toMatch(/rate/i);
+    expect((outOfRange.content as Array<{ text: string }>)[0]?.text).toMatch(/rate/i);
 
     const nanRate = await call({ text: "hi", rate: NaN });
     expect(nanRate.isError).toBe(true);
@@ -28,7 +28,7 @@ describe("synthesize_speech errors", () => {
     try {
       const res = await call({ text: "hello", voice: "en-am_michael" });
       expect(res.isError).toBe(true);
-      expect((res.content as Array<{ text: string }>)[0].text).toMatch(/install --tts|not installed|kesha-engine not installed/i);
+      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(/install --tts|not installed|kesha-engine not installed/i);
     } finally {
       if (prev === undefined) delete process.env.KESHA_CACHE_DIR;
       else process.env.KESHA_CACHE_DIR = prev;

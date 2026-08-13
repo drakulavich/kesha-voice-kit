@@ -103,13 +103,14 @@ function expandModelFileMacros(source: string): string {
   let stripped = "";
   let at = 0;
   for (const decl of source.matchAll(/macro_rules!\s+(\w+)\s*\{/g)) {
+    const name = decl[1];
     const body = balanced(source, decl.index + decl[0].length - 1, "{", "}");
-    if (!body) continue;
+    if (!name || !body) continue;
     const arm = /\(([^)]*)\)\s*=>\s*\{/.exec(body.inner);
     const template = arm && balanced(body.inner, arm.index + arm[0].length - 1, "{", "}");
     if (arm && template && template.inner.includes("ModelFile")) {
-      macros.set(decl[1], {
-        params: [...arm[1].matchAll(/(\$\w+):/g)].map((p) => p[1]),
+      macros.set(name, {
+        params: [...(arm[1] ?? "").matchAll(/(\$\w+):/g)].map((p) => p[1] ?? ""),
         template: template.inner,
       });
     }
@@ -143,8 +144,8 @@ export function parseManifestUrls(source: string): Map<string, string> {
   const urls = new Map<string, string>();
   const modelFile = /ModelFile\s*\{\s*rel_path:\s*([\s\S]*?),\s*url:\s*([\s\S]*?),\s*sha256:/g;
   for (const match of expandModelFileMacros(source).matchAll(modelFile)) {
-    const relPath = literalValue(match[1]);
-    const url = literalValue(match[2]);
+    const relPath = literalValue(match[1] ?? "");
+    const url = literalValue(match[2] ?? "");
     if (relPath && url) urls.set(relPath, url);
   }
   return urls;

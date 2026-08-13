@@ -141,7 +141,7 @@ describe("init onboarding", () => {
   test("init drives every prompt through @clack/prompts", async () => {
     // #677: a node:readline interface sharing stdin with clack deadlocks after clack closes.
     const source = await Bun.file(new URL("../../src/cli/init.ts", import.meta.url)).text();
-    const imported = [...source.matchAll(/^import .*?from "(.+?)";$/gm)].map((m) => m[1]);
+    const imported = [...source.matchAll(/^import .*?from "(.+?)";$/gm)].map((m) => m[1] ?? "");
 
     expect(imported).toContain("@clack/prompts");
     expect(imported.filter((m) => m.startsWith("node:readline"))).toEqual([]);

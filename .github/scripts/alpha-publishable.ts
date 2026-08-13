@@ -18,12 +18,13 @@ export function parseNameStatus(diff: string): ChangedPath[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .flatMap((line) => {
-      const [status, ...rest] = line.split(/\t+/);
-      const path = rest[rest.length - 1];
+      const [status = "", ...rest] = line.split(/\t+/);
+      const path = rest[rest.length - 1] ?? "";
+      const code = status[0] ?? "";
       // A rename is a delete plus an add to the tarball, and either side alone can ship.
-      return status[0] === "R"
-        ? [{ status: "D", path: rest[0] }, { status: "A", path }]
-        : [{ status: status[0], path }];
+      return code === "R"
+        ? [{ status: "D", path: rest[0] ?? "" }, { status: "A", path }]
+        : [{ status: code, path }];
     });
 }
 

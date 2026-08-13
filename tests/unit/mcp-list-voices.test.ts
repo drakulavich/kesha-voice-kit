@@ -44,7 +44,7 @@ describe("list_voices / list_languages guard when the engine is missing", () => 
     await withMissingEngine(async () => {
       const res = await call("list_voices");
       expect(res.isError).toBe(true);
-      expect((res.content as Array<{ text: string }>)[0].text).toContain("kesha-engine not installed");
+      expect((res.content as Array<{ text: string }>)[0]?.text).toContain("kesha-engine not installed");
     });
   });
 
@@ -52,7 +52,7 @@ describe("list_voices / list_languages guard when the engine is missing", () => 
     await withMissingEngine(async () => {
       const res = await call("list_languages");
       expect(res.isError).toBe(true);
-      expect((res.content as Array<{ text: string }>)[0].text).toContain("kesha-engine not installed");
+      expect((res.content as Array<{ text: string }>)[0]?.text).toContain("kesha-engine not installed");
     });
   });
 });
@@ -69,7 +69,7 @@ describe("list_voices guard when the engine is present but not executable", () =
     try {
       const res = await call("list_voices");
       expect(res.isError).toBe(true);
-      const text = (res.content as Array<{ text: string }>)[0].text;
+      const text = (res.content as Array<{ text: string }>)[0]?.text;
       expect(text).toContain("E_ENGINE_SPAWN");
       expect(text).toContain(notExecutable);
     } finally {
