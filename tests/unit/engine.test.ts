@@ -370,18 +370,27 @@ describe("engine", () => {
     });
   });
 
-  /** An engine without the capability sends no key; the parser must not invent one. */
-  fakeEngineTest("transcribeEngineWithSegments leaves words undefined when absent", async () => {
+  /** An engine without the capability sends no key; the parser must not invent one — a
+   * `words: undefined` still counts as a column to TOON, which prints it as `words` / `null`. */
+  fakeEngineTest("transcribeEngineWithSegments leaves words absent, not undefined", async () => {
     await withEngineEnv(fakeEngine(["transcribe.segments"]), async () => {
       const out = await transcribeEngineWithSegments("audio.wav");
-      expect(out.segments[0]!.words).toBeUndefined();
+      expect(out.segments[0]).toStrictEqual({ start: 0, end: 1, text: "ok", speaker: 0 });
     });
   });
 
   /** A malformed `words` is a bad enrichment, not a bad transcript: drop it, keep the text.
-   * Throwing would make a garbled optional field cost the user their transcription. */
+   * Throwing would make a garbled optional field cost the user their transcription. Each
+   * of `word`/`start`/`end` is checked on its own, so each gets its own broken payload. */
   fakeEngineTest("transcribeEngineWithSegments drops malformed word timings", async () => {
-    for (const words of ['"not-an-array"', '[{"word":"hi","start":"0","end":1}]', "[{}]", "[null]"]) {
+    for (const words of [
+      '"not-an-array"',
+      '[{"word":7,"start":0,"end":1}]',
+      '[{"word":"hi","start":"0","end":1}]',
+      '[{"word":"hi","start":0,"end":"1"}]',
+      "[{}]",
+      "[null]",
+    ]) {
       const payload = `{"text":"hi","segments":[{"start":0,"end":1,"text":"hi","words":${words}}]}`;
       const engine = writeTranscribingEngine(
         "kesha-engine-badwords-",
@@ -391,7 +400,7 @@ describe("engine", () => {
       await withEngineEnv(engine, async () => {
         const out = await transcribeEngineWithSegments("audio.wav");
         expect(out.text).toBe("hi");
-        expect(out.segments[0]!.words).toBeUndefined();
+        expect(out.segments[0]).toStrictEqual({ start: 0, end: 1, text: "hi" });
       });
     }
   });
@@ -567,11 +576,11 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     return writeTranscribingEngine("kesha-engine-malformed-", ["transcribe.segments"], `  printf '%s\\n' '${payload}'`);
   }
 
-  function capabilitiesEngine(payload: string): string {
+  function capabilitiesEngine(payload: string, exitCode = 0): string {
     const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-caps-")), "kesha-engine");
     writeFileSync(
       path,
-      `#!/bin/sh\nif [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${payload}'\n  exit 0\nfi\nexit 2\n`,
+      `#!/bin/sh\nif [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${payload}'\n  exit ${exitCode}\nfi\nexit 2\n`,
     );
     chmodSync(path, 0o755);
     return path;
@@ -582,6 +591,9 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     ["a non-string text", '{"text":7,"segments":[]}'],
     ["segments that are not an array", '{"text":"ok","segments":{}}'],
     ["no segments field", '{"text":"ok"}'],
+    // A bare `null` has no fields to inspect; it must still read as a malformed reply
+    // rather than as whatever TypeError reading through it would produce.
+    ["a bare null", "null"],
   ] as const) {
     fakeEngineTest(`${shape} is rejected, with the payload named`, async () => {
       await withEngineEnv(transcribingEngine(payload), async () => {
@@ -642,6 +654,24 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
       });
     });
   }
+
+  // The exit code is the engine's own verdict on what it just printed: a probe that failed
+  // must read as no capabilities even when the bytes on stdout happen to parse.
+  fakeEngineTest("capabilities printed by a failing probe are not trusted", async () => {
+    await withEngineEnv(
+      capabilitiesEngine('{"protocolVersion":3,"backend":"onnx","features":["tts"]}', 3),
+      async () => {
+        expect(await getEngineCapabilities()).toBeNull();
+      },
+    );
+  });
+
+  // Null, not undefined: callers branch on `caps === null` for the "could not read it" message.
+  fakeEngineTest("stdout that is not JSON at all reads as no capabilities", async () => {
+    await withEngineEnv(capabilitiesEngine("not json"), async () => {
+      expect(await getEngineCapabilities()).toBeNull();
+    });
+  });
 
   fakeEngineTest("well-formed capabilities are returned as they came", async () => {
     await withEngineEnv(
