@@ -3,10 +3,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
 
-const MODELS_RS = readFileSync(
-  join(import.meta.dir, "..", "..", "rust", "src", "models.rs"),
-  "utf8",
-).replace(/\r\n/g, "\n");
+const rustSource = (...parts: string[]) =>
+  readFileSync(join(import.meta.dir, "..", "..", "rust", "src", ...parts), "utf8").replace(
+    /\r\n/g,
+    "\n",
+  );
+
+const MODELS_RS = rustSource("models.rs");
 
 // Parsed, not copied: a language added to tts_languages() alone must turn these guards red (#769).
 function advertisedTtsLangs(): { systemKokoro: string[]; onnx: string[] } {
@@ -192,15 +195,20 @@ describe("pickVoiceForLang (auto-routing)", () => {
   });
 });
 
+// The MCP server names this voice when routing declines, and reports it as the one that
+// spoke (#942). Two things have to hold for that report to stay true, so both are parsed
+// out of the Rust source rather than copied: the constant's value, and the fact that
+// `kesha-engine say` still applies *that* constant when no --voice reaches it.
 describe("DEFAULT_VOICE_ID", () => {
-  // The MCP server names this voice when routing declines, and reports it as the one that
-  // spoke (#942). If the engine's own fallback moves, that report becomes a lie.
   it("matches the engine's fallback voice", () => {
-    const voicesRs = readFileSync(
-      join(import.meta.dir, "..", "..", "rust", "src", "tts", "voices.rs"),
-      "utf8",
-    );
-    const engineDefault = voicesRs.match(/DEFAULT_VOICE_ID:\s*&str\s*=\s*"([^"]+)"/)?.[1];
+    const engineDefault = rustSource("tts", "voices.rs").match(
+      /DEFAULT_VOICE_ID:\s*&str\s*=\s*"([^"]+)"/,
+    )?.[1];
     expect(engineDefault).toBe(DEFAULT_VOICE_ID);
+  });
+
+  it("is what the engine's own say applies when no voice reaches it", () => {
+    const fallback = rustSource("cli", "say.rs").match(/voice_id\.unwrap_or\(([^)]*)\)/)?.[1];
+    expect(fallback).toBe("tts::voices::DEFAULT_VOICE_ID");
   });
 });

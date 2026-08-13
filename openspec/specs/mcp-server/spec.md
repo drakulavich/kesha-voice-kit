@@ -125,6 +125,14 @@ The tool SHALL:
   voice, exactly as `kesha say` routes it
 - AND `structuredContent.voice` is that Voice id (`en-am_michael` here)
 
+#### Scenario: The auto-routed voice is not installed
+
+- GIVEN the detected language routes to a voice whose models are not installed
+- WHEN Sona calls `synthesize_speech` with no `voice`
+- THEN the call returns `isError: true` carrying the Engine's own message, the
+  same failure `kesha say` gives — rather than silently speaking a voice the
+  caller did not ask for
+
 #### Scenario: Voice omitted and the language does not route
 
 - GIVEN text-language detection is unavailable, or the detected language has no
@@ -133,12 +141,12 @@ The tool SHALL:
 - THEN synthesis uses the Engine's default voice
 - AND `structuredContent.voice` names that voice rather than a placeholder
 
-> *Technical Note — `synthesize_speech` registered at `src/mcp/tools.ts:36`.
+> *Technical Note — `synthesize_speech` registered at `src/mcp/tools.ts:37`.
 > Rate validation at `src/mcp/tools.ts:62`. `allocAudioPath` in
 > `src/mcp/audio-output.ts:25` creates `<tmpdir>/kesha-mcp/` with mode
 > `0o700` and names the file `<uuid>.<ext>`. `chmodSync(outPath, 0o600)` at
-> `src/mcp/tools.ts:73`. The voice is resolved before the engine is spawned by
-> `resolveSayVoice` (`src/voice-routing.ts`) — the same function `kesha say`
+> `src/mcp/tools.ts:71`. The voice is resolved before the engine is spawned by
+> `resolveSayVoice` (`src/voice-routing.ts:76`) — the same function `kesha say`
 > uses — falling back to `DEFAULT_VOICE_ID`, and passed to the engine
 > explicitly so the reported id is the one that spoke (#942).*
 

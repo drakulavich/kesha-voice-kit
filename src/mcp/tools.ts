@@ -65,9 +65,7 @@ export function registerTools(server: McpServer): void {
       const fmt: SayFormat = format ?? "wav";
       const outPath = allocAudioPath(fmt);
       try {
-        // Resolve before spawning and pass the id explicitly: an MCP caller has no stderr to
-        // read, so the voice it is told is the only record of what spoke (#942). Naming the
-        // engine's own default is the same resolution it would make from a bare `say`.
+        // An MCP caller has no stderr to read: the voice it is told is its only record (#942).
         const resolvedVoice = (await resolveSayVoice(voice, undefined, text)) ?? DEFAULT_VOICE_ID;
         await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath });
         chmodSync(outPath, 0o600);

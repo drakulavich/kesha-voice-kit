@@ -1,11 +1,6 @@
 import { detectTextLanguageEngine } from "./engine";
 
-/**
- * The voice the engine falls back to when `say` is given no `--voice`
- * (`tts::voices::DEFAULT_VOICE_ID`, rust/src/tts/voices.rs). Callers that must
- * report the voice actually used name it explicitly rather than let the engine
- * pick silently.
- */
+/** The voice the Engine speaks with when `say` is given no `--voice` — mirrors `tts::voices::DEFAULT_VOICE_ID`. */
 export const DEFAULT_VOICE_ID = "en-am_michael";
 
 /**
@@ -77,9 +72,6 @@ async function autoRouteVoice(text: string): Promise<string | undefined> {
  * macOS text-language auto-detection > engine default (`undefined`). A language
  * hint the build has no voice for resolves to `undefined` (engine default)
  * rather than re-running detection — the user stated the language explicitly.
- *
- * Every caller that synthesizes routes through here; the MCP server reports what
- * it returns as the voice used, so a second routing path would be a second answer.
  */
 export async function resolveSayVoice(
   explicitVoice: string | undefined,

@@ -5,6 +5,7 @@ import { join } from "path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
+import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
 
 const skipOnWin32 = process.platform === "win32" ? test.skip : test;
 
@@ -85,9 +86,13 @@ describe("synthesize_speech reports the voice it used (#942)", () => {
     const engine = synthesizingEngine({ code: "ru", confidence: 0.99 });
     const { voice } = await synthesize(engine, { text: "Совещание начинается." });
 
-    // Which Russian voice depends on the platform (AVSpeech on darwin, Vosk elsewhere);
-    // that it is a Russian one, and that the engine was told so, is the contract.
-    expect(voice).toMatch(/ru/i);
+    // The contract is "the same voice `kesha say` would use", so it is asserted against the
+    // routing function rather than a literal — which Russian voice is right depends on the
+    // platform, and darwin's AVSpeech Milena is a documented choice, not a defect (CLAUDE.md).
+    const routed = pickVoiceForLang("ru", 0.99);
+    expect(routed).toBeDefined();
+    expect(voice).toBe(routed as string);
+    expect(voice).not.toBe(DEFAULT_VOICE_ID);
     expect(engine.sayArgs()).toContain(voice);
   });
 
