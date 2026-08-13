@@ -60,18 +60,19 @@ describe("log routing", () => {
     expect(stdout).not.toContain("status-msg");
   });
 
-  test("progress writes to stdout, not stderr", () => {
-    const stderr = captureStderr(() => {
-      const stdout = captureStdout(() => log.progress("progress-msg"));
-      expect(stdout).toContain("progress-msg");
+  test("progress writes to stderr, not stdout", () => {
+    const stdout = captureStdout(() => {
+      const stderr = captureStderr(() => log.progress("progress-msg"));
+      expect(stderr).toContain("progress-msg");
     });
-    expect(stderr).not.toContain("progress-msg");
+    expect(stdout).not.toContain("progress-msg");
   });
 
   test("stderr lines end with a newline", () => {
     expect(captureStderr(() => log.warn("w"))).toMatch(/\n$/);
     expect(captureStderr(() => log.error("e"))).toMatch(/\n$/);
     expect(captureStderr(() => log.status("s"))).toMatch(/\n$/);
+    expect(captureStderr(() => log.progress("p"))).toMatch(/\n$/);
   });
 });
 
@@ -82,13 +83,13 @@ describe("log.quietEnabled level gating (#526)", () => {
 
   test("progress is suppressed when quietEnabled", () => {
     log.quietEnabled = true;
-    const out = captureStdout(() => log.progress("quiet-progress"));
+    const out = captureStderr(() => log.progress("quiet-progress"));
     expect(out).not.toContain("quiet-progress");
   });
 
   test("progress is emitted when quietEnabled is false", () => {
     log.quietEnabled = false;
-    const out = captureStdout(() => log.progress("loud-progress"));
+    const out = captureStderr(() => log.progress("loud-progress"));
     expect(out).toContain("loud-progress");
   });
 

@@ -826,7 +826,7 @@ describe("CLI contracts", () => {
       exitCode: 0,
       stdoutContains: ["Engine binary already installed", "Backend installed successfully"],
       stdoutNotContains: [dir],
-      stderrEmpty: true,
+      stderrContains: ["Installing models..."],
     });
     expect(JSON.parse(readFileSync(installArgsPath, "utf8"))).toEqual(["--vad"]);
 
@@ -847,6 +847,34 @@ describe("CLI contracts", () => {
       status: "success",
     });
     expect(typeof events[1].durationMs).toBe("number");
+  });
+
+  test("install keeps progress on stderr while --plan's deliverable stays on stdout (#945)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-install-stdout-purity-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_INSTALL_ARGS_PATH: join(dir, "install-args.json"),
+    };
+
+    // Progress chatter ("Installing models...") is not a result; it must not ride
+    // stdout, where a future `install --json` would collide with it.
+    const install = await runCli(["install", "--vad"], { env });
+    expectContract(install, {
+      exitCode: 0,
+      stdoutContains: ["Backend installed successfully"],
+      stdoutNotContains: ["Installing models..."],
+      stderrContains: ["Installing models..."],
+    });
+
+    // `--plan` *is* a deliverable and stays on stdout.
+    const plan = await runCli(["install", "--plan", "--tts"], { env });
+    expectContract(plan, {
+      exitCode: 0,
+      stdoutContains: ["Kesha install plan"],
+    });
   });
 
   test("install finishes even when gh on PATH never answers (#810)", async () => {
