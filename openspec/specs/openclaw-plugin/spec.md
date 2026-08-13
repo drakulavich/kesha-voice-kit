@@ -4,17 +4,20 @@
 
 The OpenClaw plugin gives an LLM agent ears: a voice message arriving in any
 channel OpenClaw is connected to gets transcribed locally by Kesha before the
-agent reads it. The plugin ships inside the CLI package and drives the `kesha`
-command as a subprocess — it is a thin adapter, not a second implementation of
-Transcription.
+agent reads it. The plugin ships inside the CLI package. It is a thin adapter —
+it declares an audio media-understanding provider so Kesha is discoverable, and
+holds no transcription code of its own. The transcript is produced by OpenClaw's
+configured `type: "cli"` model entry, which runs the `kesha` command; the plugin
+is not a second implementation of Transcription.
 
 This is Maks's main workflow: voice notes in Telegram, transcribed on his own
 laptop, no API key anywhere.
 
 ## Non-Goals
 
-- Transcription itself. The plugin shells out to the CLI and specifies nothing
-  about how audio becomes text — see [transcription](../transcription/spec.md).
+- Transcription itself. Neither the plugin nor the documented configuration
+  specifies anything about how audio becomes text — see
+  [transcription](../transcription/spec.md).
 - Speaking. `kesha say` produces messenger-ready OGG/Opus, but the plugin does
   not register a synthesis capability; invoking it is left to a host hook or
   agent tool.
@@ -50,97 +53,60 @@ The plugin manifest and its entry module SHALL be published as part of the CLI p
 > and a JSON-Schema-shaped `configSchema`; `configPatch` is not a valid field
 > and is silently discarded by the loader.*
 
-### Requirement: Transcription runs through the installed CLI as a subprocess
+### Requirement: The plugin registers a discoverable audio provider but does not transcribe
 
-The plugin SHALL obtain transcripts by invoking the installed `kesha` command as a subprocess and reading its machine-readable output. It SHALL NOT link the Engine, embed a model, or reimplement any part of Transcription.
+The plugin SHALL register a single audio media-understanding provider so Kesha is discoverable in `openclaw plugins inspect`. The registration SHALL be declaration-only: it SHALL NOT carry a transcription handler, link the Engine, embed a model, or reimplement any part of Transcription. Transcription is performed by OpenClaw's configured `type: "cli"` model entry, which runs the installed `kesha` command — not by the plugin.
+
+#### Scenario: Maks inspects the installed plugin
+
+- GIVEN the plugin is installed
+- WHEN Maks runs `openclaw plugins inspect`
+- THEN the plugin shows one media-understanding capability
+  (`Shape: plain-capability`)
 
 #### Scenario: Maks's agent receives a voice message
 
-- GIVEN `kesha` is on PATH with the Engine and models installed
+- GIVEN `kesha` is on PATH with the Engine and models installed, and
+  `tools.media.audio.models` carries the documented `type: "cli"` entry
 - WHEN a voice message reaches OpenClaw and audio understanding is enabled
-- THEN the audio is written to a temporary file, `kesha` transcribes it, and the
-  agent sees the transcript text
+- THEN OpenClaw's `type: "cli"` handler runs `kesha` on the audio and the agent
+  sees the transcript text
 
-#### Scenario: A request arrives with no audio
+#### Scenario: OpenClaw resolves a media-understanding provider for audio
 
-- WHEN the plugin is handed a request carrying no audio buffer
-- THEN it returns an empty transcript without spawning anything
+- WHEN OpenClaw's provider path is offered this plugin's provider
+- THEN it does not select it, because the provider carries no transcription
+  handler and a local keyless CLI cannot satisfy the provider-auth gate that
+  path requires
 
-> *Technical Note — `transcribeAudio` in `openclaw-plugin.cjs:39-72` writes the
-> buffer to `os.tmpdir()` keeping the original extension (defaulting to `.ogg`),
-> runs `spawnSync("kesha", ["--json", tmp])`, and reads `parsed[0].text` from
-> the result array. It reports the model id `parakeet-tdt-0.6b-v3` on success.
-> The registered provider declares `capabilities: ["audio"]` and
-> `autoPriority: { audio: 50 }` (`:75-84`).*
+> *Technical Note — `register` in `openclaw-plugin.cjs` calls
+> `api.registerMediaUnderstandingProvider` with `id: "kesha-voice-kit"`,
+> `capabilities: ["audio"]`, `defaultModels: { audio: "parakeet-tdt-0.6b-v3" }`,
+> and `autoPriority: { audio: 50 }` — and no `transcribeAudio`. The `Shape:
+> plain-capability` in `plugins inspect` is derived from the provider id being
+> registered, not from any handler (`derivePluginInspectShape`,
+> `capabilityCount === 1`). OpenClaw's audio selection skips any provider without
+> a `transcribeAudio` handler (`if (!provider.transcribeAudio) return null`), and
+> the auth gate (`hasProviderAuthAvailable`) is only satisfiable for this
+> provider by a literal `apiKey` on `models.providers.kesha-voice-kit` — a
+> keyless local CLI has no sane way to set one. The ~45-line handler that spawned
+> `kesha` was retired in #933 (see Open Issues).*
 
-### Requirement: The plugin never triggers a download
+### Requirement: The plugin holds no install or download code
 
-The plugin SHALL require that the CLI, Engine, and models are already installed, and SHALL NOT download or install anything itself. The Never-auto-download rule applies to it exactly as it applies to the CLI.
+The plugin SHALL contain no install or download code path, so it cannot fetch the CLI, Engine, or models itself. The Never-auto-download rule applies to it exactly as it applies to the CLI: prerequisites must already be installed.
 
 #### Scenario: A voice message arrives before `kesha install` was run
 
 - GIVEN `kesha` is on PATH but no Engine is installed
-- WHEN a voice message reaches the plugin
-- THEN nothing is downloaded, and the agent receives no transcript
-
-#### Scenario: The CLI is not installed at all
-
-- GIVEN `kesha` does not resolve on PATH
-- WHEN a voice message reaches the plugin
-- THEN the spawn fails and the plugin returns an empty transcript
+- WHEN the documented `type: "cli"` path runs `kesha` on the audio
+- THEN nothing is downloaded, `kesha` fails loudly with an actionable hint, and
+  the agent receives no transcript
 
 > *Technical Note — the prerequisites (`bun add -g`, then `kesha install`, plus
 > `kesha install --tts` only if `kesha say` is used) are stated in the header
-> comment of `openclaw-plugin.cjs:14-18` and in `docs/openclaw.md`. The plugin
-> holds no install code path.*
-
-### Requirement: A failed transcription yields an empty transcript rather than a raised error
-
-The plugin SHALL absorb every failure that occurs once transcription has started — spawn failure, non-zero exit, timeout, unparseable output — and return an empty transcript, so a bad audio message cannot crash the agent's message handling. Failures before that point are not absorbed (see Open Issues).
-
-#### Scenario: The CLI exits non-zero on a corrupt attachment
-
-- GIVEN a corrupt audio attachment
-- WHEN the plugin transcribes it
-- THEN `kesha` exits non-zero and the plugin returns an empty transcript
-- AND the temporary file is deleted regardless
-
-#### Scenario: Transcription outruns the timeout
-
-- GIVEN a long recording and the default timeout
-- WHEN transcription has not finished in time
-- THEN the subprocess is stopped and the plugin returns an empty transcript
-- AND a caller-supplied timeout is honoured in place of the default
-
-> *Technical Note — every failure branch inside the `try` at
-> `openclaw-plugin.cjs:45-70` returns `{ text: "" }`; the `finally` block
-> unlinks the temporary file best-effort. `DEFAULT_TIMEOUT_MS` is 60 000
-> (`:29`) and is overridden by `req.timeoutMs` (`:48`). The `try` opens at `:45`
-> — after the write at `:43` — so the write is outside it. This deliberately
-> trades the corpus-wide "never swallow errors" rule for host stability — see
-> Open Issues.*
-
-### Requirement: Temporary audio never outlives the request
-
-The plugin SHALL write the audio it was handed to a per-request temporary file under the system temporary directory and SHALL delete it once the request finishes, whether it succeeded or failed.
-
-#### Scenario: A voice message is transcribed successfully
-
-- WHEN the plugin finishes a successful transcription
-- THEN the temporary audio file no longer exists
-
-#### Scenario: Two messages arrive in the same millisecond
-
-- GIVEN two requests with the same file extension start within one millisecond
-  in the same host process
-- WHEN both compose their temporary path
-- THEN the paths collide, and one request overwrites the other's audio and
-  deletes the file the other is still using — the name carries no per-request
-  uniqueness beyond the clock (see Open Issues)
-
-> *Technical Note — `tempAudioPath` (`openclaw-plugin.cjs:32`) composes
-> `kesha-<pid>-<Date.now()><ext>` under `os.tmpdir()`. Deletion happens in the
-> `finally` of `transcribeAudio` and swallows its own error.*
+> comment of `openclaw-plugin.cjs` and in `docs/openclaw.md`. The entry module
+> holds no runtime behaviour beyond the provider declaration.*
 
 ### Requirement: The plugin source carries no token that trips the host's scanner
 
@@ -157,13 +123,14 @@ The plugin entry module SHALL NOT contain the substrings OpenClaw's `dangerous-e
 - THEN the scanner fires even though the code is unchanged, and the plugin is
   blocked
 
-> *Technical Note — the module specifier is split across a `+` at
-> `openclaw-plugin.cjs:25` precisely so the substring is absent from the source;
-> the reason is recorded in the comment above it and in
+> *Technical Note — since #933 the entry module holds no subprocess call, so the
+> `dangerous-exec` rule (a bare command-running call AND the forbidden module
+> substring, both in one file, comments included) cannot fire. The prohibition
+> still stands for future edits: an `Editing note` comment in the module and
 > `docs/runbooks/openclaw-plugin.md` ("Comments count — it's a naive regex, not
-> AST-aware"). CLAUDE.md repeats the prohibition. This is also why the entry
-> module is CommonJS requiring Node built-ins rather than Bun-native APIs: it
-> runs inside OpenClaw's runtime, not Kesha's.*
+> AST-aware") record it, and CLAUDE.md repeats it. The entry module is still
+> CommonJS with `module.exports` because it runs inside OpenClaw's runtime, not
+> Kesha's.*
 
 ### Requirement: Plugin distribution is independent of the CLI and Engine releases
 
@@ -188,35 +155,25 @@ Publishing the plugin to the OpenClaw registry SHALL be its own deliberate step,
 
 ## Open Issues
 
-- **The registered provider is not the path that transcribes.** Per
-  `docs/runbooks/openclaw-plugin.md`, OpenClaw routes audio through the
-  `type: "cli"` entry in `tools.media.audio.models`, which spawns `kesha`
-  directly; `registerMediaUnderstandingProvider` requires an API key via
-  `requireApiKey()` and silently fails for local CLI tools, so the registration
-  exists for discoverability only. On the documented default configuration
-  `transcribeAudio` never runs — meaning most of the requirements above describe
-  a code path users do not exercise. Worth an issue to either wire it up or
-  retire it.
-- **Nothing tests the plugin.** No unit or integration test loads
-  `openclaw-plugin.cjs`, asserts its provider registration, or checks the
-  scanner constraint. All of it is held by review and by the runbook.
-- The swallow-everything error contract conflicts with the repository's "never
-  swallow errors; never return success on failure" rule. An empty transcript is
-  indistinguishable from silence that genuinely transcribed to nothing, so a
-  misconfigured install looks like a quiet user.
-- **The temporary write is outside the `try`.** `fs.writeFileSync` runs at
-  `openclaw-plugin.cjs:43` and the `try` opens at `:45`, so a full disk, a
-  read-only or missing `os.tmpdir()`, or a permission error throws straight into
-  the host — the one failure the absorb-everything contract does not cover, and
-  the one most likely to hit every request rather than one.
-- **Temporary paths are not collision-safe.** `kesha-<pid>-<Date.now()><ext>`
-  repeats for two same-extension requests in the same millisecond in one
-  process. `Date.now()` has millisecond resolution and OpenClaw can hand the
-  provider concurrent messages; the `finally` then deletes a file the other
-  request may still be reading. A counter or `randomUUID()` would close it.
+- **Resolved (#933): the registered provider was not the path that transcribes.**
+  The `transcribeAudio` handler and its temp-file / spawn / parse / timeout /
+  cleanup helpers were retired. The provider registration is now declaration-only
+  — it keeps Kesha discoverable in `openclaw plugins inspect`
+  (`Shape: plain-capability`) while removing the ~45 lines the documented config
+  never reached. This also closes the two defects that lived only on that path
+  (the temporary write outside the `try`, and the non-collision-safe
+  `kesha-<pid>-<Date.now()><ext>` name). If a future OpenClaw release makes a
+  keyless local provider selectable, re-add the handler then rather than
+  restoring dead code speculatively.
+- **The plugin is only lightly tested.** `tests/unit/openclaw-plugin.test.ts`
+  loads `openclaw-plugin.cjs`, asserts the declaration-only registration (one
+  audio provider, no `transcribeAudio` handler), and reproduces OpenClaw's
+  `dangerous-exec` rule to confirm the source does not trip it. It does not
+  install the plugin into a real OpenClaw and assert the live `plugins inspect`
+  shape, and it couples to OpenClaw's current scanner regex — tracked in #928.
 - `openclaw.plugin.json` advertises "25 languages" and "~19x faster than
   Whisper" independently of the README and `server.json`. Nothing keeps those
   claims in sync when the supported-language set changes.
-- The plugin passes `--json` without `--timestamps`; the timestamped variant
-  documented in `docs/openclaw.md` is a user-side configuration of the
-  `type: "cli"` path, not something the plugin can select.
+- The documented `--timestamps` variant in `docs/openclaw.md` is a user-side
+  configuration of the `type: "cli"` path — it is selected by the user's
+  `models` entry, not by the plugin.
