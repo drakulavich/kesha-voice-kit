@@ -1,12 +1,12 @@
 import { join, basename } from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
   IDLE_STOP_GRACE_MS,
   IDLE_WARN_MS,
   NO_SIGNAL_TIMEOUT_MS,
   parseMaxSeconds,
-  TRANSCRIBE_TIMEOUT_SECONDS,
+  transcribeTimeoutMs,
 } from "./dictation-config";
 import {
   notFoundMessage,
@@ -40,6 +40,15 @@ export function startDictationSession(
   let cancelled = false;
   let stopRequested = false;
   let tempDir: string | null = null;
+  let audioPath: string | null = null;
+  let recordedSeconds = 0;
+  // captureComplete latches when recordPhase returns — the WAV exists on disk
+  // from that instant, before the multi-second silence read — so a dismiss or
+  // failure during that read still keeps it. confirmedSilent is the separate
+  // decision that a recording proven silent may be deleted (#944).
+  let captureComplete = false;
+  let confirmedSilent = false;
+  let keepAudio = false;
   let stopMonitoring: (() => void) | null = null;
   let recorder: RunningTask<void> | null = null;
   let transcriber: RunningTask<string> | null = null;
@@ -55,10 +64,22 @@ export function startDictationSession(
       cancelled = true;
       transcriber?.stop();
       stopTranscribeTimer?.();
-      setState({ status: "error", message: "Transcription cancelled." });
+      // A deliberate cancel of transcription must not cost the recording once
+      // it has been captured — keep it and name it, same as a failure (#944).
+      if (captureComplete && audioPath) {
+        keepAudio = true;
+        setState({
+          status: "error",
+          message: "Transcription cancelled.",
+          hint: keptAudioHint(audioPath),
+        });
+      } else {
+        setState({ status: "error", message: "Transcription cancelled." });
+      }
     },
     cancel: () => {
       cancelled = true;
+      if (captureComplete) keepAudio = true;
       recorder?.stop();
       transcriber?.stop();
       stopMonitoring?.();
@@ -71,6 +92,9 @@ export function startDictationSession(
   return session;
 
   async function run() {
+    // Best-effort sweep of recordings kept by earlier failed sessions (#944);
+    // fire-and-forget so it never delays the microphone.
+    void deps.pruneOldRecordings();
     try {
       const maxSeconds = parseMaxSeconds(prefs.maxRecordingSeconds);
       const kesha = await deps.resolveKesha(prefs.keshaBinPath);
@@ -95,11 +119,16 @@ export function startDictationSession(
       if (cancelled) return;
 
       tempDir = await deps.createTempDir();
-      const audioPath = join(tempDir, "dictation.wav");
+      audioPath = join(tempDir, "dictation.wav");
 
       if (!(await recordPhase(kesha, audioPath, maxSeconds))) return;
 
+      // The WAV is on disk now; a dismiss or failure past this point — even
+      // during the silence read below — must not discard it (#944).
+      captureComplete = true;
+
       if (await deps.isSilentAudio(audioPath)) {
+        confirmedSilent = true;
         throw new Error(
           "Recorded audio is silent. Check macOS Microphone permission for Raycast and the selected input device.",
         );
@@ -110,15 +139,24 @@ export function startDictationSession(
 
       await deliverTranscript(result);
     } catch (err: unknown) {
-      if (cancelled) return;
+      if (cancelled) {
+        if (captureComplete) keepAudio = true;
+        return;
+      }
+      // A recording proven silent is worthless — delete it; any other
+      // post-capture failure keeps the recording for recovery (#944).
+      keepAudio = captureComplete && !confirmedSilent;
       await deps.showToast({ style: "failure", title: "Dictation failed" });
       setState({
         status: "error",
         message: err instanceof Error ? err.message : String(err),
+        hint: keepAudio && audioPath ? keptAudioHint(audioPath) : undefined,
       });
     } finally {
       releaseResources();
-      if (tempDir) await deps.cleanupTempDir(tempDir);
+      // Keep the recording when transcription failed so it can be recovered
+      // from the CLI; otherwise the private temp dir is cleaned up (#944).
+      if (tempDir && !keepAudio) await deps.cleanupTempDir(tempDir);
     }
   }
 
@@ -187,9 +225,13 @@ export function startDictationSession(
     }
 
     recorder = deps.startRecorder(kesha, audioPath, maxSeconds);
+    const recorderStartedAt = now();
     try {
       await recorder.done;
     } finally {
+      // Wall-clock capture length ≈ audio duration; it feeds the scaled
+      // transcription timeout so a long recording keeps proportional room (#944).
+      recordedSeconds = Math.max(0, (now() - recorderStartedAt) / 1000);
       recorder = null;
       stopMonitoring?.();
       stopMonitoring = null;
@@ -201,10 +243,11 @@ export function startDictationSession(
     kesha: KeshaSpawn,
     audioPath: string,
   ): Promise<TranscribeResult | null> {
+    const timeoutMs = transcribeTimeoutMs(recordedSeconds);
     setState({
       status: "transcribing",
       elapsedSeconds: 0,
-      timeoutSeconds: TRANSCRIBE_TIMEOUT_SECONDS,
+      timeoutSeconds: Math.round(timeoutMs / 1000),
     });
     await deps.showToast({
       style: "animated",
@@ -214,7 +257,7 @@ export function startDictationSession(
     if (cancelled) return null;
 
     stopTranscribeTimer = startTranscribingTimer(setState);
-    transcriber = deps.startTranscriber(kesha, audioPath);
+    transcriber = deps.startTranscriber(kesha, audioPath, timeoutMs);
     const result = normalizeTranscribeResult(audioPath, await transcriber.done);
     stopTranscribeTimer?.();
     stopTranscribeTimer = null;
@@ -248,6 +291,88 @@ export function startDictationSession(
   }
 }
 
+// Names the surviving recording and a copy-paste CLI command so a failed
+// transcription is recoverable instead of lost (#944).
+export function keptAudioHint(audioPath: string): string {
+  return [
+    `Your recording was kept at ${audioPath}`,
+    `Transcribe it from a terminal with: kesha "${audioPath}"`,
+  ].join("\n");
+}
+
+const RECORDING_TEMP_PREFIX = "raycast-kesha-dictate-";
+const RECORDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// A recording kept after a failed session (#944) has no owner to delete it, so
+// prune week-old ones on the next start — the raycast analog of the engine's
+// recovery-WAV prune (#965). The age cut protects a concurrent session's
+// fresh temp dir.
+export function staleRecordingDirs(
+  entries: { name: string; mtimeMs: number }[],
+  nowMs: number,
+  maxAgeMs: number = RECORDING_MAX_AGE_MS,
+): string[] {
+  return entries
+    .filter(
+      (entry) =>
+        entry.name.startsWith(RECORDING_TEMP_PREFIX) &&
+        nowMs - entry.mtimeMs > maxAgeMs,
+    )
+    .map((entry) => entry.name);
+}
+
+export interface PruneRecordingsDeps {
+  baseDir?: string;
+  readdir?: (dir: string) => Promise<string[]>;
+  stat?: (path: string) => Promise<{ mtimeMs: number }>;
+  rm?: (
+    path: string,
+    options: { recursive: boolean; force: boolean },
+  ) => Promise<void>;
+  now?: () => number;
+}
+
+export async function pruneOldRecordings(
+  deps: PruneRecordingsDeps = {},
+): Promise<void> {
+  const base = deps.baseDir ?? tmpdir();
+  const readdirFn = deps.readdir ?? ((dir: string) => readdir(dir));
+  const statFn = deps.stat ?? ((path: string) => stat(path));
+  const rmFn =
+    deps.rm ??
+    ((path: string, options: { recursive: boolean; force: boolean }) =>
+      rm(path, options));
+  const nowMs = (deps.now ?? Date.now)();
+
+  let names: string[];
+  try {
+    names = await readdirFn(base);
+  } catch {
+    return;
+  }
+  const candidates = names.filter((name) =>
+    name.startsWith(RECORDING_TEMP_PREFIX),
+  );
+  const entries = await Promise.all(
+    candidates.map(async (name) => {
+      try {
+        const info = await statFn(join(base, name));
+        return { name, mtimeMs: info.mtimeMs };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const present = entries.filter(
+    (entry): entry is { name: string; mtimeMs: number } => entry !== null,
+  );
+  await Promise.all(
+    staleRecordingDirs(present, nowMs).map((name) =>
+      rmFn(join(base, name), { recursive: true, force: true }),
+    ),
+  );
+}
+
 // Each reason has a different remedy, so the headline tracks it, not just the hint (#647).
 function preflightMessage(reason: EnginePreflightResult["reason"]): string {
   switch (reason) {
@@ -271,13 +396,14 @@ export function createDefaultDictationDeps(
     ...adapter,
     resolveKesha: resolveKeshaBin,
     preflight: defaultPreflight,
-    createTempDir: () => mkdtemp(join(tmpdir(), "raycast-kesha-dictate-")),
+    createTempDir: () => mkdtemp(join(tmpdir(), RECORDING_TEMP_PREFIX)),
     cleanupTempDir: (dir) => rm(dir, { recursive: true, force: true }),
+    pruneOldRecordings: () => pruneOldRecordings(),
     startRecordingMonitor,
     startRecorder: (kesha, audioPath, maxSeconds) =>
       startKeshaRecorder(kesha, audioPath, maxSeconds),
-    startTranscriber: (kesha, audioPath) =>
-      startKeshaTranscriber(kesha, audioPath),
+    startTranscriber: (kesha, audioPath, timeoutMs) =>
+      startKeshaTranscriber(kesha, audioPath, timeoutMs),
     isSilentAudio: isSilentWavFile,
   };
 }

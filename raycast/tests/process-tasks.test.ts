@@ -5,8 +5,9 @@ import {
   startKeshaTranscriber,
   stopProcessWithWatchdog,
 } from "../src/lib/process-tasks";
-import { TRANSCRIBE_TIMEOUT_MS } from "../src/lib/dictation-config";
 import { FakeProcess, createSpawnRecorder } from "./helpers/fake-process";
+
+const TIMEOUT_MS = 90_000;
 
 const kesha = { command: "kesha", prefixArgs: ["--prefix"] };
 
@@ -55,7 +56,9 @@ describe("process task helpers", () => {
 
   it("runs plain transcribe, trims nothing in task, and resolves stdout", async () => {
     const { spawn, calls, processes } = createSpawnRecorder();
-    const task = startKeshaTranscriber(kesha, "/tmp/audio.wav", { spawn });
+    const task = startKeshaTranscriber(kesha, "/tmp/audio.wav", TIMEOUT_MS, {
+      spawn,
+    });
 
     expect(calls[0]).toMatchObject({
       command: "kesha",
@@ -68,20 +71,20 @@ describe("process task helpers", () => {
     await expect(task.done).resolves.toBe(" hello \n");
   });
 
-  it("kills transcribe on timeout and reports bounded timeout", async () => {
+  it("kills transcribe on the passed timeout and reports its duration in seconds", async () => {
     vi.useFakeTimers();
     const { spawn, processes } = createSpawnRecorder();
     const kill = vi.fn();
-    const task = startKeshaTranscriber(kesha, "/tmp/audio.wav", {
+    const task = startKeshaTranscriber(kesha, "/tmp/audio.wav", TIMEOUT_MS, {
       spawn,
       kill,
     });
 
-    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
+    vi.advanceTimersByTime(TIMEOUT_MS);
     expect(kill).toHaveBeenCalledWith(processes[0].asChild(), "SIGTERM");
     processes[0].exit(null);
     await expect(task.done).rejects.toThrow(
-      "kesha transcription timed out after 60 seconds.",
+      "kesha transcription timed out after 90 seconds.",
     );
     vi.useRealTimers();
   });
@@ -89,7 +92,7 @@ describe("process task helpers", () => {
   it("can stop an active transcribe task", () => {
     const { spawn, processes } = createSpawnRecorder();
     const kill = vi.fn();
-    const task = startKeshaTranscriber(kesha, "/tmp/audio.wav", {
+    const task = startKeshaTranscriber(kesha, "/tmp/audio.wav", TIMEOUT_MS, {
       spawn,
       kill,
     });
@@ -101,7 +104,9 @@ describe("process task helpers", () => {
 
   it("surfaces stderr when transcribe exits nonzero", async () => {
     const { spawn, processes } = createSpawnRecorder();
-    const task = startKeshaTranscriber(kesha, "/tmp/audio.wav", { spawn });
+    const task = startKeshaTranscriber(kesha, "/tmp/audio.wav", TIMEOUT_MS, {
+      spawn,
+    });
     processes[0].emitStderr("bad audio");
     processes[0].exit(1);
     await expect(task.done).rejects.toThrow("bad audio");

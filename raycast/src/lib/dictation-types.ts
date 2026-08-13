@@ -62,6 +62,7 @@ export interface DictationControllerDeps {
   preflight: (kesha: KeshaSpawn) => Promise<EnginePreflightResult>;
   createTempDir: () => Promise<string>;
   cleanupTempDir: (tempDir: string) => Promise<void>;
+  pruneOldRecordings: () => Promise<void>;
   startRecordingMonitor: (
     onPatch: (patch: RecordingPatch) => void,
   ) => () => void;
@@ -73,6 +74,7 @@ export interface DictationControllerDeps {
   startTranscriber: (
     kesha: KeshaSpawn,
     audioPath: string,
+    timeoutMs: number,
   ) => RunningTask<string>;
   isSilentAudio: (audioPath: string) => Promise<boolean>;
   copyToClipboard: (text: string) => Promise<void>;
