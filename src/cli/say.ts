@@ -8,6 +8,7 @@ import {
   spawnStdioWithDebugFd,
 } from "../engine";
 import { installHint } from "../install-hint";
+import { registerProcessTree } from "../process-tree";
 import { log } from "../log";
 import { say, SayError, type SayFormat } from "../synth";
 import { artifactFromBytes, artifactFromFile, type StatsRecorder } from "../stats";
@@ -317,7 +318,16 @@ export const sayCommand = defineCommand({
         ["say", "--list-voices"],
         spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
       );
-      process.exit(await proc.exited);
+      // Register so a Ctrl-C during a cold Engine load terminates it and exits 130/143 (#939);
+      // dispose before the process.exit below so the registration never outlives the run.
+      const tree = registerProcessTree(proc);
+      let exitCode: number;
+      try {
+        exitCode = await proc.exited;
+      } finally {
+        tree.dispose();
+      }
+      process.exit(exitCode);
     }
 
     const flags = resolveSayFlags(args);

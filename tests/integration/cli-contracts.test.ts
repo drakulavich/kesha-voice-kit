@@ -222,6 +222,24 @@ process.exit(2);
   return enginePath;
 }
 
+function createListVoicesHangEngine(dir: string, enginePidPath: string): string {
+  const enginePath = join(dir, "kesha-engine-listvoices-hang");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "say" && args[1] === "--list-voices") {
+  await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
+  await new Promise(() => {});
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
 function expectContract(
   actual: CliScenarioResult,
   expected: {
@@ -941,6 +959,35 @@ describe("CLI contracts", () => {
     expect(stdout).not.toContain("fake media");
     expect(stderr).toContain(`Transcribing ${mediaPath}`);
     expect(await waitForPidExit(helperPid)).toBe(true);
+  });
+
+  test("Ctrl+C during say --list-voices terminates the engine and exits 130", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-listvoices-sigint-");
+    const enginePidPath = join(dir, "engine.pid");
+    const enginePath = createListVoicesHangEngine(dir, enginePidPath);
+
+    const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", "say", "--list-voices"], {
+      cwd: DEFAULT_CWD,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+    const stdoutPromise = new Response(proc.stdout).text();
+    const stderrPromise = new Response(proc.stderr).text();
+    const enginePid = await waitForPidFile(enginePidPath);
+
+    proc.kill("SIGINT");
+
+    const [, , exitCode] = await Promise.all([stdoutPromise, stderrPromise, proc.exited]);
+    expect(exitCode).toBe(130);
+    expect(await waitForPidExit(enginePid)).toBe(true);
   });
 
   test("early transcription failure does not start audio language detection", async () => {

@@ -1,5 +1,6 @@
 import { getEngineBinPath, isEngineInstalled, spawnEngineProcess, spawnStdioWithDebugFd } from "../engine";
 import { installHint } from "../install-hint";
+import { registerProcessTree } from "../process-tree";
 
 export interface VoiceInfo {
   voiceId: string;
@@ -117,15 +118,23 @@ export async function listVoices(): Promise<VoiceInfo[]> {
     ["say", "--list-voices"],
     spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
   );
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
-    new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
-    proc.exited,
-  ]);
-  if (code !== 0) {
-    throw new Error(`engine list-voices failed (exit ${code}): ${err.trim()}`);
+  // Register so an interrupt of the long-lived MCP stdio server terminates this spawn
+  // instead of orphaning it; dispose in finally keeps the registration request-scoped
+  // so a persistent server never leaks one per call (#939).
+  const tree = registerProcessTree(proc);
+  try {
+    const [out, err, code] = await Promise.all([
+      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
+      new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
+      proc.exited,
+    ]);
+    if (code !== 0) {
+      throw new Error(`engine list-voices failed (exit ${code}): ${err.trim()}`);
+    }
+    return parseVoiceLines(out);
+  } finally {
+    tree.dispose();
   }
-  return parseVoiceLines(out);
 }
 
 export function aggregateLanguages(voices: VoiceInfo[]): LanguageInfo[] {
