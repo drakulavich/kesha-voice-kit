@@ -41,12 +41,16 @@ way CI does:
 ```bash
 brew tap oven-sh/bun
 brew tap-new local/tap
+# Audit the committed pin first — --strict rejects the file:// url the stage step
+# writes, so it must run before staging, exactly as CI does.
+cp packaging/homebrew/Formula/kesha-voice-kit.rb \
+  "$(brew --repository local/tap)/Formula/kesha-voice-kit.rb"
+brew audit --strict --formula local/tap/kesha-voice-kit
 node .github/scripts/stage-homebrew-worktree-formula.mjs \
   --tap-dir "$(brew --repository local/tap)" \
   --archive "$(mktemp -d)/kesha-worktree.tar.gz"
 brew install --build-from-source local/tap/kesha-voice-kit
 brew test local/tap/kesha-voice-kit
-brew audit --strict --formula "$(brew --repository local/tap)/Formula/kesha-voice-kit.rb"
 ```
 
 The public tap itself can be validated with:

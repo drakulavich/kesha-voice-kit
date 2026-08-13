@@ -239,7 +239,7 @@ jobs:
           cp packaging/homebrew/Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/kesha-voice-kit.rb"
           brew audit --strict --formula local/kesha/kesha-voice-kit
 
-      - name: 🌳 Stage formula against the working tree
+      - name: 🌳 Stage the HEAD archive as the tap formula
         # #924: build a git-archive of HEAD instead of the pinned release tarball, so the
         # install block is exercised against the checkout under review, not a released tree.
         run: node .github/scripts/stage-homebrew-worktree-formula.mjs --tap-dir "$(brew --repository local/kesha)" --archive "$RUNNER_TEMP/kesha-worktree.tar.gz"
@@ -249,8 +249,8 @@ jobs:
         # rewrite landed so a silently-skipped stage can't false-green the lane (#924).
         run: |
           formula="$(brew --repository local/kesha)/Formula/kesha-voice-kit.rb"
-          grep -q 'url "file://' "$formula" || { echo "staged formula missing file:// url"; exit 1; }
-          ! grep -q 'archive/refs/tags' "$formula" || { echo "staged formula still names the release tag"; exit 1; }
+          grep -qE '^  url "file://' "$formula" || { echo "staged formula missing file:// url"; exit 1; }
+          ! grep -qE '^  url ".*archive/refs/tags' "$formula" || { echo "staged formula still names the release tag"; exit 1; }
 
       - name: 📦 Install formula
         run: brew install --build-from-source local/kesha/kesha-voice-kit
