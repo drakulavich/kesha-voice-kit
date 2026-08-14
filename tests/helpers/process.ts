@@ -5,8 +5,11 @@ const PID_FILE_POLL_INTERVAL_MS = 25;
 const PID_FILE_POLL_ATTEMPTS = 400;
 const PID_EXIT_POLL_ATTEMPTS = 400;
 
-export async function waitForPidFile(path: string): Promise<number> {
-  for (let i = 0; i < PID_FILE_POLL_ATTEMPTS; i++) {
+export async function waitForPidFile(
+  path: string,
+  attempts: number = PID_FILE_POLL_ATTEMPTS,
+): Promise<number> {
+  for (let i = 0; i < attempts; i++) {
     if (existsSync(path)) return Number(readFileSync(path, "utf8"));
     await Bun.sleep(PID_FILE_POLL_INTERVAL_MS);
   }

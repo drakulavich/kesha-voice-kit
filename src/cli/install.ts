@@ -9,6 +9,7 @@ import { log } from "../log";
 import { packageVersion } from "../package-info";
 import { isSemver } from "../semver.mjs";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
+import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 import type { SharedInstallArgs } from "./types";
 
 export interface InstallCommandArgs extends SharedInstallArgs {
@@ -239,6 +240,11 @@ export async function performInstall(options: PerformInstallOptions) {
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);
     finishInstallDiagnostic(diagnosticLog, startedAt, "success");
   } catch (err: unknown) {
+    const signalExitCode = getPendingSignalExitCode();
+    if (signalExitCode !== null) {
+      await waitForPendingSignalCleanup();
+      process.exit(signalExitCode);
+    }
     const message = errorMessage(err);
     finishInstallDiagnostic(diagnosticLog, startedAt, "failed", errorKind);
     log.error(message);

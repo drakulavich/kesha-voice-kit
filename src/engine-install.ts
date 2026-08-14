@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from 
 import {
   getEngineBinPath,
   getEngineCapabilities,
+  spawnEngineProcess,
+  spawnStdioWithDebugFd,
   TRANSCRIBE_DIARIZE_FEATURE,
   type EngineCapabilities,
 } from "./engine";
@@ -16,6 +18,7 @@ import { log } from "./log";
 import { engineVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { streamResponseToFile } from "./progress";
+import { registerProcessTree } from "./process-tree";
 import {
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
@@ -224,24 +227,12 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
   log.progress("Warming FluidAudio Kokoro CoreML cache...");
 
   const startedAt = performance.now();
-  const proc = Bun.spawn(
-    [
-      binPath,
-      "say",
-      "--voice",
-      "en-am_michael",
-      "--out",
-      outPath,
-      "Kesha warmup.",
-    ],
-    {
-      stdout: "ignore",
-      stderr: "pipe",
-      // Resolves the voice from the Model cache, so it needs the same runtime
-      // `KESHA_CACHE_DIR` the install itself was given (#876).
-      env: process.env,
-    },
+  const proc = spawnEngineProcess(
+    binPath,
+    ["say", "--voice", "en-am_michael", "--out", outPath, "Kesha warmup."],
+    spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
   );
+  const tree = registerProcessTree(proc);
 
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -280,6 +271,7 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
     );
   } finally {
     clearTimeout(timer);
+    tree.dispose();
     try {
       rmSync(outPath, { force: true });
     } catch {
@@ -547,11 +539,11 @@ export function validateDiarize(caps: EngineCapabilities | null): void {
  * Runs `kesha-engine install` to download/verify models.
  * Inherits stdio so per-file progress reaches the user live, and throws on non-zero exit.
  */
-function runEngineModelInstall(
+async function runEngineModelInstall(
   binPath: string,
   noCache: boolean,
   options: InstallOptions,
-): void {
+): Promise<void> {
   log.progress("Installing models...");
   const installArgs = buildEngineInstallArgs({
     noCache,
@@ -563,15 +555,22 @@ function runEngineModelInstall(
   // `env` is load-bearing, not tidiness: this child resolves the model destination from
   // `KESHA_CACHE_DIR`, and without it Bun's startup snapshot sends a redirected install
   // to the real `~/.cache/kesha` anyway (#876).
-  const proc = Bun.spawnSync([binPath, ...installArgs], {
-    stdout: "inherit",
-    stderr: "inherit",
-    env: process.env,
-  });
+  const proc = spawnEngineProcess(
+    binPath,
+    installArgs,
+    spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
+  );
+  const tree = registerProcessTree(proc);
+  let exitCode: number;
+  try {
+    exitCode = await proc.exited;
+  } finally {
+    tree.dispose();
+  }
 
-  if (proc.exitCode !== 0) {
+  if (exitCode !== 0) {
     throw new Error(
-      `Failed to install models: kesha-engine install exited with code ${proc.exitCode}. ` +
+      `Failed to install models: kesha-engine install exited with code ${exitCode}. ` +
         "See the engine output above for the failing file.",
     );
   }
@@ -777,7 +776,7 @@ async function installLockedEngine(
     if (options.diarize) validateDiarize(caps);
   }
 
-  runEngineModelInstall(binPath, noCache, options);
+  await runEngineModelInstall(binPath, noCache, options);
 
   // Warm the FluidAudio Kokoro CoreML cache only when a Kokoro language is
   // requested. Russian (`ru`) routes through Vosk-TTS, not Kokoro, so a

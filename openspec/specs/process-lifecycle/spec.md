@@ -7,12 +7,11 @@ those runs take minutes. This spec covers what happens when such a run is
 interrupted: which processes are terminated, how long they are given, what exit
 code the CLI reports, and what a caller who cancels programmatically observes.
 
-Every Engine subprocess started through the shared `spawnEngineProcess` helper
-registers itself, so this coverage is uniform across them: the two-hour
-transcription and the near-instant `--list-voices` listing are terminated the
-same way when interrupted. A few direct `Bun.spawn` paths outside that helper —
-the darwin Kokoro warmup, the model install, and the `--version` probe — do not,
-and are listed under Open Issues.
+Every Engine subprocess is started through `spawnEngineProcess` and registered
+for its lifetime, so this coverage is uniform across them: the two-hour
+transcription, the near-instant `--list-voices` listing, a darwin Kokoro warmup,
+model installation, and a `--version` health check are terminated the same way
+when interrupted.
 
 Ira runs batches in CI where a job cancellation must not leave a model-loading
 Engine holding a runner's CPU. Maks presses Ctrl-C on a long meeting
@@ -34,9 +33,9 @@ her agent and needs a distinguishable outcome rather than an empty transcript.
 
 ## Requirements
 
-### Requirement: An interrupted command terminates its registered Engine subprocess and reports the signal in its Exit code
+### Requirement: An interrupted command terminates its Engine subprocess and reports the signal in its Exit code
 
-When the CLI receives an interrupt or termination signal while a registered Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination — rather than with the command's own success or failure code. Every `spawnEngineProcess` call site registers, so this holds for transcription, Language detection, synthesis, recording, and both `--list-voices` listings — the CLI command's and the MCP server's — alike; the direct `Bun.spawn` warmup, install, and probe paths do not (see Open Issues).
+When the CLI receives an interrupt or termination signal while an Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination — rather than with the command's own success or failure code. This holds for transcription, Language detection, synthesis, recording, both `--list-voices` listings — the CLI command's and the MCP server's — alike, as well as the darwin Kokoro warmup, model installation, and executable health checks.
 
 #### Scenario: Maks interrupts a long transcription
 
@@ -173,20 +172,10 @@ When a caller of the Core API cancels an in-flight call, the call SHALL fail wit
   flag or timeout wires an `AbortSignal` into a run. The Raycast extension gets
   its cancellation by killing the CLI process instead, which lands on the signal
   path above rather than this one.
-- `waitForPendingSignalCleanup` is consulted only in the main transcription
-  command (`src/cli/main.ts`). `kesha say`, `kesha record`, and `kesha install`
-  rely on the handler's own `process.exit`, so their interrupted exit code is
-  set by the same handler but never awaited by the command — whether that can
-  race a command-owned `process.exit` is untested.
+- `waitForPendingSignalCleanup` is consulted by the main transcription command
+  and `kesha install`; `kesha say` and `kesha record` still rely on the
+  handler's own `process.exit`, so whether their command-owned exits can race
+  the signal cleanup is untested.
 - The Windows path spawns `taskkill` and does not wait for it, so on Windows the
   tree kill is fire-and-forget; nothing verifies it completed before the CLI
   exits.
-- Three Engine spawns bypass `spawnEngineProcess` and so never register:
-  `warmDarwinKokoro` (`src/engine-install.ts:214`, a darwin Kokoro warmup that
-  can run for up to 180 s and is not detached), `runEngineModelInstall`
-  (`src/engine-install.ts:548`, a `spawnSync` install in the CLI's own process
-  group) and `probeExecutable` (`src/engine-health.ts:23`, a short `--version`
-  probe with its own kill timer). Interrupting during one leaves that Engine to
-  the shell rather than the CLI. #939 fixed the two `spawnEngineProcess` bypasses
-  (`--list-voices`, CLI and MCP); these direct-`Bun.spawn` paths are a separate,
-  unaddressed gap.
