@@ -746,6 +746,89 @@ mod tests {
         }
     }
 
+    /// #1006: upstream's cardinal fallback spans at most four tokens, so the
+    /// "and" a scale word owns pushed the number past the limit and it resolved
+    /// as two — "two hundred and thirty two" came out "230 2".
+    #[test]
+    fn an_and_a_scale_owns_does_not_split_the_number() {
+        for (spoken, expected) in [
+            ("two hundred and thirty two", "232"),
+            (
+                "there are two hundred and thirty two open pull requests",
+                "there are 232 open pull requests",
+            ),
+            ("five hundred and twenty three dogs", "523 dogs"),
+            ("one hundred and twenty five", "125"),
+            // Already one span before the collapse, and still one after it.
+            ("two hundred thirty two", "232"),
+            ("one thousand two hundred thirty four", "1234"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected, "{spoken:?}");
+        }
+    }
+
+    /// The collapse (#1006) and the sentence-"and" mask (#1000) act on different
+    /// "and"s in the same pass and must not trade places: the speaker's survives,
+    /// the number's disappears into its number, the money tagger's stays put.
+    #[test]
+    fn the_collapse_composes_with_the_sentence_and_mask() {
+        for (spoken, expected) in [
+            ("cats and three dogs", "cats and 3 dogs"),
+            ("three hundred and five dogs", "305 dogs"),
+            (
+                "two hundred and thirty two open pull requests and cats",
+                "232 open pull requests and cats",
+            ),
+            ("it costs five dollars and fifty cents", "it costs $5.50"),
+            ("five dollars and three apples", "$5 and 3 apples"),
+            ("the s and p five hundred index", "the S&P 500 index"),
+            ("we counted three hundred and", "we counted 300 and"),
+            ("two thousand, and three apples", "2000, and 3 apples"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected, "{spoken:?}");
+        }
+    }
+
+    /// #1004: upstream's pretokenizer does not split on "-", so a hyphenated
+    /// number matched no cardinal word and stayed spelled out.
+    #[test]
+    fn a_hyphenated_number_is_rewritten_like_the_spaced_form() {
+        for (spoken, expected) in [
+            ("twenty-five apples", "25 apples"),
+            ("twenty five apples", "25 apples"),
+            ("nineteen eighty-four", "1984"),
+            ("one hundred and twenty-five", "125"),
+            ("twenty-five, apples", "25, apples"),
+            ("the number two-hundred", "the number 200"),
+            (
+                "I have twenty-five apples and three hundred oranges.",
+                "I have 25 apples and 300 oranges.",
+            ),
+        ] {
+            assert_eq!(normalize_text(spoken), expected, "{spoken:?}");
+        }
+    }
+
+    /// The split fires only when every hyphen-separated part is a number word,
+    /// so an ordinary hyphenated word keeps its hyphen (#1004).
+    #[test]
+    fn a_hyphen_between_non_number_words_survives() {
+        for text in [
+            "a well-known bug",
+            "state-of-the-art tooling",
+            "twenty-something developers",
+            "a T-shirt",
+            "the twenty-first commit",
+            "a two-thirds majority",
+            "a nine-to-five job",
+            "merge-base",
+            "re-run it",
+            "over-engineered",
+        ] {
+            assert_eq!(normalize_text(text), text, "{text:?}");
+        }
+    }
+
     #[test]
     fn text_is_kept_when_normalization_would_erase_it() {
         // Guards the one shape that would be data loss: non-blank in, blank out.
