@@ -489,6 +489,47 @@ mod tests {
     }
 
     #[test]
+    fn a_sentence_and_survives_a_number_that_follows_it() {
+        // #1000: upstream's cardinal reader strips "and" from any span it
+        // takes, so the speaker's conjunction vanished with the number.
+        for (spoken, expected) in [
+            ("Cats and three dogs.", "Cats and 3 dogs."),
+            (
+                "I have twenty-five apples and three hundred oranges.",
+                "I have twenty-five apples and 300 oranges.",
+            ),
+            ("Cats and 300 dogs.", "Cats and 300 dogs."),
+            ("Cats and 20 dogs.", "Cats and 20 dogs."),
+            (
+                "Bread and butter and cheese.",
+                "Bread and butter and cheese.",
+            ),
+            ("and three dogs", "and 3 dogs"),
+            (
+                "salt and pepper and three eggs",
+                "salt and pepper and 3 eggs",
+            ),
+            ("between five and ten dogs", "between 5 and 10 dogs"),
+            ("pick one and two", "pick 1 and 2"),
+            ("chapter five and three dogs", "chapter 5 and 3 dogs"),
+            ("two and a half hours", "2 and a half hours"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    #[test]
+    fn an_and_inside_a_number_still_joins_it() {
+        for (spoken, expected) in [
+            ("Three hundred and five dogs.", "305 dogs."),
+            ("one thousand and one nights", "1001 nights"),
+            ("it costs five dollars and fifty cents", "it costs $5.50"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    #[test]
     fn text_is_kept_when_normalization_would_erase_it() {
         // Guards the one shape that would be data loss: non-blank in, blank out.
         for text in ["ok", "hello world", "проверь все свои конфиги"] {
