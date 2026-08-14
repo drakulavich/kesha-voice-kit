@@ -132,6 +132,9 @@ const NUMBER_TAIL_WORDS: &[&str] = &[
 /// so the phrase is matched as a whole and left intact (#1000).
 const WHITELIST_AND_PHRASE: &[&str] = &["s", "and", "p", "five", "hundred"];
 
+/// `parse_span`'s `token_count <= 4` gate on the cardinal fallback.
+const MAX_CARDINAL_SPAN_TOKENS: usize = 4;
+
 /// Object-replacement character: no upstream tagger matches a span containing
 /// it, and the pretokenizer neither splits nor absorbs it.
 const PROTECTED_MASK: &str = "\u{FFFC}";
@@ -232,16 +235,38 @@ fn is_number_word(core: &str) -> bool {
     NUMBER_TAIL_WORDS.contains(&core) || NUMBER_SCALE_WORDS.contains(&core)
 }
 
-/// Upstream's cardinal fallback spans at most four tokens (`parse_span`), so a
-/// scale word's "and" pushes "two hundred and thirty two" past the limit and
-/// two shorter spans win instead — 230, then 2. Dropping that "and" before the
-/// pass makes the number one span again; the money tagger's "and" is left in
-/// place because `parse_dollars_and_cents` reads it (#1006).
+/// Upstream's cardinal fallback only fires on spans of at most four tokens
+/// (`parse_span`), so a scale word's "and" pushes "two hundred and thirty two"
+/// past the limit and two shorter spans win instead — 230, then 2. Dropping
+/// that "and" before the pass makes the number one span again; the money
+/// tagger's "and" is left in place because `parse_dollars_and_cents` reads it
+/// (#1006).
+///
+/// Two positions are left alone because dropping the "and" there costs a word
+/// and buys nothing: after upstream's `S&P 500` whitelist entry, which is
+/// matched as a whole so the "and" behind it reaches no tagger; and where the
+/// number words either side already exceed the fallback's limit, so the span
+/// stays unreadable whether the "and" goes or stays.
 fn a_scale_owns_the_and(words: &[&str], and_index: usize) -> bool {
     joins_a_number(words, and_index)
+        && !follows_whitelist_phrase(words, and_index)
         && and_index.checked_sub(1).is_some_and(|head| {
             NUMBER_SCALE_WORDS.contains(&punctuation_core(words[head]).as_str())
         })
+        && number_words_around(words, and_index) <= MAX_CARDINAL_SPAN_TOKENS
+}
+
+/// How many number words the "and" sits between — the span upstream is left to
+/// read once the "and" is gone.
+fn number_words_around(words: &[&str], and_index: usize) -> usize {
+    let is_number = |word: &&&str| is_number_word(&punctuation_core(word));
+    let before = words[..and_index]
+        .iter()
+        .rev()
+        .take_while(is_number)
+        .count();
+    let after = words[and_index + 1..].iter().take_while(is_number).count();
+    before + after
 }
 
 /// Upstream's cardinal reader strips a bare "and" from every span it takes, so
@@ -255,13 +280,27 @@ fn joins_a_number(words: &[&str], and_index: usize) -> bool {
     ) else {
         return false;
     };
-    // "two thousand, and three apples": the clause break ended the number.
-    if before.ends_with(|c: char| c.is_ascii_punctuation()) {
+    // "two thousand, and three apples", "two hundred and. thirty two": a clause
+    // break either side of the "and" ended the number.
+    if before.ends_with(|c: char| c.is_ascii_punctuation())
+        || words[and_index].contains(|c: char| c.is_ascii_punctuation())
+    {
         return false;
     }
     let head = punctuation_core(before);
     if !(NUMBER_SCALE_WORDS.contains(&head.as_str()) || DOLLAR_HEADS.contains(&head.as_str()))
         || !NUMBER_TAIL_WORDS.contains(&punctuation_core(after).as_str())
+    {
+        return false;
+    }
+    // "between one hundred and two hundred dogs": no number spends the same
+    // scale word twice, so a repeat of the head scale after the tail is a
+    // second number and the "and" between them is the speaker's. A larger
+    // scale there multiplies the whole group instead ("two hundred and fifty
+    // thousand") and stays part of the one number.
+    if words
+        .get(and_index + 2)
+        .is_some_and(|word| punctuation_core(word) == head)
     {
         return false;
     }
@@ -282,9 +321,21 @@ fn joins_a_number(words: &[&str], and_index: usize) -> bool {
 
 /// True when the "and" at `and_index` sits inside [`WHITELIST_AND_PHRASE`].
 fn starts_whitelist_phrase(words: &[&str], and_index: usize) -> bool {
-    let Some(start) = and_index.checked_sub(1) else {
-        return false;
-    };
+    and_index
+        .checked_sub(1)
+        .is_some_and(|start| whitelist_phrase_at(words, start))
+}
+
+/// True when the "and" at `and_index` is the one right after
+/// [`WHITELIST_AND_PHRASE`]. Upstream matches the phrase as a whole and stops
+/// there, so this "and" reaches no tagger and dropping it only loses it.
+fn follows_whitelist_phrase(words: &[&str], and_index: usize) -> bool {
+    and_index
+        .checked_sub(WHITELIST_AND_PHRASE.len())
+        .is_some_and(|start| whitelist_phrase_at(words, start))
+}
+
+fn whitelist_phrase_at(words: &[&str], start: usize) -> bool {
     words
         .get(start..start + WHITELIST_AND_PHRASE.len())
         .is_some_and(|window| {
@@ -498,6 +549,10 @@ mod tests {
             "two thousand, and three apples",
             "the s and p five hundred index",
             "two hundred and thirty two open pull requests",
+            "two hundred and. thirty two",
+            "two hundred (and thirty two)",
+            "between one hundred and two hundred dogs",
+            "two hundred thousand and thirty two",
             "twenty-five apples",
             "a well-known bug",
             "state-of-the-art tooling",
@@ -749,16 +804,48 @@ mod tests {
         assert_eq!(text_processing_rs::normalize_sentence(&phrase), "S&P 500");
     }
 
-    /// Upstream limits the rewrites do not reach, pinned so a pin bump shows up
-    /// as a diff here rather than a surprise: a whitelist hit ends the pass so
-    /// what follows it is never tagged, and a hyphenated number the split
-    /// declines to touch is only half-read.
+    /// Upstream limits, unchanged by the rewrites and pinned so a pin bump shows
+    /// up as a diff here rather than a surprise: a whitelist hit ends the pass so
+    /// what follows it is never tagged, and a number too long for the cardinal
+    /// fallback is emitted as two whichever way the "and" is handled.
     #[test]
-    fn upstream_limits_the_rewrites_do_not_reach() {
+    fn upstream_residuals_are_left_as_upstream_produces_them() {
+        for spoken in [
+            "s and p five hundred and three dogs",
+            "two hundred thousand and thirty two",
+            "three hundred thousand and forty five",
+            "between one hundred and two thousand dogs",
+        ] {
+            assert_eq!(
+                normalize_text(spoken),
+                text_processing_rs::normalize_sentence(spoken),
+                "{spoken:?}"
+            );
+        }
         assert_eq!(
             normalize_text("s and p five hundred and three dogs"),
-            "S&P 500 three dogs"
+            "S&P 500 and three dogs"
         );
+        assert_eq!(
+            normalize_text("two hundred thousand and thirty two"),
+            "200000 32"
+        );
+        assert_eq!(
+            normalize_text("three hundred thousand and forty five"),
+            "300000 45"
+        );
+        // The repeated-scale rule reads a repeat, not a range, so a range whose
+        // halves carry different scales is still read as one number.
+        assert_eq!(
+            normalize_text("between one hundred and two thousand dogs"),
+            "between 102 thousand dogs"
+        );
+    }
+
+    /// The hyphen split only fires when every part is a number word, so a
+    /// hyphenated number upstream still cannot read is left half-read (#1004).
+    #[test]
+    fn upstream_limits_the_rewrites_do_not_reach() {
         assert_eq!(normalize_text("twenty-five thousand"), "25 thousand");
     }
 
@@ -818,8 +905,45 @@ mod tests {
             ("it costs five dollars and fifty cents", "it costs $5.50"),
             ("five dollars and three apples", "$5 and 3 apples"),
             ("the s and p five hundred index", "the S&P 500 index"),
+            (
+                "s and p five hundred and three dogs",
+                "S&P 500 and three dogs",
+            ),
             ("we counted three hundred and", "we counted 300 and"),
             ("two thousand, and three apples", "2000, and 3 apples"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected, "{spoken:?}");
+        }
+    }
+
+    /// Punctuation glued to the "and" is a clause break just like punctuation on
+    /// the word before it, so the "and" is the speaker's and stays (#1006).
+    #[test]
+    fn punctuation_on_the_and_ends_the_number() {
+        for (spoken, expected) in [
+            ("two hundred and. thirty two", "200 and. 32"),
+            ("two thousand and. three apples", "2000 and. 3 apples"),
+            ("two hundred (and thirty two)", "200 (and 32)"),
+            ("two hundred and, thirty two", "200 and, 32"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected, "{spoken:?}");
+        }
+    }
+
+    /// A number never spends the same scale word twice, so a repeat of the head
+    /// scale after the tail starts a second number — the shape a spoken range
+    /// takes — and the "and" between them is the speaker's (#1006).
+    #[test]
+    fn a_repeated_scale_after_the_and_starts_a_second_number() {
+        for (spoken, expected) in [
+            (
+                "between one hundred and two hundred dogs",
+                "between 100 and 200 dogs",
+            ),
+            ("one hundred and two hundred", "100 and 200"),
+            // A larger scale after the tail multiplies the whole group instead,
+            // so that "and" still belongs to the one number.
+            ("two hundred and fifty thousand", "250 thousand"),
         ] {
             assert_eq!(normalize_text(spoken), expected, "{spoken:?}");
         }
