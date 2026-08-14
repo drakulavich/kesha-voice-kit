@@ -40,7 +40,7 @@ kesha voice.ogg
 
 ```bash
 kesha --json voice.ogg
-# → [{"file":"voice.ogg","text":"Привет, как дела?","lang":"ru","audioLanguage":{"code":"ru","confidence":0.98},"textLanguage":{"code":"ru","confidence":0.99}}]
+# → [{"file":"voice.ogg","text":"Привет, как дела?","lang":"ru","audioLanguage":{"code":"ru","confidence":0.98},"textLanguage":{"code":"ru","confidence":0.99,"source":"engine"}}]
 ```
 
 **Batch transcribe a folder of voice notes:**
@@ -109,8 +109,8 @@ Identify the language of an audio file *before* deciding what to do with it.
 **Detect language with confidence scores:**
 
 ```bash
-kesha --json --verbose audio.mp3 | jq '.[0] | {lang, audioConfidence: .audioLanguage.confidence, textConfidence: .textLanguage.confidence}'
-# → {"lang":"de","audioConfidence":0.97,"textConfidence":0.96}
+kesha --json --verbose audio.mp3 | jq '.[0] | {lang, audioConfidence: .audioLanguage.confidence, textConfidence: .textLanguage.confidence, textSource: .textLanguage.source}'
+# → {"lang":"de","audioConfidence":0.97,"textConfidence":0.96,"textSource":"engine"}
 ```
 
 **Branch on detected language in a script:**
@@ -135,6 +135,7 @@ kesha --lang en voice.ogg
 💡 **Tips:**
 
 - Audio-language detection (`audioLanguage`) analyzes acoustic features — works even on short clips. Text-language detection (`textLanguage`) kicks in after transcription and is more reliable for long audio.
+- `textLanguage.source` names the detector: `"engine"` (macOS `NLLanguageRecognizer`) or `"tinyld"` (the CLI fallback used everywhere else). The two score on different scales, so branch on `source` before you compare a `confidence` against a threshold.
 - 25 European languages supported for STT. Use `--lang` to sanity-check expectations in CI/testing pipelines.
 
 ## Batch Meeting Transcription

@@ -1,12 +1,12 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { existsSync, statSync } from "fs";
-import { detect } from "tinyld";
+import { detectAll } from "tinyld";
 import { preflightTranscribeWithSegments, transcribeWithSegments } from "../transcribe";
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
-import type { TranscribeErrorRecord, TranscribeResult } from "../types";
+import type { TextLangDetectResult, TranscribeErrorRecord, TranscribeResult } from "../types";
 import {
   formatJsonOutput,
   formatTextOutput,
@@ -45,9 +45,21 @@ interface MainCommandArgs {
   "no-color": boolean;
 }
 
+/**
+ * The CLI-side `tinyld` fallback, tagged `source: "tinyld"` so a consumer can
+ * tell it apart from an Engine detection instead of reading the placeholder
+ * `confidence: 0` it used to carry as a genuine zero (#941). The score is
+ * tinyld's own and is not on the Engine's scale.
+ */
+export function detectTextLanguageFallback(text: string): TextLangDetectResult | undefined {
+  if (!text) return undefined;
+  const [best] = detectAll(text);
+  if (!best) return undefined;
+  return { code: best.lang, confidence: best.accuracy, source: "tinyld" };
+}
+
 export function detectLanguage(text: string): string {
-  if (!text) return "";
-  return detect(text);
+  return detectTextLanguageFallback(text)?.code ?? "";
 }
 
 /** True when `path` exists and is a directory. Used to reject directory positionals before any progress/engine spawn. */
@@ -215,7 +227,7 @@ async function detectLanguages(
   },
 ): Promise<{
   audioLanguage: LangDetectResult | undefined;
-  textLanguage: LangDetectResult | undefined;
+  textLanguage: TextLangDetectResult | undefined;
   lang: string;
   ranAudioLangId: boolean;
 }> {
@@ -243,17 +255,17 @@ async function detectLanguages(
     }
   }
 
-  const tinyldLang = wantsLangId ? detectLanguage(text) : "";
-  let textLanguage: LangDetectResult | undefined;
+  const tinyldResult = wantsLangId ? detectTextLanguageFallback(text) : undefined;
+  let textLanguage: TextLangDetectResult | undefined;
 
   if (wantsLangId) {
     const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text));
     if (engineTextResult && engineTextResult.code) {
-      textLanguage = engineTextResult;
+      textLanguage = { ...engineTextResult, source: "engine" };
     }
   }
 
-  const lang = textLanguage?.code || tinyldLang;
+  const lang = textLanguage?.code || tinyldResult?.code || "";
 
   const mismatchWarning = checkLanguageMismatch(expectedLang, lang);
   if (mismatchWarning) {
@@ -262,7 +274,7 @@ async function detectLanguages(
 
   return {
     audioLanguage,
-    textLanguage: textLanguage ?? (tinyldLang ? { code: tinyldLang, confidence: 0 } : undefined),
+    textLanguage: textLanguage ?? tinyldResult,
     lang,
     ranAudioLangId: audioResult !== null,
   };

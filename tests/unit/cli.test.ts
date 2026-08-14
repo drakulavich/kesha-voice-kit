@@ -500,11 +500,11 @@ describe("JSON output with lang-id fields", () => {
     const results = [{
       file: "a.ogg", text: "Hello", lang: "en",
       audioLanguage: { code: "en", confidence: 0.94 },
-      textLanguage: { code: "en", confidence: 0.98 },
+      textLanguage: { code: "en", confidence: 0.98, source: "engine" as const },
     }];
     const parsed = JSON.parse(formatJsonOutput(results));
     expect(parsed[0].audioLanguage).toEqual({ code: "en", confidence: 0.94 });
-    expect(parsed[0].textLanguage).toEqual({ code: "en", confidence: 0.98 });
+    expect(parsed[0].textLanguage).toEqual({ code: "en", confidence: 0.98, source: "engine" });
     expect(parsed[0].lang).toBe("en");
   });
 
