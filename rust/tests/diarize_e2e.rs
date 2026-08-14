@@ -197,7 +197,11 @@ fn a_clip_below_the_diarizer_floor_keeps_its_transcript() {
         .unwrap();
 
     let spoken = tmp.path().join("spoken.wav");
-    if !say("Hello everyone, this is the call.", "en-am_michael", &spoken) {
+    if !say(
+        "Hello everyone, this is the call.",
+        "en-am_michael",
+        &spoken,
+    ) {
         eprintln!("skipping: TTS voices not installed (run `kesha install --tts`)");
         return;
     }

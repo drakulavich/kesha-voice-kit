@@ -143,7 +143,23 @@ The percentage check SHALL be skipped when there is exactly one ASR Segment: the
 ratio can then only be 0 % or 100 % depending on whether that Segment's midpoint
 lands in a speaker-change gap, which measures absent segmentation rather than
 partial labeling. Diarization returning no spans at all SHALL still fail closed
-at any Segment count.
+at any Segment count, with one exception: when the audio file is shorter than the
+1.04 s the Sortformer chunker needs before it can emit its first chunk, an empty
+result is the clip being too short rather than labels going missing. There the
+Engine SHALL return the transcript without `speaker` fields and exit 0, and SHALL
+say on stderr that the clip is below the floor and that the labels the user asked
+for are not in the output. Both halves of that exception are required — a run that
+dropped labels still has spans, and a clip long enough to diarize is judged by the
+checks above unchanged.
+
+#### Scenario: Ira diarizes a voice command shorter than the model's window
+
+- GIVEN a 0.9 s recording and the VAD + diarize models installed
+- WHEN Ira runs `kesha --json --speakers short.wav`
+- THEN stderr says no speaker spans came back, that the clip is 0.90 s against a
+  1.04 s floor, and that the transcript is returned without speaker labels
+- AND stdout carries the transcript, whose Segments omit `speaker` entirely
+- AND the process exits 0
 
 #### Scenario: A single whole-file Segment does not fail closed
 
@@ -166,10 +182,15 @@ at any Segment count.
 - AND the process exits 1
 
 > *Technical Note — constants: `MIN_DIARIZE_SEGMENT_COVERAGE = 0.95`,
-> `MAX_DIARIZE_TAIL_GAP_SECONDS = 30.0`.
-> Source: `rust/src/transcribe/diarize.rs` lines 20–21.
-> Validation function: `validate_coverage` in
-> `rust/src/transcribe/diarize.rs` lines 212–265.*
+> `MAX_DIARIZE_TAIL_GAP_SECONDS = 30.0`, `MIN_DIARIZABLE_SECONDS = 1.04`.
+> Source: `rust/src/transcribe/diarize.rs`.
+> Validation function: `validate_coverage`; the short-clip exception is
+> `below_diarizer_floor`, which runs before it. The floor derives from
+> `SortformerConfig.balancedV2`: `(chunkLen 6 + chunkRightContext 7) *
+> subsamplingFactor 8 * melStride 160 / sampleRate 16 000`. Measured on a cut of
+> `01-ne-nuzhno-slat-soobshcheniya.ogg`, the step is at ~1.023 s — 16 360 samples
+> return 0 spans, 16 380 return 1 — so the derived value sits just above the
+> observed one. Closes #999.*
 
 ### Requirement: Speaker ids are cluster indices stable within one call only
 
