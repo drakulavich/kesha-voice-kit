@@ -331,17 +331,16 @@ session rather than silently copying an empty string.
 
 - GIVEN Transcription succeeded but returned only whitespace
 - WHEN the Dictation session completes
-- THEN the view shows `No transcript returned.`
+- THEN the view shows `No speech was detected in the recording.`
 - AND the clipboard is left untouched
 
 > *Technical Note — the empty case is rejected by `normalizeTranscribeResult`
-> (`raycast/src/lib/dictation-controller.ts` lines 253–262), which trims stdout
-> and throws before the session sees a result; that is why the user-visible text
-> is `No transcript returned.` and not the friendlier
-> `No speech was detected in the recording.` at lines 158–160, which is
-> unreachable for exactly that reason (see Open Issues). Trim, copy and success
-> state: lines 157–169. Clipboard write is Raycast's own `Clipboard.copy`,
-> injected at
+> (`raycast/src/lib/dictation-controller.ts`), which trims stdout and throws
+> before the session sees a result. It is the only empty-transcript guard on the
+> path and so carries the user-facing wording; `deliverTranscript` used to repeat
+> the check unreachably behind it, and that duplicate is gone (#943). Copy and
+> success state: `deliverTranscript`, on the already-trimmed text. Clipboard
+> write is Raycast's own `Clipboard.copy`, injected at
 > `raycast/src/dictate-to-clipboard.tsx` lines 43–46; the result view's copy
 > action is at lines 115–118.*
 
@@ -568,14 +567,6 @@ When the signal meter delivers no sample within a short window (~8 s) of recordi
   `--max-seconds` — but it stops on meter silence, not on audio silence, so a
   monologue recorded while the meter is dead is cut at 45 s. That coupling is
   not obvious from the requirement text.
-- The friendlier empty-transcript message `No speech was detected in the
-  recording.` (`raycast/src/lib/dictation-controller.ts` lines 158–160) is
-  unreachable: `normalizeTranscribeResult` (lines 253–262) already trims and
-  throws `No transcript returned.` for the same input, so that is what Maks
-  actually sees. Either the outer guard should go or `normalizeTranscribeResult`
-  should carry the friendlier wording — changing it means diverging from the
-  version currently in the Raycast Store, so it is recorded here rather than
-  fixed in the sync.
 - Microphone permission is observed only indirectly, as digital silence. The
   extension cannot distinguish "permission denied" from "the wrong input device
   is selected" or "the mic is muted in hardware", so the error names all of

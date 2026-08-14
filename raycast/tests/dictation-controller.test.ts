@@ -578,6 +578,21 @@ describe("dictation controller", () => {
     );
   });
 
+  it("tells the user no speech was detected when the transcript is empty (#943)", async () => {
+    const deps = createDeps({
+      startTranscriber: vi.fn(() => resolvedTask(Promise.resolve("  \n"))),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.copyToClipboard).not.toHaveBeenCalled();
+    expect(deps.states.at(-1)).toMatchObject({
+      status: "error",
+      message: "No speech was detected in the recording.",
+    });
+  });
+
   it("keeps the recording when the user cancels transcription after capture (#944)", async () => {
     const transcriber = deferred<string>();
     const deps = createDeps({
@@ -894,7 +909,7 @@ describe("normalizeTranscribeResult", () => {
       text: "hello",
     });
     expect(() => normalizeTranscribeResult("/tmp/a.wav", " \n")).toThrow(
-      "No transcript returned.",
+      "No speech was detected in the recording.",
     );
   });
 });
