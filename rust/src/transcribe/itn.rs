@@ -73,25 +73,77 @@ const PUNCTUATION_NAMES: &[&str] = &[
     "slash",
 ];
 
+/// Words after which an "and" can still belong to the number rather than to
+/// the sentence: a scale word ("three hundred and five") or the dollar the
+/// money tagger splits on ("five dollars and fifty cents"). Mirrors upstream's
+/// `SCALES` and `parse_dollars_and_cents` at the `8a043f1` pin (#1000).
+const NUMBER_CONNECTOR_HEADS: &[&str] = &[
+    "hundred",
+    "thousand",
+    "million",
+    "billion",
+    "trillion",
+    "quadrillion",
+    "quintillion",
+    "sextillion",
+    "lakh",
+    "crore",
+    "dollar",
+    "dollars",
+];
+
+/// Upstream's 0-99 vocabulary (`ONES` + `TENS`) — the only words that can
+/// complete a number after a connector.
+const NUMBER_TAIL_WORDS: &[&str] = &[
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+];
+
 /// Object-replacement character: no upstream tagger matches a span containing
 /// it, and the pretokenizer neither splits nor absorbs it.
-const PUNCTUATION_MASK: &str = "\u{FFFC}";
+const PROTECTED_MASK: &str = "\u{FFFC}";
 
 /// `normalize_sentence` trims its input and can return an empty string for
 /// whitespace-only text; keep the original in that case so the pass can only
 /// ever rewrite content, never erase it.
 fn normalize_text(text: &str) -> String {
-    let masked = mask_punctuation_names(text);
+    let masked = mask_protected_words(text);
     let source = masked.as_ref().map_or(text, |(masked, _)| masked.as_str());
     let normalized = text_processing_rs::normalize_sentence(source);
     let normalized = match &masked {
-        Some((_, names)) => match restore_punctuation_names(&normalized, names) {
+        Some((_, names)) => match restore_protected_words(&normalized, names) {
             Some(restored) => restored,
             None => {
                 eprintln!(
-                    "warning: --itn left a segment unnormalized: the text pass returned {} of {} punctuation-name placeholders, \
+                    "warning: --itn left a segment unnormalized: the text pass returned {} of {} protected-word placeholders, \
                      so the pinned text-processing-rs revision no longer treats U+FFFC as inert. Report this against #822.",
-                    normalized.matches(PUNCTUATION_MASK).count(),
+                    normalized.matches(PROTECTED_MASK).count(),
                     names.len()
                 );
                 return text.to_string();
@@ -105,11 +157,12 @@ fn normalize_text(text: &str) -> String {
     normalized
 }
 
-/// Replace every spoken punctuation name with [`PUNCTUATION_MASK`], returning
-/// the masked text and the original words in order. `None` when there is
-/// nothing to protect, so untouched text reaches upstream byte-identical.
-fn mask_punctuation_names(text: &str) -> Option<(String, Vec<String>)> {
-    if text.contains(PUNCTUATION_MASK) {
+/// Replace every word upstream would consume out from under the speaker with
+/// [`PROTECTED_MASK`], returning the masked text and the original words in
+/// order. `None` when there is nothing to protect, so untouched text reaches
+/// upstream byte-identical.
+fn mask_protected_words(text: &str) -> Option<(String, Vec<String>)> {
+    if text.contains(PROTECTED_MASK) {
         return None;
     }
     let words: Vec<&str> = text.split_whitespace().collect();
@@ -123,11 +176,17 @@ fn mask_punctuation_names(text: &str) -> Option<(String, Vec<String>)> {
             .map(|next| format!("{core} {}", punctuation_core(next)));
         if pair.is_some_and(|pair| PUNCTUATION_NAME_PAIRS.contains(&pair.as_str())) {
             names.push(format!("{} {}", words[i], words[i + 1]));
-            masked.push(PUNCTUATION_MASK);
+            masked.push(PROTECTED_MASK);
             i += 2;
-        } else if PUNCTUATION_NAMES.contains(&core.as_str()) {
+        } else if PUNCTUATION_NAMES.contains(&core.as_str())
+            || (core == "and"
+                && !joins_a_number(
+                    i.checked_sub(1).map(|p| words[p]),
+                    words.get(i + 1).copied(),
+                ))
+        {
             names.push(words[i].to_string());
-            masked.push(PUNCTUATION_MASK);
+            masked.push(PROTECTED_MASK);
             i += 1;
         } else {
             masked.push(words[i]);
@@ -140,6 +199,18 @@ fn mask_punctuation_names(text: &str) -> Option<(String, Vec<String>)> {
     Some((masked.join(" "), names))
 }
 
+/// Upstream's cardinal reader strips a bare "and" from every span it takes, so
+/// a sentence "and" next to a spoken number is swallowed with it (#1000).
+/// English only puts "and" inside a number between a connector head and a word
+/// that completes it, so every other "and" is the speaker's and gets masked.
+fn joins_a_number(before: Option<&str>, after: Option<&str>) -> bool {
+    let (Some(before), Some(after)) = (before, after) else {
+        return false;
+    };
+    NUMBER_CONNECTOR_HEADS.contains(&punctuation_core(before).as_str())
+        && NUMBER_TAIL_WORDS.contains(&punctuation_core(after).as_str())
+}
+
 fn punctuation_core(word: &str) -> String {
     word.trim_matches(|c: char| c.is_ascii_punctuation())
         .to_lowercase()
@@ -148,10 +219,10 @@ fn punctuation_core(word: &str) -> String {
 /// All-or-nothing: `None` unless every placeholder is matched by exactly one
 /// saved name, so a pin that eats or splits the mask fails closed rather than
 /// shifting every later name onto the wrong slot.
-fn restore_punctuation_names(text: &str, names: &[String]) -> Option<String> {
+fn restore_protected_words(text: &str, names: &[String]) -> Option<String> {
     let mut names = names.iter();
     let mut out = String::with_capacity(text.len());
-    for (index, part) in text.split(PUNCTUATION_MASK).enumerate() {
+    for (index, part) in text.split(PROTECTED_MASK).enumerate() {
         if index > 0 {
             out.push_str(names.next()?);
         }
@@ -337,6 +408,8 @@ mod tests {
             "she gave a plus one",
             "it was a difficult period.",
             "go to example dot com",
+            "Cats and three dogs.",
+            "Three hundred and five dogs.",
         ] {
             let once = normalize_text(text);
             assert_eq!(normalize_text(&once), once, "not idempotent for {text:?}");
@@ -478,12 +551,12 @@ mod tests {
     fn restoring_is_all_or_nothing() {
         let names = vec!["period".to_string(), "comma".to_string()];
         assert_eq!(
-            restore_punctuation_names("a \u{FFFC} b \u{FFFC} c", &names),
+            restore_protected_words("a \u{FFFC} b \u{FFFC} c", &names),
             Some("a period b comma c".to_string())
         );
-        assert_eq!(restore_punctuation_names("a \u{FFFC} b", &names), None);
+        assert_eq!(restore_protected_words("a \u{FFFC} b", &names), None);
         assert_eq!(
-            restore_punctuation_names("a \u{FFFC} b \u{FFFC} c \u{FFFC}", &names),
+            restore_protected_words("a \u{FFFC} b \u{FFFC} c \u{FFFC}", &names),
             None
         );
     }
@@ -526,6 +599,26 @@ mod tests {
             ("it costs five dollars and fifty cents", "it costs $5.50"),
         ] {
             assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    /// Both lists exist to name the one position where upstream is right to
+    /// eat the "and". Keeps them grounded in upstream's own vocabulary rather
+    /// than guesswork, and fails loudly if a pin bump moves that position.
+    #[test]
+    fn upstream_absorbs_the_and_at_every_position_the_rule_exempts() {
+        let absorbs_and = |phrase: &str| {
+            !text_processing_rs::normalize_sentence(phrase)
+                .split_whitespace()
+                .any(|word| word == "and")
+        };
+        for head in NUMBER_CONNECTOR_HEADS {
+            let phrase = format!("two {head} and one");
+            assert!(absorbs_and(&phrase), "{head} is not a number connector");
+        }
+        for tail in NUMBER_TAIL_WORDS {
+            let phrase = format!("two hundred and {tail}");
+            assert!(absorbs_and(&phrase), "{tail} does not complete a number");
         }
     }
 
