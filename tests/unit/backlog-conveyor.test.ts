@@ -62,6 +62,12 @@ function gateFacts(overrides: Partial<GateFacts> = {}): GateFacts {
 }
 
 describe("backlog gate", () => {
+  test("rejects approval evidence bound to a previous head", () => {
+    const facts = gateFacts({ evidence: evidenceFor({ headSha: "b".repeat(40) }) });
+
+    expect(evaluateGate(facts).violations).toContain("review evidence is not bound to the current head SHA");
+  });
+
   test("accepts verified provider evidence without a distinct GitHub approver", () => {
     const facts = gateFacts({
       pullRequest: {

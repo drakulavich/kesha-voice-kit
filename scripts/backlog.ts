@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { ExitCode, OperationalError, bunRunner, close, gate, parseGateEvidence, sync, type Evaluation } from "./backlog-conveyor";
+import { ExitCode, OperationalError, REPORT_SCHEMA_VERSION, bunRunner, close, gate, parseGateEvidence, sync, type Evaluation } from "./backlog-conveyor";
 
 type Command = { name: "sync"; apply: boolean; json: boolean } | { name: "gate"; issue: number; pr: number; evidencePath: string; apply: boolean; json: boolean } | { name: "close"; issue: number; pr: number; apply: boolean; json: boolean };
 
@@ -50,7 +50,7 @@ function exitCode(result: Evaluation): number {
 }
 
 function output(command: Command, result: Evaluation): void {
-  const report = { schemaVersion: 1, command: command.name, apply: command.apply, findings: result.findings, violations: result.violations, refusals: result.refusals, actions: result.safeActions };
+  const report = { schemaVersion: REPORT_SCHEMA_VERSION, command: command.name, apply: command.apply, findings: result.findings, violations: result.violations, refusals: result.refusals, actions: result.safeActions };
   if (command.json) {
     console.log(JSON.stringify(report));
     return;
