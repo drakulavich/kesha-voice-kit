@@ -7,6 +7,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
@@ -113,6 +114,11 @@ if (args[0] === "transcribe") {
   } else {
     console.log(text);
   }
+  process.exit(0);
+}
+
+if (args[0] === "say") {
+  await Bun.write(Bun.stdout, new Uint8Array(Number(process.env.KESHA_FAKE_SAY_BYTES || "4096")));
   process.exit(0);
 }
 
@@ -262,6 +268,47 @@ process.exit(2);
   );
   chmodSync(enginePath, 0o755);
   return enginePath;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * Runs the CLI under a real shell so its stdout can be redirected or piped. `runCliScenario`
+ * drains stdout to completion, so it can never produce the reader-went-away case #1001 is
+ * about; `${PIPESTATUS[0]}` reports the CLI's own status rather than the consumer's.
+ */
+async function runCliWithShellStdout(
+  args: string[],
+  stdoutSuffix: string,
+  env: Record<string, string>,
+): Promise<{ exitCode: number; stderr: string }> {
+  const cli = [process.execPath, "run", "src/cli-entry.ts", ...args].map(shellQuote).join(" ");
+  const proc = Bun.spawn(["bash", "-c", `${cli} ${stdoutSuffix}; exit \${PIPESTATUS[0]}`], {
+    cwd: DEFAULT_CWD,
+    stdout: "ignore",
+    stderr: "pipe",
+    env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", ...env },
+  });
+  const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  return { exitCode, stderr };
+}
+
+async function runCliPipedTo(
+  args: string[],
+  consumer: string,
+  opts: { env: Record<string, string>; sinkPath: string },
+): Promise<{ exitCode: number; stderr: string; stdoutBytes: number }> {
+  const run = await runCliWithShellStdout(
+    args,
+    `| ${consumer} > ${shellQuote(opts.sinkPath)}`,
+    opts.env,
+  );
+  return {
+    ...run,
+    stdoutBytes: existsSync(opts.sinkPath) ? statSync(opts.sinkPath).size : 0,
+  };
 }
 
 function expectContract(
@@ -1370,5 +1417,66 @@ describe("CLI contracts", () => {
     });
 
     expect(existsSync(join(dir, "cache", "engine"))).toBe(false);
+  }, 30000);
+
+  // `kesha say | ffplay -` then quitting, or `| head -c N` for a preview, is ordinary use of
+  // a filter. Bun delivers the resulting EPIPE asynchronously, so it used to escape as an
+  // uncaught crash dump — absolute install paths, a Bun banner, exit 1 on a synthesis that
+  // in fact succeeded (#1001).
+  test("a reader that stops reading ends the run quietly, on say and on transcribe (#1001)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-stdout-epipe-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const mediaPath = join(dir, "clip.ogg");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_SAY_BYTES: "262144",
+    };
+
+    const dropped = await runCliPipedTo(["say", "--voice", "en-am_michael", "тест потока"], "true", {
+      env,
+      sinkPath: join(dir, "dropped.bin"),
+    });
+    expect(dropped.stderr).toBe("");
+    expect(dropped.exitCode).toBe(0);
+    expect(dropped.stdoutBytes).toBe(0);
+
+    const preview = await runCliPipedTo(
+      ["say", "--voice", "en-am_michael", "тест потока"],
+      "head -c 1000",
+      { env, sinkPath: join(dir, "preview.bin") },
+    );
+    expect(preview.stderr).toBe("");
+    expect(preview.exitCode).toBe(0);
+    expect(preview.stdoutBytes).toBe(1000);
+
+    // Same write path, so the guard belongs to stdout rather than to `say` (main.ts:399-407).
+    const transcript = await runCliPipedTo([mediaPath], "true", {
+      env,
+      sinkPath: join(dir, "transcript.txt"),
+    });
+    expect(transcript.stderr).not.toContain("EPIPE");
+    expect(transcript.exitCode).toBe(0);
+  }, 30000);
+
+  test("a stdout that fails for any other reason still fails loudly (#1001)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-stdout-ebadf-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const env: Record<string, string> = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+
+    // fd 1 opened read-only: every write fails EBADF. Not a reader leaving, so the run has to
+    // say what went wrong and exit non-zero rather than pretend the audio was delivered.
+    const run = await runCliWithShellStdout(
+      ["say", "--voice", "en-am_michael", "тест потока"],
+      "1</dev/null",
+      env,
+    );
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stderr).toContain("failed writing to stdout");
+    expect(run.stderr).toContain("EBADF");
+    expect(run.stderr).not.toContain("at writeFast");
   }, 30000);
 });
