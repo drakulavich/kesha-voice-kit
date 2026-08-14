@@ -19,5 +19,5 @@
 
 - [x] 4.1 Sabotage exact-head enforcement and prove the targeted test fails; restore and rerun
 - [x] 4.2 Sabotage dirty-worktree protection and prove the targeted test fails; restore and rerun
-- [ ] 4.3 Run targeted tests, type check, OpenSpec strict validation and `just preflight`
+- [x] 4.3 Run targeted tests, type check, OpenSpec strict validation and `just preflight`
 - [ ] 4.4 Push a draft PR with `Closes #1032`; verify exact closing reference, draft/head state and clean worktree
