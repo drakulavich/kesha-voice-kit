@@ -4,13 +4,14 @@
 
 Labels remain the durable external truth, while a gate needs durable evidence that can be
 recovered by another checkout. A GitHub PR comment containing a small versioned JSON marker
-binds the approval and CI decision to one exact head SHA. It is not an ignored local ledger.
+binds the approval and CI decision to one exact head SHA. It is not an ignored local ledger
+or a provider-specific agent artifact.
 
 ## Decisions
 
 ### A repository-local Bun script owns the command boundary
 
-`package.json` exposes `bun run backlog -- <subcommand>`. `scripts/backlog.ts` parses only
+`package.json` exposes `bun run conveyor -- <subcommand>`. `scripts/backlog.ts` parses only
 the phase-1 flags and maps results to stable exit codes. `scripts/backlog-conveyor.ts` holds
 the pure decision logic and a narrow runner interface so fixture tests never contact GitHub
 or a user worktree.
@@ -22,14 +23,18 @@ the current `headRefOid` through the REST API, and required contexts from the de
 protection endpoint. Every JSON response is shape-checked before use. Commands use argv
 arrays exclusively; no user-controlled input is interpolated in a shell.
 
-### Gate evidence is SHA-bound and independently approved
+### Gate evidence is SHA-bound, independently approved, and provider-neutral
 
 `gate` accepts only an open, non-draft, mergeable PR to the default branch, with exactly the
 requested closing issue. An `APPROVED` review by someone other than the PR author must name
 the current head SHA. Required contexts are read from branch protection and each matching
 check/status must be terminal and successful; skipped, pending, absent, or non-successful
-contexts fail. The gate comment records schema version, issue, PR, head SHA and the approval
-evidence. A later `sync` removes `merge-ready` when this marker no longer matches the head.
+contexts fail. `gate --evidence <path>` consumes a JSON object with `provider` (any non-empty
+string), `verdict: "APPROVED"`, exact `headSha`, `uri`, and SHA-256 `digest`. The versioned
+comment records exactly that portable evidence object with issue and PR identifiers. Any two
+orchestrators therefore produce and consume the same GitHub state; the command never reads
+agent-local settings, state, model names, or provider-specific artifact formats. A later
+`sync` removes `merge-ready` when this marker no longer matches the head.
 
 ### Worktree deletion is deliberately harder than label cleanup
 

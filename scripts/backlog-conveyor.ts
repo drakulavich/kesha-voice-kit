@@ -16,9 +16,15 @@ export interface GateMarker {
   version: 1;
   issue: number;
   pr: number;
+  evidence: GateEvidence;
+}
+
+export interface GateEvidence {
+  provider: string;
+  verdict: "APPROVED";
   headSha: string;
-  reviewer: string;
-  approvedAt: string;
+  uri: string;
+  digest: string;
 }
 
 export interface GateFacts {
@@ -38,6 +44,7 @@ export interface GateFacts {
   };
   requiredContexts: string[];
   checks: Array<{ name: string; state: string }>;
+  evidence: GateEvidence;
   marker: GateMarker | null;
 }
 
@@ -136,7 +143,7 @@ function closingIssues(value: unknown, source: string): number[] {
 }
 
 function matchingBranch(branch: string | null, issue: number): boolean {
-  return branch === `issue-${issue}` || branch === `feat/issue-${issue}`;
+  return new RegExp(`^(?:[^/]+/)?issue-${issue}$`).test(branch ?? "");
 }
 
 function sameNumbers(actual: number[], expected: number[]): boolean {
@@ -145,6 +152,19 @@ function sameNumbers(actual: number[], expected: number[]): boolean {
 
 export function encodeGateMarker(marker: GateMarker): string {
   return `<!-- kesha-backlog-gate:v1 ${JSON.stringify(marker)} -->`;
+}
+
+export function parseGateEvidence(value: unknown, source = "gate evidence"): GateEvidence {
+  const evidence = requiredRecord(value, source);
+  const provider = requiredString(evidence.provider, `${source}.provider`);
+  const verdict = requiredString(evidence.verdict, `${source}.verdict`);
+  if (verdict !== "APPROVED") throw new OperationalError(`${source}.verdict must be APPROVED`);
+  const headSha = requiredString(evidence.headSha, `${source}.headSha`);
+  if (!/^[0-9a-f]{40,64}$/i.test(headSha)) throw new OperationalError(`${source}.headSha must be a Git SHA`);
+  const uri = requiredString(evidence.uri, `${source}.uri`);
+  const digest = requiredString(evidence.digest, `${source}.digest`);
+  if (!/^[0-9a-f]{64}$/i.test(digest)) throw new OperationalError(`${source}.digest must be a SHA-256 digest`);
+  return { provider, verdict: "APPROVED", headSha, uri, digest };
 }
 
 export function parseGateMarker(body: string): GateMarker | null {
@@ -157,9 +177,7 @@ export function parseGateMarker(body: string): GateMarker | null {
       version: 1,
       issue: requiredNumber(value.issue, "gate marker.issue"),
       pr: requiredNumber(value.pr, "gate marker.pr"),
-      headSha: requiredString(value.headSha, "gate marker.headSha"),
-      reviewer: requiredString(value.reviewer, "gate marker.reviewer"),
-      approvedAt: requiredString(value.approvedAt, "gate marker.approvedAt"),
+      evidence: parseGateEvidence(value.evidence, "gate marker.evidence"),
     };
   } catch {
     return null;
@@ -174,6 +192,7 @@ export function evaluateGate(facts: GateFacts): Evaluation {
   if (pr.mergeable !== "MERGEABLE") violations.push(`pull request is not mergeable (${pr.mergeable})`);
   if (pr.baseRefName !== facts.defaultBranch) violations.push(`pull request base '${pr.baseRefName}' is not default branch '${facts.defaultBranch}'`);
   if (!sameNumbers(pr.closingIssueNumbers, [facts.issue])) violations.push(`closing issues must equal [${facts.issue}]`);
+  if (facts.evidence.headSha !== pr.headSha) violations.push("review evidence is not bound to the current head SHA");
   const approval = pr.reviews.find(
     (review) => review.state === "APPROVED" && review.author !== null && review.author !== pr.author && review.commitSha === pr.headSha && review.submittedAt !== null,
   );
@@ -186,10 +205,8 @@ export function evaluateGate(facts: GateFacts): Evaluation {
       violations.push(`required check '${context}' is ${results.find((result) => result.state !== "SUCCESS")!.state}`);
     }
   }
-  const marker: GateMarker | null = approval && approval.author !== null && approval.submittedAt !== null
-    ? { version: 1, issue: facts.issue, pr: facts.pr, headSha: pr.headSha, reviewer: approval.author, approvedAt: approval.submittedAt! }
-    : null;
-  const markerCurrent = facts.marker !== null && facts.marker.issue === facts.issue && facts.marker.pr === facts.pr && facts.marker.headSha === pr.headSha;
+  const marker: GateMarker | null = approval ? { version: 1, issue: facts.issue, pr: facts.pr, evidence: facts.evidence } : null;
+  const markerCurrent = facts.marker !== null && facts.marker.issue === facts.issue && facts.marker.pr === facts.pr && JSON.stringify(facts.marker.evidence) === JSON.stringify(facts.evidence);
   const safeActions: Evaluation["safeActions"] = [];
   if (violations.length === 0 && marker && !markerCurrent) safeActions.push({ kind: "create-marker", pr: facts.pr, marker });
   if (violations.length === 0 && !pr.labels.includes("merge-ready")) safeActions.push({ kind: "add-merge-ready", pr: facts.pr });
@@ -202,7 +219,7 @@ export function evaluateSync(facts: SyncFacts): Evaluation {
   for (const pr of facts.pullRequests) {
     if (
       pr.labels.includes("merge-ready") &&
-      (!pr.marker || pr.marker.pr !== pr.number || !sameNumbers(pr.closingIssueNumbers, [pr.marker.issue]) || pr.marker.headSha !== pr.headSha)
+      (!pr.marker || pr.marker.pr !== pr.number || !sameNumbers(pr.closingIssueNumbers, [pr.marker.issue]) || pr.marker.evidence.headSha !== pr.headSha)
     ) {
       findings.push(`PR #${pr.number} has stale merge-ready evidence`);
       safeActions.push({ kind: "remove-merge-ready", pr: pr.number });
@@ -338,15 +355,15 @@ async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {
 }
 
 async function loadSyncPullRequests(runner: Runner, repo: { owner: string; name: string }): Promise<SyncFacts["pullRequests"]> {
-  const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "all", "--limit", "100", "--json", "number,state,headRefOid,labels,closingIssuesReferences"], "gh pr list"), "gh pr list");
-  const prs: SyncFacts["pullRequests"] = [];
-  for (const [index, entry] of raw.entries()) {
+  const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "all", "--limit", "100", "--json", "number,state,mergedAt,headRefOid,labels,closingIssuesReferences"], "gh pr list"), "gh pr list");
+  const parsed = raw.map((entry, index) => {
     const pr = requiredRecord(entry, `gh pr list[${index}]`);
     const number = requiredNumber(pr.number, `gh pr list[${index}].number`);
     const prLabels = labels(pr.labels, `gh pr list[${index}].labels`);
-    prs.push({ number, state: requiredString(pr.state, `gh pr list[${index}].state`), headSha: requiredString(pr.headRefOid, `gh pr list[${index}].headRefOid`), labels: prLabels, closingIssueNumbers: closingIssues(pr.closingIssuesReferences, `gh pr list[${index}].closingIssuesReferences`), marker: prLabels.includes("merge-ready") ? await loadMarker(runner, repo, number) : null });
-  }
-  return prs;
+    return { number, state: optionalString(pr.mergedAt, `gh pr list[${index}].mergedAt`) === null ? requiredString(pr.state, `gh pr list[${index}].state`) : "MERGED", headSha: requiredString(pr.headRefOid, `gh pr list[${index}].headRefOid`), labels: prLabels, closingIssueNumbers: closingIssues(pr.closingIssuesReferences, `gh pr list[${index}].closingIssuesReferences`) };
+  });
+  const markers = await Promise.all(parsed.map(async (pr) => (pr.labels.includes("merge-ready") ? await loadMarker(runner, repo, pr.number) : null)));
+  return parsed.map((pr, index) => ({ ...pr, marker: markers[index]! }));
 }
 
 interface ListedWorktree { path: string; branch: string | null }
@@ -419,10 +436,10 @@ export async function sync(runner: Runner, apply: boolean): Promise<Evaluation> 
   return evaluation;
 }
 
-export async function gate(runner: Runner, issue: number, pr: number, apply: boolean): Promise<Evaluation> {
+export async function gate(runner: Runner, issue: number, pr: number, evidence: GateEvidence, apply: boolean): Promise<Evaluation> {
   const repo = await repository(runner);
   const pullRequest = await loadPullRequest(runner, repo, pr);
-  const facts: GateFacts = { issue, pr, defaultBranch: repo.defaultBranch, pullRequest, requiredContexts: await loadRequiredContexts(runner, repo, repo.defaultBranch), checks: await loadChecks(runner, repo, pullRequest.headSha), marker: await loadMarker(runner, repo, pr) };
+  const facts: GateFacts = { issue, pr, defaultBranch: repo.defaultBranch, pullRequest, requiredContexts: await loadRequiredContexts(runner, repo, repo.defaultBranch), checks: await loadChecks(runner, repo, pullRequest.headSha), evidence, marker: await loadMarker(runner, repo, pr) };
   const evaluation = evaluateGate(facts);
   if (apply && evaluation.violations.length === 0) await applyActions(runner, evaluation.safeActions, repo);
   return evaluation;

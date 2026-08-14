@@ -9,9 +9,9 @@ instead of another local source of truth.
 
 ## What Changes
 
-- Add a tracked Bun command with `sync`, `gate`, and `close` subcommands, deterministic
+- Add a tracked, agent-agnostic Bun command with `sync`, `gate`, and `close` subcommands, deterministic
   human output, and a versioned JSON report.
-- Keep GitHub labels and a SHA-bound structured PR comment as durable state; the ignored
+- Keep GitHub labels and a provider-neutral, SHA-bound structured PR comment as durable state; the ignored
   markdown ledger remains non-authoritative.
 - Make all mutations opt-in with `--apply`, idempotent, and narrowly constrained to
   reported repairs.
@@ -20,6 +20,7 @@ instead of another local source of truth.
 
 - Collision scheduling, priority scoring, metrics, auto-merge, or a daemon/database.
 - Replacing GitHub labels or importing the ignored markdown ledger.
+- Depending on a named agent, model, local settings, or provider-specific artifact format.
 - Automatically removing a dirty or out-of-repository worktree.
 
 ## Impact

@@ -1,13 +1,13 @@
 ## 1. Contract and executable boundary
 
 - [ ] 1.1 Add the OpenSpec proposal, design, delta specification, and strict validation
-- [ ] 1.2 Add `bun run backlog -- sync|gate|close`, deterministic text/JSON output and stable exit codes
+- [ ] 1.2 Add `bun run conveyor -- sync|gate|close`, deterministic text/JSON output and stable exit codes
 
 ## 2. Risk-first gate
 
 - [ ] 2.1 RED: fixture tests for a stale approval SHA, wrong closing issue, and skipped/missing required check
 - [ ] 2.2 GREEN: validate exact head, independent approval, exact closing reference, default base, mergeability and green required checks
-- [ ] 2.3 Persist and recover a versioned SHA-bound PR gate marker; make apply idempotent
+- [ ] 2.3 Persist and recover a versioned provider-neutral SHA-bound PR gate marker; make apply idempotent
 
 ## 3. Reconciliation and close safety
 

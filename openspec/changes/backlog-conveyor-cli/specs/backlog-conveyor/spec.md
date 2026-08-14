@@ -2,7 +2,7 @@
 
 ### Requirement: The repository SHALL expose a safe backlog conveyor command
 
-The repository SHALL expose `bun run backlog -- sync|gate|close`. Each subcommand MUST emit
+The repository SHALL expose `bun run conveyor -- sync|gate|close`. Each subcommand MUST emit
 deterministic human-readable output by default and a JSON report with a declared schema
 version under `--json`. Mutating actions MUST be dry-run unless `--apply` is passed and
 repeating an applied command MUST be idempotent. The command SHALL use distinguishable exit
@@ -23,17 +23,27 @@ codes for success, invariant violation, operational failure, and unsafe/refused 
 
 ### Requirement: Gate SHALL bind independent approval and checks to one head SHA
 
-`gate --issue N --pr P` SHALL require an open, non-draft, mergeable PR to the default
+`gate --issue N --pr P --evidence path` SHALL require an open, non-draft, mergeable PR to the default
 branch, exactly `[N]` in `closingIssuesReferences`, an independent `APPROVED` review for the
 current head SHA, and terminal successful results for every real required check. A stacked
 or non-default-base PR MUST be ineligible. Under `--apply`, a versioned machine-readable
-PR comment MUST bind the marker to the current SHA before `merge-ready` is added.
+PR comment MUST bind the marker to the current SHA before `merge-ready` is added. The evidence
+object MUST be versioned and provider-neutral: any non-empty `provider`, `verdict: APPROVED`,
+exact head SHA, evidence URI/path, and SHA-256 digest. The command MUST NOT depend on a named
+agent, model, local settings, or provider-specific artifact format.
 
 #### Scenario: Ira sees a review made before a push
 
 - GIVEN an approval on SHA `a` and PR head SHA `b`
 - WHEN Ira runs `gate --issue 1032 --pr 1040`
 - THEN it exits with an invariant violation
+
+#### Scenario: Ira and a second orchestrator share one marker
+
+- GIVEN Ira supplies evidence from provider `review-system-a` for a current head
+- AND a second orchestrator supplies the same valid evidence schema with provider `future-agent-b`
+- WHEN either runs `bun run conveyor -- gate --issue 1032 --pr 1040 --evidence path --apply`
+- THEN the marker is readable by both and no provider name is special-cased
 - AND it does not add `merge-ready`
 
 #### Scenario: Ira encounters a skipped required check

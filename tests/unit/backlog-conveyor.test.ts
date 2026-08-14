@@ -3,12 +3,20 @@ import {
   evaluateClose,
   evaluateGate,
   evaluateSync,
+  parseGateEvidence,
   type CloseFacts,
   type GateFacts,
   type SyncFacts,
 } from "../../scripts/backlog-conveyor";
 
 const head = "a".repeat(40);
+const evidence = {
+  provider: "independent-review-system",
+  verdict: "APPROVED" as const,
+  headSha: head,
+  uri: "https://reviews.example.test/evidence/1",
+  digest: "c".repeat(64),
+};
 
 function gateFacts(overrides: Partial<GateFacts> = {}): GateFacts {
   return {
@@ -28,6 +36,7 @@ function gateFacts(overrides: Partial<GateFacts> = {}): GateFacts {
     },
     requiredContexts: ["🧪 CI"],
     checks: [{ name: "🧪 CI", state: "SUCCESS" }],
+    evidence,
     marker: null,
     ...overrides,
   };
@@ -58,6 +67,15 @@ describe("backlog gate", () => {
 
     expect(evaluateGate(facts).violations).toContain("required check '🧪 CI' is SKIPPED");
   });
+
+  test("accepts arbitrary evidence providers but validates verdict and SHA", () => {
+    expect(parseGateEvidence({ ...evidence, provider: "any-future-orchestrator" })).toEqual({
+      ...evidence,
+      provider: "any-future-orchestrator",
+    });
+    expect(() => parseGateEvidence({ ...evidence, verdict: "PENDING" })).toThrow("verdict must be APPROVED");
+    expect(() => parseGateEvidence({ ...evidence, headSha: "not-a-sha" })).toThrow("headSha must be a Git SHA");
+  });
 });
 
 describe("backlog sync", () => {
@@ -71,7 +89,7 @@ describe("backlog sync", () => {
           headSha: head,
           labels: ["merge-ready"],
           closingIssueNumbers: [1032],
-          marker: { version: 1, issue: 1032, pr: 1040, headSha: "b".repeat(40), reviewer: "reviewer", approvedAt: "2026-08-14T10:00:00Z" },
+          marker: { version: 1, issue: 1032, pr: 1040, evidence: { ...evidence, headSha: "b".repeat(40) } },
         },
       ],
       worktrees: [],
