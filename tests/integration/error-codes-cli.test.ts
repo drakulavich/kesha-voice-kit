@@ -9,7 +9,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "fs";
-import { tmpdir } from "os";
+import { hostname, tmpdir } from "os";
 import { join } from "path";
 import { DEFAULT_TIMEOUT_MS, runCliScenario } from "./cli-scenario";
 
@@ -34,6 +34,8 @@ interface BadInputSpec {
   code: string;
   stderrContains: string[];
   stderrNotContains?: string[];
+  /** Result lines the command legitimately prints before failing; stdout stays empty otherwise. */
+  stdoutContains?: string[];
 }
 
 interface BadInput {
@@ -160,6 +162,58 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       };
     },
   },
+  {
+    // The engine directory exists and cannot be written — the sibling of "cannot be created"
+    // above, and what a Nix read-only-store install hits on every run (#1018).
+    name: "an existing engine directory this user cannot write into",
+    skip: process.platform === "win32" || process.getuid?.() === 0,
+    prepare(dir) {
+      const engineDir = stageUnwritableDir(dir, "read-only-engine");
+      if (!engineDir) return null;
+      return {
+        args: ["install", "--engine-version", UNRELEASED],
+        env: { KESHA_ENGINE_BIN: join(engineDir, "kesha-engine") },
+        code: "E_INVALID_ARG",
+        stderrContains: [
+          `Cannot install engine v${UNRELEASED}`,
+          `${engineDir} is not writable`,
+          "Fix: point KESHA_ENGINE_BIN at a writable path",
+        ],
+        // The pin-override notice is a `kesha install` result line, printed before the failure.
+        stdoutContains: [`Installing engine v${UNRELEASED} instead of the pinned`],
+      };
+    },
+  },
+  {
+    // Waiting is bounded, and the end of the wait is a failure like any other: a lock held by a
+    // live owner we cannot outlast. KESHA_INSTALL_LOCK_WAIT_SECS is what makes it a test rather
+    // than an afternoon.
+    name: "an install that gives up waiting for another install to release the cache",
+    prepare(dir) {
+      const binPath = join(dir, "engine", "bin", "kesha-engine");
+      const lockDir = `${binPath}.lock`;
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(
+        join(lockDir, "owner-held.json"),
+        JSON.stringify({
+          token: "held",
+          pid: process.pid,
+          host: hostname(),
+          startedAt: Date.now(),
+        }),
+      );
+      return {
+        args: ["install", "--engine-version", UNRELEASED],
+        env: { KESHA_ENGINE_BIN: binPath, KESHA_INSTALL_LOCK_WAIT_SECS: "1" },
+        code: "E_INSTALL_RACE",
+        stderrContains: [
+          "Gave up after",
+          `held by pid ${process.pid}`,
+          `${lockDir} and re-run`,
+        ],
+      };
+    },
+  },
 ];
 
 const tempDirs: string[] = [];
@@ -182,7 +236,14 @@ describe("failures the CLI answers without the engine", () => {
       const dir = makeTempDir();
       const spec = input.prepare(dir);
       if (!spec) return;
-      const { args, env, code, stderrContains, stderrNotContains = [] } = spec;
+      const {
+        args,
+        env,
+        code,
+        stderrContains,
+        stderrNotContains = [],
+        stdoutContains = [],
+      } = spec;
       const run = await runCliScenario(args, {
         env: {
           HOME: dir,
@@ -196,7 +257,11 @@ describe("failures the CLI answers without the engine", () => {
       });
 
       expect(run.exitCode).not.toBe(0);
-      expect(run.stdout).toBe("");
+      if (stdoutContains.length === 0) expect(run.stdout).toBe("");
+      for (const needle of stdoutContains) {
+        expect(run.stdout).toContain(needle);
+      }
+      expect(run.stdout).not.toMatch(CODED_ERROR);
       expect(run.stderr).toMatch(CODED_ERROR);
       expect(run.stderr).toContain(`error [${code}]:`);
       for (const needle of stderrContains) {

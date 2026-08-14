@@ -52,6 +52,16 @@ function writeOwner(lockDir: string, token: string, pid: number): void {
   );
 }
 
+/** Scopes the override so a value the developer or the lane already set survives the test. */
+function withLockWaitSecs(value: string): () => void {
+  const saved = process.env.KESHA_INSTALL_LOCK_WAIT_SECS;
+  process.env.KESHA_INSTALL_LOCK_WAIT_SECS = value;
+  return () => {
+    if (saved === undefined) delete process.env.KESHA_INSTALL_LOCK_WAIT_SECS;
+    else process.env.KESHA_INSTALL_LOCK_WAIT_SECS = saved;
+  };
+}
+
 function ownerToken(lockDir: string): string | null {
   const owner = readdirSync(lockDir).find((e) => e.startsWith("owner-"));
   return owner ? owner.slice("owner-".length, -".json".length) : null;
@@ -194,10 +204,34 @@ describe("acquireInstallLock (#997)", () => {
     const release = await acquireInstallLock(binPath, 2_000);
     try {
       await expect(acquireInstallLock(binPath, 200)).rejects.toThrow(
-        new RegExp(`held by pid ${process.pid}[\\s\\S]*\\.lock and re-run`),
+        new RegExp(`E_INSTALL_RACE[\\s\\S]*held by pid ${process.pid}[\\s\\S]*\\.lock and re-run`),
       );
     } finally {
       release();
+    }
+  });
+
+  posixTest("KESHA_INSTALL_LOCK_WAIT_SECS caps the wait instead of the six-hour default", async () => {
+    const binPath = stageBinPath("kesha-lock-env-wait-");
+    const release = await acquireInstallLock(binPath, 2_000);
+    const restoreEnv = withLockWaitSecs("1");
+    try {
+      await expect(acquireInstallLock(binPath)).rejects.toThrow(/E_INSTALL_RACE/);
+    } finally {
+      restoreEnv();
+      release();
+    }
+  }, 30_000);
+
+  test("a KESHA_INSTALL_LOCK_WAIT_SECS that is not a positive number is rejected", async () => {
+    const binPath = stageBinPath("kesha-lock-env-bad-");
+    const restoreEnv = withLockWaitSecs("soon");
+    try {
+      await expect(acquireInstallLock(binPath)).rejects.toThrow(
+        /E_INVALID_ARG[\s\S]*KESHA_INSTALL_LOCK_WAIT_SECS/,
+      );
+    } finally {
+      restoreEnv();
     }
   });
 });
