@@ -2431,7 +2431,7 @@ mod mirror_tests {
         let _lock = crate::util::test_env::lock();
 
         {
-            let _g = EnvGuard::unset("KESHA_MODEL_MIRROR");
+            let _g = EnvGuard::unset(&_lock, "KESHA_MODEL_MIRROR");
             assert_eq!(model_mirror(), None);
             assert_eq!(
                 apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
@@ -2439,7 +2439,7 @@ mod mirror_tests {
             );
         }
         {
-            let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "");
+            let _g = EnvGuard::set(&_lock, "KESHA_MODEL_MIRROR", "");
             assert_eq!(model_mirror(), None);
             assert_eq!(
                 apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
@@ -2447,7 +2447,7 @@ mod mirror_tests {
             );
         }
         {
-            let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "   ");
+            let _g = EnvGuard::set(&_lock, "KESHA_MODEL_MIRROR", "   ");
             assert_eq!(model_mirror(), None);
         }
     }
@@ -2455,7 +2455,11 @@ mod mirror_tests {
     #[test]
     fn rewrites_hf_url_onto_mirror_base_preserving_path() {
         let _lock = crate::util::test_env::lock();
-        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "https://mirror.example.com/kesha");
+        let _g = EnvGuard::set(
+            &_lock,
+            "KESHA_MODEL_MIRROR",
+            "https://mirror.example.com/kesha",
+        );
         assert_eq!(
             apply_mirror("https://huggingface.co/foo/bar/resolve/main/file.onnx"),
             "https://mirror.example.com/kesha/foo/bar/resolve/main/file.onnx"
@@ -2465,7 +2469,11 @@ mod mirror_tests {
     #[test]
     fn strips_trailing_slash_from_mirror_base() {
         let _lock = crate::util::test_env::lock();
-        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "https://mirror.example.com/kesha/");
+        let _g = EnvGuard::set(
+            &_lock,
+            "KESHA_MODEL_MIRROR",
+            "https://mirror.example.com/kesha/",
+        );
         assert_eq!(
             apply_mirror("https://huggingface.co/x/y/resolve/main/z.bin"),
             "https://mirror.example.com/kesha/x/y/resolve/main/z.bin"
@@ -2477,7 +2485,7 @@ mod mirror_tests {
         // github.com release assets (engine binary + avspeech sidecar) must
         // NOT be redirected — KESHA_MODEL_MIRROR only covers model files.
         let _lock = crate::util::test_env::lock();
-        let _g = EnvGuard::set("KESHA_MODEL_MIRROR", "https://mirror.example.com");
+        let _g = EnvGuard::set(&_lock, "KESHA_MODEL_MIRROR", "https://mirror.example.com");
         let url = "https://github.com/drakulavich/kesha-voice-kit/releases/download/v1.3.0/kesha-engine-darwin-arm64";
         assert_eq!(apply_mirror(url), url);
     }
@@ -2816,7 +2824,7 @@ mod tts_tests {
     #[test]
     fn cache_dir_honors_env_var() {
         let _lock = crate::util::test_env::lock();
-        let guard = EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-test-xyz");
+        let guard = EnvGuard::set(&_lock, "KESHA_CACHE_DIR", "/tmp/kesha-test-xyz");
         assert_eq!(cache_dir().unwrap(), PathBuf::from("/tmp/kesha-test-xyz"));
         drop(guard);
     }
@@ -3706,6 +3714,7 @@ mod characterization_tests {
         let _lock = crate::util::test_env::lock();
         let tmp = tempfile::tempdir().unwrap();
         let _guard = crate::util::test_env::EnvGuard::set(
+            &_lock,
             "KESHA_CACHE_DIR",
             tmp.path().to_str().expect("utf-8 temp path"),
         );
@@ -3743,6 +3752,7 @@ mod characterization_tests {
         let _lock = crate::util::test_env::lock();
         let tmp = tempfile::tempdir().unwrap();
         let _guard = crate::util::test_env::EnvGuard::set(
+            &_lock,
             "KESHA_CACHE_DIR",
             tmp.path().to_str().expect("utf-8 temp path"),
         );
@@ -3769,6 +3779,7 @@ mod characterization_tests {
         let _lock = crate::util::test_env::lock();
         let tmp = tempfile::tempdir().unwrap();
         let _guard = crate::util::test_env::EnvGuard::set(
+            &_lock,
             "KESHA_CACHE_DIR",
             tmp.path().to_str().expect("utf-8 temp path"),
         );
@@ -3790,6 +3801,7 @@ mod characterization_tests {
         let _lock = crate::util::test_env::lock();
         let tmp = tempfile::tempdir().unwrap();
         let _guard = crate::util::test_env::EnvGuard::set(
+            &_lock,
             "KESHA_CACHE_DIR",
             tmp.path().to_str().expect("utf-8 temp path"),
         );
@@ -4872,7 +4884,7 @@ mod retry_tests {
             partial_response(&body, cut),
         ]);
         let _lock = crate::util::test_env::lock();
-        let _guard = crate::util::test_env::EnvGuard::set("KESHA_MODEL_MIRROR", &base);
+        let _guard = crate::util::test_env::EnvGuard::set(&_lock, "KESHA_MODEL_MIRROR", &base);
         let cache = TempCache::new("mirror-resume");
         let file = model_file(
             "models/retry/payload.bin",

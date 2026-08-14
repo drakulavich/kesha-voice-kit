@@ -1783,9 +1783,13 @@ mod tests {
         let _env_lock = crate::util::test_env::lock();
         let cache = tempfile::tempdir().unwrap();
         let missing_diarize_model = cache.path().join("missing-diarize.mlpackage");
-        let _cache_guard =
-            crate::util::test_env::EnvGuard::set("KESHA_CACHE_DIR", cache.path().to_str().unwrap());
+        let _cache_guard = crate::util::test_env::EnvGuard::set(
+            &_env_lock,
+            "KESHA_CACHE_DIR",
+            cache.path().to_str().unwrap(),
+        );
         let _diarize_guard = crate::util::test_env::EnvGuard::set(
+            &_env_lock,
             "KESHA_DIARIZE_MODEL_PATH",
             missing_diarize_model.to_str().unwrap(),
         );

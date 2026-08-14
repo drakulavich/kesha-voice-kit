@@ -900,7 +900,7 @@ mod tests {
     fn recovery_audio_lives_under_the_kesha_cache() {
         let _lock = crate::util::test_env::lock();
         let _guard =
-            crate::util::test_env::EnvGuard::set("KESHA_CACHE_DIR", "/tmp/kesha-962-cache");
+            crate::util::test_env::EnvGuard::set(&_lock, "KESHA_CACHE_DIR", "/tmp/kesha-962-cache");
         assert_eq!(
             spill::recovery_dir().unwrap(),
             std::path::PathBuf::from("/tmp/kesha-962-cache/recordings")
@@ -1086,7 +1086,7 @@ mod tests {
         let _lock = crate::util::test_env::lock();
         let cache = tempfile::tempdir().unwrap();
         let cache_path = cache.path().to_string_lossy().into_owned();
-        let _guard = crate::util::test_env::EnvGuard::set("KESHA_CACHE_DIR", &cache_path);
+        let _guard = crate::util::test_env::EnvGuard::set(&_lock, "KESHA_CACHE_DIR", &cache_path);
 
         let err = match load_live_endpoint(crate::vad::EndpointConfig::default()) {
             Ok(_) => panic!("a missing VAD model must not start endpointing"),

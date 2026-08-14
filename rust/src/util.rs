@@ -28,44 +28,58 @@ pub fn argmax(xs: &[f32]) -> usize {
 pub mod test_env {
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
-    /// Crate-wide lock for every env-mutating test. Poisoning is ignored:
-    /// a panicked env test must not cascade into unrelated ones.
-    pub fn lock() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+    /// Crate-wide lock for every env-mutating test.
+    pub struct EnvLock {
+        _guard: MutexGuard<'static, ()>,
     }
 
-    /// Restores the env var to its original value on drop. Hold the guard
-    /// from [`lock`] for the whole test — `EnvGuard` deliberately does not
-    /// take it itself so a test can set several vars.
-    pub struct EnvGuard {
+    /// Acquires the crate-wide env lock. Poisoning is ignored so a panicked
+    /// env test does not cascade into unrelated ones.
+    pub fn lock() -> EnvLock {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        EnvLock {
+            _guard: LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()),
+        }
+    }
+
+    /// Restores the env var to its original value on drop while its borrowed
+    /// [`EnvLock`] keeps env mutation serialized.
+    pub struct EnvGuard<'lock> {
         key: &'static str,
         original: Option<String>,
+        _lock: std::marker::PhantomData<&'lock EnvLock>,
     }
 
-    impl EnvGuard {
-        pub fn set(key: &'static str, val: &str) -> Self {
+    impl<'lock> EnvGuard<'lock> {
+        pub fn set(_lock: &'lock EnvLock, key: &'static str, val: &str) -> Self {
             let original = std::env::var(key).ok();
-            // SAFETY: callers must hold [`lock`], which serializes every env-mutating
-            // test in the crate. #954 tracks making that a type-level requirement.
+            // SAFETY: the borrowed `EnvLock` serializes every env-mutating test in the crate.
             unsafe { std::env::set_var(key, val) };
-            Self { key, original }
+            Self {
+                key,
+                original,
+                _lock: std::marker::PhantomData,
+            }
         }
 
-        pub fn unset(key: &'static str) -> Self {
+        pub fn unset(_lock: &'lock EnvLock, key: &'static str) -> Self {
             let original = std::env::var(key).ok();
-            // SAFETY: callers must hold [`lock`], which serializes every env-mutating
-            // test in the crate. #954 tracks making that a type-level requirement.
+            // SAFETY: the borrowed `EnvLock` serializes every env-mutating test in the crate.
             unsafe { std::env::remove_var(key) };
-            Self { key, original }
+            Self {
+                key,
+                original,
+                _lock: std::marker::PhantomData,
+            }
         }
     }
 
-    impl Drop for EnvGuard {
+    impl Drop for EnvGuard<'_> {
         fn drop(&mut self) {
-            // Locals drop in reverse order, so a test that took [`lock`] first still holds it here.
+            // `EnvGuard` cannot outlive its borrowed `EnvLock`.
             match &self.original {
                 // SAFETY: restoration runs under that still-held lock, like the set did.
                 Some(v) => unsafe { std::env::set_var(self.key, v) },
@@ -73,5 +87,20 @@ pub mod test_env {
                 None => unsafe { std::env::remove_var(self.key) },
             }
         }
+    }
+
+    #[test]
+    fn env_guard_mutators_require_a_borrowed_env_lock() {
+        fn set<'lock>(lock: &'lock EnvLock) -> EnvGuard<'lock> {
+            EnvGuard::set(lock, "KESHA_TEST_ENV_GUARD", "value")
+        }
+
+        fn unset<'lock>(lock: &'lock EnvLock) -> EnvGuard<'lock> {
+            EnvGuard::unset(lock, "KESHA_TEST_ENV_GUARD")
+        }
+
+        let lock = lock();
+        drop(set(&lock));
+        drop(unset(&lock));
     }
 }
