@@ -909,7 +909,7 @@ describe("normalizeTranscribeResult", () => {
       text: "hello",
     });
     expect(() => normalizeTranscribeResult("/tmp/a.wav", " \n")).toThrow(
-      "No transcript returned.",
+      "No speech was detected in the recording.",
     );
   });
 });

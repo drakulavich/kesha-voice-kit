@@ -266,19 +266,12 @@ export function startDictationSession(
   }
 
   async function deliverTranscript(result: TranscribeResult) {
-    const transcript = result.text.trim();
-    if (!transcript) {
-      throw new Error("No speech was detected in the recording.");
-    }
-    await deps.copyToClipboard(transcript);
+    await deps.copyToClipboard(result.text);
     await deps.showToast({
       style: "success",
       title: "Copied transcript",
     });
-    setState({
-      status: "ok",
-      result: { ...result, text: transcript },
-    });
+    setState({ status: "ok", result });
   }
 
   function releaseResources() {
@@ -458,8 +451,10 @@ export function normalizeTranscribeResult(
   stdout: string,
 ): TranscribeResult {
   const text = stdout.trim();
+  // The only empty-transcript guard on the path, so it carries the wording the
+  // user needs — talking too quietly is the common cause, not a broken CLI (#943).
   if (!text) {
-    throw new Error("No transcript returned.");
+    throw new Error("No speech was detected in the recording.");
   }
   return { file: audioPath, text };
 }
