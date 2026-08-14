@@ -139,6 +139,27 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       };
     },
   },
+  {
+    // mkdir(<file>) raises EEXIST, not the ENOTDIR of mkdir(<file>/sub): the same misconfiguration
+    // reaches the same code only if both errnos map to it.
+    name: "KESHA_ENGINE_BIN whose parent directory is itself a regular file",
+    prepare(dir) {
+      const file = join(dir, "not-a-dir");
+      writeFileSync(file, "");
+      const binPath = join(file, "kesha-engine");
+      return {
+        args: ["install", "--engine-version", UNRELEASED],
+        env: { KESHA_ENGINE_BIN: binPath },
+        code: "E_INVALID_ARG",
+        stderrContains: [
+          "KESHA_ENGINE_BIN",
+          binPath,
+          "Fix: point KESHA_ENGINE_BIN at a path whose parent directories are directories, not files",
+        ],
+        stderrNotContains: ["EEXIST:"],
+      };
+    },
+  },
 ];
 
 const tempDirs: string[] = [];

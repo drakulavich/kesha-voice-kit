@@ -649,6 +649,8 @@ const ENGINE_DIR_PATH_ERRNOS: Record<string, string> = {
   EACCES: "permission denied",
   EPERM: "permission denied",
   ENOTDIR: "a component of it is a file, not a directory",
+  // mkdir(recursive) raises this, not ENOTDIR, when the engine directory itself is an existing file.
+  EEXIST: "it already exists as a file, not a directory",
   EROFS: "the filesystem is read-only",
   ELOOP: "the path loops through symlinks",
   ENAMETOOLONG: "the path is too long",
@@ -698,7 +700,7 @@ function ensureEngineDirCreatable(binPath: string): void {
           "re-run `kesha install`; if it persists, file a bug with `kesha support-bundle`.",
       );
     }
-    const fix = engineDirFix(setting?.name, errno === "ENOTDIR", engineDir);
+    const fix = engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir);
     throw new Error(`error [${TS_NATIVE_CODES.INVALID_ARG}]: ${what}.\n  Fix: ${fix}`);
   }
 }
