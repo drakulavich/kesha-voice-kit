@@ -49,3 +49,16 @@ the `requiredFailure` shape above.
 
 Running ungated is still available; it just has to be deliberate now. Add the suite to
 `UNGATED_BY_DESIGN` in that file with a one-line reason, and the loud CI signal is yours.
+
+## No suite may leave a process running
+
+`bunfig.toml` preloads `tests/helpers/leak-guard.ts` into every suite, so a stub that outlives the
+test that spawned it fails the run and is reaped rather than sitting in `ps` for days (#1003). It
+reaps twice: after each test, the pids `waitForPidFile` handed out — that is every fake engine
+announcing itself — and after each file, every descendant the runner still has, which is how an
+engine spawned in-process gets caught. Signal escalates SIGTERM → SIGKILL, because the fixtures
+worth catching are the ones that trap SIGTERM.
+
+Nothing to do at a call site: `waitForPidFile` tracks what it returns. Only descendants and pids a
+test actually saw are ever signalled, so a parallel lane's processes are out of reach by
+construction.
