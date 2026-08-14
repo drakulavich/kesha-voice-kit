@@ -11,6 +11,7 @@ import {
 } from "fs";
 import { hostname } from "os";
 import { dirname, join } from "path";
+import { TS_NATIVE_CODES } from "./error-codes";
 import { errorMessage } from "./error-utils";
 import { log } from "./log";
 
@@ -170,12 +171,36 @@ function publishLock(lockDir: string, owner: LockOwner): PublishOutcome {
   }
 }
 
+/**
+ * The wait ceiling in seconds, for a job that would rather fail than sit behind a holder it
+ * cannot outlast (and what makes the timeout reachable in a test).
+ */
+function configuredMaxWaitMs(): number {
+  const raw = process.env.KESHA_INSTALL_LOCK_WAIT_SECS?.trim();
+  if (!raw) return MAX_WAIT_MS;
+  const secs = Number(raw);
+  if (!Number.isFinite(secs) || secs <= 0) {
+    throw new Error(
+      `error [${TS_NATIVE_CODES.INVALID_ARG}]: KESHA_INSTALL_LOCK_WAIT_SECS="${raw}" is not a ` +
+        "positive number of seconds.\n  Fix: set it to how many seconds `kesha install` may wait " +
+        "for another install to release the cache, or unset it for the default (6 h).",
+    );
+  }
+  return secs * 1_000;
+}
+
+/**
+ * Giving up on the lock is `E_INSTALL_RACE` for the same reason an overwritten cache is: another
+ * install reached this cache first, nothing was written, and re-running once it is quiet is the
+ * fix — so a consumer retrying on that code does the right thing here too (#1018).
+ */
 function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: number): Error {
   const waited =
     waitedMs >= 60_000 ? `${Math.round(waitedMs / 60_000)} min` : `${Math.round(waitedMs / 1_000)}s`;
   const who = holder ? `pid ${holder.pid} on ${holder.host}` : "an install it cannot identify";
   return new Error(
-    `Gave up after ${waited} waiting for another \`kesha install\` to release ` +
+    `error [${TS_NATIVE_CODES.INSTALL_RACE}]: ` +
+      `Gave up after ${waited} waiting for another \`kesha install\` to release ` +
       `${dirname(binPath)}: it is held by ${who}.\n` +
       `  Fix: wait for that install to finish, or — if none is running — delete ` +
       `${binPath}.lock and re-run. Concurrent jobs want private caches ` +
@@ -192,7 +217,7 @@ function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: numbe
  */
 export async function acquireInstallLock(
   binPath: string,
-  maxWaitMs = MAX_WAIT_MS,
+  maxWaitMs = configuredMaxWaitMs(),
 ): Promise<() => void> {
   const lockDir = `${binPath}.lock`;
   const owner: LockOwner = {

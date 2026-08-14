@@ -762,7 +762,10 @@ async function installLockedEngine(
   } else {
     if (!canWriteEngineDir) {
       throw new Error(
-        `Cannot install engine v${version}: ${engineDir} is not writable ` +
+        // The sibling of the engine dir that cannot be *created*, which #998 coded the same way:
+        // both are a configured path this user cannot write the engine into.
+        `error [${TS_NATIVE_CODES.INVALID_ARG}]: ` +
+          `Cannot install engine v${version}: ${engineDir} is not writable ` +
           `(installed: ${installedVersion ? `v${installedVersion}` : "no recorded version"}).\n` +
           "  Fix: point KESHA_ENGINE_BIN at a writable path, or install into a writable prefix.",
       );
