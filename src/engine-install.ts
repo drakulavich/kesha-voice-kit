@@ -8,7 +8,7 @@ import {
   TRANSCRIBE_DIARIZE_FEATURE,
   type EngineCapabilities,
 } from "./engine";
-import { engineFunctionalHealth, probeExecutable } from "./engine-health";
+import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { TS_NATIVE_CODES } from "./error-codes";
 import { acquireInstallLock } from "./install-lock";
@@ -617,9 +617,23 @@ export function assertNotRealCacheUnderTest(binPath: string): void {
  * #997: exit 0 from `kesha install` has to mean the requested engine is the one on disk.
  * The lock covers concurrent CLI runs; this covers what it cannot — a manual cache edit, an
  * install that predates the lock, or a lock the filesystem refused to grant.
+ *
+ * The binary is asked its own version because the marker alone cannot tell: a peer that
+ * publishes its engine here by rename leaves our marker standing, and "the marker says what
+ * we wrote" would then pass while another engine answers every later command.
  */
-function assertRequestedVersionLanded(binPath: string, version: string): void {
+async function assertRequestedVersionLanded(binPath: string, version: string): Promise<void> {
   const landed = readInstalledEngineVersion(binPath);
+  const reported = await readExecutableVersion(binPath);
+  if (reported && reported !== version) {
+    throw new Error(
+      `error [${TS_NATIVE_CODES.INSTALL_RACE}]: installed engine v${version}, but the binary in ` +
+        `${dirname(binPath)} reports v${reported} — something else published an engine there ` +
+        "during this install.\n" +
+        `  Fix: re-run \`kesha install --engine-version ${version}\` once no other install is ` +
+        "running against this cache (KESHA_CACHE_DIR / KESHA_ENGINE_BIN pick a private one).",
+    );
+  }
   if (landed === version && existsSync(binPath)) return;
   throw new Error(
     `error [${TS_NATIVE_CODES.INSTALL_RACE}]: installed engine v${version}, but ${dirname(binPath)} ` +
@@ -715,7 +729,7 @@ async function installLockedEngine(
     cleanupRetiredSidecars(engineDir);
   }
 
-  assertRequestedVersionLanded(binPath, version);
+  await assertRequestedVersionLanded(binPath, version);
   log.success(`Backend installed successfully (engine v${version}).`);
   return binPath;
 }

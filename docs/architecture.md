@@ -68,6 +68,19 @@ Cache boundary: `kesha install` and opt-in feature installs populate the local
 cache; ordinary transcription and speech commands fail fast if required assets
 are missing.
 
+Concurrent installs: runs sharing one engine directory serialise on a
+`<engine-binary>.lock` directory, and a second run waits for the first instead
+of downloading over it ([#997](https://github.com/drakulavich/kesha-voice-kit/issues/997)).
+Where that lock cannot be created or cleared — a read-only Nix store, foreign
+permissions — the install runs unserialised rather than failing an install that
+would otherwise work; what keeps the result honest either way is the check
+before the success line, which asks both the version marker *and* the installed
+binary (`kesha-engine --version`) whether they are the requested release and
+fails with `E_INSTALL_RACE` if not. That promise holds for the moment the
+success line prints: once the lock is released, another install may replace the
+engine, so concurrent jobs that must pin a version want private caches
+(`KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`).
+
 ## Models
 
 | Model | Task | Size | Source |

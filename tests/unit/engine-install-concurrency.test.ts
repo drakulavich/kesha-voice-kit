@@ -10,13 +10,17 @@ const VERSION_A = "9.9.9-alpha.1";
 const VERSION_B = "9.9.8";
 
 /**
- * Answers `--capabilities-json`, `install` and `say`. `install` brackets itself in `log` so a
- * test can see whether two installs were inside the engine at once, and holds the cache for
- * `KESHA_TEST_INSTALL_SLEEP` seconds so the overlap window is set by the test, not by timing.
- * `extraInstallBody` stands in for a writer the lock cannot cover.
+ * Answers `--version`, `--capabilities-json`, `install` and `say`. `install` brackets itself in
+ * `log` so a test can see whether two installs were inside the engine at once, and holds the
+ * cache for `KESHA_TEST_INSTALL_SLEEP` seconds so the overlap window is set by the test, not by
+ * timing. `extraInstallBody` stands in for a writer the lock cannot cover.
  */
-function engineScript(logPath: string, extraInstallBody = ""): string {
+function engineScript(logPath: string, version: string, extraInstallBody = ""): string {
   return `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "kesha-engine ${version}"
+  exit 0
+fi
 if [ "$1" = "--capabilities-json" ]; then
   printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":["tts"]}'
   exit 0
@@ -64,14 +68,17 @@ function stageEngineDir(prefix: string): string {
   return binPath;
 }
 
-/** Serves the stub engine for every release asset. */
+/** Serves a stub engine that reports the version its own release URL names. */
 function stubReleases(extraInstallBody = ""): void {
-  const body = engineScript(engineLog, extraInstallBody);
-  globalThis.fetch = (async (_input: Request | URL | string): Promise<Response> =>
-    new Response(body, {
+  globalThis.fetch = (async (input: Request | URL | string): Promise<Response> => {
+    const url = String(input instanceof Request ? input.url : input);
+    const version = /\/download\/v([^/]+)\//.exec(url)?.[1] ?? "0.0.0";
+    const body = engineScript(engineLog, version, extraInstallBody);
+    return new Response(body, {
       status: 200,
       headers: { "content-length": String(Buffer.byteLength(body)) },
-    })) as typeof fetch;
+    });
+  }) as typeof fetch;
 }
 
 interface SuccessClaim {
@@ -99,7 +106,7 @@ function spawnPeerInstall(version: string, holdSecs: number) {
   const dir = mkdtempSync(join(tmpdir(), "kesha-install-peer-"));
   tempDirs.push(dir);
   const script = join(dir, "peer-install.ts");
-  const body = engineScript(engineLog);
+  const body = engineScript(engineLog, version);
   writeFileSync(
     script,
     `import { installEngine } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
@@ -163,6 +170,27 @@ describe("concurrent kesha install (#997)", () => {
     await expect(installEngine({ version: VERSION_A })).rejects.toThrow(/E_INSTALL_RACE/);
 
     expect(claims).toEqual([]);
+  }, 30_000);
+
+  posixTest("an engine swapped in under our marker fails the install", async () => {
+    const binPath = stageEngineDir("kesha-install-swapped-");
+    // What a peer publishing its own engine by rename looks like from here: our marker still
+    // names the version we installed, while the binary answering every later command is theirs.
+    stubReleases(
+      [
+        `  printf '%s\\n' '#!/bin/sh' 'echo "kesha-engine ${VERSION_B}"' 'exit 0' > "$0.peer"`,
+        `  chmod +x "$0.peer"`,
+        `  mv "$0.peer" "$0"`,
+      ].join("\n"),
+    );
+    const claims = captureSuccessClaims(binPath);
+
+    await expect(installEngine({ version: VERSION_A })).rejects.toThrow(
+      new RegExp(`E_INSTALL_RACE.*reports v${VERSION_B.replace(/\./g, "\\.")}`, "s"),
+    );
+
+    expect(claims).toEqual([]);
+    expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
   }, 30_000);
 
   posixTest("an install killed mid-flight does not wedge the next one", async () => {
