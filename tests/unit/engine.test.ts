@@ -482,6 +482,72 @@ describe("engine", () => {
       expect(await waitForPidExit(helperPid)).toBe(true);
     });
   });
+
+  /**
+   * #1002: a 51 s diarization model load read as a hang because the engine's stderr was
+   * collected to EOF before any of it was forwarded, so the lines announcing the wait
+   * only landed once the wait was over. The stub blocks until the caller acknowledges
+   * the line and reports in its own transcript whether that happened, so the contract —
+   * progress reaches the caller while the engine still works — is asserted with no
+   * wall-clock comparison to go flaky.
+   */
+  fakeEngineTest("progress reaches the caller while the engine is still running", async () => {
+    const ack = join(mkdtempSync(join(tmpdir(), "kesha-live-progress-")), "ack");
+    const engine = writeTranscribingEngine(
+      "kesha-engine-live-progress-",
+      ["transcribe.segments"],
+      `  echo 'diarize: loading the CoreML model on all' >&2
+  i=0
+  while [ "$i" -lt 20 ]; do
+    if [ -e '${ack}' ]; then
+      printf '%s\\n' '{"text":"streamed","segments":[]}'
+      exit 0
+    fi
+    sleep 0.05
+    i=$((i + 1))
+  done
+  printf '%s\\n' '{"text":"buffered","segments":[]}'`,
+    );
+
+    const seen: string[] = [];
+    const out = await withEngineEnv(engine, () =>
+      transcribeEngineWithSegments("audio.wav", {
+        onProgressLine: (line) => {
+          seen.push(line);
+          writeFileSync(ack, "");
+        },
+      }),
+    );
+
+    expect(out.text).toBe("streamed");
+    expect(seen).toEqual(["diarize: loading the CoreML model on all"]);
+  });
+
+  /** The other half of that contract: a failure still arrives whole through the thrown
+   *  error, and the progress already shown live is not replayed inside it. */
+  fakeEngineTest("a failure keeps its own report and does not repeat live progress", async () => {
+    const engine = writeTranscribingEngine(
+      "kesha-engine-progress-failure-",
+      ["transcribe.segments"],
+      `  echo 'diarize: loading the CoreML model on all' >&2
+  echo 'error [E_DIARIZE_TIMEOUT]: speaker diarization stalled while loading the model' >&2
+  exit 1`,
+    );
+
+    const seen: string[] = [];
+    const failure = await withEngineEnv(engine, () =>
+      transcribeEngineWithSegments("audio.wav", {
+        onProgressLine: (line) => seen.push(line),
+      }).then(
+        () => null,
+        (err: unknown) => String(err),
+      ),
+    );
+
+    expect(seen).toEqual(["diarize: loading the CoreML model on all"]);
+    expect(failure).toContain("error [E_DIARIZE_TIMEOUT]: speaker diarization stalled");
+    expect(failure).not.toContain("loading the CoreML model");
+  });
 });
 
 describe("spawnStdioWithDebugFd", () => {
