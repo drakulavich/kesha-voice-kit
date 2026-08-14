@@ -14,7 +14,8 @@ Two independent sub-capabilities exist:
   analyzes only the first 10 s of audio; returns `{code, confidence}`.
 - **Language detection (text)** — macOS `NLLanguageRecognizer` via the
   `kesha-textlang` Sidecar (or legacy `swift -e` fallback); returns
-  `{code, confidence}`; macOS only.
+  `{code, confidence}`; macOS only. Off macOS the CLI still reports a text
+  language in transcription output, from its own `tinyld` fallback.
 
 Both sub-capabilities are also called automatically during transcription when
 structured output is requested (see the transcription spec for how results
@@ -22,15 +23,18 @@ surface in JSON/TOON/transcript-format output).
 
 ## Non-Goals
 
-- Language detection (text) is not available on Linux or Windows; those
-  platforms return an error.
+- The Engine's text detection is not available on Linux or Windows; the
+  `detect-text-lang` subcommand returns an error there. Transcription output is
+  not affected — the CLI falls back to `tinyld` and still reports a
+  `textLanguage`.
 - The audio model analyzes only the first 10 s; it does not summarize language
   across a full recording.
 - Language detection does not translate or re-transcribe in a different
   language; it only identifies.
 - The CLI-side `tinyld` text fallback is a best-effort safety net when the
-  Engine text-lang call fails; it names itself in `textLanguage.source` and its
-  confidence is not on the Engine's scale, so the two are not comparable.
+  Engine text-lang call fails or is unavailable; it names itself in
+  `textLanguage.source` and its confidence is not on the Engine's scale, so the
+  two are not comparable.
 
 ## Requirements
 

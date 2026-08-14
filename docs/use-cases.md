@@ -113,6 +113,13 @@ kesha --json --verbose audio.mp3 | jq '.[0] | {lang, audioConfidence: .audioLang
 # → {"lang":"de","audioConfidence":0.97,"textConfidence":0.96,"textSource":"engine"}
 ```
 
+The same command on Linux or Windows, where the Engine has no text detection, falls back to `tinyld` — same shape, different detector and a score on `tinyld`'s scale:
+
+```bash
+kesha --json audio.mp3 | jq -c '.[0].textLanguage'
+# → {"code":"de","confidence":0.76,"source":"tinyld"}
+```
+
 **Branch on detected language in a script:**
 
 ```bash

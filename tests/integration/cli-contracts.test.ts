@@ -99,7 +99,7 @@ if (args[0] === "detect-text-lang") {
     console.error("detect-text-lang is only available on macOS");
     process.exit(1);
   }
-  console.log(JSON.stringify({ code: "ru", confidence: 0.98 }));
+  console.log(JSON.stringify({ code: "ru", confidence: Number(process.env.KESHA_FAKE_TEXT_LANG_CONFIDENCE ?? "0.98") }));
   process.exit(0);
 }
 
@@ -1071,12 +1071,33 @@ describe("CLI contracts", () => {
       },
     });
     expectContract(fromTinyld, { exitCode: 0 });
-    const fallback = JSON.parse(fromTinyld.stdout)[0].textLanguage;
-    expect(fallback.source).toBe("tinyld");
-    expect(fallback.code).toBe("ru");
-    // The point of #941: the fallback reports tinyld's own score, so a consumer
-    // gating on `confidence > 0` no longer discards every non-macOS detection.
-    expect(fallback.confidence).toBeGreaterThan(0);
+    // The scale gap `source` exists to disambiguate: tinyld scores this exact
+    // transcript at 0.2 where the engine reports 0.98, so a consumer thresholding
+    // at 0.5 would discard every correct non-macOS detection.
+    expect(JSON.parse(fromTinyld.stdout)[0].textLanguage).toEqual({
+      code: "ru",
+      confidence: 0.2,
+      source: "tinyld",
+    });
+
+    const unsureDir = makeTempDir("kesha-cli-contract-textlang-unsure-");
+    const unsureMedia = join(unsureDir, "workshop.mp4");
+    writeFileSync(unsureMedia, "fake media");
+    const fromUnsureEngine = await runCli(["--json", unsureMedia], {
+      env: {
+        ...isolatedEnv(unsureDir),
+        KESHA_ENGINE_BIN: enginePath,
+        KESHA_FAKE_TEXT_LANG_CONFIDENCE: "0",
+      },
+    });
+    expectContract(fromUnsureEngine, { exitCode: 0 });
+    // The case that caused #941: a genuinely unsure engine still reads as the
+    // engine, so 0 no longer doubles as "this came from the fallback".
+    expect(JSON.parse(fromUnsureEngine.stdout)[0].textLanguage).toEqual({
+      code: "ru",
+      confidence: 0,
+      source: "engine",
+    });
   });
 
   test("Ctrl+C terminates helper processes below the engine", async () => {

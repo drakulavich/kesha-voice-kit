@@ -446,11 +446,21 @@ describe("language detection", () => {
   });
 
   test("fallback detection reports tinyld's own score and names its source (#941)", () => {
-    const result = detectTextLanguageFallback("Это простое предложение на русском языке для тестирования.");
-    expect(result?.code).toBe("ru");
-    expect(result?.source).toBe("tinyld");
-    expect(result?.confidence).toBeGreaterThan(0);
-    expect(result?.confidence).toBeLessThanOrEqual(1);
+    expect(detectTextLanguageFallback("Это простое предложение на русском языке для тестирования.")).toEqual({
+      code: "ru",
+      confidence: 1,
+      source: "tinyld",
+    });
+  });
+
+  test("fallback confidence is tinyld's scale, not the Engine's (#941)", () => {
+    // A short sample the Engine scores ~0.98 scores 0.2 here — the gap that makes
+    // a cross-source confidence threshold wrong, and the reason `source` exists.
+    expect(detectTextLanguageFallback("Привет с воркшопа")).toEqual({
+      code: "ru",
+      confidence: 0.2,
+      source: "tinyld",
+    });
   });
 
   test("fallback detection returns undefined for empty text", () => {

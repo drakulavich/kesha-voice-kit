@@ -130,11 +130,13 @@ kesha --json voice.ogg
   "text": "Привет, как дела?",
   "lang": "ru",
   "audioLanguage": { "code": "ru", "confidence": 0.98 },
-  "textLanguage": { "code": "ru", "confidence": 0.99 }
+  "textLanguage": { "code": "ru", "confidence": 0.99, "source": "engine" }
 }]
 ```
 
 Use `lang` (or the more detailed `audioLanguage`/`textLanguage`) to decide how to respond.
+
+**Read `textLanguage.source` before you compare its `confidence` to a threshold.** `"engine"` (macOS `NLLanguageRecognizer`) and `"tinyld"` (the CLI fallback used on Linux/Windows) score on different scales — the same correct detection reads ~0.98 from the engine and ~0.2 from `tinyld`, so a fixed `> 0.5` gate discards every correct fallback result. `audioLanguage` has one detector and carries no `source`.
 
 Need timestamped transcript segments for navigation, chapters, or downstream editing:
 
@@ -204,7 +206,7 @@ Format is also inferred from `--out` extension (`.ogg` / `.opus` / `.oga` → OG
 
 ## Language detection standalone
 
-`kesha --json audio.ogg` includes both audio-based (`audioLanguage`) and text-based (`textLanguage`) detection. Use audio detection to identify the language before running language-specific logic.
+`kesha --json audio.ogg` includes both audio-based (`audioLanguage`) and text-based (`textLanguage`) detection. Use audio detection to identify the language before running language-specific logic. `textLanguage` also names its detector in `source` — see the threshold rule under [STT](#stt-transcribe-audio).
 
 ## Install
 
