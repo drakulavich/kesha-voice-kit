@@ -33,8 +33,6 @@ interface MainCommandArgs {
   debug: boolean;
   vad: boolean;
   "no-vad": boolean;
-  noVad?: boolean;
-  no_vad?: boolean;
   timestamps: boolean;
   speakers: boolean;
   itn: boolean;
@@ -65,31 +63,31 @@ export function isDirectoryPath(path: string): boolean {
  * with its own clearer error first.
  */
 export type ResolvedOutputFormat =
-  | {
-      ok: true;
-      wantsJson: boolean;
-      wantsToon: boolean;
-      wantsTranscript: boolean;
-    }
+  | { ok: true; format: "json" | "toon" | "transcript" | "text" }
   | { ok: false; error: string };
 
 const SUPPORTED_FORMATS = ["transcript", "json", "toon"] as const;
+
+function isSupportedFormat(format: string): format is (typeof SUPPORTED_FORMATS)[number] {
+  return SUPPORTED_FORMATS.some((supported) => supported === format);
+}
 
 export function resolveOutputFormat(input: {
   json?: boolean;
   toon?: boolean;
   format?: string;
 }): ResolvedOutputFormat {
-  if (input.format !== undefined && !SUPPORTED_FORMATS.includes(input.format as never)) {
+  if (input.format !== undefined && !isSupportedFormat(input.format)) {
     return {
       ok: false,
       error: `unknown --format '${input.format}'. supported: ${SUPPORTED_FORMATS.join(", ")}`,
     };
   }
-  const wantsJson = !!input.json || input.format === "json";
-  const wantsToon = !!input.toon || input.format === "toon";
-  const wantsTranscript = input.format === "transcript";
-  if (wantsJson && wantsToon) {
+  if (
+    (input.json && input.toon) ||
+    (input.json && input.format === "toon") ||
+    (input.toon && input.format === "json")
+  ) {
     return {
       ok: false,
       error: "--json and --toon are mutually exclusive (pick one output format).",
@@ -100,7 +98,7 @@ export function resolveOutputFormat(input: {
   // dispatch checked wantsJson/wantsToon first). Greptile P2 on #300
   // flagged the silent override. Fail loudly with the same shape as
   // the json/toon mutex — symmetric across all three formats.
-  if (wantsTranscript && (wantsJson || wantsToon)) {
+  if (input.format === "transcript" && (input.json || input.toon)) {
     return {
       ok: false,
       error:
@@ -108,7 +106,7 @@ export function resolveOutputFormat(input: {
         "(pick one output format).",
     };
   }
-  return { ok: true, wantsJson, wantsToon, wantsTranscript };
+  return { ok: true, format: input.json ? "json" : input.toon ? "toon" : (input.format ?? "text") };
 }
 
 export function checkLanguageMismatch(expected: string | undefined, detected: string): string | null {
@@ -151,6 +149,19 @@ export type ValidatedTranscribeArgs = {
   outputFormat: "json" | "toon" | "transcript" | "text";
 };
 
+type MainVadArgs = Pick<MainCommandArgs, "vad" | "no-vad">;
+
+export function normalizeMainCommandArgs<T extends MainVadArgs>(
+  args: T,
+  rawArgs: string[],
+): T & { noVad: boolean } {
+  return {
+    ...args,
+    vad: rawArgs.includes("--vad") || args.vad,
+    noVad: rawArgs.includes("--no-vad") || args["no-vad"] === true,
+  };
+}
+
 export type TranscribeArgsValidation =
   | ({ ok: true } & ValidatedTranscribeArgs)
   | { ok: false; error: string };
@@ -161,20 +172,16 @@ export function validateTranscribeArgs(
   rawArgs: string[],
   fmt: ResolvedOutputFormat & { ok: true },
 ): TranscribeArgsValidation {
-  const { wantsJson, wantsToon, wantsTranscript } = fmt;
-
-  // citty treats --no-vad as the negated form of --vad, so read rawArgs
-  // to distinguish "off" from the default auto mode and to catch both flags.
-  const vad = rawArgs.includes("--vad") || Boolean(args.vad);
-  const noVad = rawArgs.includes("--no-vad") || Boolean(args["no-vad"] ?? args.noVad ?? args.no_vad);
+  const normalizedArgs = normalizeMainCommandArgs(args, rawArgs);
+  const { vad, noVad } = normalizedArgs;
 
   if (vad && noVad) {
     return { ok: false, error: "--vad and --no-vad are mutually exclusive." };
   }
-  if (args.timestamps && !(wantsJson || wantsToon)) {
+  if (args.timestamps && fmt.format !== "json" && fmt.format !== "toon") {
     return { ok: false, error: "--timestamps requires --json, --toon, or --format {json,toon}." };
   }
-  if (args.speakers && !(wantsJson || wantsToon)) {
+  if (args.speakers && fmt.format !== "json" && fmt.format !== "toon") {
     return { ok: false, error: "--speakers requires --json, --toon, or --format {json,toon}." };
   }
   // #768: diarization labels VAD-windowed segments, so --no-vad leaves nothing to label.
@@ -187,20 +194,12 @@ export function validateTranscribeArgs(
         "(VAD engages automatically for --speakers), or drop --speakers.",
     };
   }
-  if (args["include-errors"] && !(wantsJson || wantsToon)) {
+  if (args["include-errors"] && fmt.format !== "json" && fmt.format !== "toon") {
     return { ok: false, error: "--include-errors requires --json, --toon, or --format {json,toon}." };
   }
 
   const vadMode: ValidatedTranscribeArgs["vadMode"] = vad ? "on" : noVad ? "off" : "auto";
-  const outputFormat: ValidatedTranscribeArgs["outputFormat"] = wantsJson
-    ? "json"
-    : wantsToon
-      ? "toon"
-      : wantsTranscript
-        ? "transcript"
-        : "text";
-
-  return { ok: true, vadMode, outputFormat };
+  return { ok: true, vadMode, outputFormat: fmt.format };
 }
 
 async function detectLanguages(
@@ -422,6 +421,21 @@ function writeOutput(
 }
 
 /** The transcribe command, bound to the global flags dispatch resolved before citty. */
+export const MAIN_VAD_ARGS = {
+  vad: {
+    type: "boolean",
+    description:
+      "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
+    default: false,
+  },
+  "no-vad": {
+    type: "boolean",
+    description:
+      "Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers",
+    default: false,
+  },
+} as const;
+
 export function createMainCommand(context: CliContext = { quiet: false, disableColor: false }) {
   return defineCommand({
     meta: {
@@ -499,16 +513,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         description: "Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)",
         default: false,
       },
-      vad: {
-        type: "boolean",
-        description: "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
-        default: false,
-      },
-      "no-vad": {
-        type: "boolean",
-        description: "Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers",
-        default: false,
-      },
+      ...MAIN_VAD_ARGS,
       // quiet and no-color are resolved before citty in dispatch.ts (so they
       // apply to every command, not just transcribe); declared here only so they
       // appear in `kesha --help`.
