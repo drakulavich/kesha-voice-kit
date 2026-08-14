@@ -460,6 +460,54 @@ mod tests {
         assert!(endpoint.observe(0.1));
     }
 
+    /// Exercises the incremental ONNX path with committed spoken audio. The
+    /// fixture stays below the one-second endpoint window; only the committed
+    /// trailing-silence fixture ends the take.
+    #[test]
+    fn streaming_endpoint_waits_for_a_trailing_pause_after_a_spoken_fixture() {
+        let Some(path) = std::env::var_os("VAD_MODEL") else {
+            eprintln!("VAD_MODEL not set; skipping");
+            return;
+        };
+        let fixture = format!(
+            "{}/../tests/fixtures/benchmark-en/03-review-pull-request.ogg",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let mut samples = crate::audio::load_audio(&fixture).expect("decode fixture");
+        let mut endpoint = StreamingVad::load(
+            Path::new(&path),
+            EndpointConfig {
+                threshold: 0.5,
+                trailing_silence_ms: 1_000,
+                min_speech_ms: 250,
+            },
+        )
+        .expect("load VAD");
+
+        for chunk in samples.chunks(317) {
+            assert!(
+                !endpoint.feed(chunk).expect("score fixture"),
+                "the endpoint fired before the trailing pause"
+            );
+        }
+
+        let silence = crate::audio::load_audio(&format!(
+            "{}/../tests/fixtures/silence.wav",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .expect("decode silence fixture");
+        for _ in 0..3 {
+            samples.extend_from_slice(&silence);
+        }
+        let stopped = samples
+            .chunks(317)
+            .any(|chunk| endpoint.feed(chunk).expect("score trailing pause"));
+        assert!(
+            stopped,
+            "the endpoint did not fire on one second of silence"
+        );
+    }
+
     /// Gated on VAD_MODEL — confirms wiring against the real ONNX when
     /// the file is present. Default CI doesn't download it so this is skipped.
     #[test]

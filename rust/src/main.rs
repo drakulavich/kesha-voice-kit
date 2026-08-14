@@ -70,6 +70,19 @@ enum Commands {
         /// Maximum recording duration in seconds
         #[arg(long = "max-seconds", default_value_t = 120)]
         max_seconds: u64,
+        /// Stop a live transcription after trailing silence. Requires the
+        /// explicitly installed Silero VAD model (`kesha install --vad`).
+        #[arg(long, requires = "live")]
+        auto_stop: bool,
+        /// Trailing silence before --auto-stop ends the recording.
+        #[arg(long = "auto-stop-silence-ms", requires = "auto_stop")]
+        auto_stop_silence_ms: Option<u32>,
+        /// Silero speech-probability threshold for --auto-stop.
+        #[arg(long = "auto-stop-threshold", requires = "auto_stop")]
+        auto_stop_threshold: Option<f32>,
+        /// Minimum detected speech before --auto-stop may end a recording.
+        #[arg(long = "auto-stop-min-speech-ms", requires = "auto_stop")]
+        auto_stop_min_speech_ms: Option<u32>,
     },
     /// Download models
     Install(cli::install::InstallArgs),
@@ -120,7 +133,19 @@ fn run_command(command: Option<Commands>) -> Result<()> {
             out,
             live,
             max_seconds,
-        }) => cli::record::run(out, live, max_seconds)?,
+            auto_stop,
+            auto_stop_silence_ms,
+            auto_stop_threshold,
+            auto_stop_min_speech_ms,
+        }) => {
+            let endpoint = cli::record::endpoint_config(
+                auto_stop,
+                auto_stop_silence_ms,
+                auto_stop_threshold,
+                auto_stop_min_speech_ms,
+            )?;
+            cli::record::run(out, live, max_seconds, endpoint)?
+        }
         Some(Commands::Install(args)) => cli::install::run(args)?,
         #[cfg(feature = "tts")]
         Some(Commands::Say(args)) => {

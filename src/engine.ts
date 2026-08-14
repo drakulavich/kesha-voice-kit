@@ -22,6 +22,8 @@ export const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
 export const TRANSCRIBE_DIARIZE_FEATURE = "transcribe.diarize";
 /** Mirrors `rust/src/record.rs::RECORD_LIVE_FEATURE`. */
 export const RECORD_LIVE_FEATURE = "record.live";
+/** Mirrors `rust/src/record.rs::RECORD_LIVE_AUTO_STOP_FEATURE`. */
+export const RECORD_LIVE_AUTO_STOP_FEATURE = "record.live.auto-stop";
 
 /**
  * Capability-flag string for the opt-in written-form (ITN) pass. Every engine
@@ -420,7 +422,7 @@ export async function transcribeEngineWithSegments(
 /** Live transcription needs the Engine's streaming ASR session, which only the
  * CoreML backend on Apple Silicon compiles. Refuses here rather than letting the
  * Engine answer with `E_UNSUPPORTED_PLATFORM` after the spawn. */
-export async function preflightRecordLive(): Promise<void> {
+export async function preflightRecordLive(autoStop = false): Promise<void> {
   const caps = await getEngineCapabilities().catch(() => null);
   if (caps === null) {
     throw new Error(
@@ -438,10 +440,24 @@ export async function preflightRecordLive(): Promise<void> {
         "    kesha note.wav",
     );
   }
+  if (autoStop && !caps.features.includes(RECORD_LIVE_AUTO_STOP_FEATURE)) {
+    throw new Error(
+      "live auto-stop requires a newer CoreML engine with Silero VAD endpointing.\n\n" +
+        `Install the matching engine and retry:\n\n    ${installHint()}`,
+    );
+  }
 }
 
 /** Either capture to a WAV or transcribe live — the Engine rejects both at once. */
-export type RecordTarget = { live: true } | { live?: false; out: string };
+export interface LiveAutoStopOptions {
+  silenceMs: number;
+  threshold: number;
+  minSpeechMs: number;
+}
+
+export type RecordTarget =
+  | { live: true; autoStop?: LiveAutoStopOptions }
+  | { live?: false; out: string };
 
 /**
  * A live session catches SIGINT/SIGTERM, prints the transcript it has and then
@@ -454,7 +470,23 @@ const SIGNALLED_LIVE_EXIT_CODES = new Set([130, 143]);
 export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
   const binPath = getEngineBinPath();
   const args = target.live
-    ? ["record", "--live", "--max-seconds", String(maxSeconds)]
+    ? [
+        "record",
+        "--live",
+        "--max-seconds",
+        String(maxSeconds),
+        ...(target.autoStop
+          ? [
+              "--auto-stop",
+              "--auto-stop-silence-ms",
+              String(target.autoStop.silenceMs),
+              "--auto-stop-threshold",
+              String(target.autoStop.threshold),
+              "--auto-stop-min-speech-ms",
+              String(target.autoStop.minSpeechMs),
+            ]
+          : []),
+      ]
     : ["record", "--out", target.out, "--max-seconds", String(maxSeconds)];
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
