@@ -31,4 +31,10 @@ export type TranscribeJsonOutput =
       errors: TranscribeErrorRecord[];
     };
 
+export function hasErrorRecords(
+  output: TranscribeJsonOutput,
+): output is { results: TranscribeResult[]; errors: TranscribeErrorRecord[] } {
+  return !Array.isArray(output);
+}
+
 export type { LangDetectResult, TranscriptionSegment };

@@ -28,6 +28,7 @@ export type {
   TranscribeJsonOutput,
   TranscribeResult,
 } from "./types";
+export { hasErrorRecords } from "./types";
 
 /**
  * Install TTS models for the given languages (default: English only, matching
