@@ -14,7 +14,8 @@ Two independent sub-capabilities exist:
   analyzes only the first 10 s of audio; returns `{code, confidence}`.
 - **Language detection (text)** — macOS `NLLanguageRecognizer` via the
   `kesha-textlang` Sidecar (or legacy `swift -e` fallback); returns
-  `{code, confidence}`; macOS only.
+  `{code, confidence}`; macOS only. Off macOS the CLI still reports a text
+  language in transcription output, from its own `tinyld` fallback.
 
 Both sub-capabilities are also called automatically during transcription when
 structured output is requested (see the transcription spec for how results
@@ -22,15 +23,18 @@ surface in JSON/TOON/transcript-format output).
 
 ## Non-Goals
 
-- Language detection (text) is not available on Linux or Windows; those
-  platforms return an error.
+- The Engine's text detection is not available on Linux or Windows; the
+  `detect-text-lang` subcommand returns an error there. Transcription output is
+  not affected — the CLI falls back to `tinyld` and still reports a
+  `textLanguage`.
 - The audio model analyzes only the first 10 s; it does not summarize language
   across a full recording.
 - Language detection does not translate or re-transcribe in a different
   language; it only identifies.
 - The CLI-side `tinyld` text fallback is a best-effort safety net when the
-  Engine text-lang call fails; it carries confidence 0 and is not a
-  first-class output.
+  Engine text-lang call fails or is unavailable; it names itself in
+  `textLanguage.source` and its confidence is not on the Engine's scale, so the
+  two are not comparable.
 
 ## Requirements
 
@@ -145,8 +149,13 @@ The CLI SHALL populate language fields in transcription output whenever any of
 - `--json` / `--toon` include `lang`, and language detection sub-fields in
   each result object.
 - When the Engine text-lang call succeeds, its result is used; when it fails
-  or is unavailable, the CLI-side `tinyld` result is used as a fallback with
-  `confidence: 0`.
+  or is unavailable — which is every non-macOS platform — the CLI-side
+  `tinyld` result is used as a fallback.
+- `textLanguage` SHALL carry a `source` field naming the detector behind it:
+  `"engine"` or `"tinyld"`. Each detector reports its own score in
+  `confidence`; the scores are on different scales (`NLLanguageRecognizer`'s
+  probability vs `tinyld`'s n-gram accuracy) and SHALL NOT be compared across
+  sources. `audioLanguage` has one source and carries no such field.
 
 #### Scenario: Maks checks language on a voice note
 
@@ -159,6 +168,15 @@ The CLI SHALL populate language fields in transcription output whenever any of
 - WHEN Sona runs `kesha --json call.ogg`
 - THEN the result object includes a `lang` string field and the process exits 0
 
+#### Scenario: Sona tells a fallback detection from an unsure one
+
+- GIVEN Sona runs on Linux, where the Engine has no text detection
+- WHEN Sona runs `kesha --json call.ogg`
+- THEN `textLanguage.source` is `"tinyld"` and `textLanguage.confidence` is
+  `tinyld`'s own score, not a placeholder `0`
+- AND the same command on macOS reports `textLanguage.source` `"engine"`, so a
+  genuinely unsure Engine detection is distinguishable from a fallback one
+
 #### Scenario: --lang mismatch triggers a warning, not a failure
 
 - GIVEN `ru.ogg` contains Russian speech detected with confidence above 0.8
@@ -166,11 +184,11 @@ The CLI SHALL populate language fields in transcription output whenever any of
 - THEN the transcript is still printed and the process exits 0
 - AND stderr carries a language-mismatch warning
 
-> *Technical Note — `wantsLangId` trigger: `src/cli/main.ts` line 322.
-> `tinyld` fallback: `detect` imported from `tinyld` package, used at
-> `src/cli/main.ts` line 397. Text-lang engine call: `detectTextLanguageEngine`
-> called at line 401. `tinyld` result carries `confidence: 0` to signal it is
-> the fallback (`src/cli/main.ts` line 420).*
+> *Technical Note — `wantsLangId` trigger: `src/cli/main.ts`. `tinyld`
+> fallback: `detectTextLanguageFallback` in `src/cli/main.ts`, reading the top
+> `detectAll` entry's `accuracy` and tagging it `source: "tinyld"`. Text-lang
+> engine call: `detectTextLanguageEngine`, tagged `source: "engine"` at the
+> call site. Shape: `TextLangDetectResult` in `src/types.ts` (#941).*
 
 ## Open Issues
 
@@ -180,5 +198,3 @@ The CLI SHALL populate language fields in transcription output whenever any of
 - Audio lang-id is unconditionally skipped for transcripts over 10 minutes;
   a more precise duration-based gate (based on actual audio duration rather
   than estimated transcript duration) is a possible future improvement.
-- `tinyld` confidence is always reported as 0, making it indistinguishable
-  from a genuine 0-confidence Engine result in the JSON output.

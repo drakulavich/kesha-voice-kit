@@ -54,7 +54,7 @@ describe("formatTextOutput", () => {
 describe("formatTranscriptOutput", () => {
   test("appends lang line with confidence", () => {
     const out = formatTranscriptOutput([
-      result({ textLanguage: { code: "ru", confidence: 0.987 } }),
+      result({ textLanguage: { code: "ru", confidence: 0.987, source: "engine" } }),
     ]);
     expect(out).toBe("hello\n[lang: ru, confidence: 0.99]\n");
   });
@@ -69,7 +69,7 @@ describe("formatVerboseOutput", () => {
     const out = formatVerboseOutput([
       result({
         audioLanguage: { code: "en", confidence: 0.5 },
-        textLanguage: { code: "en", confidence: 0.75 },
+        textLanguage: { code: "en", confidence: 0.75, source: "engine" },
         sttTimeMs: 120,
       }),
     ]);

@@ -30,6 +30,7 @@ export {
   createMainCommand,
   mainCommand,
   detectLanguage,
+  detectTextLanguageFallback,
   checkLanguageMismatch,
   estimateTranscriptDurationSeconds,
   isDirectoryPath,

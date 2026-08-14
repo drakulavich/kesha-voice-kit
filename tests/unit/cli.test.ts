@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { parseArgs, renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
+import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, detectTextLanguageFallback, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat } from "../../src/cli";
 import { MAIN_VAD_ARGS, normalizeMainCommandArgs } from "../../src/cli/main";
 
@@ -466,6 +466,28 @@ describe("language detection", () => {
     expect(lang).toBe("");
   });
 
+  test("fallback detection reports tinyld's own score and names its source (#941)", () => {
+    expect(detectTextLanguageFallback("Это простое предложение на русском языке для тестирования.")).toEqual({
+      code: "ru",
+      confidence: 1,
+      source: "tinyld",
+    });
+  });
+
+  test("fallback confidence is tinyld's scale, not the Engine's (#941)", () => {
+    // A short sample the Engine scores ~0.98 scores 0.2 here — the gap that makes
+    // a cross-source confidence threshold wrong, and the reason `source` exists.
+    expect(detectTextLanguageFallback("Привет с воркшопа")).toEqual({
+      code: "ru",
+      confidence: 0.2,
+      source: "tinyld",
+    });
+  });
+
+  test("fallback detection returns undefined for empty text", () => {
+    expect(detectTextLanguageFallback("")).toBeUndefined();
+  });
+
   test("checkLanguageMismatch returns null when no expected lang", () => {
     const warning = checkLanguageMismatch(undefined, "en");
     expect(warning).toBeNull();
@@ -509,11 +531,11 @@ describe("JSON output with lang-id fields", () => {
     const results = [{
       file: "a.ogg", text: "Hello", lang: "en",
       audioLanguage: { code: "en", confidence: 0.94 },
-      textLanguage: { code: "en", confidence: 0.98 },
+      textLanguage: { code: "en", confidence: 0.98, source: "engine" as const },
     }];
     const parsed = JSON.parse(formatJsonOutput(results));
     expect(parsed[0].audioLanguage).toEqual({ code: "en", confidence: 0.94 });
-    expect(parsed[0].textLanguage).toEqual({ code: "en", confidence: 0.98 });
+    expect(parsed[0].textLanguage).toEqual({ code: "en", confidence: 0.98, source: "engine" });
     expect(parsed[0].lang).toBe("en");
   });
 

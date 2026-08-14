@@ -95,7 +95,11 @@ if (args[0] === "detect-lang") {
 }
 
 if (args[0] === "detect-text-lang") {
-  console.log(JSON.stringify({ code: "ru", confidence: 0.98 }));
+  if (process.env.KESHA_FAKE_TEXT_LANG_UNSUPPORTED) {
+    console.error("detect-text-lang is only available on macOS");
+    process.exit(1);
+  }
+  console.log(JSON.stringify({ code: "ru", confidence: Number(process.env.KESHA_FAKE_TEXT_LANG_CONFIDENCE ?? "0.98") }));
   process.exit(0);
 }
 
@@ -875,7 +879,7 @@ describe("CLI contracts", () => {
       text: "Привет с воркшопа",
       lang: "ru",
       audioLanguage: { code: "ru", confidence: 0.99 },
-      textLanguage: { code: "ru", confidence: 0.98 },
+      textLanguage: { code: "ru", confidence: 0.98, source: "engine" },
     });
     expect(parsed[0].segments[0]).toEqual({
       start: 0,
@@ -1106,9 +1110,64 @@ describe("CLI contracts", () => {
     });
     const parsed = JSON.parse(run.stdout);
     expect(parsed[0].audioLanguage).toBeUndefined();
-    expect(parsed[0].textLanguage).toEqual({ code: "ru", confidence: 0.98 });
+    expect(parsed[0].textLanguage).toEqual({ code: "ru", confidence: 0.98, source: "engine" });
     expect(parsed[0].segments[0].end).toBe(900);
     expect(existsSync(detectLangMarker)).toBe(false);
+  });
+
+  test("textLanguage names the detector that produced it (#941)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-textlang-source-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+
+    const fromEngine = await runCli(["--json", mediaPath], { env });
+    expectContract(fromEngine, { exitCode: 0 });
+    expect(JSON.parse(fromEngine.stdout)[0].textLanguage).toEqual({
+      code: "ru",
+      confidence: 0.98,
+      source: "engine",
+    });
+
+    const fallbackDir = makeTempDir("kesha-cli-contract-textlang-fallback-");
+    const fallbackMedia = join(fallbackDir, "workshop.mp4");
+    writeFileSync(fallbackMedia, "fake media");
+    const fromTinyld = await runCli(["--json", fallbackMedia], {
+      env: {
+        ...isolatedEnv(fallbackDir),
+        KESHA_ENGINE_BIN: enginePath,
+        KESHA_FAKE_TEXT_LANG_UNSUPPORTED: "1",
+      },
+    });
+    expectContract(fromTinyld, { exitCode: 0 });
+    // The scale gap `source` exists to disambiguate: tinyld scores this exact
+    // transcript at 0.2 where the engine reports 0.98, so a consumer thresholding
+    // at 0.5 would discard every correct non-macOS detection.
+    expect(JSON.parse(fromTinyld.stdout)[0].textLanguage).toEqual({
+      code: "ru",
+      confidence: 0.2,
+      source: "tinyld",
+    });
+
+    const unsureDir = makeTempDir("kesha-cli-contract-textlang-unsure-");
+    const unsureMedia = join(unsureDir, "workshop.mp4");
+    writeFileSync(unsureMedia, "fake media");
+    const fromUnsureEngine = await runCli(["--json", unsureMedia], {
+      env: {
+        ...isolatedEnv(unsureDir),
+        KESHA_ENGINE_BIN: enginePath,
+        KESHA_FAKE_TEXT_LANG_CONFIDENCE: "0",
+      },
+    });
+    expectContract(fromUnsureEngine, { exitCode: 0 });
+    // The case that caused #941: a genuinely unsure engine still reads as the
+    // engine, so 0 no longer doubles as "this came from the fallback".
+    expect(JSON.parse(fromUnsureEngine.stdout)[0].textLanguage).toEqual({
+      code: "ru",
+      confidence: 0,
+      source: "engine",
+    });
   });
 
   test("Ctrl+C terminates helper processes below the engine", async () => {
