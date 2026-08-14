@@ -53,6 +53,70 @@ impl Default for VadConfig {
     }
 }
 
+/// Configuration for live end-of-utterance detection.
+#[derive(Debug, Clone, Copy)]
+pub struct EndpointConfig {
+    pub threshold: f32,
+    pub trailing_silence_ms: u32,
+    pub min_speech_ms: u32,
+}
+
+impl Default for EndpointConfig {
+    fn default() -> Self {
+        Self {
+            threshold: 0.5,
+            trailing_silence_ms: 1_000,
+            min_speech_ms: 250,
+        }
+    }
+}
+
+/// Turns Silero frame probabilities into a one-way stop decision.
+pub struct VadEndpoint {
+    cfg: EndpointConfig,
+    speech_samples: usize,
+    trailing_silence_samples: usize,
+}
+
+/// Stateful Silero inference for live audio. Audio may arrive in arbitrary
+/// chunks; only complete 512-sample hops are evaluated and the tail remains
+/// buffered for the next call.
+pub struct StreamingVad {
+    detector: VadDetector,
+    endpoint: VadEndpoint,
+    state: Vec<f32>,
+    input_buf: Vec<f32>,
+    pending: Vec<f32>,
+}
+
+impl VadEndpoint {
+    pub fn new(cfg: EndpointConfig) -> Self {
+        Self {
+            cfg,
+            speech_samples: 0,
+            trailing_silence_samples: 0,
+        }
+    }
+
+    /// Returns true once an utterance of the configured minimum speech length
+    /// is followed by the configured trailing silence.
+    pub fn observe(&mut self, probability: f32) -> bool {
+        if probability >= self.cfg.threshold {
+            self.speech_samples += FRAME_SAMPLES;
+            self.trailing_silence_samples = 0;
+            return false;
+        }
+
+        if self.speech_samples < ms_to_samples_ceil(self.cfg.min_speech_ms, SAMPLE_RATE) {
+            return false;
+        }
+
+        self.trailing_silence_samples += FRAME_SAMPLES;
+        self.trailing_silence_samples
+            >= ms_to_samples_ceil(self.cfg.trailing_silence_ms, SAMPLE_RATE)
+    }
+}
+
 pub struct VadDetector {
     session: Session,
 }
@@ -99,36 +163,72 @@ impl VadDetector {
                 dst[chunk.len()..].fill(0.0);
             }
 
-            // ort 2.0 `Value::from_array` requires owned ndarrays, so two
-            // Vec clones per frame are unavoidable here. The buffers above
-            // still get reused — the clones free as soon as `run` returns.
-            let input = Value::from_array(Array2::<f32>::from_shape_vec(
-                (1, INPUT_SAMPLES),
-                input_buf.clone(),
-            )?)?;
-            let state_val =
-                Value::from_array(Array3::<f32>::from_shape_vec((2, 1, 128), state.clone())?)?;
-            // `sr` is an ONNX scalar (rank 0) — `arr0` builds an Array0 which
-            // serialises to a scalar tensor; passing rank-1 here would trip the
-            // model into a silent shape mismatch on some ort builds.
-            let sr_val = Value::from_array(arr0(SAMPLE_RATE as i64))?;
-
-            let outputs = self.session.run(ort::inputs![
-                "input" => input,
-                "state" => state_val,
-                "sr"    => sr_val,
-            ])?;
-
-            let (_prob_shape, prob_data) = outputs["output"].try_extract_tensor::<f32>()?;
-            probs.push(prob_data[0]);
-
-            let (_state_shape, state_data) = outputs["stateN"].try_extract_tensor::<f32>()?;
-            // In-place copy reuses the state Vec; previously `state = .to_vec()`
-            // freed and reallocated ~1 KB every 32 ms.
-            state.copy_from_slice(state_data);
+            probs.push(self.frame_probability(&input_buf, &mut state)?);
         }
 
         Ok(probs)
+    }
+
+    fn frame_probability(&mut self, input_buf: &[f32], state: &mut [f32]) -> Result<f32> {
+        // ort 2.0 `Value::from_array` requires owned ndarrays, so two Vec
+        // clones per frame are unavoidable here. The caller reuses both
+        // buffers, and the clones free as soon as `run` returns.
+        let input = Value::from_array(Array2::<f32>::from_shape_vec(
+            (1, INPUT_SAMPLES),
+            input_buf.to_vec(),
+        )?)?;
+        let state_val =
+            Value::from_array(Array3::<f32>::from_shape_vec((2, 1, 128), state.to_vec())?)?;
+        // `sr` is an ONNX scalar (rank 0) — `arr0` builds an Array0 which
+        // serialises to a scalar tensor; passing rank-1 here would trip the
+        // model into a silent shape mismatch on some ort builds.
+        let sr_val = Value::from_array(arr0(SAMPLE_RATE as i64))?;
+
+        let outputs = self.session.run(ort::inputs![
+            "input" => input,
+            "state" => state_val,
+            "sr"    => sr_val,
+        ])?;
+
+        let (_prob_shape, prob_data) = outputs["output"].try_extract_tensor::<f32>()?;
+        let (_state_shape, state_data) = outputs["stateN"].try_extract_tensor::<f32>()?;
+        // In-place copy reuses the state Vec; previously `state = .to_vec()`
+        // freed and reallocated ~1 KB every 32 ms.
+        state.copy_from_slice(state_data);
+        Ok(prob_data[0])
+    }
+}
+
+impl StreamingVad {
+    pub fn load(model_path: &Path, cfg: EndpointConfig) -> Result<Self> {
+        Ok(Self {
+            detector: VadDetector::load(model_path)?,
+            endpoint: VadEndpoint::new(cfg),
+            state: vec![0.0; STATE_LEN],
+            input_buf: vec![0.0; INPUT_SAMPLES],
+            pending: Vec::new(),
+        })
+    }
+
+    /// Returns true when the accumulated speech has ended. Input must be 16 kHz
+    /// mono f32 samples, matching [`SAMPLE_RATE`].
+    pub fn feed(&mut self, samples: &[f32]) -> Result<bool> {
+        self.pending.extend_from_slice(samples);
+        let complete_samples = (self.pending.len() / FRAME_SAMPLES) * FRAME_SAMPLES;
+        for chunk in self.pending[..complete_samples].chunks_exact(FRAME_SAMPLES) {
+            let tail_start = INPUT_SAMPLES - CONTEXT_SAMPLES;
+            self.input_buf.copy_within(tail_start..INPUT_SAMPLES, 0);
+            self.input_buf[CONTEXT_SAMPLES..].copy_from_slice(chunk);
+            let probability = self
+                .detector
+                .frame_probability(&self.input_buf, &mut self.state)?;
+            if self.endpoint.observe(probability) {
+                self.pending.drain(..complete_samples);
+                return Ok(true);
+            }
+        }
+        self.pending.drain(..complete_samples);
+        Ok(false)
     }
 }
 
@@ -194,6 +294,10 @@ fn post_process(
 
 fn ms_to_samples(ms: u32, sample_rate: u32) -> usize {
     ((ms as u64 * sample_rate as u64) / 1000) as usize
+}
+
+fn ms_to_samples_ceil(ms: u32, sample_rate: u32) -> usize {
+    (ms as u64 * sample_rate as u64).div_ceil(1000) as usize
 }
 
 #[cfg(test)]
@@ -309,6 +413,51 @@ mod tests {
         assert_eq!(ms_to_samples(100, 16_000), 1_600);
         // 31 ms @ 16 kHz = 496 samples — just under one 512-frame window.
         assert_eq!(ms_to_samples(31, 16_000), 496);
+    }
+
+    #[test]
+    fn endpoint_waits_for_the_configured_trailing_silence() {
+        let mut endpoint = VadEndpoint::new(EndpointConfig {
+            threshold: 0.5,
+            trailing_silence_ms: 320,
+            min_speech_ms: 192,
+        });
+
+        for _ in 0..6 {
+            assert!(!endpoint.observe(0.9));
+        }
+        for _ in 0..9 {
+            assert!(!endpoint.observe(0.1));
+        }
+        assert!(endpoint.observe(0.1));
+    }
+
+    #[test]
+    fn endpoint_ignores_a_cough_and_a_short_mid_sentence_pause() {
+        let mut endpoint = VadEndpoint::new(EndpointConfig {
+            threshold: 0.5,
+            trailing_silence_ms: 320,
+            min_speech_ms: 192,
+        });
+
+        for _ in 0..2 {
+            assert!(!endpoint.observe(0.9));
+        }
+        for _ in 0..20 {
+            assert!(!endpoint.observe(0.1));
+        }
+
+        for _ in 0..6 {
+            assert!(!endpoint.observe(0.9));
+        }
+        for _ in 0..9 {
+            assert!(!endpoint.observe(0.1));
+        }
+        assert!(!endpoint.observe(0.9));
+        for _ in 0..9 {
+            assert!(!endpoint.observe(0.1));
+        }
+        assert!(endpoint.observe(0.1));
     }
 
     /// Gated on VAD_MODEL — confirms wiring against the real ONNX when
