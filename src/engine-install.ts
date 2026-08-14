@@ -644,6 +644,33 @@ async function assertRequestedVersionLanded(binPath: string, version: string): P
   );
 }
 
+/** mkdir errnos that mean the configured path is itself wrong; anything else is not a bad argument. */
+const ENGINE_DIR_PATH_ERRNOS: Record<string, string> = {
+  EACCES: "permission denied",
+  EPERM: "permission denied",
+  ENOTDIR: "a component of it is a file, not a directory",
+  EROFS: "the filesystem is read-only",
+  ELOOP: "the path loops through symlinks",
+  ENAMETOOLONG: "the path is too long",
+};
+
+/** `KESHA_ENGINE_BIN` names the binary file, so "point it at a writable directory" breaks the next install. */
+function engineDirFix(setting: string | undefined, notADir: boolean, engineDir: string): string {
+  if (setting === "KESHA_ENGINE_BIN") {
+    return notADir
+      ? "point KESHA_ENGINE_BIN at a path whose parent directories are directories, not files, or unset it to install into the default cache."
+      : "point KESHA_ENGINE_BIN at a writable path — the engine binary's own file path, under a directory that can be created — or unset it to install into the default cache.";
+  }
+  if (setting === "KESHA_CACHE_DIR") {
+    return notADir
+      ? "point KESHA_CACHE_DIR at a directory instead of a file, or unset it to install into the default cache."
+      : "point KESHA_CACHE_DIR at a writable directory, or unset it to install into the default cache.";
+  }
+  return notADir
+    ? `remove or rename the file blocking ${engineDir}, or point KESHA_CACHE_DIR at a directory.`
+    : `point KESHA_CACHE_DIR at a writable directory, or fix the permissions on ${keshaCacheDir()}.`;
+}
+
 /**
  * Creates the engine directory up front, so a cache path the user configured fails with a code
  * and the name of the setting that supplied it instead of a raw errno from the first write
@@ -660,22 +687,18 @@ function ensureEngineDirCreatable(binPath: string): void {
       : process.env.KESHA_CACHE_DIR
         ? { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR }
         : null;
-    const errno = (e as NodeJS.ErrnoException).code;
-    // Said in prose: the raw errno named neither the cache nor what to do about it (#998).
-    const why =
-      errno === "EACCES" || errno === "EPERM"
-        ? "permission denied"
-        : errno === "ENOTDIR"
-          ? "a component of it is a file, not a directory"
-          : errno === "EROFS"
-            ? "the filesystem is read-only"
-            : errorMessage(e);
+    const errno = (e as NodeJS.ErrnoException).code ?? "";
+    const why = ENGINE_DIR_PATH_ERRNOS[errno];
     const what = setting
-      ? `${setting.name}="${setting.value}" cannot hold the engine directory ${engineDir}: ${why}`
-      : `cannot create the engine directory ${engineDir}: ${why}`;
-    const fix = setting
-      ? `point ${setting.name} at a writable directory, or unset it to install into the default cache.`
-      : `point KESHA_CACHE_DIR at a writable directory, or fix the permissions on ${keshaCacheDir()}.`;
+      ? `${setting.name}="${setting.value}" cannot hold the engine directory ${engineDir}: ${why ?? errorMessage(e)}`
+      : `cannot create the engine directory ${engineDir}: ${why ?? errorMessage(e)}`;
+    if (!why) {
+      throw new Error(
+        `error [${TS_NATIVE_CODES.INTERNAL}]: ${what}.\n  Fix: resolve that filesystem error and ` +
+          "re-run `kesha install`; if it persists, file a bug with `kesha support-bundle`.",
+      );
+    }
+    const fix = engineDirFix(setting?.name, errno === "ENOTDIR", engineDir);
     throw new Error(`error [${TS_NATIVE_CODES.INVALID_ARG}]: ${what}.\n  Fix: ${fix}`);
   }
 }
