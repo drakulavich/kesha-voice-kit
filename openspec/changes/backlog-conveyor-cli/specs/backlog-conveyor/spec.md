@@ -24,8 +24,11 @@ codes for success, invariant violation, operational failure, and unsafe/refused 
 ### Requirement: Gate SHALL bind independent approval and checks to one head SHA
 
 `gate --issue N --pr P --evidence path` SHALL require an open, non-draft, mergeable PR to the default
-branch, exactly `[N]` in `closingIssuesReferences`, an independent `APPROVED` review for the
-current head SHA, and terminal successful results for every real required check. A required
+branch, exactly `[N]` in `closingIssuesReferences`, verified provider-neutral approval evidence
+for the current head SHA, and terminal successful results for every real required check. A
+distinct GitHub reviewer account MUST NOT be required, so multiple orchestrators may use one
+authenticated GitHub identity. A current-head native `CHANGES_REQUESTED` from someone other
+than the PR author MUST block; native `APPROVED` and `COMMENTED` reviews are supplemental. A required
 check with a protected `app_id` MUST match that app, and its latest matching attempt by
 start/creation time MUST be authoritative. A stacked or non-default-base PR MUST be ineligible. Under `--apply`, a
 versioned machine-readable PR comment MUST bind the marker to the current SHA before
@@ -36,13 +39,13 @@ The command MUST read markers from all comment pages and accept only the newest 
 authored by an owner, member, or collaborator. `sync` MUST re-evaluate the same current-head
 gate policy before preserving `merge-ready`; marker association alone MUST NOT establish
 eligibility. The latest decisive current-head review state per independent reviewer MUST apply:
-an approved review is required and any current change request blocks, while later comments do
-not cancel an approval. The command MUST NOT depend on a named agent, model, local settings,
+any current change request blocks, while later comments do not cancel an approval when present.
+The command MUST NOT depend on a named agent, model, local settings,
 or provider-specific artifact format.
 
-#### Scenario: Ira sees a review made before a push
+#### Scenario: Ira sees approval evidence made before a push
 
-- GIVEN an approval on SHA `a` and PR head SHA `b`
+- GIVEN approval evidence on SHA `a` and PR head SHA `b`
 - WHEN Ira runs `gate --issue 1032 --pr 1040`
 - THEN it exits with an invariant violation
 
@@ -74,9 +77,15 @@ or provider-specific artifact format.
 
 #### Scenario: Ira sees a marker written by the PR author who is a repository owner
 
-- GIVEN the marker is current and syntactically valid but the PR has no independent current-head approval
+- GIVEN the marker is current and syntactically valid but its evidence does not match the current head
 - WHEN Ira runs `sync`
 - THEN it reports `merge-ready` stale and may remove only that label under `--apply`
+
+#### Scenario: Sona and Maks share one GitHub identity
+
+- GIVEN Sona and Maks use different evidence providers but one authenticated GitHub account
+- WHEN either runs `gate` with valid current-head evidence and no blocking native review
+- THEN the gate accepts the evidence without requiring a distinct GitHub reviewer login
 
 #### Scenario: Maks receives altered evidence
 

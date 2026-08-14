@@ -26,8 +26,12 @@ arrays exclusively; no user-controlled input is interpolated in a shell.
 ### Gate evidence is self-versioned, SHA-bound, independently approved, and provider-neutral
 
 `gate` accepts only an open, non-draft, mergeable PR to the default branch, with exactly the
-requested closing issue. An `APPROVED` review by someone other than the PR author must name
-the current head SHA. Required contexts are read from branch protection and each matching
+requested closing issue. The verified provider-neutral evidence is the required approval bound
+to the current head SHA; it does not require a second GitHub account, so different orchestrators
+can operate under one authenticated GitHub identity. Native GitHub reviews remain a blocking
+signal: a current-head `CHANGES_REQUESTED` by someone other than the PR author fails the gate,
+while `APPROVED` and `COMMENTED` are supplemental. Required contexts are read from branch
+protection and each matching
 check/status must be terminal and successful; a protected check with an `app_id` accepts only
 that app's result, and the deterministically latest matching attempt by start/creation time is
 authoritative (not a later completion time from an older parallel attempt). Skipped,
@@ -41,7 +45,7 @@ repository owner, member, or collaborator is accepted; all comment pages are con
 Marker authorship alone never establishes eligibility: `sync` re-runs the same current-head
 gate policy before preserving `merge-ready`. Review state uses each independent reviewer's
 latest decisive current-head state; a current change request blocks, while a later comment does
-not erase an approval. Any two orchestrators therefore produce and consume the same GitHub
+not erase an approval when one exists. Any two orchestrators therefore produce and consume the same GitHub
 state: a trusted verified marker for the same issue/PR/head is shared state regardless of
 provider. The command never reads agent-local settings, state, model names, or provider-specific
 artifact formats. A later `sync` removes `merge-ready` when this marker no longer matches the

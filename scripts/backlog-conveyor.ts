@@ -281,8 +281,6 @@ export function evaluateGate(facts: GateFacts): Evaluation {
     if (!current || review.submittedAt > current.submittedAt) latestReviewByAuthor.set(review.author, { state: review.state, submittedAt: review.submittedAt });
   }
   if ([...latestReviewByAuthor.values()].some((review) => review.state === "CHANGES_REQUESTED")) violations.push("an independent reviewer requested changes on the current head");
-  const approval = [...latestReviewByAuthor.values()].some((review) => review.state === "APPROVED");
-  if (!approval) violations.push("no independent approval is bound to the current head SHA");
   if (facts.requiredChecks.length === 0) violations.push("default branch has no required checks");
   for (const required of facts.requiredChecks) {
     const results = facts.checks.filter((check) => check.name === required.context && (required.appId === null || check.appId === required.appId));
@@ -298,7 +296,7 @@ export function evaluateGate(facts: GateFacts): Evaluation {
     });
     if (latest.state !== "SUCCESS") violations.push(`required check '${required.context}' is ${latest.state}`);
   }
-  const marker: GateMarker | null = approval ? { version: 1, issue: facts.issue, pr: facts.pr, evidence: facts.evidence } : null;
+  const marker: GateMarker = { version: 1, issue: facts.issue, pr: facts.pr, evidence: facts.evidence };
   const markerCurrent = facts.marker !== null && facts.marker.issue === facts.issue && facts.marker.pr === facts.pr && facts.marker.evidence.headSha === pr.headSha;
   const safeActions: Evaluation["safeActions"] = [];
   if (violations.length === 0 && marker && !markerCurrent) safeActions.push({ kind: "create-marker", pr: facts.pr, marker });

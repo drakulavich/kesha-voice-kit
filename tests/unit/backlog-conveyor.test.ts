@@ -62,15 +62,15 @@ function gateFacts(overrides: Partial<GateFacts> = {}): GateFacts {
 }
 
 describe("backlog gate", () => {
-  test("rejects an approval that was made for a previous head", () => {
+  test("accepts verified provider evidence without a distinct GitHub approver", () => {
     const facts = gateFacts({
       pullRequest: {
         ...gateFacts().pullRequest,
-        reviews: [{ state: "APPROVED", author: "reviewer", commitSha: "b".repeat(40), submittedAt: "2026-08-14T10:00:00Z" }],
+        reviews: [{ state: "APPROVED", author: "author", commitSha: head, submittedAt: "2026-08-14T10:00:00Z" }],
       },
     });
 
-    expect(evaluateGate(facts).violations).toContain("no independent approval is bound to the current head SHA");
+    expect(evaluateGate(facts).violations).not.toContain("no independent approval is bound to the current head SHA");
   });
 
   test("rejects a pull request that closes a different issue", () => {
@@ -269,7 +269,7 @@ describe("backlog sync", () => {
     expect(result.safeActions).toEqual([{ kind: "remove-wip", issue: 1032 }]);
   });
 
-  test("removes merge-ready when a current trusted marker lacks independent approval", async () => {
+  test("preserves merge-ready when current trusted evidence has green facts but no distinct GitHub approver", async () => {
     const marker = encodeGateMarker({ version: 1, issue: 1032, pr: 1040, evidence });
     const runner: Runner = {
       async run(argv) {
@@ -290,7 +290,7 @@ describe("backlog sync", () => {
       },
     };
 
-    expect((await sync(runner, false)).safeActions).toContainEqual({ kind: "remove-merge-ready", pr: 1040 });
+    expect((await sync(runner, false)).safeActions).toEqual([]);
   });
 
   test("aborts before mutation when current check facts cannot be loaded", async () => {
