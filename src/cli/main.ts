@@ -324,6 +324,13 @@ async function processFile(
 
   const startedAt = performance.now();
   let progress: ReturnType<typeof createPercentProgress> | null = null;
+  // #1002: the bar sitting at 0% through a ~100 s diarization model load reads as a hang,
+  // so the engine's progress has to land while it happens, not once the run is over.
+  const showProgressLine = (line: string) => {
+    const write = () => process.stderr.write(`${line}\n`);
+    if (progress) progress.interrupt(write);
+    else write();
+  };
   try {
     await preflightTranscribeWithSegments({ vad: vadMode, timestamps, speakers, itn });
     progress = reportProgress
@@ -332,7 +339,13 @@ async function processFile(
         })
       : null;
     const transcript = await stats.timeStage("transcribe", () =>
-      transcribeWithSegments(file, { vad: vadMode, timestamps, speakers, itn }),
+      transcribeWithSegments(file, {
+        vad: vadMode,
+        timestamps,
+        speakers,
+        itn,
+        onProgressLine: showProgressLine,
+      }),
     );
     const { text, segments } = transcript;
     const transcriptDurationSeconds = estimateTranscriptDurationSeconds(segments);

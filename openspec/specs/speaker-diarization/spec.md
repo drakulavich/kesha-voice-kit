@@ -258,6 +258,12 @@ The Engine SHALL report diarization progress on stderr — never stdout — nami
 the compute units at the start, the model load time once the binding reports the
 model ready, and the percentage of audio processed at intervals thereafter.
 
+The CLI SHALL relay each of those lines as the Engine writes it, not once the run
+is over. Progress that arrives only after the wait it described cannot tell a slow
+run from a hung one, which is what a silent 51 s model load was taken for (#1002).
+Progress relayed this way SHALL NOT be repeated in the failure report, which keeps
+naming the file and the Engine's own error.
+
 The Engine SHALL supervise the run with a budget per phase rather than one
 wall-clock timeout, each phase delimited by a signal from the binding rather than
 inferred: 300 s for the model load (up to the model-ready marker), 60 s plus
@@ -278,6 +284,14 @@ can only shorten a run — never widen a phase budget.
   `diarize: model ready in 4.0s; reading the audio`, then percentage lines, then
   `diarize: done in 39.5s (20 spans)`
 - AND stdout carries only the JSON result
+
+#### Scenario: Maks watches the model load rather than a still bar
+
+- GIVEN a cold ANE cache, so the model load runs for ~105 s
+- WHEN Maks runs `kesha --json --speakers meeting.ogg`
+- THEN `diarize: loading the CoreML model on all` reaches his terminal before the
+  load begins, and the cold-cache explanation while it is still going
+- AND neither waits for the run to finish to be printed
 
 #### Scenario: The first run after an ANE cache eviction
 
