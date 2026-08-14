@@ -257,10 +257,8 @@ export function evaluateClose(facts: CloseFacts): Evaluation {
   if (facts.worktree?.dirty) refusals.push("matching worktree is dirty");
   if (facts.worktree && !facts.worktree.insideManagedDirectory) refusals.push("matching worktree is outside the managed .worktrees directory");
   const safeActions: Evaluation["safeActions"] = [];
-  if (violations.length === 0 && !facts.issue.labels.includes("WIP")) {
-    // Already-cleaned close is intentionally a no-op.
-  } else if (violations.length === 0) safeActions.push({ kind: "remove-wip", issue: facts.issue.number });
   if (violations.length === 0 && refusals.length === 0 && facts.worktree) safeActions.push({ kind: "remove-worktree", path: facts.worktree.path });
+  if (violations.length === 0 && facts.issue.labels.includes("WIP")) safeActions.push({ kind: "remove-wip", issue: facts.issue.number });
   return { violations, refusals, safeActions, findings: [] };
 }
 
@@ -347,7 +345,7 @@ async function loadMarker(runner: Runner, repo: { owner: string; name: string },
 }
 
 async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {
-  const raw = requiredArray(await runJson(runner, ["gh", "issue", "list", "--state", "all", "--limit", "100", "--json", "number,state,labels"], "gh issue list"), "gh issue list");
+  const raw = requiredArray(await runJson(runner, ["gh", "issue", "list", "--state", "all", "--limit", "1000", "--json", "number,state,labels"], "gh issue list"), "gh issue list");
   return raw.map((entry, index) => {
     const issue = requiredRecord(entry, `gh issue list[${index}]`);
     return { number: requiredNumber(issue.number, `gh issue list[${index}].number`), state: requiredString(issue.state, `gh issue list[${index}].state`), labels: labels(issue.labels, `gh issue list[${index}].labels`) };
@@ -355,7 +353,7 @@ async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {
 }
 
 async function loadSyncPullRequests(runner: Runner, repo: { owner: string; name: string }): Promise<SyncFacts["pullRequests"]> {
-  const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "all", "--limit", "100", "--json", "number,state,mergedAt,headRefOid,labels,closingIssuesReferences"], "gh pr list"), "gh pr list");
+  const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "all", "--limit", "1000", "--json", "number,state,mergedAt,headRefOid,labels,closingIssuesReferences"], "gh pr list"), "gh pr list");
   const parsed = raw.map((entry, index) => {
     const pr = requiredRecord(entry, `gh pr list[${index}]`);
     const number = requiredNumber(pr.number, `gh pr list[${index}].number`);
