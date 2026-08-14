@@ -194,10 +194,34 @@ describe("acquireInstallLock (#997)", () => {
     const release = await acquireInstallLock(binPath, 2_000);
     try {
       await expect(acquireInstallLock(binPath, 200)).rejects.toThrow(
-        new RegExp(`held by pid ${process.pid}[\\s\\S]*\\.lock and re-run`),
+        new RegExp(`E_INSTALL_RACE[\\s\\S]*held by pid ${process.pid}[\\s\\S]*\\.lock and re-run`),
       );
     } finally {
       release();
+    }
+  });
+
+  posixTest("KESHA_INSTALL_LOCK_WAIT_SECS caps the wait instead of the six-hour default", async () => {
+    const binPath = stageBinPath("kesha-lock-env-wait-");
+    const release = await acquireInstallLock(binPath, 2_000);
+    process.env.KESHA_INSTALL_LOCK_WAIT_SECS = "1";
+    try {
+      await expect(acquireInstallLock(binPath)).rejects.toThrow(/E_INSTALL_RACE/);
+    } finally {
+      delete process.env.KESHA_INSTALL_LOCK_WAIT_SECS;
+      release();
+    }
+  }, 30_000);
+
+  test("a KESHA_INSTALL_LOCK_WAIT_SECS that is not a positive number is rejected", async () => {
+    const binPath = stageBinPath("kesha-lock-env-bad-");
+    process.env.KESHA_INSTALL_LOCK_WAIT_SECS = "soon";
+    try {
+      await expect(acquireInstallLock(binPath)).rejects.toThrow(
+        /E_INVALID_ARG[\s\S]*KESHA_INSTALL_LOCK_WAIT_SECS/,
+      );
+    } finally {
+      delete process.env.KESHA_INSTALL_LOCK_WAIT_SECS;
     }
   });
 });
