@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  formatJsonOutput,
   formatTextOutput,
   formatTranscriptOutput,
   formatVerboseOutput,
   humanBytes,
 } from "../../src/format";
-import type { TranscribeResult } from "../../src/types";
+import { hasErrorRecords } from "../../src/lib";
+import type { TranscribeJsonOutput, TranscribeResult } from "../../src/types";
 
 function result(overrides: Partial<TranscribeResult>): TranscribeResult {
   return { file: "a.ogg", text: "hello", ...overrides } as TranscribeResult;
@@ -91,5 +93,24 @@ describe("formatVerboseOutput", () => {
       result({ file: "b.ogg", text: "two" }),
     ]);
     expect(out).toBe("=== a.ogg ===\n---\none\n\n=== b.ogg ===\n---\ntwo\n");
+  });
+});
+
+describe("formatJsonOutput", () => {
+  test("keeps the bare result array recognizable after serialization", () => {
+    const output = JSON.parse(formatJsonOutput([result({})])) as TranscribeJsonOutput;
+
+    expect(hasErrorRecords(output)).toBe(false);
+    expect(output).toEqual([result({})]);
+  });
+
+  test("keeps the results-and-errors envelope recognizable after serialization", () => {
+    const errors = [{ file: "missing.ogg", code: "E_INPUT_NOT_FOUND", message: "File not found" }];
+    const output = JSON.parse(formatJsonOutput([result({})], errors)) as TranscribeJsonOutput;
+
+    expect(hasErrorRecords(output)).toBe(true);
+    if (hasErrorRecords(output)) {
+      expect(output).toEqual({ results: [result({})], errors });
+    }
   });
 });
