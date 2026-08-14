@@ -32,6 +32,7 @@ interface MainCommandArgs {
   verbose: boolean;
   debug: boolean;
   vad: boolean;
+  "no-vad": boolean;
   timestamps: boolean;
   speakers: boolean;
   itn: boolean;
@@ -148,13 +149,16 @@ export type ValidatedTranscribeArgs = {
   outputFormat: "json" | "toon" | "transcript" | "text";
 };
 
-type NormalizedMainCommandArgs = MainCommandArgs & { noVad: boolean };
+type MainVadArgs = Pick<MainCommandArgs, "vad" | "no-vad">;
 
-function normalizeMainCommandArgs(args: MainCommandArgs, rawArgs: string[]): NormalizedMainCommandArgs {
+export function normalizeMainCommandArgs<T extends MainVadArgs>(
+  args: T,
+  rawArgs: string[],
+): T & { noVad: boolean } {
   return {
     ...args,
     vad: rawArgs.includes("--vad") || args.vad,
-    noVad: rawArgs.includes("--no-vad"),
+    noVad: rawArgs.includes("--no-vad") || args["no-vad"] === true,
   };
 }
 
@@ -164,10 +168,12 @@ export type TranscribeArgsValidation =
 
 /** Validates cross-flag consistency that citty can't express. */
 export function validateTranscribeArgs(
-  args: NormalizedMainCommandArgs,
+  args: MainCommandArgs,
+  rawArgs: string[],
   fmt: ResolvedOutputFormat & { ok: true },
 ): TranscribeArgsValidation {
-  const { vad, noVad } = args;
+  const normalizedArgs = normalizeMainCommandArgs(args, rawArgs);
+  const { vad, noVad } = normalizedArgs;
 
   if (vad && noVad) {
     return { ok: false, error: "--vad and --no-vad are mutually exclusive." };
@@ -402,6 +408,21 @@ function writeOutput(
 }
 
 /** The transcribe command, bound to the global flags dispatch resolved before citty. */
+export const MAIN_VAD_ARGS = {
+  vad: {
+    type: "boolean",
+    description:
+      "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
+    default: false,
+  },
+  "no-vad": {
+    type: "boolean",
+    description:
+      "Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers",
+    default: false,
+  },
+} as const;
+
 export function createMainCommand(context: CliContext = { quiet: false, disableColor: false }) {
   return defineCommand({
     meta: {
@@ -479,16 +500,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         description: "Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)",
         default: false,
       },
-      vad: {
-        type: "boolean",
-        description: "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
-        default: false,
-      },
-      "no-vad": {
-        type: "boolean",
-        description: "Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers",
-        default: false,
-      },
+      ...MAIN_VAD_ARGS,
       // quiet and no-color are resolved before citty in dispatch.ts (so they
       // apply to every command, not just transcribe); declared here only so they
       // appear in `kesha --help`.
@@ -518,7 +530,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         process.exit(2);
       }
 
-      const validated = validateTranscribeArgs(normalizeMainCommandArgs(args, rawArgs), fmt);
+      const validated = validateTranscribeArgs(args, rawArgs, fmt);
       if (!validated.ok) {
         log.error(validated.error);
         process.exit(2);

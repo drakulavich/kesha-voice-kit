@@ -3,6 +3,7 @@ import { parseArgs, renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
 import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat } from "../../src/cli";
+import { MAIN_VAD_ARGS, normalizeMainCommandArgs } from "../../src/cli/main";
 
 function normalizeUsage(usage: string): string {
   return usage
@@ -19,7 +20,9 @@ function normalizeUsage(usage: string): string {
     .trim();
 }
 
-function defaultMainArgs(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+type MainCommandArgs = Parameters<typeof validateTranscribeArgs>[0];
+
+function defaultMainArgs(overrides: Partial<MainCommandArgs> = {}): MainCommandArgs {
   return {
     _: [],
     json: false,
@@ -30,19 +33,26 @@ function defaultMainArgs(overrides: Record<string, unknown> = {}): Record<string
     "no-vad": false,
     timestamps: false,
     speakers: false,
+    itn: false,
     "include-errors": false,
+    quiet: false,
+    "no-color": false,
     ...overrides,
   };
 }
 
 describe("citty negated flags", () => {
-  test("--no-vad is represented as vad: false, not a no-vad key", () => {
-    const args: Record<string, unknown> = parseArgs(["--no-vad"], {
-      vad: { type: "boolean", default: false },
-    });
+  test("production VAD args distinguish exact and camel-case no-vad spellings", () => {
+    const exactRawArgs = ["--no-vad"];
+    const exact = parseArgs<typeof MAIN_VAD_ARGS>(exactRawArgs, MAIN_VAD_ARGS);
+    const camelRawArgs = ["--noVad"];
+    const camel = parseArgs<typeof MAIN_VAD_ARGS>(camelRawArgs, MAIN_VAD_ARGS);
 
-    expect(args.vad).toBe(false);
-    expect(args["no-vad"]).toBeUndefined();
+    expect(exact.vad).toBe(false);
+    expect(exact["no-vad"]).toBe(false);
+    expect(normalizeMainCommandArgs(exact, exactRawArgs).noVad).toBe(true);
+    expect(camel["no-vad"]).toBe(true);
+    expect(normalizeMainCommandArgs(camel, camelRawArgs).noVad).toBe(true);
   });
 });
 
@@ -638,18 +648,24 @@ function okFmt(format: "json" | "toon" | "transcript" | "text" = "text"): Resolv
 
 describe("validateTranscribeArgs guards", () => {
   function validate(
-    argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
+    argsOverrides: Partial<MainCommandArgs>,
     rawArgs: string[],
     fmt: ResolvedOutputFormat & { ok: true },
   ) {
+    const parsedVadArgs = parseArgs<typeof MAIN_VAD_ARGS>(rawArgs, MAIN_VAD_ARGS);
     return validateTranscribeArgs(
-      { ...defaultMainArgs(argsOverrides), noVad: rawArgs.includes("--no-vad") } as never,
+      defaultMainArgs({
+        vad: parsedVadArgs.vad,
+        "no-vad": parsedVadArgs["no-vad"],
+        ...argsOverrides,
+      }),
+      rawArgs,
       fmt,
     );
   }
 
   function expectRejected(
-    argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
+    argsOverrides: Partial<MainCommandArgs>,
     rawArgs: string[],
     fmt: ResolvedOutputFormat & { ok: true },
   ): string {
@@ -660,7 +676,7 @@ describe("validateTranscribeArgs guards", () => {
   }
 
   function expectAccepted(
-    argsOverrides: Partial<ReturnType<typeof defaultMainArgs>>,
+    argsOverrides: Partial<MainCommandArgs>,
     rawArgs: string[],
     fmt: ResolvedOutputFormat & { ok: true },
   ) {
@@ -720,15 +736,19 @@ describe("validateTranscribeArgs guards", () => {
   });
 
   test("--vad and --no-vad are mutually exclusive", () => {
-    expect(expectRejected({ vad: true }, ["--vad", "--no-vad"], okFmt())).toContain(
+    expect(expectRejected({}, ["--vad", "--no-vad"], okFmt())).toContain(
+      "mutually exclusive",
+    );
+    expect(expectRejected({}, ["--no-vad", "--vad"], okFmt())).toContain(
       "mutually exclusive",
     );
   });
 
-  test("vadMode derives correctly from rawArgs", () => {
+  test("vadMode derives from the production parse and normalization boundary", () => {
     expect(expectAccepted({}, [], okFmt()).vadMode).toBe("auto");
-    expect(expectAccepted({ vad: true }, ["--vad"], okFmt()).vadMode).toBe("on");
+    expect(expectAccepted({}, ["--vad"], okFmt()).vadMode).toBe("on");
     expect(expectAccepted({}, ["--no-vad"], okFmt()).vadMode).toBe("off");
+    expect(expectAccepted({}, ["--noVad"], okFmt()).vadMode).toBe("off");
   });
 
   test("--speakers with --no-vad is rejected (#768)", () => {
