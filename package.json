@@ -44,6 +44,7 @@
   },
   "scripts": {
     "test": "bun test --timeout 30000",
+    "backlog": "bun scripts/backlog.ts",
     "test:watch": "bun test --timeout 30000 --watch",
     "test:unit": "bun test --timeout 30000 tests/unit/",
     "test:cli-fast": "bun test --timeout 30000 tests/unit/ tests/integration/cli-contracts.test.ts tests/integration/error-codes-cli.test.ts tests/integration/say.test.ts",
