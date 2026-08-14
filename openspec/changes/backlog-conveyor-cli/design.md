@@ -23,18 +23,21 @@ the current `headRefOid` through the REST API, and required contexts from the de
 protection endpoint. Every JSON response is shape-checked before use. Commands use argv
 arrays exclusively; no user-controlled input is interpolated in a shell.
 
-### Gate evidence is SHA-bound, independently approved, and provider-neutral
+### Gate evidence is self-versioned, SHA-bound, independently approved, and provider-neutral
 
 `gate` accepts only an open, non-draft, mergeable PR to the default branch, with exactly the
 requested closing issue. An `APPROVED` review by someone other than the PR author must name
 the current head SHA. Required contexts are read from branch protection and each matching
-check/status must be terminal and successful; skipped, pending, absent, or non-successful
-contexts fail. `gate --evidence <path>` consumes a JSON object with `provider` (any non-empty
-string), `verdict: "APPROVED"`, exact `headSha`, `uri`, and SHA-256 `digest`. The versioned
-comment records exactly that portable evidence object with issue and PR identifiers. Any two
-orchestrators therefore produce and consume the same GitHub state; the command never reads
-agent-local settings, state, model names, or provider-specific artifact formats. A later
-`sync` removes `merge-ready` when this marker no longer matches the head.
+check/status must be terminal and successful; a protected check with an `app_id` accepts only
+that app's result, and the deterministically latest matching attempt is authoritative. Skipped,
+pending, absent, or non-successful current attempts fail. `gate --evidence <path>` consumes a
+self-versioned JSON object (`version: 1`) with `provider` (any non-empty string),
+`verdict: "APPROVED"`, exact `headSha`, `uri`, and SHA-256 `digest`. The versioned comment
+records exactly that portable evidence object with issue and PR identifiers. Only the newest
+marker authored by a repository owner, member, or collaborator is accepted; all comment pages
+are considered. Any two orchestrators therefore produce and consume the same GitHub state; the
+command never reads agent-local settings, state, model names, or provider-specific artifact
+formats. A later `sync` removes `merge-ready` when this marker no longer matches the head.
 
 ### Worktree deletion is deliberately harder than label cleanup
 
@@ -50,6 +53,8 @@ path outside that directory is refused; the command never supplies force.
   SHA, avoiding approval carry-over.
 - `sync` reports missing, dirty, and orphan worktrees but only applies label repairs that it
   explicitly reported as safe.
+- The comment trust boundary intentionally excludes public contributors: an untrusted marker
+  cannot create merge eligibility, even if it is syntactically valid.
 
 ## Technical notes
 

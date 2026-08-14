@@ -20,11 +20,25 @@ export interface GateMarker {
 }
 
 export interface GateEvidence {
+  version: 1;
   provider: string;
   verdict: "APPROVED";
   headSha: string;
   uri: string;
   digest: string;
+}
+
+export interface RequiredCheck {
+  context: string;
+  appId: number | null;
+}
+
+export interface CheckResult {
+  name: string;
+  state: string;
+  appId: number | null;
+  observedAt: string | null;
+  id: number;
 }
 
 export interface GateFacts {
@@ -42,8 +56,8 @@ export interface GateFacts {
     labels: string[];
     reviews: Array<{ state: string; author: string | null; commitSha: string | null; submittedAt: string | null }>;
   };
-  requiredContexts: string[];
-  checks: Array<{ name: string; state: string }>;
+  requiredChecks: RequiredCheck[];
+  checks: CheckResult[];
   evidence: GateEvidence;
   marker: GateMarker | null;
 }
@@ -126,6 +140,11 @@ function optionalString(value: unknown, source: string): string | null {
   return requiredString(value, source);
 }
 
+function optionalNumber(value: unknown, source: string): number | null {
+  if (value === null || value === undefined) return null;
+  return requiredNumber(value, source);
+}
+
 async function runJson(runner: Runner, argv: string[], source: string): Promise<unknown> {
   const result = await runner.run(argv);
   if (result.exitCode !== 0) {
@@ -142,8 +161,13 @@ function closingIssues(value: unknown, source: string): number[] {
   return requiredArray(value, source).map((entry, index) => requiredNumber(requiredRecord(entry, `${source}[${index}]`).number, `${source}[${index}].number`));
 }
 
+export function issueNumberFromBranch(branch: string | null): number | null {
+  const match = /^(?:[^/]+\/)?issue-([1-9]\d*)$/.exec(branch ?? "");
+  return match ? Number(match[1]) : null;
+}
+
 function matchingBranch(branch: string | null, issue: number): boolean {
-  return new RegExp(`^(?:[^/]+/)?issue-${issue}$`).test(branch ?? "");
+  return issueNumberFromBranch(branch) === issue;
 }
 
 function sameNumbers(actual: number[], expected: number[]): boolean {
@@ -156,6 +180,7 @@ export function encodeGateMarker(marker: GateMarker): string {
 
 export function parseGateEvidence(value: unknown, source = "gate evidence"): GateEvidence {
   const evidence = requiredRecord(value, source);
+  if (evidence.version !== 1) throw new OperationalError(`${source}.version must equal 1`);
   const provider = requiredString(evidence.provider, `${source}.provider`);
   const verdict = requiredString(evidence.verdict, `${source}.verdict`);
   if (verdict !== "APPROVED") throw new OperationalError(`${source}.verdict must be APPROVED`);
@@ -164,7 +189,7 @@ export function parseGateEvidence(value: unknown, source = "gate evidence"): Gat
   const uri = requiredString(evidence.uri, `${source}.uri`);
   const digest = requiredString(evidence.digest, `${source}.digest`);
   if (!/^[0-9a-f]{64}$/i.test(digest)) throw new OperationalError(`${source}.digest must be a SHA-256 digest`);
-  return { provider, verdict: "APPROVED", headSha, uri, digest };
+  return { version: 1, provider, verdict: "APPROVED", headSha, uri, digest };
 }
 
 export function parseGateMarker(body: string): GateMarker | null {
@@ -197,13 +222,20 @@ export function evaluateGate(facts: GateFacts): Evaluation {
     (review) => review.state === "APPROVED" && review.author !== null && review.author !== pr.author && review.commitSha === pr.headSha && review.submittedAt !== null,
   );
   if (!approval) violations.push("no independent approval is bound to the current head SHA");
-  if (facts.requiredContexts.length === 0) violations.push("default branch has no required checks");
-  for (const context of facts.requiredContexts) {
-    const results = facts.checks.filter((check) => check.name === context);
-    if (results.length === 0) violations.push(`required check '${context}' is absent`);
-    else if (results.some((result) => result.state !== "SUCCESS")) {
-      violations.push(`required check '${context}' is ${results.find((result) => result.state !== "SUCCESS")!.state}`);
+  if (facts.requiredChecks.length === 0) violations.push("default branch has no required checks");
+  for (const required of facts.requiredChecks) {
+    const results = facts.checks.filter((check) => check.name === required.context && (required.appId === null || check.appId === required.appId));
+    if (results.length === 0) {
+      violations.push(required.appId === null ? `required check '${required.context}' is absent` : `required check '${required.context}' for app ${required.appId} is absent`);
+      continue;
     }
+    const latest = results.reduce((current, candidate) => {
+      const currentTime = current.observedAt ?? "";
+      const candidateTime = candidate.observedAt ?? "";
+      if (candidateTime > currentTime || (candidateTime === currentTime && candidate.id > current.id)) return candidate;
+      return current;
+    });
+    if (latest.state !== "SUCCESS") violations.push(`required check '${required.context}' is ${latest.state}`);
   }
   const marker: GateMarker | null = approval ? { version: 1, issue: facts.issue, pr: facts.pr, evidence: facts.evidence } : null;
   const markerCurrent = facts.marker !== null && facts.marker.issue === facts.issue && facts.marker.pr === facts.pr && JSON.stringify(facts.marker.evidence) === JSON.stringify(facts.evidence);
@@ -238,9 +270,9 @@ export function evaluateSync(facts: SyncFacts): Evaluation {
     }
   }
   for (const worktree of facts.worktrees) {
-    const issue = worktree.branch ? /^\/?(?:feat\/)?issue-(\d+)$/.exec(worktree.branch) : null;
+    const issue = issueNumberFromBranch(worktree.branch);
     if (worktree.dirty) findings.push(`worktree ${worktree.path} is dirty`);
-    if (issue && !facts.issues.some((candidate) => candidate.number === Number(issue[1]) && candidate.labels.includes("WIP"))) {
+    if (issue !== null && !facts.issues.some((candidate) => candidate.number === issue && candidate.labels.includes("WIP"))) {
       findings.push(`worktree ${worktree.path} is orphaned`);
     }
   }
@@ -312,33 +344,60 @@ async function loadPullRequest(runner: Runner, repo: { owner: string; name: stri
   };
 }
 
-async function loadRequiredContexts(runner: Runner, repo: { owner: string; name: string }, branch: string): Promise<string[]> {
+async function loadRequiredChecks(runner: Runner, repo: { owner: string; name: string }, branch: string): Promise<RequiredCheck[]> {
   const raw = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/branches/${branch}/protection/required_status_checks`], "gh api required status checks"), "gh api required status checks");
-  const contexts = requiredArray(raw.contexts, "required status checks.contexts").map((entry, index) => requiredString(entry, `required status checks.contexts[${index}]`));
-  const checks = raw.checks === undefined ? [] : requiredArray(raw.checks, "required status checks.checks").map((entry, index) => requiredString(requiredRecord(entry, `required status checks.checks[${index}]`).context, `required status checks.checks[${index}].context`));
-  return [...new Set([...contexts, ...checks])];
+  const contexts = requiredArray(raw.contexts, "required status checks.contexts").map((entry, index) => ({ context: requiredString(entry, `required status checks.contexts[${index}]`), appId: null }));
+  const checks = raw.checks === undefined ? [] : requiredArray(raw.checks, "required status checks.checks").map((entry, index) => {
+    const check = requiredRecord(entry, `required status checks.checks[${index}]`);
+    return { context: requiredString(check.context, `required status checks.checks[${index}].context`), appId: optionalNumber(check.app_id, `required status checks.checks[${index}].app_id`) };
+  });
+  const deduplicated = new Map<string, RequiredCheck>();
+  for (const required of [...contexts, ...checks]) deduplicated.set(`${required.context}\u0000${required.appId ?? ""}`, required);
+  return [...deduplicated.values()];
 }
 
-async function loadChecks(runner: Runner, repo: { owner: string; name: string }, sha: string): Promise<GateFacts["checks"]> {
+async function loadChecks(runner: Runner, repo: { owner: string; name: string }, sha: string): Promise<CheckResult[]> {
   const runs = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/check-runs?per_page=100`], "gh api check runs"), "gh api check runs");
   const statuses = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/status`], "gh api statuses"), "gh api statuses");
   const checkRuns = requiredArray(runs.check_runs, "check runs.check_runs").map((entry, index) => {
     const run = requiredRecord(entry, `check runs.check_runs[${index}]`);
     const status = requiredString(run.status, `check runs.check_runs[${index}].status`);
     const conclusion = optionalString(run.conclusion, `check runs.check_runs[${index}].conclusion`);
-    return { name: requiredString(run.name, `check runs.check_runs[${index}].name`), state: status === "completed" && conclusion === "success" ? "SUCCESS" : conclusion?.toUpperCase() ?? status.toUpperCase() };
+    const app = run.app === null || run.app === undefined ? null : requiredRecord(run.app, `check runs.check_runs[${index}].app`);
+    return {
+      name: requiredString(run.name, `check runs.check_runs[${index}].name`),
+      state: status === "completed" && conclusion === "success" ? "SUCCESS" : conclusion?.toUpperCase() ?? status.toUpperCase(),
+      appId: app ? requiredNumber(app.id, `check runs.check_runs[${index}].app.id`) : null,
+      observedAt: optionalString(run.completed_at, `check runs.check_runs[${index}].completed_at`) ?? optionalString(run.started_at, `check runs.check_runs[${index}].started_at`),
+      id: requiredNumber(run.id, `check runs.check_runs[${index}].id`),
+    };
   });
   const statusContexts = requiredArray(statuses.statuses, "statuses.statuses").map((entry, index) => {
     const status = requiredRecord(entry, `statuses.statuses[${index}]`);
-    return { name: requiredString(status.context, `statuses.statuses[${index}].context`), state: requiredString(status.state, `statuses.statuses[${index}].state`).toUpperCase() };
+    return {
+      name: requiredString(status.context, `statuses.statuses[${index}].context`),
+      state: requiredString(status.state, `statuses.statuses[${index}].state`).toUpperCase(),
+      appId: null,
+      observedAt: optionalString(status.created_at, `statuses.statuses[${index}].created_at`),
+      id: requiredNumber(status.id, `statuses.statuses[${index}].id`),
+    };
   });
   return [...checkRuns, ...statusContexts];
 }
 
-async function loadMarker(runner: Runner, repo: { owner: string; name: string }, pr: number): Promise<GateMarker | null> {
-  const raw = requiredArray(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${pr}/comments?per_page=100`], "gh api comments"), "gh api comments");
-  for (const comment of [...raw].reverse()) {
-    const marker = parseGateMarker(requiredString(requiredRecord(comment, "comment").body, "comment.body"));
+const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+export async function loadMarker(runner: Runner, repo: { owner: string; name: string }, pr: number): Promise<GateMarker | null> {
+  const comments: unknown[] = [];
+  for (let page = 1; ; page += 1) {
+    const raw = requiredArray(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${pr}/comments?per_page=100&page=${page}`], "gh api comments"), "gh api comments");
+    comments.push(...raw);
+    if (raw.length < 100) break;
+  }
+  for (const comment of [...comments].reverse()) {
+    const parsed = requiredRecord(comment, "comment");
+    if (!trustedAssociations.has(requiredString(parsed.author_association, "comment.author_association"))) continue;
+    const marker = parseGateMarker(requiredString(parsed.body, "comment.body"));
     if (marker) return marker;
   }
   return null;
@@ -437,7 +496,7 @@ export async function sync(runner: Runner, apply: boolean): Promise<Evaluation> 
 export async function gate(runner: Runner, issue: number, pr: number, evidence: GateEvidence, apply: boolean): Promise<Evaluation> {
   const repo = await repository(runner);
   const pullRequest = await loadPullRequest(runner, repo, pr);
-  const facts: GateFacts = { issue, pr, defaultBranch: repo.defaultBranch, pullRequest, requiredContexts: await loadRequiredContexts(runner, repo, repo.defaultBranch), checks: await loadChecks(runner, repo, pullRequest.headSha), evidence, marker: await loadMarker(runner, repo, pr) };
+  const facts: GateFacts = { issue, pr, defaultBranch: repo.defaultBranch, pullRequest, requiredChecks: await loadRequiredChecks(runner, repo, repo.defaultBranch), checks: await loadChecks(runner, repo, pullRequest.headSha), evidence, marker: await loadMarker(runner, repo, pr) };
   const evaluation = evaluateGate(facts);
   if (apply && evaluation.violations.length === 0) await applyActions(runner, evaluation.safeActions, repo);
   return evaluation;

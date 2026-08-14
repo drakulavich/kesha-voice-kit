@@ -25,12 +25,15 @@ codes for success, invariant violation, operational failure, and unsafe/refused 
 
 `gate --issue N --pr P --evidence path` SHALL require an open, non-draft, mergeable PR to the default
 branch, exactly `[N]` in `closingIssuesReferences`, an independent `APPROVED` review for the
-current head SHA, and terminal successful results for every real required check. A stacked
-or non-default-base PR MUST be ineligible. Under `--apply`, a versioned machine-readable
-PR comment MUST bind the marker to the current SHA before `merge-ready` is added. The evidence
-object MUST be versioned and provider-neutral: any non-empty `provider`, `verdict: APPROVED`,
-exact head SHA, evidence URI/path, and SHA-256 digest. The command MUST NOT depend on a named
-agent, model, local settings, or provider-specific artifact format.
+current head SHA, and terminal successful results for every real required check. A required
+check with a protected `app_id` MUST match that app, and its latest matching attempt MUST be
+authoritative. A stacked or non-default-base PR MUST be ineligible. Under `--apply`, a
+versioned machine-readable PR comment MUST bind the marker to the current SHA before
+`merge-ready` is added. The evidence object MUST itself declare `version: 1` and remain
+provider-neutral: any non-empty `provider`, `verdict: APPROVED`, exact head SHA, evidence
+URI/path, and SHA-256 digest. The command MUST read markers from all comment pages and accept
+only the newest valid marker authored by an owner, member, or collaborator. The command MUST
+NOT depend on a named agent, model, local settings, or provider-specific artifact format.
 
 #### Scenario: Ira sees a review made before a push
 
@@ -44,13 +47,25 @@ agent, model, local settings, or provider-specific artifact format.
 - AND a second orchestrator supplies the same valid evidence schema with provider `future-agent-b`
 - WHEN either runs `bun run conveyor -- gate --issue 1032 --pr 1040 --evidence path --apply`
 - THEN the marker is readable by both and no provider name is special-cased
-- AND it does not add `merge-ready`
+- AND a repeated apply preserves the existing marker and `merge-ready` without a duplicate mutation
 
 #### Scenario: Ira encounters a skipped required check
 
 - GIVEN a required context with a skipped or pending result on the current head
 - WHEN Ira runs `gate --issue 1032 --pr 1040`
 - THEN it exits with an invariant violation
+
+#### Scenario: Maks sees a newer successful attempt after an older failure
+
+- GIVEN a protected required check from app `17` has an older failed attempt and a newer successful attempt on the current head
+- WHEN Maks runs `gate --issue 1032 --pr 1040`
+- THEN the gate accepts the check based on the newer attempt
+
+#### Scenario: Sona sees a valid-looking untrusted marker
+
+- GIVEN the newest valid-looking marker was authored by an untrusted external contributor
+- WHEN Sona runs `sync` or `gate`
+- THEN the marker is ignored and cannot preserve or create merge eligibility
 
 ### Requirement: Sync and close SHALL preserve worktree safety
 
