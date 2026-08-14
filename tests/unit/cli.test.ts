@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
+import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, detectTextLanguageFallback, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat } from "../../src/cli";
 
 function normalizeUsage(usage: string): string {
@@ -443,6 +443,18 @@ describe("language detection", () => {
   test("returns empty string for empty text", () => {
     const lang = detectLanguage("");
     expect(lang).toBe("");
+  });
+
+  test("fallback detection reports tinyld's own score and names its source (#941)", () => {
+    const result = detectTextLanguageFallback("Это простое предложение на русском языке для тестирования.");
+    expect(result?.code).toBe("ru");
+    expect(result?.source).toBe("tinyld");
+    expect(result?.confidence).toBeGreaterThan(0);
+    expect(result?.confidence).toBeLessThanOrEqual(1);
+  });
+
+  test("fallback detection returns undefined for empty text", () => {
+    expect(detectTextLanguageFallback("")).toBeUndefined();
   });
 
   test("checkLanguageMismatch returns null when no expected lang", () => {
