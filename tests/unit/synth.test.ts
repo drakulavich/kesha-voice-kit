@@ -1,6 +1,42 @@
 import { describe, it, expect, spyOn } from "bun:test";
-import { buildSayArgs, engineCrashMessage, say, SayError } from "../../src/synth";
+import { buildSayArgs, engineCrashMessage, say, SayError, type SayOptions } from "../../src/synth";
 import { log } from "../../src/log";
+
+describe("SayOptions type contract", () => {
+  const oggOpusOptions: SayOptions = {
+    format: "ogg-opus",
+    bitrate: 32_000,
+    sampleRate: 24_000,
+  };
+  const wavOptions: SayOptions = { format: "wav" };
+
+  // @ts-expect-error bitrate is only valid with format: "ogg-opus"
+  const wavWithBitrate: SayOptions = {
+    format: "wav",
+    bitrate: 64_000,
+  };
+  const flacWithSampleRate: SayOptions = {
+    format: "flac",
+    // @ts-expect-error sampleRate is only valid with format: "ogg-opus"
+    sampleRate: 24_000,
+  };
+  // @ts-expect-error bitrate requires an explicit format: "ogg-opus"
+  const defaultFormatWithBitrate: SayOptions = {
+    bitrate: 64_000,
+  };
+  const opusWithUnsupportedSampleRate: SayOptions = {
+    format: "ogg-opus",
+    // @ts-expect-error 44100 is not an Opus sample rate supported by kesha-engine
+    sampleRate: 44_100,
+  };
+
+  void oggOpusOptions;
+  void wavOptions;
+  void wavWithBitrate;
+  void flacWithSampleRate;
+  void defaultFormatWithBitrate;
+  void opusWithUnsupportedSampleRate;
+});
 
 describe("buildSayArgs", () => {
   it("starts with the 'say' subcommand", () => {
