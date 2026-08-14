@@ -410,6 +410,9 @@ mod tests {
             "go to example dot com",
             "Cats and three dogs.",
             "Three hundred and five dogs.",
+            "five dollars and three apples",
+            "two thousand, and three apples",
+            "the s and p five hundred index",
         ] {
             let once = normalize_text(text);
             assert_eq!(normalize_text(&once), once, "not idempotent for {text:?}");
@@ -586,6 +589,10 @@ mod tests {
             ("pick one and two", "pick 1 and 2"),
             ("chapter five and three dogs", "chapter 5 and 3 dogs"),
             ("two and a half hours", "2 and a half hours"),
+            // No word completes the number, so the "and" is the speaker's even
+            // straight after a scale word.
+            ("we counted three hundred and", "we counted 300 and"),
+            ("three hundred and five and three dogs", "305 and 3 dogs"),
         ] {
             assert_eq!(normalize_text(spoken), expected);
         }
@@ -597,6 +604,9 @@ mod tests {
             ("Three hundred and five dogs.", "305 dogs."),
             ("one thousand and one nights", "1001 nights"),
             ("it costs five dollars and fifty cents", "it costs $5.50"),
+            ("fifty dollars and ninety nine cents", "$50.99"),
+            ("one dollar and one cent", "$1.01"),
+            ("five dollars and fifty", "$5.50"),
         ] {
             assert_eq!(normalize_text(spoken), expected);
         }
@@ -620,6 +630,68 @@ mod tests {
             let phrase = format!("two hundred and {tail}");
             assert!(absorbs_and(&phrase), "{tail} does not complete a number");
         }
+    }
+
+    /// A whole dollar amount is already a complete number, so upstream's split
+    /// only justifies eating the "and" when the cents half follows. Without
+    /// this the tail became cents: `$5.03 apples`, `$10.02 tickets` (#1000).
+    #[test]
+    fn a_dollar_amount_keeps_an_and_no_cents_phrase_follows() {
+        for (spoken, expected) in [
+            ("five dollars and three apples", "$5 and 3 apples"),
+            ("ten dollars and two tickets", "$10 and 2 tickets"),
+            ("one dollar and two tickets", "$1 and 2 tickets"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    /// Punctuation on the connector ends the number, so the "and" after it
+    /// starts a new clause and belongs to the speaker (#1000).
+    #[test]
+    fn a_clause_break_on_the_connector_releases_the_and() {
+        for (spoken, expected) in [
+            ("two thousand, and three apples", "2000, and 3 apples"),
+            ("two thousand. and three apples", "2000. and 3 apples"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    /// `S&P 500` is upstream's one whitelist phrase built around an "and";
+    /// masking it would leave the phrase untagged (#1000).
+    #[test]
+    fn the_whitelist_phrase_built_on_and_still_matches() {
+        for (spoken, expected) in [
+            ("s and p five hundred", "S&P 500"),
+            ("the s and p five hundred index", "the S&P 500 index"),
+            ("the S and P five hundred index", "the S&P 500 index"),
+            // Too short to be the phrase, so the "and" is the speaker's again.
+            ("s and p five", "s and p 5"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    /// Upstream limits, unchanged by the guard and pinned so a pin bump shows
+    /// up as a diff here rather than a surprise: a residual under a scale is
+    /// emitted as a separate number, and a whitelist hit ends the pass so what
+    /// follows it is never tagged.
+    #[test]
+    fn upstream_residuals_are_left_as_upstream_produces_them() {
+        for spoken in [
+            "five hundred and twenty three dogs",
+            "s and p five hundred and three dogs",
+        ] {
+            assert_eq!(
+                normalize_text(spoken),
+                text_processing_rs::normalize_sentence(spoken)
+            );
+        }
+        assert_eq!(
+            normalize_text("five hundred and twenty three dogs"),
+            "520 3 dogs"
+        );
     }
 
     #[test]
