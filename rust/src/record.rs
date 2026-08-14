@@ -1079,4 +1079,23 @@ mod tests {
             "unexpected error: {err}"
         );
     }
+
+    #[test]
+    #[cfg(all(feature = "coreml", target_os = "macos"))]
+    fn live_endpointing_requires_an_explicitly_installed_vad_model() {
+        let _lock = crate::util::test_env::lock();
+        let cache = tempfile::tempdir().unwrap();
+        let cache_path = cache.path().to_string_lossy().into_owned();
+        let _guard = crate::util::test_env::EnvGuard::set("KESHA_CACHE_DIR", &cache_path);
+
+        let err = match load_live_endpoint(crate::vad::EndpointConfig::default()) {
+            Ok(_) => panic!("a missing VAD model must not start endpointing"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("kesha install --vad"),
+            "missing-model hint was not actionable: {err:#}"
+        );
+    }
 }
