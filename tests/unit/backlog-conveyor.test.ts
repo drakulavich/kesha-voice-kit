@@ -145,6 +145,32 @@ describe("backlog gate", () => {
     expect(evaluateGate(facts).violations).not.toContain("required check '🧪 CI' is FAILURE");
   });
 
+  test("loads all check-run attempts so a second-page success supersedes an older failure", async () => {
+    const checkRunTargets: string[] = [];
+    const olderFailure = { id: 1, name: "🧪 CI", status: "completed", conclusion: "failure", app: { id: 17 }, started_at: "2026-08-14T10:00:00Z", completed_at: "2026-08-14T10:01:00Z" };
+    const filler = Array.from({ length: 99 }, (_, index) => ({ id: index + 10, name: `other-${index}`, status: "completed", conclusion: "success", app: { id: 17 }, started_at: "2026-08-14T10:00:00Z", completed_at: "2026-08-14T10:01:00Z" }));
+    const newerSuccess = { id: 2, name: "🧪 CI", status: "completed", conclusion: "success", app: { id: 17 }, started_at: "2026-08-14T11:00:00Z", completed_at: "2026-08-14T11:01:00Z" };
+    const runner: Runner = {
+      async run(argv) {
+        const target = argv[2] ?? "";
+        if (target.includes("check-runs")) {
+          checkRunTargets.push(target);
+          const page = new URL(`https://example.test/${target}`).searchParams.get("page");
+          return { exitCode: 0, stderr: "", stdout: JSON.stringify({ check_runs: page === "2" ? [newerSuccess] : [olderFailure, ...filler] }) };
+        }
+        return { exitCode: 0, stderr: "", stdout: JSON.stringify({ statuses: [] }) };
+      },
+    };
+
+    const facts = gateFacts({ checks: await loadChecks(runner, { owner: "o", name: "r" }, head), requiredChecks: [{ context: "🧪 CI", appId: 17 }] });
+
+    expect(checkRunTargets).toEqual([
+      `repos/o/r/commits/${head}/check-runs?filter=all&per_page=100&page=1`,
+      `repos/o/r/commits/${head}/check-runs?filter=all&per_page=100&page=2`,
+    ]);
+    expect(evaluateGate(facts).violations).not.toContain("required check '🧪 CI' is FAILURE");
+  });
+
   test("rejects a matching check name from the wrong protected app", () => {
     const facts = gateFacts({
       checks: [{ name: "🧪 CI", state: "SUCCESS", appId: 99, attemptAt: "2026-08-14T11:00:00Z", id: 2 }],

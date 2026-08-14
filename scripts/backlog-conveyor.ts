@@ -420,9 +420,15 @@ async function loadRequiredChecks(runner: Runner, repo: Pick<Repository, "owner"
 }
 
 export async function loadChecks(runner: Runner, repo: Pick<Repository, "owner" | "name">, sha: string): Promise<CheckResult[]> {
-  const runs = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/check-runs?per_page=100`], "gh api check runs"), "gh api check runs");
   const statuses = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/status`], "gh api statuses"), "gh api statuses");
-  const checkRuns = requiredArray(runs.check_runs, "check runs.check_runs").map((entry, index) => {
+  const allRuns: unknown[] = [];
+  for (let page = 1; ; page += 1) {
+    const runs = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/check-runs?filter=all&per_page=100&page=${page}`], "gh api check runs"), "gh api check runs");
+    const pageRuns = requiredArray(runs.check_runs, "check runs.check_runs");
+    allRuns.push(...pageRuns);
+    if (pageRuns.length < 100) break;
+  }
+  const checkRuns = allRuns.map((entry, index) => {
     const run = requiredRecord(entry, `check runs.check_runs[${index}]`);
     const status = requiredString(run.status, `check runs.check_runs[${index}].status`);
     const conclusion = optionalString(run.conclusion, `check runs.check_runs[${index}].conclusion`);
