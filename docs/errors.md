@@ -32,6 +32,7 @@ code never needs sanitizing.
 | `E_TRANSCRIBE_FAILED` | transcribe | no | The ASR pipeline failed. | Re-run; file a bug with a support bundle. |
 | `E_DIARIZE_TIMEOUT` | transcribe | yes | A diarization phase exceeded its budget, or `KESHA_DIARIZE_TIMEOUT_SECS` cut the run short. The message names the phase: model load, reading the audio, or processing chunks. | Model load: re-run once warm (`kesha install --diarize`), or `KESHA_DIARIZE_COMPUTE_UNITS=cpu-and-gpu`, or raise `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` (default 300). Own cap: raise or unset `KESHA_DIARIZE_TIMEOUT_SECS`. Otherwise file a bug. |
 | `E_ENGINE_SPAWN` | internal | no | The CLI couldn't spawn the engine subprocess. | `kesha install`; check the engine binary path (`KESHA_ENGINE_BIN`). |
+| `E_INSTALL_RACE` | internal | yes | `kesha install` finished, but the engine recorded in the cache is not the version it installed — something else wrote to the same cache during the run. | Re-run the install once no other one is in flight; give concurrent jobs private caches via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`. |
 | `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid. | See `kesha --help`; the message names the setting and its accepted values. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |
 
@@ -40,8 +41,9 @@ code never needs sanitizing.
 - **Engine codes** (everything except `E_ENGINE_SPAWN`) are defined in the Rust
   engine and emitted on its stderr as `error [CODE]: …`. List them with
   `kesha-engine --error-codes-json`.
-- **`E_ENGINE_SPAWN`** originates only in the TypeScript CLI, for the failure to
-  spawn the engine subprocess at all.
+- **`E_ENGINE_SPAWN`** and **`E_INSTALL_RACE`** originate only in the TypeScript
+  CLI — the failure to spawn the engine subprocess at all, and an install whose
+  version was overwritten in the cache before it could report success.
 - **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
   engine and the TypeScript CLI: the CLI validates arguments and checks input
   existence up front, and the engine emits the same codes when a bad argument or
