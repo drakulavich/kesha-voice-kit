@@ -92,6 +92,10 @@ const NUMBER_CONNECTOR_HEADS: &[&str] = &[
     "dollars",
 ];
 
+/// The connector heads whose "and" belongs to the number only when a cents
+/// phrase follows, because it is the money tagger's split rather than a scale.
+const DOLLAR_HEADS: &[&str] = &["dollar", "dollars"];
+
 /// Upstream's 0-99 vocabulary (`ONES` + `TENS`) — the only words that can
 /// complete a number after a connector.
 const NUMBER_TAIL_WORDS: &[&str] = &[
@@ -124,6 +128,11 @@ const NUMBER_TAIL_WORDS: &[&str] = &[
     "eighty",
     "ninety",
 ];
+
+/// The only whitelist entry containing "and" (`itn/en/whitelist.rs` at the
+/// `8a043f1` pin). Masking that "and" would hide `S&P 500` from the whitelist,
+/// so the phrase is matched as a whole and left intact (#1000).
+const WHITELIST_AND_PHRASE: &[&str] = &["s", "and", "p", "five", "hundred"];
 
 /// Object-replacement character: no upstream tagger matches a span containing
 /// it, and the pretokenizer neither splits nor absorbs it.
@@ -179,11 +188,7 @@ fn mask_protected_words(text: &str) -> Option<(String, Vec<String>)> {
             masked.push(PROTECTED_MASK);
             i += 2;
         } else if PUNCTUATION_NAMES.contains(&core.as_str())
-            || (core == "and"
-                && !joins_a_number(
-                    i.checked_sub(1).map(|p| words[p]),
-                    words.get(i + 1).copied(),
-                ))
+            || (core == "and" && !joins_a_number(&words, i) && !starts_whitelist_phrase(&words, i))
         {
             names.push(words[i].to_string());
             masked.push(PROTECTED_MASK);
@@ -203,12 +208,51 @@ fn mask_protected_words(text: &str) -> Option<(String, Vec<String>)> {
 /// a sentence "and" next to a spoken number is swallowed with it (#1000).
 /// English only puts "and" inside a number between a connector head and a word
 /// that completes it, so every other "and" is the speaker's and gets masked.
-fn joins_a_number(before: Option<&str>, after: Option<&str>) -> bool {
-    let (Some(before), Some(after)) = (before, after) else {
+fn joins_a_number(words: &[&str], and_index: usize) -> bool {
+    let (Some(before), Some(after)) = (
+        and_index.checked_sub(1).map(|p| words[p]),
+        words.get(and_index + 1),
+    ) else {
         return false;
     };
-    NUMBER_CONNECTOR_HEADS.contains(&punctuation_core(before).as_str())
-        && NUMBER_TAIL_WORDS.contains(&punctuation_core(after).as_str())
+    // "two thousand, and three apples": the clause break ended the number.
+    if before.ends_with(|c: char| c.is_ascii_punctuation()) {
+        return false;
+    }
+    let head = punctuation_core(before);
+    if !NUMBER_CONNECTOR_HEADS.contains(&head.as_str())
+        || !NUMBER_TAIL_WORDS.contains(&punctuation_core(after).as_str())
+    {
+        return false;
+    }
+    // A whole dollar amount is a complete number, so what follows its "and" is
+    // the number's only when it is the cents half of the money tagger's split;
+    // "five dollars and three apples" is the speaker's conjunction (#1000).
+    if DOLLAR_HEADS.contains(&head.as_str()) {
+        let cents = words[and_index + 1..]
+            .iter()
+            .take_while(|word| NUMBER_TAIL_WORDS.contains(&punctuation_core(word).as_str()))
+            .count();
+        return words[and_index + 1 + cents..]
+            .first()
+            .is_none_or(|rest| matches!(punctuation_core(rest).as_str(), "cent" | "cents"));
+    }
+    true
+}
+
+/// True when the "and" at `and_index` sits inside [`WHITELIST_AND_PHRASE`].
+fn starts_whitelist_phrase(words: &[&str], and_index: usize) -> bool {
+    let Some(start) = and_index.checked_sub(1) else {
+        return false;
+    };
+    words
+        .get(start..start + WHITELIST_AND_PHRASE.len())
+        .is_some_and(|window| {
+            window
+                .iter()
+                .zip(WHITELIST_AND_PHRASE)
+                .all(|(word, expected)| punctuation_core(word) == *expected)
+        })
 }
 
 fn punctuation_core(word: &str) -> String {
@@ -612,26 +656,6 @@ mod tests {
         }
     }
 
-    /// Both lists exist to name the one position where upstream is right to
-    /// eat the "and". Keeps them grounded in upstream's own vocabulary rather
-    /// than guesswork, and fails loudly if a pin bump moves that position.
-    #[test]
-    fn upstream_absorbs_the_and_at_every_position_the_rule_exempts() {
-        let absorbs_and = |phrase: &str| {
-            !text_processing_rs::normalize_sentence(phrase)
-                .split_whitespace()
-                .any(|word| word == "and")
-        };
-        for head in NUMBER_CONNECTOR_HEADS {
-            let phrase = format!("two {head} and one");
-            assert!(absorbs_and(&phrase), "{head} is not a number connector");
-        }
-        for tail in NUMBER_TAIL_WORDS {
-            let phrase = format!("two hundred and {tail}");
-            assert!(absorbs_and(&phrase), "{tail} does not complete a number");
-        }
-    }
-
     /// A whole dollar amount is already a complete number, so upstream's split
     /// only justifies eating the "and" when the cents half follows. Without
     /// this the tail became cents: `$5.03 apples`, `$10.02 tickets` (#1000).
@@ -673,6 +697,14 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_whitelist_and_phrase_is_one_upstream_rewrites() {
+        // Grounds the constant in upstream's own whitelist rather than
+        // guesswork, and fails loudly if a pin bump drops or renames the entry.
+        let phrase = WHITELIST_AND_PHRASE.join(" ");
+        assert_eq!(text_processing_rs::normalize_sentence(&phrase), "S&P 500");
+    }
+
     /// Upstream limits, unchanged by the guard and pinned so a pin bump shows
     /// up as a diff here rather than a surprise: a residual under a scale is
     /// emitted as a separate number, and a whitelist hit ends the pass so what
@@ -692,6 +724,26 @@ mod tests {
             normalize_text("five hundred and twenty three dogs"),
             "520 3 dogs"
         );
+    }
+
+    /// Both lists exist to name the one position where upstream is right to
+    /// eat the "and". Keeps them grounded in upstream's own vocabulary rather
+    /// than guesswork, and fails loudly if a pin bump moves that position.
+    #[test]
+    fn upstream_absorbs_the_and_at_every_position_the_rule_exempts() {
+        let absorbs_and = |phrase: &str| {
+            !text_processing_rs::normalize_sentence(phrase)
+                .split_whitespace()
+                .any(|word| word == "and")
+        };
+        for head in NUMBER_CONNECTOR_HEADS {
+            let phrase = format!("two {head} and one");
+            assert!(absorbs_and(&phrase), "{head} is not a number connector");
+        }
+        for tail in NUMBER_TAIL_WORDS {
+            let phrase = format!("two hundred and {tail}");
+            assert!(absorbs_and(&phrase), "{tail} does not complete a number");
+        }
     }
 
     #[test]
