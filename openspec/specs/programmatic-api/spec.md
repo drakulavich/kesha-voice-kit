@@ -65,8 +65,7 @@ object. It SHALL:
 > `src/lib.ts:46`. The Engine's stderr never reaches the caller's stderr because
 > `runEngine` (`src/engine.ts:106`) spawns it with `stdio: ["ignore", "pipe",
 > "pipe"]` — stderr is captured into a string, surfaced only inside the thrown
-> Error on failure and discarded on success. `lib.ts` also passes `silent: true`,
-> but that option is currently never read downstream — see Open Issues.*
+> Error on failure and discarded on success.*
 
 ### Requirement: `transcribeWithTimestamps(path, opts?)` returns text and segments
 
@@ -267,8 +266,3 @@ message naming the `kesha install` command needed to fix the situation.
   surfaced in the type; it is documented only in the JSDoc comment.
 - `downloadTts` does not expose a progress callback; callers cannot observe
   download progress except via stderr parsing.
-- **`silent` is a dead option** — `lib.ts` passes `silent: true` to
-  `internalTranscribe`/`internalTranscribeWithSegments` (`src/lib.ts:52,66`), but
-  `TranscribeOptions.silent` (`src/transcribe.ts:15`) is never read; stderr
-  suppression for the Core API comes solely from `runEngine`'s piped stdio. The
-  flag should either be wired up or removed.
