@@ -4597,6 +4597,7 @@ mod retry_tests {
     /// up. The body is still arriving when a deadline shorter than the drip
     /// fires, and no scheduling delay can hand the client the promised length —
     /// those bytes are never sent, so the read cannot come back `Ok` (#1013).
+    #[cfg(unix)]
     fn never_completing_server(chunk: usize, chunks: usize, gap_ms: u64, hold_ms: u64) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind never-completing server");
         let base = format!("http://{}", listener.local_addr().expect("stub addr"));
