@@ -1,6 +1,7 @@
 import { runMain, type CommandDef } from "citty";
 import { existsSync } from "fs";
 import { log } from "../log";
+import { guardStdoutWrites } from "../stdout-pipe";
 import { suggestCommand } from "../suggest-command";
 import { applyCliContext, resolveCliContext } from "./context";
 
@@ -89,6 +90,7 @@ export function unknownCommandMessages(token: string, subcommandKeys: string[]):
 }
 
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
+  guardStdoutWrites();
   const context = resolveCliContext(argv);
   applyCliContext(context);
 
