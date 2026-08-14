@@ -73,25 +73,86 @@ const PUNCTUATION_NAMES: &[&str] = &[
     "slash",
 ];
 
+/// Words after which an "and" can still belong to the number rather than to
+/// the sentence: a scale word ("three hundred and five") or the dollar the
+/// money tagger splits on ("five dollars and fifty cents"). Mirrors upstream's
+/// `SCALES` and `parse_dollars_and_cents` at the `8a043f1` pin (#1000).
+const NUMBER_CONNECTOR_HEADS: &[&str] = &[
+    "hundred",
+    "thousand",
+    "million",
+    "billion",
+    "trillion",
+    "quadrillion",
+    "quintillion",
+    "sextillion",
+    "lakh",
+    "crore",
+    "dollar",
+    "dollars",
+];
+
+/// The connector heads whose "and" belongs to the number only when a cents
+/// phrase follows, because it is the money tagger's split rather than a scale.
+const DOLLAR_HEADS: &[&str] = &["dollar", "dollars"];
+
+/// Upstream's 0-99 vocabulary (`ONES` + `TENS`) — the only words that can
+/// complete a number after a connector.
+const NUMBER_TAIL_WORDS: &[&str] = &[
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+];
+
+/// The only whitelist entry containing "and" (`itn/en/whitelist.rs` at the
+/// `8a043f1` pin). Masking that "and" would hide `S&P 500` from the whitelist,
+/// so the phrase is matched as a whole and left intact (#1000).
+const WHITELIST_AND_PHRASE: &[&str] = &["s", "and", "p", "five", "hundred"];
+
 /// Object-replacement character: no upstream tagger matches a span containing
 /// it, and the pretokenizer neither splits nor absorbs it.
-const PUNCTUATION_MASK: &str = "\u{FFFC}";
+const PROTECTED_MASK: &str = "\u{FFFC}";
 
 /// `normalize_sentence` trims its input and can return an empty string for
 /// whitespace-only text; keep the original in that case so the pass can only
 /// ever rewrite content, never erase it.
 fn normalize_text(text: &str) -> String {
-    let masked = mask_punctuation_names(text);
+    let masked = mask_protected_words(text);
     let source = masked.as_ref().map_or(text, |(masked, _)| masked.as_str());
     let normalized = text_processing_rs::normalize_sentence(source);
     let normalized = match &masked {
-        Some((_, names)) => match restore_punctuation_names(&normalized, names) {
+        Some((_, names)) => match restore_protected_words(&normalized, names) {
             Some(restored) => restored,
             None => {
                 eprintln!(
-                    "warning: --itn left a segment unnormalized: the text pass returned {} of {} punctuation-name placeholders, \
+                    "warning: --itn left a segment unnormalized: the text pass returned {} of {} protected-word placeholders, \
                      so the pinned text-processing-rs revision no longer treats U+FFFC as inert. Report this against #822.",
-                    normalized.matches(PUNCTUATION_MASK).count(),
+                    normalized.matches(PROTECTED_MASK).count(),
                     names.len()
                 );
                 return text.to_string();
@@ -105,11 +166,12 @@ fn normalize_text(text: &str) -> String {
     normalized
 }
 
-/// Replace every spoken punctuation name with [`PUNCTUATION_MASK`], returning
-/// the masked text and the original words in order. `None` when there is
-/// nothing to protect, so untouched text reaches upstream byte-identical.
-fn mask_punctuation_names(text: &str) -> Option<(String, Vec<String>)> {
-    if text.contains(PUNCTUATION_MASK) {
+/// Replace every word upstream would consume out from under the speaker with
+/// [`PROTECTED_MASK`], returning the masked text and the original words in
+/// order. `None` when there is nothing to protect, so untouched text reaches
+/// upstream byte-identical.
+fn mask_protected_words(text: &str) -> Option<(String, Vec<String>)> {
+    if text.contains(PROTECTED_MASK) {
         return None;
     }
     let words: Vec<&str> = text.split_whitespace().collect();
@@ -123,11 +185,13 @@ fn mask_punctuation_names(text: &str) -> Option<(String, Vec<String>)> {
             .map(|next| format!("{core} {}", punctuation_core(next)));
         if pair.is_some_and(|pair| PUNCTUATION_NAME_PAIRS.contains(&pair.as_str())) {
             names.push(format!("{} {}", words[i], words[i + 1]));
-            masked.push(PUNCTUATION_MASK);
+            masked.push(PROTECTED_MASK);
             i += 2;
-        } else if PUNCTUATION_NAMES.contains(&core.as_str()) {
+        } else if PUNCTUATION_NAMES.contains(&core.as_str())
+            || (core == "and" && !joins_a_number(&words, i) && !starts_whitelist_phrase(&words, i))
+        {
             names.push(words[i].to_string());
-            masked.push(PUNCTUATION_MASK);
+            masked.push(PROTECTED_MASK);
             i += 1;
         } else {
             masked.push(words[i]);
@@ -140,6 +204,57 @@ fn mask_punctuation_names(text: &str) -> Option<(String, Vec<String>)> {
     Some((masked.join(" "), names))
 }
 
+/// Upstream's cardinal reader strips a bare "and" from every span it takes, so
+/// a sentence "and" next to a spoken number is swallowed with it (#1000).
+/// English only puts "and" inside a number between a connector head and a word
+/// that completes it, so every other "and" is the speaker's and gets masked.
+fn joins_a_number(words: &[&str], and_index: usize) -> bool {
+    let (Some(before), Some(after)) = (
+        and_index.checked_sub(1).map(|p| words[p]),
+        words.get(and_index + 1),
+    ) else {
+        return false;
+    };
+    // "two thousand, and three apples": the clause break ended the number.
+    if before.ends_with(|c: char| c.is_ascii_punctuation()) {
+        return false;
+    }
+    let head = punctuation_core(before);
+    if !NUMBER_CONNECTOR_HEADS.contains(&head.as_str())
+        || !NUMBER_TAIL_WORDS.contains(&punctuation_core(after).as_str())
+    {
+        return false;
+    }
+    // A whole dollar amount is a complete number, so what follows its "and" is
+    // the number's only when it is the cents half of the money tagger's split;
+    // "five dollars and three apples" is the speaker's conjunction (#1000).
+    if DOLLAR_HEADS.contains(&head.as_str()) {
+        let cents = words[and_index + 1..]
+            .iter()
+            .take_while(|word| NUMBER_TAIL_WORDS.contains(&punctuation_core(word).as_str()))
+            .count();
+        return words[and_index + 1 + cents..]
+            .first()
+            .is_none_or(|rest| matches!(punctuation_core(rest).as_str(), "cent" | "cents"));
+    }
+    true
+}
+
+/// True when the "and" at `and_index` sits inside [`WHITELIST_AND_PHRASE`].
+fn starts_whitelist_phrase(words: &[&str], and_index: usize) -> bool {
+    let Some(start) = and_index.checked_sub(1) else {
+        return false;
+    };
+    words
+        .get(start..start + WHITELIST_AND_PHRASE.len())
+        .is_some_and(|window| {
+            window
+                .iter()
+                .zip(WHITELIST_AND_PHRASE)
+                .all(|(word, expected)| punctuation_core(word) == *expected)
+        })
+}
+
 fn punctuation_core(word: &str) -> String {
     word.trim_matches(|c: char| c.is_ascii_punctuation())
         .to_lowercase()
@@ -148,10 +263,10 @@ fn punctuation_core(word: &str) -> String {
 /// All-or-nothing: `None` unless every placeholder is matched by exactly one
 /// saved name, so a pin that eats or splits the mask fails closed rather than
 /// shifting every later name onto the wrong slot.
-fn restore_punctuation_names(text: &str, names: &[String]) -> Option<String> {
+fn restore_protected_words(text: &str, names: &[String]) -> Option<String> {
     let mut names = names.iter();
     let mut out = String::with_capacity(text.len());
-    for (index, part) in text.split(PUNCTUATION_MASK).enumerate() {
+    for (index, part) in text.split(PROTECTED_MASK).enumerate() {
         if index > 0 {
             out.push_str(names.next()?);
         }
@@ -337,6 +452,11 @@ mod tests {
             "she gave a plus one",
             "it was a difficult period.",
             "go to example dot com",
+            "Cats and three dogs.",
+            "Three hundred and five dogs.",
+            "five dollars and three apples",
+            "two thousand, and three apples",
+            "the s and p five hundred index",
         ] {
             let once = normalize_text(text);
             assert_eq!(normalize_text(&once), once, "not idempotent for {text:?}");
@@ -478,14 +598,152 @@ mod tests {
     fn restoring_is_all_or_nothing() {
         let names = vec!["period".to_string(), "comma".to_string()];
         assert_eq!(
-            restore_punctuation_names("a \u{FFFC} b \u{FFFC} c", &names),
+            restore_protected_words("a \u{FFFC} b \u{FFFC} c", &names),
             Some("a period b comma c".to_string())
         );
-        assert_eq!(restore_punctuation_names("a \u{FFFC} b", &names), None);
+        assert_eq!(restore_protected_words("a \u{FFFC} b", &names), None);
         assert_eq!(
-            restore_punctuation_names("a \u{FFFC} b \u{FFFC} c \u{FFFC}", &names),
+            restore_protected_words("a \u{FFFC} b \u{FFFC} c \u{FFFC}", &names),
             None
         );
+    }
+
+    #[test]
+    fn a_sentence_and_survives_a_number_that_follows_it() {
+        // #1000: upstream's cardinal reader strips "and" from any span it
+        // takes, so the speaker's conjunction vanished with the number.
+        for (spoken, expected) in [
+            ("Cats and three dogs.", "Cats and 3 dogs."),
+            (
+                "I have twenty-five apples and three hundred oranges.",
+                "I have twenty-five apples and 300 oranges.",
+            ),
+            ("Cats and 300 dogs.", "Cats and 300 dogs."),
+            ("Cats and 20 dogs.", "Cats and 20 dogs."),
+            (
+                "Bread and butter and cheese.",
+                "Bread and butter and cheese.",
+            ),
+            ("and three dogs", "and 3 dogs"),
+            (
+                "salt and pepper and three eggs",
+                "salt and pepper and 3 eggs",
+            ),
+            ("between five and ten dogs", "between 5 and 10 dogs"),
+            ("pick one and two", "pick 1 and 2"),
+            ("chapter five and three dogs", "chapter 5 and 3 dogs"),
+            ("two and a half hours", "2 and a half hours"),
+            // No word completes the number, so the "and" is the speaker's even
+            // straight after a scale word.
+            ("we counted three hundred and", "we counted 300 and"),
+            ("three hundred and five and three dogs", "305 and 3 dogs"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    #[test]
+    fn an_and_inside_a_number_still_joins_it() {
+        for (spoken, expected) in [
+            ("Three hundred and five dogs.", "305 dogs."),
+            ("one thousand and one nights", "1001 nights"),
+            ("it costs five dollars and fifty cents", "it costs $5.50"),
+            ("fifty dollars and ninety nine cents", "$50.99"),
+            ("one dollar and one cent", "$1.01"),
+            ("five dollars and fifty", "$5.50"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    /// A whole dollar amount is already a complete number, so upstream's split
+    /// only justifies eating the "and" when the cents half follows. Without
+    /// this the tail became cents: `$5.03 apples`, `$10.02 tickets` (#1000).
+    #[test]
+    fn a_dollar_amount_keeps_an_and_no_cents_phrase_follows() {
+        for (spoken, expected) in [
+            ("five dollars and three apples", "$5 and 3 apples"),
+            ("ten dollars and two tickets", "$10 and 2 tickets"),
+            ("one dollar and two tickets", "$1 and 2 tickets"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    /// Punctuation on the connector ends the number, so the "and" after it
+    /// starts a new clause and belongs to the speaker (#1000).
+    #[test]
+    fn a_clause_break_on_the_connector_releases_the_and() {
+        for (spoken, expected) in [
+            ("two thousand, and three apples", "2000, and 3 apples"),
+            ("two thousand. and three apples", "2000. and 3 apples"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    /// `S&P 500` is upstream's one whitelist phrase built around an "and";
+    /// masking it would leave the phrase untagged (#1000).
+    #[test]
+    fn the_whitelist_phrase_built_on_and_still_matches() {
+        for (spoken, expected) in [
+            ("s and p five hundred", "S&P 500"),
+            ("the s and p five hundred index", "the S&P 500 index"),
+            ("the S and P five hundred index", "the S&P 500 index"),
+            // Too short to be the phrase, so the "and" is the speaker's again.
+            ("s and p five", "s and p 5"),
+        ] {
+            assert_eq!(normalize_text(spoken), expected);
+        }
+    }
+
+    #[test]
+    fn the_whitelist_and_phrase_is_one_upstream_rewrites() {
+        // Grounds the constant in upstream's own whitelist rather than
+        // guesswork, and fails loudly if a pin bump drops or renames the entry.
+        let phrase = WHITELIST_AND_PHRASE.join(" ");
+        assert_eq!(text_processing_rs::normalize_sentence(&phrase), "S&P 500");
+    }
+
+    /// Upstream limits, unchanged by the guard and pinned so a pin bump shows
+    /// up as a diff here rather than a surprise: a residual under a scale is
+    /// emitted as a separate number, and a whitelist hit ends the pass so what
+    /// follows it is never tagged.
+    #[test]
+    fn upstream_residuals_are_left_as_upstream_produces_them() {
+        for spoken in [
+            "five hundred and twenty three dogs",
+            "s and p five hundred and three dogs",
+        ] {
+            assert_eq!(
+                normalize_text(spoken),
+                text_processing_rs::normalize_sentence(spoken)
+            );
+        }
+        assert_eq!(
+            normalize_text("five hundred and twenty three dogs"),
+            "520 3 dogs"
+        );
+    }
+
+    /// Both lists exist to name the one position where upstream is right to
+    /// eat the "and". Keeps them grounded in upstream's own vocabulary rather
+    /// than guesswork, and fails loudly if a pin bump moves that position.
+    #[test]
+    fn upstream_absorbs_the_and_at_every_position_the_rule_exempts() {
+        let absorbs_and = |phrase: &str| {
+            !text_processing_rs::normalize_sentence(phrase)
+                .split_whitespace()
+                .any(|word| word == "and")
+        };
+        for head in NUMBER_CONNECTOR_HEADS {
+            let phrase = format!("two {head} and one");
+            assert!(absorbs_and(&phrase), "{head} is not a number connector");
+        }
+        for tail in NUMBER_TAIL_WORDS {
+            let phrase = format!("two hundred and {tail}");
+            assert!(absorbs_and(&phrase), "{tail} does not complete a number");
+        }
     }
 
     #[test]
