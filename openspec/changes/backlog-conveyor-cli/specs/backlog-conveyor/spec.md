@@ -26,8 +26,8 @@ codes for success, invariant violation, operational failure, and unsafe/refused 
 `gate --issue N --pr P --evidence path` SHALL require an open, non-draft, mergeable PR to the default
 branch, exactly `[N]` in `closingIssuesReferences`, an independent `APPROVED` review for the
 current head SHA, and terminal successful results for every real required check. A required
-check with a protected `app_id` MUST match that app, and its latest matching attempt MUST be
-authoritative. A stacked or non-default-base PR MUST be ineligible. Under `--apply`, a
+check with a protected `app_id` MUST match that app, and its latest matching attempt by
+start/creation time MUST be authoritative. A stacked or non-default-base PR MUST be ineligible. Under `--apply`, a
 versioned machine-readable PR comment MUST bind the marker to the current SHA before
 `merge-ready` is added. The evidence object MUST itself declare `version: 1` and remain
 provider-neutral: any non-empty `provider`, `verdict: APPROVED`, exact head SHA, evidence

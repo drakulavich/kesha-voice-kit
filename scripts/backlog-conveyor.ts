@@ -37,7 +37,7 @@ export interface CheckResult {
   name: string;
   state: string;
   appId: number | null;
-  observedAt: string | null;
+  attemptAt: string | null;
   id: number;
 }
 
@@ -230,8 +230,8 @@ export function evaluateGate(facts: GateFacts): Evaluation {
       continue;
     }
     const latest = results.reduce((current, candidate) => {
-      const currentTime = current.observedAt ?? "";
-      const candidateTime = candidate.observedAt ?? "";
+      const currentTime = current.attemptAt ?? "";
+      const candidateTime = candidate.attemptAt ?? "";
       if (candidateTime > currentTime || (candidateTime === currentTime && candidate.id > current.id)) return candidate;
       return current;
     });
@@ -356,7 +356,7 @@ async function loadRequiredChecks(runner: Runner, repo: { owner: string; name: s
   return [...deduplicated.values()];
 }
 
-async function loadChecks(runner: Runner, repo: { owner: string; name: string }, sha: string): Promise<CheckResult[]> {
+export async function loadChecks(runner: Runner, repo: { owner: string; name: string }, sha: string): Promise<CheckResult[]> {
   const runs = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/check-runs?per_page=100`], "gh api check runs"), "gh api check runs");
   const statuses = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/status`], "gh api statuses"), "gh api statuses");
   const checkRuns = requiredArray(runs.check_runs, "check runs.check_runs").map((entry, index) => {
@@ -368,7 +368,7 @@ async function loadChecks(runner: Runner, repo: { owner: string; name: string },
       name: requiredString(run.name, `check runs.check_runs[${index}].name`),
       state: status === "completed" && conclusion === "success" ? "SUCCESS" : conclusion?.toUpperCase() ?? status.toUpperCase(),
       appId: app ? requiredNumber(app.id, `check runs.check_runs[${index}].app.id`) : null,
-      observedAt: optionalString(run.completed_at, `check runs.check_runs[${index}].completed_at`) ?? optionalString(run.started_at, `check runs.check_runs[${index}].started_at`),
+      attemptAt: optionalString(run.started_at, `check runs.check_runs[${index}].started_at`),
       id: requiredNumber(run.id, `check runs.check_runs[${index}].id`),
     };
   });
@@ -378,7 +378,7 @@ async function loadChecks(runner: Runner, repo: { owner: string; name: string },
       name: requiredString(status.context, `statuses.statuses[${index}].context`),
       state: requiredString(status.state, `statuses.statuses[${index}].state`).toUpperCase(),
       appId: null,
-      observedAt: optionalString(status.created_at, `statuses.statuses[${index}].created_at`),
+      attemptAt: optionalString(status.created_at, `statuses.statuses[${index}].created_at`),
       id: requiredNumber(status.id, `statuses.statuses[${index}].id`),
     };
   });

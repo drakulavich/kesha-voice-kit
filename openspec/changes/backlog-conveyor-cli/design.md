@@ -29,7 +29,8 @@ arrays exclusively; no user-controlled input is interpolated in a shell.
 requested closing issue. An `APPROVED` review by someone other than the PR author must name
 the current head SHA. Required contexts are read from branch protection and each matching
 check/status must be terminal and successful; a protected check with an `app_id` accepts only
-that app's result, and the deterministically latest matching attempt is authoritative. Skipped,
+that app's result, and the deterministically latest matching attempt by start/creation time is
+authoritative (not a later completion time from an older parallel attempt). Skipped,
 pending, absent, or non-successful current attempts fail. `gate --evidence <path>` consumes a
 self-versioned JSON object (`version: 1`) with `provider` (any non-empty string),
 `verdict: "APPROVED"`, exact `headSha`, `uri`, and SHA-256 `digest`. The versioned comment

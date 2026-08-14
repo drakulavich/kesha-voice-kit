@@ -5,6 +5,7 @@ import {
   evaluateGate,
   evaluateSync,
   issueNumberFromBranch,
+  loadChecks,
   loadMarker,
   parseGateEvidence,
   type CloseFacts,
@@ -40,7 +41,7 @@ function gateFacts(overrides: Partial<GateFacts> = {}): GateFacts {
       reviews: [{ state: "APPROVED", author: "reviewer", commitSha: head, submittedAt: "2026-08-14T10:00:00Z" }],
     },
     requiredChecks: [{ context: "🧪 CI", appId: null }],
-    checks: [{ name: "🧪 CI", state: "SUCCESS", appId: null, observedAt: "2026-08-14T10:00:00Z", id: 1 }],
+    checks: [{ name: "🧪 CI", state: "SUCCESS", appId: null, attemptAt: "2026-08-14T10:00:00Z", id: 1 }],
     evidence,
     marker: null,
     ...overrides,
@@ -68,7 +69,7 @@ describe("backlog gate", () => {
   });
 
   test("rejects skipped, pending, or absent required checks", () => {
-    const facts = gateFacts({ checks: [{ name: "🧪 CI", state: "SKIPPED", appId: null, observedAt: "2026-08-14T10:00:00Z", id: 1 }] });
+    const facts = gateFacts({ checks: [{ name: "🧪 CI", state: "SKIPPED", appId: null, attemptAt: "2026-08-14T10:00:00Z", id: 1 }] });
 
     expect(evaluateGate(facts).violations).toContain("required check '🧪 CI' is SKIPPED");
   });
@@ -88,9 +89,36 @@ describe("backlog gate", () => {
   test("uses the latest matching check attempt rather than an older failure", () => {
     const facts = gateFacts({
       checks: [
-        { name: "🧪 CI", state: "FAILURE", appId: 17, observedAt: "2026-08-14T10:00:00Z", id: 1 },
-        { name: "🧪 CI", state: "SUCCESS", appId: 17, observedAt: "2026-08-14T11:00:00Z", id: 2 },
+        { name: "🧪 CI", state: "FAILURE", appId: 17, attemptAt: "2026-08-14T10:00:00Z", id: 1 },
+        { name: "🧪 CI", state: "SUCCESS", appId: 17, attemptAt: "2026-08-14T11:00:00Z", id: 2 },
       ],
+      requiredChecks: [{ context: "🧪 CI", appId: 17 }],
+    });
+
+    expect(evaluateGate(facts).violations).not.toContain("required check '🧪 CI' is FAILURE");
+  });
+
+  test("uses an attempt start time when an older parallel run finishes later", async () => {
+    const runner: Runner = {
+      async run(argv) {
+        const target = argv[2] ?? "";
+        if (target.includes("check-runs")) {
+          return {
+            exitCode: 0,
+            stderr: "",
+            stdout: JSON.stringify({
+              check_runs: [
+                { id: 1, name: "🧪 CI", status: "completed", conclusion: "failure", app: { id: 17 }, started_at: "2026-08-14T10:00:00Z", completed_at: "2026-08-14T12:00:00Z" },
+                { id: 2, name: "🧪 CI", status: "completed", conclusion: "success", app: { id: 17 }, started_at: "2026-08-14T11:00:00Z", completed_at: "2026-08-14T11:30:00Z" },
+              ],
+            }),
+          };
+        }
+        return { exitCode: 0, stderr: "", stdout: JSON.stringify({ statuses: [] }) };
+      },
+    };
+    const facts = gateFacts({
+      checks: await loadChecks(runner, { owner: "o", name: "r" }, head),
       requiredChecks: [{ context: "🧪 CI", appId: 17 }],
     });
 
@@ -99,7 +127,7 @@ describe("backlog gate", () => {
 
   test("rejects a matching check name from the wrong protected app", () => {
     const facts = gateFacts({
-      checks: [{ name: "🧪 CI", state: "SUCCESS", appId: 99, observedAt: "2026-08-14T11:00:00Z", id: 2 }],
+      checks: [{ name: "🧪 CI", state: "SUCCESS", appId: 99, attemptAt: "2026-08-14T11:00:00Z", id: 2 }],
       requiredChecks: [{ context: "🧪 CI", appId: 17 }],
     });
 
