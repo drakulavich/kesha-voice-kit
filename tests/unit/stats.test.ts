@@ -42,6 +42,18 @@ function useTempStatsDb(prefix: string): () => string {
   return () => dir;
 }
 
+/**
+ * A run window inside the retention horizon. #1005: `exportStats` prunes rows older than the
+ * 90-day default as it reads, so a literal date here fails the day it ages out — keep it relative.
+ */
+function recentRunWindow(durationMs = 1_000): { startedAt: string; finishedAt: string } {
+  const startedAt = Date.now() - 60 * 60 * 1000;
+  return {
+    startedAt: new Date(startedAt).toISOString(),
+    finishedAt: new Date(startedAt + durationMs).toISOString(),
+  };
+}
+
 describe("stats storage", () => {
   const statsDir = useTempStatsDb("kesha-stats-test-");
 
@@ -186,8 +198,7 @@ describe("stats storage", () => {
     seedStatsRun({
       command: "transcribe",
       status: "failed",
-      startedAt: "2026-05-16T10:00:00.000Z",
-      finishedAt: "2026-05-16T10:00:01.000Z",
+      ...recentRunWindow(),
       itemCount: 1,
       stages: [{ stage: "transcribe", durationMs: 100, status: "failed" }],
       inputArtifacts: [{ format: "wav", sizeBytes: 1234, durationMs: 2000 }],
@@ -966,8 +977,7 @@ describe("stats export contracts", () => {
     seedStatsRun({
       command: "transcribe",
       status: "failed",
-      startedAt: "2026-05-16T10:00:00.000Z",
-      finishedAt: "2026-05-16T10:00:01.000Z",
+      ...recentRunWindow(),
       itemCount: 1,
       stages: [],
     });
@@ -989,8 +999,7 @@ describe("stats export contracts", () => {
     seedStatsRun({
       command: "transcribe",
       status: "failed",
-      startedAt: "2026-05-16T10:00:00.000Z",
-      finishedAt: "2026-05-16T10:00:01.000Z",
+      ...recentRunWindow(),
       itemCount: 1,
       stages: [],
       error: new Error('one, two "three"'),
