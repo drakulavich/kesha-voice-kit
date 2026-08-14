@@ -14,3 +14,15 @@ Auto-triggers at 120 s so voice messages (< 30 s of near-pure speech) stay on th
 If VAD is not installed, very long Auto-mode audio uses fixed 10-minute ASR windows with 5 seconds of overlap and stitched absolute offsets. That fallback is safer than one full-file pass, but VAD boundaries are still better for meetings and silence-heavy recordings.
 
 Defaults: threshold 0.5, min-speech 250 ms, min-silence 100 ms, 30 ms edge padding. See issues [#128](https://github.com/drakulavich/kesha-voice-kit/issues/128) (base), [#187](https://github.com/drakulavich/kesha-voice-kit/issues/187) (auto-trigger), and [#404](https://github.com/drakulavich/kesha-voice-kit/issues/404) (long-audio contract).
+
+## Live end-of-utterance
+
+`record --live` stays manual by default. Opt in when dictating to stop after a spoken utterance and its trailing pause:
+
+```bash
+kesha install --vad
+kesha record --live --auto-stop
+kesha record --live --auto-stop --auto-stop-silence-ms 800 --auto-stop-threshold 0.4
+```
+
+The live detector uses the installed Silero model and never downloads it. It waits for 1,000 ms of silence by default, after at least 250 ms of detected speech; use `--auto-stop-min-speech-ms` to tune that false-start guard. A missing VAD model fails with `kesha install --vad` rather than starting a recording without endpointing.

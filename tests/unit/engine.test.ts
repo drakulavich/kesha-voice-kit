@@ -263,6 +263,20 @@ describe("engine", () => {
     });
   });
 
+  fakeEngineTest("preflight rejects auto-stop when the live engine does not advertise it", async () => {
+    await withEngineEnv(fakeEngine(["transcribe", "record.live"]), async () => {
+      await expect(preflightRecordLive(true)).rejects.toThrow(
+        "live auto-stop requires a newer CoreML engine",
+      );
+    });
+  });
+
+  fakeEngineTest("preflight accepts auto-stop only when the engine advertises endpointing", async () => {
+    await withEngineEnv(fakeEngine(["transcribe", "record.live", "record.live.auto-stop"]), async () => {
+      await expect(preflightRecordLive(true)).resolves.toBeUndefined();
+    });
+  });
+
   // An unreadable probe must not be read as "supported" — that would forward
   // --live into an engine that has no such flag. It is also not the same failure
   // as an engine that answered and lacks the feature, so it says so.

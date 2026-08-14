@@ -162,6 +162,18 @@ Transcribe the microphone live and print the transcript to stdout (CoreML on App
 .B \-\-max\-seconds
 Maximum recording duration in seconds
 .TP
+.B \-\-auto\-stop
+End a live recording after trailing silence (requires `kesha install \-\-vad`)
+.TP
+.B \-\-auto\-stop\-silence\-ms
+Trailing silence before auto\-stop (default: 1000)
+.TP
+.B \-\-auto\-stop\-threshold
+Silero speech threshold for auto\-stop (default: 0.5)
+.TP
+.B \-\-auto\-stop\-min\-speech\-ms
+Minimum speech before auto\-stop may end a recording (default: 250)
+.TP
 .B \-\-debug
 Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)
 .SS say

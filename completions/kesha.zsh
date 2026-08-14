@@ -98,6 +98,10 @@ _kesha() {
         '--out=[Write recorded WAV audio to this path]:out:' \
         '--live[Transcribe the microphone live and print the transcript to stdout (CoreML on Apple Silicon only)]' \
         '--max-seconds=[Maximum recording duration in seconds]:max seconds:' \
+        '--auto-stop[End a live recording after trailing silence (requires `kesha install --vad`)]' \
+        '--auto-stop-silence-ms=[Trailing silence before auto-stop (default: 1000)]:auto stop silence ms:' \
+        '--auto-stop-threshold=[Silero speech threshold for auto-stop (default: 0.5)]:auto stop threshold:' \
+        '--auto-stop-min-speech-ms=[Minimum speech before auto-stop may end a recording (default: 250)]:auto stop min speech ms:' \
         '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]'
       ;;
     say)

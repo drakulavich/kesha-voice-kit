@@ -43,6 +43,8 @@ const WAV_HEADER_LEN: usize = 58;
 /// Capabilities flag for `kesha record --live`; the CLI checks it before
 /// forwarding the flag.
 pub const RECORD_LIVE_FEATURE: &str = "record.live";
+/// Capabilities flag for opt-in end-of-utterance stopping on a live recording.
+pub const RECORD_LIVE_AUTO_STOP_FEATURE: &str = "record.live.auto-stop";
 
 pub struct RecordSummary {
     pub path: std::path::PathBuf,
@@ -147,11 +149,14 @@ pub struct LiveOutcome {
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 pub fn record_default_input_live(
     max_duration: Duration,
+    endpoint: Option<crate::vad::EndpointConfig>,
     deliver: impl FnOnce(&str) -> Result<()>,
 ) -> Result<LiveOutcome> {
     if max_duration.is_zero() {
         anyhow::bail!("--max-seconds must be greater than 0");
     }
+
+    let endpoint = endpoint.map(load_live_endpoint).transpose()?;
 
     // Before CPAL opens the device and spawns its threads: POSIX does not
     // promise `signal` is thread-safe.
@@ -166,6 +171,7 @@ pub fn record_default_input_live(
         mono: Vec::new(),
         input_channels: input.config.channels,
         spill: open_recovery_spill(sample_rate),
+        endpoint,
     };
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(LIVE_QUEUE_BUFFERS);
@@ -192,11 +198,13 @@ pub fn record_default_input_live(
          Ctrl-C stops and still prints."
     );
 
-    feed.listen(&sample_rx, &stop_rx, max_duration)?;
+    let ended_by_endpoint = feed.listen(&sample_rx, &stop_rx, max_duration)?;
 
     // Drain after stopping capture, or the last words spoken are never fed.
     drop(stream);
-    feed.drain(&sample_rx)?;
+    if !ended_by_endpoint {
+        feed.drain(&sample_rx)?;
+    }
 
     warn_dropped_buffers(dropped.load(std::sync::atomic::Ordering::Relaxed));
 
@@ -207,6 +215,19 @@ pub fn record_default_input_live(
         transcript,
         interrupted_by,
     })
+}
+
+#[cfg(all(feature = "coreml", target_os = "macos"))]
+fn load_live_endpoint(cfg: crate::vad::EndpointConfig) -> Result<crate::vad::StreamingVad> {
+    let vad_dir = crate::models::model_dir(crate::models::ModelKind::Vad)?;
+    if !crate::models::is_cached_in(crate::models::ModelKind::Vad, &vad_dir) {
+        anyhow::bail!(
+            "Error: VAD model not installed\n\n\
+             Please run: kesha install --vad"
+        );
+    }
+    crate::vad::StreamingVad::load(&vad_dir.join("silero_vad.onnx"), cfg)
+        .context("load Silero VAD for live endpointing")
 }
 
 /// Hands the transcript to `deliver`, then decides the spill's fate from
@@ -284,16 +305,18 @@ struct LiveFeed {
     mono: Vec<f32>,
     input_channels: u16,
     spill: Option<spill::SpillWav>,
+    endpoint: Option<crate::vad::StreamingVad>,
 }
 
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 impl LiveFeed {
-    fn feed(&mut self, interleaved: &[f32]) -> Result<()> {
+    fn feed(&mut self, interleaved: &[f32]) -> Result<bool> {
         let Self {
             session,
             mono,
             input_channels,
             spill,
+            endpoint,
         } = self;
         mono.clear();
         mono.extend(
@@ -307,7 +330,11 @@ impl LiveFeed {
                 *spill = None;
             }
         }
-        session.feed(mono)
+        let ready = session.feed(mono)?;
+        match endpoint {
+            Some(endpoint) => endpoint.feed(&ready),
+            None => Ok(false),
+        }
     }
 
     fn listen(
@@ -315,10 +342,11 @@ impl LiveFeed {
         sample_rx: &mpsc::Receiver<Vec<f32>>,
         stop_rx: &mpsc::Receiver<()>,
         max_duration: Duration,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let started = Instant::now();
         let mut announced = 0u64;
         let tick = io::stderr().is_terminal();
+        let mut ended_by_endpoint = false;
         loop {
             if stop_rx.try_recv().is_ok()
                 || started.elapsed() >= max_duration
@@ -327,7 +355,12 @@ impl LiveFeed {
                 break;
             }
             match sample_rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(samples) => self.feed(&samples)?,
+                Ok(samples) if self.feed(&samples)? => {
+                    eprintln!("End of utterance detected.");
+                    ended_by_endpoint = true;
+                    break;
+                }
+                Ok(_) => {}
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -340,12 +373,12 @@ impl LiveFeed {
         if announced > 0 {
             eprintln!();
         }
-        Ok(())
+        Ok(ended_by_endpoint)
     }
 
     fn drain(&mut self, sample_rx: &mpsc::Receiver<Vec<f32>>) -> Result<()> {
         while let Ok(samples) = sample_rx.try_recv() {
-            self.feed(&samples)?;
+            let _ = self.feed(&samples)?;
         }
         Ok(())
     }
@@ -1044,6 +1077,25 @@ mod tests {
         assert!(
             err.to_string().contains("WAV total size overflow"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "coreml", target_os = "macos"))]
+    fn live_endpointing_requires_an_explicitly_installed_vad_model() {
+        let _lock = crate::util::test_env::lock();
+        let cache = tempfile::tempdir().unwrap();
+        let cache_path = cache.path().to_string_lossy().into_owned();
+        let _guard = crate::util::test_env::EnvGuard::set("KESHA_CACHE_DIR", &cache_path);
+
+        let err = match load_live_endpoint(crate::vad::EndpointConfig::default()) {
+            Ok(_) => panic!("a missing VAD model must not start endpointing"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("kesha install --vad"),
+            "missing-model hint was not actionable: {err:#}"
         );
     }
 }

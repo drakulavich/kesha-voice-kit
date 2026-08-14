@@ -1,6 +1,12 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { isEngineInstalled, preflightRecordLive, recordEngine, type RecordTarget } from "../engine";
+import {
+  isEngineInstalled,
+  preflightRecordLive,
+  recordEngine,
+  type LiveAutoStopOptions,
+  type RecordTarget,
+} from "../engine";
 import { installHint } from "../install-hint";
 import { log } from "../log";
 
@@ -8,6 +14,10 @@ export interface RecordArgs {
   out?: string;
   live?: boolean;
   "max-seconds"?: string | number;
+  "auto-stop"?: boolean;
+  "auto-stop-silence-ms"?: string | number;
+  "auto-stop-threshold"?: string | number;
+  "auto-stop-min-speech-ms"?: string | number;
   debug?: boolean;
 }
 
@@ -17,6 +27,9 @@ export type ResolvedRecordArgs =
 
 const DEFAULT_MAX_SECONDS = 120;
 const MAX_RECORD_SECONDS = 3600;
+const DEFAULT_AUTO_STOP_SILENCE_MS = 1000;
+const DEFAULT_AUTO_STOP_THRESHOLD = 0.5;
+const DEFAULT_AUTO_STOP_MIN_SPEECH_MS = 250;
 
 type Rejected = { ok: false; error: string };
 
@@ -57,7 +70,71 @@ export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
   if (!target.ok) return target;
   const max = resolveMaxSeconds(args["max-seconds"]);
   if (!max.ok) return max;
-  return { ok: true, target: target.target, maxSeconds: max.maxSeconds };
+  const autoStop = resolveAutoStop(args, target.target);
+  if (!autoStop.ok) return autoStop;
+  return {
+    ok: true,
+    target: autoStop.options ? { live: true, autoStop: autoStop.options } : target.target,
+    maxSeconds: max.maxSeconds,
+  };
+}
+
+function resolveAutoStop(
+  args: RecordArgs,
+  target: RecordTarget,
+): { ok: true; options?: LiveAutoStopOptions } | Rejected {
+  const enabled = args["auto-stop"] === true;
+  const hasSettings =
+    args["auto-stop-silence-ms"] !== undefined ||
+    args["auto-stop-threshold"] !== undefined ||
+    args["auto-stop-min-speech-ms"] !== undefined;
+  if (!enabled && hasSettings) {
+    return { ok: false, error: "auto-stop settings require --auto-stop." };
+  }
+  if (enabled && !target.live) {
+    return { ok: false, error: "--auto-stop requires --live." };
+  }
+  if (!enabled) return { ok: true };
+
+  const silenceMs = resolvePositiveInteger(
+    args["auto-stop-silence-ms"],
+    DEFAULT_AUTO_STOP_SILENCE_MS,
+    "--auto-stop-silence-ms",
+  );
+  if (!silenceMs.ok) return silenceMs;
+  const minSpeechMs = resolvePositiveInteger(
+    args["auto-stop-min-speech-ms"],
+    DEFAULT_AUTO_STOP_MIN_SPEECH_MS,
+    "--auto-stop-min-speech-ms",
+  );
+  if (!minSpeechMs.ok) return minSpeechMs;
+  const threshold = resolveThreshold(args["auto-stop-threshold"]);
+  if (!threshold.ok) return threshold;
+  return { ok: true, options: { silenceMs: silenceMs.value, threshold: threshold.value, minSpeechMs: minSpeechMs.value } };
+}
+
+function resolvePositiveInteger(
+  rawValue: string | number | undefined,
+  defaultValue: number,
+  flag: string,
+): { ok: true; value: number } | Rejected {
+  const raw = String(rawValue ?? defaultValue).trim();
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    return { ok: false, error: `${flag} must be a positive integer.` };
+  }
+  return { ok: true, value };
+}
+
+function resolveThreshold(
+  rawValue: string | number | undefined,
+): { ok: true; value: number } | Rejected {
+  const raw = String(rawValue ?? DEFAULT_AUTO_STOP_THRESHOLD).trim();
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0 || value > 1) {
+    return { ok: false, error: "--auto-stop-threshold must be greater than 0 and at most 1." };
+  }
+  return { ok: true, value };
 }
 
 /** Mirrors `src/transcribe.ts`'s "no transcription backend" guard message, worded for recording. */
@@ -91,6 +168,23 @@ export const recordCommand = defineCommand({
       description: "Maximum recording duration in seconds",
       default: String(DEFAULT_MAX_SECONDS),
     },
+    "auto-stop": {
+      type: "boolean",
+      description: "End a live recording after trailing silence (requires `kesha install --vad`)",
+      default: false,
+    },
+    "auto-stop-silence-ms": {
+      type: "string",
+      description: "Trailing silence before auto-stop (default: 1000)",
+    },
+    "auto-stop-threshold": {
+      type: "string",
+      description: "Silero speech threshold for auto-stop (default: 0.5)",
+    },
+    "auto-stop-min-speech-ms": {
+      type: "string",
+      description: "Minimum speech before auto-stop may end a recording (default: 250)",
+    },
     debug: {
       type: "boolean",
       description: "Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)",
@@ -109,7 +203,7 @@ export const recordCommand = defineCommand({
       process.exit(1);
     }
     try {
-      if (resolved.target.live) await preflightRecordLive();
+      if (resolved.target.live) await preflightRecordLive(resolved.target.autoStop !== undefined);
       await recordEngine(resolved.target, resolved.maxSeconds);
     } catch (err) {
       log.error(errorMessage(err));

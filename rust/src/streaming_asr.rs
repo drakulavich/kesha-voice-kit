@@ -57,15 +57,18 @@ impl StreamingAsrSession {
         })
     }
 
-    pub fn feed(&mut self, mono: &[f32]) -> Result<()> {
+    /// Feeds the ASR session and returns the exact 16 kHz samples accepted by
+    /// it, so live VAD can inspect the same continuous resampled stream.
+    pub fn feed(&mut self, mono: &[f32]) -> Result<Vec<f32>> {
         let ready = self.resampler.push(mono)?;
         if ready.is_empty() {
-            return Ok(());
+            return Ok(ready);
         }
         with_silenced_stdout(self.devnull.as_ref(), || {
             self.audio.streaming_asr_feed(&ready)
         })
-        .context("failed to feed audio to FluidAudio streaming ASR")
+        .context("failed to feed audio to FluidAudio streaming ASR")?;
+        Ok(ready)
     }
 
     pub fn finish(mut self) -> Result<String> {

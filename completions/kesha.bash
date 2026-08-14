@@ -25,7 +25,7 @@ _kesha_completion() {
     logs) opts="--help -h --json" ;;
     manpage) opts="--help -h" ;;
     mcp) opts="--help -h" ;;
-    record) opts="--help -h --out --live --max-seconds --debug" ;;
+    record) opts="--help -h --out --live --max-seconds --auto-stop --auto-stop-silence-ms --auto-stop-threshold --auto-stop-min-speech-ms --debug" ;;
     say) opts="--help -h --voice --lang --out --rate --list-voices --ssml --format --bitrate --sample-rate --no-expand-abbrev --verbose --debug" ;;
     stats) opts="--help -h --format" ;;
     status) opts="--help -h --disk --json" ;;
