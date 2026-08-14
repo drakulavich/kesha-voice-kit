@@ -15,7 +15,7 @@ code never needs sanitizing.
 | Code | Category | Retryable | When it fires | How to fix |
 |------|----------|-----------|---------------|------------|
 | `E_INPUT_NOT_FOUND` | input | no | The input audio path doesn't exist (or no stdin was piped). | Check the path; pass a readable file. |
-| `E_BAD_AUDIO` | input | no | The audio container/codec couldn't be decoded (or the file couldn't be opened for a reason other than "missing"). | Re-export to wav/ogg/mp3; verify the file isn't truncated; check permissions. |
+| `E_BAD_AUDIO` | input | no | The audio container/codec couldn't be decoded (or the file couldn't be opened for a reason other than "missing"). A directory passed where an audio file is expected is `E_INVALID_ARG`, not this — the CLI rejects it as a bad argument before the engine ever opens it. | Re-export to wav/ogg/mp3; verify the file isn't truncated; check permissions. |
 | `E_MODEL_MISSING` | model | no | A required model or voice isn't installed. | `kesha install` / `kesha install --tts`. |
 | `E_MODEL_DOWNLOAD` | model | yes | A model download failed (network or mirror error). | Retry; check connectivity and `KESHA_MODEL_MIRROR`. |
 | `E_CACHE_CORRUPT` | model | no | A cached model file failed SHA-256 verification. | `kesha install --no-cache` to re-fetch. |
@@ -33,7 +33,7 @@ code never needs sanitizing.
 | `E_DIARIZE_TIMEOUT` | transcribe | yes | A diarization phase exceeded its budget, or `KESHA_DIARIZE_TIMEOUT_SECS` cut the run short. The message names the phase: model load, reading the audio, or processing chunks. | Model load: re-run once warm (`kesha install --diarize`), or `KESHA_DIARIZE_COMPUTE_UNITS=cpu-and-gpu`, or raise `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` (default 300). Own cap: raise or unset `KESHA_DIARIZE_TIMEOUT_SECS`. Otherwise file a bug. |
 | `E_ENGINE_SPAWN` | internal | no | The CLI couldn't spawn the engine subprocess. | `kesha install`; check the engine binary path (`KESHA_ENGINE_BIN`). |
 | `E_INSTALL_RACE` | internal | yes | `kesha install` finished, but the engine in the cache is not the one it installed — either the recorded version or the binary's own `--version` names something else, because a second writer reached the same cache during the run. | Re-run the install once no other one is in flight; give concurrent jobs private caches via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`. |
-| `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid. | See `kesha --help`; the message names the setting and its accepted values. |
+| `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid — including a directory passed where an audio file is expected, and a `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN` path the engine directory cannot be created under (unwritable, or not a directory). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |
 
 ## Where codes come from
@@ -45,8 +45,9 @@ code never needs sanitizing.
   CLI — the failure to spawn the engine subprocess at all, and an install whose
   version was overwritten in the cache before it could report success.
 - **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
-  engine and the TypeScript CLI: the CLI validates arguments and checks input
-  existence up front, and the engine emits the same codes when a bad argument or
+  engine and the TypeScript CLI: the CLI validates arguments, checks input
+  existence up front and refuses a cache path it cannot create the engine
+  directory under, and the engine emits the same codes when a bad argument or
   a missing file reaches it directly (e.g. `kesha-engine say` with conflicting
   `--model` / `--voice-file`, or a malformed `--format`).
 

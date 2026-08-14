@@ -450,7 +450,7 @@ describe("CLI contracts", () => {
     expectContract(missing, {
       exitCode: 1,
       stdoutEmpty: true,
-      stderrContains: ["missing.wav: File not found"],
+      stderrContains: ["missing.wav: error [E_INPUT_NOT_FOUND]: File not found"],
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
@@ -481,18 +481,18 @@ describe("CLI contracts", () => {
     expectContract(run, {
       exitCode: 1,
       stdoutEmpty: true,
-      stderrContains: [`${target}: is a directory (expected an audio file)`],
+      stderrContains: [`${target}: error [E_INVALID_ARG]: is a directory (expected an audio file)`],
       stderrNotContains: ["fake engine should not have been invoked", "Transcribing", "%"],
     });
 
     const { events } = readDiagnosticLog(env.KESHA_LOG_DIR);
     expect(events.map((event) => event.event)).toEqual(["command.start", "input.invalid", "command.finish"]);
-    expect(events[1]).toMatchObject({ command: "transcribe", error_code: "E_BAD_AUDIO" });
+    expect(events[1]).toMatchObject({ command: "transcribe", error_code: "E_INVALID_ARG" });
 
     const jsonRun = await runCli(["--json", "--include-errors", target], { env });
     const parsed = JSON.parse(jsonRun.stdout);
     expect(parsed.errors).toEqual([
-      { file: target, code: "E_BAD_AUDIO", message: "is a directory (expected an audio file)" },
+      { file: target, code: "E_INVALID_ARG", message: "is a directory (expected an audio file)" },
     ]);
   });
 
@@ -547,7 +547,10 @@ describe("CLI contracts", () => {
     expectContract(run, {
       exitCode: 1,
       stdoutEmpty: true,
-      stderrContains: ["a.wav: File not found", "b.wav: File not found"],
+      stderrContains: [
+        "a.wav: error [E_INPUT_NOT_FOUND]: File not found",
+        "b.wav: error [E_INPUT_NOT_FOUND]: File not found",
+      ],
     });
   });
 
@@ -559,7 +562,10 @@ describe("CLI contracts", () => {
     expectContract(run, {
       exitCode: 1,
       stdoutEmpty: true,
-      stderrContains: ["a.wav: File not found", "b.wav: File not found"],
+      stderrContains: [
+        "a.wav: error [E_INPUT_NOT_FOUND]: File not found",
+        "b.wav: error [E_INPUT_NOT_FOUND]: File not found",
+      ],
     });
   });
 
@@ -618,7 +624,7 @@ describe("CLI contracts", () => {
     const run = await runCli(["--toon", "--include-errors", mediaPath, "missing.wav"], { env });
     expectContract(run, {
       exitCode: 1,
-      stderrContains: ["missing.wav: File not found"],
+      stderrContains: ["missing.wav: error [E_INPUT_NOT_FOUND]: File not found"],
       stdoutNotContains: ["Transcribing", "Transcribed"],
     });
 
@@ -669,7 +675,7 @@ describe("CLI contracts", () => {
     const run = await runCli(["--json", mediaPath, "missing.wav"], { env });
     expectContract(run, {
       exitCode: 1,
-      stderrContains: ["missing.wav: File not found"],
+      stderrContains: ["missing.wav: error [E_INPUT_NOT_FOUND]: File not found"],
     });
 
     const parsed = JSON.parse(run.stdout);
@@ -695,9 +701,9 @@ describe("CLI contracts", () => {
         "0%",
         `Transcribed ${mediaPath}`,
         "100%",
-        "missing.wav: File not found",
+        "missing.wav: error [E_INPUT_NOT_FOUND]: File not found",
       ],
-      stdoutNotContains: ["Transcribing", "Transcribed", "missing.wav: File not found"],
+      stdoutNotContains: ["Transcribing", "Transcribed", "missing.wav: error [E_INPUT_NOT_FOUND]: File not found"],
     });
 
     const parsed = JSON.parse(run.stdout);
