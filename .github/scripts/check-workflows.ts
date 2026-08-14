@@ -17,6 +17,63 @@ import { parse, YAMLParseError } from "yaml";
 import { engineTargetEntries, targetKey } from "../../src/engine-targets";
 
 const dirs = [".github/workflows", ".github/actions"];
+const RUST_TOOLCHAIN_FILE = "rust-toolchain.toml";
+
+export type RustToolchainPin = {
+  channel: string;
+  components: string[];
+};
+
+/** Read the source-controlled Rust toolchain contract shared by contributors and CI. */
+export function readRustToolchainPin(): { pin?: RustToolchainPin; errors: string[] } {
+  try {
+    const contents = readFileSync(RUST_TOOLCHAIN_FILE, "utf8");
+    const toolchain = /^\[toolchain\]\s*$([\s\S]*)/m.exec(contents)?.[1];
+    if (!toolchain) return { errors: [`${RUST_TOOLCHAIN_FILE}: expected a [toolchain] table`] };
+
+    const channel = /^channel\s*=\s*"([^"]+)"\s*$/m.exec(toolchain)?.[1];
+    const componentList = /^components\s*=\s*\[([^\]]*)\]\s*$/m.exec(toolchain)?.[1] ?? "";
+    const components = [...componentList.matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? "");
+
+    if (!channel) return { errors: [`${RUST_TOOLCHAIN_FILE}: expected [toolchain].channel`] };
+    if (components.length === 0) return { errors: [`${RUST_TOOLCHAIN_FILE}: expected [toolchain].components`] };
+
+    return { pin: { channel, components }, errors: [] };
+  } catch (err) {
+    return { errors: [`${RUST_TOOLCHAIN_FILE}: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+}
+
+/**
+ * The action installs the toolchain passed through `with.toolchain`, rather than reading the
+ * repository toolchain file. Keep every explicit action invocation aligned with that file.
+ */
+export function requirePinnedRustToolchain(path: string, document: unknown, pin: RustToolchainPin): string[] {
+  const jobs = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs;
+  if (!jobs || typeof jobs !== "object") return [];
+
+  const errors: string[] = [];
+  for (const [job, definition] of Object.entries(jobs)) {
+    if (!Array.isArray(definition?.steps)) continue;
+    for (const step of definition.steps as Step[]) {
+      if (typeof step?.uses !== "string" || !step.uses.startsWith("dtolnay/rust-toolchain@")) continue;
+
+      if (step.with?.toolchain !== pin.channel) {
+        errors.push(`${path}: \`${job}\` must install Rust ${pin.channel}, not \`${String(step.with?.toolchain ?? "") }\``);
+      }
+
+      const components = String(step.with?.components ?? "")
+        .split(",")
+        .map((component) => component.trim())
+        .filter(Boolean);
+      const missing = pin.components.filter((component) => !components.includes(component));
+      if (missing.length > 0) {
+        errors.push(`${path}: \`${job}\` must install ${missing.join(", ")} from ${RUST_TOOLCHAIN_FILE}`);
+      }
+    }
+  }
+  return errors;
+}
 
 function collectYamlFiles(dir: string): string[] {
   return readdirSync(dir, { recursive: true })
@@ -449,7 +506,12 @@ function describeUnreadable(path: string, err: unknown): string {
   return `${path}: ${err instanceof Error ? err.message : String(err)}`;
 }
 
-function checkFile(path: string, testedScripts: string[], cacheWriters: CacheEntry[]): string[] {
+function checkFile(
+  path: string,
+  testedScripts: string[],
+  cacheWriters: CacheEntry[],
+  rustToolchain: RustToolchainPin | undefined,
+): string[] {
   try {
     const contents = readFileSync(path, "utf8");
     const document = parse(contents);
@@ -464,6 +526,7 @@ function checkFile(path: string, testedScripts: string[], cacheWriters: CacheEnt
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
+      ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
     ];
   } catch (err) {
     return [describeUnreadable(path, err)];
@@ -484,7 +547,11 @@ function main(): void {
   const cacheWriters = existsSync(SEED_WORKFLOW)
     ? collectCacheWriters(parse(readFileSync(SEED_WORKFLOW, "utf8")))
     : [];
-  const errors = files.flatMap((path) => checkFile(path, testedScripts, cacheWriters));
+  const { pin: rustToolchain, errors: rustToolchainErrors } = readRustToolchainPin();
+  const errors = [
+    ...rustToolchainErrors,
+    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain)),
+  ];
   for (const error of errors) console.error(error);
 
   if (errors.length > 0) {

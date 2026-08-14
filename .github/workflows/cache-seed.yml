@@ -125,7 +125,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         if: steps.probe.outputs.cache-hit != 'true'
         with:
-          toolchain: stable
+          toolchain: "1.94.1"
+          components: rustfmt,clippy
 
       # Deliberately no rust-cache: this job builds only on a miss, and its artifacts
       # cost 716 MB of a budget whose pressure already evicts the bundle it seeds.
