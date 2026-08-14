@@ -38,6 +38,8 @@ describe("openclaw plugin registration", () => {
     expect(registrations).toHaveLength(1);
     expect(registrations[0]?.id).toBe("kesha-voice-kit");
     expect(registrations[0]?.capabilities).toEqual(["audio"]);
+    expect(registrations[0]?.defaultModels).toEqual({ audio: "parakeet-tdt-0.6b-v3" });
+    expect(registrations[0]?.autoPriority).toEqual({ audio: 50 });
   });
 
   // #933: the provider is declaration-only. A transcription handler would make it
@@ -66,5 +68,40 @@ describe("openclaw plugin source stays scanner-clean", () => {
 
   test("the forbidden module substring is absent from the source", () => {
     expect(FORBIDDEN_MODULE.test(source)).toBe(false);
+  });
+});
+
+describe("openclaw package contracts", () => {
+  const manifest = JSON.parse(readRepoFile("openclaw.plugin.json")) as {
+    id?: string;
+    configSchema?: {
+      type?: string;
+      additionalProperties?: boolean;
+      properties?: Record<string, unknown>;
+    };
+    configPatch?: unknown;
+  };
+  const packageJson = JSON.parse(readRepoFile("package.json")) as {
+    openclaw?: {
+      extensions?: string[];
+      compat?: { pluginApi?: string };
+      build?: { openclawVersion?: string };
+    };
+  };
+
+  test("ships an installable manifest with an empty object config schema", () => {
+    expect(manifest.id).toBe("kesha-voice-kit");
+    expect(manifest.configSchema).toEqual({
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+    });
+    expect(manifest.configPatch).toBeUndefined();
+  });
+
+  test("declares every OpenClaw publish requirement", () => {
+    expect(packageJson.openclaw?.extensions).toEqual(["./openclaw-plugin.cjs"]);
+    expect(packageJson.openclaw?.compat?.pluginApi).toBe(">=2026.5.27");
+    expect(packageJson.openclaw?.build?.openclawVersion).toBe("2026.5.27");
   });
 });
