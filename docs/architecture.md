@@ -81,6 +81,20 @@ success line prints: once the lock is released, another install may replace the
 engine, so concurrent jobs that must pin a version want private caches
 (`KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`).
 
+The wait itself is bounded, and giving up on it is `E_INSTALL_RACE` too — the
+same code for the same situation: another install holds this cache, nothing was
+written, and re-running once it is quiet is the fix
+([#1018](https://github.com/drakulavich/kesha-voice-kit/issues/1018)).
+`KESHA_INSTALL_LOCK_WAIT_SECS` sets that ceiling in seconds, for a job that
+would rather fail than sit behind a holder it cannot outlast; unset, it is 6 h —
+the slowest legitimate install, a cold 2.4 GB bundle on a thin link — and a
+value that is not a positive number is rejected with `E_INVALID_ARG` rather than
+read as "do not wait". Lowering it trades away the self-healing retry: a wait
+that runs out at the default has by then outlived the lock's own staleness
+ceiling, so a single retry takes the lock over, whereas a short wait can expire
+against a lock that is still fresh — and a caller that retries on
+`E_INSTALL_RACE` will keep timing out until the holder finishes.
+
 ## Models
 
 | Model | Task | Size | Source |
