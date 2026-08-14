@@ -14,7 +14,7 @@ import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { engineVersion } from "../../src/package-info";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
-import { waitForPidExit, waitForPidFile } from "../helpers/process";
+import { pidIsAlive, waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
   DEFAULT_TIMEOUT_MS,
   installFakeDiarizeModel,
@@ -250,6 +250,76 @@ process.exit(2);
   );
   chmodSync(enginePath, 0o755);
   return enginePath;
+}
+
+function createLifecycleEngine(
+  dir: string,
+  enginePidPath: string,
+  hangsDuring: "probe" | "model-install" | "warmup" | "version-check",
+): string {
+  const enginePath = join(dir, `kesha-engine-${hangsDuring}`);
+  const capabilities = hangsDuring === "probe"
+    ? ""
+    : "console.log(JSON.stringify({ protocolVersion: 1, backend: \"fake\", features: [] }));";
+  const hang = `
+  await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
+  await new Promise(() => {});
+`;
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "--capabilities-json") {
+  ${capabilities}
+  process.exit(0);
+}
+if (args[0] === "--version" && ${JSON.stringify(hangsDuring)} !== "probe" && ${JSON.stringify(hangsDuring)} !== "version-check") {
+  console.log("kesha-engine ${engineVersion}");
+  process.exit(0);
+}
+if (
+  (${JSON.stringify(hangsDuring)} === "probe" && args[0] === "--version") ||
+  (${JSON.stringify(hangsDuring)} === "model-install" && args[0] === "install") ||
+  (${JSON.stringify(hangsDuring)} === "warmup" && args[0] === "say") ||
+  (${JSON.stringify(hangsDuring)} === "version-check" && args[0] === "--version")
+) {${hang}}
+if (args[0] === "install") process.exit(0);
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+async function interruptInstallAndReadExit(
+  args: readonly string[],
+  env: Record<string, string>,
+  enginePidPath: string,
+): Promise<{ exitCode: number | null; engineStopped: boolean }> {
+  const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", ...args], {
+    cwd: DEFAULT_CWD,
+    stdout: "ignore",
+    stderr: "ignore",
+    env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", ...env },
+  });
+  const enginePid = await waitForPidFile(enginePidPath, 800);
+  proc.kill("SIGINT");
+  const exitCode = await Promise.race([
+    proc.exited,
+    Bun.sleep(5_000).then(() => null),
+  ]);
+  let engineStopped = false;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (!pidIsAlive(enginePid)) {
+      engineStopped = true;
+      break;
+    }
+    await Bun.sleep(25);
+  }
+  if (exitCode === null) proc.kill("SIGKILL");
+  if (!engineStopped) process.kill(enginePid, "SIGKILL");
+  return { exitCode, engineStopped };
 }
 
 function createListVoicesHangEngine(dir: string, enginePidPath: string): string {
@@ -1139,6 +1209,46 @@ describe("CLI contracts", () => {
       expect(await waitForPidExit(enginePid)).toBe(true);
     });
   }
+
+  for (const [phase, args] of [
+    ["probe", ["install"]],
+    ["model-install", ["install"]],
+    ["version-check", ["install"]],
+  ] as const) {
+    test(`Ctrl+C during ${phase} terminates the engine and exits 130 (#971)`, async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir(`kesha-cli-contract-${phase}-signal-`);
+      const enginePidPath = join(dir, "engine.pid");
+      const enginePath = createLifecycleEngine(dir, enginePidPath, phase);
+      markFakeEngineInstalled(enginePath);
+
+      const result = await interruptInstallAndReadExit(
+        args,
+        { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+        enginePidPath,
+      );
+
+      expect(result.exitCode).toBe(130);
+      expect(result.engineStopped).toBe(true);
+    });
+  }
+
+  test("Ctrl+C during the darwin Kokoro warmup terminates the engine and exits 130 (#971)", async () => {
+    if (process.platform !== "darwin" || process.arch !== "arm64") return;
+    const dir = makeTempDir("kesha-cli-contract-warmup-signal-");
+    const enginePidPath = join(dir, "engine.pid");
+    const enginePath = createLifecycleEngine(dir, enginePidPath, "warmup");
+    markFakeEngineInstalled(enginePath);
+
+    const result = await interruptInstallAndReadExit(
+      ["install", "--tts", "en"],
+      { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      enginePidPath,
+    );
+
+    expect(result.exitCode).toBe(130);
+    expect(result.engineStopped).toBe(true);
+  });
 
   test("early transcription failure does not start audio language detection", async () => {
     if (process.platform === "win32") return;

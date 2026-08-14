@@ -1,6 +1,13 @@
 import { existsSync } from "fs";
 import { errorMessage } from "./error-utils";
-import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from "./engine";
+import {
+  getEngineBinPath,
+  getEngineCapabilities,
+  spawnEngineProcess,
+  spawnStdioWithDebugFd,
+  type EngineCapabilities,
+} from "./engine";
+import { registerProcessTree } from "./process-tree";
 
 export type ExecutableHealth =
   | { status: "ok" }
@@ -28,27 +35,25 @@ export async function probeExecutable(
 
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = Bun.spawn([binPath, ...args], {
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-      // Nothing this probe runs reads a `KESHA_*` today; it is passed so every engine spawn
-      // resolves env the same way and the #874/#876 class cannot come back here (#876).
-      env: process.env,
-    });
+    proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["ignore", "ignore", "ignore"]));
   } catch (err) {
     return { status: "unusable", detail: errorMessage(err) };
   }
+  const tree = registerProcessTree(proc);
 
   let timedOut = false;
+  let forceKillTimer: Timer | undefined;
   const timer = setTimeout(() => {
     timedOut = true;
-    proc.kill();
+    tree.terminate();
+    forceKillTimer = tree.forceKillAfterGrace();
   }, PROBE_TIMEOUT_MS);
   try {
     await proc.exited;
   } finally {
     clearTimeout(timer);
+    tree.dispose();
+    if (!timedOut && forceKillTimer) clearTimeout(forceKillTimer);
   }
 
   if (timedOut) {
@@ -73,17 +78,23 @@ export async function readExecutableVersion(
 
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = Bun.spawn([binPath, "--version"], {
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "ignore",
-      env: process.env,
-    });
+    proc = spawnEngineProcess(
+      binPath,
+      ["--version"],
+      spawnStdioWithDebugFd(["ignore", "pipe", "ignore"]),
+    );
   } catch {
     return null;
   }
+  const tree = registerProcessTree(proc);
 
-  const timer = setTimeout(() => proc.kill(), timeoutMs);
+  let timedOut = false;
+  let forceKillTimer: Timer | undefined;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    tree.terminate();
+    forceKillTimer = tree.forceKillAfterGrace();
+  }, timeoutMs);
   let stdout: string;
   try {
     [stdout] = await Promise.all([
@@ -92,6 +103,8 @@ export async function readExecutableVersion(
     ]);
   } finally {
     clearTimeout(timer);
+    tree.dispose();
+    if (!timedOut && forceKillTimer) clearTimeout(forceKillTimer);
   }
   return /(\d+\.\d+\.\d+[0-9A-Za-z.+-]*)/.exec(stdout)?.[1] ?? null;
 }
