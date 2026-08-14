@@ -295,20 +295,20 @@ async function processFile(
       command: "transcribe",
       error_code: TS_NATIVE_CODES.INPUT_NOT_FOUND,
     });
-    log.error(`${file}: File not found`);
+    log.error(`${file}: error [${TS_NATIVE_CODES.INPUT_NOT_FOUND}]: File not found`);
     return { ok: false, error: { file, code: TS_NATIVE_CODES.INPUT_NOT_FOUND, message: "File not found" } };
   }
 
   if (isDirectoryPath(file)) {
-    stats.recordError("input", new Error("is a directory"), ENGINE_CODES.BAD_AUDIO);
+    stats.recordError("input", new Error("is a directory"), TS_NATIVE_CODES.INVALID_ARG);
     diagnosticLog.event("input.invalid", {
       command: "transcribe",
-      error_code: ENGINE_CODES.BAD_AUDIO,
+      error_code: TS_NATIVE_CODES.INVALID_ARG,
     });
-    log.error(`${file}: is a directory (expected an audio file)`);
+    log.error(`${file}: error [${TS_NATIVE_CODES.INVALID_ARG}]: is a directory (expected an audio file)`);
     return {
       ok: false,
-      error: { file, code: ENGINE_CODES.BAD_AUDIO, message: "is a directory (expected an audio file)" },
+      error: { file, code: TS_NATIVE_CODES.INVALID_ARG, message: "is a directory (expected an audio file)" },
     };
   }
 

@@ -17,7 +17,12 @@ const CODED_ERROR = /error \[E_[A-Z0-9_]+\]:/;
 interface BadInput {
   name: string;
   skip?: boolean;
-  prepare(dir: string): { args: string[]; env?: Record<string, string>; stderrContains: string[] };
+  prepare(dir: string): {
+    args: string[];
+    env?: Record<string, string>;
+    stderrContains: string[];
+    stderrNotContains?: string[];
+  };
 }
 
 const KNOWN_BAD_INPUTS: BadInput[] = [
@@ -48,9 +53,10 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       mkdirSync(readOnly);
       chmodSync(readOnly, 0o500);
       return {
-        args: ["install"],
+        args: ["install", "--engine-version", "1.24.10-alpha.2"],
         env: { KESHA_CACHE_DIR: readOnly },
-        stderrContains: ["KESHA_CACHE_DIR", readOnly],
+        stderrContains: ["KESHA_CACHE_DIR", readOnly, "Fix: point KESHA_CACHE_DIR at a writable directory"],
+        stderrNotContains: ["EACCES:"],
       };
     },
   },
@@ -60,9 +66,10 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       const file = join(dir, "not-a-dir");
       writeFileSync(file, "");
       return {
-        args: ["install"],
+        args: ["install", "--engine-version", "1.24.10-alpha.2"],
         env: { KESHA_CACHE_DIR: file },
-        stderrContains: ["KESHA_CACHE_DIR", file],
+        stderrContains: ["KESHA_CACHE_DIR", file, "Fix: point KESHA_CACHE_DIR at a writable directory"],
+        stderrNotContains: ["ENOTDIR:"],
       };
     },
   },
@@ -86,7 +93,7 @@ describe("failures the CLI answers without the engine", () => {
   for (const input of KNOWN_BAD_INPUTS) {
     test.skipIf(input.skip === true)(`${input.name} prints a coded error`, async () => {
       const dir = makeTempDir();
-      const { args, env, stderrContains } = input.prepare(dir);
+      const { args, env, stderrContains, stderrNotContains = [] } = input.prepare(dir);
       const run = await runCliScenario(args, {
         env: {
           HOME: dir,
@@ -102,6 +109,9 @@ describe("failures the CLI answers without the engine", () => {
       expect(run.stderr).toMatch(CODED_ERROR);
       for (const needle of stderrContains) {
         expect(run.stderr).toContain(needle);
+      }
+      for (const needle of stderrNotContains) {
+        expect(run.stderr).not.toContain(needle);
       }
     });
   }

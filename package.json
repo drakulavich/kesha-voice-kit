@@ -46,7 +46,7 @@
     "test": "bun test --timeout 30000",
     "test:watch": "bun test --timeout 30000 --watch",
     "test:unit": "bun test --timeout 30000 tests/unit/",
-    "test:cli-fast": "bun test --timeout 30000 tests/unit/ tests/integration/cli-contracts.test.ts tests/integration/say.test.ts",
+    "test:cli-fast": "bun test --timeout 30000 tests/unit/ tests/integration/cli-contracts.test.ts tests/integration/error-codes-cli.test.ts tests/integration/say.test.ts",
     "test:integration": "bun test --timeout 30000 tests/integration/",
     "coverage:ts": "bun run test:cli-fast --coverage --coverage-reporter=text --coverage-reporter=lcov --coverage-dir=coverage/ts",
     "coverage:check:ts": "bun .github/scripts/check-coverage.ts --preset=ts --lcov=coverage/ts/lcov.info --summary=coverage/ts/summary.md",

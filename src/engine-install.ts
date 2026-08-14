@@ -644,6 +644,42 @@ async function assertRequestedVersionLanded(binPath: string, version: string): P
   );
 }
 
+/**
+ * Creates the engine directory up front, so a cache path the user configured fails with a code
+ * and the name of the setting that supplied it instead of a raw errno from the first write
+ * inside the download (#998). `recursive: true` is a no-op on a directory that already exists,
+ * so a read-only Nix engine dir still reaches the writability branch in `installLockedEngine`.
+ */
+function ensureEngineDirCreatable(binPath: string): void {
+  const engineDir = dirname(binPath);
+  try {
+    mkdirSync(engineDir, { recursive: true });
+  } catch (e) {
+    const setting = process.env.KESHA_ENGINE_BIN
+      ? { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN }
+      : process.env.KESHA_CACHE_DIR
+        ? { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR }
+        : null;
+    const errno = (e as NodeJS.ErrnoException).code;
+    // Said in prose: the raw errno named neither the cache nor what to do about it (#998).
+    const why =
+      errno === "EACCES" || errno === "EPERM"
+        ? "permission denied"
+        : errno === "ENOTDIR"
+          ? "a component of it is a file, not a directory"
+          : errno === "EROFS"
+            ? "the filesystem is read-only"
+            : errorMessage(e);
+    const what = setting
+      ? `${setting.name}="${setting.value}" cannot hold the engine directory ${engineDir}: ${why}`
+      : `cannot create the engine directory ${engineDir}: ${why}`;
+    const fix = setting
+      ? `point ${setting.name} at a writable directory, or unset it to install into the default cache.`
+      : `point KESHA_CACHE_DIR at a writable directory, or fix the permissions on ${keshaCacheDir()}.`;
+    throw new Error(`error [${TS_NATIVE_CODES.INVALID_ARG}]: ${what}.\n  Fix: ${fix}`);
+  }
+}
+
 export interface EngineInstallRequest extends InstallOptions {
   noCache?: boolean;
   backend?: string;
@@ -661,6 +697,7 @@ export interface EngineInstallRequest extends InstallOptions {
 export async function installEngine(request: EngineInstallRequest = {}): Promise<string> {
   const binPath = getEngineBinPath();
   assertNotRealCacheUnderTest(binPath);
+  ensureEngineDirCreatable(binPath);
   const release = await acquireInstallLock(binPath);
   try {
     return await installLockedEngine(binPath, request);
