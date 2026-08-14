@@ -15,6 +15,8 @@
 //!
 //! A second case covers the other end of the range: a clip too short for the
 //! Sortformer chunker to emit anything must still return its transcript (#999).
+//! It cuts a committed fixture rather than synthesizing, so it does not inherit
+//! the TTS skip — Sortformer and VAD are the only prerequisites it needs.
 
 #![cfg(feature = "system_diarize")]
 
@@ -59,25 +61,23 @@ fn concat_wavs(inputs: &[PathBuf], out: &Path) {
     writer.finalize().expect("finalize combined wav");
 }
 
-/// Copy the leading `seconds` of `input` into `out`, keeping the source spec.
-fn truncate_wav(input: &Path, out: &Path, seconds: f32) {
-    let mut reader = hound::WavReader::open(input).expect("read wav to truncate");
-    let spec = reader.spec();
-    let keep = (seconds * spec.sample_rate as f32) as usize * spec.channels as usize;
-    let mut writer = hound::WavWriter::create(out, spec).expect("create truncated wav");
-    match spec.sample_format {
-        hound::SampleFormat::Float => {
-            for s in reader.samples::<f32>().take(keep) {
-                writer.write_sample(s.expect("read f32 sample")).unwrap();
-            }
-        }
-        hound::SampleFormat::Int => {
-            for s in reader.samples::<i32>().take(keep) {
-                writer.write_sample(s.expect("read int sample")).unwrap();
-            }
-        }
+/// Write mono 16 kHz samples as 16-bit PCM. Paired with `load_audio_truncated`, whose
+/// output is already the engine's decode target, so the file's duration is exactly the
+/// cut length — which the assertion on the stderr notice depends on.
+fn write_wav_16k(samples: &[f32], out: &Path) {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 16_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(out, spec).expect("create short wav");
+    for s in samples {
+        writer
+            .write_sample((s.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16)
+            .expect("write sample");
     }
-    writer.finalize().expect("finalize truncated wav");
+    writer.finalize().expect("finalize short wav");
 }
 
 #[test]
@@ -196,18 +196,14 @@ fn a_clip_below_the_diarizer_floor_keeps_its_transcript() {
         .tempdir()
         .unwrap();
 
-    let spoken = tmp.path().join("spoken.wav");
-    if !say(
-        "Hello everyone, this is the call.",
-        "en-am_michael",
-        &spoken,
-    ) {
-        eprintln!("skipping: TTS voices not installed (run `kesha install --tts`)");
-        return;
-    }
-
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/benchmark-en/01-check-email.ogg"
+    );
+    let samples = kesha_engine::audio::load_audio_truncated(fixture, 0.9)
+        .expect("committed fixture must decode — run `git lfs pull` in a fresh checkout");
     let short = tmp.path().join("short.wav");
-    truncate_wav(&spoken, &short, 0.9);
+    write_wav_16k(&samples, &short);
 
     let out = Command::new(&exe)
         .args([
@@ -222,10 +218,13 @@ fn a_clip_below_the_diarizer_floor_keeps_its_transcript() {
 
     let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
+        // The ASR models are on this list where the sibling test leaves them off: cutting a
+        // fixture instead of synthesizing means no TTS gate runs first to catch a bare machine.
         if stderr.contains("diarization model not found")
             || stderr.contains("kesha-diarize sidecar not found")
             || stderr.contains("VAD model")
             || stderr.contains("silero-vad")
+            || stderr.contains("No transcription models installed")
         {
             eprintln!(
                 "skipping: prerequisite missing (run `kesha install --vad --diarize`):\n{stderr}"
@@ -247,7 +246,9 @@ fn a_clip_below_the_diarizer_floor_keeps_its_transcript() {
         "a clip the diarizer cannot read must not carry invented labels: {segments:#?}"
     );
     assert!(
-        stderr.contains("without speaker labels"),
-        "the user asked for labels and did not get them — stderr must say so: {stderr}"
+        stderr.contains("the clip is 0.90s")
+            && stderr.contains("needs 1.04s")
+            && stderr.contains("without speaker labels"),
+        "stderr must name the clip length, the floor, and that labels are missing: {stderr}"
     );
 }

@@ -143,14 +143,17 @@ The percentage check SHALL be skipped when there is exactly one ASR Segment: the
 ratio can then only be 0 % or 100 % depending on whether that Segment's midpoint
 lands in a speaker-change gap, which measures absent segmentation rather than
 partial labeling. Diarization returning no spans at all SHALL still fail closed
-at any Segment count, with one exception: when the audio file is shorter than the
-1.04 s the Sortformer chunker needs before it can emit its first chunk, an empty
-result is the clip being too short rather than labels going missing. There the
-Engine SHALL return the transcript without `speaker` fields and exit 0, and SHALL
-say on stderr that the clip is below the floor and that the labels the user asked
-for are not in the output. Both halves of that exception are required — a run that
-dropped labels still has spans, and a clip long enough to diarize is judged by the
-checks above unchanged.
+at any Segment count, with one exception: when the clip is shorter than the 1.04 s
+the Sortformer chunker needs before it can emit its first chunk, an empty result is
+the clip being too short rather than labels going missing. There the Engine SHALL
+return the transcript without `speaker` fields and exit 0, and SHALL say on stderr
+that the clip is below the floor and that the labels the user asked for are not in
+the output. A clip long enough to diarize is judged by the checks above unchanged,
+whether it lost some of its labels or all of them. Because a container can
+under-report its own duration, the Engine SHALL believe a below-floor measurement
+only when the transcript agrees: an ASR timeline reaching 1.04 s or beyond means the
+measurement is wrong, and the Engine SHALL fail closed rather than degrade — so the
+stderr notice never claims a length the transcript contradicts.
 
 #### Scenario: Ira diarizes a voice command shorter than the model's window
 
@@ -160,6 +163,13 @@ checks above unchanged.
   1.04 s floor, and that the transcript is returned without speaker labels
 - AND stdout carries the transcript, whose Segments omit `speaker` entirely
 - AND the process exits 0
+
+#### Scenario: A container that under-reports its own length does not open the exception
+
+- GIVEN a file whose header claims 0.3 s, diarization returning no spans, and an ASR
+  transcript running to 60 s
+- THEN the Engine reports the coverage error naming `labeled 0/1 segments` rather
+  than degrading, and the process exits 1
 
 #### Scenario: A single whole-file Segment does not fail closed
 
@@ -190,7 +200,9 @@ checks above unchanged.
 > subsamplingFactor 8 * melStride 160 / sampleRate 16 000`. Measured on a cut of
 > `01-ne-nuzhno-slat-soobshcheniya.ogg`, the step is at ~1.023 s — 16 360 samples
 > return 0 spans, 16 380 return 1 — so the derived value sits just above the
-> observed one. Closes #999.*
+> observed one, and a clip in that 17 ms band degrades where it could still have
+> been labeled. The duration cross-check is `max_asr_end`, the same clock
+> `validate_coverage` uses. Closes #999.*
 
 ### Requirement: Speaker ids are cluster indices stable within one call only
 
