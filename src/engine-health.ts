@@ -58,6 +58,44 @@ export async function probeExecutable(
   return { status: "ok" };
 }
 
+/**
+ * The version the binary claims for itself (`kesha-engine 1.24.9` → `1.24.9`), or null when it
+ * names none — a stand-in engine, or a build predating `--version`.
+ *
+ * The `.version` marker beside the binary is a claim any other writer can overwrite; the engine
+ * is the only witness to which engine is actually on disk (#997).
+ */
+export async function readExecutableVersion(
+  binPath: string,
+  timeoutMs = PROBE_TIMEOUT_MS,
+): Promise<string | null> {
+  if (!existsSync(binPath)) return null;
+
+  let proc: ReturnType<typeof Bun.spawn>;
+  try {
+    proc = Bun.spawn([binPath, "--version"], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+      env: process.env,
+    });
+  } catch {
+    return null;
+  }
+
+  const timer = setTimeout(() => proc.kill(), timeoutMs);
+  let stdout: string;
+  try {
+    [stdout] = await Promise.all([
+      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
+      proc.exited,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+  return /(\d+\.\d+\.\d+[0-9A-Za-z.+-]*)/.exec(stdout)?.[1] ?? null;
+}
+
 export type EngineFunctionalHealth =
   | { status: "ok"; capabilities: EngineCapabilities }
   | { status: "missing" }
