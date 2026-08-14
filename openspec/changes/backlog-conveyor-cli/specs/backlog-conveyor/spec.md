@@ -31,9 +31,14 @@ start/creation time MUST be authoritative. A stacked or non-default-base PR MUST
 versioned machine-readable PR comment MUST bind the marker to the current SHA before
 `merge-ready` is added. The evidence object MUST itself declare `version: 1` and remain
 provider-neutral: any non-empty `provider`, `verdict: APPROVED`, exact head SHA, evidence
-URI/path, and SHA-256 digest. The command MUST read markers from all comment pages and accept
-only the newest valid marker authored by an owner, member, or collaborator. The command MUST
-NOT depend on a named agent, model, local settings, or provider-specific artifact format.
+URI/path, and SHA-256 digest of fixed-order canonical evidence bytes excluding that digest.
+The command MUST read markers from all comment pages and accept only the newest valid marker
+authored by an owner, member, or collaborator. `sync` MUST re-evaluate the same current-head
+gate policy before preserving `merge-ready`; marker association alone MUST NOT establish
+eligibility. The latest decisive current-head review state per independent reviewer MUST apply:
+an approved review is required and any current change request blocks, while later comments do
+not cancel an approval. The command MUST NOT depend on a named agent, model, local settings,
+or provider-specific artifact format.
 
 #### Scenario: Ira sees a review made before a push
 
@@ -67,14 +72,34 @@ NOT depend on a named agent, model, local settings, or provider-specific artifac
 - WHEN Sona runs `sync` or `gate`
 - THEN the marker is ignored and cannot preserve or create merge eligibility
 
+#### Scenario: Ira sees a marker written by the PR author who is a repository owner
+
+- GIVEN the marker is current and syntactically valid but the PR has no independent current-head approval
+- WHEN Ira runs `sync`
+- THEN it reports `merge-ready` stale and may remove only that label under `--apply`
+
+#### Scenario: Maks receives altered evidence
+
+- GIVEN evidence has a digest that does not equal the fixed-order canonical payload excluding the digest
+- WHEN Maks runs `gate` or reads the marker
+- THEN the command rejects the evidence
+
+#### Scenario: Ira cannot load current checks
+
+- GIVEN GitHub refuses or returns malformed required check data during `sync --apply`
+- WHEN Ira runs the command
+- THEN it exits operationally before any label mutation
+
 ### Requirement: Sync and close SHALL preserve worktree safety
 
 `sync` SHALL report stale merge-ready markers, WIP state left by a closed or merged PR, and
-missing, dirty, or orphan local worktrees. It SHALL remove only explicitly reported safe
-labels under `--apply`. `close --issue N --pr P` SHALL verify closed/merged PR and issue
-state consistency; under `--apply` it SHALL remove WIP and only a clean, listed matching
-worktree directly underneath the repository's `.worktrees/` directory. It MUST refuse a
-dirty, unlisted, or outside target and MUST NOT force removal.
+missing, dirty, or orphan local worktrees. It SHALL remove WIP automatically only after the
+linked issue is closed, and it SHALL deduplicate every safe mutation before `--apply`.
+`close --issue N --pr P` SHALL verify closed/merged PR and issue state consistency; under
+`--apply` it SHALL remove WIP and only a clean, listed matching worktree that is a real direct
+child of the repository's `.worktrees/` directory. It MUST refuse a dirty, nested, symlinked,
+unlisted, or outside target, MUST emit no safe action when it refuses, and MUST NOT force
+removal.
 
 #### Scenario: Ira closes an already-cleaned merged item
 
@@ -87,3 +112,15 @@ dirty, unlisted, or outside target and MUST NOT force removal.
 - GIVEN the matching worktree has uncommitted changes
 - WHEN Ira runs `close --issue 1032 --pr 1040 --apply`
 - THEN it refuses the mutation and leaves the worktree intact
+
+#### Scenario: Sona sees a closed unmerged PR while the issue remains open
+
+- GIVEN the issue is open with WIP and a linked PR was closed without merging
+- WHEN Sona runs `sync --apply`
+- THEN it reports the retained WIP and does not remove it
+
+#### Scenario: Maks sees two historical PRs for one closed issue
+
+- GIVEN two closed or merged PRs reference one closed issue with WIP
+- WHEN Maks runs `sync --apply`
+- THEN the WIP removal is applied at most once

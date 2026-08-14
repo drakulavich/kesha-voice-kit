@@ -33,18 +33,32 @@ that app's result, and the deterministically latest matching attempt by start/cr
 authoritative (not a later completion time from an older parallel attempt). Skipped,
 pending, absent, or non-successful current attempts fail. `gate --evidence <path>` consumes a
 self-versioned JSON object (`version: 1`) with `provider` (any non-empty string),
-`verdict: "APPROVED"`, exact `headSha`, `uri`, and SHA-256 `digest`. The versioned comment
-records exactly that portable evidence object with issue and PR identifiers. Only the newest
-marker authored by a repository owner, member, or collaborator is accepted; all comment pages
-are considered. Any two orchestrators therefore produce and consume the same GitHub state; the
-command never reads agent-local settings, state, model names, or provider-specific artifact
-formats. A later `sync` removes `merge-ready` when this marker no longer matches the head.
+`verdict: "APPROVED"`, exact `headSha`, `uri`, and SHA-256 `digest`. The digest is recomputed
+from fixed-order canonical UTF-8 JSON bytes of every evidence field except `digest`, so both the
+CLI and marker readers reject altered evidence. The versioned comment records exactly that
+portable evidence object with issue and PR identifiers. Only the newest marker authored by a
+repository owner, member, or collaborator is accepted; all comment pages are considered.
+Marker authorship alone never establishes eligibility: `sync` re-runs the same current-head
+gate policy before preserving `merge-ready`. Review state uses each independent reviewer's
+latest decisive current-head state; a current change request blocks, while a later comment does
+not erase an approval. Any two orchestrators therefore produce and consume the same GitHub
+state: a trusted verified marker for the same issue/PR/head is shared state regardless of
+provider. The command never reads agent-local settings, state, model names, or provider-specific
+artifact formats. A later `sync` removes `merge-ready` when this marker no longer matches the
+head or no longer passes that policy.
+
+Reconciliation distinguishes missing or invalid marker evidence from an operational failure.
+The former is stale evidence; a GitHub query, authentication, rate-limit, or malformed-response
+failure aborts the entire sync before any `--apply` mutation. Required checks are read once per
+sync and reused for every marked PR.
 
 ### Worktree deletion is deliberately harder than label cleanup
 
-`close --apply` only removes a clean worktree that is listed by Git and resolves underneath
-the repository's exact `.worktrees/` directory. A dirty candidate, an unlisted path, or a
-path outside that directory is refused; the command never supplies force.
+`close --apply` only removes a clean worktree that is listed by Git and is a real direct child
+of the repository's exact `.worktrees/` directory. The discovery and apply paths use the same
+realpath predicate; a dirty, nested, symlinked, unlisted, or outside candidate is refused, and
+a refusal yields no label mutation. The command never supplies force. `sync` removes WIP only
+after the linked issue is closed, and all reported mutations are deduplicated before apply.
 
 ## Risks / Trade-offs
 
@@ -56,6 +70,8 @@ path outside that directory is refused; the command never supplies force.
   explicitly reported as safe.
 - The comment trust boundary intentionally excludes public contributors: an untrusted marker
   cannot create merge eligibility, even if it is syntactically valid.
+- A repository owner can still author a PR marker, so marker association is not authorization;
+  current independent review and CI facts remain mandatory on every reconciliation.
 
 ## Technical notes
 

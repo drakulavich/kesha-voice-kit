@@ -1,5 +1,6 @@
-import { existsSync, realpathSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export const REPORT_SCHEMA_VERSION = 1;
 
@@ -27,6 +28,8 @@ export interface GateEvidence {
   uri: string;
   digest: string;
 }
+
+type GateEvidencePayload = Omit<GateEvidence, "digest">;
 
 export interface RequiredCheck {
   context: string;
@@ -71,6 +74,7 @@ export interface SyncFacts {
     labels: string[];
     closingIssueNumbers: number[];
     marker: GateMarker | null;
+    gateVerified: boolean;
   }>;
   worktrees: Array<{ path: string; branch: string | null; dirty: boolean; insideManagedDirectory: boolean }>;
 }
@@ -99,6 +103,12 @@ export interface Runner {
 }
 
 export class OperationalError extends Error {}
+
+interface Repository {
+  owner: string;
+  name: string;
+  defaultBranch: string;
+}
 
 const isRecord = (value: unknown): value is JsonRecord => typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -170,12 +180,55 @@ function matchingBranch(branch: string | null, issue: number): boolean {
   return issueNumberFromBranch(branch) === issue;
 }
 
+export function isDirectManagedWorktree(path: string, managedDirectory: string): boolean {
+  try {
+    const requested = resolve(path);
+    if (lstatSync(requested).isSymbolicLink()) return false;
+    const candidate = realpathSync(requested);
+    const managed = realpathSync(managedDirectory);
+    const child = relative(managed, candidate);
+    return child !== "" && !isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`) && dirname(child) === ".";
+  } catch {
+    return false;
+  }
+}
+
 function sameNumbers(actual: number[], expected: number[]): boolean {
   return actual.length === expected.length && actual.every((number, index) => number === expected[index]);
 }
 
+function actionKey(action: Evaluation["safeActions"][number]): string {
+  if (action.kind === "create-marker") return `${action.kind}:${action.pr}:${JSON.stringify(action.marker)}`;
+  if (action.kind === "remove-worktree") return `${action.kind}:${action.path}`;
+  return `${action.kind}:${action.pr ?? action.issue}`;
+}
+
+function uniqueActions(actions: Evaluation["safeActions"]): Evaluation["safeActions"] {
+  const seen = new Set<string>();
+  return actions.filter((action) => {
+    const key = actionKey(action);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function encodeGateMarker(marker: GateMarker): string {
   return `<!-- kesha-backlog-gate:v1 ${JSON.stringify(marker)} -->`;
+}
+
+export function canonicalGateEvidencePayload(evidence: GateEvidencePayload): string {
+  return JSON.stringify({
+    version: evidence.version,
+    provider: evidence.provider,
+    verdict: evidence.verdict,
+    headSha: evidence.headSha,
+    uri: evidence.uri,
+  });
+}
+
+export function digestGateEvidence(evidence: GateEvidencePayload): string {
+  return createHash("sha256").update(canonicalGateEvidencePayload(evidence)).digest("hex");
 }
 
 export function parseGateEvidence(value: unknown, source = "gate evidence"): GateEvidence {
@@ -189,7 +242,9 @@ export function parseGateEvidence(value: unknown, source = "gate evidence"): Gat
   const uri = requiredString(evidence.uri, `${source}.uri`);
   const digest = requiredString(evidence.digest, `${source}.digest`);
   if (!/^[0-9a-f]{64}$/i.test(digest)) throw new OperationalError(`${source}.digest must be a SHA-256 digest`);
-  return { version: 1, provider, verdict: "APPROVED", headSha, uri, digest };
+  const parsed = { version: 1 as const, provider, verdict: "APPROVED" as const, headSha, uri, digest };
+  if (digest.toLowerCase() !== digestGateEvidence(parsed)) throw new OperationalError(`${source}.digest does not match canonical evidence payload`);
+  return parsed;
 }
 
 export function parseGateMarker(body: string): GateMarker | null {
@@ -218,9 +273,15 @@ export function evaluateGate(facts: GateFacts): Evaluation {
   if (pr.baseRefName !== facts.defaultBranch) violations.push(`pull request base '${pr.baseRefName}' is not default branch '${facts.defaultBranch}'`);
   if (!sameNumbers(pr.closingIssueNumbers, [facts.issue])) violations.push(`closing issues must equal [${facts.issue}]`);
   if (facts.evidence.headSha !== pr.headSha) violations.push("review evidence is not bound to the current head SHA");
-  const approval = pr.reviews.find(
-    (review) => review.state === "APPROVED" && review.author !== null && review.author !== pr.author && review.commitSha === pr.headSha && review.submittedAt !== null,
-  );
+  const latestReviewByAuthor = new Map<string, { state: string; submittedAt: string }>();
+  for (const review of pr.reviews) {
+    if (review.author === null || review.author === pr.author || review.commitSha !== pr.headSha || review.submittedAt === null) continue;
+    if (review.state !== "APPROVED" && review.state !== "CHANGES_REQUESTED" && review.state !== "DISMISSED") continue;
+    const current = latestReviewByAuthor.get(review.author);
+    if (!current || review.submittedAt > current.submittedAt) latestReviewByAuthor.set(review.author, { state: review.state, submittedAt: review.submittedAt });
+  }
+  if ([...latestReviewByAuthor.values()].some((review) => review.state === "CHANGES_REQUESTED")) violations.push("an independent reviewer requested changes on the current head");
+  const approval = [...latestReviewByAuthor.values()].some((review) => review.state === "APPROVED");
   if (!approval) violations.push("no independent approval is bound to the current head SHA");
   if (facts.requiredChecks.length === 0) violations.push("default branch has no required checks");
   for (const required of facts.requiredChecks) {
@@ -238,11 +299,11 @@ export function evaluateGate(facts: GateFacts): Evaluation {
     if (latest.state !== "SUCCESS") violations.push(`required check '${required.context}' is ${latest.state}`);
   }
   const marker: GateMarker | null = approval ? { version: 1, issue: facts.issue, pr: facts.pr, evidence: facts.evidence } : null;
-  const markerCurrent = facts.marker !== null && facts.marker.issue === facts.issue && facts.marker.pr === facts.pr && JSON.stringify(facts.marker.evidence) === JSON.stringify(facts.evidence);
+  const markerCurrent = facts.marker !== null && facts.marker.issue === facts.issue && facts.marker.pr === facts.pr && facts.marker.evidence.headSha === pr.headSha;
   const safeActions: Evaluation["safeActions"] = [];
   if (violations.length === 0 && marker && !markerCurrent) safeActions.push({ kind: "create-marker", pr: facts.pr, marker });
   if (violations.length === 0 && !pr.labels.includes("merge-ready")) safeActions.push({ kind: "add-merge-ready", pr: facts.pr });
-  return { violations, refusals: [], safeActions, findings: [] };
+  return { violations, refusals: [], safeActions: uniqueActions(safeActions), findings: [] };
 }
 
 export function evaluateSync(facts: SyncFacts): Evaluation {
@@ -251,7 +312,7 @@ export function evaluateSync(facts: SyncFacts): Evaluation {
   for (const pr of facts.pullRequests) {
     if (
       pr.labels.includes("merge-ready") &&
-      (!pr.marker || pr.marker.pr !== pr.number || !sameNumbers(pr.closingIssueNumbers, [pr.marker.issue]) || pr.marker.evidence.headSha !== pr.headSha)
+      (!pr.gateVerified || !pr.marker || pr.marker.pr !== pr.number || !sameNumbers(pr.closingIssueNumbers, [pr.marker.issue]) || pr.marker.evidence.headSha !== pr.headSha)
     ) {
       findings.push(`PR #${pr.number} has stale merge-ready evidence`);
       safeActions.push({ kind: "remove-merge-ready", pr: pr.number });
@@ -259,8 +320,12 @@ export function evaluateSync(facts: SyncFacts): Evaluation {
     if ((pr.state === "CLOSED" || pr.state === "MERGED") && pr.closingIssueNumbers.length === 1) {
       const issue = facts.issues.find((candidate) => candidate.number === pr.closingIssueNumbers[0]);
       if (issue?.labels.includes("WIP")) {
-        findings.push(`issue #${issue.number} retains WIP after PR #${pr.number} ${pr.state.toLowerCase()}`);
-        safeActions.push({ kind: "remove-wip", issue: issue.number });
+        if (issue.state === "CLOSED") {
+          findings.push(`issue #${issue.number} retains WIP after PR #${pr.number} ${pr.state.toLowerCase()}`);
+          safeActions.push({ kind: "remove-wip", issue: issue.number });
+        } else {
+          findings.push(`issue #${issue.number} retains WIP after PR #${pr.number} ${pr.state.toLowerCase()}; automatic cleanup requires a closed issue`);
+        }
       }
     }
   }
@@ -276,7 +341,7 @@ export function evaluateSync(facts: SyncFacts): Evaluation {
       findings.push(`worktree ${worktree.path} is orphaned`);
     }
   }
-  return { violations: [], refusals: [], safeActions, findings };
+  return { violations: [], refusals: [], safeActions: uniqueActions(safeActions), findings };
 }
 
 export function evaluateClose(facts: CloseFacts): Evaluation {
@@ -290,8 +355,8 @@ export function evaluateClose(facts: CloseFacts): Evaluation {
   if (facts.worktree && !facts.worktree.insideManagedDirectory) refusals.push("matching worktree is outside the managed .worktrees directory");
   const safeActions: Evaluation["safeActions"] = [];
   if (violations.length === 0 && refusals.length === 0 && facts.worktree) safeActions.push({ kind: "remove-worktree", path: facts.worktree.path });
-  if (violations.length === 0 && facts.issue.labels.includes("WIP")) safeActions.push({ kind: "remove-wip", issue: facts.issue.number });
-  return { violations, refusals, safeActions, findings: [] };
+  if (violations.length === 0 && refusals.length === 0 && facts.issue.labels.includes("WIP")) safeActions.push({ kind: "remove-wip", issue: facts.issue.number });
+  return { violations, refusals, safeActions: uniqueActions(safeActions), findings: [] };
 }
 
 export function bunRunner(): Runner {
@@ -312,7 +377,7 @@ export function bunRunner(): Runner {
   };
 }
 
-async function repository(runner: Runner): Promise<{ owner: string; name: string; defaultBranch: string }> {
+async function repository(runner: Runner): Promise<Repository> {
   const raw = requiredRecord(await runJson(runner, ["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"], "gh repo view"), "gh repo view");
   const [owner, name] = requiredString(raw.nameWithOwner, "gh repo view.nameWithOwner").split("/");
   if (!owner || !name) throw new OperationalError("gh repo view.nameWithOwner must be owner/name");
@@ -322,7 +387,7 @@ async function repository(runner: Runner): Promise<{ owner: string; name: string
 
 const pullRequestQuery = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { number state isDraft mergeable headRefOid baseRefName author { login } labels(first: 100) { nodes { name } } closingIssuesReferences(first: 10) { nodes { number } } reviews(last: 100) { nodes { state submittedAt author { login } commit { oid } } } } } }`;
 
-async function loadPullRequest(runner: Runner, repo: { owner: string; name: string }, number: number): Promise<GateFacts["pullRequest"]> {
+async function loadPullRequest(runner: Runner, repo: Pick<Repository, "owner" | "name">, number: number): Promise<GateFacts["pullRequest"]> {
   const raw = requiredRecord(await runJson(runner, ["gh", "api", "graphql", "-f", `query=${pullRequestQuery}`, "-F", `owner=${repo.owner}`, "-F", `name=${repo.name}`, "-F", `number=${number}`], "gh api graphql"), "gh api graphql");
   const pr = requiredRecord(requiredRecord(requiredRecord(raw.data, "graphql.data").repository, "graphql.repository").pullRequest, "graphql.pullRequest");
   const reviews = requiredArray(requiredRecord(pr.reviews, "graphql.pullRequest.reviews").nodes, "graphql.pullRequest.reviews.nodes").map((entry, index) => {
@@ -344,7 +409,7 @@ async function loadPullRequest(runner: Runner, repo: { owner: string; name: stri
   };
 }
 
-async function loadRequiredChecks(runner: Runner, repo: { owner: string; name: string }, branch: string): Promise<RequiredCheck[]> {
+async function loadRequiredChecks(runner: Runner, repo: Pick<Repository, "owner" | "name">, branch: string): Promise<RequiredCheck[]> {
   const raw = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/branches/${branch}/protection/required_status_checks`], "gh api required status checks"), "gh api required status checks");
   const contexts = requiredArray(raw.contexts, "required status checks.contexts").map((entry, index) => ({ context: requiredString(entry, `required status checks.contexts[${index}]`), appId: null }));
   const checks = raw.checks === undefined ? [] : requiredArray(raw.checks, "required status checks.checks").map((entry, index) => {
@@ -356,7 +421,7 @@ async function loadRequiredChecks(runner: Runner, repo: { owner: string; name: s
   return [...deduplicated.values()];
 }
 
-export async function loadChecks(runner: Runner, repo: { owner: string; name: string }, sha: string): Promise<CheckResult[]> {
+export async function loadChecks(runner: Runner, repo: Pick<Repository, "owner" | "name">, sha: string): Promise<CheckResult[]> {
   const runs = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/check-runs?per_page=100`], "gh api check runs"), "gh api check runs");
   const statuses = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/commits/${sha}/status`], "gh api statuses"), "gh api statuses");
   const checkRuns = requiredArray(runs.check_runs, "check runs.check_runs").map((entry, index) => {
@@ -387,7 +452,7 @@ export async function loadChecks(runner: Runner, repo: { owner: string; name: st
 
 const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 
-export async function loadMarker(runner: Runner, repo: { owner: string; name: string }, pr: number): Promise<GateMarker | null> {
+export async function loadMarker(runner: Runner, repo: Pick<Repository, "owner" | "name">, pr: number): Promise<GateMarker | null> {
   const comments: unknown[] = [];
   for (let page = 1; ; page += 1) {
     const raw = requiredArray(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${pr}/comments?per_page=100&page=${page}`], "gh api comments"), "gh api comments");
@@ -411,7 +476,7 @@ async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {
   });
 }
 
-async function loadSyncPullRequests(runner: Runner, repo: { owner: string; name: string }): Promise<SyncFacts["pullRequests"]> {
+async function loadSyncPullRequests(runner: Runner, repo: Repository): Promise<SyncFacts["pullRequests"]> {
   const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "all", "--limit", "1000", "--json", "number,state,mergedAt,headRefOid,labels,closingIssuesReferences"], "gh pr list"), "gh pr list");
   const parsed = raw.map((entry, index) => {
     const pr = requiredRecord(entry, `gh pr list[${index}]`);
@@ -419,8 +484,26 @@ async function loadSyncPullRequests(runner: Runner, repo: { owner: string; name:
     const prLabels = labels(pr.labels, `gh pr list[${index}].labels`);
     return { number, state: optionalString(pr.mergedAt, `gh pr list[${index}].mergedAt`) === null ? requiredString(pr.state, `gh pr list[${index}].state`) : "MERGED", headSha: requiredString(pr.headRefOid, `gh pr list[${index}].headRefOid`), labels: prLabels, closingIssueNumbers: closingIssues(pr.closingIssuesReferences, `gh pr list[${index}].closingIssuesReferences`) };
   });
-  const markers = await Promise.all(parsed.map(async (pr) => (pr.labels.includes("merge-ready") ? await loadMarker(runner, repo, pr.number) : null)));
-  return parsed.map((pr, index) => ({ ...pr, marker: markers[index]! }));
+  const requiredChecks = parsed.some((pr) => pr.labels.includes("merge-ready"))
+    ? await loadRequiredChecks(runner, repo, repo.defaultBranch)
+    : [];
+  return Promise.all(parsed.map(async (pr) => {
+    if (!pr.labels.includes("merge-ready")) return { ...pr, marker: null, gateVerified: false };
+    const marker = await loadMarker(runner, repo, pr.number);
+    if (!marker) return { ...pr, marker: null, gateVerified: false };
+    const pullRequest = await loadPullRequest(runner, repo, pr.number);
+    const facts: GateFacts = {
+      issue: marker.issue,
+      pr: pr.number,
+      defaultBranch: repo.defaultBranch,
+      pullRequest,
+      requiredChecks,
+      checks: await loadChecks(runner, repo, pullRequest.headSha),
+      evidence: marker.evidence,
+      marker,
+    };
+    return { ...pr, marker, gateVerified: evaluateGate(facts).violations.length === 0 };
+  }));
 }
 
 interface ListedWorktree { path: string; branch: string | null }
@@ -445,7 +528,7 @@ async function loadWorktrees(runner: Runner): Promise<SyncFacts["worktrees"]> {
   const managed = resolve(repoRoot, ".worktrees");
   const worktrees: SyncFacts["worktrees"] = [];
   for (const worktree of parseWorktrees(listed.stdout)) {
-    const insideManagedDirectory = resolve(worktree.path).startsWith(`${managed}/`);
+    const insideManagedDirectory = isDirectManagedWorktree(worktree.path, managed);
     let dirty = false;
     if (insideManagedDirectory) {
       const status = await runner.run(["git", "-C", worktree.path, "status", "--porcelain"]);
@@ -480,9 +563,7 @@ function safeManagedWorktreePath(path: string): boolean {
   const common = Bun.spawnSync(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"]);
   if (common.exitCode !== 0) return false;
   const root = dirname(common.stdout.toString().trim());
-  const managed = resolve(realpathSync(root), ".worktrees");
-  const candidate = realpathSync(path);
-  return dirname(candidate) === managed && relative(managed, candidate) !== "";
+  return isDirectManagedWorktree(path, resolve(root, ".worktrees"));
 }
 
 export async function sync(runner: Runner, apply: boolean): Promise<Evaluation> {
