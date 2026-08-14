@@ -32,9 +32,6 @@ interface MainCommandArgs {
   verbose: boolean;
   debug: boolean;
   vad: boolean;
-  "no-vad": boolean;
-  noVad?: boolean;
-  no_vad?: boolean;
   timestamps: boolean;
   speakers: boolean;
   itn: boolean;
@@ -65,31 +62,31 @@ export function isDirectoryPath(path: string): boolean {
  * with its own clearer error first.
  */
 export type ResolvedOutputFormat =
-  | {
-      ok: true;
-      wantsJson: boolean;
-      wantsToon: boolean;
-      wantsTranscript: boolean;
-    }
+  | { ok: true; format: "json" | "toon" | "transcript" | "text" }
   | { ok: false; error: string };
 
 const SUPPORTED_FORMATS = ["transcript", "json", "toon"] as const;
+
+function isSupportedFormat(format: string): format is (typeof SUPPORTED_FORMATS)[number] {
+  return SUPPORTED_FORMATS.some((supported) => supported === format);
+}
 
 export function resolveOutputFormat(input: {
   json?: boolean;
   toon?: boolean;
   format?: string;
 }): ResolvedOutputFormat {
-  if (input.format !== undefined && !SUPPORTED_FORMATS.includes(input.format as never)) {
+  if (input.format !== undefined && !isSupportedFormat(input.format)) {
     return {
       ok: false,
       error: `unknown --format '${input.format}'. supported: ${SUPPORTED_FORMATS.join(", ")}`,
     };
   }
-  const wantsJson = !!input.json || input.format === "json";
-  const wantsToon = !!input.toon || input.format === "toon";
-  const wantsTranscript = input.format === "transcript";
-  if (wantsJson && wantsToon) {
+  if (
+    (input.json && input.toon) ||
+    (input.json && input.format === "toon") ||
+    (input.toon && input.format === "json")
+  ) {
     return {
       ok: false,
       error: "--json and --toon are mutually exclusive (pick one output format).",
@@ -100,7 +97,7 @@ export function resolveOutputFormat(input: {
   // dispatch checked wantsJson/wantsToon first). Greptile P2 on #300
   // flagged the silent override. Fail loudly with the same shape as
   // the json/toon mutex — symmetric across all three formats.
-  if (wantsTranscript && (wantsJson || wantsToon)) {
+  if (input.format === "transcript" && (input.json || input.toon)) {
     return {
       ok: false,
       error:
@@ -108,7 +105,7 @@ export function resolveOutputFormat(input: {
         "(pick one output format).",
     };
   }
-  return { ok: true, wantsJson, wantsToon, wantsTranscript };
+  return { ok: true, format: input.json ? "json" : input.toon ? "toon" : (input.format ?? "text") };
 }
 
 export function checkLanguageMismatch(expected: string | undefined, detected: string): string | null {
@@ -151,30 +148,34 @@ export type ValidatedTranscribeArgs = {
   outputFormat: "json" | "toon" | "transcript" | "text";
 };
 
+type NormalizedMainCommandArgs = MainCommandArgs & { noVad: boolean };
+
+function normalizeMainCommandArgs(args: MainCommandArgs, rawArgs: string[]): NormalizedMainCommandArgs {
+  return {
+    ...args,
+    vad: rawArgs.includes("--vad") || args.vad,
+    noVad: rawArgs.includes("--no-vad"),
+  };
+}
+
 export type TranscribeArgsValidation =
   | ({ ok: true } & ValidatedTranscribeArgs)
   | { ok: false; error: string };
 
 /** Validates cross-flag consistency that citty can't express. */
 export function validateTranscribeArgs(
-  args: MainCommandArgs,
-  rawArgs: string[],
+  args: NormalizedMainCommandArgs,
   fmt: ResolvedOutputFormat & { ok: true },
 ): TranscribeArgsValidation {
-  const { wantsJson, wantsToon, wantsTranscript } = fmt;
-
-  // citty treats --no-vad as the negated form of --vad, so read rawArgs
-  // to distinguish "off" from the default auto mode and to catch both flags.
-  const vad = rawArgs.includes("--vad") || Boolean(args.vad);
-  const noVad = rawArgs.includes("--no-vad") || Boolean(args["no-vad"] ?? args.noVad ?? args.no_vad);
+  const { vad, noVad } = args;
 
   if (vad && noVad) {
     return { ok: false, error: "--vad and --no-vad are mutually exclusive." };
   }
-  if (args.timestamps && !(wantsJson || wantsToon)) {
+  if (args.timestamps && fmt.format !== "json" && fmt.format !== "toon") {
     return { ok: false, error: "--timestamps requires --json, --toon, or --format {json,toon}." };
   }
-  if (args.speakers && !(wantsJson || wantsToon)) {
+  if (args.speakers && fmt.format !== "json" && fmt.format !== "toon") {
     return { ok: false, error: "--speakers requires --json, --toon, or --format {json,toon}." };
   }
   // #768: diarization labels VAD-windowed segments, so --no-vad leaves nothing to label.
@@ -187,20 +188,12 @@ export function validateTranscribeArgs(
         "(VAD engages automatically for --speakers), or drop --speakers.",
     };
   }
-  if (args["include-errors"] && !(wantsJson || wantsToon)) {
+  if (args["include-errors"] && fmt.format !== "json" && fmt.format !== "toon") {
     return { ok: false, error: "--include-errors requires --json, --toon, or --format {json,toon}." };
   }
 
   const vadMode: ValidatedTranscribeArgs["vadMode"] = vad ? "on" : noVad ? "off" : "auto";
-  const outputFormat: ValidatedTranscribeArgs["outputFormat"] = wantsJson
-    ? "json"
-    : wantsToon
-      ? "toon"
-      : wantsTranscript
-        ? "transcript"
-        : "text";
-
-  return { ok: true, vadMode, outputFormat };
+  return { ok: true, vadMode, outputFormat: fmt.format };
 }
 
 async function detectLanguages(
@@ -525,7 +518,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         process.exit(2);
       }
 
-      const validated = validateTranscribeArgs(args, rawArgs, fmt);
+      const validated = validateTranscribeArgs(normalizeMainCommandArgs(args, rawArgs), fmt);
       if (!validated.ok) {
         log.error(validated.error);
         process.exit(2);

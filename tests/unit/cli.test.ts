@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { renderUsage } from "citty";
+import { parseArgs, renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
 import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat } from "../../src/cli";
@@ -34,6 +34,17 @@ function defaultMainArgs(overrides: Record<string, unknown> = {}): Record<string
     ...overrides,
   };
 }
+
+describe("citty negated flags", () => {
+  test("--no-vad is represented as vad: false, not a no-vad key", () => {
+    const args: Record<string, unknown> = parseArgs(["--no-vad"], {
+      vad: { type: "boolean", default: false },
+    });
+
+    expect(args.vad).toBe(false);
+    expect(args["no-vad"]).toBeUndefined();
+  });
+});
 
 describe("CLI help", () => {
   test("init help contains onboarding and feature options", async () => {
@@ -508,62 +519,42 @@ describe("resolveOutputFormat (#300 regression)", () => {
   // #300: `--format toon` silently fell through to plain text; these lock in the contract.
 
   describe("boolean flags route to their format", () => {
-    test("--json sets wantsJson", () => {
+    test("--json resolves to json", () => {
       const r = resolveOutputFormat({ json: true });
       expect(r.ok).toBe(true);
-      if (r.ok) {
-        expect(r.wantsJson).toBe(true);
-        expect(r.wantsToon).toBe(false);
-        expect(r.wantsTranscript).toBe(false);
-      }
+      if (r.ok) expect(r.format).toBe("json");
     });
 
-    test("--toon sets wantsToon", () => {
+    test("--toon resolves to toon", () => {
       const r = resolveOutputFormat({ toon: true });
       expect(r.ok).toBe(true);
-      if (r.ok) {
-        expect(r.wantsToon).toBe(true);
-        expect(r.wantsJson).toBe(false);
-        expect(r.wantsTranscript).toBe(false);
-      }
+      if (r.ok) expect(r.format).toBe("toon");
     });
 
-    test("no flags → all false (default plain-text)", () => {
+    test("no flags resolve to plain text", () => {
       const r = resolveOutputFormat({});
       expect(r.ok).toBe(true);
-      if (r.ok) {
-        expect(r.wantsJson).toBe(false);
-        expect(r.wantsToon).toBe(false);
-        expect(r.wantsTranscript).toBe(false);
-      }
+      if (r.ok) expect(r.format).toBe("text");
     });
   });
 
   describe("--format string is an alias for the boolean", () => {
-    test("--format json", () => {
+    test("--format json resolves to json", () => {
       const r = resolveOutputFormat({ format: "json" });
       expect(r.ok).toBe(true);
-      if (r.ok) expect(r.wantsJson).toBe(true);
+      if (r.ok) expect(r.format).toBe("json");
     });
 
     test("--format toon (the bug fixed in #300)", () => {
       const r = resolveOutputFormat({ format: "toon" });
       expect(r.ok).toBe(true);
-      if (r.ok) {
-        expect(r.wantsToon).toBe(true);
-        expect(r.wantsJson).toBe(false);
-        expect(r.wantsTranscript).toBe(false);
-      }
+      if (r.ok) expect(r.format).toBe("toon");
     });
 
     test("--format transcript", () => {
       const r = resolveOutputFormat({ format: "transcript" });
       expect(r.ok).toBe(true);
-      if (r.ok) {
-        expect(r.wantsTranscript).toBe(true);
-        expect(r.wantsJson).toBe(false);
-        expect(r.wantsToon).toBe(false);
-      }
+      if (r.ok) expect(r.format).toBe("transcript");
     });
   });
 
@@ -627,22 +618,22 @@ describe("resolveOutputFormat (#300 regression)", () => {
   });
 
   describe("boolean + --format same value is harmless (idempotent)", () => {
-    test("--json --format json → wantsJson true, no mutex", () => {
+    test("--json --format json resolves to json without a mutex", () => {
       const r = resolveOutputFormat({ json: true, format: "json" });
       expect(r.ok).toBe(true);
-      if (r.ok) expect(r.wantsJson).toBe(true);
+      if (r.ok) expect(r.format).toBe("json");
     });
 
-    test("--toon --format toon → wantsToon true, no mutex", () => {
+    test("--toon --format toon resolves to toon without a mutex", () => {
       const r = resolveOutputFormat({ toon: true, format: "toon" });
       expect(r.ok).toBe(true);
-      if (r.ok) expect(r.wantsToon).toBe(true);
+      if (r.ok) expect(r.format).toBe("toon");
     });
   });
 });
 
-function okFmt(json = false, toon = false, transcript = false): ResolvedOutputFormat & { ok: true } {
-  return { ok: true, wantsJson: json, wantsToon: toon, wantsTranscript: transcript };
+function okFmt(format: "json" | "toon" | "transcript" | "text" = "text"): ResolvedOutputFormat & { ok: true } {
+  return { ok: true, format };
 }
 
 describe("validateTranscribeArgs guards", () => {
@@ -651,7 +642,10 @@ describe("validateTranscribeArgs guards", () => {
     rawArgs: string[],
     fmt: ResolvedOutputFormat & { ok: true },
   ) {
-    return validateTranscribeArgs(defaultMainArgs(argsOverrides) as never, rawArgs, fmt);
+    return validateTranscribeArgs(
+      { ...defaultMainArgs(argsOverrides), noVad: rawArgs.includes("--no-vad") } as never,
+      fmt,
+    );
   }
 
   function expectRejected(
@@ -684,7 +678,7 @@ describe("validateTranscribeArgs guards", () => {
 
   test("--timestamps with --json is accepted", () => {
     expect(
-      expectAccepted({ timestamps: true, json: true }, ["--timestamps", "--json"], okFmt(true))
+      expectAccepted({ timestamps: true, json: true }, ["--timestamps", "--json"], okFmt("json"))
         .outputFormat,
     ).toBe("json");
   });
@@ -697,7 +691,7 @@ describe("validateTranscribeArgs guards", () => {
 
   test("--speakers with --toon is accepted", () => {
     expect(
-      expectAccepted({ speakers: true, toon: true }, ["--speakers", "--toon"], okFmt(false, true))
+      expectAccepted({ speakers: true, toon: true }, ["--speakers", "--toon"], okFmt("toon"))
         .outputFormat,
     ).toBe("toon");
   });
@@ -710,7 +704,7 @@ describe("validateTranscribeArgs guards", () => {
 
   test("--include-errors with --json is accepted", () => {
     expect(
-      expectAccepted({ "include-errors": true, json: true }, ["--include-errors", "--json"], okFmt(true))
+      expectAccepted({ "include-errors": true, json: true }, ["--include-errors", "--json"], okFmt("json"))
         .outputFormat,
     ).toBe("json");
   });
@@ -720,7 +714,7 @@ describe("validateTranscribeArgs guards", () => {
       expectAccepted(
         { "include-errors": true, toon: true },
         ["--include-errors", "--toon"],
-        okFmt(false, true),
+        okFmt("toon"),
       ).outputFormat,
     ).toBe("toon");
   });
@@ -739,13 +733,13 @@ describe("validateTranscribeArgs guards", () => {
 
   test("--speakers with --no-vad is rejected (#768)", () => {
     expect(
-      expectRejected({ speakers: true, json: true }, ["--speakers", "--no-vad"], okFmt(true)),
+      expectRejected({ speakers: true, json: true }, ["--speakers", "--no-vad"], okFmt("json")),
     ).toContain("--speakers cannot be combined with --no-vad");
   });
 
   test("--speakers alone still routes through auto VAD", () => {
     expect(
-      expectAccepted({ speakers: true, json: true }, ["--speakers", "--json"], okFmt(true)).vadMode,
+      expectAccepted({ speakers: true, json: true }, ["--speakers", "--json"], okFmt("json")).vadMode,
     ).toBe("auto");
   });
 });
