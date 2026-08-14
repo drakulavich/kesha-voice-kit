@@ -115,6 +115,51 @@ export function spawnStdioWithDebugFd(
 
 export interface RunEngineOptions {
   signal?: AbortSignal;
+  /** Receives each progress line as the engine writes it, rather than once the run is
+   *  over (#1002). Progress the caller takes delivery of this way is dropped from the
+   *  returned `stderr`, so it is never shown a second time in the failure report. */
+  onProgressLine?: (line: string) => void;
+}
+
+/**
+ * Whether `line` is the engine reporting on work in flight rather than on its outcome.
+ *
+ * Diarization is the only phase slow enough to need it: its CoreML model load alone
+ * costs ~100 s on a first run and ~5 s warm, and it prefixes every line it emits
+ * (#443/#721). Errors carry no such prefix, so they stay with the failure report.
+ */
+function isProgressLine(line: string): boolean {
+  return line.startsWith("diarize: ");
+}
+
+/** Reads `stream` to EOF, handing progress lines to `onProgress` as they arrive and
+ *  returning everything else. */
+async function partitionProgress(
+  stream: ReadableStream<Uint8Array>,
+  onProgress: (line: string) => void,
+): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let rest = "";
+  let pending = "";
+  const take = (line: string) => {
+    if (isProgressLine(line)) onProgress(line);
+    else rest += `${line}\n`;
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending += decoder.decode(value, { stream: true });
+    let nl = pending.indexOf("\n");
+    while (nl !== -1) {
+      take(pending.slice(0, nl));
+      pending = pending.slice(nl + 1);
+      nl = pending.indexOf("\n");
+    }
+  }
+  pending += decoder.decode();
+  if (pending.length > 0) take(pending);
+  return rest;
 }
 
 /**
@@ -170,9 +215,12 @@ async function runEngine(
   let stderr: string;
   let exitCode: number;
   try {
+    const onProgress = opts.onProgressLine;
     [stdout, stderr, exitCode] = await Promise.all([
       new Response(stdoutStream).text(),
-      new Response(stderrStream).text(),
+      onProgress
+        ? partitionProgress(stderrStream, onProgress)
+        : new Response(stderrStream).text(),
       proc.exited,
     ]);
   } finally {
@@ -211,6 +259,8 @@ export interface TranscribeEngineOptions {
   /** Rewrite spoken-form numbers to written form. Requires the engine to
    * advertise `transcribe.itn` (#710). */
   itn?: boolean;
+  /** See {@link RunEngineOptions.onProgressLine}. */
+  onProgressLine?: (line: string) => void;
 }
 
 /** #768: speakers force VAD windowing, so `vad: "off"` is an invalid pair. Callers
@@ -345,7 +395,10 @@ export async function transcribeEngine(
   await preflightTranscribeEngineItn(opts);
 
   const args = buildTranscribeArgs(audioPath, opts);
-  const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
+  const { stdout, stderr, exitCode } = await runEngine(args, {
+    signal: opts.signal,
+    onProgressLine: opts.onProgressLine,
+  });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
   }
@@ -407,7 +460,10 @@ export async function transcribeEngineWithSegments(
   await preflightTranscribeEngineWithSegments(opts);
 
   const args = buildTranscribeArgs(audioPath, opts, true);
-  const { stdout, stderr, exitCode } = await runEngine(args, { signal: opts.signal });
+  const { stdout, stderr, exitCode } = await runEngine(args, {
+    signal: opts.signal,
+    onProgressLine: opts.onProgressLine,
+  });
   if (exitCode !== 0) {
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
   }

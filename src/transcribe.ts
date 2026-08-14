@@ -29,6 +29,10 @@ export interface TranscribeOptions {
    * through unchanged. Throws when the engine doesn't advertise
    * `transcribe.itn`. */
   itn?: boolean;
+  /** Receives the engine's progress lines as it writes them, rather than once the run
+   * is over. The diarization model load alone can take ~100 s on a first run, and a
+   * caller with no way to show that in flight looks like it has hung (#1002). */
+  onProgressLine?: (line: string) => void;
 }
 
 export async function transcribe(audioPath: string, opts: TranscribeOptions = {}): Promise<string> {
@@ -72,6 +76,7 @@ export async function transcribeWithSegments(
       signal: opts.signal,
       speakers: opts.speakers,
       itn: opts.itn,
+      onProgressLine: opts.onProgressLine,
     });
   }
 
@@ -79,6 +84,7 @@ export async function transcribeWithSegments(
     vad: opts.vad,
     signal: opts.signal,
     itn: opts.itn,
+    onProgressLine: opts.onProgressLine,
   });
   return { text, segments: [] };
 }
