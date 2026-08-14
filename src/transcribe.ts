@@ -14,7 +14,6 @@ export type { VadMode };
 export type { TranscriptionOutput };
 
 export interface TranscribeOptions {
-  silent?: boolean;
   /** Silero VAD preprocessing selector. Defaults to `"auto"`. */
   vad?: VadMode;
   /** Cancel any in-flight engine subprocess for this transcription. */

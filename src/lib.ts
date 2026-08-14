@@ -49,7 +49,7 @@ export async function transcribe(
     throw new Error(`File not found: ${audioPath}`);
   }
 
-  return internalTranscribe(audioPath, { ...options, silent: true });
+  return internalTranscribe(audioPath, options);
 }
 
 export async function transcribeWithTimestamps(
@@ -63,7 +63,6 @@ export async function transcribeWithTimestamps(
   return internalTranscribeWithSegments(audioPath, {
     ...options,
     timestamps: true,
-    silent: true,
   });
 }
 
