@@ -12,6 +12,9 @@
 //!   * or the engine binary is missing.
 //!
 //! Closes #199.
+//!
+//! A second case covers the other end of the range: a clip too short for the
+//! Sortformer chunker to emit anything must still return its transcript (#999).
 
 #![cfg(feature = "system_diarize")]
 
@@ -54,6 +57,27 @@ fn concat_wavs(inputs: &[PathBuf], out: &Path) {
         }
     }
     writer.finalize().expect("finalize combined wav");
+}
+
+/// Copy the leading `seconds` of `input` into `out`, keeping the source spec.
+fn truncate_wav(input: &Path, out: &Path, seconds: f32) {
+    let mut reader = hound::WavReader::open(input).expect("read wav to truncate");
+    let spec = reader.spec();
+    let keep = (seconds * spec.sample_rate as f32) as usize * spec.channels as usize;
+    let mut writer = hound::WavWriter::create(out, spec).expect("create truncated wav");
+    match spec.sample_format {
+        hound::SampleFormat::Float => {
+            for s in reader.samples::<f32>().take(keep) {
+                writer.write_sample(s.expect("read f32 sample")).unwrap();
+            }
+        }
+        hound::SampleFormat::Int => {
+            for s in reader.samples::<i32>().take(keep) {
+                writer.write_sample(s.expect("read int sample")).unwrap();
+            }
+        }
+    }
+    writer.finalize().expect("finalize truncated wav");
 }
 
 #[test]
@@ -152,5 +176,74 @@ fn two_speaker_dialogue_yields_two_clusters() {
         labeled_ratio >= 0.80,
         "expected ≥ 80% of segments to have a speaker label, got {:.0}%",
         labeled_ratio * 100.0
+    );
+}
+
+/// #999: Sortformer needs 1.04 s before it can emit its first chunk, so every shorter
+/// clip comes back with no spans at all — which the coverage check turned into a hard
+/// `E_INTERNAL`, discarding a transcript the engine had already produced. `kesha record`
+/// plus `--speakers` for a voice command is exactly that length.
+#[test]
+fn a_clip_below_the_diarizer_floor_keeps_its_transcript() {
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-diarize-floor-")
+        .tempdir()
+        .unwrap();
+
+    let spoken = tmp.path().join("spoken.wav");
+    if !say("Hello everyone, this is the call.", "en-am_michael", &spoken) {
+        eprintln!("skipping: TTS voices not installed (run `kesha install --tts`)");
+        return;
+    }
+
+    let short = tmp.path().join("short.wav");
+    truncate_wav(&spoken, &short, 0.9);
+
+    let out = Command::new(&exe)
+        .args([
+            "transcribe",
+            "--json",
+            "--vad",
+            "--speakers",
+            short.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if !out.status.success() {
+        if stderr.contains("diarization model not found")
+            || stderr.contains("kesha-diarize sidecar not found")
+            || stderr.contains("VAD model")
+            || stderr.contains("silero-vad")
+        {
+            eprintln!(
+                "skipping: prerequisite missing (run `kesha install --vad --diarize`):\n{stderr}"
+            );
+            return;
+        }
+        panic!("a 0.9 s clip must transcribe rather than fail closed: {stderr}");
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("engine output is not valid JSON");
+    let segments = json["segments"].as_array().expect("segments is an array");
+    assert!(
+        !segments.is_empty(),
+        "the transcript is what degrading exists to preserve; got {json}"
+    );
+    assert!(
+        segments.iter().all(|s| s.get("speaker").is_none()),
+        "a clip the diarizer cannot read must not carry invented labels: {segments:#?}"
+    );
+    assert!(
+        stderr.contains("without speaker labels"),
+        "the user asked for labels and did not get them — stderr must say so: {stderr}"
     );
 }
