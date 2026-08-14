@@ -23,6 +23,15 @@ use super::TranscriptionSegment;
 const MIN_DIARIZE_SEGMENT_COVERAGE: f32 = 0.95;
 const MAX_DIARIZE_TAIL_GAP_SECONDS: f32 = 30.0;
 
+/// Audio the Sortformer chunker needs before it can emit its first chunk: one core chunk
+/// plus full right context, `(chunkLen + chunkRightContext) * subsamplingFactor * melStride
+/// / sampleRate` = (6 + 7) * 8 * 160 / 16 000 for `balancedV2`. Below it the model returns
+/// no spans for any input, so an empty result there is the clip being too short rather than
+/// labels going missing. The step measured on a real clip is 1.023 s (16 360 samples give
+/// 0 spans, 16 380 give 1); the derived value sits just above it so nothing genuinely below
+/// the floor is left failing (#999).
+const MIN_DIARIZABLE_SECONDS: f32 = 1.04;
+
 /// Default budget for the model load — the span before the binding's model-ready
 /// marker, which is one synchronous CoreML call and nothing else. Cold that is the
 /// ANE program compile, measured at 107.3 s on an M2 (0.3 s of it
@@ -133,6 +142,17 @@ pub(crate) fn run(
         units,
     };
     let spans: Vec<DiarizeSpan> = run_supervised(job, total_deadline, load_budget, audio_secs)?;
+
+    if let Some(secs) = below_diarizer_floor(&spans, asr_segments, audio_path, duration) {
+        eprintln!(
+            "diarize: no speaker spans — the clip is {secs:.2}s and the model needs \
+             {MIN_DIARIZABLE_SECONDS:.2}s of audio before it can label anything; \
+             returning the transcript without speaker labels"
+        );
+        dtrace!("diarize::below_floor clip_secs={secs:.3}");
+        dtrace_json!("diarize.below_floor", { "clip_secs": secs });
+        return Ok(spans);
+    }
 
     let coverage = validate_coverage(asr_segments, &spans)?;
     dtrace!(
@@ -766,6 +786,40 @@ pub(crate) struct DiarizeCoverage {
     pub max_span_end: f32,
 }
 
+/// `Some(secs)` for the one shape the model cannot serve: nothing came back *and* the clip
+/// is shorter than [`MIN_DIARIZABLE_SECONDS`] on both clocks available here. Every conjunct
+/// is load-bearing — a partial label drop still has spans, a total drop on a long clip still
+/// answers to [`validate_coverage`], and a container can under-report its own length, so the
+/// transcript's own end time has to agree before the probe is believed (#999).
+fn below_diarizer_floor(
+    spans: &[DiarizeSpan],
+    asr_segments: &[TranscriptionSegment],
+    audio_path: &Path,
+    hint: Option<f32>,
+) -> Option<f32> {
+    if !spans.is_empty() {
+        return None;
+    }
+    if max_asr_end(asr_segments).is_some_and(|end| end >= MIN_DIARIZABLE_SECONDS) {
+        return None;
+    }
+    clip_seconds(audio_path, hint).filter(|secs| *secs < MIN_DIARIZABLE_SECONDS)
+}
+
+/// `--speakers` forces VAD, which skips the `Auto` duration probe, so the caller normally
+/// has none: fall back to the cheap header probe, then a decode for containers it cannot
+/// answer. `None` — an unmeasurable file — keeps the coverage check closed.
+fn clip_seconds(audio_path: &Path, hint: Option<f32>) -> Option<f32> {
+    if hint.is_some() {
+        return hint;
+    }
+    let path = audio_path.to_str()?;
+    match crate::audio::probe_duration_seconds(path) {
+        Ok(Some(secs)) => Some(secs),
+        _ => crate::audio::measure_duration_seconds(path).ok(),
+    }
+}
+
 pub(crate) fn validate_coverage(
     asr_segments: &[TranscriptionSegment],
     diarize_spans: &[DiarizeSpan],
@@ -1017,6 +1071,80 @@ mod tests {
             .expect_err("spans stopping 480s before the transcript end should fail closed");
 
         assert!(format!("{err}").contains("speaker diarization coverage incomplete"));
+    }
+
+    fn tone_150ms() -> &'static Path {
+        Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/tone-150ms.wav"
+        ))
+    }
+
+    fn tone_3s() -> &'static Path {
+        Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/tone-3s.wav"
+        ))
+    }
+
+    #[test]
+    fn a_clip_below_the_floor_degrades_instead_of_failing() {
+        assert_eq!(
+            below_diarizer_floor(&[], &[seg(0.0, 0.2, "hi")], tone_150ms(), Some(0.2)),
+            Some(0.2)
+        );
+    }
+
+    #[test]
+    fn an_empty_result_on_a_full_length_clip_still_fails_closed() {
+        let asr = [seg(0.0, 60.0, "a long take")];
+        assert_eq!(
+            below_diarizer_floor(&[], &asr, tone_150ms(), Some(60.0)),
+            None
+        );
+
+        let err = validate_coverage(&asr, &[])
+            .expect_err("a minute of audio with no spans is dropped labels, not a short clip");
+        assert!(format!("{err}").contains("labeled 0/1 segments"), "{err}");
+    }
+
+    #[test]
+    fn an_empty_result_still_fails_closed_on_the_path_that_probes_the_file() {
+        let asr = [seg(0.0, 3.0, "a long take")];
+        assert_eq!(below_diarizer_floor(&[], &asr, tone_3s(), None), None);
+
+        let err = validate_coverage(&asr, &[])
+            .expect_err("three seconds with no spans is dropped labels, not a short clip");
+        assert!(format!("{err}").contains("labeled 0/1 segments"), "{err}");
+    }
+
+    #[test]
+    fn a_container_that_under_reports_its_length_still_fails_closed() {
+        let asr = [seg(0.0, 60.0, "a long take")];
+        assert_eq!(
+            below_diarizer_floor(&[], &asr, tone_150ms(), Some(0.3)),
+            None
+        );
+
+        let err = validate_coverage(&asr, &[])
+            .expect_err("a header claiming 0.3 s over a minute of speech must not buy a degrade");
+        assert!(format!("{err}").contains("labeled 0/1 segments"), "{err}");
+    }
+
+    #[test]
+    fn a_short_clip_the_model_did_label_is_still_judged_by_coverage() {
+        let spans = vec![span(0.0, 0.1, 0)];
+        assert_eq!(
+            below_diarizer_floor(&spans, &[seg(0.0, 0.2, "hi")], tone_150ms(), Some(0.2)),
+            None
+        );
+    }
+
+    #[test]
+    fn the_clip_is_measured_from_the_file_when_the_caller_probed_none() {
+        let secs = below_diarizer_floor(&[], &[], tone_150ms(), None)
+            .expect("a 0.15 s file is below the floor");
+        assert!((secs - 0.15).abs() < 0.01, "{secs}");
     }
 
     #[test]

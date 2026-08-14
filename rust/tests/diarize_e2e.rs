@@ -12,6 +12,11 @@
 //!   * or the engine binary is missing.
 //!
 //! Closes #199.
+//!
+//! A second case covers the other end of the range: a clip too short for the
+//! Sortformer chunker to emit anything must still return its transcript (#999).
+//! It cuts a committed fixture rather than synthesizing, so it does not inherit
+//! the TTS skip — Sortformer and VAD are the only prerequisites it needs.
 
 #![cfg(feature = "system_diarize")]
 
@@ -54,6 +59,25 @@ fn concat_wavs(inputs: &[PathBuf], out: &Path) {
         }
     }
     writer.finalize().expect("finalize combined wav");
+}
+
+/// Write mono 16 kHz samples as 16-bit PCM. Paired with `load_audio_truncated`, whose
+/// output is already the engine's decode target, so the file's duration is exactly the
+/// cut length — which the assertion on the stderr notice depends on.
+fn write_wav_16k(samples: &[f32], out: &Path) {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 16_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(out, spec).expect("create short wav");
+    for s in samples {
+        writer
+            .write_sample((s.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16)
+            .expect("write sample");
+    }
+    writer.finalize().expect("finalize short wav");
 }
 
 #[test]
@@ -152,5 +176,79 @@ fn two_speaker_dialogue_yields_two_clusters() {
         labeled_ratio >= 0.80,
         "expected ≥ 80% of segments to have a speaker label, got {:.0}%",
         labeled_ratio * 100.0
+    );
+}
+
+/// #999: Sortformer needs 1.04 s before it can emit its first chunk, so every shorter
+/// clip comes back with no spans at all — which the coverage check turned into a hard
+/// `E_INTERNAL`, discarding a transcript the engine had already produced. `kesha record`
+/// plus `--speakers` for a voice command is exactly that length.
+#[test]
+fn a_clip_below_the_diarizer_floor_keeps_its_transcript() {
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-diarize-floor-")
+        .tempdir()
+        .unwrap();
+
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/benchmark-en/01-check-email.ogg"
+    );
+    let samples = kesha_engine::audio::load_audio_truncated(fixture, 0.9)
+        .expect("committed fixture must decode — run `git lfs pull` in a fresh checkout");
+    let short = tmp.path().join("short.wav");
+    write_wav_16k(&samples, &short);
+
+    let out = Command::new(&exe)
+        .args([
+            "transcribe",
+            "--json",
+            "--vad",
+            "--speakers",
+            short.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if !out.status.success() {
+        // The ASR models are on this list where the sibling test leaves them off: cutting a
+        // fixture instead of synthesizing means no TTS gate runs first to catch a bare machine.
+        if stderr.contains("diarization model not found")
+            || stderr.contains("kesha-diarize sidecar not found")
+            || stderr.contains("VAD model")
+            || stderr.contains("silero-vad")
+            || stderr.contains("No transcription models installed")
+        {
+            eprintln!(
+                "skipping: prerequisite missing (run `kesha install --vad --diarize`):\n{stderr}"
+            );
+            return;
+        }
+        panic!("a 0.9 s clip must transcribe rather than fail closed: {stderr}");
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("engine output is not valid JSON");
+    let segments = json["segments"].as_array().expect("segments is an array");
+    assert!(
+        !segments.is_empty(),
+        "the transcript is what degrading exists to preserve; got {json}"
+    );
+    assert!(
+        segments.iter().all(|s| s.get("speaker").is_none()),
+        "a clip the diarizer cannot read must not carry invented labels: {segments:#?}"
+    );
+    assert!(
+        stderr.contains("the clip is 0.90s")
+            && stderr.contains("needs 1.04s")
+            && stderr.contains("without speaker labels"),
+        "stderr must name the clip length, the floor, and that labels are missing: {stderr}"
     );
 }
