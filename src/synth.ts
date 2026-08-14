@@ -20,9 +20,11 @@ import { registerProcessTree } from "./process-tree";
  *   Safari/iOS. Keeps the engine's native rate; no bitrate knob.
  */
 export type SayFormat = "wav" | "ogg-opus" | "flac";
+export const SUPPORTED_SAMPLE_RATES = [8000, 12000, 16000, 24000, 48000] as const;
+export type SupportedSampleRate = (typeof SUPPORTED_SAMPLE_RATES)[number];
 export const MAX_TEXT_CHARS = 5000;
 
-export interface SayOptions {
+type SayBase = {
   /**
    * Text to synthesize. Required for programmatic callers — `say()` does not
    * forward the host process's stdin. The CLI (`kesha say` with no positional
@@ -36,14 +38,6 @@ export interface SayOptions {
   /** Parse `text` as SSML (`<speak>…<break time="500ms"/>…</speak>`). See issue #122. */
   ssml?: boolean;
   /**
-   * Defaults to `wav`, or inferred from the `out` extension: `.wav` → wav, `.ogg`/`.opus` → ogg-opus.
-   */
-  format?: SayFormat;
-  /** Only valid with `format: "ogg-opus"`. Default 32000. */
-  bitrate?: number;
-  /** Only valid with `format: "ogg-opus"`. Must be one of 8000, 12000, 16000, 24000, 48000. Default 24000. */
-  sampleRate?: number;
-  /**
    * Disable acronym auto-expansion. Honored for `ru-vosk-*` voices and for
    * `en-*` on ONNX engine builds; a no-op on FluidAudio Kokoro (the released
    * darwin-arm64 binary), `macos-*` and non-English voices, where the engine
@@ -56,7 +50,21 @@ export interface SayOptions {
    * still works regardless of this flag.
    */
   noExpandAbbrev?: boolean;
-}
+};
+
+type OpusOpts = {
+  format: "ogg-opus";
+  bitrate?: number;
+  sampleRate?: SupportedSampleRate;
+};
+
+type PcmOpts = {
+  format?: "wav" | "flac";
+  bitrate?: never;
+  sampleRate?: never;
+};
+
+export type SayOptions = SayBase & (OpusOpts | PcmOpts);
 
 function applyNoExpandAbbrev(args: string[], capabilities: EngineCapabilities | null | undefined): void {
   const supportsAcronymExpansion =

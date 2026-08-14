@@ -9,7 +9,13 @@ import {
 import { installHint } from "../install-hint";
 import { registerProcessTree } from "../process-tree";
 import { log } from "../log";
-import { say, SayError, type SayFormat } from "../synth";
+import {
+  say,
+  SayError,
+  SUPPORTED_SAMPLE_RATES,
+  type SayFormat,
+  type SayOptions,
+} from "../synth";
 import { artifactFromBytes, artifactFromFile, type StatsRecorder } from "../stats";
 import { resolveSayVoice } from "../voice-routing";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
@@ -68,12 +74,13 @@ function parseBitrateFlag(value: unknown): Parsed<number> {
   return bitrate;
 }
 
-const SUPPORTED_SAMPLE_RATES = [8000, 12000, 16000, 24000, 48000];
-
 function parseSampleRateFlag(value: unknown): Parsed<number> {
   const sampleRate = parseFiniteNumberFlag("--sample-rate", value);
   if (!sampleRate.ok || sampleRate.value === undefined) return sampleRate;
-  if (!Number.isInteger(sampleRate.value) || !SUPPORTED_SAMPLE_RATES.includes(sampleRate.value)) {
+  if (
+    !Number.isInteger(sampleRate.value) ||
+    !SUPPORTED_SAMPLE_RATES.includes(sampleRate.value as (typeof SUPPORTED_SAMPLE_RATES)[number])
+  ) {
     return {
       ok: false,
       error: `--sample-rate must be one of ${SUPPORTED_SAMPLE_RATES.join(", ")}.`,
@@ -189,7 +196,7 @@ async function synthesizeAndEmit(
       const voiceLabel = opts.voice ?? "default voice";
       log.status(`Synthesizing ${voiceLabel} -> ${opts.out}...`);
     }
-    const audio = await stats.timeStage("tts", () => say(opts));
+    const audio = await stats.timeStage("tts", () => say(opts as SayOptions));
     const ttsTimeMs = Math.round(performance.now() - startedAt);
     if (opts.out) {
       log.status(`Saved ${opts.out} (${ttsTimeMs}ms)`);
