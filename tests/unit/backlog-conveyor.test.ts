@@ -75,6 +75,8 @@ describe("backlog gate", () => {
     });
     expect(() => parseGateEvidence({ ...evidence, verdict: "PENDING" })).toThrow("verdict must be APPROVED");
     expect(() => parseGateEvidence({ ...evidence, headSha: "not-a-sha" })).toThrow("headSha must be a Git SHA");
+    expect(() => parseGateEvidence({ ...evidence, uri: "" })).toThrow("uri must be a non-empty string");
+    expect(() => parseGateEvidence({ ...evidence, digest: "not-a-digest" })).toThrow("digest must be a SHA-256 digest");
   });
 });
 

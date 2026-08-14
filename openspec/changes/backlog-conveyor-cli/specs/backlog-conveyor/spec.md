@@ -11,7 +11,7 @@ codes for success, invariant violation, operational failure, and unsafe/refused 
 #### Scenario: Ira previews a reconciliation
 
 - GIVEN GitHub and local worktree facts
-- WHEN Ira runs `bun run backlog -- sync --json`
+- WHEN Ira runs `bun run conveyor -- sync --json`
 - THEN the report has the declared schema version and lists findings/actions
 - AND GitHub labels and worktrees are unchanged
 

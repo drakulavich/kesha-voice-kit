@@ -28,4 +28,4 @@ instead of another local source of truth.
 - `scripts/backlog-conveyor.ts` — validated GitHub/git boundary and invariant evaluation.
 - `scripts/backlog.ts` — Bun CLI parsing, output and exit-code boundary.
 - `tests/unit/backlog-conveyor.test.ts` — fixture-only contract coverage.
-- `package.json` — tracked `bun run backlog` entry point.
+- `package.json` — tracked `bun run conveyor` entry point.
