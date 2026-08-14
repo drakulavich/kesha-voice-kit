@@ -487,7 +487,7 @@ mod tests {
         let _lock = lock();
 
         {
-            let _g = EnvGuard::unset(COMPUTE_UNITS_ENV);
+            let _g = EnvGuard::unset(&_lock, COMPUTE_UNITS_ENV);
             assert_eq!(
                 compute_units_from_env().expect("unset is valid"),
                 KokoroComputeUnits::Default
@@ -496,7 +496,7 @@ mod tests {
 
         // GHA exports a conditional `env:` as the empty string rather than omitting it.
         for blank in ["", "   "] {
-            let _g = EnvGuard::set(COMPUTE_UNITS_ENV, blank);
+            let _g = EnvGuard::set(&_lock, COMPUTE_UNITS_ENV, blank);
             assert_eq!(
                 compute_units_from_env().expect("blank is valid"),
                 KokoroComputeUnits::Default
@@ -509,14 +509,14 @@ mod tests {
             ("ALL-ANE", KokoroComputeUnits::AllAne),
             ("default", KokoroComputeUnits::Default),
         ] {
-            let _g = EnvGuard::set(COMPUTE_UNITS_ENV, value);
+            let _g = EnvGuard::set(&_lock, COMPUTE_UNITS_ENV, value);
             let parsed = compute_units_from_env().unwrap_or_else(|e| panic!("{value:?}: {e}"));
             assert_eq!(parsed, expected);
             assert_eq!(preset_name(parsed), value.trim().to_ascii_lowercase());
         }
 
         // Must fail loudly instead of silently using the ANE the caller was avoiding.
-        let _g = EnvGuard::set(COMPUTE_UNITS_ENV, "ane-please");
+        let _g = EnvGuard::set(&_lock, COMPUTE_UNITS_ENV, "ane-please");
         let err = compute_units_from_env().expect_err("unknown preset must error");
         assert_eq!(crate::errors::code_of(&err), ErrorCode::InvalidArg);
         let msg = err.to_string();

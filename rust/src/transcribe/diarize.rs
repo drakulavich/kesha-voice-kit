@@ -1259,16 +1259,16 @@ mod tests {
     fn compute_units_default_to_all_and_reject_junk() {
         let _guard = crate::util::test_env::lock();
 
-        let _unset = crate::util::test_env::EnvGuard::unset(COMPUTE_UNITS_ENV);
+        let _unset = crate::util::test_env::EnvGuard::unset(&_guard, COMPUTE_UNITS_ENV);
         assert_eq!(compute_units_from_env().unwrap(), DiarizeComputeUnits::All);
 
-        let _env = crate::util::test_env::EnvGuard::set(COMPUTE_UNITS_ENV, "CPU-Only");
+        let _env = crate::util::test_env::EnvGuard::set(&_guard, COMPUTE_UNITS_ENV, "CPU-Only");
         assert_eq!(
             compute_units_from_env().unwrap(),
             DiarizeComputeUnits::CpuOnly
         );
 
-        let _env = crate::util::test_env::EnvGuard::set(COMPUTE_UNITS_ENV, "tpu");
+        let _env = crate::util::test_env::EnvGuard::set(&_guard, COMPUTE_UNITS_ENV, "tpu");
         let err = compute_units_from_env().unwrap_err().to_string();
         assert!(err.contains("is not a known CoreML compute-units preset"));
         assert!(err.contains("cpu-and-gpu"));
@@ -1278,10 +1278,10 @@ mod tests {
     fn total_timeout_is_opt_in() {
         let _guard = crate::util::test_env::lock();
 
-        let _unset = crate::util::test_env::EnvGuard::unset(TOTAL_TIMEOUT_ENV);
+        let _unset = crate::util::test_env::EnvGuard::unset(&_guard, TOTAL_TIMEOUT_ENV);
         assert_eq!(total_timeout_from_env().unwrap(), None);
 
-        let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, "3600");
+        let _env = crate::util::test_env::EnvGuard::set(&_guard, TOTAL_TIMEOUT_ENV, "3600");
         assert_eq!(
             total_timeout_from_env().unwrap(),
             Some(Duration::from_secs(3_600))
@@ -1289,7 +1289,7 @@ mod tests {
 
         // Empty reads as "not configured"; a wrapper exporting an unset variable is not
         // making a claim about the cap.
-        let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, "  ");
+        let _env = crate::util::test_env::EnvGuard::set(&_guard, TOTAL_TIMEOUT_ENV, "  ");
         assert_eq!(total_timeout_from_env().unwrap(), None);
     }
 
@@ -1300,7 +1300,7 @@ mod tests {
         // Silently reading as "no cap" is how a typo removes the only bound the user
         // asked for; `0` gets the same treatment because unsetting already means no cap.
         for bad in ["0", "-1", "1.5", "300s", "nope"] {
-            let _env = crate::util::test_env::EnvGuard::set(TOTAL_TIMEOUT_ENV, bad);
+            let _env = crate::util::test_env::EnvGuard::set(&_guard, TOTAL_TIMEOUT_ENV, bad);
             let err = total_timeout_from_env().unwrap_err().to_string();
             assert!(err.contains(TOTAL_TIMEOUT_ENV), "{bad}: {err}");
             assert!(
@@ -1314,17 +1314,17 @@ mod tests {
     fn load_budget_is_overridable_but_never_zero() {
         let _guard = crate::util::test_env::lock();
 
-        let _unset = crate::util::test_env::EnvGuard::unset(LOAD_TIMEOUT_ENV);
+        let _unset = crate::util::test_env::EnvGuard::unset(&_guard, LOAD_TIMEOUT_ENV);
         assert_eq!(
             load_budget_from_env().unwrap(),
             Duration::from_secs(MODEL_LOAD_BUDGET_SECS)
         );
 
-        let _env = crate::util::test_env::EnvGuard::set(LOAD_TIMEOUT_ENV, "900");
+        let _env = crate::util::test_env::EnvGuard::set(&_guard, LOAD_TIMEOUT_ENV, "900");
         assert_eq!(load_budget_from_env().unwrap(), Duration::from_secs(900));
 
         // A typo here used to hand back the default budget without a word.
-        let _env = crate::util::test_env::EnvGuard::set(LOAD_TIMEOUT_ENV, "nope");
+        let _env = crate::util::test_env::EnvGuard::set(&_guard, LOAD_TIMEOUT_ENV, "nope");
         let err = load_budget_from_env().unwrap_err().to_string();
         assert!(err.contains(LOAD_TIMEOUT_ENV), "{err}");
     }
