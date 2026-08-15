@@ -84,6 +84,8 @@ Model-dependent suites self-skip, and not uniformly: `e2e-engine` and `mcp-e2e` 
 
 On the Rust side the guard **is** enforced: `KESHA_REQUIRE_MODEL_TESTS` names which weights a lane promised (`mini` or real), every gate in `rust/tests/common/mod.rs` refuses the wrong tier, and `rust/tests/model_gate.rs` is the meta-test — including the exemptions it lists deliberately. `KESHA_REQUIRE_G2P_TESTS` and `KESHA_REQUIRE_VOSK_TESTS` do the same for the two bundles that have no stand-in. The TS side now mirrors it: `tests/integration/README.md` states the convention and `tests/unit/model-suite-guards.test.ts` enforces it, detecting a real-engine suite by its imports only and listing ungated-by-design suites explicitly (#921).
 
+A test that spawns a stub owns its death. `bunfig.toml` preloads `tests/helpers/leak-guard.ts` into every suite, which reaps what a failed, timed-out or interrupted test left behind and fails the run naming it — before that, three stubs sat at `PPID=1` for two and a half days (#1003). Call sites need nothing: `waitForPidFile` tracks the pid it returns, and the per-file pass sweeps the runner's descendants. Convention and reach: `tests/integration/README.md`.
+
 ### PR ETIQUETTE
 
 - `main` is protected; every change goes through a PR and CI must pass.
