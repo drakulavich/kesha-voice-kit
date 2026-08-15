@@ -21,7 +21,7 @@ The product promise is not "one model for every audio problem." The promise is a
 | Transcribe to structured output for scripts or agents | Stable | `kesha --json audio.ogg`, `kesha --toon audio.ogg`, `kesha --format transcript audio.ogg` |
 | Detect likely audio/text language during transcription | Stable | `--lang`, `--verbose`, JSON/TOON language fields |
 | Skip silence in long audio | Beta | `kesha --vad meeting.m4a`, auto-on for long audio when VAD is installed |
-| Synthesize English or Russian speech locally | Beta | `kesha say "text"`, `kesha install --tts` |
+| Synthesize supported languages locally | Beta | `kesha say "text"`, `kesha install --tts` |
 | Use macOS system voices without model downloads | Stable on macOS | `kesha say --voice macos-*` |
 | Label speakers in meeting transcripts | Preview, darwin-arm64 only | `kesha --json --vad --speakers meeting.m4a` |
 | Integrate with OpenClaw as a local voice model | Stable integration surface, user-configured route | `docs/openclaw.md` |
@@ -35,7 +35,7 @@ The product promise is not "one model for every audio problem." The promise is a
 - Streaming phone-call transcription or real-time conversation infrastructure.
 - Speaker identity across files. Diarization emits per-file cluster IDs, not names or persistent voice profiles.
 - Full SSML coverage. Kesha supports a practical subset for current TTS engines; unsupported tags should fail or warn clearly.
-- Universal TTS across all 25 STT languages. TTS is intentionally scoped to English, Russian, and macOS system voices.
+- Universal TTS across all 25 STT languages. TTS is intentionally scoped to its documented nine-language set and macOS system voices.
 - Model training, fine-tuning, or benchmark leadership on every dataset.
 - Browser/mobile SDKs. The supported product surface is CLI-first, with thin integrations around it.
 
@@ -47,7 +47,7 @@ The product promise is not "one model for every audio problem." The promise is a
 | JSON / TOON / transcript output formats | Stable | Intended for scripts, agents, and downstream tooling. |
 | Audio language detection | Stable | Used for warnings and structured metadata. |
 | VAD preprocessing | Beta | Useful for long or silence-heavy audio; short voice messages stay on the fast path. |
-| English/Russian TTS | Beta | Requires `kesha install --tts`; model cache and first-run cost are expected. |
+| Kokoro and Vosk TTS | Beta | Nine documented languages; requires `kesha install --tts`, so model cache and first-run cost are expected. |
 | macOS AVSpeech voices | Stable on macOS | Zero-install system voices; quality is OS voice quality, not neural TTS. |
 | SSML subset | Preview | `<prosody rate>`, Russian stress markers, and IPA support are engine-specific. |
 | Speaker diarization | Preview | darwin-arm64 only; cluster IDs are stable within one file only. |
@@ -63,8 +63,9 @@ The product promise is not "one model for every audio problem." The promise is a
 | STT | Supported, CoreML path | Not shipped | Supported, ONNX CPU path | Supported, ONNX CPU path | `aarch64-darwin`, `x86_64-linux` |
 | Audio language detection | Supported | Not shipped | Supported | Supported | Supported where the flake builds |
 | VAD | Supported with `kesha install --vad` | Not shipped | Supported with `kesha install --vad` | Supported with `kesha install --vad` | Supported where the engine path includes VAD assets |
-| TTS: English Kokoro | Supported, FluidAudio/CoreML in release builds | Not shipped | Supported, ONNX path | Supported, ONNX path | Supported except where noted in `docs/nix-install.md` |
+| TTS: Kokoro (`en` `es` `fr` `it` `pt`) | Supported, FluidAudio/CoreML in release builds | Not shipped | Supported, ONNX path | Supported, ONNX path | Supported except where noted in `docs/nix-install.md` |
 | TTS: Russian Vosk-TTS | Supported | Not shipped | Supported | Supported | Supported except where noted in `docs/nix-install.md` |
+| TTS: Kokoro (`hi` `ja` `zh`) | Supported, darwin-arm64 only | Not shipped | Not supported | Not supported | `aarch64-darwin` only |
 | macOS system voices | Supported | Not shipped | Not applicable | Not applicable | Supported on `aarch64-darwin` |
 | Speaker diarization | Preview, darwin-arm64 only | Not supported | Not supported | Not supported | Not wired into the Nix build yet |
 | Raycast extension | Supported | Not shipped | Not applicable | Not applicable | Not applicable |
