@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { acquireLease, claimOrder, encodeClaimMarker, evaluateCollisionPlan, isLiveClaim, issueNumberFromBranch, leaseDirectory, normalizedPath, parseClaimManifest, parseClaimMarker, releaseLease, sameManifest, statusLease, timestamp, type ClaimManifest, type ClaimMarker, type ClaimRecord, type CollisionPlan, type LeaseResult, type LeaseState } from "./backlog-coordination";
+import { encodePriorityMarker, evaluateMetrics, parsePriorityMarker, selectCurrentAssessment, sortQueue, type LifecycleIssue, type LifecyclePullRequest, type PriorityAssessment, type PriorityComment, type QueueEntry } from "./backlog-priority";
 
 export { acquireLease, encodeClaimMarker, evaluateCollisionPlan, issueNumberFromBranch, leaseDirectory, parseClaimManifest, releaseLease, statusLease } from "./backlog-coordination";
 export type { ClaimManifest, ClaimMarker, ClaimRecord, CollisionPlan, LeaseResult, LeaseState } from "./backlog-coordination";
@@ -455,6 +456,140 @@ export async function loadChecks(runner: Runner, repo: Pick<Repository, "owner" 
 }
 
 const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+const pageCap = 100;
+const phase3Concurrency = 4;
+
+export async function mapBounded<T, U>(values: T[], limit: number, map: (value: T, index: number) => Promise<U>): Promise<U[]> {
+  const results = new Array<U>(values.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= values.length) return;
+      results[index] = await map(values[index]!, index);
+    }
+  }));
+  return results;
+}
+
+async function pagedArray(runner: Runner, endpoint: (page: number) => string, source: string): Promise<unknown[]> {
+  const values: unknown[] = [];
+  for (let page = 1; page <= pageCap; page += 1) {
+    const current = requiredArray(await runJson(runner, ["gh", "api", endpoint(page)], source), source);
+    values.push(...current);
+    if (current.length < 100) return values;
+  }
+  throw new OperationalError(`${source} reached pagination cap; refusing incomplete result`);
+}
+
+function priorityComments(values: unknown[], source: string): PriorityComment[] {
+  return values.map((entry, index) => {
+    const comment = requiredRecord(entry, `${source}[${index}]`);
+    return {
+      marker: requiredString(comment.body, `${source}[${index}].body`),
+      authorAssociation: requiredString(comment.author_association, `${source}[${index}].author_association`),
+      createdAt: timestamp(comment.created_at, `${source}[${index}].created_at`),
+      databaseId: requiredNumber(comment.id, `${source}[${index}].id`),
+    };
+  });
+}
+
+async function loadPriorityAssessment(runner: Runner, repo: Pick<Repository, "owner" | "name">, issue: number) {
+  return selectCurrentAssessment(priorityComments(await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues/${issue}/comments?per_page=100&page=${page}`, "gh api priority comments"), "priority comment"), issue);
+}
+
+function sameAssessment(left: PriorityAssessment, right: PriorityAssessment): boolean {
+  return left.version === right.version && left.issue === right.issue && left.provider === right.provider && left.impact === right.impact && left.urgency === right.urgency && left.unblock === right.unblock && left.riskReduction === right.riskReduction && left.confidence === right.confidence && left.effort === right.effort && left.rationale === right.rationale;
+}
+
+export async function prioritize(runner: Runner, assessment: PriorityAssessment, apply: boolean): Promise<Evaluation & { accepted: boolean; assessment: PriorityAssessment; score: number }> {
+  const repo = await repository(runner);
+  const issue = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${assessment.issue}`], "gh api priority issue"), "gh api priority issue");
+  if (requiredNumber(issue.number, "priority issue.number") !== assessment.issue) throw new OperationalError("priority issue number does not match request");
+  if (requiredString(issue.state, "priority issue.state") !== "open") return { findings: [], refusals: [], safeActions: [], violations: [`issue #${assessment.issue} must be open`], accepted: false, assessment, score: 0 };
+  if (issue.pull_request !== undefined) return { findings: [], refusals: [], safeActions: [], violations: [`issue #${assessment.issue} must not be a pull request`], accepted: false, assessment, score: 0 };
+  const current = await loadPriorityAssessment(runner, repo, assessment.issue);
+  const score = Math.round(((4 * assessment.impact + 3 * assessment.urgency + 2 * assessment.unblock + 2 * assessment.riskReduction) * assessment.confidence / assessment.effort) * 100) / 100;
+  if (current && sameAssessment(current.assessment, assessment)) return { findings: ["matching priority assessment already current"], refusals: [], safeActions: [], violations: [], accepted: true, assessment, score };
+  if (!apply) return { findings: [], refusals: [], safeActions: [{ kind: "create-marker", issue: assessment.issue }], violations: [], accepted: false, assessment, score };
+  const posted = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${assessment.issue}/comments`, "--method", "POST", "-f", `body=${encodePriorityMarker(assessment)}`], "gh api priority mutation"), "gh api priority mutation");
+  const postedId = requiredNumber(posted.id, "priority mutation.id");
+  const after = await loadPriorityAssessment(runner, repo, assessment.issue);
+  if (!after || after.databaseId !== postedId) return { findings: [], refusals: [], safeActions: [], violations: ["priority assessment was superseded before confirmation"], accepted: false, assessment, score };
+  return { findings: ["priority assessment accepted"], refusals: [], safeActions: [], violations: [], accepted: true, assessment: after.assessment, score: after.score };
+}
+
+interface QueueIssue { number: number; state: string; labels: string[]; createdAt: string; isPullRequest: boolean }
+
+async function loadPriorityIssues(runner: Runner, repo: Pick<Repository, "owner" | "name">, state: "open" | "all" = "open"): Promise<QueueIssue[]> {
+  return pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues?state=${state}&per_page=100&page=${page}`, "gh api priority issues").then((values) => values.map((entry, index) => {
+    const issue = requiredRecord(entry, `priority issue[${index}]`);
+    return { number: requiredNumber(issue.number, `priority issue[${index}].number`), state: requiredString(issue.state, `priority issue[${index}].state`).toUpperCase(), labels: labels(issue.labels, `priority issue[${index}].labels`), createdAt: timestamp(issue.createdAt ?? issue.created_at, `priority issue[${index}].createdAt`), isPullRequest: issue.pull_request !== undefined && issue.pull_request !== null };
+  }));
+}
+
+export async function queue(runner: Runner, label?: string, limit?: number): Promise<{ entries: QueueEntry[] }> {
+  const repo = await repository(runner);
+  const issues = (await loadPriorityIssues(runner, repo)).filter((issue) => !issue.isPullRequest && !issue.labels.some((candidate) => candidate === "WIP" || candidate === "needs-decision" || candidate === "wontfix") && (label === undefined || issue.labels.includes(label)));
+  const entries = sortQueue(await mapBounded(issues, phase3Concurrency, async (issue) => ({ ...issue, assessment: (await loadPriorityAssessment(runner, repo, issue.number))?.assessment ?? null })));
+  return { entries: limit === undefined ? entries : entries.slice(0, limit) };
+}
+
+interface GateCandidate { issue: number; createdAt: string; databaseId: number }
+
+async function loadHistoricalGateCandidates(runner: Runner, repo: Pick<Repository, "owner" | "name">, pullRequest: { number: number; headSha: string }): Promise<GateCandidate[]> {
+  const comments = await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues/${pullRequest.number}/comments?per_page=100&page=${page}`, "gh api gate comments");
+  const valid: GateCandidate[] = [];
+  for (const [index, entry] of comments.entries()) {
+    const comment = requiredRecord(entry, `gate comment[${index}]`);
+    if (!trustedAssociations.has(requiredString(comment.author_association, `gate comment[${index}].author_association`))) continue;
+    const body = requiredString(comment.body, `gate comment[${index}].body`);
+    const marker = parseGateMarker(body);
+    if (body.includes("<!-- kesha-backlog-gate:v1 ") && marker === null) throw new OperationalError("trusted gate marker is malformed");
+    if (!marker || marker.pr !== pullRequest.number || marker.evidence.headSha !== pullRequest.headSha) continue;
+    valid.push({ issue: marker.issue, createdAt: timestamp(comment.created_at, `gate comment[${index}].created_at`), databaseId: requiredNumber(comment.id, `gate comment[${index}].id`) });
+  }
+  return valid;
+}
+
+export async function metrics(runner: Runner, since: string, now = new Date()) {
+  const repo = await repository(runner);
+  const issues = await loadPriorityIssues(runner, repo, "all");
+  const raw = await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/pulls?state=all&per_page=100&page=${page}`, "gh api metrics pull requests");
+  const pullRequests: LifecyclePullRequest[] = await mapBounded(raw, phase3Concurrency, async (entry, index) => {
+    const pullRequest = requiredRecord(entry, `metrics pull request[${index}]`);
+    const number = requiredNumber(pullRequest.number, `metrics pull request[${index}].number`);
+    const head = requiredRecord(pullRequest.head, `metrics pull request[${index}].head`);
+    const headSha = requiredString(head.sha, `metrics pull request[${index}].head.sha`);
+    const candidates = await loadHistoricalGateCandidates(runner, repo, { number, headSha });
+    const soleIssue = candidates.length === 0 ? null : await loadMetricClosingIssue(runner, repo, number);
+    const gate = soleIssue === null ? null : candidates
+      .filter((candidate) => candidate.issue === soleIssue)
+      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.databaseId - right.databaseId)
+      .at(-1) ?? null;
+    return {
+      number,
+      createdAt: timestamp(pullRequest.created_at, `metrics pull request[${index}].created_at`),
+      mergedAt: pullRequest.merged_at === null ? null : timestamp(pullRequest.merged_at, `metrics pull request[${index}].merged_at`),
+      gateAt: gate?.createdAt ?? null,
+      state: requiredString(pullRequest.state, `metrics pull request[${index}].state`).toUpperCase(),
+      labels: labels(pullRequest.labels, `metrics pull request[${index}].labels`),
+    };
+  });
+  const metricIssues: LifecycleIssue[] = issues.filter((issue) => !issue.isPullRequest).map((issue) => ({ number: issue.number, state: issue.state, labels: issue.labels, createdAt: issue.createdAt }));
+  return evaluateMetrics({ since, now: now.toISOString(), issues: metricIssues, pullRequests });
+}
+
+const metricClosingIssueQuery = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { closingIssuesReferences(first: 2) { nodes { number } pageInfo { hasNextPage } } } } }`;
+
+async function loadMetricClosingIssue(runner: Runner, repo: Pick<Repository, "owner" | "name">, number: number): Promise<number | null> {
+  const raw = requiredRecord(await runJson(runner, ["gh", "api", "graphql", "-f", `query=${metricClosingIssueQuery}`, "-F", `owner=${repo.owner}`, "-F", `name=${repo.name}`, "-F", `number=${number}`], "gh api metric closing issues"), "gh api metric closing issues");
+  const references = requiredRecord(requiredRecord(requiredRecord(requiredRecord(raw.data, "metric closing issues.data").repository, "metric closing issues.repository").pullRequest, "metric closing issues.pullRequest").closingIssuesReferences, "metric closing issues.references");
+  if (requiredBoolean(requiredRecord(references.pageInfo, "metric closing issues.pageInfo").hasNextPage, "metric closing issues.pageInfo.hasNextPage")) return null;
+  const issues = closingIssues(references.nodes, "metric closing issues.nodes");
+  return issues.length === 1 ? issues[0]! : null;
+}
 
 export async function loadMarker(runner: Runner, repo: Pick<Repository, "owner" | "name">, pr: number): Promise<GateMarker | null> {
   const comments: unknown[] = [];
