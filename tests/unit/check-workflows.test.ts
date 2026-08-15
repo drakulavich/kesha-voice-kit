@@ -9,7 +9,9 @@ import {
   requireDepsBeforeBunTest,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
+  requirePinnedRustToolchain,
   requirePreUploadSynthesisSmoke,
+  readRustToolchainPin,
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
 import { parseRepoYaml, readRepoFile, repoPath } from "../helpers/repo";
@@ -459,5 +461,22 @@ describe("requireDepsBeforeBunTest", () => {
 
   test("ignores a mention that is not a run", () => {
     expect(requireDepsBeforeBunTest(PATH, job("decide", [{ name: "x", run: 'echo "bun test"' }]))).toEqual([]);
+  });
+});
+
+describe("Rust toolchain pin", () => {
+  const PIN = { channel: "1.94.1", components: ["rustfmt", "clippy"] };
+
+  test("the root toolchain file declares the exact compiler and developer components", () => {
+    const { pin, errors } = readRustToolchainPin();
+    expect(errors).toEqual([]);
+    expect(pin).toEqual(PIN);
+  });
+
+  test("every explicit Rust CI setup installs the root compiler and components", () => {
+    for (const file of readdirSync(repoPath(".github/workflows"))) {
+      const path = `.github/workflows/${file}`;
+      expect([path, requirePinnedRustToolchain(path, parseRepoYaml(path), PIN)]).toEqual([path, []]);
+    }
   });
 });
