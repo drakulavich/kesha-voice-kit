@@ -192,7 +192,7 @@
               <span class="stat-label">Detection langs</span>
             </li>
             <li>
-              <span class="stat-num">62–66MB</span>
+              <span class="stat-num">~65 MB</span>
               <span class="stat-label">Published engine binary</span>
             </li>
             <li>
@@ -283,10 +283,10 @@
                 Kokoro runs through CoreML/ANE on Apple Silicon and ONNX on Linux and Windows;
                 Vosk-TTS covers Russian, and macOS system voices need no model download. macOS
                 auto-routes from the text language; Linux and Windows use <code>--lang</code> or
-                <code>--voice</code>. SSML
-                <code>&lt;prosody rate&gt;</code>, <code>&lt;break&gt;</code>, and
-                <code>&lt;emphasis&gt;</code> work on every backend — v1.21 closed the Apple
-                Silicon gap via FluidAudio 0.14.7’s model-native speed control.
+                <code>--voice</code>. Kokoro (ANE or ONNX) and Vosk support SSML
+                <code>&lt;prosody rate&gt;</code> and <code>&lt;break&gt;</code>;
+                <code>&lt;emphasis&gt;</code> is Vosk-only. macOS system voices reject
+                <code>--ssml</code>.
               </p>
             </article>
 
@@ -320,9 +320,10 @@
               <h3>Timestamped transcripts</h3>
               <p>
                 <code>--json --timestamps</code> adds a <code>words</code> array to each segment:
-                file-relative, 0.08-second-grid spans for subtitle and alignment workflows. The
-                field is absent when the decoder has no usable words (for example after
-                <code>--itn</code>), not an empty array.
+                file-relative predictions on a 0.08-second grid. Each word end is predicted
+                independently, so consecutive spans may overlap and an end is not necessarily the
+                next word’s start. The field is absent when the decoder has no usable words (for
+                example after <code>--itn</code>), not an empty array.
               </p>
             </article>
 
@@ -386,8 +387,10 @@
               <p>
                 On darwin-arm64, <code>kesha record --live</code> prints the microphone transcript
                 to stdout. Install VAD explicitly, then opt into silence stopping with
-                <code>--auto-stop</code>: 1,000 ms silence after 250 ms speech by default. A
-                Ctrl-C interruption keeps a recovery WAV when delivery fails.
+                <code>--auto-stop</code>: 1,000 ms silence after 250 ms speech by default. Live
+                recording has a 120-second hard stop by default; pass <code>--max-seconds</code>
+                to override it. Ctrl-C still prints the transcript; a recovery WAV is kept only
+                if delivery fails.
               </p>
               <ul class="chip-row" role="list">
                 <li>darwin-arm64</li>
@@ -433,8 +436,9 @@
                 Install TTS only when you need it. Kokoro powers English and multilingual voices
                 through CoreML/ANE on Apple Silicon and ONNX on Linux/Windows; Russian uses
                 Vosk-TTS. <strong>Chinese, Japanese, and Hindi are darwin-arm64 only;</strong>
-                use <code>--lang</code> on Linux and Windows rather than relying on macOS
-                auto-routing.
+                Chinese accepts Han text, while Hindi requires romanized Latin input and Japanese
+                requires romaji (Devanagari and kana/kanji are rejected). Use <code>--lang</code>
+                on Linux and Windows rather than relying on macOS auto-routing.
               </p>
               <ul class="chip-row" role="list">
                 <li>en · es · fr · it · pt</li>
@@ -519,9 +523,8 @@
             <p class="section-sub">
               Real output from <code>kesha say</code> — Kokoro-82M for English, Vosk-TTS for Russian.
               SSML <code>&lt;prosody rate&gt;</code> renders the same text at different speeds without
-              resampling artifacts. v1.21 brought prosody to Apple Silicon Kokoro too — EN, RU,
-              and the v1.22 multilingual voices all honor <code>&lt;prosody&gt;</code>,
-              <code>&lt;break&gt;</code>, and <code>&lt;emphasis&gt;</code>.
+              resampling artifacts. Kokoro and Vosk honor <code>&lt;prosody&gt;</code> and
+              <code>&lt;break&gt;</code>; <code>&lt;emphasis&gt;</code> is Vosk-only.
             </p>
           </header>
 
@@ -673,9 +676,17 @@
               <div class="step__num">01</div>
               <h3>Install Bun</h3>
               <p>Skip if you already have it.</p>
+              <p><strong>macOS / Linux</strong></p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> curl -fsSL https://bun.sh/install | bash</code></pre>
                 <button class="copy" data-copy="curl -fsSL https://bun.sh/install | bash" aria-label="Copy">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                </button>
+              </div>
+              <p><strong>Windows PowerShell</strong></p>
+              <div class="code-block">
+                <pre><code><span class="muted">&gt;</span> powershell -c "irm bun.sh/install.ps1 | iex"</code></pre>
+                <button class="copy" data-copy="powershell -c &quot;irm bun.sh/install.ps1 | iex&quot;" aria-label="Copy">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
                 </button>
               </div>
@@ -770,7 +781,7 @@ kesha install --plan && kesha install" aria-label="Copy">
 <span class="cm"># OGG/Opus voice notes (drop straight into Telegram)</span>
 <span class="muted">$</span> kesha say --format ogg-opus "Уже бегу!" --out voice.ogg
 
-<span class="cm"># Variable-speed playback via SSML &lt;prosody rate&gt;</span>
+<span class="cm"># Kokoro / Vosk only: variable-speed playback via SSML &lt;prosody rate&gt;</span>
 <span class="muted">$</span> kesha say --voice en-am_michael --ssml \
     '&lt;speak&gt;&lt;prosody rate="x-fast"&gt;Read this fast.&lt;/prosody&gt;&lt;/speak&gt;' \
     --out fast.wav
