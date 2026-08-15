@@ -7,13 +7,13 @@
     "url": "https://github.com/drakulavich/kesha-voice-kit",
     "source": "github"
   },
-  "version": "1.28.0",
+  "version": "1.29.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@drakulavich/kesha-voice-kit",
-      "version": "1.28.0",
+      "version": "1.29.0",
       "transport": {
         "type": "stdio"
       },
