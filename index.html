@@ -389,8 +389,9 @@
                 to stdout. Install VAD explicitly, then opt into silence stopping with
                 <code>--auto-stop</code>: 1,000 ms silence after 250 ms speech by default. Live
                 recording has a 120-second hard stop by default; pass <code>--max-seconds</code>
-                to override it. Ctrl-C still prints the transcript; a recovery WAV is kept only
-                if delivery fails.
+                to override it. Ctrl-C prints the transcript; the recovery WAV is deleted only
+                after uninterrupted successful stdout delivery, and is kept if delivery fails or
+                Ctrl-C or SIGTERM ends the session.
               </p>
               <ul class="chip-row" role="list">
                 <li>darwin-arm64</li>
