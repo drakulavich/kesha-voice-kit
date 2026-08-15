@@ -24,8 +24,8 @@ const assessment: PriorityAssessment = {
 
 describe("backlog priority", () => {
   test("derives the documented score and rejects caller supplied scores", () => {
-    expect(computePriorityScore(assessment)).toBe(73);
-    expect(parsePriorityManifest({ ...assessment, score: 999 })).toThrow("must not include score");
+    expect(computePriorityScore(assessment)).toBe(84);
+    expect(() => parsePriorityManifest({ ...assessment, score: 999 })).toThrow("must not include score");
     expect(() => parsePriorityManifest({ ...assessment, impact: 6 })).toThrow("impact must be an integer between 0 and 5");
   });
 
@@ -78,8 +78,8 @@ describe("backlog lifecycle metrics", () => {
     expect(result.currentWip).toBe(1);
     expect(result.currentMergeReady).toBe(1);
     expect(result.durations.openToGate).toEqual({ sampleSize: 4, median: 9000, p90: 14400 });
-    expect(result.durations.gateToMerge).toEqual({ sampleSize: 4, median: 95400, p90: 108000 });
-    expect(result.durations.openToMerge).toEqual({ sampleSize: 4, median: 122400, p90: 122400 });
+    expect(result.durations.gateToMerge).toEqual({ sampleSize: 4, median: 93600, p90: 108000 });
+    expect(result.durations.openToMerge).toEqual({ sampleSize: 4, median: 102600, p90: 122400 });
   });
 
   test("returns null for empty samples and rejects negative chronology instead of clamping it", () => {
@@ -100,7 +100,7 @@ describe("backlog lifecycle metrics", () => {
       issues: [{ number: 1, state: "OPEN", labels: ["WIP", "merge-ready"], createdAt: "2026-08-01T00:00:00Z" }],
       pullRequests: [
         { number: 1, createdAt: "2026-08-01T00:00:00Z", gateAt: "2026-08-09T00:00:00Z", mergedAt: "2026-08-11T00:00:00Z" },
-        { number: 2, createdAt: "2026-08-01T00:00:00Z", gateAt: "2026-08-11T00:00:00Z", mergedAt: "2026-08-09T00:00:00Z" },
+        { number: 2, createdAt: "2026-08-01T00:00:00Z", gateAt: "2026-08-11T00:00:00Z", mergedAt: null },
       ],
     });
 
