@@ -1,7 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { acquireLease, claimOrder, encodeClaimMarker, evaluateCollisionPlan, isLiveClaim, issueNumberFromBranch, leaseDirectory, normalizedPath, parseClaimManifest, parseClaimMarker, releaseLease, sameManifest, statusLease, timestamp, type ClaimManifest, type ClaimMarker, type ClaimRecord, type CollisionPlan, type LeaseResult, type LeaseState } from "./backlog-coordination";
+
+export { acquireLease, encodeClaimMarker, evaluateCollisionPlan, issueNumberFromBranch, leaseDirectory, parseClaimManifest, releaseLease, statusLease } from "./backlog-coordination";
+export type { ClaimManifest, ClaimMarker, ClaimRecord, CollisionPlan, LeaseResult, LeaseState } from "./backlog-coordination";
 
 export const REPORT_SCHEMA_VERSION = 1;
 
@@ -28,55 +31,6 @@ export interface GateEvidence {
   headSha: string;
   uri: string;
   digest: string;
-}
-
-export interface ClaimManifest {
-  version: 1;
-  issue: number;
-  holder: string;
-  paths: string[];
-  ttlSeconds: number;
-}
-
-export interface ClaimMarker {
-  version: 1;
-  action: "claim" | "release";
-  manifest: ClaimManifest;
-  expiresAt: string | null;
-}
-
-export interface ClaimRecord {
-  issue: number;
-  state: string;
-  labels: string[];
-  authorAssociation: string;
-  createdAt: string;
-  id: number;
-  marker: ClaimMarker;
-}
-
-export interface CollisionPlan {
-  edges: Array<{ source: "claim" | "pull-request" | "worktree"; issue?: number; pr?: number; path: string }>;
-  self: Array<{ source: "claim" | "pull-request" | "worktree"; issue?: number; pr?: number; path: string }>;
-  idempotent: boolean;
-  expiresAt: string | null;
-  rejectedClaimIds: number[];
-}
-
-export interface LeaseState {
-  version: 1;
-  resource: string;
-  holder: string;
-  acquiredAt: string;
-  expiresAt: string;
-  host: string;
-  pid: number;
-}
-
-export interface LeaseResult {
-  state: "acquired" | "already-owned" | "refused" | "released" | "absent" | "held" | "expired";
-  lease: LeaseState | null;
-  recovered?: boolean;
 }
 
 type GateEvidencePayload = Omit<GateEvidence, "digest">;
@@ -138,7 +92,7 @@ export interface CloseFacts {
 export interface Evaluation {
   violations: string[];
   refusals: string[];
-  safeActions: Array<{ kind: "add-merge-ready" | "remove-merge-ready" | "remove-wip" | "remove-worktree" | "create-marker" | "create-claim" | "release-claim"; pr?: number; issue?: number; path?: string; marker?: GateMarker | ClaimMarker }>;
+  safeActions: Array<{ kind: "add-merge-ready" | "remove-merge-ready" | "remove-wip" | "remove-worktree" | "create-marker" | "create-claim" | "release-claim" | "acquire-lease" | "release-lease"; pr?: number; issue?: number; path?: string; resource?: string; marker?: GateMarker | ClaimMarker }>;
   findings: string[];
 }
 
@@ -205,120 +159,6 @@ function optionalNumber(value: unknown, source: string): number | null {
   return requiredNumber(value, source);
 }
 
-function timestamp(value: unknown, source: string): string {
-  const text = requiredString(value, source);
-  if (Number.isNaN(Date.parse(text))) throw new OperationalError(`${source} must be an ISO timestamp`);
-  return text;
-}
-
-function normalizedPath(value: unknown, source: string): string {
-  const path = requiredString(value, source);
-  if (isAbsolute(path) || path.includes("\\") || path.includes("*") || path.endsWith("/")) throw new OperationalError(`${source} must be a normalized repository-relative path`);
-  const segments = path.split("/");
-  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) throw new OperationalError(`${source} must be a normalized repository-relative path`);
-  return path;
-}
-
-function boundedTtl(value: unknown, source: string): number {
-  const ttl = requiredNumber(value, source);
-  if (ttl < 1 || ttl > 86_400) throw new OperationalError(`${source} must be between 1 and 86400 seconds`);
-  return ttl;
-}
-
-export function parseClaimManifest(value: unknown, source = "claim manifest"): ClaimManifest {
-  const manifest = requiredRecord(value, source);
-  if (manifest.version !== 1) throw new OperationalError(`${source}.version must equal 1`);
-  const issue = requiredNumber(manifest.issue, `${source}.issue`);
-  if (issue < 1) throw new OperationalError(`${source}.issue must be positive`);
-  const holder = requiredString(manifest.holder, `${source}.holder`);
-  const paths = requiredArray(manifest.paths, `${source}.paths`).map((path, index) => normalizedPath(path, `${source}.paths[${index}]`));
-  if (paths.length === 0) throw new OperationalError(`${source}.paths must not be empty`);
-  const canonicalPaths = [...new Set(paths)].sort();
-  return { version: 1, issue, holder, paths: canonicalPaths, ttlSeconds: boundedTtl(manifest.ttlSeconds, `${source}.ttlSeconds`) };
-}
-
-function sameManifest(left: ClaimManifest, right: ClaimManifest): boolean {
-  return left.issue === right.issue && left.holder === right.holder && left.ttlSeconds === right.ttlSeconds && left.paths.length === right.paths.length && left.paths.every((path, index) => path === right.paths[index]);
-}
-
-export function encodeClaimMarker(marker: ClaimMarker): string {
-  return `<!-- kesha-backlog-claim:v1 ${JSON.stringify(marker)} -->`;
-}
-
-export function parseClaimMarker(body: string): ClaimMarker | null {
-  const match = /<!-- kesha-backlog-claim:v1 (\{.*\}) -->/.exec(body);
-  if (!match?.[1]) return null;
-  try {
-    const marker = requiredRecord(JSON.parse(match[1]), "claim marker");
-    if (marker.version !== 1) return null;
-    const action = requiredString(marker.action, "claim marker.action");
-    if (action !== "claim" && action !== "release") return null;
-    const expiresAt = marker.expiresAt === null || marker.expiresAt === undefined ? null : timestamp(marker.expiresAt, "claim marker.expiresAt");
-    if (action === "claim" && expiresAt === null) return null;
-    return { version: 1, action, manifest: parseClaimManifest(marker.manifest, "claim marker.manifest"), expiresAt };
-  } catch {
-    return null;
-  }
-}
-
-function pathOverlap(left: string[], right: string[]): string | null {
-  for (const candidate of left) {
-    if (right.some((other) => candidate === other || candidate.startsWith(`${other}/`) || other.startsWith(`${candidate}/`))) return candidate;
-  }
-  return null;
-}
-
-function claimOrder(left: ClaimRecord, right: ClaimRecord): number {
-  return left.createdAt.localeCompare(right.createdAt) || left.id - right.id;
-}
-
-function isLiveClaim(record: ClaimRecord, now: Date): boolean {
-  return record.marker.action === "claim" && record.state === "OPEN" && record.labels.includes("WIP") && trustedAssociations.has(record.authorAssociation) && record.marker.expiresAt !== null && Date.parse(record.marker.expiresAt) > now.getTime();
-}
-
-function acceptedClaims(records: ClaimRecord[], now: Date): { accepted: ClaimRecord[]; rejected: ClaimRecord[] } {
-  const accepted: ClaimRecord[] = [];
-  const rejected: ClaimRecord[] = [];
-  for (const record of records.filter((candidate) => isLiveClaim(candidate, now)).sort(claimOrder)) {
-    if (accepted.some((previous) => pathOverlap(previous.marker.manifest.paths, record.marker.manifest.paths) !== null)) rejected.push(record);
-    else accepted.push(record);
-  }
-  return { accepted, rejected };
-}
-
-export function evaluateCollisionPlan(manifest: ClaimManifest, facts: {
-  claims: ClaimRecord[];
-  pullRequests: Array<{ number: number; closingIssueNumbers: number[]; files: string[] }>;
-  worktrees: Array<{ branch: string | null; files: string[] }>;
-}, now = new Date()): CollisionPlan {
-  const { accepted, rejected } = acceptedClaims(facts.claims, now);
-  const edges: CollisionPlan["edges"] = [];
-  const self: CollisionPlan["self"] = [];
-  for (const claim of accepted) {
-    const path = pathOverlap(manifest.paths, claim.marker.manifest.paths);
-    if (path === null) continue;
-    const entry = { source: "claim" as const, issue: claim.issue, path };
-    if (claim.issue === manifest.issue) self.push(entry);
-    else edges.push(entry);
-  }
-  for (const pullRequest of facts.pullRequests) {
-    const path = pathOverlap(manifest.paths, pullRequest.files);
-    if (path === null) continue;
-    const entry = { source: "pull-request" as const, pr: pullRequest.number, path };
-    if (pullRequest.closingIssueNumbers.includes(manifest.issue)) self.push(entry);
-    else edges.push(entry);
-  }
-  for (const worktree of facts.worktrees) {
-    const path = pathOverlap(manifest.paths, worktree.files);
-    if (path === null) continue;
-    const entry = { source: "worktree" as const, path };
-    if (issueNumberFromBranch(worktree.branch) === manifest.issue) self.push(entry);
-    else edges.push(entry);
-  }
-  const own = accepted.find((claim) => sameManifest(claim.marker.manifest, manifest)) ?? null;
-  return { edges, self, idempotent: own !== null, expiresAt: own?.marker.expiresAt ?? null, rejectedClaimIds: rejected.map((claim) => claim.id) };
-}
-
 async function runJson(runner: Runner, argv: string[], source: string): Promise<unknown> {
   const result = await runner.run(argv);
   if (result.exitCode !== 0) {
@@ -333,11 +173,6 @@ function labels(value: unknown, source: string): string[] {
 
 function closingIssues(value: unknown, source: string): number[] {
   return requiredArray(value, source).map((entry, index) => requiredNumber(requiredRecord(entry, `${source}[${index}]`).number, `${source}[${index}].number`));
-}
-
-export function issueNumberFromBranch(branch: string | null): number | null {
-  const match = /^(?:[^/]+\/)?issue-([1-9]\d*)$/.exec(branch ?? "");
-  return match ? Number(match[1]) : null;
 }
 
 function matchingBranch(branch: string | null, issue: number): boolean {
@@ -692,7 +527,7 @@ function statusPaths(output: string): string[] {
   return [...new Set(paths)].sort();
 }
 
-async function loadCollisionWorktrees(runner: Runner): Promise<Array<{ branch: string | null; files: string[] }>> {
+export async function loadCollisionWorktrees(runner: Runner): Promise<Array<{ branch: string | null; files: string[] }>> {
   const listed = await runner.run(["git", "worktree", "list", "--porcelain"]);
   if (listed.exitCode !== 0) throw new OperationalError(`git worktree list failed: ${listed.stderr.trim()}`);
   const result: Array<{ branch: string | null; files: string[] }> = [];
@@ -701,9 +536,11 @@ async function loadCollisionWorktrees(runner: Runner): Promise<Array<{ branch: s
       result.push({ branch: null, files: [] });
       continue;
     }
+    const committed = await runner.run(["git", "-C", worktree.path, "diff", "--no-renames", "--name-only", "origin/main...HEAD"]);
+    if (committed.exitCode !== 0) throw new OperationalError(`git diff failed for ${worktree.path}: ${committed.stderr.trim()}`);
     const status = await runner.run(["git", "-C", worktree.path, "status", "--porcelain=v1", "-z", "--untracked-files=all"]);
     if (status.exitCode !== 0) throw new OperationalError(`git status failed for ${worktree.path}: ${status.stderr.trim()}`);
-    result.push({ branch: worktree.branch, files: statusPaths(status.stdout) });
+    result.push({ branch: worktree.branch, files: [...new Set([...committed.stdout.split("\n").filter(Boolean).map((path) => normalizedPath(path, "git diff path")), ...statusPaths(status.stdout)])].sort() });
   }
   return result;
 }
@@ -778,206 +615,15 @@ export async function leaseRoot(runner: Runner): Promise<string> {
   return leaseDirectory(result.stdout.trim());
 }
 
-function leaseResource(value: string): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value)) throw new OperationalError("lease resource must use 1-64 letters, digits, dots, underscores, or hyphens");
-  return value;
-}
-
-function leaseHolder(value: string): string {
-  if (value.length === 0 || value.length > 256) throw new OperationalError("lease holder must be a non-empty string up to 256 characters");
-  return value;
-}
-
-export function leaseDirectory(gitCommonDirectory: string): string {
-  const common = resolve(gitCommonDirectory);
-  let stat;
-  try {
-    stat = lstatSync(common);
-  } catch {
-    throw new OperationalError("shared git common directory is missing");
+export function evaluateLeaseOperation(operation: "acquire" | "release" | "status", input: { resource: string; holder?: string }, observed: LeaseResult): Evaluation {
+  if (operation === "status") return { findings: [observed.state], violations: [], refusals: [], safeActions: [] };
+  if (observed.state === "held" && observed.lease?.holder !== input.holder) return { findings: [], violations: [], refusals: ["resource lease is held by another holder"], safeActions: [] };
+  if (operation === "acquire") {
+    if (observed.state === "held") return { findings: ["already-owned"], violations: [], refusals: [], safeActions: [] };
+    return { findings: [], violations: [], refusals: [], safeActions: [{ kind: "acquire-lease", resource: input.resource }] };
   }
-  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new OperationalError("shared git common directory must be a real directory");
-  return join(common, "kesha-backlog-leases");
-}
-
-function leaseRootState(root: string, create: boolean): string | null {
-  const requested = resolve(root);
-  const parent = dirname(requested);
-  let parentStat;
-  try {
-    parentStat = lstatSync(parent);
-  } catch {
-    throw new OperationalError("lease root parent is missing");
-  }
-  if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) throw new OperationalError("lease root parent must be a real directory");
-  if (!existsSync(requested)) {
-    if (!create) return null;
-    try {
-      mkdirSync(requested);
-    } catch (error) {
-      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
-    }
-  }
-  const stat = lstatSync(requested);
-  if (stat.isSymbolicLink()) throw new OperationalError("lease root must not be a symlink");
-  if (!stat.isDirectory()) throw new OperationalError("lease root must be a directory");
-  return requested;
-}
-
-function leaseStatePath(root: string, resource: string): string {
-  const candidate = resolve(root, `${leaseResource(resource)}.json`);
-  const child = relative(root, candidate);
-  if (child === "" || isAbsolute(child) || child === ".." || child.startsWith(`..${sep}`)) throw new OperationalError("lease state path escapes its root");
-  return candidate;
-}
-
-function parseLeaseState(value: unknown, source: string): LeaseState {
-  const lease = requiredRecord(value, source);
-  if (lease.version !== 1) throw new OperationalError(`${source}.version must equal 1`);
-  const resource = leaseResource(requiredString(lease.resource, `${source}.resource`));
-  const holder = leaseHolder(requiredString(lease.holder, `${source}.holder`));
-  const pid = requiredNumber(lease.pid, `${source}.pid`);
-  if (pid < 1) throw new OperationalError(`${source}.pid must be positive`);
-  return { version: 1, resource, holder, acquiredAt: timestamp(lease.acquiredAt, `${source}.acquiredAt`), expiresAt: timestamp(lease.expiresAt, `${source}.expiresAt`), host: requiredString(lease.host, `${source}.host`), pid };
-}
-
-function readLease(root: string, resource: string): LeaseState | null {
-  const path = leaseStatePath(root, resource);
-  if (!existsSync(path)) return null;
-  const stat = lstatSync(path);
-  if (stat.isSymbolicLink()) throw new OperationalError("lease state must not be a symlink");
-  if (!stat.isFile()) throw new OperationalError("lease state must be a regular file");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    throw new OperationalError("malformed lease state");
-  }
-  const lease = parseLeaseState(parsed, "lease state");
-  if (lease.resource !== resource) throw new OperationalError("lease state resource does not match its path");
-  return lease;
-}
-
-function isLiveLease(lease: LeaseState, now: Date): boolean {
-  return Date.parse(lease.expiresAt) > now.getTime();
-}
-
-function leaseRequest(input: { resource: string; holder: string; ttlSeconds?: number }): { resource: string; holder: string; ttlSeconds: number } {
-  return { resource: leaseResource(input.resource), holder: leaseHolder(input.holder), ttlSeconds: boundedTtl(input.ttlSeconds ?? 600, "lease ttlSeconds") };
-}
-
-function withLeaseGuard<T>(root: string, resource: string, operation: () => T): T {
-  const guard = join(root, `.${resource}.lock`);
-  const temporary = join(root, `.${resource}.${process.pid}.${randomUUID()}.lock-tmp`);
-  try {
-    writeFileSync(temporary, JSON.stringify({ version: 1, resource }), { encoding: "utf8", mode: 0o600, flag: "wx" });
-    try {
-      linkSync(temporary, guard);
-    } catch (error) {
-      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
-      let stat;
-      try {
-        stat = lstatSync(guard);
-      } catch {
-        throw new OperationalError("lease operation is already in progress");
-      }
-      if (stat.isSymbolicLink()) throw new OperationalError("lease operation guard must not be a symlink");
-      throw new OperationalError("lease operation is already in progress");
-    }
-  } finally {
-    if (existsSync(temporary)) unlinkSync(temporary);
-  }
-  try {
-    return operation();
-  } finally {
-    unlinkSync(guard);
-  }
-}
-
-function assertNoLeaseGuard(root: string, resource: string): void {
-  const guard = join(root, `.${resource}.lock`);
-  if (!existsSync(guard)) return;
-  const stat = lstatSync(guard);
-  if (stat.isSymbolicLink()) throw new OperationalError("lease operation guard must not be a symlink");
-  if (!stat.isFile()) throw new OperationalError("lease operation guard must be a regular file");
-  let value: JsonRecord;
-  try {
-    value = requiredRecord(JSON.parse(readFileSync(guard, "utf8")), "lease operation guard");
-  } catch (error) {
-    if (error instanceof OperationalError) throw error;
-    throw new OperationalError("malformed lease operation guard");
-  }
-  if (value.version !== 1 || value.resource !== resource) throw new OperationalError("malformed lease operation guard");
-  throw new OperationalError("lease operation is already in progress");
-}
-
-export function statusLease(root: string, resource: string, now = new Date()): LeaseResult {
-  const safeRoot = leaseRootState(root, false);
-  if (safeRoot === null) return { state: "absent", lease: null };
-  const safeResource = leaseResource(resource);
-  assertNoLeaseGuard(safeRoot, safeResource);
-  const lease = readLease(safeRoot, safeResource);
-  if (lease === null) return { state: "absent", lease: null };
-  return { state: isLiveLease(lease, now) ? "held" : "expired", lease };
-}
-
-export function acquireLease(root: string, input: { resource: string; holder: string; ttlSeconds?: number }, now = new Date()): LeaseResult {
-  const request = leaseRequest(input);
-  const safeRoot = leaseRootState(root, true)!;
-  try {
-    return withLeaseGuard(safeRoot, request.resource, () => {
-    const path = leaseStatePath(safeRoot, request.resource);
-    const current = readLease(safeRoot, request.resource);
-    if (current && isLiveLease(current, now)) {
-      if (current.holder === request.holder) return { state: "already-owned" as const, lease: current };
-      return { state: "refused" as const, lease: current };
-    }
-    const recovered = current !== null;
-    if (current !== null) unlinkSync(path);
-    const lease: LeaseState = { version: 1, resource: request.resource, holder: request.holder, acquiredAt: now.toISOString(), expiresAt: new Date(now.getTime() + request.ttlSeconds * 1000).toISOString(), host: hostname(), pid: process.pid };
-    const temporary = join(safeRoot, `.${request.resource}.${process.pid}.${randomUUID()}.tmp`);
-    try {
-      writeFileSync(temporary, JSON.stringify(lease), { encoding: "utf8", mode: 0o600, flag: "wx" });
-      try {
-        linkSync(temporary, path);
-        return { state: "acquired" as const, lease, recovered };
-      } catch (error) {
-        if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
-        return { state: "refused" as const, lease: readLease(safeRoot, request.resource) };
-      }
-    } finally {
-      if (existsSync(temporary)) unlinkSync(temporary);
-    }
-    });
-  } catch (error) {
-    if (error instanceof OperationalError && error.message === "lease operation is already in progress") return { state: "refused", lease: readLease(safeRoot, request.resource) };
-    throw error;
-  }
-}
-
-export function releaseLease(root: string, input: { resource: string; holder: string }, now = new Date()): LeaseResult {
-  const resource = leaseResource(input.resource);
-  const holder = leaseHolder(input.holder);
-  const safeRoot = leaseRootState(root, false);
-  if (safeRoot === null) return { state: "absent", lease: null };
-  try {
-    return withLeaseGuard(safeRoot, resource, () => {
-    const path = leaseStatePath(safeRoot, resource);
-    const current = readLease(safeRoot, resource);
-    if (current === null || !isLiveLease(current, now)) return { state: "absent" as const, lease: current };
-    if (current.holder !== holder) return { state: "refused" as const, lease: current };
-    try {
-      unlinkSync(path);
-    } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") return { state: "absent" as const, lease: null };
-      throw error;
-    }
-    return { state: "released" as const, lease: current };
-    });
-  } catch (error) {
-    if (error instanceof OperationalError && error.message === "lease operation is already in progress") return { state: "refused", lease: readLease(safeRoot, resource) };
-    throw error;
-  }
+  if (observed.state !== "held") return { findings: ["absent"], violations: [], refusals: [], safeActions: [] };
+  return { findings: [], violations: [], refusals: [], safeActions: [{ kind: "release-lease", resource: input.resource }] };
 }
 
 async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {

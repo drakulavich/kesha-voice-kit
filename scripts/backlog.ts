@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { ExitCode, OperationalError, REPORT_SCHEMA_VERSION, acquireLease, bunRunner, claim, close, gate, leaseRoot, parseClaimManifest, parseGateEvidence, plan, releaseClaim, releaseLease, statusLease, sync, type Evaluation, type LeaseResult } from "./backlog-conveyor";
+import { ExitCode, OperationalError, REPORT_SCHEMA_VERSION, acquireLease, bunRunner, claim, close, evaluateLeaseOperation, gate, leaseRoot, parseClaimManifest, parseGateEvidence, plan, releaseClaim, releaseLease, statusLease, sync, type Evaluation } from "./backlog-conveyor";
 
 type Command =
   | { name: "sync"; apply: boolean; json: boolean }
@@ -89,7 +89,7 @@ function exitCode(result: Evaluation): number {
 }
 
 function output(command: Command, result: Evaluation, details?: unknown): void {
-  const report = { schemaVersion: REPORT_SCHEMA_VERSION, command: command.name, apply: command.apply, findings: result.findings, violations: result.violations, refusals: result.refusals, actions: result.safeActions };
+  const report = { schemaVersion: REPORT_SCHEMA_VERSION, command: command.name, operation: command.name === "lease" ? command.operation : undefined, apply: command.apply, findings: result.findings, violations: result.violations, refusals: result.refusals, actions: result.safeActions };
   if (command.json) {
     console.log(JSON.stringify(details === undefined ? report : { ...report, details }));
     return;
@@ -97,15 +97,6 @@ function output(command: Command, result: Evaluation, details?: unknown): void {
   console.log(`backlog ${command.name}: ${exitCode(result) === 0 ? "ok" : "blocked"}`);
   for (const message of [...result.findings, ...result.violations, ...result.refusals]) console.log(`- ${message}`);
   for (const action of result.safeActions) console.log(`- ${command.apply ? "applied" : "would apply"}: ${action.kind}`);
-}
-
-function leaseEvaluation(result: LeaseResult, operation: "acquire" | "release" | "status", apply: boolean): Evaluation {
-  if (result.state === "refused") return { findings: [], violations: [], refusals: ["resource lease is held by another holder or busy"], safeActions: [] };
-  if (operation === "status") return { findings: [result.state], violations: [], refusals: [], safeActions: [] };
-  if (!apply && ((operation === "acquire" && (result.state === "absent" || result.state === "expired")) || (operation === "release" && result.state === "held"))) {
-    return { findings: [], violations: [], refusals: [], safeActions: [] };
-  }
-  return { findings: [result.state], violations: [], refusals: [], safeActions: [] };
 }
 
 async function main(): Promise<void> {
@@ -125,16 +116,12 @@ async function main(): Promise<void> {
   else {
     const root = await leaseRoot(runner);
     const preview = statusLease(root, command.resource);
-    const lease = command.operation === "status"
-      ? preview
-      : command.operation === "acquire"
-        ? command.apply
-          ? acquireLease(root, { resource: command.resource, holder: command.holder!, ttlSeconds: command.ttlSeconds })
-          : preview
-        : command.apply
-          ? releaseLease(root, { resource: command.resource, holder: command.holder! })
-          : preview;
-    result = leaseEvaluation(lease, command.operation, command.apply);
+    const decision = evaluateLeaseOperation(command.operation, { resource: command.resource, holder: command.holder }, preview);
+    const shouldApply = command.apply && decision.safeActions.length === 1;
+    const lease = !shouldApply ? preview : command.operation === "acquire"
+      ? acquireLease(root, { resource: command.resource, holder: command.holder!, ttlSeconds: command.ttlSeconds })
+      : releaseLease(root, { resource: command.resource, holder: command.holder! });
+    result = shouldApply ? evaluateLeaseOperation(command.operation, { resource: command.resource, holder: command.holder }, lease) : decision;
     output(command, result, lease);
     process.exit(exitCode(result));
   }

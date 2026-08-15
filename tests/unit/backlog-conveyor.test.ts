@@ -18,10 +18,12 @@ import {
   acquireLease,
   claim,
   encodeClaimMarker,
+  evaluateLeaseOperation,
   evaluateCollisionPlan,
   leaseDirectory,
   leaseRoot,
   loadClaims,
+  loadCollisionWorktrees,
   loadPullRequestFiles,
   parseClaimManifest,
   releaseLease,
@@ -595,6 +597,19 @@ describe("backlog collision coordination", () => {
     await expect(loadPullRequestFiles(runner, { owner: "o", name: "r" }, 1040)).resolves.toEqual(expect.arrayContaining(["docs/0.md", "scripts/backlog.ts"]));
   });
 
+  test("includes committed worktree changes that are not yet in an open pull request", async () => {
+    const runner: Runner = {
+      async run(argv) {
+        if (argv[0] === "git" && argv[1] === "worktree") return { exitCode: 0, stderr: "", stdout: "worktree /repo/.worktrees/issue-1033\nHEAD deadbeef\nbranch refs/heads/feat/issue-1033\n" };
+        if (argv.includes("diff")) return { exitCode: 0, stderr: "", stdout: "scripts/backlog.ts\n" };
+        if (argv.includes("status")) return { exitCode: 0, stderr: "", stdout: "" };
+        throw new Error(`unexpected argv ${argv.join(" ")}`);
+      },
+    };
+
+    await expect(loadCollisionWorktrees(runner)).resolves.toEqual([{ branch: "feat/issue-1033", files: ["scripts/backlog.ts"] }]);
+  });
+
   test("re-reads after apply and reports a concurrent winning marker instead of acquired", async () => {
     const calls: string[][] = [];
     let issueReads = 0;
@@ -676,6 +691,16 @@ describe("backlog resource leases", () => {
     expect(statusLease(root, "preflight", coordinationNow)).toEqual({ state: "absent", lease: null });
     expect(existsSync(root)).toBe(false);
   }));
+
+  test("gives dry-run lease commands the same holder-aware refusal and action decision as apply", () => {
+    const lease = { version: 1 as const, resource: "preflight", holder: "lane-a", acquiredAt: "2026-08-15T12:00:00.000Z", expiresAt: "2026-08-15T12:01:00.000Z", host: "host", pid: 1 };
+
+    expect(evaluateLeaseOperation("acquire", { resource: "preflight", holder: "lane-b" }, { state: "held", lease })).toMatchObject({ refusals: ["resource lease is held by another holder"], safeActions: [] });
+    expect(evaluateLeaseOperation("release", { resource: "preflight", holder: "lane-b" }, { state: "held", lease })).toMatchObject({ refusals: ["resource lease is held by another holder"], safeActions: [] });
+    expect(evaluateLeaseOperation("acquire", { resource: "preflight", holder: "lane-a" }, { state: "held", lease })).toMatchObject({ findings: ["already-owned"], safeActions: [] });
+    expect(evaluateLeaseOperation("acquire", { resource: "preflight", holder: "lane-b" }, { state: "absent", lease: null })).toMatchObject({ safeActions: [{ kind: "acquire-lease", resource: "preflight" }] });
+    expect(evaluateLeaseOperation("release", { resource: "preflight", holder: "lane-a" }, { state: "held", lease })).toMatchObject({ safeActions: [{ kind: "release-lease", resource: "preflight" }] });
+  });
 
   test("fails closed instead of reporting a surviving operation guard as free", () => withLeaseRoot((common) => {
     const root = leaseDirectory(common);
