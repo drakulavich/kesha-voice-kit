@@ -21,7 +21,7 @@ To get set up, see the [install guide](https://github.com/drakulavich/kesha-voic
 
 - **Keep voice messages short.** For transcripts under 3 minutes, KESHA uses a fast path with no silence detection overhead. Longer audio works — just expect a few extra seconds of VAD preprocessing.
 - **Use `--json` for automation.** Structured output with language detection, confidence scores, and optional timestamps is what scripts and agents need. Plain text is for humans.
-- **Match TTS voice language to text.** `kesha say` auto-routes English → Kokoro and Russian → Vosk-TTS. For any other language, use macOS system voices (`--voice macos-de-DE "Guten Tag"`).
+- **Match TTS voice language to text.** On macOS, `kesha say` routes supported languages from the text; on Linux/Windows pass `--lang <code>` or `--voice <id>`. For languages outside that set, use macOS system voices (`--voice macos-de-DE "Guten Tag"`).
 - **Combine with other tools.** Pipe KESHA transcripts into `jq`, `grep`, your CRM, or an AI agent for multi-step workflows.
 - **License awareness.** KESHA is MIT — ship it, embed it, automate it. No API keys, no per-minute billing, no cloud egress costs.
 
@@ -73,7 +73,7 @@ kesha say --format ogg-opus --out reply.ogg "Hey, I'll be there in 10 minutes"
 
 ```bash
 kesha say --voice ru-vosk-m02 --format ogg-opus --out reply.ogg "Скоро буду"
-# → reply.ogg (ru-vosk-m02 — женский голос, оптимальный для русской речи)
+# → reply.ogg (ru-vosk-m02 — male Russian voice)
 ```
 
 **Batch generate multiple voice notes:**
@@ -99,7 +99,7 @@ kesha say --format ogg-opus --bitrate 48000 --sample-rate 48000 --out hq.ogg "Go
 💡 **Tips:**
 
 - `--format ogg-opus` emits directly to messenger-native format — no ffmpeg round-trip, no WAV conversion.
-- Default voice for English is Kokoro-82M (FluidAudio CoreML on Apple Silicon, ONNX elsewhere). Russian uses Vosk-TTS with 5 speaker options (`ru-vosk-m02` through `m06`).
+- Default voice for English is Kokoro-82M (FluidAudio CoreML on Apple Silicon, ONNX elsewhere). Russian Vosk-TTS provides `ru-vosk-f01`, `ru-vosk-f02`, `ru-vosk-f03`, `ru-vosk-m01`, and `ru-vosk-m02`.
 - All TTS models run locally — zero latency from network calls, zero privacy risk from cloud uploads.
 
 ## Language Detection Pipeline
