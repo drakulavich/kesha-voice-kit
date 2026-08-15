@@ -9,8 +9,10 @@ rationale. It SHALL derive, rather than accept, the two-decimal score
 `round(((4*impact + 3*urgency + 2*unblock + 2*riskReduction) * confidence / effort) * 100) / 100`.
 The command SHALL remain dry-run unless applied, publish a versioned structured marker when
 needed, trust only OWNER, MEMBER, or COLLABORATOR markers, and reread all pages after a write.
-A repeated identical current assessment SHALL be idempotent, and the latest trusted marker by
-`(createdAt, databaseId)` SHALL supersede earlier assessments.
+A repeated identical normalized assessment SHALL be idempotent, and the latest trusted marker by
+`(createdAt, databaseId)` SHALL supersede earlier assessments. Under apply, the conveyor SHALL
+parse the REST-created comment id and report accepted only when that exact id remains current
+after complete comment pagination.
 
 #### Scenario: Ira applies an assessment
 
@@ -31,8 +33,10 @@ The conveyor SHALL expose `queue [--label <name>] [--limit <N>] [--json]` as a r
 of open issues and trusted priority markers. It SHALL exclude WIP, needs-decision, and wontfix
 labels and pull requests; sort assessed entries by descending score, then oldest creation time,
 then issue number; and place visible unassessed entries at score zero after assessed entries.
-It SHALL emit score components and rationale, honour an exact optional label, and fail closed on
-incomplete pagination or malformed trusted markers.
+It SHALL emit score components and rationale, honour an exact optional label, apply a bounded
+positive integer limit only after ordering, and fail closed on incomplete pagination or malformed
+trusted markers. Every paginated collection SHALL use REST `per_page=100`, start at page 1, stop
+only after a short page, and fail when its finite cap is reached without a short page.
 
 #### Scenario: Sona views a mixed queue
 
@@ -49,13 +53,20 @@ incomplete pagination or malformed trusted markers.
 ### Requirement: The conveyor SHALL aggregate lifecycle metrics from GitHub facts and trusted gates
 
 The conveyor SHALL expose read-only `metrics --since <ISO timestamp> [--json]` using GitHub
-issue and PR facts and trusted gate markers only. It SHALL reject `since` after its report upper
+issue and PR facts and trusted gate markers only. It SHALL capture its report upper bound before
+reads, reject `since` after that bound, and use bounds as an event filter rather than a
+transactional snapshot. It SHALL reject `since` after its report upper
 bound; include merged counts and merge-ended samples only for `mergedAt` within inclusive bounds;
 include gated counts and open→gate samples only for trusted gate-marker creation within bounds;
-allow an earlier valid gate for merge-ended samples; and count all currently open WIP and
-merge-ready issues regardless of bounds. It SHALL report sample size, median, and nearest-rank
-p90 for valid PR-open→gate, gate→merge, and PR-open→merge durations. It SHALL use null for an
-empty sample, reject negative or non-finite chronology, and never read the ignored ledger.
+allow an earlier valid gate for merge-ended samples; and count all currently open WIP issues and
+open merge-ready pull requests regardless of bounds. A historical gate SHALL be the latest valid
+trusted marker by `(createdAt, databaseId)` whose marker PR equals its comment container, whose
+marker issue equals that PR's sole closing issue, and whose evidence SHA equals that PR head SHA;
+this validation is independent of open-PR gate eligibility. It SHALL report seconds, sample size,
+median, and nearest-rank p90 for valid PR-open→gate, gate→merge, and PR-open→merge durations with
+stable JSON keys and null for an empty sample; reject negative or non-finite chronology; and never
+read the ignored ledger. Every paginated collection SHALL use REST `per_page=100`, start at page 1,
+stop only after a short page, and fail when its finite cap is reached without a short page.
 
 #### Scenario: Maks measures a completed lifecycle
 
