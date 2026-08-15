@@ -88,6 +88,7 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || value.length === 0) throw new Error(`${name} must be a non-empty string`);
+  if (value.trim() !== value) throw new Error(`${name} must not have surrounding whitespace`);
   return value;
 }
 
@@ -108,10 +109,12 @@ export function parsePriorityManifest(value: unknown, source = "priority manifes
   if (value.version !== 1) throw new Error(`${source}.version must equal 1`);
   const rationale = requiredString(value.rationale, `${source}.rationale`);
   if (rationale.length > 280) throw new Error(`${source}.rationale must be at most 280 characters`);
+  const provider = requiredString(value.provider, `${source}.provider`);
+  if (provider.length > 256) throw new Error(`${source}.provider must be at most 256 characters`);
   return {
     version: 1,
     issue: requiredInteger(value.issue, `${source}.issue`, 1, Number.MAX_SAFE_INTEGER),
-    provider: requiredString(value.provider, `${source}.provider`),
+    provider,
     impact: requiredInteger(value.impact, `${source}.impact`, 0, 5),
     urgency: requiredInteger(value.urgency, `${source}.urgency`, 0, 5),
     unblock: requiredInteger(value.unblock, `${source}.unblock`, 0, 5),
@@ -142,6 +145,7 @@ export function parsePriorityMarker(body: string): PriorityMarker | null {
     throw new Error("priority marker is malformed");
   }
   if (!isRecord(raw) || raw.version !== 1) throw new Error("priority marker is malformed");
+  exactKeys(raw, ["version", "assessment", "score"], "priority marker");
   const assessment = parsePriorityManifest(raw.assessment, "priority marker.assessment");
   if (typeof raw.score !== "number" || !Number.isFinite(raw.score) || raw.score !== computePriorityScore(assessment)) {
     throw new Error("priority marker.score does not match assessment");

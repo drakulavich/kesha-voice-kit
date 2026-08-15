@@ -11,8 +11,8 @@ measurements without making the authenticated account or opaque provider field a
 ### Priority is manifest input, not prose inference
 
 `prioritize` reads a JSON manifest with `version: 1`, a positive existing open issue number, an opaque
-non-empty provider, dimensions `impact`, `urgency`, `unblock`, and `riskReduction` in 0..5,
-`confidence` and `effort` in 1..5, plus a concise non-empty rationale. It never accepts a
+non-empty opaque provider of at most 256 trimmed characters, dimensions `impact`, `urgency`, `unblock`, and `riskReduction` in 0..5,
+`confidence` and `effort` in 1..5, plus a concise trimmed non-empty rationale of at most 280 characters. It never accepts a
 caller score. The canonical score is rounded to two decimals from
 `((4*impact + 3*urgency + 2*unblock + 2*riskReduction) * confidence / effort)`.
 

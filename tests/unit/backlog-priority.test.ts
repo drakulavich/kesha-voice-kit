@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   computePriorityScore,
   encodePriorityMarker,
@@ -8,7 +9,7 @@ import {
   sortQueue,
   type PriorityAssessment,
 } from "../../scripts/backlog-priority";
-import { metrics, prioritize, queue, type Runner } from "../../scripts/backlog-conveyor";
+import { encodeGateMarker, mapBounded, metrics, prioritize, queue, type Runner } from "../../scripts/backlog-conveyor";
 
 const assessment: PriorityAssessment = {
   version: 1,
@@ -28,6 +29,8 @@ describe("backlog priority", () => {
     expect(computePriorityScore(assessment)).toBe(84);
     expect(() => parsePriorityManifest({ ...assessment, score: 999 })).toThrow("must not include score");
     expect(() => parsePriorityManifest({ ...assessment, impact: 6 })).toThrow("impact must be an integer between 0 and 5");
+    expect(() => parsePriorityManifest({ ...assessment, provider: "   " })).toThrow("provider must not have surrounding whitespace");
+    expect(() => parsePriorityManifest({ ...assessment, rationale: "   " })).toThrow("rationale must not have surrounding whitespace");
   });
 
   test("newest trusted marker supersedes an older marker without treating provider as identity", () => {
@@ -119,7 +122,25 @@ function priorityRunner(respond: (argv: string[]) => unknown): Runner {
   return { async run(argv) { return { exitCode: 0, stderr: "", stdout: JSON.stringify(respond(argv)) }; } };
 }
 
+function gateMarker(issue: number, pr: number, headSha: string): string {
+  const evidence = { version: 1 as const, provider: "opaque", verdict: "APPROVED" as const, headSha, uri: "https://example.test/gate" };
+  return encodeGateMarker({ version: 1, issue, pr, evidence: { ...evidence, digest: createHash("sha256").update(JSON.stringify(evidence)).digest("hex") } });
+}
+
 describe("conveyor priority boundaries", () => {
+  test("bounds Phase 3 GitHub work without changing input order", async () => {
+    let active = 0;
+    let peak = 0;
+    const result = await mapBounded([1, 2, 3, 4, 5, 6], 2, async (value) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      active -= 1;
+      return value * 2;
+    });
+    expect(peak).toBe(2);
+    expect(result).toEqual([2, 4, 6, 8, 10, 12]);
+  });
   test("requires an existing open issue before an applied assessment can publish", async () => {
     const calls: string[][] = [];
     const runner: Runner = {
@@ -179,5 +200,85 @@ describe("conveyor priority boundaries", () => {
     });
 
     await expect(metrics(runner, "2026-08-01T00:00:00Z", new Date("2026-08-03T00:00:00Z"))).rejects.toThrow("trusted gate marker is malformed");
+  });
+
+  test("uses a REST second pull page and only the latest valid gate marker for each PR", async () => {
+    const head = "a".repeat(40);
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({ number: index + 1, created_at: "2026-08-01T00:00:00Z", merged_at: null, state: "CLOSED", labels: [], head: { sha: head } }));
+    const runner = priorityRunner((argv) => {
+      if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };
+      const target = argv[2] ?? "";
+      if (target.includes("/issues?state=all")) return [];
+      if (target.includes("/pulls?state=all") && target.endsWith("page=1")) return firstPage;
+      if (target.includes("/pulls?state=all") && target.endsWith("page=2")) return [{ number: 101, created_at: "2026-08-01T00:00:00Z", merged_at: "2026-08-02T00:00:00Z", state: "CLOSED", labels: [], head: { sha: head } }];
+      if (target === "graphql") {
+        const number = Number(argv.find((value) => value.startsWith("number="))?.slice("number=".length));
+        return { data: { repository: { pullRequest: { closingIssuesReferences: { nodes: [{ number: number === 101 ? 500 : number }], pageInfo: { hasNextPage: false } } } } } };
+      }
+      if (target.includes("comments")) {
+        const pr = Number(/issues\/(\d+)\/comments/.exec(target)?.[1]);
+        if (pr === 101) return [
+          { id: 1, created_at: "2026-08-01T01:00:00Z", author_association: "OWNER", body: gateMarker(500, 101, "b".repeat(40)) },
+          { id: 2, created_at: "2026-08-01T02:00:00Z", author_association: "OWNER", body: gateMarker(999, 102, head) },
+          { id: 3, created_at: "2026-08-01T03:00:00Z", author_association: "OWNER", body: gateMarker(500, 101, head) },
+          { id: 4, created_at: "2026-08-01T03:00:00Z", author_association: "COLLABORATOR", body: gateMarker(500, 101, head) },
+        ];
+        return [];
+      }
+      throw new Error(`unexpected argv ${argv.join(" ")}`);
+    });
+
+    const result = await metrics(runner, "2026-08-01T00:00:00Z", new Date("2026-08-03T00:00:00Z"));
+    expect(result.mergedPullRequests).toBe(1);
+    expect(result.gatedPullRequests).toBe(1);
+    expect(result.durations.openToGate).toEqual({ sampleSize: 1, median: 10800, p90: 10800 });
+  });
+
+  test("refuses a REST pull pagination cap instead of returning partial metrics", async () => {
+    const page = Array.from({ length: 100 }, (_, index) => ({ number: index + 1, created_at: "2026-08-01T00:00:00Z", merged_at: null, state: "OPEN", labels: [], head: { sha: "a".repeat(40) } }));
+    const runner = priorityRunner((argv) => {
+      if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };
+      if ((argv[2] ?? "").includes("/issues?state=all")) return [];
+      if ((argv[2] ?? "").includes("/pulls?state=all")) return page;
+      throw new Error(`unexpected argv ${argv.join(" ")}`);
+    });
+
+    await expect(metrics(runner, "2026-08-01T00:00:00Z", new Date("2026-08-03T00:00:00Z"))).rejects.toThrow("reached pagination cap");
+  });
+
+  test("refuses malformed issue and trusted comment timestamps before queue ordering", async () => {
+    const malformedIssue = priorityRunner((argv) => {
+      if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };
+      if ((argv[2] ?? "").includes("/issues?state=open")) return [{ number: 1, state: "OPEN", labels: [], createdAt: "not-a-time" }];
+      throw new Error(`unexpected argv ${argv.join(" ")}`);
+    });
+    await expect(queue(malformedIssue)).rejects.toThrow("must be an ISO timestamp");
+
+    const malformedComment = priorityRunner((argv) => {
+      if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };
+      if ((argv[2] ?? "").includes("/issues?state=open")) return [{ number: 1, state: "OPEN", labels: [], createdAt: "2026-08-01T00:00:00Z" }];
+      if ((argv[2] ?? "").includes("comments")) return [{ id: 1, created_at: "not-a-time", author_association: "OWNER", body: encodePriorityMarker(assessment) }];
+      throw new Error(`unexpected argv ${argv.join(" ")}`);
+    });
+    await expect(queue(malformedComment)).rejects.toThrow("must be an ISO timestamp");
+  });
+
+  test("reports a concurrent priority write as superseded when its POST id is no longer current", async () => {
+    const marker = encodePriorityMarker({ ...assessment, rationale: "Concurrent update." });
+    let reads = 0;
+    const runner: Runner = {
+      async run(argv) {
+        if (argv[1] === "repo") return { exitCode: 0, stderr: "", stdout: JSON.stringify({ nameWithOwner: "o/r", defaultBranchRef: { name: "main" } }) };
+        if (argv[2] === "repos/o/r/issues/1036") return { exitCode: 0, stderr: "", stdout: JSON.stringify({ number: 1036, state: "open" }) };
+        if ((argv[2] ?? "").includes("comments") && argv.includes("--method")) return { exitCode: 0, stderr: "", stdout: JSON.stringify({ id: 1 }) };
+        if ((argv[2] ?? "").includes("comments")) {
+          reads += 1;
+          return { exitCode: 0, stderr: "", stdout: JSON.stringify(reads === 1 ? [] : [{ id: 2, created_at: "2026-08-02T00:00:00Z", author_association: "OWNER", body: marker }]) };
+        }
+        throw new Error(`unexpected argv ${argv.join(" ")}`);
+      },
+    };
+
+    await expect(prioritize(runner, assessment, true)).resolves.toMatchObject({ accepted: false, violations: ["priority assessment was superseded before confirmation"] });
   });
 });

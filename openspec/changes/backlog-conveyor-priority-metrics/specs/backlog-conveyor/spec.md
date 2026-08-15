@@ -3,9 +3,9 @@
 ### Requirement: The conveyor SHALL record explainable priority assessments without provider identity authority
 
 The conveyor SHALL accept `prioritize --manifest <path> [--apply] [--json]` with a version 1
-manifest containing a positive existing open issue, opaque non-empty provider, integer impact, urgency,
+manifest containing a positive existing open issue, opaque trimmed provider of at most 256 characters, integer impact, urgency,
 unblock, and riskReduction values in 0..5, confidence and effort values in 1..5, and a concise
-rationale. It SHALL derive, rather than accept, the two-decimal score
+trimmed rationale of at most 280 characters. It SHALL derive, rather than accept, the two-decimal score
 `round(((4*impact + 3*urgency + 2*unblock + 2*riskReduction) * confidence / effort) * 100) / 100`.
 The command SHALL remain dry-run unless applied, publish a versioned structured marker when
 needed, trust only OWNER, MEMBER, or COLLABORATOR markers, and reread all pages after a write.

@@ -457,6 +457,21 @@ export async function loadChecks(runner: Runner, repo: Pick<Repository, "owner" 
 
 const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const pageCap = 100;
+const phase3Concurrency = 4;
+
+export async function mapBounded<T, U>(values: T[], limit: number, map: (value: T, index: number) => Promise<U>): Promise<U[]> {
+  const results = new Array<U>(values.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= values.length) return;
+      results[index] = await map(values[index]!, index);
+    }
+  }));
+  return results;
+}
 
 async function pagedArray(runner: Runner, endpoint: (page: number) => string, source: string): Promise<unknown[]> {
   const values: unknown[] = [];
@@ -474,7 +489,7 @@ function priorityComments(values: unknown[], source: string): PriorityComment[] 
     return {
       marker: requiredString(comment.body, `${source}[${index}].body`),
       authorAssociation: requiredString(comment.author_association, `${source}[${index}].author_association`),
-      createdAt: requiredString(comment.created_at, `${source}[${index}].created_at`),
+      createdAt: timestamp(comment.created_at, `${source}[${index}].created_at`),
       databaseId: requiredNumber(comment.id, `${source}[${index}].id`),
     };
   });
@@ -510,14 +525,14 @@ interface QueueIssue { number: number; state: string; labels: string[]; createdA
 async function loadPriorityIssues(runner: Runner, repo: Pick<Repository, "owner" | "name">, state: "open" | "all" = "open"): Promise<QueueIssue[]> {
   return pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues?state=${state}&per_page=100&page=${page}`, "gh api priority issues").then((values) => values.map((entry, index) => {
     const issue = requiredRecord(entry, `priority issue[${index}]`);
-    return { number: requiredNumber(issue.number, `priority issue[${index}].number`), state: requiredString(issue.state, `priority issue[${index}].state`).toUpperCase(), labels: labels(issue.labels, `priority issue[${index}].labels`), createdAt: requiredString(issue.createdAt ?? issue.created_at, `priority issue[${index}].createdAt`), isPullRequest: issue.pull_request !== undefined && issue.pull_request !== null };
+    return { number: requiredNumber(issue.number, `priority issue[${index}].number`), state: requiredString(issue.state, `priority issue[${index}].state`).toUpperCase(), labels: labels(issue.labels, `priority issue[${index}].labels`), createdAt: timestamp(issue.createdAt ?? issue.created_at, `priority issue[${index}].createdAt`), isPullRequest: issue.pull_request !== undefined && issue.pull_request !== null };
   }));
 }
 
 export async function queue(runner: Runner, label?: string, limit?: number): Promise<{ entries: QueueEntry[] }> {
   const repo = await repository(runner);
   const issues = (await loadPriorityIssues(runner, repo)).filter((issue) => !issue.isPullRequest && !issue.labels.some((candidate) => candidate === "WIP" || candidate === "needs-decision" || candidate === "wontfix") && (label === undefined || issue.labels.includes(label)));
-  const entries = sortQueue(await Promise.all(issues.map(async (issue) => ({ ...issue, assessment: (await loadPriorityAssessment(runner, repo, issue.number))?.assessment ?? null }))));
+  const entries = sortQueue(await mapBounded(issues, phase3Concurrency, async (issue) => ({ ...issue, assessment: (await loadPriorityAssessment(runner, repo, issue.number))?.assessment ?? null })));
   return { entries: limit === undefined ? entries : entries.slice(0, limit) };
 }
 
@@ -531,7 +546,7 @@ async function loadHistoricalGate(runner: Runner, repo: Pick<Repository, "owner"
     const marker = parseGateMarker(body);
     if (body.includes("<!-- kesha-backlog-gate:v1 ") && marker === null) throw new OperationalError("trusted gate marker is malformed");
     if (!marker || marker.pr !== pullRequest.number || pullRequest.closingIssueNumbers.length !== 1 || marker.issue !== pullRequest.closingIssueNumbers[0] || marker.evidence.headSha !== pullRequest.headSha) continue;
-    valid.push({ createdAt: requiredString(comment.created_at, `gate comment[${index}].created_at`), databaseId: requiredNumber(comment.id, `gate comment[${index}].id`) });
+    valid.push({ createdAt: timestamp(comment.created_at, `gate comment[${index}].created_at`), databaseId: requiredNumber(comment.id, `gate comment[${index}].id`) });
   }
   valid.sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.databaseId - right.databaseId);
   return valid.at(-1)?.createdAt ?? null;
@@ -541,20 +556,20 @@ export async function metrics(runner: Runner, since: string, now = new Date()) {
   const repo = await repository(runner);
   const issues = await loadPriorityIssues(runner, repo, "all");
   const raw = await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/pulls?state=all&per_page=100&page=${page}`, "gh api metrics pull requests");
-  const pullRequests: LifecyclePullRequest[] = await Promise.all(raw.map(async (entry, index) => {
+  const pullRequests: LifecyclePullRequest[] = await mapBounded(raw, phase3Concurrency, async (entry, index) => {
     const pullRequest = requiredRecord(entry, `metrics pull request[${index}]`);
     const number = requiredNumber(pullRequest.number, `metrics pull request[${index}].number`);
     const closingIssueNumbers = await loadMetricClosingIssues(runner, repo, number);
     const head = requiredRecord(pullRequest.head, `metrics pull request[${index}].head`);
     return {
       number,
-      createdAt: requiredString(pullRequest.created_at, `metrics pull request[${index}].created_at`),
-      mergedAt: optionalString(pullRequest.merged_at, `metrics pull request[${index}].merged_at`),
+      createdAt: timestamp(pullRequest.created_at, `metrics pull request[${index}].created_at`),
+      mergedAt: pullRequest.merged_at === null ? null : timestamp(pullRequest.merged_at, `metrics pull request[${index}].merged_at`),
       gateAt: await loadHistoricalGate(runner, repo, { number, headSha: requiredString(head.sha, `metrics pull request[${index}].head.sha`), closingIssueNumbers }),
       state: requiredString(pullRequest.state, `metrics pull request[${index}].state`),
       labels: labels(pullRequest.labels, `metrics pull request[${index}].labels`),
     };
-  }));
+  });
   const metricIssues: LifecycleIssue[] = issues.filter((issue) => !issue.isPullRequest).map((issue) => ({ number: issue.number, state: issue.state, labels: issue.labels, createdAt: issue.createdAt }));
   return evaluateMetrics({ since, now: now.toISOString(), issues: metricIssues, pullRequests });
 }
