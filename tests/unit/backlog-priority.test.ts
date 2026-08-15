@@ -257,6 +257,29 @@ describe("conveyor priority boundaries", () => {
     await expect(metrics(runner, "2026-08-01T00:00:00Z", new Date("2026-08-03T00:00:00Z"))).rejects.toThrow("reached pagination cap");
   });
 
+  test("treats non-sole closing issues as ungated and skips GraphQL without a candidate gate", async () => {
+    const head = "a".repeat(40);
+    let graphCalls = 0;
+    const runner = priorityRunner((argv) => {
+      if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };
+      if ((argv[2] ?? "").includes("/issues?state=all")) return [];
+      if ((argv[2] ?? "").includes("/pulls?state=all")) return [
+        { number: 1, created_at: "2026-08-01T00:00:00Z", merged_at: null, state: "OPEN", labels: [], head: { sha: head } },
+        { number: 2, created_at: "2026-08-01T00:00:00Z", merged_at: null, state: "OPEN", labels: [], head: { sha: head } },
+      ];
+      if ((argv[2] ?? "").includes("issues/1/comments")) return [];
+      if ((argv[2] ?? "").includes("issues/2/comments")) return [{ id: 1, created_at: "2026-08-01T01:00:00Z", author_association: "OWNER", body: gateMarker(20, 2, head) }];
+      if (argv[2] === "graphql") {
+        graphCalls += 1;
+        return { data: { repository: { pullRequest: { closingIssuesReferences: { nodes: [{ number: 20 }, { number: 21 }], pageInfo: { hasNextPage: true } } } } } };
+      }
+      throw new Error(`unexpected argv ${argv.join(" ")}`);
+    });
+    const result = await metrics(runner, "2026-08-01T00:00:00Z", new Date("2026-08-02T00:00:00Z"));
+    expect(result.gatedPullRequests).toBe(0);
+    expect(graphCalls).toBe(1);
+  });
+
   test("refuses malformed issue and trusted comment timestamps before queue ordering", async () => {
     const malformedIssue = priorityRunner((argv) => {
       if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };

@@ -50,7 +50,8 @@ counts scan all open issues and merge-ready counts scan all open pull requests r
 `since`. A historical gate is the newest valid marker by `(createdAt, databaseId)`, independent
 of open-PR gate eligibility: it is trusted, strict/digest-valid, has marker PR equal to its
 comment container, marker issue equal to the PR's sole closing issue, and evidence SHA equal to
-the PR head. For valid chronology
+the PR head. A PR without exactly one closing issue is simply ungated, not a report error; the
+closing-issue read occurs only after a trusted container/head-matching candidate marker exists. For valid chronology
 it calculates durations in seconds for `open→gate`, `gate→merge`, and `open→merge`; each reports sample size,
 median (average of middle pair for even samples), and nearest-rank p90 on sorted values. A missing
 sample is null, never zero. Negative, non-finite, or otherwise invalid durations are rejected

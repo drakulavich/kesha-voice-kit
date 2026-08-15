@@ -62,7 +62,8 @@ allow an earlier valid gate for merge-ended samples; and count all currently ope
 open merge-ready pull requests regardless of bounds. A historical gate SHALL be the latest valid
 trusted marker by `(createdAt, databaseId)` whose marker PR equals its comment container, whose
 marker issue equals that PR's sole closing issue, and whose evidence SHA equals that PR head SHA;
-this validation is independent of open-PR gate eligibility. It SHALL report seconds, sample size,
+a PR without exactly one closing issue SHALL be ungated rather than fail the aggregate. This
+validation is independent of open-PR gate eligibility. It SHALL report seconds, sample size,
 median, and nearest-rank p90 for valid PR-open→gate, gate→merge, and PR-open→merge durations with
 stable JSON keys and null for an empty sample; reject negative or non-finite chronology; and never
 read the ignored ledger. Every paginated collection SHALL use REST `per_page=100`, start at page 1,

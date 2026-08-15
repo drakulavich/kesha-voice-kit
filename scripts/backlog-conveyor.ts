@@ -536,20 +536,21 @@ export async function queue(runner: Runner, label?: string, limit?: number): Pro
   return { entries: limit === undefined ? entries : entries.slice(0, limit) };
 }
 
-async function loadHistoricalGate(runner: Runner, repo: Pick<Repository, "owner" | "name">, pullRequest: { number: number; headSha: string; closingIssueNumbers: number[] }): Promise<string | null> {
+interface GateCandidate { issue: number; createdAt: string; databaseId: number }
+
+async function loadHistoricalGateCandidates(runner: Runner, repo: Pick<Repository, "owner" | "name">, pullRequest: { number: number; headSha: string }): Promise<GateCandidate[]> {
   const comments = await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues/${pullRequest.number}/comments?per_page=100&page=${page}`, "gh api gate comments");
-  const valid: Array<{ createdAt: string; databaseId: number }> = [];
+  const valid: GateCandidate[] = [];
   for (const [index, entry] of comments.entries()) {
     const comment = requiredRecord(entry, `gate comment[${index}]`);
     if (!trustedAssociations.has(requiredString(comment.author_association, `gate comment[${index}].author_association`))) continue;
     const body = requiredString(comment.body, `gate comment[${index}].body`);
     const marker = parseGateMarker(body);
     if (body.includes("<!-- kesha-backlog-gate:v1 ") && marker === null) throw new OperationalError("trusted gate marker is malformed");
-    if (!marker || marker.pr !== pullRequest.number || pullRequest.closingIssueNumbers.length !== 1 || marker.issue !== pullRequest.closingIssueNumbers[0] || marker.evidence.headSha !== pullRequest.headSha) continue;
-    valid.push({ createdAt: timestamp(comment.created_at, `gate comment[${index}].created_at`), databaseId: requiredNumber(comment.id, `gate comment[${index}].id`) });
+    if (!marker || marker.pr !== pullRequest.number || marker.evidence.headSha !== pullRequest.headSha) continue;
+    valid.push({ issue: marker.issue, createdAt: timestamp(comment.created_at, `gate comment[${index}].created_at`), databaseId: requiredNumber(comment.id, `gate comment[${index}].id`) });
   }
-  valid.sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.databaseId - right.databaseId);
-  return valid.at(-1)?.createdAt ?? null;
+  return valid;
 }
 
 export async function metrics(runner: Runner, since: string, now = new Date()) {
@@ -559,13 +560,19 @@ export async function metrics(runner: Runner, since: string, now = new Date()) {
   const pullRequests: LifecyclePullRequest[] = await mapBounded(raw, phase3Concurrency, async (entry, index) => {
     const pullRequest = requiredRecord(entry, `metrics pull request[${index}]`);
     const number = requiredNumber(pullRequest.number, `metrics pull request[${index}].number`);
-    const closingIssueNumbers = await loadMetricClosingIssues(runner, repo, number);
     const head = requiredRecord(pullRequest.head, `metrics pull request[${index}].head`);
+    const headSha = requiredString(head.sha, `metrics pull request[${index}].head.sha`);
+    const candidates = await loadHistoricalGateCandidates(runner, repo, { number, headSha });
+    const soleIssue = candidates.length === 0 ? null : await loadMetricClosingIssue(runner, repo, number);
+    const gate = soleIssue === null ? null : candidates
+      .filter((candidate) => candidate.issue === soleIssue)
+      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.databaseId - right.databaseId)
+      .at(-1) ?? null;
     return {
       number,
       createdAt: timestamp(pullRequest.created_at, `metrics pull request[${index}].created_at`),
       mergedAt: pullRequest.merged_at === null ? null : timestamp(pullRequest.merged_at, `metrics pull request[${index}].merged_at`),
-      gateAt: await loadHistoricalGate(runner, repo, { number, headSha: requiredString(head.sha, `metrics pull request[${index}].head.sha`), closingIssueNumbers }),
+      gateAt: gate?.createdAt ?? null,
       state: requiredString(pullRequest.state, `metrics pull request[${index}].state`).toUpperCase(),
       labels: labels(pullRequest.labels, `metrics pull request[${index}].labels`),
     };
@@ -576,11 +583,12 @@ export async function metrics(runner: Runner, since: string, now = new Date()) {
 
 const metricClosingIssueQuery = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { closingIssuesReferences(first: 2) { nodes { number } pageInfo { hasNextPage } } } } }`;
 
-async function loadMetricClosingIssues(runner: Runner, repo: Pick<Repository, "owner" | "name">, number: number): Promise<number[]> {
+async function loadMetricClosingIssue(runner: Runner, repo: Pick<Repository, "owner" | "name">, number: number): Promise<number | null> {
   const raw = requiredRecord(await runJson(runner, ["gh", "api", "graphql", "-f", `query=${metricClosingIssueQuery}`, "-F", `owner=${repo.owner}`, "-F", `name=${repo.name}`, "-F", `number=${number}`], "gh api metric closing issues"), "gh api metric closing issues");
   const references = requiredRecord(requiredRecord(requiredRecord(requiredRecord(raw.data, "metric closing issues.data").repository, "metric closing issues.repository").pullRequest, "metric closing issues.pullRequest").closingIssuesReferences, "metric closing issues.references");
-  if (requiredBoolean(requiredRecord(references.pageInfo, "metric closing issues.pageInfo").hasNextPage, "metric closing issues.pageInfo.hasNextPage")) throw new OperationalError("metric closing issue references are incomplete");
-  return closingIssues(references.nodes, "metric closing issues.nodes");
+  if (requiredBoolean(requiredRecord(references.pageInfo, "metric closing issues.pageInfo").hasNextPage, "metric closing issues.pageInfo.hasNextPage")) return null;
+  const issues = closingIssues(references.nodes, "metric closing issues.nodes");
+  return issues.length === 1 ? issues[0]! : null;
 }
 
 export async function loadMarker(runner: Runner, repo: Pick<Repository, "owner" | "name">, pr: number): Promise<GateMarker | null> {
