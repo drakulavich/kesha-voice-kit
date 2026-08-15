@@ -24,6 +24,13 @@ function ttlSeconds(raw: string | undefined): number {
   return parsed;
 }
 
+function queueLimit(raw: string | undefined): number {
+  if (!raw || !/^\d+$/.test(raw)) usage("--limit requires a positive integer");
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 1000) usage("--limit must be between 1 and 1000");
+  return parsed;
+}
+
 function issueNumber(flag: string, raw: string | undefined): number {
   if (!raw || !/^[1-9]\d*$/.test(raw)) usage(`${flag} requires a positive integer`);
   return Number(raw);
@@ -58,7 +65,7 @@ function parseArgs(argv: string[]): Command {
     else if (arg === "--holder") holder = argv.shift() ?? usage("--holder needs an opaque value");
     else if (arg === "--ttl-seconds") leaseTtl = ttlSeconds(argv.shift());
     else if (arg === "--label") label = argv.shift() ?? usage("--label needs a name");
-    else if (arg === "--limit") limit = ttlSeconds(argv.shift());
+    else if (arg === "--limit") limit = queueLimit(argv.shift());
     else if (arg === "--since") since = argv.shift() ?? usage("--since needs an ISO timestamp");
     else usage(`unknown argument '${arg}'`);
   }

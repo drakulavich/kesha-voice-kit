@@ -144,6 +144,7 @@ describe("conveyor priority boundaries", () => {
         { number: 10, state: "OPEN", labels: [], createdAt: "2026-08-02T00:00:00Z" },
         { number: 11, state: "OPEN", labels: [], createdAt: "2026-08-01T00:00:00Z" },
         { number: 12, state: "OPEN", labels: [{ name: "WIP" }], createdAt: "2026-08-01T00:00:00Z" },
+        { number: 13, state: "OPEN", labels: [], createdAt: "2026-08-01T00:00:00Z", pull_request: { url: "https://example.test/pr/13" } },
       ];
       const target = argv[2] ?? "";
       if (target.includes("issues/10/comments") && target.endsWith("page=1")) return Array.from({ length: 100 }, (_, index) => ({ id: index + 1, created_at: "2026-08-01T00:00:00Z", author_association: "MEMBER", body: index === 99 ? older : "ordinary" }));
@@ -171,7 +172,8 @@ describe("conveyor priority boundaries", () => {
     const runner = priorityRunner((argv) => {
       if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };
       if ((argv[2] ?? "").includes("/issues?state=all")) return [];
-      if (argv[1] === "pr") return [{ number: 2, createdAt: "2026-08-01T00:00:00Z", mergedAt: null, state: "OPEN", labels: [], headRefOid: "a".repeat(40), closingIssuesReferences: [] }];
+      if ((argv[2] ?? "").includes("/pulls?state=all")) return [{ number: 2, created_at: "2026-08-01T00:00:00Z", merged_at: null, state: "OPEN", labels: [], head: { sha: "a".repeat(40) } }];
+      if (argv[2] === "graphql") return { data: { repository: { pullRequest: { closingIssuesReferences: { nodes: [], pageInfo: { hasNextPage: false } } } } } };
       if ((argv[2] ?? "").includes("comments")) return [{ id: 1, created_at: "2026-08-02T00:00:00Z", author_association: "OWNER", body: gate }];
       throw new Error(`unexpected argv ${argv.join(" ")}`);
     });

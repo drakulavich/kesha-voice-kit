@@ -32,7 +32,7 @@ idempotent with no new comment.
 `queue` reads all open issues and all relevant issue-comment pages through REST `per_page=100`
 pages from 1 through a finite cap, stopping only on a short page and failing at a cap without one.
 It excludes WIP, needs-decision, and wontfix labelled issues, and it never includes pull requests.
-Optional label filtering is exact. `--limit` is a bounded positive integer applied after sorting.
+Optional label filtering is exact. `--limit` is an integer in 1..1000 applied after sorting.
 The result sorts assessed issues by descending score, then oldest
 `createdAt`, then issue number; visible unassessed issues have score zero and come after every
 assessed issue. It emits component dimensions and rationale, not an inferred explanation. Any

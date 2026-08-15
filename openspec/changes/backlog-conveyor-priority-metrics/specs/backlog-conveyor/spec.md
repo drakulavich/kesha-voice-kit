@@ -33,8 +33,8 @@ The conveyor SHALL expose `queue [--label <name>] [--limit <N>] [--json]` as a r
 of open issues and trusted priority markers. It SHALL exclude WIP, needs-decision, and wontfix
 labels and pull requests; sort assessed entries by descending score, then oldest creation time,
 then issue number; and place visible unassessed entries at score zero after assessed entries.
-It SHALL emit score components and rationale, honour an exact optional label, apply a bounded
-positive integer limit only after ordering, and fail closed on incomplete pagination or malformed
+It SHALL emit score components and rationale, honour an exact optional label, apply an integer
+limit in 1..1000 only after ordering, and fail closed on incomplete pagination or malformed
 trusted markers. Every paginated collection SHALL use REST `per_page=100`, start at page 1, stop
 only after a short page, and fail when its finite cap is reached without a short page.
 

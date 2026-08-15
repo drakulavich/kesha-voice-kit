@@ -505,18 +505,18 @@ export async function prioritize(runner: Runner, assessment: PriorityAssessment,
   return { findings: ["priority assessment accepted"], refusals: [], safeActions: [], violations: [], accepted: true, assessment: after.assessment, score: after.score };
 }
 
-interface QueueIssue { number: number; state: string; labels: string[]; createdAt: string }
+interface QueueIssue { number: number; state: string; labels: string[]; createdAt: string; isPullRequest: boolean }
 
 async function loadPriorityIssues(runner: Runner, repo: Pick<Repository, "owner" | "name">, state: "open" | "all" = "open"): Promise<QueueIssue[]> {
   return pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues?state=${state}&per_page=100&page=${page}`, "gh api priority issues").then((values) => values.map((entry, index) => {
     const issue = requiredRecord(entry, `priority issue[${index}]`);
-    return { number: requiredNumber(issue.number, `priority issue[${index}].number`), state: requiredString(issue.state, `priority issue[${index}].state`).toUpperCase(), labels: labels(issue.labels, `priority issue[${index}].labels`), createdAt: requiredString(issue.createdAt ?? issue.created_at, `priority issue[${index}].createdAt`) };
+    return { number: requiredNumber(issue.number, `priority issue[${index}].number`), state: requiredString(issue.state, `priority issue[${index}].state`).toUpperCase(), labels: labels(issue.labels, `priority issue[${index}].labels`), createdAt: requiredString(issue.createdAt ?? issue.created_at, `priority issue[${index}].createdAt`), isPullRequest: issue.pull_request !== undefined && issue.pull_request !== null };
   }));
 }
 
 export async function queue(runner: Runner, label?: string, limit?: number): Promise<{ entries: QueueEntry[] }> {
   const repo = await repository(runner);
-  const issues = (await loadPriorityIssues(runner, repo)).filter((issue) => !issue.labels.some((candidate) => candidate === "WIP" || candidate === "needs-decision" || candidate === "wontfix") && (label === undefined || issue.labels.includes(label)));
+  const issues = (await loadPriorityIssues(runner, repo)).filter((issue) => !issue.isPullRequest && !issue.labels.some((candidate) => candidate === "WIP" || candidate === "needs-decision" || candidate === "wontfix") && (label === undefined || issue.labels.includes(label)));
   const entries = sortQueue(await Promise.all(issues.map(async (issue) => ({ ...issue, assessment: (await loadPriorityAssessment(runner, repo, issue.number))?.assessment ?? null }))));
   return { entries: limit === undefined ? entries : entries.slice(0, limit) };
 }
@@ -540,23 +540,32 @@ async function loadHistoricalGate(runner: Runner, repo: Pick<Repository, "owner"
 export async function metrics(runner: Runner, since: string, now = new Date()) {
   const repo = await repository(runner);
   const issues = await loadPriorityIssues(runner, repo, "all");
-  const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "all", "--limit", "1000", "--json", "number,state,createdAt,mergedAt,headRefOid,labels,closingIssuesReferences"], "gh pr metrics list"), "gh pr metrics list");
-  if (raw.length === 1000) throw new OperationalError("metrics pull request list reached limit; refusing incomplete result");
+  const raw = await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/pulls?state=all&per_page=100&page=${page}`, "gh api metrics pull requests");
   const pullRequests: LifecyclePullRequest[] = await Promise.all(raw.map(async (entry, index) => {
     const pullRequest = requiredRecord(entry, `metrics pull request[${index}]`);
     const number = requiredNumber(pullRequest.number, `metrics pull request[${index}].number`);
-    const closingIssueNumbers = closingIssues(pullRequest.closingIssuesReferences, `metrics pull request[${index}].closingIssuesReferences`);
+    const closingIssueNumbers = await loadMetricClosingIssues(runner, repo, number);
+    const head = requiredRecord(pullRequest.head, `metrics pull request[${index}].head`);
     return {
       number,
-      createdAt: requiredString(pullRequest.createdAt, `metrics pull request[${index}].createdAt`),
-      mergedAt: optionalString(pullRequest.mergedAt, `metrics pull request[${index}].mergedAt`),
-      gateAt: await loadHistoricalGate(runner, repo, { number, headSha: requiredString(pullRequest.headRefOid, `metrics pull request[${index}].headRefOid`), closingIssueNumbers }),
+      createdAt: requiredString(pullRequest.created_at, `metrics pull request[${index}].created_at`),
+      mergedAt: optionalString(pullRequest.merged_at, `metrics pull request[${index}].merged_at`),
+      gateAt: await loadHistoricalGate(runner, repo, { number, headSha: requiredString(head.sha, `metrics pull request[${index}].head.sha`), closingIssueNumbers }),
       state: requiredString(pullRequest.state, `metrics pull request[${index}].state`),
       labels: labels(pullRequest.labels, `metrics pull request[${index}].labels`),
     };
   }));
-  const metricIssues: LifecycleIssue[] = issues.map((issue) => ({ number: issue.number, state: issue.state, labels: issue.labels, createdAt: issue.createdAt }));
+  const metricIssues: LifecycleIssue[] = issues.filter((issue) => !issue.isPullRequest).map((issue) => ({ number: issue.number, state: issue.state, labels: issue.labels, createdAt: issue.createdAt }));
   return evaluateMetrics({ since, now: now.toISOString(), issues: metricIssues, pullRequests });
+}
+
+const metricClosingIssueQuery = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { closingIssuesReferences(first: 2) { nodes { number } pageInfo { hasNextPage } } } } }`;
+
+async function loadMetricClosingIssues(runner: Runner, repo: Pick<Repository, "owner" | "name">, number: number): Promise<number[]> {
+  const raw = requiredRecord(await runJson(runner, ["gh", "api", "graphql", "-f", `query=${metricClosingIssueQuery}`, "-F", `owner=${repo.owner}`, "-F", `name=${repo.name}`, "-F", `number=${number}`], "gh api metric closing issues"), "gh api metric closing issues");
+  const references = requiredRecord(requiredRecord(requiredRecord(requiredRecord(raw.data, "metric closing issues.data").repository, "metric closing issues.repository").pullRequest, "metric closing issues.pullRequest").closingIssuesReferences, "metric closing issues.references");
+  if (requiredBoolean(requiredRecord(references.pageInfo, "metric closing issues.pageInfo").hasNextPage, "metric closing issues.pageInfo.hasNextPage")) throw new OperationalError("metric closing issue references are incomplete");
+  return closingIssues(references.nodes, "metric closing issues.nodes");
 }
 
 export async function loadMarker(runner: Runner, repo: Pick<Repository, "owner" | "name">, pr: number): Promise<GateMarker | null> {
