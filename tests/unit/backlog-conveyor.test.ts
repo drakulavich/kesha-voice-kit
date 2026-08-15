@@ -725,7 +725,9 @@ describe("backlog resource leases", () => {
     const root = leaseDirectory(common);
     const source = new URL("../../scripts/backlog-conveyor.ts", import.meta.url).pathname;
     const code = `import { acquireLease } from ${JSON.stringify(source)}; console.log(acquireLease(${JSON.stringify(root)}, { resource: \"preflight\", holder: process.argv[1], ttlSeconds: 60 }, new Date(\"2026-08-15T12:00:00.000Z\")).state);`;
-    const processes = ["lane-a", "lane-b"].map((holder) => Bun.spawn([process.execPath, "--eval", code, holder], { stdout: "pipe", stderr: "pipe" }));
+    const bun = Bun.which("bun");
+    if (!bun) throw new Error("bun executable is unavailable");
+    const processes = ["lane-a", "lane-b"].map((holder) => Bun.spawn([bun, "--eval", code, holder], { stdout: "pipe", stderr: "pipe" }));
     const output = await Promise.all(processes.map(async (process) => ({ exitCode: await process.exited, stdout: (await new Response(process.stdout).text()).trim(), stderr: await new Response(process.stderr).text() })));
 
     expect(output).toEqual(expect.arrayContaining([expect.objectContaining({ exitCode: 0 }), expect.objectContaining({ exitCode: 0 })]));
@@ -737,7 +739,9 @@ describe("backlog resource leases", () => {
     acquireLease(root, { resource: "preflight", holder: "expired-owner", ttlSeconds: 1 }, new Date("2026-08-15T10:00:00.000Z"));
     const source = new URL("../../scripts/backlog-conveyor.ts", import.meta.url).pathname;
     const code = `import { acquireLease } from ${JSON.stringify(source)}; console.log(acquireLease(${JSON.stringify(root)}, { resource: \"preflight\", holder: process.argv[1], ttlSeconds: 60 }, new Date(\"2026-08-15T12:00:00.000Z\")).state);`;
-    const processes = ["lane-a", "lane-b"].map((holder) => Bun.spawn([process.execPath, "--eval", code, holder], { stdout: "pipe", stderr: "pipe" }));
+    const bun = Bun.which("bun");
+    if (!bun) throw new Error("bun executable is unavailable");
+    const processes = ["lane-a", "lane-b"].map((holder) => Bun.spawn([bun, "--eval", code, holder], { stdout: "pipe", stderr: "pipe" }));
     const output = await Promise.all(processes.map(async (process) => ({ exitCode: await process.exited, stdout: (await new Response(process.stdout).text()).trim() })));
 
     expect(output).toEqual(expect.arrayContaining([expect.objectContaining({ exitCode: 0, stdout: "acquired" }), expect.objectContaining({ exitCode: 0, stdout: "refused" })]));
