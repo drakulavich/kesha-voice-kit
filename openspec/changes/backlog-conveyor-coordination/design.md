@@ -49,11 +49,13 @@ private temporary file and atomically published with an exclusive hard link, so 
 can never observe or own a partially-written winning state.
 
 A live lease from another holder is a refusal. Repeating acquisition by the same holder is
-idempotent. Expired well-formed state is removed only as part of a new acquisition; racing
-reclaimers can remove the old state, but only the process whose exclusive publish succeeds
-owns the replacement. Release accepts only the recorded holder and removes only a live,
-well-formed lease; expired or absent state is already released. Unknown, malformed,
-symlinked, or escaping state is refused rather than removed.
+idempotent. An atomically-created per-resource operation guard serializes expiry recovery
+and release, so a stale reclaimer cannot unlink a lease another reclaimer just published.
+A guard that survives a crashed operation is fail-closed rather than guessed away. Expired
+well-formed state is removed only while that guard is held. Release accepts only the recorded
+holder and removes only a live, well-formed lease; expired or absent state is already
+released. `status` never creates lease storage. Unknown, malformed, symlinked, or escaping
+state is refused rather than removed.
 
 ### Existing report and execution conventions remain the public boundary
 

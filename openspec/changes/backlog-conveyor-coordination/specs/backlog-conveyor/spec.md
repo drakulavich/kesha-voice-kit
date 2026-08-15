@@ -67,9 +67,11 @@ opaque non-empty holder, and bounded TTL. The lease state SHALL be visible from 
 worktree through the repository's shared Git common directory and SHALL record a version,
 resource, holder, acquisition and expiry times, host, and pid. Acquisition SHALL yield one
 atomic winner; a live lease from another holder SHALL refuse safely. Expired well-formed
-state SHALL be recoverable by a contender, while release SHALL be idempotent and SHALL NOT
-release another holder's live lease. Unknown, malformed, symlinked, or path-escaping state
-SHALL fail closed without force deletion.
+state SHALL be recoverable by a contender under an atomic per-resource operation guard,
+while release SHALL be idempotent and SHALL NOT release another holder's live lease. A
+surviving operation guard SHALL fail closed rather than be force-deleted. `status` SHALL NOT
+create storage. Unknown, malformed, symlinked, or path-escaping state SHALL fail closed
+without force deletion.
 
 #### Scenario: Ira acquires a shared heavy resource
 

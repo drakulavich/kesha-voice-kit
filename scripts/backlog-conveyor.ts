@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export const REPORT_SCHEMA_VERSION = 1;
 
@@ -27,6 +28,55 @@ export interface GateEvidence {
   headSha: string;
   uri: string;
   digest: string;
+}
+
+export interface ClaimManifest {
+  version: 1;
+  issue: number;
+  holder: string;
+  paths: string[];
+  ttlSeconds: number;
+}
+
+export interface ClaimMarker {
+  version: 1;
+  action: "claim" | "release";
+  manifest: ClaimManifest;
+  expiresAt: string | null;
+}
+
+export interface ClaimRecord {
+  issue: number;
+  state: string;
+  labels: string[];
+  authorAssociation: string;
+  createdAt: string;
+  id: number;
+  marker: ClaimMarker;
+}
+
+export interface CollisionPlan {
+  edges: Array<{ source: "claim" | "pull-request" | "worktree"; issue?: number; pr?: number; path: string }>;
+  self: Array<{ source: "claim" | "pull-request" | "worktree"; issue?: number; pr?: number; path: string }>;
+  idempotent: boolean;
+  expiresAt: string | null;
+  rejectedClaimIds: number[];
+}
+
+export interface LeaseState {
+  version: 1;
+  resource: string;
+  holder: string;
+  acquiredAt: string;
+  expiresAt: string;
+  host: string;
+  pid: number;
+}
+
+export interface LeaseResult {
+  state: "acquired" | "already-owned" | "refused" | "released" | "absent" | "held" | "expired";
+  lease: LeaseState | null;
+  recovered?: boolean;
 }
 
 type GateEvidencePayload = Omit<GateEvidence, "digest">;
@@ -88,7 +138,7 @@ export interface CloseFacts {
 export interface Evaluation {
   violations: string[];
   refusals: string[];
-  safeActions: Array<{ kind: "add-merge-ready" | "remove-merge-ready" | "remove-wip" | "remove-worktree" | "create-marker"; pr?: number; issue?: number; path?: string; marker?: GateMarker }>;
+  safeActions: Array<{ kind: "add-merge-ready" | "remove-merge-ready" | "remove-wip" | "remove-worktree" | "create-marker" | "create-claim" | "release-claim"; pr?: number; issue?: number; path?: string; marker?: GateMarker | ClaimMarker }>;
   findings: string[];
 }
 
@@ -155,6 +205,120 @@ function optionalNumber(value: unknown, source: string): number | null {
   return requiredNumber(value, source);
 }
 
+function timestamp(value: unknown, source: string): string {
+  const text = requiredString(value, source);
+  if (Number.isNaN(Date.parse(text))) throw new OperationalError(`${source} must be an ISO timestamp`);
+  return text;
+}
+
+function normalizedPath(value: unknown, source: string): string {
+  const path = requiredString(value, source);
+  if (isAbsolute(path) || path.includes("\\") || path.includes("*") || path.endsWith("/")) throw new OperationalError(`${source} must be a normalized repository-relative path`);
+  const segments = path.split("/");
+  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) throw new OperationalError(`${source} must be a normalized repository-relative path`);
+  return path;
+}
+
+function boundedTtl(value: unknown, source: string): number {
+  const ttl = requiredNumber(value, source);
+  if (ttl < 1 || ttl > 86_400) throw new OperationalError(`${source} must be between 1 and 86400 seconds`);
+  return ttl;
+}
+
+export function parseClaimManifest(value: unknown, source = "claim manifest"): ClaimManifest {
+  const manifest = requiredRecord(value, source);
+  if (manifest.version !== 1) throw new OperationalError(`${source}.version must equal 1`);
+  const issue = requiredNumber(manifest.issue, `${source}.issue`);
+  if (issue < 1) throw new OperationalError(`${source}.issue must be positive`);
+  const holder = requiredString(manifest.holder, `${source}.holder`);
+  const paths = requiredArray(manifest.paths, `${source}.paths`).map((path, index) => normalizedPath(path, `${source}.paths[${index}]`));
+  if (paths.length === 0) throw new OperationalError(`${source}.paths must not be empty`);
+  const canonicalPaths = [...new Set(paths)].sort();
+  return { version: 1, issue, holder, paths: canonicalPaths, ttlSeconds: boundedTtl(manifest.ttlSeconds, `${source}.ttlSeconds`) };
+}
+
+function sameManifest(left: ClaimManifest, right: ClaimManifest): boolean {
+  return left.issue === right.issue && left.holder === right.holder && left.ttlSeconds === right.ttlSeconds && left.paths.length === right.paths.length && left.paths.every((path, index) => path === right.paths[index]);
+}
+
+export function encodeClaimMarker(marker: ClaimMarker): string {
+  return `<!-- kesha-backlog-claim:v1 ${JSON.stringify(marker)} -->`;
+}
+
+export function parseClaimMarker(body: string): ClaimMarker | null {
+  const match = /<!-- kesha-backlog-claim:v1 (\{.*\}) -->/.exec(body);
+  if (!match?.[1]) return null;
+  try {
+    const marker = requiredRecord(JSON.parse(match[1]), "claim marker");
+    if (marker.version !== 1) return null;
+    const action = requiredString(marker.action, "claim marker.action");
+    if (action !== "claim" && action !== "release") return null;
+    const expiresAt = marker.expiresAt === null || marker.expiresAt === undefined ? null : timestamp(marker.expiresAt, "claim marker.expiresAt");
+    if (action === "claim" && expiresAt === null) return null;
+    return { version: 1, action, manifest: parseClaimManifest(marker.manifest, "claim marker.manifest"), expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+function pathOverlap(left: string[], right: string[]): string | null {
+  for (const candidate of left) {
+    if (right.some((other) => candidate === other || candidate.startsWith(`${other}/`) || other.startsWith(`${candidate}/`))) return candidate;
+  }
+  return null;
+}
+
+function claimOrder(left: ClaimRecord, right: ClaimRecord): number {
+  return left.createdAt.localeCompare(right.createdAt) || left.id - right.id;
+}
+
+function isLiveClaim(record: ClaimRecord, now: Date): boolean {
+  return record.marker.action === "claim" && record.state === "OPEN" && record.labels.includes("WIP") && trustedAssociations.has(record.authorAssociation) && record.marker.expiresAt !== null && Date.parse(record.marker.expiresAt) > now.getTime();
+}
+
+function acceptedClaims(records: ClaimRecord[], now: Date): { accepted: ClaimRecord[]; rejected: ClaimRecord[] } {
+  const accepted: ClaimRecord[] = [];
+  const rejected: ClaimRecord[] = [];
+  for (const record of records.filter((candidate) => isLiveClaim(candidate, now)).sort(claimOrder)) {
+    if (accepted.some((previous) => pathOverlap(previous.marker.manifest.paths, record.marker.manifest.paths) !== null)) rejected.push(record);
+    else accepted.push(record);
+  }
+  return { accepted, rejected };
+}
+
+export function evaluateCollisionPlan(manifest: ClaimManifest, facts: {
+  claims: ClaimRecord[];
+  pullRequests: Array<{ number: number; closingIssueNumbers: number[]; files: string[] }>;
+  worktrees: Array<{ branch: string | null; files: string[] }>;
+}, now = new Date()): CollisionPlan {
+  const { accepted, rejected } = acceptedClaims(facts.claims, now);
+  const edges: CollisionPlan["edges"] = [];
+  const self: CollisionPlan["self"] = [];
+  for (const claim of accepted) {
+    const path = pathOverlap(manifest.paths, claim.marker.manifest.paths);
+    if (path === null) continue;
+    const entry = { source: "claim" as const, issue: claim.issue, path };
+    if (claim.issue === manifest.issue) self.push(entry);
+    else edges.push(entry);
+  }
+  for (const pullRequest of facts.pullRequests) {
+    const path = pathOverlap(manifest.paths, pullRequest.files);
+    if (path === null) continue;
+    const entry = { source: "pull-request" as const, pr: pullRequest.number, path };
+    if (pullRequest.closingIssueNumbers.includes(manifest.issue)) self.push(entry);
+    else edges.push(entry);
+  }
+  for (const worktree of facts.worktrees) {
+    const path = pathOverlap(manifest.paths, worktree.files);
+    if (path === null) continue;
+    const entry = { source: "worktree" as const, path };
+    if (issueNumberFromBranch(worktree.branch) === manifest.issue) self.push(entry);
+    else edges.push(entry);
+  }
+  const own = accepted.find((claim) => sameManifest(claim.marker.manifest, manifest)) ?? null;
+  return { edges, self, idempotent: own !== null, expiresAt: own?.marker.expiresAt ?? null, rejectedClaimIds: rejected.map((claim) => claim.id) };
+}
+
 async function runJson(runner: Runner, argv: string[], source: string): Promise<unknown> {
   const result = await runner.run(argv);
   if (result.exitCode !== 0) {
@@ -199,6 +363,7 @@ function sameNumbers(actual: number[], expected: number[]): boolean {
 
 function actionKey(action: Evaluation["safeActions"][number]): string {
   if (action.kind === "create-marker") return `${action.kind}:${action.pr}:${JSON.stringify(action.marker)}`;
+  if (action.kind === "create-claim" || action.kind === "release-claim") return `${action.kind}:${action.issue}:${JSON.stringify(action.marker)}`;
   if (action.kind === "remove-worktree") return `${action.kind}:${action.path}`;
   return `${action.kind}:${action.pr ?? action.issue}`;
 }
@@ -472,6 +637,349 @@ export async function loadMarker(runner: Runner, repo: Pick<Repository, "owner" 
   return null;
 }
 
+export async function loadClaims(runner: Runner, repo: Pick<Repository, "owner" | "name">, issues: Array<{ number: number; state: string; labels: string[] }>, now = new Date()): Promise<ClaimRecord[]> {
+  const markers: ClaimRecord[] = [];
+  for (const issue of issues) {
+    if (issue.state !== "OPEN" || !issue.labels.includes("WIP")) continue;
+    for (let page = 1; ; page += 1) {
+      const raw = requiredArray(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${issue.number}/comments?per_page=100&page=${page}`], "gh api claim comments"), "gh api claim comments");
+      for (const entry of raw) {
+        const comment = requiredRecord(entry, "claim comment");
+        const authorAssociation = requiredString(comment.author_association, "claim comment.author_association");
+        if (!trustedAssociations.has(authorAssociation)) continue;
+        const marker = parseClaimMarker(requiredString(comment.body, "claim comment.body"));
+        if (!marker || marker.manifest.issue !== issue.number) continue;
+        markers.push({ issue: issue.number, state: issue.state, labels: issue.labels, authorAssociation, createdAt: timestamp(comment.created_at, "claim comment.created_at"), id: requiredNumber(comment.id, "claim comment.id"), marker });
+      }
+      if (raw.length < 100) break;
+    }
+  }
+  const releases = markers.filter((record) => record.marker.action === "release");
+  const claims = markers.filter((record) => record.marker.action === "claim" && !releases.some((release) => sameManifest(release.marker.manifest, record.marker.manifest) && claimOrder(release, record) > 0));
+  void now;
+  return claims.sort(claimOrder);
+}
+
+export async function loadPullRequestFiles(runner: Runner, repo: Pick<Repository, "owner" | "name">, pr: number): Promise<string[]> {
+  const files: string[] = [];
+  for (let page = 1; ; page += 1) {
+    const raw = requiredArray(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/pulls/${pr}/files?per_page=100&page=${page}`], "gh api pull request files"), "gh api pull request files");
+    files.push(...raw.map((entry, index) => normalizedPath(requiredRecord(entry, `pull request files[${index}]`).filename, `pull request files[${index}].filename`)));
+    if (raw.length < 100) break;
+  }
+  return [...new Set(files)].sort();
+}
+
+async function loadOpenPullRequests(runner: Runner, repo: Pick<Repository, "owner" | "name">): Promise<Array<{ number: number; closingIssueNumbers: number[]; files: string[] }>> {
+  const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "open", "--limit", "1000", "--json", "number,closingIssuesReferences"], "gh pr list"), "gh pr list");
+  return Promise.all(raw.map(async (entry, index) => {
+    const pullRequest = requiredRecord(entry, `gh pr list[${index}]`);
+    const number = requiredNumber(pullRequest.number, `gh pr list[${index}].number`);
+    return { number, closingIssueNumbers: closingIssues(pullRequest.closingIssuesReferences, `gh pr list[${index}].closingIssuesReferences`), files: await loadPullRequestFiles(runner, repo, number) };
+  }));
+}
+
+function statusPaths(output: string): string[] {
+  const paths: string[] = [];
+  const entries = output.split("\0");
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry || entry.length < 4) continue;
+    const code = entry.slice(0, 2);
+    paths.push(normalizedPath(entry.slice(3), "git status path"));
+    if ((code[0] === "R" || code[0] === "C" || code[1] === "R" || code[1] === "C") && entries[index + 1]) paths.push(normalizedPath(entries[++index]!, "git status renamed path"));
+  }
+  return [...new Set(paths)].sort();
+}
+
+async function loadCollisionWorktrees(runner: Runner): Promise<Array<{ branch: string | null; files: string[] }>> {
+  const listed = await runner.run(["git", "worktree", "list", "--porcelain"]);
+  if (listed.exitCode !== 0) throw new OperationalError(`git worktree list failed: ${listed.stderr.trim()}`);
+  const result: Array<{ branch: string | null; files: string[] }> = [];
+  for (const worktree of parseWorktrees(listed.stdout)) {
+    if (worktree.branch === null) {
+      result.push({ branch: null, files: [] });
+      continue;
+    }
+    const status = await runner.run(["git", "-C", worktree.path, "status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+    if (status.exitCode !== 0) throw new OperationalError(`git status failed for ${worktree.path}: ${status.stderr.trim()}`);
+    result.push({ branch: worktree.branch, files: statusPaths(status.stdout) });
+  }
+  return result;
+}
+
+async function collisionFacts(runner: Runner, repo: Repository, now: Date): Promise<{ issues: SyncFacts["issues"]; claims: ClaimRecord[]; pullRequests: Array<{ number: number; closingIssueNumbers: number[]; files: string[] }>; worktrees: Array<{ branch: string | null; files: string[] }> }> {
+  const issues = await loadIssues(runner);
+  return { issues, claims: await loadClaims(runner, repo, issues, now), pullRequests: await loadOpenPullRequests(runner, repo), worktrees: await loadCollisionWorktrees(runner) };
+}
+
+function claimEvaluation(plan: CollisionPlan, manifest: ClaimManifest, marker: ClaimMarker | null): Evaluation {
+  if (plan.edges.length > 0) return { findings: [], refusals: [], safeActions: [], violations: ["claim collides with active repository work"] };
+  if (plan.idempotent) return { findings: ["matching live claim already accepted"], refusals: [], safeActions: [], violations: [] };
+  if (marker === null) return { findings: [], refusals: [], safeActions: [], violations: [] };
+  return { findings: [], refusals: [], safeActions: [{ kind: marker.action === "claim" ? "create-claim" : "release-claim", issue: manifest.issue, marker }], violations: [] };
+}
+
+async function postClaimMarker(runner: Runner, repo: Pick<Repository, "owner" | "name">, issue: number, marker: ClaimMarker): Promise<void> {
+  const result = await runner.run(["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${issue}/comments`, "--method", "POST", "-f", `body=${encodeClaimMarker(marker)}`]);
+  if (result.exitCode !== 0) throw new OperationalError(`gh api claim mutation failed (${result.exitCode}): ${result.stderr.trim() || "no error output"}`);
+}
+
+export async function claim(runner: Runner, manifest: ClaimManifest, apply: boolean, now = new Date()): Promise<Evaluation> {
+  const repo = await repository(runner);
+  const before = await collisionFacts(runner, repo, now);
+  const issue = before.issues.find((candidate) => candidate.number === manifest.issue);
+  if (!issue || issue.state !== "OPEN" || !issue.labels.includes("WIP")) return { findings: [], refusals: [], safeActions: [], violations: [`issue #${manifest.issue} must be open and labeled WIP`] };
+  const expiresAt = new Date(now.getTime() + manifest.ttlSeconds * 1000).toISOString();
+  const marker: ClaimMarker = { version: 1, action: "claim", manifest, expiresAt };
+  const initial = claimEvaluation(evaluateCollisionPlan(manifest, before, now), manifest, marker);
+  if (!apply || initial.violations.length > 0 || initial.safeActions.length === 0) return initial;
+  await postClaimMarker(runner, repo, manifest.issue, marker);
+  const after = await collisionFacts(runner, repo, now);
+  const final = evaluateCollisionPlan(manifest, after, now);
+  if (!final.idempotent) return { findings: [], refusals: [], safeActions: [], violations: ["claim lost deterministic collision arbitration"] };
+  return { findings: ["claim acquired"], refusals: [], safeActions: [], violations: [] };
+}
+
+export async function plan(runner: Runner, manifest: ClaimManifest, now = new Date()): Promise<{ evaluation: Evaluation; plan: CollisionPlan }> {
+  const repo = await repository(runner);
+  const facts = await collisionFacts(runner, repo, now);
+  const issue = facts.issues.find((candidate) => candidate.number === manifest.issue);
+  if (!issue || issue.state !== "OPEN" || !issue.labels.includes("WIP")) return { plan: { edges: [], self: [], idempotent: false, expiresAt: null, rejectedClaimIds: [] }, evaluation: { findings: [], refusals: [], safeActions: [], violations: [`issue #${manifest.issue} must be open and labeled WIP`] } };
+  const collisionPlan = evaluateCollisionPlan(manifest, facts, now);
+  return {
+    plan: collisionPlan,
+    evaluation: {
+      findings: collisionPlan.self.map((entry) => `self ${entry.source} overlap at ${entry.path}`),
+      refusals: [],
+      safeActions: [],
+      violations: collisionPlan.edges.map((entry) => `collision with ${entry.source} at ${entry.path}`),
+    },
+  };
+}
+
+export async function releaseClaim(runner: Runner, manifest: ClaimManifest, apply: boolean, now = new Date()): Promise<Evaluation> {
+  const repo = await repository(runner);
+  const before = await collisionFacts(runner, repo, now);
+  const existing = before.claims.find((record) => sameManifest(record.marker.manifest, manifest) && isLiveClaim(record, now));
+  if (!existing) return { findings: ["matching live claim is already absent"], refusals: [], safeActions: [], violations: [] };
+  const marker: ClaimMarker = { version: 1, action: "release", manifest, expiresAt: null };
+  const result: Evaluation = { findings: [], refusals: [], safeActions: [{ kind: "release-claim", issue: manifest.issue, marker }], violations: [] };
+  if (!apply) return result;
+  await postClaimMarker(runner, repo, manifest.issue, marker);
+  const after = await collisionFacts(runner, repo, now);
+  if (after.claims.some((record) => sameManifest(record.marker.manifest, manifest) && isLiveClaim(record, now))) throw new OperationalError("claim release marker was not observed after re-read");
+  return { findings: ["claim released"], refusals: [], safeActions: [], violations: [] };
+}
+
+export async function leaseRoot(runner: Runner): Promise<string> {
+  const result = await runner.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (result.exitCode !== 0) throw new OperationalError(`git rev-parse failed: ${result.stderr.trim() || "no error output"}`);
+  return leaseDirectory(result.stdout.trim());
+}
+
+function leaseResource(value: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value)) throw new OperationalError("lease resource must use 1-64 letters, digits, dots, underscores, or hyphens");
+  return value;
+}
+
+function leaseHolder(value: string): string {
+  if (value.length === 0 || value.length > 256) throw new OperationalError("lease holder must be a non-empty string up to 256 characters");
+  return value;
+}
+
+export function leaseDirectory(gitCommonDirectory: string): string {
+  const common = resolve(gitCommonDirectory);
+  let stat;
+  try {
+    stat = lstatSync(common);
+  } catch {
+    throw new OperationalError("shared git common directory is missing");
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new OperationalError("shared git common directory must be a real directory");
+  return join(common, "kesha-backlog-leases");
+}
+
+function leaseRootState(root: string, create: boolean): string | null {
+  const requested = resolve(root);
+  const parent = dirname(requested);
+  let parentStat;
+  try {
+    parentStat = lstatSync(parent);
+  } catch {
+    throw new OperationalError("lease root parent is missing");
+  }
+  if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) throw new OperationalError("lease root parent must be a real directory");
+  if (!existsSync(requested)) {
+    if (!create) return null;
+    try {
+      mkdirSync(requested);
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
+    }
+  }
+  const stat = lstatSync(requested);
+  if (stat.isSymbolicLink()) throw new OperationalError("lease root must not be a symlink");
+  if (!stat.isDirectory()) throw new OperationalError("lease root must be a directory");
+  return requested;
+}
+
+function leaseStatePath(root: string, resource: string): string {
+  const candidate = resolve(root, `${leaseResource(resource)}.json`);
+  const child = relative(root, candidate);
+  if (child === "" || isAbsolute(child) || child === ".." || child.startsWith(`..${sep}`)) throw new OperationalError("lease state path escapes its root");
+  return candidate;
+}
+
+function parseLeaseState(value: unknown, source: string): LeaseState {
+  const lease = requiredRecord(value, source);
+  if (lease.version !== 1) throw new OperationalError(`${source}.version must equal 1`);
+  const resource = leaseResource(requiredString(lease.resource, `${source}.resource`));
+  const holder = leaseHolder(requiredString(lease.holder, `${source}.holder`));
+  const pid = requiredNumber(lease.pid, `${source}.pid`);
+  if (pid < 1) throw new OperationalError(`${source}.pid must be positive`);
+  return { version: 1, resource, holder, acquiredAt: timestamp(lease.acquiredAt, `${source}.acquiredAt`), expiresAt: timestamp(lease.expiresAt, `${source}.expiresAt`), host: requiredString(lease.host, `${source}.host`), pid };
+}
+
+function readLease(root: string, resource: string): LeaseState | null {
+  const path = leaseStatePath(root, resource);
+  if (!existsSync(path)) return null;
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) throw new OperationalError("lease state must not be a symlink");
+  if (!stat.isFile()) throw new OperationalError("lease state must be a regular file");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    throw new OperationalError("malformed lease state");
+  }
+  const lease = parseLeaseState(parsed, "lease state");
+  if (lease.resource !== resource) throw new OperationalError("lease state resource does not match its path");
+  return lease;
+}
+
+function isLiveLease(lease: LeaseState, now: Date): boolean {
+  return Date.parse(lease.expiresAt) > now.getTime();
+}
+
+function leaseRequest(input: { resource: string; holder: string; ttlSeconds?: number }): { resource: string; holder: string; ttlSeconds: number } {
+  return { resource: leaseResource(input.resource), holder: leaseHolder(input.holder), ttlSeconds: boundedTtl(input.ttlSeconds ?? 600, "lease ttlSeconds") };
+}
+
+function withLeaseGuard<T>(root: string, resource: string, operation: () => T): T {
+  const guard = join(root, `.${resource}.lock`);
+  const temporary = join(root, `.${resource}.${process.pid}.${randomUUID()}.lock-tmp`);
+  try {
+    writeFileSync(temporary, JSON.stringify({ version: 1, resource }), { encoding: "utf8", mode: 0o600, flag: "wx" });
+    try {
+      linkSync(temporary, guard);
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
+      let stat;
+      try {
+        stat = lstatSync(guard);
+      } catch {
+        throw new OperationalError("lease operation is already in progress");
+      }
+      if (stat.isSymbolicLink()) throw new OperationalError("lease operation guard must not be a symlink");
+      throw new OperationalError("lease operation is already in progress");
+    }
+  } finally {
+    if (existsSync(temporary)) unlinkSync(temporary);
+  }
+  try {
+    return operation();
+  } finally {
+    unlinkSync(guard);
+  }
+}
+
+function assertNoLeaseGuard(root: string, resource: string): void {
+  const guard = join(root, `.${resource}.lock`);
+  if (!existsSync(guard)) return;
+  const stat = lstatSync(guard);
+  if (stat.isSymbolicLink()) throw new OperationalError("lease operation guard must not be a symlink");
+  if (!stat.isFile()) throw new OperationalError("lease operation guard must be a regular file");
+  let value: JsonRecord;
+  try {
+    value = requiredRecord(JSON.parse(readFileSync(guard, "utf8")), "lease operation guard");
+  } catch (error) {
+    if (error instanceof OperationalError) throw error;
+    throw new OperationalError("malformed lease operation guard");
+  }
+  if (value.version !== 1 || value.resource !== resource) throw new OperationalError("malformed lease operation guard");
+  throw new OperationalError("lease operation is already in progress");
+}
+
+export function statusLease(root: string, resource: string, now = new Date()): LeaseResult {
+  const safeRoot = leaseRootState(root, false);
+  if (safeRoot === null) return { state: "absent", lease: null };
+  const safeResource = leaseResource(resource);
+  assertNoLeaseGuard(safeRoot, safeResource);
+  const lease = readLease(safeRoot, safeResource);
+  if (lease === null) return { state: "absent", lease: null };
+  return { state: isLiveLease(lease, now) ? "held" : "expired", lease };
+}
+
+export function acquireLease(root: string, input: { resource: string; holder: string; ttlSeconds?: number }, now = new Date()): LeaseResult {
+  const request = leaseRequest(input);
+  const safeRoot = leaseRootState(root, true)!;
+  try {
+    return withLeaseGuard(safeRoot, request.resource, () => {
+    const path = leaseStatePath(safeRoot, request.resource);
+    const current = readLease(safeRoot, request.resource);
+    if (current && isLiveLease(current, now)) {
+      if (current.holder === request.holder) return { state: "already-owned" as const, lease: current };
+      return { state: "refused" as const, lease: current };
+    }
+    const recovered = current !== null;
+    if (current !== null) unlinkSync(path);
+    const lease: LeaseState = { version: 1, resource: request.resource, holder: request.holder, acquiredAt: now.toISOString(), expiresAt: new Date(now.getTime() + request.ttlSeconds * 1000).toISOString(), host: hostname(), pid: process.pid };
+    const temporary = join(safeRoot, `.${request.resource}.${process.pid}.${randomUUID()}.tmp`);
+    try {
+      writeFileSync(temporary, JSON.stringify(lease), { encoding: "utf8", mode: 0o600, flag: "wx" });
+      try {
+        linkSync(temporary, path);
+        return { state: "acquired" as const, lease, recovered };
+      } catch (error) {
+        if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
+        return { state: "refused" as const, lease: readLease(safeRoot, request.resource) };
+      }
+    } finally {
+      if (existsSync(temporary)) unlinkSync(temporary);
+    }
+    });
+  } catch (error) {
+    if (error instanceof OperationalError && error.message === "lease operation is already in progress") return { state: "refused", lease: readLease(safeRoot, request.resource) };
+    throw error;
+  }
+}
+
+export function releaseLease(root: string, input: { resource: string; holder: string }, now = new Date()): LeaseResult {
+  const resource = leaseResource(input.resource);
+  const holder = leaseHolder(input.holder);
+  const safeRoot = leaseRootState(root, false);
+  if (safeRoot === null) return { state: "absent", lease: null };
+  try {
+    return withLeaseGuard(safeRoot, resource, () => {
+    const path = leaseStatePath(safeRoot, resource);
+    const current = readLease(safeRoot, resource);
+    if (current === null || !isLiveLease(current, now)) return { state: "absent" as const, lease: current };
+    if (current.holder !== holder) return { state: "refused" as const, lease: current };
+    try {
+      unlinkSync(path);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return { state: "absent" as const, lease: null };
+      throw error;
+    }
+    return { state: "released" as const, lease: current };
+    });
+  } catch (error) {
+    if (error instanceof OperationalError && error.message === "lease operation is already in progress") return { state: "refused", lease: readLease(safeRoot, resource) };
+    throw error;
+  }
+}
+
 async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {
   const raw = requiredArray(await runJson(runner, ["gh", "issue", "list", "--state", "all", "--limit", "1000", "--json", "number,state,labels"], "gh issue list"), "gh issue list");
   return raw.map((entry, index) => {
@@ -552,7 +1060,9 @@ async function applyActions(runner: Runner, actions: Evaluation["safeActions"], 
     else if (action.kind === "remove-wip") argv = ["gh", "issue", "edit", String(action.issue), "--remove-label", "WIP"];
     else if (action.kind === "create-marker") {
       if (!repo || !action.marker) throw new OperationalError("internal marker action is incomplete");
-      argv = ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${action.pr}/comments`, "--method", "POST", "-f", `body=${encodeGateMarker(action.marker)}`];
+      argv = ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${action.pr}/comments`, "--method", "POST", "-f", `body=${encodeGateMarker(action.marker as GateMarker)}`];
+    } else if (action.kind === "create-claim" || action.kind === "release-claim") {
+      throw new OperationalError("claim actions must use the claim boundary");
     } else {
       if (!action.path || !safeManagedWorktreePath(action.path)) throw new OperationalError("refusing an unmanaged worktree removal");
       argv = ["git", "worktree", "remove", action.path];

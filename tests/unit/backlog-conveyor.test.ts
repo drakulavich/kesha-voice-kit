@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -16,10 +16,13 @@ import {
   parseGateMarker,
   sync,
   acquireLease,
+  claim,
   encodeClaimMarker,
   evaluateCollisionPlan,
   leaseDirectory,
+  leaseRoot,
   loadClaims,
+  loadPullRequestFiles,
   parseClaimManifest,
   releaseLease,
   statusLease,
@@ -558,15 +561,74 @@ describe("backlog collision coordination", () => {
       expect.objectContaining({ issue: 1033, id: 101, marker: expect.objectContaining({ action: "claim" }) }),
     ]);
   });
+
+  test("treats a trusted release marker as idempotent and leaves non-WIP issues inactive", async () => {
+    const original = claimRecord(1033, "lane-b", ["scripts/backlog.ts"], "2026-08-15T11:00:00.000Z", 101).marker;
+    const released = { ...original, action: "release" as const, expiresAt: null };
+    const runner: Runner = {
+      async run(argv) {
+        const target = argv[2] ?? "";
+        const issue = target.includes("/1033/") ? 1033 : 1032;
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: JSON.stringify([
+            { id: 101, created_at: "2026-08-15T11:00:00.000Z", body: encodeClaimMarker(original), author_association: "MEMBER" },
+            { id: 102, created_at: "2026-08-15T11:01:00.000Z", body: encodeClaimMarker(released), author_association: "MEMBER" },
+          ]),
+        };
+      },
+    };
+
+    await expect(loadClaims(runner, { owner: "o", name: "r" }, [{ number: 1032, state: "OPEN", labels: [] }, { number: 1033, state: "OPEN", labels: ["WIP"] }], coordinationNow)).resolves.toEqual([]);
+  });
+
+  test("paginates every open pull request file list", async () => {
+    const runner: Runner = {
+      async run(argv) {
+        const target = argv[2] ?? "";
+        const page = Number(new URL(`https://example.test/${target}`).searchParams.get("page") ?? "1");
+        return { exitCode: 0, stderr: "", stdout: JSON.stringify(page === 1 ? Array.from({ length: 100 }, (_, index) => ({ filename: `docs/${index}.md` })) : [{ filename: "scripts/backlog.ts" }]) };
+      },
+    };
+
+    await expect(loadPullRequestFiles(runner, { owner: "o", name: "r" }, 1040)).resolves.toEqual(expect.arrayContaining(["docs/0.md", "scripts/backlog.ts"]));
+  });
+
+  test("re-reads after apply and reports a concurrent winning marker instead of acquired", async () => {
+    const calls: string[][] = [];
+    let issueReads = 0;
+    const theirs = claimRecord(1033, "lane-b", ["scripts/backlog.ts"], "2026-08-15T11:00:00.000Z", 1).marker;
+    const runner: Runner = {
+      async run(argv) {
+        calls.push(argv);
+        if (argv[0] === "gh" && argv[1] === "repo") return { exitCode: 0, stderr: "", stdout: JSON.stringify({ nameWithOwner: "o/r", defaultBranchRef: { name: "main" } }) };
+        if (argv[0] === "gh" && argv[1] === "issue") {
+          issueReads += 1;
+          return { exitCode: 0, stderr: "", stdout: JSON.stringify([{ number: 1033, state: "OPEN", labels: [{ name: "WIP" }] }, { number: 1034, state: "OPEN", labels: [{ name: "WIP" }] }]) };
+        }
+        if (argv[0] === "gh" && argv[1] === "pr") return { exitCode: 0, stderr: "", stdout: "[]" };
+        if (argv[0] === "git" && argv[1] === "worktree") return { exitCode: 0, stderr: "", stdout: "worktree /repo\nHEAD deadbeef\nbare\n" };
+        if (argv[0] === "gh" && argv[1] === "api" && argv[3] === "--method") return { exitCode: 0, stderr: "", stdout: "{}" };
+        const target = argv[2] ?? "";
+        if (target.includes("/comments")) return { exitCode: 0, stderr: "", stdout: JSON.stringify(issueReads > 1 && target.includes("/1033/") ? [{ id: 1, created_at: "2026-08-15T11:00:00.000Z", body: encodeClaimMarker(theirs), author_association: "MEMBER" }] : []) };
+        throw new Error(`unexpected argv ${argv.join(" ")}`);
+      },
+    };
+
+    const result = await claim(runner, manifest(), true, coordinationNow);
+    expect(result.violations).toContain("claim lost deterministic collision arbitration");
+    expect(calls.filter((argv) => argv[0] === "gh" && argv[1] === "issue").length).toBe(2);
+  });
 });
 
 describe("backlog resource leases", () => {
-  function withLeaseRoot(run: (common: string) => void): void {
+  async function withLeaseRoot(run: (common: string) => void | Promise<void>): Promise<void> {
     const root = mkdtempSync(join(tmpdir(), "kesha-conveyor-lease-"));
     const common = join(root, "shared.git");
     try {
       mkdirSync(common);
-      run(common);
+      await run(common);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -584,6 +646,8 @@ describe("backlog resource leases", () => {
   test("refuses a foreign live lease, recovers an expired lease, and makes release idempotent", () => withLeaseRoot((common) => {
     const root = leaseDirectory(common);
     expect(acquireLease(root, { resource: "preflight", holder: "lane-a", ttlSeconds: 60 }, coordinationNow).state).toBe("acquired");
+    const firstExpiry = statusLease(root, "preflight", coordinationNow).lease?.expiresAt;
+    expect(acquireLease(root, { resource: "preflight", holder: "lane-a", ttlSeconds: 600 }, coordinationNow)).toEqual(expect.objectContaining({ state: "already-owned", lease: expect.objectContaining({ expiresAt: firstExpiry }) }));
     expect(acquireLease(root, { resource: "preflight", holder: "lane-b", ttlSeconds: 60 }, coordinationNow).state).toBe("refused");
     expect(acquireLease(root, { resource: "preflight", holder: "lane-b", ttlSeconds: 60 }, new Date("2026-08-15T12:02:00.000Z"))).toEqual(expect.objectContaining({ state: "acquired", recovered: true }));
     expect(releaseLease(root, { resource: "preflight", holder: "lane-a" }, new Date("2026-08-15T12:02:01.000Z")).state).toBe("refused");
@@ -601,5 +665,57 @@ describe("backlog resource leases", () => {
     symlinkSync(join(common, "outside.json"), join(root, "preflight.json"));
     expect(() => acquireLease(root, { resource: "preflight", holder: "lane-a", ttlSeconds: 60 }, coordinationNow)).toThrow("symlink");
     expect(() => acquireLease(root, { resource: "../escape", holder: "lane-a", ttlSeconds: 60 }, coordinationNow)).toThrow("resource");
+    rmSync(join(root, "preflight.json"));
+    const symlinkedRoot = join(common, "symlinked-root");
+    symlinkSync(root, symlinkedRoot, "dir");
+    expect(() => statusLease(symlinkedRoot, "preflight", coordinationNow)).toThrow("lease root must not be a symlink");
+  }));
+
+  test("keeps status read-only when the lease root is absent", () => withLeaseRoot((common) => {
+    const root = leaseDirectory(common);
+    expect(statusLease(root, "preflight", coordinationNow)).toEqual({ state: "absent", lease: null });
+    expect(existsSync(root)).toBe(false);
+  }));
+
+  test("fails closed instead of reporting a surviving operation guard as free", () => withLeaseRoot((common) => {
+    const root = leaseDirectory(common);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, ".preflight.lock"), JSON.stringify({ version: 1, resource: "preflight" }));
+    expect(() => statusLease(root, "preflight", coordinationNow)).toThrow("lease operation is already in progress");
+  }));
+
+  test("discovers the same lease root from separate worktree-shaped git results", async () => {
+    const root = mkdtempSync(join(tmpdir(), "kesha-conveyor-common-"));
+    try {
+      const common = join(root, "shared.git");
+      mkdirSync(common);
+      const runner: Runner = { async run() { return { exitCode: 0, stderr: "", stdout: `${common}\n` }; } };
+      await expect(Promise.all([leaseRoot(runner), leaseRoot(runner)])).resolves.toEqual([leaseDirectory(common), leaseDirectory(common)]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("uses exclusive publication so concurrent processes have one lease winner", async () => withLeaseRoot(async (common) => {
+    const root = leaseDirectory(common);
+    const source = new URL("../../scripts/backlog-conveyor.ts", import.meta.url).pathname;
+    const code = `import { acquireLease } from ${JSON.stringify(source)}; console.log(acquireLease(${JSON.stringify(root)}, { resource: \"preflight\", holder: process.argv[1], ttlSeconds: 60 }, new Date(\"2026-08-15T12:00:00.000Z\")).state);`;
+    const processes = ["lane-a", "lane-b"].map((holder) => Bun.spawn([process.execPath, "--eval", code, holder], { stdout: "pipe", stderr: "pipe" }));
+    const output = await Promise.all(processes.map(async (process) => ({ exitCode: await process.exited, stdout: (await new Response(process.stdout).text()).trim(), stderr: await new Response(process.stderr).text() })));
+
+    expect(output).toEqual(expect.arrayContaining([expect.objectContaining({ exitCode: 0 }), expect.objectContaining({ exitCode: 0 })]));
+    expect(output.map((result) => result.stdout).sort()).toEqual(["acquired", "refused"]);
+  }));
+
+  test("serializes concurrent expired-lease reclaimers so an early winner cannot be unlinked", async () => withLeaseRoot(async (common) => {
+    const root = leaseDirectory(common);
+    acquireLease(root, { resource: "preflight", holder: "expired-owner", ttlSeconds: 1 }, new Date("2026-08-15T10:00:00.000Z"));
+    const source = new URL("../../scripts/backlog-conveyor.ts", import.meta.url).pathname;
+    const code = `import { acquireLease } from ${JSON.stringify(source)}; console.log(acquireLease(${JSON.stringify(root)}, { resource: \"preflight\", holder: process.argv[1], ttlSeconds: 60 }, new Date(\"2026-08-15T12:00:00.000Z\")).state);`;
+    const processes = ["lane-a", "lane-b"].map((holder) => Bun.spawn([process.execPath, "--eval", code, holder], { stdout: "pipe", stderr: "pipe" }));
+    const output = await Promise.all(processes.map(async (process) => ({ exitCode: await process.exited, stdout: (await new Response(process.stdout).text()).trim() })));
+
+    expect(output).toEqual(expect.arrayContaining([expect.objectContaining({ exitCode: 0, stdout: "acquired" }), expect.objectContaining({ exitCode: 0, stdout: "refused" })]));
+    expect(statusLease(root, "preflight", coordinationNow).lease?.holder).toMatch(/lane-[ab]/);
   }));
 });
