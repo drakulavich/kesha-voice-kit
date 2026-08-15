@@ -98,11 +98,8 @@ Greptile reviews on open and on every new commit. **P1/P2 findings are merge blo
 
 ### BACKLOG CONVEYOR REVIEW GATE
 
-Every conveyor PR has an additional, mandatory adversarial Grok pass. Give Grok a risk-specific prompt, not a generic review request. The orchestrator MUST post one `**grok review**` PR comment with the verdict and every material finding (or an explicit clean verdict), so a later fresh-context fix agent can act from GitHub rather than private agent state.
 
-Confirmed Grok P1/P2 findings are merge blockers. Hand them to a subsequent fix pass, push its changes, and repeat Grok, Greptile, and CI for the new head SHA; a false positive needs a PR comment explaining why it was rejected. Remove `merge-ready` before reopening this loop if it was ever present.
-
-Only after the current head is otherwise fully ready — required CI has passed, Greptile has covered that SHA, and Grok is clean or all its blockers have been fixed and re-reviewed — run `/simplify <PR>`. Record its outcome in the PR. Any simplify finding or resulting change reopens the same fix-and-review loop on the new head. The conveyor MUST NOT add `merge-ready` until this simplify pass is complete for the current head; if `/simplify` is unavailable or inconclusive, leave the PR out of `merge-ready` and record the blocker.
+Every conveyor PR MUST follow the [backlog conveyor review runbook](docs/runbooks/backlog-conveyor-review.md): a risk-specific Grok review with a durable PR comment, a later fix-and-re-review pass for confirmed blockers, and `/simplify <PR>` only after the current head is otherwise ready. `merge-ready` is forbidden until that full sequence is recorded for the current head; an unavailable or inconclusive step is a blocker, not permission to proceed.
 
 ### ERROR HANDLING
 
