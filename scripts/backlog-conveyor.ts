@@ -496,7 +496,7 @@ function priorityComments(values: unknown[], source: string): PriorityComment[] 
 }
 
 async function loadPriorityAssessment(runner: Runner, repo: Pick<Repository, "owner" | "name">, issue: number) {
-  return selectCurrentAssessment(priorityComments(await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues/${issue}/comments?per_page=100&page=${page}`, "gh api priority comments"), "priority comment"));
+  return selectCurrentAssessment(priorityComments(await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues/${issue}/comments?per_page=100&page=${page}`, "gh api priority comments"), "priority comment"), issue);
 }
 
 function sameAssessment(left: PriorityAssessment, right: PriorityAssessment): boolean {
@@ -548,7 +548,7 @@ async function loadHistoricalGate(runner: Runner, repo: Pick<Repository, "owner"
     if (!marker || marker.pr !== pullRequest.number || pullRequest.closingIssueNumbers.length !== 1 || marker.issue !== pullRequest.closingIssueNumbers[0] || marker.evidence.headSha !== pullRequest.headSha) continue;
     valid.push({ createdAt: timestamp(comment.created_at, `gate comment[${index}].created_at`), databaseId: requiredNumber(comment.id, `gate comment[${index}].id`) });
   }
-  valid.sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.databaseId - right.databaseId);
+  valid.sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.databaseId - right.databaseId);
   return valid.at(-1)?.createdAt ?? null;
 }
 
@@ -566,7 +566,7 @@ export async function metrics(runner: Runner, since: string, now = new Date()) {
       createdAt: timestamp(pullRequest.created_at, `metrics pull request[${index}].created_at`),
       mergedAt: pullRequest.merged_at === null ? null : timestamp(pullRequest.merged_at, `metrics pull request[${index}].merged_at`),
       gateAt: await loadHistoricalGate(runner, repo, { number, headSha: requiredString(head.sha, `metrics pull request[${index}].head.sha`), closingIssueNumbers }),
-      state: requiredString(pullRequest.state, `metrics pull request[${index}].state`),
+      state: requiredString(pullRequest.state, `metrics pull request[${index}].state`).toUpperCase(),
       labels: labels(pullRequest.labels, `metrics pull request[${index}].labels`),
     };
   });

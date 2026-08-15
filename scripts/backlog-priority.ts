@@ -153,12 +153,17 @@ export function parsePriorityMarker(body: string): PriorityMarker | null {
   return { version: 1, assessment, score: raw.score };
 }
 
-export function selectCurrentAssessment(comments: PriorityComment[]): { assessment: PriorityAssessment; score: number; createdAt: string; databaseId: number } | null {
+export function selectCurrentAssessment(comments: PriorityComment[], expectedIssue?: number): { assessment: PriorityAssessment; score: number; createdAt: string; databaseId: number } | null {
   const trusted = comments
     .filter((comment) => trustedAssociations.has(comment.authorAssociation))
-    .map((comment) => ({ ...comment, parsed: parsePriorityMarker(comment.marker) }))
+    .map((comment) => {
+      const parsed = parsePriorityMarker(comment.marker);
+      if (parsed !== null && expectedIssue !== undefined && parsed.assessment.issue !== expectedIssue) throw new Error("priority marker issue does not match comment container");
+      if (!Number.isFinite(Date.parse(comment.createdAt))) throw new Error("priority comment.createdAt must be an ISO timestamp");
+      return { ...comment, parsed };
+    })
     .filter((comment): comment is PriorityComment & { parsed: PriorityMarker } => comment.parsed !== null)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.databaseId - right.databaseId);
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.databaseId - right.databaseId);
   const current = trusted.at(-1);
   return current ? { assessment: current.parsed.assessment, score: current.parsed.score, createdAt: current.createdAt, databaseId: current.databaseId } : null;
 }
@@ -184,7 +189,7 @@ export function sortQueue(entries: QueueInput[]): QueueEntry[] {
         rationale: assessment?.rationale ?? null,
       };
     })
-    .sort((left, right) => Number(right.assessed) - Number(left.assessed) || right.score - left.score || left.createdAt.localeCompare(right.createdAt) || left.number - right.number);
+    .sort((left, right) => Number(right.assessed) - Number(left.assessed) || right.score - left.score || Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.number - right.number);
 }
 
 function parsedTime(value: string, source: string): number {

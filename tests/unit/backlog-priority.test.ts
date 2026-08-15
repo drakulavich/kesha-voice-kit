@@ -45,6 +45,17 @@ describe("backlog priority", () => {
     expect(result?.assessment).toMatchObject({ provider: "anything-opaque", urgency: 5 });
   });
 
+  test("orders offsets by instant and refuses a trusted marker on the wrong issue", () => {
+    const earlierInstant = { ...assessment, rationale: "Earlier instant." };
+    const laterInstant = { ...assessment, urgency: 5, rationale: "Later instant." };
+    const selected = selectCurrentAssessment([
+      { marker: encodePriorityMarker(earlierInstant), authorAssociation: "OWNER", createdAt: "2026-08-01T01:00:00+02:00", databaseId: 1 },
+      { marker: encodePriorityMarker(laterInstant), authorAssociation: "OWNER", createdAt: "2026-08-01T00:30:00Z", databaseId: 2 },
+    ], 1036);
+    expect(selected?.assessment.rationale).toBe("Later instant.");
+    expect(() => selectCurrentAssessment([{ marker: encodePriorityMarker({ ...assessment, issue: 1037 }), authorAssociation: "OWNER", createdAt: "2026-08-01T00:00:00Z", databaseId: 1 }], 1036)).toThrow("does not match comment container");
+  });
+
   test("orders assessed work before visible unassessed work and uses age then number as tie breaks", () => {
     const entries = sortQueue([
       { number: 12, createdAt: "2026-08-03T00:00:00Z", labels: [], assessment: null },
@@ -157,8 +168,8 @@ describe("conveyor priority boundaries", () => {
   });
 
   test("queues all comment pages, ignores untrusted lookalikes, and rejects malformed trusted markers", async () => {
-    const older = encodePriorityMarker({ ...assessment, rationale: "Earlier." });
-    const newer = encodePriorityMarker({ ...assessment, urgency: 5, rationale: "Newer." });
+    const older = encodePriorityMarker({ ...assessment, issue: 10, rationale: "Earlier." });
+    const newer = encodePriorityMarker({ ...assessment, issue: 10, urgency: 5, rationale: "Newer." });
     const runner = priorityRunner((argv) => {
       if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };
       if ((argv[2] ?? "").includes("/issues?state=open")) return [
@@ -280,5 +291,24 @@ describe("conveyor priority boundaries", () => {
     };
 
     await expect(prioritize(runner, assessment, true)).resolves.toMatchObject({ accepted: false, violations: ["priority assessment was superseded before confirmation"] });
+  });
+
+  test("normalizes lowercase REST pull state for current merge-ready metrics", async () => {
+    const runner = priorityRunner((argv) => {
+      if (argv[1] === "repo") return { nameWithOwner: "o/r", defaultBranchRef: { name: "main" } };
+      if ((argv[2] ?? "").includes("/issues?state=all")) return [];
+      if ((argv[2] ?? "").includes("/pulls?state=all")) return [{ number: 1, created_at: "2026-08-01T00:00:00Z", merged_at: null, state: "open", labels: [{ name: "merge-ready" }], head: { sha: "a".repeat(40) } }];
+      if (argv[2] === "graphql") return { data: { repository: { pullRequest: { closingIssuesReferences: { nodes: [], pageInfo: { hasNextPage: false } } } } } };
+      if ((argv[2] ?? "").includes("comments")) return [];
+      throw new Error(`unexpected argv ${argv.join(" ")}`);
+    });
+    expect((await metrics(runner, "2026-08-01T00:00:00Z", new Date("2026-08-02T00:00:00Z"))).currentMergeReady).toBe(1);
+  });
+
+  test("retains legacy command flag rejection", () => {
+    for (const args of [["sync", "--label", "x"], ["plan", "--manifest", "x", "--limit", "1"], ["lease", "status", "--resource", "preflight", "--since", "2026-08-01T00:00:00Z"]]) {
+      const child = Bun.spawnSync(["bun", "scripts/backlog.ts", ...args], { cwd: process.cwd(), stdout: "pipe", stderr: "pipe" });
+      expect(child.exitCode).toBe(3);
+    }
   });
 });

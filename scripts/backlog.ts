@@ -70,7 +70,7 @@ function parseArgs(argv: string[]): Command {
     else usage(`unknown argument '${arg}'`);
   }
   if (name === "sync") {
-    if (issue !== undefined || pr !== undefined || evidencePath !== undefined || manifestPath !== undefined || resource !== undefined || holder !== undefined || leaseTtl !== undefined) usage("sync does not accept command-specific flags");
+    if (issue !== undefined || pr !== undefined || evidencePath !== undefined || manifestPath !== undefined || resource !== undefined || holder !== undefined || leaseTtl !== undefined || label !== undefined || limit !== undefined || since !== undefined) usage("sync does not accept command-specific flags");
     return { name, apply, json };
   }
   if (name === "prioritize") {
@@ -89,13 +89,13 @@ function parseArgs(argv: string[]): Command {
   }
   if (name === "plan" || name === "claim" || name === "release") {
     if (!manifestPath) usage(`${name} requires --manifest path`);
-    if (issue !== undefined || pr !== undefined || evidencePath !== undefined || resource !== undefined || holder !== undefined || leaseTtl !== undefined) usage(`${name} only accepts --manifest, --apply, and --json`);
+    if (issue !== undefined || pr !== undefined || evidencePath !== undefined || resource !== undefined || holder !== undefined || leaseTtl !== undefined || label !== undefined || limit !== undefined || since !== undefined) usage(`${name} only accepts --manifest, --apply, and --json`);
     if (name === "plan" && apply) usage("plan is read-only and does not accept --apply");
     return { name, manifestPath, apply, json };
   }
   if (name === "lease") {
     if (!resource) usage("lease requires --resource name");
-    if (issue !== undefined || pr !== undefined || evidencePath !== undefined || manifestPath !== undefined) usage("lease does not accept issue, pull request, evidence, or manifest flags");
+    if (issue !== undefined || pr !== undefined || evidencePath !== undefined || manifestPath !== undefined || label !== undefined || limit !== undefined || since !== undefined) usage("lease does not accept issue, pull request, evidence, manifest, queue, or metrics flags");
     if (operation === "status") {
       if (holder !== undefined || leaseTtl !== undefined || apply) usage("lease status accepts only --resource and --json");
       return { name, operation, resource, apply, json };
@@ -107,9 +107,10 @@ function parseArgs(argv: string[]): Command {
   if (issue === undefined || pr === undefined) usage(`${name} requires --issue N and --pr P`);
   if (name === "gate") {
     if (!evidencePath) usage("gate requires --evidence path");
+    if (manifestPath !== undefined || label !== undefined || limit !== undefined || since !== undefined) usage("gate does not accept manifest, queue, or metrics flags");
     return { name, issue, pr, evidencePath, apply, json };
   }
-  if (evidencePath !== undefined) usage("close does not accept --evidence");
+  if (evidencePath !== undefined || manifestPath !== undefined || label !== undefined || limit !== undefined || since !== undefined) usage("close does not accept evidence, manifest, queue, or metrics flags");
   return { name, issue, pr, apply, json };
 }
 
