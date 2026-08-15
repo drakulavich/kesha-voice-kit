@@ -4592,6 +4592,53 @@ mod retry_tests {
         base
     }
 
+    /// Drips `chunk * chunks` bytes `gap_ms` apart while promising twice that
+    /// many, then holds the socket open and quiet for `hold_ms` before hanging
+    /// up. The body is still arriving when a deadline shorter than the drip
+    /// fires, and no scheduling delay can hand the client the promised length —
+    /// those bytes are never sent, so the read cannot come back `Ok` (#1013).
+    #[cfg(unix)]
+    fn never_completing_server(chunk: usize, chunks: usize, gap_ms: u64, hold_ms: u64) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind never-completing server");
+        let base = format!("http://{}", listener.local_addr().expect("stub addr"));
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            if !read_request(&mut stream) {
+                return;
+            }
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                chunk * chunks * 2
+            );
+            if stream.write_all(head.as_bytes()).is_err() {
+                return;
+            }
+            for _ in 0..chunks {
+                if stream.write_all(&vec![b'k'; chunk]).is_err() {
+                    return;
+                }
+                let _ = stream.flush();
+                std::thread::sleep(Duration::from_millis(gap_ms));
+            }
+            std::thread::sleep(Duration::from_millis(hold_ms));
+        });
+        base
+    }
+
+    /// The `Timeout` ureq blames for a cut body read, `None` if the reader
+    /// failed for any other reason. `io::copy` hands back the wrapped
+    /// `ureq::Error`, and the variant is what tells a rolling stall budget from
+    /// the whole-body deadline — a wall-clock band cannot, and goes flaky under
+    /// suite load besides (#1013).
+    fn timeout_reason(err: &io::Error) -> Option<ureq::Timeout> {
+        match err.get_ref()?.downcast_ref::<ureq::Error>()? {
+            ureq::Error::Timeout(reason) => Some(*reason),
+            _ => None,
+        }
+    }
+
     /// Promises `promised` bytes, sends `sent` of them, then holds the socket
     /// open and quiet for `silence_ms` without ever closing it.
     fn stalling_server(sent: usize, promised: usize, silence_ms: u64) -> String {
@@ -4680,10 +4727,14 @@ mod retry_tests {
 
         assert_eq!(sink.len(), SENT, "the prefix must survive for resume");
         assert!(
-            (BUDGET..BUDGET * 4).contains(&elapsed),
-            "aborted after {elapsed:?}, budget {BUDGET:?}"
+            elapsed >= BUDGET,
+            "cut after {elapsed:?}, budget {BUDGET:?}"
         );
-        assert!(err.to_string().to_lowercase().contains("timeout"), "{err}");
+        assert_eq!(
+            timeout_reason(&err),
+            Some(ureq::Timeout::RecvBody),
+            "the stall budget must be what cut it: {err:?}"
+        );
     }
 
     /// The coupling the swap rests on. With the body budget generous, the only
@@ -4706,8 +4757,8 @@ mod retry_tests {
         let elapsed = started.elapsed();
 
         assert!(
-            (BUDGET..BUDGET * 4).contains(&elapsed),
-            "aborted after {elapsed:?}, budget {BUDGET:?}"
+            elapsed >= BUDGET,
+            "cut after {elapsed:?}, budget {BUDGET:?}"
         );
         assert!(
             matches!(err, ureq::Error::Timeout(ureq::Timeout::SendRequest)),
@@ -4733,6 +4784,12 @@ mod retry_tests {
     /// why #776 reproduced on ubuntu while windows fetched the same file in
     /// 86s. Asserting the windows behaviour would pin a platform bug, so this
     /// pins the semantics the cap actually has where it is enforced (#893).
+    ///
+    /// The server promises more than it will ever send because ureq enforces
+    /// the deadline through the socket read timeout: a client descheduled long
+    /// enough for the whole body to land in the kernel buffer drains it without
+    /// a single blocking read and never sees the cut. Against a body that
+    /// cannot complete that race has no winning side (#1013).
     #[cfg(unix)]
     #[test]
     fn the_receive_deadline_caps_the_whole_body_not_just_a_stall() {
@@ -4741,7 +4798,7 @@ mod retry_tests {
         const CHUNKS: usize = 100;
 
         for recv_body in [None, Some(Duration::from_secs(30))] {
-            let base = streaming_server(CHUNK, CHUNKS, 20);
+            let base = never_completing_server(CHUNK, CHUNKS, 20, 10_000);
             let started = std::time::Instant::now();
             let response = ureq::get(format!("{base}/payload.bin"))
                 .config()
@@ -4758,16 +4815,13 @@ mod retry_tests {
             let elapsed = started.elapsed();
 
             assert!(
-                sink.len() < CHUNK * CHUNKS,
-                "{recv_body:?}: the body finished, so nothing was capped"
+                elapsed >= DEADLINE,
+                "{recv_body:?}: cut after {elapsed:?}, deadline {DEADLINE:?}"
             );
-            assert!(
-                (DEADLINE..DEADLINE * 3).contains(&elapsed),
-                "{recv_body:?}: aborted after {elapsed:?}, deadline {DEADLINE:?}"
-            );
-            assert!(
-                err.to_string().to_lowercase().contains("timeout"),
-                "{recv_body:?}: {err}"
+            assert_eq!(
+                timeout_reason(&err),
+                Some(ureq::Timeout::RecvResponse),
+                "{recv_body:?}: the whole-body deadline must be what cut it: {err:?}"
             );
         }
     }
