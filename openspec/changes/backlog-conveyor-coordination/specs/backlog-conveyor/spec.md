@@ -18,6 +18,11 @@ same canonical manifest identity SHALL be idempotent without renewing its expiry
 after expiry starts a new TTL. Release SHALL be idempotent, including when holders share one
 GitHub identity.
 
+The ordered sweep SHALL compare each candidate with earlier accepted claims that were live at
+the candidate's creation time. Expiry or release SHALL stop current blocking without
+resurrecting a historical loser; a new marker created after expiry or release SHALL compete
+as a new candidate.
+
 #### Scenario: Ira previews all three collision sources
 
 - GIVEN Ira's normalized manifest plans `scripts/backlog.ts`
@@ -55,10 +60,10 @@ GitHub identity.
 - WHEN Sona runs `plan` or `claim`
 - THEN the conveyor fails before publishing a marker
 
-> *Technical Note — sources: `scripts/backlog.ts:4` owns command parsing and report output;
+> _Technical Note — sources: `scripts/backlog.ts:4` owns command parsing and report output;
 > `scripts/backlog-conveyor.ts:102` validates external data; `scripts/backlog-conveyor.ts:493`
 > paginates GitHub comments. This change extends those boundaries without changing the
-> Phase 1 report schema or trusting a provider account.*
+> Phase 1 report schema or trusting a provider account._
 
 ### Requirement: The conveyor SHALL safely serialize a host-local named heavy resource
 
@@ -94,10 +99,10 @@ without force deletion.
 - THEN the conveyor fails closed
 - AND it does not delete or overwrite that state
 
-> *Technical Note — sources: `scripts/backlog-conveyor.ts:1` is the validated coordination
+> _Technical Note — sources: `scripts/backlog-conveyor.ts:1` is the validated coordination
 > module and `scripts/backlog-conveyor.ts:507` already obtains the absolute shared Git common
 > directory. `scripts/backlog.ts:24` is extended with the lease grammar; the state root is
-> derived only from that common directory, never from a provider-local configuration.*
+> derived only from that common directory, never from a provider-local configuration._
 
 ## Open Issues
 

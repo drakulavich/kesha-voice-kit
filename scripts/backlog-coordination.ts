@@ -36,6 +36,8 @@ export interface ClaimRecord {
   createdAt: string;
   id: number;
   marker: ClaimMarker;
+  releasedAt: string | null;
+  releasedId: number | null;
 }
 export interface CollisionPlan {
   edges: Array<{
@@ -224,7 +226,26 @@ export function isLiveClaim(record: ClaimRecord, now: Date): boolean {
     record.labels.includes("WIP") &&
     trustedAssociations.has(record.authorAssociation) &&
     record.marker.expiresAt !== null &&
-    Date.parse(record.marker.expiresAt) > now.getTime()
+    Date.parse(record.marker.expiresAt) > now.getTime() &&
+    record.releasedAt === null
+  );
+}
+function wasLiveAtCandidate(
+  record: ClaimRecord,
+  candidate: ClaimRecord,
+): boolean {
+  return (
+    record.marker.action === "claim" &&
+    record.state === "OPEN" &&
+    record.labels.includes("WIP") &&
+    trustedAssociations.has(record.authorAssociation) &&
+    record.marker.expiresAt !== null &&
+    Date.parse(record.marker.expiresAt) > Date.parse(candidate.createdAt) &&
+    (record.releasedAt === null ||
+      record.releasedAt > candidate.createdAt ||
+      (record.releasedAt === candidate.createdAt &&
+        record.releasedId !== null &&
+        record.releasedId > candidate.id))
   );
 }
 export function issueNumberFromBranch(branch: string | null): number | null {
@@ -247,10 +268,11 @@ export function evaluateCollisionPlan(
   const accepted: ClaimRecord[] = [];
   const rejected: ClaimRecord[] = [];
   for (const candidate of facts.claims
-    .filter((claim) => isLiveClaim(claim, now))
+    .filter((claim) => claim.marker.action === "claim")
     .sort(claimOrder))
     (accepted.some(
       (claim) =>
+        wasLiveAtCandidate(claim, candidate) &&
         overlap(
           claim.marker.manifest.paths,
           candidate.marker.manifest.paths,
@@ -261,7 +283,8 @@ export function evaluateCollisionPlan(
     ).push(candidate);
   const edges: CollisionPlan["edges"] = [];
   const self: CollisionPlan["self"] = [];
-  for (const claim of accepted) {
+  const liveAccepted = accepted.filter((claim) => isLiveClaim(claim, now));
+  for (const claim of liveAccepted) {
     const path = overlap(manifest.paths, claim.marker.manifest.paths);
     if (path !== null)
       (claim.issue === manifest.issue ? self : edges).push({
@@ -287,8 +310,9 @@ export function evaluateCollisionPlan(
       ).push({ source: "worktree", path });
   }
   const own =
-    accepted.find((claim) => sameManifest(claim.marker.manifest, manifest)) ??
-    null;
+    liveAccepted.find((claim) =>
+      sameManifest(claim.marker.manifest, manifest),
+    ) ?? null;
   return {
     edges,
     self,
@@ -374,12 +398,17 @@ function parseLease(value: unknown, source: string): LeaseState {
     throw new CoordinationError(`${source}.version must equal 1`);
   const pid = number(lease.pid, `${source}.pid`);
   if (pid < 1) throw new CoordinationError(`${source}.pid must be positive`);
+  const acquiredAt = timestamp(lease.acquiredAt, `${source}.acquiredAt`);
+  const expiresAt = timestamp(lease.expiresAt, `${source}.expiresAt`);
+  const duration = Date.parse(expiresAt) - Date.parse(acquiredAt);
+  if (duration <= 0 || duration > 86_400_000)
+    throw new CoordinationError(`${source} has an invalid lease duration`);
   return {
     version: 1,
     resource: resource(string(lease.resource, `${source}.resource`)),
     holder: holder(string(lease.holder, `${source}.holder`)),
-    acquiredAt: timestamp(lease.acquiredAt, `${source}.acquiredAt`),
-    expiresAt: timestamp(lease.expiresAt, `${source}.expiresAt`),
+    acquiredAt,
+    expiresAt,
     host: string(lease.host, `${source}.host`),
     pid,
   };
@@ -477,9 +506,9 @@ export function statusLease(
   name: string,
   now = new Date(),
 ): LeaseResult {
+  const safeName = resource(name);
   const safeRoot = rootState(root, false);
   if (safeRoot === null) return { state: "absent", lease: null };
-  const safeName = resource(name);
   assertNoGuard(safeRoot, safeName);
   const lease = readLease(safeRoot, safeName);
   return lease === null

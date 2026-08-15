@@ -27,6 +27,10 @@ accepted candidate. A losing candidate is inactive for every later decision, whi
 a loser that overlaps two paths from creating a transitive phantom lock. The holder remains
 opaque and is never compared to an account name.
 
+Acceptance is evaluated against earlier accepted claims that were live at the candidate's
+creation time. Expiry or release controls present blocking only; it never resurrects a
+historical loser, while a new marker created after expiry or release competes normally.
+
 The manifest identity is the canonical version, issue, holder, paths, and TTL tuple. A live
 accepted claim with that identity is an idempotent re-claim, not a renewal; its expiry stays
 unchanged. Re-claiming after expiry publishes a new marker and starts a new TTL. The candidate

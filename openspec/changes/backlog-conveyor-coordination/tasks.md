@@ -23,4 +23,4 @@
 - [x] 4.2 Sabotage atomic/live-lease protection and prove the focused test fails; restore it
 - [x] 4.3 Run targeted tests, typecheck/lint, strict OpenSpec validation, lease dogfood, and
   `just preflight`
-- [ ] 4.4 Push a draft PR with `Closes #1034`, verify the closing reference and clean worktree
+- [x] 4.4 Push a draft PR with `Closes #1034`, verify the closing reference and clean worktree

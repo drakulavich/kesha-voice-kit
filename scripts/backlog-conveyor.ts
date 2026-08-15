@@ -484,13 +484,28 @@ export async function loadClaims(runner: Runner, repo: Pick<Repository, "owner" 
         if (!trustedAssociations.has(authorAssociation)) continue;
         const marker = parseClaimMarker(requiredString(comment.body, "claim comment.body"));
         if (!marker || marker.manifest.issue !== issue.number) continue;
-        markers.push({ issue: issue.number, state: issue.state, labels: issue.labels, authorAssociation, createdAt: timestamp(comment.created_at, "claim comment.created_at"), id: requiredNumber(comment.id, "claim comment.id"), marker });
+        markers.push({ issue: issue.number, state: issue.state, labels: issue.labels, authorAssociation, createdAt: timestamp(comment.created_at, "claim comment.created_at"), id: requiredNumber(comment.id, "claim comment.id"), marker, releasedAt: null, releasedId: null });
       }
       if (raw.length < 100) break;
     }
   }
   const releases = markers.filter((record) => record.marker.action === "release");
-  const claims = markers.filter((record) => record.marker.action === "claim" && !releases.some((release) => sameManifest(release.marker.manifest, record.marker.manifest) && claimOrder(release, record) > 0));
+  const claims = markers
+    .filter((record) => record.marker.action === "claim")
+    .map((record) => {
+      const release = releases
+          .filter(
+            (release) =>
+              sameManifest(release.marker.manifest, record.marker.manifest) &&
+              claimOrder(release, record) > 0,
+          )
+          .sort(claimOrder)[0] ?? null;
+      return {
+        ...record,
+        releasedAt: release?.createdAt ?? null,
+        releasedId: release?.id ?? null,
+      };
+    });
   void now;
   return claims.sort(claimOrder);
 }
@@ -507,6 +522,7 @@ export async function loadPullRequestFiles(runner: Runner, repo: Pick<Repository
 
 async function loadOpenPullRequests(runner: Runner, repo: Pick<Repository, "owner" | "name">): Promise<Array<{ number: number; closingIssueNumbers: number[]; files: string[] }>> {
   const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "open", "--limit", "1000", "--json", "number,closingIssuesReferences"], "gh pr list"), "gh pr list");
+  if (raw.length === 1000) throw new OperationalError("collision pull request list reached limit; refusing incomplete graph");
   return Promise.all(raw.map(async (entry, index) => {
     const pullRequest = requiredRecord(entry, `gh pr list[${index}]`);
     const number = requiredNumber(pullRequest.number, `gh pr list[${index}].number`);
@@ -532,10 +548,6 @@ export async function loadCollisionWorktrees(runner: Runner): Promise<Array<{ br
   if (listed.exitCode !== 0) throw new OperationalError(`git worktree list failed: ${listed.stderr.trim()}`);
   const result: Array<{ branch: string | null; files: string[] }> = [];
   for (const worktree of parseWorktrees(listed.stdout)) {
-    if (worktree.branch === null) {
-      result.push({ branch: null, files: [] });
-      continue;
-    }
     const committed = await runner.run(["git", "-C", worktree.path, "diff", "--no-renames", "--name-only", "origin/main...HEAD"]);
     if (committed.exitCode !== 0) throw new OperationalError(`git diff failed for ${worktree.path}: ${committed.stderr.trim()}`);
     const status = await runner.run(["git", "-C", worktree.path, "status", "--porcelain=v1", "-z", "--untracked-files=all"]);
@@ -546,7 +558,7 @@ export async function loadCollisionWorktrees(runner: Runner): Promise<Array<{ br
 }
 
 async function collisionFacts(runner: Runner, repo: Repository, now: Date): Promise<{ issues: SyncFacts["issues"]; claims: ClaimRecord[]; pullRequests: Array<{ number: number; closingIssueNumbers: number[]; files: string[] }>; worktrees: Array<{ branch: string | null; files: string[] }> }> {
-  const issues = await loadIssues(runner);
+  const issues = await loadCollisionIssues(runner);
   return { issues, claims: await loadClaims(runner, repo, issues, now), pullRequests: await loadOpenPullRequests(runner, repo), worktrees: await loadCollisionWorktrees(runner) };
 }
 
@@ -574,7 +586,13 @@ export async function claim(runner: Runner, manifest: ClaimManifest, apply: bool
   await postClaimMarker(runner, repo, manifest.issue, marker);
   const after = await collisionFacts(runner, repo, now);
   const final = evaluateCollisionPlan(manifest, after, now);
-  if (!final.idempotent) return { findings: [], refusals: [], safeActions: [], violations: ["claim lost deterministic collision arbitration"] };
+  if (!final.idempotent || final.edges.length > 0) {
+    const release: ClaimMarker = { version: 1, action: "release", manifest, expiresAt: null };
+    await postClaimMarker(runner, repo, manifest.issue, release);
+    const compensated = await collisionFacts(runner, repo, now);
+    if (compensated.claims.some((record) => sameManifest(record.marker.manifest, manifest) && isLiveClaim(record, now))) throw new OperationalError("claim compensation release was not observed after re-read");
+    return { findings: [], refusals: [], safeActions: [], violations: [final.idempotent ? "claim became colliding after acquisition; marker was released" : "claim lost deterministic collision arbitration"] };
+  }
   return { findings: ["claim acquired"], refusals: [], safeActions: [], violations: [] };
 }
 
@@ -617,6 +635,9 @@ export async function leaseRoot(runner: Runner): Promise<string> {
 
 export function evaluateLeaseOperation(operation: "acquire" | "release" | "status", input: { resource: string; holder?: string }, observed: LeaseResult): Evaluation {
   if (operation === "status") return { findings: [observed.state], violations: [], refusals: [], safeActions: [] };
+  if (observed.state === "refused") return { findings: [], violations: [], refusals: ["resource lease is held by another holder or operation is busy"], safeActions: [] };
+  if (observed.state === "acquired" || observed.state === "released") return { findings: [observed.state], violations: [], refusals: [], safeActions: [] };
+  if (observed.state === "already-owned") return { findings: ["already-owned"], violations: [], refusals: [], safeActions: [] };
   if (observed.state === "held" && observed.lease?.holder !== input.holder) return { findings: [], violations: [], refusals: ["resource lease is held by another holder"], safeActions: [] };
   if (operation === "acquire") {
     if (observed.state === "held") return { findings: ["already-owned"], violations: [], refusals: [], safeActions: [] };
@@ -631,6 +652,15 @@ async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {
   return raw.map((entry, index) => {
     const issue = requiredRecord(entry, `gh issue list[${index}]`);
     return { number: requiredNumber(issue.number, `gh issue list[${index}].number`), state: requiredString(issue.state, `gh issue list[${index}].state`), labels: labels(issue.labels, `gh issue list[${index}].labels`) };
+  });
+}
+
+async function loadCollisionIssues(runner: Runner): Promise<SyncFacts["issues"]> {
+  const raw = requiredArray(await runJson(runner, ["gh", "issue", "list", "--state", "open", "--label", "WIP", "--limit", "1000", "--json", "number,state,labels"], "gh collision issue list"), "gh collision issue list");
+  if (raw.length === 1000) throw new OperationalError("collision issue list reached limit; refusing incomplete graph");
+  return raw.map((entry, index) => {
+    const issue = requiredRecord(entry, `gh collision issue list[${index}]`);
+    return { number: requiredNumber(issue.number, `gh collision issue list[${index}].number`), state: requiredString(issue.state, `gh collision issue list[${index}].state`), labels: labels(issue.labels, `gh collision issue list[${index}].labels`) };
   });
 }
 
