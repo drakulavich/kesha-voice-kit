@@ -1,15 +1,19 @@
 #!/usr/bin/env bun
-import { ExitCode, OperationalError, REPORT_SCHEMA_VERSION, acquireLease, bunRunner, claim, close, evaluateLeaseOperation, gate, leaseRoot, parseClaimManifest, parseGateEvidence, plan, releaseClaim, releaseLease, statusLease, sync, type Evaluation } from "./backlog-conveyor";
+import { ExitCode, OperationalError, REPORT_SCHEMA_VERSION, acquireLease, bunRunner, claim, close, evaluateLeaseOperation, gate, leaseRoot, metrics, parseClaimManifest, parseGateEvidence, plan, prioritize, queue, releaseClaim, releaseLease, statusLease, sync, type Evaluation } from "./backlog-conveyor";
+import { parsePriorityManifest } from "./backlog-priority";
 
 type Command =
   | { name: "sync"; apply: boolean; json: boolean }
   | { name: "gate"; issue: number; pr: number; evidencePath: string; apply: boolean; json: boolean }
   | { name: "close"; issue: number; pr: number; apply: boolean; json: boolean }
+  | { name: "prioritize"; manifestPath: string; apply: boolean; json: boolean }
+  | { name: "queue"; label?: string; limit?: number; json: boolean }
+  | { name: "metrics"; since: string; json: boolean }
   | { name: "plan" | "claim" | "release"; manifestPath: string; apply: boolean; json: boolean }
   | { name: "lease"; operation: "acquire" | "release" | "status"; resource: string; holder?: string; ttlSeconds?: number; apply: boolean; json: boolean };
 
 function usage(message: string): never {
-  console.error(`${message}\nusage: bun run conveyor -- <sync|gate|close|plan|claim|release|lease> [--issue N --pr P] [--evidence path] [--manifest path] [--resource name --holder opaque --ttl-seconds N] [--apply] [--json]`);
+  console.error(`${message}\nusage: bun run conveyor -- <sync|gate|close|plan|claim|release|prioritize|queue|metrics|lease> [--issue N --pr P] [--evidence path] [--manifest path] [--label name --limit N] [--since ISO] [--resource name --holder opaque --ttl-seconds N] [--apply] [--json]`);
   process.exit(ExitCode.operationalFailure);
 }
 
@@ -27,7 +31,7 @@ function issueNumber(flag: string, raw: string | undefined): number {
 
 function parseArgs(argv: string[]): Command {
   const name = argv.shift();
-  if (name !== "sync" && name !== "gate" && name !== "close" && name !== "plan" && name !== "claim" && name !== "release" && name !== "lease") usage(`unknown subcommand '${name ?? ""}'`);
+  if (name !== "sync" && name !== "gate" && name !== "close" && name !== "plan" && name !== "claim" && name !== "release" && name !== "prioritize" && name !== "queue" && name !== "metrics" && name !== "lease") usage(`unknown subcommand '${name ?? ""}'`);
   const operation = name === "lease" ? argv.shift() : undefined;
   if (name === "lease" && operation !== "acquire" && operation !== "release" && operation !== "status") usage("lease requires acquire, release, or status");
   let apply = false;
@@ -39,6 +43,9 @@ function parseArgs(argv: string[]): Command {
   let resource: string | undefined;
   let holder: string | undefined;
   let leaseTtl: number | undefined;
+  let label: string | undefined;
+  let limit: number | undefined;
+  let since: string | undefined;
   while (argv.length > 0) {
     const arg = argv.shift()!;
     if (arg === "--apply") apply = true;
@@ -50,11 +57,28 @@ function parseArgs(argv: string[]): Command {
     else if (arg === "--resource") resource = argv.shift() ?? usage("--resource needs a name");
     else if (arg === "--holder") holder = argv.shift() ?? usage("--holder needs an opaque value");
     else if (arg === "--ttl-seconds") leaseTtl = ttlSeconds(argv.shift());
+    else if (arg === "--label") label = argv.shift() ?? usage("--label needs a name");
+    else if (arg === "--limit") limit = ttlSeconds(argv.shift());
+    else if (arg === "--since") since = argv.shift() ?? usage("--since needs an ISO timestamp");
     else usage(`unknown argument '${arg}'`);
   }
   if (name === "sync") {
     if (issue !== undefined || pr !== undefined || evidencePath !== undefined || manifestPath !== undefined || resource !== undefined || holder !== undefined || leaseTtl !== undefined) usage("sync does not accept command-specific flags");
     return { name, apply, json };
+  }
+  if (name === "prioritize") {
+    if (!manifestPath) usage("prioritize requires --manifest path");
+    if (issue !== undefined || pr !== undefined || evidencePath !== undefined || resource !== undefined || holder !== undefined || leaseTtl !== undefined || label !== undefined || limit !== undefined || since !== undefined) usage("prioritize only accepts --manifest, --apply, and --json");
+    return { name, manifestPath, apply, json };
+  }
+  if (name === "queue") {
+    if (apply || issue !== undefined || pr !== undefined || evidencePath !== undefined || manifestPath !== undefined || resource !== undefined || holder !== undefined || leaseTtl !== undefined || since !== undefined) usage("queue only accepts --label, --limit, and --json");
+    return { name, label, limit, json };
+  }
+  if (name === "metrics") {
+    if (!since || Number.isNaN(Date.parse(since))) usage("metrics requires --since ISO timestamp");
+    if (apply || issue !== undefined || pr !== undefined || evidencePath !== undefined || manifestPath !== undefined || resource !== undefined || holder !== undefined || leaseTtl !== undefined || label !== undefined || limit !== undefined) usage("metrics only accepts --since and --json");
+    return { name, since, json };
   }
   if (name === "plan" || name === "claim" || name === "release") {
     if (!manifestPath) usage(`${name} requires --manifest path`);
@@ -89,7 +113,7 @@ function exitCode(result: Evaluation): number {
 }
 
 function output(command: Command, result: Evaluation, details?: unknown): void {
-  const report = { schemaVersion: REPORT_SCHEMA_VERSION, command: command.name, operation: command.name === "lease" ? command.operation : undefined, apply: command.apply, findings: result.findings, violations: result.violations, refusals: result.refusals, actions: result.safeActions };
+  const report = { schemaVersion: REPORT_SCHEMA_VERSION, command: command.name, operation: command.name === "lease" ? command.operation : undefined, apply: "apply" in command ? command.apply : false, findings: result.findings, violations: result.violations, refusals: result.refusals, actions: result.safeActions };
   if (command.json) {
     console.log(JSON.stringify(details === undefined ? report : { ...report, details }));
     return;
@@ -106,6 +130,21 @@ async function main(): Promise<void> {
   if (command.name === "sync") result = await sync(runner, command.apply);
   else if (command.name === "gate") result = await gate(runner, command.issue, command.pr, parseGateEvidence(JSON.parse(await Bun.file(command.evidencePath).text()), `evidence ${command.evidencePath}`), command.apply);
   else if (command.name === "close") result = await close(runner, command.issue, command.pr, command.apply);
+  else if (command.name === "prioritize") {
+    const prioritized = await prioritize(runner, parsePriorityManifest(JSON.parse(await Bun.file(command.manifestPath).text()), `manifest ${command.manifestPath}`), command.apply);
+    output(command, prioritized, { accepted: prioritized.accepted, assessment: prioritized.assessment, score: prioritized.score });
+    process.exit(exitCode(prioritized));
+  } else if (command.name === "queue") {
+    const queued = await queue(runner, command.label, command.limit);
+    result = { findings: [], violations: [], refusals: [], safeActions: [] };
+    output(command, result, queued);
+    process.exit(ExitCode.success);
+  } else if (command.name === "metrics") {
+    const measured = await metrics(runner, command.since);
+    result = { findings: [], violations: [], refusals: [], safeActions: [] };
+    output(command, result, measured);
+    process.exit(ExitCode.success);
+  }
   else if (command.name === "plan") {
     const planned = await plan(runner, parseClaimManifest(JSON.parse(await Bun.file(command.manifestPath).text()), `manifest ${command.manifestPath}`));
     result = planned.evaluation;

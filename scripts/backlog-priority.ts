@@ -53,6 +53,8 @@ export interface LifecyclePullRequest {
   createdAt: string;
   gateAt: string | null;
   mergedAt: string | null;
+  state?: string;
+  labels?: string[];
 }
 
 export interface DurationSummary {
@@ -191,12 +193,6 @@ function isInWindow(value: number, since: number, now: number): boolean {
   return value >= since && value <= now;
 }
 
-function duration(from: number, until: number, source: string): number {
-  const value = (until - from) / 1000;
-  if (!Number.isFinite(value) || value < 0) throw new Error(`${source} has negative ${source.includes("gate") ? "open-to-gate" : "lifecycle"} duration`);
-  return value;
-}
-
 function summary(values: number[]): DurationSummary | null {
   if (values.length === 0) return null;
   const ordered = [...values].sort((left, right) => left - right);
@@ -236,7 +232,7 @@ export function evaluateMetrics(input: { since: string; now: string; issues: Lif
     mergedPullRequests,
     gatedPullRequests,
     currentWip: input.issues.filter((issue) => issue.state === "OPEN" && issue.labels.includes("WIP")).length,
-    currentMergeReady: input.issues.filter((issue) => issue.state === "OPEN" && issue.labels.includes("merge-ready")).length,
+    currentMergeReady: input.pullRequests.filter((pullRequest) => pullRequest.state === "OPEN" && pullRequest.labels?.includes("merge-ready")).length,
     durations: { openToGate: summary(openToGate), gateToMerge: summary(gateToMerge), openToMerge: summary(openToMerge) },
   };
 }
