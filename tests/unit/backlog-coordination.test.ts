@@ -737,7 +737,7 @@ describe("backlog resource leases", () => {
       const source = new URL(
         "../../scripts/backlog-conveyor.ts",
         import.meta.url,
-      ).pathname;
+      ).href;
       const code = `import { acquireLease } from ${JSON.stringify(source)}; console.log(acquireLease(${JSON.stringify(root)}, { resource: "preflight", holder: process.argv[1], ttlSeconds: 60 }, new Date("2026-08-15T12:00:00.000Z")).state);`;
       const bun = Bun.which("bun");
       if (!bun) throw new Error("bun executable is unavailable");
@@ -770,7 +770,7 @@ describe("backlog resource leases", () => {
       const source = new URL(
         "../../scripts/backlog-conveyor.ts",
         import.meta.url,
-      ).pathname;
+      ).href;
       const code = `import { acquireLease } from ${JSON.stringify(source)}; console.log(acquireLease(${JSON.stringify(root)}, { resource: "preflight", holder: process.argv[1], ttlSeconds: 60 }, new Date("2026-08-15T12:00:00.000Z")).state);`;
       const bun = Bun.which("bun");
       if (!bun) throw new Error("bun executable is unavailable");
