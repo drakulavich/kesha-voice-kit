@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -15,6 +15,14 @@ import {
   parseGateEvidence,
   parseGateMarker,
   sync,
+  acquireLease,
+  encodeClaimMarker,
+  evaluateCollisionPlan,
+  leaseDirectory,
+  loadClaims,
+  parseClaimManifest,
+  releaseLease,
+  statusLease,
   type CloseFacts,
   type GateEvidence,
   type GateFacts,
@@ -427,4 +435,171 @@ describe("backlog close", () => {
     expect(evaluateClose(facts).refusals).toContain("matching worktree is outside the managed .worktrees directory");
     expect(evaluateClose(facts).safeActions).toEqual([]);
   });
+});
+
+const coordinationNow = new Date("2026-08-15T12:00:00.000Z");
+
+function manifest(overrides: Record<string, unknown> = {}) {
+  return parseClaimManifest({
+    version: 1,
+    issue: 1034,
+    holder: "lane-a",
+    paths: ["scripts/backlog.ts"],
+    ttlSeconds: 600,
+    ...overrides,
+  });
+}
+
+function claimRecord(issue: number, holder: string, paths: string[], createdAt: string, id: number, expiresAt = "2026-08-15T12:10:00.000Z") {
+  return {
+    issue,
+    state: "OPEN",
+    labels: ["WIP"],
+    authorAssociation: "MEMBER",
+    createdAt,
+    id,
+    marker: {
+      version: 1 as const,
+      action: "claim" as const,
+      manifest: { version: 1 as const, issue, holder, paths, ttlSeconds: 600 },
+      expiresAt,
+    },
+  };
+}
+
+describe("backlog collision coordination", () => {
+  test("plans claim, pull-request, and worktree collisions without crossing prefix boundaries", () => {
+    const result = evaluateCollisionPlan(manifest({ paths: ["scripts"] }), {
+      claims: [claimRecord(1033, "lane-b", ["scripts/backlog-conveyor.ts"], "2026-08-15T11:00:00.000Z", 1)],
+      pullRequests: [{ number: 1041, closingIssueNumbers: [1033], files: ["scripts/backlog.ts"] }],
+      worktrees: [{ branch: "feat/issue-1033", files: ["scripts/backlog.ts"] }],
+    }, coordinationNow);
+
+    expect(result.edges.map((edge) => edge.source)).toEqual(["claim", "pull-request", "worktree"]);
+    expect(evaluateCollisionPlan(manifest(), {
+      claims: [claimRecord(1033, "lane-b", ["scripts/backlog.tsx"], "2026-08-15T11:00:00.000Z", 1)],
+      pullRequests: [],
+      worktrees: [],
+    }, coordinationNow).edges).toEqual([]);
+  });
+
+  test("excludes the candidate issue's own claim, pull request, and worktree from blocking", () => {
+    const result = evaluateCollisionPlan(manifest(), {
+      claims: [claimRecord(1034, "lane-a", ["scripts/backlog.ts"], "2026-08-15T11:00:00.000Z", 1)],
+      pullRequests: [{ number: 1042, closingIssueNumbers: [1034], files: ["scripts/backlog.ts"] }],
+      worktrees: [{ branch: "feat/issue-1034", files: ["scripts/backlog.ts"] }],
+    }, coordinationNow);
+
+    expect(result.edges).toEqual([]);
+    expect(result.self.map((entry) => entry.source)).toEqual(["claim", "pull-request", "worktree"]);
+  });
+
+  test("treats expired claims as inactive and preserves a live canonical manifest as idempotent", () => {
+    const expired = claimRecord(1033, "lane-b", ["scripts/backlog.ts"], "2026-08-15T10:00:00.000Z", 1, "2026-08-15T11:00:00.000Z");
+    const liveSelf = claimRecord(1034, "lane-a", ["scripts/backlog.ts"], "2026-08-15T11:59:00.000Z", 2);
+    const result = evaluateCollisionPlan(manifest(), { claims: [expired, liveSelf], pullRequests: [], worktrees: [] }, coordinationNow);
+
+    expect(result.edges).toEqual([]);
+    expect(result.idempotent).toBe(true);
+    expect(result.expiresAt).toBe("2026-08-15T12:10:00.000Z");
+  });
+
+  test("uses an ordered accepted-claim sweep so a loser cannot create a phantom lock", () => {
+    const result = evaluateCollisionPlan(manifest({ paths: ["z"] }), {
+      claims: [
+        claimRecord(1031, "lane-a", ["x", "y"], "2026-08-15T11:00:00.000Z", 1),
+        claimRecord(1032, "lane-b", ["y", "z"], "2026-08-15T11:01:00.000Z", 2),
+      ],
+      pullRequests: [],
+      worktrees: [],
+    }, coordinationNow);
+
+    expect(result.edges).toEqual([]);
+    expect(result.rejectedClaimIds).toEqual([2]);
+  });
+
+  test("uses database id as the tie-breaker for concurrent opaque holders sharing one login", () => {
+    const result = evaluateCollisionPlan(manifest({ holder: "lane-c" }), {
+      claims: [
+        claimRecord(1031, "lane-a", ["scripts/backlog.ts"], "2026-08-15T11:00:00.000Z", 9),
+        claimRecord(1032, "lane-b", ["scripts/backlog.ts"], "2026-08-15T11:00:00.000Z", 10),
+      ],
+      pullRequests: [],
+      worktrees: [],
+    }, coordinationNow);
+
+    expect(result.edges).toEqual([{ source: "claim", issue: 1031, path: "scripts/backlog.ts" }]);
+  });
+
+  test("paginates trusted claim markers and ignores external comments", async () => {
+    const trusted = encodeClaimMarker(claimRecord(1033, "lane-b", ["scripts/backlog.ts"], "2026-08-15T11:00:00.000Z", 101).marker);
+    const external = encodeClaimMarker(claimRecord(1032, "lane-c", ["scripts/backlog.ts"], "2026-08-15T11:01:00.000Z", 102).marker);
+    const runner: Runner = {
+      async run(argv) {
+        const target = argv[2] ?? "";
+        const page = Number(new URL(`https://example.test/${target}`).searchParams.get("page") ?? "1");
+        if (page === 1) {
+          return {
+            exitCode: 0,
+            stderr: "",
+            stdout: JSON.stringify(Array.from({ length: 100 }, (_, index) => ({
+              id: index + 1,
+              created_at: "2026-08-15T10:00:00.000Z",
+              body: index === 99 ? external : "ordinary",
+              author_association: "NONE",
+            }))),
+          };
+        }
+        return { exitCode: 0, stderr: "", stdout: JSON.stringify([{ id: 101, created_at: "2026-08-15T11:00:00.000Z", body: trusted, author_association: "COLLABORATOR" }]) };
+      },
+    };
+
+    await expect(loadClaims(runner, { owner: "o", name: "r" }, [{ number: 1032, state: "OPEN", labels: ["WIP"] }, { number: 1033, state: "OPEN", labels: ["WIP"] }], coordinationNow)).resolves.toEqual([
+      expect.objectContaining({ issue: 1033, id: 101, marker: expect.objectContaining({ action: "claim" }) }),
+    ]);
+  });
+});
+
+describe("backlog resource leases", () => {
+  function withLeaseRoot(run: (common: string) => void): void {
+    const root = mkdtempSync(join(tmpdir(), "kesha-conveyor-lease-"));
+    const common = join(root, "shared.git");
+    try {
+      mkdirSync(common);
+      run(common);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test("gives simultaneous contenders one atomic winner visible through the shared git directory", () => withLeaseRoot((common) => {
+    const root = leaseDirectory(common);
+    const first = acquireLease(root, { resource: "preflight", holder: "lane-a", ttlSeconds: 60 }, coordinationNow);
+    const second = acquireLease(leaseDirectory(common), { resource: "preflight", holder: "lane-b", ttlSeconds: 60 }, coordinationNow);
+
+    expect([first.state, second.state].sort()).toEqual(["acquired", "refused"]);
+    expect(statusLease(leaseDirectory(common), "preflight", coordinationNow)).toEqual(expect.objectContaining({ state: "held", lease: expect.objectContaining({ holder: "lane-a" }) }));
+  }));
+
+  test("refuses a foreign live lease, recovers an expired lease, and makes release idempotent", () => withLeaseRoot((common) => {
+    const root = leaseDirectory(common);
+    expect(acquireLease(root, { resource: "preflight", holder: "lane-a", ttlSeconds: 60 }, coordinationNow).state).toBe("acquired");
+    expect(acquireLease(root, { resource: "preflight", holder: "lane-b", ttlSeconds: 60 }, coordinationNow).state).toBe("refused");
+    expect(acquireLease(root, { resource: "preflight", holder: "lane-b", ttlSeconds: 60 }, new Date("2026-08-15T12:02:00.000Z"))).toEqual(expect.objectContaining({ state: "acquired", recovered: true }));
+    expect(releaseLease(root, { resource: "preflight", holder: "lane-a" }, new Date("2026-08-15T12:02:01.000Z")).state).toBe("refused");
+    expect(releaseLease(root, { resource: "preflight", holder: "lane-b" }, new Date("2026-08-15T12:02:01.000Z")).state).toBe("released");
+    expect(releaseLease(root, { resource: "preflight", holder: "lane-b" }, new Date("2026-08-15T12:02:01.000Z")).state).toBe("absent");
+  }));
+
+  test("fails closed for malformed, symlinked, and path-escaping lease state", () => withLeaseRoot((common) => {
+    const root = leaseDirectory(common);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "preflight.json"), "not-json");
+    expect(() => statusLease(root, "preflight", coordinationNow)).toThrow("malformed lease state");
+    rmSync(join(root, "preflight.json"));
+    writeFileSync(join(common, "outside.json"), "{}");
+    symlinkSync(join(common, "outside.json"), join(root, "preflight.json"));
+    expect(() => acquireLease(root, { resource: "preflight", holder: "lane-a", ttlSeconds: 60 }, coordinationNow)).toThrow("symlink");
+    expect(() => acquireLease(root, { resource: "../escape", holder: "lane-a", ttlSeconds: 60 }, coordinationNow)).toThrow("resource");
+  }));
 });
