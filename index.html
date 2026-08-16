@@ -6,7 +6,7 @@
     <title>Kesha Voice Kit — Open-source voice toolkit for macOS, Linux, Windows</title>
     <meta
       name="description"
-      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Multilingual TTS — English, Russian, Spanish, French, Italian, Portuguese on every platform; Mandarin Chinese natively on Apple Silicon. Speaker diarization, OGG/Opus + FLAC output, SSML prosody. A single Rust binary for macOS, Linux, and Windows. No Python, no ffmpeg."
+      content="Open-source, local voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon, word-level timestamps, and multilingual TTS. Explicit installs keep multi-GB models under your control. macOS, Linux, and Windows. No Python or ffmpeg."
     />
     <meta name="theme-color" content="#0b1014" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="Kesha Voice Kit" />
     <meta
       property="og:description"
-      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon, ~2.5× on Linux/Windows CPU. STT in 25 languages, multilingual TTS (en, ru, es, fr, it, pt cross-platform; native zh on macOS), speaker diarization, OGG/Opus + FLAC output — all from a single Rust binary."
+      content="Open-source, local voice toolkit. ~19× faster than Whisper on Apple Silicon, word-level timestamps, multilingual TTS, and explicit model installs for macOS, Linux, and Windows."
     />
     <meta property="og:image" content="assets/logo.png" />
 
@@ -112,7 +112,7 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.23 · MIT licensed · macOS · Linux · Windows</span>
+            <span>v1.24.10 engine · v1.28 Bun CLI · MIT · macOS · Linux · Windows</span>
           </div>
 
           <h1 class="hero__title">
@@ -122,12 +122,10 @@
           </h1>
 
           <p class="hero__sub">
-            Small, fast, open-source audio models — speech-to-text with timestamped segments and
-            speaker diarization for meetings, text-to-speech that exports straight to
-            Telegram-ready OGG/Opus voice notes, voice activity detection, and language ID. CLI
-            tools plus an OpenClaw skill for LLM agents. CoreML on Apple Silicon, ONNX on
-            Linux + Windows.
-            <strong>One Rust binary. No Python. No ffmpeg.</strong>
+            Local speech-to-text with word-level timestamps, text-to-speech, live dictation, and
+            language ID. Install the engine and models deliberately, see progress on stderr, and
+            keep your audio on your machine. CoreML/ANE on Apple Silicon; ONNX on Linux and
+            Windows. <strong>No Python. No ffmpeg. No surprise downloads.</strong>
           </p>
 
           <!-- Animated waveform -->
@@ -194,8 +192,8 @@
               <span class="stat-label">Detection langs</span>
             </li>
             <li>
-              <span class="stat-num">~20MB</span>
-              <span class="stat-label">Single binary</span>
+              <span class="stat-num">~65 MB</span>
+              <span class="stat-label">Published engine binary</span>
             </li>
             <li>
               <span class="stat-num">19×</span>
@@ -233,12 +231,12 @@
               <p>
                 25 languages via NVIDIA Parakeet TDT. ~19× faster than Whisper on Apple Silicon,
                 ~2.5× on CPU. Auto language detection, optional VAD for long audio,
-                timestamped segments, plain text or LLM-friendly TOON output.
+                word-level timestamps, plain text, or LLM-friendly TOON output.
               </p>
               <ul class="chip-row" role="list">
                 <li>EN · RU · DE · FR · ES</li>
                 <li>+ 20 more</li>
-                <li>--timestamps</li>
+                <li>word timestamps</li>
                 <li>VAD opt-in</li>
                 <li>JSON / TOON</li>
               </ul>
@@ -282,12 +280,13 @@
               </div>
               <h3>Text-to-speech</h3>
               <p>
-                Kokoro-82M for English (CoreML on Apple Silicon, ONNX elsewhere) with acronym
-                auto-expand (FBI, EPAM, JSON), Vosk-TTS for Russian with stress markers, plus ~180
-                macOS system voices. Auto-routes by detected language. SSML
-                <code>&lt;prosody rate&gt;</code>, <code>&lt;break&gt;</code>, and
-                <code>&lt;emphasis&gt;</code> work on every backend — v1.21 closed the Apple
-                Silicon gap via FluidAudio 0.14.7’s model-native speed control.
+                Kokoro runs through CoreML/ANE on Apple Silicon and ONNX on Linux and Windows;
+                Vosk-TTS covers Russian, and macOS system voices need no model download. macOS
+                auto-routes from the text language; Linux and Windows use <code>--lang</code> or
+                <code>--voice</code>. Kokoro (ANE or ONNX) and Vosk support SSML
+                <code>&lt;prosody rate&gt;</code> and <code>&lt;break&gt;</code>;
+                <code>&lt;emphasis&gt;</code> is Vosk-only. macOS system voices reject
+                <code>--ssml</code>.
               </p>
             </article>
 
@@ -320,9 +319,11 @@
               </div>
               <h3>Timestamped transcripts</h3>
               <p>
-                <code>--json --timestamps</code> returns segments with <code>start</code> and
-                <code>end</code>. Plays nicely with subtitles, meeting tools, and chunked LLM
-                summarisation. Programmatic API: <code>transcribeWithTimestamps()</code>.
+                <code>--json --timestamps</code> adds a <code>words</code> array to each segment:
+                file-relative predictions on a 0.08-second grid. Each word end is predicted
+                independently, so consecutive spans may overlap and an end is not necessarily the
+                next word’s start. The field is absent when the decoder has no usable words (for
+                example after <code>--itn</code>), not an empty array.
               </p>
             </article>
 
@@ -335,8 +336,10 @@
               </div>
               <h3>Language detection</h3>
               <p>
-                107 languages from audio via SpeechBrain ECAPA-TDNN. Text language detection
-                runs through a precompiled Swift sidecar on macOS — 30–50 ms cold or warm.
+                107 languages from audio via SpeechBrain ECAPA-TDNN. JSON and TOON also expose
+                <code>textLanguage</code> separately from spoken <code>audioLanguage</code>:
+                Apple’s recognizer on macOS and bundled tinyld elsewhere. Their confidence scales
+                are not comparable.
               </p>
             </article>
 
@@ -348,8 +351,9 @@
               </div>
               <h3>Voice activity detection</h3>
               <p>
-                Silero VAD v5 trims silence on long, sparse recordings. Auto-enabled past 120
-                seconds of audio.
+                Silero VAD v5 trims silence on long, sparse recordings. Install it explicitly
+                with <code>kesha install --vad</code>; Kesha uses it automatically past 120
+                seconds once it is available.
               </p>
             </article>
 
@@ -379,16 +383,20 @@
                 </svg>
               </div>
               <span class="badge-new">New</span>
-              <h3><code>kesha record</code></h3>
+              <h3>Live dictation with recovery</h3>
               <p>
-                Capture voice notes from the default microphone and pipe straight into
-                <code>kesha --json</code> to close the transcribe-then-reply loop. No
-                ffmpeg, no separate recorder process.
+                On darwin-arm64, <code>kesha record --live</code> prints the microphone transcript
+                to stdout. Install VAD explicitly, then opt into silence stopping with
+                <code>--auto-stop</code>: 1,000 ms silence after 250 ms speech by default. Live
+                recording has a 120-second hard stop by default; pass <code>--max-seconds</code>
+                to override it. Ctrl-C prints the transcript; the recovery WAV is deleted only
+                after uninterrupted successful stdout delivery, and is kept if delivery fails or
+                Ctrl-C or SIGTERM ends the session.
               </p>
               <ul class="chip-row" role="list">
-                <li>kesha record</li>
-                <li>| kesha --json</li>
-                <li>WAV mono</li>
+                <li>darwin-arm64</li>
+                <li>kesha install --vad</li>
+                <li>--auto-stop</li>
               </ul>
             </article>
 
@@ -423,20 +431,21 @@
                   <path d="M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18" />
                 </svg>
               </div>
-              <span class="badge-new">v1.23</span>
+              <span class="badge-new">v1.24</span>
               <h3>Multilingual TTS</h3>
               <p>
-                English + Spanish, French, Italian, and Portuguese on every platform via
-                CharsiuG2P (ByT5-tiny ONNX, CC-BY 4.0) with per-language number and acronym
-                normalizers — OTAN, OVNI, FIFA read as words. <strong>Mandarin Chinese</strong>
-                runs natively on Apple Silicon via FluidAudio 0.14.8’s tone-aware ANE variant.
-                Russian stays on Vosk-TTS. <code>--lang es-ES</code> for Castilian Spanish.
+                Install TTS only when you need it. Kokoro powers English and multilingual voices
+                through CoreML/ANE on Apple Silicon and ONNX on Linux/Windows; Russian uses
+                Vosk-TTS. <strong>Chinese, Japanese, and Hindi are darwin-arm64 only;</strong>
+                Chinese accepts Han text, while Hindi requires romanized Latin input and Japanese
+                requires romaji (Devanagari and kana/kanji are rejected). Use <code>--lang</code>
+                on Linux and Windows rather than relying on macOS auto-routing.
               </p>
               <ul class="chip-row" role="list">
                 <li>en · es · fr · it · pt</li>
                 <li>ru (Vosk)</li>
-                <li>zh (macOS ANE)</li>
-                <li>es-ES · es-419</li>
+                <li>hi · ja · zh (darwin-arm64)</li>
+                <li>--lang off macOS</li>
               </ul>
             </article>
 
@@ -515,9 +524,8 @@
             <p class="section-sub">
               Real output from <code>kesha say</code> — Kokoro-82M for English, Vosk-TTS for Russian.
               SSML <code>&lt;prosody rate&gt;</code> renders the same text at different speeds without
-              resampling artifacts. v1.21 brought prosody to Apple Silicon Kokoro too — EN, RU,
-              and the v1.22 multilingual voices all honor <code>&lt;prosody&gt;</code>,
-              <code>&lt;break&gt;</code>, and <code>&lt;emphasis&gt;</code>.
+              resampling artifacts. Kokoro and Vosk honor <code>&lt;prosody&gt;</code> and
+              <code>&lt;break&gt;</code>; <code>&lt;emphasis&gt;</code> is Vosk-only.
             </p>
           </header>
 
@@ -659,7 +667,8 @@
             </h2>
             <p class="section-sub">
               Requires <a href="https://bun.sh" target="_blank" rel="noopener">Bun</a> ≥ 1.3 on
-              macOS arm64 or Linux x64.
+              macOS arm64, Linux x64, or Windows x64. Engine and models download only when you
+              ask them to.
             </p>
           </header>
 
@@ -668,9 +677,17 @@
               <div class="step__num">01</div>
               <h3>Install Bun</h3>
               <p>Skip if you already have it.</p>
+              <p><strong>macOS / Linux</strong></p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> curl -fsSL https://bun.sh/install | bash</code></pre>
                 <button class="copy" data-copy="curl -fsSL https://bun.sh/install | bash" aria-label="Copy">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                </button>
+              </div>
+              <p><strong>Windows PowerShell</strong></p>
+              <div class="code-block">
+                <pre><code><span class="muted">&gt;</span> powershell -c "irm bun.sh/install.ps1 | iex"</code></pre>
+                <button class="copy" data-copy="powershell -c &quot;irm bun.sh/install.ps1 | iex&quot;" aria-label="Copy">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
                 </button>
               </div>
@@ -680,19 +697,17 @@
               <div class="step__num">02</div>
               <h3>Install Kesha</h3>
               <p>
-                Pulls the engine and base STT models, then warms the Neural Engine on macOS
-                (<code>--tts</code> pulls Kokoro + multilingual voices, ~990 MB on darwin-arm64).
-                First transcribe runs in ~500 ms instead of a 25-second hang.
-                <code>kesha init</code> is the guided entry point for humans;
-                <code>kesha install</code> is the explicit one for CI and agents — same code
-                underneath.
+                Preview the size, then explicitly download the engine and base STT models.
+                Progress and recovery hints go to stderr; Kesha never downloads them while you
+                transcribe or speak. Add <code>--tts</code> or <code>--vad</code> only when those
+                workflows need them.
               </p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> bun add -g @drakulavich/kesha-voice-kit
-<span class="muted">$</span> kesha init             <span class="cm"># humans (interactive)</span>
-<span class="muted">$</span> kesha install --tts    <span class="cm"># + multilingual voices</span></code></pre>
+<span class="muted">$</span> kesha install --plan && kesha install
+<span class="muted">$</span> kesha install --vad    <span class="cm"># only for live auto-stop / VAD</span></code></pre>
                 <button class="copy" data-copy="bun add -g @drakulavich/kesha-voice-kit
-kesha init" aria-label="Copy">
+kesha install --plan && kesha install" aria-label="Copy">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
                 </button>
               </div>
@@ -701,7 +716,7 @@ kesha init" aria-label="Copy">
             <div class="step">
               <div class="step__num">03</div>
               <h3>Transcribe</h3>
-              <p>Pipe-friendly. Stdout = transcript, stderr = errors.</p>
+              <p>Pipe-friendly: stdout is the transcript; stderr carries progress and errors.</p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> kesha audio.ogg
 Свободу попугаям! Свободу!</code></pre>
@@ -735,10 +750,10 @@ kesha init" aria-label="Copy">
 <span class="cm"># Compact, LLM-friendly TOON</span>
 <span class="muted">$</span> kesha --toon audio.ogg
 
-<span class="cm"># Long / silence-heavy audio (auto past 120s)</span>
+<span class="cm"># Long / silence-heavy audio (after: kesha install --vad)</span>
 <span class="muted">$</span> kesha --vad lecture.m4a
 
-<span class="cm"># Timestamped segments (start/end per phrase)</span>
+<span class="cm"># Segments plus word-level timestamps</span>
 <span class="muted">$</span> kesha --json --timestamps interview.ogg
 
 <span class="cm"># Meeting transcript with speaker IDs (darwin-arm64)</span>
@@ -747,24 +762,27 @@ kesha init" aria-label="Copy">
 <span class="cm"># Warn if detected language differs</span>
 <span class="muted">$</span> kesha --lang en interview.wav
 
-<span class="cm"># Record from default mic, then transcribe straight to JSON</span>
-<span class="muted">$</span> kesha record | kesha --json</code></pre>
+<span class="cm"># Live dictation: darwin-arm64 + explicit VAD install</span>
+<span class="muted">$</span> kesha install --vad && kesha record --live --auto-stop</code></pre>
               </div>
             </div>
 
             <div class="tabs__panel" data-panel="tts">
               <div class="code-block code-block--lg">
-                <pre><code><span class="cm"># Opt-in TTS pack: Kokoro (EN) + Vosk-TTS (RU), ~990MB</span>
+                <pre><code><span class="cm"># Opt-in TTS pack: English; preview sizes first</span>
 <span class="muted">$</span> kesha install --tts
 
-<span class="cm"># Speak — voice auto-picks from text language</span>
+<span class="cm"># macOS auto-routes from text language</span>
 <span class="muted">$</span> kesha say "Hello, world" &gt; hello.wav
 <span class="muted">$</span> kesha say "Привет, мир" &gt; privet.wav
+
+<span class="cm"># Linux / Windows: state the language explicitly</span>
+<span class="muted">$</span> kesha say --lang ru "Привет, мир" &gt; privet.wav
 
 <span class="cm"># OGG/Opus voice notes (drop straight into Telegram)</span>
 <span class="muted">$</span> kesha say --format ogg-opus "Уже бегу!" --out voice.ogg
 
-<span class="cm"># Variable-speed playback via SSML &lt;prosody rate&gt;</span>
+<span class="cm"># Kokoro / Vosk only: variable-speed playback via SSML &lt;prosody rate&gt;</span>
 <span class="muted">$</span> kesha say --voice en-am_michael --ssml \
     '&lt;speak&gt;&lt;prosody rate="x-fast"&gt;Read this fast.&lt;/prosody&gt;&lt;/speak&gt;' \
     --out fast.wav
