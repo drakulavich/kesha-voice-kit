@@ -38,7 +38,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          existing="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state open --json title,body)"
+          existing="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state all --json title,body)"
           count="$(printf '%s' "$existing" | jq 'length')"
           if [ "$count" = "1" ]; then
             expected="$(printf '%s' "$existing" | jq --arg tag "$TAG_NAME" '

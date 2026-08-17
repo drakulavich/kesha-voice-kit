@@ -65,6 +65,7 @@ describe("buildPostEngineReleaseFollowup", () => {
   test("records published engine sizes and leads the CLI and registry by one minor", () => {
     const result = buildPostEngineReleaseFollowup({
       tag: "v1.24.11",
+      cliReleasePublished: true,
       release: { isDraft: false, isPrerelease: false, assets: assets() },
       manifest: manifest(),
       targetSource,
@@ -92,6 +93,7 @@ describe("buildPostEngineReleaseFollowup", () => {
     expect(() =>
       buildPostEngineReleaseFollowup({
         tag: "v1.24.11",
+        cliReleasePublished: true,
         release: { isDraft: false, isPrerelease: false, assets: publishedAssets },
         manifest: manifest(),
         targetSource,
@@ -105,6 +107,7 @@ describe("buildPostEngineReleaseFollowup", () => {
     expect(() =>
       buildPostEngineReleaseFollowup({
         tag: "v1.24.11",
+        cliReleasePublished: true,
         release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
         targetSource,
@@ -118,6 +121,7 @@ describe("buildPostEngineReleaseFollowup", () => {
     expect(() =>
       buildPostEngineReleaseFollowup({
         tag: "v1.24.11",
+        cliReleasePublished: true,
         release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
         targetSource,
@@ -125,6 +129,20 @@ describe("buildPostEngineReleaseFollowup", () => {
         serverSource: serverSource.replaceAll("1.29.0", "1.28.0"),
       }),
     ).toThrow(/does not match package\.json#version/i);
+  });
+
+  test("waits until the current CLI marker release has published before leading its base", () => {
+    expect(() =>
+      buildPostEngineReleaseFollowup({
+        tag: "v1.24.11",
+        cliReleasePublished: false,
+        release: { isDraft: false, isPrerelease: false, assets: assets() },
+        manifest: manifest(),
+        targetSource,
+        packageSource,
+        serverSource,
+      }),
+    ).toThrow(/CLI marker release.*not published/i);
   });
 });
 
@@ -137,6 +155,7 @@ describe("post-engine-release workflow", () => {
     expect(workflow.on.workflow_dispatch.inputs.tag.required).toBe(true);
     expect(job.permissions).toMatchObject({ contents: "write", "pull-requests": "write" });
     expect(job.concurrency.group).toContain("post-engine-release");
+    expect(job.steps.some((step: { run?: string }) => step.run?.includes("--state all"))).toBe(true);
     expect(job.steps.some((step: { run?: string }) => step.run?.includes("post-engine-release.ts"))).toBe(true);
     expect(job.steps.some((step: { run?: string }) => step.run?.includes("git switch -c"))).toBe(true);
     expect(job.steps.some((step: { run?: string }) => step.run?.includes("gh pr create"))).toBe(true);

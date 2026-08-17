@@ -21,6 +21,7 @@ type Manifest = {
 
 type FollowupInput = {
   tag: string;
+  cliReleasePublished: boolean;
   release: Release;
   manifest: Manifest;
   targetSource: string;
@@ -189,6 +190,11 @@ export function buildPostEngineReleaseFollowup(input: FollowupInput): Followup {
   if (cmp(cli, engine) < 0 || cli.prerelease.length > 0 || cli.build.length > 0) {
     throw new Error(`package.json#version (${pkg.version}) is not an unambiguous stable CLI baseline`);
   }
+  if (!input.cliReleasePublished) {
+    throw new Error(
+      `CLI marker release v${pkg.version}-cli is not published; publish it before leading the next CLI baseline`,
+    );
+  }
   const nextCliVersion = `${cli.major}.${cli.minor + 1}.0`;
   const packageSource = `${JSON.stringify({ ...JSON.parse(input.packageSource), version: nextCliVersion }, null, 2)}\n`;
   const serverSource = replaceServerVersions(input.serverSource, pkg.version, nextCliVersion);
@@ -217,6 +223,20 @@ async function fetchJson(url: string, token: string): Promise<unknown> {
   return response.json();
 }
 
+async function releaseIsPublished(token: string, tag: string): Promise<boolean> {
+  const response = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`, {
+    headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}` },
+  });
+  if (response.status === 404) return false;
+  if (!response.ok) throw new Error(`GitHub API request failed (${response.status}) for CLI marker ${tag}`);
+  const release = asRecord(await response.json(), "CLI marker release");
+  return (
+    !booleanAt(release.draft, "CLI marker release draft") &&
+    !booleanAt(release.prerelease, "CLI marker release prerelease") &&
+    typeof release.published_at === "string"
+  );
+}
+
 async function main(): Promise<void> {
   const tag = option("--tag");
   const token = process.env.GITHUB_TOKEN;
@@ -237,17 +257,22 @@ async function main(): Promise<void> {
   const manifestAsset = assets.find((asset) => asset.name === "kesha-release-manifest.json");
   if (!manifestAsset?.browser_download_url) throw new Error(`release ${tag} has no kesha-release-manifest.json asset`);
   const manifest = parseManifest(await fetchJson(manifestAsset.browser_download_url, token));
+  const targetSource = readFileSync("src/engine-targets.ts", "utf8");
+  const packageSource = readFileSync("package.json", "utf8");
+  const serverSource = readFileSync("server.json", "utf8");
+  const cliReleasePublished = await releaseIsPublished(token, `v${parsePackage(packageSource).version}-cli`);
   const result = buildPostEngineReleaseFollowup({
     tag,
+    cliReleasePublished,
     release: {
       isDraft: booleanAt(raw.draft, "release draft"),
       isPrerelease: booleanAt(raw.prerelease, "release prerelease"),
       assets,
     },
     manifest,
-    targetSource: readFileSync("src/engine-targets.ts", "utf8"),
-    packageSource: readFileSync("package.json", "utf8"),
-    serverSource: readFileSync("server.json", "utf8"),
+    targetSource,
+    packageSource,
+    serverSource,
   });
   writeFileSync("src/engine-targets.ts", result.targetSource);
   writeFileSync("package.json", result.packageSource);
