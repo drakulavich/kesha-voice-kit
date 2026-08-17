@@ -57,7 +57,10 @@ async function run(
   args: string[],
   timeoutMs = 300_000,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const proc = Bun.spawn(["kesha", ...args], { stdout: "pipe", stderr: "pipe" });
+  // Release smoke stages a draft binary behind a tag checkout rather than a global link.  The
+  // override preserves the ordinary `kesha` default while making that exact CLI path observable.
+  const command = process.env.KESHA_COMMAND || "kesha";
+  const proc = Bun.spawn([command, ...args], { stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => proc.kill(), timeoutMs);
   try {
     const [stdout, stderr] = await Promise.all([

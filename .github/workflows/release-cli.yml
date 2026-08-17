@@ -123,3 +123,11 @@ jobs:
           TAG: ${{ needs.plan.outputs.tag }}
         run: |
           echo "::error::npm publish failed for $TAG while its GitHub release is already public. Re-run the publish alone — it is idempotent, an already-published version exits 0 without republishing: gh workflow run npm-publish.yml --ref $TAG -f tag=$TAG"
+
+  published-install-smoke:
+    name: Smoke the published npm install
+    needs: [plan, publish-npm]
+    uses: ./.github/workflows/release-install-smoke.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+      version: ${{ needs.plan.outputs.version }}
