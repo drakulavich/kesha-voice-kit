@@ -65,12 +65,18 @@ where tests live, and a "where to change X" table.
 ## Development
 
 ```bash
-bun run check       # typecheck + version drift + deterministic CLI tests
+bun run check       # typecheck + version drift + deterministic CLI tests (the fast path)
 just test           # bun unit + integration tests
 bun run lint        # bunx tsc --noEmit
 just smoke-test     # bun link → kesha install → run against fixtures
 just release        # lint + test + smoke-test
 ```
+
+**Keep the fast path sacred.** `bun run check` (and `bun run test:cli-fast`)
+must stay free of engine downloads, model installs, and heavy e2e. Use it for
+every CLI-only change. Engine-backed integration, TTS e2e, diarization, and
+smoke tests live on the slower explicit path (`just test`, `just smoke-test`,
+CI). Do not pull network or multi-GB dependencies into the fast loop.
 
 Use `bun run check` for a quick local confidence pass before
 opening small CLI-only PRs. It avoids the engine-backed E2E lanes while still
@@ -173,13 +179,53 @@ kesha-voice-kit/
 ## Tests
 
 - Unit tests in `tests/unit/` — no external deps, run on
-  Linux/Windows/macOS.
+  Linux/Windows/macOS. Prefer these for pure functions and deterministic CLI
+  contracts.
 - Integration tests in `tests/integration/` — exercise the actual engine
-  binary, run on macos-14 in CI.
-- Rust integration tests in `rust/tests/` — `cargo test` runs them on
-  Linux/Windows/macOS via the warm `--stdin-loop` harness.
+  binary, run on macos-14 in CI. Prefer these the moment behaviour crosses the
+  CLI or engine boundary.
+- Rust integration tests in `rust/tests/` — `cargo nextest` / `just rust-test`
+  (matches CI). Do not rely on plain `cargo test` for the suite.
 - `audio-quality-check` agent runs after every commit touching
   `rust/src/tts/**` (see `.claude/agents/audio-quality-check.md`).
+
+### Fast path vs slow path
+
+| Path | Command | What it is for |
+|------|---------|----------------|
+| **Fast (sacred)** | `bun run check` / `bun run test:cli-fast` | Design feedback while coding. No engine download, no models, no network. Must stay seconds-fast. |
+| **Full local** | `just test` | Unit + integration (still avoids the heaviest model-dependent e2e). |
+| **Smoke / release** | `just smoke-test`, `just release` | Real install + fixtures. Explicit and slower. |
+| **CI** | `ci.yml`, `rust-test.yml` | Authoritative gates; model-heavy jobs are path-filtered or self-skipping. |
+
+Do not add engine installs, large fixtures, or network calls to the fast path.
+If a change needs those, put the test on the slower path and keep the fast
+loop pure.
+
+### Mutation testing
+
+Coverage tells you code was *executed*. Mutation testing tells you whether the
+tests would *notice* if behaviour changed. A surviving mutant is a missing
+assertion, not a score to inflate.
+
+Scoped runs stay usable because they only re-run the suites that reach the
+mutated file:
+
+```bash
+just mutants-ts src/voice-routing.ts          # TypeScript (Stryker + Bun)
+just mutants-ts src/engine.ts src/cli/main.ts # several files
+just mutants-ts --with-integration src/foo.ts # include integration suites (slower)
+
+just mutants-rust src/errors.rs               # Rust (cargo-mutants; needs clean tree)
+```
+
+Or via npm scripts: `bun run mutants:ts -- src/voice-routing.ts`.
+
+Treat survivors on critical paths (engine spawn, capability checks, install
+hints, stdout/stderr contracts, voice routing) as real design debt. Leave
+equivalent or intentionally untestable mutants alone; the goal is stronger
+assertions, not 100% kill rate. Details and quality bar live in
+[`CLAUDE.md`](./CLAUDE.md) under "TESTS COME FIRST, AND ARE JUDGED BY WHAT THEY CATCH".
 
 Handy loops:
 
