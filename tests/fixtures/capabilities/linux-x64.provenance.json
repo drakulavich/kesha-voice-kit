@@ -1,6 +1,6 @@
 {
-  "engineVersion": "1.24.9",
+  "engineVersion": "1.24.10",
   "assetName": "kesha-engine-linux-x64",
-  "sha256": "32298e355135d7a0ae468bb934ca14d179b31d54d6ba8e3b3c127074a26966bf",
-  "recordedFrom": "kesha-engine-linux-x64 smoke-tested pre-upload in build-engine run 31274041934 job 93144639950 (tag v1.24.9); sha256 from the release SHA256SUMS"
+  "sha256": "562da15e9996377e99a9c8ac103a4e7deac7145b3e1aafee268026a1f9d2b83c",
+  "recordedFrom": "kesha-engine-linux-x64 from release v1.24.10"
 }
