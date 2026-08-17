@@ -1,0 +1,108 @@
+name: Post-engine release follow-up
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable engine tag to replay (vX.Y.Z)
+        required: true
+        type: string
+
+jobs:
+  follow_up:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: post-engine-release-${{ github.event.release.tag_name || inputs.tag }}
+      cancel-in-progress: false
+    env:
+      REPOSITORY: drakulavich/kesha-voice-kit
+      TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+      BRANCH: automation/post-release-${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: Refuse an existing follow-up branch or PR
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state open --json title,body)"
+          count="$(printf '%s' "$existing" | jq 'length')"
+          if [ "$count" = "1" ]; then
+            expected="$(printf '%s' "$existing" | jq --arg tag "$TAG_NAME" '
+              ((.[0].title | startswith("chore(release): record " + $tag + " assets and lead CLI to v"))
+              and (.[0].body | contains("Published engine tag: `" + $tag + "`")))
+            ')"
+            if [ "$expected" = "true" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "A matching follow-up PR for $TAG_NAME is already open; leaving it untouched."
+              exit 0
+            fi
+            echo "::error::An unrelated PR already uses $BRANCH; refusing to touch it." >&2
+            exit 1
+          fi
+          if [ "$count" != "0" ]; then
+            echo "::error::More than one open PR uses $BRANCH; refusing an ambiguous follow-up." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "::error::Branch $BRANCH already exists without an open follow-up PR; refusing to overwrite it." >&2
+            exit 1
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Read published release and prepare follow-up
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bun .github/scripts/post-engine-release.ts --tag "$TAG_NAME"
+
+      - name: Validate and record output
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          {
+            printf '\n## Validation output\n\n```text\n'
+            bun run check:versions
+            bun run check:engine-targets
+            git diff --check
+            printf 'git diff --check: passed\n```\n'
+          } | tee -a post-release-pr.md
+
+      - name: Commit and push follow-up branch
+        if: steps.existing.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add package.json server.json src/engine-targets.ts
+          git diff --cached --quiet && { echo "::error::No post-release changes were generated." >&2; exit 1; }
+          next_cli="$(bun -e 'console.log(JSON.parse(await Bun.file("package.json").text()).version)')"
+          git commit -m "chore(release): lead CLI base to v$next_cli"
+          git push origin "$BRANCH"
+
+      - name: Open follow-up pull request
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          next_cli="$(bun -e 'console.log(JSON.parse(await Bun.file("package.json").text()).version)')"
+          gh pr create \
+            --repo "$REPOSITORY" \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(release): record $TAG_NAME assets and lead CLI to v$next_cli" \
+            --body-file post-release-pr.md
