@@ -25,10 +25,17 @@ cosign verify-blob \\
   --certificate-identity "https://github.com/${REPO}/.github/workflows/build-engine.yml@refs/tags/${tag}" \\
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
   kesha-engine-darwin-arm64
+
+# Before gh release edit --draft=false, require the authenticated install smoke to pass:
+gh workflow run release-install-smoke.yml -R ${REPO} -f tag=${tag} -f mode=draft-engine
 \`\`\`
 
 The release also includes packaging metadata in \`kesha-release-manifest.json\`
 and a source SBOM in \`kesha-voice-kit-${tag}.spdx.json\`.
+
+The smoke downloads this draft with GitHub authentication into an isolated cache, checks the
+Linux artifact's version and capabilities, warms ASR, then transcribes and synthesises. If it
+fails, do not un-draft; inspect its log and rebuild or replace the draft with a new patch tag.
 `;
 }
 

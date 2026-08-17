@@ -1,0 +1,75 @@
+name: "🚬 Release install smoke"
+
+# The draft path is intentionally manual: only an authenticated GitHub token can download a
+# draft asset, and a failed run is an explicit stop sign before a maintainer un-drafts it.  The
+# reusable npm path is called by the CLI release only after the registry says the exact version is
+# live, so it cannot accidentally smoke the checkout or a prior global installation.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Engine or CLI release tag to verify (for example v1.30.0)"
+        required: true
+        type: string
+      mode:
+        description: "draft-engine verifies a still-draft engine release; npm verifies a published CLI package"
+        required: true
+        default: draft-engine
+        type: choice
+        options: [draft-engine, npm]
+      version:
+        description: "Required for npm mode: exact CLI package version"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      mode:
+        required: false
+        default: npm
+        type: string
+
+jobs:
+  draft-engine:
+    if: inputs.mode == 'draft-engine'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # GitHub hides drafts from read-only tokens; this job never writes despite the visibility scope.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          lfs: true
+      - uses: ./.github/actions/setup-bun
+      - name: Read the engine pin from the release tag
+        run: echo "ENGINE_VERSION=$(jq -er '.keshaEngine.version | strings' package.json)" >> "$GITHUB_ENV"
+      - name: Verify the draft artifact through an isolated user path
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: .github/scripts/release-install-smoke.sh draft-engine
+
+  npm:
+    if: inputs.mode == 'npm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          lfs: true
+      - uses: ./.github/actions/setup-bun
+      - name: Verify the exact published npm package through an isolated user path
+        env:
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
+        run: .github/scripts/release-install-smoke.sh npm
