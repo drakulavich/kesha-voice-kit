@@ -98,8 +98,7 @@ Greptile reviews on open and on every new commit. **P1/P2 findings are merge blo
 
 ### BACKLOG CONVEYOR REVIEW GATE
 
-
-Every conveyor PR MUST follow the [backlog conveyor review runbook](docs/runbooks/backlog-conveyor-review.md): a risk-specific Grok review with a durable PR comment, a later fix-and-re-review pass for confirmed blockers, and `/simplify <PR>` only after the current head is otherwise ready. `merge-ready` is forbidden until that full sequence is recorded for the current head; an unavailable or inconclusive step is a blocker, not permission to proceed.
+Every conveyor PR MUST follow the [backlog conveyor review runbook](docs/runbooks/backlog-conveyor-review.md): a risk-specific Grok review with a durable PR comment, a later fix-and-re-review pass for confirmed blockers, and a final simplify pass only after the current head is otherwise ready. `merge-ready` is forbidden until that full sequence is recorded for the current head; an unavailable or inconclusive step is a blocker, not permission to proceed.
 
 ### ERROR HANDLING
 
