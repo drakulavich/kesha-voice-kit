@@ -14,9 +14,24 @@
 //!   asynchronous `E5RT` prints — diarization teardown, and anything CoreML
 //!   emits between two streaming ASR calls — which fire after the call returns,
 //!   where a scoped guard has already put fd 1 back.
+//!
+//! File descriptor 1 belongs to the whole process, not a Rust thread. The
+//! internal ownership lock serializes every redirect/restore transition here;
+//! while a scoped guard owns it, unrelated threads still must not write to
+//! stdout because their bytes would be intentionally discarded. Worker callers
+//! send progress over channels and leave reporting to the stdout-owning thread.
 
 use std::io::Write;
 use std::os::fd::OwnedFd;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+fn stdout_ownership() -> MutexGuard<'static, ()> {
+    static OWNER: OnceLock<Mutex<()>> = OnceLock::new();
+    OWNER
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// `dup` a descriptor into an owned handle, or `None` when the call failed.
 /// Every caller here treats failure as best-effort: run unguarded rather than
@@ -39,6 +54,8 @@ fn dup_owned(fd: std::os::fd::RawFd) -> Option<OwnedFd> {
 /// when opening /dev/null failed).
 pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce() -> R) -> R {
     use std::os::fd::AsRawFd;
+
+    let _owner = stdout_ownership();
 
     struct StdoutGuard {
         saved: Option<OwnedFd>,
@@ -208,6 +225,8 @@ impl StdoutShield {
     pub(crate) fn new() -> Self {
         use std::os::fd::AsRawFd;
 
+        let _owner = stdout_ownership();
+
         // The original stdout — the pipe the parent reads — stays referenced by this dup.
         let real_stdout: Option<std::fs::File> =
             dup_owned(libc::STDOUT_FILENO).map(std::fs::File::from);
@@ -294,6 +313,47 @@ mod tests {
     fn c_flush() {
         // SAFETY: fflush(NULL) flushes every open C output stream and borrows nothing.
         unsafe { libc::fflush(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn stdout_ownership_serializes_concurrent_guards() {
+        use std::sync::{mpsc, Arc};
+        use std::time::Duration;
+
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (attempting_tx, attempting_rx) = mpsc::channel();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let release_rx = Arc::new(std::sync::Mutex::new(release_rx));
+
+        let first = std::thread::spawn({
+            let release_rx = Arc::clone(&release_rx);
+            move || {
+                let _owner = stdout_ownership();
+                started_tx.send(()).expect("report first owner");
+                release_rx
+                    .lock()
+                    .expect("lock release receiver")
+                    .recv()
+                    .expect("release first owner");
+            }
+        });
+        started_rx.recv().expect("wait for first owner");
+
+        let second = std::thread::spawn(move || {
+            attempting_tx.send(()).expect("report second owner attempt");
+            let _owner = stdout_ownership();
+            entered_tx.send(()).expect("report second owner");
+        });
+        attempting_rx.recv().expect("wait for second owner attempt");
+        assert!(entered_rx.recv_timeout(Duration::from_millis(100)).is_err());
+
+        release_tx.send(()).expect("release first owner");
+        first.join().expect("first owner joins");
+        entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second owner enters after the first exits");
+        second.join().expect("second owner joins");
     }
 
     /// #841: the bridge collapses every transcribe throw to "Transcription
