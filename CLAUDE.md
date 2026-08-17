@@ -96,6 +96,10 @@ A test that spawns a stub owns its death. `bunfig.toml` preloads `tests/helpers/
 
 Greptile reviews on open and on every new commit. **P1/P2 findings are merge blockers.** Do not stop at the PR URL: wait for CI and Greptile to cover the latest head SHA, then report whether it is green. Clear false positives may be dismissed with a PR comment explaining why — rare in practice. Re-review and auto-merge mechanics: the `release-mechanics` skill.
 
+### BACKLOG CONVEYOR REVIEW GATE
+
+Every conveyor PR MUST follow the [backlog conveyor review runbook](docs/runbooks/backlog-conveyor-review.md): a risk-specific Grok review with a durable PR comment, a later fix-and-re-review pass for confirmed blockers, and a final simplify pass only after the current head is otherwise ready. `merge-ready` is forbidden until that full sequence is recorded for the current head; an unavailable or inconclusive step is a blocker, not permission to proceed.
+
 ### ERROR HANDLING
 
 Human-readable messages with context: what failed, why, what to do. Never swallow errors; never return success on failure.
