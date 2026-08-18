@@ -91,7 +91,7 @@
   },
   "devDependencies": {
     "@hughescr/stryker-bun-runner": "^1.3.8",
-    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/core": "^10.0.0",
     "@types/bun": "latest",
     "fast-xml-parser": "^5.8.0",
     "typescript": "^7.0.2",
