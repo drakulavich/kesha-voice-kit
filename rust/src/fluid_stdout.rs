@@ -362,16 +362,18 @@ mod tests {
             }
         });
         attempting_rx.recv().expect("wait for second attempt");
-        assert!(entered_rx.recv_timeout(Duration::from_millis(100)).is_err());
+        let entered_early = entered_rx.recv_timeout(Duration::from_millis(100)).is_ok();
 
         release_tx.send(()).expect("release first guard");
         first.join().expect("first guard joins");
-        entered_rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("second guard enters after the first exits");
+        if !entered_early {
+            entered_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("second guard enters after the first exits");
+        }
         second.join().expect("second guard joins");
         assert!(
-            !overlapped.load(Ordering::SeqCst),
+            !overlapped.load(Ordering::SeqCst) && !entered_early,
             "second guard ran its closure while the first still owned fd 1"
         );
     }
