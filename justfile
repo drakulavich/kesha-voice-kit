@@ -57,9 +57,11 @@ worktree-rm slug: root-checkout-only
     git worktree prune
 
 # Adversarially review this worktree's PR; CLAIM is required because named claims found defects and generic asks did not (#1065)
+[positional-arguments]
 review CLAIM:
     #!/usr/bin/env bash
     set -euo pipefail
+    claim="$1"
     reviewer=${KESHA_REVIEWER:-omc ask grok -p}
     pr="$(gh pr view --json number -q .number 2>/dev/null)" || {
       echo "refusing: no pull request for this branch — open it first" >&2; exit 2; }
@@ -72,7 +74,7 @@ review CLAIM:
     Adversarial review of pull request #${pr} at head ${head} (branch ${branch} vs ${base}).
 
     Prove or refute this claim, and say which assertion fires if it is wrong:
-    {{ CLAIM }}
+    ${claim}
 
     Where a claim can be settled by running something, run it: mutate the code, execute the
     test, report the failure, restore the file. Do not settle it by reading.
@@ -132,6 +134,9 @@ preflight:
     echo "==> TS gate (always)"
     bun run test
     bun run lint
+    # CI runs these two and preflight did not, so a shell-injecting recipe reached CI green locally (#1065).
+    bun run check:recipes
+    bun run check:workflows
 
     if [ -n "$rust" ]; then
       echo "==> Rust gate"
