@@ -56,6 +56,39 @@ worktree-rm slug: root-checkout-only
     git worktree remove ".worktrees/$1"
     git worktree prune
 
+# Adversarially review this worktree's PR; CLAIM is required because named claims found defects and generic asks did not (#1065)
+[positional-arguments]
+review CLAIM:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    claim="$1"
+    reviewer=${KESHA_REVIEWER:-omc ask grok -p}
+    pr="$(gh pr view --json number -q .number 2>/dev/null)" || {
+      echo "refusing: no pull request for this branch — open it first" >&2; exit 2; }
+    head="$(gh pr view --json headRefOid -q .headRefOid)"
+    base="$(gh pr view --json baseRefName -q .baseRefName)"
+    branch="$(git rev-parse --abbrev-ref HEAD)"
+    log=".omc/review-${pr}-${head:0:8}.log"
+    mkdir -p .omc
+    read -r -d '' prompt <<EOF || true
+    Adversarial review of pull request #${pr} at head ${head} (branch ${branch} vs ${base}).
+
+    Prove or refute this claim, and say which assertion fires if it is wrong:
+    ${claim}
+
+    Where a claim can be settled by running something, run it: mutate the code, execute the
+    test, report the failure, restore the file. Do not settle it by reading.
+    If you still agree with the claim after examining it, say so plainly — agreement and
+    non-examination look identical otherwise.
+    If the diff touches tests, state whether any existing assertion was changed, deleted or
+    renamed, and whether each change is justified or re-points a pin at broken output.
+
+    Output findings with severity P1/P2/P3.
+    EOF
+    echo "==> reviewing #${pr} at ${head:0:8}; output -> ${log}"
+    nohup ${reviewer} "${prompt}" > "${log}" 2>&1 &
+    echo "==> launched in background; post the findings as one **grok review** comment carrying the full head SHA"
+
 # Run all tests
 test:
     bun run test:unit
@@ -101,6 +134,9 @@ preflight:
     echo "==> TS gate (always)"
     bun run test
     bun run lint
+    # CI runs these two and preflight did not, so a shell-injecting recipe reached CI green locally (#1065).
+    bun run check:recipes
+    bun run check:workflows
 
     if [ -n "$rust" ]; then
       echo "==> Rust gate"

@@ -237,6 +237,7 @@ describe("the repository's own references", () => {
       "preflight",
       "release",
       "release-tag",
+      "review",
       "rust-test",
       "smoke-test",
       "test",
