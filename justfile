@@ -94,6 +94,15 @@ review CLAIM:
 mutate file find replace +test:
     bun scripts/mutate.ts "$@"
 
+# Earn merge-ready: build SHA-bound evidence for this PR and hand it to the conveyor gate (#1078)
+[positional-arguments]
+gate issue pr provider uri:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    evidence="$(bun scripts/gate-evidence.ts "$3" "$4" --pr "$2")"
+    echo "==> evidence: $evidence"
+    bun run conveyor -- gate --issue "$1" --pr "$2" --evidence "$evidence" --apply
+
 # Run all tests
 test:
     bun run test:unit
