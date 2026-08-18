@@ -89,6 +89,11 @@ review CLAIM:
     nohup ${reviewer} "${prompt}" > "${log}" 2>&1 &
     echo "==> launched in background; post the findings as one **grok review** comment carrying the full head SHA"
 
+# Prove a guard is pinned: replace text, run the tests, restore. Refuses when the text does not occur (#1075)
+[positional-arguments]
+mutate file find replace +test:
+    bun scripts/mutate.ts "$@"
+
 # Run all tests
 test:
     bun run test:unit

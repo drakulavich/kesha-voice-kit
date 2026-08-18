@@ -72,6 +72,8 @@ The rule behind that audit: a test pays off when the **contract is stable and th
 - Prefer `tests/integration/` the moment behaviour crosses the CLI or the engine boundary; that is where the highest-value coverage lives.
 - New behaviour gets coverage next to the code that changed. Do not lean on a broad e2e test that happens to walk the branch.
 
+A guard is only a guard if removing it goes red. `just mutate <file> <find> <replace> <test>` proves that in seconds — it refuses when the text does not occur, restores the file in a `finally`, and exits 0 only when the mutation was *caught*. A hand-rolled `perl -0pi` that matches nothing exits 0 and reads as "the pin is useless" (#1075).
+
 **Fix a flaky test before doing anything else.** A suite that fails at random teaches everyone to re-run it, and the next genuine failure gets re-run too. Never `skip` a flaky or failing test to force green — fix it, or quarantine it behind an issue. That ban is about hiding red; the environmental guards below are the opposite and must stay.
 
 When deciding whether some change caused a flake, one run per arm settles nothing — check CI on the same SHA first, then repeat each arm enough times to separate signal from noise. Background for install timeouts in `cli-contracts`: macOS scans every freshly written executable on first exec, which cost these scenarios 2–9 s. #649 widened `cli-scenario.ts`'s `DEFAULT_TIMEOUT_MS` from 4 s to 15 s to cover it, so a timeout there is no longer explained away as that flake — treat it as real until proven otherwise.
