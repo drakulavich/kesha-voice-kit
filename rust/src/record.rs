@@ -3,8 +3,10 @@ use std::io::Write;
 #[cfg(target_os = "macos")]
 use std::io::{self, IsTerminal, Read};
 use std::path::Path;
+#[cfg(any(target_os = "macos", test))]
+use std::sync::mpsc;
 #[cfg(target_os = "macos")]
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 #[cfg(target_os = "macos")]
 use std::time::Instant;
@@ -73,12 +75,16 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
     let input_channels = input.config.channels;
     let sample_rate = input.config.sample_rate.0;
 
-    let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
+    let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(RECORD_QUEUE_BUFFERS);
+    let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     spawn_stdin_stop_thread(stop_tx);
 
-    let sink = move |samples| {
-        let _ = sample_tx.send(samples);
+    let sink = {
+        let dropped = std::sync::Arc::clone(&dropped);
+        move |samples| {
+            enqueue_record_buffer(&sample_tx, &dropped, samples);
+        }
     };
     let stream = build_input_stream_for_format(&input, sink)?;
 
@@ -118,6 +124,7 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
             mono_samples.push(mix_frame_to_mono(frame).clamp(-1.0, 1.0));
         }
     }
+    warn_dropped_buffers(dropped.load(std::sync::atomic::Ordering::Relaxed));
 
     write_plain_mono_float_wav(path, sample_rate, &mono_samples)
         .context("failed to write WAV recording")?;
@@ -174,7 +181,7 @@ pub fn record_default_input_live(
         endpoint,
     };
 
-    let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(LIVE_QUEUE_BUFFERS);
+    let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(RECORD_QUEUE_BUFFERS);
     let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     spawn_stdin_stop_thread(stop_tx);
@@ -182,10 +189,7 @@ pub fn record_default_input_live(
     let sink = {
         let dropped = std::sync::Arc::clone(&dropped);
         move |samples| {
-            // Never block the CPAL callback; overflow is reported, not absorbed.
-            if sample_tx.try_send(samples).is_err() {
-                dropped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
+            enqueue_record_buffer(&sample_tx, &dropped, samples);
         }
     };
     let stream = build_input_stream_for_format(&input, sink)?;
@@ -388,24 +392,42 @@ impl LiveFeed {
     }
 }
 
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 fn warn_dropped_buffers(dropped: usize) {
     if dropped > 0 {
         eprintln!(
-            "warning: dropped {dropped} microphone buffer(s) — transcription could not keep up, \
-             so the transcript may have gaps"
+            "warning: dropped {dropped} microphone buffer(s) — recording could not keep up, \
+             so audio may have gaps"
         );
     }
 }
 
 /// Backlog the capture callback may run ahead by — ~5.5 s at the 512-frame,
 /// 48 kHz callback measured on an M-series Mac, far beyond the fraction of real
-/// time the ANE needs. Reaching it means something is wrong, which is why
+/// time a normal WAV write needs. Reaching it means something is wrong, which is why
 /// overflow is reported rather than absorbed.
-#[cfg(all(feature = "coreml", target_os = "macos"))]
-const LIVE_QUEUE_BUFFERS: usize = 512;
+#[cfg(any(target_os = "macos", test))]
+const RECORD_QUEUE_BUFFERS: usize = 512;
+
+#[cfg(any(target_os = "macos", test))]
+fn enqueue_record_buffer(
+    tx: &mpsc::SyncSender<Vec<f32>>,
+    dropped: &std::sync::atomic::AtomicUsize,
+    samples: Vec<f32>,
+) {
+    // Never block the CPAL callback; overflow is reported, not absorbed.
+    if tx.try_send(samples).is_err() {
+        dropped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 
 #[cfg(target_os = "macos")]
+/// Starts the one-shot piped-stdin stop reader for a CLI recording.
+///
+/// This intentionally detaches because a blocking stdin read is not portable to
+/// cancel, and the engine performs one recording before its process exits. Do
+/// not reuse this helper for multiple recordings in one process: the first
+/// reader owns stdin until it receives a byte or the process exits.
 fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<()>) {
     if io::stdin().is_terminal() {
         return;
@@ -796,6 +818,25 @@ mod interrupt {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn record_queue_drops_the_buffer_that_overflows_its_documented_bound() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(RECORD_QUEUE_BUFFERS);
+        let dropped = std::sync::atomic::AtomicUsize::new(0);
+
+        for _ in 0..RECORD_QUEUE_BUFFERS {
+            enqueue_record_buffer(&tx, &dropped, vec![0.25]);
+        }
+        enqueue_record_buffer(&tx, &dropped, vec![0.5]);
+
+        let queued: Vec<Vec<f32>> = rx.try_iter().collect();
+        assert_eq!(dropped.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(queued.len(), RECORD_QUEUE_BUFFERS);
+        assert!(
+            queued.iter().all(|buffer| buffer == &vec![0.25]),
+            "the overflowing buffer must be dropped, never queued"
+        );
+    }
 
     #[test]
     fn wav_writer_finalizes_readable_mono_float_wav() {
