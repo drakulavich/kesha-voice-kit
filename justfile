@@ -70,21 +70,7 @@ review CLAIM:
     branch="$(git rev-parse --abbrev-ref HEAD)"
     log=".omc/review-${pr}-${head:0:8}.log"
     mkdir -p .omc
-    read -r -d '' prompt <<EOF || true
-    Adversarial review of pull request #${pr} at head ${head} (branch ${branch} vs ${base}).
-
-    Prove or refute this claim, and say which assertion fires if it is wrong:
-    ${claim}
-
-    Where a claim can be settled by running something, run it: mutate the code, execute the
-    test, report the failure, restore the file. Do not settle it by reading.
-    If you still agree with the claim after examining it, say so plainly — agreement and
-    non-examination look identical otherwise.
-    If the diff touches tests, state whether any existing assertion was changed, deleted or
-    renamed, and whether each change is justified or re-points a pin at broken output.
-
-    Output findings with severity P1/P2/P3.
-    EOF
+    prompt="$(bun scripts/review-prompt.ts "$pr" "$head" "$branch" "$base" "$claim")"
     echo "==> reviewing #${pr} at ${head:0:8}; output -> ${log}"
     nohup ${reviewer} "${prompt}" > "${log}" 2>&1 &
     echo "==> launched in background; post the findings as one **grok review** comment carrying the full head SHA"

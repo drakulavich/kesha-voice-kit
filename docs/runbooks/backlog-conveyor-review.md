@@ -11,6 +11,13 @@ Run `just review "<claim>"` the moment the PR exists. Measured over
 every P1/P2 the reviews did raise led to a code change — 6 for 6. Coverage,
 not wording, is what the gate was losing.
 
+The prompt is a claim **plus a standing sweep**. The claim focuses; measured over three PRs on
+2026-08-18 it also *narrowed*, and every later round found what a different question would have
+surfaced first rather than what a closer reading would have. The sweep — second-order
+consequences, both mutations per guard, the lane that runs each new test, this repo's recurring
+classes, and an explicit statement of what went unexamined — is what stops the claim bounding
+the review. It lives in `scripts/review-prompt.ts` so it can be pinned by a test.
+
 `CLAIM` is required by the recipe on purpose. Reviews framed as *refute this
 specific claim* found defects that "review this PR" did not, including two false
 assertions their own author had written down with confidence.
