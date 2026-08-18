@@ -10,6 +10,13 @@ on:
         required: true
         type: string
 
+# Its validating steps pipe (`{ bun run check:versions; ... } | tee`, `git ls-remote | cut`), and an
+# unspecified shell is `bash -e {0}` with no pipefail — the pipeline's status was `tee`'s. Naming
+# bash explicitly is what makes GitHub run `bash --noprofile --norc -eo pipefail {0}` (#1083).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   follow_up:
     runs-on: ubuntu-latest

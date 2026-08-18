@@ -8,6 +8,7 @@ import {
   referencedRecipes,
   sweptFiles,
   undocumentedRecipes,
+  unguardedPipelines,
   unknownReferences,
 } from "../../.github/scripts/check-recipes";
 import { readRepoFile, REPO_ROOT } from "../helpers/repo";
@@ -225,6 +226,74 @@ describe("interpolatedParameters", () => {
     const errors = interpolatedParameters(dump({ worktree: withBody(["slug", "branch"], body) }));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("{{ branch }}, {{ slug }}");
+  });
+});
+
+// A pipeline reports only its last stage's status, so `just worktree-rm x | tail && echo "removed"`
+// printed `removed` for a worktree that was still there. `set -o pipefail` is what makes it honest.
+describe("unguardedPipelines", () => {
+  const shebang = (body: string[], isShebang = true) => ({
+    doc: "d",
+    shebang: isShebang,
+    body: body.map((line) => [line]),
+  });
+
+  test("flags a pipeline that runs without pipefail", () => {
+    const errors = unguardedPipelines(
+      dump({ land: shebang(["#!/usr/bin/env bash", "set -eu", 'git log | head -3 && echo "ok"']) }),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("`land` runs a pipeline");
+    expect(errors[0]).toContain("git log | head -3");
+    expect(errors[0]).toContain("set -euo pipefail");
+  });
+
+  test("passes once pipefail is set above the pipeline", () => {
+    const body = ["#!/usr/bin/env bash", "set -euo pipefail", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  test("the long form counts too", () => {
+    const body = ["#!/usr/bin/env bash", "set -o pipefail", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  test("pipefail set after the pipeline does not guard it", () => {
+    const body = ["#!/usr/bin/env bash", "git log | head -3", "set -euo pipefail"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toHaveLength(1);
+  });
+
+  test("a non-shebang recipe cannot set pipefail, so the fix is a bash shebang", () => {
+    const errors = unguardedPipelines(dump({ land: shebang(["git log | head -3"], false) }));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#!/usr/bin/env bash");
+  });
+
+  test("`||` is not a pipeline", () => {
+    expect(unguardedPipelines(dump({ land: shebang(["git log || exit 2"], false) }))).toEqual([]);
+  });
+
+  test("a pipe inside quotes is data, not a pipeline", () => {
+    const body = ["grep -qE 'a|b' file", 'grep -qE "a|b" file'];
+    expect(unguardedPipelines(dump({ land: shebang(body, false) }))).toEqual([]);
+  });
+
+  test("a pipe in a trailing comment is not a pipeline", () => {
+    expect(unguardedPipelines(dump({ land: shebang(["git log # a | b"], false) }))).toEqual([]);
+  });
+
+  test("`>|` is a redirect, not a pipeline", () => {
+    expect(unguardedPipelines(dump({ land: shebang(["git log >| out"], false) }))).toEqual([]);
+  });
+
+  test("an interpolated variable is not read as shell, so its `|` cannot be a pipeline", () => {
+    const body = [['[[ "$1" =~ ', [["variable", "SLUG_PATTERN"]], " ]]"]];
+    expect(unguardedPipelines(dump({ land: { doc: "d", shebang: false, body } }))).toEqual([]);
+  });
+
+  test("names one offending line per recipe, not one per pipe", () => {
+    const body = ["a | b", "c | d"];
+    expect(unguardedPipelines(dump({ land: shebang(body, false) }))).toHaveLength(1);
   });
 });
 

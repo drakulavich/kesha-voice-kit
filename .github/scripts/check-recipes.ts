@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Fails when a documented `just <recipe>` names a recipe the justfile does not define, or when a
+ * Fails when a documented `just <recipe>` names a recipe the justfile does not define, when a
+ * recipe runs a pipeline whose exit status nothing makes honest, or when a
  * recipe carries no doc comment — `just --list` renders that comment, so an undocumented recipe is
  * invisible. This is what makes #797's Makefile sweep verifiable rather than grep-and-hope, and it
  * is a gate `make` cannot support at all, having no introspection.
@@ -12,6 +13,10 @@
  * — and only when `just` sits at a command boundary (line start, or after `;` `&&` `||` `|` `(`
  * `$(`), followed by any number of `NAME=value` assignments, and the next token is kebab-case.
  * A flag (`just --list`) or any other token shape is skipped rather than guessed at.
+ *
+ * The pipefail rule scans for a `|` the shell would read as a pipeline, tracking quotes, escapes and
+ * trailing comments. Its one known false positive is an unquoted alternation inside `[[ x =~ a|b ]]`,
+ * which is fragile shell anyway — quote the pattern or lift it into a variable.
  *
  * Known false negatives, all of them deliberate: a reference in prose with no backticks; a trailing
  * comma inside the code span (`just test,`); `just $RECIPE`; `.claude/settings.json`, whose
@@ -25,6 +30,7 @@ import { join } from "node:path";
 type Recipe = {
   doc?: string | null;
   private?: boolean;
+  shebang?: boolean;
   parameters?: { name?: string }[];
   body?: unknown;
 };
@@ -158,6 +164,72 @@ export function interpolatedParameters(dump: JustDump): string[] {
   });
 }
 
+function lineText(fragment: unknown): string {
+  if (typeof fragment === "string") return fragment;
+  if (!Array.isArray(fragment)) return "";
+  if (fragment[0] === "variable" && typeof fragment[1] === "string") return `{{${fragment[1]}}}`;
+  return fragment.map(lineText).join("");
+}
+
+/** True when the shell would read a `|` in `text` as a pipeline rather than as data. */
+export function runsAPipeline(text: string): boolean {
+  let quote: "'" | '"' | null = null;
+  for (let at = 0; at < text.length; at++) {
+    const char = text[at];
+    if (quote === "'") {
+      if (char === "'") quote = null;
+      continue;
+    }
+    if (char === "\\") {
+      at++;
+      continue;
+    }
+    if (quote === '"') {
+      if (char === '"') quote = null;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char === "#" && (at === 0 || /\s/.test(text[at - 1] ?? ""))) return false;
+    if (char !== "|") continue;
+    if (text[at + 1] === "|") {
+      at++;
+      continue;
+    }
+    if (text[at - 1] !== ">") return true;
+  }
+  return false;
+}
+
+const SETS_PIPEFAIL = /^\s*set\s+(?:-\S+\s+)*pipefail\b/;
+
+/**
+ * A pipeline's exit status is its *last* stage's, so `just worktree-rm x | tail -3 && echo removed`
+ * reports success for a `just` that failed — three times in one session, once about a worktree that
+ * was still there (#1083). `set -o pipefail` is the fix, and `sh -cu` — what `just` runs a
+ * non-shebang recipe under — has no portable spelling of it.
+ */
+export function unguardedPipelines(dump: JustDump): string[] {
+  return Object.entries(dump.recipes ?? {}).flatMap(([name, recipe]) => {
+    let guarded = false;
+    for (const line of (Array.isArray(recipe.body) ? recipe.body : []).map(lineText)) {
+      if (SETS_PIPEFAIL.test(line)) guarded = true;
+      if (guarded || !runsAPipeline(line)) continue;
+      const fix = recipe.shebang
+        ? "add `set -euo pipefail` above it"
+        : "give the recipe a `#!/usr/bin/env bash` line and `set -euo pipefail`, since `sh -cu` " +
+          "(what `just` runs a non-shebang recipe under) has no portable pipefail";
+      return [
+        `justfile: recipe \`${name}\` runs a pipeline without pipefail, so it reports only the ` +
+          `last stage's exit status (in \`${line.trim()}\`) — ${fix} (#1083)`,
+      ];
+    }
+    return [];
+  });
+}
+
 export function undocumentedRecipes(dump: JustDump): string[] {
   return Object.entries(dump.recipes ?? {})
     .filter(([, recipe]) => !recipe.private && !recipe.doc)
@@ -197,6 +269,7 @@ function main(): void {
   const errors = [
     ...undocumentedRecipes(dump),
     ...interpolatedParameters(dump),
+    ...unguardedPipelines(dump),
     ...sweptFiles(root).flatMap((path) =>
       unknownReferences(path, readFileSync(join(root, path), "utf8"), known),
     ),
