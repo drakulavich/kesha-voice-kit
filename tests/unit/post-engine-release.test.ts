@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildPostEngineReleaseFollowup } from "../../.github/scripts/post-engine-release";
+import { decideFollowup, ownsTag, refuseConcurrentFollowup } from "../../.github/scripts/post-release-guard";
 import { parseRepoYaml } from "../helpers/repo";
 
 const targetSource = `const ENGINE_TARGETS: Record<string, EngineTarget> = {
@@ -161,37 +162,50 @@ describe("post-engine-release workflow", () => {
     expect(job.steps.some((step: { run?: string }) => step.run?.includes("gh pr create"))).toBe(true);
   });
 
-  // Both guards were added without a pin, and deleting either left the suite green (#1041 review).
-  test("only a stable engine tag reaches the script", () => {
-    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
-    const shape = workflow.jobs.follow_up.steps.find((step: { id?: string }) => step.id === "shape");
-    const pattern = /\^v\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$/.exec(shape.run);
-    expect(pattern).not.toBeNull();
-    const anchored = new RegExp(String(pattern));
-    for (const tag of ["v1.24.11", "v1.29.0", "v10.0.100"]) expect(anchored.test(tag)).toBe(true);
-    for (const tag of ["v1.29.0-cli", "v1.24.11-alpha.1", "v1.24.11-beta.1", "1.24.11", "v1.24"]) {
-      expect(anchored.test(tag)).toBe(false);
+  test("only a stable engine tag is owned by the follow-up", () => {
+    for (const tag of ["v1.24.11", "v1.29.0", "v10.0.100", "v0.0.0"]) expect(ownsTag(tag)).toBe(true);
+    for (const tag of ["v1.29.0-cli", "v1.24.11-alpha.1", "v1.24.11-beta.1", "1.24.11", "v1.24", "v01.2.3", "v1.2.3 "]) {
+      expect(ownsTag(tag)).toBe(false);
     }
   });
 
-  test("a second follow-up cannot lead the CLI while another is in flight", () => {
-    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
-    const job = workflow.jobs.follow_up;
+  test("a follow-up refuses while another one exists as a branch or an open pull request", () => {
+    const branch = "automation/post-release-v1.24.12";
+    expect(refuseConcurrentFollowup({ branch, openHeads: [], remoteHeads: [] })).toBeNull();
+    expect(refuseConcurrentFollowup({ branch, openHeads: [branch], remoteHeads: [`refs/heads/${branch}`] })).toBeNull();
+    // Unrelated work must not block a release follow-up.
+    expect(refuseConcurrentFollowup({ branch, openHeads: ["fix/issue-1", "docs/issue-2"], remoteHeads: [] })).toBeNull();
+    // A branch exists before its pull request does, so either list alone must refuse.
+    const viaPr = refuseConcurrentFollowup({ branch, openHeads: ["automation/post-release-v1.24.11"], remoteHeads: [] });
+    expect(viaPr).toContain("automation/post-release-v1.24.11");
+    const viaBranch = refuseConcurrentFollowup({ branch, openHeads: [], remoteHeads: ["refs/heads/automation/post-release-v1.24.11"] });
+    expect(viaBranch).toContain("automation/post-release-v1.24.11");
+  });
+
+  test("the decision itself skips a foreign tag and refuses a concurrent follow-up", () => {
+    const base = { TAG_NAME: "v1.24.12", BRANCH: "automation/post-release-v1.24.12" };
+    expect(decideFollowup(base)).toEqual({ skip: false });
+    expect(decideFollowup({ ...base, TAG_NAME: "v1.29.0-cli" })).toEqual({ skip: true });
+    expect(decideFollowup({ ...base, TAG_NAME: "v1.24.12-beta.1" })).toEqual({ skip: true });
+    const busy = decideFollowup({ ...base, OPEN_HEADS: "automation/post-release-v1.24.11" });
+    expect(busy).toMatchObject({ refuse: expect.stringContaining("automation/post-release-v1.24.11") });
+    const pushed = decideFollowup({ ...base, REMOTE_HEADS: "abc123\trefs/heads/automation/post-release-v1.24.11" });
+    expect(pushed).toMatchObject({ refuse: expect.stringContaining("automation/post-release-v1.24.11") });
+    expect(decideFollowup({ BRANCH: base.BRANCH })).toMatchObject({ refuse: expect.stringContaining("TAG_NAME") });
+  });
+
+  test("the workflow delegates both guards instead of restating them", () => {
+    const job = parseRepoYaml(".github/workflows/post-engine-release.yml").jobs.follow_up;
     // Per-tag serialization let two tags read main's baseline at once, so the group carries no tag.
     expect(job.concurrency.group).toBe("post-engine-release");
     expect(job.concurrency["cancel-in-progress"]).toBe(false);
-    const guard = job.steps.find((step: { id?: string }) => step.id === "existing").run;
-    expect(guard).toContain("head:automation/post-release-");
-    expect(guard).toContain("refs/heads/automation/post-release-*");
-  });
-
-  test("every mutating step is skipped for a tag this workflow does not own", () => {
-    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
-    // A skipped step has no output, and "" != 'true' would otherwise let these run anyway.
-    const mutating = workflow.jobs.follow_up.steps.filter((step: { id?: string; run?: string }) =>
+    const guard = job.steps.find((step: { id?: string }) => step.id === "shape").run;
+    expect(guard).toContain("post-release-guard.ts");
+    const mutating = job.steps.filter((step: { id?: string; run?: string }) =>
       step.id !== "shape" && step.id !== "existing" && step.run !== undefined,
     );
     expect(mutating.length).toBeGreaterThan(0);
+    // A skipped step has no output, and "" != 'true' would otherwise let these run anyway.
     for (const step of mutating) expect(step.if).toContain("steps.shape.outputs.skip != 'true'");
   });
 });

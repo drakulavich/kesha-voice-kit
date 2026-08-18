@@ -33,16 +33,14 @@ jobs:
       - name: Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      # `release: published` fires for `-cli` and prerelease tags too, which the script rejects — one red run per CLI publish (#1041).
-      - name: Skip a tag this workflow does not own
+      - name: Decide whether this tag is ours and no other follow-up is in flight
         id: shape
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Not a stable engine tag, nothing to follow up: $TAG_NAME"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          OPEN_HEADS="$(gh pr list --repo "$REPOSITORY" --state open --json headRefName -q '.[].headRefName')" \
+          REMOTE_HEADS="$(git ls-remote --heads origin 'refs/heads/automation/post-release-*' | cut -f2)" \
+          bun .github/scripts/post-release-guard.ts >> "$GITHUB_OUTPUT"
 
       - name: Refuse an existing follow-up branch or PR
         id: existing
@@ -50,15 +48,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # A second follow-up opened before the first merges reads the same baseline and leads the CLI to the same version twice (#1041).
-          others="$(gh pr list --repo "$REPOSITORY" --state open --search 'head:automation/post-release-' --json headRefName \
-            | jq --arg branch "$BRANCH" '[.[] | select(.headRefName != $branch)] | length')"
-          stale="$(git ls-remote --heads origin 'refs/heads/automation/post-release-*' \
-            | awk -v keep="refs/heads/$BRANCH" '$2 != keep' | wc -l | tr -d ' ')"
-          if [ "$others" != "0" ] || [ "$stale" != "0" ]; then
-            echo "::error::Another post-release follow-up branch or PR exists; land it before leading the CLI again." >&2
-            exit 1
-          fi
           existing="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state all --json title,body)"
           count="$(printf '%s' "$existing" | jq 'length')"
           if [ "$count" = "1" ]; then
@@ -76,10 +65,6 @@ jobs:
           fi
           if [ "$count" != "0" ]; then
             echo "::error::More than one open PR uses $BRANCH; refusing an ambiguous follow-up." >&2
-            exit 1
-          fi
-          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            echo "::error::Branch $BRANCH already exists without an open follow-up PR; refusing to overwrite it." >&2
             exit 1
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
