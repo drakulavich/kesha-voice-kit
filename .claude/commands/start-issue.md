@@ -17,8 +17,9 @@ Arguments: `$ARGUMENTS` → first token is the issue number (required), optional
 
 2. Tag it `WIP` so drakulavich sees it's in flight. Create the label first only if it doesn't exist:
    ```bash
-   gh label create WIP -R drakulavich/kesha-voice-kit --color FBCA04 \
-     --description "An agent or contributor is actively working on this" 2>/dev/null || true
+   gh label list -R drakulavich/kesha-voice-kit | grep -q '^WIP' || \
+     gh label create WIP -R drakulavich/kesha-voice-kit --color FBCA04 \
+       --description "An agent or contributor is actively working on this"
    gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP
    ```
 
