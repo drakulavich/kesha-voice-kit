@@ -219,6 +219,8 @@ Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: the **`t
 
 Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-engine` and `release-cli` (cut a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches).
 
-Still plain runbooks: [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).
+Still plain runbooks: [backlog-conveyor](docs/runbooks/backlog-conveyor.md) · [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).
+
+The conveyor loop lives in that runbook rather than in a client-specific command file, so Claude and Codex follow the same text. Anything only one client can see is what the other silently skips.
 
 The OpenClaw plugin (`openclaw.plugin.json` + `openclaw-plugin.cjs`) routes audio through the `type: "cli"` path in `tools.media.audio.models`, and its `dangerous-exec` scanner is a naive regex that also reads comments — never name a forbidden module substring anywhere in that file.

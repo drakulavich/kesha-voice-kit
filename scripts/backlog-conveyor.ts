@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { acquireLease, claimOrder, encodeClaimMarker, evaluateCollisionPlan, isLiveClaim, issueNumberFromBranch, leaseDirectory, normalizedPath, parseClaimManifest, parseClaimMarker, releaseLease, sameManifest, statusLease, timestamp, type ClaimManifest, type ClaimMarker, type ClaimRecord, type CollisionPlan, type LeaseResult, type LeaseState } from "./backlog-coordination";
-import { encodePriorityMarker, evaluateMetrics, parsePriorityMarker, selectCurrentAssessment, sortQueue, type LifecycleIssue, type LifecyclePullRequest, type PriorityAssessment, type PriorityComment, type QueueEntry } from "./backlog-priority";
 
-export { acquireLease, encodeClaimMarker, evaluateCollisionPlan, issueNumberFromBranch, leaseDirectory, parseClaimManifest, releaseLease, statusLease } from "./backlog-coordination";
-export type { ClaimManifest, ClaimMarker, ClaimRecord, CollisionPlan, LeaseResult, LeaseState } from "./backlog-coordination";
 
 export const REPORT_SCHEMA_VERSION = 1;
 
@@ -93,7 +89,7 @@ export interface CloseFacts {
 export interface Evaluation {
   violations: string[];
   refusals: string[];
-  safeActions: Array<{ kind: "add-merge-ready" | "remove-merge-ready" | "remove-wip" | "remove-worktree" | "create-marker" | "create-claim" | "release-claim" | "acquire-lease" | "release-lease"; pr?: number; issue?: number; path?: string; resource?: string; marker?: GateMarker | ClaimMarker }>;
+  safeActions: Array<{ kind: "add-merge-ready" | "remove-merge-ready" | "remove-wip" | "remove-worktree" | "create-marker"; pr?: number; issue?: number; path?: string; marker?: GateMarker }>;
   findings: string[];
 }
 
@@ -176,6 +172,11 @@ function closingIssues(value: unknown, source: string): number[] {
   return requiredArray(value, source).map((entry, index) => requiredNumber(requiredRecord(entry, `${source}[${index}]`).number, `${source}[${index}].number`));
 }
 
+export function issueNumberFromBranch(branch: string | null): number | null {
+  const match = /^(?:[^/]+\/)?issue-([1-9]\d*)$/.exec(branch ?? "");
+  return match ? Number(match[1]) : null;
+}
+
 function matchingBranch(branch: string | null, issue: number): boolean {
   return issueNumberFromBranch(branch) === issue;
 }
@@ -199,7 +200,6 @@ function sameNumbers(actual: number[], expected: number[]): boolean {
 
 function actionKey(action: Evaluation["safeActions"][number]): string {
   if (action.kind === "create-marker") return `${action.kind}:${action.pr}:${JSON.stringify(action.marker)}`;
-  if (action.kind === "create-claim" || action.kind === "release-claim") return `${action.kind}:${action.issue}:${JSON.stringify(action.marker)}`;
   if (action.kind === "remove-worktree") return `${action.kind}:${action.path}`;
   return `${action.kind}:${action.pr ?? action.issue}`;
 }
@@ -483,113 +483,11 @@ async function pagedArray(runner: Runner, endpoint: (page: number) => string, so
   throw new OperationalError(`${source} reached pagination cap; refusing incomplete result`);
 }
 
-function priorityComments(values: unknown[], source: string): PriorityComment[] {
-  return values.map((entry, index) => {
-    const comment = requiredRecord(entry, `${source}[${index}]`);
-    return {
-      marker: requiredString(comment.body, `${source}[${index}].body`),
-      authorAssociation: requiredString(comment.author_association, `${source}[${index}].author_association`),
-      createdAt: timestamp(comment.created_at, `${source}[${index}].created_at`),
-      databaseId: requiredNumber(comment.id, `${source}[${index}].id`),
-    };
-  });
-}
-
-async function loadPriorityAssessment(runner: Runner, repo: Pick<Repository, "owner" | "name">, issue: number) {
-  return selectCurrentAssessment(priorityComments(await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues/${issue}/comments?per_page=100&page=${page}`, "gh api priority comments"), "priority comment"), issue);
-}
-
-function sameAssessment(left: PriorityAssessment, right: PriorityAssessment): boolean {
-  return left.version === right.version && left.issue === right.issue && left.provider === right.provider && left.impact === right.impact && left.urgency === right.urgency && left.unblock === right.unblock && left.riskReduction === right.riskReduction && left.confidence === right.confidence && left.effort === right.effort && left.rationale === right.rationale;
-}
-
-export async function prioritize(runner: Runner, assessment: PriorityAssessment, apply: boolean): Promise<Evaluation & { accepted: boolean; assessment: PriorityAssessment; score: number }> {
-  const repo = await repository(runner);
-  const issue = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${assessment.issue}`], "gh api priority issue"), "gh api priority issue");
-  if (requiredNumber(issue.number, "priority issue.number") !== assessment.issue) throw new OperationalError("priority issue number does not match request");
-  if (requiredString(issue.state, "priority issue.state") !== "open") return { findings: [], refusals: [], safeActions: [], violations: [`issue #${assessment.issue} must be open`], accepted: false, assessment, score: 0 };
-  if (issue.pull_request !== undefined) return { findings: [], refusals: [], safeActions: [], violations: [`issue #${assessment.issue} must not be a pull request`], accepted: false, assessment, score: 0 };
-  const current = await loadPriorityAssessment(runner, repo, assessment.issue);
-  const score = Math.round(((4 * assessment.impact + 3 * assessment.urgency + 2 * assessment.unblock + 2 * assessment.riskReduction) * assessment.confidence / assessment.effort) * 100) / 100;
-  if (current && sameAssessment(current.assessment, assessment)) return { findings: ["matching priority assessment already current"], refusals: [], safeActions: [], violations: [], accepted: true, assessment, score };
-  if (!apply) return { findings: [], refusals: [], safeActions: [{ kind: "create-marker", issue: assessment.issue }], violations: [], accepted: false, assessment, score };
-  const posted = requiredRecord(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${assessment.issue}/comments`, "--method", "POST", "-f", `body=${encodePriorityMarker(assessment)}`], "gh api priority mutation"), "gh api priority mutation");
-  const postedId = requiredNumber(posted.id, "priority mutation.id");
-  const after = await loadPriorityAssessment(runner, repo, assessment.issue);
-  if (!after || after.databaseId !== postedId) return { findings: [], refusals: [], safeActions: [], violations: ["priority assessment was superseded before confirmation"], accepted: false, assessment, score };
-  return { findings: ["priority assessment accepted"], refusals: [], safeActions: [], violations: [], accepted: true, assessment: after.assessment, score: after.score };
-}
-
 interface QueueIssue { number: number; state: string; labels: string[]; createdAt: string; isPullRequest: boolean }
-
-async function loadPriorityIssues(runner: Runner, repo: Pick<Repository, "owner" | "name">, state: "open" | "all" = "open"): Promise<QueueIssue[]> {
-  return pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues?state=${state}&per_page=100&page=${page}`, "gh api priority issues").then((values) => values.map((entry, index) => {
-    const issue = requiredRecord(entry, `priority issue[${index}]`);
-    return { number: requiredNumber(issue.number, `priority issue[${index}].number`), state: requiredString(issue.state, `priority issue[${index}].state`).toUpperCase(), labels: labels(issue.labels, `priority issue[${index}].labels`), createdAt: timestamp(issue.createdAt ?? issue.created_at, `priority issue[${index}].createdAt`), isPullRequest: issue.pull_request !== undefined && issue.pull_request !== null };
-  }));
-}
-
-export async function queue(runner: Runner, label?: string, limit?: number): Promise<{ entries: QueueEntry[] }> {
-  const repo = await repository(runner);
-  const issues = (await loadPriorityIssues(runner, repo)).filter((issue) => !issue.isPullRequest && !issue.labels.some((candidate) => candidate === "WIP" || candidate === "needs-decision" || candidate === "wontfix") && (label === undefined || issue.labels.includes(label)));
-  const entries = sortQueue(await mapBounded(issues, phase3Concurrency, async (issue) => ({ ...issue, assessment: (await loadPriorityAssessment(runner, repo, issue.number))?.assessment ?? null })));
-  return { entries: limit === undefined ? entries : entries.slice(0, limit) };
-}
 
 interface GateCandidate { issue: number; createdAt: string; databaseId: number }
 
-async function loadHistoricalGateCandidates(runner: Runner, repo: Pick<Repository, "owner" | "name">, pullRequest: { number: number; headSha: string }): Promise<GateCandidate[]> {
-  const comments = await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/issues/${pullRequest.number}/comments?per_page=100&page=${page}`, "gh api gate comments");
-  const valid: GateCandidate[] = [];
-  for (const [index, entry] of comments.entries()) {
-    const comment = requiredRecord(entry, `gate comment[${index}]`);
-    if (!trustedAssociations.has(requiredString(comment.author_association, `gate comment[${index}].author_association`))) continue;
-    const body = requiredString(comment.body, `gate comment[${index}].body`);
-    const marker = parseGateMarker(body);
-    if (body.includes("<!-- kesha-backlog-gate:v1 ") && marker === null) throw new OperationalError("trusted gate marker is malformed");
-    if (!marker || marker.pr !== pullRequest.number || marker.evidence.headSha !== pullRequest.headSha) continue;
-    valid.push({ issue: marker.issue, createdAt: timestamp(comment.created_at, `gate comment[${index}].created_at`), databaseId: requiredNumber(comment.id, `gate comment[${index}].id`) });
-  }
-  return valid;
-}
-
-export async function metrics(runner: Runner, since: string, now = new Date()) {
-  const repo = await repository(runner);
-  const issues = await loadPriorityIssues(runner, repo, "all");
-  const raw = await pagedArray(runner, (page) => `repos/${repo.owner}/${repo.name}/pulls?state=all&per_page=100&page=${page}`, "gh api metrics pull requests");
-  const pullRequests: LifecyclePullRequest[] = await mapBounded(raw, phase3Concurrency, async (entry, index) => {
-    const pullRequest = requiredRecord(entry, `metrics pull request[${index}]`);
-    const number = requiredNumber(pullRequest.number, `metrics pull request[${index}].number`);
-    const head = requiredRecord(pullRequest.head, `metrics pull request[${index}].head`);
-    const headSha = requiredString(head.sha, `metrics pull request[${index}].head.sha`);
-    const candidates = await loadHistoricalGateCandidates(runner, repo, { number, headSha });
-    const soleIssue = candidates.length === 0 ? null : await loadMetricClosingIssue(runner, repo, number);
-    const gate = soleIssue === null ? null : candidates
-      .filter((candidate) => candidate.issue === soleIssue)
-      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.databaseId - right.databaseId)
-      .at(-1) ?? null;
-    return {
-      number,
-      createdAt: timestamp(pullRequest.created_at, `metrics pull request[${index}].created_at`),
-      mergedAt: pullRequest.merged_at === null ? null : timestamp(pullRequest.merged_at, `metrics pull request[${index}].merged_at`),
-      gateAt: gate?.createdAt ?? null,
-      state: requiredString(pullRequest.state, `metrics pull request[${index}].state`).toUpperCase(),
-      labels: labels(pullRequest.labels, `metrics pull request[${index}].labels`),
-    };
-  });
-  const metricIssues: LifecycleIssue[] = issues.filter((issue) => !issue.isPullRequest).map((issue) => ({ number: issue.number, state: issue.state, labels: issue.labels, createdAt: issue.createdAt }));
-  return evaluateMetrics({ since, now: now.toISOString(), issues: metricIssues, pullRequests });
-}
-
 const metricClosingIssueQuery = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { closingIssuesReferences(first: 2) { nodes { number } pageInfo { hasNextPage } } } } }`;
-
-async function loadMetricClosingIssue(runner: Runner, repo: Pick<Repository, "owner" | "name">, number: number): Promise<number | null> {
-  const raw = requiredRecord(await runJson(runner, ["gh", "api", "graphql", "-f", `query=${metricClosingIssueQuery}`, "-F", `owner=${repo.owner}`, "-F", `name=${repo.name}`, "-F", `number=${number}`], "gh api metric closing issues"), "gh api metric closing issues");
-  const references = requiredRecord(requiredRecord(requiredRecord(requiredRecord(raw.data, "metric closing issues.data").repository, "metric closing issues.repository").pullRequest, "metric closing issues.pullRequest").closingIssuesReferences, "metric closing issues.references");
-  if (requiredBoolean(requiredRecord(references.pageInfo, "metric closing issues.pageInfo").hasNextPage, "metric closing issues.pageInfo.hasNextPage")) return null;
-  const issues = closingIssues(references.nodes, "metric closing issues.nodes");
-  return issues.length === 1 ? issues[0]! : null;
-}
 
 export async function loadMarker(runner: Runner, repo: Pick<Repository, "owner" | "name">, pr: number): Promise<GateMarker | null> {
   const comments: unknown[] = [];
@@ -605,181 +503,6 @@ export async function loadMarker(runner: Runner, repo: Pick<Repository, "owner" 
     if (marker) return marker;
   }
   return null;
-}
-
-export async function loadClaims(runner: Runner, repo: Pick<Repository, "owner" | "name">, issues: Array<{ number: number; state: string; labels: string[] }>, now = new Date()): Promise<ClaimRecord[]> {
-  const markers: ClaimRecord[] = [];
-  for (const issue of issues) {
-    if (issue.state !== "OPEN" || !issue.labels.includes("WIP")) continue;
-    for (let page = 1; ; page += 1) {
-      const raw = requiredArray(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${issue.number}/comments?per_page=100&page=${page}`], "gh api claim comments"), "gh api claim comments");
-      for (const entry of raw) {
-        const comment = requiredRecord(entry, "claim comment");
-        const authorAssociation = requiredString(comment.author_association, "claim comment.author_association");
-        if (!trustedAssociations.has(authorAssociation)) continue;
-        const marker = parseClaimMarker(requiredString(comment.body, "claim comment.body"));
-        if (!marker || marker.manifest.issue !== issue.number) continue;
-        markers.push({ issue: issue.number, state: issue.state, labels: issue.labels, authorAssociation, createdAt: timestamp(comment.created_at, "claim comment.created_at"), id: requiredNumber(comment.id, "claim comment.id"), marker, releasedAt: null, releasedId: null });
-      }
-      if (raw.length < 100) break;
-    }
-  }
-  const releases = markers.filter((record) => record.marker.action === "release");
-  const claims = markers
-    .filter((record) => record.marker.action === "claim")
-    .map((record) => {
-      const release = releases
-          .filter(
-            (release) =>
-              sameManifest(release.marker.manifest, record.marker.manifest) &&
-              claimOrder(release, record) > 0,
-          )
-          .sort(claimOrder)[0] ?? null;
-      return {
-        ...record,
-        releasedAt: release?.createdAt ?? null,
-        releasedId: release?.id ?? null,
-      };
-    });
-  void now;
-  return claims.sort(claimOrder);
-}
-
-export async function loadPullRequestFiles(runner: Runner, repo: Pick<Repository, "owner" | "name">, pr: number): Promise<string[]> {
-  const files: string[] = [];
-  for (let page = 1; ; page += 1) {
-    const raw = requiredArray(await runJson(runner, ["gh", "api", `repos/${repo.owner}/${repo.name}/pulls/${pr}/files?per_page=100&page=${page}`], "gh api pull request files"), "gh api pull request files");
-    files.push(...raw.map((entry, index) => normalizedPath(requiredRecord(entry, `pull request files[${index}]`).filename, `pull request files[${index}].filename`)));
-    if (raw.length < 100) break;
-  }
-  return [...new Set(files)].sort();
-}
-
-async function loadOpenPullRequests(runner: Runner, repo: Pick<Repository, "owner" | "name">): Promise<Array<{ number: number; closingIssueNumbers: number[]; files: string[] }>> {
-  const raw = requiredArray(await runJson(runner, ["gh", "pr", "list", "--state", "open", "--limit", "1000", "--json", "number,closingIssuesReferences"], "gh pr list"), "gh pr list");
-  if (raw.length === 1000) throw new OperationalError("collision pull request list reached limit; refusing incomplete graph");
-  return Promise.all(raw.map(async (entry, index) => {
-    const pullRequest = requiredRecord(entry, `gh pr list[${index}]`);
-    const number = requiredNumber(pullRequest.number, `gh pr list[${index}].number`);
-    return { number, closingIssueNumbers: closingIssues(pullRequest.closingIssuesReferences, `gh pr list[${index}].closingIssuesReferences`), files: await loadPullRequestFiles(runner, repo, number) };
-  }));
-}
-
-function statusPaths(output: string): string[] {
-  const paths: string[] = [];
-  const entries = output.split("\0");
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (!entry || entry.length < 4) continue;
-    const code = entry.slice(0, 2);
-    paths.push(normalizedPath(entry.slice(3), "git status path"));
-    if ((code[0] === "R" || code[0] === "C" || code[1] === "R" || code[1] === "C") && entries[index + 1]) paths.push(normalizedPath(entries[++index]!, "git status renamed path"));
-  }
-  return [...new Set(paths)].sort();
-}
-
-export async function loadCollisionWorktrees(runner: Runner): Promise<Array<{ branch: string | null; files: string[] }>> {
-  const listed = await runner.run(["git", "worktree", "list", "--porcelain"]);
-  if (listed.exitCode !== 0) throw new OperationalError(`git worktree list failed: ${listed.stderr.trim()}`);
-  const result: Array<{ branch: string | null; files: string[] }> = [];
-  for (const worktree of parseWorktrees(listed.stdout)) {
-    const committed = await runner.run(["git", "-C", worktree.path, "diff", "--no-renames", "--name-only", "origin/main...HEAD"]);
-    if (committed.exitCode !== 0) throw new OperationalError(`git diff failed for ${worktree.path}: ${committed.stderr.trim()}`);
-    const status = await runner.run(["git", "-C", worktree.path, "status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-    if (status.exitCode !== 0) throw new OperationalError(`git status failed for ${worktree.path}: ${status.stderr.trim()}`);
-    result.push({ branch: worktree.branch, files: [...new Set([...committed.stdout.split("\n").filter(Boolean).map((path) => normalizedPath(path, "git diff path")), ...statusPaths(status.stdout)])].sort() });
-  }
-  return result;
-}
-
-async function collisionFacts(runner: Runner, repo: Repository, now: Date): Promise<{ issues: SyncFacts["issues"]; claims: ClaimRecord[]; pullRequests: Array<{ number: number; closingIssueNumbers: number[]; files: string[] }>; worktrees: Array<{ branch: string | null; files: string[] }> }> {
-  const issues = await loadCollisionIssues(runner);
-  return { issues, claims: await loadClaims(runner, repo, issues, now), pullRequests: await loadOpenPullRequests(runner, repo), worktrees: await loadCollisionWorktrees(runner) };
-}
-
-function claimEvaluation(plan: CollisionPlan, manifest: ClaimManifest, marker: ClaimMarker | null): Evaluation {
-  if (plan.edges.length > 0) return { findings: [], refusals: [], safeActions: [], violations: ["claim collides with active repository work"] };
-  if (plan.idempotent) return { findings: ["matching live claim already accepted"], refusals: [], safeActions: [], violations: [] };
-  if (marker === null) return { findings: [], refusals: [], safeActions: [], violations: [] };
-  return { findings: [], refusals: [], safeActions: [{ kind: marker.action === "claim" ? "create-claim" : "release-claim", issue: manifest.issue, marker }], violations: [] };
-}
-
-async function postClaimMarker(runner: Runner, repo: Pick<Repository, "owner" | "name">, issue: number, marker: ClaimMarker): Promise<void> {
-  const result = await runner.run(["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${issue}/comments`, "--method", "POST", "-f", `body=${encodeClaimMarker(marker)}`]);
-  if (result.exitCode !== 0) throw new OperationalError(`gh api claim mutation failed (${result.exitCode}): ${result.stderr.trim() || "no error output"}`);
-}
-
-export async function claim(runner: Runner, manifest: ClaimManifest, apply: boolean, now = new Date()): Promise<Evaluation> {
-  const repo = await repository(runner);
-  const before = await collisionFacts(runner, repo, now);
-  const issue = before.issues.find((candidate) => candidate.number === manifest.issue);
-  if (!issue || issue.state !== "OPEN" || !issue.labels.includes("WIP")) return { findings: [], refusals: [], safeActions: [], violations: [`issue #${manifest.issue} must be open and labeled WIP`] };
-  const expiresAt = new Date(now.getTime() + manifest.ttlSeconds * 1000).toISOString();
-  const marker: ClaimMarker = { version: 1, action: "claim", manifest, expiresAt };
-  const initial = claimEvaluation(evaluateCollisionPlan(manifest, before, now), manifest, marker);
-  if (!apply || initial.violations.length > 0 || initial.safeActions.length === 0) return initial;
-  await postClaimMarker(runner, repo, manifest.issue, marker);
-  const after = await collisionFacts(runner, repo, now);
-  const final = evaluateCollisionPlan(manifest, after, now);
-  if (!final.idempotent || final.edges.length > 0) {
-    const release: ClaimMarker = { version: 1, action: "release", manifest, expiresAt: null };
-    await postClaimMarker(runner, repo, manifest.issue, release);
-    const compensated = await collisionFacts(runner, repo, now);
-    if (compensated.claims.some((record) => sameManifest(record.marker.manifest, manifest) && isLiveClaim(record, now))) throw new OperationalError("claim compensation release was not observed after re-read");
-    return { findings: [], refusals: [], safeActions: [], violations: [final.idempotent ? "claim became colliding after acquisition; marker was released" : "claim lost deterministic collision arbitration"] };
-  }
-  return { findings: ["claim acquired"], refusals: [], safeActions: [], violations: [] };
-}
-
-export async function plan(runner: Runner, manifest: ClaimManifest, now = new Date()): Promise<{ evaluation: Evaluation; plan: CollisionPlan }> {
-  const repo = await repository(runner);
-  const facts = await collisionFacts(runner, repo, now);
-  const issue = facts.issues.find((candidate) => candidate.number === manifest.issue);
-  if (!issue || issue.state !== "OPEN" || !issue.labels.includes("WIP")) return { plan: { edges: [], self: [], idempotent: false, expiresAt: null, rejectedClaimIds: [] }, evaluation: { findings: [], refusals: [], safeActions: [], violations: [`issue #${manifest.issue} must be open and labeled WIP`] } };
-  const collisionPlan = evaluateCollisionPlan(manifest, facts, now);
-  return {
-    plan: collisionPlan,
-    evaluation: {
-      findings: collisionPlan.self.map((entry) => `self ${entry.source} overlap at ${entry.path}`),
-      refusals: [],
-      safeActions: [],
-      violations: collisionPlan.edges.map((entry) => `collision with ${entry.source} at ${entry.path}`),
-    },
-  };
-}
-
-export async function releaseClaim(runner: Runner, manifest: ClaimManifest, apply: boolean, now = new Date()): Promise<Evaluation> {
-  const repo = await repository(runner);
-  const before = await collisionFacts(runner, repo, now);
-  const existing = before.claims.find((record) => sameManifest(record.marker.manifest, manifest) && isLiveClaim(record, now));
-  if (!existing) return { findings: ["matching live claim is already absent"], refusals: [], safeActions: [], violations: [] };
-  const marker: ClaimMarker = { version: 1, action: "release", manifest, expiresAt: null };
-  const result: Evaluation = { findings: [], refusals: [], safeActions: [{ kind: "release-claim", issue: manifest.issue, marker }], violations: [] };
-  if (!apply) return result;
-  await postClaimMarker(runner, repo, manifest.issue, marker);
-  const after = await collisionFacts(runner, repo, now);
-  if (after.claims.some((record) => sameManifest(record.marker.manifest, manifest) && isLiveClaim(record, now))) throw new OperationalError("claim release marker was not observed after re-read");
-  return { findings: ["claim released"], refusals: [], safeActions: [], violations: [] };
-}
-
-export async function leaseRoot(runner: Runner): Promise<string> {
-  const result = await runner.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  if (result.exitCode !== 0) throw new OperationalError(`git rev-parse failed: ${result.stderr.trim() || "no error output"}`);
-  return leaseDirectory(result.stdout.trim());
-}
-
-export function evaluateLeaseOperation(operation: "acquire" | "release" | "status", input: { resource: string; holder?: string }, observed: LeaseResult): Evaluation {
-  if (operation === "status") return { findings: [observed.state], violations: [], refusals: [], safeActions: [] };
-  if (observed.state === "refused") return { findings: [], violations: [], refusals: ["resource lease is held by another holder or operation is busy"], safeActions: [] };
-  if (observed.state === "acquired" || observed.state === "released") return { findings: [observed.state], violations: [], refusals: [], safeActions: [] };
-  if (observed.state === "already-owned") return { findings: ["already-owned"], violations: [], refusals: [], safeActions: [] };
-  if (observed.state === "held" && observed.lease?.holder !== input.holder) return { findings: [], violations: [], refusals: ["resource lease is held by another holder"], safeActions: [] };
-  if (operation === "acquire") {
-    if (observed.state === "held") return { findings: ["already-owned"], violations: [], refusals: [], safeActions: [] };
-    return { findings: [], violations: [], refusals: [], safeActions: [{ kind: "acquire-lease", resource: input.resource }] };
-  }
-  if (observed.state !== "held") return { findings: ["absent"], violations: [], refusals: [], safeActions: [] };
-  return { findings: [], violations: [], refusals: [], safeActions: [{ kind: "release-lease", resource: input.resource }] };
 }
 
 async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {
@@ -871,10 +594,7 @@ async function applyActions(runner: Runner, actions: Evaluation["safeActions"], 
     else if (action.kind === "remove-wip") argv = ["gh", "issue", "edit", String(action.issue), "--remove-label", "WIP"];
     else if (action.kind === "create-marker") {
       if (!repo || !action.marker) throw new OperationalError("internal marker action is incomplete");
-      argv = ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${action.pr}/comments`, "--method", "POST", "-f", `body=${encodeGateMarker(action.marker as GateMarker)}`];
-    } else if (action.kind === "create-claim" || action.kind === "release-claim") {
-      throw new OperationalError("claim actions must use the claim boundary");
-    } else {
+      argv = ["gh", "api", `repos/${repo.owner}/${repo.name}/issues/${action.pr}/comments`, "--method", "POST", "-f", `body=${encodeGateMarker(action.marker as GateMarker)}`];    } else {
       if (!action.path || !safeManagedWorktreePath(action.path)) throw new OperationalError("refusing an unmanaged worktree removal");
       argv = ["git", "worktree", "remove", action.path];
     }
