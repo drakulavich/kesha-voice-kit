@@ -7,31 +7,40 @@ and Claude.
 
 ## 0. When Greptile counts
 
-A requirement below to obtain **new** Greptile coverage applies **if the
-Greptile quota is available**. Grok and the simplify pass are commissioned per
-PR, so if either is unavailable nobody looked and the PR is blocked. Greptile
-reviews on its own trigger, against a quota this repository does not control;
-its absence is a fact about the vendor, not evidence about the change, and
-blocking on it would make every conveyor PR unmergeable for the length of an
-outage.
+Greptile is **unavailable** when its quota will not produce a review of this
+head at all — the single predicate this section uses; "exhausted" and "outage"
+mean the same thing and carry no separate rule. Where a step below says to wait
+for Greptile, that wait applies unless Greptile is unavailable.
+
+Grok and the simplify pass are commissioned per PR, so if either is unavailable
+nobody looked and the PR is blocked. Greptile reviews on its own trigger,
+against a quota this repository does not control; its absence is a fact about
+the vendor, not evidence about the change, and blocking on it would make every
+conveyor PR unmergeable for as long as it lasts.
 
 The carve-out is narrow:
 
-- It covers **Greptile only**, and only the act of obtaining a new review. An
-  unavailable or inconclusive Grok or simplify pass, or a red CI check, remains
-  a hard blocker, exactly as `CLAUDE.md` states.
-- It never clears a **finding**. Outstanding Greptile P1/P2 from any earlier
-  head still block, quota or no quota; an outage stops new coverage arriving, it
-  does not retire what already arrived.
+- It excuses **one thing**: waiting for a Greptile review that cannot arrive. It
+  excuses nothing else. An unavailable or inconclusive Grok or simplify pass, or
+  a red or missing CI check, remains a hard blocker, exactly as `CLAUDE.md`
+  states.
+- It never touches a **finding**. Every Greptile P1/P2 blocks until resolved,
+  whichever head raised it and whatever the quota is doing — including one
+  raised on the current head. Unavailability stops new coverage arriving; it
+  neither retires what arrived nor excuses leaving it unanswered. Silence is not
+  dismissal: the only way off a finding is the false-positive comment
+  `CLAUDE.md` describes.
 - Unavailability must be **recorded on the PR with the head SHA it applies to**,
   in the same comment that carries the rest of that head's evidence, and the
-  record must **quote something a stranger can retrieve** — the check rollup
-  showing no Greptile context, the bot's own quota comment, an HTTP error, a
-  dated status page. Assertion alone is an affidavit, not evidence. This rule
-  binds hardest when the quota is down; the opening sentence does not switch it
-  off.
+  record must cite an artifact **Greptile or its vendor produced** — its own
+  comment naming the quota state, an HTTP status it returned, or its dated
+  status page. Nothing the conveyor wrote counts, including its own earlier
+  record, and neither does the absence of a Greptile check on this PR: absence
+  is what a wait looks like too. If no such artifact exists, this is a wait, not
+  an outage. This rule binds hardest when the quota is down; the opening
+  sentence does not switch it off.
 - "Available but not finished yet" is not unavailable — that is a wait.
-- Availability is judged per head, and re-judged immediately before
+- Unavailability is judged per head, and re-judged immediately before
   `merge-ready`. A quota that returns — on this head or the next — puts
   Greptile back in the required set.
 
@@ -52,7 +61,7 @@ enough. Post one PR comment headed `**grok review**` that contains:
 Confirmed Grok P1/P2 findings block `merge-ready`. Remove that label first
 if it is present, then give the finding comment verbatim to a subsequent fix
 pass. The fix pass pushes its own changes; the new head must repeat Grok review
-and CI, and must repeat Greptile review only when its quota is available (§0).
+and CI, and must repeat Greptile review unless Greptile is unavailable (§0).
 A rejected finding needs a PR comment explaining the evidence for rejecting it
 and naming the current head SHA. On that SHA, a rejection closes the finding
 only when its evidence is sufficient for a fresh agent to verify it. A clean
@@ -69,8 +78,10 @@ follow-up; they do not silently disappear.
 Before simplification, verify all evidence refers to the same current PR head:
 
 - the provider-neutral conveyor gate's required checks are green on that head;
-- Greptile has covered that head, or its unavailability is recorded for that
-  head as §0 requires, and no Greptile P1/P2 is outstanding; and
+- every Greptile P1/P2 is resolved — those raised on this head and those
+  raised on any earlier one, whatever the quota is doing;
+- Greptile has covered that head, or its unavailability for that head is
+  recorded as §0 requires; and
 - the current-head Grok comment is clean, or every confirmed P1/P2 was fixed
   or rejected with SHA-bound evidence on this head.
 
@@ -81,7 +92,7 @@ when the provider offers it; otherwise use an equivalent provider-neutral pass.
 Post a `**simplify**` PR comment with the reviewed head SHA, verdict, and any
 material suggestion. If simplification identifies a change or causes one, that
 new head restarts at step 1; it needs fresh Grok, CI and a new simplify pass,
-plus fresh Greptile only when its quota is available (§0). If no capable
+plus fresh Greptile unless Greptile is unavailable (§0). If no capable
 simplify pass is available or its result is inconclusive, record the blocker
 and leave the PR without `merge-ready`.
 
