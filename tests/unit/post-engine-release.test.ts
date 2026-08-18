@@ -162,6 +162,19 @@ describe("post-engine-release workflow", () => {
     expect(job.steps.some((step: { run?: string }) => step.run?.includes("gh pr create"))).toBe(true);
   });
 
+  // Every validating step here pipes — `{ bun run check:versions; ... } | tee` and
+  // `git ls-remote | cut`. GitHub's *unspecified* default shell is `bash -e {0}` with no pipefail,
+  // so those took `tee`'s and `cut`'s exit status: a failed check was recorded as output and a
+  // failed ls-remote read as "no follow-up branch exists". Only `shell: bash` turns pipefail on (#1083).
+  test("validation steps fail when a command inside them fails, not when the last one does", () => {
+    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
+    expect(workflow.defaults.run.shell).toBe("bash");
+
+    const steps = workflow.jobs.follow_up.steps as { shell?: string; run?: string }[];
+    expect(steps.filter((step) => step.run !== undefined).length).toBeGreaterThan(0);
+    for (const step of steps) expect(step.shell ?? "bash").toBe("bash");
+  });
+
   test("only a stable engine tag is owned by the follow-up", () => {
     for (const tag of ["v1.24.11", "v1.29.0", "v10.0.100", "v0.0.0"]) expect(ownsTag(tag)).toBe(true);
     for (const tag of ["v1.29.0-cli", "v1.24.11-alpha.1", "v1.24.11-beta.1", "1.24.11", "v1.24", "v01.2.3", "v1.2.3 "]) {

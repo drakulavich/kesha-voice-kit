@@ -8,6 +8,7 @@ import {
   referencedRecipes,
   sweptFiles,
   undocumentedRecipes,
+  unguardedPipelines,
   unknownReferences,
 } from "../../.github/scripts/check-recipes";
 import { readRepoFile, REPO_ROOT } from "../helpers/repo";
@@ -225,6 +226,218 @@ describe("interpolatedParameters", () => {
     const errors = interpolatedParameters(dump({ worktree: withBody(["slug", "branch"], body) }));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("{{ branch }}, {{ slug }}");
+  });
+});
+
+// A pipeline reports only its last stage's status, so `just worktree-rm x | tail && echo "removed"`
+// printed `removed` for a worktree that was still there. `set -o pipefail` is what makes it honest.
+describe("unguardedPipelines", () => {
+  const shebang = (body: string[], isShebang = true) => ({
+    doc: "d",
+    shebang: isShebang,
+    body: body.map((line) => [line]),
+  });
+
+  test("flags a pipeline that runs without pipefail", () => {
+    const errors = unguardedPipelines(
+      dump({ land: shebang(["#!/usr/bin/env bash", "set -eu", 'git log | head -3 && echo "ok"']) }),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("`land` runs a pipeline");
+    expect(errors[0]).toContain("git log | head -3");
+    expect(errors[0]).toContain("set -euo pipefail");
+  });
+
+  test("passes once pipefail is set above the pipeline", () => {
+    const body = ["#!/usr/bin/env bash", "set -euo pipefail", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  test("the long form counts too", () => {
+    const body = ["#!/usr/bin/env bash", "set -o pipefail", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  test("every spelling that really enables pipefail counts", () => {
+    for (const set of ["set -euo pipefail", "set -o pipefail", "set -o errexit -o pipefail"]) {
+      const body = ["#!/usr/bin/env bash", set, "git log | head -3"];
+      expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+    }
+  });
+
+  // `set pipefail` makes "pipefail" a positional argument and `set -e pipefail` makes it $1.
+  // Neither turns the option on, so neither may silence the gate.
+  test("a `set` that does not enable pipefail does not guard anything", () => {
+    for (const set of ["set pipefail", "set -- pipefail", "set -e pipefail", "set +o pipefail"]) {
+      const body = ["#!/usr/bin/env bash", set, "git log | head -3"];
+      expect(unguardedPipelines(dump({ land: shebang(body) }))).toHaveLength(1);
+    }
+  });
+
+  test("`set +o pipefail` turns the guard back off", () => {
+    const body = ["#!/usr/bin/env bash", "set -euo pipefail", "set +o pipefail", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toHaveLength(1);
+  });
+
+  test("pipefail set after the pipeline does not guard it", () => {
+    const body = ["#!/usr/bin/env bash", "git log | head -3", "set -euo pipefail"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toHaveLength(1);
+  });
+
+  test("a non-shebang recipe cannot set pipefail, so the fix is a bash shebang", () => {
+    const errors = unguardedPipelines(dump({ land: shebang(["git log | head -3"], false) }));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#!/usr/bin/env bash");
+  });
+
+  // Ubuntu's `sh` is dash, which answers `set -o pipefail` with "Illegal option". Accepting it
+  // here would bless the cheap fix over the one that works.
+  test("`set -o pipefail` in a non-shebang recipe does not guard it", () => {
+    const body = ["set -o pipefail", "git log | head -3"];
+    const errors = unguardedPipelines(dump({ land: shebang(body, false) }));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#!/usr/bin/env bash");
+  });
+
+  test("a justfile-wide pipefail shell does guard them, since that is the interpreter", () => {
+    const shell = { command: "bash", arguments: ["-euo", "pipefail", "-c"] };
+    const withShell = { ...dump({ land: shebang(["git log | head -3"], false) }), settings: { shell } };
+    expect(unguardedPipelines(withShell)).toEqual([]);
+  });
+
+  // `just --dump` reports `shebang: true` for any shebang. `#!/bin/sh` is dash on Ubuntu, which
+  // answers `set -o pipefail` with "Illegal option" — trusting the flag alone reopened the dash hole
+  // one level up from where round 1 closed it.
+  test("only an interpreter that has pipefail can enable it", () => {
+    for (const line of ["#!/bin/sh", "#!/usr/bin/env sh", "#!/usr/bin/env python3"]) {
+      const body = [line, "set -o pipefail", "git log | head -3"];
+      const errors = unguardedPipelines(dump({ land: shebang(body) }));
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain("#!/usr/bin/env bash");
+    }
+    for (const line of ["#!/bin/bash", "#!/usr/bin/env bash", "#!/usr/bin/env zsh", "#!/usr/bin/env -S bash -e"]) {
+      const body = [line, "set -o pipefail", "git log | head -3"];
+      expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+    }
+  });
+
+  // Rounds 1-3 each closed one `set` spelling and left the next one silently guarded, because an
+  // unparsed `set` counted as "says nothing". A `set` that mentions pipefail at all and does not
+  // provably enable it now counts as off, so an unrecognised spelling fails closed by construction.
+  test("a `set` that mentions pipefail without provably enabling it counts as off", () => {
+    for (const off of ["set +o pipefail;", "set +o pipefail; git log | head -3"]) {
+      const body = ["#!/usr/bin/env bash", "set -euo pipefail", off, "git log | head -3"];
+      expect(unguardedPipelines(dump({ land: shebang(body) }))).toHaveLength(1);
+    }
+  });
+
+  // Verified against bash: this really does enable pipefail, so flagging it is the cost of failing
+  // closed on a spelling the scanner cannot prove. Writing `set -euo pipefail` is the fix.
+  test("a quoted operand fails closed, which is a false positive and the intended direction", () => {
+    const body = ["#!/usr/bin/env bash", "set -o 'pipefail'", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toHaveLength(1);
+
+    // The load-bearing half: an unprovable spelling must *revoke* a guard that was really on,
+    // not be waved through as "says nothing".
+    const revoked = ["#!/usr/bin/env bash", "set -euo pipefail", "set -o 'pipefail'", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(revoked) }))).toHaveLength(1);
+  });
+
+  test("extra operands after the option do not stop it enabling", () => {
+    const body = ["#!/usr/bin/env bash", "set -o pipefail extra-operand", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  test("a pipeline guarded earlier on its own line is still guarded", () => {
+    const body = ["#!/usr/bin/env bash", "set -o pipefail; git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  // `$((1 | 2))` is bitwise OR, not a pipeline — the seam that treating every `$(` as command
+  // substitution opened.
+  test("arithmetic expansion is not a pipeline, but a substitution inside it still is", () => {
+    for (const clean of ["x=$((1 | 2))", 'x="$((1 | 2))"', "x=$(( FLAGS | 4 ))"]) {
+      expect(unguardedPipelines(dump({ land: shebang([clean], false) }))).toEqual([]);
+    }
+    expect(unguardedPipelines(dump({ land: shebang(["x=$(( $(a | b) ))"], false) }))).toHaveLength(1);
+  });
+
+  test("an env assignment before the interpreter does not hide it", () => {
+    for (const line of ["#!/usr/bin/env FOO=bar bash", "#!/usr/bin/env -S FOO=bar bash"]) {
+      const body = [line, "set -euo pipefail", "git log | head -3"];
+      expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+    }
+  });
+
+  test("a later `set` that says nothing about pipefail leaves it on", () => {
+    const body = ["#!/usr/bin/env bash", "set -euo pipefail", "set -x", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  test("`--` ends option parsing, so what follows it enables nothing", () => {
+    const off = ["#!/usr/bin/env bash", "set -- -o pipefail", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(off) }))).toHaveLength(1);
+    const on = ["#!/usr/bin/env bash", "set -o pipefail --", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(on) }))).toEqual([]);
+  });
+
+  test("a justfile-wide shell guards only when its argv really enables pipefail", () => {
+    const body = { land: shebang(["git log | head -3"], false) };
+    const withShell = (args: string[]) => ({ ...dump(body), settings: { shell: { command: "bash", arguments: args } } });
+    expect(unguardedPipelines(withShell(["-o", "pipefail", "-c"]))).toEqual([]);
+    expect(unguardedPipelines(withShell(["-euo", "pipefail", "-c"]))).toEqual([]);
+    expect(unguardedPipelines(withShell(["+o", "pipefail", "-c"]))).toHaveLength(1);
+    expect(unguardedPipelines(withShell(["-c", "pipefail"]))).toHaveLength(1);
+  });
+
+  // `preflight`'s own spelling. The status of `"$(a | b)"` is still the pipeline's, and reading the
+  // whole double-quoted run as data missed every pipeline the justfile actually contains.
+  test("a pipeline inside a quoted command substitution is shell, not data", () => {
+    const piped = [
+      'changed="$(git diff --name-only | sort -u)"',
+      'changed="$( { git diff; git ls-files; } | sort -u )"',
+      'changed="`git diff --name-only | sort -u`"',
+    ];
+    for (const line of piped) {
+      expect(unguardedPipelines(dump({ land: shebang([line], false) }))).toHaveLength(1);
+    }
+  });
+
+  test("a pipe that is merely inside double quotes is still data", () => {
+    for (const line of ['echo "a | b"', 'grep -qE "a|b" file', 'echo "$(date) a | b"']) {
+      expect(unguardedPipelines(dump({ land: shebang([line], false) }))).toEqual([]);
+    }
+  });
+
+  test("`||` is not a pipeline", () => {
+    expect(unguardedPipelines(dump({ land: shebang(["git log || exit 2"], false) }))).toEqual([]);
+  });
+
+  test("a pipe inside quotes is data, not a pipeline", () => {
+    const body = ["grep -qE 'a|b' file", 'grep -qE "a|b" file'];
+    expect(unguardedPipelines(dump({ land: shebang(body, false) }))).toEqual([]);
+  });
+
+  test("a pipe in a trailing comment is not a pipeline", () => {
+    expect(unguardedPipelines(dump({ land: shebang(["git log # a | b"], false) }))).toEqual([]);
+  });
+
+  test("`>|` is a redirect, not a pipeline", () => {
+    expect(unguardedPipelines(dump({ land: shebang(["git log >| out"], false) }))).toEqual([]);
+  });
+
+  // The dump carries a variable's *name*, never its value, so the scanner can never see whether
+  // the substituted text pipes. It renders to a token boundary rather than to anything shell-like.
+  test("an interpolated variable contributes no pipeline, whatever it is called", () => {
+    for (const name of ["SLUG_PATTERN", "a|b"]) {
+      const body = [['[[ "$1" =~ ', [["variable", name]], " ]]"]];
+      expect(unguardedPipelines(dump({ land: { doc: "d", shebang: false, body } }))).toEqual([]);
+    }
+  });
+
+  test("names one offending line per recipe, not one per pipe", () => {
+    const body = ["a | b", "c | d"];
+    expect(unguardedPipelines(dump({ land: shebang(body, false) }))).toHaveLength(1);
   });
 });
 

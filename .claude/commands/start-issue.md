@@ -15,11 +15,12 @@ Arguments: `$ARGUMENTS` → first token is the issue number (required), optional
    gh issue view <N> -R drakulavich/kesha-voice-kit
    ```
 
-2. Tag it `WIP` so drakulavich sees it's in flight. Create the label first only if it doesn't exist:
+2. Tag it `WIP` so drakulavich sees it's in flight. Creating an existing label is a harmless
+   error, so `|| true` absorbs it — but stderr stays visible, and the `--add-label` below is the
+   real gate: it fails loudly if the label genuinely is not there.
    ```bash
-   gh label list -R drakulavich/kesha-voice-kit | grep -q '^WIP' || \
-     gh label create WIP -R drakulavich/kesha-voice-kit --color FBCA04 \
-       --description "An agent or contributor is actively working on this"
+   gh label create WIP -R drakulavich/kesha-voice-kit --color FBCA04 \
+     --description "An agent or contributor is actively working on this" || true
    gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP
    ```
 
