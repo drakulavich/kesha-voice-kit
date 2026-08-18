@@ -34,7 +34,11 @@ type Recipe = {
   parameters?: { name?: string }[];
   body?: unknown;
 };
-export type JustDump = { recipes?: Record<string, Recipe>; aliases?: Record<string, unknown> };
+export type JustDump = {
+  recipes?: Record<string, Recipe>;
+  aliases?: Record<string, unknown>;
+  settings?: { shell?: { command?: string; arguments?: string[] } | null };
+};
 
 const SWEPT_ROOT_FILES = ["README.md", "CONTRIBUTING.md", "CLAUDE.md"];
 const SWEPT_DIRS = ["docs/", ".claude/", ".github/workflows/"];
@@ -167,7 +171,8 @@ export function interpolatedParameters(dump: JustDump): string[] {
 function lineText(fragment: unknown): string {
   if (typeof fragment === "string") return fragment;
   if (!Array.isArray(fragment)) return "";
-  if (fragment[0] === "variable" && typeof fragment[1] === "string") return `{{${fragment[1]}}}`;
+  // The dump carries the variable's name, not its value, so nothing here is shell the recipe runs.
+  if (fragment[0] === "variable" && typeof fragment[1] === "string") return " ";
   return fragment.map(lineText).join("");
 }
 
@@ -203,7 +208,15 @@ export function runsAPipeline(text: string): boolean {
   return false;
 }
 
-const SETS_PIPEFAIL = /^\s*set\s+(?:-\S+\s+)*pipefail\b/;
+// `pipefail` must be the operand of an enabling `-...o`: `set pipefail` makes it a positional
+// argument, `set -e pipefail` makes it $1, and neither turns the option on.
+const ENABLES_PIPEFAIL = /^\s*set\s+(?:\S+\s+)*-[a-zA-Z]*o\s+pipefail\b/;
+const DISABLES_PIPEFAIL = /^\s*set\s+(?:\S+\s+)*\+[a-zA-Z]*o\s+pipefail\b/;
+
+/** `just` runs a non-shebang recipe under `settings.shell`, so a pipefail one guards them all. */
+function shellEnablesPipefail(dump: JustDump): boolean {
+  return (dump.settings?.shell?.arguments ?? []).some((argument) => argument === "pipefail");
+}
 
 /**
  * A pipeline's exit status is its *last* stage's, so `just worktree-rm x | tail -3 && echo removed`
@@ -212,15 +225,18 @@ const SETS_PIPEFAIL = /^\s*set\s+(?:-\S+\s+)*pipefail\b/;
  * non-shebang recipe under — has no portable spelling of it.
  */
 export function unguardedPipelines(dump: JustDump): string[] {
+  const shellGuards = shellEnablesPipefail(dump);
   return Object.entries(dump.recipes ?? {}).flatMap(([name, recipe]) => {
-    let guarded = false;
+    const shebang = recipe.shebang === true;
+    let guarded = !shebang && shellGuards;
     for (const line of (Array.isArray(recipe.body) ? recipe.body : []).map(lineText)) {
-      if (SETS_PIPEFAIL.test(line)) guarded = true;
+      if (DISABLES_PIPEFAIL.test(line)) guarded = false;
+      else if (shebang && ENABLES_PIPEFAIL.test(line)) guarded = true;
       if (guarded || !runsAPipeline(line)) continue;
-      const fix = recipe.shebang
+      const fix = shebang
         ? "add `set -euo pipefail` above it"
-        : "give the recipe a `#!/usr/bin/env bash` line and `set -euo pipefail`, since `sh -cu` " +
-          "(what `just` runs a non-shebang recipe under) has no portable pipefail";
+        : "give the recipe a `#!/usr/bin/env bash` line and `set -euo pipefail` — a non-shebang " +
+          "recipe runs under `sh -cu`, which is dash on Ubuntu and rejects `set -o pipefail` outright";
       return [
         `justfile: recipe \`${name}\` runs a pipeline without pipefail, so it reports only the ` +
           `last stage's exit status (in \`${line.trim()}\`) — ${fix} (#1083)`,

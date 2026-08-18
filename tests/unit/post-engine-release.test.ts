@@ -169,6 +169,10 @@ describe("post-engine-release workflow", () => {
   test("validation steps fail when a command inside them fails, not when the last one does", () => {
     const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
     expect(workflow.defaults.run.shell).toBe("bash");
+
+    const steps = workflow.jobs.follow_up.steps as { shell?: string; run?: string }[];
+    expect(steps.filter((step) => step.run !== undefined).length).toBeGreaterThan(0);
+    for (const step of steps) expect(step.shell ?? "bash").toBe("bash");
   });
 
   test("only a stable engine tag is owned by the follow-up", () => {
