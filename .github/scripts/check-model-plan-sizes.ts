@@ -13,8 +13,9 @@
  * and a plan entry whose `relPath` resolves to no URL fails the run rather than being skipped,
  * which is what stops a parser regression from going quietly green.
  *
- * HEAD only: no downloads, no cache impact. `KESHA_MODEL_MIRROR` is deliberately not honoured —
- * the subject here is upstream truth.
+ * HEAD first, falling back to a one-byte range request for hosts that answer HEAD without a
+ * Content-Length: no downloads either way, no cache impact. `KESHA_MODEL_MIRROR` is deliberately
+ * not honoured — the subject here is upstream truth.
  */
 import { readFileSync } from "node:fs";
 import { humanBytes } from "../../src/format";
@@ -172,6 +173,44 @@ export interface LiveSizeOptions {
   backoffMs?: number;
 }
 
+/** The whole resource length a 206 reports, which is not the length of the bytes it served. */
+export function rangeTotal(headers: Headers): number | null {
+  const total = /\/(\d+)$/.exec(headers.get("content-range")?.trim() ?? "")?.[1];
+  const bytes = total === undefined ? Number.NaN : Number(total);
+  return Number.isInteger(bytes) ? bytes : null;
+}
+
+// The size lives on the far side of HuggingFace's 302, and only in an identity encoding.
+const HEAD_PROBE: RequestInit = { method: "HEAD", headers: { "accept-encoding": "identity" } };
+const RANGE_PROBE: RequestInit = {
+  method: "GET",
+  headers: { "accept-encoding": "identity", range: "bytes=0-0" },
+};
+
+async function probeSize(
+  url: string,
+  { fetchImpl, attempts, backoffMs }: Required<LiveSizeOptions>,
+  init: RequestInit,
+  sizeOf: (res: Response) => number | null,
+): Promise<number | null> {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (attempt > 1) await Bun.sleep(backoffMs * 2 ** (attempt - 2));
+    try {
+      const res = await fetchImpl(url, {
+        redirect: "follow",
+        signal: AbortSignal.timeout(30_000),
+        ...init,
+      });
+      // Retried like a dropped connection: a CDN omitting Content-Length intermittently would otherwise spend its one attempt and file the drift issue.
+      const bytes = res.ok ? sizeOf(res) : null;
+      if (bytes !== null) return bytes;
+    } catch {
+      // Swallowed so the loop can retry; a transient blip must never read as a wrong size.
+    }
+  }
+  return null;
+}
+
 /**
  * Bytes the URL serves, or null if the run could not find out.
  *
@@ -185,24 +224,15 @@ export async function liveSize(
   url: string,
   { fetchImpl = fetch, attempts = 4, backoffMs = 1000 }: LiveSizeOptions = {},
 ): Promise<number | null> {
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    if (attempt > 1) await Bun.sleep(backoffMs * 2 ** (attempt - 2));
-    try {
-      // The size lives on the far side of HuggingFace's 302, and only in an identity encoding.
-      const res = await fetchImpl(url, {
-        method: "HEAD",
-        redirect: "follow",
-        headers: { "accept-encoding": "identity" },
-        signal: AbortSignal.timeout(30_000),
-      });
-      // Retried like a dropped connection: a CDN omitting Content-Length intermittently would otherwise spend its one attempt and file the drift issue.
-      const bytes = res.ok ? contentLength(res.headers) : null;
-      if (bytes !== null) return bytes;
-    } catch {
-      // Swallowed so the loop can retry; a transient blip must never read as a wrong size.
-    }
-  }
-  return null;
+  const options = { fetchImpl, attempts, backoffMs };
+  const head = await probeSize(url, options, HEAD_PROBE, (res) => contentLength(res.headers));
+  if (head !== null) return head;
+  // raw.githubusercontent.com answers HEAD 200 with no Content-Length at all, which left the
+  // plan's one non-HuggingFace entry permanently unmeasurable (#1054). Asking for a single
+  // byte costs no download and reports the whole length in Content-Range.
+  return probeSize(url, options, RANGE_PROBE, (res) =>
+    res.status === 206 ? rangeTotal(res.headers) : contentLength(res.headers),
+  );
 }
 
 export function compareEntry(entry: PlanEntry, live: number | null): Verdict {
