@@ -94,7 +94,7 @@ A test that spawns a stub owns its death. `bunfig.toml` preloads `tests/helpers/
 
 ### GREPTILE PR REVIEW IS A GATE
 
-Greptile reviews on open and on every new commit. **P1/P2 findings are merge blockers.** Do not stop at the PR URL: wait for CI and Greptile to cover the latest head SHA, then report whether it is green. Clear false positives may be dismissed with a PR comment explaining why — rare in practice. Re-review and auto-merge mechanics: the `release-mechanics` skill.
+Greptile reviews on open and on every new commit. **P1/P2 findings are merge blockers** — that never lapses, whatever the quota is doing. Do not stop at the PR URL: wait for CI and Greptile to cover the latest head SHA, then report whether it is green. The one case where you do not wait is a conveyor PR while the Greptile quota is exhausted; §0 of the [review runbook](docs/runbooks/backlog-conveyor-review.md) says what must be recorded instead. Clear false positives may be dismissed with a PR comment explaining why — rare in practice. Re-review and auto-merge mechanics: the `release-mechanics` skill.
 
 ### BACKLOG CONVEYOR REVIEW GATE
 
