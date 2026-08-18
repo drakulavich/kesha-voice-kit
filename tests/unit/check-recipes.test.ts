@@ -234,6 +234,7 @@ describe("the repository's own references", () => {
     const found = new Set(names("CLAUDE.md", readRepoFile("CLAUDE.md")));
     expect([...found].sort()).toEqual([
       "dev-setup",
+      "mutate",
       "preflight",
       "release",
       "release-tag",
