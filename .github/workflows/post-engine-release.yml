@@ -33,11 +33,30 @@ jobs:
       - name: Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
+      # `release: published` fires for `-cli` and prerelease tags too, which the script rejects — one red run per CLI publish (#1041).
+      - name: Skip a tag this workflow does not own
+        id: shape
+        run: |
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Not a stable engine tag, nothing to follow up: $TAG_NAME"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Refuse an existing follow-up branch or PR
         id: existing
+        if: steps.shape.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A second follow-up opened before the first merges reads the same baseline and leads the CLI to the same version twice (#1041).
+          others="$(gh pr list --repo "$REPOSITORY" --state open --search 'head:automation/post-release-' --json headRefName \
+            | jq --arg branch "$BRANCH" '[.[] | select(.headRefName != $branch)] | length')"
+          if [ "$others" != "0" ]; then
+            echo "::error::Another post-release follow-up is still open; merge it before leading the CLI again." >&2
+            exit 1
+          fi
           existing="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state all --json title,body)"
           count="$(printf '%s' "$existing" | jq 'length')"
           if [ "$count" = "1" ]; then
@@ -64,13 +83,13 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Read published release and prepare follow-up
-        if: steps.existing.outputs.skip != 'true'
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: bun .github/scripts/post-engine-release.ts --tag "$TAG_NAME"
 
       - name: Validate and record output
-        if: steps.existing.outputs.skip != 'true'
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -83,7 +102,7 @@ jobs:
           } | tee -a post-release-pr.md
 
       - name: Commit and push follow-up branch
-        if: steps.existing.outputs.skip != 'true'
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -95,7 +114,7 @@ jobs:
           git push origin "$BRANCH"
 
       - name: Open follow-up pull request
-        if: steps.existing.outputs.skip != 'true'
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
