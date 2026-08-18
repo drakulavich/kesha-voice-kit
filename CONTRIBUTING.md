@@ -29,7 +29,7 @@ kesha install --vad      # opt-in: Silero VAD model
 The CLI is a Bun/TypeScript wrapper around `kesha-engine`, a Rust binary
 downloaded from GitHub Releases at the version pinned in
 `package.json#keshaEngine.version`. CLI and engine are versioned
-independently — see [`CLAUDE.md`](./CLAUDE.md) "RELEASE PROCESS" for the
+independently — see [`CLAUDE.md`](./CLAUDE.md) "Releases" for the
 full split.
 
 ### Trying an engine build without editing the pin
@@ -65,18 +65,20 @@ where tests live, and a "where to change X" table.
 ## Development
 
 ```bash
-bun run check       # typecheck + version drift + deterministic CLI tests (the fast path)
+bun run check       # tsc + versions + recipes + test:cli-fast (the fast path; needs just)
 just test           # bun unit + integration tests
 bun run lint        # bunx tsc --noEmit
 just smoke-test     # bun link → kesha install → run against fixtures
-just release        # lint + test + smoke-test
+just release        # check (lint + versions + recipes + all Bun tests) + smoke-test
 ```
 
 **Keep the fast path sacred.** `bun run check` (and `bun run test:cli-fast`)
 must stay free of engine downloads, model installs, and heavy e2e. Use it for
-every CLI-only change. Engine-backed integration, TTS e2e, diarization, and
-smoke tests live on the slower explicit path (`just test`, `just smoke-test`,
-CI). Do not pull network or multi-GB dependencies into the fast loop.
+every CLI-only change. Real-engine e2e, TTS e2e, diarization, and smoke tests
+are not on this path: `just test` runs unit plus `tests/integration/` (real-
+engine cases self-skip unless an engine is already installed), `just smoke-test`
+is the explicit install-and-fixtures path, and TTS e2e / diarization live in
+CI. Do not pull network or multi-GB dependencies into the fast loop.
 
 Use `bun run check` for a quick local confidence pass before
 opening small CLI-only PRs. It avoids the engine-backed E2E lanes while still
@@ -87,7 +89,7 @@ Rust engine work happens in `rust/`:
 
 ```bash
 cd rust
-cargo test --no-default-features --features onnx,tts --lib
+cargo nextest run --no-default-features --features onnx,tts --lib
 cargo clippy --all-targets --no-default-features --features onnx,tts -- -D warnings
 cargo fmt --check
 ```
@@ -136,7 +138,7 @@ kesha-voice-kit/
 ├── scripts/                    # benchmark.ts, smoke-test.ts
 ├── .github/workflows/
 │   ├── ci.yml                  # PR: unit + integration + tts-e2e + type check
-│   ├── rust-test.yml           # PR touching rust/: cargo test/fmt/clippy across 3 OSes
+│   ├── rust-test.yml           # PR touching rust/: nextest/fmt/clippy across 3 OSes
 │   └── build-engine.yml        # tag push (v*, excluding -cli): build 3 binaries + draft release
 ├── raycast/                    # Raycast extension (separate npm tree, vendored)
 ├── openclaw.plugin.json        # OpenClaw manifest
@@ -147,8 +149,9 @@ kesha-voice-kit/
 ## Pull requests
 
 - Branch from `main`. Don't pile unrelated changes into one PR.
-- Run `just test && bun run lint` before pushing. For Rust changes, also `cd
-  rust && cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test`.
+- Run `just test && bun run lint` before pushing. For Rust changes, also `just
+  rust-test` and `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings`.
+  Do not use plain `cargo test` for the suite.
 - CI must pass before merging. `main` is protected.
 - Squash-merge preferred. Greptile reviews are advisory but their P1/P2
   findings should be addressed before merge.
@@ -181,10 +184,11 @@ kesha-voice-kit/
 - Unit tests in `tests/unit/` — no external deps, run on
   Linux/Windows/macOS. Prefer these for pure functions and deterministic CLI
   contracts.
-- Integration tests in `tests/integration/` — exercise the actual engine
-  binary, run on macos-14 in CI. Prefer these the moment behaviour crosses the
-  CLI or engine boundary.
-- Rust integration tests in `rust/tests/` — `cargo nextest` / `just rust-test`
+- Integration tests in `tests/integration/` — most drive a fake engine and run
+  everywhere; real-engine suites self-skip when no engine is present. CI's fast
+  `integration-tests` job is macos-latest and does not install an engine. Prefer
+  these the moment behaviour crosses the CLI or engine boundary.
+- Rust integration tests in `rust/tests/` — `cargo nextest run` / `just rust-test`
   (matches CI). Do not rely on plain `cargo test` for the suite.
 - `audio-quality-check` agent runs after every commit touching
   `rust/src/tts/**` (see `.claude/agents/audio-quality-check.md`).
@@ -193,8 +197,8 @@ kesha-voice-kit/
 
 | Path | Command | What it is for |
 |------|---------|----------------|
-| **Fast (sacred)** | `bun run check` / `bun run test:cli-fast` | Design feedback while coding. No engine download, no models, no network. Must stay seconds-fast. |
-| **Full local** | `just test` | Unit + integration (still avoids the heaviest model-dependent e2e). |
+| **Fast (sacred)** | `bun run check` / `bun run test:cli-fast` | Design feedback while coding. No engine download, no models, no network. Keep it that way; do not confuse it with `just check`, which runs all integration tests. |
+| **Full local** | `just test` | Unit + `tests/integration/`. Fake-engine suites always run; real-engine e2e runs only if an engine is already installed. This recipe never downloads the 2.4 GB bundle. |
 | **Smoke / release** | `just smoke-test`, `just release` | Real install + fixtures. Explicit and slower. |
 | **CI** | `ci.yml`, `rust-test.yml` | Authoritative gates; model-heavy jobs are path-filtered or self-skipping. |
 
@@ -212,20 +216,28 @@ Scoped runs stay usable because they only re-run the suites that reach the
 mutated file:
 
 ```bash
-just mutants-ts src/voice-routing.ts          # TypeScript (Stryker + Bun)
-just mutants-ts src/engine.ts src/cli/main.ts # several files
+just mutants-ts src/voice-routing.ts                           # TypeScript (Stryker + Bun)
+just mutants-ts --with-integration src/engine.ts src/cli/main.ts # several files
 just mutants-ts --with-integration src/foo.ts # include integration suites (slower)
 
-just mutants-rust src/errors.rs               # Rust (cargo-mutants; needs clean tree)
+just mutants-rust src/errors.rs # Rust: cargo-mutants; clean rust/ tree required
 ```
 
 Or via npm scripts: `bun run mutants:ts -- src/voice-routing.ts`.
 
+The default TypeScript roots are `tests/unit/` only. For engine spawn, CLI
+contracts, or install hints, pass `--with-integration` so the relevant
+integration suites are measured. `mutants-rust` runs in place: install its tool
+once with `cargo install --locked cargo-mutants`, keep `rust/` clean, and
+override its default `tts,system_kokoro,system_diarize` features with `just
+FEATURES=tts mutants-rust …` when appropriate.
+
 Treat survivors on critical paths (engine spawn, capability checks, install
 hints, stdout/stderr contracts, voice routing) as real design debt. Leave
 equivalent or intentionally untestable mutants alone; the goal is stronger
-assertions, not 100% kill rate. Details and quality bar live in
-[`CLAUDE.md`](./CLAUDE.md) under "TESTS COME FIRST, AND ARE JUDGED BY WHAT THEY CATCH".
+assertions, not 100% kill rate. The behavioural, structure-insensitive test
+quality bar is in [`CLAUDE.md`](./CLAUDE.md) under "TESTS COME FIRST, AND ARE
+JUDGED BY WHAT THEY CATCH"; mutation commands and survivor triage live here.
 
 Handy loops:
 
@@ -236,12 +248,12 @@ Handy loops:
 ## CI workflows
 
 - `ci.yml` — runs on PRs: `changes` filter → unit-tests (3 OSes) +
-  integration-tests + tts-e2e + raycast-lint + pr-comment.
-  `integration-tests` is skipped on `release/*` branches (release
-  chicken-and-egg: pinned engine tag doesn't exist yet).
-- `rust-test.yml` — runs on PRs touching `rust/**`: `cargo test/fmt/clippy`
-  on 3 OSes + `cargo check --features coreml --no-default-features` on
-  macos-14.
+  `integration-tests` (macos-latest, no engine install) + path-filtered
+  `integration-tests-full`, `tts-e2e`, and `raycast-lint`. The full
+  integration and TTS jobs skip `release/*`; `integration-tests` does not.
+- `rust-test.yml` — runs on PRs touching `rust/**`: nextest plus fmt/clippy,
+  and macos-14 also runs the CoreML `cargo check --all-targets` and
+  `just verify-darwin-full` feature set.
 - `build-engine.yml` — runs on `v*` tag pushes (excluding `v*-cli`):
   builds 3 platform binaries, smoke-tests each with `--capabilities-json`,
   creates a draft release.
@@ -249,8 +261,8 @@ Handy loops:
 
 ## Releases
 
-The full release runbook lives in [`CLAUDE.md`](./CLAUDE.md) "RELEASE
-PROCESS". Quick orientation:
+The full release runbook lives in [`CLAUDE.md`](./CLAUDE.md) "Releases".
+Quick orientation:
 
 - **Engine release** (any change under `rust/`, or bumping
   `keshaEngine.version`): bump `rust/Cargo.toml` + `rust/Cargo.lock` +
