@@ -178,23 +178,40 @@ function lineText(fragment: unknown): string {
 
 /** True when the shell would read a `|` in `text` as a pipeline rather than as data. */
 export function runsAPipeline(text: string): boolean {
-  let quote: "'" | '"' | null = null;
+  // `"` suppresses a `|`, but `$( )` and backticks *inside* it reopen shell — `x="$(a | b)"` is the
+  // justfile's own spelling, and its status is still the pipeline's.
+  const context: string[] = [];
+  const inside = () => context[context.length - 1];
   for (let at = 0; at < text.length; at++) {
     const char = text[at];
-    if (quote === "'") {
-      if (char === "'") quote = null;
+    if (inside() === "'") {
+      if (char === "'") context.pop();
       continue;
     }
     if (char === "\\") {
       at++;
       continue;
     }
-    if (quote === '"') {
-      if (char === '"') quote = null;
+    if (char === "$" && text[at + 1] === "(") {
+      context.push("$");
+      at++;
+      continue;
+    }
+    if (char === "`") {
+      if (inside() === "`") context.pop();
+      else context.push("`");
+      continue;
+    }
+    if (inside() === '"') {
+      if (char === '"') context.pop();
       continue;
     }
     if (char === "'" || char === '"') {
-      quote = char;
+      context.push(char);
+      continue;
+    }
+    if (char === ")" && inside() === "$") {
+      context.pop();
       continue;
     }
     if (char === "#" && (at === 0 || /\s/.test(text[at - 1] ?? ""))) return false;
@@ -208,14 +225,36 @@ export function runsAPipeline(text: string): boolean {
   return false;
 }
 
-// `pipefail` must be the operand of an enabling `-...o`: `set pipefail` makes it a positional
-// argument, `set -e pipefail` makes it $1, and neither turns the option on.
-const ENABLES_PIPEFAIL = /^\s*set\s+(?:\S+\s+)*-[a-zA-Z]*o\s+pipefail\b/;
-const DISABLES_PIPEFAIL = /^\s*set\s+(?:\S+\s+)*\+[a-zA-Z]*o\s+pipefail\b/;
+/**
+ * Whether a `set` argv turns pipefail on, off, or says nothing about it (`null` — `set -x` after
+ * `set -euo pipefail` leaves it on). `pipefail` must be the operand of an enabling `-...o`:
+ * `set pipefail` makes it positional, `set -e pipefail` makes it $1, `set +o pipefail` turns it off,
+ * and `--` ends option parsing so nothing after it is a flag at all.
+ */
+export function pipefailSetting(tokens: string[]): boolean | null {
+  let on: boolean | null = null;
+  for (let at = 0; at < tokens.length; at++) {
+    const token = tokens[at] ?? "";
+    if (token === "--") break;
+    if (!/^[-+][a-zA-Z]*o$/.test(token) || tokens[at + 1] !== "pipefail") continue;
+    on = token.startsWith("-");
+    at++;
+  }
+  return on;
+}
+
+const SET_LINE = /^\s*set\s+(.*)$/;
+
+/** bash and zsh have pipefail; `sh` is dash on Ubuntu and rejects `set -o pipefail` outright. */
+function interpreterHasPipefail(shebangLine: string): boolean {
+  const words = shebangLine.replace(/^#!/, "").trim().split(/\s+/);
+  const named = words.filter((word) => !word.startsWith("-") && !/(^|\/)env$/.test(word))[0] ?? "";
+  return /(^|\/)(bash|zsh)$/.test(named);
+}
 
 /** `just` runs a non-shebang recipe under `settings.shell`, so a pipefail one guards them all. */
 function shellEnablesPipefail(dump: JustDump): boolean {
-  return (dump.settings?.shell?.arguments ?? []).some((argument) => argument === "pipefail");
+  return pipefailSetting(dump.settings?.shell?.arguments ?? []) === true;
 }
 
 /**
@@ -227,16 +266,20 @@ function shellEnablesPipefail(dump: JustDump): boolean {
 export function unguardedPipelines(dump: JustDump): string[] {
   const shellGuards = shellEnablesPipefail(dump);
   return Object.entries(dump.recipes ?? {}).flatMap(([name, recipe]) => {
+    const lines = (Array.isArray(recipe.body) ? recipe.body : []).map(lineText);
     const shebang = recipe.shebang === true;
+    const canSetPipefail = shebang && interpreterHasPipefail(lines[0] ?? "");
     let guarded = !shebang && shellGuards;
-    for (const line of (Array.isArray(recipe.body) ? recipe.body : []).map(lineText)) {
-      if (DISABLES_PIPEFAIL.test(line)) guarded = false;
-      else if (shebang && ENABLES_PIPEFAIL.test(line)) guarded = true;
+    for (const line of lines) {
+      const set = line.match(SET_LINE);
+      const setting = set ? pipefailSetting((set[1] ?? "").split(/\s+/).filter(Boolean)) : null;
+      if (setting !== null) guarded = setting && canSetPipefail;
       if (guarded || !runsAPipeline(line)) continue;
-      const fix = shebang
+      const fix = canSetPipefail
         ? "add `set -euo pipefail` above it"
-        : "give the recipe a `#!/usr/bin/env bash` line and `set -euo pipefail` — a non-shebang " +
-          "recipe runs under `sh -cu`, which is dash on Ubuntu and rejects `set -o pipefail` outright";
+        : "give the recipe a `#!/usr/bin/env bash` line and `set -euo pipefail` — `sh` is dash on " +
+          "Ubuntu, which rejects `set -o pipefail` outright, and it is what `just` runs a " +
+          "non-shebang recipe under";
       return [
         `justfile: recipe \`${name}\` runs a pipeline without pipefail, so it reports only the ` +
           `last stage's exit status (in \`${line.trim()}\`) — ${fix} (#1083)`,
