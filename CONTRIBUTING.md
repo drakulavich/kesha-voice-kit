@@ -76,7 +76,8 @@ just release        # check (lint + versions + recipes + all Bun tests) + smoke-
 must stay free of engine downloads, model installs, and heavy e2e. Use it for
 every CLI-only change. Real-engine e2e, TTS e2e, diarization, and smoke tests
 are not on this path: `just test` runs unit plus `tests/integration/` (real-
-engine cases self-skip unless an engine is already installed), `just smoke-test`
+engine cases self-skip, on two different gates — see
+`tests/integration/README.md`), `just smoke-test`
 is the explicit install-and-fixtures path, and TTS e2e / diarization live in
 CI. Do not pull network or multi-GB dependencies into the fast loop.
 
@@ -185,7 +186,12 @@ kesha-voice-kit/
   Linux/Windows/macOS. Prefer these for pure functions and deterministic CLI
   contracts.
 - Integration tests in `tests/integration/` — most drive a fake engine and run
-  everywhere; real-engine suites self-skip when no engine is present. CI's fast
+  everywhere; real-engine suites self-skip, and not on one condition —
+  `e2e-engine` and `mcp-e2e` gate on an installed engine, while `say-e2e` and
+  `mcp-synthesis-e2e` gate on a source-built `rust/target/release/kesha-engine`
+  plus the committed Kokoro stand-in, so installing an engine does not run them.
+  `tests/integration/README.md` states the convention and
+  `tests/unit/model-suite-guards.test.ts` enforces it. CI's fast
   `integration-tests` job is macos-latest and does not install an engine. Prefer
   these the moment behaviour crosses the CLI or engine boundary.
 - Rust integration tests in `rust/tests/` — `cargo nextest run` / `just rust-test`
@@ -198,7 +204,7 @@ kesha-voice-kit/
 | Path | Command | What it is for |
 |------|---------|----------------|
 | **Fast (sacred)** | `bun run check` / `bun run test:cli-fast` | Design feedback while coding. No engine download, no models, no network. Keep it that way; do not confuse it with `just check`, which runs all integration tests. |
-| **Full local** | `just test` | Unit + `tests/integration/`. Fake-engine suites always run; real-engine e2e runs only if an engine is already installed. This recipe never downloads the 2.4 GB bundle. |
+| **Full local** | `just test` | Unit + `tests/integration/`. Fake-engine suites always run; real-engine e2e runs only where its own gate is satisfied — `kesha install` covers `e2e-engine`/`mcp-e2e`, not the synthesis suites. This recipe never downloads the 2.4 GB bundle. |
 | **Smoke / release** | `just smoke-test`, `just release` | Real install + fixtures. Explicit and slower. |
 | **CI** | `ci.yml`, `rust-test.yml` | Authoritative gates; model-heavy jobs are path-filtered or self-skipping. |
 
@@ -266,15 +272,20 @@ Quick orientation:
 
 - **Engine release** (any change under `rust/`, or bumping
   `keshaEngine.version`): bump `rust/Cargo.toml` + `rust/Cargo.lock` +
-  `package.json#version` + `package.json#keshaEngine.version` in lockstep
-  on a `release/X.Y.Z` branch → merge → tag `vX.Y.Z` → write release notes
-  on the **draft** release before publishing → independent validation
-  (download the binary, run end-to-end) → `npm publish --access public`.
+  `package.json#keshaEngine.version` — leave `package.json#version` alone, it
+  carries the next unreleased CLI — on a `release/X.Y.Z` branch → merge → tag
+  `vX.Y.Z` → write release notes on the **draft** release → validate the draft
+  binary with authenticated `gh release download` (draft assets 404 to anonymous
+  clients, so `curl` cannot check them) → un-draft. A bare engine tag publishes
+  nothing to npm; the bumped pin reaches users with the next `-cli` release.
 
-- **CLI-only patch** (docs, TS fix, plugin tweak): bump only
-  `package.json#version` → merge → `npm publish` → tag `vX.Y.Z-cli` (the
-  `-cli` suffix excludes the tag from `build-engine.yml` so no Rust
-  rebuild fires).
+- **CLI-only patch** (docs, TS fix, plugin tweak): bump `package.json#version`
+  and the two `server.json` versions with it, or `bun run check:versions`
+  rejects the commit → merge → create the `vX.Y.Z-cli` release. Publishing that
+  marker is what runs `npm publish --provenance` in GitHub Actions, and the
+  `-cli` suffix excludes the tag from `build-engine.yml` so no Rust rebuild
+  fires. **Do not publish from a laptop** — that loses the provenance
+  attestation.
 
 Tag names are one-shot — GitHub's immutable releases permanently reserve
 them after publish. Broken release → bump patch and cut a new tag. Never
