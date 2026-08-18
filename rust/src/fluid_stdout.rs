@@ -14,9 +14,26 @@
 //!   asynchronous `E5RT` prints — diarization teardown, and anything CoreML
 //!   emits between two streaming ASR calls — which fire after the call returns,
 //!   where a scoped guard has already put fd 1 back.
+//!
+//! File descriptor 1 belongs to the whole process, not a Rust thread. The
+//! internal ownership lock serializes every redirect/restore transition here;
+//! while a scoped guard owns it, unrelated threads still must not write to
+//! stdout because their bytes would be intentionally discarded. Worker callers
+//! send progress over channels and leave reporting to the stdout-owning thread.
 
 use std::io::Write;
 use std::os::fd::OwnedFd;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+/// Not reentrant: a nested call, or a FluidAudio callback that re-enters a
+/// guard, hangs forever with no error and no log line.
+fn stdout_ownership() -> MutexGuard<'static, ()> {
+    static OWNER: OnceLock<Mutex<()>> = OnceLock::new();
+    OWNER
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// `dup` a descriptor into an owned handle, or `None` when the call failed.
 /// Every caller here treats failure as best-effort: run unguarded rather than
@@ -39,6 +56,8 @@ fn dup_owned(fd: std::os::fd::RawFd) -> Option<OwnedFd> {
 /// when opening /dev/null failed).
 pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce() -> R) -> R {
     use std::os::fd::AsRawFd;
+
+    let _owner = stdout_ownership();
 
     struct StdoutGuard {
         saved: Option<OwnedFd>,
@@ -208,6 +227,8 @@ impl StdoutShield {
     pub(crate) fn new() -> Self {
         use std::os::fd::AsRawFd;
 
+        let _owner = stdout_ownership();
+
         // The original stdout — the pipe the parent reads — stays referenced by this dup.
         let real_stdout: Option<std::fs::File> =
             dup_owned(libc::STDOUT_FILENO).map(std::fs::File::from);
@@ -294,6 +315,67 @@ mod tests {
     fn c_flush() {
         // SAFETY: fflush(NULL) flushes every open C output stream and borrows nothing.
         unsafe { libc::fflush(std::ptr::null_mut()) };
+    }
+
+    /// Drives the real guard, not `stdout_ownership` directly: deleting the lock
+    /// from `with_silenced_stdout` lets the second thread run its closure while
+    /// the first is still inside. `overlapped` turns that into a statement about
+    /// ordering rather than about elapsed time, which the deadline alone cannot
+    /// make.
+    #[test]
+    fn scoped_guards_serialize_stdout_ownership() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc};
+        use std::time::Duration;
+
+        let inside = Arc::new(AtomicBool::new(false));
+        let overlapped = Arc::new(AtomicBool::new(false));
+        let (first_in_tx, first_in_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (attempting_tx, attempting_rx) = mpsc::channel();
+        let (entered_tx, entered_rx) = mpsc::channel();
+
+        let first = std::thread::spawn({
+            let inside = Arc::clone(&inside);
+            move || {
+                with_silenced_stdout(None, || {
+                    inside.store(true, Ordering::SeqCst);
+                    first_in_tx.send(()).expect("report first guard");
+                    release_rx.recv().expect("release first guard");
+                    inside.store(false, Ordering::SeqCst);
+                });
+            }
+        });
+        first_in_rx.recv().expect("wait for first guard");
+
+        let second = std::thread::spawn({
+            let inside = Arc::clone(&inside);
+            let overlapped = Arc::clone(&overlapped);
+            move || {
+                attempting_tx.send(()).expect("report second attempt");
+                with_silenced_stdout(None, || {
+                    if inside.load(Ordering::SeqCst) {
+                        overlapped.store(true, Ordering::SeqCst);
+                    }
+                    entered_tx.send(()).expect("report second guard");
+                });
+            }
+        });
+        attempting_rx.recv().expect("wait for second attempt");
+        let entered_early = entered_rx.recv_timeout(Duration::from_millis(100)).is_ok();
+
+        release_tx.send(()).expect("release first guard");
+        first.join().expect("first guard joins");
+        if !entered_early {
+            entered_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("second guard enters after the first exits");
+        }
+        second.join().expect("second guard joins");
+        assert!(
+            !overlapped.load(Ordering::SeqCst) && !entered_early,
+            "second guard ran its closure while the first still owned fd 1"
+        );
     }
 
     /// #841: the bridge collapses every transcribe throw to "Transcription
@@ -394,6 +476,76 @@ mod tests {
         assert_eq!(
             contents, "transcript\n",
             "shielded stdout must carry only the payload"
+        );
+    }
+
+    /// The shield holds the lock only across its descriptor swap, so what is on
+    /// test is the entry: `new()` must not swap fd 1 out from under a live scoped
+    /// guard. `RestoreFd` puts the real stdout back afterwards — the shield never
+    /// does, by design.
+    #[cfg(all(
+        any(feature = "system_diarize", feature = "coreml"),
+        target_os = "macos"
+    ))]
+    #[test]
+    fn permanent_shield_waits_for_a_live_scoped_guard() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc};
+        use std::time::Duration;
+
+        let capture = tempfile::tempfile().expect("capture tempfile");
+        let _restore = redirect(libc::STDOUT_FILENO, &capture);
+
+        let inside = Arc::new(AtomicBool::new(false));
+        let overlapped = Arc::new(AtomicBool::new(false));
+        let (holding_tx, holding_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (attempting_tx, attempting_rx) = mpsc::channel();
+        let (built_tx, built_rx) = mpsc::channel();
+
+        let holder = std::thread::spawn({
+            let inside = Arc::clone(&inside);
+            move || {
+                with_silenced_stdout(None, || {
+                    inside.store(true, Ordering::SeqCst);
+                    holding_tx.send(()).expect("report holder");
+                    release_rx.recv().expect("release holder");
+                    inside.store(false, Ordering::SeqCst);
+                });
+            }
+        });
+        holding_rx.recv().expect("wait for holder");
+
+        let builder = std::thread::spawn({
+            let inside = Arc::clone(&inside);
+            let overlapped = Arc::clone(&overlapped);
+            move || {
+                attempting_tx.send(()).expect("report shield attempt");
+                let shield = StdoutShield::new();
+                if inside.load(Ordering::SeqCst) {
+                    overlapped.store(true, Ordering::SeqCst);
+                }
+                built_tx.send(()).expect("report shield built");
+                shield
+            }
+        });
+        attempting_rx.recv().expect("wait for shield attempt");
+        let built_early = built_rx.recv_timeout(Duration::from_millis(100)).is_ok();
+
+        release_tx.send(()).expect("release holder");
+        holder.join().expect("holder joins");
+        if !built_early {
+            built_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("shield builds once the scoped guard exits");
+        }
+        let shield = builder.join().expect("builder joins");
+        drop(shield);
+        drop(_restore);
+
+        assert!(
+            !overlapped.load(Ordering::SeqCst) && !built_early,
+            "StdoutShield::new swapped fd 1 while a scoped guard still owned it"
         );
     }
 }

@@ -491,11 +491,12 @@ jobs:
           # "this guard did not run" line is exactly that (#841).
           # `system_diarize` rides along because `transcribe::diarize` compiles under no other
           # lane, so its tests only ever got clippy'd; they are pure and cost 0.14 s (#999).
+          # `fluid_stdout` builds under no other lane, so without these two the fd 1 locks are unpinned in CI (#951).
           cargo nextest run \
             --no-default-features --features coreml,system_diarize \
             --run-ignored all \
             --success-output immediate \
-            -E 'test(transcribe_samples_is_stateless_across_calls) + test(debug_routes_silenced_chatter_to_stderr) + test(a_sub_second_file_transcribes_instead_of_erroring) + test(transcribe::diarize::)'
+            -E 'test(transcribe_samples_is_stateless_across_calls) + test(debug_routes_silenced_chatter_to_stderr) + test(a_sub_second_file_transcribes_instead_of_erroring) + test(transcribe::diarize::) + test(scoped_guards_serialize_stdout_ownership) + test(permanent_shield_waits_for_a_live_scoped_guard)'
 
       - name: 📤 Upload JUnit
         if: always()

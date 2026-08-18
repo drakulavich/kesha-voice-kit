@@ -417,8 +417,8 @@ fn spawn_worker(
     let progress_tx = tx.clone();
 
     std::thread::spawn(move || {
-        // Oneshot guard silences sync CoreML stdout; async E5RT teardown print is
-        // handled by `StdoutShield` at the CLI layer (fd 1 stays redirected past exit). (#259/#397/#434)
+        // Progress crosses the channel rather than stdout: fluid_stdout owns fd 1 for this
+        // call, while the CLI's StdoutShield catches later E5RT teardown output. (#259/#397/#434/#951)
         let result = crate::fluid_stdout::with_silenced_stdout_oneshot(
             || -> Result<Option<Vec<DiarizeSpan>>> {
                 let audio = crate::models::fluidaudio_bridge(
