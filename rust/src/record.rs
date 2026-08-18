@@ -820,15 +820,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn record_queue_drops_an_overflowing_callback_buffer() {
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    fn record_queue_drops_the_buffer_that_overflows_its_documented_bound() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(RECORD_QUEUE_BUFFERS);
         let dropped = std::sync::atomic::AtomicUsize::new(0);
 
-        enqueue_record_buffer(&tx, &dropped, vec![0.25]);
+        for _ in 0..RECORD_QUEUE_BUFFERS {
+            enqueue_record_buffer(&tx, &dropped, vec![0.25]);
+        }
         enqueue_record_buffer(&tx, &dropped, vec![0.5]);
 
+        let queued: Vec<Vec<f32>> = rx.try_iter().collect();
         assert_eq!(dropped.load(std::sync::atomic::Ordering::Relaxed), 1);
-        assert_eq!(rx.recv().unwrap(), vec![0.25]);
+        assert_eq!(queued.len(), RECORD_QUEUE_BUFFERS);
+        assert!(
+            queued.iter().all(|buffer| buffer == &vec![0.25]),
+            "the overflowing buffer must be dropped, never queued"
+        );
     }
 
     #[test]
