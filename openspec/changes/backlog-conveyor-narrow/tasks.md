@@ -1,0 +1,7 @@
+- [x] Reduce `scripts/backlog.ts` to `sync|gate|close` with only their flags.
+- [x] Strip coordination and priority delegation from `scripts/backlog-conveyor.ts`, keeping `issueNumberFromBranch` for `sync`.
+- [x] Delete `scripts/backlog-coordination.ts` and `scripts/backlog-priority.ts`.
+- [x] Delete the two test suites covering the removed modules.
+- [x] Confirm `sync`, `gate` and `close` behave unchanged, and that `bunx tsc --noEmit` is clean.
+- [x] Move the conveyor loop into a tracked runbook so Codex and Claude read the same file.
+- [ ] Validate OpenSpec, run preflight, and open the pull request.
