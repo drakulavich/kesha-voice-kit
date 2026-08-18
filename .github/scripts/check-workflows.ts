@@ -350,6 +350,50 @@ export function requireBashOnWindowsRunSteps(path: string, document: unknown): s
 }
 
 /**
+ * Fails when a `run:` step on a non-Windows runner resolves to a shell without pipefail.
+ *
+ * GitHub's *unspecified* default is `bash -e {0}`; only naming `bash` selects
+ * `bash --noprofile --norc -eo pipefail {0}`. So an undeclared step takes its pipeline's **last**
+ * stage exit status: `{ bun run check:versions; ... } | tee` recorded a failed check as ordinary
+ * output and went green (#1083). `shell: sh` is the same trap spelled out. An explicit non-POSIX
+ * shell has no pipelines to get wrong and passes. Windows defaults to pwsh instead, which is
+ * `requireBashOnWindowsRunSteps`'s lane (#850, #1084).
+ */
+const PIPEFAIL_SHELLS = new Set(["bash", "pwsh", "powershell", "python", "cmd"]);
+
+export function requirePipefailShell(path: string, document: unknown): string[] {
+  const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
+  if (!jobs || typeof jobs !== "object") return [];
+
+  const workflowShell = (document as { defaults?: { run?: { shell?: unknown } } })?.defaults?.run?.shell;
+  const errors: string[] = [];
+
+  for (const [name, job] of Object.entries(jobs)) {
+    if (!Array.isArray(job?.steps)) continue;
+    const labels = runnerLabels(job);
+    if (labels.length > 0 && labels.every((label) => /windows/i.test(label))) continue;
+
+    for (const [at, step] of (job.steps as Step[]).entries()) {
+      if (typeof step?.run !== "string") continue;
+      const shell = step.shell ?? job.defaults?.run?.shell ?? workflowShell;
+      if (typeof shell === "string" && PIPEFAIL_SHELLS.has(shell)) continue;
+      const label = typeof step.name === "string" ? `\`${step.name}\`` : `${at + 1}`;
+      const found =
+        shell === undefined
+          ? "has no `shell:`, so it runs under the unspecified default `bash -e {0}`"
+          : `sets \`shell: ${String(shell)}\``;
+      errors.push(
+        `${path}: \`${name}\` step ${label} ${found} — no pipefail there, so a pipeline reports ` +
+          `only its last stage and a failed command inside one passes silently. Name \`shell: bash\`, ` +
+          `or set \`defaults.run.shell: bash\` once for the workflow (#1084)`,
+      );
+    }
+  }
+
+  return errors;
+}
+
+/**
  * Fails when a restore-only model cache has no writer, or has one that disagrees about the entry.
  *
  * `cache-write: "false"` hands the whole responsibility for an entry to cache-seed.yml (#661). Nothing
@@ -523,6 +567,7 @@ function checkFile(
       ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
+      ...requirePipefailShell(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),

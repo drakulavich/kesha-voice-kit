@@ -27,6 +27,10 @@ on:
 # No workflow-level `permissions`: a called workflow may only maintain or reduce what the
 # caller granted, so a `contents: read` default here could be read as capping `reserve-tag`
 # below the write it needs. Every job below states its own instead.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   decide:
     name: Decide and derive

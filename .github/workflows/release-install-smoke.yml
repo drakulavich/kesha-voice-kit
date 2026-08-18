@@ -34,6 +34,10 @@ on:
         default: npm
         type: string
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   draft-engine:
     if: inputs.mode == 'draft-engine'

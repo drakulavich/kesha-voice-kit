@@ -17,6 +17,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # Always runs (even on docs PRs) so the workflow concludes successfully and
   # its required check reports; outputs gate the heavy rust jobs below.

@@ -38,6 +38,10 @@ concurrency:
   group: npm-publish
   queue: max
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # The alpha lane. Reserving a tag needs `contents: write`, so it is granted here and never
   # alongside `id-token: write` — tagging and provenance publishing stay in separate jobs.
