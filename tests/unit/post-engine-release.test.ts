@@ -160,4 +160,38 @@ describe("post-engine-release workflow", () => {
     expect(job.steps.some((step: { run?: string }) => step.run?.includes("git switch -c"))).toBe(true);
     expect(job.steps.some((step: { run?: string }) => step.run?.includes("gh pr create"))).toBe(true);
   });
+
+  // Both guards were added without a pin, and deleting either left the suite green (#1041 review).
+  test("only a stable engine tag reaches the script", () => {
+    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
+    const shape = workflow.jobs.follow_up.steps.find((step: { id?: string }) => step.id === "shape");
+    const pattern = /\^v\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$/.exec(shape.run);
+    expect(pattern).not.toBeNull();
+    const anchored = new RegExp(String(pattern));
+    for (const tag of ["v1.24.11", "v1.29.0", "v10.0.100"]) expect(anchored.test(tag)).toBe(true);
+    for (const tag of ["v1.29.0-cli", "v1.24.11-alpha.1", "v1.24.11-beta.1", "1.24.11", "v1.24"]) {
+      expect(anchored.test(tag)).toBe(false);
+    }
+  });
+
+  test("a second follow-up cannot lead the CLI while another is in flight", () => {
+    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
+    const job = workflow.jobs.follow_up;
+    // Per-tag serialization let two tags read main's baseline at once, so the group carries no tag.
+    expect(job.concurrency.group).toBe("post-engine-release");
+    expect(job.concurrency["cancel-in-progress"]).toBe(false);
+    const guard = job.steps.find((step: { id?: string }) => step.id === "existing").run;
+    expect(guard).toContain("head:automation/post-release-");
+    expect(guard).toContain("refs/heads/automation/post-release-*");
+  });
+
+  test("every mutating step is skipped for a tag this workflow does not own", () => {
+    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
+    // A skipped step has no output, and "" != 'true' would otherwise let these run anyway.
+    const mutating = workflow.jobs.follow_up.steps.filter((step: { id?: string; run?: string }) =>
+      step.id !== "shape" && step.id !== "existing" && step.run !== undefined,
+    );
+    expect(mutating.length).toBeGreaterThan(0);
+    for (const step of mutating) expect(step.if).toContain("steps.shape.outputs.skip != 'true'");
+  });
 });

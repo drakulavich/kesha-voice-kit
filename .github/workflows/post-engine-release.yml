@@ -17,7 +17,7 @@ jobs:
       contents: write
       pull-requests: write
     concurrency:
-      group: post-engine-release-${{ github.event.release.tag_name || inputs.tag }}
+      group: post-engine-release
       cancel-in-progress: false
     env:
       REPOSITORY: drakulavich/kesha-voice-kit
@@ -53,8 +53,10 @@ jobs:
           # A second follow-up opened before the first merges reads the same baseline and leads the CLI to the same version twice (#1041).
           others="$(gh pr list --repo "$REPOSITORY" --state open --search 'head:automation/post-release-' --json headRefName \
             | jq --arg branch "$BRANCH" '[.[] | select(.headRefName != $branch)] | length')"
-          if [ "$others" != "0" ]; then
-            echo "::error::Another post-release follow-up is still open; merge it before leading the CLI again." >&2
+          stale="$(git ls-remote --heads origin 'refs/heads/automation/post-release-*' \
+            | awk -v keep="refs/heads/$BRANCH" '$2 != keep' | wc -l | tr -d ' ')"
+          if [ "$others" != "0" ] || [ "$stale" != "0" ]; then
+            echo "::error::Another post-release follow-up branch or PR exists; land it before leading the CLI again." >&2
             exit 1
           fi
           existing="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state all --json title,body)"
