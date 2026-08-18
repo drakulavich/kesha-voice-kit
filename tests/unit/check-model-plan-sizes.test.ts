@@ -224,6 +224,24 @@ describe("liveSize", () => {
     expect(await liveSize(url, { fetchImpl: omitsLengthOnce, backoffMs: 0 })).toBe(2327524);
   });
 
+  test("learns the length from a one-byte range when HEAD carries no length at all", async () => {
+    // raw.githubusercontent.com answers HEAD 200 with no Content-Length header (#1054), which
+    // left silero_vad.onnx — the plan's only non-HuggingFace entry — permanently unmeasurable.
+    const ranges: string[] = [];
+    const rawGithub: FetchLike = async (_input, init) => {
+      if (init?.method === "HEAD") return new Response(null, { status: 200 });
+      ranges.push(new Headers(init?.headers).get("range") ?? "");
+      return new Response("x", {
+        status: 206,
+        headers: { "content-range": "bytes 0-0/2327524", "content-length": "1" },
+      });
+    };
+
+    // The total the range reports, never the single byte it served.
+    expect(await liveSize(url, { fetchImpl: rawGithub, backoffMs: 0 })).toBe(2327524);
+    expect(ranges).toEqual(["bytes=0-0"]);
+  });
+
   test("gives up rather than guessing when the host keeps failing", async () => {
     const dead: FetchLike = async () => new Response(null, { status: 404 });
 

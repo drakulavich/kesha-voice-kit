@@ -10,7 +10,8 @@ name: "📏 Model-Plan Size Canary"
 #
 # So this job asks the only question that settles it: for every entry in
 # model-plan.json, does the pinned URL serve exactly the recorded number of bytes?
-# HEAD requests only — no downloads, no cache writes, seconds of runtime.
+# A HEAD, or a one-byte range request where HEAD carries no length (#1054) — no downloads
+# either way, no cache writes, seconds of runtime.
 #
 # Exact match is the bar. Sizes are pinned like the SHA-256s beside them, and a
 # "close enough" tolerance would have passed the 72.9 MB under-report that started
