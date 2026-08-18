@@ -167,6 +167,8 @@ Three invariants worth knowing before you touch a release:
 
 Full procedure, `bun link` gotchas, and re-review mechanics: the **`release-mechanics`** skill (loads on demand). To cut one, invoke **`release-engine`** (engine, bare `vX.Y.Z`) or **`release-cli`** (CLI to npm, `vX.Y.Z-cli`); a full ship is the engine first, then the CLI that carries its pin.
 
+When an authorized maintainer needs a verified stable tag creation sequence, use `just release-tag vX.Y.Z notes.md` from the clean root checkout. The deliberate GitHub API fallback is `just release-tag vX.Y.Z notes.md api`; do not switch to it after a timed-out Git push until the remote tag state is known. Details: [release tag helper](docs/runbooks/release-tag-helper.md).
+
 ## Build Commands
 
 ```bash

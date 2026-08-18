@@ -119,6 +119,13 @@ preflight:
       echo "==> CoreML check skipped: no rust/src/backend/ changes"
     fi
 
+# Create and verify a human-authorized stable engine tag. The `api` mode is an explicit fallback
+# for an SSH push that cannot be used; it never follows an uncertain push failure automatically.
+# Usage: just release-tag vX.Y.Z notes.md [push|api]
+[positional-arguments]
+release-tag tag notes mode="push": root-checkout-only
+    bun scripts/release-tag.ts --tag "$1" --notes "$2" --mode "$3"
+
 # The default nextest run builds only onnx,tts, so system_kokoro / system_diarize /
 # system_text_lang never compile locally; rust-test.yml calls this recipe rather than repeat the set.
 # Lint the full darwin release feature set (macOS 14+ arm64)
