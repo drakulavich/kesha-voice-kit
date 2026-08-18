@@ -19,8 +19,8 @@ Claude and Codex read this, not a client-specific command file.
    Blocked mid-flight? Push what exists, open a draft PR, comment the blocker,
    report `BLOCKED: <reason>`. Do not spin.
 
-3. **Review — on every PR, no exceptions.** `just review "<claim>"` the moment
-   the PR exists; see the [review runbook](backlog-conveyor-review.md) for what
+3. **Review — on every PR, no exceptions.** Launch it the moment the PR exists;
+   the [review runbook](backlog-conveyor-review.md) names the command and what
    the comment must carry. 43% of merged PRs used to skip this entirely, and
    that gap cost more than any wording did.
 
