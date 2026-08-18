@@ -25,6 +25,8 @@ use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
+/// Not reentrant: a nested call, or a FluidAudio callback that re-enters a
+/// guard, hangs forever with no error and no log line.
 fn stdout_ownership() -> MutexGuard<'static, ()> {
     static OWNER: OnceLock<Mutex<()>> = OnceLock::new();
     OWNER
@@ -315,45 +317,64 @@ mod tests {
         unsafe { libc::fflush(std::ptr::null_mut()) };
     }
 
+    /// Drives the real guard, not `stdout_ownership` directly: deleting the lock
+    /// from `with_silenced_stdout` lets the second thread run its closure while
+    /// the first is still inside, which `overlapped` records independently of any
+    /// timeout. `StdoutShield::new`'s own lock has no in-process counterpart —
+    /// that guard never restores fd 1 by design, so building one would silence
+    /// the rest of the test binary.
     #[test]
-    fn stdout_ownership_serializes_concurrent_guards() {
+    fn scoped_guards_serialize_stdout_ownership() {
+        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::{mpsc, Arc};
         use std::time::Duration;
 
-        let (started_tx, started_rx) = mpsc::channel();
+        let inside = Arc::new(AtomicBool::new(false));
+        let overlapped = Arc::new(AtomicBool::new(false));
+        let (first_in_tx, first_in_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let (attempting_tx, attempting_rx) = mpsc::channel();
         let (entered_tx, entered_rx) = mpsc::channel();
-        let release_rx = Arc::new(std::sync::Mutex::new(release_rx));
 
         let first = std::thread::spawn({
-            let release_rx = Arc::clone(&release_rx);
+            let inside = Arc::clone(&inside);
             move || {
-                let _owner = stdout_ownership();
-                started_tx.send(()).expect("report first owner");
-                release_rx
-                    .lock()
-                    .expect("lock release receiver")
-                    .recv()
-                    .expect("release first owner");
+                with_silenced_stdout(None, || {
+                    inside.store(true, Ordering::SeqCst);
+                    first_in_tx.send(()).expect("report first guard");
+                    release_rx.recv().expect("release first guard");
+                    inside.store(false, Ordering::SeqCst);
+                });
             }
         });
-        started_rx.recv().expect("wait for first owner");
+        first_in_rx.recv().expect("wait for first guard");
 
-        let second = std::thread::spawn(move || {
-            attempting_tx.send(()).expect("report second owner attempt");
-            let _owner = stdout_ownership();
-            entered_tx.send(()).expect("report second owner");
+        let second = std::thread::spawn({
+            let inside = Arc::clone(&inside);
+            let overlapped = Arc::clone(&overlapped);
+            move || {
+                attempting_tx.send(()).expect("report second attempt");
+                with_silenced_stdout(None, || {
+                    if inside.load(Ordering::SeqCst) {
+                        overlapped.store(true, Ordering::SeqCst);
+                    }
+                    entered_tx.send(()).expect("report second guard");
+                });
+            }
         });
-        attempting_rx.recv().expect("wait for second owner attempt");
+        attempting_rx.recv().expect("wait for second attempt");
         assert!(entered_rx.recv_timeout(Duration::from_millis(100)).is_err());
 
-        release_tx.send(()).expect("release first owner");
-        first.join().expect("first owner joins");
+        release_tx.send(()).expect("release first guard");
+        first.join().expect("first guard joins");
         entered_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("second owner enters after the first exits");
-        second.join().expect("second owner joins");
+            .recv_timeout(Duration::from_secs(5))
+            .expect("second guard enters after the first exits");
+        second.join().expect("second guard joins");
+        assert!(
+            !overlapped.load(Ordering::SeqCst),
+            "second guard ran its closure while the first still owned fd 1"
+        );
     }
 
     /// #841: the bridge collapses every transcribe throw to "Transcription
