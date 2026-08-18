@@ -131,12 +131,20 @@ preflight:
     if [ -n "{{ ALL }}" ] || grep -q '^rust/' <<<"$changed"; then rust=1; fi
     if [ -n "{{ ALL }}" ] || grep -q '^rust/src/backend/' <<<"$changed"; then backend=1; fi
 
+    behind="$(git rev-list --count HEAD..origin/main)"
+    # A checkout that quietly fell 14 commits behind had an agent reading a stale CLAUDE.md for nine hours (#1070).
+    [ "$behind" = "0" ] || echo "==> NOTE: this checkout is $behind commit(s) behind origin/main — read instructions with: git show origin/main:<path>"
+
     echo "==> TS gate (always)"
     bun run test
     bun run lint
-    # CI runs these two and preflight did not, so a shell-injecting recipe reached CI green locally (#1065).
+    # tests/unit/preflight-parity.test.ts holds this list equal to what CI runs (#1070).
     bun run check:recipes
     bun run check:workflows
+    bun run check:versions
+    bun run check:specs
+    bun run check:engine-targets
+    bun run check:release-manifest
 
     if [ -n "$rust" ]; then
       echo "==> Rust gate"
