@@ -321,6 +321,54 @@ describe("unguardedPipelines", () => {
     }
   });
 
+  // Rounds 1-3 each closed one `set` spelling and left the next one silently guarded, because an
+  // unparsed `set` counted as "says nothing". A `set` that mentions pipefail at all and does not
+  // provably enable it now counts as off, so an unrecognised spelling fails closed by construction.
+  test("a `set` that mentions pipefail without provably enabling it counts as off", () => {
+    for (const off of ["set +o pipefail;", "set +o pipefail; git log | head -3"]) {
+      const body = ["#!/usr/bin/env bash", "set -euo pipefail", off, "git log | head -3"];
+      expect(unguardedPipelines(dump({ land: shebang(body) }))).toHaveLength(1);
+    }
+  });
+
+  // Verified against bash: this really does enable pipefail, so flagging it is the cost of failing
+  // closed on a spelling the scanner cannot prove. Writing `set -euo pipefail` is the fix.
+  test("a quoted operand fails closed, which is a false positive and the intended direction", () => {
+    const body = ["#!/usr/bin/env bash", "set -o 'pipefail'", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toHaveLength(1);
+
+    // The load-bearing half: an unprovable spelling must *revoke* a guard that was really on,
+    // not be waved through as "says nothing".
+    const revoked = ["#!/usr/bin/env bash", "set -euo pipefail", "set -o 'pipefail'", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(revoked) }))).toHaveLength(1);
+  });
+
+  test("extra operands after the option do not stop it enabling", () => {
+    const body = ["#!/usr/bin/env bash", "set -o pipefail extra-operand", "git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  test("a pipeline guarded earlier on its own line is still guarded", () => {
+    const body = ["#!/usr/bin/env bash", "set -o pipefail; git log | head -3"];
+    expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+  });
+
+  // `$((1 | 2))` is bitwise OR, not a pipeline — the seam that treating every `$(` as command
+  // substitution opened.
+  test("arithmetic expansion is not a pipeline, but a substitution inside it still is", () => {
+    for (const clean of ["x=$((1 | 2))", 'x="$((1 | 2))"', "x=$(( FLAGS | 4 ))"]) {
+      expect(unguardedPipelines(dump({ land: shebang([clean], false) }))).toEqual([]);
+    }
+    expect(unguardedPipelines(dump({ land: shebang(["x=$(( $(a | b) ))"], false) }))).toHaveLength(1);
+  });
+
+  test("an env assignment before the interpreter does not hide it", () => {
+    for (const line of ["#!/usr/bin/env FOO=bar bash", "#!/usr/bin/env -S FOO=bar bash"]) {
+      const body = [line, "set -euo pipefail", "git log | head -3"];
+      expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);
+    }
+  });
+
   test("a later `set` that says nothing about pipefail leaves it on", () => {
     const body = ["#!/usr/bin/env bash", "set -euo pipefail", "set -x", "git log | head -3"];
     expect(unguardedPipelines(dump({ land: shebang(body) }))).toEqual([]);

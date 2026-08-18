@@ -14,9 +14,13 @@
  * `$(`), followed by any number of `NAME=value` assignments, and the next token is kebab-case.
  * A flag (`just --list`) or any other token shape is skipped rather than guessed at.
  *
- * The pipefail rule scans for a `|` the shell would read as a pipeline, tracking quotes, escapes and
- * trailing comments. Its one known false positive is an unquoted alternation inside `[[ x =~ a|b ]]`,
- * which is fragile shell anyway — quote the pattern or lift it into a variable.
+ * The pipefail rule scans for a `|` the shell would read as a pipeline, tracking quotes, escapes,
+ * trailing comments, arithmetic `$(( ))`, and the `$( )` / backtick substitutions that reopen shell
+ * inside double quotes. It fails **closed**: a `set` naming pipefail that it cannot prove enables it
+ * counts as off, because rounds of closing one `set` spelling at a time kept leaving the next one
+ * silently guarded. Known false positives, both fail-closed: an unquoted alternation inside
+ * `[[ x =~ a|b ]]`, and a quoted operand (`set -o 'pipefail'`). Writing `set -euo pipefail` and
+ * quoting the pattern fix them, and both are better shell regardless.
  *
  * Known false negatives, all of them deliberate: a reference in prose with no backticks; a trailing
  * comma inside the code span (`just test,`); `just $RECIPE`; `.claude/settings.json`, whose
@@ -192,8 +196,18 @@ export function runsAPipeline(text: string): boolean {
       at++;
       continue;
     }
+    if (char === "$" && text[at + 1] === "(" && text[at + 2] === "(") {
+      context.push("arith");
+      at += 2;
+      continue;
+    }
     if (char === "$" && text[at + 1] === "(") {
       context.push("$");
+      at++;
+      continue;
+    }
+    if (char === ")" && inside() === "arith" && text[at + 1] === ")") {
+      context.pop();
       at++;
       continue;
     }
@@ -215,7 +229,7 @@ export function runsAPipeline(text: string): boolean {
       continue;
     }
     if (char === "#" && (at === 0 || /\s/.test(text[at - 1] ?? ""))) return false;
-    if (char !== "|") continue;
+    if (char !== "|" || inside() === "arith") continue;
     if (text[at + 1] === "|") {
       at++;
       continue;
@@ -243,12 +257,28 @@ export function pipefailSetting(tokens: string[]): boolean | null {
   return on;
 }
 
-const SET_LINE = /^\s*set\s+(.*)$/;
+/**
+ * What a recipe *line* does to pipefail, `null` when it says nothing. A `set` naming pipefail that
+ * does not provably enable it counts as **off**: rounds 1-3 each closed one spelling and left the
+ * next silently guarded, because an unparsed `set` was read as "says nothing" (#1083).
+ */
+export function linePipefail(line: string): boolean | null {
+  let setting: boolean | null = null;
+  for (const command of line.split(/[;&]+/)) {
+    const set = command.match(/^\s*set\s+(.*)$/);
+    if (!set) continue;
+    const tokens = (set[1] ?? "").split(/\s+/).filter(Boolean);
+    if (!tokens.some((token) => token.includes("pipefail"))) continue;
+    setting = pipefailSetting(tokens) === true;
+  }
+  return setting;
+}
 
 /** bash and zsh have pipefail; `sh` is dash on Ubuntu and rejects `set -o pipefail` outright. */
 function interpreterHasPipefail(shebangLine: string): boolean {
   const words = shebangLine.replace(/^#!/, "").trim().split(/\s+/);
-  const named = words.filter((word) => !word.startsWith("-") && !/(^|\/)env$/.test(word))[0] ?? "";
+  const skip = (word: string) => word.startsWith("-") || /(^|\/)env$/.test(word) || /^\w+=/.test(word);
+  const named = words.filter((word) => !skip(word))[0] ?? "";
   return /(^|\/)(bash|zsh)$/.test(named);
 }
 
@@ -260,8 +290,11 @@ function shellEnablesPipefail(dump: JustDump): boolean {
 /**
  * A pipeline's exit status is its *last* stage's, so `just worktree-rm x | tail -3 && echo removed`
  * reports success for a `just` that failed — three times in one session, once about a worktree that
- * was still there (#1083). `set -o pipefail` is the fix, and `sh -cu` — what `just` runs a
- * non-shebang recipe under — has no portable spelling of it.
+ * was still there (#1083). `set -o pipefail` is the fix. `just` runs each non-shebang *line* in a
+ * new `sh -cu` (its documented default), so an earlier `set` never reaches the next line — and that
+ * `sh` is dash on Ubuntu, which rejects `set -o pipefail` anyway. Only a bash/zsh shebang, whose
+ * body is one script, or a justfile-wide `set shell := ["bash", "-euo", "pipefail", "-c"]`, guards
+ * a pipeline.
  */
 export function unguardedPipelines(dump: JustDump): string[] {
   const shellGuards = shellEnablesPipefail(dump);
@@ -271,15 +304,14 @@ export function unguardedPipelines(dump: JustDump): string[] {
     const canSetPipefail = shebang && interpreterHasPipefail(lines[0] ?? "");
     let guarded = !shebang && shellGuards;
     for (const line of lines) {
-      const set = line.match(SET_LINE);
-      const setting = set ? pipefailSetting((set[1] ?? "").split(/\s+/).filter(Boolean)) : null;
+      const setting = linePipefail(line);
       if (setting !== null) guarded = setting && canSetPipefail;
       if (guarded || !runsAPipeline(line)) continue;
       const fix = canSetPipefail
         ? "add `set -euo pipefail` above it"
-        : "give the recipe a `#!/usr/bin/env bash` line and `set -euo pipefail` — `sh` is dash on " +
-          "Ubuntu, which rejects `set -o pipefail` outright, and it is what `just` runs a " +
-          "non-shebang recipe under";
+        : "give the recipe a `#!/usr/bin/env bash` line and `set -euo pipefail` — `just` runs each " +
+          "non-shebang line in a *new* `sh -cu`, so an earlier `set` is gone whatever the shell, " +
+          "and that `sh` is dash on Ubuntu, which rejects `set -o pipefail` outright";
       return [
         `justfile: recipe \`${name}\` runs a pipeline without pipefail, so it reports only the ` +
           `last stage's exit status (in \`${line.trim()}\`) — ${fix} (#1083)`,
