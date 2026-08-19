@@ -1,6 +1,9 @@
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
+  checkFile,
   collectCacheWriters,
   forbidLinuxPackaging,
   requireBashOnWindowsRunSteps,
@@ -408,6 +411,11 @@ describe("requirePipefailShell", () => {
     }
   });
 
+  // GitHub runs cmd with the last program's error level and no fail-fast, which is sh's trap.
+  test("fails on cmd, which reports the last program's error level", () => {
+    expect(errorsFor(smoke({ steps: [{ ...PIPED, shell: "cmd" }] }))).toHaveLength(1);
+  });
+
   // Windows defaults to pwsh, not `bash -e`; that lane is requireBashOnWindowsRunSteps (#850).
   test("leaves a windows-only job alone", () => {
     expect(errorsFor(smoke({ "runs-on": "windows-latest" }))).toEqual([]);
@@ -423,6 +431,15 @@ describe("requirePipefailShell", () => {
 
   test("ignores steps that only `uses` an action", () => {
     expect(errorsFor(smoke({ steps: [{ uses: "actions/checkout@v5" }] }))).toEqual([]);
+  });
+
+  // A gate is only a gate if checkFile still calls it, and the live suite cannot notice a
+  // dropped check because the tree it reads is already clean.
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  smoke:\n    runs-on: ubuntu-latest\n    steps:\n      - run: a | b\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1084"))).toHaveLength(1);
   });
 });
 

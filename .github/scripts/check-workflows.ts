@@ -355,11 +355,11 @@ export function requireBashOnWindowsRunSteps(path: string, document: unknown): s
  * GitHub's *unspecified* default is `bash -e {0}`; only naming `bash` selects
  * `bash --noprofile --norc -eo pipefail {0}`. So an undeclared step takes its pipeline's **last**
  * stage exit status: `{ bun run check:versions; ... } | tee` recorded a failed check as ordinary
- * output and went green (#1083). `shell: sh` is the same trap spelled out. An explicit non-POSIX
- * shell has no pipelines to get wrong and passes. Windows defaults to pwsh instead, which is
- * `requireBashOnWindowsRunSteps`'s lane (#850, #1084).
+ * output and went green (#1083). `shell: sh` is the same trap spelled out, and so is `cmd`, which
+ * exits with the last program's error level. An explicit non-POSIX shell has no pipelines to get
+ * wrong and passes. Windows defaults to pwsh, which is `requireBashOnWindowsRunSteps`'s lane (#850).
  */
-const PIPEFAIL_SHELLS = new Set(["bash", "pwsh", "powershell", "python", "cmd"]);
+const PIPEFAIL_SHELLS = new Set(["bash", "pwsh", "powershell", "python"]);
 
 export function requirePipefailShell(path: string, document: unknown): string[] {
   const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
@@ -550,7 +550,7 @@ function describeUnreadable(path: string, err: unknown): string {
   return `${path}: ${err instanceof Error ? err.message : String(err)}`;
 }
 
-function checkFile(
+export function checkFile(
   path: string,
   testedScripts: string[],
   cacheWriters: CacheEntry[],
