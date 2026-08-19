@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { runQuiet } from "../../scripts/quiet-gate";
 
-const SCRIPT = new URL("../../scripts/quiet-gate.ts", import.meta.url).pathname;
+// process.execPath, not "bun": a bare name fails uv_spawn on Windows. import.meta.dir is
+// Bun-native and absolute, where a file URL's pathname keeps the leading slash Windows rejects.
+const SCRIPT = join(import.meta.dir, "..", "..", "scripts", "quiet-gate.ts");
 
 async function cli(argv: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(["bun", SCRIPT, ...argv], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([process.execPath, SCRIPT, ...argv], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   return { code, stdout, stderr };
 }
