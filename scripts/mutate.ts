@@ -12,7 +12,7 @@ export function mutate(source: string, find: string, replace: string): MutationR
   return { replacements, source: replacements === 0 ? source : source.split(find).join(replace) };
 }
 
-export type MutationRun = { exitCode: number; log: string };
+export type MutationRun = { exitCode: number; log: string; discard?: () => void };
 export type MutationVerdict = { pinned: boolean; report: string };
 
 /// A caught mutation's output is the failure the run asked for, and nobody reads it — but a test
@@ -50,6 +50,7 @@ async function main(): Promise<void> {
   }
 
   const result = verdict(run);
+  run.discard?.();
   console.error(result.report);
   if (!result.pinned) {
     console.error(`NOT PINNED: the mutation survived — nothing failed when '${find}' was replaced`);

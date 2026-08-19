@@ -1,26 +1,33 @@
 #!/usr/bin/env bun
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export type QuietResult = { exitCode: number; log: string; logPath: string; durationMs: number };
+/// `discard` removes the kept log; a caller that prints the log keeps the file so a large failure
+/// can be grepped instead of re-run.
+export type QuietResult = { exitCode: number; log: string; logPath: string; durationMs: number; discard: () => void };
 
 /// Both streams share one file descriptor so the log reads in the order the command wrote it:
 /// separate pipes reorder a failure's error relative to the output that followed it.
 export async function runQuiet(argv: string[], directory = mkdtempSync(join(tmpdir(), "kesha-gate-"))): Promise<QuietResult> {
   const logPath = join(directory, "gate.log");
   const started = Date.now();
+  const discard = () => rmSync(directory, { recursive: true, force: true });
   const fd = openSync(logPath, "w");
+  let log: string;
+  let exitCode: number;
   try {
-    const process = Bun.spawn(argv, { stdout: fd, stderr: fd });
-    const exitCode = await process.exited;
-    closeSync(fd);
-    return { exitCode, log: readFileSync(logPath, "utf8"), logPath, durationMs: Date.now() - started };
+    exitCode = await Bun.spawn(argv, { stdout: fd, stderr: fd }).exited;
   } catch (error) {
+    exitCode = 127;
+    log = `could not start ${argv[0]}: ${error instanceof Error ? error.message : String(error)}\n`;
     closeSync(fd);
-    const message = `could not start ${argv[0]}: ${error instanceof Error ? error.message : String(error)}\n`;
-    return { exitCode: 127, log: message, logPath, durationMs: Date.now() - started };
+    writeFileSync(logPath, log);
+    return { exitCode, log, logPath, durationMs: Date.now() - started, discard };
   }
+  closeSync(fd);
+  log = readFileSync(logPath, "utf8");
+  return { exitCode, log, logPath, durationMs: Date.now() - started, discard };
 }
 
 function usage(message: string): never {
@@ -41,7 +48,7 @@ async function main(): Promise<void> {
   if (process.stderr.isTTY) process.stderr.write(`… ${label}\n`);
   const result = await runQuiet(command);
   if (result.exitCode === 0) {
-    rmSync(result.logPath, { force: true });
+    result.discard();
     console.log(`✓ ${label} ${seconds(result.durationMs)}`);
     return;
   }

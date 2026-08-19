@@ -68,8 +68,8 @@ review CLAIM:
     command -v "${reviewer%% *}" >/dev/null || {
       echo "refusing: reviewer '${reviewer%% *}' is not on PATH — install it or set KESHA_REVIEWER" >&2; exit 2; }
     # One read: three separate gh calls can straddle a push and review a head the number never had.
-    facts="$(gh pr view --json number,headRefOid,baseRefName -q '"\(.number) \(.headRefOid) \(.baseRefName)"' 2>/dev/null)" || {
-      echo "refusing: no pull request for this branch — open it first" >&2; exit 2; }
+    facts="$(gh pr view --json number,headRefOid,baseRefName -q '"\(.number) \(.headRefOid) \(.baseRefName)"')" || {
+      echo "refusing: gh could not read a pull request for this branch (its error is above) — open one first" >&2; exit 2; }
     read -r pr head base <<<"$facts"
     branch="$(git rev-parse --abbrev-ref HEAD)"
     log=".omc/review-${pr}-${head:0:8}.log"
