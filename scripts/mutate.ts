@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from "node:fs";
+import { runQuiet } from "./quiet-gate";
 
 export type MutationResult = { replacements: number; source: string };
 
@@ -9,6 +10,17 @@ export function mutate(source: string, find: string, replace: string): MutationR
   if (find.length === 0) throw new Error("the text to replace must not be empty");
   const replacements = source.split(find).length - 1;
   return { replacements, source: replacements === 0 ? source : source.split(find).join(replace) };
+}
+
+export type MutationRun = { exitCode: number; log: string };
+export type MutationVerdict = { pinned: boolean; report: string };
+
+/// A caught mutation's output is the failure the run asked for, and nobody reads it — but a test
+/// command that never ran a test (a build error, a filterset matching nothing) also exits non-zero
+/// and reads identically, so the tail stays. A survivor is the surprising outcome: print it all.
+export function verdict(run: MutationRun, tailLines = 5): MutationVerdict {
+  if (run.exitCode === 0) return { pinned: false, report: run.log };
+  return { pinned: true, report: run.log.replace(/\n$/, "").split("\n").slice(-tailLines).join("\n") };
 }
 
 function usage(message: string): never {
@@ -27,17 +39,19 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  let survived = false;
+  let run: MutationRun = { exitCode: 0, log: "" };
   try {
     writeFileSync(file, source);
     console.error(`==> mutated ${file} (${replacements} occurrence${replacements === 1 ? "" : "s"}); running: ${command.join(" ")}`);
-    survived = (await Bun.spawn(command, { stdout: "inherit", stderr: "inherit" }).exited) === 0;
+    run = await runQuiet(command);
   } finally {
     writeFileSync(file, original);
     console.error(`==> restored ${file}`);
   }
 
-  if (survived) {
+  const result = verdict(run);
+  console.error(result.report);
+  if (!result.pinned) {
     console.error(`NOT PINNED: the mutation survived — nothing failed when '${find}' was replaced`);
     process.exit(1);
   }
