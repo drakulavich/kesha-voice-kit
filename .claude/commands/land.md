@@ -1,43 +1,41 @@
 ---
 description: Land a green PR — verify CI+Greptile on head SHA, confirm issue linkage, merge, and clean up the worktree.
 argument-hint: "[pr-number] (defaults to the current branch's PR)"
-allowed-tools: Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr merge:*), Bash(gh issue view:*), Bash(gh issue close:*), Bash(just:*), Bash(git rev-parse:*)
+allowed-tools: Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr merge:*), Bash(gh issue view:*), Bash(gh issue close:*), Bash(bun run:*), Bash(just:*), Bash(git rev-parse:*)
 ---
 
-Finish and merge a PR safely, enforcing the repo's review gate, issue-linkage, and worktree-cleanup rules. **Do not merge** unless CI and Greptile are both green on the latest head SHA.
+Finish and merge a PR safely. The mergeability rules are **code**, not prose here: `just gate` refuses an unmerged head that fails any of them. Do not re-derive them with `gh` — run the gate and read its violations.
 
 Arguments: `$ARGUMENTS` → optional PR number (defaults to the current branch's PR).
 
 ## Steps
 
-1. Resolve the PR and its current head SHA (`<PR_N>` is the PR number from `$ARGUMENTS`):
+1. Resolve the PR (`<PR_N>`), its head SHA, and the issue it closes:
    ```bash
-   gh pr view <PR_N> -R drakulavich/kesha-voice-kit --json number,headRefOid,mergeStateStatus,body,headRefName,closingIssuesReferences
+   gh pr view <PR_N> -R drakulavich/kesha-voice-kit --json number,headRefOid,mergeStateStatus,headRefName,closingIssuesReferences
    ```
+   No closing issue (a dependabot bump, say)? `gate` cannot express that PR: check it by hand, put the verdict in a comment, and apply no label.
 
-2. **Gate — refuse to merge if not satisfied:**
-   - CI checks all passing/skipped on the head SHA (`gh pr checks <PR_N>`).
-   - Greptile review `conclusion` is success **on that head SHA** (not a stale pass — see `/await-review`). If P1/P2 findings are open, stop and list them.
-   - `mergeStateStatus` is `CLEAN`.
-   If any fails, report what's blocking and stop.
+2. **Gate.** `<PROVIDER>`/`<URI>` are the review that approved this head — the `**grok review**` comment's source and URL:
+   ```bash
+   just gate <ISSUE_N> <PR_N> <PROVIDER> <URI>
+   ```
+   It reads the head immediately before binding evidence to it and refuses unless the PR is open, non-draft, mergeable, based on the default branch, closes exactly `[<ISSUE_N>]`, carries no current-head `CHANGES_REQUESTED`, and every required check is terminally green. Any violation it prints is the blocker — report it and stop.
 
-3. **Issue linkage:** confirm the PR body/commits contain a `Closes #N` / `Fixes #N` / `Resolves #N` keyword so the issue auto-closes. If the work fully addresses an issue but the keyword is missing, tell the user (don't silently merge a partial link). `Refs #N` is correct for partial work — in that case the issue should stay open.
+3. **Greptile is a separate gate** the conveyor does not see: open **P1/P2** findings on the current head block the merge whatever the gate said, and never gate on the Confidence Score. See `/await-review`.
 
-4. **Merge** (match the repo's convention — squash unless told otherwise). `--delete-branch` removes the remote feature branch regardless of the repo's auto-delete setting:
+4. **Merge** (squash unless told otherwise). `--delete-branch` removes the remote feature branch regardless of the repo's auto-delete setting:
    ```bash
    gh pr merge <PR_N> -R drakulavich/kesha-voice-kit --squash --delete-branch
    ```
 
-5. **Clean up the worktree** for the merged branch — from the root checkout, which the recipe enforces:
+5. **Close** — from the **root checkout**, never from inside the worktree being removed:
    ```bash
-   just worktree-rm <slug>
+   bun run conveyor -- close --issue <ISSUE_N> --pr <PR_N> --apply
    ```
-
-6. **Verify the issue actually closed** (auto-close can lag for partial links). If it should be closed but isn't (`<ISSUE_N>` is the issue, `<PR_N>` is the PR that landed it):
+   It removes the `WIP` label and the clean managed worktree, and refuses a dirty or unmanaged one rather than forcing it. It requires the issue to be closed already; GitHub's auto-close can lag a merge, so re-run it, or close by hand when the link was `Refs #N` rather than `Closes #N`:
    ```bash
-   gh issue view <ISSUE_N> -R drakulavich/kesha-voice-kit --json state
    gh issue close <ISSUE_N> -R drakulavich/kesha-voice-kit --comment "Landed in #<PR_N>."
    ```
-   The `WIP` label is removed automatically on merge; if it lingers, remove it.
 
-Reference: CLAUDE.md "GREPTILE PR REVIEW IS A GATE", "LINK PRS TO ISSUES", "MAIN STAYS IN THE ROOT CHECKOUT".
+Reference: CLAUDE.md "GREPTILE PR REVIEW IS A GATE", "BACKLOG CONVEYOR REVIEW GATE", "MAIN STAYS IN THE ROOT CHECKOUT".
