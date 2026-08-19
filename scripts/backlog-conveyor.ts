@@ -93,6 +93,9 @@ export interface Evaluation {
   findings: string[];
 }
 
+/// `sync` alone names the next ticket: `gate` and `close` act on one the caller already chose.
+export type SyncEvaluation = Evaluation & { nextIssue: number | null };
+
 export interface RunnerResult {
   exitCode: number;
   stdout: string;
@@ -305,7 +308,15 @@ export function evaluateGate(facts: GateFacts): Evaluation {
   return { violations, refusals: [], safeActions: uniqueActions(safeActions), findings: [] };
 }
 
-export function evaluateSync(facts: SyncFacts): Evaluation {
+/// The loop's selection rule, applied where the facts already are: the oldest open issue carrying
+/// neither `WIP` nor `needs-decision`. Issue numbers ascend with creation, so the lowest open
+/// number is the oldest — no `createdAt` and no second `gh issue list`.
+export function selectNextIssue(issues: SyncFacts["issues"]): number | null {
+  const available = issues.filter((issue) => issue.state === "OPEN" && !issue.labels.includes("WIP") && !issue.labels.includes("needs-decision"));
+  return available.length === 0 ? null : Math.min(...available.map((issue) => issue.number));
+}
+
+export function evaluateSync(facts: SyncFacts): SyncEvaluation {
   const findings: string[] = [];
   const safeActions: Evaluation["safeActions"] = [];
   for (const pr of facts.pullRequests) {
@@ -340,7 +351,7 @@ export function evaluateSync(facts: SyncFacts): Evaluation {
       findings.push(`worktree ${worktree.path} is orphaned`);
     }
   }
-  return { violations: [], refusals: [], safeActions: uniqueActions(safeActions), findings };
+  return { violations: [], refusals: [], safeActions: uniqueActions(safeActions), findings, nextIssue: selectNextIssue(facts.issues) };
 }
 
 export function evaluateClose(facts: CloseFacts): Evaluation {
@@ -611,7 +622,7 @@ function safeManagedWorktreePath(path: string): boolean {
   return isDirectManagedWorktree(path, resolve(root, ".worktrees"));
 }
 
-export async function sync(runner: Runner, apply: boolean): Promise<Evaluation> {
+export async function sync(runner: Runner, apply: boolean): Promise<SyncEvaluation> {
   const repo = await repository(runner);
   const facts: SyncFacts = { issues: await loadIssues(runner), pullRequests: await loadSyncPullRequests(runner, repo), worktrees: await loadWorktrees(runner) };
   const evaluation = evaluateSync(facts);

@@ -7,7 +7,9 @@ Claude and Codex read this, not a client-specific command file.
 ## Loop
 
 1. **Select** — `bun run conveyor -- sync` (`--apply` if it proposes repairs).
-   Take the oldest open issue carrying neither `WIP` nor `needs-decision`.
+   It ends with `next ticket: #N` — the oldest open issue carrying neither `WIP`
+   nor `needs-decision` — computed from facts it already holds, so the selection
+   rule costs no second query.
    A question only the maintainer can answer gets a comment, `needs-decision`,
    and the next ticket — not an implementation run.
 
