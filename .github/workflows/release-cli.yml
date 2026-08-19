@@ -23,6 +23,10 @@ permissions:
 concurrency:
   group: release-cli-${{ inputs.tag || github.ref_name }}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   plan:
     name: Classify the tag

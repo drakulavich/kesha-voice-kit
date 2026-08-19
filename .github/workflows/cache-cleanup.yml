@@ -27,6 +27,10 @@ on:
 
 permissions: {}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   reclaim:
     runs-on: ubuntu-latest

@@ -45,6 +45,10 @@ concurrency:
   group: cache-seed
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   kokoro:
     name: Kokoro models (${{ matrix.os }})

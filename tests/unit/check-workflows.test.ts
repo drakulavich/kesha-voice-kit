@@ -1,9 +1,13 @@
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
+  checkFile,
   collectCacheWriters,
   forbidLinuxPackaging,
   requireBashOnWindowsRunSteps,
+  requirePipefailShell,
   requireRestoreOnlyCachesHaveAWriter,
   requireDarwinSmokeCoversBothEngines,
   requireDepsBeforeBunTest,
@@ -359,6 +363,83 @@ describe("requireBashOnWindowsRunSteps", () => {
 
   test("a matrix it cannot resolve is not treated as windows", () => {
     expect(errorsFor(matrixJob({ os: "${{ fromJSON(needs.plan.outputs.os) }}" }))).toEqual([]);
+  });
+});
+
+describe("requirePipefailShell", () => {
+  const PIPED = { name: "record", run: "bun run check:versions | tee log" };
+  const smoke = (job: Record<string, unknown>, top: Record<string, unknown> = {}) => ({
+    ...top,
+    jobs: { smoke: { "runs-on": "ubuntu-latest", steps: [PIPED], ...job } },
+  });
+  const errorsFor = (document: unknown) => requirePipefailShell(CI, document);
+
+  test("passes on every workflow in the repo", () => {
+    for (const file of readdirSync(repoPath(".github/workflows"))) {
+      const path = `.github/workflows/${file}`;
+      expect([path, requirePipefailShell(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
+  });
+
+  test("fails when a run step is left on the unspecified default", () => {
+    const errors = errorsFor(smoke({}));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("`smoke` step `record` has no `shell:`");
+    expect(errors[0]).toContain("pipefail");
+  });
+
+  test("names an unnamed step by position", () => {
+    expect(errorsFor(smoke({ steps: [{ run: "ls" }] }))[0]).toContain("step 1");
+  });
+
+  test("passes when the step, the job, or the workflow names bash", () => {
+    expect(errorsFor(smoke({ steps: [{ ...PIPED, shell: "bash" }] }))).toEqual([]);
+    expect(errorsFor(smoke({ defaults: { run: { shell: "bash" } } }))).toEqual([]);
+    expect(errorsFor(smoke({}, { defaults: { run: { shell: "bash" } } }))).toEqual([]);
+  });
+
+  // `sh` is the one explicit choice that looks deliberate and still behaves like the default.
+  test("fails on an explicit sh, which is the default trap spelled out", () => {
+    const errors = errorsFor(smoke({ steps: [{ ...PIPED, shell: "sh" }] }));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("sets `shell: sh`");
+  });
+
+  test("passes on a shell that has no POSIX pipelines to get wrong", () => {
+    for (const shell of ["pwsh", "powershell", "python"]) {
+      expect(errorsFor(smoke({ steps: [{ ...PIPED, shell }] }))).toEqual([]);
+    }
+  });
+
+  // GitHub runs cmd with the last program's error level and no fail-fast, which is sh's trap.
+  test("fails on cmd, which reports the last program's error level", () => {
+    expect(errorsFor(smoke({ steps: [{ ...PIPED, shell: "cmd" }] }))).toHaveLength(1);
+  });
+
+  // Windows defaults to pwsh, not `bash -e`; that lane is requireBashOnWindowsRunSteps (#850).
+  test("leaves a windows-only job alone", () => {
+    expect(errorsFor(smoke({ "runs-on": "windows-latest" }))).toEqual([]);
+  });
+
+  test("checks a matrix job for its non-windows legs", () => {
+    const matrix = {
+      "runs-on": "${{ matrix.os }}",
+      strategy: { matrix: { os: ["ubuntu-latest", "windows-latest"] } },
+    };
+    expect(errorsFor(smoke(matrix))).toHaveLength(1);
+  });
+
+  test("ignores steps that only `uses` an action", () => {
+    expect(errorsFor(smoke({ steps: [{ uses: "actions/checkout@v5" }] }))).toEqual([]);
+  });
+
+  // A gate is only a gate if checkFile still calls it, and the live suite cannot notice a
+  // dropped check because the tree it reads is already clean.
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  smoke:\n    runs-on: ubuntu-latest\n    steps:\n      - run: a | b\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1084"))).toHaveLength(1);
   });
 });
 
