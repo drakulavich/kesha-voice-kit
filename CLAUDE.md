@@ -100,7 +100,7 @@ Greptile reviews on open and on every new commit. **P1/P2 findings are merge blo
 
 ### BACKLOG CONVEYOR REVIEW GATE
 
-Every conveyor PR MUST follow the [backlog conveyor review runbook](docs/runbooks/backlog-conveyor-review.md): `just review "<claim>"` the moment the PR exists, a durable comment carrying the full head SHA and every finding, and a fix pass for confirmed blockers that restarts the review on the new head. `merge-ready` comes only from `bun run conveyor -- gate … --apply`, never by hand — `just gate <issue> <pr> <provider> <uri>` builds the SHA-bound evidence and calls it, reading the head immediately before binding to it. 43% of merged PRs used to skip the review entirely — that gap cost more than any wording did, which is why the recipe takes the claim as a required argument.
+Every conveyor PR MUST follow the [backlog conveyor review runbook](docs/runbooks/backlog-conveyor-review.md): `just review "<claim>"` the moment the PR exists and `just review-wait <log>` to collect it, a durable comment carrying the full head SHA and every finding, and a fix pass for confirmed blockers that restarts the review on the new head. `merge-ready` comes only from `bun run conveyor -- gate … --apply`, never by hand — `just gate <issue> <pr> <provider> <uri>` builds the SHA-bound evidence and calls it, reading the head immediately before binding to it. 43% of merged PRs used to skip the review entirely — that gap cost more than any wording did, which is why the recipe takes the claim as a required argument.
 
 ### ERROR HANDLING
 

@@ -453,6 +453,7 @@ describe("the repository's own references", () => {
       "release",
       "release-tag",
       "review",
+      "review-wait",
       "rust-test",
       "smoke-test",
       "test",
