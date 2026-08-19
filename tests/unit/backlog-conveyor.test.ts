@@ -14,6 +14,7 @@ import {
   loadMarker,
   parseGateEvidence,
   parseGateMarker,
+  selectNextIssue,
   sync,
   type CloseFacts,
   type GateEvidence,
@@ -351,6 +352,31 @@ describe("backlog sync", () => {
 
     await expect(sync(runner, true)).rejects.toThrow("gh api check runs failed (1): rate limited");
     expect(calls.some((argv) => argv[0] === "gh" && argv[1] === "pr" && argv[2] === "edit")).toBe(false);
+  });
+});
+
+// Step 1 of the loop is "take the oldest open issue carrying neither WIP nor needs-decision".
+// sync already holds every issue, so naming it costs no extra call — and an agent that has to
+// re-derive it from a second `gh issue list` reads "oldest" as "least recently updated".
+describe("next ticket selection", () => {
+  const issues = [
+    { number: 1032, state: "CLOSED", labels: [] },
+    { number: 1040, state: "OPEN", labels: ["WIP"] },
+    { number: 1041, state: "OPEN", labels: ["needs-decision"] },
+    { number: 1042, state: "OPEN", labels: ["enhancement"] },
+    { number: 1043, state: "OPEN", labels: [] },
+  ];
+
+  test("takes the oldest open issue that is neither in flight nor blocked on the maintainer", () => {
+    expect(selectNextIssue(issues)).toBe(1042);
+  });
+
+  test("reports no ticket rather than an arbitrary one when the queue is exhausted", () => {
+    expect(selectNextIssue(issues.filter((issue) => issue.state !== "OPEN"))).toBeNull();
+  });
+
+  test("orders by issue number, which is creation order, not by list order", () => {
+    expect(selectNextIssue([...issues].reverse())).toBe(1042);
   });
 });
 

@@ -7,15 +7,17 @@ Claude and Codex read this, not a client-specific command file.
 ## Loop
 
 1. **Select** — `bun run conveyor -- sync` (`--apply` if it proposes repairs).
-   Take the oldest open issue carrying neither `WIP` nor `needs-decision`.
+   It ends with `next ticket: #N` — the oldest open issue carrying neither `WIP`
+   nor `needs-decision` — computed from facts it already holds, so the selection
+   rule costs no second query.
    A question only the maintainer can answer gets a comment, `needs-decision`,
    and the next ticket — not an implementation run.
 
 2. **Work** — `just worktree issue-<N>`, then one fresh-context agent, never
    reused across tickets. The brief gives coordinates rather than a search:
    `src/engine.ts:120-180` and the exact failing command, not "look at the
-   engine code". Gates run to a file and you read the tail — `bun run test`
-   prints 332 lines and no flag shortens it.
+   engine code". `just preflight` prints one line per gate and the failing
+   gate's output verbatim, so read what it prints rather than redirecting it.
    Blocked mid-flight? Push what exists, open a draft PR, comment the blocker,
    report `BLOCKED: <reason>`. Do not spin.
 

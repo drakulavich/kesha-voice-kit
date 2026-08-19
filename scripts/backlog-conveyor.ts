@@ -93,6 +93,9 @@ export interface Evaluation {
   findings: string[];
 }
 
+/// `sync` alone names the next ticket: `gate` and `close` act on one the caller already chose.
+export type SyncEvaluation = Evaluation & { nextIssue: number | null };
+
 export interface RunnerResult {
   exitCode: number;
   stdout: string;
@@ -305,7 +308,15 @@ export function evaluateGate(facts: GateFacts): Evaluation {
   return { violations, refusals: [], safeActions: uniqueActions(safeActions), findings: [] };
 }
 
-export function evaluateSync(facts: SyncFacts): Evaluation {
+/// The loop's selection rule, applied where the facts already are: the oldest open issue carrying
+/// neither `WIP` nor `needs-decision`. Issue numbers ascend with creation, so the lowest open
+/// number is the oldest — no `createdAt` and no second `gh issue list`.
+export function selectNextIssue(issues: SyncFacts["issues"]): number | null {
+  const available = issues.filter((issue) => issue.state === "OPEN" && !issue.labels.includes("WIP") && !issue.labels.includes("needs-decision"));
+  return available.length === 0 ? null : Math.min(...available.map((issue) => issue.number));
+}
+
+export function evaluateSync(facts: SyncFacts): SyncEvaluation {
   const findings: string[] = [];
   const safeActions: Evaluation["safeActions"] = [];
   for (const pr of facts.pullRequests) {
@@ -340,7 +351,7 @@ export function evaluateSync(facts: SyncFacts): Evaluation {
       findings.push(`worktree ${worktree.path} is orphaned`);
     }
   }
-  return { violations: [], refusals: [], safeActions: uniqueActions(safeActions), findings };
+  return { violations: [], refusals: [], safeActions: uniqueActions(safeActions), findings, nextIssue: selectNextIssue(facts.issues) };
 }
 
 export function evaluateClose(facts: CloseFacts): Evaluation {
@@ -456,39 +467,6 @@ export async function loadChecks(runner: Runner, repo: Pick<Repository, "owner" 
 }
 
 const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
-const pageCap = 100;
-const phase3Concurrency = 4;
-
-export async function mapBounded<T, U>(values: T[], limit: number, map: (value: T, index: number) => Promise<U>): Promise<U[]> {
-  const results = new Array<U>(values.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, async () => {
-    for (;;) {
-      const index = next;
-      next += 1;
-      if (index >= values.length) return;
-      results[index] = await map(values[index]!, index);
-    }
-  }));
-  return results;
-}
-
-async function pagedArray(runner: Runner, endpoint: (page: number) => string, source: string): Promise<unknown[]> {
-  const values: unknown[] = [];
-  for (let page = 1; page <= pageCap; page += 1) {
-    const current = requiredArray(await runJson(runner, ["gh", "api", endpoint(page)], source), source);
-    values.push(...current);
-    if (current.length < 100) return values;
-  }
-  throw new OperationalError(`${source} reached pagination cap; refusing incomplete result`);
-}
-
-interface QueueIssue { number: number; state: string; labels: string[]; createdAt: string; isPullRequest: boolean }
-
-interface GateCandidate { issue: number; createdAt: string; databaseId: number }
-
-const metricClosingIssueQuery = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { closingIssuesReferences(first: 2) { nodes { number } pageInfo { hasNextPage } } } } }`;
-
 export async function loadMarker(runner: Runner, repo: Pick<Repository, "owner" | "name">, pr: number): Promise<GateMarker | null> {
   const comments: unknown[] = [];
   for (let page = 1; ; page += 1) {
@@ -510,15 +488,6 @@ async function loadIssues(runner: Runner): Promise<SyncFacts["issues"]> {
   return raw.map((entry, index) => {
     const issue = requiredRecord(entry, `gh issue list[${index}]`);
     return { number: requiredNumber(issue.number, `gh issue list[${index}].number`), state: requiredString(issue.state, `gh issue list[${index}].state`), labels: labels(issue.labels, `gh issue list[${index}].labels`) };
-  });
-}
-
-async function loadCollisionIssues(runner: Runner): Promise<SyncFacts["issues"]> {
-  const raw = requiredArray(await runJson(runner, ["gh", "issue", "list", "--state", "open", "--label", "WIP", "--limit", "1000", "--json", "number,state,labels"], "gh collision issue list"), "gh collision issue list");
-  if (raw.length === 1000) throw new OperationalError("collision issue list reached limit; refusing incomplete graph");
-  return raw.map((entry, index) => {
-    const issue = requiredRecord(entry, `gh collision issue list[${index}]`);
-    return { number: requiredNumber(issue.number, `gh collision issue list[${index}].number`), state: requiredString(issue.state, `gh collision issue list[${index}].state`), labels: labels(issue.labels, `gh collision issue list[${index}].labels`) };
   });
 }
 
@@ -611,7 +580,7 @@ function safeManagedWorktreePath(path: string): boolean {
   return isDirectManagedWorktree(path, resolve(root, ".worktrees"));
 }
 
-export async function sync(runner: Runner, apply: boolean): Promise<Evaluation> {
+export async function sync(runner: Runner, apply: boolean): Promise<SyncEvaluation> {
   const repo = await repository(runner);
   const facts: SyncFacts = { issues: await loadIssues(runner), pullRequests: await loadSyncPullRequests(runner, repo), worktrees: await loadWorktrees(runner) };
   const evaluation = evaluateSync(facts);

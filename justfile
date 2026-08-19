@@ -63,17 +63,33 @@ review CLAIM:
     set -euo pipefail
     claim="$1"
     reviewer=${KESHA_REVIEWER:-omc ask grok -p}
-    pr="$(gh pr view --json number -q .number 2>/dev/null)" || {
-      echo "refusing: no pull request for this branch — open it first" >&2; exit 2; }
-    head="$(gh pr view --json headRefOid -q .headRefOid)"
-    base="$(gh pr view --json baseRefName -q .baseRefName)"
+    # A detached reviewer that was never on PATH reports itself as launched and is discovered
+    # minutes later, in a log holding "command not found" where the findings should be.
+    command -v "${reviewer%% *}" >/dev/null || {
+      echo "refusing: reviewer '${reviewer%% *}' is not on PATH — install it or set KESHA_REVIEWER" >&2; exit 2; }
+    # One read: three separate gh calls can straddle a push and review a head the number never had.
+    facts="$(gh pr view --json number,headRefOid,baseRefName -q '"\(.number) \(.headRefOid) \(.baseRefName)"')" || {
+      echo "refusing: gh could not read a pull request for this branch (its error is above) — open one first" >&2; exit 2; }
+    read -r pr head base <<<"$facts"
     branch="$(git rev-parse --abbrev-ref HEAD)"
     log=".omc/review-${pr}-${head:0:8}.log"
     mkdir -p .omc
+    # Truncate rather than remove: review-wait refuses a log that does not exist, and the detached
+    # subshell has not necessarily created it by the time this recipe returns.
+    rm -f "${log}.status"
+    : > "${log}"
     prompt="$(bun scripts/review-prompt.ts "$pr" "$head" "$branch" "$base" "$claim")"
     echo "==> reviewing #${pr} at ${head:0:8}; output -> ${log}"
-    nohup ${reviewer} "${prompt}" > "${log}" 2>&1 &
-    echo "==> launched in background; post the findings as one **grok review** comment carrying the full head SHA"
+    # $0 carries the log path so that ${reviewer} keeps the word splitting it needs, and the
+    # sentinel is the only signal that separates a finished review from a half-written one.
+    nohup bash -c 'set +e; "$@" > "$0" 2>&1; echo $? > "$0.status"' "${log}" ${reviewer} "${prompt}" >/dev/null 2>&1 &
+    echo "==> launched in background; block on it with: just review-wait ${log}"
+    echo "==> then post the findings as one **grok review** comment carrying the full head SHA"
+
+# Block until `just review` finishes and print its findings once, rather than re-reading a growing log
+[positional-arguments]
+review-wait LOG:
+    bun scripts/review-wait.ts "$@"
 
 # Prove a guard is pinned: replace text, run the tests, restore. Refuses when the text does not occur (#1075)
 [positional-arguments]
@@ -135,22 +151,26 @@ preflight:
     # A checkout that quietly fell 14 commits behind had an agent reading a stale CLAUDE.md for nine hours (#1070).
     [ "$behind" = "0" ] || echo "==> NOTE: this checkout is $behind commit(s) behind origin/main — read instructions with: git show origin/main:<path>"
 
+    # A green gate's output is never read, and handing it to an agent costs thousands of tokens
+    # per run; quiet-gate buffers it and prints it verbatim only when the gate fails.
+    gate() { bun scripts/quiet-gate.ts "$1" -- "${@:2}"; }
+
     echo "==> TS gate (always)"
-    bun run test
-    bun run lint
+    gate test bun run test
+    gate lint bun run lint
     # tests/unit/preflight-parity.test.ts holds this list equal to what CI runs (#1070).
-    bun run check:recipes
-    bun run check:workflows
-    bun run check:versions
-    bun run check:specs
-    bun run check:engine-targets
-    bun run check:release-manifest
+    gate check:recipes bun run check:recipes
+    gate check:workflows bun run check:workflows
+    gate check:versions bun run check:versions
+    gate check:specs bun run check:specs
+    gate check:engine-targets bun run check:engine-targets
+    gate check:release-manifest bun run check:release-manifest
 
     if [ -n "$rust" ]; then
       echo "==> Rust gate"
       # `cargo fmt` formats in place rather than checking, so this can leave a whitespace diff to commit.
-      (cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings)
-      {{ just_executable() }} rust-test
+      gate clippy bash -c 'cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings'
+      gate rust-test {{ just_executable() }} rust-test
     else
       echo "==> Rust gate skipped: no rust/ changes (force with just ALL=1 preflight)"
     fi
@@ -158,7 +178,7 @@ preflight:
     if [ -n "$backend" ]; then
       echo "==> CoreML build check"
       # --all-targets matches rust-test.yml's check so the #[cfg(feature = "coreml")] tests compile too (#708).
-      (cd rust && cargo check --features coreml --no-default-features --all-targets)
+      gate coreml bash -c 'cd rust && cargo check --features coreml --no-default-features --all-targets'
     else
       echo "==> CoreML check skipped: no rust/src/backend/ changes"
     fi

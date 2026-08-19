@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { ExitCode, OperationalError, REPORT_SCHEMA_VERSION, bunRunner, close, gate, parseGateEvidence, sync, type Evaluation } from "./backlog-conveyor";
+import { ExitCode, OperationalError, REPORT_SCHEMA_VERSION, bunRunner, close, gate, parseGateEvidence, sync, type Evaluation, type SyncEvaluation } from "./backlog-conveyor";
 
 type Command =
   | { name: "sync"; apply: boolean; json: boolean }
@@ -52,8 +52,13 @@ function exitCode(result: Evaluation): number {
   return ExitCode.success;
 }
 
-function output(command: Command, result: Evaluation): void {
-  const report = { schemaVersion: REPORT_SCHEMA_VERSION, command: command.name, apply: command.apply, findings: result.findings, violations: result.violations, refusals: result.refusals, actions: result.safeActions };
+function nextTicket(result: Evaluation | SyncEvaluation): number | null | undefined {
+  return "nextIssue" in result ? result.nextIssue : undefined;
+}
+
+function output(command: Command, result: Evaluation | SyncEvaluation): void {
+  const next = nextTicket(result);
+  const report = { schemaVersion: REPORT_SCHEMA_VERSION, command: command.name, apply: command.apply, findings: result.findings, violations: result.violations, refusals: result.refusals, actions: result.safeActions, ...(next === undefined ? {} : { nextIssue: next }) };
   if (command.json) {
     console.log(JSON.stringify(report));
     return;
@@ -61,6 +66,7 @@ function output(command: Command, result: Evaluation): void {
   console.log(`backlog ${command.name}: ${exitCode(result) === 0 ? "ok" : "blocked"}`);
   for (const message of [...result.findings, ...result.violations, ...result.refusals]) console.log(`- ${message}`);
   for (const action of result.safeActions) console.log(`- ${command.apply ? "applied" : "would apply"}: ${action.kind}`);
+  if (next !== undefined) console.log(`- next ticket: ${next === null ? "none — the queue is empty" : `#${next}`}`);
 }
 
 async function main(): Promise<void> {

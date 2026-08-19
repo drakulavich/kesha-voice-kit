@@ -10,17 +10,25 @@ Arguments: `$ARGUMENTS` → optional PR number. If omitted, resolve the PR for t
 
 ## Steps
 
-1. Resolve the PR number and capture the **current head SHA**:
+1. Read the PR and its **current head SHA** in one call (`<N>` is the PR number):
    ```bash
    gh pr view <N> -R drakulavich/kesha-voice-kit --json number,headRefOid,mergeStateStatus
    ```
 
-2. Poll until both CI and Greptile are non-pending **on that head SHA**. Use a background poll so you don't block the session — re-check every ~50s, up to ~20 min. Parse `gh pr checks <N>` (tab-separated: name TAB state); for Greptile, also confirm via `gh pr view --json statusCheckRollup` that its `conclusion` is set (an empty conclusion = still reviewing the new SHA, even if a stale pass shows). Do **not** trust a pass whose timestamp predates the latest push.
+2. Block on the checks rather than polling them — each poll's table is context you pay for, and `--watch` returns once they settle:
+   ```bash
+   gh pr checks <N> -R drakulavich/kesha-voice-kit --watch --fail-fast --interval 30 > /dev/null
+   ```
 
-3. When both settle, summarize:
-   - CI: which jobs passed / failed / were skipped (path-filtered jobs skipping is normal for docs-only PRs).
-   - Greptile: the top-level summary and every inline **P1/P2** finding (treat these as merge blockers). Pull them via `gh pr view <N> --json reviews,comments` filtering authors matching `greptile`.
+3. Ask once for what is not green, and for Greptile's state on **that same SHA**:
+   ```bash
+   gh pr checks <N> -R drakulavich/kesha-voice-kit --json name,state,link \
+     --jq '.[] | select(.state != "SUCCESS" and .state != "SKIPPED")'
+   gh pr view <N> -R drakulavich/kesha-voice-kit --json reviews,comments \
+     --jq '[.reviews[], .comments[] | select(.author.login | test("greptile"; "i"))] | .[-3:]'
+   ```
+   An empty Greptile `conclusion` means it is still reading the new SHA even if a stale pass shows; do **not** trust a pass whose timestamp predates the latest push. If the head SHA changed while you waited, start again at step 1 — the answer is about the old commit.
 
-4. State plainly: is the **latest head SHA** green + reviewed, or still waiting? If there are P1/P2 findings, list them as the blockers to fix before merge (or note a clear false positive to dismiss with a comment).
+4. State plainly: is the **latest head SHA** green + reviewed, or still waiting? List every **P1/P2** as a merge blocker (or note a clear false positive to dismiss with a comment). **Never gate on the Confidence Score** — 9 of 30 PRs scored 5/5 while carrying Greptile's own P1/P2. Greptile silent → say so and carry on.
 
 Reference: CLAUDE.md "GREPTILE PR REVIEW IS A GATE".

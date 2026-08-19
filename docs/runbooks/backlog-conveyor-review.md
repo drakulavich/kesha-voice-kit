@@ -6,7 +6,9 @@ GitHub evidence must contain.
 
 ## 1. Review every PR, aimed at a claim
 
-Run `just review "<claim>"` the moment the PR exists. Measured over
+Run `just review "<claim>"` the moment the PR exists, and block on it with the
+`just review-wait <log>` line it prints — the reviewer detaches, and polling its
+growing log costs the whole file every time you look. Measured over
 #1016–#1064, **13 of 30 merged PRs (43%) were never reviewed at all**, while
 every P1/P2 the reviews did raise led to a code change — 6 for 6. Coverage,
 not wording, is what the gate was losing.
