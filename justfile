@@ -135,22 +135,26 @@ preflight:
     # A checkout that quietly fell 14 commits behind had an agent reading a stale CLAUDE.md for nine hours (#1070).
     [ "$behind" = "0" ] || echo "==> NOTE: this checkout is $behind commit(s) behind origin/main — read instructions with: git show origin/main:<path>"
 
+    # A green gate's output is never read, and handing it to an agent costs thousands of tokens
+    # per run; quiet-gate buffers it and prints it verbatim only when the gate fails.
+    gate() { bun scripts/quiet-gate.ts "$1" -- "${@:2}"; }
+
     echo "==> TS gate (always)"
-    bun run test
-    bun run lint
+    gate test bun run test
+    gate lint bun run lint
     # tests/unit/preflight-parity.test.ts holds this list equal to what CI runs (#1070).
-    bun run check:recipes
-    bun run check:workflows
-    bun run check:versions
-    bun run check:specs
-    bun run check:engine-targets
-    bun run check:release-manifest
+    gate check:recipes bun run check:recipes
+    gate check:workflows bun run check:workflows
+    gate check:versions bun run check:versions
+    gate check:specs bun run check:specs
+    gate check:engine-targets bun run check:engine-targets
+    gate check:release-manifest bun run check:release-manifest
 
     if [ -n "$rust" ]; then
       echo "==> Rust gate"
       # `cargo fmt` formats in place rather than checking, so this can leave a whitespace diff to commit.
-      (cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings)
-      {{ just_executable() }} rust-test
+      gate clippy bash -c 'cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings'
+      gate rust-test {{ just_executable() }} rust-test
     else
       echo "==> Rust gate skipped: no rust/ changes (force with just ALL=1 preflight)"
     fi
@@ -158,7 +162,7 @@ preflight:
     if [ -n "$backend" ]; then
       echo "==> CoreML build check"
       # --all-targets matches rust-test.yml's check so the #[cfg(feature = "coreml")] tests compile too (#708).
-      (cd rust && cargo check --features coreml --no-default-features --all-targets)
+      gate coreml bash -c 'cd rust && cargo check --features coreml --no-default-features --all-targets'
     else
       echo "==> CoreML check skipped: no rust/src/backend/ changes"
     fi

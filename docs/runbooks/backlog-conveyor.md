@@ -14,8 +14,8 @@ Claude and Codex read this, not a client-specific command file.
 2. **Work** — `just worktree issue-<N>`, then one fresh-context agent, never
    reused across tickets. The brief gives coordinates rather than a search:
    `src/engine.ts:120-180` and the exact failing command, not "look at the
-   engine code". Gates run to a file and you read the tail — `bun run test`
-   prints 332 lines and no flag shortens it.
+   engine code". `just preflight` prints one line per gate and the failing
+   gate's output verbatim, so read what it prints rather than redirecting it.
    Blocked mid-flight? Push what exists, open a draft PR, comment the blocker,
    report `BLOCKED: <reason>`. Do not spin.
 
