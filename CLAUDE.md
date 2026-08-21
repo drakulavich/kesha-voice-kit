@@ -91,7 +91,7 @@ A test that spawns a stub owns its death. `bunfig.toml` preloads `tests/helpers/
 ### PR ETIQUETTE
 
 - `main` is protected; every change goes through a PR and CI must pass.
-- Label the issue `WIP` when you pick it up (`gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP`), remove it when the PR merges or the work is abandoned.
+- Picking up work means the ticket is next off the queue, named by `conveyor next` — there is no label to apply. In-flight state is the queue entry, the worktree, and the open PR; see [the conveyor runbook](docs/runbooks/conveyor.md).
 - Put `Closes #N` in the PR **body or commit message**, not only the title, so it auto-closes. Each issue needs its own keyword (`Closes #N, closes #M`) — a bare list closes only the first. Use `Refs #N` for partial work, then verify with `gh issue view <N> --json state` and close manually.
 
 ### GREPTILE PR REVIEW IS A GATE

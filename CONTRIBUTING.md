@@ -156,11 +156,9 @@ kesha-voice-kit/
 - CI must pass before merging. `main` is protected.
 - Squash-merge preferred. Greptile reviews are advisory but their P1/P2
   findings should be addressed before merge.
-- For active work, tag the issue with the `WIP` label so the maintainer
-  sees it at a glance:
-  ```bash
-  gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP
-  ```
+- Active work is visible as a branch, a worktree, and an open PR — there is
+  no label to apply. See [`docs/runbooks/conveyor.md`](docs/runbooks/conveyor.md)
+  for the loop.
 
 ## Code style
 
