@@ -91,16 +91,24 @@ A test that spawns a stub owns its death. `bunfig.toml` preloads `tests/helpers/
 ### PR ETIQUETTE
 
 - `main` is protected; every change goes through a PR and CI must pass.
-- Label the issue `WIP` when you pick it up (`gh issue edit <N> -R drakulavich/kesha-voice-kit --add-label WIP`), remove it when the PR merges or the work is abandoned.
+- Picking up work means the ticket is next off the queue, named by `conveyor next` — there is no label to apply. In-flight state is the queue entry, the worktree, and the open PR; see [the conveyor runbook](docs/runbooks/conveyor.md).
 - Put `Closes #N` in the PR **body or commit message**, not only the title, so it auto-closes. Each issue needs its own keyword (`Closes #N, closes #M`) — a bare list closes only the first. Use `Refs #N` for partial work, then verify with `gh issue view <N> --json state` and close manually.
 
 ### GREPTILE PR REVIEW IS A GATE
 
 Greptile reviews on open and on every new commit. **P1/P2 findings are merge blockers** — that never lapses. Do not stop at the PR URL: CI must cover the latest head SHA, and so must Greptile whenever it is answering; report whether it is green. **Never gate on its Confidence Score** — 9 of 30 PRs across #753–#800 scored `5/5` "safe to merge" while carrying Greptile's own P1/P2 inline findings. Gate on findings. When Greptile is silent, record that on the PR and carry on rather than blocking. Clear false positives may be dismissed with a PR comment explaining why — rare in practice. Re-review and auto-merge mechanics: the `release-mechanics` skill.
 
-### BACKLOG CONVEYOR REVIEW GATE
+### CONVEYOR REVIEW GATE
 
-Every conveyor PR MUST follow the [backlog conveyor review runbook](docs/runbooks/backlog-conveyor-review.md): `just review "<claim>"` the moment the PR exists, a durable comment carrying the full head SHA and every finding, and a fix pass for confirmed blockers that restarts the review on the new head. `merge-ready` comes only from `bun run conveyor -- gate … --apply`, never by hand — `just gate <issue> <pr> <provider> <uri>` builds the SHA-bound evidence and calls it, reading the head immediately before binding to it. 43% of merged PRs used to skip the review entirely — that gap cost more than any wording did, which is why the recipe takes the claim as a required argument.
+Every conveyor-driven PR follows [the conveyor runbook](docs/runbooks/conveyor.md):
+review via `conveyor review-prompt --pr <P> --claim "<claim>"` piped to the
+reviewer the moment the PR exists, one durable comment carrying the full head
+SHA and every finding, and a fix pass for confirmed blockers that restarts the
+review on the new head. The merge verdict is the gate comment posted by
+`conveyor gate … --apply` — its visible line binds the verdict to the head
+SHA; never write one by hand. 43% of merged PRs used to skip the review
+entirely — that gap cost more than any wording did, which is why the review
+prompt takes the claim as a required argument.
 
 ### ERROR HANDLING
 
@@ -221,7 +229,7 @@ Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: the **`t
 
 Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-engine` and `release-cli` (cut a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches).
 
-Still plain runbooks: [backlog-conveyor](docs/runbooks/backlog-conveyor.md) · [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).
+Still plain runbooks: [conveyor](docs/runbooks/conveyor.md) · [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).
 
 The conveyor loop lives in that runbook rather than in a client-specific command file, so Claude and Codex follow the same text. Anything only one client can see is what the other silently skips.
 
