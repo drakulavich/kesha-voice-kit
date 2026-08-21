@@ -37,3 +37,6 @@ mutants.out.old/
 # CI-only model cache: workspace-relative so one cross-OS entry serves Linux and Windows (#860).
 .kesha-ci-cache/
 .kesha-ci-cache-probe/
+
+# standalone conveyor profile: names the real repository and maintainer, never committed.
+conveyor.config.json
