@@ -295,6 +295,7 @@ export function requirePactVerificationCoversEveryTarget(path: string, document:
  */
 type Job = {
   "runs-on"?: unknown;
+  "timeout-minutes"?: number;
   steps?: unknown[];
   strategy?: { matrix?: unknown };
   defaults?: { run?: { shell?: unknown } };
