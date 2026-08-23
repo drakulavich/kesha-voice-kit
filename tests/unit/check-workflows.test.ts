@@ -619,19 +619,19 @@ describe("requireAptTimeouts", () => {
     expect(errors[0]).toContain("not strictly below 360");
   });
 
-  test("passes when timeout-minutes is 30", () => {
+  test("passes when timeout-minutes is 10", () => {
     const doc = {
       jobs: {
-        lint: { "runs-on": "ubuntu-latest", "timeout-minutes": 30, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
+        lint: { "runs-on": "ubuntu-latest", "timeout-minutes": 10, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
       },
     };
     expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
   });
 
-  test("passes when timeout-minutes is 60", () => {
+  test("passes when timeout-minutes is 15", () => {
     const doc = {
       jobs: {
-        push: { "runs-on": "ubuntu-latest", "timeout-minutes": 60, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
+        push: { "runs-on": "ubuntu-latest", "timeout-minutes": 15, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
       },
     };
     expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
