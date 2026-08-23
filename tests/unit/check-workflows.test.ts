@@ -636,4 +636,14 @@ describe("requireAptTimeouts", () => {
     };
     expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
   });
+
+  // A gate is only a gate if checkFile still calls it, and the live suite cannot notice a
+  // dropped check because the tree it reads is already clean. This test names a rust-test.yml
+  // file so the endsWith check enables the rule.
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: sudo apt-get install -y libopus-dev\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1090"))).toHaveLength(1);
+  });
 });
