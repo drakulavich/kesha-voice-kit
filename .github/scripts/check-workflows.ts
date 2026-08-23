@@ -469,6 +469,43 @@ export function requireRestoreOnlyCachesHaveAWriter(
 }
 
 /**
+ * Fails when a job on Ubuntu invokes apt-get without a timeout bound strictly below 360 minutes.
+ * An apt mirror stall burns GitHub's full 6-hour default if unbounded; 30-60 minutes stops the burn (#1090).
+ */
+export function requireAptTimeouts(path: string, document: unknown): string[] {
+  if (!path.endsWith("rust-test.yml")) return [];
+
+  const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
+  if (!jobs || typeof jobs !== "object") return [];
+
+  const errors: string[] = [];
+  for (const [name, job] of Object.entries(jobs)) {
+    const labels = runnerLabels(job);
+    if (labels.length === 0 || !labels.some((label) => /ubuntu/i.test(label))) continue;
+
+    const steps = Array.isArray(job?.steps) ? (job.steps as Step[]) : [];
+    const hasAptGet = steps.some((step) => typeof step?.run === "string" && /apt-get/i.test(step.run));
+    if (!hasAptGet) continue;
+
+    const timeout = job["timeout-minutes"];
+    if (timeout === undefined) {
+      errors.push(
+        `${path}: \`${name}\` runs on Ubuntu and invokes apt-get, but has no \`timeout-minutes\`; an apt stall burns 360 minutes unattended (#1090)`,
+      );
+    } else {
+      const timeoutNum = Number(timeout);
+      if (isNaN(timeoutNum) || timeoutNum >= 360) {
+        errors.push(
+          `${path}: \`${name}\` runs on Ubuntu and invokes apt-get, but \`timeout-minutes: ${timeout}\` is not strictly below 360; an apt stall exceeds this bound (#1090)`,
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
  * Fails when a script covered by a unit test sits outside ci.yml's `code` filter.
  * `check:versions` and the unit tests run inside `unit-tests`, which that filter gates,
  * so an uncovered script means edits to a gate skip the tests that prove it works.
@@ -568,6 +605,7 @@ export function checkFile(
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
       ...requirePipefailShell(path, document),
+      ...requireAptTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
