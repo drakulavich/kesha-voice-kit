@@ -447,12 +447,10 @@ describe("the repository's own references", () => {
     const found = new Set(names("CLAUDE.md", readRepoFile("CLAUDE.md")));
     expect([...found].sort()).toEqual([
       "dev-setup",
-      "gate",
       "mutate",
       "preflight",
       "release",
       "release-tag",
-      "review",
       "rust-test",
       "smoke-test",
       "test",

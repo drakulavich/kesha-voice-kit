@@ -56,38 +56,10 @@ worktree-rm slug: root-checkout-only
     git worktree remove ".worktrees/$1"
     git worktree prune
 
-# Adversarially review this worktree's PR; CLAIM is required because named claims found defects and generic asks did not (#1065)
-[positional-arguments]
-review CLAIM:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    claim="$1"
-    reviewer=${KESHA_REVIEWER:-omc ask grok -p}
-    pr="$(gh pr view --json number -q .number 2>/dev/null)" || {
-      echo "refusing: no pull request for this branch — open it first" >&2; exit 2; }
-    head="$(gh pr view --json headRefOid -q .headRefOid)"
-    base="$(gh pr view --json baseRefName -q .baseRefName)"
-    branch="$(git rev-parse --abbrev-ref HEAD)"
-    log=".omc/review-${pr}-${head:0:8}.log"
-    mkdir -p .omc
-    prompt="$(bun scripts/review-prompt.ts "$pr" "$head" "$branch" "$base" "$claim")"
-    echo "==> reviewing #${pr} at ${head:0:8}; output -> ${log}"
-    nohup ${reviewer} "${prompt}" > "${log}" 2>&1 &
-    echo "==> launched in background; post the findings as one **grok review** comment carrying the full head SHA"
-
 # Prove a guard is pinned: replace text, run the tests, restore. Refuses when the text does not occur (#1075)
 [positional-arguments]
 mutate file find replace +test:
     bun scripts/mutate.ts "$@"
-
-# Earn merge-ready: build SHA-bound evidence for this PR and hand it to the conveyor gate (#1078)
-[positional-arguments]
-gate issue pr provider uri:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    evidence="$(bun scripts/gate-evidence.ts "$3" "$4" --pr "$2")"
-    echo "==> evidence: $evidence"
-    bun run conveyor -- gate --issue "$1" --pr "$2" --evidence "$evidence" --apply
 
 # Run all tests
 test:
