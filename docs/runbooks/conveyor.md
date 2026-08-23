@@ -1,9 +1,11 @@
 # The conveyor loop
 
 The loop is the standalone conveyor's RUNBOOK.md — read it in the checkout the
-`conveyor` command comes from (`~/personal/repos/conveyor/RUNBOOK.md`). This
-file records only what kesha does differently; for anything unstated, the
-RUNBOOK is the text.
+`conveyor` command comes from. The command is a `bun link` symlink, so the
+checkout is discoverable from the binary itself:
+`readlink -f "$(which conveyor)"` names `<checkout>/src/cli.ts`, and the
+RUNBOOK sits at that checkout's root. This file records only what kesha does
+differently; for anything unstated, the RUNBOOK is the text.
 
 ## Deltas
 
