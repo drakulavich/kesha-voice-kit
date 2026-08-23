@@ -6,6 +6,7 @@ import {
   checkFile,
   collectCacheWriters,
   forbidLinuxPackaging,
+  requireAptTimeouts,
   requireBashOnWindowsRunSteps,
   requirePipefailShell,
   requireRestoreOnlyCachesHaveAWriter,
@@ -559,5 +560,90 @@ describe("Rust toolchain pin", () => {
       const path = `.github/workflows/${file}`;
       expect([path, requirePinnedRustToolchain(path, parseRepoYaml(path), PIN)]).toEqual([path, []]);
     }
+  });
+});
+
+describe("requireAptTimeouts", () => {
+  const RUST_TEST = ".github/workflows/rust-test.yml";
+
+  test("passes on the real rust-test.yml", () => {
+    expect(requireAptTimeouts(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
+  });
+
+  test("ignores non-rust-test workflows", () => {
+    const doc = {
+      jobs: {
+        test: { "runs-on": "ubuntu-latest", steps: [{ run: "sudo apt-get install x" }] },
+      },
+    };
+    expect(requireAptTimeouts(CI, doc)).toEqual([]);
+  });
+
+  test("ignores jobs that do not run on ubuntu", () => {
+    const doc = {
+      jobs: {
+        test: { "runs-on": "macos-14", steps: [{ run: "sudo apt-get install x" }] },
+      },
+    };
+    expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
+  });
+
+  test("ignores jobs that do not invoke apt-get", () => {
+    const doc = {
+      jobs: {
+        test: { "runs-on": "ubuntu-latest", steps: [{ run: "bun test" }] },
+      },
+    };
+    expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
+  });
+
+  test("fails when a job on ubuntu runs apt-get with no timeout-minutes", () => {
+    const doc = {
+      jobs: {
+        lint: { "runs-on": "ubuntu-latest", steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
+      },
+    };
+    const errors = requireAptTimeouts(RUST_TEST, doc);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("has no `timeout-minutes`");
+  });
+
+  test("fails when timeout-minutes is 360 or higher", () => {
+    const doc = {
+      jobs: {
+        lint: { "runs-on": "ubuntu-latest", "timeout-minutes": 360, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
+      },
+    };
+    const errors = requireAptTimeouts(RUST_TEST, doc);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("not strictly below 360");
+  });
+
+  test("passes when timeout-minutes is 10", () => {
+    const doc = {
+      jobs: {
+        lint: { "runs-on": "ubuntu-latest", "timeout-minutes": 10, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
+      },
+    };
+    expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
+  });
+
+  test("passes when timeout-minutes is 15", () => {
+    const doc = {
+      jobs: {
+        push: { "runs-on": "ubuntu-latest", "timeout-minutes": 15, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
+      },
+    };
+    expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
+  });
+
+  // A gate is only a gate if checkFile still calls it, and the live suite cannot notice a
+  // dropped check because the tree it reads is already clean. This test names a rust-test.yml
+  // file so the endsWith check enables the rule.
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: sudo apt-get install -y libopus-dev\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1090"))).toHaveLength(1);
   });
 });
