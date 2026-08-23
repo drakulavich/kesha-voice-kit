@@ -10,8 +10,11 @@ RUNBOOK is the text.
 - **Profile and state**: `conveyor.config.json` at the kesha root (gitignored;
   never committed — it names the real repository and maintainer). Queue and
   state live in the conveyor checkout under `state/drakulavich--kesha-voice-kit/`.
-- **Reviewer**: `conveyor review-prompt --pr <P> --claim "<claim>" | omc ask grok -p`,
-  launched in the background, log at `.omc/review-<pr>-<sha8>.log`. Findings
+- **Reviewer**: `conveyor review-prompt --pr <P> --claim "<claim>" > /tmp/review-<P>.md`,
+  then `grok --prompt-file /tmp/review-<P>.md --sandbox read-only` in the
+  background, log at `.omc/review-<pr>-<sha8>.log`. The prompt goes in by
+  path, never through argv — the RUNBOOK's own rule, and one large diff is
+  all it takes to prove it. Findings
   land as one `**grok review**` comment carrying the full head SHA and every
   material finding. Greptile is the trigger-driven second reviewer; its
   Confidence Score is never a gate.
