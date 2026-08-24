@@ -6,15 +6,18 @@ import {
   contentLength,
   flattenPlan,
   liveSize,
+  parseManifestEntries,
   parseManifestUrls,
   type FetchLike,
 } from "../../.github/scripts/check-model-plan-sizes";
 import modelPlan from "../../model-plan.json" with { type: "json" };
 
 const repoRoot = join(import.meta.dir, "..", "..");
+const realManifestSource = () =>
+  readFileSync(join(repoRoot, "rust", "src", "models.rs"), "utf8");
 
-const realManifestUrls = () =>
-  parseManifestUrls(readFileSync(join(repoRoot, "rust", "src", "models.rs"), "utf8"));
+const realManifestUrls = () => parseManifestUrls(realManifestSource());
+const realManifestEntries = () => parseManifestEntries(realManifestSource());
 
 describe("flattenPlan", () => {
   test("reads arrays, single files and per-language maps alike", () => {
@@ -110,6 +113,39 @@ describe("parseManifestUrls", () => {
     ).toBe(
       "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
     );
+  });
+
+  // The English and Mandarin ANE bundles stage identical basenames (e.g.
+  // `KokoroAlbert.mlmodelc/analytics/coremldata.bin`) into different directories at install
+  // time — `stage_into(&fluidaudio_ane_kokoro_dir()?, ANE_EN_FILES, …)` vs `stage_into(&zh,
+  // ANE_ZH_FILES, …)` — so `relPath` is not unique across the manifest. `parseManifestUrls`'s
+  // map would let the later declaration (`ANE_ZH_FILES`) silently shadow the earlier one
+  // (`ANE_EN_FILES`) for every colliding key; `parseManifestEntries` must keep both.
+  test("keeps colliding rel_paths as separate entries rather than letting one shadow the other", () => {
+    const albertCoremldata = realManifestEntries().filter(
+      (entry) => entry.relPath === "KokoroAlbert.mlmodelc/analytics/coremldata.bin",
+    );
+    expect(albertCoremldata).toHaveLength(2);
+    expect(albertCoremldata.map((entry) => entry.url)).toEqual([
+      expect.stringContaining("/ANE/KokoroAlbert.mlmodelc/analytics/coremldata.bin"),
+      expect.stringContaining("/ANE-zh/KokoroAlbert.mlmodelc/analytics/coremldata.bin"),
+    ]);
+  });
+
+  // `parseManifestEntries` expands the `ModelFile`-building macros in place, so this sees
+  // every manifest models.rs declares regardless of `cfg` — including the `system_kokoro`
+  // ANE ones no CI lane ever compiles as tests (#1093, #1096 review) — and every entry, not
+  // just one per colliding `relPath` (the test above). `manifest_tests::
+  // every_huggingface_url_pins_an_immutable_revision` in models.rs covers the same rule with
+  // real Rust types where it does run; this is the one that runs everywhere.
+  test("no huggingface.co url in the real manifest resolves through a mutable ref", () => {
+    const mutableRefs: string[] = [];
+    for (const { relPath, url } of realManifestEntries()) {
+      const ref = /^https:\/\/huggingface\.co\/[^/]+\/[^/]+\/resolve\/([^/]+)\//.exec(url)?.[1];
+      if (ref === undefined) continue;
+      if (!/^[0-9a-f]{40}$/.test(ref)) mutableRefs.push(`${relPath}: ${url}`);
+    }
+    expect(mutableRefs).toEqual([]);
   });
 });
 
