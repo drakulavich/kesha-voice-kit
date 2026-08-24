@@ -32,10 +32,10 @@ into a hard `E_CACHE_CORRUPT` at install rather than a silent swap, which is the
 working as designed — and is also precisely the outage class this ticket is about, so it
 is tempting to fold them in. Deliberately out of scope: the silero-vad tag *could* be
 repinned to a commit SHA (a GitHub tag resolves to one, same as a Hugging Face revision) —
-tracked as a follow-up issue, referenced here once filed. The kokoro-onnx release asset has
-no immutable URL form at all (GitHub release assets are addressed by tag, not commit), so
-for that one file the SHA-256 pin is the only guard there will ever be; widening the "must
-be a 40-hex ref" rule to it would be asserting something that can never hold.
+tracked as #1099. The kokoro-onnx release asset has no immutable URL form at all (GitHub
+release assets are addressed by tag, not commit), so for that one file the SHA-256 pin is
+the only guard there will ever be; widening the "must be a 40-hex ref" rule to it would be
+asserting something that can never hold.
 
 ## Why `parseManifestEntries`, not the existing `parseManifestUrls`
 
