@@ -33,27 +33,27 @@ pub struct ModelFile {
 const ASR_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/parakeet-tdt-v3/encoder-model.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/encoder-model.onnx",
         sha256: "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1",
     },
     ModelFile {
         rel_path: "models/parakeet-tdt-v3/encoder-model.onnx.data",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx.data",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/encoder-model.onnx.data",
         sha256: "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36",
     },
     ModelFile {
         rel_path: "models/parakeet-tdt-v3/decoder_joint-model.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/decoder_joint-model.onnx",
         sha256: "e978ddf6688527182c10fde2eb4b83068421648985ef23f7a86be732be8706c1",
     },
     ModelFile {
         rel_path: "models/parakeet-tdt-v3/nemo128.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/nemo128.onnx",
         sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
     },
     ModelFile {
         rel_path: "models/parakeet-tdt-v3/vocab.txt",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/vocab.txt",
         sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
     },
 ];
@@ -88,22 +88,22 @@ const VAD_FILES: &[ModelFile] = &[ModelFile {
 const DIARIZE_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Manifest.json",
-        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Manifest.json",
+        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1/SortformerNvidiaLow_v2.mlpackage/Manifest.json",
         sha256: "48005880c54b1b7f5b0ae81a33fead3a36e3e2a773eb3fbf1f61ebe08515bba6",
     },
     ModelFile {
         rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel",
-        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel",
         sha256: "478267113144c0292a3db41fb22148b6c052d2399ae3dab0ca20cd3687880358",
     },
     ModelFile {
         rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
-        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
+        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
         sha256: "ad40d62ccd7a0943d2cd9cc8eeee7f27116e58cf6532ab43196b34142fc86583",
     },
     ModelFile {
         rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin",
-        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin",
+        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin",
         sha256: "e8ebd6767429fd224671b79ad2a3e3cd8bd34f83373ff84fca2f5387414191a0",
     },
 ];
@@ -113,17 +113,17 @@ const DIARIZE_FILES: &[ModelFile] = &[
 const LANG_ID_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/lang-id-ecapa/lang-id-ecapa.onnx",
-        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/main/lang-id-ecapa.onnx",
+        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/41e60dea31b80ea5d4f9d9d9e818501ea184e568/lang-id-ecapa.onnx",
         sha256: "4af3b6a5b4165f78715fe363ed6b7650d5f77ed0a6e2966c500eadc46252a288",
     },
     ModelFile {
         rel_path: "models/lang-id-ecapa/lang-id-ecapa.onnx.data",
-        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/main/lang-id-ecapa.onnx.data",
+        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/41e60dea31b80ea5d4f9d9d9e818501ea184e568/lang-id-ecapa.onnx.data",
         sha256: "78fefd776536f4a686bcf705dedb8e9a497b924a2107a949b42a24b2b90174a2",
     },
     ModelFile {
         rel_path: "models/lang-id-ecapa/labels.json",
-        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/main/labels.json",
+        url: "https://huggingface.co/drakulavich/SpeechBrain-coreml/resolve/41e60dea31b80ea5d4f9d9d9e818501ea184e568/labels.json",
         sha256: "9e515c3c7932659fd1e6c3febc395529d0a8092328adb9f5e75185a04bb523d0",
     },
 ];
@@ -220,7 +220,7 @@ macro_rules! kokoro_voice {
         ModelFile {
             rel_path: concat!("models/kokoro-82m/voices/", $name, ".bin"),
             url: concat!(
-                "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/",
+                "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/",
                 $name,
                 ".bin"
             ),
@@ -256,17 +256,17 @@ const KOKORO_EN_VOICE: ModelFile = kokoro_voice!(
 const G2P_CHARSIU_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/g2p/byt5-tiny/encoder_model.onnx",
-        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/encoder_model.onnx",
+        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/0e2cf759874353bcc0cd153d4b6886a27f61e4a7/encoder_model.onnx",
         sha256: "1ac7aca11845527873f9e0e870fbe1e3c3ac2cb009d8852230332d10541aab04",
     },
     ModelFile {
         rel_path: "models/g2p/byt5-tiny/decoder_model.onnx",
-        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/decoder_model.onnx",
+        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/0e2cf759874353bcc0cd153d4b6886a27f61e4a7/decoder_model.onnx",
         sha256: "de32477aae14e254d4a7dee4b2c324fb39f93a0dc254181c5bfdd8fc67492919",
     },
     ModelFile {
         rel_path: "models/g2p/byt5-tiny/decoder_with_past_model.onnx",
-        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main/decoder_with_past_model.onnx",
+        url: "https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/0e2cf759874353bcc0cd153d4b6886a27f61e4a7/decoder_with_past_model.onnx",
         sha256: "fae30b9f3a8d935be01b32af851bae6d54f330813167073e84caf6d0a1890fcb",
     },
 ];
@@ -368,7 +368,7 @@ macro_rules! ane_kokoro_voice {
         ModelFile {
             rel_path: concat!($name, ".bin"),
             url: concat!(
-                "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/",
+                "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/",
                 $name,
                 ".bin"
             ),
@@ -522,7 +522,7 @@ macro_rules! ane_en_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/",
                 "ANE/",
                 $rel
             ),
@@ -704,7 +704,7 @@ macro_rules! kokoro_g2p_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/",
                 "",
                 $rel
             ),
@@ -787,7 +787,7 @@ macro_rules! ane_zh_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/",
                 "ANE-zh/",
                 $rel
             ),
@@ -1000,7 +1000,7 @@ macro_rules! ane_zh_asset {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/",
                 $remote
             ),
             sha256: $sha,
@@ -1628,28 +1628,28 @@ pub fn incomplete_ane_bundle_names() -> Vec<String> {
 pub const VOSK_RU_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/vosk-ru/model.onnx",
-        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/model.onnx",
+        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/37c7b45a32b3fa62f3a2bbce89677080dcd2107f/model.onnx",
         sha256: "0fa5a36b22a8bf7fe7179a3882c6371d2c01e5317019e717516f892d329c24b9",
     },
     ModelFile {
         rel_path: "models/vosk-ru/dictionary",
-        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/dictionary",
+        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/37c7b45a32b3fa62f3a2bbce89677080dcd2107f/dictionary",
         sha256: "2939e72c170bb41ac8e256828cca1c5fac4db1e36717f9f53fde843b00a220ba",
     },
     ModelFile {
         rel_path: "models/vosk-ru/config.json",
-        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/config.json",
+        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/37c7b45a32b3fa62f3a2bbce89677080dcd2107f/config.json",
         sha256: "e155fb266a730e1858a2420442b465acf08a3236dffad7d1a507bf155b213d50",
     },
     ModelFile {
         rel_path: "models/vosk-ru/bert/model.onnx",
         url:
-            "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/model.onnx",
+            "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/37c7b45a32b3fa62f3a2bbce89677080dcd2107f/bert/model.onnx",
         sha256: "2e2f1740eaae5e29c2b4844625cbb01ff644b2b5fb0560bd34374c35d8a092c1",
     },
     ModelFile {
         rel_path: "models/vosk-ru/bert/vocab.txt",
-        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/vocab.txt",
+        url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/37c7b45a32b3fa62f3a2bbce89677080dcd2107f/bert/vocab.txt",
         sha256: "bbe5063cc3d7a314effd90e9c5099cf493b81f2b9552c155264e16eeab074237",
     },
     // removed: README.md (drakulavich/vosk-tts-ru-0.9-multi) — not opened at
@@ -2210,6 +2210,81 @@ mod manifest_tests {
         let _ = fs::remove_file(&target);
         Ok(())
     }
+
+    /// Every `huggingface.co` URL must resolve a 40-hex commit, never a mutable
+    /// ref like `main` — upstream republishing under `main` silently invalidates
+    /// every hash pinned against it in one shot (#1093).
+    fn assert_pins_immutable_revision(f: &ModelFile) {
+        let Some(rest) = f.url.strip_prefix("https://huggingface.co/") else {
+            return;
+        };
+        let Some((_, after_resolve)) = rest.split_once("/resolve/") else {
+            panic!("{f:?} huggingface.co url has no /resolve/<ref>/ segment");
+        };
+        let ref_segment = after_resolve.split('/').next().unwrap_or("");
+        assert!(
+            ref_segment.len() == 40 && ref_segment.chars().all(|c| c.is_ascii_hexdigit()),
+            "{f:?} pins mutable ref {ref_segment:?} instead of a 40-hex commit — an \
+             upstream republish under it breaks every hash already pinned against it (#1093)"
+        );
+    }
+
+    #[test]
+    fn every_huggingface_url_pins_an_immutable_revision() {
+        #[cfg(not(feature = "coreml"))]
+        for f in ASR_FILES {
+            assert_pins_immutable_revision(f);
+        }
+        for f in DIARIZE_FILES {
+            assert_pins_immutable_revision(f);
+        }
+        for f in LANG_ID_FILES {
+            assert_pins_immutable_revision(f);
+        }
+        #[cfg(feature = "tts")]
+        for f in VOSK_RU_FILES {
+            assert_pins_immutable_revision(f);
+        }
+        #[cfg(all(
+            feature = "tts",
+            not(all(
+                feature = "system_kokoro",
+                target_os = "macos",
+                target_arch = "aarch64"
+            ))
+        ))]
+        {
+            for f in G2P_CHARSIU_FILES {
+                assert_pins_immutable_revision(f);
+            }
+            assert_pins_immutable_revision(&KOKORO_EN_VOICE);
+            for lang in ["es", "fr", "it", "pt"] {
+                assert_pins_immutable_revision(
+                    &multilang_voice(lang).expect("known Kokoro language"),
+                );
+            }
+        }
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        {
+            for f in ANE_KOKORO_VOICES {
+                assert_pins_immutable_revision(f);
+            }
+            for manifest in [
+                ANE_EN_FILES,
+                ANE_ZH_FILES,
+                ANE_ZH_G2P_ASSETS,
+                KOKORO_G2P_FILES,
+            ] {
+                for f in manifest {
+                    assert_pins_immutable_revision(f);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2512,7 +2587,7 @@ mod tts_tests {
         for f in m {
             assert!(f.sha256.len() == 64, "sha256 must be 64 hex chars");
             assert!(f.url.starts_with(
-                "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/"
+                "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/37c7b45a32b3fa62f3a2bbce89677080dcd2107f/"
             ));
         }
     }
@@ -2669,7 +2744,7 @@ mod tts_tests {
                 );
                 assert!(
                     f.url.starts_with(
-                        "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/main/"
+                        "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/"
                     ),
                     "{f:?} must come from the FluidInference repo FluidAudio itself uses"
                 );
