@@ -100,15 +100,15 @@ describe("parseManifestUrls", () => {
     const urls = realManifestUrls();
 
     expect(urls.get("models/parakeet-tdt-v3/vocab.txt")).toBe(
-      "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
+      "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/vocab.txt",
     );
     expect(urls.get("models/kokoro-82m/voices/am_michael.bin")).toBe(
-      "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/am_michael.bin",
+      "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/am_michael.bin",
     );
     expect(
       urls.get("models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin"),
     ).toBe(
-      "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
+      "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
     );
   });
 });
