@@ -70,27 +70,36 @@ fails the `len() == 40` check — proven below rather than assumed.
 
 Every row: `just mutate <file> <find> <replace> <test command>`, restored in a `finally`
 regardless of outcome; every restore was confirmed with a clean `git status --short`
-afterward and a green re-run of the named test.
+afterward and a green re-run of the named test. Every Rust row names the exact
+`cargo nextest` feature flags it ran under, because the guard's reach depends on them:
+rows 2–4 target `VOSK_RU_FILES`, which compiles under the plain `--features tts`
+`🧪 Rust Tests` actually runs, so `PINNED` there is a real CI result. Row 1 targets the
+`system_kokoro`-gated ANE manifest, which does not compile under that flag at all — its
+`PINNED` result is real too, but only for the wider local build the row names, matching
+the `none` reach already recorded in the table above; do not read it as CI coverage.
 
 | # | Guard | File | Test | Mutation | Occurrences | Result |
 |---|---|---|---|---|---|---|
-| 1 | Rust | `rust/src/models.rs` | `manifest_tests::every_huggingface_url_pins_an_immutable_revision` | Revert `FluidInference/kokoro-82m-coreml`'s pin to `main` (all four ANE macros, since they share the literal) | 5 | **PINNED** — `pins mutable ref "main" instead of a 40-hex commit` |
-| 2 | Rust | `rust/src/models.rs` | `manifest_tests::every_huggingface_url_pins_an_immutable_revision` | Revert `drakulavich/vosk-tts-ru-0.9-multi`'s pin to `resolve//` (empty ref / deleted revision) | 1 | **PINNED** — `pins mutable ref "" instead of a 40-hex commit` |
-| 3 | Rust | `rust/src/models.rs` | `manifest_tests::every_huggingface_url_pins_an_immutable_revision` | Revert `drakulavich/vosk-tts-ru-0.9-multi`'s pin to a non-`main`, non-hex ref (`v1.0-legacy`) | 1 | **PINNED** — `pins mutable ref "v1.0-legacy" instead of a 40-hex commit` |
-| 4 | Rust | `rust/src/models.rs` | `manifest_tests::every_huggingface_url_pins_an_immutable_revision` | Delete the `/resolve/<ref>/` segment entirely from `drakulavich/vosk-tts-ru-0.9-multi`'s URL | 1 | **PINNED** — `huggingface.co url has no /resolve/<ref>/ segment` |
+| 1 | Rust | `rust/src/models.rs` | `manifest_tests::every_huggingface_url_pins_an_immutable_revision` | Revert `FluidInference/kokoro-82m-coreml`'s pin to `main` (all four ANE macros, since they share the literal), run via `cargo nextest run --features tts,system_kokoro,system_diarize --no-default-features --features onnx …` — **not** the `--features tts` build `🧪 Rust Tests` runs; required because the ANE macros don't compile without `system_kokoro` | 5 | **PINNED, lane `none`** — `pins mutable ref "main" instead of a 40-hex commit`, on a build no CI job runs as tests |
+| 2 | Rust | `rust/src/models.rs` | `manifest_tests::every_huggingface_url_pins_an_immutable_revision` | Revert `drakulavich/vosk-tts-ru-0.9-multi`'s pin to `resolve//` (empty ref / deleted revision), run via `cargo nextest run --features tts …` — the same default build `🧪 Rust Tests` runs | 1 | **PINNED** — `pins mutable ref "" instead of a 40-hex commit` |
+| 3 | Rust | `rust/src/models.rs` | `manifest_tests::every_huggingface_url_pins_an_immutable_revision` | Revert `drakulavich/vosk-tts-ru-0.9-multi`'s pin to a non-`main`, non-hex ref (`v1.0-legacy`), run via `cargo nextest run --features tts …` — same default build | 1 | **PINNED** — `pins mutable ref "v1.0-legacy" instead of a 40-hex commit` |
+| 4 | Rust | `rust/src/models.rs` | `manifest_tests::every_huggingface_url_pins_an_immutable_revision` | Delete the `/resolve/<ref>/` segment entirely from `drakulavich/vosk-tts-ru-0.9-multi`'s URL, run via `cargo nextest run --features tts …` — same default build | 1 | **PINNED** — `huggingface.co url has no /resolve/<ref>/ segment` |
 | 5 | TS | `tests/unit/check-model-plan-sizes.test.ts` | `parseManifestUrls > no Hugging Face manifest URL resolves through a mutable ref` | Revert `FluidInference/kokoro-82m-coreml`'s pin to `main` (all four ANE macros) | 5 | **PINNED** — fails, naming all 94 affected manifest entries (37 `ANE/` + 12 shared G2P + 43 `ANE-zh/` + 2 pinyin assets) |
 | 6 | TS | `tests/unit/check-model-plan-sizes.test.ts` | `parseManifestUrls > no Hugging Face manifest URL resolves through a mutable ref` | Revert **only** `ane_en_file!`'s pin to `main`, leaving `ane_zh_file!` correctly pinned (the `relPath`-collision case) | 1 | **PINNED** — fails, naming all 37 `ANE_EN_FILES` entries; `ANE_ZH_FILES`'s 43 entries correctly report their still-pinned commit |
 | 7 | TS | `tests/unit/check-model-plan-sizes.test.ts` | `parseManifestUrls > no Hugging Face manifest URL resolves through a mutable ref` | Revert `drakulavich/vosk-tts-ru-0.9-multi`'s pin to `resolve//` (empty ref / deleted revision — the exact hole review round 2 found) | 1 | **PINNED** — fails, naming all 5 `VOSK_RU_FILES` entries; before the ref-parsing fix this mutation **survived** (`NOT PINNED`) |
 | 8 | TS | `tests/unit/check-model-plan-sizes.test.ts` | `parseManifestUrls > no Hugging Face manifest URL resolves through a mutable ref` | Revert `drakulavich/vosk-tts-ru-0.9-multi`'s pin to a non-`main`, non-hex ref (`v1.0-legacy`) | 1 | **PINNED** — fails, naming all 5 `VOSK_RU_FILES` entries |
 | 9 | TS | `tests/unit/check-model-plan-sizes.test.ts` | `parseManifestUrls > no Hugging Face manifest URL resolves through a mutable ref` | Delete the `/resolve/<ref>/` segment entirely from `drakulavich/vosk-tts-ru-0.9-multi`'s URL | 1 | **PINNED** — fails, naming all 5 `VOSK_RU_FILES` entries |
 
-Rows 1 and 5 are the ticket's actual regression, reproduced exactly. Rows 2–4 and 7–9
-prove both guards generalise past a `main`-only denylist: an empty ref, a plausible-looking
-but non-hex ref, and a URL with no `/resolve/` segment at all are all caught, not just the
-literal string `main`. Row 6 proves the `relPath`-collision fix does something — against
-the pre-fix, map-based approach this regression would have been invisible. Row 7 is the
-one review round 2 asked for by name; the pre-fix guard's `NOT PINNED` result for it was
-reproduced and is the reason rows 5–9 exist in their current (post-fix) form.
+Rows 1 and 5 are the ticket's actual regression, reproduced exactly — but only row 5 is a
+CI result; row 1 needed the wider, non-CI `system_kokoro` build to compile at all (review
+round 4), which is the whole reason this PR needed the TS guard in the first place. Rows
+2–4 and 7–9 prove both guards generalise past a `main`-only denylist: an empty ref, a
+plausible-looking but non-hex ref, and a URL with no `/resolve/` segment at all are all
+caught, not just the literal string `main`. Row 6 proves the `relPath`-collision fix does
+something — against the pre-fix, map-based approach this regression would have been
+invisible. Row 7 is the one review round 2 asked for by name; the pre-fix guard's
+`NOT PINNED` result for it was reproduced and is the reason rows 5–9 exist in their
+current (post-fix) form.
 
 **Known drift risk in this table:** the "Test" column repeats each guard's exact function
 or `test(...)` name in prose, and nothing re-checks that string against the source if
