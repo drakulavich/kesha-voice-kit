@@ -138,11 +138,13 @@ describe("parseManifestUrls", () => {
   // just one per colliding `relPath` (the test above). `manifest_tests::
   // every_huggingface_url_pins_an_immutable_revision` in models.rs covers the same rule with
   // real Rust types where it does run; this is the one that runs everywhere.
+  // Asserted positively — a denylist of `main` alone let `resolve//` through unseen.
   test("no huggingface.co url in the real manifest resolves through a mutable ref", () => {
     const mutableRefs: string[] = [];
     for (const { relPath, url } of realManifestEntries()) {
-      const ref = /^https:\/\/huggingface\.co\/[^/]+\/[^/]+\/resolve\/([^/]+)\//.exec(url)?.[1];
-      if (ref === undefined) continue;
+      if (!url.startsWith("https://huggingface.co/")) continue;
+      const afterResolve = url.split("/resolve/")[1];
+      const ref = afterResolve?.split("/")[0] ?? "";
       if (!/^[0-9a-f]{40}$/.test(ref)) mutableRefs.push(`${relPath}: ${url}`);
     }
     expect(mutableRefs).toEqual([]);
