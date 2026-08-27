@@ -140,15 +140,32 @@ function expandModelFileMacros(source: string): string {
   return stripped;
 }
 
-/** `rel_path` → `url` for every `ModelFile` pinned in models.rs, `cfg` gating included. */
-export function parseManifestUrls(source: string): Map<string, string> {
-  const urls = new Map<string, string>();
+export interface ManifestEntry {
+  relPath: string;
+  url: string;
+}
+
+/**
+ * Every `ModelFile` pinned in models.rs, `cfg` gating included, in source order. English and
+ * Mandarin ANE bundles stage identical basenames into different directories, so `relPath` is
+ * not a unique key across the whole file — callers that need every entry (not just one per
+ * `relPath`) must use this rather than `parseManifestUrls`'s deduping map (#1096 review).
+ */
+export function parseManifestEntries(source: string): ManifestEntry[] {
+  const entries: ManifestEntry[] = [];
   const modelFile = /ModelFile\s*\{\s*rel_path:\s*([\s\S]*?),\s*url:\s*([\s\S]*?),\s*sha256:/g;
   for (const match of expandModelFileMacros(source).matchAll(modelFile)) {
     const relPath = literalValue(match[1] ?? "");
     const url = literalValue(match[2] ?? "");
-    if (relPath && url) urls.set(relPath, url);
+    if (relPath && url) entries.push({ relPath, url });
   }
+  return entries;
+}
+
+/** `rel_path` → `url` for every `ModelFile` pinned in models.rs, `cfg` gating included. */
+export function parseManifestUrls(source: string): Map<string, string> {
+  const urls = new Map<string, string>();
+  for (const { relPath, url } of parseManifestEntries(source)) urls.set(relPath, url);
   return urls;
 }
 
