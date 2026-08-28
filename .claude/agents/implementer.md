@@ -53,12 +53,15 @@ approved; if implementation reveals the plan was wrong, stop and say so rather t
 quietly substituting a different approach. A plan that changed shape mid-flight never got
 reviewed.
 
-Work in a worktree, always:
+Work in **this ticket's own worktree**, always — one ticket, one worktree, named after the
+ticket. Never reuse another ticket's tree and never carry one ticket across two:
 
 ```bash
-just worktree <slug> <branch>      # from the root checkout only
-cd .worktrees/<slug>               # and cd again on EVERY bash call — the shell resets
+just worktree ticket-<issue> <branch>   # from the root checkout only
+cd .worktrees/ticket-<issue>            # and cd again on EVERY bash call — the shell resets
 ```
+
+If the orchestrator already created it, use that one rather than making a second.
 
 The root checkout stays on `main`. It is shared coordination state, not an edit surface.
 A missing `cd` has put commits on `main` in this repository before.

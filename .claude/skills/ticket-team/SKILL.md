@@ -12,6 +12,31 @@ work: `implementer` builds, `teamlead` approves plans.
 The queue lives in this session. The maintainer fills it; you take one ticket at a time and
 run it to a pull request that is out of draft and assigned to them.
 
+## 0. One ticket, one worktree
+
+Every ticket gets its own worktree, created from the root checkout before the implementer
+starts and removed after the hand-off:
+
+```bash
+just worktree ticket-<issue> fix/issue-<issue>    # root checkout only; branches off fresh origin/main
+…
+just worktree-rm ticket-<issue>                   # from the root checkout, never from inside it
+```
+
+Name it after the ticket. Two tickets never share a worktree and one ticket never spans
+two: the whole point is that a ticket's state — its branch, its uncommitted edits, its
+failed gate — is legible on its own and disappears with it. A shared worktree turns a
+review comment on one ticket into a diff that also carries another's half-finished work.
+
+The root checkout stays on `main` throughout. It is shared coordination state, not an
+edit surface, and `just worktree` refuses to run from anywhere else so cleanup cannot
+delete the tree it is standing in. The shell's working directory resets between calls, so
+every command inside the worktree `cd`s to it first — a missing `cd` has put commits on
+`main` in this repository before.
+
+Remove the worktree once the pull request is out of draft. Leaving it behind is how a
+later ticket inherits stale state and a branch nobody is on.
+
 ## 1. Size the ticket
 
 Read it first. Sizing decides how much machinery the ticket gets, and over-serving a
