@@ -17,9 +17,10 @@ run it to a pull request that is out of draft and assigned to them.
 `/omc-plan` and `/execute` are the OMC skills this protocol invokes, and a skill present on
 disk is not the same as one registered — check your own listing before you start. Step 6's
 simplification pass is **not** an OMC skill: `~/.claude/skills/` has no `simplify`. Use the
-`code-simplifier` agent, which exists as an agent regardless of what resolves as a command. Check your own skill listing before you
-start; if they are absent, `omc setup` installs them and `omc doctor conflicts` reports the
-state. This is not hypothetical — the whole protocol was written against them once while the
+`code-simplifier` agent, which exists as an agent regardless of what resolves as a command.
+
+If the OMC skills are absent from your listing, `omc setup` installs them and
+`omc doctor conflicts` reports the state. This is not hypothetical — the whole protocol was written against them once while the
 plugin was unregistered, so every phase named an invocation that could not resolve.
 
 `omc ask` is a **binary**, not a skill, and works regardless.
