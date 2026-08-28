@@ -7,8 +7,9 @@ const SCRIPT = ".github/scripts/release-install-smoke.sh";
 function metadataFilter(): string {
   const source = readFileSync(SCRIPT, "utf8");
   const match = source.match(/jq -e --arg version "\$VERSION" '\n([\s\S]*?)\n\s*' "\$metadata"/);
-  if (!match) throw new Error(`${SCRIPT}: could not find the npm metadata jq filter`);
-  return match[1];
+  const filter = match?.[1];
+  if (!filter) throw new Error(`${SCRIPT}: could not find the npm metadata jq filter`);
+  return filter;
 }
 
 async function runFilter(document: unknown): Promise<boolean> {
