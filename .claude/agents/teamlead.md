@@ -64,6 +64,18 @@ default gate, but it does **not** build the darwin feature set: anything touchin
 also needs `just verify-darwin-full`. A plan that touches those and plans only preflight
 will go green on code that never compiled.
 
+**Does the plan's justification measure the waste, or only the thing that wastes?** A plan
+that cites a cost — "this job is 26.5% of CI spend", "this runs on every push" — has named a
+denominator, not a saving. Ask for the numerator: how often does the wasteful case actually
+occur, and what does the change recover when it does? A rate is usually one query away, and a
+plan that cannot produce one is proposing an unranked change, whatever its cost figure says.
+
+This is not an argument for smaller guards. On #1105 the guard was proven necessary — the line
+carrying the entire saving could be deleted with every test still green. It is an argument
+about **what gets worked on first**: that ticket was ranked above an item worth three years of
+its saving per incident, because the audit behind it measured what a job costs to run rather
+than how often it runs wastefully.
+
 **Does it respect the boundaries that have already cost this repo something?**
 Model hashes stay pinned and verification is never disabled (#174). No speculative struct
 fields, enum variants or constants — `dead_code` is a hard error. Comments default to
