@@ -229,6 +229,19 @@ Report in one message: the ticket, what shipped, which findings you applied and 
 rejected with the reason, the gate output, and anything left unverified. State plainly what did
 **not** get done.
 
+**Take the durable copy at approval time.** The moment the team lead approves, copy the plan
+handoff and — once step 4 runs — the codex artifact out of the worktree into
+`.omc/retro/<issue>/` in the **root checkout**. Both live under `.omc/`, which is gitignored,
+so the branch carries neither, and §7 removes the worktree at merge. Without the copy the
+retro is reading files that a merge can delete underneath it — which has already happened
+here: on #1110 the worktree was removed mid-retro and the artifacts survived only because it
+had read them minutes earlier.
+
+The copy also closes something nothing else re-checks: an approved handoff can be edited
+after its digest was taken, and on #1110 it was — the file's mtime was later than the review
+that approved it, and it had been updated to describe work done after the fact. A copy taken
+at approval is the version that was actually approved.
+
 ## 8. Retro — the ticket is not done until the ledger is
 
 Spawn `retro` once the hand-off is made. It reads the ticket's artifacts — the plan, every

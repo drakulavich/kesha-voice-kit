@@ -98,6 +98,13 @@ denominator, not a saving. Ask for the numerator: how often does the wasteful ca
 occur, and what does the change recover when it does? A rate is usually one query away, and a
 plan that cannot produce one is proposing an unranked change, whatever its cost figure says.
 
+This fires on an **incident-shaped** justification too, not only a cost figure. "This failure
+mode cost us 360 minutes once" is an anecdote until you say over what window, how many times,
+and — the question that actually bites — **whether the observed instances fall inside the class
+the change covers**. On #1110 both known instances were the same apt step on the same Ubuntu
+file, already covered by the narrow guard the change replaced, while the 24 jobs it newly bound
+had none. The plan led with the incident, so the numerator question never engaged.
+
 This is not an argument for smaller guards. On #1105 the guard was proven necessary — the line
 carrying the entire saving could be deleted with every test still green. It is an argument
 about **what gets worked on first**: that ticket was ranked above an item worth three years of

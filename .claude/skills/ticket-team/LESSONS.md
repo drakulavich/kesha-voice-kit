@@ -26,14 +26,14 @@ when the answer is no.
 | The OMC skills must be verified registered before the loop starts | #1107 | 1 | The whole protocol named `/omc-plan`, `/execute`, `/omc-review` while the plugin was unregistered; every phase called something that could not resolve |
 | Agents deliver by `SendMessage`; idle is availability, not output | #1107 | 1 | Three agents in a row completed their work and reported nothing until asked by name |
 | The verdict is a closed shape and the orchestrator fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
-| A closing keyword is checked for the right word, not for its presence — `Refs #N` when the ticket outlives the change | #1105 | 1 | `Closes #1105` shipped item one of a four-item audit and closed the other three on merge, including the one measured as the most valuable |
-| Write the smallest thing that settles the ticket — and treat writing nothing as a real answer | #1105 | 1 | 4 functional lines out of 302; 9 of 9 defects lived in the apparatus around them, which was rewritten four times while the four lines never moved |
+| A closing keyword is checked for the right word, not for its presence — `Refs #N` when the ticket outlives the change | #1105 | 2 | `Closes #1105` shipped item one of a four-item audit and closed the other three on merge, including the one measured as the most valuable |
+| Write the smallest thing that settles the ticket — and treat writing nothing as a real answer | #1105 | 2 | 4 functional lines out of 302; 9 of 9 defects lived in the apparatus around them, which was rewritten four times while the four lines never moved |
 | Guard the instance, not the class, until a second instance exists — and treat a guard that changes more often than the thing it guards as the liability signal it is | #1105 | 1 | A rule generalised to unwritten workflows produced all nine defects across three rounds; the guarded file changed in 1 of 5 commits, the guard in 4 of 5 |
 | A plan justified by a cost figure must measure the **frequency of the waste**, not the cost of the thing that wastes | #1105 | 1 | The ticket was ranked first on `Rust Tests` being 26.5% of CI cost; the waste it removes is 2.9% of that, while an unranked item in the same audit is worth three years of it per incident |
 | The claim handed to a reviewer is quoted from the artifact, never from an agent's summary of it | #1110 | 1 | The implementer's report said "~3-4x headroom"; the PR body said a 5-minute floor plus two scoped exceptions. The orchestrator relayed the summary, and codex refuted a claim that had never shipped |
 | After editing a rule, grep the other files for the fact it changed — a fix that states a new rule without retiring the passage that stated the old one | #1107 | 1 | Three findings in one review round, all introduced by earlier fixes: `$WT` survived where the rule had moved to absolute paths, `/simplify` was excused by the precondition meant to catch it, and one file asserted both that the implementer is in the worktree and that it is not, 51 lines apart |
 | A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 1 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
-| A plan's mutation list must cover every value AND every input shape the claim rests on, derived from what the end state must not contain | #1105 | 1 | Four findings: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; and two of three valid `on:` spellings bypassed the rule entirely |
+| A plan's mutation list must cover every value AND every input shape the claim rests on, derived from what the end state must not contain | #1105 | 2 | Four findings: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; and two of three valid `on:` spellings bypassed the rule entirely |
 | The approval carries a digest of the plan it approved | #1107 | 1 | Round 2 on #1105: two readers reported different sizes for the same file — 11250 characters against 11344 bytes — and the digest settled that the content was identical. A size is not an identity |
 
 ---
@@ -201,6 +201,80 @@ What the ticket does buy that the money argument misses: a superseded run holds 
 runners and delays the current one. In a free public repository latency is the real currency.
 But the ticket was justified on cost, and on cost the justification does not survive contact
 with the frequency.
+
+## #1110 — `timeout-minutes` for the 26 unbounded jobs
+
+Eight defects, four escaped a stage, three produced a change. The plan round paid for itself
+twice, and #1109's spelling-chase did not recur.
+
+**Plan r1's guard rejected an already-correct job**, and **its first mutation was a no-op.**
+Caught at: teamlead, round 1, both. Earliest: the same. Successes. The team lead settled the
+first by *executing* the proposed guard against the real tree — 26 errors, then 0 after
+injecting the values — where #1109's analogous claim stayed an inference. The second produced
+a live bug nobody was hunting: a bare `timeout-minutes:` parses to `null`, `Number(null)` is
+`0`, and such a job would have read as "0 minutes, valid" and passed the guard outright.
+
+**The `uses:` skip branch was unpinned and redundant.** Caught at: codex. Earliest: the same —
+§4's full-depth mutation sweep is assigned there. Success. Its second-order note is why it was
+removed rather than pinned: the obvious fix would have tested invalid GitHub Actions syntax.
+
+**A claim relayed from a chat summary rather than the artifact.** Caught at: codex. Earliest:
+the orchestrator, one `gh pr view --json body` before writing the prompt. Change applied.
+Stated honestly: the round was **not** wasted — the same review produced the real `uses:`
+finding and sharpened the disclosure from "the guard does not validate the values" to "no
+assertion verifies headroom **at all**". Where the over-generalised phrasing originated cannot
+be established, because the message it came from is not an artifact anyone can read; the fix
+belongs to the orchestrator regardless, since a wrong fact aimed at a **reviewer** costs more
+than one aimed at an implementer — the implementer reads the files, the reviewer treats the
+claim as the artifact.
+
+**Three wrong OS labels in briefs.** Caught at: plan, by the implementer reading the files.
+Earliest: the same. Success, **no rule** — the correction loop is the answer and it cost
+nothing measurable.
+
+**Two guards discriminating by the same issue number.** Both file-gate probes filter on
+`#1105`, so the new guard's error broke the older probe and forced an out-of-plan edit. Caught
+at: implementation, by a red test, and disclosed. Earliest: plan. `no change proposed` — but
+items 3 and 4 of the audit are open and the next guard pays the same edit.
+
+**The protocol deletes the artifacts the protocol requires the retro to read.** Caught at:
+retro, by luck — the worktree was removed mid-retro, taking the plan and the codex artifact
+with it, and `.omc/` is gitignored so the branch carries neither. Earliest: when §8 was
+written. §7 ends the ticket at merge with `just worktree-rm`; §8 spawns the retro afterwards
+and points it at the worktree. Same class as #1107's top defect: a rule added without checking
+the file it contradicts. Change applied — take the durable copy at approval time, which also
+closes an approved handoff being edited after its digest was taken, as this one was.
+
+**The ticket shipped without a rate, and the rule against that did not fire.** Caught at:
+retro. Earliest: teamlead round 1. The rule asks for the numerator behind a **cost figure**;
+this plan led with a measured incident and a duration table, so the question never engaged.
+Change applied — it now fires on incident-shaped justifications too.
+
+### Benefit, measured in retro rather than at ranking
+
+999 completed runs, 2026-08-13 → 2026-08-28. Five exceeded 60 minutes of wall clock; four were
+queue delay with every job under 4 minutes, which `timeout-minutes` does not bound at all.
+
+**One real stall:** `rust-push-gate` on `ubuntu-latest`, unbounded at its head, held
+`Install system audio deps (Opus)` for **360.3 minutes** on 2026-08-18 before GitHub's default
+killed it — $2.16 at Linux list, $0.00 billed here.
+
+Both observed instances of this failure mode — that one and #1090's `lint-ubuntu` — are the
+same apt step, the same file, on `ubuntu-latest`, on jobs the **narrow** `requireAptTimeouts`
+already covered and #1095 had bounded in the commit this branch forked from. **The 24 jobs this
+ticket newly bounds have zero observed instances, and the macOS case that ranked the item
+first has none either.**
+
+Real failure mode, proven once, bought for ~130 lines of guard and tests against 26 lines of
+configuration. Defensible as insurance. The ranking argument was not measured, and three `gh`
+queries at plan time would have said so — the second time in two tickets that this audit ranked
+on a figure that turned out not to describe the waste.
+
+### Outcome
+
+Merged as `394e013`. CI green on the full head `31dc9d4`; Greptile `SUCCESS` on the same head
+with no inline findings, completing two seconds before the merge. `Refs #1105` was the right
+keyword — the issue is still open with items 3 and 4.
 
 ## #1106 — the npm metadata gate
 
