@@ -26,8 +26,7 @@ name: ❄️ Nix Build
 # still ships the CoreML backend.
 
 on:
-  # Only the paths that can actually break the flake — ~7 commits in this
-  # repo's history — rather than every `rust/**` push as before.
+  # `rust/**` and `package.json` feed the derivation too; the weekly run covers them, because an advisory two-OS build on every Rust PR is the cost #1105 removed.
   pull_request:
     paths:
       - 'flake.nix'
