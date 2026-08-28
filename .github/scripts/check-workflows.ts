@@ -672,12 +672,33 @@ export function requireConcurrencyOnPullRequestWorkflows(path: string, document:
   }
 
   const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown })?.group;
-  if (typeof group !== "string" || !group.includes("github.ref")) {
+  // Inside `${{ … }}`, not merely present: a literal `github.ref` is one repository-wide
+  // group, which makes unrelated PRs evict each other rather than none at all.
+  if (typeof group !== "string" || !/\$\{\{[^}]*github\.ref[^}]*\}\}/.test(group)) {
     return [
-      `${path}: \`concurrency.group\` must interpolate \`github.ref\`; a ref-less group queues every PR into one lane and GitHub evicts the pending run, so the required check never lands (#597)`,
+      `${path}: \`concurrency.group\` must interpolate \`github.ref\` inside a \`\${{ }}\` expression; any group shared across pull requests queues them into one lane and GitHub evicts the pending run, so the required check never lands (#597)`,
     ];
   }
   return [];
+}
+
+/**
+ * Fails when `rust-test.yml` stops cancelling superseded runs.
+ *
+ * Scoped to this one workflow rather than every pull-request workflow: `security.yml` sets
+ * `cancel-in-progress: false` deliberately, and auditing that choice is outside #1105. Here
+ * the line is the entire saving — two macOS jobs at 10.3x Linux per minute.
+ */
+export function requireRustTestCancelsSupersededRuns(path: string, document: unknown): string[] {
+  if (!path.endsWith("rust-test.yml")) return [];
+
+  const concurrency = (document as { concurrency?: unknown } | undefined)?.concurrency;
+  const cancel = (concurrency as { "cancel-in-progress"?: unknown } | undefined)?.["cancel-in-progress"];
+  if (cancel === true) return [];
+
+  return [
+    `${path}: \`concurrency.cancel-in-progress\` must be \`true\`; without it superseded pushes run both macOS jobs to completion, which is the entire cost saving (#1105)`,
+  ];
 }
 
 export function checkFile(
@@ -700,6 +721,7 @@ export function checkFile(
       ...requirePipefailShell(path, document),
       ...requireReusableCallPermissions(path, document),
       ...requireConcurrencyOnPullRequestWorkflows(path, document),
+      ...requireRustTestCancelsSupersededRuns(path, document),
       ...requireAptTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),

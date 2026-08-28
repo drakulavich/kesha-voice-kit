@@ -9,6 +9,7 @@ import {
   requireAptTimeouts,
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
+  requireRustTestCancelsSupersededRuns,
   requirePipefailShell,
   requireReusableCallPermissions,
   requireRestoreOnlyCachesHaveAWriter,
@@ -728,6 +729,28 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
     expect(errors[0]).toContain("#597");
   });
 
+  // A bare literal is one repository-wide group, so unrelated PRs would evict each other —
+  // worse than no group at all, and `includes("github.ref")` alone accepts it.
+  test("fails a literal github.ref that is not an expression", () => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+      on: { pull_request: null },
+      concurrency: { group: "github.ref", "cancel-in-progress": true },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#597");
+  });
+
+  test("accepts github.ref composed with other expressions", () => {
+    for (const group of [GROUP, "${{ github.ref }}", "rust-${{ github.ref }}-${{ github.event_name }}"]) {
+      expect(
+        requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+          on: { pull_request: null },
+          concurrency: { group, "cancel-in-progress": true },
+        }),
+      ).toEqual([]);
+    }
+  });
+
   test("fails the string shorthand when it omits the ref", () => {
     expect(
       requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request: null }, concurrency: "one-lane" }),
@@ -766,6 +789,45 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
   test("the file gate actually runs it", () => {
     const yaml = "on:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+  });
+});
+
+describe("requireRustTestCancelsSupersededRuns", () => {
+  const RUST_TEST = ".github/workflows/rust-test.yml";
+  const ref = { group: "${{ github.workflow }}-${{ github.ref }}" };
+
+  test("passes on the real rust-test.yml", () => {
+    expect(requireRustTestCancelsSupersededRuns(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
+  });
+
+  // security.yml sets `false` deliberately; auditing that is outside #1105, so this rule
+  // must not reach it.
+  test("ignores every other workflow", () => {
+    const SECURITY = ".github/workflows/security.yml";
+    expect(requireRustTestCancelsSupersededRuns(SECURITY, parseRepoYaml(SECURITY))).toEqual([]);
+  });
+
+  test("fails when cancel-in-progress is false", () => {
+    const errors = requireRustTestCancelsSupersededRuns(RUST_TEST, {
+      concurrency: { ...ref, "cancel-in-progress": false },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1105");
+  });
+
+  test("fails when cancel-in-progress is dropped entirely", () => {
+    expect(requireRustTestCancelsSupersededRuns(RUST_TEST, { concurrency: ref })).toHaveLength(1);
+  });
+
+  test("fails when the whole concurrency block is gone", () => {
+    expect(requireRustTestCancelsSupersededRuns(RUST_TEST, { on: { pull_request: null } })).toHaveLength(1);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on:\n  pull_request:\nconcurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
