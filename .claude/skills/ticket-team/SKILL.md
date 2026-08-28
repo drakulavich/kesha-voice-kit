@@ -460,6 +460,21 @@ So: undraft, assign, report to the maintainer. The review arrives afterwards, an
 still a merge gate that does not lapse — P1/P2 findings are blockers whenever they land, and
 they get the same triage as codex's. Check for it when it arrives rather than blocking on it.
 
+**Greptile edits one comment in place; it never posts a second.** So a comment count that has
+not changed is not evidence it has not re-reviewed, and `created_at` says nothing about which
+head a comment answers on. The pair that does is **`updated_at` plus the SHA in its own
+footer**. On #1105 item 3 two agents disagreed about whether it had reviewed the new head —
+one read `created_at` (18:33:25Z, two heads back) and one read the footer (`d07e3de`, current);
+`updated_at` was 18:51:58Z and settled it. After a push, wait for `updated_at` to move, not for
+a count to increment, because it will not increment.
+
+Same shape one level down, already paid for: GitHub re-anchors an inline finding's `commit_id`
+to the head, so a stale finding looks current. The discriminator there is `original_commit_id`
+plus `updated_at`, never `commit_id`.
+
+And it submits **no review state** — `reviews` stays `[]`. "Zero findings" means
+`pulls/<N>/comments` returned 0, which is the gate; its Confidence Score is not, and never is.
+
 Keep the worktree until the pull request is **merged**, not merely until Greptile has
 spoken. A P1 arriving after cleanup needs a tree that no longer exists — and so does the
 maintainer's own review, which comes after the hand-off by definition. Optimising the
