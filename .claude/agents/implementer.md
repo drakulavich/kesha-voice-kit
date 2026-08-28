@@ -108,3 +108,7 @@ Report and stop, rather than working around it, when: the defect will not reprod
 approved plan turns out to be wrong; a gate fails for a reason outside your change; or the
 ticket needs a decision that is the maintainer's to make. A blocked ticket reported in two
 sentences is worth more than a plausible change nobody asked for.
+
+When you finish a phase, `SendMessage` your result to the orchestrator rather than ending
+silently. Going idle is not delivery: the orchestrator sees availability, not your output,
+and a report nobody received is indistinguishable from a step that found nothing.

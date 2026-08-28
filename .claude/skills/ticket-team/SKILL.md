@@ -42,6 +42,18 @@ every command inside the worktree `cd`s to it first — a missing `cd` has put c
 Remove the worktree once the pull request is out of draft. Leaving it behind is how a
 later ticket inherits stale state and a branch nobody is on.
 
+## 0b. Every agent reports by sending, not by finishing
+
+Tell each agent, in its prompt, to `SendMessage` its result to you when a phase completes.
+Do not rely on a final report arriving because the agent stopped: three agents in a row went
+idle here having done the work, and delivered nothing until asked for it by name. An idle
+signal means "available", not "here is my output" — and an orchestrator that reads idle as
+completion will either wait forever or, worse, proceed as though the step produced nothing
+to object to.
+
+If an agent goes idle without reporting, ask it for the output explicitly and name the shape
+you want back. That costs one message; assuming silence meant assent costs the round.
+
 ## 1. Size the ticket
 
 Read it first. Sizing decides how much machinery the ticket gets, and over-serving a

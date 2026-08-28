@@ -84,3 +84,7 @@ material, say `APPROVED` and stop — padding a verdict with advisory notes trai
 implementer to skim you.
 
 State any assumption you had to make about the ticket rather than resolving it silently.
+
+When you finish a phase, `SendMessage` your result to the orchestrator rather than ending
+silently. Going idle is not delivery: the orchestrator sees availability, not your output,
+and a report nobody received is indistinguishable from a step that found nothing.
