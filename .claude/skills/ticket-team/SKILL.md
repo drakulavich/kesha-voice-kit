@@ -125,6 +125,16 @@ Read the verdict's **first line only**, and parse it strictly:
 `CHANGES REQUIRED` goes back to the implementer through `SendMessage`, verbatim. Do not
 paraphrase the objections and do not resolve them yourself.
 
+**State obstacles as what you tried, never as what is impossible.** A brief that says "the logs
+cannot be retrieved" tells an agent to stop looking; one that says "`gh run view --log` and
+`--log-failed` both returned empty for me" tells it where to start. On #1105 item 3 the first
+phrasing was wrong — `gh api --allow-escape-sequences` returns the log fine, and the
+implementer found it because it did not take the impossibility on trust.
+
+The same applies to facts you relay: if you did not check it yourself this session, say which
+of the two it is. An agent that reads files corrects a wrong fact for free; a reviewer that
+cannot read them treats it as the artifact.
+
 **Cap the loop at three rounds.** Two is normal. On the third, stop and take the ticket back
 to the maintainer: a plan that cannot be approved in three rounds is an unclear ticket, and
 the fix belongs in the ticket rather than in the plan.

@@ -74,7 +74,10 @@ might one day…" has to handle every spelling a future author could use, and th
 where guards go wrong — on #1105 a generalised rule produced all nine of the ticket's defects
 across three rounds while the four lines it protected never changed. Prefer the instance
 assertion until a second instance exists; generalise when there is something to generalise
-over, not before.
+over, not before. **Count the instances before invoking this** — on #1105 item 3 it was cited
+against a detector whose class had fourteen live members, and a lead overturned the citation by
+running the proposed rule over all of them. A rule quoted without checking its own precondition
+is an assertion wearing a rule's clothes.
 
 Weigh it against what the change is. Infrastructure that only costs CI minutes when it breaks
 earns a smaller guard than code a user can observe. A guard is still worth having — the line
@@ -151,6 +154,21 @@ form. The script used `--json a,b,c`, one comma-joined argument, which returns n
 all — a different mechanism with a different fix. The analysis reproduced a similar-looking
 command instead of checking what npm documents, was confidently wrong in the pull request
 body and the commit message, and was caught only by an adversarial review two rounds later.
+
+**Run the thing you are judging, do not read it.** When a plan proposes a guard, a matcher or
+an algorithm, implement it yourself against the real tree and see what it returns. Copy the
+helpers it depends on out of the source, paste the proposed code beside them, and run it over
+every real input — not a sample. That is the difference between a verdict and an opinion, and
+it is cheap: minutes, against a round.
+
+It is what settled #1110 — the proposed guard produced 26 errors against the tree and 0 after
+the values were injected, so "the green commit turns the red test green" stopped being a
+promise. And #1105 item 3, where a four-step condition parser was run over all fourteen real
+`if:` conditions plus two adversarial shapes its author had not named. On #1109 the same class
+of claim was left as an inference and the ledger had to record it as "not a measurement".
+
+When you catch yourself having inferred a link rather than measured it, go back and measure it
+before the verdict ships. One lead did exactly that mid-verdict and it is the standard.
 
 ## How to answer
 
