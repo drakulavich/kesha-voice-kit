@@ -240,12 +240,29 @@ settle it by reading" — and neither announces it:
   `tests/helpers/leak-guard.ts` into every suite — so **every** `bun test` reports one spurious
   unnamed failure at `tests/helpers/process.ts:62`. A reviewer either spends a round chasing it
   or reads `144 pass / 1 fail` as a red suite.
+
+  **Mechanism, because a teammate read it the other way and was wrong:** `Bun.spawnSync`
+  *throws* when the spawn itself fails, so `process.ts:63`'s `if (!res.success) return []` is
+  unreachable on this path and the guard fails **loudly**, not open. Demonstrated rather than
+  argued — `Bun.spawnSync(["/nonexistent"])` throws `ENOENT … posix_spawn`, the same class as
+  EPERM. The failure is unnamed precisely because it is a thrown exception from the `afterEach`
+  hook rather than `report()`'s named message. The `!res.success` branch is real and covers the
+  other case: `ps` running and exiting nonzero, which does fail open.
 - Both: `ccc` cannot start its daemon (`PermissionError` on `~/.cocoindex_code/daemon.log`), and
   its index lives in the root checkout rather than the worktree. The semantic-search path we
   point reviewers at is simply absent.
 
-How many past mutation tables were executed rather than described is **not known**, and no
-figure is recorded here because inventing one would be worse than the admission. This is the
+**One population is countable, and refusing to count it was the wrong kind of caution.**
+`git ls-tree -r --name-only origin/main -- docs/mutation-evidence/` returns exactly one file,
+`issue-1093.md`. So *committed* mutation tables before #1111 number **1**, and its rows can be
+replayed with `just mutate` in a write-capable environment — a one-command check, not an open
+question. Scope it honestly: this bounds committed tables, not mutation claims made in PR
+bodies and comments, which is the larger population and remains unknown. Declining to give any
+number when a bounded one was one command away is its own failure, and the team lead supplied
+it after the orchestrator declared it unknowable.
+
+How many *uncommitted* mutation claims were executed rather than described is **not known**, and
+no figure is recorded here because inventing one would be worse than the admission. This is the
 loop failing its own standard: it has spent the day asking every agent to name the measurement
 behind a claim, while its primary instrument was quietly unable to take one.
 
