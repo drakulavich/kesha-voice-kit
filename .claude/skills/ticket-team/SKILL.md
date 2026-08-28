@@ -394,6 +394,23 @@ Not every finding gets applied. For each, decide and record:
 Applied findings go back as one batch. If a finding contradicts the approved plan, that is a
 plan problem — back to step 2.
 
+### Propose a remedy this repository can actually accept
+
+**A finding whose remedy needs two facts in one comment is unsatisfiable here.** `check-new-comments.ts`
+rejects any *added* multi-line `#` or `//` run, and replacing a two-line comment counts as adding
+one — so "state X and Y in the comment" cannot be applied as written. Name the one fact that
+matters and say explicitly that the rest goes in the PR body.
+
+*Incident:* on #1105 item 3 the triage asked for a comment carrying the trade, the uncovered
+class and a measurement. The implementer could land one line, kept the correction, and dropped
+the verified `~7` count. Right priority — but the choice was forced by the orchestrator writing
+a remedy the repository rejects, and it was the third time that hook shaped this diff.
+
+The general form, which is the one worth carrying: **a remedy that cannot be executed as
+specified is discovered only by the person executing it.** The same shape as a `just mutate`
+find-string that does not occur. Whoever writes the remedy owes it a moment's thought about
+whether the gates will take it, because the cost of not doing that lands on someone else.
+
 ## 6. Simplify, if it earns it
 
 Spawn `code-simplifier` against the worktree by its full path, and only when the diff got there by accretion. Skip it on a small
