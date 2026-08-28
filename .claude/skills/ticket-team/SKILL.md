@@ -220,6 +220,17 @@ the fix belongs in the ticket rather than in the plan.
 
 You may overrule the team lead. If you do, say so in the PR body with the reason.
 
+**When two instructions conflict, the receiver names the conflict — it does not pick.** The
+orchestrator owns sequencing and scope; the team lead owns whether a plan may be built. Neither
+owns the other's, and an agent handed contradictory orders must say so to both rather than
+resolve it silently by choosing one. *Incident:* on #1105 item 3 the lead told the implementer
+to undraft, the orchestrator told it to hold until triage, and the PR was undrafted. Which
+message arrived first cannot be established — the only record is chat — so this is recorded as
+a missing precedence rule rather than as anyone's error, which is what the evidence supports.
+
+Undrafting is not reversible in the way it looks: it triggers Greptile and assigns a maintainer
+who may merge. Treat it as the hand-off it is.
+
 ## 3. Implement
 
 `SendMessage` the approval to the implementer. It runs `/execute` against the **absolute**
