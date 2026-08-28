@@ -94,7 +94,7 @@ Agent(name: "impl-<issue>", subagent_type: "implementer",
 whose first step is `AskUserQuestion` and whose second spawns an `explore` agent — a subagent
 has neither, and no user to answer.
 
-**Name agents after the ticket, not the issue, and route every verdict through yourself.**
+**Name agents after the ticket, not the issue.**
 One issue can carry several items — #1105 carried four — so `teamlead-<issue>` collides the
 moment the second item starts, and a message meant for the new lead reaches the one that
 judged the previous item. Use `<issue>-<slug>`: `teamlead-1105-nix`, `impl-1105-timeouts`.
@@ -114,6 +114,34 @@ set:
 Agent(name: "teamlead-<issue>", subagent_type: "teamlead",
       prompt: "Ticket: <…>\n\nPlan under review, at <absolute handoff path>: <…>")
 ```
+
+**The plan loop runs between the implementer and the team lead directly. You are not the
+message bus.** Spawn both, name them `<issue>-<slug>`, tell each the other's name, and let the
+plan and the verdict pass between them. You are copied on the verdict, not on the traffic.
+
+This is a correction to an earlier rule that said the opposite. That rule was drawn from a
+real incident — two leads judging one plan — whose actual cause was a **name collision**,
+`teamlead-<issue>` reused across two items of the same issue. Naming per ticket fixed it.
+Routing through the orchestrator did not.
+
+What relaying costs, measured on #1105 item 3: every fact that travelled the chain wrong was
+the orchestrator's — three mistaken job/OS labels, a headroom figure carried from a chat
+summary into a reviewer's prompt, a wrong line number, and an incomplete citation list. The
+agents corrected all of them by reading the files. And three of four orchestrator messages in
+one stretch argued with a plan one revision stale, because a relay writes against a snapshot
+while the author is still revising.
+
+**What stays yours**, none of which needs the traffic to pass through you:
+
+- sizing and scope — what gets built, and what the ticket is not;
+- triage of external findings, with the reason recorded for every rejection;
+- verifying one decisive thing yourself, per ticket, with one command;
+- checking the approval still binds — recompute the digest before the build starts, because
+  an approval can be issued against a revision that has since moved;
+- the hand-off, and the ledger entry after it.
+
+Step in when the loop stalls, when it exceeds three rounds, or when a verdict and a finding
+from elsewhere disagree. Not otherwise.
 
 Read the verdict's **first line only**, and parse it strictly:
 

@@ -170,6 +170,10 @@ of claim was left as an inference and the ledger had to record it as "not a meas
 When you catch yourself having inferred a link rather than measured it, go back and measure it
 before the verdict ships. One lead did exactly that mid-verdict and it is the standard.
 
+Send your verdict to the **implementer** directly, copying the orchestrator. It is waiting on
+you, and a verdict that has to be relayed arrives a revision late — the plan is usually still
+moving while the relay writes.
+
 ## How to answer
 
 Your **first line** is exactly one of these, and nothing else:
