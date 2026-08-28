@@ -11,34 +11,32 @@ has not been approved is not a licence to write code.
 
 ## Phase 1 — plan, then stop
 
-Produce the plan with OMC, not by hand — and if that skill is **not offered to you**,
-say so in one line at the top of your report and derive the plan from reading the files
-instead. Do not reconstruct one from memory, and do not let the orchestrator guess which
-of the two it is reading: which lane produced the plan changes how much it should be
-trusted.
-
-
+The orchestrator gives you a worktree path. Everything you write or report is an **absolute**
+path built from it — never a bare `.omc/plans/…`. You cannot move your own working directory,
+and a relative path resolves against whichever tree you happen to be in, which is how a plan
+written in one tree gets handed to a step running in another.
 
 ```
-/omc-plan <the ticket, verbatim, plus any coordinates you were given>
+/omc-plan --direct <the ticket, verbatim, plus any coordinates you were given>
 ```
 
-Run it **from inside this ticket's worktree**, which the orchestrator created before
-handing you the ticket. That matters: `/omc-plan` writes its handoff to `.omc/plans/`
-relative to the working directory, `.omc/` is gitignored so no branch carries it, and a
-plan written in the root checkout is simply not there when phase 2 runs `/execute` from
-the worktree. Plan where you will build.
+`--direct` is not optional. Without it `/omc-plan` picks Interview mode for anything broad,
+whose first step is `AskUserQuestion` and whose second spawns an `explore` agent — you have
+neither, and no user to answer.
 
-Its `handoff-policy` is `approval-required`, and in this team the approver is the team
-lead. Report the plan **and the absolute path to its handoff**, then stop — no source
-edits, no commits. If you were given no worktree, say so and stop rather than planning in
-the root checkout.
+If that skill is **not offered to you**, say so in one line at the top of your report and
+derive the plan from reading the files instead. Do not reconstruct one from memory, and do not
+leave the orchestrator to guess which of the two it is reading: which lane produced a plan
+changes how far it should be trusted.
 
-Whatever `omc-plan` gives you, it is yours to make concrete before you hand it over.
-A plan that says "update the validation" is not yet a plan; one that names the file, the function, the assertion that currently passes
-and would stop passing, and the command that proves it, is. If the ticket does not carry
-coordinates and you cannot find them in a few targeted searches, say so and ask — do not
-open a survey of the repository.
+Report the plan and the **absolute** path to its handoff, `SendMessage` it to the
+orchestrator, then stop — no source edits, no commits.
+
+Whatever the planning lane gives you, it is yours to make concrete before you hand it over.
+A plan that says "update the validation" is not yet a plan; one that names the file, the
+function, the assertion that currently passes and would stop passing, and the command that
+proves it, is. If the ticket does not carry coordinates and you cannot find them in a few
+targeted searches, say so and ask — do not open a survey of the repository.
 
 Structure it as:
 
@@ -66,18 +64,10 @@ approved; if implementation reveals the plan was wrong, stop and say so rather t
 quietly substituting a different approach. A plan that changed shape mid-flight never got
 reviewed.
 
-Work in **this ticket's own worktree**, always — one ticket, one worktree, named after the
-ticket. Never reuse another ticket's tree and never carry one ticket across two:
-
-```bash
-just worktree ticket-<issue> <branch>   # from the root checkout only
-cd .worktrees/ticket-<issue>            # and cd again on EVERY bash call — the shell resets
-```
-
-If the orchestrator already created it, use that one rather than making a second.
-
-The root checkout stays on `main`. It is shared coordination state, not an edit surface.
-A missing `cd` has put commits on `main` in this repository before.
+Build in the worktree the orchestrator gave you — it already exists, so do not run
+`just worktree` yourself: that recipe is root-checkout-only and exits 2 from inside a tree.
+Address files in it by absolute path. `cd` at the start of every Bash call as well; the shell
+resets between calls, and a missing `cd` has put commits on `main` in this repository before.
 
 Run the approved plan through the OMC executor rather than freehanding it — pass it the
 handoff path, not a retelling:

@@ -12,179 +12,188 @@ work: `implementer` builds, `teamlead` approves plans.
 The queue lives in this session. The maintainer fills it; you take one ticket at a time and
 run it to a pull request that is out of draft and assigned to them.
 
-## 0. One ticket, one worktree
+## Precondition: the OMC skills must resolve
 
-Every ticket gets its own worktree, created from the root checkout before the implementer
-starts and removed after the hand-off:
+`/omc-plan`, `/execute` and `/omc-review` are plugin skills, and a plugin that is present on
+disk is not the same as one that is registered. Check your own skill listing before you
+start; if they are absent, `omc setup` installs them and `omc doctor conflicts` reports the
+state. This is not hypothetical — the whole protocol was written against them once while the
+plugin was unregistered, so every phase named an invocation that could not resolve.
+
+`omc ask` is a **binary**, not a skill, and works regardless.
+
+## 0. One ticket, one worktree — and paths are absolute
+
+Every ticket gets its own worktree, created from the root checkout **before** the implementer
+starts, and removed after the hand-off:
 
 ```bash
 just worktree ticket-<issue> fix/issue-<issue>    # root checkout only; branches off fresh origin/main
+WT="$(pwd)/.worktrees/ticket-<issue>"             # capture it absolute — you will pass this around
 …
 just worktree-rm ticket-<issue>                   # from the root checkout, never from inside it
 ```
 
-Create it **before** the implementer starts, not between the plan and the build: the plan
-handoff lands in `.omc/plans/` relative to wherever `/omc-plan` ran, `.omc/` is
-gitignored, and a plan produced in the root checkout is not there when `/execute` runs
-from the worktree. Both phases happen in the same tree.
+Two tickets never share a worktree and one ticket never spans two: a ticket's state — its
+branch, its uncommitted edits, its failed gate — must be legible on its own and disappear
+with it.
 
-Name it after the ticket. Two tickets never share a worktree and one ticket never spans
-two: the whole point is that a ticket's state — its branch, its uncommitted edits, its
-failed gate — is legible on its own and disappears with it. A shared worktree turns a
-review comment on one ticket into a diff that also carries another's half-finished work.
+**Every path you hand an agent is absolute.** You cannot relocate a subagent's working
+directory: the `Agent` tool has no `cwd`, `EnterWorktree` is not in these agents' tool lists,
+and a `cd` inside one Bash call does not govern how a Skill or Write resolves a relative path.
+So the protocol does not depend on anyone's cwd — it passes `$WT` and absolute file paths, and
+every agent reads and writes by them. A relative `.omc/plans/…` resolves against whichever
+tree the agent happens to be in, which is how a plan written in one tree was handed to a step
+running in another.
 
-The root checkout stays on `main` throughout. It is shared coordination state, not an
-edit surface, and `just worktree` refuses to run from anywhere else so cleanup cannot
-delete the tree it is standing in. The shell's working directory resets between calls, so
-every command inside the worktree `cd`s to it first — a missing `cd` has put commits on
-`main` in this repository before.
-
-Remove the worktree once the pull request is out of draft. Leaving it behind is how a
-later ticket inherits stale state and a branch nobody is on.
+The root checkout stays on `main` throughout — shared coordination state, not an edit surface.
 
 ## 0b. Every agent reports by sending, not by finishing
 
-Tell each agent, in its prompt, to `SendMessage` its result to you when a phase completes.
-Do not rely on a final report arriving because the agent stopped: three agents in a row went
-idle here having done the work, and delivered nothing until asked for it by name. An idle
-signal means "available", not "here is my output" — and an orchestrator that reads idle as
-completion will either wait forever or, worse, proceed as though the step produced nothing
-to object to.
-
-If an agent goes idle without reporting, ask it for the output explicitly and name the shape
-you want back. That costs one message; assuming silence meant assent costs the round.
+Tell each agent, in its prompt, to `SendMessage` its result to you when a phase completes. Do
+not rely on a final report arriving because the agent stopped: three agents in a row went idle
+here having done the work, and delivered nothing until asked for it by name. An idle signal
+means "available", not "here is my output" — and an orchestrator that reads idle as completion
+will either wait forever or proceed as though the step found nothing to object to.
 
 ## 1. Size the ticket
 
-Read it first. Sizing decides how much machinery the ticket gets, and over-serving a
-one-line change wastes more than under-serving it.
+Read it first. Sizing decides how much machinery the ticket gets, and over-serving a one-line
+change wastes more than under-serving it.
 
-- **Trivial** — a constant, a version field, a typo, a data sync whose gate already names
-  the right value. No plan round, no codex review. Do it yourself, open the PR, done. The
-  team is overhead here.
-- **Standard** — one behaviour, coordinates already known or findable in a few searches.
-  The full loop below, `implementer` on its default tier.
-- **Complex** — crosses the CLI/engine boundary, touches release mechanics, changes
-  synthesized audio, or the ticket names an outcome rather than a change. Full loop,
-  `implementer` with `model: opus`, and expect the plan to come back from the team lead at
-  least once.
+- **Trivial** — a constant, a version field, a data sync whose gate already names the right
+  value. No plan round, no codex review: you do it yourself. **Still in a worktree** — `main`
+  is protected and the root checkout is not an edit surface, so there is nowhere else to open
+  a pull request from. Note that CLAUDE.md's test-first exemption covers only formatting- and
+  docs-only changes; a constant with a gate behind it is still a change that gate must catch.
+- **Standard** — one behaviour, coordinates known or findable in a few searches. Full loop.
+- **Complex** — crosses the CLI/engine boundary, touches release mechanics, changes synthesized
+  audio, or names an outcome rather than a change. Full loop, `implementer` with `model: opus`,
+  and expect the plan back from the team lead at least once.
 
-Say which you picked and why, in one line. If the ticket is really several tickets, split
-it and run them one at a time rather than handing the implementer a compound brief.
+Say which you picked and why, in one line. If the ticket is really several tickets, split it.
 
 ## 2. Plan, and get it approved
 
-Spawn the implementer **named**, so you can continue it rather than re-explaining:
+Spawn the implementer **named**, and give it the worktree it will work in:
 
 ```
 Agent(name: "impl-<issue>", subagent_type: "implementer",
-      prompt: "<the ticket, verbatim, plus any coordinates you already have>
-               Phase 1 only: run /omc-plan, report the plan and its .omc/plans/ path, and stop.")
+      prompt: "<the ticket, verbatim, plus any coordinates you have>
+               Your worktree: <absolute $WT>
+               Phase 1 only: run /omc-plan --direct, report the plan and the ABSOLUTE path to
+               its handoff, then SendMessage it to me and stop.")
 ```
 
-Hand the returned plan to the team lead together with the ticket — it judges the plan
-against what was asked, not against its own taste:
+`--direct` is load-bearing. `/omc-plan` otherwise picks Interview mode for anything broad,
+whose first step is `AskUserQuestion` and whose second spawns an `explore` agent — a subagent
+has neither, and no user to answer.
+
+Spawn the team lead **named too**, and reuse it for every round on this ticket. A fresh one
+each round cannot tell whether its own objections were addressed, and may raise a different
+set:
 
 ```
-Agent(subagent_type: "teamlead",
-      prompt: "Ticket: <…>\n\nPlan under review:\n<…>")
+Agent(name: "teamlead-<issue>", subagent_type: "teamlead",
+      prompt: "Ticket: <…>\n\nPlan under review, at <absolute handoff path>: <…>")
 ```
 
 Read the verdict's **first line only**, and parse it strictly:
 
 - `VERDICT: APPROVED <digest>` — and the digest must still match `shasum -a 256` of the
-  handoff. If it does not, the plan changed after approval: back to the team lead, not
-  forward to the build.
-- `VERDICT: CHANGES REQUIRED` — or **anything you cannot parse**. Fail closed. A verdict
-  that does not match the shape is not an approval, and treating an unparseable one as
-  "nothing to object to" is how unreviewed work ships.
+  handoff. If it does not, the plan changed after approval: back to the team lead.
+- `VERDICT: CHANGES REQUIRED` — or **anything you cannot parse**. Fail closed. A verdict that
+  does not match the shape is not an approval.
 
 `CHANGES REQUIRED` goes back to the implementer through `SendMessage`, verbatim. Do not
-paraphrase the objections and do not resolve them yourself — the implementer revises, the
-team lead re-approves. Two rounds is normal; a third means the ticket is unclear, so fix
-the ticket rather than the plan.
+paraphrase the objections and do not resolve them yourself.
 
-You may overrule the team lead. If you do, say so in the PR body with the reason — an
-overruled objection that goes unrecorded is indistinguishable from one nobody read.
+**Cap the loop at three rounds.** Two is normal. On the third, stop and take the ticket back
+to the maintainer: a plan that cannot be approved in three rounds is an unclear ticket, and
+the fix belongs in the ticket rather than in the plan.
+
+You may overrule the team lead. If you do, say so in the PR body with the reason.
 
 ## 3. Implement
 
-`SendMessage` the approval to the implementer. It runs `/execute` against the approved
-handoff in `.omc/plans/`, works in a worktree, lands the failing test first, runs the gate
-the plan named, and opens a **draft** PR.
+`SendMessage` the approval to the implementer. It runs `/execute` against the **absolute**
+handoff path, works in `$WT`, lands the failing test first, runs the gate the plan named, and
+opens a **draft** PR.
 
 ## 4. Review with codex
 
-Once the PR exists:
-
 ```bash
-omc ask codex "Review PR #<N> in this repository. <the claim the PR makes>.
-               Try to refute that claim: name the assertion that would fire if it were false."
+cd "$WT" && omc ask codex "Review PR #<N>. <the claim the PR makes>.
+  Try to refute that claim: name the assertion that would fire if it were false."
 ```
 
-Never assemble a raw `codex` invocation — `omc ask` owns flag selection, provider
-compatibility and artifact capture. The artifact lands in `.omc/artifacts/ask/`.
+The `cd` matters: from the root checkout the reviewer reads `main`, which does not contain the
+branch. The artifact lands in `$WT/.omc/artifacts/ask/`.
 
-Ask it to **refute a specific claim**, not to "review the PR" — a claim is a required
-argument, not a nicety. A reviewer pointed at a claim finds the confident wrong assertion;
-a reviewer pointed at a diff finds style. Measured elsewhere: three confident assertions
-fell to "is that argument correct?" in one day, none to "review this PR".
+Never assemble a raw `codex` invocation — `omc ask` owns flag selection and artifact capture.
+Note its one limitation against this repository's own rule: `omc ask` takes the prompt through
+argv, while the conveyor runbook requires prompts by file path because one large diff is
+enough to break argv. Keep the claim short for that reason, and if a prompt ever needs to
+carry a diff, that is the point to stop using this path.
 
-Append the same four sweep items every time, so coverage does not depend on what the
-prompt happened to mention:
+Ask it to **refute a specific claim**, not to "review the PR" — a claim is required, not a
+nicety. Measured elsewhere: three confident assertions fell to "is that argument correct?" in
+one day, none to "review this PR".
 
-1. **Guards at full depth** — for every guard the diff adds, run **both** mutations:
-   delete it, and separately neutralise it while leaving its shape in place. A guard whose
-   test only catches deletion is unpinned against the mutation that actually happens.
-2. **Reach** — for every test the diff adds or changes, name the CI lane that executes it,
-   or none. A test compiled everywhere and run nowhere has already shipped in this
-   repository (`model_gate.rs`, `model-suite-guards.test.ts`).
+Append the same four sweep items every time, so coverage does not depend on what the prompt
+happened to mention:
+
+1. **Guards at full depth** — for every guard the diff adds, run **both** mutations: delete
+   it, and separately neutralise it while leaving its shape in place. A guard whose test only
+   catches deletion is unpinned against the mutation that actually happens.
+2. **Reach** — for every test the diff adds or changes, name the CI lane that executes it, or
+   none. A test compiled everywhere and run nowhere has already shipped here.
 3. **Second-order** — for each finding, name what fixing it the obvious way would open.
 4. **Completeness** — end with what was **not** examined. If that list is empty, say so
    explicitly: an unstated gap reads identically to no gap.
 
-## 5. Triage the findings — this is your job, not the implementer's
+## 5. Triage the findings — your job, not the implementer's
 
-Not every finding gets applied. For each one decide, and record the decision:
+Not every finding gets applied. For each, decide and record:
 
-- **Apply** — it is a defect, a missing guard, or a contract the diff breaks.
-- **Reject** — it is style, speculation, a rule this repository has deliberately retired
-  (argv-order assertions, call counts, "the export exists"), or it is simply wrong. Say
-  why, in one sentence. A rejected finding with a reason is a decision; a silently dropped
-  one is a gap.
-- **Defer** — real, but outside this ticket. File it or note it; do not widen the PR.
+- **Apply** — a defect, a missing guard, or a contract the diff breaks.
+- **Reject** — style, speculation, a rule this repository has deliberately retired (argv-order
+  assertions, call counts, "the export exists"), or simply wrong. Say why in one sentence. A
+  rejected finding with a reason is a decision; a silently dropped one is a gap.
+- **Defer** — real, but outside this ticket. File it; do not widen the PR.
 
-Applied findings go back to the implementer through `SendMessage` as one batch, not one at
-a time. If a finding contradicts the approved plan, that is a plan problem — back to step 2.
+Applied findings go back as one batch. If a finding contradicts the approved plan, that is a
+plan problem — back to step 2.
 
 ## 6. Simplify, if it earns it
 
-Run `/simplify` only when the diff got there by accretion — a fix round left duplication,
-or the shape stopped matching the surrounding code. Skip it on a small, clean diff: a
-simplification pass on three lines is a second review round with nothing to find, and it
-invalidates the review that just happened.
+Run `/simplify` from `$WT`, and only when the diff got there by accretion. Skip it on a small
+clean diff: a simplification pass on three lines is a second review round with nothing to find,
+and it invalidates the review that just happened.
 
 ## 7. Hand it over
 
 Verify before you claim anything: check CI **by the full head SHA**, not through the pull
-request view, which can report a superseded run as green after a force-push. Poll the
-remote rather than the working copy — a local snapshot once called an agent stuck while its
-pull request was open.
+request view, which can report a superseded run as green after a force-push. Poll the remote
+rather than the working copy — a local snapshot once called an agent stuck while its pull
+request was open.
 
-And **verify one decisive thing yourself**, with one command, rather than relaying what an
-agent reported. "Gates green" has been reported here while the type checker had errors, and
-a green CI job has existed that never ran the test it was created for. Today it was the type
-check: run in the root checkout, reported clean, while the worktree carrying the new file
-did not compile. Pick the check the ticket actually turns on and run it.
+**Verify one decisive thing yourself**, with one command, rather than relaying what an agent
+reported. "Gates green" has been reported here while the type checker had errors, and a green
+CI job has existed that never ran the test it was created for.
 
-Then take the PR out of draft and assign it to the maintainer:
+**Greptile is a merge gate and it does not lapse.** Take the PR out of draft first, then wait
+for its review: P1/P2 findings are blockers, and this loop must not declare a ticket done
+before the gate that outlives it has spoken. Triage its findings the same way as codex's. Keep
+`$WT` until then — a P1 arriving after cleanup needs a tree that no longer exists.
 
 ```bash
 gh pr ready <N>
+# wait for Greptile, triage, fix if needed
 gh pr edit <N> --add-assignee drakulavich
+just worktree-rm ticket-<issue>            # from the root checkout, once the gate has spoken
 ```
 
-Report in one message: what the ticket was, what shipped, which codex findings you applied
-and which you rejected with the reason, the gate output, and anything left unverified.
-State plainly what did **not** get done. A hand-off that hides a skipped step is worse than
-one that names it.
+Report in one message: the ticket, what shipped, which findings you applied and which you
+rejected with the reason, the gate output, and anything left unverified. State plainly what did
+**not** get done.
