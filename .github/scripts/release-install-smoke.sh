@@ -80,7 +80,9 @@ run_npm() {
   export npm_config_cache="$scratch/npm-cache"
   export NPM_CONFIG_PREFIX="$prefix"
 
-  npm view "$package@$VERSION" --json version,dist.integrity,dist.attestations > "$metadata"
+  # Ask for the whole document, not a field list: `npm view --json a b c` answers with keys
+  # named literally "dist.integrity" and "dist.attestations", so a nested filter reads null.
+  npm view "$package@$VERSION" --json > "$metadata"
   jq -e --arg version "$VERSION" '
     .version == $version
     and (.dist.integrity | type == "string" and startswith("sha512-"))
