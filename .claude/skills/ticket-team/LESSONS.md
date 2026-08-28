@@ -206,6 +206,25 @@ runners and delays the current one. In a free public repository latency is the r
 But the ticket was justified on cost, and on cost the justification does not survive contact
 with the frequency.
 
+## Every agent is `drakulavich` in GitHub's audit trail
+
+On #1105 item 3 the timeline reads `18:31:00Z ready_for_review by drakulavich` then
+`18:33:24Z convert_to_draft by drakulavich`. Three agents and one human share that identity,
+so **which of them re-drafted the PR cannot be established** — not from the timeline, not from
+chat, not at all. No claim is made here about who did it.
+
+The consequence is larger than one event: when two agents report contradictory states, GitHub's
+own record cannot arbitrate, and the loop falls back to comparing timestamps in chat. That is
+how three separate "contradictions" on this ticket resolved — the digest that had moved, the
+green that went stale, and this — every one of them the same artifact: **two true observations
+of different moments, read as two claims about one moment.**
+
+**The rule that follows is about reading, not about tooling.** Before recording that two agents
+disagree, get both timestamps. A disagreement between agents is a disagreement about *when*
+until proven otherwise, and it usually is. Separate GitHub identities per agent would settle
+attribution, but that is a change to the maintainer's account, not something this loop adopts
+on its own — noted as available, not proposed.
+
 ## The review harness degrades the instruction it is graded on
 
 **Open question, deliberately without a number.** Every conveyor review in this repository has
