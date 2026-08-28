@@ -213,6 +213,14 @@ is to check the block, and a digest that was accurate when written goes stale th
 revises. That has already happened: a verdict correctly said "(matched)" and was reading bytes the
 implementer replaced minutes later.
 
+**The binding block is the implementer's last action, not its first.** Write the block after the
+final edit and send immediately — never compose it, edit further, then send. This rule is
+`teamlead-1105-homebrew`'s, proposed after it hit the failure three times in one ticket: a plan
+that moves between the block and the send makes the digest wrong on arrival, and the reviewer
+then either approves unread bytes or spends a message reconciling. Twice on that ticket the lead
+accounted for the delta by hand — `sed`-ing the changed range and checking its byte count against
+the file's growth — and approved safely. That worked, and it is not a substitute for sending last.
+
 **Watch for a revision that crosses your verdict.** If the implementer revises in response to
 something else while your verdict is in flight, the two pass each other and its revision will not
 engage your items. Say so plainly and point at the earlier message rather than restating it — and
