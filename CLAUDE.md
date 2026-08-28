@@ -91,24 +91,22 @@ A test that spawns a stub owns its death. `bunfig.toml` preloads `tests/helpers/
 ### PR ETIQUETTE
 
 - `main` is protected; every change goes through a PR and CI must pass.
-- Picking up work means the ticket is next off the queue, named by `conveyor next` — there is no label to apply. In-flight state is the queue entry, the worktree, and the open PR; see [the conveyor runbook](docs/runbooks/conveyor.md).
+- Picking up work means taking the next ticket off the queue — there is no label to apply. In-flight state is the worktree and the open PR.
 - Put `Closes #N` in the PR **body or commit message**, not only the title, so it auto-closes. Each issue needs its own keyword (`Closes #N, closes #M`) — a bare list closes only the first. Use `Refs #N` for partial work, then verify with `gh issue view <N> --json state` and close manually.
 
 ### GREPTILE PR REVIEW IS A GATE
 
 Greptile reviews on open and on every new commit. **P1/P2 findings are merge blockers** — that never lapses. Do not stop at the PR URL: CI must cover the latest head SHA, and so must Greptile whenever it is answering; report whether it is green. **Never gate on its Confidence Score** — 9 of 30 PRs across #753–#800 scored `5/5` "safe to merge" while carrying Greptile's own P1/P2 inline findings. Gate on findings. When Greptile is silent, record that on the PR and carry on rather than blocking. Clear false positives may be dismissed with a PR comment explaining why — rare in practice. Re-review and auto-merge mechanics: the `release-mechanics` skill.
 
-### CONVEYOR REVIEW GATE
+### ADVERSARIAL REVIEW IS A GATE
 
-Every conveyor-driven PR follows [the conveyor runbook](docs/runbooks/conveyor.md):
-review via `conveyor review-prompt --pr <P> --claim "<claim>"` piped to the
-reviewer the moment the PR exists, one durable comment carrying the full head
-SHA and every finding, and a fix pass for confirmed blockers that restarts the
-review on the new head. The merge verdict is the gate comment posted by
-`conveyor gate … --apply` — its visible line binds the verdict to the head
-SHA; never write one by hand. 43% of merged PRs used to skip the review
-entirely — that gap cost more than any wording did, which is why the review
-prompt takes the claim as a required argument.
+Every PR gets an adversarial review the moment it exists, and it is **aimed at a
+claim** rather than at the PR — "review this" returns agreement, "prove or refute
+that X, and say which assertion fires if it is wrong" returns findings. One
+durable comment carries the full 40-hex head SHA and every finding; confirmed
+blockers get a fix pass, and the review restarts on the new head. 43% of merged
+PRs used to skip the review entirely, and that gap cost more than any wording
+did — which is why the claim is required rather than optional.
 
 ### ERROR HANDLING
 
@@ -229,8 +227,6 @@ Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: the **`t
 
 Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-engine` and `release-cli` (cut a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches).
 
-Still plain runbooks: [conveyor](docs/runbooks/conveyor.md) · [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).
-
-The conveyor loop lives in that runbook rather than in a client-specific command file, so Claude and Codex follow the same text. Anything only one client can see is what the other silently skips.
+Still plain runbooks: [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).
 
 The OpenClaw plugin (`openclaw.plugin.json` + `openclaw-plugin.cjs`) routes audio through the `type: "cli"` path in `tools.media.audio.models`, and its `dangerous-exec` scanner is a naive regex that also reads comments — never name a forbidden module substring anywhere in that file.
