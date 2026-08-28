@@ -83,7 +83,8 @@ handoff path, not a retelling:
 /execute <absolute path to the approved handoff>
 ```
 
-Absolute, not relative: you are in the worktree and the path is only unambiguous that way.
+Absolute, not relative: your working directory is the root checkout, not the worktree, so a
+relative path silently resolves against the wrong tree.
 
 Red → Green → Refactor, one cycle per commit. Land the failing test first, then the fix.
 Assert contracts a user can observe — never argv order, call counts, stderr spies, or "the
@@ -120,12 +121,12 @@ chunks across TypeScript, Rust, Markdown and more. Use it to answer *where does 
 when you do not know the path: it finds a concept by description, where `grep` needs the
 identifier you have not guessed yet.
 
-**Run it from the root checkout, never from your worktree.** The index lives only in the
+**It works from the root checkout, which is where you already are.** The index lives only in the
 root's `.cocoindex_code/`. From a worktree `ccc status` still prints the root project's stats,
 so the tool looks healthy — and `ccc search` returns `No results found` for a query that hits
 from the root. An empty result is indistinguishable from "this does not exist in the code",
 which is the wrong conclusion drawn confidently. A search is inspection, so stepping into the
-root for it is allowed; step back before you edit anything.
+root for it is allowed.
 
 **It is built on demand and goes stale.** Anything merged since the last build is missing, and
 a stale index answers with a plausible-looking irrelevant hit rather than nothing. `ccc index`
