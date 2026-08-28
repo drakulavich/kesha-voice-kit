@@ -26,6 +26,7 @@ when the answer is no.
 | The OMC skills must be verified registered before the loop starts | #1107 | 1 | The whole protocol named `/omc-plan`, `/execute`, `/omc-review` while the plugin was unregistered; every phase called something that could not resolve |
 | Agents deliver by `SendMessage`; idle is availability, not output | #1107 | 1 | Three agents in a row completed their work and reported nothing until asked by name |
 | The verdict is a closed shape and the orchestrator fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
+| Guard the instance, not the class, until a second instance exists — and treat a guard that changes more often than the thing it guards as the liability signal it is | #1105 | 1 | A rule generalised to unwritten workflows produced all nine defects across three rounds; the guarded file changed in 1 of 5 commits, the guard in 4 of 5 |
 | A plan justified by a cost figure must measure the **frequency of the waste**, not the cost of the thing that wastes | #1105 | 1 | The ticket was ranked first on `Rust Tests` being 26.5% of CI cost; the waste it removes is 2.9% of that, while an unranked item in the same audit is worth three years of it per incident |
 | A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 1 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
 | A plan's mutation list must cover every value AND every input shape the claim rests on, derived from what the end state must not contain | #1105 | 1 | Four findings: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; and two of three valid `on:` spellings bypassed the rule entirely |
@@ -137,9 +138,26 @@ The whole ticket is **4 functional lines out of 302** — the `concurrency` bloc
 ticket lived in the guard; the four lines were correct in the first commit and never changed
 across three review rounds.
 
-The guard is not the problem — codex proved it necessary by showing `cancel-in-progress: true`
-could be deleted with everything staying green. The problem is the **ranking**, and it is
-mine: #1105 put this item first on the strength of "`Rust Tests` is 26.5% of CI cost". That is
+The guard is where the cost went, and the reason is that it was written for a **class** rather
+than an instance. `requireConcurrencyOnPullRequestWorkflows` polices workflows nobody has
+written yet, so it must handle every way a future author might spell `on:` and every way they
+might write a ref expression — which is precisely where all nine defects came from. The
+instance assertion, "`rust-test.yml` carries this block", has none of that surface and would
+have been about ten lines.
+
+The churn says it plainly. Across five commits the guarded file changed **once**; the rule and
+its tests changed **four times each**. CLAUDE.md's own bar is that a test pays off when the
+contract is stable and the implementation is likely to change, and is a liability when both
+move together. Here the contract never moved and the guard was rewritten every round — the
+liability criterion firing in real time, unnoticed while it happened.
+
+This was also infrastructure, not production code. Its failure mode is that CI costs a little
+more; nothing a user can observe, no data at risk. That does not make a guard worthless — the
+line carrying the whole saving really could be deleted with every test green — but it does set
+what the guard is worth paying, and 210 lines of unit test for four lines of CI configuration
+is over it.
+
+The ranking was wrong too, and that part is mine: #1105 put this item first on the strength of "`Rust Tests` is 26.5% of CI cost". That is
 the cost of *running* the workflow, not the cost of the *waste* the change removes.
 
 Measured afterwards, using `ci.yml` as the proxy — both workflows fire on the same

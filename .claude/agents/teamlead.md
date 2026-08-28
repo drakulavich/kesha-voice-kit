@@ -53,6 +53,18 @@ the exemption it claims to be blocked on can be scoped around instead — on #11
 the fix keyed on one filename and never touched the workflow the plan said it would have
 had to investigate first.
 
+**Is the guard scoped to the instance or to a class?** A guard written for "any workflow that
+might one day…" has to handle every spelling a future author could use, and that surface is
+where guards go wrong — on #1105 a generalised rule produced all nine of the ticket's defects
+across three rounds while the four lines it protected never changed. Prefer the instance
+assertion until a second instance exists; generalise when there is something to generalise
+over, not before.
+
+Weigh it against what the change is. Infrastructure that only costs CI minutes when it breaks
+earns a smaller guard than code a user can observe. A guard is still worth having — the line
+carrying an entire saving can be deleted silently — but "worth having" and "worth 210 lines of
+unit test for four lines of YAML" are different claims, and only the first is automatic.
+
 **Is the test at the right level, and does it assert a contract?** Unit-test pure
 functions whose contract is stable; go to `tests/integration/` the moment behaviour
 crosses the CLI/engine boundary. Assert what a user can observe — never argv order, call
