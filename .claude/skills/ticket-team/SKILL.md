@@ -264,6 +264,48 @@ happened to mention:
 4. **Completeness** — end with what was **not** examined. If that list is empty, say so
    explicitly: an unstated gap reads identically to no gap.
 
+## Using git as the team's own substrate
+
+The binding block came from noticing that a hand-rolled digest is a weaker version of
+something git already provides. That generalises, and it is worth stating as a principle
+rather than rediscovering per-mechanism. Four rules, each with the incident that earned it.
+Nothing here is adopted because it is elegant.
+
+**1. Name a SHA, never describe a state.** Anything you would put in prose that git can name —
+what the tree looked like, what a reviewer read, what CI actually ran against — gets named by
+its SHA instead. *Incident:* two verdict requests quoted a digest the file had already moved
+past, and an early build stayed invisible to the verdict being issued because the digest bound
+the plan and nothing bound the tree. The repo learned the same lesson one level up: gate CI on
+the full head SHA, because after a force-push the PR view reports the superseded run as green.
+
+**2. Every git command names its worktree: `git -C <absolute path>`.** Not `cd` and then git.
+*Incident:* a missing `cd` put a commit on `main`, and later wrote a fix into the wrong PR
+while `preflight` and CI stayed green on both — the gates were honest about a tree nobody had
+asked them about. `cd` is state that survives between calls and that parallel calls race on;
+`-C` is an argument, and an argument cannot be left behind by the previous command. This is
+strictly stronger than remembering to `cd`, and it costs the same keystrokes.
+
+**3. A coordination artifact that exists only in chat did not happen.** Plans, verdicts,
+review output and triage decisions are evidence, and evidence has to be re-readable by an
+agent that was not in the conversation. *Incident:* the retro could not establish where a
+claim originated, because the only record was a chat message no artifact preserved — and the
+honest ledger entry had to say so. Write it to a file in the worktree, or to a ref; a
+`SendMessage` body is a notification that evidence exists, not the evidence.
+
+**4. The team's history is not the product's history.** `kesha-voice-kit`'s log is read by
+people shipping a voice toolkit; it should not carry which agent approved which digest.
+Coordination state goes on the team branch or on refs outside the ticket branch
+(`refs/team/<ticket>/…`), never into the product commits or the PR diff. The PR body carries
+the reasoning; the trailer-and-verdict machinery stays behind it. This constraint is what
+makes rule 3 affordable — durability without noise.
+
+**Considered and not adopted**, so the next agent does not re-propose them: signed commits and
+`Approved-by:` trailers on product commits (rule 4 forbids the noise, and no incident calls
+for cryptographic identity between cooperating agents); `git notes` for verdicts (attaches to
+a commit, and at plan time there are none); and proving reviewer write-containment by diffing
+the tree across a verdict (the honour-system version has not been violated once — a guard with
+no incident is the liability this ledger keeps retiring).
+
 ## Skin in the game
 
 Every claim here is made by someone who can be wrong, and the loop only corrects what it can
