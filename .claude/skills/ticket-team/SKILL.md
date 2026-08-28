@@ -78,6 +78,15 @@ Agent(subagent_type: "teamlead",
       prompt: "Ticket: <…>\n\nPlan under review:\n<…>")
 ```
 
+Read the verdict's **first line only**, and parse it strictly:
+
+- `VERDICT: APPROVED <digest>` — and the digest must still match `shasum -a 256` of the
+  handoff. If it does not, the plan changed after approval: back to the team lead, not
+  forward to the build.
+- `VERDICT: CHANGES REQUIRED` — or **anything you cannot parse**. Fail closed. A verdict
+  that does not match the shape is not an approval, and treating an unparseable one as
+  "nothing to object to" is how unreviewed work ships.
+
 `CHANGES REQUIRED` goes back to the implementer through `SendMessage`, verbatim. Do not
 paraphrase the objections and do not resolve them yourself — the implementer revises, the
 team lead re-approves. Two rounds is normal; a third means the ticket is unclear, so fix
@@ -104,8 +113,23 @@ omc ask codex "Review PR #<N> in this repository. <the claim the PR makes>.
 Never assemble a raw `codex` invocation — `omc ask` owns flag selection, provider
 compatibility and artifact capture. The artifact lands in `.omc/artifacts/ask/`.
 
-Ask it to **refute a specific claim**, not to "review the PR". A reviewer pointed at a
-claim finds the confident wrong assertion; a reviewer pointed at a diff finds style.
+Ask it to **refute a specific claim**, not to "review the PR" — a claim is a required
+argument, not a nicety. A reviewer pointed at a claim finds the confident wrong assertion;
+a reviewer pointed at a diff finds style. Measured elsewhere: three confident assertions
+fell to "is that argument correct?" in one day, none to "review this PR".
+
+Append the same four sweep items every time, so coverage does not depend on what the
+prompt happened to mention:
+
+1. **Guards at full depth** — for every guard the diff adds, run **both** mutations:
+   delete it, and separately neutralise it while leaving its shape in place. A guard whose
+   test only catches deletion is unpinned against the mutation that actually happens.
+2. **Reach** — for every test the diff adds or changes, name the CI lane that executes it,
+   or none. A test compiled everywhere and run nowhere has already shipped in this
+   repository (`model_gate.rs`, `model-suite-guards.test.ts`).
+3. **Second-order** — for each finding, name what fixing it the obvious way would open.
+4. **Completeness** — end with what was **not** examined. If that list is empty, say so
+   explicitly: an unstated gap reads identically to no gap.
 
 ## 5. Triage the findings — this is your job, not the implementer's
 
@@ -131,7 +155,15 @@ invalidates the review that just happened.
 ## 7. Hand it over
 
 Verify before you claim anything: check CI **by the full head SHA**, not through the pull
-request view, which can report a superseded run as green after a force-push.
+request view, which can report a superseded run as green after a force-push. Poll the
+remote rather than the working copy — a local snapshot once called an agent stuck while its
+pull request was open.
+
+And **verify one decisive thing yourself**, with one command, rather than relaying what an
+agent reported. "Gates green" has been reported here while the type checker had errors, and
+a green CI job has existed that never ran the test it was created for. Today it was the type
+check: run in the root checkout, reported clean, while the worktree carrying the new file
+did not compile. Pick the check the ticket actually turns on and run it.
 
 Then take the PR out of draft and assign it to the maintainer:
 

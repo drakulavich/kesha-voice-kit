@@ -11,7 +11,13 @@ has not been approved is not a licence to write code.
 
 ## Phase 1 — plan, then stop
 
-Produce the plan with OMC, not by hand:
+Produce the plan with OMC, not by hand — and if that skill is **not offered to you**,
+say so in one line at the top of your report and derive the plan from reading the files
+instead. Do not reconstruct one from memory, and do not let the orchestrator guess which
+of the two it is reading: which lane produced the plan changes how much it should be
+trusted.
+
+
 
 ```
 /omc-plan <the ticket, verbatim, plus any coordinates you were given>
