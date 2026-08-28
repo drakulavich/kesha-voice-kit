@@ -3,15 +3,15 @@ import { readFileSync } from "node:fs";
 
 const SCRIPT = ".github/scripts/release-install-smoke.sh";
 
-// The gate under test is a bash script that only ever runs on the Ubuntu release runner,
-// and these cases execute its real jq rather than a reimplementation. Windows runners ship
-// no jq, so there the filter cases have nothing to run — the structural assertion below
-// still runs everywhere and is the one that catches the regression this file exists for.
+// These cases execute the script's real jq rather than a reimplementation, so they need it
+// on PATH. GitHub runners all ship it; a contributor machine may not.
 const JQ = Bun.which("jq");
 
 /** The jq the script actually runs, lifted from the script so the test cannot drift from it. */
 function metadataFilter(): string {
-  const source = readFileSync(SCRIPT, "utf8");
+  // Windows CI checks the tree out with CRLF, and the pattern below anchors on newlines:
+  // without this the filter is simply not found and every case fails on that runner alone.
+  const source = readFileSync(SCRIPT, "utf8").replace(/\r\n/g, "\n");
   const match = source.match(/jq -e --arg version "\$VERSION" '\n([\s\S]*?)\n\s*' "\$metadata"/);
   const filter = match?.[1];
   if (!filter) throw new Error(`${SCRIPT}: could not find the npm metadata jq filter`);
@@ -57,7 +57,7 @@ describe("release-install-smoke npm metadata gate", () => {
   });
 
   test("the script therefore requests the whole document, not a field list", () => {
-    const source = readFileSync(SCRIPT, "utf8");
+    const source = readFileSync(SCRIPT, "utf8").replace(/\r\n/g, "\n");
     expect(source).toContain(`npm view "$package@$VERSION" --json > "$metadata"`);
   });
 
