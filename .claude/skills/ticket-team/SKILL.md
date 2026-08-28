@@ -71,7 +71,13 @@ change wastes more than under-serving it.
   is protected and the root checkout is not an edit surface, so there is nowhere else to open
   a pull request from. Note that CLAUDE.md's test-first exemption covers only formatting- and
   docs-only changes; a constant with a gate behind it is still a change that gate must catch.
-- **Standard** — one behaviour, coordinates known or findable in a few searches. Full loop.
+- **Light** — infrastructure only: workflows, CI scripts, tooling, docs. No product code, no
+  `src/**`, no `rust/src/**`. **One** plan message rather than a plan loop, the adversarial
+  review on the final head, and the mutation table in the **pull request body** rather than a
+  `docs/mutation-evidence/` file. #1105 item 3 was sized Standard and cost seven heads for
+  twenty-eight lines of decisions; four of those heads carried no change at all.
+- **Standard** — one behaviour in product code, coordinates known or findable in a few searches.
+  Full loop.
 - **Complex** — crosses the CLI/engine boundary, touches release mechanics, changes synthesized
   audio, or names an outcome rather than a change. Full loop, `implementer` with `model: opus`,
   and expect the plan back from the team lead at least once.
@@ -238,6 +244,11 @@ handoff path, works in its worktree, lands the failing test first, runs the gate
 opens a **draft** PR.
 
 ## 4. Review with codex
+
+**Run it on the head you expect to be final.** A review aimed at an earlier head reports
+everything committed since as missing: on #1105 item 3 the prompt was generated one commit
+before the mutation evidence landed, and the review returned that absence as a P2 which then
+cost a round to explain. The reviewer is not wrong — it answered about the head it was given.
 
 ```bash
 cd <repo>/.worktrees/ticket-<issue> && omc ask codex "Review PR #<N>. <the claim the PR makes>.
@@ -428,6 +439,32 @@ The general form, which is the one worth carrying: **a remedy that cannot be exe
 specified is discovered only by the person executing it.** The same shape as a `just mutate`
 find-string that does not occur. Whoever writes the remedy owes it a moment's thought about
 whether the gates will take it, because the cost of not doing that lands on someone else.
+
+## 5b. One consolidation pass — never push prose alone
+
+**Findings are applied in a single push, not one push each.** On #1105 item 3 three of seven
+commits changed four lines between them — a false comment, a sharper version of it, and two
+stale citations — and each bought a full CI cycle plus a second-reviewer pass. Half the pull
+request's heads carried prose.
+
+So: collect every finding from triage, apply them together, and before pushing sweep the whole
+diff once for the defects that only prose has —
+
+```bash
+bun .claude/skills/ticket-team/check-citations.ts origin/main HEAD
+```
+
+It extracts every `file:line` the diff **adds** and resolves each against the post-diff tree,
+failing on a citation that now points at a blank line or cannot be resolved to one file. That
+is the `ci.yml:984` defect — accurate on `main`, made false by the very diff containing it,
+and invisible to codex across two passes and Greptile across four. A line number is a claim
+about a file at a revision; nothing else in the repository checks one.
+
+Then read every comment the diff adds and ask what it **asserts**, not whether it reads well.
+The two prose defects on that ticket were both false claims, not clumsy wording.
+
+**A head that changes only prose is a process failure, not a fix.** If one is unavoidable —
+a blocking finding after the last push — say so rather than treating it as routine.
 
 ## 6. Simplify, if it earns it
 
