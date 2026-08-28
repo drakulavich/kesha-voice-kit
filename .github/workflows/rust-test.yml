@@ -145,7 +145,7 @@ jobs:
       # JUnit XML via the `ci` profile (see rust/.config/nextest.toml).
       # taiki-e/install-action caches a prebuilt binary per OS/arch so
       # the install is ~1s on warm cache.
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2.86.5
         with:
           tool: nextest
 
@@ -208,7 +208,7 @@ jobs:
       # darwin-only break is caught before a release tag builds it.
       # The feature set lives in the `verify-darwin-full` recipe, so CI and the local
       # gate cannot drift apart (#797) — hence a `just` on PATH for this lane.
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2.86.5
         if: matrix.os == 'macos-14'
         with:
           tool: just@1.58.0
@@ -290,11 +290,11 @@ jobs:
           # would not match this job's fingerprints anyway (#741).
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2.86.5
         with:
           tool: nextest
 
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2.86.5
         with:
           tool: cargo-llvm-cov
 
@@ -387,7 +387,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2.86.5
         with:
           tool: nextest
       - name: Check formatting
@@ -463,7 +463,7 @@ jobs:
         with:
           workspaces: rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2.86.5
         with:
           tool: nextest
 
