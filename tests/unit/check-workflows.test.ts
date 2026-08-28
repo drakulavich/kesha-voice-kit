@@ -8,6 +8,8 @@ import {
   forbidLinuxPackaging,
   requireAptTimeouts,
   requireBashOnWindowsRunSteps,
+  requireConcurrencyOnPullRequestWorkflows,
+  requireRustTestCancelsSupersededRuns,
   requirePipefailShell,
   requireReusableCallPermissions,
   requireRestoreOnlyCachesHaveAWriter,
@@ -696,5 +698,213 @@ describe("requireReusableCallPermissions", () => {
     });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("does not exist");
+  });
+});
+
+describe("requireConcurrencyOnPullRequestWorkflows", () => {
+  const RUST_TEST = ".github/workflows/rust-test.yml";
+  const SYNTHETIC = ".github/workflows/synthetic.yml";
+  const GROUP = "${{ github.workflow }}-${{ github.ref }}";
+
+  test("passes on the real rust-test.yml", () => {
+    expect(requireConcurrencyOnPullRequestWorkflows(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
+  });
+
+  test("passes on the real ci.yml", () => {
+    expect(requireConcurrencyOnPullRequestWorkflows(CI, parseRepoYaml(CI))).toEqual([]);
+  });
+
+  test("fails a pull_request workflow with no concurrency at all", () => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request: null }, jobs: {} });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1105");
+  });
+
+  test("fails a group that does not interpolate github.ref", () => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+      on: { pull_request: null },
+      concurrency: { group: "${{ github.workflow }}", "cancel-in-progress": true },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#597");
+  });
+
+  // A bare literal is one repository-wide group, so unrelated PRs would evict each other —
+  // worse than no group at all, and `includes("github.ref")` alone accepts it.
+  test("fails a literal github.ref that is not an expression", () => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+      on: { pull_request: null },
+      concurrency: { group: "github.ref", "cancel-in-progress": true },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#597");
+  });
+
+  test("accepts github.ref composed with other expressions", () => {
+    for (const group of [GROUP, "${{ github.ref }}", "rust-${{ github.ref }}-${{ github.event_name }}"]) {
+      expect(
+        requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+          on: { pull_request: null },
+          concurrency: { group, "cancel-in-progress": true },
+        }),
+      ).toEqual([]);
+    }
+  });
+
+  test("fails the concurrency string shorthand when it omits the ref", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request: null }, concurrency: "one-lane" }),
+    ).toHaveLength(1);
+  });
+
+  // Every spelling of one defect; review rounds 1-3 each closed one of these alone (#1105).
+  test.each([
+    ["bare literal", "github.ref"],
+    ["single-quoted literal", "${{ 'github.ref' }}"],
+    ["double-quoted literal", '${{ "github.ref" }}'],
+    ["literal inside a call", "${{ format('github.ref') }}"],
+    ["boolean sibling context", "${{ github.ref_protected }}"],
+    ["short-name sibling context", "${{ github.ref_name }}"],
+    ["type sibling context", "${{ github.ref_type }}"],
+    ["no per-ref context at all", "${{ github.workflow }}"],
+  ])("fails a group that does not vary per ref: %s", (_form, group) => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+      on: { pull_request: null },
+      concurrency: { group, "cancel-in-progress": true },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#597");
+  });
+
+  // A `}` inside a string literal used to truncate the scan and reject these wrongly.
+  test.each([
+    ["composed via format", "${{ format('{0}', github.ref) }}"],
+    ["brace inside a sibling literal", "${{ format('a}b') }}-${{ github.ref }}"],
+  ])("accepts a group that varies per ref: %s", (_form, group) => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: { pull_request: null },
+        concurrency: { group, "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
+  });
+
+  // Yields two groups repo-wide; rejecting it needs an evaluator, not a longer pattern.
+  test("accepts a boolean comparison over github.ref — the known residual", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: { pull_request: null },
+        concurrency: { group: "${{ github.ref == 'refs/heads/main' }}", "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
+  });
+
+  test("still accepts github.ref alongside a rejected sibling context", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: { pull_request: null },
+        concurrency: { group: "${{ github.ref_protected }}-${{ github.ref }}", "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
+  });
+
+  test.each([
+    ["string", "pull_request"],
+    ["array", ["push", "pull_request"]],
+  ])("catches the %s trigger shorthand with no concurrency", (_form, on) => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on, jobs: {} });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1105");
+  });
+
+  test.each([
+    ["string", "pull_request_target"],
+    ["array", ["push", "pull_request_target"]],
+  ])("ignores pull_request_target in the %s shorthand", (_form, on) => {
+    expect(requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on, jobs: {} })).toEqual([]);
+  });
+
+  test("accepts a compliant workflow declared with the array shorthand", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: ["push", "pull_request"],
+        concurrency: { group: GROUP, "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
+  });
+
+  // pull_request_target is a different trigger with a different token; cache-cleanup.yml uses
+  // it, and a prefix match would drag it in.
+  test("ignores pull_request_target", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request_target: { types: ["closed"] } } }),
+    ).toEqual([]);
+  });
+
+  test("ignores a workflow that never runs on pull requests", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { schedule: [{ cron: "0 4 * * *" }] }, jobs: {} }),
+    ).toEqual([]);
+  });
+
+  // `pull_request:` with no body parses to null, so a truthiness test would skip the very
+  // workflows this rule exists for.
+  test("checks a pull_request trigger declared with no body", () => {
+    expect(requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request: null } })).toHaveLength(1);
+  });
+
+  test("accepts a compliant pull_request workflow", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: { pull_request: { branches: ["main"] } },
+        concurrency: { group: GROUP, "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+  });
+});
+
+describe("requireRustTestCancelsSupersededRuns", () => {
+  const RUST_TEST = ".github/workflows/rust-test.yml";
+  const ref = { group: "${{ github.workflow }}-${{ github.ref }}" };
+
+  test("passes on the real rust-test.yml", () => {
+    expect(requireRustTestCancelsSupersededRuns(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
+  });
+
+  // security.yml sets `false` deliberately; auditing that is outside #1105, so this rule
+  // must not reach it.
+  test("ignores every other workflow", () => {
+    const SECURITY = ".github/workflows/security.yml";
+    expect(requireRustTestCancelsSupersededRuns(SECURITY, parseRepoYaml(SECURITY))).toEqual([]);
+  });
+
+  test("fails when cancel-in-progress is false", () => {
+    const errors = requireRustTestCancelsSupersededRuns(RUST_TEST, {
+      concurrency: { ...ref, "cancel-in-progress": false },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1105");
+  });
+
+  test("fails when cancel-in-progress is dropped entirely", () => {
+    expect(requireRustTestCancelsSupersededRuns(RUST_TEST, { concurrency: ref })).toHaveLength(1);
+  });
+
+  test("fails when the whole concurrency block is gone", () => {
+    expect(requireRustTestCancelsSupersededRuns(RUST_TEST, { on: { pull_request: null } })).toHaveLength(1);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on:\n  pull_request:\nconcurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });

@@ -17,6 +17,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Must include the ref: a workflow-wide group serialises every PR into one queue, and
+  # GitHub evicts the pending run when a third arrives — the evicted run reports nothing, so
+  # the required "🧪 Rust Tests" check never lands and the PR is BLOCKED forever (#597).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     shell: bash

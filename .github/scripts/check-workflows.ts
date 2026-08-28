@@ -648,6 +648,89 @@ export function requireReusableCallPermissions(path: string, document: unknown):
   return errors;
 }
 
+/**
+ * The trigger names an `on:` declares, across all three forms GitHub accepts: `on: push`,
+ * `on: [push, pull_request]`, and the mapping. `on` itself parses as the string key rather
+ * than the YAML 1.1 boolean, and a mapping's `pull_request:` may carry a null body.
+ */
+function triggerNames(on: unknown): string[] {
+  if (typeof on === "string") return [on];
+  if (Array.isArray(on)) return on.filter((entry): entry is string => typeof entry === "string");
+  if (typeof on === "object" && on !== null) return Object.keys(on);
+  return [];
+}
+
+/**
+ * Contexts that take a distinct value per ref. `github.head_ref` is deliberately absent: it is
+ * empty on push events, so a group keyed on it alone collapses every push into one lane.
+ */
+const PER_REF_CONTEXT = /github\.ref(?!\w)/;
+const EXPRESSION = /\$\{\{(.*?)\}\}/gs;
+/** Single quotes with `''` escaping are GitHub's only string literal; `"…"` is invalid syntax, stripped so a typo cannot satisfy the check either. */
+const STRING_LITERAL = /'(?:[^']|'')*'|"[^"]*"/g;
+
+/**
+ * Whether the group takes a distinct value per ref, which is the property that makes
+ * cancellation safe. Necessary, not sufficient: it proves an expression *consumes* a per-ref
+ * context as data, not that the result is injective over refs — `${{ github.ref == 'x' }}`
+ * satisfies it and yields two groups. Deciding that needs an expression evaluator, so the
+ * residual is stated rather than chased (#1105).
+ */
+function groupVariesPerRef(group: string): boolean {
+  for (const [, expression] of group.matchAll(EXPRESSION)) {
+    if (PER_REF_CONTEXT.test((expression ?? "").replace(STRING_LITERAL, ""))) return true;
+  }
+  return false;
+}
+
+/**
+ * Fails when a workflow that runs on pull requests declares no top-level `concurrency` group.
+ *
+ * Without one every superseded push runs to completion: `rust-test.yml` carried two macOS
+ * jobs that way, and macOS is 80% of this repo's CI cost at 10.3x Linux per minute (#1105).
+ * The group must additionally vary per ref — any group shared across pull requests serialises
+ * them into one queue, and GitHub evicts the pending run when a third arrives, so the evicted
+ * run reports nothing and the required check never lands, blocking the PR forever (#597).
+ */
+export function requireConcurrencyOnPullRequestWorkflows(path: string, document: unknown): string[] {
+  const doc = document as { on?: unknown; concurrency?: unknown } | undefined;
+  if (!triggerNames(doc?.on).includes("pull_request")) return [];
+
+  const concurrency = doc?.concurrency;
+  if (concurrency === undefined || concurrency === null) {
+    return [
+      `${path}: runs on pull requests but declares no top-level \`concurrency\`; every superseded push runs the whole workflow to completion (#1105)`,
+    ];
+  }
+
+  const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown })?.group;
+  if (typeof group !== "string" || !groupVariesPerRef(group)) {
+    return [
+      `${path}: \`concurrency.group\` must vary per ref — some \`\${{ }}\` expression has to use \`github.ref\` as an operand, not as quoted text; a group shared across pull requests queues them into one lane and GitHub evicts the pending run, so the required check never lands (#597)`,
+    ];
+  }
+  return [];
+}
+
+/**
+ * Fails when `rust-test.yml` stops cancelling superseded runs.
+ *
+ * Scoped to this one workflow rather than every pull-request workflow: `security.yml` sets
+ * `cancel-in-progress: false` deliberately, and auditing that choice is outside #1105. Here
+ * the line is the entire saving — two macOS jobs at 10.3x Linux per minute.
+ */
+export function requireRustTestCancelsSupersededRuns(path: string, document: unknown): string[] {
+  if (!path.endsWith("rust-test.yml")) return [];
+
+  const concurrency = (document as { concurrency?: unknown } | undefined)?.concurrency;
+  const cancel = (concurrency as { "cancel-in-progress"?: unknown } | undefined)?.["cancel-in-progress"];
+  if (cancel === true) return [];
+
+  return [
+    `${path}: \`concurrency.cancel-in-progress\` must be \`true\`; without it superseded pushes run both macOS jobs to completion, which is the entire cost saving (#1105)`,
+  ];
+}
+
 export function checkFile(
   path: string,
   testedScripts: string[],
@@ -667,6 +750,8 @@ export function checkFile(
       ...requireBashOnWindowsRunSteps(path, document),
       ...requirePipefailShell(path, document),
       ...requireReusableCallPermissions(path, document),
+      ...requireConcurrencyOnPullRequestWorkflows(path, document),
+      ...requireRustTestCancelsSupersededRuns(path, document),
       ...requireAptTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
