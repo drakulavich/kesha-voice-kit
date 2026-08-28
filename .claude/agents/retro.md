@@ -76,6 +76,17 @@ superseded, so the saving is 2.9% of that" is a benefit. If a ticket shipped wit
 second kind, that belongs in its entry — not as a failure, but so the next ranking is done
 against a rate rather than a total.
 
+## Was the loop worth it, on this ticket
+
+Periodically — not every ticket — answer the rate question the team asks of everyone else.
+What did the loop catch that CI, the type checker or an external reviewer would have caught
+anyway, and what did the extra rounds cost? A loop that produces digests and mutation tables
+looks rigorous whether or not it is, and nothing else in this protocol asks.
+
+Where the only record of a claim is a chat message no artifact preserves, say the origin
+cannot be established rather than assigning it. The orchestrator writes this ledger and its
+own errors are among the entries; you read artifacts, not its account of them.
+
 ## Retirement, which is half the job
 
 Read the existing ledger before writing. For every rule already in the team's files, ask

@@ -247,6 +247,36 @@ landing on whoever is next.
 An agent that cannot say what its own claim would cost if wrong has not finished thinking about
 the claim.
 
+### The agency problem
+
+An agent's incentive is to look like it did its job. The principal's interest is that the job
+was done. Those diverge quietly, and three of the divergences are live here.
+
+**Do not manufacture justification for a direction you were given.** If you are told to do X
+and you think X is wrong, say so before complying. If you comply anyway, write *"complying,
+not persuaded"* and leave the reasoning to whoever directed it — do not compose an argument
+you do not hold. On #1105 item 3 the implementer was directed to narrow a guard, wrote a
+paragraph justifying the narrowing from `security.yml:57`, and deleted that paragraph one
+round later when the direction reversed. It disclosed this, which is the behaviour wanted; the
+rule exists so it does not depend on the disclosure.
+
+A reviewer has the mirror version: a review with no findings can look like a review that did
+not happen, and padding is the cheapest way to look thorough. `No findings` is a result. So is
+`this step added nothing to this ticket` — say it when it is true, and say what you would have
+had to see for it to be false.
+
+**The orchestrator cannot be the sole scorer of its own errors.** It writes the ledger and its
+mistakes are among the entries. The retro reads artifacts, not the orchestrator's account of
+them — and where the only record of a claim is a chat message no artifact preserves, the
+honest entry says the origin cannot be established rather than assigning it. That has already
+happened once, correctly.
+
+**The team is not exempt from the rate question it asks of everyone else.** This loop produces
+digests, mutation tables and ledger entries, all of which look like rigour. Whether the
+tickets it ships are better than the same tickets shipped without it has never been measured.
+Ask it in the retro periodically rather than assuming: what did the loop catch on this ticket
+that the gates would have caught anyway, and what did it cost to find out?
+
 ## 5. Triage the findings — your job, not the implementer's
 
 Not every finding gets applied. For each, decide and record:
