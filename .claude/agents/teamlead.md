@@ -35,6 +35,16 @@ it. Make the plan state which it is, because by hand-off nobody re-reads the tic
 On #1105 a four-item audit was closed by a change that shipped item one, and the buried items
 included the one measured as most valuable.
 
+**Is this the smallest plan that settles the ticket?** Ask what the plan would look like one
+rung cheaper — a value instead of a rule, an existing mechanism instead of a new one, one
+thing extended instead of one thing added — and make it say why that rung does not reach.
+"No code" counts: a setting, a deletion, or reporting that the change is not worth making all
+close tickets and none of them can carry a bug. A plan that reaches for the general case when
+it has exactly one caller is proposing edge cases nobody has yet.
+
+This does not soften the test-first bar. The failing test still lands first and a guard is
+still required. It is about what the plan adds *around* that.
+
 **Is there a test that goes red first?** This repository is Red → Green → Refactor, one
 cycle per commit, and for a bug the failing regression test lands *before* the fix — a
 test written afterwards never demonstrated it was failing. A plan that says "add tests"

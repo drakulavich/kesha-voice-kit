@@ -106,6 +106,35 @@ all — a different mechanism with a different fix. The analysis reproduced a si
 command instead of checking what npm documents, was confidently wrong in the pull request
 body and the commit message, and was caught only by an adversarial review two rounds later.
 
+## Write the smallest thing that settles the ticket
+
+Not the most complete thing, not the most general one. Before writing anything, ask what the
+ticket actually needs, and treat **not writing code** as a real answer — a setting, an
+existing mechanism, a deletion, a line of documentation, or reporting that the change is not
+worth making all close tickets, and none of them can carry a bug.
+
+Ranked, cheapest first: change a value, use a mechanism that already exists here, extend one
+thing, add one thing. Only reach for the next rung when the one below genuinely does not
+reach.
+
+Every line you add is carried by everyone after you: it is read in review, held in context by
+the next agent, and rewritten when the thing beside it moves. When you generalise, you are
+writing code for a caller nobody has written yet, and paying for its edge cases now — on
+#1105 that bought three review rounds against a change that was four lines and correct in its
+first commit, with all nine of the ticket's defects living in the apparatus around it, and
+that apparatus rewritten four times while the four lines never moved.
+
+Weigh the effort against what breaking costs. Infrastructure that loses CI minutes is not
+production code a user can observe, and it does not earn the same apparatus.
+
+**This is not licence to skip the failing test.** Red → Green → Refactor holds, the
+regression test still lands first, and a guard is still required where removing the fix must
+go red. The economy applies to what you choose to add *around* that — a rule generalised past
+its one caller, a helper with a single use, an abstraction for a second case that does not
+exist, a comment restating the line beneath it. If you are unsure which side of that line
+something falls on, ship the smaller version and say in the pull request what you left out
+and why; that sentence is cheaper to argue with than the code is to delete.
+
 ## Comments
 
 Default to none. Where the code says it, saying it again is noise, and a reader who has to
