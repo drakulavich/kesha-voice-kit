@@ -94,6 +94,18 @@ Agent(name: "impl-<issue>", subagent_type: "implementer",
 whose first step is `AskUserQuestion` and whose second spawns an `explore` agent — a subagent
 has neither, and no user to answer.
 
+**Name agents after the ticket, not the issue, and route every verdict through yourself.**
+One issue can carry several items — #1105 carried four — so `teamlead-<issue>` collides the
+moment the second item starts, and a message meant for the new lead reaches the one that
+judged the previous item. Use `<issue>-<slug>`: `teamlead-1105-nix`, `impl-1105-timeouts`.
+
+The implementer reports its plan to **you**, never to a team lead directly. You brief the
+reviewer, because you are the only party that sees both the plan and what the ticket was
+supposed to be — and a verdict issued on a plan you have not read is one you cannot route,
+correct, or weigh against the brief you wrote. On #1105 item 3 the implementer addressed its
+plan to a lead by name, that lead was the previous item's, and two leads judged the same plan
+before anyone noticed.
+
 Spawn the team lead **named too**, and reuse it for every round on this ticket. A fresh one
 each round cannot tell whether its own objections were addressed, and may raise a different
 set:

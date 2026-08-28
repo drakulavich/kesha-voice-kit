@@ -36,6 +36,9 @@ when your working directory is the root — copy it to an absolute path under yo
 and report **that**. Reporting a worktree path you did not write to
 produces a path that does not exist, and the next step shasums it.
 
+Send it to the **orchestrator**, never to a team lead directly — routing the review is its
+job, and a verdict on a plan it has not read cannot be weighed against the brief it wrote.
+
 Then `SendMessage` the plan and that absolute path to the orchestrator and stop — no source
 edits, no commits.
 
