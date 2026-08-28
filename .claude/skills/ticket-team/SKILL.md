@@ -141,6 +141,17 @@ argv, while the conveyor runbook requires prompts by file path because one large
 enough to break argv. Keep the claim short for that reason, and if a prompt ever needs to
 carry a diff, that is the point to stop using this path.
 
+Quote the claim from the **artifact**, not from an agent's summary of it. On #1110 the
+implementer's chat report said the timeout values carried "~3-4x headroom over the slowest
+observed sample". The pull request body said something different and correct — a 5-minute
+floor for jobs that finish in seconds, ~3x for the two matrix jobs, ~25x for `publish-npm`.
+The orchestrator carried the summary's phrasing into the codex prompt, codex correctly
+refuted it, and the finding landed on a claim nobody had shipped.
+
+Nothing was lost — the review's other finding was real and the artifacts got tightened
+anyway — but the round was spent refuting a sentence that existed only in a chat message.
+Read the body, quote the body.
+
 Ask it to **refute a specific claim**, not to "review the PR" — a claim is required, not a
 nicety. Measured elsewhere: three confident assertions fell to "is that argument correct?" in
 one day, none to "review this PR".
