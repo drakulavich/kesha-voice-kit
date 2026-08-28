@@ -161,12 +161,17 @@ the moment a commit lands it does not, and that difference is the whole check. A
 compares two SHAs instead of reading a description of a tree, which is the same reason this
 repo gates CI on the full head SHA rather than on `gh pr checks`.
 
-The plan digest survives alongside it only because the plan lives under `.omc/plans/`, which
-is ignored — an untracked file is outside what `HEAD` covers. **If the plan is ever committed,
-the two collapse into one SHA and the digest line goes.** Do not commit it to the ticket branch
-to achieve that: a 26 KB design document in a 51-line diff is noise, and the PR body already
-carries the reasoning. A ref outside the branch (`git update-ref refs/plans/ticket-<N>`) is the
-version worth trying when a plan is worth keeping.
+**The second token is permanent, and it is not redundant with the first.** `HEAD` says the tree
+moved; it does not say *which revision of the plan you are approving*, and this ticket saw four
+plan revisions inside one unchanged tree. The two would collapse only if the plan were
+committed to the ticket branch — which rule 4 below forbids, and which would put a 26 KB design
+document in a 51-line diff besides. So both tokens stay.
+
+What should change is the second token's *kind*. Today it is a hand-rolled `shasum` because
+`.omc/plans/` is ignored and the file is untracked. The consistent endpoint is a ref outside
+the branch — `git update-ref refs/team/<ticket>/plan` — so the request quotes two SHAs from
+the same tool and neither is recomputed by hand. Rule 1 applied to the one place still exempt
+from it.
 
 Each line exists because it was missed:
 
