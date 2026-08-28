@@ -23,6 +23,11 @@ just worktree ticket-<issue> fix/issue-<issue>    # root checkout only; branches
 just worktree-rm ticket-<issue>                   # from the root checkout, never from inside it
 ```
 
+Create it **before** the implementer starts, not between the plan and the build: the plan
+handoff lands in `.omc/plans/` relative to wherever `/omc-plan` ran, `.omc/` is
+gitignored, and a plan produced in the root checkout is not there when `/execute` runs
+from the worktree. Both phases happen in the same tree.
+
 Name it after the ticket. Two tickets never share a worktree and one ticket never spans
 two: the whole point is that a ticket's state — its branch, its uncommitted edits, its
 failed gate — is legible on its own and disappears with it. A shared worktree turns a

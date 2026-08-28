@@ -17,9 +17,16 @@ Produce the plan with OMC, not by hand:
 /omc-plan <the ticket, verbatim, plus any coordinates you were given>
 ```
 
-It writes its handoff under `.omc/plans/`; its own `handoff-policy` is
-`approval-required`, and in this team the approver is the team lead. Report the plan
-**and the path to it**, then stop. No edits, no worktree, no commits.
+Run it **from inside this ticket's worktree**, which the orchestrator created before
+handing you the ticket. That matters: `/omc-plan` writes its handoff to `.omc/plans/`
+relative to the working directory, `.omc/` is gitignored so no branch carries it, and a
+plan written in the root checkout is simply not there when phase 2 runs `/execute` from
+the worktree. Plan where you will build.
+
+Its `handoff-policy` is `approval-required`, and in this team the approver is the team
+lead. Report the plan **and the absolute path to its handoff**, then stop — no source
+edits, no commits. If you were given no worktree, say so and stop rather than planning in
+the root checkout.
 
 Whatever `omc-plan` gives you, it is yours to make concrete before you hand it over.
 A plan that says "update the validation" is not yet a plan; one that names the file, the function, the assertion that currently passes
@@ -70,8 +77,10 @@ Run the approved plan through the OMC executor rather than freehanding it — pa
 handoff path, not a retelling:
 
 ```
-/execute .omc/plans/<the approved plan>
+/execute <absolute path to the approved handoff>
 ```
+
+Absolute, not relative: you are in the worktree and the path is only unambiguous that way.
 
 Red → Green → Refactor, one cycle per commit. Land the failing test first, then the fix.
 Assert contracts a user can observe — never argv order, call counts, stderr spies, or "the
