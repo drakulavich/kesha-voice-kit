@@ -757,19 +757,47 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
     ).toHaveLength(1);
   });
 
-  // `github.ref_protected` is a boolean, so it collapses every protected-branch run into one
-  // group — the repository-wide failure the expression check exists to stop, respelled.
-  test.each(["${{ github.ref_protected }}", "${{ github.ref_name }}", "${{ github.ref_type }}"])(
-    "fails the ref-adjacent context %s",
-    (group) => {
-      const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+  // Every spelling of one defect; review rounds 1-3 each closed one of these alone (#1105).
+  test.each([
+    ["bare literal", "github.ref"],
+    ["single-quoted literal", "${{ 'github.ref' }}"],
+    ["double-quoted literal", '${{ "github.ref" }}'],
+    ["literal inside a call", "${{ format('github.ref') }}"],
+    ["boolean sibling context", "${{ github.ref_protected }}"],
+    ["short-name sibling context", "${{ github.ref_name }}"],
+    ["type sibling context", "${{ github.ref_type }}"],
+    ["no per-ref context at all", "${{ github.workflow }}"],
+  ])("fails a group that does not vary per ref: %s", (_form, group) => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+      on: { pull_request: null },
+      concurrency: { group, "cancel-in-progress": true },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#597");
+  });
+
+  // A `}` inside a string literal used to truncate the scan and reject these wrongly.
+  test.each([
+    ["composed via format", "${{ format('{0}', github.ref) }}"],
+    ["brace inside a sibling literal", "${{ format('a}b') }}-${{ github.ref }}"],
+  ])("accepts a group that varies per ref: %s", (_form, group) => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
         on: { pull_request: null },
         concurrency: { group, "cancel-in-progress": true },
-      });
-      expect(errors).toHaveLength(1);
-      expect(errors[0]).toContain("#597");
-    },
-  );
+      }),
+    ).toEqual([]);
+  });
+
+  // Yields two groups repo-wide; rejecting it needs an evaluator, not a longer pattern.
+  test("accepts a boolean comparison over github.ref — the known residual", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: { pull_request: null },
+        concurrency: { group: "${{ github.ref == 'refs/heads/main' }}", "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
+  });
 
   test("still accepts github.ref alongside a rejected sibling context", () => {
     expect(

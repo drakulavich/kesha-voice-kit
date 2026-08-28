@@ -661,13 +661,36 @@ function triggerNames(on: unknown): string[] {
 }
 
 /**
+ * Contexts that take a distinct value per ref. `github.head_ref` is deliberately absent: it is
+ * empty on push events, so a group keyed on it alone collapses every push into one lane.
+ */
+const PER_REF_CONTEXT = /github\.ref(?!\w)/;
+const EXPRESSION = /\$\{\{(.*?)\}\}/gs;
+/** Single quotes with `''` escaping are GitHub's only string literal; `"…"` is invalid syntax, stripped so a typo cannot satisfy the check either. */
+const STRING_LITERAL = /'(?:[^']|'')*'|"[^"]*"/g;
+
+/**
+ * Whether the group takes a distinct value per ref, which is the property that makes
+ * cancellation safe. Necessary, not sufficient: it proves an expression *consumes* a per-ref
+ * context as data, not that the result is injective over refs — `${{ github.ref == 'x' }}`
+ * satisfies it and yields two groups. Deciding that needs an expression evaluator, so the
+ * residual is stated rather than chased (#1105).
+ */
+function groupVariesPerRef(group: string): boolean {
+  for (const [, expression] of group.matchAll(EXPRESSION)) {
+    if (PER_REF_CONTEXT.test((expression ?? "").replace(STRING_LITERAL, ""))) return true;
+  }
+  return false;
+}
+
+/**
  * Fails when a workflow that runs on pull requests declares no top-level `concurrency` group.
  *
  * Without one every superseded push runs to completion: `rust-test.yml` carried two macOS
  * jobs that way, and macOS is 80% of this repo's CI cost at 10.3x Linux per minute (#1105).
- * The group must interpolate `github.ref` — a workflow-wide group serialises every PR into
- * one queue, and GitHub evicts the pending run when a third arrives, so the evicted run
- * reports nothing and the required check never lands, blocking the PR forever (#597).
+ * The group must additionally vary per ref — any group shared across pull requests serialises
+ * them into one queue, and GitHub evicts the pending run when a third arrives, so the evicted
+ * run reports nothing and the required check never lands, blocking the PR forever (#597).
  */
 export function requireConcurrencyOnPullRequestWorkflows(path: string, document: unknown): string[] {
   const doc = document as { on?: unknown; concurrency?: unknown } | undefined;
@@ -681,12 +704,9 @@ export function requireConcurrencyOnPullRequestWorkflows(path: string, document:
   }
 
   const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown })?.group;
-  // Inside `${{ … }}`, not merely present: a literal `github.ref` is one repository-wide
-  // group, which makes unrelated PRs evict each other rather than none at all. `github.ref`
-  // exactly, so the boolean `github.ref_protected` — and any other `ref_*` — is rejected.
-  if (typeof group !== "string" || !/\$\{\{[^}]*github\.ref(?!\w)[^}]*\}\}/.test(group)) {
+  if (typeof group !== "string" || !groupVariesPerRef(group)) {
     return [
-      `${path}: \`concurrency.group\` must interpolate \`github.ref\` inside a \`\${{ }}\` expression; any group shared across pull requests queues them into one lane and GitHub evicts the pending run, so the required check never lands (#597)`,
+      `${path}: \`concurrency.group\` must vary per ref — some \`\${{ }}\` expression has to use \`github.ref\` as an operand, not as quoted text; a group shared across pull requests queues them into one lane and GitHub evicts the pending run, so the required check never lands (#597)`,
     ];
   }
   return [];
