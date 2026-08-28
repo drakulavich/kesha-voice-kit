@@ -218,6 +218,35 @@ happened to mention:
 4. **Completeness** — end with what was **not** examined. If that list is empty, say so
    explicitly: an unstated gap reads identically to no gap.
 
+## Skin in the game
+
+Every claim here is made by someone who can be wrong, and the loop only corrects what it can
+attribute. Two rules, and neither is about blame — an unattributed error cannot be seen as a
+pattern, and a pattern is the only thing a ledger can act on.
+
+**Sign the claim.** A verdict, a rejected finding, a directive, a relayed fact — each carries
+who made it, and the ledger entry for an escaped defect names the stage **and the agent**,
+including the orchestrator. On #1105 item 3 the orchestrator supplied three wrong job/OS
+labels, a headroom figure lifted from a chat summary, a wrong line number and an incomplete
+citation list; every one was corrected by an agent that read the file, and none of it would
+have been visible as a pattern if the entries had said only "caught at plan".
+
+**Name the downside and who bears it.** Before directing a change, say what it costs if the
+direction is wrong and who pays. A directive whose cost falls entirely on someone else earns
+one more look before it is sent. The orchestrator reversed the same design decision twice on
+#1105 item 3 — instance, then class, then instance — and the implementer paid three revisions
+for it. That was cheap only because the plan round moves prose rather than code, which is the
+strongest argument for stopping before implementation anyone made on that ticket; after commit
+1 the same churn is rework.
+
+The corollary, which is the part that binds: **the lead that approved a plan reviews the fix
+when a defect the plan stage could have caught escapes it.** Not a note in a file — the same
+named agent, so the cost of a loose approval returns to the reviewer that gave it rather than
+landing on whoever is next.
+
+An agent that cannot say what its own claim would cost if wrong has not finished thinking about
+the claim.
+
 ## 5. Triage the findings — your job, not the implementer's
 
 Not every finding gets applied. For each, decide and record:

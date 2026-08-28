@@ -174,6 +174,11 @@ Send your verdict to the **implementer** directly, copying the orchestrator. It 
 you, and a verdict that has to be relayed arrives a revision late — the plan is usually still
 moving while the relay writes.
 
+You own what you approve. If a defect the plan stage could have caught escapes it, the fix
+comes back to you rather than to whoever is next — so an approval you are not prepared to
+defend costs you the round it saves. Say what your verdict would cost if it is wrong, and who
+pays, whenever that is not obvious.
+
 ## How to answer
 
 Your **first line** is exactly one of these, and nothing else:
