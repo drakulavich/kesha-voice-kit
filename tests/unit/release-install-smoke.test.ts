@@ -18,13 +18,17 @@ function metadataFilter(): string {
   return filter;
 }
 
-async function runFilter(document: unknown): Promise<boolean> {
+async function runFilterRaw(input: string): Promise<number> {
   const proc = Bun.spawn(["jq", "-e", "--arg", "version", "1.29.1", metadataFilter()], {
-    stdin: new TextEncoder().encode(JSON.stringify(document)),
+    stdin: new TextEncoder().encode(input),
     stdout: "ignore",
     stderr: "ignore",
   });
-  return (await proc.exited) === 0;
+  return await proc.exited;
+}
+
+async function runFilter(document: unknown): Promise<boolean> {
+  return (await runFilterRaw(JSON.stringify(document))) === 0;
 }
 
 /** What `npm view <pkg> --json` returns, trimmed to the keys the filter reads. */
@@ -40,14 +44,27 @@ const PUBLISHED = {
 };
 
 describe("release-install-smoke npm metadata gate", () => {
+  // The skip is an escape hatch for contributor machines, not for CI. Without this a future
+  // image change could silently skip every predicate case and leave the suite green.
+  test("jq is present in CI, so none of the cases below are silently skipped", () => {
+    if (process.env.CI) expect(JQ).toBeTruthy();
+  });
+
   test.skipIf(!JQ)("accepts a genuinely published, provenance-carrying version", async () => {
     expect(await runFilter(PUBLISHED)).toBe(true);
   });
 
-  test.skipIf(!JQ)("rejects the flattened shape `npm view --json <fields>` returns", async () => {
-    // Asking for a field list answers with keys named
-    // literally "dist.integrity" / "dist.attestations", so the nested filter reads null
-    // and the gate fails every release regardless of what was published.
+  // THE regression. The replaced command was `--json version,dist.integrity,dist.attestations`
+  // — one comma-joined argument, not three. npm answers that with an empty document at exit 0,
+  // and `jq -e` on no input exits 4, so the gate failed every release whatever was published.
+  test.skipIf(!JQ)("fails on the empty document the comma-joined field list produced", async () => {
+    expect(await runFilterRaw("")).toBe(4);
+  });
+
+  // Not the regression: the space-separated form flattens instead of emptying. Kept because it
+  // is the other way a field list breaks this filter, and the difference is easy to misread —
+  // the first analysis of this bug reproduced this shape and described it as the cause.
+  test.skipIf(!JQ)("rejects the flattened shape a space-separated field list returns", async () => {
     const flattened = {
       version: "1.29.1",
       "dist.integrity": PUBLISHED.dist.integrity,
