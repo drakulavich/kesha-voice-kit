@@ -56,6 +56,19 @@ Rules that fail the bar and should not be proposed:
 - A rule derived from the same list as the fix. A check built from what you just corrected
   cannot fail; derive it from what the end state must not contain.
 
+## One question the ledger keeps asking
+
+For every ticket, record whether its **benefit** was measured or only its mechanism. A change
+can be correct, well guarded and fully verified while being worth almost nothing, and nothing
+earlier in the loop will say so: the plan round judges whether the change does what it claims,
+not whether the claim was worth ranking first.
+
+So state the benefit as a number where one exists, and where it does not, say that plainly.
+"Measured: the workflow is 26% of CI cost" is a denominator. "Measured: 2.9% of its runs are
+superseded, so the saving is 2.9% of that" is a benefit. If a ticket shipped without the
+second kind, that belongs in its entry — not as a failure, but so the next ranking is done
+against a rate rather than a total.
+
 ## Retirement, which is half the job
 
 Read the existing ledger before writing. For every rule already in the team's files, ask

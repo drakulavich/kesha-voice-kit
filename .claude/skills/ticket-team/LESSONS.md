@@ -26,6 +26,7 @@ when the answer is no.
 | The OMC skills must be verified registered before the loop starts | #1107 | 1 | The whole protocol named `/omc-plan`, `/execute`, `/omc-review` while the plugin was unregistered; every phase called something that could not resolve |
 | Agents deliver by `SendMessage`; idle is availability, not output | #1107 | 1 | Three agents in a row completed their work and reported nothing until asked by name |
 | The verdict is a closed shape and the orchestrator fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
+| A plan justified by a cost figure must measure the **frequency of the waste**, not the cost of the thing that wastes | #1105 | 1 | The ticket was ranked first on `Rust Tests` being 26.5% of CI cost; the waste it removes is 2.9% of that, while an unranked item in the same audit is worth three years of it per incident |
 | A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 1 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
 | A plan's mutation list must cover every value AND every input shape the claim rests on, derived from what the end state must not contain | #1105 | 1 | Four findings: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; and two of three valid `on:` spellings bypassed the rule entirely |
 | The approval carries a digest of the plan it approved | #1107 | 1 | Round 2 on #1105: the digest matched while the two byte counts did not, which is exactly the case it exists for |
@@ -127,6 +128,39 @@ reading `$?` through a `| tail` would have shown 0 and read as a pass.
 **Not demonstrated live: the cancellation itself.** Not a defect — the plan carried the
 standing evidence (two measured cancelled `ci.yml` runs plus the identical `if: always()`
 aggregator shape) and the gap is recorded in the pull request body. `none`.
+
+
+### Pareto, measured after the fact
+
+The whole ticket is **4 functional lines out of 302** — the `concurrency` block. The other
+295 are the guard around it: 85 lines of lint rule, 210 of tests. All nine defects in this
+ticket lived in the guard; the four lines were correct in the first commit and never changed
+across three review rounds.
+
+The guard is not the problem — codex proved it necessary by showing `cancel-in-progress: true`
+could be deleted with everything staying green. The problem is the **ranking**, and it is
+mine: #1105 put this item first on the strength of "`Rust Tests` is 26.5% of CI cost". That is
+the cost of *running* the workflow, not the cost of the *waste* the change removes.
+
+Measured afterwards, using `ci.yml` as the proxy — both workflows fire on the same
+pull-request events, and `ci.yml` already carries the group so its cancellations are the rate
+a working group produces:
+
+| | `rust-test.yml` (no group) | `ci.yml` (has one) |
+|---|---|---|
+| pull_request runs in 200 | 176 | 136 |
+| cancelled | **0 (0%)** | **4 (2.9%)** |
+
+So the saving is ~2.9% of that 26.5%, or roughly three macOS minutes per ten days — about
+$0.21 at private-repo rates and exactly $0 here, since the repository is public. Meanwhile
+#1105's third item, 26 jobs with no `timeout-minutes` including a macOS build, is worth $22
+the first time one hangs for the default 360 minutes: **one incident outweighs three years of
+this ticket's saving.**
+
+What the ticket does buy that the money argument misses: a superseded run holds scarce macOS
+runners and delays the current one. In a free public repository latency is the real currency.
+But the ticket was justified on cost, and on cost the justification does not survive contact
+with the frequency.
 
 ## #1106 — the npm metadata gate
 
