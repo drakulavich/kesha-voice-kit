@@ -26,6 +26,7 @@ when the answer is no.
 | The OMC skills must be verified registered before the loop starts | #1107 | 1 | The whole protocol named `/omc-plan`, `/execute`, `/omc-review` while the plugin was unregistered; every phase called something that could not resolve |
 | Agents deliver by `SendMessage`; idle is availability, not output | #1107 | 1 | Three agents in a row completed their work and reported nothing until asked by name |
 | The verdict is a closed shape and the orchestrator fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
+| A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 1 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
 | A plan's mutation list must cover every value AND every input shape the claim rests on, derived from what the end state must not contain | #1105 | 1 | Four findings: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; and two of three valid `on:` spellings bypassed the rule entirely |
 | The approval carries a digest of the plan it approved | #1107 | 1 | Round 2 on #1105: the digest matched while the two byte counts did not, which is exactly the case it exists for |
 
@@ -65,7 +66,7 @@ something an agent file can enforce.
 
 ## #1105 — `concurrency` for `rust-test.yml`
 
-Seven defects, five escaped a stage, four produced one shared change.
+Seven defects, five escaped a stage, and the largest of them took three rounds because the guard was written against spellings instead of the property behind them.
 
 **The plan asserted a cancelled run reports `cancelled`; the aggregator reports `failure`.**
 Caught at: teamlead, before any code existed. Earliest that could have: the same.
@@ -74,37 +75,39 @@ verification step built on that claim would have had the implementer report a re
 that was not one. The implementer reproduced the finding itself before rewriting, and found
 a third SHA (`e2b9a246`) where the aggregator check is absent entirely.
 
-**`group.includes("github.ref")` accepted the bare literal `group: github.ref`** — one
-hard-coded repository-wide group, so unrelated pull requests evict each other, which is
-worse than no group at all.
-Caught at: codex. Earliest that could have: **plan**. The plan required the group to
-"interpolate `github.ref`" and then prescribed exactly two mutations, both derived from its
-own diff. A mutation list built from the change cannot fail on a wrong-but-accepted value.
+**Three rounds against one defect: a concurrency group that does not vary per ref.**
+Round 1 caught the bare literal `group: github.ref` and was fixed by requiring `${{ … }}`.
+Round 2 caught `${{ github.ref_protected }}` and was fixed with a `(?!\w)` boundary. Round 3
+caught `${{ 'github.ref' }}` — a quoted constant — as a live P1 on the head that had just
+been reviewed clean.
+Caught at: codex (round 1), Greptile (rounds 2 and 3). Earliest that could have: **round 2**.
+Two different spellings of one failure mode is the signal to ask what property they violate,
+not to write a second pattern.
 
-**`cancel-in-progress: true` had no guard at all** — deleting it or setting it `false` left
-the suite and `check:workflows` green, while that line is the entire cost saving.
-Caught at: codex. Earliest that could have: **teamlead**. The plan's Risks section named
-the gap in writing and the approval read it as an accepted trade-off. It was not one: the
-applied fix scopes `requireRustTestCancelsSupersededRuns` to `rust-test.yml` by `endsWith`,
-which never touches `security.yml` and so never needed the investigation the plan named as
-its blocker.
+The implementer named this itself when asked, and its formulation is the lesson: at round 1
+it wrote a guard against the example in front of it rather than against the property the
+example violated, then confirmed each new spelling failed and patched that one — which feels
+like evidence-driven work and is three iterations of the same mistake.
 
-**Two of the three valid trigger spellings bypass the rule** — `on: pull_request` and
-`on: [pull_request]` are not detected; only the mapping form is. The rule's stated purpose
-is to stop a future `pull_request` workflow losing its group, and two ways of writing that
-workflow walk past it.
-Caught at: Greptile, after undrafting. Earliest that could have: **plan**, by the same
-rule as the two above — the end state must not contain an unguarded `pull_request`
-workflow *in any spelling*, and the mutation list covered values rather than input shapes.
-Notable: the codex sweep ran and did not find this. Both-mutations-per-guard covers the
-values a guard reads, not the shapes it must accept.
+Rounds 2 and 3 were avoidable. The eventual fix asserts the property — each `${{ … }}` has
+its string literals stripped and must still reference a per-ref context as an operand — and
+it rejected two further spellings the implementer invented (`format('github.ref')`, and a
+double-quoted form) on the first try, which is the evidence the unit is right rather than
+its author's say-so. It also fixed a **false reject** neither review found: the old
+`[^}]*` could not cross the `}` inside `{0}`, so a legitimate
+`${{ format('{0}', github.ref) }}` was being refused. A pattern wrong in both directions is
+not one that needs another clause.
 
-**`${{ github.ref_protected }}` is accepted, and it is a boolean** — every protected-branch
-run collapses into one group, reintroducing the repository-wide failure the literal-`ref`
-fix had just closed, spelled differently.
-Caught at: Greptile. Earliest that could have: **codex**, whose finding created the
-`${{ … }}` requirement; the fix was written against `github.ref` as a substring without
-asking which other `github.ref*` values satisfy it.
+Stated residual, recorded rather than chased: the check is necessary, not sufficient.
+`${{ github.ref == 'refs/heads/main' }}` satisfies it and yields two groups repository-wide;
+proving injectivity over refs needs an expression evaluator. That boundary is a named test,
+not a silence.
+
+**Greptile reported `SUCCESS` at Confidence 4/5 while carrying a live P1 on the head.**
+Caught at: orchestrator, by reading the inline findings and checking each `commit_id`
+against the head — two P2s in the same listing were stale, pinned to the previous head.
+Earliest: the same. Success, no rule: CLAUDE.md already says to gate on findings and never
+on the score, and this is the first time in this ledger that rule has paid.
 
 **The orchestrator told the implementer its fix push would supersede the in-flight run "for
 free"; all three runs on `b5bf9b7` had already completed.**
