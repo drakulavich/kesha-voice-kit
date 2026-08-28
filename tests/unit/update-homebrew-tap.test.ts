@@ -79,6 +79,8 @@ describe("buildUpdatedFormula", () => {
         ? new Response("not found", { status: 404 })
         : new Response(Buffer.from("fake tarball"));
 
-    await expect(buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl })).rejects.toThrow();
+    await expect(buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl })).rejects.toThrow(
+      /HTTP 404/,
+    );
   });
 });
