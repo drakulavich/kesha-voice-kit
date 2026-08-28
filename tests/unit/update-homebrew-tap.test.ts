@@ -61,4 +61,24 @@ describe("buildUpdatedFormula", () => {
       }),
     ).rejects.toThrow(/stable/i);
   });
+
+  test("rejects when the tagged package.json has no version, rather than falling back to the tag", async () => {
+    const fetchImpl = async (url: string) =>
+      url.endsWith("package.json")
+        ? new Response(JSON.stringify({}))
+        : new Response(Buffer.from("fake tarball"));
+
+    await expect(
+      buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl }),
+    ).rejects.toThrow(/version/i);
+  });
+
+  test("rejects when the package.json fetch itself fails", async () => {
+    const fetchImpl = async (url: string) =>
+      url.endsWith("package.json")
+        ? new Response("not found", { status: 404 })
+        : new Response(Buffer.from("fake tarball"));
+
+    await expect(buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl })).rejects.toThrow();
+  });
 });

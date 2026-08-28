@@ -41,8 +41,7 @@ export async function buildUpdatedFormula({ tag, formula, fetchImpl = fetch }) {
   ]);
 
   const tagVersion = tag.slice(1);
-  // Homebrew scans this exact string out of the archive/refs/tags url itself; an explicit
-  // version equal to it fails `brew audit --strict` as redundant (#1105).
+  // Homebrew scans this exact string from the url; an explicit version equal to it fails `brew audit --strict` as redundant (#1105).
   const version = cliVersion === tagVersion ? null : cliVersion;
 
   return rewriteFormula(formula, { url: tarballUrl, version, sha256 });
