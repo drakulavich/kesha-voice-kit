@@ -30,8 +30,10 @@ leave the orchestrator to guess which of the two it is reading: which lane produ
 changes how far it should be trusted.
 
 `/omc-plan` writes its handoff to `.omc/plans/` relative to **its own** working directory,
-and nothing redirects it — so find the file it actually wrote, copy it to an absolute path
-under your worktree, and report **that**. Reporting a worktree path you did not write to
+and nothing redirects it — so find the file it actually wrote — glob
+`.omc/plans/` under the **root checkout** for the newest match, since that is where it lands
+when your working directory is the root — copy it to an absolute path under your worktree,
+and report **that**. Reporting a worktree path you did not write to
 produces a path that does not exist, and the next step shasums it.
 
 Then `SendMessage` the plan and that absolute path to the orchestrator and stop — no source

@@ -14,8 +14,10 @@ run it to a pull request that is out of draft and assigned to them.
 
 ## Precondition: the OMC skills must resolve
 
-`/omc-plan` and `/execute` are the OMC skills this protocol invokes; `/simplify` in step 6 is
-a built-in command, not an OMC one. A skill present on disk is not the same as one registered. Check your own skill listing before you
+`/omc-plan` and `/execute` are the OMC skills this protocol invokes, and a skill present on
+disk is not the same as one registered — check your own listing before you start. Step 6's
+simplification pass is **not** an OMC skill: `~/.claude/skills/` has no `simplify`. Use the
+`code-simplifier` agent, which exists as an agent regardless of what resolves as a command. Check your own skill listing before you
 start; if they are absent, `omc setup` installs them and `omc doctor conflicts` reports the
 state. This is not hypothetical — the whole protocol was written against them once while the
 plugin was unregistered, so every phase named an invocation that could not resolve.
@@ -43,7 +45,7 @@ with it.
 **Every path you hand an agent is absolute.** You cannot relocate a subagent's working
 directory: the `Agent` tool has no `cwd`, `EnterWorktree` is not in these agents' tool lists,
 and a `cd` inside one Bash call does not govern how a Skill or Write resolves a relative path.
-So the protocol does not depend on anyone's cwd — it passes `<the worktree, written out in full>` and absolute file paths, and
+So the protocol does not depend on anyone's cwd — it passes `<worktree-abs>` and absolute file paths, and
 every agent reads and writes by them. A relative `.omc/plans/…` resolves against whichever
 tree the agent happens to be in, which is how a plan written in one tree was handed to a step
 running in another.
@@ -82,7 +84,7 @@ Spawn the implementer **named**, and give it the worktree it will work in:
 ```
 Agent(name: "impl-<issue>", subagent_type: "implementer",
       prompt: "<the ticket, verbatim, plus any coordinates you have>
-               Your worktree: <absolute <the worktree, written out in full>>
+               Your worktree: <worktree-abs>
                Phase 1 only: run /omc-plan --direct, report the plan and the ABSOLUTE path to
                its handoff, then SendMessage it to me and stop.")
 ```
@@ -169,7 +171,7 @@ plan problem — back to step 2.
 
 ## 6. Simplify, if it earns it
 
-Run `/simplify` from the worktree, by its full path, and only when the diff got there by accretion. Skip it on a small
+Spawn `code-simplifier` against the worktree by its full path, and only when the diff got there by accretion. Skip it on a small
 clean diff: a simplification pass on three lines is a second review round with nothing to find,
 and it invalidates the review that just happened.
 
@@ -224,7 +226,7 @@ stage caught it, and which earlier stage could have.
 
 ```
 Agent(name: "retro-<issue>", subagent_type: "retro",
-      prompt: "Ticket #<issue>, PR #<N>, worktree <absolute <the worktree, written out in full>>. Artifacts: <plan path>,
+      prompt: "Ticket #<issue>, PR #<N>, worktree <worktree-abs>. Artifacts: <plan path>,
                verdicts, codex findings and my triage, CI runs. Propose the ledger entry.")
 ```
 
