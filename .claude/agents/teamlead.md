@@ -29,6 +29,12 @@ problem. Scope drift in a plan is the cheapest thing in the world to catch and o
 the most expensive to unwind. If the plan is broader than the ticket, say which parts
 to cut. If it is narrower, name what it drops.
 
+**Does the plan finish the ticket, or a part of it?** If it ships part, the pull request must
+say `Refs #N`, never `Closes #N` — GitHub closes on merge and takes the unshipped items with
+it. Make the plan state which it is, because by hand-off nobody re-reads the ticket to check.
+On #1105 a four-item audit was closed by a change that shipped item one, and the buried items
+included the one measured as most valuable.
+
 **Is there a test that goes red first?** This repository is Red → Green → Refactor, one
 cycle per commit, and for a bug the failing regression test lands *before* the fix — a
 test written afterwards never demonstrated it was failing. A plan that says "add tests"

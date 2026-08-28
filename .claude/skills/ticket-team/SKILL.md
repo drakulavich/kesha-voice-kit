@@ -178,6 +178,12 @@ request view, which can report a superseded run as green after a force-push. Pol
 rather than the working copy — a local snapshot once called an agent stuck while its pull
 request was open.
 
+Check the closing keyword for the **right word**, not for its presence. `Closes #N` only when
+the change finishes the ticket; `Refs #N` when the ticket outlives it, and then close by hand
+once it is genuinely done. Verifying that `Closes` is in the body is not verification — on
+#1105 it was there, it was wrong, and merging closed a four-item audit on the strength of one
+shipped item.
+
 **Verify one decisive thing yourself**, with one command, rather than relaying what an agent
 reported. "Gates green" has been reported here while the type checker had errors, and a green
 CI job has existed that never ran the test it was created for.

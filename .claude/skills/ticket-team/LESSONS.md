@@ -26,6 +26,7 @@ when the answer is no.
 | The OMC skills must be verified registered before the loop starts | #1107 | 1 | The whole protocol named `/omc-plan`, `/execute`, `/omc-review` while the plugin was unregistered; every phase called something that could not resolve |
 | Agents deliver by `SendMessage`; idle is availability, not output | #1107 | 1 | Three agents in a row completed their work and reported nothing until asked by name |
 | The verdict is a closed shape and the orchestrator fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
+| A closing keyword is checked for the right word, not for its presence — `Refs #N` when the ticket outlives the change | #1105 | 1 | `Closes #1105` shipped item one of a four-item audit and closed the other three on merge, including the one measured as the most valuable |
 | Guard the instance, not the class, until a second instance exists — and treat a guard that changes more often than the thing it guards as the liability signal it is | #1105 | 1 | A rule generalised to unwritten workflows produced all nine defects across three rounds; the guarded file changed in 1 of 5 commits, the guard in 4 of 5 |
 | A plan justified by a cost figure must measure the **frequency of the waste**, not the cost of the thing that wastes | #1105 | 1 | The ticket was ranked first on `Rust Tests` being 26.5% of CI cost; the waste it removes is 2.9% of that, while an unranked item in the same audit is worth three years of it per incident |
 | A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 1 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
@@ -130,6 +131,24 @@ reading `$?` through a `| tail` would have shown 0 and read as a pass.
 standing evidence (two measured cancelled `ci.yml` runs plus the identical `if: always()`
 aggregator shape) and the gap is recorded in the pull request body. `none`.
 
+
+### Outcome
+
+Merged as `12b461c`. The four lines are on `main` and `check:workflows` is green.
+
+One defect escaped every stage of the loop and was caught only after merge: the pull request
+carried `Closes #1105`, but #1105 is a four-item audit and this shipped item one. Merging
+closed the whole audit, burying the item that the same review had just measured as worth three
+years of this one per incident. CLAUDE.md states the rule — `Refs #N` for partial work,
+`Closes` only when the ticket is finished.
+
+Caught at: after merge, by the orchestrator. Earliest that could have: **plan**, where the
+scope was already known to be one item of four, and again at hand-off, where the orchestrator
+verified `Closes #1105` was present in the body and treated its presence as correctness. That
+is the failure worth naming: the check ran, passed, and asked the wrong question — whether the
+keyword was there, never whether it was the right keyword.
+
+Issue reopened with the three remaining items and the corrected ranking.
 
 ### Pareto, measured after the fact
 
