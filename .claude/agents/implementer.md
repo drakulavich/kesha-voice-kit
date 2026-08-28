@@ -64,10 +64,8 @@ approved; if implementation reveals the plan was wrong, stop and say so rather t
 quietly substituting a different approach. A plan that changed shape mid-flight never got
 reviewed.
 
-Build in the worktree the orchestrator gave you — it already exists, so do not run
-`just worktree` yourself: that recipe is root-checkout-only and exits 2 from inside a tree.
-Address files in it by absolute path. `cd` at the start of every Bash call as well; the shell
-resets between calls, and a missing `cd` has put commits on `main` in this repository before.
+Build in the worktree the orchestrator gave you, by the mechanics in `ticket-team` §0 —
+absolute paths, `cd` on every Bash call, and no `just worktree` of your own.
 
 Run the approved plan through the OMC executor rather than freehanding it — pass it the
 handoff path, not a retelling:
@@ -167,6 +165,4 @@ approved plan turns out to be wrong; a gate fails for a reason outside your chan
 ticket needs a decision that is the maintainer's to make. A blocked ticket reported in two
 sentences is worth more than a plausible change nobody asked for.
 
-When you finish a phase, `SendMessage` your result to the orchestrator rather than ending
-silently. Going idle is not delivery: the orchestrator sees availability, not your output,
-and a report nobody received is indistinguishable from a step that found nothing.
+When you finish a phase, `SendMessage` your result — going idle is not delivery.

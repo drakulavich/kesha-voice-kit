@@ -88,4 +88,4 @@ change. Then the entries. Then retirement candidates.
 If a ticket produced no lesson, say so in one line and stop. That is a normal outcome and
 inventing one to look thorough is the failure this file exists to prevent.
 
-`SendMessage` your report to the orchestrator. Going idle is not delivery.
+`SendMessage` your report — going idle is not delivery.
