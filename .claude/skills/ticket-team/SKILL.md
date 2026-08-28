@@ -143,6 +143,52 @@ while the author is still revising.
 Step in when the loop stalls, when it exceeds three rounds, or when a verdict and a finding
 from elsewhere disagree. Not otherwise.
 
+### The binding block
+
+A verdict binds the artifact it names and **nothing outside it**. Every divergence this loop
+has produced so far lived in that gap. Git already closes most of it, so the request opens
+with two tokens and nothing else:
+
+```
+HEAD:   <git rev-parse HEAD>   <clean | dirty: git status --short>
+PLAN:   <absolute path>
+DIGEST: <sha256>  <bytes>
+STANDING ON: <the HEAD+digest pair whose APPROVED authorises this, or "none — first submission">
+```
+
+**`HEAD` is the tree binding, and it is not prose.** At plan time it equals `origin/main`;
+the moment a commit lands it does not, and that difference is the whole check. A reviewer
+compares two SHAs instead of reading a description of a tree, which is the same reason this
+repo gates CI on the full head SHA rather than on `gh pr checks`.
+
+The plan digest survives alongside it only because the plan lives under `.omc/plans/`, which
+is ignored — an untracked file is outside what `HEAD` covers. **If the plan is ever committed,
+the two collapse into one SHA and the digest line goes.** Do not commit it to the ticket branch
+to achieve that: a 26 KB design document in a 51-line diff is noise, and the PR body already
+carries the reasoning. A ref outside the branch (`git update-ref refs/plans/ticket-<N>`) is the
+version worth trying when a plan is worth keeping.
+
+Each line exists because it was missed:
+
+- **HEAD.** On #1105 item 3 the plan digest reproduced exactly while the guard was already
+  written and wired in the worktree. The reviewer had no reason to run `git status`, so the
+  early build was invisible to the verdict it was issuing. It happened to be authorised;
+  nothing in the protocol made that checkable. One reviewer ran `git log origin/main..HEAD`
+  unprompted in two verdicts — putting it in the request turns that habit into a guarantee.
+- **STANDING ON.** The same run built against an authorisation embedded inside a
+  `CHANGES REQUIRED` ("if you want to start committing, start; what is blocked is the plan
+  document as the PR body") rather than against a verdict for the digest in hand. Defensible,
+  and disclosed when asked — but naming what you stand on costs one line and removes the
+  reconciliation entirely.
+
+**An authorisation inside a rejection is scoped to what it says and expires with the next
+verdict.** Quote it when you stand on it. If quoting it makes it look thinner than you
+remembered, that is the check working.
+
+**Do not predict a round's cost.** "This is a clause, not a round" was said of a change that
+became a round. Say what you are asking for; how much it costs is the other agent's to
+report, and a wrong prediction makes the next honest estimate cheaper to dismiss.
+
 Read the verdict's **first line only**, and parse it strictly:
 
 - `VERDICT: APPROVED <digest>` — and the digest must still match `shasum -a 256` of the
