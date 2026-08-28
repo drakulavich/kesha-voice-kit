@@ -197,3 +197,39 @@ just worktree-rm ticket-<issue>            # from the root checkout, once the ga
 Report in one message: the ticket, what shipped, which findings you applied and which you
 rejected with the reason, the gate output, and anything left unverified. State plainly what did
 **not** get done.
+
+## 8. Retro — the ticket is not done until the ledger is
+
+Spawn `retro` once the hand-off is made. It reads the ticket's artifacts — the plan, every
+verdict including the `CHANGES REQUIRED` rounds, the codex findings with your triage, the
+CI runs, any external review, the final diff — and answers one question per defect: which
+stage caught it, and which earlier stage could have.
+
+```
+Agent(name: "retro-<issue>", subagent_type: "retro",
+      prompt: "Ticket #<issue>, PR #<N>, worktree <absolute $WT>. Artifacts: <plan path>,
+               verdicts, codex findings and my triage, CI runs. Propose the ledger entry.")
+```
+
+It proposes; **you** judge and write `.claude/skills/ticket-team/LESSONS.md`. That split is
+the same one the rest of this protocol runs on — nothing approves its own work — and it
+matters more here than anywhere, because a retro that edits the team's rules unattended is
+a loop with no reviewer at all.
+
+Apply the same triage you applied to codex: a proposed rule enters only if it names what it
+would have caught, with this ticket as evidence. Reject the rest **with the reason written
+down**, including the tempting ones — a restatement of something the files already say, or
+advice with no failure attached. If a rule already existed and was not followed, the finding
+is about why it was not followed, not that it should be repeated louder.
+
+Update the `fired` counts, including where the answer is no. Cut what has not fired in ten
+tickets, and say in the ledger that it is being cut for being unmeasured rather than for
+being wrong.
+
+A ticket that produced no lesson gets one line saying so. That is the normal outcome, and
+inventing one to look thorough is the failure this step exists to prevent — a ledger that
+only grows stops being read, and every rule in it is paid for by every future agent that
+has to hold it in context.
+
+Changes to the agent files themselves ship as their own pull request, reviewed like any
+other. The ledger is the evidence that PR cites.
