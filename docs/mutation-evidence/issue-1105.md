@@ -3,7 +3,7 @@
 One guard, `forbidNixBuildInCiAggregator` in `.github/scripts/check-workflows.ts`. It asserts
 that `jobs.ci.needs` in `ci.yml` does not contain `nix-build` — a job gated on
 `github.event_name == 'push'` cannot report on a pull request, yet a failed **or cancelled**
-run reds the required `🧪 CI` check on `main` (`ci.yml:984`), which is what happened at
+run reds the required `🧪 CI` check on `main` (the `ci` aggregator's fail step), which is what happened at
 `394e013a`.
 
 | Guard | File | Test | Where it runs | Reach |

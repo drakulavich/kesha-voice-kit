@@ -745,7 +745,7 @@ export function requireRustTestCancelsSupersededRuns(path: string, document: unk
  * Fails when the `ci` aggregator needs `nix-build`.
  *
  * A job in the required `ci` aggregator that cannot run on a pull request reds `main` — on
- * `cancelled` as well as `failure` (`ci.yml:984`) — with nothing a PR could have prevented.
+ * `cancelled` as well as `failure` (the `ci` aggregator's fail step) — with nothing a PR could have prevented.
  * Asserted as this one instance because a general matcher's own failure mode is an over-fire
  * and `check:workflows` is in `preflight`, so over-firing blocks every push; it therefore
  * misses the same job under another name. Widen on the second instance (#1105).
