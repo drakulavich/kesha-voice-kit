@@ -588,6 +588,66 @@ function describeUnreadable(path: string, err: unknown): string {
   return `${path}: ${err instanceof Error ? err.message : String(err)}`;
 }
 
+const PERMISSION_RANK: Record<string, number> = { none: 0, read: 1, write: 2 };
+const LEVEL_NAME = ["none", "read", "write"] as const;
+
+/** GitHub grants a called workflow only what the calling job holds; a job-level block replaces the workflow-level one. */
+function permissionGrants(node: unknown): Record<string, number> | undefined {
+  if (node === undefined || node === null) return undefined;
+  if (typeof node === "string") return { "*": node === "write-all" ? 2 : node === "read-all" ? 1 : 0 };
+  if (typeof node !== "object") return undefined;
+  const out: Record<string, number> = {};
+  for (const [scope, value] of Object.entries(node as Record<string, unknown>)) {
+    out[scope] = PERMISSION_RANK[String(value)] ?? 0;
+  }
+  return out;
+}
+
+function grantedTo(scope: string, grants: Record<string, number> | undefined): number {
+  if (!grants) return 0;
+  return grants[scope] ?? grants["*"] ?? 0;
+}
+
+export function requireReusableCallPermissions(path: string, document: unknown): string[] {
+  const doc = document as { jobs?: Record<string, Job>; permissions?: unknown } | undefined;
+  const jobs = doc?.jobs;
+  if (!jobs || typeof jobs !== "object") return [];
+
+  const workflowGrants = permissionGrants(doc?.permissions);
+  const errors: string[] = [];
+
+  for (const [name, job] of Object.entries(jobs)) {
+    const uses = (job as { uses?: unknown })?.uses;
+    if (typeof uses !== "string" || !uses.startsWith("./.github/workflows/")) continue;
+
+    const calleePath = uses.slice(2);
+    if (!existsSync(calleePath)) {
+      errors.push(`${path}: \`${name}\` calls ${uses}, which does not exist`);
+      continue;
+    }
+
+    const callee = parse(readFileSync(calleePath, "utf8")) as
+      | { jobs?: Record<string, Job>; permissions?: unknown }
+      | undefined;
+    const calleeDefaults = permissionGrants(callee?.permissions);
+    const granted = permissionGrants((job as { permissions?: unknown })?.permissions) ?? workflowGrants;
+
+    for (const [calleeJob, nested] of Object.entries(callee?.jobs ?? {})) {
+      const wanted = permissionGrants((nested as { permissions?: unknown })?.permissions) ?? calleeDefaults;
+      if (!wanted) continue;
+      for (const [scope, level] of Object.entries(wanted)) {
+        if (scope === "*" || level <= grantedTo(scope, granted)) continue;
+        errors.push(
+          `${path}: \`${name}\` calls ${uses} whose job \`${calleeJob}\` requests \`${scope}: ${LEVEL_NAME[level]}\`, ` +
+            `but the calling job only grants \`${scope}: ${LEVEL_NAME[grantedTo(scope, granted)]}\`. ` +
+            `GitHub validates this before any \`if:\` runs, so the whole workflow fails to start`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
 export function checkFile(
   path: string,
   testedScripts: string[],
@@ -606,6 +666,7 @@ export function checkFile(
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
       ...requirePipefailShell(path, document),
+      ...requireReusableCallPermissions(path, document),
       ...requireAptTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
