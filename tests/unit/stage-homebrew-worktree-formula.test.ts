@@ -30,6 +30,22 @@ describe("rewriteFormula", () => {
     expect(out).toContain(`version "${VERSION}"`);
   });
 
+  test("replaces an existing version line rather than duplicating it", () => {
+    const withVersion = rewriteFormula(FORMULA, { url: URL, version: "1.29.1", sha256: SHA256 });
+    const out = rewriteFormula(withVersion, { url: URL, version: "1.30.0", sha256: SHA256 });
+
+    expect(out.match(/^  version /gm)).toHaveLength(1);
+    expect(out).toContain('version "1.30.0"');
+    expect(out).not.toContain('version "1.29.1"');
+  });
+
+  test("omits the version line, and strips any existing one, when version is falsy", () => {
+    const withVersion = rewriteFormula(FORMULA, { url: URL, version: "1.24.7", sha256: SHA256 });
+    const out = rewriteFormula(withVersion, { url: URL, version: null, sha256: SHA256 });
+
+    expect(out).not.toMatch(/^  version /m);
+  });
+
   // The CLI writes the tap formula only with rewriteFormula's return value, so a
   // formula it rejects can never leave a partial file behind.
   test("refuses a formula with no url before returning a rewrite", () => {

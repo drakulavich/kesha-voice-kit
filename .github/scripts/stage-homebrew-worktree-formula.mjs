@@ -24,14 +24,18 @@ function replaceOne(source, pattern, replacement, label) {
 }
 
 export function rewriteFormula(formula, { url, version, sha256 }) {
-  const withUrl = replaceOne(
-    formula,
-    /^  url ".*"$/m,
-    // A file:// url gives Homebrew no version to parse, and the formula's `test do`
-    // asserts `version` matches `kesha --version`, so pin it from package.json.
-    `  url "${url}"\n  version "${version}"`,
-    "url",
-  );
+  // Strip before deciding whether to insert: a caller may pass an already-rewritten formula
+  // (a Homebrew tap's previous release), and re-inserting without stripping first leaves two
+  // `version` lines, of which Homebrew silently keeps the stale one (#1105).
+  const withoutVersion = formula.replace(/^  version ".*"\n/m, "");
+  const urlLine = version
+    ? // A file:// url gives Homebrew no version to parse, and the formula's `test do`
+      // asserts `version` matches `kesha --version`, so pin it from package.json.
+      `  url "${url}"\n  version "${version}"`
+    : // Falsy version means the caller's version already equals what Homebrew scans from the
+      // url itself — an explicit line here fails `brew audit --strict` as redundant (#1105).
+      `  url "${url}"`;
+  const withUrl = replaceOne(withoutVersion, /^  url ".*"$/m, urlLine, "url");
   return replaceOne(withUrl, /^  sha256 "[a-f0-9]{64}"$/m, `  sha256 "${sha256}"`, "sha256");
 }
 
