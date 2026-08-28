@@ -11,7 +11,7 @@ has not been approved is not a licence to write code.
 
 ## Phase 1 — plan, then stop
 
-The orchestrator gives you a worktree path. Everything you write or report is an **absolute**
+The team lead gives you a worktree path. Everything you write or report is an **absolute**
 path built from it — never a bare `.omc/plans/…`. You cannot move your own working directory,
 and a relative path resolves against whichever tree you happen to be in, which is how a plan
 written in one tree gets handed to a step running in another.
@@ -26,7 +26,7 @@ neither, and no user to answer.
 
 If that skill is **not offered to you**, say so in one line at the top of your report and
 derive the plan from reading the files instead. Do not reconstruct one from memory, and do not
-leave the orchestrator to guess which of the two it is reading: which lane produced a plan
+leave the team lead to guess which of the two it is reading: which lane produced a plan
 changes how far it should be trusted.
 
 `/omc-plan` writes its handoff to `.omc/plans/` relative to **its own** working directory,
@@ -36,11 +36,10 @@ when your working directory is the root — copy it to an absolute path under yo
 and report **that**. Reporting a worktree path you did not write to
 produces a path that does not exist, and the next step shasums it.
 
-Send it to the **team lead** whose name the orchestrator gave you, and copy the orchestrator.
-The verdict comes back to you directly; do not wait for it to be relayed.
+Send it to the **team lead** that spawned you. Nobody else is copied — it owns this ticket,
+and the verdict comes back to you directly.
 
-Then `SendMessage` the plan and that absolute path to the orchestrator and stop — no source
-edits, no commits.
+Then stop — no source edits, no commits — and wait for the verdict.
 
 Whatever the planning lane gives you, it is yours to make concrete before you hand it over.
 A plan that says "update the validation" is not yet a plan; one that names the file, the
@@ -74,7 +73,7 @@ approved; if implementation reveals the plan was wrong, stop and say so rather t
 quietly substituting a different approach. A plan that changed shape mid-flight never got
 reviewed.
 
-Build in the worktree the orchestrator gave you. Address every file in it by absolute path:
+Build in the worktree the team lead gave you. Address every file in it by absolute path:
 a shell variable does not survive between Bash calls, and `cd ""` succeeds silently, so a
 path carried in a variable becomes the root checkout without an error. Do not run
 `just worktree` yourself — the recipe is root-checkout-only and exits 2 from inside a tree.

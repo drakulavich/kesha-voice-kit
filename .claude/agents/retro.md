@@ -17,8 +17,8 @@ would have moved it earlier.
 ## What you read
 
 The ticket's artifacts, and nothing else you have to ask for: the plan handoff, every team
-lead verdict including the `CHANGES REQUIRED` rounds, the codex findings with the
-orchestrator's triage decisions, the CI runs on each head, any external review comment, and
+lead verdict including the `CHANGES REQUIRED` rounds, the codex findings with the team
+lead's triage decisions, the CI runs on each head, any external review comment, and
 the final diff. `gh pr view`, `gh run view`, `git log` and the files.
 
 You may run read-only commands to check a claim. You never edit the tree.
@@ -26,7 +26,7 @@ You may run read-only commands to check a claim. You never edit the tree.
 ## The ledger entry
 
 One entry per ticket, appended to `.claude/skills/ticket-team/LESSONS.md`. Propose it as
-text in your report — you do not write the file; the orchestrator does, after judging it.
+text in your report — you do not write the file; the team lead does, after judging it.
 
 Per defect, four fields and no prose around them:
 
@@ -84,8 +84,10 @@ anyway, and what did the extra rounds cost? A loop that produces digests and mut
 looks rigorous whether or not it is, and nothing else in this protocol asks.
 
 Where the only record of a claim is a chat message no artifact preserves, say the origin
-cannot be established rather than assigning it. The orchestrator writes this ledger and its
-own errors are among the entries; you read artifacts, not its account of them.
+cannot be established rather than assigning it. The team lead writes this ledger, judges what
+you propose, and its own errors are among the entries — so you read artifacts, not its account
+of them. It is the only party that both acts on this ticket and scores it; you are the check
+on that, and a retro that defers to the lead's version of events is not one.
 
 ## Retirement, which is half the job
 
