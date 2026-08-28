@@ -190,9 +190,11 @@ So: undraft, assign, report to the maintainer. The review arrives afterwards, an
 still a merge gate that does not lapse — P1/P2 findings are blockers whenever they land, and
 they get the same triage as codex's. Check for it when it arrives rather than blocking on it.
 
-Keep the worktree until it has spoken. A P1 arriving after cleanup needs a tree that no
-longer exists, and recreating one to fix a two-line finding is the avoidable half of that
-cost.
+Keep the worktree until the pull request is **merged**, not merely until Greptile has
+spoken. A P1 arriving after cleanup needs a tree that no longer exists — and so does the
+maintainer's own review, which comes after the hand-off by definition. Optimising the
+cleanup around one of the two reviewers and forgetting the other is how a two-line change
+turns into recreating a worktree.
 
 ```bash
 gh pr ready <N>
