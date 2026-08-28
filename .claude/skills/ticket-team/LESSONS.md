@@ -206,6 +206,33 @@ runners and delays the current one. In a free public repository latency is the r
 But the ticket was justified on cost, and on cost the justification does not survive contact
 with the frequency.
 
+## The reviewer who cites the run-it rule is the one most obliged to run it
+
+The team lead's own line, offered after it invoked "run the thing you are judging, do not read
+it" against the orchestrator's leak-guard diagnosis and then settled the question by reading
+the source. Its reading was careful and wrong: `process.ts:63`'s `if (!res.success) return []`
+looks like a fail-open branch, but `Bun.spawnSync` *throws* on a pre-exec `posix_spawn` failure,
+so that line is unreachable on the EPERM path. It ran the experiment afterwards and confirmed
+it — `ENOENT` and `EACCES` both throw, a real `ps` returns `success=true` — then withdrew the
+refutation without softening it and asked for the correction to be recorded unsoftened.
+
+Why this is worse than not invoking the rule: **citing it lends the conclusion authority the
+method did not earn.** A reviewer that says "I read this and think X" invites a check; one that
+says "the rule is to run it, and X" sounds as though it did. The orchestrator's evidence — a
+stack frame at `process.ts:62:19`, the `Bun.spawnSync` call itself — was decisive on its own and
+should have outweighed a reading of the source, because a value returned from a call cannot
+produce a frame at it.
+
+**A fourth instance of the ticket's recurring shape, and this one is the orchestrator's.** It
+read a paused review log — 375 KB, not growing, no matching `pgrep` — as a dead process and
+relaunched it, having minutes earlier stood the implementer down for running a duplicate. The
+first run then completed normally with the findings that were triaged. Its own duplicate was
+worse than the one it stopped: same claim, stale head, and a mistaken death certificate.
+
+Snapshot read as state, four times on one ticket: a tree read as unbuilt, a green read as
+current, a draft read as never-undrafted, a log read as finished. The fix each time was to get
+the timestamp or the process before concluding, not to read more carefully.
+
 ## Every agent is `drakulavich` in GitHub's audit trail
 
 On #1105 item 3 the timeline reads `18:31:00Z ready_for_review by drakulavich` then
