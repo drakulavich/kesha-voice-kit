@@ -9,6 +9,7 @@ import {
   requireAptTimeouts,
   requireBashOnWindowsRunSteps,
   requirePipefailShell,
+  requireReusableCallPermissions,
   requireRestoreOnlyCachesHaveAWriter,
   requireDarwinSmokeCoversBothEngines,
   requireDepsBeforeBunTest,
@@ -645,5 +646,55 @@ describe("requireAptTimeouts", () => {
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1090"))).toHaveLength(1);
+  });
+});
+
+describe("requireReusableCallPermissions", () => {
+  const SMOKE = "./.github/workflows/release-install-smoke.yml";
+
+  test("passes on the real release-cli.yml", () => {
+    expect(requireReusableCallPermissions(RELEASE_CLI, parseRepoYaml(RELEASE_CLI))).toEqual([]);
+  });
+
+  test("ignores a job that runs steps rather than calling a workflow", () => {
+    expect(requireReusableCallPermissions(RELEASE_CLI, job("build", [UPLOAD]))).toEqual([]);
+  });
+
+  test("fails when the caller grants read and the callee asks for write", () => {
+    const errors = requireReusableCallPermissions(RELEASE_CLI, {
+      permissions: { contents: "read" },
+      jobs: { smoke: { uses: SMOKE } },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("draft-engine");
+    expect(errors[0]).toContain("fails to start");
+  });
+
+  test("passes once the calling job raises the scope itself", () => {
+    expect(
+      requireReusableCallPermissions(RELEASE_CLI, {
+        permissions: { contents: "read" },
+        jobs: { smoke: { uses: SMOKE, permissions: { contents: "write" } } },
+      }),
+    ).toEqual([]);
+  });
+
+  test("a job-level block replaces the workflow-level one rather than merging", () => {
+    // The job grants only `actions`, so `contents` drops to none for the call — both callee jobs go unmet.
+    const errors = requireReusableCallPermissions(RELEASE_CLI, {
+      permissions: { contents: "write" },
+      jobs: { smoke: { uses: SMOKE, permissions: { actions: "read" } } },
+    });
+    expect(errors).toHaveLength(2);
+    expect(errors.join("\n")).toContain("requests \`contents: read\`");
+    expect(errors.join("\n")).toContain("only grants \`contents: none\`");
+  });
+
+  test("reports a called workflow that does not exist", () => {
+    const errors = requireReusableCallPermissions(RELEASE_CLI, {
+      jobs: { smoke: { uses: "./.github/workflows/does-not-exist.yml" } },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("does not exist");
   });
 });

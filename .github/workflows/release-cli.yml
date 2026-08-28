@@ -132,6 +132,10 @@ jobs:
     name: Smoke the published npm install
     needs: [plan, publish-npm]
     uses: ./.github/workflows/release-install-smoke.yml
+    # Static validation: the callee's draft-engine job asks for contents: write, and GitHub
+    # checks that before any `if:` runs — the workflow-level read would refuse to start.
+    permissions:
+      contents: write
     with:
       tag: ${{ needs.plan.outputs.tag }}
       version: ${{ needs.plan.outputs.version }}
