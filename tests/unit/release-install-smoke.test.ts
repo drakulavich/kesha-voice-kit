@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 
 const SCRIPT = ".github/scripts/release-install-smoke.sh";
 
+// The gate under test is a bash script that only ever runs on the Ubuntu release runner,
+// and these cases execute its real jq rather than a reimplementation. Windows runners ship
+// no jq, so there the filter cases have nothing to run — the structural assertion below
+// still runs everywhere and is the one that catches the regression this file exists for.
+const JQ = Bun.which("jq");
+
 /** The jq the script actually runs, lifted from the script so the test cannot drift from it. */
 function metadataFilter(): string {
   const source = readFileSync(SCRIPT, "utf8");
@@ -34,11 +40,11 @@ const PUBLISHED = {
 };
 
 describe("release-install-smoke npm metadata gate", () => {
-  test("accepts a genuinely published, provenance-carrying version", async () => {
+  test.skipIf(!JQ)("accepts a genuinely published, provenance-carrying version", async () => {
     expect(await runFilter(PUBLISHED)).toBe(true);
   });
 
-  test("rejects the flattened shape `npm view --json <fields>` returns", async () => {
+  test.skipIf(!JQ)("rejects the flattened shape `npm view --json <fields>` returns", async () => {
     // Asking for a field list answers with keys named
     // literally "dist.integrity" / "dist.attestations", so the nested filter reads null
     // and the gate fails every release regardless of what was published.
@@ -55,12 +61,12 @@ describe("release-install-smoke npm metadata gate", () => {
     expect(source).toContain(`npm view "$package@$VERSION" --json > "$metadata"`);
   });
 
-  test("rejects a version published without provenance", async () => {
+  test.skipIf(!JQ)("rejects a version published without provenance", async () => {
     const noProvenance = { ...PUBLISHED, dist: { ...PUBLISHED.dist, attestations: undefined } };
     expect(await runFilter(noProvenance)).toBe(false);
   });
 
-  test("rejects a provenance predicate that is not SLSA v1", async () => {
+  test.skipIf(!JQ)("rejects a provenance predicate that is not SLSA v1", async () => {
     const wrongPredicate = {
       ...PUBLISHED,
       dist: { ...PUBLISHED.dist, attestations: { provenance: { predicateType: "https://slsa.dev/provenance/v0.2" } } },
@@ -68,11 +74,11 @@ describe("release-install-smoke npm metadata gate", () => {
     expect(await runFilter(wrongPredicate)).toBe(false);
   });
 
-  test("rejects a mismatched version even when everything else is present", async () => {
+  test.skipIf(!JQ)("rejects a mismatched version even when everything else is present", async () => {
     expect(await runFilter({ ...PUBLISHED, version: "1.29.0" })).toBe(false);
   });
 
-  test("rejects an integrity digest that is not sha512", async () => {
+  test.skipIf(!JQ)("rejects an integrity digest that is not sha512", async () => {
     const weakDigest = { ...PUBLISHED, dist: { ...PUBLISHED.dist, integrity: "sha1-deadbeef" } };
     expect(await runFilter(weakDigest)).toBe(false);
   });
