@@ -648,6 +648,38 @@ export function requireReusableCallPermissions(path: string, document: unknown):
   return errors;
 }
 
+/**
+ * Fails when a workflow that runs on pull requests declares no top-level `concurrency` group.
+ *
+ * Without one every superseded push runs to completion: `rust-test.yml` carried two macOS
+ * jobs that way, and macOS is 80% of this repo's CI cost at 10.3x Linux per minute (#1105).
+ * The group must interpolate `github.ref` — a workflow-wide group serialises every PR into
+ * one queue, and GitHub evicts the pending run when a third arrives, so the evicted run
+ * reports nothing and the required check never lands, blocking the PR forever (#597).
+ */
+export function requireConcurrencyOnPullRequestWorkflows(path: string, document: unknown): string[] {
+  const doc = document as { on?: unknown; concurrency?: unknown } | undefined;
+  const triggers = doc?.on;
+  // `on` parses as the string key (YAML 1.2, not the 1.1 boolean) and `pull_request:` with no
+  // body is null, so membership is the only safe test — and it must not match pull_request_target.
+  if (typeof triggers !== "object" || triggers === null || !("pull_request" in triggers)) return [];
+
+  const concurrency = doc?.concurrency;
+  if (concurrency === undefined || concurrency === null) {
+    return [
+      `${path}: runs on pull requests but declares no top-level \`concurrency\`; every superseded push runs the whole workflow to completion (#1105)`,
+    ];
+  }
+
+  const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown })?.group;
+  if (typeof group !== "string" || !group.includes("github.ref")) {
+    return [
+      `${path}: \`concurrency.group\` must interpolate \`github.ref\`; a ref-less group queues every PR into one lane and GitHub evicts the pending run, so the required check never lands (#597)`,
+    ];
+  }
+  return [];
+}
+
 export function checkFile(
   path: string,
   testedScripts: string[],
@@ -667,6 +699,7 @@ export function checkFile(
       ...requireBashOnWindowsRunSteps(path, document),
       ...requirePipefailShell(path, document),
       ...requireReusableCallPermissions(path, document),
+      ...requireConcurrencyOnPullRequestWorkflows(path, document),
       ...requireAptTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),

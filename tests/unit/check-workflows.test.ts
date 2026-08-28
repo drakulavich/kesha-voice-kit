@@ -8,6 +8,7 @@ import {
   forbidLinuxPackaging,
   requireAptTimeouts,
   requireBashOnWindowsRunSteps,
+  requireConcurrencyOnPullRequestWorkflows,
   requirePipefailShell,
   requireReusableCallPermissions,
   requireRestoreOnlyCachesHaveAWriter,
@@ -696,5 +697,76 @@ describe("requireReusableCallPermissions", () => {
     });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("does not exist");
+  });
+});
+
+describe("requireConcurrencyOnPullRequestWorkflows", () => {
+  const RUST_TEST = ".github/workflows/rust-test.yml";
+  const SYNTHETIC = ".github/workflows/synthetic.yml";
+  const GROUP = "${{ github.workflow }}-${{ github.ref }}";
+
+  test("passes on the real rust-test.yml", () => {
+    expect(requireConcurrencyOnPullRequestWorkflows(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
+  });
+
+  test("passes on the real ci.yml", () => {
+    expect(requireConcurrencyOnPullRequestWorkflows(CI, parseRepoYaml(CI))).toEqual([]);
+  });
+
+  test("fails a pull_request workflow with no concurrency at all", () => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request: null }, jobs: {} });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1105");
+  });
+
+  test("fails a group that does not interpolate github.ref", () => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+      on: { pull_request: null },
+      concurrency: { group: "${{ github.workflow }}", "cancel-in-progress": true },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#597");
+  });
+
+  test("fails the string shorthand when it omits the ref", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request: null }, concurrency: "one-lane" }),
+    ).toHaveLength(1);
+  });
+
+  // pull_request_target is a different trigger with a different token; cache-cleanup.yml uses
+  // it, and a prefix match would drag it in.
+  test("ignores pull_request_target", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request_target: { types: ["closed"] } } }),
+    ).toEqual([]);
+  });
+
+  test("ignores a workflow that never runs on pull requests", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { schedule: [{ cron: "0 4 * * *" }] }, jobs: {} }),
+    ).toEqual([]);
+  });
+
+  // `pull_request:` with no body parses to null, so a truthiness test would skip the very
+  // workflows this rule exists for.
+  test("checks a pull_request trigger declared with no body", () => {
+    expect(requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request: null } })).toHaveLength(1);
+  });
+
+  test("accepts a compliant pull_request workflow", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: { pull_request: { branches: ["main"] } },
+        concurrency: { group: GROUP, "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });
