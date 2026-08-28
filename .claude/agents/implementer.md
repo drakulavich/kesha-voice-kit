@@ -85,6 +85,24 @@ and what to do. No speculative fields, variants or constants — `dead_code` is 
 under `-D warnings`. Comments default to none: write one only for a non-obvious *why*, a
 gotcha, an issue reference, a `SAFETY:` block, or a public-API contract.
 
+## Comments
+
+Default to none. Where the code says it, saying it again is noise, and a reader who has to
+skip a paragraph to reach the assertion has been charged for nothing.
+
+Write one only where a reader would otherwise be stuck, and then write the part they cannot
+derive: **why**, not what. A gotcha, a non-obvious constraint, the reason a value is that
+value, an issue reference, a `SAFETY:` block, a public-API contract. Never a narration of
+the mechanics, never a restatement of the name directly beneath it.
+
+One line. Not a paragraph and not fifty — if the explanation genuinely needs more, it
+belongs in the commit message or the pull request body, and a reader who needs the history
+will find it there. Two exceptions carry their own length: `SAFETY:` blocks and doc
+contracts, and a doc contract states the contract, never the implementation.
+
+Hold generated code to this bar too. The comment most worth deleting is the one that
+sounded thorough while adding nothing.
+
 Before you push, run the gate the plan named and paste what it printed. `just preflight`
 is the executable definition; do not reconstruct its commands from memory.
 

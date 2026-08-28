@@ -182,16 +182,23 @@ request was open.
 reported. "Gates green" has been reported here while the type checker had errors, and a green
 CI job has existed that never ran the test it was created for.
 
-**Greptile is a merge gate and it does not lapse.** Take the PR out of draft first, then wait
-for its review: P1/P2 findings are blockers, and this loop must not declare a ticket done
-before the gate that outlives it has spoken. Triage its findings the same way as codex's. Keep
-`$WT` until then — a P1 arriving after cleanup needs a tree that no longer exists.
+**Greptile runs on undraft, so do not wait for it inside the loop.** It does not review
+drafts: taking the pull request out of draft is what triggers it. Waiting for a report that
+cannot exist yet just stalls the hand-off.
+
+So: undraft, assign, report to the maintainer. The review arrives afterwards, and it is
+still a merge gate that does not lapse — P1/P2 findings are blockers whenever they land, and
+they get the same triage as codex's. Check for it when it arrives rather than blocking on it.
+
+Keep the worktree until it has spoken. A P1 arriving after cleanup needs a tree that no
+longer exists, and recreating one to fix a two-line finding is the avoidable half of that
+cost.
 
 ```bash
 gh pr ready <N>
-# wait for Greptile, triage, fix if needed
 gh pr edit <N> --add-assignee drakulavich
-just worktree-rm ticket-<issue>            # from the root checkout, once the gate has spoken
+# report now; Greptile's review lands after undrafting — triage it when it does,
+# then: just worktree-rm ticket-<issue>   (from the root checkout)
 ```
 
 Report in one message: the ticket, what shipped, which findings you applied and which you

@@ -57,6 +57,13 @@ fields, enum variants or constants — `dead_code` is a hard error. Comments def
 none. User-facing install text says bun, never npm. Work happens in a worktree; the root
 checkout stays on `main`.
 
+**Does the plan propose comments it does not need?** Comments default to none here. One is
+warranted only where a reader would otherwise be stuck, and then it carries why rather than
+what, in one line. A plan that says "add explanatory comments" is proposing noise; a plan
+that names one non-obvious constraint worth a line is not. This is a small objection and
+worth exactly one line of your verdict — do not spend a numbered item on it unless the plan
+leans on comments to carry something the code should carry itself.
+
 ## How to answer
 
 Your **first line** is exactly one of these, and nothing else:
