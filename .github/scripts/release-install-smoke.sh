@@ -80,9 +80,7 @@ run_npm() {
   export npm_config_cache="$scratch/npm-cache"
   export NPM_CONFIG_PREFIX="$prefix"
 
-  # Ask for the whole document, never a field list. `--json a,b,c` answers with an empty
-  # document at exit 0, and `jq -e` on no input exits 4; the space-separated form flattens to
-  # keys named literally "dist.integrity". Both defeat a nested filter, for different reasons.
+  # Never a field list: `--json a,b,c` yields an empty document at exit 0, and the space-separated form flattens `dist.integrity` into a literal key.
   npm view "$package@$VERSION" --json > "$metadata"
   jq -e --arg version "$VERSION" '
     .version == $version
