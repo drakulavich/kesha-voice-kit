@@ -206,6 +206,39 @@ runners and delays the current one. In a free public repository latency is the r
 But the ticket was justified on cost, and on cost the justification does not survive contact
 with the frequency.
 
+## The review harness degrades the instruction it is graded on
+
+**Open question, deliberately without a number.** Every conveyor review in this repository has
+run under `codex exec --sandbox read-only` or `--sandbox workspace-write`. Both break the
+prompt's central demand — "where a claim can be settled by running something, run it… do not
+settle it by reading" — and neither announces it:
+
+- `read-only`: `just mutate` writes the file under test and restores it in a `finally`. The
+  write fails, so "run BOTH mutations, report which assertion fires" is *unsatisfiable*. What
+  comes back is reasoning in the shape of verification, which is the one thing the instruction
+  exists to prevent.
+- `workspace-write`: mutations do run, but `ps` returns EPERM, and `bunfig.toml` preloads
+  `tests/helpers/leak-guard.ts` into every suite — so **every** `bun test` reports one spurious
+  unnamed failure at `tests/helpers/process.ts:62`. A reviewer either spends a round chasing it
+  or reads `144 pass / 1 fail` as a red suite.
+- Both: `ccc` cannot start its daemon (`PermissionError` on `~/.cocoindex_code/daemon.log`), and
+  its index lives in the root checkout rather than the worktree. The semantic-search path we
+  point reviewers at is simply absent.
+
+How many past mutation tables were executed rather than described is **not known**, and no
+figure is recorded here because inventing one would be worse than the admission. This is the
+loop failing its own standard: it has spent the day asking every agent to name the measurement
+behind a claim, while its primary instrument was quietly unable to take one.
+
+**The fix applied now**, pending something better: declare all three artifacts at the top of
+the review prompt, state that the mutation instruction is *not* waived because write access
+exists, and require that an unrunnable mutation be reported as the command that failed rather
+than as a verified row. **The fix not yet applied:** nothing checks that a reviewer ran what it
+says it ran. A mutation row is still self-reported.
+
+Found by reading the reviewer's own transcript rather than its conclusion — which is the
+practice that found it, and is worth more than the finding.
+
 ## #1105 item 3 — `nix-build` (in flight)
 
 **A third divergence, same family, caught before it cost anything.** The team lead told the
