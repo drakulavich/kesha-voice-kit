@@ -17,7 +17,7 @@ const ENGINE_TARGETS: Record<string, EngineTarget> = {
   "darwin-arm64": {
     assetName: "kesha-engine-darwin-arm64",
     backend: "coreml",
-    sizeBytes: 64_514_624,
+    sizeBytes: 64_514_608,
   },
   "linux-x64": {
     assetName: "kesha-engine-linux-x64",
