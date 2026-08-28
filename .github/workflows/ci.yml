@@ -36,6 +36,7 @@ defaults:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.filter.outputs.code }}
       integration: ${{ steps.filter.outputs.integration }}
@@ -190,6 +191,7 @@ jobs:
       needs.changes.outputs.workflows == 'true' || needs.changes.outputs.recipes == 'true'
       || github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -976,6 +978,7 @@ jobs:
       - openspec-validate
       - nix-build
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Fail if any required job failed
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')

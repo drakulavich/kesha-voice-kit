@@ -39,6 +39,7 @@ jobs:
   tag:
     if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
       actions: write # for the self-dispatch below (#651)
@@ -110,6 +111,7 @@ jobs:
             features: onnx,tts
             binary: kesha-engine-windows-x64.exe
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     env:
       # Target macOS 14 so the Swift compiler treats concurrency as
       # OS-provided and does not emit an explicit @rpath dependency on
@@ -445,6 +447,7 @@ jobs:
     needs: [build, darwin-synthesis-smoke]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       id-token: write

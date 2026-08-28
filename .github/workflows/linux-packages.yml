@@ -43,6 +43,7 @@ jobs:
   # CI only. The packages users install are cut from a `-cli` tag by release-cli.yml (#728).
   linux-packages:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

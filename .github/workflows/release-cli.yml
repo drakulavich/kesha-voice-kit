@@ -31,6 +31,7 @@ jobs:
   plan:
     name: Classify the tag
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # Not for writing: a draft release is invisible to a read-only token, and a guard that
     # cannot see the drafts it exists to catch would pass the build straight into one.
     permissions:
@@ -68,6 +69,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.packages == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -104,6 +106,7 @@ jobs:
     name: Publish to npm
     needs: [plan, packages]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       actions: write

@@ -34,6 +34,7 @@ defaults:
 jobs:
   reclaim:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       # Deleting cache entries needs write on the Actions scope. Nothing else in
       # this job touches the repository, so every other scope stays unset.
