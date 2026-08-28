@@ -308,6 +308,15 @@ claim originated, because the only record was a chat message no artifact preserv
 honest ledger entry had to say so. Write it to a file in the worktree, or to a ref; a
 `SendMessage` body is a notification that evidence exists, not the evidence.
 
+  **Decisions count as artifacts, and the maintainer's chat is not an audience.** On the same
+  ticket the orchestrator decided against taking an improved comment — the head was already
+  undrafted with Greptile's footer naming that exact SHA, so another commit meant re-running
+  both Nix legs and forcing a re-review for prose that was no longer false — and wrote that
+  decision only in its conversation with the maintainer. No agent reads that. The commit
+  happened, the cost was paid, and the decision had never existed anywhere the people acting
+  on it could see. **Rule violated by its own author one hour after writing it**, which is the
+  most useful thing about the incident: a rule you agree with is not a rule you follow.
+
 **4. The team's history is not the product's history.** `kesha-voice-kit`'s log is read by
 people shipping a voice toolkit; it should not carry which agent approved which digest.
 Coordination state goes on the team branch or on refs outside the ticket branch
