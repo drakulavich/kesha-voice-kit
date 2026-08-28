@@ -1,0 +1,79 @@
+name: ❄️ Nix Build
+
+# Advisory, not a gate: this reports on the PR and on a weekly schedule but is
+# deliberately absent from `🧪 CI`'s aggregator, so a Beta install path cannot
+# veto every merge. It moved out of ci.yml because it only ran on push, which
+# meant no PR could report on it while a failed or cancelled run still redded
+# the required check on `main` (#1105).
+#
+# Verify the Nix flake still evaluates and the engine derivation builds. Does
+# NOT replace `build-engine.yml` — distributable release artifacts continue to
+# go through Github-runner cargo + Swift toolchain pins.
+#
+# Currently builds only `.#kesha-engine`. The Bun wrapper package
+# `.#kesha` uses a fixed-output derivation whose `outputHash` requires
+# a nix-equipped developer to populate (see flake.nix `keshaNodeModules`
+# block + #264 plan T5); CI without that hash can't build it.
+#
+# macos-14 is Apple Silicon (aarch64-darwin). It exercises the Darwin-
+# only flake paths: Swift toolchain via nixpkgs, the Apple SDK
+# frameworks input, and the `say-avspeech` Swift sidecar stage-in
+# inside the engine derivation's postInstall. The lane uses the
+# `onnx,tts,system_tts` feature set — not `coreml,tts,system_tts` —
+# because `fluidaudio-rs`'s build.rs invokes `swift build`, which
+# tries to clone FluidAudio.git inside the offline Nix sandbox.
+# The canonical darwin release (build-engine.yml, pinned Xcode 16.2)
+# still ships the CoreML backend.
+
+on:
+  # `rust/**` and `package.json` feed this derivation too, so a new crate needing a system library or a `build.rs` change is caught only by the weekly cron below — accepted, because a two-OS build on every Rust push is the cost #1105 removed; widen on the first real instance.
+  pull_request:
+    paths:
+      - 'flake.nix'
+      - 'flake.lock'
+      - '.github/workflows/nix-build.yml'
+  # Catches drift no PR would: nixpkgs-unstable moving, or another upstream
+  # policy change like the crates.io User-Agent block this job found (#1105).
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  nix-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: ❄️  Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      # No remote Nix cache: DeterminateSystems retired the free
+      # `magic-nix-cache-action` backend (the macos-14 row of this job hung
+      # in `Setup Nix cache` for the full 35-min timeout). FlakeHub Cache
+      # works but requires auth; revisit if cold builds become painful.
+
+      - name: 🔍 Validate flake metadata
+        run: nix flake metadata --no-update-lock-file
+
+      - name: 🦀 Build kesha-engine
+        run: nix build .#kesha-engine --no-update-lock-file -L
+
+      - name: 🚬 Smoke
+        run: ./result/bin/kesha-engine --version

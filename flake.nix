@@ -30,6 +30,13 @@
         naersk' = pkgs.callPackage naersk {
           cargo = rustToolchain;
           rustc = rustToolchain;
+          # crates.io 403s the `curl/*` User-Agent nixpkgs fetchurl sends, and naersk calls it directly (#1105).
+          fetchurl = args: pkgs.fetchurl (args // {
+            curlOptsList = (args.curlOptsList or [ ]) ++ [
+              "--user-agent"
+              "kesha-voice-kit (+https://github.com/drakulavich/kesha-voice-kit)"
+            ];
+          });
         };
 
         # Platform detection

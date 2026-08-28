@@ -19,8 +19,8 @@ permissions:
   contents: read
   # `id-token: write` is NOT granted at workflow scope — it's elevated
   # only on the three test jobs that actually upload to Flakiness.io
-  # (Greptile #301 P1 security finding). `changes`, `raycast-lint`, and
-  # `nix-build` run third-party actions and don't need OIDC capability.
+  # (Greptile #301 P1 security finding). `changes` and `raycast-lint` run
+  # third-party actions and don't need OIDC capability.
   # `pull-requests: write` was previously needed for a sticky test-results
   # comment; removed alongside #303 when Flakiness.io took over the
   # "where did the tests land" surface.
@@ -44,7 +44,6 @@ jobs:
       tts_e2e: ${{ steps.filter.outputs.tts_e2e }}
       raycast: ${{ steps.filter.outputs.raycast }}
       openspec: ${{ steps.filter.outputs.openspec }}
-      nix: ${{ steps.filter.outputs.nix }}
       workflows: ${{ steps.filter.outputs.workflows }}
       recipes: ${{ steps.filter.outputs.recipes }}
       homebrew: ${{ steps.filter.outputs.homebrew }}
@@ -149,12 +148,6 @@ jobs:
               - '.github/workflows/ci.yml'
             openspec:
               - 'openspec/**'
-              - 'package.json'
-              - '.github/workflows/ci.yml'
-            nix:
-              - 'flake.nix'
-              - 'flake.lock'
-              - 'rust/**'
               - 'package.json'
               - '.github/workflows/ci.yml'
             workflows:
@@ -907,55 +900,6 @@ jobs:
           OPENSPEC_TELEMETRY: '0'
         run: bun run check:specs
 
-  # Supplementary post-merge check: verify the Nix flake still evaluates and
-  # the engine derivation builds after relevant changes land on main. Does NOT
-  # replace `build-engine.yml` — distributable release artifacts
-  # continue to go through Github-runner cargo + Swift toolchain pins.
-  #
-  # Currently builds only `.#kesha-engine`. The Bun wrapper package
-  # `.#kesha` uses a fixed-output derivation whose `outputHash` requires
-  # a nix-equipped developer to populate (see flake.nix `keshaNodeModules`
-  # block + #264 plan T5); CI without that hash can't build it.
-  #
-  # macos-14 is Apple Silicon (aarch64-darwin). It exercises the Darwin-
-  # only flake paths: Swift toolchain via nixpkgs, the Apple SDK
-  # frameworks input, and the `say-avspeech` Swift sidecar stage-in
-  # inside the engine derivation's postInstall. The lane uses the
-  # `onnx,tts,system_tts` feature set — not `coreml,tts,system_tts` —
-  # because `fluidaudio-rs`'s build.rs invokes `swift build`, which
-  # tries to clone FluidAudio.git inside the offline Nix sandbox.
-  # The canonical darwin release (build-engine.yml, pinned Xcode 16.2)
-  # still ships the CoreML backend.
-  nix-build:
-    needs: changes
-    if: github.event_name == 'push' && needs.changes.outputs.nix == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-14]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: ❄️  Install Nix
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
-      # No remote Nix cache: DeterminateSystems retired the free
-      # `magic-nix-cache-action` backend (the macos-14 row of this job hung
-      # in `Setup Nix cache` for the full 35-min timeout). FlakeHub Cache
-      # works but requires auth; revisit if cold builds become painful.
-
-      - name: 🔍 Validate flake metadata
-        run: nix flake metadata --no-update-lock-file
-
-      - name: 🦀 Build kesha-engine
-        run: nix build .#kesha-engine --no-update-lock-file -L
-
-      - name: 🚬 Smoke
-        run: ./result/bin/kesha-engine --version
-
   # Aggregator gate = the single required status check for branch protection.
   # Always runs so 🧪 CI reports on every PR; the path-gated jobs above skip on
   # unrelated PRs (→ success). The step fails the gate only if a real job failed.
@@ -976,7 +920,6 @@ jobs:
       - tts-e2e
       - raycast-lint
       - openspec-validate
-      - nix-build
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
