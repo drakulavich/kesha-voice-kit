@@ -14,8 +14,8 @@ run it to a pull request that is out of draft and assigned to them.
 
 ## Precondition: the OMC skills must resolve
 
-`/omc-plan`, `/execute` and `/omc-review` are plugin skills, and a plugin that is present on
-disk is not the same as one that is registered. Check your own skill listing before you
+`/omc-plan` and `/execute` are the OMC skills this protocol invokes; `/simplify` in step 6 is
+a built-in command, not an OMC one. A skill present on disk is not the same as one registered. Check your own skill listing before you
 start; if they are absent, `omc setup` installs them and `omc doctor conflicts` reports the
 state. This is not hypothetical — the whole protocol was written against them once while the
 plugin was unregistered, so every phase named an invocation that could not resolve.
@@ -29,7 +29,9 @@ starts, and removed after the hand-off:
 
 ```bash
 just worktree ticket-<issue> fix/issue-<issue>    # root checkout only; branches off fresh origin/main
-WT="$(pwd)/.worktrees/ticket-<issue>"             # capture it absolute — you will pass this around
+# The worktree is <repo>/.worktrees/ticket-<issue>. Write that path out in full every time you
+# need it. A shell variable does not survive between Bash calls, and `cd ""` succeeds as a
+# no-op — so a command built from a lost variable runs in the root checkout, on main, at exit 0.
 …
 just worktree-rm ticket-<issue>                   # from the root checkout, never from inside it
 ```
@@ -41,7 +43,7 @@ with it.
 **Every path you hand an agent is absolute.** You cannot relocate a subagent's working
 directory: the `Agent` tool has no `cwd`, `EnterWorktree` is not in these agents' tool lists,
 and a `cd` inside one Bash call does not govern how a Skill or Write resolves a relative path.
-So the protocol does not depend on anyone's cwd — it passes `$WT` and absolute file paths, and
+So the protocol does not depend on anyone's cwd — it passes `<the worktree, written out in full>` and absolute file paths, and
 every agent reads and writes by them. A relative `.omc/plans/…` resolves against whichever
 tree the agent happens to be in, which is how a plan written in one tree was handed to a step
 running in another.
@@ -80,7 +82,7 @@ Spawn the implementer **named**, and give it the worktree it will work in:
 ```
 Agent(name: "impl-<issue>", subagent_type: "implementer",
       prompt: "<the ticket, verbatim, plus any coordinates you have>
-               Your worktree: <absolute $WT>
+               Your worktree: <absolute <the worktree, written out in full>>
                Phase 1 only: run /omc-plan --direct, report the plan and the ABSOLUTE path to
                its handoff, then SendMessage it to me and stop.")
 ```
@@ -117,18 +119,18 @@ You may overrule the team lead. If you do, say so in the PR body with the reason
 ## 3. Implement
 
 `SendMessage` the approval to the implementer. It runs `/execute` against the **absolute**
-handoff path, works in `$WT`, lands the failing test first, runs the gate the plan named, and
+handoff path, works in its worktree, lands the failing test first, runs the gate the plan named, and
 opens a **draft** PR.
 
 ## 4. Review with codex
 
 ```bash
-cd "$WT" && omc ask codex "Review PR #<N>. <the claim the PR makes>.
+cd <repo>/.worktrees/ticket-<issue> && omc ask codex "Review PR #<N>. <the claim the PR makes>.
   Try to refute that claim: name the assertion that would fire if it were false."
 ```
 
 The `cd` matters: from the root checkout the reviewer reads `main`, which does not contain the
-branch. The artifact lands in `$WT/.omc/artifacts/ask/`.
+branch. The artifact lands in `<the worktree>/.omc/artifacts/ask/`.
 
 Never assemble a raw `codex` invocation — `omc ask` owns flag selection and artifact capture.
 Note its one limitation against this repository's own rule: `omc ask` takes the prompt through
@@ -167,7 +169,7 @@ plan problem — back to step 2.
 
 ## 6. Simplify, if it earns it
 
-Run `/simplify` from `$WT`, and only when the diff got there by accretion. Skip it on a small
+Run `/simplify` from the worktree, by its full path, and only when the diff got there by accretion. Skip it on a small
 clean diff: a simplification pass on three lines is a second review round with nothing to find,
 and it invalidates the review that just happened.
 
@@ -222,7 +224,7 @@ stage caught it, and which earlier stage could have.
 
 ```
 Agent(name: "retro-<issue>", subagent_type: "retro",
-      prompt: "Ticket #<issue>, PR #<N>, worktree <absolute $WT>. Artifacts: <plan path>,
+      prompt: "Ticket #<issue>, PR #<N>, worktree <absolute <the worktree, written out in full>>. Artifacts: <plan path>,
                verdicts, codex findings and my triage, CI runs. Propose the ledger entry.")
 ```
 

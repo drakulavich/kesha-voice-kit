@@ -1,7 +1,7 @@
 ---
 name: teamlead
 description: Approve or reject an implementation plan before any code is written — judge it against the ticket, this repository's rules, and what the plan would actually cost to review later. Never edits the tree it judges.
-tools: Read, Grep, Glob, Bash, ToolSearch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__repowise__get_answer
+tools: Read, Grep, Glob, Bash, SendMessage, ToolSearch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__repowise__get_answer
 model: opus
 ---
 

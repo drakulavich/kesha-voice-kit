@@ -1,7 +1,7 @@
 ---
 name: retro
 description: After a ticket ships, work out which defects escaped which stage and what would have caught them earlier — one ledger entry, evidence only, proposals rather than edits.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, SendMessage
 model: opus
 ---
 

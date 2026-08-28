@@ -32,7 +32,7 @@ when the answer is no.
 | A plan justified by a cost figure must measure the **frequency of the waste**, not the cost of the thing that wastes | #1105 | 1 | The ticket was ranked first on `Rust Tests` being 26.5% of CI cost; the waste it removes is 2.9% of that, while an unranked item in the same audit is worth three years of it per incident |
 | A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 1 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
 | A plan's mutation list must cover every value AND every input shape the claim rests on, derived from what the end state must not contain | #1105 | 1 | Four findings: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; and two of three valid `on:` spellings bypassed the rule entirely |
-| The approval carries a digest of the plan it approved | #1107 | 1 | Round 2 on #1105: the digest matched while the two byte counts did not, which is exactly the case it exists for |
+| The approval carries a digest of the plan it approved | #1107 | 1 | Round 2 on #1105: two readers reported different sizes for the same file — 11250 characters against 11344 bytes — and the digest settled that the content was identical. A size is not an identity |
 
 ---
 
