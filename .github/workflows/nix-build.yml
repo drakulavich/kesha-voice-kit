@@ -26,7 +26,7 @@ name: ❄️ Nix Build
 # still ships the CoreML backend.
 
 on:
-  # `rust/**` and `package.json` feed the derivation too; the weekly run covers them, because an advisory two-OS build on every Rust PR is the cost #1105 removed.
+  # `rust/**` and `package.json` feed this derivation too, so a new crate needing a system library or a `build.rs` change is caught only by the weekly cron below — accepted, because a two-OS build on every Rust push is the cost #1105 removed; widen on the first real instance.
   pull_request:
     paths:
       - 'flake.nix'
