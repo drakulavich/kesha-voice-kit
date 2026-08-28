@@ -7,6 +7,7 @@ import {
   checkFile,
   collectCacheWriters,
   forbidLinuxPackaging,
+  forbidNixBuildInCiAggregator,
   requireJobTimeouts,
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
@@ -895,5 +896,33 @@ describe("requireRustTestCancelsSupersededRuns", () => {
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+  });
+});
+
+describe("forbidNixBuildInCiAggregator", () => {
+  test("passes on the real ci.yml", () => {
+    expect(forbidNixBuildInCiAggregator(CI, parseRepoYaml(CI))).toEqual([]);
+  });
+
+  test("fails when the aggregator needs nix-build", () => {
+    const errors = forbidNixBuildInCiAggregator(CI, { jobs: { ci: { needs: ["unit-tests", "nix-build"] } } });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("nix-build");
+  });
+
+  test("ignores workflows other than ci.yml", () => {
+    const doc = { jobs: { ci: { needs: ["nix-build"] } } };
+    expect(forbidNixBuildInCiAggregator(".github/workflows/rust-test.yml", doc)).toEqual([]);
+  });
+
+  // A gate is only a gate if checkFile still calls it, and the live suite cannot notice a gate
+  // that was quietly unwired. The probe's jobs carry no `steps:` because `requireJobTimeouts`
+  // has no path guard and interpolates the job name, so a `steps`-bearing `nix-build` would emit
+  // a second error containing "nix-build" and this would pass asserting nothing (#1105).
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  nix-build:\n    if: github.event_name == 'push'\n  ci:\n    needs: [nix-build]\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("nix-build"))).toHaveLength(1);
   });
 });

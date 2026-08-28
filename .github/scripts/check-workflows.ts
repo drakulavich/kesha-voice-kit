@@ -741,6 +741,27 @@ export function requireRustTestCancelsSupersededRuns(path: string, document: unk
   ];
 }
 
+/**
+ * Fails when the `ci` aggregator needs `nix-build`.
+ *
+ * A job in the required `ci` aggregator that cannot run on a pull request reds `main` — on
+ * `cancelled` as well as `failure` (`ci.yml:984`) — with nothing a PR could have prevented.
+ * Asserted as this one instance because a general matcher's own failure mode is an over-fire
+ * and `check:workflows` is in `preflight`, so over-firing blocks every push; it therefore
+ * misses the same job under another name. Widen on the second instance (#1105).
+ */
+export function forbidNixBuildInCiAggregator(path: string, document: unknown): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const needs = (document as { jobs?: { ci?: { needs?: unknown } } } | undefined)?.jobs?.ci?.needs;
+  if (!Array.isArray(needs) || !needs.includes("nix-build")) return [];
+
+  return [
+    `${path}: \`ci\` needs \`nix-build\`, which runs only on push — it cannot report on a pull request, ` +
+      `yet a failed or cancelled run reds the required check on \`main\` (#1105)`,
+  ];
+}
+
 export function checkFile(
   path: string,
   testedScripts: string[],
@@ -762,6 +783,7 @@ export function checkFile(
       ...requireReusableCallPermissions(path, document),
       ...requireConcurrencyOnPullRequestWorkflows(path, document),
       ...requireRustTestCancelsSupersededRuns(path, document),
+      ...forbidNixBuildInCiAggregator(path, document),
       ...requireJobTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
