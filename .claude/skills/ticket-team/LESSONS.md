@@ -206,6 +206,37 @@ runners and delays the current one. In a free public repository latency is the r
 But the ticket was justified on cost, and on cost the justification does not survive contact
 with the frequency.
 
+## #1105 item 3 — `nix-build` (in flight)
+
+Recorded before the outcome, because the defects are the orchestrator's and "sign the claim"
+now applies to it.
+
+**Two wrong inferences from true premises, on the ticket's central design question, both by
+the orchestrator and both corrected by the same lead.** First: `security.yml:57` was called the
+fact settling class-versus-instance. The premise held — that spelling is in the repo and the
+class parser misses it — but the guard is scoped to `ci.yml` and `security.yml`'s jobs are not
+in `jobs.ci.needs`, so it is an instance of the *spelling*, not of the defect. Second: "after
+commit 2 there are zero push-only jobs, so the class rule guards a non-recurrence." Also true,
+also not a reason — the instance guard has zero violators after commit 2 as well, since that
+is what turns its test green, so the argument indicts both designs equally; generalised it
+forbids every regression test, because every fix removes its own violator.
+
+Caught at: team lead, both. Earliest that could have: the orchestrator, by asking whether the
+argument also indicts the option it prefers. **No rule proposed** — "check your argument does
+not prove too much" is advice without teeth, and the two rules that already exist carry it:
+verify one decisive thing yourself, and sign the claim. Recording the attribution is the
+correction.
+
+The argument that actually decides it was in the plan before either of the orchestrator's:
+`check:workflows` sits in `preflight`, so a false positive blocks every push until someone
+deletes the guard, while a miss costs one red `main`. The class rule carries an over-fire
+surface and a blind spot it must document; the instance carries neither.
+
+**The direct loop paid on its first pass.** With the orchestrator out of the exchange, the plan
+reached a better argument than the relay had carried — that the *marginal* machinery of a
+general rule buys nothing against zero live instances, which is the one-rung-cheaper test
+rather than the non-recurrence claim. Reported by the lead, not by the orchestrator.
+
 ## #1110 — `timeout-minutes` for the 26 unbounded jobs
 
 Eight defects, four escaped a stage, three produced a change. The plan round paid for itself
