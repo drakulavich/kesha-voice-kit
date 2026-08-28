@@ -296,6 +296,7 @@ export function requirePactVerificationCoversEveryTarget(path: string, document:
 type Job = {
   "runs-on"?: unknown;
   "timeout-minutes"?: number;
+  uses?: unknown;
   steps?: unknown[];
   strategy?: { matrix?: unknown };
   defaults?: { run?: { shell?: unknown } };
@@ -469,35 +470,44 @@ export function requireRestoreOnlyCachesHaveAWriter(
   return errors;
 }
 
-/**
- * Fails when a job on Ubuntu invokes apt-get without a timeout bound strictly below 360 minutes.
- * An apt mirror stall burns GitHub's full 6-hour default if unbounded; 30-60 minutes stops the burn (#1090).
- */
-export function requireAptTimeouts(path: string, document: unknown): string[] {
-  if (!path.endsWith("rust-test.yml")) return [];
+/** The concrete `timeout-minutes` values a job's declaration resolves to, substituting matrix keys. */
+function timeoutCandidates(job: Job): string[] {
+  const raw = String(job["timeout-minutes"]);
+  const references = [...raw.matchAll(/\$\{\{\s*matrix\.([\w.]+)\s*\}\}/g)];
+  if (references.length === 0) return [raw];
+  const matrix = job.strategy?.matrix;
+  return references.flatMap((reference) => {
+    const key = (reference[1] ?? "").split(".");
+    return [...valuesAt(matrix, key), ...valuesAt((matrix as { include?: unknown })?.include, key)];
+  });
+}
 
+/**
+ * Fails when a job with its own steps has no `timeout-minutes`, or resolves to a value ≥360.
+ * Generalises the apt-get-only, rust-test.yml-only rule #1090 added — the risk was never
+ * apt-specific, and a macOS hang costs 10.3x an Ubuntu one (#1105).
+ */
+export function requireJobTimeouts(path: string, document: unknown): string[] {
   const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
   if (!jobs || typeof jobs !== "object") return [];
 
   const errors: string[] = [];
   for (const [name, job] of Object.entries(jobs)) {
-    const labels = runnerLabels(job);
-    if (labels.length === 0 || !labels.some((label) => /ubuntu/i.test(label))) continue;
+    if (typeof job?.uses === "string") continue;
+    if (!Array.isArray(job?.steps)) continue;
 
-    const steps = Array.isArray(job?.steps) ? (job.steps as Step[]) : [];
-    const hasAptGet = steps.some((step) => typeof step?.run === "string" && /apt-get/i.test(step.run));
-    if (!hasAptGet) continue;
-
-    const timeout = job["timeout-minutes"];
-    if (timeout === undefined) {
+    if (job["timeout-minutes"] == null) {
       errors.push(
-        `${path}: \`${name}\` runs on Ubuntu and invokes apt-get, but has no \`timeout-minutes\`; an apt stall burns 360 minutes unattended (#1090)`,
+        `${path}: \`${name}\` has no \`timeout-minutes\`; an unattended stall burns GitHub's 360-minute default (#1105)`,
       );
-    } else {
-      const timeoutNum = Number(timeout);
+      continue;
+    }
+
+    for (const candidate of timeoutCandidates(job)) {
+      const timeoutNum = Number(candidate);
       if (isNaN(timeoutNum) || timeoutNum >= 360) {
         errors.push(
-          `${path}: \`${name}\` runs on Ubuntu and invokes apt-get, but \`timeout-minutes: ${timeout}\` is not strictly below 360; an apt stall exceeds this bound (#1090)`,
+          `${path}: \`${name}\` sets \`timeout-minutes: ${candidate}\`, not strictly below 360; an unattended stall still exceeds this bound (#1105)`,
         );
       }
     }
@@ -752,7 +762,7 @@ export function checkFile(
       ...requireReusableCallPermissions(path, document),
       ...requireConcurrencyOnPullRequestWorkflows(path, document),
       ...requireRustTestCancelsSupersededRuns(path, document),
-      ...requireAptTimeouts(path, document),
+      ...requireJobTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),

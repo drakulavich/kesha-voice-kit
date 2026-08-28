@@ -2,11 +2,12 @@ import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
+import { parse } from "yaml";
 import {
   checkFile,
   collectCacheWriters,
   forbidLinuxPackaging,
-  requireAptTimeouts,
+  requireJobTimeouts,
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
   requireRustTestCancelsSupersededRuns,
@@ -566,88 +567,75 @@ describe("Rust toolchain pin", () => {
   });
 });
 
-describe("requireAptTimeouts", () => {
-  const RUST_TEST = ".github/workflows/rust-test.yml";
-
-  test("passes on the real rust-test.yml", () => {
-    expect(requireAptTimeouts(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
+describe("requireJobTimeouts", () => {
+  test("passes on every workflow in the repo", () => {
+    for (const file of readdirSync(repoPath(".github/workflows"))) {
+      const path = `.github/workflows/${file}`;
+      expect([path, requireJobTimeouts(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
   });
 
-  test("ignores non-rust-test workflows", () => {
-    const doc = {
-      jobs: {
-        test: { "runs-on": "ubuntu-latest", steps: [{ run: "sudo apt-get install x" }] },
-      },
-    };
-    expect(requireAptTimeouts(CI, doc)).toEqual([]);
+  test("ignores a job that calls a reusable workflow via `uses:`", () => {
+    const doc = { jobs: { smoke: { uses: "./.github/workflows/release-install-smoke.yml" } } };
+    expect(requireJobTimeouts(CI, doc)).toEqual([]);
   });
 
-  test("ignores jobs that do not run on ubuntu", () => {
-    const doc = {
-      jobs: {
-        test: { "runs-on": "macos-14", steps: [{ run: "sudo apt-get install x" }] },
-      },
-    };
-    expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
+  // toEqual on the exact message, not toHaveLength: a mutant that neutralises the missing-value
+  // check still emits one error (Number(undefined) is NaN), just with different text — only an
+  // exact match tells the two branches apart.
+  test("fails when a job with steps has no timeout-minutes", () => {
+    const doc = { jobs: { lint: { "runs-on": "ubuntu-latest", steps: [{ run: "echo hi" }] } } };
+    expect(requireJobTimeouts(CI, doc)).toEqual([
+      `${CI}: \`lint\` has no \`timeout-minutes\`; an unattended stall burns GitHub's 360-minute default (#1105)`,
+    ]);
   });
 
-  test("ignores jobs that do not invoke apt-get", () => {
-    const doc = {
-      jobs: {
-        test: { "runs-on": "ubuntu-latest", steps: [{ run: "bun test" }] },
-      },
-    };
-    expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
-  });
-
-  test("fails when a job on ubuntu runs apt-get with no timeout-minutes", () => {
-    const doc = {
-      jobs: {
-        lint: { "runs-on": "ubuntu-latest", steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
-      },
-    };
-    const errors = requireAptTimeouts(RUST_TEST, doc);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("has no `timeout-minutes`");
+  // A bare `timeout-minutes:` with nothing after the colon parses to null, not undefined;
+  // Number(null) is 0, which used to read as "0 minutes, valid" (#1105 review).
+  test("fails when timeout-minutes is written with no value", () => {
+    const doc = parse("jobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes:\n    steps:\n      - run: echo hi\n");
+    expect(requireJobTimeouts(CI, doc)).toEqual([
+      `${CI}: \`lint\` has no \`timeout-minutes\`; an unattended stall burns GitHub's 360-minute default (#1105)`,
+    ]);
   });
 
   test("fails when timeout-minutes is 360 or higher", () => {
-    const doc = {
-      jobs: {
-        lint: { "runs-on": "ubuntu-latest", "timeout-minutes": 360, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
-      },
-    };
-    const errors = requireAptTimeouts(RUST_TEST, doc);
+    const doc = { jobs: { lint: { "runs-on": "ubuntu-latest", "timeout-minutes": 360, steps: [{ run: "echo hi" }] } } };
+    const errors = requireJobTimeouts(CI, doc);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("not strictly below 360");
   });
 
-  test("passes when timeout-minutes is 10", () => {
-    const doc = {
-      jobs: {
-        lint: { "runs-on": "ubuntu-latest", "timeout-minutes": 10, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
-      },
-    };
-    expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
+  test("passes when timeout-minutes is under 360", () => {
+    const doc = { jobs: { lint: { "runs-on": "ubuntu-latest", "timeout-minutes": 15, steps: [{ run: "echo hi" }] } } };
+    expect(requireJobTimeouts(CI, doc)).toEqual([]);
   });
 
-  test("passes when timeout-minutes is 15", () => {
+  // release-branch-engine-smoke's real shape: `timeout-minutes: ${{ matrix.timeout }}` with the
+  // value living only in strategy.matrix.include, not a top-level matrix key.
+  test("resolves a matrix-templated timeout-minutes per leg", () => {
     const doc = {
       jobs: {
-        push: { "runs-on": "ubuntu-latest", "timeout-minutes": 15, steps: [{ run: "sudo apt-get install -y libopus-dev" }] },
+        smoke: {
+          "runs-on": "${{ matrix.os }}",
+          "timeout-minutes": "${{ matrix.timeout }}",
+          strategy: { matrix: { include: [{ os: "ubuntu-latest", timeout: 30 }, { os: "windows-latest", timeout: 400 }] } },
+          steps: [{ run: "echo hi" }],
+        },
       },
     };
-    expect(requireAptTimeouts(RUST_TEST, doc)).toEqual([]);
+    const errors = requireJobTimeouts(CI, doc);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("timeout-minutes: 400");
   });
 
   // A gate is only a gate if checkFile still calls it, and the live suite cannot notice a
-  // dropped check because the tree it reads is already clean. This test names a rust-test.yml
-  // file so the endsWith check enables the rule.
+  // dropped check because the tree it reads is already clean.
   test("the file gate actually runs it", () => {
-    const yaml = "on: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: sudo apt-get install -y libopus-dev\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
+    const yaml = "on: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1090"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });
 
@@ -863,7 +851,8 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
   });
 
   test("the file gate actually runs it", () => {
-    const yaml = "on:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
+    const yaml =
+      "on:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: echo hi\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
