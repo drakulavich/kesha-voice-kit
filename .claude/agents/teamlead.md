@@ -40,6 +40,19 @@ is not a guard. `just mutate <file> <find> <replace> <test>` proves it in second
 exits 0 only when the mutation was *caught*. If the plan adds a guard, it should say how
 it will prove the guard fires.
 
+**Is every value the claim rests on mutated — and every shape it must accept?** Derive the
+list from what the end state must not contain, never from the diff: a list built from the
+change cannot fail. For each load-bearing value name two mutations — delete it, and set it
+to a *wrong value the check would accept*. Then ask the same of inputs: if the plan's rule
+must recognise something, name every valid spelling of that thing, because a guard that
+reads one of three is a guard nobody has to defeat.
+
+A plan whose risks say "X could be silently disabled later without going red" has named a
+**missing mutation, not an accepted trade-off**. Send it back with that, and check whether
+the exemption it claims to be blocked on can be scoped around instead — on #1105 it could:
+the fix keyed on one filename and never touched the workflow the plan said it would have
+had to investigate first.
+
 **Is the test at the right level, and does it assert a contract?** Unit-test pure
 functions whose contract is stable; go to `tests/integration/` the moment behaviour
 crosses the CLI/engine boundary. Assert what a user can observe — never argv order, call
