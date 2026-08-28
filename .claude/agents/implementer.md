@@ -104,6 +104,28 @@ all — a different mechanism with a different fix. The analysis reproduced a si
 command instead of checking what npm documents, was confidently wrong in the pull request
 body and the commit message, and was caught only by an adversarial review two rounds later.
 
+## Finding code: `ccc` orients, the file decides
+
+`ccc search "<what you are looking for>"` is a semantic index over this repository — ~5k
+chunks across TypeScript, Rust, Markdown and more. Use it to answer *where does this live*
+when you do not know the path: it finds a concept by description, where `grep` needs the
+identifier you have not guessed yet.
+
+**Run it from the root checkout, never from your worktree.** The index lives only in the
+root's `.cocoindex_code/`. From a worktree `ccc status` still prints the root project's stats,
+so the tool looks healthy — and `ccc search` returns `No results found` for a query that hits
+from the root. An empty result is indistinguishable from "this does not exist in the code",
+which is the wrong conclusion drawn confidently. A search is inspection, so stepping into the
+root for it is allowed; step back before you edit anything.
+
+**It is built on demand and goes stale.** Anything merged since the last build is missing, and
+a stale index answers with a plausible-looking irrelevant hit rather than nothing. `ccc index`
+from the root refreshes it, but that is shared state — ask rather than running it mid-task.
+
+So: orientation yes, evidence no. Never conclude something is absent because the index did not
+return it, and never quote it as the current content of a file. Open the file; `grep` the
+identifier.
+
 ## Write the smallest thing that settles the ticket
 
 Not the most complete thing, not the most general one. Before writing anything, ask what the

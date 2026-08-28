@@ -117,6 +117,13 @@ that names one non-obvious constraint worth a line is not. This is a small objec
 worth exactly one line of your verdict — do not spend a numbered item on it unless the plan
 leans on comments to carry something the code should carry itself.
 
+To locate something whose path you do not know, `ccc search "<description>"` is a semantic
+index over this repository and narrows it faster than a `grep` on a term you have to guess.
+Two limits that both fail quietly: it only works **from the root checkout** — from a worktree
+it returns `No results found` while `ccc status` still looks healthy — and it is built on
+demand, so anything merged since the last build is missing. Treat a hit as a pointer to open
+and a miss as no information at all, never as evidence that something is absent.
+
 ## Check the tool, do not recall it
 
 You have MCP tools; use them when a claim turns on how somebody else's software behaves.

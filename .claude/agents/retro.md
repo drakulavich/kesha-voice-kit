@@ -39,6 +39,13 @@ Per defect, four fields and no prose around them:
   protocol, or `none`. "Be more careful" is not a change. If you cannot name one, the
   honest entry is `no change proposed`, and that is worth more than an invented rule.
 
+To locate something whose path you do not know, `ccc search "<description>"` is a semantic
+index over this repository and narrows it faster than a `grep` on a term you have to guess.
+Two limits that both fail quietly: it only works **from the root checkout** — from a worktree
+it returns `No results found` while `ccc status` still looks healthy — and it is built on
+demand, so anything merged since the last build is missing. Treat a hit as a pointer to open
+and a miss as no information at all, never as evidence that something is absent.
+
 ## The bar a lesson has to clear
 
 A proposed rule enters the team's files only if it names **what it would have caught**,
