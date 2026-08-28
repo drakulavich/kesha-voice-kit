@@ -462,8 +462,15 @@ they get the same triage as codex's. Check for it when it arrives rather than bl
 
 **Greptile edits one comment in place; it never posts a second.** So a comment count that has
 not changed is not evidence it has not re-reviewed, and `created_at` says nothing about which
-head a comment answers on. The pair that does is **`updated_at` plus the SHA in its own
-footer**. On #1105 item 3 two agents disagreed about whether it had reviewed the new head —
+head a comment answers on. **Its footer carries `Reviews (N)` and `Last reviewed commit`** —
+that counter is the discriminator, and it beats `updated_at` because it needs no comparison
+against a timestamp you have to remember. `updated_at` plus the footer SHA works as a fallback.
+
+**And query the login with its `[bot]` suffix.** `select(.user.login=="greptile-apps")` returns
+empty; the login is `greptile-apps[bot]`, and `repowise-bot[bot]` is the same. An empty `jq`
+result is indistinguishable from "it never commented" — the repository's own recurring class,
+the one that made `npm view --json a,b,c` return zero bytes at exit 0, and `ls` through an
+`eza` alias return no files and no error. A filter that matches nothing reads as a fact. On #1105 item 3 two agents disagreed about whether it had reviewed the new head —
 one read `created_at` (18:33:25Z, two heads back) and one read the footer (`d07e3de`, current);
 `updated_at` was 18:51:58Z and settled it. After a push, wait for `updated_at` to move, not for
 a count to increment, because it will not increment.
