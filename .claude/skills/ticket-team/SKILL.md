@@ -317,6 +317,15 @@ honest ledger entry had to say so. Write it to a file in the worktree, or to a r
   on it could see. **Rule violated by its own author one hour after writing it**, which is the
   most useful thing about the incident: a rule you agree with is not a rule you follow.
 
+  **The asymmetry that says where to route it** (the implementer's framing, and better than the
+  orchestrator's): a decision *to act* announces itself when the action lands, so someone
+  re-checking will find it. A decision *not to act* leaves no trace at all — no amount of
+  re-checking surfaces a commit that was never made. So the countermeasure is not vigilance,
+  it is routing: **send a decision against a proposed change to whoever proposed it**, because
+  they are the only party who will notice its absence. Four of this ticket's five
+  snapshot-as-state instances were the first kind and were caught; the fifth was the second
+  kind and surfaced only because its author volunteered it.
+
 **4. The team's history is not the product's history.** `kesha-voice-kit`'s log is read by
 people shipping a voice toolkit; it should not carry which agent approved which digest.
 Coordination state goes on the team branch or on refs outside the ticket branch
