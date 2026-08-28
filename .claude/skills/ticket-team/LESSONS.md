@@ -208,6 +208,22 @@ with the frequency.
 
 ## #1105 item 3 — `nix-build` (in flight)
 
+**A third divergence, same family, caught before it cost anything.** The team lead told the
+implementer the conveyor review was still owed, while the orchestrator had already been
+running it for eight minutes. Two finding sets on one head was the outcome avoided. Nobody was
+wrong: the protocol assigns review to the orchestrator, and the orchestrator had not said it
+had started.
+
+Caught at: the orchestrator, on reading the lead's status message. Earliest that could have:
+the orchestrator, at launch. **No new field proposed** — `HEAD`/`STANDING ON` binds verdict
+requests and does nothing for a long-running external step. The habit is cheaper than another
+header line: **announce a long external step when you start it, not when you report it.**
+Recorded here rather than in the protocol precisely because it is a habit; if it recurs, it
+earns a rule.
+
+The pattern across all three: a state that exists but is bound to nothing the other party can
+read. Twice it was the tree, once it was a running process.
+
 Recorded before the outcome, because the defects are the orchestrator's and "sign the claim"
 now applies to it.
 
