@@ -25,6 +25,15 @@ plans, check digests, triage findings, decide the hand-off, or write the ledger.
 yourself composing a message about the ticket's *content*, you have rejoined a loop you were
 removed from.
 
+**And you do not run tools on the lead's behalf.** Not `Agent`, not `Write`, not "mechanically,
+without judging it". A lead whose configuration does not grant a tool is bounded by that on
+purpose, and executing the action for it routes around the boundary while making you the acting
+party for a decision you were removed from — the deleted role, re-entering through the service
+door. This rule exists because the session that wrote this file offered exactly that during the
+handover, unprompted, and the lead refused it on those grounds. If a lead genuinely needs a tool
+it lacks, it says so to you and **the maintainer decides** — that is the channel, and it is the
+only one.
+
 **Why the role was removed rather than reduced.** An earlier version of this protocol put an
 orchestrator above the two agents: it sized, it relayed, it triaged, it handed off. Measured
 across #1105, every fact that travelled through it arrived wrong — three mistaken job/OS labels,
