@@ -649,6 +649,18 @@ export function requireReusableCallPermissions(path: string, document: unknown):
 }
 
 /**
+ * The trigger names an `on:` declares, across all three forms GitHub accepts: `on: push`,
+ * `on: [push, pull_request]`, and the mapping. `on` itself parses as the string key rather
+ * than the YAML 1.1 boolean, and a mapping's `pull_request:` may carry a null body.
+ */
+function triggerNames(on: unknown): string[] {
+  if (typeof on === "string") return [on];
+  if (Array.isArray(on)) return on.filter((entry): entry is string => typeof entry === "string");
+  if (typeof on === "object" && on !== null) return Object.keys(on);
+  return [];
+}
+
+/**
  * Fails when a workflow that runs on pull requests declares no top-level `concurrency` group.
  *
  * Without one every superseded push runs to completion: `rust-test.yml` carried two macOS
@@ -659,10 +671,7 @@ export function requireReusableCallPermissions(path: string, document: unknown):
  */
 export function requireConcurrencyOnPullRequestWorkflows(path: string, document: unknown): string[] {
   const doc = document as { on?: unknown; concurrency?: unknown } | undefined;
-  const triggers = doc?.on;
-  // `on` parses as the string key (YAML 1.2, not the 1.1 boolean) and `pull_request:` with no
-  // body is null, so membership is the only safe test — and it must not match pull_request_target.
-  if (typeof triggers !== "object" || triggers === null || !("pull_request" in triggers)) return [];
+  if (!triggerNames(doc?.on).includes("pull_request")) return [];
 
   const concurrency = doc?.concurrency;
   if (concurrency === undefined || concurrency === null) {
@@ -673,8 +682,9 @@ export function requireConcurrencyOnPullRequestWorkflows(path: string, document:
 
   const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown })?.group;
   // Inside `${{ … }}`, not merely present: a literal `github.ref` is one repository-wide
-  // group, which makes unrelated PRs evict each other rather than none at all.
-  if (typeof group !== "string" || !/\$\{\{[^}]*github\.ref[^}]*\}\}/.test(group)) {
+  // group, which makes unrelated PRs evict each other rather than none at all. `github.ref`
+  // exactly, so the boolean `github.ref_protected` — and any other `ref_*` — is rejected.
+  if (typeof group !== "string" || !/\$\{\{[^}]*github\.ref(?!\w)[^}]*\}\}/.test(group)) {
     return [
       `${path}: \`concurrency.group\` must interpolate \`github.ref\` inside a \`\${{ }}\` expression; any group shared across pull requests queues them into one lane and GitHub evicts the pending run, so the required check never lands (#597)`,
     ];

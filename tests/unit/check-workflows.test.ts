@@ -751,10 +751,58 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
     }
   });
 
-  test("fails the string shorthand when it omits the ref", () => {
+  test("fails the concurrency string shorthand when it omits the ref", () => {
     expect(
       requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on: { pull_request: null }, concurrency: "one-lane" }),
     ).toHaveLength(1);
+  });
+
+  // `github.ref_protected` is a boolean, so it collapses every protected-branch run into one
+  // group — the repository-wide failure the expression check exists to stop, respelled.
+  test.each(["${{ github.ref_protected }}", "${{ github.ref_name }}", "${{ github.ref_type }}"])(
+    "fails the ref-adjacent context %s",
+    (group) => {
+      const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: { pull_request: null },
+        concurrency: { group, "cancel-in-progress": true },
+      });
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain("#597");
+    },
+  );
+
+  test("still accepts github.ref alongside a rejected sibling context", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: { pull_request: null },
+        concurrency: { group: "${{ github.ref_protected }}-${{ github.ref }}", "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
+  });
+
+  test.each([
+    ["string", "pull_request"],
+    ["array", ["push", "pull_request"]],
+  ])("catches the %s trigger shorthand with no concurrency", (_form, on) => {
+    const errors = requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on, jobs: {} });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1105");
+  });
+
+  test.each([
+    ["string", "pull_request_target"],
+    ["array", ["push", "pull_request_target"]],
+  ])("ignores pull_request_target in the %s shorthand", (_form, on) => {
+    expect(requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, { on, jobs: {} })).toEqual([]);
+  });
+
+  test("accepts a compliant workflow declared with the array shorthand", () => {
+    expect(
+      requireConcurrencyOnPullRequestWorkflows(SYNTHETIC, {
+        on: ["push", "pull_request"],
+        concurrency: { group: GROUP, "cancel-in-progress": true },
+      }),
+    ).toEqual([]);
   });
 
   // pull_request_target is a different trigger with a different token; cache-cleanup.yml uses
