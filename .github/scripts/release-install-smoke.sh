@@ -80,7 +80,7 @@ run_npm() {
   export npm_config_cache="$scratch/npm-cache"
   export NPM_CONFIG_PREFIX="$prefix"
 
-  # Never a field list: `--json a,b,c` yields an empty document at exit 0, and the space-separated form flattens `dist.integrity` into a literal key.
+  # Never a field list: `--json a,b,c` returns zero bytes at exit 0, and the space-separated form flattens `dist.integrity` into a literal key.
   npm view "$package@$VERSION" --json > "$metadata"
   jq -e --arg version "$VERSION" '
     .version == $version

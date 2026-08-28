@@ -1,16 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { parseRepoYaml, readRepoFile } from "../helpers/repo";
 
+const WORKFLOW = ".github/workflows/release-install-smoke.yml";
 const SCRIPT = ".github/scripts/release-install-smoke.sh";
 
 // These cases run the script's real jq, which a contributor machine may not have.
 const JQ = Bun.which("jq");
 
-/** The jq the script actually runs, lifted from the script so the test cannot drift from it. */
+/** Windows checks the tree out with CRLF and the pattern below anchors on newlines. */
+function readScript(): string {
+  return readFileSync(SCRIPT, "utf8").replace(/\r\n/g, "\n");
+}
+
+/** The jq the script actually runs, lifted from it so the test cannot drift from the lane. */
 function metadataFilter(): string {
-  // Windows CI checks out CRLF and the pattern anchors on newlines.
-  const source = readFileSync(SCRIPT, "utf8").replace(/\r\n/g, "\n");
-  const match = source.match(/jq -e --arg version "\$VERSION" '\n([\s\S]*?)\n\s*' "\$metadata"/);
+  const match = readScript().match(/jq -e --arg version "\$VERSION" '\n([\s\S]*?)\n\s*' "\$metadata"/);
   const filter = match?.[1];
   if (!filter) throw new Error(`${SCRIPT}: could not find the npm metadata jq filter`);
   return filter;
@@ -41,6 +46,54 @@ const PUBLISHED = {
   },
 };
 
+describe("release install smoke", () => {
+  test("keeps the draft gate manual and makes the post-npm path reusable", () => {
+    const workflow = parseRepoYaml(WORKFLOW);
+
+    expect(workflow.on.workflow_dispatch.inputs.mode.default).toBe("draft-engine");
+    expect(workflow.on.workflow_call.inputs.version.required).toBe(true);
+    expect(workflow.on.workflow_call.inputs.mode.default).toBe("npm");
+    expect(workflow.jobs["draft-engine"].permissions).toEqual({ contents: "write" });
+    expect(workflow.jobs.npm.permissions).toEqual({ contents: "read" });
+  });
+
+  test("downloads the authenticated draft artifact into a disposable private cache", () => {
+    const script = readRepoFile(SCRIPT);
+    const synthesisSmoke = readRepoFile(".github/scripts/smoke-synthesis.ts");
+
+    expect(script).toContain('gh release download "$TAG"');
+    expect(script).toContain('[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]');
+    expect(script).toContain('KESHA_ENGINE_BIN="$assets/$asset"');
+    expect(script).toContain('KESHA_CACHE_DIR="$scratch/cache"');
+    expect(script).toContain('bun "$repo_root/.github/scripts/assert-install-warmup.ts"');
+    expect(script).toContain('bun "$repo_root/.github/scripts/smoke-synthesis.ts"');
+    expect(script).toContain('trap cleanup EXIT');
+    expect(synthesisSmoke).toContain('process.env.KESHA_COMMAND || "kesha"');
+  });
+
+  test("installs an exact npm package and requires provenance metadata", () => {
+    const script = readRepoFile(SCRIPT);
+
+    expect(script).toContain('npm view "$package@$VERSION" --json > "$metadata"');
+    expect(script).toContain('https://slsa.dev/provenance/v1');
+    expect(script).toContain('npm install --global "$package@$VERSION"');
+    expect(script).toContain('NPM_CONFIG_PREFIX="$prefix"');
+    expect(script).toContain('installed npm package version was $installed_version, expected $VERSION');
+  });
+
+  test("runs the npm smoke only after the release lane has observed the published version", () => {
+    const cliRelease = parseRepoYaml(".github/workflows/release-cli.yml");
+    const job = cliRelease.jobs["published-install-smoke"];
+
+    expect(job.needs).toEqual(["plan", "publish-npm"]);
+    expect(job.uses).toBe("./.github/workflows/release-install-smoke.yml");
+    expect(job.with).toEqual({
+      tag: "${{ needs.plan.outputs.tag }}",
+      version: "${{ needs.plan.outputs.version }}",
+    });
+  });
+});
+
 describe("release-install-smoke npm metadata gate", () => {
   test("jq is present in CI, so none of the cases below are silently skipped", () => {
     if (process.env.CI) expect(JQ).toBeTruthy();
@@ -50,8 +103,10 @@ describe("release-install-smoke npm metadata gate", () => {
     expect(await runFilter(PUBLISHED)).toBe(true);
   });
 
-  // The regression: `--json version,dist.integrity,dist.attestations` is one comma-joined argument, and npm answers it with nothing.
-  test.skipIf(!JQ)("fails on the empty document the comma-joined field list produced", async () => {
+  // The regression: `--json version,dist.integrity,dist.attestations` is one comma-joined
+  // argument, and npm answers it with zero bytes at exit 0 — not an empty object, which
+  // would exit 1 rather than 4.
+  test.skipIf(!JQ)("fails on the nothing-at-all the comma-joined field list returns", async () => {
     expect(await runFilterRaw("")).toBe(4);
   });
 
@@ -66,8 +121,7 @@ describe("release-install-smoke npm metadata gate", () => {
   });
 
   test("the script therefore requests the whole document, not a field list", () => {
-    const source = readFileSync(SCRIPT, "utf8").replace(/\r\n/g, "\n");
-    expect(source).toContain(`npm view "$package@$VERSION" --json > "$metadata"`);
+    expect(readScript()).toContain(`npm view "$package@$VERSION" --json > "$metadata"`);
   });
 
   test.skipIf(!JQ)("rejects a version published without provenance", async () => {
