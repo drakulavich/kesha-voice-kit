@@ -296,7 +296,6 @@ export function requirePactVerificationCoversEveryTarget(path: string, document:
 type Job = {
   "runs-on"?: unknown;
   "timeout-minutes"?: number;
-  uses?: unknown;
   steps?: unknown[];
   strategy?: { matrix?: unknown };
   defaults?: { run?: { shell?: unknown } };
@@ -493,7 +492,8 @@ export function requireJobTimeouts(path: string, document: unknown): string[] {
 
   const errors: string[] = [];
   for (const [name, job] of Object.entries(jobs)) {
-    if (typeof job?.uses === "string") continue;
+    // A reusable-workflow-call job (`uses:`) never has `steps` — GitHub's schema is one or
+    // the other — so this already excludes it without a separate `uses` check.
     if (!Array.isArray(job?.steps)) continue;
 
     if (job["timeout-minutes"] == null) {
