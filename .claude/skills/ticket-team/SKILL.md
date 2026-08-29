@@ -424,20 +424,29 @@ merge closes from. `Closes #N` only when the change finishes the ticket; `Refs #
 outlives it, and then close by hand once it is genuinely done. On #1105 `Closes` was there, it was
 wrong, and merging closed a four-item audit on the strength of one shipped item.
 
-The second place is the commit stream. A squash concatenates every commit message on the branch and
-GitHub reads the result, so a keyword written as *prose* inside a commit body is live. #1105 was
-closed by both routes twenty hours apart: first from #1109's body (`commit_id: null` on the timeline
-event), then by `27c0995`, whose pull request said `Refs #1105` while two of its 74 concatenated
-messages narrated the earlier mis-close and quoted the keyword doing it.
+The second place is the squash commit message, and it took #1105 a second time. This repository
+squashes with `squash_merge_commit_message: COMMIT_MESSAGES`, so the merge box arrives pre-filled
+with every commit message on the branch and GitHub parses the result — a keyword written as *prose*
+inside a commit body is live. #1107's pull request said only `Refs #1105`; one of its 74
+concatenated messages, `8d3ac7a6`, quoted the keyword twice while narrating an earlier mis-close,
+and the timeline records the close against `commit_id 27c0995`. `8d3ac7a6` is the commit that added
+this rule.
+
+Neither channel is redundant, and not for the reason it looks. #1109 carried `Closes #1105` in its
+body **and** in its branch commit `b5bf9b7f`, and its squash message was trimmed to the title at
+merge — so the body was the only live text there. The merge box is editable, which means
+`git log <base>..<head>` *predicts* the squash message rather than reading it, and the body check is
+what covers a trim.
 
 ```bash
-KW='\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[ :]*#[0-9]+'
+KW='\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[ :]*([-\w.]+/[-\w.]+)?#[0-9]+'
 gh pr view <N> --json body -q .body    | grep -inE "$KW"
 git log <base>..<head> --format=%B     | grep -inE "$KW"
 ```
 
-Both must return only the keywords you meant. So keep the keyword out of commit prose: name the
-issue without one when narrating, or the sentence describing a mis-close performs another.
+Both must return only the keywords you meant, and read the merge box itself before confirming a
+squash. Keep the keyword out of commit prose: name the issue without one when narrating, or the
+sentence describing a mis-close performs another.
 
 **Verify one decisive thing yourself**, with one command, rather than relaying what the implementer
 reported. "Gates green" has been reported here while the type checker had errors, and a green CI job
@@ -512,9 +521,14 @@ and say in the ledger that it is being cut for being unmeasured rather than for 
 ledger is the archive of why. So name all four at the write step and record, per file, applied or
 explicitly declined. `fd03896` added "both mutations" to this file and edited nothing else, leaving
 `implementer.md` asking the planner for "the mutation", singular; #1117 then shipped the
-per-assertion wording into two files and left `SKILL.md:223` on the old one. Placement is necessary
-and it is not sufficient — the frequency rule has its full operational form in `teamlead.md` and
-failed on three consecutive tickets anyway, on its trigger list rather than its location.
+per-assertion wording into two files and left §2's judge paragraph on the old one, which `b7da670`
+repaired. Placement is necessary and it is not sufficient — the frequency rule has its full
+operational form in `teamlead.md` and failed on three consecutive tickets anyway, on its trigger
+list rather than its location.
+
+`check-citations.ts` will not help here: it excludes `.claude/skills/ticket-team/*` from the diff it
+scans, so a `file:line` citation added to this file or to the ledger is checked by nobody. Open each
+one.
 
 A ticket that produced no lesson gets one line saying so. That is the normal outcome, and inventing
 one to look thorough is the failure this step exists to prevent.
@@ -542,10 +556,11 @@ loop paid for:
   rather than wrong. This section is subject to its own rule.
 - **Name what wakes or reaches the recipient before writing any delivery instruction** — if you
   cannot name a runtime mechanism, the instruction is invalid. Six commits went into one channel
-  class and the fix for the first caused the third: `ce81fa6` told a subagent to `SendMessage` with
-  no roster, `7195368` told an idle agent to wait. Both fail this test on their own text. A seventh
-  instance then occurred under the amended wording, which is the argument for giving the receiving
-  side a check rather than the sending side another sentence.
+  class and the fix for the first caused the third: `ce81fa6` told a subagent to `SendMessage` its
+  result, and a resumed subagent has no roster to send with — the instruction fails this test on its
+  own text, and `fbf33ac` records what it produced, a send to a guessed name that reached nobody. A
+  seventh instance then occurred under the amended wording, which is the argument for giving the
+  receiving side a check rather than the sending side another sentence.
 
 And keep asking the rate question: what did the loop catch that the gates would have caught
 anyway, and what did it cost to find out? Record unfavourable answers with the same specificity —
