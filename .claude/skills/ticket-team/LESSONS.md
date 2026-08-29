@@ -27,18 +27,19 @@ when the answer is no.
 | Delivery is by phase — first completion arrives as the return value, after a resume the artifact (handoff digest or PR) is the channel; idle is availability, not output | #1107 | 1 | Superseded the original "deliver by SendMessage" wording, which told agents to use a channel a resumed subagent cannot reach — the failure §0b now documents. Three agents went idle with finished work; a fourth's guessed-name send reached nobody |
 | The verdict is a closed shape and the implementer fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
 | Do not manufacture justification for a direction you were given — comply and say "not persuaded", or object before complying | #1105 | 1 | The implementer was directed to narrow a guard, wrote a paragraph justifying the narrowing, and deleted it one round later when the direction reversed. It disclosed this; the rule exists so the disclosure is not what the loop depends on |
-| Sign the claim, and name what being wrong would cost and who pays — the ledger names the agent, not only the stage | #1105 | 1 | Four wrong facts reached agents from the orchestrator on one ticket and every one was corrected by an agent that read the file; the same orchestrator reversed one design decision twice and the implementer paid three revisions. None of it would read as a pattern under "caught at plan" |
-| A team lead runs the thing it is judging — implement the proposed guard and execute it over every real input, never a sample | #1110 | 3 | Settled both blockers on #1110 (26 errors, then 0 after injection) and #1105 item 3 (a condition parser run over all 14 real `if:` conditions plus two adversarial shapes). #1109's analogous claim stayed an inference and the ledger had to say so. On #1108 it settled the review's sharpest finding in one command: the lead reproduced the surviving boolean group itself (151 pass, 0 fail, `check:workflows` exit 0) rather than relaying it, and separately ran the suite at both commits in a throwaway clone to confirm the red test was real |
+| Sign the claim, and name what being wrong would cost and who pays — the ledger names the agent, not only the stage | #1105 | 2 | Four wrong facts reached agents from the orchestrator on one ticket and every one was corrected by an agent that read the file; the same orchestrator reversed one design decision twice and the implementer paid three revisions. None of it would read as a pattern under "caught at plan" |
+| A team lead runs the thing it is judging — implement the proposed guard and execute it over every real input, never a sample | #1110 | 4 | Settled both blockers on #1110 (26 errors, then 0 after injection) and #1105 item 3 (a condition parser run over all 14 real `if:` conditions plus two adversarial shapes). #1109's analogous claim stayed an inference and the ledger had to say so. On #1108 it settled the review's sharpest finding in one command: the lead reproduced the surviving boolean group itself (151 pass, 0 fail, `check:workflows` exit 0) rather than relaying it, and separately ran the suite at both commits in a throwaway clone to confirm the red test was real |
 | Obstacles are stated as what you tried, not as what is impossible | #1105 | 1 | The brief said the run logs could not be retrieved by any route; `gh api --allow-escape-sequences` returns them, and the implementer found it only because it did not take the impossibility on trust |
-| A closing keyword is checked for the right word, not for its presence — `Refs #N` when the ticket outlives the change | #1105 | 3 | `Closes #1105` shipped item one of a four-item audit and closed the other three on merge, including the one measured as the most valuable |
+| A closing keyword is checked for the right word, not for its presence — `Refs #N` when the ticket outlives the change | #1105 | 4 | `Closes #1105` shipped item one of a four-item audit and closed the other three on merge, including the one measured as the most valuable |
 | Write the smallest thing that settles the ticket — and treat writing nothing as a real answer | #1105 | 3 | 4 functional lines out of 302; 9 of 9 defects lived in the apparatus around them, which was rewritten four times while the four lines never moved |
-| Guard the instance, not the class, until a second instance exists — and treat a guard that changes more often than the thing it guards as the liability signal it is | #1105 | 2 | A rule generalised to unwritten workflows produced all nine defects across three rounds; the guarded file changed in 1 of 5 commits, the guard in 4 of 5 |
+| Guard the instance, not the class, until a second instance exists — and treat a guard that changes more often than the thing it guards as the liability signal it is | #1105 | 3 | A rule generalised to unwritten workflows produced all nine defects across three rounds; the guarded file changed in 1 of 5 commits, the guard in 4 of 5 |
 | A plan justified by a cost figure or by an incident must measure the **frequency of the waste**, not the cost of the thing that wastes - and must date each cited instance against the rule that now forbids the practice, because run history is evidence about a **regime**, not about a repository. Establish the window over which the governing rule was constant before arguing a rate, and if the instances cluster at one edge of that window, the clustering **is** the finding. And the sharp form: **incidents cluster immediately before the rule that bans them, because the incident is why the rule exists.** So when the evidence sits at one edge, ask not only whether the window was homogeneous but whether the last instance *caused* the boundary. If it did, the evidence is not weak-because-non-stationary, it is inverted - you are citing the case that got the practice prohibited as a sample of ongoing behaviour. Dating it is a walk, not a one-liner: `git log -S '<text>' --reverse -- <file> \| head -1` yields a *candidate*, and the load-bearing step is `git show <sha> -- <file>`, reading whether the diff **adds** the rule or rewords it. If it rewords, take the `-` line as the new search string and repeat. No single command works: `-S` reports any change in the string's count, so newest-first returns a later edit, and `--reverse` still returns that edit when the wording changed - which is the case a reader hits by default, because they can only search text that still exists. Absence of a boundary commit is not evidence of a constant regime either; it means the rule was never written as text, which branch protection, an org setting and a maintainer's habit all satisfy | #1105 | 2 | #1105 ranked first on `Rust Tests` being 26.5% of CI cost while the waste removed is 2.9% of that. #1108 rejected rung 0 on `refs/tags/v1.0.1` carrying three runs at three SHAs - 2026-04-14/15, days 1-2 of a 136-day window - while `6d9e6da` added TAG NAMES ARE ONE-USE to CLAUDE.md on 2026-04-15, the same day as the last instance, and no tag ref has hosted a second run in the ~58 tag releases since. All five repeat-instances sit in the first 1.0% of the window (0.0, 0.0, 0.9, 0.9, 1.0). The operational form is the implementer's, proposed unprompted after the ticket closed; the lead had written only the weaker prose version, which named no check. The inversion is the implementer's, from a fourth pass, and it is the part worth keeping: `6d9e6da` is dated 2026-04-15 15:48:43 UTC, **125 minutes after the last re-push instance started** (run `24458021670`, 13:44:02Z). The cluster runs carry PR titles #90, #91, #92; the commit that ended the regime is #96, "apply lessons learned from v1.0.2 release". The plan's evidence *is* the incident that produced the prohibition. The detection went through three wrong forms first, all the lead's: no ordering flag, then `--reverse`, then `--reverse` again after learning `85a20e7` deleted the heading. Each ran clean and returned `2026-04-15`'s successor `85a20e7 2026-07-26`, at 74% of the window, for a reader searching the wording CLAUDE.md actually contains today - `TAG NAMES ARE ONE-USE` has been absent since that commit reworded it. A detection step that runs clean and returns a confident wrong number is worse than none, which is the objection this ledger raised against the guard #1108 shipped, now made three times against its own rule. The "or by an incident" clause was applied on #1110 and never reached this row, which is why the rule did not engage an incident-shaped justification here either - row 38's class, with this table as the file that kept the old wording |
-| The claim handed to a reviewer is quoted from the artifact, never from an agent's summary of it - and a known weakness is conceded by stating the evidence with its dates, never by instructing the reviewer not to report on it | #1110 | 2 | #1110: a relayed summary had codex refute a claim that had never shipped. #1108: the prompt quoted the body verbatim and codex refuted that exact sentence - but it also said "do not report 'no incident evidence' as a finding, it is already conceded", and the review then attacked mechanism only and dated none of the runs the concession rested on |
+| The claim handed to a reviewer is quoted from the artifact, never from an agent's summary of it - and a known weakness is conceded by stating the evidence with its dates, never by instructing the reviewer not to report on it | #1110 | 3 | #1110: a relayed summary had codex refute a claim that had never shipped. #1108: the prompt quoted the body verbatim and codex refuted that exact sentence - but it also said "do not report 'no incident evidence' as a finding, it is already conceded", and the review then attacked mechanism only and dated none of the runs the concession rested on |
 | After editing a rule, grep the other files for the fact it changed — a fix that states a new rule without retiring the passage that stated the old one | #1107 | 2 | Three findings in one review round, all introduced by earlier fixes: `$WT` survived where the rule had moved to absolute paths, `/simplify` was excused by the precondition meant to catch it, and one file asserted both that the implementer is in the worktree and that it is not, 51 lines apart |
-| A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 2 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
-| A plan's mutation list runs both mutations per guard - delete it, and neutralise it while leaving its shape in place - and when the guard delegates to an existing predicate, one row per residual that predicate's own doc comment states | #1105 | 2 | Four findings on #1105: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; two of three valid `on:` spellings bypassed the rule. #1108 earned the second clause: the plan's wrong-value row chose a constant group the check catches, while the predicate it reused documented the shape it accepts. `fired` does not move for #1108 - the rule did not fire there, it failed |
-| The approval carries a digest of the plan it approved | #1107 | 1 | Round 2 on #1105: two readers reported different sizes for the same file — 11250 characters against 11344 bytes — and the digest settled that the content was identical. A size is not an identity |
+| A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 3 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
+| A plan's mutation list is keyed per **assertion**, not per guard - for each thing a guard asserts, delete it, and separately leave it present but not satisfying it, plus one control that must survive - and the rule is stated in the planner's file, not only the judge's - and when the guard delegates to an existing predicate, one row per residual that predicate's own doc comment states | #1105 | 3 | Four findings on #1105: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; two of three valid `on:` spellings bypassed the rule. #1108 earned the second clause: the plan's wrong-value row chose a constant group the check catches, while the predicate it reused documented the shape it accepts. `fired` does not move for #1108 - the rule did not fire there, it failed. #1105's unit matrix earned both refinements: round 1 caught two live bypasses, then round 2's own 17-shape sweep still had no cell for "matrix row present, macOS, not arm64" and shipped a predicate Greptile filed P2 - a sweep keyed per guard has no visibly empty cell, one keyed per assertion does. And `fd03896` had added "both mutations" to the judge's section ninety minutes earlier, its own message naming that on #1108 "the reviewer was asked for it, the planner was not" - then edited only the judge's file, leaving `implementer.md` asking for "the mutation", singular |
+| The approval carries a digest of the plan it approved | #1107 | 2 | Round 2 on #1105: two readers reported different sizes for the same file — 11250 characters against 11344 bytes — and the digest settled that the content was identical. A size is not an identity |
+| A check that cannot display the counterexample is not a check - mutate the input so the claim would be false and confirm the check says so. A grep cannot see indirection, so an exclusivity premise is resolved from the executor's side; and a plan cannot commit prose it only described | #1105 | 1 | "`unit-tests` is the only CI job that runs the unit suite" was verified at plan and again at verdict by grepping `.github/workflows/` for `test:unit` - a route that structurally cannot return `coverage:ts` -> `test:cli-fast` -> `tests/unit/` - and it shipped into a committed decision log. The re-derive one-liner was run only against the artifacts that pass, and printed 0 lines at exit 0 on any other junit attribute order - the exact false conclusion the entry it lives in exists to prevent. Converged on independently from the other side: the implementer, unprompted, reported that both of its doc defects came from "verifying my prose by running it once, in the one condition I had". Two agents, four instances, one rule - and it fired on its own author's tooling within the hour, when an anchored replacement refused on `0 occurrences` instead of appending a duplicate entry into a reverted file |
 
 ---
 
@@ -609,3 +610,93 @@ at all, and its citations belong to source 2. It never reached the PR body, so i
 is zero - it cost the exposure argument that decided the ticket. It escaped plan v1, the
 verdict, plan v2, the approval, codex and Greptile. Recorded rather than assigned: nobody
 established it either way, including this ledger.
+
+---
+
+## #1105 "Worth measuring before acting" — the `unit-tests` macOS row
+
+PR #1116. Heads `d738b0b2` → `13970ec` → `a5c4c8b` → `47b9089` → `c8f5720` → `f5f88c4`. **Nine
+defects, six escaped a stage.** The ticket shipped a **decision not to change**: the matrix keeps
+three runners because 14 unit cases assert on darwin and nowhere else. Written by
+`teamlead-1105-unittests` from the `retro` agent's report, which corrected three of the lead's own
+claims in the brief it was given — all three corrections were checked and all three stood.
+
+| what | caught at | earliest that could have | the change that would move it |
+|---|---|---|---|
+| Plan v1's guard pinned the matrix entry; `exclude:` and a step-level `if:` both left it green | teamlead r1 | plan | the mutation rule in the table above, stated in the planner's file and not only the judge's |
+| `Refs #1105` where `Closes` was right, all four waste items having shipped | teamlead r1 | plan | none — the closing-keyword rule working, and the answer was the opposite of #1110's |
+| The guard accepted an Intel macOS label; 14 cases go silent with the shape intact | codex | **teamlead r2**, whose own 17-shape sweep had no cell for it | mutations keyed per **assertion**, not per guard |
+| "`unit-tests` is the only CI job that runs the unit suite" — false, and it shipped into a committed `docs/decision-log.md` | codex | plan, and again at verdict r1 — the same grep, twice | the counterexample rule in the table above |
+| The committed reproduction printed row totals and never derived the 14 | codex | implementation — the plan named "the reproduction command" and never quoted its text | same |
+| The entry said the audit "proposed dropping `macos-latest`"; #1105 made it conditional | codex | implementation, same cause | same |
+| The **fix** for the reproduction shipped a regex requiring junit attribute order: 0 lines at exit 0 on any other order, i.e. "no darwin assertions" | delta review | the fix push — tested only against the input that passes | same |
+| The arm64 predicate is a suffix denylist, so a bare Intel label passes it | **Greptile, P2** | **teamlead**, which observed `macos-13` passing during verification, wrote it off as retired, and left it out of its own triage | see below |
+| Round 2 arrived with no binding block; the two verdicts are signed with two different names for one agent | self, in its own artifacts | same | none. The delivery-by-phase rule's artifact-channel wording landed in SKILL.md at 11:10:40Z, *after* the 10:39Z incident. Whether the lead's wrong name correction caused the missing delivery cannot be established — no artifact preserves it. **And the fix has its own residual, named by the implementer after the ticket closed:** reading each head off disk is faster than waiting and made its later sends confirmations rather than triggers, but it fails on the one case nobody checks — a head pushed that the lead never looks for. The lead's mitigation for the rest of the ticket was to block in-call on `git ls-remote` until the branch head moved, rather than end a turn |
+
+### The lead saw the P2 first and dropped it
+
+During verification the lead ran the predicate over 12 real runner labels and logged `true
+macos-13`. It reasoned that `macos-13` is retired from `actions/runner-images` — true, and checked —
+and therefore omitted it from the triage entirely. The retro then found it as an undeclared
+residual, and Greptile filed it P2. **Three parties found it; the lead found it first and recorded
+it nowhere.** That is worse than not seeing it, and it is the second time on this ticket the same
+lead confirmed a claim by a route that could not have contradicted it.
+
+Fixed on `f5f88c4`: the suffix denylist became a positive allowlist that fails loudly on any
+unrecognised macOS label. Verified by mutation through the real recipe — `macos-13` (Greptile's own
+example), `macos-15-intel`, `macos-15-large` and `macos-27` (an image that does not exist yet) all
+caught; `macos-14`, `macos-26` and `macos-15-xlarge` all survive. Greptile re-reviewed that head
+(`Reviews (2)`, last reviewed commit `f5f88c48`) and raised nothing new.
+
+### Benefit: measured on the decision, never measured on the guard
+
+The refused saving is **$0.00 billed, ~$2.7 per ten days notional, and 0 s of latency** —
+`windows-latest` is the slower row (65 s median against macOS's 41 s) and gates the same downstream
+jobs — against 14 cases that would run in no lane. Both sides carry a number, derived twice
+independently. That is better than the two items before it.
+
+The **guard's** rate was never measured at ranking. Measured in retro and re-verified by the lead:
+`ci.yml`'s `unit-tests` `os:` list has been touched by **exactly one commit in 145 days** —
+`8e16a24`, 2026-04-07, the commit that created it — and no runner has ever been removed from a CI
+test matrix in this repository. #1111 looks like a counterexample and is not: `nix-build.yml:57`
+still carries `os: [ubuntu-latest, macos-14]`. So the guard is insurance against an event with
+**zero instances in the file's entire history**. Defensible — silent coverage loss is the right
+thing to insure against — but it is not what "the cheapest 10x saving available" described, and the
+frequency rule did not engage because its trigger enumerates cost figures and incidents while this
+justification was a *hypothesised future edit*. Third consecutive ticket where that rule's trigger
+list, not its idea, is what failed.
+
+### What the loop bought, and what it cost
+
+The gates caught **nothing**: `just preflight` exit 0 on all three pushes (1615 pass / 0 fail),
+`tsc` and `check:workflows` clean, three-OS CI green on every head that had one. All nine defects
+live in a mutation table, in committed prose, in a fenced code block nothing executes, or in process.
+
+Cost: three CI runs ≈ **19.5 macOS minutes ($1.21 notional)** against a row that burns ~4.7 macOS
+minutes a day — **the pull request spent about four days of the cost it was auditing**, on the
+audit's own lens — plus two plan rounds, two review rounds and 845 KB of review artifacts.
+
+Bought: three silent failures no gate reaches — the two round-1 bypasses, the Intel label, and the
+silent-zero regex. The delta review paid for itself in the one way that is provable: its single
+blocker was a defect **introduced by the fix for the previous round's finding**. A fix push is
+unreviewed code, and this is the ledger's first datum on what re-reviewing one buys.
+
+**Third consecutive ticket where every defect lived in the apparatus and none in the payload** —
+item 1: 9 of 9; #1110: ~130 lines of guard for 26 lines of config; here 9 of 9, with the finding
+itself correct in the implementer's first artifact and unchanged across four heads. The
+smallest-thing rule and the instance-not-class rule both engaged — rung 0 was weighed explicitly and
+§6 refused a class parser by name — and neither prevented it, because both govern size and class,
+not the ratio of defects to payload. **Neither is incremented for this ticket**: the retro's own
+measurement is that rungs 0-2 would have avoided five of the nine defects, which is the opposite of
+the smallest-thing rule having caught something. Three instances is a pattern worth naming and not
+yet a rule worth holding.
+
+### Not done, and why
+
+The retro proposed compressing the frequency rule from ~620 words to ~120, moving its #1108 dating
+narrative into that ticket's own section. It was deferred, and the reason first given was wrong:
+the lead diagnosed a concurrent writer racing its edits on `feat/agent-team`. There was no writer —
+`LESSONS.md` was untracked in the root checkout until #1107 merged as `27c0995`, and the merge
+checked the tracked file out over it. The deferral stands on its merits and goes to the next
+ticket's retro; the mechanism is recorded here because a ledger entry carrying a superseded
+diagnosis of its own history is what this ledger exists to prevent.

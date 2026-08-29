@@ -61,9 +61,10 @@ Structure it as:
   command that runs it. For a bug this is not optional: a test written after the fix never
   demonstrated it was failing.
 - **The change** — files and the shape of the edit, smallest thing that turns the test green.
-- **How the guard is proven** — the mutation you will run (`just mutate <file> <find>
-  <replace> <test>`) and what "caught" looks like. A guard that survives its own mutation
-  is not a guard.
+- **How the guard is proven** — one row per **assertion**, not per guard, and two mutations each
+  through `just mutate <file> <find> <replace> <test>`: delete the thing it asserts, and separately
+  leave it present but not satisfying it. Plus one control that must survive. A guard that only
+  catches deletion is unpinned against the edit that actually happens.
 - **How you will verify** — `just preflight` is the default gate, but it does **not** build
   the darwin feature set: if you touch `rust/src/tts/**` or the `system_kokoro` /
   `system_diarize` / `system_text_lang` surface, name `just verify-darwin-full` too.
