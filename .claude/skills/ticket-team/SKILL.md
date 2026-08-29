@@ -419,10 +419,52 @@ For CI the blocking form is `gh pr checks <N> --watch --fail-fast`; a timeout is
 reissue the same wait, and when it returns re-verify by the full head SHA anyway, since a push
 during the wait moves the head under the checks being followed.
 
-Check the closing keyword for the **right word**, not for its presence. `Closes #N` only when the
-change finishes the ticket; `Refs #N` when the ticket outlives it, and then close by hand once it is
-genuinely done. On #1105 `Closes` was there, it was wrong, and merging closed a four-item audit on
-the strength of one shipped item.
+Check the closing keyword for the **right word**, not for its presence, and in every place a merge
+closes from. `Closes #N` only when the change finishes the ticket; `Refs #N` when the ticket outlives
+it, then close by hand and verify with `gh issue view <N> --json state`. Each issue needs its own
+keyword — `Closes #N, closes #M` — because a bare list closes only the first. Auto-close fires only
+on a merge into the **default branch**, so a stacked pull request fires nothing on its own merge and
+then fires when its base reaches `main`. On #1105 `Closes` was there, it was wrong, and merging
+closed a four-item audit on the strength of one shipped item.
+
+None of that is a discovery here: `CLAUDE.md:95` has carried every sentence above since `759b08d`
+(2026-04-20) and this file kept the body half only — the grep-the-other-files class with the
+repository's own charter as the file that was not read.
+
+```bash
+KW='\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[ :]*([[:alnum:]._-]+/[[:alnum:]._-]+)?#[0-9]+'
+gh pr view <N> --json closingIssuesReferences -q '.closingIssuesReferences[].number'
+gh pr view <N> --json title,body -q '.title, .body'  | grep -inE "$KW"
+git log <base>..<head> --format=%B                   | grep -inE "$KW"
+```
+
+**The first line asks GitHub; the other two cover what it cannot see.** `closingIssuesReferences` is
+GitHub's own computed set for the linked-pull-request mechanism, so it beats any model of it — and
+it is what would have caught this ledger's own error about #1116. It is not sufficient: #1107 closed
+#1105 from a **commit message** and returns `[]` from that field, and a keyword in the **title** is
+not a linking channel and never reaches it either.
+
+Which is where the count comes from, so re-derive it rather than trust three. All three merge methods
+are enabled here; `merge_commit_message` is `PR_TITLE`, so a merge commit's message carries the
+title; `squash_merge_commit_title` is `COMMIT_OR_PR_TITLE` and `squash_merge_commit_message` is
+`COMMIT_MESSAGES`, so a squash takes its subject from the title and its body from the branch
+messages; rebase replays those messages. Both non-body paths have bitten this repository: #1107
+closed #1105 with a body saying only `Refs #1105`, because one of its 74 concatenated messages quoted
+the keyword twice while narrating an earlier mis-close; and #1116's title carried `(#1105)` into
+`99c8a64`'s subject on `main`, where a keyword instead of bare parentheses closes from the title
+alone — which neither a body read nor a branch log can see. The title is inert for the
+linked-pull-request mechanism, which is what "not only the title" means, and live for the commit one.
+
+The merge box is editable — #1109's was trimmed to its title — so the last line *predicts* the squash
+message rather than reading it. Read the box before confirming, and let all three return only what
+you meant.
+
+**Verify a shell snippet under `/usr/bin/grep`, not under `grep`**: this environment shadows it with
+a function whose body is `ARGV0=ugrep …`, and ugrep honours `\w` inside a bracket expression where
+POSIX ERE takes the backslash literally — the first version of this line shipped as `[-\w.]`, was
+verified green, and matched no `owner/repo#N` form under the real binary. The class is measured on
+BSD grep; GNU grep is unmeasured here. Keep the keyword out of commit prose: name the issue without
+one when narrating, or the sentence describing a mis-close performs another.
 
 **Verify one decisive thing yourself**, with one command, rather than relaying what the implementer
 reported. "Gates green" has been reported here while the type checker had errors, and a green CI job
@@ -492,6 +534,24 @@ should be repeated louder.
 Update the `fired` counts, including where the answer is no. Cut what has not fired in ten tickets,
 and say in the ledger that it is being cut for being unmeasured rather than for being wrong.
 
+**The ledger write is not the change.** A rule takes effect when it is copied into `SKILL.md`,
+`teamlead.md`, `implementer.md` or `retro.md` — what an agent actually holds in context — and the
+ledger is the archive of why. So name all four at the write step and record, per file, applied or
+explicitly declined. `fd03896` added "both mutations" to this file and edited nothing else, leaving
+`implementer.md` asking the planner for "the mutation", singular; #1117 then shipped the
+per-assertion wording into two files and left §2's judge paragraph on the old one, which `b7da670`
+repaired. Placement is necessary and it is not sufficient — the frequency rule has its full
+operational form in `teamlead.md` and failed on three consecutive tickets anyway, on its trigger
+list rather than its location.
+
+And when the rule is about how this repository works rather than about this loop, `CLAUDE.md` is
+the first file to grep, not the fifth: §6's closing-keyword rule was copied out of `CLAUDE.md:95`
+into the skill body-only and cost a review round four months later rediscovering the other half.
+
+`check-citations.ts` will not help here: it excludes `.claude/skills/ticket-team/*` from the diff it
+scans, so a `file:line` citation added to this file or to the ledger is checked by nobody. Open each
+one.
+
 A ticket that produced no lesson gets one line saying so. That is the normal outcome, and inventing
 one to look thorough is the failure this step exists to prevent.
 
@@ -501,7 +561,7 @@ ledger is the evidence that PR cites.
 ## 8. Kaizen — improve the loop while you are inside it
 
 The retro *judges* improvements; they are *found* mid-ticket, where raising one costs a message
-instead of a re-read. Six rules, for every agent in the loop, each anchored to something this
+instead of a re-read. Seven rules, for every agent in the loop, each anchored to something this
 loop paid for:
 
 - **Small and continuous beats a rewrite** — what stuck, both restructures, was the paragraph
@@ -516,6 +576,13 @@ loop paid for:
   proposal with no failure attached is dropped, said so.
 - **Retire at the rate you adopt** — a rule silent for ten tickets goes, recorded as unmeasured
   rather than wrong. This section is subject to its own rule.
+- **Name what wakes or reaches the recipient before writing any delivery instruction** — if you
+  cannot name a runtime mechanism, the instruction is invalid. Six commits went into one channel
+  class and the fix for the first caused the third: `ce81fa6` told a subagent to `SendMessage` its
+  result, and a resumed subagent has no roster to send with — the instruction fails this test on its
+  own text, and `fbf33ac` records what it produced, a send to a guessed name that reached nobody. A
+  seventh instance then occurred under the amended wording, which is the argument for giving the
+  receiving side a check rather than the sending side another sentence.
 
 And keep asking the rate question: what did the loop catch that the gates would have caught
 anyway, and what did it cost to find out? Record unfavourable answers with the same specificity —
