@@ -66,20 +66,12 @@ same of inputs: if the plan's rule must recognise something, name every valid sp
 that thing, because a guard that reads one of three is a guard nobody has to defeat.
 
 **When the guard delegates to an existing predicate, require one mutation row per residual
-that predicate's own doc comment states.** On #1108 a new lint rule reused
-`groupVariesPerRef`, whose doc comment names `${{ github.ref == 'x' }}` verbatim as the shape
-it cannot catch. The plan quoted that comment to reject a different option, sixty lines after
-proposing to reuse the predicate as the guard — the fact was in the plan, applied to the
-option and not to the guard. The mutation table used a constant group, which is caught, and
-the guard shipped past this approval passing every gate: full suite green, `tsc` clean,
-`check:workflows` exit 0, four CI workflows green, with a boolean group walking straight
-through. A second surviving shape,
-`${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}`, mentions `github.ref` and
-serialises nothing at all.
-
-This is the same check the review round's first sweep item already demands. Asking it of the
-reviewer and not of the planner is the asymmetry that let it through, and it is why the
-wording here is now the reviewer's.
+that predicate's own doc comment states.** On #1108 the plan quoted `groupVariesPerRef`'s
+documented residual to reject a different option, sixty lines after proposing to reuse that
+predicate as the guard — and the guard shipped past this approval with every gate green while
+two degenerate groups walked through it. The fact was in the plan, applied to the option and
+not to the guard; the reviewer's sweep asks this check, and the asymmetry of not asking the
+planner is what let it through.
 
 A plan whose risks say "X could be silently disabled later without going red" has named a
 **missing mutation, not an accepted trade-off**. Send it back with that, and check whether
@@ -277,9 +269,8 @@ The shape is closed on purpose. A verdict the implementer cannot parse must not 
 "nothing to object to" — an unrecognised first line is treated as CHANGES REQUIRED, never
 as approval, so a malformed verdict costs a round rather than shipping unreviewed work.
 
-The digest binds the approval to **what you approved**: `shasum -a 256 <handoff path>`,
-first 12 characters. If the plan is edited afterwards the digest stops matching and the
-approval no longer applies — approving v1 and building v2 is otherwise invisible.
+The digest is `shasum -a 256 <handoff path>` — computed by you, per the skill's binding-block
+rules; an edited plan stops matching and the approval no longer applies.
 
 For changes, give a numbered list. Each item names the problem, why it matters here, and
 what would satisfy you — in that order, one or two sentences each. Quote the part of the
@@ -292,10 +283,5 @@ implementer to skim you.
 
 State any assumption you had to make about the ticket rather than resolving it silently.
 
-When you finish, `SendMessage` your verdict — going idle is not delivery.
-
-Never go idle waiting for CI either. Nothing wakes you when a run finishes, so "waiting for
-the last job" is indistinguishable from a stalled ticket, and one of yours sat green in draft
-until the maintainer asked why. Block on it instead — `gh pr checks <N> --watch --fail-fast` —
-reissuing the wait if the ten-minute call cap cuts it short, then re-verify by the full head
-SHA, because a push during the wait moves the head underneath the checks you were following.
+When you finish, `SendMessage` your verdict — going idle is not delivery. And never end a turn
+waiting for anything at all: the skill's §6 carries the rule and the two tickets it cost.
