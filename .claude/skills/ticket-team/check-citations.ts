@@ -1,13 +1,26 @@
-const base = Bun.argv[2] ?? "origin/main";
-const head = Bun.argv[3] ?? "HEAD";
-const sh = (a: string[]) => Bun.spawnSync(a, { stdout: "pipe", stderr: "pipe" }).stdout.toString();
+const tree = Bun.argv[2];
+if (!tree || tree.startsWith("origin/")) {
+  console.error("usage: bun check-citations.ts <worktree-abs> [base] [head]");
+  process.exit(2);
+}
+const base = Bun.argv[3] ?? "origin/main";
+const head = Bun.argv[4] ?? "HEAD";
+// Failures exit 2 loudly: a swallowed git error once returned "0 citations" green from the wrong cwd.
+const sh = (a: string[]) => {
+  const r = Bun.spawnSync(a, { cwd: tree, stdout: "pipe", stderr: "pipe" });
+  if (!r.success) {
+    console.error(`FAILED (exit ${r.exitCode}): ${a.join(" ")}\n${r.stderr.toString().trim()}`);
+    process.exit(2);
+  }
+  return r.stdout.toString();
+};
 const tracked = sh(["git", "ls-tree", "-r", "--name-only", head]).split("\n").filter(Boolean);
 const byBase = new Map<string, string[]>();
 for (const p of tracked) {
   const b = p.split("/").pop()!;
   byBase.set(b, [...(byBase.get(b) ?? []), p]);
 }
-const diff = sh(["git", "diff", `${base}...${head}`]);
+const diff = sh(["git", "diff", `${base}...${head}`, "--", ".", ":(exclude).claude/skills/ticket-team/*"]);
 const cites = new Set<string>();
 for (const l of diff.split("\n")) {
   if (!l.startsWith("+") || l.startsWith("+++")) continue;

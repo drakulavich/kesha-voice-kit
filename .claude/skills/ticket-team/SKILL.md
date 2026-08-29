@@ -44,7 +44,9 @@ Everything below is addressed to the **team lead**.
 ## Precondition: the OMC skills must resolve
 
 `/omc-plan` and `/execute` are the skills this protocol invokes, and a skill present on disk is
-not the same as one registered — check the implementer's listing before you rely on them. The
+not the same as one registered. You cannot see the implementer's listing — it is per-agent,
+injected at spawn — so the check is the implementer's own: its charter has it report, in one
+line at the top of its plan, whether the skill resolved or it fell back to reading files. The
 simplification pass is **not** an OMC skill: `~/.claude/skills/` has no `simplify`. Use the
 `code-simplifier` agent, which exists regardless of what resolves as a command.
 
@@ -124,6 +126,10 @@ The actual mechanics:
   cannot reliably reach you either — it has no roster, and a name it guesses reaches nobody. From
   that point **the artifact on disk is the channel**: re-stat the handoff path, and if the digest
   moved, that is the submission.
+- **When the resumed phase produces a pull request rather than a handoff revision, the PR is the
+  artifact**: poll `gh pr list --head <branch> --json number,headRefOid` for the build phase, and
+  the new head SHA on that PR for a fix batch. The handoff digest never moves in Phase 2, so
+  re-statting it reads a finished build as "nothing submitted".
 - An **idle notification** is neither. It means "available", not "here is my output" — three
   agents in a row went idle having done the work and delivered nothing until asked by name.
 
@@ -272,6 +278,10 @@ Send the approval. The implementer runs `/execute` against the **absolute** hand
 its worktree, lands the failing test first, runs the gate the plan named, and opens a **draft** pull
 request with the closing keyword in the body.
 
+You learn it finished per §0b's third row: block on `gh pr list --head <branch>` until the PR
+exists, then read the PR and the implementer's evidence under `.omc/retro/<ticket>/`. Nothing is
+coming by message.
+
 **Recompute the digest before the build starts.** An approval can be issued against a revision that
 has since moved.
 
@@ -355,7 +365,7 @@ So: collect every finding from triage, hand them to the implementer as one batch
 the whole diff once before pushing —
 
 ```bash
-bun <this-skill's-base-directory>/check-citations.ts origin/main HEAD    # run in the ticket worktree
+bun <this-skill's-base-directory>/check-citations.ts <worktree-abs> origin/main HEAD
 ```
 
 **The path is the skill's own base directory, not the ticket tree's** — this skill and its script
@@ -364,7 +374,13 @@ exists there with ten tracked siblings, so a directory probe false-greens and th
 reads as "not installed" (#1108, where the implementer ran the step and reported the absence
 instead of skipping quietly).
 
-It extracts every `file:line` the diff **adds** and resolves each against the post-diff tree, failing
+It takes the worktree as its first argument, runs every git call against that tree, and fails
+loudly (exit 2, stderr shown) when git itself fails — an early version inherited the caller's cwd
+and returned a green "0 citations" from the root checkout. It skips this skill's own files, whose
+ledger quotes historical citations as evidence; a `file:line` quoted as history is a feature
+there, not a stale claim. It extracts each added `file:line` for the seven extensions it knows
+(`yaml/yml/ts/rs/md/json/nix` — `Cargo.toml`, `justfile` and `.sh` citations pass unchecked) and
+resolves it against the post-diff tree, failing
 on a citation that now points at a blank line or cannot be resolved. That is the `ci.yml:984` defect
 — accurate on `main`, made false by the very diff containing it, and invisible to codex across two
 passes and Greptile across four. A line number is a claim about a file at a revision; nothing else
@@ -457,7 +473,10 @@ Agent(name: "retro-<ticket>", subagent_type: "retro",
                verdicts, review findings and my triage, CI runs. Propose the ledger entry.")
 ```
 
-It proposes; **you** judge and write `.claude/skills/ticket-team/LESSONS.md`. Apply the same triage
+It proposes; **you** judge and write the ledger — `LESSONS.md` beside this skill's own SKILL.md,
+by the absolute path this skill's base directory gives you, never the relative name, which
+pre-merge resolves into a tree where the file does not exist and a `Write` there creates a fresh
+empty ledger on `main`. Apply the same triage
 you applied to the review: a proposed rule enters only if it names what it would have caught, with
 this ticket as evidence. Reject the rest **with the reason written down**, including the tempting
 ones — a restatement of something the files already say, or advice with no failure attached. If a

@@ -25,8 +25,10 @@ You may run read-only commands to check a claim. You never edit the tree.
 
 ## The ledger entry
 
-One entry per ticket, appended to `.claude/skills/ticket-team/LESSONS.md`. Propose it as
-text in your report — you do not write the file; the team lead does, after judging it.
+One entry per ticket, appended to the ledger beside this skill's own SKILL.md (the lead knows
+its absolute path; pre-merge it exists only in the protocol's own worktree, not the ticket
+tree). Propose it as text in your report — you do not write the file; the team lead does,
+after judging it.
 
 Per defect, four fields and no prose around them:
 
@@ -108,4 +110,7 @@ change. Then the entries. Then retirement candidates.
 If a ticket produced no lesson, say so in one line and stop. That is a normal outcome and
 inventing one to look thorough is the failure this file exists to prevent.
 
-`SendMessage` your report — going idle is not delivery.
+Your **final message is the delivery** — it reaches the team lead as your return value, so the
+whole proposed entry goes into it. Do not `SendMessage` it: you have no roster, a guessed name
+reaches nobody, and you have no `Write` to leave it on disk either. The return value is your only
+channel; going idle without writing the report into your final message loses it entirely.

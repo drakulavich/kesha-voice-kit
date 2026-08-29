@@ -202,6 +202,9 @@ approved plan turns out to be wrong; a gate fails for a reason outside your chan
 ticket needs a decision that is the maintainer's to make. A blocked ticket reported in two
 sentences is worth more than a plausible change nobody asked for.
 
-When you finish a phase, your final message is the delivery — write the result into it rather
-than going idle on it. Going idle is not delivery, and neither is a `SendMessage` to a name you
-inferred: the return value and the handoff on disk are the two channels that actually arrive.
+Delivery differs by phase, and going idle is never it. Phase 1 ends in your final message — the
+return value is the channel, so write the plan summary and handoff path into it. Phase 2 and any
+fix batch run after a resume, where no return value arrives: there the **pull request itself is
+the delivery** — the branch, the PR, its head SHA — plus your evidence files under
+`.omc/retro/<ticket>/`; the lead reads those, not a message. Never `SendMessage` a name you
+inferred: it reaches nobody.

@@ -1,6 +1,6 @@
 # Ledger
 
-One entry per ticket. Appended by the orchestrator from the `retro` agent's report, after
+One entry per ticket. Appended by the team lead from the `retro` agent's report, after
 judging it — the retro proposes, it does not write here.
 
 Each defect carries four fields: **what**, **caught at**, **earliest stage that could
@@ -24,8 +24,8 @@ when the answer is no.
 |---|---|---|---|
 | Paths between agents are absolute; nothing depends on a subagent's cwd | #1107 | 1 | The handoff was written in the root checkout and referenced relatively from the worktree — no standard ticket could have reached implementation |
 | The OMC skills must be verified registered before the loop starts | #1107 | 1 | The whole protocol named `/omc-plan`, `/execute`, `/omc-review` while the plugin was unregistered; every phase called something that could not resolve |
-| Agents deliver by `SendMessage`; idle is availability, not output | #1107 | 1 | Three agents in a row completed their work and reported nothing until asked by name |
-| The verdict is a closed shape and the orchestrator fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
+| Delivery is by phase — first completion arrives as the return value, after a resume the artifact (handoff digest or PR) is the channel; idle is availability, not output | #1107 | 1 | Superseded the original "deliver by SendMessage" wording, which told agents to use a channel a resumed subagent cannot reach — the failure §0b now documents. Three agents went idle with finished work; a fourth's guessed-name send reached nobody |
+| The verdict is a closed shape and the implementer fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
 | Do not manufacture justification for a direction you were given — comply and say "not persuaded", or object before complying | #1105 | 1 | The implementer was directed to narrow a guard, wrote a paragraph justifying the narrowing, and deleted it one round later when the direction reversed. It disclosed this; the rule exists so the disclosure is not what the loop depends on |
 | Sign the claim, and name what being wrong would cost and who pays — the ledger names the agent, not only the stage | #1105 | 1 | Four wrong facts reached agents from the orchestrator on one ticket and every one was corrected by an agent that read the file; the same orchestrator reversed one design decision twice and the implementer paid three revisions. None of it would read as a pattern under "caught at plan" |
 | A team lead runs the thing it is judging — implement the proposed guard and execute it over every real input, never a sample | #1110 | 3 | Settled both blockers on #1110 (26 errors, then 0 after injection) and #1105 item 3 (a condition parser run over all 14 real `if:` conditions plus two adversarial shapes). #1109's analogous claim stayed an inference and the ledger had to say so. On #1108 it settled the review's sharpest finding in one command: the lead reproduced the surviving boolean group itself (151 pass, 0 fail, `check:workflows` exit 0) rather than relaying it, and separately ran the suite at both commits in a throwaway clone to confirm the red test was real |
