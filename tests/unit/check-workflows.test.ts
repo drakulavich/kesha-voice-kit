@@ -6,6 +6,7 @@ import { parse } from "yaml";
 import {
   checkFile,
   collectCacheWriters,
+  forbidFindPipedToHead,
   forbidLinuxPackaging,
   forbidNixBuildInCiAggregator,
   requireJobTimeouts,
@@ -174,6 +175,55 @@ describe("forbidLinuxPackaging", () => {
   test("prose about the policy is not packaging", () => {
     const comment = "      # packages (.deb/.rpm) moved off engine tags; see nfpm notes in #728";
     expect(forbidLinuxPackaging(PATH, comment)).toEqual([]);
+  });
+});
+
+describe("forbidFindPipedToHead", () => {
+  test("passes on every workflow in the repo", () => {
+    for (const file of readdirSync(repoPath(".github/workflows"))) {
+      const path = `.github/workflows/${file}`;
+      expect([path, forbidFindPipedToHead(path, readRepoFile(path))]).toEqual([path, []]);
+    }
+  });
+
+  test("ignores every other file", () => {
+    expect(forbidFindPipedToHead(CI, 'run: echo "no find here"')).toEqual([]);
+  });
+
+  test.each([
+    'sidecar=$(find "rust/target/x/release/build" -name say-avspeech -type f | head -1)',
+    "path=$(find . -name '*.so' | head -n1)",
+    "path=$(find . -name '*.so' | head -n 1)",
+  ])("catches %s", (line) => {
+    const errors = forbidFindPipedToHead(PATH, `          ${line}`);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("SIGPIPE");
+    expect(errors[0]).toContain("#1088");
+  });
+
+  test("names the 1-indexed line number", () => {
+    const contents = "line one\nline two\nsidecar=$(find . -name x | head -1)\n";
+    const errors = forbidFindPipedToHead(PATH, contents);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(`${PATH}:3:`);
+  });
+
+  test("accepts the -print -quit replacement", () => {
+    const line = '          sidecar=$(find "rust/target/x/release/build" -name say-avspeech -type f -print -quit)';
+    expect(forbidFindPipedToHead(PATH, line)).toEqual([]);
+  });
+
+  test("prose about the pattern in a comment is not a pipeline", () => {
+    const comment = "      # avoid piping find into head, see #1088";
+    expect(forbidFindPipedToHead(PATH, comment)).toEqual([]);
+  });
+
+  // A dropped check wouldn't show up against the clean repo tree, only against a probe (see above).
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  smoke:\n    runs-on: macos-14\n    steps:\n      - run: find . -name x | head -1\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1088"))).toHaveLength(1);
   });
 });
 

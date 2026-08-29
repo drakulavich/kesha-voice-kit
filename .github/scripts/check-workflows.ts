@@ -395,6 +395,28 @@ export function requirePipefailShell(path: string, document: unknown): string[] 
 }
 
 /**
+ * Fails when a `run:` step pipes `find` into `head`. Both of these steps carry `shell: bash`,
+ * which GitHub runs as `bash --noprofile --norc -eo pipefail {0}` — under pipefail, if `find` is
+ * still writing when `head` has read enough lines and exits, `find` takes SIGPIPE and exits 141,
+ * and `-e` fails the step on a traversal that actually succeeded. Whether it fires depends on how
+ * many matches the tree produces and when, so it is a race that has simply not lost yet, not a
+ * safe pattern (#1088). `find ... -print -quit` returns the same first match with no second
+ * process and nothing to signal.
+ */
+export function forbidFindPipedToHead(path: string, contents: string): string[] {
+  const errors: string[] = [];
+  contents.split("\n").forEach((line, at) => {
+    if (/^\s*#/.test(line)) return;
+    if (!/\bfind\b/.test(line) || !/\|\s*head\b/.test(line)) return;
+    errors.push(
+      `${path}:${at + 1}: pipes \`find\` into \`head\` — under pipefail that is a SIGPIPE race (\`find\` can exit ` +
+        `141 while still traversing), not a guaranteed success; use \`find ... -print -quit\` instead (#1088)`,
+    );
+  });
+  return errors;
+}
+
+/**
  * Fails when a restore-only model cache has no writer, or has one that disagrees about the entry.
  *
  * `cache-write: "false"` hands the whole responsibility for an entry to cache-seed.yml (#661). Nothing
@@ -813,6 +835,7 @@ export function checkFile(
       ...requirePreUploadSynthesisSmoke(path, document),
       ...requireDarwinSmokeCoversBothEngines(path, document),
       ...forbidLinuxPackaging(path, contents),
+      ...forbidFindPipedToHead(path, contents),
       ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireBashOnWindowsRunSteps(path, document),

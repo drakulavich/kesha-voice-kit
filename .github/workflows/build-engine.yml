@@ -213,7 +213,7 @@ jobs:
         if: matrix.os == 'macos-14'
         shell: bash
         run: |
-          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name say-avspeech -type f | head -1)
+          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name say-avspeech -type f -print -quit)
           if [ -z "$sidecar" ]; then
             echo "say-avspeech sidecar not found — system_tts feature may not have compiled" >&2
             exit 1
@@ -235,7 +235,7 @@ jobs:
         if: matrix.os == 'macos-14'
         shell: bash
         run: |
-          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name kesha-textlang -type f | head -1)
+          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name kesha-textlang -type f -print -quit)
           if [ -z "$sidecar" ]; then
             echo "kesha-textlang sidecar not found — build.rs::build_text_lang_helper may have failed" >&2
             exit 1
