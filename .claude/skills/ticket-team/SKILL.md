@@ -227,6 +227,17 @@ You may give the implementer facts. **You may not give it the remedy** — not w
 not the shape of the test, not which of two options you would accept. Facts are free; a design you
 supplied is a design you cannot judge.
 
+**At verdict time, hold the plan's mutation table to the review round's first sweep item**, not to
+a weaker version of it: for each guard the plan adds, both mutations — deleted, and neutralised
+with its shape left in place — plus one row per residual that any predicate it delegates to names
+in its own doc comment. Your charter carries the reasoning and the #1108 incident; what belongs
+here is that the check happens at the moment of judging.
+
+That asymmetry is the whole finding. The demand on the reviewer is pasted into every prompt by
+construction, so it always runs; the demand on the planner lived only in a charter someone has to
+remember at the right moment. On #1108 the reviewer ran the check the planner was never asked for,
+and the guard shipped past an approval with every gate green.
+
 ### The binding block
 
 A verdict binds the artifact it names and **nothing outside it**. Every divergence this loop has
