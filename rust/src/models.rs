@@ -64,12 +64,10 @@ const ASR_FILES: &[ModelFile] = &[
 /// NOTE: `apply_mirror` only rewrites `huggingface.co` URLs, so this one
 /// passes through unchanged even with `KESHA_MODEL_MIRROR` set. Operators
 /// who need a mirrored VAD can pre-stage the file under the cache dir.
-// Pinned to a release tag (not `master`) so upstream can't break fresh
-// installs with a force-push. Hash verification already guards integrity;
-// the tag pin guards availability.
+// Pinned to a commit, not the `v6.2.1` tag, so upstream can't move it under us (#1099)
 const VAD_FILES: &[ModelFile] = &[ModelFile {
     rel_path: "models/silero-vad/silero_vad.onnx",
-    url: "https://github.com/snakers4/silero-vad/raw/v6.2.1/src/silero_vad/data/silero_vad.onnx",
+    url: "https://github.com/snakers4/silero-vad/raw/7e30209a3e901f9842f81b225f3e93d8199902b1/src/silero_vad/data/silero_vad.onnx",
     sha256: "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
 }];
 
@@ -189,6 +187,9 @@ pub fn validate_tts_langs(langs: &[&str]) -> Result<()> {
 /// official kokoro-onnx project release, which uses different IO
 /// tensor names (`tokens`/`audio` vs `input_ids`/`waveform`) but
 /// same dtypes/shapes — handled in `kokoro::Kokoro::infer`.
+///
+/// A GitHub release asset has no immutable URL form to pin, so the sha256 pinned below is
+/// the only guard against a re-upload under the same tag (#1099).
 #[cfg(all(
     feature = "tts",
     not(all(
