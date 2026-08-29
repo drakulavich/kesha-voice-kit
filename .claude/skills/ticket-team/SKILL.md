@@ -416,11 +416,22 @@ Verify before you claim anything: check CI **by the full head SHA**, not through
 view, which can report a superseded run as green after a force-push. Poll the remote rather than a
 working copy — a local snapshot once called an agent stuck while its pull request was open.
 
-**Watch CI yourself; never go idle waiting for it.** A finishing CI run does not wake you, so
-"waiting for the last job" and "stopped forever" are the same state from outside, with nothing to
-distinguish them. On #1105 item 4 the lead stood the implementer down pending one job, went idle,
-and the ticket sat after that job went green — it took the maintainer asking why the PR was still
-in draft to move it. Block on the run instead, in one Bash call:
+**Never end your turn waiting for anything — CI, a backgrounded command, a review, a reply.**
+Nothing wakes you, so "waiting" and "stopped forever" are the same state from outside, with
+nothing to distinguish them. Block on it in-call instead, and reissue the wait when the ten-minute
+cap cuts it short.
+
+This has now cost two tickets and the second one is why the rule is stated at this width. On
+#1105 item 4 the lead stood the implementer down pending one CI job, went idle, and the ticket sat
+after the job went green — the maintainer asking why the PR was still in draft is what moved it.
+On #1108 the lead read that rule as being about CI, backgrounded `omc ask` and ended its turn
+expecting a task notification: the review finished at 04:47Z, the notification did not arrive, and
+four hours passed before a ping. Three minutes before stopping it had checked the artifact, found
+it empty, confirmed the process was alive — and treated "it will notify me" as sufficient. **A
+live process is not a wake-up mechanism.** The narrow reading is the trap; there is no category of
+wait this excludes.
+
+For CI specifically, the blocking form is:
 
 ```bash
 gh pr checks <N> --watch --fail-fast     # blocks until every check settles
