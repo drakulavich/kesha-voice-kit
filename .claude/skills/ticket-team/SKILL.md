@@ -134,17 +134,28 @@ argument cannot be left behind by the previous command.
 
 The root checkout stays on `main` throughout — shared coordination state, not an edit surface.
 
-## 0b. Every agent reports by sending, not by finishing
+## 0b. Which channel carries a result, by phase
 
-Tell the implementer, in its prompt, to `SendMessage` its result to you when a phase completes. Do
-not rely on a final report arriving because an agent stopped: three agents in a row went idle here
-having done the work, and delivered nothing until asked for by name. An idle signal means
-"available", not "here is my output" — and reading idle as completion means either waiting forever
-or proceeding as though a step found nothing to object to.
+An earlier version of this section said "every agent reports by sending" while §2 said "the return
+value is the channel". Both were stated unconditionally; each is true for part of the lifecycle,
+and the contradiction cost a lead thirty minutes of waiting for a message that could not arrive.
+The actual mechanics:
 
-The mirror of that rule is also true and cost this loop five messages once: **do not read a silence
-or a stale artifact as a discrepancy either.** Before asserting that something does not match, ask
-what is current. One question is cheaper than three corrections.
+- **First completion** of a spawned subagent arrives as its **return value** — the `Agent` call's
+  result. Nothing needs to be sent.
+- **After you resume it** by `SendMessage`, there is no second return value. The implementer
+  cannot reliably reach you either — it has no roster, and a name it guesses reaches nobody. From
+  that point **the artifact on disk is the channel**: re-stat the handoff path, and if the digest
+  moved, that is the submission.
+- An **idle notification** is neither. It means "available", not "here is my output" — three
+  agents in a row went idle having done the work and delivered nothing until asked by name.
+
+The operational rule that falls out: after any resume, poll the artifact, not the mailbox — and
+never end a turn waiting for either.
+
+The mirror also holds and cost five messages once: **do not read a silence or a stale artifact as
+a discrepancy.** Before asserting that something does not match, ask what is current. One question
+is cheaper than three corrections.
 
 **Lead every report with the state it describes**, so the recipient can tell in one line which
 snapshot they are holding:
@@ -207,29 +218,19 @@ Agent(name: "impl-<ticket>", subagent_type: "implementer",
       prompt: "<the ticket, verbatim, plus the coordinates you have and which of them you
                verified yourself>
                Your worktree: <worktree-abs>
-               I am teamlead-<ticket>; send everything to me.
-               Phase 1 only: run /omc-plan --direct, then SendMessage me the plan and the
-               ABSOLUTE path to its handoff, and stop.")
+               Phase 1 only: run /omc-plan --direct, end your final message with the plan
+               summary and the ABSOLUTE path to its handoff, and stop. After any resume,
+               your revised handoff on disk is your submission — do not try to message me.")
 ```
 
 `--direct` is load-bearing. `/omc-plan` otherwise picks Interview mode for anything broad, whose
 first step is `AskUserQuestion` and whose second spawns an `explore` agent — a subagent has neither,
 and no user to answer.
 
-**Read the handoff off disk. Do not wait to be sent it.** The implementer you spawn is a
-synchronous subagent: its **return value** is the channel that reaches you, and once you resume it
-by `SendMessage` there is no return value coming. You have no `ListAgents` and no blocking
-primitive for an agent's reply, so a turn ended expecting delivery is a turn that ends forever.
-
-On the last #1105 item the revision was complete on disk at 10:39Z — 16635 bytes to 22855, a new
-digest, and the implementer's own mutation script beside it — while the lead waited for a message.
-The implementer had tried to reach a name it inferred from the roster, which reached nobody.
-Thirty minutes, ended by the maintainer asking whether the loop had hung.
-
-So the binding is **the digest you compute yourself** from the file at the handoff path, never the
-block someone sends you. Re-stat the path; if it moved, that is the submission. This is the same
-rule as "hash the file yourself before every verdict", and it is why that rule is written that
-way — a submission you cannot receive is still a submission you can read.
+The plan reaches you per §0b: first as the `Agent` return value, and after any resume as the file
+at the handoff path — re-stat it, and a moved digest is the submission. On the last #1105 item a
+finished revision sat on disk for thirty minutes while the lead waited for a message the
+implementer had no way to deliver.
 
 **Mark which facts you checked yourself.** An agent that reads files corrects a wrong fact for free;
 one that takes it on trust builds on it. State obstacles as what you tried, never as what is

@@ -36,10 +36,13 @@ when your working directory is the root — copy it to an absolute path under yo
 and report **that**. Reporting a worktree path you did not write to
 produces a path that does not exist, and the next step shasums it.
 
-Send it to the **team lead** that spawned you. Nobody else is copied — it owns this ticket,
-and the verdict comes back to you directly.
+Your **final message is the delivery** — it reaches the team lead as your return value, so end it
+with the plan summary and that absolute handoff path. Do not `SendMessage` the lead: you have no
+roster, and a name you guess reaches nobody — one implementer's guessed-name report silently
+reached no one while its finished revision sat undelivered for thirty minutes.
 
-Then stop — no source edits, no commits — and wait for the verdict.
+Then stop — no source edits, no commits — and wait for the verdict. After any resume, the same
+rule inverted: your revised handoff **on disk** is your submission, and the lead reads it there.
 
 Whatever the planning lane gives you, it is yours to make concrete before you hand it over.
 A plan that says "update the validation" is not yet a plan; one that names the file, the
@@ -199,4 +202,6 @@ approved plan turns out to be wrong; a gate fails for a reason outside your chan
 ticket needs a decision that is the maintainer's to make. A blocked ticket reported in two
 sentences is worth more than a plausible change nobody asked for.
 
-When you finish a phase, `SendMessage` your result — going idle is not delivery.
+When you finish a phase, your final message is the delivery — write the result into it rather
+than going idle on it. Going idle is not delivery, and neither is a `SendMessage` to a name you
+inferred: the return value and the handoff on disk are the two channels that actually arrive.
