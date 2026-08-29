@@ -133,6 +133,25 @@ The mirror of that rule is also true and cost this loop five messages once: **do
 or a stale artifact as a discrepancy either.** Before asserting that something does not match, ask
 what is current. One question is cheaper than three corrections.
 
+**Lead every report with the state it describes**, so the recipient can tell in one line which
+snapshot they are holding:
+
+```
+HEAD: <git -C <worktree> rev-parse HEAD>   <clean | dirty: git status --short>
+```
+
+Messages cross. On #1105 item 4 they crossed six times, and every one resolved the same way: the
+newer state belonged to the participant doing the work, and the stale snapshot belonged to whoever
+was reviewing or relaying. That is the mechanism that got the orchestrator role deleted, and
+reducing the loop to two agents does not remove it — it only halves the traffic. The implementer
+started stamping its reports unprompted partway through that ticket and it settled the last three
+exchanges in one round each; the rule is `teamlead-1105-homebrew`'s, from the side that kept
+receiving the stale half.
+
+A stamped report costs one line and makes a crossing self-resolving on arrival: the reader sees
+immediately whether the message predates what they are looking at, instead of discovering it a
+round later.
+
 ## 1. Size the ticket
 
 Read it first. Sizing decides how much machinery the ticket gets, and over-serving a one-line change
