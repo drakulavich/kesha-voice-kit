@@ -120,16 +120,22 @@ occur, and what does the change recover when it does? A rate is usually one quer
 plan that cannot produce one is proposing an unranked change, whatever its cost figure says.
 
 **A rate is computed over the window in which the practice was still permitted.** Date every
-cited instance against the rule, guard or workflow check that now forbids it — two `git log -S`
-queries produce it. An undated rate silently averages over a regime that no longer exists.
+cited instance against the rule that now forbids it — two `git log -S` queries produce it. An
+undated rate silently averages over a regime that no longer exists.
+
+**Date it against the rule, and check any guard you cite actually covers the path the instance
+took.** The first draft of this paragraph offered `dce4bef`'s uniqueness check as corroboration;
+that check lives in a job gated `if: github.event_name == 'workflow_dispatch'`, so it never sees
+a push event, and every observed instance was push-path. A guard on the wrong path is not
+evidence, and citing one makes a dated claim look stronger than it is.
 
 This is the third consecutive ticket out of the #1105 audit whose ranking rested on a figure
 that does not describe the live rate: #1105 cited 26.5% of CI spend against 2.9% actual waste,
 #1110 newly bounded 24 jobs with zero observed instances, and #1108 cited 5 runs across 2 tag
 refs — **both of them 2026-04-14 and 2026-04-15, days 1 and 2 of a 136-day window.** `6d9e6da`
 added TAG NAMES ARE ONE-USE to CLAUDE.md on 2026-04-15, the same day as the last instance, and
-`dce4bef` added the dispatch-path uniqueness check a month later. Zero tag ref has hosted a
-second run in the 55 non-cli tags since. The live rate was 0/55, not 5/96, and the plan
+zero tag ref has hosted a second run in the 55 non-cli tags since. The live rate was 0/55,
+not 5/96, and the plan
 rejected doing nothing *solely* on those April SHAs. Dated, that rejection reads "false for a
 practice retired four months ago", which is a different sentence and might have decided the
 ticket differently.
