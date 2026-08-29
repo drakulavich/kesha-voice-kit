@@ -22,17 +22,33 @@ unconditionally, since `unit-tests` is gated `if: needs.changes.outputs.code == 
 this diff specifically that filter always matches: `rust/src/models.rs` is one of its listed
 paths, so an edit to it always triggers the job.
 
-No matching Rust-side test exists or was added, and here the reach comparison runs the other
-way from what an earlier draft of this file claimed: `VAD_FILES` carries no `#[cfg(...)]`
-gate, so a Rust test would see the same one entry, but the TS `code` filter also matches
-`tests/**` and `model-plan.json` changes that touch neither `rust/src/models.rs` nor anything
-the Rust gate's own path filter watches — a test-only edit to this very file, for instance,
-re-runs the TS assertion without ever triggering a Rust nextest run. The TS test's trigger set
-is a superset of what a hypothetical Rust duplicate would add, not merely equal to it, so the
-duplicate would still add no reach the TS test doesn't already have. (Contrast the
-Hugging-Face guards, which keep both a Rust and a TS version because the TS one's reach
-genuinely exceeds the Rust one in a different way — it sees `system_kokoro`-gated manifests no
-CI lane ever compiles as tests.)
+No matching Rust-side test exists or was added. Checked directly rather than compared by
+trigger-set size, because the two lanes' path filters are not nested either way:
+`rust-test.yml`'s `test` job runs whenever the `changes` job's own path filter matches
+`rust/**` (`.github/workflows/rust-test.yml:46-47`), gating the job itself at `:111-113`,
+while `ci.yml`'s `code` filter takes only three paths out of the Rust tree —
+`rust-toolchain.toml`, `rust/Cargo.toml`, `rust/src/models.rs` — plus `tests/**` and
+`model-plan.json` on the non-Rust side (`.github/workflows/ci.yml:73-96`). A PR that edits
+only, say, `rust/src/vad.rs` runs the Rust lane and skips `unit-tests`; a PR that edits only
+`tests/unit/check-model-plan-sizes.test.ts` runs `unit-tests` and skips the Rust lane. Neither
+trigger set contains the other, so "identical reach" and "a superset" (an earlier draft's
+claim, retracted here) are both false as statements about how often each lane runs.
+
+The comparison that holds is about **signal, not trigger sets**: this assertion reads only
+`rust/src/models.rs`'s text, so its result cannot change on a run where that file didn't
+change — a Rust duplicate reading the same file has the identical property. Both lanes
+already fire on every change to `rust/src/models.rs` (the TS one because that path is
+explicitly in the `code` filter; a hypothetical Rust one because it's under `rust/**`), which
+is the only event either assertion could ever flip on. The extra runs each lane's broader
+filter buys — TS on a `tests/**`-only change, Rust on an unrelated `rust/**`-only change — are
+runs where `rust/src/models.rs` is unchanged, so neither assertion's outcome can differ from
+its last run. A Rust duplicate therefore adds no catching power on the axis that matters, not
+because its trigger set is a subset of the TS one's, but because the two assertions can only
+disagree with each other's last result when the file both of them read has changed, and both
+already run then. (Contrast the Hugging-Face guards, which keep both a Rust and a TS version
+because the TS one covers manifests — the `system_kokoro`-gated ones — that no CI lane ever
+compiles as Rust tests at all, a real difference in what each assertion can see, not in how
+often it runs.)
 
 ## Observed red before the fix
 
