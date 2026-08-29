@@ -123,24 +123,35 @@ plan that cannot produce one is proposing an unranked change, whatever its cost 
 cited instance against the rule that now forbids it. An undated rate silently averages over a
 regime that no longer exists.
 
-**Take the introduction, not the latest edit** — `git log -S` reports every commit where the
-string's count changed and prints newest first, so the top line is usually a later reword:
+**Finding that date takes a walk-back, not a query.** `git log -S '<text>' --reverse … | head -1`
+gives a *candidate*; the mandated step is `git show <sha> -- <file>` to see whether that commit
+**adds** the rule or **rewords** an existing one. On a reword, take the `-` line and search that
+instead. Repeat until a commit adds it.
 
-```bash
-git log -S '<the rule text>' --reverse --format='%h %ad' --date=short -- <file> | head -1
-```
+Two failure modes, both producing a confident wrong date, and this paragraph shipped with each in
+turn. Without `--reverse` you get the newest count-change: 2026-07-26 for `TAG NAMES ARE ONE-USE`,
+not the 2026-04-15 introduction. With `--reverse` you still get 2026-07-26, because that commit
+*reworded* the heading and the original string is absent from CLAUDE.md today — so a reader greps
+the current file, finds `Tag names are one-use.`, searches the only text that still exists, and
+lands 74% into the window either way. `--reverse` fixes persistence; nothing but the walk-back
+fixes rewording, and rewording is the default case because you can only search what is there now.
 
-The first draft of this paragraph said "two `git log -S` queries produce it" and named no
-ordering. Run that way against `TAG NAMES ARE ONE-USE` it returns 2026-07-26 — a July cut of
-CLAUDE.md — rather than the 2026-04-15 introduction, which places the ban *after* most of the
-136-day window and makes the April clustering read as coincidence. That is the finding inverted
-by its own detection step, and it is the failure this file keeps recording: a command that runs
-clean, returns a number, and returns the wrong one is worse than no check, because it produces a
-confident date.
+Even the walk-back succeeded here partly by luck: `6d9e6da` introduced
+`### TAG NAMES ARE ONE-USE UNDER IMMUTABLE RELEASES`, and the search string matched as a
+substring. A reword sharing no substring breaks the chain silently. That is why the `git show`
+confirmation is the step and the query is not.
 
-**And `-S` finding nothing means the rule was never written down, not that the window is
-homogeneous.** This works only where the governing regime is versioned text. A practice retired
-by branch protection, an org setting, or an unwritten maintainer habit leaves no commit to find.
+**Ask whether the last instance *caused* the boundary.** `6d9e6da` landed 125 minutes after the
+last repeat-instance began, and its subject is "apply lessons learned from v1.0.2 release" —
+the re-push loop #1108's plan cited as evidence is the incident that produced the rule banning it.
+Incidents cluster immediately before their rule *because the incident is why the rule exists*. So
+evidence at the edge of a window is not merely weak-for-non-stationarity: it can be **inverted** —
+citing the case that got a practice prohibited as though it were a sample of ongoing behaviour.
+That names the error better than "regime boundary" does, and it is `impl-1108`'s formulation.
+
+**`-S` finding nothing means the rule was never written down, not that the window is homogeneous.**
+This works only where the governing regime is versioned text. A practice retired by branch
+protection, an org setting, or an unwritten maintainer habit leaves no commit to find.
 
 **Run history is evidence about a regime, not about a repository, and the cheapest tell needs no
 guess about which rule to look for: if the instances cluster at one edge of the window, the
