@@ -421,32 +421,32 @@ during the wait moves the head under the checks being followed.
 
 Check the closing keyword for the **right word**, not for its presence — and in **both** places a
 merge closes from. `Closes #N` only when the change finishes the ticket; `Refs #N` when the ticket
-outlives it, and then close by hand once it is genuinely done. On #1105 `Closes` was there, it was
-wrong, and merging closed a four-item audit on the strength of one shipped item.
+outlives it, and then close by hand once it is genuinely done. Each issue needs its own keyword —
+`Closes #N, closes #M` — because a bare list closes only the first. On #1105 `Closes` was there, it
+was wrong, and merging closed a four-item audit on the strength of one shipped item.
 
-The second place is the squash commit message, and it took #1105 a second time. This repository
-squashes with `squash_merge_commit_message: COMMIT_MESSAGES`, so the merge box arrives pre-filled
-with every commit message on the branch and GitHub parses the result — a keyword written as *prose*
-inside a commit body is live. #1107's pull request said only `Refs #1105`; one of its 74
-concatenated messages, `8d3ac7a6`, quoted the keyword twice while narrating an earlier mis-close,
-and the timeline records the close against `commit_id 27c0995`. `8d3ac7a6` is the commit that added
-this rule.
-
-Neither channel is redundant, and not for the reason it looks. #1109 carried `Closes #1105` in its
-body **and** in its branch commit `b5bf9b7f`, and its squash message was trimmed to the title at
-merge — so the body was the only live text there. The merge box is editable, which means
-`git log <base>..<head>` *predicts* the squash message rather than reading it, and the body check is
-what covers a trim.
+Both-channels is not a discovery. `CLAUDE.md:95` has said "the PR **body or commit message**" since
+`759b08d` (2026-04-20) and this file said body-only until now, which is the grep-the-other-files
+class with the repository's own charter as the file that was not read. They are independent
+mechanisms: a body keyword closes with no commit mentioning the issue, and a squash message closes
+with a clean body. #1107 is the second kind — its body said only `Refs #1105`, one of the 74
+messages its squash concatenated quoted the keyword twice while narrating an earlier mis-close, and
+the timeline records the close against `commit_id 27c0995`. `squash_merge_commit_message` is
+`COMMIT_MESSAGES` here and the merge box is then editable — #1109's was trimmed to its title — so
+`git log` *predicts* that message rather than reading it. Read the box before confirming a squash.
 
 ```bash
-KW='\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[ :]*([-\w.]+/[-\w.]+)?#[0-9]+'
+KW='\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[ :]*([[:alnum:]._-]+/[[:alnum:]._-]+)?#[0-9]+'
 gh pr view <N> --json body -q .body    | grep -inE "$KW"
 git log <base>..<head> --format=%B     | grep -inE "$KW"
 ```
 
-Both must return only the keywords you meant, and read the merge box itself before confirming a
-squash. Keep the keyword out of commit prose: name the issue without one when narrating, or the
-sentence describing a mis-close performs another.
+Both must return only the keywords you meant. **Verify a shell snippet under `/usr/bin/grep`, not
+under `grep`**: this environment shadows it with a function that execs `ugrep`, which honours `\w`
+inside a bracket expression where POSIX ERE takes the backslash literally — the first version of
+this line shipped as `[-\w.]`, was verified green, and matched no `owner/repo#N` form under the
+real binary. Keep the keyword out of commit prose: name the issue without one when narrating, or
+the sentence describing a mis-close performs another.
 
 **Verify one decisive thing yourself**, with one command, rather than relaying what the implementer
 reported. "Gates green" has been reported here while the type checker had errors, and a green CI job
@@ -525,6 +525,10 @@ per-assertion wording into two files and left §2's judge paragraph on the old o
 repaired. Placement is necessary and it is not sufficient — the frequency rule has its full
 operational form in `teamlead.md` and failed on three consecutive tickets anyway, on its trigger
 list rather than its location.
+
+And when the rule is about how this repository works rather than about this loop, `CLAUDE.md` is
+the first file to grep, not the fifth: §6's closing-keyword rule was copied out of `CLAUDE.md:95`
+into the skill body-only and cost a review round four months later rediscovering the other half.
 
 `check-citations.ts` will not help here: it excludes `.claude/skills/ticket-team/*` from the diff it
 scans, so a `file:line` citation added to this file or to the ledger is checked by nobody. Open each
