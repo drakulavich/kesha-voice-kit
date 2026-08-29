@@ -379,11 +379,18 @@ bun <this-skill's-base-directory>/check-citations.ts origin/main HEAD    # run i
 ```
 
 **The path is absolute and it is the skill's own, not the ticket tree's.** When this skill loads
-it tells you its base directory; use that. `check-citations.ts` ships alongside this file and is
-not on `main` until the pull request carrying them merges, so a ticket worktree branched from
-`main` does not contain it — a relative `.claude/skills/…` resolves to nothing there. The
-implementer on #1108 followed the instruction as written, found no such file, and reported it
-rather than skipping the step quietly, which is how this was caught.
+it tells you its base directory; use that.
+
+The trap is sharper than "the file is missing". `.claude/` **is** tracked on `main` — `agents/`,
+`commands/`, `hooks/`, `settings.json` and `skills/` all exist in every ticket worktree — but
+`skills/ticket-team/` does not, because this skill and `check-citations.ts` are untracked
+(`.git/info/exclude` carries `.claude/`) and ship only in the pull request that adds them. So a
+probe for the directory succeeds, an agent concludes the tooling is installed, and the missing
+file then reads as "not installed" with nothing to distinguish it from "excluded from this tree".
+
+Caught because the implementer on #1108 ran the step, found no such file, and reported it instead
+of skipping it quietly — and then sharpened it again when the first explanation, mine, was still
+wrong about the directory being absent.
 
 It extracts every `file:line` the diff **adds** and resolves each against the post-diff tree, failing
 on a citation that now points at a blank line or cannot be resolved. That is the `ci.yml:984` defect
