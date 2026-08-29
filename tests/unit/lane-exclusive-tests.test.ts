@@ -59,14 +59,16 @@ describe("a lane-exclusive test cannot run nowhere", () => {
 });
 
 describe("the darwin-only unit tests have a lane", () => {
-  // 14 unit cases assert only on darwin (#1105); without a macOS leg they would run in no lane.
+  // 14 unit cases assert only on darwin (#1105); the other unit lane is ubuntu-only, so this leg is where they assert.
   const unitTests = () => parseRepoYaml(".github/workflows/ci.yml").jobs["unit-tests"];
 
   test("the matrix keeps a macOS runner it does not exclude", () => {
     const job = unitTests();
     expect(job["runs-on"]).toBe("${{ matrix.os }}");
     const runners: string[] = job.strategy.matrix.os;
-    expect(runners.filter((r) => r.startsWith("macos"))).not.toEqual([]);
+    // Intel macOS carries `-large` or `-intel`; bare and `-xlarge` labels are arm64, which is what the gated cases need.
+    const arm64Macos = (r: string) => r.startsWith("macos") && !r.endsWith("-large") && !r.endsWith("-intel");
+    expect(runners.filter(arm64Macos)).not.toEqual([]);
     expect(job.strategy.matrix.exclude).toBeUndefined();
   });
 
