@@ -782,5 +782,7 @@ for the last row: the correction came from a second reader, on a claim the lead 
 "verified" by running its own command against its own example.** Also raised there and not fixed
 here, because neither is this pull request's: `check-citations.ts` excludes the skill's own
 directory, now noted in §7; and the frequency row says "~58 tag releases since" where
-`teamlead.md:168` says "55 non-cli tags… 0/55" — one measurement, two numbers, introduced by
-`27c0995` and the first live instance the four-file step would be aimed at.
+`teamlead.md:168` says "55 non-cli tags… 0/55". That second one is **not** established as drift —
+the two phrasings name different denominators and neither reproduces today, since
+`git for-each-ref` gives 79 tags after 2026-04-15 of which 54 are non-cli. Recorded because a
+reader will take the two figures for one measurement, and left as `27c0995`'s to resolve.
