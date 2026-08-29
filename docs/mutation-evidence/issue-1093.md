@@ -22,9 +22,9 @@ Both guards check `startsWith("https://huggingface.co/")` / `strip_prefix("https
 and skip anything else. Two manifest URLs are GitHub-hosted and neither is immutable
 either, but on purpose neither is in scope here:
 
-- `rust/src/models.rs:72` — `snakers4/silero-vad/raw/v6.2.1/…` resolves through a **git
+- `rust/src/models.rs:70` — `snakers4/silero-vad/raw/v6.2.1/…` resolves through a **git
   tag**, which can be moved or recreated.
-- `rust/src/models.rs:202` — `thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/…`
+- `rust/src/models.rs:203` — `thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/…`
   is a **GitHub release asset**, which can be deleted and re-uploaded under the same tag.
 
 Either would fail exactly the way #1093 failed: the SHA-256 pin turns the upstream move
@@ -36,6 +36,11 @@ tracked as #1099. The kokoro-onnx release asset has no immutable URL form at all
 release assets are addressed by tag, not commit), so for that one file the SHA-256 pin is
 the only guard there will ever be; widening the "must be a 40-hex ref" rule to it would be
 asserting something that can never hold.
+
+**Update (#1099):** the silero-vad line above is now pinned to a commit; see
+`docs/mutation-evidence/issue-1099.md` for the guard and its mutation proof. The kokoro-onnx
+release asset remains permanently unpinnable and carries a one-line note at its declaration
+instead.
 
 ## Why `parseManifestEntries`, not the existing `parseManifestUrls`
 
