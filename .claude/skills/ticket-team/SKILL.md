@@ -216,6 +216,21 @@ Agent(name: "impl-<ticket>", subagent_type: "implementer",
 first step is `AskUserQuestion` and whose second spawns an `explore` agent — a subagent has neither,
 and no user to answer.
 
+**Read the handoff off disk. Do not wait to be sent it.** The implementer you spawn is a
+synchronous subagent: its **return value** is the channel that reaches you, and once you resume it
+by `SendMessage` there is no return value coming. You have no `ListAgents` and no blocking
+primitive for an agent's reply, so a turn ended expecting delivery is a turn that ends forever.
+
+On the last #1105 item the revision was complete on disk at 10:39Z — 16635 bytes to 22855, a new
+digest, and the implementer's own mutation script beside it — while the lead waited for a message.
+The implementer had tried to reach a name it inferred from the roster, which reached nobody.
+Thirty minutes, ended by the maintainer asking whether the loop had hung.
+
+So the binding is **the digest you compute yourself** from the file at the handoff path, never the
+block someone sends you. Re-stat the path; if it moved, that is the submission. This is the same
+rule as "hash the file yourself before every verdict", and it is why that rule is written that
+way — a submission you cannot receive is still a submission you can read.
+
 **Mark which facts you checked yourself.** An agent that reads files corrects a wrong fact for free;
 one that takes it on trust builds on it. State obstacles as what you tried, never as what is
 impossible: a brief saying "the logs cannot be retrieved" tells an agent to stop looking, while
