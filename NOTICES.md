@@ -19,7 +19,7 @@ see [speechbrain/lang-id-voxlingua107-ecapa](https://huggingface.co/speechbrain/
 ### Silero VAD v5 (opt-in: `kesha install --vad`)
 
 Voice activity detection. MIT. Authored by [Silero Team](https://github.com/snakers4/silero-vad).
-Pinned to the `v6.2.1` tag.
+Pinned to a commit (the `v6.2.1` tag's target at the time of pinning).
 
 ## Models downloaded by `kesha install --tts`
 
