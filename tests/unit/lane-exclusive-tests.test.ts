@@ -66,8 +66,9 @@ describe("the darwin-only unit tests have a lane", () => {
     const job = unitTests();
     expect(job["runs-on"]).toBe("${{ matrix.os }}");
     const runners: string[] = job.strategy.matrix.os;
-    // Intel macOS carries `-large` or `-intel`; bare and `-xlarge` labels are arm64, which is what the gated cases need.
-    const arm64Macos = (r: string) => r.startsWith("macos") && !r.endsWith("-large") && !r.endsWith("-intel");
+    // Positively arm64 per actions/runner-images; an unrecognised macOS label fails here rather than passing (#1105).
+    const ARM64_MACOS = ["macos-latest", "macos-14", "macos-15", "macos-26"];
+    const arm64Macos = (r: string) => ARM64_MACOS.includes(r.replace(/-xlarge$/, ""));
     expect(runners.filter(arm64Macos)).not.toEqual([]);
     expect(job.strategy.matrix.exclude).toBeUndefined();
   });
