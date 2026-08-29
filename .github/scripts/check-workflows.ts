@@ -742,6 +742,38 @@ export function requireRustTestCancelsSupersededRuns(path: string, document: unk
 }
 
 /**
+ * Fails when `build-engine.yml` stops serialising runs that share a ref.
+ *
+ * A tag ref is not single-use: deleting and re-pushing a failed release tag is how this repo
+ * retries one, and `refs/tags/v1.0.1` carried three `push` runs at three different head SHAs
+ * that way. Two of them in flight together would put two `release` jobs against one draft
+ * release, and a release published short a platform binary needs a whole new patch tag to
+ * repair. So the group must vary per ref, and `cancel-in-progress` must stay `false` because
+ * cancelling a run mid-upload is itself the partial-draft defect (#1108).
+ */
+export function requireBuildEngineSerialisesRunsPerRef(path: string, document: unknown): string[] {
+  if (!path.endsWith("build-engine.yml")) return [];
+
+  const concurrency = (document as { concurrency?: unknown } | undefined)?.concurrency;
+  const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown } | undefined)?.group;
+  const errors: string[] = [];
+
+  if (typeof group !== "string" || !groupVariesPerRef(group)) {
+    errors.push(
+      `${path}: \`concurrency.group\` must vary per ref — set it to \`\${{ github.workflow }}-\${{ github.ref }}\`; without a group two runs at one tag ref race the same draft release, and a group that does not vary per ref queues every ref into one lane instead (#1108)`,
+    );
+  }
+
+  if ((concurrency as { "cancel-in-progress"?: unknown } | undefined)?.["cancel-in-progress"] !== false) {
+    errors.push(
+      `${path}: \`concurrency.cancel-in-progress\` must be spelled \`false\`; cancelling a superseded run mid-upload leaves the draft release short an asset, and a release name cannot be reused to repair it (#1108)`,
+    );
+  }
+
+  return errors;
+}
+
+/**
  * Fails when the `ci` aggregator needs `nix-build`.
  *
  * A job in the required `ci` aggregator that cannot run on a pull request reds `main` — on
@@ -783,6 +815,7 @@ export function checkFile(
       ...requireReusableCallPermissions(path, document),
       ...requireConcurrencyOnPullRequestWorkflows(path, document),
       ...requireRustTestCancelsSupersededRuns(path, document),
+      ...requireBuildEngineSerialisesRunsPerRef(path, document),
       ...forbidNixBuildInCiAggregator(path, document),
       ...requireJobTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),

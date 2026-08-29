@@ -11,6 +11,7 @@ import {
   requireJobTimeouts,
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
+  requireBuildEngineSerialisesRunsPerRef,
   requireRustTestCancelsSupersededRuns,
   requirePipefailShell,
   requireReusableCallPermissions,
@@ -857,6 +858,53 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+  });
+});
+
+describe("requireBuildEngineSerialisesRunsPerRef", () => {
+  const ref = { group: "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": false };
+
+  test("passes on the real build-engine.yml", () => {
+    expect(requireBuildEngineSerialisesRunsPerRef(PATH, parseRepoYaml(PATH))).toEqual([]);
+  });
+
+  // rust-test.yml sets cancel-in-progress: true deliberately (#1105); this rule must not reach it.
+  test("ignores every other workflow", () => {
+    const RUST_TEST = ".github/workflows/rust-test.yml";
+    expect(requireBuildEngineSerialisesRunsPerRef(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
+  });
+
+  test("fails when the group does not vary per ref", () => {
+    const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
+      concurrency: { group: "build-engine", "cancel-in-progress": false },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1108");
+  });
+
+  test("fails when cancel-in-progress is true", () => {
+    const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
+      concurrency: { ...ref, "cancel-in-progress": true },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("mid-upload");
+  });
+
+  test("fails when cancel-in-progress is dropped entirely", () => {
+    expect(
+      requireBuildEngineSerialisesRunsPerRef(PATH, { concurrency: { group: ref.group } }),
+    ).toHaveLength(1);
+  });
+
+  test("fails when the whole concurrency block is gone", () => {
+    expect(requireBuildEngineSerialisesRunsPerRef(PATH, { on: { push: null }, jobs: {} })).toHaveLength(2);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on:\n  push:\njobs: {}\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1108"))).toHaveLength(2);
   });
 });
 
