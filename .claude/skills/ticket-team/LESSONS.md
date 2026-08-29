@@ -24,11 +24,11 @@ when the answer is no.
 |---|---|---|---|
 | Paths between agents are absolute; nothing depends on a subagent's cwd | #1107 | 1 | The handoff was written in the root checkout and referenced relatively from the worktree — no standard ticket could have reached implementation |
 | The OMC skills must be verified registered before the loop starts | #1107 | 1 | The whole protocol named `/omc-plan`, `/execute`, `/omc-review` while the plugin was unregistered; every phase called something that could not resolve |
-| Agents deliver by `SendMessage`; idle is availability, not output | #1107 | 1 | Three agents in a row completed their work and reported nothing until asked by name |
+| Agents deliver by `SendMessage`; idle is availability, not output. The same applies to any wait you started: a backgrounded process, not only a CI run | #1107 | 2 | Three agents in a row completed their work and reported nothing until asked by name. On #1108 the lead applied this to CI and not to `omc ask`: it backgrounded the review, confirmed the process alive, then ended its turn expecting a completion notification. The review had finished three minutes later and the ticket sat four hours until the session asked why |
 | The verdict is a closed shape and the orchestrator fails closed on anything unparseable | #1107 | 0 | Adopted from the conveyor's `findings.ts` before it cost anything here — watch it, and cut it if it never fires |
 | Do not manufacture justification for a direction you were given — comply and say "not persuaded", or object before complying | #1105 | 1 | The implementer was directed to narrow a guard, wrote a paragraph justifying the narrowing, and deleted it one round later when the direction reversed. It disclosed this; the rule exists so the disclosure is not what the loop depends on |
 | Sign the claim, and name what being wrong would cost and who pays — the ledger names the agent, not only the stage | #1105 | 1 | Four wrong facts reached agents from the orchestrator on one ticket and every one was corrected by an agent that read the file; the same orchestrator reversed one design decision twice and the implementer paid three revisions. None of it would read as a pattern under "caught at plan" |
-| A team lead runs the thing it is judging — implement the proposed guard and execute it over every real input, never a sample | #1110 | 2 | Settled both blockers on #1110 (26 errors, then 0 after injection) and #1105 item 3 (a condition parser run over all 14 real `if:` conditions plus two adversarial shapes). #1109's analogous claim stayed an inference and the ledger had to say so |
+| A team lead runs the thing it is judging — implement the proposed guard and execute it over every real input, never a sample | #1110 | 3 | Settled both blockers on #1110 (26 errors, then 0 after injection) and #1105 item 3 (a condition parser run over all 14 real `if:` conditions plus two adversarial shapes). #1109's analogous claim stayed an inference and the ledger had to say so. On #1108 it settled the review's sharpest finding in one command: the lead reproduced the surviving boolean group itself (151 pass, 0 fail, `check:workflows` exit 0) rather than relaying it, and separately ran the suite at both commits in a throwaway clone to confirm the red test was real |
 | Obstacles are stated as what you tried, not as what is impossible | #1105 | 1 | The brief said the run logs could not be retrieved by any route; `gh api --allow-escape-sequences` returns them, and the implementer found it only because it did not take the impossibility on trust |
 | A closing keyword is checked for the right word, not for its presence — `Refs #N` when the ticket outlives the change | #1105 | 2 | `Closes #1105` shipped item one of a four-item audit and closed the other three on merge, including the one measured as the most valuable |
 | Write the smallest thing that settles the ticket — and treat writing nothing as a real answer | #1105 | 2 | 4 functional lines out of 302; 9 of 9 defects lived in the apparatus around them, which was rewritten four times while the four lines never moved |
@@ -37,8 +37,10 @@ when the answer is no.
 | The claim handed to a reviewer is quoted from the artifact, never from an agent's summary of it | #1110 | 1 | The implementer's report said "~3-4x headroom"; the PR body said a 5-minute floor plus two scoped exceptions. The orchestrator relayed the summary, and codex refuted a claim that had never shipped |
 | After editing a rule, grep the other files for the fact it changed — a fix that states a new rule without retiring the passage that stated the old one | #1107 | 1 | Three findings in one review round, all introduced by earlier fixes: `$WT` survived where the rule had moved to absolute paths, `/simplify` was excused by the precondition meant to catch it, and one file asserted both that the implementer is in the worktree and that it is not, 51 lines apart |
 | A second instance of a defect class is the signal to reformulate the guard, not to extend it | #1105 | 1 | Three rounds against one defect — bare literal, `ref_protected`, quoted constant — each closing one spelling. The property-based fix rejected two further spellings on the first try and repaired a false reject neither review had found |
-| A plan's mutation list must cover every value AND every input shape the claim rests on, derived from what the end state must not contain | #1105 | 2 | Four findings: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; and two of three valid `on:` spellings bypassed the rule entirely |
-| The approval carries a digest of the plan it approved | #1107 | 1 | Round 2 on #1105: two readers reported different sizes for the same file — 11250 characters against 11344 bytes — and the digest settled that the content was identical. A size is not an identity |
+| A plan's mutation list must cover every value AND every input shape the claim rests on, derived from what the end state must not contain | #1105 | 3 | Four findings: a literal `group: github.ref` passed the `includes` check; deleting `cancel-in-progress: true` left everything green; and two of three valid `on:` spellings bypassed the rule entirely. #1108 is the second instance in the same file: the table mutated the group to a constant, which is caught, and never to a shape the check accepts |
+| The approval carries a digest of the plan it approved | #1107 | 2 | Round 2 on #1105: two readers reported different sizes for the same file — 11250 characters against 11344 bytes — and the digest settled that the content was identical. A size is not an identity. On #1108 the lead hashed both revisions itself rather than quoting the block, and the plan-v1 resubmission that crossed its verdict was identifiable as a crossing rather than a revision because the digest was unchanged |
+| When a guard delegates to an existing predicate, every residual that predicate's own doc comment states is a mandatory mutation row | #1108 | 1 | The new rule reused `groupVariesPerRef`, whose comment names `${{ github.ref == 'x' }}` verbatim as the shape it cannot catch. The plan quoted that comment to reject a *different* option sixty lines after proposing the reuse. The guard shipped past the lead's approval with full suite green, `tsc` clean, `check:workflows` exit 0 and four CI workflows green, and a second surviving shape ending in `github.run_id` serialised nothing at all |
+| Date the incident evidence against the controls that closed it: the rate that matters is the one under the regime in force today | #1108 | 1 | The plan rejected "no change" solely on a tag ref that hosted three runs at three SHAs. Both instances are 2026-04-14 and 2026-04-15, days 1 and 2 of a 136-day window; `6d9e6da` added TAG NAMES ARE ONE-USE to CLAUDE.md on 2026-04-15, the same day as the last one, and `dce4bef` added the dispatch-path uniqueness check on 2026-05-14. The rate under the live regime is 0 in ~55 tags, not 5 in 96, and no stage asked |
 
 ---
 
@@ -495,3 +497,86 @@ What the loop caught that the gates would not have: both blockers. What it cost:
 rounds and roughly forty messages, five of which were crossings and three of which were the
 orchestrator checking bindings that the participants had already resolved. The orchestrator role
 was deleted during this ticket for that reason.
+
+---
+
+## #1108 - `concurrency` for `build-engine.yml`
+
+Sized Light. Two plan rounds, one review round, one consolidation push. Merged as `d738b0b`,
+PR #1114, issue closed COMPLETED.
+
+The ticket asked for a *decision*, and both outcomes were legitimate. It shipped a change.
+
+### The ticket's premise was false in both directions
+
+The exposure it named does not exist: two dispatches on `refs/heads/main` cannot leave a
+partial draft release, because the `release` job is gated on `startsWith(github.ref,
+'refs/tags/v')`. The one such overlap in 96 runs shows `release: skipped` in both.
+
+Its reason for *inaction* was also false: `refs/tags/v1.0.1` hosted three `push` runs at three
+distinct head SHAs, so "group size 1 cancels nothing" was wrong. The lead's own measurement
+reported that cardinality and then dismissed the runs as sequential retries without pulling
+the SHAs; the implementer pulled them. Both halves mattered and neither stage had both.
+
+### Defects
+
+| what | caught at | earliest that could have | the change that would move it |
+|---|---|---|---|
+| Retry gaps stated as "4.5 and 7.7 min" were one interval in two units; the real start-to-start gaps are 7.62 and 27.90 | plan verdict | plan | none proposed - a slip, caught in one round by re-cutting the author's own data |
+| The near-miss argument held the gap fixed while stretching the run, which the retry-follows-failure mechanism forbids | plan verdict | plan | none proposed - the verdict named the mechanism and the plan withdrew the argument rather than repairing it |
+| `queue: max` rejected as possibly not a real key | plan verdict | plan | already covered by checking the tool instead of recalling it; the docs settled it in one query |
+| The new guard accepted any expression merely mentioning `github.ref` | review | **plan** | the delegated-predicate row above |
+| "Cannot change what the tap sees" was false under old-first ordering | review | plan | covered by the run-it row; the mechanism was in `classify-release-tag.mjs` the whole time |
+| Rung 0 rejected on evidence that predates the ban on the practice | **retro** | plan | the dated-evidence row above |
+| Four-hour stall waiting on a backgrounded review | the session asking | lead | the amended idle row above |
+| A post-merge note posted 11 minutes after the merge, framed as input to it | self, on reading the timestamps | lead | none proposed - a recorded practice ("check PR state before any follow-up") existed and was not applied. A rule already stated is a finding about why, not a reason to restate it |
+
+Seven of eight escaped the stage that should have caught them. Two of those were caught by the
+review round and one by the retro.
+
+### What the review round bought
+
+It found the unpinned guard, which had already passed the lead's approval and every gate:
+1611 tests green, `tsc` clean, `check:workflows` exit 0, four CI workflows green. The lead
+reproduced it rather than relaying it, and the implementer then found a second surviving shape
+the lead had missed - `${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}`, which
+mentions `github.ref`, passes the predicate, and gives every run its own group. That second
+shape is what ruled out the middle fix and forced pinning the exact text.
+
+One of three findings was rejected: the `refs/heads/main` eviction was already disclosed in the
+PR body with its window and rate, and the finding read the release-path claim without the
+residual that qualified it.
+
+### The judgement the plan never wrote, answered here
+
+The change guards a conjunction whose intersection has never occurred: same-ref concurrency in
+2 of 96 runs, a tag ref taking more than one run in 5 runs across 2 refs, never both. That was
+disclosed honestly and prominently, which is why it was approvable.
+
+But disclosure is not justification, and the sharper question is what the guard trades. It
+removes an unobserved **loud** failure - a draft short a binary, which a user meets as a
+`kesha install` 404 - and introduces an unobserved **silent** one: old-first ordering means a
+stable or beta release can ship complete and built from a superseded commit, with nothing red
+anywhere. For this repository that is the worse direction, and no stage asked the question
+before merge. Filed as #1115 with a concrete way to make it loud, rather than reverting four
+lines of disclosed config at a 0-in-55 rate.
+
+The honest summary: the change is defensible on cost asymmetry and it stays. Its *justification*
+was overstated, and that cleared the lead's approval, not the implementer's plan.
+
+### Rejected, with reasons
+
+- **A rule from the arithmetic slip.** No generalisable trigger; re-cutting the author's own
+  data caught it in one round, which is the round the verdict exists for.
+- **A rule from the false tap claim.** Already covered by running the thing you are judging and
+  by the review's first sweep item.
+- **"Pin the group to its exact text."** Derived from the fix. A list built from the change
+  cannot fail, which is the same defect as a mutation list derived from the diff.
+- **A new rule for the idle stall.** The rule existed; it was scoped to CI waits and the lead
+  did not carry it across to a backgrounded process. Amended, not added.
+- **Anything of the "be more careful" form.**
+
+### Retirement watch
+
+Nothing reaches the ten-ticket bar; the ledger is seven tickets old. "The verdict is a closed
+shape" remains at 0 fires across five tickets and should be cut at ten if it stays silent.
