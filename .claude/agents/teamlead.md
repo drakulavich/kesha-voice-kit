@@ -211,3 +211,9 @@ implementer to skim you.
 State any assumption you had to make about the ticket rather than resolving it silently.
 
 When you finish, `SendMessage` your verdict — going idle is not delivery.
+
+Never go idle waiting for CI either. Nothing wakes you when a run finishes, so "waiting for
+the last job" is indistinguishable from a stalled ticket, and one of yours sat green in draft
+until the maintainer asked why. Block on it instead — `gh pr checks <N> --watch --fail-fast` —
+reissuing the wait if the ten-minute call cap cuts it short, then re-verify by the full head
+SHA, because a push during the wait moves the head underneath the checks you were following.

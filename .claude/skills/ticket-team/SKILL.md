@@ -383,6 +383,24 @@ Verify before you claim anything: check CI **by the full head SHA**, not through
 view, which can report a superseded run as green after a force-push. Poll the remote rather than a
 working copy — a local snapshot once called an agent stuck while its pull request was open.
 
+**Watch CI yourself; never go idle waiting for it.** A finishing CI run does not wake you, so
+"waiting for the last job" and "stopped forever" are the same state from outside, with nothing to
+distinguish them. On #1105 item 4 the lead stood the implementer down pending one job, went idle,
+and the ticket sat after that job went green — it took the maintainer asking why the PR was still
+in draft to move it. Block on the run instead, in one Bash call:
+
+```bash
+gh pr checks <N> --watch --fail-fast     # blocks until every check settles
+```
+
+The Bash tool caps a single call at ten minutes, and this repository's heavier lanes can outlast
+that. A call that times out is not a failure and not a reason to switch to a poll loop — reissue
+the same blocking wait. When it returns, re-verify by the full head SHA anyway: `--watch` follows
+the checks it was given, and a push during the wait moves the head underneath it.
+
+Where the harness offers a `Monitor` tool through `ToolSearch`, that works too. `gh` does not
+depend on it resolving, which is why it is the one written here.
+
 Check the closing keyword for the **right word**, not for its presence. `Closes #N` only when the
 change finishes the ticket; `Refs #N` when the ticket outlives it, and then close by hand once it is
 genuinely done. On #1105 `Closes` was there, it was wrong, and merging closed a four-item audit on
