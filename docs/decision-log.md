@@ -149,6 +149,38 @@ issue/PR that drove it). Newest concerns first within each section.
   publish + the `make` flow remain authoritative.
 - **Status:** active, secondary ([#242], [#264]).
 
+## Continuous integration
+
+### `unit-tests` keeps its macOS row
+- **Decision:** the `unit-tests` matrix in `.github/workflows/ci.yml` stays at three
+  runners. The #1105 minutes audit proposed dropping `macos-latest` as "the cheapest 10x
+  saving available"; measuring it refused the proposal.
+- **Context:** 14 unit cases assert on `macos-latest` and assert nothing, or less, on
+  `ubuntu-latest` — 9 skipped outright via `isDarwinArm64() ? test : test.skip`, 5 more
+  cut short by an in-body early return. They cover the darwin sidecars, Gatekeeper
+  unblocking, the Kokoro ANE staging and the warm-up, all of which production code reaches
+  through `isDarwinArm64` in `src/engine-targets.ts`. `unit-tests` is the only CI job that
+  runs the unit suite, so removing the leg would run those cases in no lane at all.
+- **Rationale:** the saving is $0 — the repository is public — and 0 s of latency, since
+  `windows-latest` is the slowest row and gates the same downstream jobs. Neither ubuntu
+  nor macOS is a subset of the other: one case runs on ubuntu and windows and not on macOS.
+  `tests/unit/lane-exclusive-tests.test.ts` pins the leg so a future audit fails loudly
+  instead of deleting the coverage silently.
+- **Reproduce** against any `ci.yml` run that executed `unit-tests`. Each row uploads a
+  junit artifact, and bun's reporter records an `assertions` count on every `<testcase>` —
+  comparing those counts row by row catches both a `test.skip` and an in-body early return,
+  where comparing test names alone would miss the second:
+
+  ```bash
+  gh run download <run-id> -n test-results-ubuntu-latest -n test-results-macos-latest \
+    -n test-results-windows-latest -D junit
+  grep -o 'assertions="[0-9]*"' junit/test-results-*/unit-*.xml | head   # totals are on <testsuites>
+  ```
+
+  On run `33244355718` (`d738b0b`): 3021 / 3052 / 2664 assertions and 9 / 0 / 186 skipped
+  for ubuntu / macos / windows, over 1399 cases each.
+- **Status:** active ([#1105]).
+
 ---
 
 [#123]: https://github.com/drakulavich/kesha-voice-kit/issues/123
@@ -166,3 +198,4 @@ issue/PR that drove it). Newest concerns first within each section.
 [#291]: https://github.com/drakulavich/kesha-voice-kit/issues/291
 [#473]: https://github.com/drakulavich/kesha-voice-kit/issues/473
 [#509]: https://github.com/drakulavich/kesha-voice-kit/pull/509
+[#1105]: https://github.com/drakulavich/kesha-voice-kit/issues/1105
