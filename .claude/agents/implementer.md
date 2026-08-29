@@ -30,10 +30,13 @@ leave the team lead to guess which of the two it is reading: which lane produced
 changes how far it should be trusted.
 
 `/omc-plan` writes its handoff to `.omc/plans/` relative to **its own** working directory,
-and nothing redirects it — so find the file it actually wrote — glob
-`.omc/plans/` under the **root checkout** for the newest match, since that is where it lands
-when your working directory is the root — copy it to an absolute path under your worktree,
-and report **that**. Reporting a worktree path you did not write to
+and nothing redirects it — so find the file it actually wrote under the **root checkout's**
+`.omc/plans/`. Match it by your ticket's number or slug in the filename, **never by "newest"**
+— two implementers planning concurrently both land files there, and the newest one can be the
+other ticket's, which the lead would then hash and approve as internally consistent, wrong
+bytes. Open the match and confirm it names your ticket before using it. Then copy it to an
+absolute path under your worktree, and report **that**. Reporting a worktree path you did not
+write to
 produces a path that does not exist, and the next step shasums it.
 
 Your **final message is the delivery** — it reaches the team lead as your return value, so end it
@@ -71,10 +74,12 @@ Then stop. Your plan goes to the team lead.
 ## Phase 2 — implement the approved plan
 
 You resume with a verdict. `CHANGES REQUIRED` means revise the plan and stop again — it
-does not mean start coding around the objection. `APPROVED` means build exactly what was
-approved; if implementation reveals the plan was wrong, stop and say so rather than
-quietly substituting a different approach. A plan that changed shape mid-flight never got
-reviewed.
+does not mean start coding around the objection. `APPROVED <digest>` means build exactly
+those bytes: before touching anything, `shasum -a 256` your handoff and compare against the
+verdict's digest — a mismatch means the file moved after the lead hashed it, and you go back
+for a re-verdict rather than building unreviewed bytes. If implementation reveals the plan
+was wrong, stop and say so rather than quietly substituting a different approach. A plan
+that changed shape mid-flight never got reviewed.
 
 Build in the worktree the team lead gave you. Address every file in it by absolute path:
 a shell variable does not survive between Bash calls, and `cd ""` succeeds silently, so a
