@@ -419,10 +419,25 @@ For CI the blocking form is `gh pr checks <N> --watch --fail-fast`; a timeout is
 reissue the same wait, and when it returns re-verify by the full head SHA anyway, since a push
 during the wait moves the head under the checks being followed.
 
-Check the closing keyword for the **right word**, not for its presence. `Closes #N` only when the
-change finishes the ticket; `Refs #N` when the ticket outlives it, and then close by hand once it is
-genuinely done. On #1105 `Closes` was there, it was wrong, and merging closed a four-item audit on
-the strength of one shipped item.
+Check the closing keyword for the **right word**, not for its presence — and in **both** places a
+merge closes from. `Closes #N` only when the change finishes the ticket; `Refs #N` when the ticket
+outlives it, and then close by hand once it is genuinely done. On #1105 `Closes` was there, it was
+wrong, and merging closed a four-item audit on the strength of one shipped item.
+
+The second place is the commit stream. A squash concatenates every commit message on the branch and
+GitHub reads the result, so a keyword written as *prose* inside a commit body is live. #1105 was
+closed by both routes twenty hours apart: first from #1109's body (`commit_id: null` on the timeline
+event), then by `27c0995`, whose pull request said `Refs #1105` while two of its 74 concatenated
+messages narrated the earlier mis-close and quoted the keyword doing it.
+
+```bash
+KW='\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[ :]*#[0-9]+'
+gh pr view <N> --json body -q .body    | grep -inE "$KW"
+git log <base>..<head> --format=%B     | grep -inE "$KW"
+```
+
+Both must return only the keywords you meant. So keep the keyword out of commit prose: name the
+issue without one when narrating, or the sentence describing a mis-close performs another.
 
 **Verify one decisive thing yourself**, with one command, rather than relaying what the implementer
 reported. "Gates green" has been reported here while the type checker had errors, and a green CI job
@@ -492,6 +507,15 @@ should be repeated louder.
 Update the `fired` counts, including where the answer is no. Cut what has not fired in ten tickets,
 and say in the ledger that it is being cut for being unmeasured rather than for being wrong.
 
+**The ledger write is not the change.** A rule takes effect when it is copied into `SKILL.md`,
+`teamlead.md`, `implementer.md` or `retro.md` — what an agent actually holds in context — and the
+ledger is the archive of why. So name all four at the write step and record, per file, applied or
+explicitly declined. `fd03896` added "both mutations" to this file and edited nothing else, leaving
+`implementer.md` asking the planner for "the mutation", singular; #1117 then shipped the
+per-assertion wording into two files and left `SKILL.md:223` on the old one. Placement is necessary
+and it is not sufficient — the frequency rule has its full operational form in `teamlead.md` and
+failed on three consecutive tickets anyway, on its trigger list rather than its location.
+
 A ticket that produced no lesson gets one line saying so. That is the normal outcome, and inventing
 one to look thorough is the failure this step exists to prevent.
 
@@ -501,7 +525,7 @@ ledger is the evidence that PR cites.
 ## 8. Kaizen — improve the loop while you are inside it
 
 The retro *judges* improvements; they are *found* mid-ticket, where raising one costs a message
-instead of a re-read. Six rules, for every agent in the loop, each anchored to something this
+instead of a re-read. Seven rules, for every agent in the loop, each anchored to something this
 loop paid for:
 
 - **Small and continuous beats a rewrite** — what stuck, both restructures, was the paragraph
@@ -516,6 +540,12 @@ loop paid for:
   proposal with no failure attached is dropped, said so.
 - **Retire at the rate you adopt** — a rule silent for ten tickets goes, recorded as unmeasured
   rather than wrong. This section is subject to its own rule.
+- **Name what wakes or reaches the recipient before writing any delivery instruction** — if you
+  cannot name a runtime mechanism, the instruction is invalid. Six commits went into one channel
+  class and the fix for the first caused the third: `ce81fa6` told a subagent to `SendMessage` with
+  no roster, `7195368` told an idle agent to wait. Both fail this test on their own text. A seventh
+  instance then occurred under the amended wording, which is the argument for giving the receiving
+  side a check rather than the sending side another sentence.
 
 And keep asking the rate question: what did the loop catch that the gates would have caught
 anyway, and what did it cost to find out? Record unfavourable answers with the same specificity —
