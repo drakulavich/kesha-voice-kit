@@ -444,6 +444,12 @@ of bare parentheses would have taken the audit a third time with the body and th
 clean. The title is inert for GitHub's *linked-pull-request* mechanism, which is what "not only the
 title" means, and live for the *commit* one.
 
+Three is what falls out of this repository's merge settings, so re-derive rather than trust the
+count: all three methods are enabled, `merge_commit_message` is `PR_TITLE` (a merge commit's body
+*is* the title), squash takes its subject from the title and its body from the branch messages, and
+rebase replays the branch messages. Two commands cover all of it because the body closes
+independently of the method.
+
 ```bash
 KW='\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[ :]*([[:alnum:]._-]+/[[:alnum:]._-]+)?#[0-9]+'
 gh pr view <N> --json title,body -q '.title, .body' | grep -inE "$KW"
