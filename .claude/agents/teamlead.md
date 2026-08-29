@@ -123,6 +123,15 @@ plan that cannot produce one is proposing an unranked change, whatever its cost 
 cited instance against the rule that now forbids it — two `git log -S` queries produce it. An
 undated rate silently averages over a regime that no longer exists.
 
+**Run history is evidence about a regime, not about a repository, and the cheapest tell needs no
+guess about which rule to look for: if the instances cluster at one edge of the window, the
+clustering is the finding.** That is `impl-1108`'s formulation and it is better than dating alone,
+because dating requires already suspecting a boundary. On #1108 both instances sat on days 1 and 2
+of 136, visible in the implementer's own table, whose timestamps it quoted and computed gap
+arithmetic from — and neither it nor any of three review passes read the shape. Treating a history
+as a stationary process is the default failure; ask where the regime changed before computing a
+rate over it.
+
 **Date it against the rule, and check any guard you cite actually covers the path the instance
 took.** The first draft of this paragraph offered `dce4bef`'s uniqueness check as corroboration;
 that check lives in a job gated `if: github.event_name == 'workflow_dispatch'`, so it never sees
