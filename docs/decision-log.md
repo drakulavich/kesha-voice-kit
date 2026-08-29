@@ -149,6 +149,55 @@ issue/PR that drove it). Newest concerns first within each section.
   publish + the `make` flow remain authoritative.
 - **Status:** active, secondary ([#242], [#264]).
 
+## Continuous integration
+
+### `unit-tests` keeps its macOS row
+- **Decision:** the `unit-tests` matrix in `.github/workflows/ci.yml` stays at three
+  runners. The #1105 minutes audit ranked dropping `macos-latest` as the cheapest 10x
+  saving available *if* the unit suite had no darwin-specific assertions, and asked for that
+  to be checked rather than assumed. It was checked; it has them.
+- **Context:** 14 unit cases assert on `macos-latest` and assert nothing, or less, on
+  `ubuntu-latest` — 9 skipped outright via `isDarwinArm64() ? test : test.skip`, 5 more
+  cut short by an in-body early return. They cover the darwin sidecars, Gatekeeper
+  unblocking, the Kokoro ANE staging and the warm-up, all of which production code reaches
+  through `isDarwinArm64` in `src/engine-targets.ts`. Two CI jobs run the unit suite —
+  `unit-tests`, and `ts-coverage` through `coverage:ts` → `test:cli-fast` — and `ts-coverage`
+  is `ubuntu-latest` only, so this matrix row is the sole place those 14 cases assert.
+- **Rationale:** the saving is $0 — the repository is public — and 0 s of latency, since
+  `windows-latest` is the slowest row and gates the same downstream jobs. Neither ubuntu
+  nor macOS is a subset of the other: one case runs on ubuntu and windows and not on macOS.
+  `tests/unit/lane-exclusive-tests.test.ts` pins the leg so a future audit fails loudly
+  instead of deleting the coverage silently.
+- **Re-derive the 14** from any `ci.yml` run that executed `unit-tests`. Each row uploads a
+  junit artifact, and bun's reporter records an `assertions` count on every `<testcase>` —
+  comparing per-case counts catches both a `test.skip` and an in-body early return, where
+  comparing test names alone would miss the second:
+
+  ```bash
+  gh run download <run-id> -n test-results-ubuntu-latest -n test-results-macos-latest -D junit
+  bun -e '
+  const attrs = (tag) => Object.fromEntries([...tag.matchAll(/([a-z]+)="([^"]*)"/g)].map((a) => [a[1], a[2]]));
+  const cases = async (os) => {
+    const xml = await Bun.file(`junit/test-results-${os}/unit-${os}.xml`).text();
+    const seen = [...xml.matchAll(/<testcase\b([^>]*)/g)].map((m) => attrs(m[1])).filter((a) => a.name && a.classname);
+    if (seen.length === 0) throw new Error(`parsed no testcases from ${os} — the junit format moved, this answer would be wrong`);
+    return new Map(seen.map((a) => [`${a.classname} :: ${a.name}`, +(a.assertions ?? 0)]));
+  };
+  const [ubuntu, macos] = [await cases("ubuntu-latest"), await cases("macos-latest")];
+  const only = [...macos].filter(([k, n]) => (ubuntu.get(k) ?? 0) < n);
+  for (const [k, n] of only) console.log(`${ubuntu.get(k) ?? 0}/${n}  ${k}`);
+  console.log(`${only.length} cases assert on macos and not, or less, on ubuntu`);
+  '
+  ```
+
+  Attributes are read by name rather than by position, and a file that yields no testcases
+  throws instead of reporting zero — a silent `0` here would tell a future audit there are no
+  darwin-specific assertions, which is the exact false conclusion this entry exists to prevent.
+  On run `33244355718` (`d738b0b`) it prints the 14 and their per-row counts. Row totals there
+  were 3021 / 3052 / 2664 assertions and 9 / 0 / 186 skipped for ubuntu / macos / windows, over
+  1399 cases each.
+- **Status:** active ([#1105]).
+
 ---
 
 [#123]: https://github.com/drakulavich/kesha-voice-kit/issues/123
@@ -166,3 +215,4 @@ issue/PR that drove it). Newest concerns first within each section.
 [#291]: https://github.com/drakulavich/kesha-voice-kit/issues/291
 [#473]: https://github.com/drakulavich/kesha-voice-kit/issues/473
 [#509]: https://github.com/drakulavich/kesha-voice-kit/pull/509
+[#1105]: https://github.com/drakulavich/kesha-voice-kit/issues/1105

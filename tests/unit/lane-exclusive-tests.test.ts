@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseRepoYaml } from "../helpers/repo";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const WORKFLOW = ".github/workflows/rust-test.yml";
@@ -54,5 +55,29 @@ describe("a lane-exclusive test cannot run nowhere", () => {
     const sources = ["rust/src/backend/fluidaudio.rs", ...LANE_EXCLUSIVE].map((relative) => read(relative)).join("\n");
     // A rename that empties the lane must fail here rather than quietly select nothing.
     for (const name of named) expect(sources).toContain(`fn ${name}`);
+  });
+});
+
+describe("the darwin-only unit tests have a lane", () => {
+  // 14 unit cases assert only on darwin (#1105); the other unit lane is ubuntu-only, so this leg is where they assert.
+  const unitTests = () => parseRepoYaml(".github/workflows/ci.yml").jobs["unit-tests"];
+
+  test("the matrix keeps a macOS runner it does not exclude", () => {
+    const job = unitTests();
+    expect(job["runs-on"]).toBe("${{ matrix.os }}");
+    const runners: string[] = job.strategy.matrix.os;
+    // Positively arm64 per actions/runner-images; an unrecognised macOS label fails here rather than passing (#1105).
+    const ARM64_MACOS = ["macos-latest", "macos-14", "macos-15", "macos-26"];
+    const arm64Macos = (r: string) => ARM64_MACOS.includes(r.replace(/-xlarge$/, ""));
+    expect(runners.filter(arm64Macos)).not.toEqual([]);
+    expect(job.strategy.matrix.exclude).toBeUndefined();
+  });
+
+  test("the step that runs the unit suite is not conditioned off a row", () => {
+    const steps = unitTests().steps.filter(
+      (s: { run?: string }) => typeof s.run === "string" && s.run.includes("test:unit"),
+    );
+    expect(steps).toHaveLength(1);
+    expect(steps[0].if).toBeUndefined();
   });
 });
