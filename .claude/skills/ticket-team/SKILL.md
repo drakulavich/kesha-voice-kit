@@ -20,38 +20,22 @@ Agent(name: "teamlead-<ticket>", subagent_type: "teamlead",
                Report to me once, when the pull request is handed off.")
 ```
 
-That is the whole of your involvement. You do not size the ticket, spawn the implementer, relay
-plans, check digests, triage findings, decide the hand-off, or write the ledger. If you find
-yourself composing a message about the ticket's *content*, you have rejoined a loop you were
-removed from.
+That is the whole of your involvement — no sizing, relaying, digest checks, triage, hand-off
+decisions or ledger writes. If you are composing a message about the ticket's *content*, you have
+rejoined a loop you were removed from. (The loop used to have an orchestrator in that seat;
+measured across #1105, every fact routed through it arrived wrong and its interventions corrected
+nothing — a relay reads snapshots, and its snapshot is by construction older than the
+participants'.)
 
-**And you do not run tools on the lead's behalf.** Not `Agent`, not `Write`, not "mechanically,
-without judging it". A lead whose configuration does not grant a tool is bounded by that on
-purpose, and executing the action for it routes around the boundary while making you the acting
-party for a decision you were removed from — the deleted role, re-entering through the service
-door. This rule exists because the session that wrote this file offered exactly that during the
-handover, unprompted, and the lead refused it on those grounds. If a lead genuinely needs a tool
-it lacks, it says so to you and **the maintainer decides** — that is the channel, and it is the
-only one.
+**Do not run tools on the lead's behalf** — not `Agent`, not `Write`, not "mechanically, without
+judging it". A lead's tool list is a boundary, and executing around it makes you the acting party
+for a decision you were removed from; the session that wrote this file offered exactly that,
+unprompted, and the lead rightly refused. A lead missing a tool says so, and **the maintainer
+decides**.
 
-**Why the role was removed rather than reduced.** An earlier version of this protocol put an
-orchestrator above the two agents: it sized, it relayed, it triaged, it handed off. Measured
-across #1105, every fact that travelled through it arrived wrong — three mistaken job/OS labels,
-a headroom figure lifted from a chat summary into a reviewer's prompt, a wrong line number, an
-incomplete citation list — and the agents corrected all of them by reading the files. Its two
-substantive interventions on item 4, both binding checks, produced no correction and cost five
-messages: it was reading snapshots, and a snapshot held by a party copied on traffic is by
-construction older than the participants'. The role's remaining duties were real; none of them
-needed a third party to hold.
-
-You will still receive idle notifications from the agents. **An idle signal means "available",
-not "here is my output."** Ignore them. The lead reports once, by sending.
-
-Two things stay yours, because they are not ticket work:
-
-- **Stopping the ticket.** If the maintainer wants it abandoned or re-scoped, say so to the lead.
-- **Answering a question only the maintainer can answer.** The lead will ask through you when the
-  ticket itself is unclear. Relay the maintainer's answer verbatim; do not compose one.
+Idle notifications mean "available", not "here is my output" — ignore them; the lead reports
+once. What stays yours: stopping or re-scoping the ticket on the maintainer's word, and relaying
+— verbatim, never composing — an answer only the maintainer can give.
 
 ---
 
@@ -70,18 +54,11 @@ plugin was unregistered, so every phase named an invocation that could not resol
 
 `omc ask` is a **binary**, not a skill, and works regardless.
 
-**Resolve the team's own three files by path from the ticket worktree, not by the presence of
-`.claude/skills/`.** `SKILL.md`, `LESSONS.md` and `check-citations.ts` are what this loop runs
-on, and `git ls-files .claude/skills/ticket-team` returning 0 means none of them is in a tree
-branched from `main`. The directory probe is not the check: `.claude/` and `.claude/skills/` do
-exist there with ten sibling skills tracked, so a missing file reads as "not installed" with
-nothing separating it from "excluded from this tree".
-
-The consequence, until the pull request carrying them merges: §4's consolidation sweep has never
-been runnable by any implementer, because §0 puts every implementer in a worktree — and neither
-the protocol nor the ledger is readable from the tree they govern. Test the three paths and say
-which are absent. The fix is merging that pull request; the precondition is what makes the next
-occurrence loud instead of silent.
+**Resolve the team's own three files — `SKILL.md`, `LESSONS.md`, `check-citations.ts` — by full
+path, never by the presence of `.claude/skills/`.** That directory exists in every worktree with
+ten tracked siblings while these three are untracked and ship only in their own pull request, so
+the probe false-greens. Test the three paths and say which are absent; until their PR merges,
+§4's sweep runs from the skill's base directory, not the ticket tree.
 
 ## What you own, and the one thing you must not do
 
@@ -164,17 +141,10 @@ snapshot they are holding:
 HEAD: <git -C <worktree> rev-parse HEAD>   <clean | dirty: git status --short>
 ```
 
-Messages cross. On #1105 item 4 they crossed six times, and every one resolved the same way: the
-newer state belonged to the participant doing the work, and the stale snapshot belonged to whoever
-was reviewing or relaying. That is the mechanism that got the orchestrator role deleted, and
-reducing the loop to two agents does not remove it — it only halves the traffic. The implementer
-started stamping its reports unprompted partway through that ticket and it settled the last three
-exchanges in one round each; the rule is `teamlead-1105-homebrew`'s, from the side that kept
-receiving the stale half.
-
-A stamped report costs one line and makes a crossing self-resolving on arrival: the reader sees
-immediately whether the message predates what they are looking at, instead of discovering it a
-round later.
+Messages cross — six times on one ticket, and every crossing resolved the same way: the newer
+state belonged to whoever was doing the work, the stale snapshot to whoever was reviewing. A
+stamped report costs one line and makes a crossing self-resolving on arrival; unstamped, it is
+discovered a round later.
 
 ## 1. Size the ticket
 
@@ -243,16 +213,12 @@ You may give the implementer facts. **You may not give it the remedy** — not w
 not the shape of the test, not which of two options you would accept. Facts are free; a design you
 supplied is a design you cannot judge.
 
-**At verdict time, hold the plan's mutation table to the review round's first sweep item**, not to
-a weaker version of it: for each guard the plan adds, both mutations — deleted, and neutralised
-with its shape left in place — plus one row per residual that any predicate it delegates to names
-in its own doc comment. Your charter carries the reasoning and the #1108 incident; what belongs
-here is that the check happens at the moment of judging.
-
-That asymmetry is the whole finding. The demand on the reviewer is pasted into every prompt by
-construction, so it always runs; the demand on the planner lived only in a charter someone has to
-remember at the right moment. On #1108 the reviewer ran the check the planner was never asked for,
-and the guard shipped past an approval with every gate green.
+**At verdict time, hold the plan's mutation table to the review round's first sweep item**: for
+each guard, both mutations — deleted, and neutralised with its shape left in place — plus one row
+per residual any delegated predicate names in its own doc comment. Your charter carries the
+reasoning; what belongs here is that the check runs at the moment of judging, because on #1108
+the reviewer was asked for it, the planner was not, and the guard shipped past an approval with
+every gate green.
 
 ### The binding block
 
@@ -266,37 +232,20 @@ DIGEST: <sha256>  <bytes>
 STANDING ON: <the HEAD+digest pair whose APPROVED authorises this, or "none — first submission">
 ```
 
-**`HEAD` is the tree binding, and it is not prose.** At plan time it equals `origin/main`; the
-moment a commit lands it does not, and that difference is the whole check. Compare two SHAs instead
-of reading a description of a tree — the same reason this repo gates CI on the full head SHA rather
-than on `gh pr checks`. On #1105 item 3 a plan digest reproduced exactly while the guard was already
-written and wired in the worktree; nothing in the request made that visible.
+**`HEAD` binds the tree, `DIGEST` binds the revision, and neither is redundant** — one ticket saw
+four plan revisions inside one unchanged tree, and on another a digest reproduced exactly while
+the guard was already built in the worktree. Compare SHAs, never read a description of a tree.
 
-**The second token is permanent and not redundant with the first.** `HEAD` says the tree moved; it
-does not say which revision of the plan you are approving, and one ticket saw four plan revisions
-inside one unchanged tree.
+**Hash the file yourself before every verdict** — never quote the digest from the block; the
+point is to check the block, and a "(matched)" that was true when written has already gone stale
+under a reviewer once.
 
-**Hash the file yourself before every verdict.** Never quote the digest from the block — the point
-is to check the block, and a digest that was accurate when written goes stale the moment the author
-revises. That has already happened: a verdict correctly said "(matched)" and was reading bytes the
-implementer replaced minutes later.
+**The block is the implementer's last action** — composed after the final edit and sent
+immediately, or the digest is wrong on arrival (three times in one ticket).
 
-**The binding block is the implementer's last action, not its first.** Write the block after the
-final edit and send immediately — never compose it, edit further, then send. This rule is
-`teamlead-1105-homebrew`'s, proposed after it hit the failure three times in one ticket: a plan
-that moves between the block and the send makes the digest wrong on arrival, and the reviewer
-then either approves unread bytes or spends a message reconciling. Twice on that ticket the lead
-accounted for the delta by hand — `sed`-ing the changed range and checking its byte count against
-the file's growth — and approved safely. That worked, and it is not a substitute for sending last.
-
-**Watch for a revision that crosses your verdict.** If the implementer revises in response to
-something else while your verdict is in flight, the two pass each other and its revision will not
-engage your items. Say so plainly and point at the earlier message rather than restating it — and
-do not count the crossing as a round. It is a sequencing artifact, not a failed attempt.
-
-**Do not predict a round's cost.** "This is a clause, not a round" was said of a change that became
-a round. Say what you are asking for; how much it costs is the other agent's to report, and a wrong
-prediction makes the next honest estimate cheaper to dismiss.
+**A revision can cross your verdict in flight.** It then answers something other than your items:
+say so, point at the earlier message, and do not count the crossing as a round — it is a
+sequencing artifact, not a failed attempt.
 
 Your verdict's first line is parsed strictly by the implementer:
 
@@ -316,13 +265,6 @@ teaches the author to treat every verdict as hostile.
 **Cap the loop at three rounds.** Two is normal. On the third, stop and take the ticket back to the
 maintainer through the session that spawned you: a plan that cannot be approved in three rounds is
 an unclear ticket, and the fix belongs in the ticket rather than in the plan.
-
-### An authorisation inside a rejection
-
-An authorisation embedded in a `CHANGES REQUIRED` — "if you want to start committing, start; what
-is blocked is the plan document as the PR body" — **is scoped to what it says and expires with the
-next verdict.** Require the implementer to quote it in `STANDING ON` when it stands on one. If
-quoting it makes it look thinner than remembered, that is the check working.
 
 ## 3. Implement
 
@@ -364,11 +306,9 @@ sample"; the PR body said something different and correct. The summary's phrasin
 prompt, codex correctly refuted it, and the finding landed on a claim nobody had shipped.
 
 **Concede a weakness by stating the evidence and its dates — never by fencing off the topic.**
-On #1108 the prompt said "do not report 'no incident evidence' as a finding, it is already
-conceded". Conceding that much was right; the fence also excluded *"the observation you rely on
-is stale and describes a practice this repository forbade the day it was last seen"*, which is a
-different finding and is the one nobody made. The reviewer attacked mechanism only and never
-dated a single cited run. A topic you close is a topic no one can surprise you on.
+On #1108 the prompt closed "no incident evidence" as already conceded, which also excluded "the
+evidence you rely on is stale" — a different finding, and the one nobody made. A topic you close
+is a topic no one can surprise you on.
 
 Ask it to **refute a specific claim**, not to "review the PR" — a claim is required, not a nicety.
 Three confident assertions fell to "is that argument correct?" in one day; none fell to "review
@@ -399,17 +339,10 @@ Across #753–#800, nine of thirty pull requests carried a reviewer's own P1/P2 
 same reviewer scored them "safe to merge". A reviewer applied wholesale is a reviewer nobody is
 reading. If a finding contradicts the approved plan, that is a plan problem — back to §2.
 
-### Propose a remedy this repository can accept
-
-**A finding whose remedy needs two facts in one comment is unsatisfiable here.**
-`check-new-comments.ts` rejects any *added* multi-line `#` or `//` run, and replacing a two-line
-comment counts as adding one — so "state X and Y in the comment" cannot be applied as written. Name
-the one fact that matters and say explicitly that the rest goes in the PR body.
-
-The general form: **a remedy that cannot be executed as specified is discovered only by the person
-executing it.** Same shape as a `just mutate` find-string that does not occur. Whoever writes the
-remedy owes it a moment's thought about whether the gates will take it, because the cost of skipping
-that lands on someone else.
+When you write a remedy, check the gates will take it as specified — `check-new-comments.ts`
+rejects any added multi-line comment, so "state X and Y in the comment" is unsatisfiable here:
+name the one fact that matters and put the rest in the PR body. A remedy that cannot be executed
+as written is discovered only by whoever executes it.
 
 ### One consolidation pass — never push prose alone
 
@@ -425,19 +358,11 @@ the whole diff once before pushing —
 bun <this-skill's-base-directory>/check-citations.ts origin/main HEAD    # run in the ticket worktree
 ```
 
-**The path is absolute and it is the skill's own, not the ticket tree's.** When this skill loads
-it tells you its base directory; use that.
-
-The trap is sharper than "the file is missing". `.claude/` **is** tracked on `main` — `agents/`,
-`commands/`, `hooks/`, `settings.json` and `skills/` all exist in every ticket worktree — but
-`skills/ticket-team/` does not, because this skill and `check-citations.ts` are untracked
-(`.git/info/exclude` carries `.claude/`) and ship only in the pull request that adds them. So a
-probe for the directory succeeds, an agent concludes the tooling is installed, and the missing
-file then reads as "not installed" with nothing to distinguish it from "excluded from this tree".
-
-Caught because the implementer on #1108 ran the step, found no such file, and reported it instead
-of skipping it quietly — and then sharpened it again when the first explanation, mine, was still
-wrong about the directory being absent.
+**The path is the skill's own base directory, not the ticket tree's** — this skill and its script
+are untracked and absent from any worktree branched off `main`, while `.claude/skills/` itself
+exists there with ten tracked siblings, so a directory probe false-greens and the missing file
+reads as "not installed" (#1108, where the implementer ran the step and reported the absence
+instead of skipping quietly).
 
 It extracts every `file:line` the diff **adds** and resolves each against the post-diff tree, failing
 on a citation that now points at a blank line or cannot be resolved. That is the `ci.yml:984` defect
@@ -464,33 +389,16 @@ view, which can report a superseded run as green after a force-push. Poll the re
 working copy — a local snapshot once called an agent stuck while its pull request was open.
 
 **Never end your turn waiting for anything — CI, a backgrounded command, a review, a reply.**
-Nothing wakes you, so "waiting" and "stopped forever" are the same state from outside, with
-nothing to distinguish them. Block on it in-call instead, and reissue the wait when the ten-minute
-cap cuts it short.
+Nothing wakes you, so "waiting" and "stopped forever" are identical from outside. Block in-call
+and reissue the wait when the ten-minute Bash cap cuts it short. This has cost two tickets — a
+green CI job nobody saw on #1105 item 4, and a finished review that sat unread for four hours on
+#1108 because the lead read the rule as CI-only, backgrounded `omc ask`, and confirmed the process
+was alive before stopping. **A live process is not a wake-up mechanism**, and there is no category
+of wait this excludes.
 
-This has now cost two tickets and the second one is why the rule is stated at this width. On
-#1105 item 4 the lead stood the implementer down pending one CI job, went idle, and the ticket sat
-after the job went green — the maintainer asking why the PR was still in draft is what moved it.
-On #1108 the lead read that rule as being about CI, backgrounded `omc ask` and ended its turn
-expecting a task notification: the review finished at 04:47Z, the notification did not arrive, and
-four hours passed before a ping. Three minutes before stopping it had checked the artifact, found
-it empty, confirmed the process was alive — and treated "it will notify me" as sufficient. **A
-live process is not a wake-up mechanism.** The narrow reading is the trap; there is no category of
-wait this excludes.
-
-For CI specifically, the blocking form is:
-
-```bash
-gh pr checks <N> --watch --fail-fast     # blocks until every check settles
-```
-
-The Bash tool caps a single call at ten minutes, and this repository's heavier lanes can outlast
-that. A call that times out is not a failure and not a reason to switch to a poll loop — reissue
-the same blocking wait. When it returns, re-verify by the full head SHA anyway: `--watch` follows
-the checks it was given, and a push during the wait moves the head underneath it.
-
-Where the harness offers a `Monitor` tool through `ToolSearch`, that works too. `gh` does not
-depend on it resolving, which is why it is the one written here.
+For CI the blocking form is `gh pr checks <N> --watch --fail-fast`; a timeout is not a failure —
+reissue the same wait, and when it returns re-verify by the full head SHA anyway, since a push
+during the wait moves the head under the checks being followed.
 
 Check the closing keyword for the **right word**, not for its presence. `Closes #N` only when the
 change finishes the ticket; `Refs #N` when the ticket outlives it, and then close by hand once it is
@@ -567,113 +475,67 @@ ledger is the evidence that PR cites.
 
 ## 8. Kaizen — improve the loop while you are inside it
 
-The retro is where improvements are *judged*, not where they are *found*. Findings arrive while
-the work is happening, and an improvement noticed mid-ticket costs one message; the same
-improvement recovered at retro costs re-reading the whole ticket to reconstruct why it mattered.
-So raise it when you hit it, and let §7 decide whether it survives.
+The retro *judges* improvements; they are *found* mid-ticket, where raising one costs a message
+instead of a re-read. Six rules, for every agent in the loop, each anchored to something this
+loop paid for:
 
-Six rules, each with what it is anchored to here. They apply to every agent in the loop, not
-only to you.
+- **Small and continuous beats a rewrite** — what stuck, both restructures, was the paragraph
+  tied to an incident; the reorganisations mostly restated the file.
+- **Standardise before you improve** — an improvement to an unwritten habit is a preference,
+  and a preference cannot be argued with.
+- **Go and see** — the loop's strongest rule, "run the tool, not a reimplementation of it",
+  exists because a reviewer twice reported a property of a scratch copy as the original's.
+- **The improvement belongs to whoever hit the friction** — the binding-block rule came from the
+  lead that hit it three times; do not defer to whoever holds the pen.
+- **Every proposal carries what it would have caught** — the ledger's bar, applied earlier; a
+  proposal with no failure attached is dropped, said so.
+- **Retire at the rate you adopt** — a rule silent for ten tickets goes, recorded as unmeasured
+  rather than wrong. This section is subject to its own rule.
 
-**Small and continuous beats a rewrite.** This protocol has been restructured twice, and both
-times the parts that stuck were single paragraphs attached to a specific incident, while the
-large reorganisations mostly restated what the file already said. Prefer the paragraph.
-
-**Standardise before you improve.** You cannot improve a process that is not written down — an
-improvement to an unwritten habit is indistinguishable from a preference, and neither can be
-argued with. This is the same reason a coordination artifact that exists only in chat did not
-happen.
-
-**Go and see.** The strongest rule this loop has produced is "run the tool, not a
-reimplementation of it", and it exists because a reviewer twice reported a property of
-`scripts/mutate.ts` that it had inferred from a scratch copy using different semantics. When a
-claim is about what something does, go to the thing.
-
-**The improvement belongs to whoever hit the friction.** The binding-block rule came from the
-lead that hit that failure three times in one ticket; the sharpest framing of the
-decision-routing rule came from the implementer, not from the party that wrote it down. Do not
-wait to be asked, and do not defer to whoever holds the pen.
-
-**Every proposal carries what it would have caught.** Same bar as the ledger, applied earlier. A
-proposal with no failure attached is a preference; say so and drop it rather than filing it as a
-rule for someone else to carry.
-
-**Retire at the rate you adopt.** If nothing is being cut, the process is growing, and every line
-of growth is paid by every future agent that has to hold it in context. A rule that has not fired
-in ten tickets goes, and the ledger says it went for being unmeasured rather than for being
-wrong. This section is subject to its own rule.
-
-And keep asking the rate question rather than assuming the answer: what did the loop catch that
-the gates would have caught anyway, and what did it cost to find out? Record the unfavourable
-answers with the same specificity as the favourable ones. A process that only ever produces
-evidence of its own value is not being measured.
+And keep asking the rate question: what did the loop catch that the gates would have caught
+anyway, and what did it cost to find out? Record unfavourable answers with the same specificity —
+a process that only ever produces evidence of its own value is not being measured.
 
 ## Coordination artifacts, and what git already provides
 
-**1. Name a SHA, never describe a state.** Anything you would put in prose that git can name — what
-the tree looked like, what a reviewer read, what CI ran against — gets named by its SHA instead. Two
-verdict requests once quoted a digest the file had already moved past, and an early build stayed
-invisible to the verdict being issued because the digest bound the plan and nothing bound the tree.
+**1. Name a SHA, never describe a state** — what the tree looked like, what a reviewer read, what
+CI ran against. Prose descriptions have twice hidden a moved file and once hidden an early build.
 
 **2. A coordination artifact that exists only in chat did not happen.** Plans, verdicts, review
-output and triage decisions are evidence, and evidence has to be re-readable by an agent that was
-not in the conversation. A retro once could not establish where a claim originated, because the only
-record was a chat message no artifact preserved. Write it to a file under `.omc/retro/<ticket>/`;
-a `SendMessage` body is a notification that evidence exists, not the evidence.
+output and triage decisions go under `.omc/retro/<ticket>/`, re-readable by an agent that was not
+in the conversation; a `SendMessage` body is notification that evidence exists, not the evidence.
+And a decision **not** to act is the artifact that vanishes — nothing re-surfaces a commit never
+made — so send it to whoever proposed the change: they alone will notice its absence.
 
-**Decisions count as artifacts, and a decision *not* to act is the one that vanishes.** A decision to
-act announces itself when the action lands; a decision against a change leaves no trace at all, and
-no amount of re-checking surfaces a commit that was never made. So **send a decision against a
-proposed change to whoever proposed it** — they are the only party who will notice its absence. On
-#1105 item 3 four of five snapshot-as-state instances were the first kind and were caught; the fifth
-was the second kind and surfaced only because its author volunteered it.
+**3. The team's history is not the product's history.** Coordination state stays under `.omc/` or
+refs outside the ticket branch, never in product commits or the PR diff; the PR body carries the
+reasoning, the verdict machinery stays behind it.
 
-**3. The team's history is not the product's history.** `kesha-voice-kit`'s log is read by people
-shipping a voice toolkit; it should not carry which agent approved which digest. Coordination state
-goes under `.omc/` or on refs outside the ticket branch (`refs/team/<ticket>/…`), never into product
-commits or the PR diff. The PR body carries the reasoning; the verdict machinery stays behind it.
-
-**Considered and not adopted**, so the next agent does not re-propose them: signed commits and
-`Approved-by:` trailers on product commits (rule 3 forbids the noise, and no incident calls for
-cryptographic identity between cooperating agents); `git notes` for verdicts (attaches to a commit,
-and at plan time there are none); and proving reviewer write-containment by diffing the tree across
-a verdict (the honour-system version has not been violated once — a guard with no incident is the
-liability this ledger keeps retiring).
+**Considered and not adopted**, so the next agent does not re-propose them: `Approved-by:`
+trailers and signed commits (rule 3 forbids the noise), `git notes` for verdicts (nothing to
+attach to at plan time), and diffing the tree across a verdict to prove reviewer containment
+(never violated once — a guard with no incident is the liability this ledger keeps retiring).
 
 ## Skin in the game
 
-**Sign the claim.** A verdict, a rejected finding, a directive, a relayed fact — each carries who
-made it, and a ledger entry for an escaped defect names the stage **and the agent**, including you.
-An unattributed error cannot be seen as a pattern, and a pattern is the only thing a ledger can act
-on.
+**Sign the claim.** Every verdict, rejected finding, directive and relayed fact carries who made
+it, and a ledger entry for an escaped defect names the stage **and the agent**, including you —
+an unattributed error cannot be seen as a pattern, and a pattern is the only thing a ledger can
+act on.
 
-**Name the downside and who bears it.** Before directing a change, say what it costs if the direction
-is wrong and who pays. A directive whose cost falls entirely on someone else earns one more look
-before it is sent. One reviewer reversed the same design decision twice on #1105 item 3 — instance,
-then class, then instance — and the implementer paid three revisions for it. That was cheap only
-because the plan round moves prose rather than code, which is the strongest argument anyone made on
-that ticket for stopping before implementation; after commit 1 the same churn is rework.
+**Name the downside and who bears it** before directing a change. A directive whose cost falls
+entirely on someone else earns one more look: one reviewer reversed the same design decision
+twice and the implementer paid three revisions — cheap only because the plan round moves prose,
+which is itself the strongest argument for stopping before implementation.
 
-**When two instructions conflict, the receiver names the conflict — it does not pick.** An agent
-handed contradictory orders says so to both sources rather than resolving it silently. On #1105 item
-3 one message said undraft and another said hold until triage, and the PR was undrafted; which
-arrived first cannot be established, because the only record was chat.
+**When two instructions conflict, the receiver names the conflict to both sources — it does not
+pick.** A silent resolution once undrafted a PR against a hold order, and which order came first
+could not be established because the only record was chat.
 
-**Do not manufacture justification for a direction you were given.** If you think a direction is
-wrong, say so before complying. If you comply anyway, write *"complying, not persuaded"* and leave
-the reasoning to whoever directed it. On #1105 item 3 the implementer was directed to narrow a guard,
-wrote a paragraph justifying it from `security.yml:57`, and deleted that paragraph one round later
-when the direction reversed.
+**Do not manufacture justification for a direction you were given.** Object before complying, or
+comply with *"complying, not persuaded"* — one implementer wrote a paragraph defending a
+direction and deleted it a round later when the direction reversed.
 
-**You cannot be the sole scorer of your own errors.** You write the ledger and your mistakes are
-among the entries. The `retro` agent reads artifacts, not your account of them — which is why §3
-requires the copies. Where the only record of a claim is a chat message no artifact preserved, the
-honest entry says the origin cannot be established rather than assigning it.
-
-**The team is not exempt from the rate question it asks of everyone else.** This loop produces
-digests, mutation tables and ledger entries, all of which look like rigour. Whether the tickets it
-ships are better than the same tickets shipped without it is a measurement, not an assumption. Ask
-it in the retro periodically: what did the loop catch that the gates would have caught anyway, and
-what did it cost to find out? On #1105 item 4 the answer was favourable and specific — two defects
-no lane could have caught, because CI audits the committed formula before staging. Record the
-unfavourable answers with the same specificity.
+**You cannot be the sole scorer of your own errors.** The `retro` agent reads artifacts, not your
+account of them — that is why §3 requires the copies — and where the only record is chat, the
+honest entry says the origin cannot be established.
