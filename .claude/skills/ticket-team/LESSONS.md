@@ -780,8 +780,12 @@ and stronger — #1109's squash message was trimmed to the title at merge, so `g
 message a human can rewrite — and it is the lead's, written after the refutation. **A seventh instance
 for the last row: the correction came from a second reader, on a claim the lead had already
 "verified" by running its own command against its own example.** The §6 check then fired on its own
-author: this pull request's first body quoted the keyword twice while explaining it, and the body
-channel is the live one — the check the request adds is what found it. Also raised there and not fixed
+author **three times on this one pull request**, every time in a body sentence explaining the check
+itself — twice in the first draft, and once more in the paragraph reporting the regex's own test
+inputs. The body is a live channel, so each of those bodies would have acted on merge. That is the
+strongest evidence in this entry that the guard works, and it is also the measurement behind the
+sentence telling you to keep the keyword out of prose: the rule is not hypothetical, its author
+broke it three times while writing it down. Also raised there and not fixed
 here, because neither is this pull request's: `check-citations.ts` excludes the skill's own
 directory, now noted in §7; and the frequency row says "~58 tag releases since" where
 `teamlead.md:168` says "55 non-cli tags… 0/55". That second one is **not** established as drift —
