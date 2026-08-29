@@ -472,6 +472,17 @@ jobs:
           fetch-tags: true
           fetch-depth: 0
 
+      # #1108 serialises runs per ref but not against a re-pointed tag — the backstop for a local `git push --force`, which meets no uniqueness check (#1115).
+      - name: Verify tag has not been superseded
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          current="$(git rev-parse "refs/tags/$TAG_NAME")"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "::error::tag $TAG_NAME now points at $current, but this run was triggered for $GITHUB_SHA — the tag was re-pointed mid-build. Refusing to publish a release built from a superseded commit."
+            exit 1
+          fi
+
       - name: Prepare release notes from tag annotation
         env:
           TAG_NAME: ${{ github.ref_name }}

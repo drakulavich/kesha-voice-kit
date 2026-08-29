@@ -12,6 +12,7 @@ import {
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
   requireBuildEngineSerialisesRunsPerRef,
+  requireReleaseVerifiesTagIsCurrent,
   requireRustTestCancelsSupersededRuns,
   requirePipefailShell,
   requireReusableCallPermissions,
@@ -920,6 +921,54 @@ describe("requireBuildEngineSerialisesRunsPerRef", () => {
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1108"))).toHaveLength(2);
+  });
+});
+
+describe("requireReleaseVerifiesTagIsCurrent", () => {
+  const GUARD = {
+    name: "Verify tag has not been superseded",
+    env: { TAG_NAME: "${{ github.ref_name }}" },
+    run: 'current="$(git rev-parse "refs/tags/$TAG_NAME")"\nif [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n',
+  };
+  const PUBLISH = { name: "Create draft release with binaries", uses: "softprops/action-gh-release@3d0d9888c" };
+
+  test("passes on the real build-engine.yml", () => {
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, parseRepoYaml(PATH))).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireReleaseVerifiesTagIsCurrent(CI, job("release", [PUBLISH]))).toEqual([]);
+  });
+
+  test("fails when the guard step is missing", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [PUBLISH]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1115");
+  });
+
+  test("fails when the guard runs after the draft release is created", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [PUBLISH, GUARD]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("runs after");
+  });
+
+  test("passes when the guard precedes the draft release", () => {
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [GUARD, PUBLISH]))).toEqual([]);
+  });
+
+  test("fails when the guard step is disabled", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [{ ...GUARD, if: "false" }, PUBLISH]));
+    expect(errors[0]).toContain("#1115");
+  });
+
+  test("fails when only half the check is present", () => {
+    const noShaCheck = { ...GUARD, run: 'current="$(git rev-parse "refs/tags/$TAG_NAME")"\necho "$current"\n' };
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [noShaCheck, PUBLISH]))[0]).toContain("#1115");
+  });
+
+  test("fails when the release job is gone", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, { jobs: { build: {} } });
+    expect(errors[0]).toContain("expected a `release` job");
   });
 });
 

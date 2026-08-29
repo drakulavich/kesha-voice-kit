@@ -779,6 +779,50 @@ export function requireBuildEngineSerialisesRunsPerRef(path: string, document: u
 }
 
 /**
+ * Fails when the `release` job could publish a draft without first checking that the tag it is
+ * building still points at the commit this run was triggered for.
+ *
+ * `requireBuildEngineSerialisesRunsPerRef` (#1108) makes two runs racing one draft release
+ * loud — the second queues instead of colliding mid-upload. It does not make a re-pointed tag
+ * loud: if the tag moves while run A is still building, A's `release` job checks out whatever
+ * the tag names by the time it runs and creates a complete-looking draft from the superseded
+ * commit — nothing reds, and for stable/beta a human can un-draft it before the correct run
+ * even finishes. A step comparing the tag's live target against `github.sha` (fixed at trigger)
+ * before the draft is created converts that into a failed job (#1115).
+ */
+export function requireReleaseVerifiesTagIsCurrent(path: string, document: unknown): string[] {
+  if (!path.endsWith("build-engine.yml")) return [];
+
+  const steps = jobSteps(document, "release");
+  if (!steps) return [`${path}: expected a \`release\` job with steps`];
+
+  const isGuard = (step: Step) =>
+    typeof step?.run === "string" &&
+    /\bgit rev-parse\b/.test(step.run) &&
+    /refs\/tags/.test(step.run) &&
+    /GITHUB_SHA/.test(step.run) &&
+    condition(step).trim() !== "false";
+  const guard = steps.findIndex(isGuard);
+  const publish = steps.findIndex(
+    (step) => typeof step?.uses === "string" && step.uses.startsWith("softprops/action-gh-release"),
+  );
+
+  if (guard === -1) {
+    return [
+      `${path}: the release job must verify the tag still points at github.sha before creating the draft — ` +
+        `a re-pointed tag builds a complete-looking release from a superseded commit with nothing red (#1115)`,
+    ];
+  }
+  if (publish === -1) {
+    return [`${path}: expected the release job to create the draft release via softprops/action-gh-release`];
+  }
+  if (guard > publish) {
+    return [`${path}: the tag-currency guard runs after the draft release is created; move it before (#1115)`];
+  }
+  return [];
+}
+
+/**
  * Fails when the `ci` aggregator needs `nix-build`.
  *
  * A job in the required `ci` aggregator that cannot run on a pull request reds `main` — on
@@ -821,6 +865,7 @@ export function checkFile(
       ...requireConcurrencyOnPullRequestWorkflows(path, document),
       ...requireRustTestCancelsSupersededRuns(path, document),
       ...requireBuildEngineSerialisesRunsPerRef(path, document),
+      ...requireReleaseVerifiesTagIsCurrent(path, document),
       ...forbidNixBuildInCiAggregator(path, document),
       ...requireJobTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
