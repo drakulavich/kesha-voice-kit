@@ -27,6 +27,11 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  # Never cancel a run mid-upload: the release job would leave the draft short an asset (#1108).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
