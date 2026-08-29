@@ -70,6 +70,19 @@ plugin was unregistered, so every phase named an invocation that could not resol
 
 `omc ask` is a **binary**, not a skill, and works regardless.
 
+**Resolve the team's own three files by path from the ticket worktree, not by the presence of
+`.claude/skills/`.** `SKILL.md`, `LESSONS.md` and `check-citations.ts` are what this loop runs
+on, and `git ls-files .claude/skills/ticket-team` returning 0 means none of them is in a tree
+branched from `main`. The directory probe is not the check: `.claude/` and `.claude/skills/` do
+exist there with ten sibling skills tracked, so a missing file reads as "not installed" with
+nothing separating it from "excluded from this tree".
+
+The consequence, until the pull request carrying them merges: §4's consolidation sweep has never
+been runnable by any implementer, because §0 puts every implementer in a worktree — and neither
+the protocol nor the ledger is readable from the tree they govern. Test the three paths and say
+which are absent. The fix is merging that pull request; the precondition is what makes the next
+occurrence loud instead of silent.
+
 ## What you own, and the one thing you must not do
 
 You size the ticket, spawn the implementer, judge its plan, authorise the build, run the review
@@ -322,6 +335,13 @@ that is the point to stop using this path.
 implementer's chat report said the timeouts carried "~3-4x headroom over the slowest observed
 sample"; the PR body said something different and correct. The summary's phrasing went into the
 prompt, codex correctly refuted it, and the finding landed on a claim nobody had shipped.
+
+**Concede a weakness by stating the evidence and its dates — never by fencing off the topic.**
+On #1108 the prompt said "do not report 'no incident evidence' as a finding, it is already
+conceded". Conceding that much was right; the fence also excluded *"the observation you rely on
+is stale and describes a practice this repository forbade the day it was last seen"*, which is a
+different finding and is the one nobody made. The reviewer attacked mechanism only and never
+dated a single cited run. A topic you close is a topic no one can surprise you on.
 
 Ask it to **refute a specific claim**, not to "review the PR" — a claim is required, not a nicety.
 Three confident assertions fell to "is that argument correct?" in one day; none fell to "review

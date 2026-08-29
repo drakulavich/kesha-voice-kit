@@ -58,12 +58,28 @@ is not a guard. `just mutate <file> <find> <replace> <test>` proves it in second
 exits 0 only when the mutation was *caught*. If the plan adds a guard, it should say how
 it will prove the guard fires.
 
-**Is every value the claim rests on mutated — and every shape it must accept?** Derive the
-list from what the end state must not contain, never from the diff: a list built from the
-change cannot fail. For each load-bearing value name two mutations — delete it, and set it
-to a *wrong value the check would accept*. Then ask the same of inputs: if the plan's rule
-must recognise something, name every valid spelling of that thing, because a guard that
-reads one of three is a guard nobody has to defeat.
+**Is every guard mutated both ways — deleted, and neutralised with its shape left in place?**
+Derive the list from what the end state must not contain, never from the diff: a list built
+from the change cannot fail. Deletion is the easy half and rarely the one that happens; the
+mutation that ships is the guard that still looks present and no longer guards. Then ask the
+same of inputs: if the plan's rule must recognise something, name every valid spelling of
+that thing, because a guard that reads one of three is a guard nobody has to defeat.
+
+**When the guard delegates to an existing predicate, require one mutation row per residual
+that predicate's own doc comment states.** On #1108 a new lint rule reused
+`groupVariesPerRef`, whose doc comment names `${{ github.ref == 'x' }}` verbatim as the shape
+it cannot catch. The plan quoted that comment to reject a different option, sixty lines after
+proposing to reuse the predicate as the guard — the fact was in the plan, applied to the
+option and not to the guard. The mutation table used a constant group, which is caught, and
+the guard shipped past this approval passing every gate: full suite green, `tsc` clean,
+`check:workflows` exit 0, four CI workflows green, with a boolean group walking straight
+through. A second surviving shape,
+`${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}`, mentions `github.ref` and
+serialises nothing at all.
+
+This is the same check the review round's first sweep item already demands. Asking it of the
+reviewer and not of the planner is the asymmetry that let it through, and it is why the
+wording here is now the reviewer's.
 
 A plan whose risks say "X could be silently disabled later without going red" has named a
 **missing mutation, not an accepted trade-off**. Send it back with that, and check whether
@@ -102,6 +118,27 @@ that cites a cost — "this job is 26.5% of CI spend", "this runs on every push"
 denominator, not a saving. Ask for the numerator: how often does the wasteful case actually
 occur, and what does the change recover when it does? A rate is usually one query away, and a
 plan that cannot produce one is proposing an unranked change, whatever its cost figure says.
+
+**A rate is computed over the window in which the practice was still permitted.** Date every
+cited instance against the rule, guard or workflow check that now forbids it — two `git log -S`
+queries produce it. An undated rate silently averages over a regime that no longer exists.
+
+This is the third consecutive ticket out of the #1105 audit whose ranking rested on a figure
+that does not describe the live rate: #1105 cited 26.5% of CI spend against 2.9% actual waste,
+#1110 newly bounded 24 jobs with zero observed instances, and #1108 cited 5 runs across 2 tag
+refs — **both of them 2026-04-14 and 2026-04-15, days 1 and 2 of a 136-day window.** `6d9e6da`
+added TAG NAMES ARE ONE-USE to CLAUDE.md on 2026-04-15, the same day as the last instance, and
+`dce4bef` added the dispatch-path uniqueness check a month later. Zero tag ref has hosted a
+second run in the 55 non-cli tags since. The live rate was 0/55, not 5/96, and the plan
+rejected doing nothing *solely* on those April SHAs. Dated, that rejection reads "false for a
+practice retired four months ago", which is a different sentence and might have decided the
+ticket differently.
+
+**And when the change trades one failure for another, make the plan write that sentence.**
+#1108 exchanged an unobserved *loud* failure — a draft short a binary, `kesha install` 404s —
+for an unobserved *silent* one: a release built from the wrong commit, silent for stable and
+beta. Both were disclosed separately and neither was ever set against the other. A trade
+nobody states is a trade nobody judged.
 
 This fires on an **incident-shaped** justification too, not only a cost figure. "This failure
 mode cost us 360 minutes once" is an anecdote until you say over what window, how many times,
