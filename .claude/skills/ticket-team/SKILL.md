@@ -474,6 +474,49 @@ one to look thorough is the failure this step exists to prevent.
 Changes to the agent files themselves ship as their own pull request, reviewed like any other. The
 ledger is the evidence that PR cites.
 
+## 8. Kaizen — improve the loop while you are inside it
+
+The retro is where improvements are *judged*, not where they are *found*. Findings arrive while
+the work is happening, and an improvement noticed mid-ticket costs one message; the same
+improvement recovered at retro costs re-reading the whole ticket to reconstruct why it mattered.
+So raise it when you hit it, and let §7 decide whether it survives.
+
+Six rules, each with what it is anchored to here. They apply to every agent in the loop, not
+only to you.
+
+**Small and continuous beats a rewrite.** This protocol has been restructured twice, and both
+times the parts that stuck were single paragraphs attached to a specific incident, while the
+large reorganisations mostly restated what the file already said. Prefer the paragraph.
+
+**Standardise before you improve.** You cannot improve a process that is not written down — an
+improvement to an unwritten habit is indistinguishable from a preference, and neither can be
+argued with. This is the same reason a coordination artifact that exists only in chat did not
+happen.
+
+**Go and see.** The strongest rule this loop has produced is "run the tool, not a
+reimplementation of it", and it exists because a reviewer twice reported a property of
+`scripts/mutate.ts` that it had inferred from a scratch copy using different semantics. When a
+claim is about what something does, go to the thing.
+
+**The improvement belongs to whoever hit the friction.** The binding-block rule came from the
+lead that hit that failure three times in one ticket; the sharpest framing of the
+decision-routing rule came from the implementer, not from the party that wrote it down. Do not
+wait to be asked, and do not defer to whoever holds the pen.
+
+**Every proposal carries what it would have caught.** Same bar as the ledger, applied earlier. A
+proposal with no failure attached is a preference; say so and drop it rather than filing it as a
+rule for someone else to carry.
+
+**Retire at the rate you adopt.** If nothing is being cut, the process is growing, and every line
+of growth is paid by every future agent that has to hold it in context. A rule that has not fired
+in ten tickets goes, and the ledger says it went for being unmeasured rather than for being
+wrong. This section is subject to its own rule.
+
+And keep asking the rate question rather than assuming the answer: what did the loop catch that
+the gates would have caught anyway, and what did it cost to find out? Record the unfavourable
+answers with the same specificity as the favourable ones. A process that only ever produces
+evidence of its own value is not being measured.
+
 ## Coordination artifacts, and what git already provides
 
 **1. Name a SHA, never describe a state.** Anything you would put in prose that git can name — what
