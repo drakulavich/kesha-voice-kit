@@ -741,15 +741,20 @@ export function requireRustTestCancelsSupersededRuns(path: string, document: unk
   ];
 }
 
+const BUILD_ENGINE_GROUP = "${{ github.workflow }}-${{ github.ref }}";
+
 /**
  * Fails when `build-engine.yml` stops serialising runs that share a ref.
  *
- * A tag ref is not single-use: deleting and re-pushing a failed release tag is how this repo
- * retries one, and `refs/tags/v1.0.1` carried three `push` runs at three different head SHAs
- * that way. Two of them in flight together would put two `release` jobs against one draft
- * release, and a release published short a platform binary needs a whole new patch tag to
- * repair. So the group must vary per ref, and `cancel-in-progress` must stay `false` because
- * cancelling a run mid-upload is itself the partial-draft defect (#1108).
+ * A tag ref is not single-use: `refs/tags/v1.0.1` carried three `push` runs at three different
+ * head SHAs, because delete-and-re-push is how a failed release tag is retried here. Two in
+ * flight together put two `release` jobs against one draft release, and a release published
+ * short a platform binary needs a new patch tag to repair.
+ *
+ * The group is pinned to its exact text rather than checked with `groupVariesPerRef`, whose
+ * stated residual would accept both a boolean that collapses every ref but one into a single
+ * lane and a run-scoped group that serialises nothing — both mention `github.ref`. Changing
+ * the group means changing this constant and saying why (#1108).
  */
 export function requireBuildEngineSerialisesRunsPerRef(path: string, document: unknown): string[] {
   if (!path.endsWith("build-engine.yml")) return [];
@@ -758,9 +763,9 @@ export function requireBuildEngineSerialisesRunsPerRef(path: string, document: u
   const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown } | undefined)?.group;
   const errors: string[] = [];
 
-  if (typeof group !== "string" || !groupVariesPerRef(group)) {
+  if (group !== BUILD_ENGINE_GROUP) {
     errors.push(
-      `${path}: \`concurrency.group\` must vary per ref — set it to \`\${{ github.workflow }}-\${{ github.ref }}\`; without a group two runs at one tag ref race the same draft release, and a group that does not vary per ref queues every ref into one lane instead (#1108)`,
+      `${path}: \`concurrency.group\` must be exactly \`${BUILD_ENGINE_GROUP}\`, not \`${String(group)}\`; a coarser group queues unrelated refs into one lane and a finer one serialises nothing, and both can still mention \`github.ref\`. Changing it deliberately means changing this rule and saying why (#1108)`,
     );
   }
 

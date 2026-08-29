@@ -874,12 +874,27 @@ describe("requireBuildEngineSerialisesRunsPerRef", () => {
     expect(requireBuildEngineSerialisesRunsPerRef(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
   });
 
-  test("fails when the group does not vary per ref", () => {
+  test("fails when the group is constant across refs", () => {
     const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
       concurrency: { group: "build-engine", "cancel-in-progress": false },
     });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("#1108");
+  });
+
+  // Both of these mention github.ref, so groupVariesPerRef accepts them; only the exact pin rejects them.
+  test("fails when a boolean group collapses every ref but one into a single lane", () => {
+    const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
+      concurrency: { group: "${{ github.ref == 'refs/tags/v1.0.1' }}", "cancel-in-progress": false },
+    });
+    expect(errors).toHaveLength(1);
+  });
+
+  test("fails when a run-scoped group serialises nothing", () => {
+    const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
+      concurrency: { group: `${ref.group}-\${{ github.run_id }}`, "cancel-in-progress": false },
+    });
+    expect(errors).toHaveLength(1);
   });
 
   test("fails when cancel-in-progress is true", () => {
