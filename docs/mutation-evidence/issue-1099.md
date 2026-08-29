@@ -17,14 +17,22 @@ test("the silero-vad manifest URL pins a 40-hex commit, not the movable v6.2.1 t
 One assertion, scoped to the single `VAD_FILES` entry in `rust/src/models.rs`, read through
 `parseManifestEntries` the same way `no Hugging Face manifest URL resolves through a mutable
 ref` (same describe block) reads every other manifest entry. Runs in the `unit-tests` job of
-the `🧪 CI` workflow on every PR — `rust/src/models.rs` is explicitly in `ci.yml`'s `code`
-path filter, so an edit to it always triggers that job regardless of anything else touched.
+the `🧪 CI` workflow whenever `ci.yml`'s `code` path filter matches — not on every PR
+unconditionally, since `unit-tests` is gated `if: needs.changes.outputs.code == 'true'`. For
+this diff specifically that filter always matches: `rust/src/models.rs` is one of its listed
+paths, so an edit to it always triggers the job.
 
-No matching Rust-side test exists or was added: `VAD_FILES` carries no `#[cfg(...)]` gate, so
-a Rust test would see the exact same one entry over the same always-triggered lane — strictly
-equal reach to the TS test above it, not wider. (Contrast the Hugging-Face guards, which keep
-both a Rust and a TS version because the TS one's reach genuinely exceeds the Rust one — it
-sees `system_kokoro`-gated manifests no CI lane ever compiles as tests.)
+No matching Rust-side test exists or was added, and here the reach comparison runs the other
+way from what an earlier draft of this file claimed: `VAD_FILES` carries no `#[cfg(...)]`
+gate, so a Rust test would see the same one entry, but the TS `code` filter also matches
+`tests/**` and `model-plan.json` changes that touch neither `rust/src/models.rs` nor anything
+the Rust gate's own path filter watches — a test-only edit to this very file, for instance,
+re-runs the TS assertion without ever triggering a Rust nextest run. The TS test's trigger set
+is a superset of what a hypothetical Rust duplicate would add, not merely equal to it, so the
+duplicate would still add no reach the TS test doesn't already have. (Contrast the
+Hugging-Face guards, which keep both a Rust and a TS version because the TS one's reach
+genuinely exceeds the Rust one in a different way — it sees `system_kokoro`-gated manifests no
+CI lane ever compiles as tests.)
 
 ## Observed red before the fix
 
@@ -97,6 +105,7 @@ tests/unit/check-model-plan-sizes.test.ts -t "silero-vad manifest URL"`, restore
 | 1 (delete) | Revert the pinned URL's ref segment from the commit back to `v6.2.1` | The property "resolves through a 40-hex commit" is fully absent, reproducing the real pre-fix red above | 1 | **PINNED** — `ref` is `"v6.2.1"` |
 | 2 (present, not satisfying) | Same 40 characters, same length, uppercased (`7E30209A3E901F9842F81B225F3E93D8199902B1`) | The shape of a commit SHA, wrong case — the regex is lowercase-only | 1 | **PINNED** |
 | 3 (present, not satisfying) | Drop the `raw/` path segment entirely, so `.split("/raw/")[1]` is `undefined` and `ref` falls back to `""` | The empty-segment edge case #1096 review round 2 found missing from the Hugging-Face guard's first draft | 1 | **PINNED** — fails on the empty-string fallback, not a crash |
+| 4 (present, not satisfying — **survives**) | Same 40 characters, same length, all zeroes (`0000…0000`) — a lowercase-hex string that is not a real commit | Nothing: the regex only checks shape, so a lowercase 40-hex string that names no actual commit is indistinguishable from one that does | 1 | **NOT PINNED** — `just mutate` exits 1; the mutated URL 404s at install time but the assertion passes |
 | control | None — the real, correctly-pinned commit SHA, untouched | — | — | **passes** (`1 pass / 0 fail`) |
 
 Row 3 is not a second assertion — it is the same regex-match assertion exercised through the
@@ -109,3 +118,14 @@ moved back, or a future edit to the URL's structure slips past the `/raw/` marke
 assertion depends on. Row 2 is not a defect this ticket names, but the same shape-vs-content
 distinction the sibling Hugging-Face guard's mutation table already tests for its own regex,
 so it was run here rather than assumed to hold by symmetry.
+
+**Row 4 is a stated boundary, not a bug to fix.** The assertion proves the ref is
+lowercase-40-hex-shaped; it does not and cannot prove the ref names a commit that exists,
+because that would require a network call from an offline, deterministic unit-test lane. This
+is not a gap unique to this guard: the sibling Hugging-Face predicate accepted at #1096
+(`assert_pins_immutable_revision`, and its TS twin) carries the identical residual — a
+`/resolve/<40 hex that resolves to nothing>/` URL passes both of them too. A commit-existence
+check was considered and rejected for the reason above; the honest claim for this guard is
+"pins a lowercase-40-hex ref," not "pins a commit that is verified to exist" — the latter is
+established once, by hand, at pin time (§"Verifying the resolved commit before pinning"
+above), not on every CI run.
