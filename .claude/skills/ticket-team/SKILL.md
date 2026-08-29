@@ -419,53 +419,52 @@ For CI the blocking form is `gh pr checks <N> --watch --fail-fast`; a timeout is
 reissue the same wait, and when it returns re-verify by the full head SHA anyway, since a push
 during the wait moves the head under the checks being followed.
 
-Check the closing keyword for the **right word**, not for its presence — and in all **three**
-places a merge closes from. `Closes #N` only when the change finishes the ticket; `Refs #N` when the
-ticket outlives it, then close by hand and verify with `gh issue view <N> --json state`. Each issue
-needs its own keyword — `Closes #N, closes #M` — because a bare list closes only the first. And
-GitHub auto-closes only on a merge into the **default branch**: a stacked pull request based on
-another branch fires nothing on its own merge, then fires when its base reaches `main`. On #1105
-`Closes` was there, it was wrong, and merging closed a four-item audit on the strength of one
-shipped item.
+Check the closing keyword for the **right word**, not for its presence, and in every place a merge
+closes from. `Closes #N` only when the change finishes the ticket; `Refs #N` when the ticket outlives
+it, then close by hand and verify with `gh issue view <N> --json state`. Each issue needs its own
+keyword — `Closes #N, closes #M` — because a bare list closes only the first. Auto-close fires only
+on a merge into the **default branch**, so a stacked pull request fires nothing on its own merge and
+then fires when its base reaches `main`. On #1105 `Closes` was there, it was wrong, and merging
+closed a four-item audit on the strength of one shipped item.
 
-None of that is a discovery here. `CLAUDE.md:95` and `759b08d` (2026-04-20) have carried every
-sentence above since April, and this file kept the body half only — the grep-the-other-files class
-with the repository's own charter as the file that was not read.
-
-The three channels are **the body, the pull request title, and the squash commit message**, and they
-are independent. A body keyword closes with no commit mentioning the issue. `squash_merge_commit_message`
-is `COMMIT_MESSAGES` here, so the merge box arrives pre-filled from the branch — that is how #1107
-closed #1105 with a body saying only `Refs #1105`, one of its 74 concatenated messages having quoted
-the keyword twice while narrating an earlier mis-close. And `squash_merge_commit_title` is
-`COMMIT_OR_PR_TITLE`, so on a multi-commit branch **the pull request title becomes the squash
-subject** — measured on #1107, #1109, #1116 and #1118, every squash subject is the title plus
-` (#N)`. #1116's title carried `(#1105)` into `99c8a64`'s subject on `main`; a keyword there instead
-of bare parentheses would have taken the audit a third time with the body and the branch log both
-clean. The title is inert for GitHub's *linked-pull-request* mechanism, which is what "not only the
-title" means, and live for the *commit* one.
-
-Three is what falls out of this repository's merge settings, so re-derive rather than trust the
-count: all three methods are enabled, `merge_commit_message` is `PR_TITLE` (a merge commit's body
-*is* the title), squash takes its subject from the title and its body from the branch messages, and
-rebase replays the branch messages. Two commands cover all of it because the body closes
-independently of the method.
+None of that is a discovery here: `CLAUDE.md:95` has carried every sentence above since `759b08d`
+(2026-04-20) and this file kept the body half only — the grep-the-other-files class with the
+repository's own charter as the file that was not read.
 
 ```bash
 KW='\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[ :]*([[:alnum:]._-]+/[[:alnum:]._-]+)?#[0-9]+'
-gh pr view <N> --json title,body -q '.title, .body' | grep -inE "$KW"
-git log <base>..<head> --format=%B                  | grep -inE "$KW"
+gh pr view <N> --json closingIssuesReferences -q '.closingIssuesReferences[].number'
+gh pr view <N> --json title,body -q '.title, .body'  | grep -inE "$KW"
+git log <base>..<head> --format=%B                   | grep -inE "$KW"
 ```
 
-The merge box is editable — #1109's was trimmed to its title — so the second line *predicts* the
-squash message rather than reading it. Read the box before confirming.
+**The first line asks GitHub; the other two cover what it cannot see.** `closingIssuesReferences` is
+GitHub's own computed set for the linked-pull-request mechanism, so it beats any model of it — and
+it is what would have caught this ledger's own error about #1116. It is not sufficient: #1107 closed
+#1105 from a **commit message** and returns `[]` from that field, and a keyword in the **title** is
+not a linking channel and never reaches it either.
 
-Both must return only the keywords you meant. **Verify a shell snippet under `/usr/bin/grep`, not
-under `grep`**: this environment shadows it with a function whose body is `ARGV0=ugrep …`, and ugrep
-honours `\w` inside a bracket expression where POSIX ERE takes the backslash literally — the first
-version of this line shipped as `[-\w.]`, was verified green, and matched no `owner/repo#N` form
-under the real binary. The class above is measured on BSD grep; GNU grep is unmeasured here.
-Keep the keyword out of commit prose: name the issue without one when narrating, or the sentence
-describing a mis-close performs another.
+Which is where the count comes from, so re-derive it rather than trust three. All three merge methods
+are enabled here; `merge_commit_message` is `PR_TITLE`, so a merge commit's message carries the
+title; `squash_merge_commit_title` is `COMMIT_OR_PR_TITLE` and `squash_merge_commit_message` is
+`COMMIT_MESSAGES`, so a squash takes its subject from the title and its body from the branch
+messages; rebase replays those messages. Both non-body paths have bitten this repository: #1107
+closed #1105 with a body saying only `Refs #1105`, because one of its 74 concatenated messages quoted
+the keyword twice while narrating an earlier mis-close; and #1116's title carried `(#1105)` into
+`99c8a64`'s subject on `main`, where a keyword instead of bare parentheses closes from the title
+alone — which neither a body read nor a branch log can see. The title is inert for the
+linked-pull-request mechanism, which is what "not only the title" means, and live for the commit one.
+
+The merge box is editable — #1109's was trimmed to its title — so the last line *predicts* the squash
+message rather than reading it. Read the box before confirming, and let all three return only what
+you meant.
+
+**Verify a shell snippet under `/usr/bin/grep`, not under `grep`**: this environment shadows it with
+a function whose body is `ARGV0=ugrep …`, and ugrep honours `\w` inside a bracket expression where
+POSIX ERE takes the backslash literally — the first version of this line shipped as `[-\w.]`, was
+verified green, and matched no `owner/repo#N` form under the real binary. The class is measured on
+BSD grep; GNU grep is unmeasured here. Keep the keyword out of commit prose: name the issue without
+one when narrating, or the sentence describing a mis-close performs another.
 
 **Verify one decisive thing yourself**, with one command, rather than relaying what the implementer
 reported. "Gates green" has been reported here while the type checker had errors, and a green CI job
