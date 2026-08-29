@@ -440,3 +440,58 @@ Change: none proposed to the team. Neither defect is evidence about the protocol
 the protocol was not used — I planned nothing, got no verdict, and requested no review.
 The honest entry is that working solo cost two wrong diagnoses on one failure, which is an
 argument for routing this class of ticket through the team rather than a rule to add to it.
+
+## #1105 item 4 — the Homebrew tap's version assertion
+
+PR #1113, shipped from the two-agent loop. Two rules, both proposed by `teamlead-1105-homebrew`
+and judged before entering. A third it proposed itself and then retracted, which is recorded
+below because the retraction is the useful part.
+
+**Run the tool, not a reimplementation of it.** A scratch reconstruction inherits your
+assumptions: `String.replace` takes the first match, `mutate.ts` takes all of them, and a
+conclusion drawn from the copy was reported twice as a property of the original. If a claim is
+about what a tool does, invoke the tool and paste what it printed.
+
+Caught at: nowhere, until the reviewer re-ran the real recipe while preparing the entry.
+Earliest that could have: the moment the claim was first made — `just mutate` prints its own
+occurrence count, so one real invocation contradicts the reconstruction immediately.
+Fired: 1.
+
+**A shared helper is only as safe as the input shape its existing caller happens to give it.**
+`rewriteFormula` inserted a `version` line without stripping one, which was correct for
+`stage-homebrew-worktree-formula.mjs` because that caller always starts from the pristine
+committed formula. The second caller reads the Homebrew tap's own previous output, so the same
+function produced two `version` lines and Homebrew silently kept the stale one. Before reusing a
+helper, ask what the new caller's input contains that the old caller's never did.
+
+Caught at: plan verdict, by running the proposed reuse against real Homebrew rather than reading
+it. Earliest that could have: the same stage — this is the stage working. No gate could have:
+`ci.yml` audits the committed formula before staging, so no lane has ever audited a formula
+carrying an injected version.
+Fired: 1.
+
+### Retracted before it was filed
+
+The reviewer first proposed a rule that `just mutate` requires a *unique* find-string, believing
+the recipe refuses on absence but not on multiplicity and could therefore mutate the wrong
+occurrence while still reporting PINNED. Asked to confirm the scope before it was escalated, it
+ran the real recipe and withdrew: `scripts/mutate.ts:10-11` is
+`source.split(find).join(replace)`, which replaces every occurrence, and line 33 prints the
+count. No mutation proof in this repository is weakened and there is nothing to fix.
+
+Kept as an entry because the rule above is exactly what would have prevented it, and because a
+ledger that records only the proposals that survived reads as though none are ever wrong. The
+question that caught it cost one message.
+
+### Pareto, measured after the fact
+
++181/-55. The defect fix is ~15 lines: the idempotency strip, the redundant-version omission,
+and `versionForTag`. ~45 lines are the refactor that makes the release script importable, ~100
+are tests. The refactor also moved the diff inside ci.yml's `homebrew` filter, so
+`homebrew-formula` ran a real `brew install` + `brew test` on macOS on the PR itself — reach
+bought as a side effect of testability rather than by widening a filter.
+
+What the loop caught that the gates would not have: both blockers. What it cost: three plan
+rounds and roughly forty messages, five of which were crossings and three of which were the
+orchestrator checking bindings that the participants had already resolved. The orchestrator role
+was deleted during this ticket for that reason.
