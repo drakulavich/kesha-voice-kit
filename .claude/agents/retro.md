@@ -25,9 +25,10 @@ You may run read-only commands to check a claim. You never edit the tree.
 
 ## The ledger entry
 
-One entry per ticket, appended to the ledger beside this skill's own SKILL.md (the lead knows
-its absolute path; pre-merge it exists only in the protocol's own worktree, not the ticket
-tree). Propose it as text in your report — you do not write the file; the team lead does,
+One entry per ticket, appended to the ledger beside the ticket-team skill's own SKILL.md, at
+the absolute path the lead knows. The ledger is tracked now, so a copy also sits in the ticket
+worktree — that copy is the wrong one, and an edit to it lands the ledger inside the ticket's
+diff. Propose it as text in your report — you do not write the file; the team lead does,
 after judging it.
 
 Per defect, four fields and no prose around them:

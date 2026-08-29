@@ -476,9 +476,12 @@ Agent(name: "retro-<ticket>", subagent_type: "retro",
 ```
 
 It proposes; **you** judge and write the ledger — `LESSONS.md` beside this skill's own SKILL.md,
-by the absolute path this skill's base directory gives you, never the relative name — in the
-untracked era that name resolved into a tree without the file, and a `Write` there created a
-fresh empty ledger on `main`. Apply the same triage
+by the absolute path this skill's base directory gives you, never the relative name. The live
+hazard: the ledger is tracked now, so the relative name resolves to the **ticket worktree's**
+copy, and a `Write` there lands the ledger change inside the ticket's own diff — an agent-file
+change smuggled past its own separate-PR rule, invisible to the gates. (In the untracked era the
+same relative name failed the opposite way, creating a fresh empty ledger on `main`.) Apply the
+same triage
 you applied to the review: a proposed rule enters only if it names what it would have caught, with
 this ticket as evidence. Reject the rest **with the reason written down**, including the tempting
 ones — a restatement of something the files already say, or advice with no failure attached. If a
