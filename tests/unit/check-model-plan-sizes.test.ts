@@ -149,6 +149,14 @@ describe("parseManifestUrls", () => {
     }
     expect(mutableRefs).toEqual([]);
   });
+
+  test("the silero-vad manifest URL pins a 40-hex commit, not the movable v6.2.1 tag", () => {
+    const vad = realManifestEntries().find(
+      (entry) => entry.relPath === "models/silero-vad/silero_vad.onnx",
+    );
+    const ref = vad?.url.split("/raw/")[1]?.split("/")[0] ?? "";
+    expect(/^[0-9a-f]{40}$/.test(ref)).toBe(true);
+  });
 });
 
 describe("compareEntry", () => {
