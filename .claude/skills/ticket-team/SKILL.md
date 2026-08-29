@@ -220,9 +220,10 @@ You may give the implementer facts. **You may not give it the remedy** — not w
 not the shape of the test, not which of two options you would accept. Facts are free; a design you
 supplied is a design you cannot judge.
 
-**At verdict time, hold the plan's mutation table to the review round's first sweep item**: for
-each guard, both mutations — deleted, and neutralised with its shape left in place — plus one row
-per residual any delegated predicate names in its own doc comment. Your charter carries the
+**At verdict time, hold the plan's mutation table to the review round's first sweep item**: one
+row per **assertion**, not per guard — a guard with six assertions has six ways to be neutralised
+— with both mutations each, deleted and neutralised-in-shape, plus one row per residual any
+delegated predicate names in its own doc comment. Your charter carries the
 reasoning; what belongs here is that the check runs at the moment of judging, because on #1108
 the reviewer was asked for it, the planner was not, and the guard shipped past an approval with
 every gate green.
