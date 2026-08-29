@@ -176,16 +176,26 @@ issue/PR that drove it). Newest concerns first within each section.
   ```bash
   gh run download <run-id> -n test-results-ubuntu-latest -n test-results-macos-latest -D junit
   bun -e '
-  const cases = async (os) => new Map([...(await Bun.file(`junit/test-results-${os}/unit-${os}.xml`).text())
-    .matchAll(/<testcase name="([^"]*)" classname="([^"]*)"[^>]*?assertions="([0-9]+)"/g)]
-    .map((m) => [`${m[2]} :: ${m[1]}`, +m[3]]));
+  const attrs = (tag) => Object.fromEntries([...tag.matchAll(/([a-z]+)="([^"]*)"/g)].map((a) => [a[1], a[2]]));
+  const cases = async (os) => {
+    const xml = await Bun.file(`junit/test-results-${os}/unit-${os}.xml`).text();
+    const seen = [...xml.matchAll(/<testcase\b([^>]*)/g)].map((m) => attrs(m[1])).filter((a) => a.name && a.classname);
+    if (seen.length === 0) throw new Error(`parsed no testcases from ${os} — the junit format moved, this answer would be wrong`);
+    return new Map(seen.map((a) => [`${a.classname} :: ${a.name}`, +(a.assertions ?? 0)]));
+  };
   const [ubuntu, macos] = [await cases("ubuntu-latest"), await cases("macos-latest")];
-  for (const [k, n] of [...macos].filter(([k, n]) => (ubuntu.get(k) ?? 0) < n)) console.log(`${ubuntu.get(k) ?? 0}/${n}  ${k}`);
+  const only = [...macos].filter(([k, n]) => (ubuntu.get(k) ?? 0) < n);
+  for (const [k, n] of only) console.log(`${ubuntu.get(k) ?? 0}/${n}  ${k}`);
+  console.log(`${only.length} cases assert on macos and not, or less, on ubuntu`);
   '
   ```
 
-  On run `33244355718` (`d738b0b`) it prints 14 lines. Row totals there were 3021 / 3052 /
-  2664 assertions and 9 / 0 / 186 skipped for ubuntu / macos / windows, over 1399 cases each.
+  Attributes are read by name rather than by position, and a file that yields no testcases
+  throws instead of reporting zero — a silent `0` here would tell a future audit there are no
+  darwin-specific assertions, which is the exact false conclusion this entry exists to prevent.
+  On run `33244355718` (`d738b0b`) it prints the 14 and their per-row counts. Row totals there
+  were 3021 / 3052 / 2664 assertions and 9 / 0 / 186 skipped for ubuntu / macos / windows, over
+  1399 cases each.
 - **Status:** active ([#1105]).
 
 ---
