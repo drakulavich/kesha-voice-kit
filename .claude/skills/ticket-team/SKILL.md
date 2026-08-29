@@ -375,8 +375,15 @@ So: collect every finding from triage, hand them to the implementer as one batch
 the whole diff once before pushing —
 
 ```bash
-bun .claude/skills/ticket-team/check-citations.ts origin/main HEAD
+bun <this-skill's-base-directory>/check-citations.ts origin/main HEAD    # run in the ticket worktree
 ```
+
+**The path is absolute and it is the skill's own, not the ticket tree's.** When this skill loads
+it tells you its base directory; use that. `check-citations.ts` ships alongside this file and is
+not on `main` until the pull request carrying them merges, so a ticket worktree branched from
+`main` does not contain it — a relative `.claude/skills/…` resolves to nothing there. The
+implementer on #1108 followed the instruction as written, found no such file, and reported it
+rather than skipping the step quietly, which is how this was caught.
 
 It extracts every `file:line` the diff **adds** and resolves each against the post-diff tree, failing
 on a citation that now points at a blank line or cannot be resolved. That is the `ci.yml:984` defect
