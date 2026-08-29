@@ -57,10 +57,11 @@ plugin was unregistered, so every phase named an invocation that could not resol
 `omc ask` is a **binary**, not a skill, and works regardless.
 
 **Resolve the team's own three files — `SKILL.md`, `LESSONS.md`, `check-citations.ts` — by full
-path, never by the presence of `.claude/skills/`.** That directory exists in every worktree with
-ten tracked siblings while these three are untracked and ship only in their own pull request, so
-the probe false-greens. Test the three paths and say which are absent; until their PR merges,
-§4's sweep runs from the skill's base directory, not the ticket tree.
+path, never by the presence of `.claude/skills/`.** They are tracked on `main` as of `27c0995`, so
+a worktree branched from current `main` contains them — but one cut from an earlier commit does
+not, while `.claude/skills/` itself exists there with ten older siblings, so a directory probe
+false-greens exactly where the files are missing. Test the three paths and say which are absent.
+§4's sweep runs from the skill's base directory either way: that path is valid in both worlds.
 
 ## What you own, and the one thing you must not do
 
@@ -368,11 +369,12 @@ the whole diff once before pushing —
 bun <this-skill's-base-directory>/check-citations.ts <worktree-abs> origin/main HEAD
 ```
 
-**The path is the skill's own base directory, not the ticket tree's** — this skill and its script
-are untracked and absent from any worktree branched off `main`, while `.claude/skills/` itself
-exists there with ten tracked siblings, so a directory probe false-greens and the missing file
-reads as "not installed" (#1108, where the implementer ran the step and reported the absence
-instead of skipping quietly).
+**The path is the skill's own base directory, not the ticket tree's.** The script is tracked on
+`main` as of `27c0995`, but a worktree cut from an earlier commit lacks it while `.claude/skills/`
+itself exists there — in the untracked era that made a directory probe false-green and the missing
+file read as "not installed" (#1108, where the implementer ran the step and reported the absence
+instead of skipping quietly). The base-directory path works in both worlds; a tree-relative one
+only in the new.
 
 It takes the worktree as its first argument, runs every git call against that tree, and fails
 loudly (exit 2, stderr shown) when git itself fails — an early version inherited the caller's cwd
@@ -474,9 +476,12 @@ Agent(name: "retro-<ticket>", subagent_type: "retro",
 ```
 
 It proposes; **you** judge and write the ledger — `LESSONS.md` beside this skill's own SKILL.md,
-by the absolute path this skill's base directory gives you, never the relative name, which
-pre-merge resolves into a tree where the file does not exist and a `Write` there creates a fresh
-empty ledger on `main`. Apply the same triage
+by the absolute path this skill's base directory gives you, never the relative name. The live
+hazard: the ledger is tracked now, so the relative name resolves to the **ticket worktree's**
+copy, and a `Write` there lands the ledger change inside the ticket's own diff — an agent-file
+change smuggled past its own separate-PR rule, invisible to the gates. (In the untracked era the
+same relative name failed the opposite way, creating a fresh empty ledger on `main`.) Apply the
+same triage
 you applied to the review: a proposed rule enters only if it names what it would have caught, with
 this ticket as evidence. Reject the rest **with the reason written down**, including the tempting
 ones — a restatement of something the files already say, or advice with no failure attached. If a
