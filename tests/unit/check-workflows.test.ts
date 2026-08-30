@@ -401,11 +401,14 @@ describe("requireTestedScriptsInCodeFilter", () => {
 const SEED = ".github/workflows/cache-seed.yml";
 const seedFilter = (paths: string[]) => ({ on: { push: { paths } } });
 
+// readdirSync/join emit win32 separators on Windows; the rules normalise at compare time, so the
+// real-tree assertions have to as well or they only hold on posix (#950 round 3).
+const repoRelative = (files: string[]) =>
+  files.map((file) => file.slice(REPO_ROOT.length + 1).replaceAll("\\", "/"));
+
 describe("manifest sources stay inside both path filters", () => {
   test("collectManifestSources finds the engine's pinned manifests and nothing else", () => {
-    const sources = collectManifestSources(repoPath("rust/src")).map((file) =>
-      file.slice(REPO_ROOT.length + 1),
-    );
+    const sources = repoRelative(collectManifestSources(repoPath("rust/src")));
     expect(sources.length).toBeGreaterThan(0);
     expect(sources).toContain("rust/src/models/manifest.rs");
     // download.rs's only `ModelFile {` is a #[cfg(test)] stub-server helper, not a pin — collecting it
@@ -425,18 +428,14 @@ describe("manifest sources stay inside both path filters", () => {
   });
 
   test("collectModelsTreeSources returns every .rs under the models tree", () => {
-    const tree = collectModelsTreeSources(repoPath("rust/src/models")).map((file) =>
-      file.slice(REPO_ROOT.length + 1),
-    );
+    const tree = repoRelative(collectModelsTreeSources(repoPath("rust/src/models")));
     expect(tree.length).toBeGreaterThanOrEqual(6);
     expect(tree).toContain("rust/src/models/paths.rs");
     expect(tree).toContain("rust/src/models/staging.rs");
   });
 
   test("the real ci.yml and cache-seed.yml cover every one of them", () => {
-    const sources = collectManifestSources(repoPath("rust/src")).map((file) =>
-      file.slice(REPO_ROOT.length + 1),
-    );
+    const sources = repoRelative(collectManifestSources(repoPath("rust/src")));
     expect(requireManifestSourcesInCodeFilter(CI, parseRepoYaml(CI), sources)).toEqual([]);
     expect(requireManifestSourcesInSeedFilter(SEED, parseRepoYaml(SEED), sources)).toEqual([]);
   });
@@ -490,6 +489,9 @@ describe("manifest sources stay inside both path filters", () => {
   });
 
   test("a backslash-separated source (win32's readdirSync/join output) still matches a forward-slash filter", () => {
+    expect(repoRelative([`${REPO_ROOT}\\rust\\src\\models\\paths.rs`])).toEqual([
+      "rust/src/models/paths.rs",
+    ]);
     const sources = ["rust\\src\\models\\manifest.rs", "rust\\src\\models\\download.rs"];
     expect(requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), sources)).toEqual([]);
     expect(requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/src/models/**"]), sources)).toEqual([]);
@@ -521,9 +523,8 @@ describe("manifest sources stay inside both path filters", () => {
     const { manifestSources, modelsTreeSources } = collectRuleSources(
       repoPath("rust/src"), repoPath("rust/src/models"),
     );
-    const rel = (files: string[]) => files.map((file) => file.slice(REPO_ROOT.length + 1));
-    expect(rel(modelsTreeSources)).toContain("rust/src/models/paths.rs");
-    expect(rel(manifestSources)).not.toContain("rust/src/models/paths.rs");
+    expect(repoRelative(modelsTreeSources)).toContain("rust/src/models/paths.rs");
+    expect(repoRelative(manifestSources)).not.toContain("rust/src/models/paths.rs");
   });
 
   // A gate is only a gate if checkFile still calls it; the real tree cannot notice an unwired one.
