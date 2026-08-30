@@ -223,8 +223,12 @@ async function fetchJson(url: string, token: string): Promise<unknown> {
   return response.json();
 }
 
-async function releaseIsPublished(token: string, tag: string): Promise<boolean> {
-  const response = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`, {
+export async function releaseIsPublished(
+  token: string,
+  tag: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  const response = await fetchImpl(`https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`, {
     headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}` },
   });
   if (response.status === 404) return false;
