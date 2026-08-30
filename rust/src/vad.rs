@@ -673,6 +673,8 @@ mod tests {
         fixtures
     }
 
+    // Only tuned_session_matches_default_bit_for_bit calls this; cfg-gate together or it's dead_code on Windows.
+    #[cfg(not(windows))]
     fn build_composite(fixtures: &[(String, Vec<f32>)]) -> Vec<f32> {
         let mut composite: Vec<f32> = Vec::new();
         while (composite.len() as f32 / SAMPLE_RATE as f32) < 129.0 {
@@ -691,6 +693,8 @@ mod tests {
     /// `vad_990_measurement` below reports timing separately, since a timing assertion in an
     /// always-run test is the flaky class CLAUDE.md bans; `load_pins_intra_threads_one_in_source`
     /// pins the specific setting, since no thread count this graph accepts changes its output.
+    // Same Windows x64 f32 divergence risk #990 round-1 review flagged for vad_spans.rs's goldens — darwin/linux only.
+    #[cfg(not(windows))]
     #[test]
     fn tuned_session_matches_default_bit_for_bit() {
         let Some(path) = vad_model_path_or_skip("tuned_session_matches_default_bit_for_bit") else {

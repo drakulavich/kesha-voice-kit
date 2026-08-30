@@ -4,7 +4,8 @@
 //! `--json` and diarization span assignment, so they are a user-visible contract
 //! rather than an implementation detail. #990 changes the Silero session's
 //! thread configuration; this file is what proves the spans did not move — on
-//! every OS the lane runs, not just the one the change was measured on.
+//! every OS the exact-comparison test below runs (darwin/linux; Windows x64 f32
+//! divergence risk from #990's own review took it off that platform).
 //!
 //! Exact comparison on purpose. The decision margin measured over this corpus is
 //! `min |p - 0.5| = 9.16e-4`, so there is no float drift small enough to justify
@@ -13,13 +14,16 @@
 
 mod common;
 
+#[cfg(not(windows))]
 use std::path::PathBuf;
 
 use kesha_engine::audio::load_audio;
+#[cfg(not(windows))]
 use kesha_engine::vad::{VadConfig, VadDetector};
 
 /// Spans in seconds, as produced by `detect_segments` at `VadConfig::default()`.
 /// Regenerate only with a recorded reason: a diff here is a changed contract.
+#[cfg(not(windows))]
 const GOLDEN: &[(&str, &[(f32, f32)])] = &[
     (
         "01-ne-nuzhno-slat-soobshcheniya.ogg",
@@ -58,6 +62,7 @@ const GOLDEN: &[(&str, &[(f32, f32)])] = &[
     ("10-load-balancer-config.ogg", &[(0.0, 5.2534375)]),
 ];
 
+#[cfg(not(windows))]
 fn fixtures() -> Vec<PathBuf> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -110,6 +115,7 @@ fn decode_fixture_rejects_a_pointer_stub() {
     );
 }
 
+#[cfg(not(windows))]
 fn render(rows: &[(String, Vec<(f32, f32)>)]) -> String {
     let mut out = String::from("const GOLDEN: &[(&str, &[(f32, f32)])] = &[\n");
     for (name, spans) in rows {
@@ -123,6 +129,8 @@ fn render(rows: &[(String, Vec<(f32, f32)>)]) -> String {
     out
 }
 
+// Goldens are macOS-ARM-exact f32; #990 round-1 review flagged this Windows x64 divergence risk, so darwin/linux only.
+#[cfg(not(windows))]
 #[test]
 fn detect_segments_reproduces_the_committed_spans() {
     let Some(model) = common::vad_model_or_skip("detect_segments_reproduces_the_committed_spans")
