@@ -1621,7 +1621,7 @@ mod tts_tests {
         }
     }
 
-    /// Same pin discipline the rest of `models.rs` gets: 64 hex chars, on
+    /// Same pin discipline the rest of the manifest gets: 64 hex chars, on
     /// huggingface.co so `KESHA_MODEL_MIRROR` can rewrite it, and a relative
     /// path that stays inside the directory it is staged into.
     #[cfg(all(

@@ -8,7 +8,7 @@
 //!   passing `Some(name)` or `Some(lang)` without `model_path` returns an
 //!   error rather than dialing out to alphacephei.com. Kesha never relied
 //!   on the auto-download path; `kesha install --tts` provisions the model
-//!   via `rust/src/models.rs::download_verified` (which pins SHA-256s).
+//!   via `rust/src/models/download.rs::download_verified` (which pins SHA-256s).
 //!
 //! * The `tokenizers` crate is replaced with the inline WordPiece in
 //!   [`crate::tokenizer`].
