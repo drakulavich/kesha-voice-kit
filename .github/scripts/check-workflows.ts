@@ -673,7 +673,12 @@ export function collectModelsTreeSources(root = "rust/src/models"): string[] {
 
 /** The pair main() feeds the two #950 rules. Exported so the pairing itself is pinnable: handing the
  * models-tree rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
-export function collectRuleSources(rustRoot?: string, modelsRoot?: string) {
+export interface RuleSources {
+  manifestSources: string[];
+  modelsTreeSources: string[];
+}
+
+export function collectRuleSources(rustRoot?: string, modelsRoot?: string): RuleSources {
   return {
     manifestSources: collectManifestSources(rustRoot),
     modelsTreeSources: collectModelsTreeSources(modelsRoot),
@@ -1068,8 +1073,7 @@ export function checkFile(
   testedScripts: string[],
   cacheWriters: CacheEntry[],
   rustToolchain: RustToolchainPin | undefined,
-  manifestSources: string[],
-  modelsTreeSources: string[],
+  sources: RuleSources,
 ): string[] {
   try {
     const contents = readFileSync(path, "utf8");
@@ -1094,9 +1098,9 @@ export function checkFile(
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
-      ...requireManifestSourcesInCodeFilter(path, document, manifestSources),
-      ...requireModelsTreeInCodeFilter(path, document, modelsTreeSources),
-      ...requireManifestSourcesInSeedFilter(path, document, manifestSources),
+      ...requireManifestSourcesInCodeFilter(path, document, sources.manifestSources),
+      ...requireModelsTreeInCodeFilter(path, document, sources.modelsTreeSources),
+      ...requireManifestSourcesInSeedFilter(path, document, sources.manifestSources),
       ...requireFlakeNixInWorkflowsFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
     ];
@@ -1130,10 +1134,10 @@ function main(): void {
     ? collectCacheWriters(parse(readFileSync(SEED_WORKFLOW, "utf8")))
     : [];
   const { pin: rustToolchain, errors: rustToolchainErrors } = readRustToolchainPin();
-  const { manifestSources, modelsTreeSources } = collectRuleSources();
+  const sources = collectRuleSources();
   const errors = [
     ...rustToolchainErrors,
-    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, manifestSources, modelsTreeSources)),
+    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, sources)),
     ...checkFlakeNix(FLAKE_NIX),
   ];
   for (const error of errors) console.error(error);
