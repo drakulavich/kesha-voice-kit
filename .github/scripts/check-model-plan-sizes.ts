@@ -7,9 +7,9 @@
  * offline test can falsify a size. The honest invariant needs the network, which is why this
  * runs weekly rather than per PR (#920).
  *
- * `relPath` is the join key. `model-plan.json` records the sizes, `rust/src/models.rs` records
+ * `relPath` is the join key. `model-plan.json` records the sizes, `rust/src/models/` records
  * the URLs, and the rust manifest test already holds those two path lists identical. The URLs
- * are read out of models.rs instead of copied here, so this file cannot drift from the pins —
+ * are read out of the models sources instead of copied here, so this file cannot drift from the pins —
  * and a plan entry whose `relPath` resolves to no URL fails the run rather than being skipped,
  * which is what stops a parser regression from going quietly green.
  *
@@ -17,9 +17,20 @@
  * Content-Length: no downloads either way, no cache impact. `KESHA_MODEL_MIRROR` is deliberately
  * not honoured — the subject here is upstream truth.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { humanBytes } from "../../src/format";
-import { rustModelsSourcePaths } from "../../tests/helpers/rust-models-source";
+
+const MODELS_DIR = join(import.meta.dir, "..", "..", "rust", "src", "models");
+
+// Computed here rather than imported from tests/helpers: that helper pulls in `yaml` transitively,
+// and a production script reaching into the test tree for a runtime dependency is the #993 shape.
+function modelsSourcePaths(): string[] {
+  return readdirSync(MODELS_DIR, { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
+    .sort()
+    .map((entry) => join(MODELS_DIR, entry));
+}
 
 export interface PlanEntry {
   group: string;
@@ -124,7 +135,7 @@ function expandModelFileMacros(source: string): string {
   stripped += source.slice(at);
 
   for (const [name, arm] of macros) {
-    // A self-referential template would never stop expanding; models.rs has none today.
+    // A self-referential template would never stop expanding; the models sources have none today.
     if (arm.template.includes(`${name}!`)) continue;
     const call = new RegExp(`\\b${name}!\\s*\\(`);
     for (let match = call.exec(stripped); match; match = call.exec(stripped)) {
@@ -147,7 +158,7 @@ export interface ManifestEntry {
 }
 
 /**
- * Every `ModelFile` pinned in models.rs, `cfg` gating included, in source order. English and
+ * Every `ModelFile` the models sources pin, `cfg` gating included, in source order. English and
  * Mandarin ANE bundles stage identical basenames into different directories, so `relPath` is
  * not a unique key across the whole file — callers that need every entry (not just one per
  * `relPath`) must use this rather than `parseManifestUrls`'s deduping map (#1096 review).
@@ -163,7 +174,7 @@ export function parseManifestEntries(source: string): ManifestEntry[] {
   return entries;
 }
 
-/** `rel_path` → `url` for every `ModelFile` pinned in models.rs, `cfg` gating included. */
+/** `rel_path` → `url` for every `ModelFile` the models sources pin, `cfg` gating included. */
 export function parseManifestUrls(source: string): Map<string, string> {
   const urls = new Map<string, string>();
   for (const { relPath, url } of parseManifestEntries(source)) urls.set(relPath, url);
@@ -282,7 +293,7 @@ if (import.meta.main) {
   const planPath = argValue("--plan", "model-plan.json");
   // `--manifest` still names one file so a pinned ref can be checked; the default follows `models` wherever it lives (#950).
   const explicit = argValue("--manifest", "");
-  const manifestPaths = explicit ? [explicit] : rustModelsSourcePaths();
+  const manifestPaths = explicit ? [explicit] : modelsSourcePaths();
   const manifestPath = manifestPaths.join(", ");
 
   const entries = flattenPlan(JSON.parse(readFileSync(planPath, "utf8")));
