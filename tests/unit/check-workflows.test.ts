@@ -448,6 +448,54 @@ describe("requirePipefailShell", () => {
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1084"))).toHaveLength(1);
   });
+
+  // Composite steps live under `runs.steps`, not `jobs`; an explicit `shell: sh` there is the same trap (#1089).
+  const compositeAction = (steps: unknown[]) => ({ runs: { using: "composite", steps } });
+
+  test("passes on every composite action in the repo", () => {
+    for (const dir of readdirSync(repoPath(".github/actions"))) {
+      const path = `.github/actions/${dir}/action.yml`;
+      expect([path, requirePipefailShell(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
+  });
+
+  test("fails on an explicit shell: sh inside a composite action's runs.steps", () => {
+    const errors = requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ ...PIPED, shell: "sh" }]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("sets `shell: sh`");
+  });
+
+  // Composite steps can't set defaults.run.shell — pointing authors at it would be a dead end.
+  test("does not suggest defaults.run.shell for a composite action", () => {
+    const errors = requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ ...PIPED, shell: "sh" }]));
+    expect(errors[0]).not.toContain("defaults.run.shell");
+  });
+
+  test("passes when a composite action's run step names bash", () => {
+    expect(
+      requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ ...PIPED, shell: "bash" }])),
+    ).toEqual([]);
+  });
+
+  // A composite can be consumed by a Windows job, so there is no runner to skip on (#1089).
+  test("checks a composite action even though it has no runs-on to skip on", () => {
+    expect(
+      requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ ...PIPED, shell: "sh" }])),
+    ).toHaveLength(1);
+  });
+
+  test("ignores steps in a composite action that only `uses` another action", () => {
+    expect(
+      requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ uses: "actions/checkout@v5" }])),
+    ).toEqual([]);
+  });
+
+  test("the file gate actually runs it on a composite action", () => {
+    const yaml = "name: Example\nruns:\n  using: composite\n  steps:\n    - run: a | b\n      shell: sh\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "action.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1089"))).toHaveLength(1);
+  });
 });
 
 describe("requireRestoreOnlyCachesHaveAWriter", () => {
