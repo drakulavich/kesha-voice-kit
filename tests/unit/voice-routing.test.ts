@@ -23,7 +23,7 @@ function advertisedTtsLangs(): { systemKokoro: string[]; onnx: string[] } {
   const systemKokoro = langsOf(false);
   const onnx = langsOf(true);
   if (systemKokoro.length === 0 || onnx.length === 0) {
-    throw new Error("could not parse tts_languages() — did rust/src/models.rs change shape?");
+    throw new Error("could not parse tts_languages() — did rust/src/models/manifest.rs change shape?");
   }
   return { systemKokoro, onnx };
 }

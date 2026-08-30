@@ -308,7 +308,7 @@ pub(super) fn multilang_voice(lang: &str) -> Option<ModelFile> {
 /// selected; per-language voices added individually.
 ///
 /// An English-only install skips the ~100 MB CharsiuG2P pack and a Russian-only
-/// install skips Kokoro entirely. Consumed by [`download_tts`].
+/// install skips Kokoro entirely. Consumed by [`super::download::download_tts`].
 #[cfg(all(
     feature = "tts",
     not(all(

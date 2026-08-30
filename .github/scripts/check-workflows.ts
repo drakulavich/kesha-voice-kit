@@ -640,6 +640,13 @@ export function requireTestedScriptsInCodeFilter(
 /**
  * Every engine source holding a `ModelFile` literal — the pins ci.yml's `code` lane and
  * cache-seed.yml's key both read, wherever `models` currently lives (#950).
+ *
+ * Deliberately narrower than `tests/helpers/rust-models-source.ts`'s `rustModelsSourcePaths`,
+ * which returns every `.rs` file under the models tree (paths.rs and staging.rs included) for
+ * the TS suites that read them as plain text. ci.yml's actual `code` filter today covers the
+ * whole directory with `rust/src/models/**`, so both requirements hold; narrowing that glob to
+ * satisfy only this guard's literal-holding subset would silently stop `unit-tests` from firing
+ * on a paths.rs/staging.rs edit even though the TS pact tests depend on them.
  */
 export function collectManifestSources(root = "rust/src"): string[] {
   if (!existsSync(root)) return [];
@@ -664,6 +671,12 @@ export function requireManifestSourcesInCodeFilter(
   const code = (parse(raw) as Record<string, string[]>)?.code;
   if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
 
+  if (manifestSources.length === 0) {
+    return [
+      `${path}: collectManifestSources() returned no files — it ran against the wrong cwd or nothing pins a ModelFile anymore, either way the guard cannot pass vacuously (#950)`,
+    ];
+  }
+
   return manifestSources
     .filter((file) => !coveredBy(code, file))
     .map(
@@ -682,6 +695,12 @@ export function requireManifestSourcesInSeedFilter(
 
   const paths = (document as { on?: { push?: { paths?: unknown } } })?.on?.push?.paths;
   if (!Array.isArray(paths)) return [`${path}: expected a \`push\` trigger with a \`paths\` list`];
+
+  if (manifestSources.length === 0) {
+    return [
+      `${path}: collectManifestSources() returned no files — it ran against the wrong cwd or nothing pins a ModelFile anymore, either way the guard cannot pass vacuously (#950)`,
+    ];
+  }
 
   const patterns = paths.filter((entry): entry is string => typeof entry === "string");
   return manifestSources

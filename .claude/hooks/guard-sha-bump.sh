@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse hook: refuse silent SHA-256 pin bumps in rust/src/models.rs.
+# PreToolUse hook: refuse silent SHA-256 pin bumps in rust/src/models.rs or rust/src/models/*.rs.
 #
 # Why: CLAUDE.md "MODEL HASHES ARE PINNED". Incident #174 was a regression
 # where verification was disabled silently. This hook blocks edits that
@@ -28,9 +28,9 @@ PAYLOAD="$(cat || true)"
 TOOL="$(printf '%s' "$PAYLOAD" | jq -r '.tool_name // empty')"
 FILE="$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // .tool_input.path // empty')"
 
-# Only guard rust/src/models.rs (any abs path resolving to it).
+# Only guard rust/src/models.rs and rust/src/models/*.rs (any abs path resolving to either).
 case "$FILE" in
-    */rust/src/models.rs|rust/src/models.rs)
+    */rust/src/models.rs|rust/src/models.rs|*/rust/src/models/*.rs|rust/src/models/*.rs)
         ;;
     *)
         exit 0
@@ -92,7 +92,7 @@ fi
 
 # No justification — block.
 cat >&2 <<EOF
-🛑 guard-sha-bump.sh: refusing silent SHA-256 bump in rust/src/models.rs.
+🛑 guard-sha-bump.sh: refusing silent SHA-256 bump in $FILE.
 
 You changed ${REMOVED_COUNT} pinned SHA(s):
 $(printf "$REMOVED" | sed 's/^/  - /')

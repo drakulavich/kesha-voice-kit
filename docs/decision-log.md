@@ -127,7 +127,7 @@ issue/PR that drove it). Newest concerns first within each section.
 ## Packaging & supply chain
 
 ### Pinned model SHA-256 hashes
-- **Decision:** every model file in `rust/src/models.rs` carries a pinned SHA-256;
+- **Decision:** every model file in `rust/src/models/manifest.rs` carries a pinned SHA-256;
   `download_verified` refuses any file whose hash doesn't match.
 - **Rationale:** makes `KESHA_MODEL_MIRROR` safe (a compromised mirror can't swap
   weights) and turns an upstream HuggingFace republish into a deliberate, reviewed

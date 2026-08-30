@@ -196,14 +196,14 @@ describe("Rust/TS FluidAudio contract agreement", () => {
 
   function rustList(constName: string): string[] {
     const block = rust.match(new RegExp(`const ${constName}: &\\[&str\\] = &\\[([^\\]]*)\\]`));
-    if (!block) throw new Error(`${constName} not found in rust/src/models.rs`);
+    if (!block) throw new Error(`${constName} not found in the rust models source (rust/src/models.rs or rust/src/models/*.rs)`);
     return [...block[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
   }
 
   // Reads the value, not the expression using it: matching `.join("…")` broke on refactors.
   function rustStr(constName: string): string {
     const block = rust.match(new RegExp(`const ${constName}: &str = "([^"]+)"`));
-    if (!block) throw new Error(`${constName} not found in rust/src/models.rs`);
+    if (!block) throw new Error(`${constName} not found in the rust models source (rust/src/models.rs or rust/src/models/*.rs)`);
     return block[1]!;
   }
 

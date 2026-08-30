@@ -452,6 +452,16 @@ describe("manifest sources stay inside both path filters", () => {
     );
   });
 
+  test("an empty manifestSources list fails loudly instead of passing vacuously", () => {
+    const codeErrors = requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), []);
+    expect(codeErrors).toHaveLength(1);
+    expect(codeErrors[0]).toContain("returned no files");
+
+    const seedErrors = requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/src/models/**"]), []);
+    expect(seedErrors).toHaveLength(1);
+    expect(seedErrors[0]).toContain("returned no files");
+  });
+
   // A gate is only a gate if checkFile still calls it; the real tree cannot notice an unwired one.
   test("the file gate actually runs both", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
