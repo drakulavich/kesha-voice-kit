@@ -951,15 +951,29 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
   test("fails when the guard runs after the draft release is created", () => {
     const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [PUBLISH, GUARD]));
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("runs after");
+    expect(errors[0]).toContain("immediately before");
   });
 
-  test("passes when the guard precedes the draft release", () => {
+  test("passes when the guard immediately precedes the draft release", () => {
     expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [GUARD, PUBLISH]))).toEqual([]);
+  });
+
+  // An early-only check leaves the SBOM/download/sign window unrevalidated — the tag can still move before GitHub resolves it at publish time (#1115 review round 3, Greptile P1).
+  test("fails when the guard runs early but not immediately before the draft release", () => {
+    const OTHER = { name: "Generate source SBOM", uses: "anchore/sbom-action@e22c389" };
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [GUARD, OTHER, PUBLISH]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("immediately before");
   });
 
   test("fails when the guard step is disabled", () => {
     const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [{ ...GUARD, if: "false" }, PUBLISH]));
+    expect(errors[0]).toContain("#1115");
+  });
+
+  // `${{ false }}` disables the step exactly like bare `false`, but a naive string-equality check misses it (#1115 review round 3, Greptile P2).
+  test("fails when the guard step is disabled via a wrapped expression", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [{ ...GUARD, if: "${{ false }}" }, PUBLISH]));
     expect(errors[0]).toContain("#1115");
   });
 

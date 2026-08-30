@@ -790,6 +790,13 @@ export function requireBuildEngineSerialisesRunsPerRef(path: string, document: u
  * even finishes. A step comparing the tag's live target against `github.sha` (fixed at trigger)
  * before the draft is created converts that into a failed job (#1115).
  */
+// Strips one `${{ }}` wrapper before comparing — `if: ${{ false }}` disables a step exactly like `if: false` but the bare-string check alone missed it (#1115 review round 3, Greptile P2).
+function isDisabled(step: Step): boolean {
+  const raw = condition(step).trim();
+  const inner = /^\$\{\{([\s\S]*)\}\}$/.exec(raw)?.[1]?.trim() ?? raw;
+  return inner === "false";
+}
+
 export function requireReleaseVerifiesTagIsCurrent(path: string, document: unknown): string[] {
   if (!path.endsWith("build-engine.yml")) return [];
 
@@ -801,23 +808,29 @@ export function requireReleaseVerifiesTagIsCurrent(path: string, document: unkno
     typeof step?.run === "string" &&
     /refs\/tags/.test(step.run) &&
     /GITHUB_SHA/.test(step.run) &&
-    condition(step).trim() !== "false";
-  const guard = steps.findIndex(isGuard);
+    !isDisabled(step);
+
   const publish = steps.findIndex(
     (step) => typeof step?.uses === "string" && step.uses.startsWith("softprops/action-gh-release"),
   );
+  if (publish === -1) {
+    return [`${path}: expected the release job to create the draft release via softprops/action-gh-release`];
+  }
 
+  const guard = steps.findIndex(isGuard);
   if (guard === -1) {
     return [
       `${path}: the release job must verify the tag still points at github.sha before creating the draft — ` +
         `a re-pointed tag builds a complete-looking release from a superseded commit with nothing red (#1115)`,
     ];
   }
-  if (publish === -1) {
-    return [`${path}: expected the release job to create the draft release via softprops/action-gh-release`];
-  }
-  if (guard > publish) {
-    return [`${path}: the tag-currency guard runs after the draft release is created; move it before (#1115)`];
+
+  // Must sit immediately before the draft is created — SBOM/download/sign cost real wall-clock, and an earlier check leaves that whole window unrevalidated (#1115 review round 3, Greptile P1).
+  if (guard !== publish - 1) {
+    return [
+      `${path}: the tag-currency guard must be the step immediately before the draft release is created, not merely somewhere before it — ` +
+        `GitHub resolves the tag to whatever it names by the time that step runs (#1115)`,
+    ];
   }
   return [];
 }

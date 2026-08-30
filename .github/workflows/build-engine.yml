@@ -472,18 +472,6 @@ jobs:
           fetch-tags: true
           fetch-depth: 0
 
-      # #1108 serialises runs per ref but not against a re-pointed tag — the backstop for a local `git push --force`, which meets no uniqueness check (#1115).
-      # Queries origin live rather than the local ref this job's checkout snapshotted, and the trailing `^{}` line peels an annotated tag to its commit — `git rev-parse refs/tags/<annotated>` alone returns the *tag object* SHA, which never equals `GITHUB_SHA`. A re-annotation that leaves the commit unchanged still passes; that residual is untouched here.
-      - name: Verify tag has not been superseded
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-        run: |
-          current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"
-          if [ "$current" != "$GITHUB_SHA" ]; then
-            echo "::error::tag $TAG_NAME now points at $current, but this run was triggered for $GITHUB_SHA — the tag was re-pointed mid-build. Refusing to publish a release built from a superseded commit."
-            exit 1
-          fi
-
       - name: Prepare release notes from tag annotation
         env:
           TAG_NAME: ${{ github.ref_name }}
@@ -544,6 +532,17 @@ jobs:
             name="${asset#./}"
             cosign sign-blob --yes --bundle "${name}.sigstore.json" "$name"
           done < <(find . -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
+
+      # Runs last, right before GitHub resolves the tag to whatever commit it names now — a re-point during the SBOM/download/sign window above is the same #1108/#1115 bug moved later (review round 3, Greptile P1); querying origin live and peeling `^{}` avoids both the stale-local-ref and tag-object-vs-commit traps (round 2 P1/P2), though a same-commit re-annotation still passes.
+      - name: Verify tag has not been superseded
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "::error::tag $TAG_NAME now points at $current, but this run was triggered for $GITHUB_SHA — the tag was re-pointed mid-build. Refusing to publish a release built from a superseded commit."
+            exit 1
+          fi
 
       # Always a draft: releases here are immutable, and an asset uploaded after publication 422s.
       - name: Create draft release with binaries
