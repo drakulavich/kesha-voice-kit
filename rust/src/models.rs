@@ -2092,6 +2092,50 @@ mod manifest_tests {
         assert!(f.url.starts_with("https://github.com/snakers4/silero-vad/"));
     }
 
+    /// Reads the literal `VAR="value"` assignment line for `var`, ignoring comments —
+    /// `script.contains(needle)` would pass on a decoy value reassigned in code while the
+    /// real one sits in a `# pinned: ...` comment. Requires exactly one such line rather than
+    /// taking the first: bash itself resolves a shadowed reassignment to the *last* one, so
+    /// "first" matching a decoy and "last" being real would still stage the wrong pin silently.
+    fn shell_assignment<'a>(script: &'a str, var: &str) -> &'a str {
+        let prefix = format!("{var}=\"");
+        let matches: Vec<&str> = script
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix(prefix.as_str()))
+            .filter_map(|rest| rest.strip_suffix('"'))
+            .collect();
+        assert_eq!(
+            matches.len(),
+            1,
+            "expected exactly one `{prefix}...\"` assignment in download-vad.sh, found {}",
+            matches.len()
+        );
+        matches[0]
+    }
+
+    /// The CI staging script carries its own copy of the URL and hash, because a
+    /// shell script cannot read a Rust const. Two copies of a pin drift, and the
+    /// drift is invisible: CI would keep staging the old weights and the span
+    /// goldens would keep passing against a model the engine no longer uses.
+    #[test]
+    fn ci_download_script_matches_the_pinned_vad_manifest() {
+        let script = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ci/download-vad.sh"),
+        )
+        .expect("read rust/ci/download-vad.sh");
+        let f = &VAD_FILES[0];
+        assert_eq!(
+            shell_assignment(&script, "URL"),
+            f.url,
+            "download-vad.sh's URL= assignment does not match the pinned URL"
+        );
+        assert_eq!(
+            shell_assignment(&script, "SHA256"),
+            f.sha256,
+            "download-vad.sh's SHA256= assignment does not match the pinned sha256"
+        );
+    }
+
     #[test]
     fn lang_id_manifest_has_expected_files_and_hashes() {
         assert_eq!(LANG_ID_FILES.len(), 3);

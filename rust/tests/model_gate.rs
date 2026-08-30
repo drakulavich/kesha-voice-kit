@@ -15,6 +15,8 @@
 //! because only the weekly canary stages that bundle. The CharsiuG2P skips in
 //! `rust/src/tts/` are no longer exempt: they gained `KESHA_REQUIRE_G2P_TESTS`
 //! when those IPA assertions became the named owner of phoneme fidelity.
+//! `common::vad_model_or_skip` carries `KESHA_REQUIRE_VAD_TESTS` and skips the tier check, Silero having no mini (#990).
+//! `vad.rs`'s own `#[cfg(test)]` module duplicates that gate locally since `frame_probs` is private to integration tests (#990).
 
 mod common;
 
@@ -225,4 +227,58 @@ fn the_kokoro_gates_fail_loudly_rather_than_skipping_when_models_are_promised() 
         cache_outcome.is_err(),
         "a lane that staged models must fail on an unreadable layout, not skip"
     );
+}
+
+/// Mirrors the kokoro coverage above for the VAD gate, which had none — the review that found
+/// `vad.rs`'s own duplicate gate silently skipping under `KESHA_REQUIRE_VAD_TESTS` also found this
+/// one, `common::vad_model_or_skip`, untested in either mutation direction (#990).
+#[test]
+fn the_vad_gate_fails_loudly_rather_than_skipping_when_required() {
+    let missing = std::env::temp_dir().join(format!("kesha-vad-gate-{}", std::process::id()));
+
+    std::env::set_var("VAD_MODEL", missing.join("silero_vad.onnx"));
+    std::env::remove_var("KESHA_REQUIRE_VAD_TESTS");
+    assert!(
+        common::vad_model_or_skip("probe").is_none(),
+        "an unstaged laptop must still skip"
+    );
+
+    std::env::set_var("KESHA_REQUIRE_VAD_TESTS", "1");
+    let outcome = std::panic::catch_unwind(|| common::vad_model_or_skip("probe"));
+
+    std::env::remove_var("KESHA_REQUIRE_VAD_TESTS");
+    std::env::remove_var("VAD_MODEL");
+
+    assert!(
+        outcome.is_err(),
+        "a lane that promised VAD models must fail loudly on a missing file, not skip"
+    );
+}
+
+/// `common::assert_not_lfs_pointer` was added with no test exercising it — deleting the call site
+/// or neutralising its `starts_with` predicate both left every existing test green (#990 round 2).
+#[test]
+fn assert_not_lfs_pointer_rejects_a_pointer_stub_and_accepts_real_bytes() {
+    let dir = std::env::temp_dir().join(format!("kesha-lfs-guard-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let pointer = dir.join("pointer.ogg");
+    std::fs::write(
+        &pointer,
+        b"version https://git-lfs.github.com/spec/v1\noid sha256:deadbeef\nsize 12345\n",
+    )
+    .expect("write pointer stub");
+    let outcome = std::panic::catch_unwind(|| common::assert_not_lfs_pointer(&pointer));
+
+    let real = dir.join("real.ogg");
+    std::fs::write(
+        &real,
+        b"OggS not really audio but not an lfs pointer either",
+    )
+    .expect("write real-ish file");
+    common::assert_not_lfs_pointer(&real);
+
+    std::fs::remove_dir_all(&dir).ok();
+
+    assert!(outcome.is_err(), "an LFS pointer stub must be rejected");
 }
