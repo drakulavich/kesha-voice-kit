@@ -192,6 +192,8 @@ const PRE_SKIP_48K: u16 = 3_840;
 /// decode. The MSVC linker bound all calls to one copy — an ODR violation that
 /// crashed Windows CI with `0xc0000005` (#585). Driving encode through the same
 /// `opusic-sys` keeps exactly one libopus in the binary.
+///
+/// `!Send`/`!Sync` (incidental, via the raw pointer): the encoder must not move between threads.
 #[cfg(feature = "tts")]
 struct OpusEncoder {
     raw: *mut opusic_sys::OpusEncoder,
@@ -211,7 +213,7 @@ impl OpusEncoder {
         if raw.is_null() || err != OPUS_OK {
             anyhow::bail!("opus encoder create: {}", opus_err_str(err));
         }
-        let enc = Self { raw };
+        let mut enc = Self { raw };
         enc.set_ctl(OPUS_SET_BITRATE_REQUEST, bitrate)
             .map_err(|e| anyhow::anyhow!("opus set_bitrate: {e}"))?;
         // Tell libopus this is voice — affects internal mode selection.
@@ -220,7 +222,7 @@ impl OpusEncoder {
         Ok(enc)
     }
 
-    fn set_ctl(&self, request: core::ffi::c_int, value: i32) -> anyhow::Result<()> {
+    fn set_ctl(&mut self, request: core::ffi::c_int, value: i32) -> anyhow::Result<()> {
         use opusic_sys::{opus_encoder_ctl, OPUS_OK};
         // SAFETY: variadic ctl setter; every request we issue takes a single opus_int32 argument.
         let rc = unsafe { opus_encoder_ctl(self.raw, request, value) };
@@ -504,6 +506,15 @@ mod tests {
                  equivalent, so they reached the encoder unbounded"
             );
         }
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn set_ctl_mutates_through_exclusive_access() {
+        // set_ctl mutates libopus's internal encoder state (#957); a mismatched signature here is a compile error.
+        fn assert_takes_mut(_f: fn(&mut OpusEncoder, core::ffi::c_int, i32) -> anyhow::Result<()>) {
+        }
+        assert_takes_mut(OpusEncoder::set_ctl);
     }
 
     #[cfg(feature = "tts")]
