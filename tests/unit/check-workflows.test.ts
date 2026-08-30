@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -407,6 +407,24 @@ const repoRelative = (files: string[]) =>
   files.map((file) => file.slice(REPO_ROOT.length + 1).replaceAll("\\", "/"));
 
 describe("manifest sources stay inside both path filters", () => {
+  // #950 round 2 (luna's probe): a production pin AFTER a #[cfg(test)] mod must still be collected —
+  // the prefix cut silently excluded it, which is the direction this guard must not fail toward.
+  test("a ModelFile literal after a test module is still collected; one inside it is not", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-models-"));
+    writeFileSync(join(dir, "after.rs"), "#[cfg(test)]\nmod tests { fn helper() {} }\nconst PIN: ModelFile = ModelFile { };\n");
+    writeFileSync(join(dir, "inside.rs"), "fn real() {}\n#[cfg(test)]\nmod tests { const STUB: ModelFile = ModelFile { }; }\n");
+    const found = collectManifestSources(dir).map((f) => f.split("/").pop());
+    expect(found).toEqual(["after.rs"]);
+  });
+
+  // #950 round 2: the rust/src/** workflows-filter entry closes the guard's silent-skip gap on the very
+  // PR that violates it — so the entry itself needs a pin, or its removal survives every lane.
+  test("ci.yml's workflows filter carries rust/src/**, so check:workflows runs on a rust-pin PR", () => {
+    const raw = readFileSync(".github/workflows/ci.yml", "utf8");
+    const filters = /workflows:\n((?:\s+(?:#[^\n]*|- '[^']+')\n)+)/.exec(raw);
+    expect(filters?.[1] ?? "").toContain("- 'rust/src/**'");
+  });
+
   test("collectManifestSources finds the engine's pinned manifests and nothing else", () => {
     const sources = repoRelative(collectManifestSources(repoPath("rust/src")));
     expect(sources.length).toBeGreaterThan(0);

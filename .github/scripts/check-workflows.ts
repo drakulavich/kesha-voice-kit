@@ -637,9 +637,33 @@ export function requireTestedScriptsInCodeFilter(
     .map((file) => `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`);
 }
 
-const sourceBeforeTests = (contents: string) => {
-  const tests = contents.indexOf("#[cfg(test)]");
-  return tests === -1 ? contents : contents.slice(0, tests);
+/**
+ * Blanks every `#[cfg(test)]`-guarded item (brace-balanced), keeping the rest — a prefix cut missed
+ * production code placed after a test module (#950 round 2's probe: `#[cfg(test)] mod tests {}` followed
+ * by a real pin), which is exactly the silent-exclusion direction a guard must not fail toward.
+ */
+const sourceOutsideTests = (contents: string) => {
+  let out = "";
+  let i = 0;
+  while (i < contents.length) {
+    const marker = contents.indexOf("#[cfg(test)]", i);
+    if (marker === -1) {
+      out += contents.slice(i);
+      break;
+    }
+    out += contents.slice(i, marker);
+    const open = contents.indexOf("{", marker);
+    if (open === -1) break;
+    let depth = 1;
+    let j = open + 1;
+    while (j < contents.length && depth > 0) {
+      if (contents[j] === "{") depth++;
+      else if (contents[j] === "}") depth--;
+      j++;
+    }
+    i = j;
+  }
+  return out;
 };
 
 /**
@@ -658,7 +682,7 @@ export function collectManifestSources(root = "rust/src"): string[] {
   return readdirSync(root, { recursive: true })
     .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
     .map((entry) => join(root, entry))
-    .filter((file) => /ModelFile\s*\{/.test(sourceBeforeTests(readFileSync(file, "utf8"))))
+    .filter((file) => /ModelFile\s*\{/.test(sourceOutsideTests(readFileSync(file, "utf8"))))
     .sort();
 }
 
