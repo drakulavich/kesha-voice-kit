@@ -123,7 +123,7 @@ pub struct VadDetector {
 
 impl VadDetector {
     pub fn load(model_path: &Path) -> Result<Self> {
-        // #990: decoder LSTM rejects >1 frame/call, so intra_threads(1) — 15.4% faster, bit-identical — is the only lever that pays.
+        // #990: decoder LSTM rejects >1 frame/call, so intra_threads(1) is the only lever that pays — bit-identical, unpinned since ort has no getter to assert against (see vad_990_measurement).
         let session = Session::builder()
             .context("failed to create VAD session builder")?
             .with_intra_threads(1)
@@ -466,8 +466,9 @@ mod tests {
     /// trailing-silence fixture ends the take.
     #[test]
     fn streaming_endpoint_waits_for_a_trailing_pause_after_a_spoken_fixture() {
-        let Some(path) = std::env::var_os("VAD_MODEL") else {
-            eprintln!("VAD_MODEL not set; skipping");
+        let Some(path) = vad_model_path_or_skip(
+            "streaming_endpoint_waits_for_a_trailing_pause_after_a_spoken_fixture",
+        ) else {
             return;
         };
         let fixture = format!(
@@ -476,7 +477,7 @@ mod tests {
         );
         let mut samples = crate::audio::load_audio(Path::new(&fixture)).expect("decode fixture");
         let mut endpoint = StreamingVad::load(
-            Path::new(&path),
+            &path,
             EndpointConfig {
                 threshold: 0.5,
                 trailing_silence_ms: 1_000,
@@ -509,15 +510,14 @@ mod tests {
         );
     }
 
-    /// Gated on VAD_MODEL — confirms wiring against the real ONNX when
-    /// the file is present. Default CI doesn't download it so this is skipped.
+    /// Gated on the model — confirms wiring against the real ONNX when staged.
     #[test]
     fn real_model_produces_probabilities_when_available() {
-        let Some(path) = std::env::var_os("VAD_MODEL") else {
-            eprintln!("VAD_MODEL not set; skipping");
+        let Some(path) = vad_model_path_or_skip("real_model_produces_probabilities_when_available")
+        else {
             return;
         };
-        let mut vad = VadDetector::load(Path::new(&path)).unwrap();
+        let mut vad = VadDetector::load(&path).unwrap();
         // 2 s of synthetic "silence + pulse + silence" — not a content
         // check, just tensor wiring.
         let mut audio = vec![0.0_f32; 32_000];
@@ -532,26 +532,75 @@ mod tests {
         );
     }
 
-    /// #990: proves the tuned session above is bit-identical to the untuned default over the
-    /// benchmark corpus plus a synthetic ~129s composite, and reports the numbers the ticket
-    /// asks for. Gated like the tests above; `just vad-bench` runs it with printed output.
+    /// Duplicates `tests/common::vad_model_or_skip`'s policy: `frame_probs` is private, so
+    /// integration tests under `rust/tests/` cannot reach it, and this module's own tests need
+    /// the same require-flag + cache-base-fallback gate (#990 review — the prior ad-hoc
+    /// `VAD_MODEL`-only check here silently skipped under `KESHA_REQUIRE_VAD_TESTS`).
+    fn vad_model_path_or_skip(test: &str) -> Option<std::path::PathBuf> {
+        let path = std::env::var_os("VAD_MODEL")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                let base = std::env::var("KESHA_CACHE_DIR")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| {
+                        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+                        std::path::PathBuf::from(home).join(".cache/kesha")
+                    });
+                base.join("models/silero-vad/silero_vad.onnx")
+            });
+        if path.is_file() {
+            return Some(path);
+        }
+        assert!(
+            std::env::var_os("KESHA_REQUIRE_VAD_TESTS").is_none(),
+            "Silero VAD not staged at {} while KESHA_REQUIRE_VAD_TESTS is set — this lane downloads it, so a missing file is a broken layout, not a laptop",
+            path.display()
+        );
+        eprintln!(
+            "Silero VAD not staged at {} — skipping {test}",
+            path.display()
+        );
+        None
+    }
+
     #[test]
-    fn tuned_session_matches_default_and_reports_990_measurement() {
-        let Some(path) = std::env::var_os("VAD_MODEL") else {
-            eprintln!("VAD_MODEL not set; skipping");
-            return;
-        };
-        let path = Path::new(&path);
+    fn vad_model_path_or_skip_fails_loudly_when_required_and_missing() {
+        let missing =
+            std::env::temp_dir().join(format!("kesha-vad-local-gate-{}", std::process::id()));
+        std::env::set_var("VAD_MODEL", missing.join("silero_vad.onnx"));
+        std::env::remove_var("KESHA_REQUIRE_VAD_TESTS");
+        assert!(
+            vad_model_path_or_skip("probe").is_none(),
+            "an unstaged laptop must still skip"
+        );
 
-        let default_session = Session::builder()
-            .expect("session builder")
-            .commit_from_file(path)
-            .expect("load VAD (untuned default)");
-        let mut baseline = VadDetector {
-            session: default_session,
-        };
-        let mut tuned = VadDetector::load(path).expect("load VAD (tuned)");
+        std::env::set_var("KESHA_REQUIRE_VAD_TESTS", "1");
+        let outcome = std::panic::catch_unwind(|| vad_model_path_or_skip("probe"));
 
+        std::env::remove_var("KESHA_REQUIRE_VAD_TESTS");
+        std::env::remove_var("VAD_MODEL");
+
+        assert!(
+            outcome.is_err(),
+            "a lane that promised VAD models must fail loudly on a missing file, not skip"
+        );
+    }
+
+    /// An LFS pointer stub is still a valid `.ogg` path, so `load_audio` fails deep inside
+    /// symphonia's probe with a message that never mentions LFS — this turns that into the
+    /// actionable hint the fixtures-empty check further down was meant to give (#990 review).
+    fn reject_lfs_pointer(path: &Path) {
+        if let Ok(bytes) = std::fs::read(path) {
+            if bytes.starts_with(b"version https://git-lfs.github.com/spec") {
+                panic!(
+                    "{} is an LFS pointer stub, not audio — run `git lfs pull`",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    fn load_benchmark_fixtures() -> Vec<(String, Vec<f32>)> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("repo root");
@@ -566,50 +615,55 @@ mod tests {
                 .collect();
             paths.sort();
             for p in paths {
+                reject_lfs_pointer(&p);
                 let name = p.file_name().unwrap().to_string_lossy().into_owned();
                 let audio =
                     crate::audio::load_audio(&p).unwrap_or_else(|e| panic!("decode {name}: {e}"));
                 fixtures.push((name, audio));
             }
         }
-        if fixtures.is_empty() {
-            eprintln!("no benchmark fixtures found — run `git lfs pull`; skipping");
+        fixtures
+    }
+
+    /// #990: proves `VadDetector::load`'s tuned session (`intra_threads(1)`) is bit-for-bit
+    /// identical to the untuned default over the full benchmark corpus — the correctness claim
+    /// this PR rests on. `vad_990_measurement` below reports timing separately, since a timing
+    /// assertion in an always-run test is the flaky class CLAUDE.md bans.
+    #[test]
+    fn tuned_session_matches_default_bit_for_bit() {
+        let Some(path) = vad_model_path_or_skip("tuned_session_matches_default_bit_for_bit") else {
             return;
-        }
+        };
 
-        let mut composite: Vec<f32> = Vec::new();
-        while (composite.len() as f32 / SAMPLE_RATE as f32) < 129.0 {
-            for (_, audio) in &fixtures {
-                composite.extend_from_slice(audio);
-            }
-        }
-        fixtures.push(("tiled-129s-composite".to_string(), composite));
+        let default_session = Session::builder()
+            .expect("session builder")
+            .commit_from_file(&path)
+            .expect("load VAD (untuned default)");
+        let mut baseline = VadDetector {
+            session: default_session,
+        };
+        let mut tuned = VadDetector::load(&path).expect("load VAD (tuned)");
 
-        let mut max_abs_delta = 0.0_f32;
+        let fixtures = load_benchmark_fixtures();
+        assert!(
+            !fixtures.is_empty(),
+            "no benchmark fixtures found — run `git lfs pull`"
+        );
+
         let mut min_margin = f32::MAX;
-        let mut total_frames = 0usize;
-        let mut default_ns = 0u128;
-        let mut tuned_ns = 0u128;
         for (name, audio) in &fixtures {
-            let t0 = std::time::Instant::now();
             let base_probs = baseline
                 .frame_probs(audio)
                 .unwrap_or_else(|e| panic!("baseline frame_probs {name}: {e}"));
-            default_ns += t0.elapsed().as_nanos();
-
-            let t1 = std::time::Instant::now();
             let tuned_probs = tuned
                 .frame_probs(audio)
                 .unwrap_or_else(|e| panic!("tuned frame_probs {name}: {e}"));
-            tuned_ns += t1.elapsed().as_nanos();
-
             assert_eq!(
                 base_probs.len(),
                 tuned_probs.len(),
                 "{name}: frame count differs"
             );
             for (i, (&b, &t)) in base_probs.iter().zip(&tuned_probs).enumerate() {
-                max_abs_delta = max_abs_delta.max((b - t).abs());
                 min_margin = min_margin.min((b - 0.5).abs());
                 assert_eq!(
                     b.to_bits(),
@@ -617,15 +671,104 @@ mod tests {
                     "{name} frame {i}: default={b} tuned={t} (bit-for-bit mismatch)"
                 );
             }
-            total_frames += base_probs.len();
+        }
+        eprintln!("#990 corpus decision margin: min|p-0.5|={min_margin:e}");
+    }
+
+    /// #990 manual measurement, not a correctness gate (see the test above for that): wall-clock
+    /// for the untuned default vs. the tuned session over a synthetic ~185s composite, alternating
+    /// which arm runs first each rep to cancel warm-up order bias — a single fixed-order run
+    /// measured a 5-10 point swing (CLAUDE.md: "one run per arm settles nothing"). `just vad-bench`
+    /// runs this with `--ignored --no-capture`; `.with_intra_threads(1)` itself has no getter to
+    /// assert against, so this print is the only record of the win, not a pinned gate.
+    #[test]
+    #[ignore = "manual measurement harness — run via `just vad-bench`"]
+    fn vad_990_measurement() {
+        let Some(path) = vad_model_path_or_skip("vad_990_measurement") else {
+            return;
+        };
+
+        let fixtures = load_benchmark_fixtures();
+        assert!(
+            !fixtures.is_empty(),
+            "no benchmark fixtures found — run `git lfs pull`"
+        );
+        let corpus_secs: f32 = fixtures
+            .iter()
+            .map(|(_, a)| a.len() as f32 / SAMPLE_RATE as f32)
+            .sum();
+
+        let mut composite: Vec<f32> = Vec::new();
+        while (composite.len() as f32 / SAMPLE_RATE as f32) < 129.0 {
+            for (_, audio) in &fixtures {
+                composite.extend_from_slice(audio);
+            }
+        }
+        let composite_secs = composite.len() as f32 / SAMPLE_RATE as f32;
+
+        const REPS: usize = 5;
+        let mut default_us: Vec<f64> = Vec::with_capacity(REPS);
+        let mut tuned_us: Vec<f64> = Vec::with_capacity(REPS);
+        let mut composite_margin = f32::MAX;
+        let mut max_abs_delta = 0.0_f32;
+
+        for rep in 0..REPS {
+            let default_session = Session::builder()
+                .expect("session builder")
+                .commit_from_file(&path)
+                .expect("load VAD (untuned default)");
+            let mut baseline = VadDetector {
+                session: default_session,
+            };
+            let mut tuned = VadDetector::load(&path).expect("load VAD (tuned)");
+
+            let (base_probs, base_ns, tuned_probs, tuned_ns) = if rep % 2 == 0 {
+                let t0 = std::time::Instant::now();
+                let b = baseline
+                    .frame_probs(&composite)
+                    .expect("baseline frame_probs");
+                let bn = t0.elapsed().as_nanos();
+                let t1 = std::time::Instant::now();
+                let t = tuned.frame_probs(&composite).expect("tuned frame_probs");
+                (b, bn, t, t1.elapsed().as_nanos())
+            } else {
+                let t1 = std::time::Instant::now();
+                let t = tuned.frame_probs(&composite).expect("tuned frame_probs");
+                let tn = t1.elapsed().as_nanos();
+                let t0 = std::time::Instant::now();
+                let b = baseline
+                    .frame_probs(&composite)
+                    .expect("baseline frame_probs");
+                (b, t0.elapsed().as_nanos(), t, tn)
+            };
+
+            assert_eq!(
+                base_probs.len(),
+                tuned_probs.len(),
+                "rep {rep}: frame count differs"
+            );
+            for (&b, &t) in base_probs.iter().zip(&tuned_probs) {
+                max_abs_delta = max_abs_delta.max((b - t).abs());
+                composite_margin = composite_margin.min((b - 0.5).abs());
+                assert_eq!(b.to_bits(), t.to_bits(), "rep {rep}: bit-for-bit mismatch");
+            }
+
+            let frames = base_probs.len() as f64;
+            default_us.push(base_ns as f64 / frames / 1e3);
+            tuned_us.push(tuned_ns as f64 / frames / 1e3);
         }
 
+        let range = |v: &[f64]| {
+            (
+                v.iter().cloned().fold(f64::MAX, f64::min),
+                v.iter().cloned().fold(f64::MIN, f64::max),
+            )
+        };
+        let (d_min, d_max) = range(&default_us);
+        let (t_min, t_max) = range(&tuned_us);
+
         eprintln!(
-            "#990 measurement -- {total_frames} frames: default {:.1}ms ({:.1}us/frame), tuned {:.1}ms ({:.1}us/frame), max|dp|={max_abs_delta:e}, min|p-0.5|={min_margin:e}",
-            default_ns as f64 / 1e6,
-            default_ns as f64 / total_frames as f64 / 1e3,
-            tuned_ns as f64 / 1e6,
-            tuned_ns as f64 / total_frames as f64 / 1e3,
+            "#990 measurement -- corpus {corpus_secs:.1}s, composite {composite_secs:.1}s, {REPS} reps alternating order: default {d_min:.1}-{d_max:.1}us/frame, tuned {t_min:.1}-{t_max:.1}us/frame, max|dp|={max_abs_delta:e}, composite min|p-0.5|={composite_margin:e}"
         );
     }
 }

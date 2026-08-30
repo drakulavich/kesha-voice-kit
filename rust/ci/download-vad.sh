@@ -17,12 +17,12 @@ VAD_DIR="$DEST/models/silero-vad"
 TARGET="$VAD_DIR/silero_vad.onnx"
 mkdir -p "$VAD_DIR"
 
-# macOS ships shasum, Linux and Git-Bash ship sha256sum.
+# Hash from stdin: GNU sha256sum escapes a filename containing '\' with a leading '\' on the output line, which Git-Bash's mixed-separator Windows paths trigger (#990 review).
 sha_of() {
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | cut -d' ' -f1
+    sha256sum < "$1" | cut -d' ' -f1
   else
-    shasum -a 256 "$1" | cut -d' ' -f1
+    shasum -a 256 < "$1" | cut -d' ' -f1
   fi
 }
 

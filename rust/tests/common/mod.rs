@@ -243,6 +243,19 @@ pub fn vad_model_or_skip(test: &str) -> Option<PathBuf> {
     None
 }
 
+/// An LFS pointer stub is still a valid audio-extension path, so a decoder fails deep inside its
+/// probe with a message that never mentions LFS — panics with the actionable hint instead (#990).
+pub fn assert_not_lfs_pointer(path: &Path) {
+    if let Ok(bytes) = std::fs::read(path) {
+        if bytes.starts_with(b"version https://git-lfs.github.com/spec") {
+            panic!(
+                "{} is an LFS pointer stub, not audio — run `git lfs pull`",
+                path.display()
+            );
+        }
+    }
+}
+
 /// Resolve the cache base used by every cache-based skip gate.
 /// `KESHA_CACHE_DIR` if set, else `$HOME/.cache/kesha`. Falls back to
 /// `/tmp/.cache/kesha` if `HOME` is unset (matches the historical

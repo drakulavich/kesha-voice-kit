@@ -92,7 +92,7 @@ rust-test *ARGS:
 
 # #990's VAD session-threading measurement, printed: needs VAD_MODEL staged (kesha install --vad)
 vad-bench:
-    cd rust && VAD_MODEL="${VAD_MODEL:-$HOME/.cache/kesha/models/silero-vad/silero_vad.onnx}" cargo nextest run --features tts --no-capture -E 'test(tuned_session_matches_default_and_reports_990_measurement)'
+    cd rust && VAD_MODEL="${VAD_MODEL:-$HOME/.cache/kesha/models/silero-vad/silero_vad.onnx}" cargo nextest run --release --features tts --run-ignored ignored-only --no-capture -E 'test(vad_990_measurement)'
 
 # Gates are selected from what changed against origin/main...HEAD plus the working tree:
 # the Rust gate on rust/, the CoreML check on rust/src/backend/. just ALL=1 preflight forces both.

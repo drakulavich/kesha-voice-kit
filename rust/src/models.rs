@@ -2092,6 +2092,18 @@ mod manifest_tests {
         assert!(f.url.starts_with("https://github.com/snakers4/silero-vad/"));
     }
 
+    /// Reads the literal `VAR="value"` assignment line for `var`, ignoring comments —
+    /// `script.contains(needle)` would pass on a decoy value reassigned in code while the
+    /// real one sits in a `# pinned: ...` comment, which defeats the drift guard entirely.
+    fn shell_assignment<'a>(script: &'a str, var: &str) -> &'a str {
+        let prefix = format!("{var}=\"");
+        script
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(prefix.as_str()))
+            .and_then(|rest| rest.strip_suffix('"'))
+            .unwrap_or_else(|| panic!("no `{prefix}...\"` assignment found in download-vad.sh"))
+    }
+
     /// The CI staging script carries its own copy of the URL and hash, because a
     /// shell script cannot read a Rust const. Two copies of a pin drift, and the
     /// drift is invisible: CI would keep staging the old weights and the span
@@ -2103,15 +2115,15 @@ mod manifest_tests {
         )
         .expect("read rust/ci/download-vad.sh");
         let f = &VAD_FILES[0];
-        assert!(
-            script.contains(f.url),
-            "download-vad.sh does not carry the pinned URL {}",
-            f.url
+        assert_eq!(
+            shell_assignment(&script, "URL"),
+            f.url,
+            "download-vad.sh's URL= assignment does not match the pinned URL"
         );
-        assert!(
-            script.contains(f.sha256),
-            "download-vad.sh does not carry the pinned sha256 {}",
-            f.sha256
+        assert_eq!(
+            shell_assignment(&script, "SHA256"),
+            f.sha256,
+            "download-vad.sh's SHA256= assignment does not match the pinned sha256"
         );
     }
 

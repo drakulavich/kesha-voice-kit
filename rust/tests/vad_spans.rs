@@ -100,6 +100,7 @@ fn detect_segments_reproduces_the_committed_spans() {
             .expect("fixture name")
             .to_string_lossy()
             .into_owned();
+        common::assert_not_lfs_pointer(&path);
         let audio = load_audio(&path).unwrap_or_else(|e| panic!("decode {name}: {e}"));
         let spans = vad
             .detect_segments(&audio, VadConfig::default())
