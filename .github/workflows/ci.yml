@@ -87,6 +87,8 @@ jobs:
               - 'server.json'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
+              # workflow-lint's static check can't catch a semantic regression in the guard tests/integration/build-engine-tag-guard.test.ts pins (#1115 review round 2).
+              - '.github/workflows/build-engine.yml'
               # Most of these scripts have unit tests; without this a script-only edit skips the tests that cover it (check-workflows.ts enforces it). Deliberately no count — the one that lived here read 16 against an actual 25.
               - '.github/scripts/**'
               # The two halves of the install-plan join (#920): the size canary's unit test
@@ -102,6 +104,7 @@ jobs:
               - 'bun.lock'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
+              - '.github/workflows/build-engine.yml'
             real_engine_e2e:
               - 'rust/**'
               - 'package.json'

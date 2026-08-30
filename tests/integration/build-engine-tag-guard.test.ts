@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanupGitRepos, commit, git, gitRepoWithRemote } from "../helpers/git-repo";
+import { cleanupGitRepos, cloneFrom, commit, git, gitRepoWithRemote } from "../helpers/git-repo";
 import { parseRepoYaml } from "../helpers/repo";
 
 afterEach(cleanupGitRepos);
@@ -20,8 +20,9 @@ function guardScript(): string {
   return guard.run;
 }
 
+// Mirrors GHA's real `bash --noprofile --norc -eo pipefail {0}` — plain `bash -c` masks a failed `git ls-remote` as an empty `current` instead of aborting (#1115 review round 2).
 async function runGuard(work: string, tagName: string, sha: string): Promise<{ code: number; stdout: string }> {
-  const proc = Bun.spawn(["bash", "-c", guardScript()], {
+  const proc = Bun.spawn(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", guardScript()], {
     cwd: work,
     env: { ...process.env, TAG_NAME: tagName, GITHUB_SHA: sha },
     stdout: "pipe",
@@ -68,6 +69,39 @@ describe("build-engine.yml release job: tag-currency guard", () => {
 
     const { code, stdout } = await runGuard(work, "v1.0.0", sha);
     expect({ code, stdout }).toEqual({ code: 0, stdout: "" });
+  });
+
+  // Re-points via a second clone so `work`'s local ref stays stale — a guard reading it instead of querying origin wrongly passes.
+  test("fails an annotated tag re-pointed on the remote only, with the local checkout untouched", async () => {
+    const work = await gitRepoWithRemote();
+    const original = await git(work, "rev-parse", "HEAD");
+    await git(work, "tag", "-a", "v1.0.0", "-m", "notes");
+    await git(work, "push", "-q", "origin", "refs/tags/v1.0.0");
+
+    const other = await cloneFrom(work);
+    await git(other, "checkout", "-q", "v1.0.0");
+    await commit(other, "later work");
+    await git(other, "tag", "-f", "-a", "v1.0.0", "-m", "notes2");
+    await git(other, "push", "-qf", "origin", "refs/tags/v1.0.0");
+
+    expect(await git(work, "rev-parse", "refs/tags/v1.0.0^{commit}")).toBe(original);
+    expect((await runGuard(work, "v1.0.0", original)).code).toBe(1);
+  });
+
+  test("fails a lightweight tag re-pointed on the remote only, with the local checkout untouched", async () => {
+    const work = await gitRepoWithRemote();
+    const original = await git(work, "rev-parse", "HEAD");
+    await git(work, "tag", "v2.0.0");
+    await git(work, "push", "-q", "origin", "refs/tags/v2.0.0");
+
+    const other = await cloneFrom(work);
+    await git(other, "checkout", "-q", "v2.0.0");
+    await commit(other, "later work");
+    await git(other, "tag", "-f", "v2.0.0");
+    await git(other, "push", "-qf", "origin", "refs/tags/v2.0.0");
+
+    expect(await git(work, "rev-parse", "refs/tags/v2.0.0")).toBe(original);
+    expect((await runGuard(work, "v2.0.0", original)).code).toBe(1);
   });
 
   test("passes a lightweight tag that has not moved", async () => {

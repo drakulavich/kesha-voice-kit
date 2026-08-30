@@ -928,7 +928,9 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
   const GUARD = {
     name: "Verify tag has not been superseded",
     env: { TAG_NAME: "${{ github.ref_name }}" },
-    run: 'current="$(git rev-parse "refs/tags/$TAG_NAME")"\nif [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n',
+    run:
+      'current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"\n' +
+      'if [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n',
   };
   const PUBLISH = { name: "Create draft release with binaries", uses: "softprops/action-gh-release@3d0d9888c" };
 
@@ -961,9 +963,14 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
     expect(errors[0]).toContain("#1115");
   });
 
-  test("fails when only half the check is present", () => {
-    const noShaCheck = { ...GUARD, run: 'current="$(git rev-parse "refs/tags/$TAG_NAME")"\necho "$current"\n' };
+  test("fails when the step never compares against GITHUB_SHA", () => {
+    const noShaCheck = { ...GUARD, run: 'current="$(git ls-remote origin "refs/tags/$TAG_NAME^{}")"\necho "$current"\n' };
     expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [noShaCheck, PUBLISH]))[0]).toContain("#1115");
+  });
+
+  test("fails when the step never mentions refs/tags", () => {
+    const noTagRef = { ...GUARD, run: 'current="$GITHUB_SHA"\nif [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n' };
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [noTagRef, PUBLISH]))[0]).toContain("#1115");
   });
 
   test("fails when the release job is gone", () => {
