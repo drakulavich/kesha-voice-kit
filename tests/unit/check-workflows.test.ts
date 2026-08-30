@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -8,6 +8,8 @@ import {
   checkFlakeNix,
   collectCacheWriters,
   collectManifestSources,
+  collectModelsTreeSources,
+  collectRuleSources,
   forbidFindPipedToHead,
   forbidLinuxPackaging,
   forbidNixBuildInCiAggregator,
@@ -252,7 +254,7 @@ describe("forbidFindPipedToHead", () => {
     const yaml = "on: push\njobs:\n  smoke:\n    runs-on: macos-14\n    steps:\n      - run: find . -name x | head -1\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1088"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1088"))).toHaveLength(1);
   });
 });
 
@@ -401,9 +403,34 @@ const seedFilter = (paths: string[]) => ({ on: { push: { paths } } });
 
 describe("manifest sources stay inside both path filters", () => {
   test("collectManifestSources finds the engine's pinned manifests and nothing else", () => {
-    const sources = collectManifestSources(repoPath("rust/src"));
+    const sources = collectManifestSources(repoPath("rust/src")).map((file) =>
+      file.slice(REPO_ROOT.length + 1),
+    );
     expect(sources.length).toBeGreaterThan(0);
-    for (const file of sources) expect(readFileSync(file, "utf8")).toContain("ModelFile {");
+    expect(sources).toContain("rust/src/models/manifest.rs");
+    // download.rs's only `ModelFile {` is a #[cfg(test)] stub-server helper, not a pin — collecting it
+    // made the rule's message false and forced cache-seed.yml to re-seed on a test-helper edit (#950 round 3).
+    expect(sources).not.toContain("rust/src/models/download.rs");
+  });
+
+  test("a ModelFile literal that only appears under #[cfg(test)] is not a pin", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-manifest-"));
+    writeFileSync(
+      join(dir, "helper.rs"),
+      "fn real() {}\n\n#[cfg(test)]\nmod t {\n    fn stub() -> ModelFile {\n        ModelFile { rel_path: \"x\" }\n    }\n}\n",
+    );
+    writeFileSync(join(dir, "pinned.rs"), "const A: ModelFile = ModelFile {\n    rel_path: \"y\",\n};\n");
+    expect(collectManifestSources(dir)).toEqual([join(dir, "pinned.rs")]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("collectModelsTreeSources returns every .rs under the models tree", () => {
+    const tree = collectModelsTreeSources(repoPath("rust/src/models")).map((file) =>
+      file.slice(REPO_ROOT.length + 1),
+    );
+    expect(tree.length).toBeGreaterThanOrEqual(6);
+    expect(tree).toContain("rust/src/models/paths.rs");
+    expect(tree).toContain("rust/src/models/staging.rs");
   });
 
   test("the real ci.yml and cache-seed.yml cover every one of them", () => {
@@ -474,6 +501,12 @@ describe("manifest sources stay inside both path filters", () => {
     );
   });
 
+  test("an empty modelsTreeSources list fails loudly instead of passing vacuously", () => {
+    const errors = requireModelsTreeInCodeFilter(CI, codeFilter(["rust/src/models/**"]), []);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("returned no files");
+  });
+
   test("an empty manifestSources list fails loudly instead of passing vacuously", () => {
     const codeErrors = requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), []);
     expect(codeErrors).toHaveLength(1);
@@ -484,18 +517,34 @@ describe("manifest sources stay inside both path filters", () => {
     expect(seedErrors[0]).toContain("returned no files");
   });
 
+  test("main pairs each rule with its own collector", () => {
+    const { manifestSources, modelsTreeSources } = collectRuleSources(
+      repoPath("rust/src"), repoPath("rust/src/models"),
+    );
+    const rel = (files: string[]) => files.map((file) => file.slice(REPO_ROOT.length + 1));
+    expect(rel(modelsTreeSources)).toContain("rust/src/models/paths.rs");
+    expect(rel(manifestSources)).not.toContain("rust/src/models/paths.rs");
+  });
+
   // A gate is only a gate if checkFile still calls it; the real tree cannot notice an unwired one.
   test("the file gate actually runs both", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
     const ci = join(dir, "ci.yml");
     writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n");
-    // Two errors, one per rule: the manifest rule and the models-tree rule both see the dropped file —
-    // this count is the wiring pin for requireModelsTreeInCodeFilter (unwire it and this drops to 1).
-    expect(checkFile(ci, [], [], undefined, ["rust/src/models.rs"]).filter((e) => e.includes("#950"))).toHaveLength(2);
+    // Distinct fifth and sixth arguments: each rule must name the file from its OWN set, so handing
+    // requireModelsTreeInCodeFilter the manifest set instead of the tree set is visible here (#950 round 3).
+    const errors = checkFile(
+      ci, [], [], undefined, ["rust/src/models/manifest.rs"], ["rust/src/models/paths.rs"],
+    ).filter((e) => e.includes("#950"));
+    expect(errors).toHaveLength(2);
+    expect(errors.join("\n")).toContain("rust/src/models/manifest.rs pins ModelFile entries");
+    expect(errors.join("\n")).toContain("rust/src/models/paths.rs is read by the TS pact suites");
 
     const seed = join(dir, "cache-seed.yml");
     writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'rust/Cargo.lock'\n");
-    expect(checkFile(seed, [], [], undefined, ["rust/src/models.rs"]).filter((e) => e.includes("#950"))).toHaveLength(1);
+    expect(
+      checkFile(seed, [], [], undefined, ["rust/src/models.rs"], ["rust/src/models.rs"]).filter((e) => e.includes("#950")),
+    ).toHaveLength(1);
   });
 });
 
@@ -534,7 +583,7 @@ describe("requireFlakeNixInWorkflowsFilter", () => {
     const yaml = "jobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            workflows:\n              - '.github/workflows/**'\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1088"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1088"))).toHaveLength(1);
   });
 });
 
@@ -719,7 +768,7 @@ describe("requirePipefailShell", () => {
     const yaml = "on: push\njobs:\n  smoke:\n    runs-on: ubuntu-latest\n    steps:\n      - run: a | b\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1084"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1084"))).toHaveLength(1);
   });
 
   // Composite steps live under `runs.steps`, not `jobs`; an explicit `shell: sh` there is the same trap (#1089).
@@ -767,7 +816,7 @@ describe("requirePipefailShell", () => {
     const yaml = "name: Example\nruns:\n  using: composite\n  steps:\n    - run: a | b\n      shell: sh\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "action.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1089"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1089"))).toHaveLength(1);
   });
 });
 
@@ -958,7 +1007,7 @@ describe("requireJobTimeouts", () => {
     const yaml = "on: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });
 
@@ -1178,7 +1227,7 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
       "on:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: echo hi\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });
 
@@ -1240,7 +1289,7 @@ describe("requireBuildEngineSerialisesRunsPerRef", () => {
     const yaml = "on:\n  push:\njobs: {}\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1108"))).toHaveLength(2);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1108"))).toHaveLength(2);
   });
 });
 
@@ -1318,7 +1367,7 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
       "on:\n  push:\njobs:\n  release:\n    steps:\n      - uses: softprops/action-gh-release@3d0d9888c\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1115"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1115"))).toHaveLength(1);
   });
 });
 
@@ -1357,7 +1406,7 @@ describe("requireRustTestCancelsSupersededRuns", () => {
     const yaml = "on:\n  pull_request:\nconcurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });
 
@@ -1385,6 +1434,6 @@ describe("forbidNixBuildInCiAggregator", () => {
     const yaml = "on: push\njobs:\n  nix-build:\n    if: github.event_name == 'push'\n  ci:\n    needs: [nix-build]\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("nix-build"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, [], []).filter((e) => e.includes("nix-build"))).toHaveLength(1);
   });
 });

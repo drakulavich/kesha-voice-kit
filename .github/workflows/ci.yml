@@ -163,6 +163,8 @@ jobs:
               - 'src/engine-targets.ts'
               # checkFlakeNix (#1088) scans this file; without it here workflow-lint never runs on a flake.nix-only change.
               - 'flake.nix'
+              # A ModelFile pin moving out of the filtered set must fire the coverage guard on ITS OWN PR (#950).
+              - 'rust/src/**'
             # check:recipes reads the justfile on one side and the prose on the other, so either
             # side moving has to re-run it — renaming a recipe and citing a recipe are the same bug.
             recipes:

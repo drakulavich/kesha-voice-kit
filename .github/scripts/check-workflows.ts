@@ -637,9 +637,14 @@ export function requireTestedScriptsInCodeFilter(
     .map((file) => `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`);
 }
 
+const sourceBeforeTests = (contents: string) => {
+  const tests = contents.indexOf("#[cfg(test)]");
+  return tests === -1 ? contents : contents.slice(0, tests);
+};
+
 /**
- * Every engine source holding a `ModelFile` literal — the pins ci.yml's `code` lane and
- * cache-seed.yml's key both read, wherever `models` currently lives (#950).
+ * Every engine source holding a `ModelFile` literal outside `#[cfg(test)]` — the pins ci.yml's
+ * `code` lane and cache-seed.yml's key both read, wherever `models` currently lives (#950).
  *
  * Deliberately narrower than `tests/helpers/rust-models-source.ts`'s `rustModelsSourcePaths`,
  * which returns every `.rs` file under the models tree (paths.rs and staging.rs included) for
@@ -653,7 +658,7 @@ export function collectManifestSources(root = "rust/src"): string[] {
   return readdirSync(root, { recursive: true })
     .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
     .map((entry) => join(root, entry))
-    .filter((file) => /ModelFile\s*\{/.test(readFileSync(file, "utf8")))
+    .filter((file) => /ModelFile\s*\{/.test(sourceBeforeTests(readFileSync(file, "utf8"))))
     .sort();
 }
 
@@ -664,6 +669,15 @@ export function collectModelsTreeSources(root = "rust/src/models"): string[] {
     .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
     .map((entry) => join(root, entry))
     .sort();
+}
+
+/** The pair main() feeds the two #950 rules. Exported so the pairing itself is pinnable: handing the
+ * models-tree rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
+export function collectRuleSources(rustRoot?: string, modelsRoot?: string) {
+  return {
+    manifestSources: collectManifestSources(rustRoot),
+    modelsTreeSources: collectModelsTreeSources(modelsRoot),
+  };
 }
 
 /** Fails when a models-tree source falls out of ci.yml's `code` filter: the TS pact suites read it, so an edit to it must fire unit-tests (#950 round 2). */
@@ -1054,8 +1068,8 @@ export function checkFile(
   testedScripts: string[],
   cacheWriters: CacheEntry[],
   rustToolchain: RustToolchainPin | undefined,
-  manifestSources: string[] = [],
-  modelsTreeSources: string[] = manifestSources,
+  manifestSources: string[],
+  modelsTreeSources: string[],
 ): string[] {
   try {
     const contents = readFileSync(path, "utf8");
@@ -1116,8 +1130,7 @@ function main(): void {
     ? collectCacheWriters(parse(readFileSync(SEED_WORKFLOW, "utf8")))
     : [];
   const { pin: rustToolchain, errors: rustToolchainErrors } = readRustToolchainPin();
-  const manifestSources = collectManifestSources();
-  const modelsTreeSources = collectModelsTreeSources();
+  const { manifestSources, modelsTreeSources } = collectRuleSources();
   const errors = [
     ...rustToolchainErrors,
     ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, manifestSources, modelsTreeSources)),
