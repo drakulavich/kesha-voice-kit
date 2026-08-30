@@ -720,7 +720,7 @@ mod tests {
         // a non-silent signal of roughly the right duration back.
         let path = std::env::temp_dir().join(format!("kesha-flac-rt-{}.flac", std::process::id()));
         std::fs::write(&path, &bytes).unwrap();
-        let decoded = crate::audio::load_audio(path.to_str().unwrap()).unwrap();
+        let decoded = crate::audio::load_audio(&path).unwrap();
         std::fs::remove_file(&path).ok();
         assert!(!decoded.is_empty(), "decoded FLAC was empty");
         let rms = (decoded.iter().map(|s| s * s).sum::<f32>() / decoded.len() as f32).sqrt();

@@ -243,7 +243,7 @@ mod tests {
             !bytes.starts_with(b"version https://git-lfs"),
             "fixture is an unmaterialized Git LFS pointer — run `git lfs pull` first"
         );
-        crate::audio::load_audio(&path).expect("decode fixture")
+        crate::audio::load_audio(std::path::Path::new(&path)).expect("decode fixture")
     }
 
     fn transcribe_streaming(samples: &[f32]) -> String {

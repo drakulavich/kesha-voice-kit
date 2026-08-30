@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
@@ -34,12 +36,9 @@ fn get_codec_registry() -> CodecRegistry {
 ///
 /// Returns an empty [`Hint`] when the path has no extension or the
 /// extension is non-UTF-8.
-fn build_hint(path: &str) -> Hint {
+fn build_hint(path: &Path) -> Hint {
     let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-    {
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(&ext.to_ascii_lowercase());
     }
     hint
@@ -48,7 +47,7 @@ fn build_hint(path: &str) -> Hint {
 /// Open `path`, probe format + select the first supported audio track.
 /// Shared by the decode loop and the duration probes so container
 /// detection + error messages live in one place.
-fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameters)> {
+fn open_format(path: &Path) -> Result<(Box<dyn FormatReader>, u32, CodecParameters)> {
     let src = std::fs::File::open(path).map_err(|e| {
         let code = if e.kind() == std::io::ErrorKind::NotFound {
             ErrorCode::InputNotFound
@@ -56,9 +55,9 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
             ErrorCode::BadAudio
         };
         let message = if code == ErrorCode::InputNotFound {
-            format!("file not found: {path}")
+            format!("file not found: {}", path.display())
         } else {
-            format!("could not open audio file: {path}: {e}")
+            format!("could not open audio file: {}: {e}", path.display())
         };
         anyhow::Error::new(crate::errors::CodedError { code, message })
     })?;
@@ -76,7 +75,7 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
-        .with_context(|| format!("unsupported audio format: {path}"))
+        .with_context(|| format!("unsupported audio format: {}", path.display()))
         .coded(ErrorCode::BadAudio)?;
 
     let track = probed
@@ -84,7 +83,7 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
         .tracks()
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-        .with_context(|| format!("no supported audio tracks in: {path}"))
+        .with_context(|| format!("no supported audio tracks in: {}", path.display()))
         .coded(ErrorCode::BadAudio)?;
 
     let track_id = track.id;
@@ -96,12 +95,12 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
 /// interleaved samples to `on_samples`. Returns the track's sample rate and
 /// channel count. Consumers that don't need the audio itself must not retain
 /// the slice, so they stay O(1) in memory.
-fn decode_packets<F: FnMut(&[f32])>(path: &str, mut on_samples: F) -> Result<(u32, usize)> {
+fn decode_packets<F: FnMut(&[f32])>(path: &Path, mut on_samples: F) -> Result<(u32, usize)> {
     let (mut format, track_id, codec_params) = open_format(path)?;
 
     let sample_rate = codec_params
         .sample_rate
-        .with_context(|| format!("unknown sample rate in: {path}"))
+        .with_context(|| format!("unknown sample rate in: {}", path.display()))
         .coded(ErrorCode::BadAudio)?;
     let channels = codec_params.channels.map(|c| c.count()).unwrap_or(1);
 
@@ -109,7 +108,7 @@ fn decode_packets<F: FnMut(&[f32])>(path: &str, mut on_samples: F) -> Result<(u3
     let codec_registry = get_codec_registry();
     let mut decoder = codec_registry
         .make(&codec_params, &dec_opts)
-        .with_context(|| format!("unsupported codec in: {path}"))
+        .with_context(|| format!("unsupported codec in: {}", path.display()))
         .coded(ErrorCode::BadAudio)?;
 
     let mut sample_buf: Option<SampleBuffer<f32>> = None;
@@ -120,7 +119,7 @@ fn decode_packets<F: FnMut(&[f32])>(path: &str, mut on_samples: F) -> Result<(u3
             Err(SymphoniaError::IoError(_)) | Err(SymphoniaError::ResetRequired) => break,
             Err(e) => {
                 return Err(e)
-                    .with_context(|| format!("decode error in: {path}"))
+                    .with_context(|| format!("decode error in: {}", path.display()))
                     .coded(ErrorCode::BadAudio)
             }
         };
@@ -138,7 +137,7 @@ fn decode_packets<F: FnMut(&[f32])>(path: &str, mut on_samples: F) -> Result<(u3
             Err(SymphoniaError::IoError(_)) | Err(SymphoniaError::DecodeError(_)) => continue,
             Err(e) => {
                 return Err(e)
-                    .with_context(|| format!("decode error in: {path}"))
+                    .with_context(|| format!("decode error in: {}", path.display()))
                     .coded(ErrorCode::BadAudio)
             }
         };
@@ -154,7 +153,7 @@ fn decode_packets<F: FnMut(&[f32])>(path: &str, mut on_samples: F) -> Result<(u3
     Ok((sample_rate, channels))
 }
 
-fn decode_audio(path: &str) -> Result<(Vec<f32>, u32, usize)> {
+fn decode_audio(path: &Path) -> Result<(Vec<f32>, u32, usize)> {
     let mut all_samples: Vec<f32> = Vec::new();
     let (sample_rate, channels) =
         decode_packets(path, |samples| all_samples.extend_from_slice(samples))?;
@@ -265,14 +264,16 @@ pub(crate) fn resample_mono(samples: &[f32], src_rate: u32, dst_rate: u32) -> Re
     Ok(output_mono)
 }
 
-pub fn load_audio(path: &str) -> Result<Vec<f32>> {
+/// Takes `&Path` rather than `&str`: the sole call site that needed to
+/// express an arbitrary OS path without a lossy round-trip (#958).
+pub fn load_audio(path: &Path) -> Result<Vec<f32>> {
     let (interleaved, sample_rate, channels) = decode_audio(path)?;
     let mono = mix_to_mono(&interleaved, channels);
     resample_mono(&mono, sample_rate, TARGET_SAMPLE_RATE)
 }
 
 pub fn load_audio_truncated(path: &str, max_seconds: f32) -> Result<Vec<f32>> {
-    let samples = load_audio(path)?;
+    let samples = load_audio(Path::new(path))?;
     let max_samples = (max_seconds * TARGET_SAMPLE_RATE as f32) as usize;
     Ok(samples.into_iter().take(max_samples).collect())
 }
@@ -283,7 +284,7 @@ pub fn load_audio_truncated(path: &str, max_seconds: f32) -> Result<Vec<f32>> {
 /// falling back to a decode-and-measure, which would defeat the purpose of a
 /// cheap probe.
 pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
-    let (_format, _track_id, codec_params) = open_format(path)?;
+    let (_format, _track_id, codec_params) = open_format(Path::new(path))?;
     match (codec_params.n_frames, codec_params.sample_rate) {
         (Some(n), Some(sr)) if sr > 0 => Ok(Some(n as f32 / sr as f32)),
         _ => Ok(None),
@@ -298,7 +299,8 @@ pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
 /// advisory routing decisions.
 pub fn measure_duration_seconds(path: &str) -> Result<f32> {
     let mut decoded_samples = 0usize;
-    let (sample_rate, channels) = decode_packets(path, |samples| decoded_samples += samples.len())?;
+    let (sample_rate, channels) =
+        decode_packets(Path::new(path), |samples| decoded_samples += samples.len())?;
     let frames = decoded_samples / channels.max(1);
     if frames == 0 || sample_rate == 0 {
         coded_bail!(
@@ -326,7 +328,7 @@ pub fn measure_duration_seconds(path: &str) -> Result<f32> {
 /// Transcription failed" is the worst offender, since it lands ~25 s into
 /// the ASR cold-load on a file we knew at the top was unusable).
 pub fn ensure_audio_track(path: &str) -> Result<()> {
-    open_format(path).map(|_| ())
+    open_format(Path::new(path)).map(|_| ())
 }
 
 #[cfg(test)]

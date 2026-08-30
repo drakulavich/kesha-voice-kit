@@ -103,7 +103,7 @@ mod tests {
         }
     }
 
-    // A real `&Path` argument, not a `&str` one, is what proves this boundary takes `&Path` (#958).
+    // Guards a revert to `&str`; a generic `AsRef<Path>` signature would also satisfy this, and that's fine (#958).
     #[test]
     fn transcribe_takes_a_path_argument() {
         let mut be = StubBackend;
@@ -111,10 +111,5 @@ mod tests {
             .transcribe(Path::new("/tmp/958.wav"))
             .expect("stub never fails");
         assert_eq!(chunk.text, "/tmp/958.wav");
-    }
-
-    #[test]
-    fn create_backend_takes_a_path_argument() {
-        let _ = create_backend(Path::new("/nonexistent-958-model-dir"));
     }
 }

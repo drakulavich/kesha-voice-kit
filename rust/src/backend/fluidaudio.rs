@@ -50,7 +50,7 @@ impl TranscribeBackend for FluidAudioBackend {
             Ok((result, words)) => Ok(chunk_from(result.text, words)),
             // FluidAudio refuses a file below ~0.25 s; the padding path serves it, and load_audio names a real fault better (#995).
             Err(_) => {
-                let samples = crate::audio::load_audio(&audio_path.to_string_lossy())?;
+                let samples = crate::audio::load_audio(audio_path)?;
                 super::ensure_transcribable(&samples)?;
                 self.transcribe_samples(&samples)
             }
@@ -484,7 +484,7 @@ mod tests {
             !bytes.starts_with(b"version https://git-lfs"),
             "fixture is an unmaterialized Git LFS pointer — run `git lfs pull` before this test"
         );
-        let samples = crate::audio::load_audio(wav).expect("decode sentence fixture");
+        let samples = crate::audio::load_audio(Path::new(wav)).expect("decode sentence fixture");
 
         // Declared first so it drops last — after the backend's CoreML teardown.
         let mut dump = FailureDump { first_call: None };
@@ -536,7 +536,7 @@ mod tests {
             !bytes.starts_with(b"version https://git-lfs"),
             "fixture is an unmaterialized Git LFS pointer — run `git lfs pull` before this test"
         );
-        let samples = crate::audio::load_audio(wav).expect("decode sentence fixture");
+        let samples = crate::audio::load_audio(Path::new(wav)).expect("decode sentence fixture");
 
         let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
         let chunk = be

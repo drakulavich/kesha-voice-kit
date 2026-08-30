@@ -473,7 +473,7 @@ mod tests {
             "{}/../tests/fixtures/benchmark-en/03-review-pull-request.ogg",
             env!("CARGO_MANIFEST_DIR")
         );
-        let mut samples = crate::audio::load_audio(&fixture).expect("decode fixture");
+        let mut samples = crate::audio::load_audio(Path::new(&fixture)).expect("decode fixture");
         let mut endpoint = StreamingVad::load(
             Path::new(&path),
             EndpointConfig {
@@ -491,10 +491,10 @@ mod tests {
             );
         }
 
-        let silence = crate::audio::load_audio(&format!(
+        let silence = crate::audio::load_audio(Path::new(&format!(
             "{}/../tests/fixtures/silence.wav",
             env!("CARGO_MANIFEST_DIR")
-        ))
+        )))
         .expect("decode silence fixture");
         for _ in 0..3 {
             samples.extend_from_slice(&silence);

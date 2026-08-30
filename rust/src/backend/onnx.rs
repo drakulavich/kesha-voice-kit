@@ -222,7 +222,7 @@ impl OnnxBackend {
 
 impl TranscribeBackend for OnnxBackend {
     fn transcribe(&mut self, audio_path: &Path) -> Result<TranscriptionChunk> {
-        let audio_samples = audio::load_audio(&audio_path.to_string_lossy())?;
+        let audio_samples = audio::load_audio(audio_path)?;
         self.transcribe_samples(&audio_samples)
     }
 

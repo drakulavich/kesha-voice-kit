@@ -456,7 +456,7 @@ fn transcribe_chunked(
     timestamps_required: bool,
 ) -> Result<TranscriptionOutput> {
     let t_audio = Instant::now();
-    let samples = audio::load_audio(audio_path)?;
+    let samples = audio::load_audio(Path::new(audio_path))?;
     dtrace!(
         "chunked::audio_loaded dt={}ms samples={}",
         t_audio.elapsed().as_millis(),
@@ -495,7 +495,7 @@ fn transcribe_via_vad(
     }
 
     let t_audio = Instant::now();
-    let samples = audio::load_audio(audio_path)?;
+    let samples = audio::load_audio(Path::new(audio_path))?;
     dtrace!(
         "vad::audio_loaded dt={}ms samples={}",
         t_audio.elapsed().as_millis(),
@@ -2247,7 +2247,7 @@ mod seam_long_form {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../tests/fixtures/benchmark-en")
             .join(name);
-        audio::load_audio(path.to_str().unwrap()).unwrap_or_else(|e| {
+        audio::load_audio(&path).unwrap_or_else(|e| {
             panic!("load {name}: {e} — run `git lfs pull` if fixtures are pointer stubs")
         })
     }
