@@ -1111,7 +1111,7 @@ pub const VOSK_RU_FILES: &[ModelFile] = &[
 #[cfg(test)]
 mod manifest_tests {
     use super::*;
-    use crate::models::{staging_path, verify_sha256, write_verified};
+    use crate::models::download::{staging_path, verify_sha256, write_verified};
     use std::fs;
     use std::io;
     use std::path::PathBuf;
