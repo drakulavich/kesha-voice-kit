@@ -18,6 +18,7 @@ import { engineTargetEntries, targetKey } from "../../src/engine-targets";
 
 const dirs = [".github/workflows", ".github/actions"];
 const RUST_TOOLCHAIN_FILE = "rust-toolchain.toml";
+const FLAKE_NIX = "flake.nix";
 
 export type RustToolchainPin = {
   channel: string;
@@ -420,6 +421,43 @@ export function requirePipefailShell(path: string, document: unknown): string[] 
 }
 
 /**
+ * Fails when a `run:` step pipes `find` into `head`. Both of these steps carry `shell: bash`,
+ * which GitHub runs as `bash --noprofile --norc -eo pipefail {0}` — under pipefail, if `find` is
+ * still writing when `head` has read enough lines and exits, `find` takes SIGPIPE and exits 141,
+ * and `-e` fails the step on a traversal that actually succeeded. Whether it fires depends on how
+ * many matches the tree produces and when, so it is a race that has simply not lost yet, not a
+ * safe pattern (#1088). `find ... -print -quit` returns the same first match with no second
+ * process and nothing to signal.
+ */
+export function forbidFindPipedToHead(path: string, contents: string): string[] {
+  const errors: string[] = [];
+  let logical = "";
+  let startAt = 0;
+
+  const check = () => {
+    if (/^\s*#/.test(logical)) return;
+    if (!/\bfind\b/.test(logical) || !/\|\s*head\b/.test(logical)) return;
+    errors.push(
+      `${path}:${startAt + 1}: pipes \`find\` into \`head\` — under pipefail that is a SIGPIPE race (\`find\` can exit ` +
+        `141 while still traversing), not a guaranteed success; use \`find ... -print -quit\` instead (#1088)`,
+    );
+  };
+
+  // A trailing `\` continues a shell command onto the next physical line; join before matching, or the two halves of a wrapped find|head never meet.
+  contents.split("\n").forEach((line, at) => {
+    if (logical === "") startAt = at;
+    const continued = /\\\s*$/.test(line);
+    logical += continued ? `${line.replace(/\\\s*$/, "")} ` : line;
+    if (continued) return;
+    check();
+    logical = "";
+  });
+  if (logical !== "") check();
+
+  return errors;
+}
+
+/**
  * Fails when a restore-only model cache has no writer, or has one that disagrees about the entry.
  *
  * `cache-write: "false"` hands the whole responsibility for an entry to cache-seed.yml (#661). Nothing
@@ -593,6 +631,21 @@ export function requireTestedScriptsInCodeFilter(
   return testedScripts
     .filter((file) => !covers(file))
     .map((file) => `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`);
+}
+
+/** Fails when ci.yml stops routing flake.nix changes to workflow-lint, the only lane that runs checkFlakeNix (#1088). */
+export function requireFlakeNixInWorkflowsFilter(path: string, document: unknown): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+
+  const workflows = (parse(raw) as Record<string, string[]>)?.workflows;
+  if (!Array.isArray(workflows)) return [`${path}: paths-filter is missing a \`workflows\` list`];
+
+  return workflows.includes(FLAKE_NIX)
+    ? []
+    : [`${path}: \`workflows\` filter must include \`${FLAKE_NIX}\`, or checkFlakeNix's guard never runs in CI (#1088)`];
 }
 
 function collectTestedScripts(): string[] {
@@ -838,6 +891,7 @@ export function checkFile(
       ...requirePreUploadSynthesisSmoke(path, document),
       ...requireDarwinSmokeCoversBothEngines(path, document),
       ...forbidLinuxPackaging(path, contents),
+      ...forbidFindPipedToHead(path, contents),
       ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
@@ -851,6 +905,7 @@ export function checkFile(
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
+      ...requireFlakeNixInWorkflowsFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
     ];
   } catch (err) {
@@ -859,6 +914,16 @@ export function checkFile(
 }
 
 const SEED_WORKFLOW = ".github/workflows/cache-seed.yml";
+
+/**
+ * flake.nix stages the same `say-avspeech` sidecar as build-engine.yml's steps, under the same
+ * `find | head` SIGPIPE race (#1088) — but it isn't YAML, so it can't go through `checkFile`'s
+ * `parse(contents)`. `forbidFindPipedToHead` is plain-text already; run it here directly instead.
+ */
+export function checkFlakeNix(path: string): string[] {
+  if (!existsSync(path)) return [];
+  return forbidFindPipedToHead(path, readFileSync(path, "utf8"));
+}
 
 function main(): void {
   const files = dirs.flatMap((dir) => collectYamlFiles(dir)).sort();
@@ -876,6 +941,7 @@ function main(): void {
   const errors = [
     ...rustToolchainErrors,
     ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain)),
+    ...checkFlakeNix(FLAKE_NIX),
   ];
   for (const error of errors) console.error(error);
 
