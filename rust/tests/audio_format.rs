@@ -44,7 +44,8 @@ fn unsupported_container_is_coded_bad_audio_not_internal() {
     );
 
     // The same path reached through the decode entry point must agree.
-    let err = audio::load_audio(path).expect_err("decoding a non-container must fail");
+    let err = audio::load_audio(std::path::Path::new(path))
+        .expect_err("decoding a non-container must fail");
     assert_eq!(code_of(&err), ErrorCode::BadAudio, "{err:#}");
 }
 
@@ -72,7 +73,8 @@ fn undecodable_codec_is_coded_bad_audio() {
     let path = fixture("alac.m4a");
     // The container opens (the track is real), so the failure surfaces at decode.
     audio::ensure_audio_track(&path).expect("ALAC container opens; the track is valid");
-    let err = audio::load_audio(&path).expect_err("an undecodable codec must fail");
+    let err =
+        audio::load_audio(std::path::Path::new(&path)).expect_err("an undecodable codec must fail");
     assert_eq!(code_of(&err), ErrorCode::BadAudio, "{err:#}");
     assert!(
         format!("{err:#}").contains("unsupported codec"),

@@ -31,9 +31,7 @@ pub struct OnnxBackend {
 }
 
 impl OnnxBackend {
-    pub fn new(model_dir: &str) -> Result<Self> {
-        let model_path = Path::new(model_dir);
-
+    pub fn new(model_path: &Path) -> Result<Self> {
         let preprocessor = Session::builder()
             .context("Failed to create preprocessor session builder")
             .coded(ErrorCode::ModelLoad)?
@@ -223,7 +221,7 @@ impl OnnxBackend {
 }
 
 impl TranscribeBackend for OnnxBackend {
-    fn transcribe(&mut self, audio_path: &str) -> Result<TranscriptionChunk> {
+    fn transcribe(&mut self, audio_path: &Path) -> Result<TranscriptionChunk> {
         let audio_samples = audio::load_audio(audio_path)?;
         self.transcribe_samples(&audio_samples)
     }
