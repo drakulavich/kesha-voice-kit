@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -7,6 +7,7 @@ import {
   checkFile,
   checkFlakeNix,
   collectCacheWriters,
+  collectManifestSources,
   forbidFindPipedToHead,
   forbidLinuxPackaging,
   forbidNixBuildInCiAggregator,
@@ -22,6 +23,8 @@ import {
   requireDarwinSmokeCoversBothEngines,
   requireDepsBeforeBunTest,
   requireFlakeNixInWorkflowsFilter,
+  requireManifestSourcesInCodeFilter,
+  requireManifestSourcesInSeedFilter,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
   requirePinnedRustToolchain,
@@ -389,6 +392,70 @@ describe("requireTestedScriptsInCodeFilter", () => {
 
   test("fails when the changes job has no inline filters", () => {
     expect(requireTestedScriptsInCodeFilter(CI, { jobs: { changes: {} } }, [])[0]).toContain("expected a `changes` job");
+  });
+});
+
+const SEED = ".github/workflows/cache-seed.yml";
+const seedFilter = (paths: string[]) => ({ on: { push: { paths } } });
+
+describe("manifest sources stay inside both path filters", () => {
+  test("collectManifestSources finds the engine's pinned manifests and nothing else", () => {
+    const sources = collectManifestSources(repoPath("rust/src"));
+    expect(sources.length).toBeGreaterThan(0);
+    for (const file of sources) expect(readFileSync(file, "utf8")).toContain("ModelFile {");
+  });
+
+  test("the real ci.yml and cache-seed.yml cover every one of them", () => {
+    const sources = collectManifestSources(repoPath("rust/src")).map((file) =>
+      file.slice(REPO_ROOT.length + 1),
+    );
+    expect(requireManifestSourcesInCodeFilter(CI, parseRepoYaml(CI), sources)).toEqual([]);
+    expect(requireManifestSourcesInSeedFilter(SEED, parseRepoYaml(SEED), sources)).toEqual([]);
+  });
+
+  test("ci.yml dropping the manifest path de-gates the install-plan join", () => {
+    const errors = requireManifestSourcesInCodeFilter(CI, codeFilter(["src/**"]), [
+      "rust/src/models.rs",
+    ]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("skips the install-plan join");
+  });
+
+  test("cache-seed.yml dropping the manifest path stops the re-seed", () => {
+    const errors = requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/Cargo.lock"]), [
+      "rust/src/models.rs",
+    ]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("never re-seeds the shared model caches");
+  });
+
+  test("a directory wildcard covers the manifests under it", () => {
+    const sources = ["rust/src/models/manifest.rs", "rust/src/models/mod.rs"];
+    expect(requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), sources)).toEqual([]);
+    expect(requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/src/models/**"]), sources)).toEqual([]);
+  });
+
+  test("each rule ignores every other workflow", () => {
+    expect(requireManifestSourcesInCodeFilter(SEED, seedFilter([]), ["rust/src/models.rs"])).toEqual([]);
+    expect(requireManifestSourcesInSeedFilter(CI, codeFilter([]), ["rust/src/models.rs"])).toEqual([]);
+  });
+
+  test("fails when cache-seed.yml has no push paths filter at all", () => {
+    expect(requireManifestSourcesInSeedFilter(SEED, { on: { push: {} } }, [])[0]).toContain(
+      "expected a `push` trigger",
+    );
+  });
+
+  // A gate is only a gate if checkFile still calls it; the real tree cannot notice an unwired one.
+  test("the file gate actually runs both", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
+    const ci = join(dir, "ci.yml");
+    writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n");
+    expect(checkFile(ci, [], [], undefined, ["rust/src/models.rs"]).filter((e) => e.includes("#950"))).toHaveLength(1);
+
+    const seed = join(dir, "cache-seed.yml");
+    writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'rust/Cargo.lock'\n");
+    expect(checkFile(seed, [], [], undefined, ["rust/src/models.rs"]).filter((e) => e.includes("#950"))).toHaveLength(1);
   });
 });
 

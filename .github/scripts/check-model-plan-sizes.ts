@@ -19,6 +19,7 @@
  */
 import { readFileSync } from "node:fs";
 import { humanBytes } from "../../src/format";
+import { rustModelsSourcePaths } from "../../tests/helpers/rust-models-source";
 
 export interface PlanEntry {
   group: string;
@@ -279,10 +280,13 @@ function argValue(flag: string, fallback: string): string {
 
 if (import.meta.main) {
   const planPath = argValue("--plan", "model-plan.json");
-  const manifestPath = argValue("--manifest", "rust/src/models.rs");
+  // `--manifest` still names one file so a pinned ref can be checked; the default follows `models` wherever it lives (#950).
+  const explicit = argValue("--manifest", "");
+  const manifestPaths = explicit ? [explicit] : rustModelsSourcePaths();
+  const manifestPath = manifestPaths.join(", ");
 
   const entries = flattenPlan(JSON.parse(readFileSync(planPath, "utf8")));
-  const urls = parseManifestUrls(readFileSync(manifestPath, "utf8"));
+  const urls = parseManifestUrls(manifestPaths.map((path) => readFileSync(path, "utf8")).join("\n"));
 
   const unresolved = entries.filter((entry) => !urls.has(entry.relPath));
   if (unresolved.length > 0) {

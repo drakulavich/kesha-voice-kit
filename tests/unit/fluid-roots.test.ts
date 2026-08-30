@@ -9,6 +9,7 @@ import {
   fluidSubsystemDirs,
 } from "../../src/fluid-roots";
 import { FLUID_ASR_REQUIRED } from "../../src/fluid-asr-cache";
+import { rustModelsSource } from "../helpers/rust-models-source";
 
 function write(path: string, bytes: number): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -234,10 +235,7 @@ describe("fluidExternalRoots", () => {
 // The resolution rule is written out in both languages; nothing else fails when only one
 // side is edited, and a divergence here silently re-downloads gigabytes (#688).
 describe("Rust/TS FluidAudio root agreement", () => {
-  const rust = readFileSync(
-    join(import.meta.dir, "..", "..", "rust", "src", "models.rs"),
-    "utf8",
-  );
+  const rust = rustModelsSource();
 
   test("relocated subpaths match models.rs", () => {
     withHome((home, cacheRoot) => {

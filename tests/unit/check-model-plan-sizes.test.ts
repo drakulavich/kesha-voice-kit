@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   compareEntry,
   contentLength,
@@ -11,10 +9,9 @@ import {
   type FetchLike,
 } from "../../.github/scripts/check-model-plan-sizes";
 import modelPlan from "../../model-plan.json" with { type: "json" };
+import { rustModelsSource } from "../helpers/rust-models-source";
 
-const repoRoot = join(import.meta.dir, "..", "..");
-const realManifestSource = () =>
-  readFileSync(join(repoRoot, "rust", "src", "models.rs"), "utf8");
+const realManifestSource = () => rustModelsSource();
 
 const realManifestUrls = () => parseManifestUrls(realManifestSource());
 const realManifestEntries = () => parseManifestEntries(realManifestSource());

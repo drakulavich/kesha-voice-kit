@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
+import { rustModelsSource } from "../helpers/rust-models-source";
 
 const rustSource = (...parts: string[]) =>
   readFileSync(join(import.meta.dir, "..", "..", "rust", "src", ...parts), "utf8").replace(
@@ -9,7 +10,7 @@ const rustSource = (...parts: string[]) =>
     "\n",
   );
 
-const MODELS_RS = rustSource("models.rs");
+const MODELS_RS = rustModelsSource().replace(/\r\n/g, "\n");
 
 // Parsed, not copied: a language added to tts_languages() alone must turn these guards red (#769).
 function advertisedTtsLangs(): { systemKokoro: string[]; onnx: string[] } {

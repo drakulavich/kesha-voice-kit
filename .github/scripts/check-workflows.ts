@@ -612,6 +612,9 @@ export function requireDepsBeforeBunTest(path: string, document: unknown): strin
   return errors;
 }
 
+const coveredBy = (patterns: string[], file: string) =>
+  patterns.some((pattern) => (pattern.endsWith("/**") ? file.startsWith(pattern.slice(0, -2)) : pattern === file));
+
 export function requireTestedScriptsInCodeFilter(
   path: string,
   document: unknown,
@@ -625,12 +628,64 @@ export function requireTestedScriptsInCodeFilter(
   const code = (parse(raw) as Record<string, string[]>)?.code;
   if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
 
-  const covers = (file: string) =>
-    code.some((pattern) => (pattern.endsWith("/**") ? file.startsWith(pattern.slice(0, -2)) : pattern === file));
-
   return testedScripts
-    .filter((file) => !covers(file))
+    .filter((file) => !coveredBy(code, file))
     .map((file) => `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`);
+}
+
+/**
+ * Every engine source holding a `ModelFile` literal — the pins ci.yml's `code` lane and
+ * cache-seed.yml's key both read, wherever `models` currently lives (#950).
+ */
+export function collectManifestSources(root = "rust/src"): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
+    .map((entry) => join(root, entry))
+    .filter((file) => /ModelFile\s*\{/.test(readFileSync(file, "utf8")))
+    .sort();
+}
+
+/** Fails when a pinned-manifest source falls out of ci.yml's `code` filter: the install-plan join then never runs, and a filter matching nothing reports nothing (#950). */
+export function requireManifestSourcesInCodeFilter(
+  path: string,
+  document: unknown,
+  manifestSources: string[],
+): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+
+  const code = (parse(raw) as Record<string, string[]>)?.code;
+  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+
+  return manifestSources
+    .filter((file) => !coveredBy(code, file))
+    .map(
+      (file) =>
+        `${path}: ${file} pins ModelFile entries but no path in the \`code\` filter matches it, so a pin change skips the install-plan join (#950)`,
+    );
+}
+
+/** Fails when a pinned-manifest source falls out of cache-seed.yml's push filter: the shared model caches then never re-seed after a pin change (#950). */
+export function requireManifestSourcesInSeedFilter(
+  path: string,
+  document: unknown,
+  manifestSources: string[],
+): string[] {
+  if (!path.endsWith("cache-seed.yml")) return [];
+
+  const paths = (document as { on?: { push?: { paths?: unknown } } })?.on?.push?.paths;
+  if (!Array.isArray(paths)) return [`${path}: expected a \`push\` trigger with a \`paths\` list`];
+
+  const patterns = paths.filter((entry): entry is string => typeof entry === "string");
+  return manifestSources
+    .filter((file) => !coveredBy(patterns, file))
+    .map(
+      (file) =>
+        `${path}: ${file} pins ModelFile entries but no path in the push \`paths\` filter matches it, so a pin change never re-seeds the shared model caches (#950)`,
+    );
 }
 
 /** Fails when ci.yml stops routing flake.nix changes to workflow-lint, the only lane that runs checkFlakeNix (#1088). */
@@ -939,6 +994,7 @@ export function checkFile(
   testedScripts: string[],
   cacheWriters: CacheEntry[],
   rustToolchain: RustToolchainPin | undefined,
+  manifestSources: string[] = [],
 ): string[] {
   try {
     const contents = readFileSync(path, "utf8");
@@ -963,6 +1019,8 @@ export function checkFile(
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
+      ...requireManifestSourcesInCodeFilter(path, document, manifestSources),
+      ...requireManifestSourcesInSeedFilter(path, document, manifestSources),
       ...requireFlakeNixInWorkflowsFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
     ];
@@ -996,9 +1054,10 @@ function main(): void {
     ? collectCacheWriters(parse(readFileSync(SEED_WORKFLOW, "utf8")))
     : [];
   const { pin: rustToolchain, errors: rustToolchainErrors } = readRustToolchainPin();
+  const manifestSources = collectManifestSources();
   const errors = [
     ...rustToolchainErrors,
-    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain)),
+    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, manifestSources)),
     ...checkFlakeNix(FLAKE_NIX),
   ];
   for (const error of errors) console.error(error);

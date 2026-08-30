@@ -9,6 +9,7 @@ import {
 } from "../../src/kokoro-ane";
 import { collectDoctorReport } from "../../src/doctor";
 import { renderInstallPlan } from "../../src/install-plan";
+import { rustModelsSource } from "../helpers/rust-models-source";
 
 const DARWIN = { platform: "darwin", arch: "arm64" } as const;
 
@@ -150,7 +151,7 @@ describe("doctor and `install --plan` tell the same Kokoro ANE story", () => {
 // The staged set is written out in both languages; nothing else fails when only one side
 // is edited, and a divergence makes doctor call an unusable install healthy (#831).
 describe("Rust/TS Kokoro ANE manifest agreement", () => {
-  const rust = readFileSync(join(import.meta.dir, "..", "..", "rust", "src", "models.rs"), "utf8");
+  const rust = rustModelsSource();
 
   /** Top-level entries of a `models.rs` `ModelFile` manifest, the granularity doctor probes. */
   function stagedTopLevel(constName: string): string[] {
