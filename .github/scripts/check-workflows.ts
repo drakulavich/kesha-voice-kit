@@ -638,37 +638,13 @@ export function requireTestedScriptsInCodeFilter(
 }
 
 /**
- * Blanks every `#[cfg(test)]`-guarded item (brace-balanced), keeping the rest — a prefix cut missed
- * production code placed after a test module (#950 round 2's probe: `#[cfg(test)] mod tests {}` followed
- * by a real pin), which is exactly the silent-exclusion direction a guard must not fail toward.
- */
-const sourceOutsideTests = (contents: string) => {
-  let out = "";
-  let i = 0;
-  while (i < contents.length) {
-    const marker = contents.indexOf("#[cfg(test)]", i);
-    if (marker === -1) {
-      out += contents.slice(i);
-      break;
-    }
-    out += contents.slice(i, marker);
-    const open = contents.indexOf("{", marker);
-    if (open === -1) break;
-    let depth = 1;
-    let j = open + 1;
-    while (j < contents.length && depth > 0) {
-      if (contents[j] === "{") depth++;
-      else if (contents[j] === "}") depth--;
-      j++;
-    }
-    i = j;
-  }
-  return out;
-};
-
-/**
- * Every engine source holding a `ModelFile` literal outside `#[cfg(test)]` — the pins ci.yml's
- * `code` lane and cache-seed.yml's key both read, wherever `models` currently lives (#950).
+ * Every engine source holding a `ModelFile` literal anywhere, `#[cfg(test)]` bodies included — the
+ * sources ci.yml's `code` lane and cache-seed.yml's key both read, wherever `models` lives (#950).
+ *
+ * Test-only literals are collected on purpose. Two text scanners that tried to exclude them each
+ * opened a silent hole: the prefix cut dropped a production pin placed below a test module, and the
+ * brace-balanced cut dropped one below a `"{"` inside a test string literal. Over-inclusion only
+ * widens a path filter, so it is the safe direction for a coverage guard (#950 round 3).
  *
  * Deliberately narrower than `tests/helpers/rust-models-source.ts`'s `rustModelsSourcePaths`,
  * which returns every `.rs` file under the models tree (paths.rs and staging.rs included) for
@@ -682,7 +658,7 @@ export function collectManifestSources(root = "rust/src"): string[] {
   return readdirSync(root, { recursive: true })
     .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
     .map((entry) => join(root, entry))
-    .filter((file) => /ModelFile\s*\{/.test(sourceOutsideTests(readFileSync(file, "utf8"))))
+    .filter((file) => /ModelFile\s*\{/.test(readFileSync(file, "utf8")))
     .sort();
 }
 
@@ -756,7 +732,7 @@ export function requireManifestSourcesInCodeFilter(
     .filter((file) => !coveredBy(code, file))
     .map(
       (file) =>
-        `${path}: ${file} pins ModelFile entries but no path in the \`code\` filter matches it, so a pin change skips the install-plan join (#950)`,
+        `${path}: ${file} contains ModelFile literals but no path in the \`code\` filter matches it, so a pin change skips the install-plan join (#950)`,
     );
 }
 
@@ -782,7 +758,7 @@ export function requireManifestSourcesInSeedFilter(
     .filter((file) => !coveredBy(patterns, file))
     .map(
       (file) =>
-        `${path}: ${file} pins ModelFile entries but no path in the push \`paths\` filter matches it, so a pin change never re-seeds the shared model caches (#950)`,
+        `${path}: ${file} contains ModelFile literals but no path in the push \`paths\` filter matches it, so a pin change never re-seeds the shared model caches (#950)`,
     );
 }
 

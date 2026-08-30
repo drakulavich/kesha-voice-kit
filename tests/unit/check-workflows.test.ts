@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -407,20 +407,32 @@ const repoRelative = (files: string[]) =>
   files.map((file) => file.slice(REPO_ROOT.length + 1).replaceAll("\\", "/"));
 
 describe("manifest sources stay inside both path filters", () => {
-  // #950 round 2 (luna's probe): a production pin AFTER a #[cfg(test)] mod must still be collected —
-  // the prefix cut silently excluded it, which is the direction this guard must not fail toward.
-  test("a ModelFile literal after a test module is still collected; one inside it is not", () => {
+  // Both shapes defeated a cfg(test)-excluding scanner and dropped the production pin below them
+  // (#950 round 3). Collecting them is the safe direction: over-inclusion only widens a path filter.
+  test("a production pin below a cfg(test) use-item is collected", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-models-"));
-    writeFileSync(join(dir, "after.rs"), "#[cfg(test)]\nmod tests { fn helper() {} }\nconst PIN: ModelFile = ModelFile { };\n");
-    writeFileSync(join(dir, "inside.rs"), "fn real() {}\n#[cfg(test)]\nmod tests { const STUB: ModelFile = ModelFile { }; }\n");
-    const found = collectManifestSources(dir).map((f) => f.split("/").pop());
-    expect(found).toEqual(["after.rs"]);
+    writeFileSync(
+      join(dir, "use_item.rs"),
+      '#[cfg(test)]\npub(crate) use super::helper;\npub const ASR: &[ModelFile] = &[ModelFile { rel_path: "encoder.onnx" }];\n',
+    );
+    expect(collectManifestSources(dir)).toEqual([join(dir, "use_item.rs")]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a production pin below a test module holding an unbalanced brace in a string is collected", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-models-"));
+    writeFileSync(
+      join(dir, "brace_literal.rs"),
+      '#[cfg(test)]\nmod tests { #[test] fn t() { assert_eq!(render("x"), "prefix{"); } }\npub const ASR: &[ModelFile] = &[ModelFile { rel_path: "encoder.onnx" }];\n',
+    );
+    expect(collectManifestSources(dir)).toEqual([join(dir, "brace_literal.rs")]);
+    rmSync(dir, { recursive: true, force: true });
   });
 
   // #950 round 2: the rust/src/** workflows-filter entry closes the guard's silent-skip gap on the very
   // PR that violates it — so the entry itself needs a pin, or its removal survives every lane.
   test("ci.yml's workflows filter carries rust/src/**, so check:workflows runs on a rust-pin PR", () => {
-    const raw = readFileSync(".github/workflows/ci.yml", "utf8");
+    const raw = readRepoFile(".github/workflows/ci.yml");
     const filters = /workflows:\n((?:\s+(?:#[^\n]*|- '[^']+')\n)+)/.exec(raw);
     expect(filters?.[1] ?? "").toContain("- 'rust/src/**'");
   });
@@ -429,20 +441,6 @@ describe("manifest sources stay inside both path filters", () => {
     const sources = repoRelative(collectManifestSources(repoPath("rust/src")));
     expect(sources.length).toBeGreaterThan(0);
     expect(sources).toContain("rust/src/models/manifest.rs");
-    // download.rs's only `ModelFile {` is a #[cfg(test)] stub-server helper, not a pin — collecting it
-    // made the rule's message false and forced cache-seed.yml to re-seed on a test-helper edit (#950 round 3).
-    expect(sources).not.toContain("rust/src/models/download.rs");
-  });
-
-  test("a ModelFile literal that only appears under #[cfg(test)] is not a pin", () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-manifest-"));
-    writeFileSync(
-      join(dir, "helper.rs"),
-      "fn real() {}\n\n#[cfg(test)]\nmod t {\n    fn stub() -> ModelFile {\n        ModelFile { rel_path: \"x\" }\n    }\n}\n",
-    );
-    writeFileSync(join(dir, "pinned.rs"), "const A: ModelFile = ModelFile {\n    rel_path: \"y\",\n};\n");
-    expect(collectManifestSources(dir)).toEqual([join(dir, "pinned.rs")]);
-    rmSync(dir, { recursive: true, force: true });
   });
 
   test("collectModelsTreeSources returns every .rs under the models tree", () => {
@@ -506,6 +504,16 @@ describe("manifest sources stay inside both path filters", () => {
     expect(requireManifestSourcesInSeedFilter(CI, codeFilter([]), ["rust/src/models.rs"])).toEqual([]);
   });
 
+  // A non-wildcard filter entry is an exact path, not a prefix: paths-filter would not fire on
+  // 'rust/src/models/manifest.rs' for the entry 'rust/src/models/manifest', so neither may this (#950 round 3).
+  test("a filter entry that is only a substring of the file does not cover it", () => {
+    const errors = requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/manifest"]), [
+      "rust/src/models/manifest.rs",
+    ]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("contains ModelFile literals");
+  });
+
   test("a backslash-separated source (win32's readdirSync/join output) still matches a forward-slash filter", () => {
     expect(repoRelative([`${REPO_ROOT}\\rust\\src\\models\\paths.rs`])).toEqual([
       "rust/src/models/paths.rs",
@@ -545,6 +553,28 @@ describe("manifest sources stay inside both path filters", () => {
     expect(repoRelative(manifestSources)).not.toContain("rust/src/models/paths.rs");
   });
 
+  // The real tree cannot separate the two lists — both path filters are directory wildcards that cover
+  // every models file — so the argument order checkFile forwards is only visible on distinct sets (#950 round 3).
+  test("checkFile forwards each list to its own rule", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
+    const ci = join(dir, "ci.yml");
+    writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'a.rs'\n              - 'b.rs'\n");
+    const seed = join(dir, "cache-seed.yml");
+    writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'a.rs'\n");
+
+    const manifestSources = ["a.rs"];
+    const modelsTreeSources = ["a.rs", "b.rs"];
+    expect(checkFile(ci, [], [], undefined, manifestSources, modelsTreeSources).filter((e) => e.includes("#950"))).toEqual([]);
+    expect(checkFile(seed, [], [], undefined, manifestSources, modelsTreeSources).filter((e) => e.includes("#950"))).toEqual([]);
+
+    // Handing the seed rule the models-tree set instead names b.rs, which the push filter never covers.
+    const swapped = checkFile(seed, [], [], undefined, modelsTreeSources, manifestSources).filter((e) => e.includes("#950"));
+    expect(swapped).toHaveLength(1);
+    expect(swapped[0]).toContain("b.rs");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   // A gate is only a gate if checkFile still calls it; the real tree cannot notice an unwired one.
   test("the file gate actually runs both", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
@@ -556,7 +586,7 @@ describe("manifest sources stay inside both path filters", () => {
       ci, [], [], undefined, ["rust/src/models/manifest.rs"], ["rust/src/models/paths.rs"],
     ).filter((e) => e.includes("#950"));
     expect(errors).toHaveLength(2);
-    expect(errors.join("\n")).toContain("rust/src/models/manifest.rs pins ModelFile entries");
+    expect(errors.join("\n")).toContain("rust/src/models/manifest.rs contains ModelFile literals");
     expect(errors.join("\n")).toContain("rust/src/models/paths.rs is read by the TS pact suites");
 
     const seed = join(dir, "cache-seed.yml");
