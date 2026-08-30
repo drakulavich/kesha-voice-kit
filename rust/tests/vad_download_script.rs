@@ -17,6 +17,7 @@ fn sha_of_hashes_a_backslash_bearing_path_to_a_bare_hex_digest() {
     let dir = std::env::temp_dir().join(format!("kesha-vad-shaof-{}", std::process::id()));
     fs::create_dir_all(&dir).expect("temp dir");
     let target = dir.join("a\\b.onnx");
+    fs::create_dir_all(target.parent().expect("fixture parent")).expect("fixture parent dir");
     fs::write(&target, b"hello vad").expect("write fixture");
 
     let inner = format!(
