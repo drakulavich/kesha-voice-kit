@@ -95,7 +95,7 @@ jobs:
               # asserts every plan entry still resolves to a URL in the manifest, and a change
               # to either file alone would otherwise never run it.
               - 'model-plan.json'
-              - 'rust/src/models.rs'
+              - 'rust/src/models/**'
             integration:
               - 'src/**'
               - 'tests/integration/**'
