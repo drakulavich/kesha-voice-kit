@@ -43,18 +43,15 @@ pub use paths::{fluidaudio_asr_dir, fluidaudio_asr_location, fluidaudio_asr_read
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-pub use staging::{incomplete_ane_bundle_names, missing_kokoro_assets};
+pub use staging::{
+    incomplete_ane_bundle_names, missing_kokoro_assets, purge_incomplete_ane_bundles,
+    stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets,
+};
 
 use anyhow::Result;
 
 use download::{cleanup_legacy, parallel_download};
 use manifest::*;
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
-use staging::purge_incomplete_ane_bundles;
 
 pub fn install(no_cache: bool) -> Result<()> {
     let cache = cache_dir()?;
