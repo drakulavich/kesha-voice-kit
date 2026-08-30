@@ -15,6 +15,7 @@
 //! because only the weekly canary stages that bundle. The CharsiuG2P skips in
 //! `rust/src/tts/` are no longer exempt: they gained `KESHA_REQUIRE_G2P_TESTS`
 //! when those IPA assertions became the named owner of phoneme fidelity.
+//! `common::vad_model_or_skip` carries `KESHA_REQUIRE_VAD_TESTS` and skips the tier check, Silero having no mini (#990).
 
 mod common;
 

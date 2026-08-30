@@ -2092,6 +2092,29 @@ mod manifest_tests {
         assert!(f.url.starts_with("https://github.com/snakers4/silero-vad/"));
     }
 
+    /// The CI staging script carries its own copy of the URL and hash, because a
+    /// shell script cannot read a Rust const. Two copies of a pin drift, and the
+    /// drift is invisible: CI would keep staging the old weights and the span
+    /// goldens would keep passing against a model the engine no longer uses.
+    #[test]
+    fn ci_download_script_matches_the_pinned_vad_manifest() {
+        let script = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ci/download-vad.sh"),
+        )
+        .expect("read rust/ci/download-vad.sh");
+        let f = &VAD_FILES[0];
+        assert!(
+            script.contains(f.url),
+            "download-vad.sh does not carry the pinned URL {}",
+            f.url
+        );
+        assert!(
+            script.contains(f.sha256),
+            "download-vad.sh does not carry the pinned sha256 {}",
+            f.sha256
+        );
+    }
+
     #[test]
     fn lang_id_manifest_has_expected_files_and_hashes() {
         assert_eq!(LANG_ID_FILES.len(), 3);

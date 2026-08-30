@@ -133,8 +133,15 @@ jobs:
       # what keeps the download from creeping back. Lanes that stage nothing
       # (rust-push-gate) leave it unset.
       KESHA_REQUIRE_MODEL_TESTS: mini
+      # Its own flag, not KESHA_REQUIRE_MODEL_TESTS: that promises `mini` here and Silero has no stand-in (#990).
+      VAD_CACHE: ${{ github.workspace }}/.vad-cache
+      VAD_MODEL: ${{ github.workspace }}/.vad-cache/models/silero-vad/silero_vad.onnx
+      KESHA_REQUIRE_VAD_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The span goldens decode benchmark{,-en}/*.ogg, which are LFS pointers without this.
+          lfs: true
       - name: Select Xcode 16 (Swift 6)
         if: matrix.os == 'macos-14'
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
@@ -233,6 +240,11 @@ jobs:
         shell: bash
         run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
 
+      # Not actions/cache: 2.3 MB does not repay a PR-scoped entry that only serves re-runs and adds LRU pressure (#741).
+      - name: 🔊 Stage Silero VAD
+        shell: bash
+        run: bash rust/ci/download-vad.sh "$VAD_CACHE"
+
       - name: Run tests
         shell: bash
         run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "${{ runner.os }}"
@@ -283,8 +295,14 @@ jobs:
       # was not worth ~935 MB of per-PR cache, and it needs real weights either way
       # (#741).
       KESHA_REQUIRE_G2P_TESTS: "1"
+      VAD_CACHE: ${{ github.workspace }}/.vad-cache
+      VAD_MODEL: ${{ github.workspace }}/.vad-cache/models/silero-vad/silero_vad.onnx
+      KESHA_REQUIRE_VAD_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The span goldens decode benchmark{,-en}/*.ogg, which are LFS pointers without this.
+          lfs: true
 
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
@@ -327,6 +345,11 @@ jobs:
       - name: 🎚️ Stage Kokoro stand-ins
         shell: bash
         run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
+
+      # Not actions/cache: 2.3 MB does not repay a PR-scoped entry that only serves re-runs and adds LRU pressure (#741).
+      - name: 🔊 Stage Silero VAD
+        shell: bash
+        run: bash rust/ci/download-vad.sh "$VAD_CACHE"
 
       - name: 📈 Rust coverage
         shell: bash
