@@ -533,6 +533,17 @@ jobs:
             cosign sign-blob --yes --bundle "${name}.sigstore.json" "$name"
           done < <(find . -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
 
+      # Runs last, right before GitHub resolves the tag to whatever commit it names now — a re-point during the SBOM/download/sign window above is the same #1108/#1115 bug moved later (review round 3, Greptile P1); querying origin live and peeling `^{}` avoids both the stale-local-ref and tag-object-vs-commit traps (round 2 P1/P2), though a same-commit re-annotation still passes.
+      - name: Verify tag has not been superseded
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "::error::tag $TAG_NAME now points at $current, but this run was triggered for $GITHUB_SHA — the tag was re-pointed mid-build. Refusing to publish a release built from a superseded commit."
+            exit 1
+          fi
+
       # Always a draft: releases here are immutable, and an asset uploaded after publication 422s.
       - name: Create draft release with binaries
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2

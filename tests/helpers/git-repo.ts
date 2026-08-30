@@ -35,6 +35,18 @@ export async function commit(work: string, subject: string): Promise<void> {
   await git(work, "commit", "-qam", subject);
 }
 
+/** An independent clone of `work`'s remote — pushing from here leaves `work`'s local refs stale. */
+export async function cloneFrom(work: string): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-git-"));
+  created.push(dir);
+  const clone = join(dir, "clone");
+  const remoteUrl = await git(work, "remote", "get-url", "origin");
+  await git(dir, "clone", "-q", remoteUrl, clone);
+  await git(clone, "config", "user.email", "test@example.com");
+  await git(clone, "config", "user.name", "test");
+  return clone;
+}
+
 export function cleanupGitRepos(): void {
   for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true });
 }

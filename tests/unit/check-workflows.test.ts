@@ -14,6 +14,7 @@ import {
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
   requireBuildEngineSerialisesRunsPerRef,
+  requireReleaseVerifiesTagIsCurrent,
   requireRustTestCancelsSupersededRuns,
   requirePipefailShell,
   requireReusableCallPermissions,
@@ -1133,6 +1134,84 @@ describe("requireBuildEngineSerialisesRunsPerRef", () => {
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1108"))).toHaveLength(2);
+  });
+});
+
+describe("requireReleaseVerifiesTagIsCurrent", () => {
+  const GUARD = {
+    name: "Verify tag has not been superseded",
+    env: { TAG_NAME: "${{ github.ref_name }}" },
+    run:
+      'current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"\n' +
+      'if [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n',
+  };
+  const PUBLISH = { name: "Create draft release with binaries", uses: "softprops/action-gh-release@3d0d9888c" };
+
+  test("passes on the real build-engine.yml", () => {
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, parseRepoYaml(PATH))).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireReleaseVerifiesTagIsCurrent(CI, job("release", [PUBLISH]))).toEqual([]);
+  });
+
+  test("fails when the guard step is missing", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [PUBLISH]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("#1115");
+  });
+
+  test("fails when the guard runs after the draft release is created", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [PUBLISH, GUARD]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("immediately before");
+  });
+
+  test("passes when the guard immediately precedes the draft release", () => {
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [GUARD, PUBLISH]))).toEqual([]);
+  });
+
+  // An early-only check leaves the SBOM/download/sign window unrevalidated — the tag can still move before GitHub resolves it at publish time (#1115 review round 3, Greptile P1).
+  test("fails when the guard runs early but not immediately before the draft release", () => {
+    const OTHER = { name: "Generate source SBOM", uses: "anchore/sbom-action@e22c389" };
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [GUARD, OTHER, PUBLISH]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("immediately before");
+  });
+
+  test("fails when the guard step is disabled", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [{ ...GUARD, if: "false" }, PUBLISH]));
+    expect(errors[0]).toContain("#1115");
+  });
+
+  // `${{ false }}` disables the step exactly like bare `false`, but a naive string-equality check misses it (#1115 review round 3, Greptile P2).
+  test("fails when the guard step is disabled via a wrapped expression", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [{ ...GUARD, if: "${{ false }}" }, PUBLISH]));
+    expect(errors[0]).toContain("#1115");
+  });
+
+  test("fails when the step never compares against GITHUB_SHA", () => {
+    const noShaCheck = { ...GUARD, run: 'current="$(git ls-remote origin "refs/tags/$TAG_NAME^{}")"\necho "$current"\n' };
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [noShaCheck, PUBLISH]))[0]).toContain("#1115");
+  });
+
+  test("fails when the step never mentions refs/tags", () => {
+    const noTagRef = { ...GUARD, run: 'current="$GITHUB_SHA"\nif [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n' };
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [noTagRef, PUBLISH]))[0]).toContain("#1115");
+  });
+
+  test("fails when the release job is gone", () => {
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, { jobs: { build: {} } });
+    expect(errors[0]).toContain("expected a `release` job");
+  });
+
+  // `jobs: {}` alone reports "expected a `release` job", not #1115 — the probe needs a real job.
+  test("the file gate actually runs it", () => {
+    const yaml =
+      "on:\n  push:\njobs:\n  release:\n    steps:\n      - uses: softprops/action-gh-release@3d0d9888c\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1115"))).toHaveLength(1);
   });
 });
 

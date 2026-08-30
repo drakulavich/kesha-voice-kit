@@ -857,6 +857,63 @@ export function requireBuildEngineSerialisesRunsPerRef(path: string, document: u
 }
 
 /**
+ * Fails when the `release` job could publish a draft without first checking that the tag it is
+ * building still points at the commit this run was triggered for.
+ *
+ * `requireBuildEngineSerialisesRunsPerRef` (#1108) makes two runs racing one draft release
+ * loud — the second queues instead of colliding mid-upload. It does not make a re-pointed tag
+ * loud: if the tag moves while run A is still building, A's `release` job checks out whatever
+ * the tag names by the time it runs and creates a complete-looking draft from the superseded
+ * commit — nothing reds, and for stable/beta a human can un-draft it before the correct run
+ * even finishes. A step comparing the tag's live target against `github.sha` (fixed at trigger)
+ * before the draft is created converts that into a failed job (#1115).
+ */
+// Strips one `${{ }}` wrapper before comparing — `if: ${{ false }}` disables a step exactly like `if: false` but the bare-string check alone missed it (#1115 review round 3, Greptile P2).
+function isDisabled(step: Step): boolean {
+  const raw = condition(step).trim();
+  const inner = /^\$\{\{([\s\S]*)\}\}$/.exec(raw)?.[1]?.trim() ?? raw;
+  return inner === "false";
+}
+
+export function requireReleaseVerifiesTagIsCurrent(path: string, document: unknown): string[] {
+  if (!path.endsWith("build-engine.yml")) return [];
+
+  const steps = jobSteps(document, "release");
+  if (!steps) return [`${path}: expected a \`release\` job with steps`];
+
+  // Checks the contract (tag ref resolved, compared to GITHUB_SHA), not the resolving command — pinning `git rev-parse` rejected the `git ls-remote ...^{}` fix for its own tag-object-vs-commit bug (#1115 review).
+  const isGuard = (step: Step) =>
+    typeof step?.run === "string" &&
+    /refs\/tags/.test(step.run) &&
+    /GITHUB_SHA/.test(step.run) &&
+    !isDisabled(step);
+
+  const publish = steps.findIndex(
+    (step) => typeof step?.uses === "string" && step.uses.startsWith("softprops/action-gh-release"),
+  );
+  if (publish === -1) {
+    return [`${path}: expected the release job to create the draft release via softprops/action-gh-release`];
+  }
+
+  const guard = steps.findIndex(isGuard);
+  if (guard === -1) {
+    return [
+      `${path}: the release job must verify the tag still points at github.sha before creating the draft — ` +
+        `a re-pointed tag builds a complete-looking release from a superseded commit with nothing red (#1115)`,
+    ];
+  }
+
+  // Must sit immediately before the draft is created — SBOM/download/sign cost real wall-clock, and an earlier check leaves that whole window unrevalidated (#1115 review round 3, Greptile P1).
+  if (guard !== publish - 1) {
+    return [
+      `${path}: the tag-currency guard must be the step immediately before the draft release is created, not merely somewhere before it — ` +
+        `GitHub resolves the tag to whatever it names by the time that step runs (#1115)`,
+    ];
+  }
+  return [];
+}
+
+/**
  * Fails when the `ci` aggregator needs `nix-build`.
  *
  * A job in the required `ci` aggregator that cannot run on a pull request reds `main` — on
@@ -900,6 +957,7 @@ export function checkFile(
       ...requireConcurrencyOnPullRequestWorkflows(path, document),
       ...requireRustTestCancelsSupersededRuns(path, document),
       ...requireBuildEngineSerialisesRunsPerRef(path, document),
+      ...requireReleaseVerifiesTagIsCurrent(path, document),
       ...forbidNixBuildInCiAggregator(path, document),
       ...requireJobTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
