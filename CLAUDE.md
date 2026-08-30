@@ -54,7 +54,7 @@ just worktree-rm <slug>
 ### VERIFY BEFORE PUSHING
 
 - `just preflight` before every push — the executable definition of the default gate: TS and every `check:*` CI runs, always; the Rust gate when `rust/**` changed; the CoreML check when `rust/src/backend/**` changed; `just ALL=1 preflight` runs every gate regardless of the diff. `tests/unit/preflight-parity.test.ts` keeps that list equal to what the pull-request workflows invoke, because a shell-injecting recipe once passed a green preflight and was caught only in CI. Read the recipe rather than reconstructing the commands.
-- Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest_tests`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
+- Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
 - `preflight` does **not** build the darwin feature set, so it goes green on code that never compiled: touching `rust/src/tts/**` or anything fluidaudio-rs-adjacent (`system_kokoro` / `system_diarize` / `system_text_lang`) also needs `just verify-darwin-full`, the recipe `rust-test.yml` runs.
 - Do NOT push broken code.
 
@@ -118,7 +118,7 @@ Don't add struct fields, enum variants, or constants "for later" — clippy's `d
 
 ### MODEL HASHES ARE PINNED
 
-Every entry in `rust/src/models.rs` carries a pinned SHA-256, and `download_verified` refuses a file whose hash doesn't match — that's what makes `KESHA_MODEL_MIRROR` safe. **NEVER comment out verification to "get it working"** (the #174 regression). To bump a model, use the `verify-pin-bump` skill.
+Every entry in `rust/src/models/manifest.rs` carries a pinned SHA-256, and `download_verified` refuses a file whose hash doesn't match — that's what makes `KESHA_MODEL_MIRROR` safe. **NEVER comment out verification to "get it working"** (the #174 regression). To bump a model, use the `verify-pin-bump` skill.
 
 ### VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE
 

@@ -11,6 +11,7 @@ import {
 } from "../../src/fluid-asr-cache";
 import { defaultBackendForPlatform, unavailableBackendError } from "../../src/cli/install";
 import { isInsideDir } from "../../src/cache-layout";
+import { rustModelsSource } from "../helpers/rust-models-source";
 
 describe("isCoremlBackend", () => {
   test("trusts the engine's reported backend over the host platform", () => {
@@ -191,21 +192,18 @@ describe("unavailableBackendError", () => {
 // The bundle contract is hardcoded in both languages; nothing else fails when only one
 // side is edited, and the int4 hole (#684) was exactly that kind of silent divergence.
 describe("Rust/TS FluidAudio contract agreement", () => {
-  const rust = readFileSync(
-    join(import.meta.dir, "..", "..", "rust", "src", "models.rs"),
-    "utf8",
-  );
+  const rust = rustModelsSource();
 
   function rustList(constName: string): string[] {
     const block = rust.match(new RegExp(`const ${constName}: &\\[&str\\] = &\\[([^\\]]*)\\]`));
-    if (!block) throw new Error(`${constName} not found in rust/src/models.rs`);
+    if (!block) throw new Error(`${constName} not found in the rust models source (rust/src/models/*.rs)`);
     return [...block[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
   }
 
   // Reads the value, not the expression using it: matching `.join("…")` broke on refactors.
   function rustStr(constName: string): string {
     const block = rust.match(new RegExp(`const ${constName}: &str = "([^"]+)"`));
-    if (!block) throw new Error(`${constName} not found in rust/src/models.rs`);
+    if (!block) throw new Error(`${constName} not found in the rust models source (rust/src/models/*.rs)`);
     return block[1]!;
   }
 

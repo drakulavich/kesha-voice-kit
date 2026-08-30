@@ -7,6 +7,9 @@ import {
   checkFile,
   checkFlakeNix,
   collectCacheWriters,
+  collectManifestSources,
+  collectModelsTreeSources,
+  collectRuleSources,
   forbidFindPipedToHead,
   forbidLinuxPackaging,
   forbidNixBuildInCiAggregator,
@@ -22,6 +25,9 @@ import {
   requireDarwinSmokeCoversBothEngines,
   requireDepsBeforeBunTest,
   requireFlakeNixInWorkflowsFilter,
+  requireManifestSourcesInCodeFilter,
+  requireModelsTreeInCodeFilter,
+  requireManifestSourcesInSeedFilter,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
   requirePinnedRustToolchain,
@@ -248,7 +254,7 @@ describe("forbidFindPipedToHead", () => {
     const yaml = "on: push\njobs:\n  smoke:\n    runs-on: macos-14\n    steps:\n      - run: find . -name x | head -1\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1088"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1088"))).toHaveLength(1);
   });
 });
 
@@ -392,6 +398,213 @@ describe("requireTestedScriptsInCodeFilter", () => {
   });
 });
 
+const SEED = ".github/workflows/cache-seed.yml";
+const seedFilter = (paths: string[]) => ({ on: { push: { paths } } });
+
+// readdirSync/join emit win32 separators on Windows; the rules normalise at compare time, so the
+// real-tree assertions have to as well or they only hold on posix (#950 round 3).
+const NO_SOURCES = { manifestSources: [], modelsTreeSources: [] };
+
+const repoRelative = (files: string[]) =>
+  files.map((file) => file.slice(REPO_ROOT.length + 1).replaceAll("\\", "/"));
+
+describe("manifest sources stay inside both path filters", () => {
+  // Both shapes defeated a cfg(test)-excluding scanner and dropped the production pin below them
+  // (#950 round 3). Collecting them is the safe direction: over-inclusion only widens a path filter.
+  test("a production pin below a cfg(test) use-item is collected", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-models-"));
+    writeFileSync(
+      join(dir, "use_item.rs"),
+      '#[cfg(test)]\npub(crate) use super::helper;\npub const ASR: &[ModelFile] = &[ModelFile { rel_path: "encoder.onnx" }];\n',
+    );
+    expect(collectManifestSources(dir)).toEqual([join(dir, "use_item.rs")]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a production pin below a test module holding an unbalanced brace in a string is collected", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-models-"));
+    writeFileSync(
+      join(dir, "brace_literal.rs"),
+      '#[cfg(test)]\nmod tests { #[test] fn t() { assert_eq!(render("x"), "prefix{"); } }\npub const ASR: &[ModelFile] = &[ModelFile { rel_path: "encoder.onnx" }];\n',
+    );
+    expect(collectManifestSources(dir)).toEqual([join(dir, "brace_literal.rs")]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // #950 round 2: the rust/src/** workflows-filter entry closes the guard's silent-skip gap on the very
+  // PR that violates it — so the entry itself needs a pin, or its removal survives every lane.
+  test("ci.yml's workflows filter carries rust/src/**, so check:workflows runs on a rust-pin PR", () => {
+    const raw = readRepoFile(".github/workflows/ci.yml");
+    const filters = /workflows:\n((?:\s+(?:#[^\n]*|- '[^']+')\n)+)/.exec(raw);
+    expect(filters?.[1] ?? "").toContain("- 'rust/src/**'");
+  });
+
+  test("collectManifestSources finds the engine's pinned manifests and nothing else", () => {
+    const sources = repoRelative(collectManifestSources(repoPath("rust/src")));
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources).toContain("rust/src/models/manifest.rs");
+  });
+
+  test("collectModelsTreeSources returns every .rs under the models tree", () => {
+    const tree = repoRelative(collectModelsTreeSources(repoPath("rust/src/models")));
+    expect(tree.length).toBeGreaterThanOrEqual(6);
+    expect(tree).toContain("rust/src/models/paths.rs");
+    expect(tree).toContain("rust/src/models/staging.rs");
+  });
+
+  test("the real ci.yml and cache-seed.yml cover every one of them", () => {
+    const sources = repoRelative(collectManifestSources(repoPath("rust/src")));
+    expect(requireManifestSourcesInCodeFilter(CI, parseRepoYaml(CI), sources)).toEqual([]);
+    expect(requireManifestSourcesInSeedFilter(SEED, parseRepoYaml(SEED), sources)).toEqual([]);
+  });
+
+  test("ci.yml dropping the manifest path de-gates the install-plan join", () => {
+    const errors = requireManifestSourcesInCodeFilter(CI, codeFilter(["src/**"]), [
+      "rust/src/models.rs",
+    ]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("skips the install-plan join");
+  });
+
+  test("cache-seed.yml dropping the manifest path stops the re-seed", () => {
+    const errors = requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/Cargo.lock"]), [
+      "rust/src/models.rs",
+    ]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("never re-seeds the shared model caches");
+  });
+
+  // #950 round 2: the TS pact suites read every .rs under the models tree (paths.rs and staging.rs
+  // included), so narrowing ci.ymls code filter to only the ModelFile-literal files must fail loudly —
+  // documenting the hazard in a docstring was the round-1 answer, enforcing it is this rules job.
+  test("narrowing the code filter to the literal-holding files fails naming the tree files it drops", () => {
+    const filters = codeFilter(["rust/src/models/manifest.rs", "rust/src/models/download.rs"]);
+    const tree = [
+      "rust/src/models/download.rs", "rust/src/models/manifest.rs", "rust/src/models/mod.rs",
+      "rust/src/models/paths.rs", "rust/src/models/progress.rs", "rust/src/models/staging.rs",
+    ];
+    const errors = requireModelsTreeInCodeFilter("ci.yml", filters, tree);
+    expect(errors).toHaveLength(4);
+    expect(errors.join("\n")).toContain("rust/src/models/paths.rs");
+    expect(errors.join("\n")).toContain("rust/src/models/staging.rs");
+  });
+
+  test("the whole-directory wildcard satisfies the models-tree rule", () => {
+    const filters = codeFilter(["rust/src/models/**"]);
+    const tree = ["rust/src/models/paths.rs", "rust/src/models/staging.rs"];
+    expect(requireModelsTreeInCodeFilter("ci.yml", filters, tree)).toHaveLength(0);
+  });
+
+  test("a directory wildcard covers the manifests under it", () => {
+    const sources = ["rust/src/models/manifest.rs", "rust/src/models/mod.rs"];
+    expect(requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), sources)).toEqual([]);
+    expect(requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/src/models/**"]), sources)).toEqual([]);
+  });
+
+  test("each rule ignores every other workflow", () => {
+    expect(requireManifestSourcesInCodeFilter(SEED, seedFilter([]), ["rust/src/models.rs"])).toEqual([]);
+    expect(requireManifestSourcesInSeedFilter(CI, codeFilter([]), ["rust/src/models.rs"])).toEqual([]);
+  });
+
+  // A non-wildcard filter entry is an exact path, not a prefix: paths-filter would not fire on
+  // 'rust/src/models/manifest.rs' for the entry 'rust/src/models/manifest', so neither may this (#950 round 3).
+  test("a filter entry that is only a substring of the file does not cover it", () => {
+    const errors = requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/manifest"]), [
+      "rust/src/models/manifest.rs",
+    ]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("contains ModelFile literals");
+  });
+
+  test("a backslash-separated source (win32's readdirSync/join output) still matches a forward-slash filter", () => {
+    expect(repoRelative([`${REPO_ROOT}\\rust\\src\\models\\paths.rs`])).toEqual([
+      "rust/src/models/paths.rs",
+    ]);
+    const sources = ["rust\\src\\models\\manifest.rs", "rust\\src\\models\\download.rs"];
+    expect(requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), sources)).toEqual([]);
+    expect(requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/src/models/**"]), sources)).toEqual([]);
+  });
+
+  test("fails when cache-seed.yml has no push paths filter at all", () => {
+    expect(requireManifestSourcesInSeedFilter(SEED, { on: { push: {} } }, [])[0]).toContain(
+      "expected a `push` trigger",
+    );
+  });
+
+  test("an empty modelsTreeSources list fails loudly instead of passing vacuously", () => {
+    const errors = requireModelsTreeInCodeFilter(CI, codeFilter(["rust/src/models/**"]), []);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("returned no files");
+  });
+
+  test("an empty manifestSources list fails loudly instead of passing vacuously", () => {
+    const codeErrors = requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), []);
+    expect(codeErrors).toHaveLength(1);
+    expect(codeErrors[0]).toContain("returned no files");
+
+    const seedErrors = requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/src/models/**"]), []);
+    expect(seedErrors).toHaveLength(1);
+    expect(seedErrors[0]).toContain("returned no files");
+  });
+
+  test("main pairs each rule with its own collector", () => {
+    const { manifestSources, modelsTreeSources } = collectRuleSources(
+      repoPath("rust/src"), repoPath("rust/src/models"),
+    );
+    expect(repoRelative(modelsTreeSources)).toContain("rust/src/models/paths.rs");
+    expect(repoRelative(manifestSources)).not.toContain("rust/src/models/paths.rs");
+  });
+
+  // The real tree cannot separate the two lists — both path filters are directory wildcards that cover
+  // every models file — so the argument order checkFile forwards is only visible on distinct sets (#950 round 3).
+  test("checkFile forwards each list to its own rule", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
+    const ci = join(dir, "ci.yml");
+    writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'a.rs'\n              - 'b.rs'\n");
+    const seed = join(dir, "cache-seed.yml");
+    writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'a.rs'\n");
+
+    const sources = { manifestSources: ["a.rs"], modelsTreeSources: ["a.rs", "b.rs"] };
+    expect(checkFile(ci, [], [], undefined, sources).filter((e) => e.includes("#950"))).toEqual([]);
+    expect(checkFile(seed, [], [], undefined, sources).filter((e) => e.includes("#950"))).toEqual([]);
+
+    // Handing the seed rule the models-tree set instead names b.rs, which the push filter never covers.
+    const swapped = checkFile(seed, [], [], undefined, {
+      manifestSources: sources.modelsTreeSources,
+      modelsTreeSources: sources.manifestSources,
+    }).filter((e) => e.includes("#950"));
+    expect(swapped).toHaveLength(1);
+    expect(swapped[0]).toContain("b.rs");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // A gate is only a gate if checkFile still calls it; the real tree cannot notice an unwired one.
+  test("the file gate actually runs both", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
+    const ci = join(dir, "ci.yml");
+    writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n");
+    // Distinct fifth and sixth arguments: each rule must name the file from its OWN set, so handing
+    // requireModelsTreeInCodeFilter the manifest set instead of the tree set is visible here (#950 round 3).
+    const errors = checkFile(ci, [], [], undefined, {
+      manifestSources: ["rust/src/models/manifest.rs"],
+      modelsTreeSources: ["rust/src/models/paths.rs"],
+    }).filter((e) => e.includes("#950"));
+    expect(errors).toHaveLength(2);
+    expect(errors.join("\n")).toContain("rust/src/models/manifest.rs contains ModelFile literals");
+    expect(errors.join("\n")).toContain("rust/src/models/paths.rs is read by the TS pact suites");
+
+    const seed = join(dir, "cache-seed.yml");
+    writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'rust/Cargo.lock'\n");
+    expect(
+      checkFile(seed, [], [], undefined, {
+        manifestSources: ["rust/src/models.rs"],
+        modelsTreeSources: ["rust/src/models.rs"],
+      }).filter((e) => e.includes("#950")),
+    ).toHaveLength(1);
+  });
+});
+
 const workflowsFilter = (paths: string[]) =>
   job("changes", [{ with: { filters: `workflows:\n${paths.map((p) => `  - '${p}'`).join("\n")}\n` } }]);
 
@@ -427,7 +640,7 @@ describe("requireFlakeNixInWorkflowsFilter", () => {
     const yaml = "jobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            workflows:\n              - '.github/workflows/**'\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1088"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1088"))).toHaveLength(1);
   });
 });
 
@@ -612,7 +825,7 @@ describe("requirePipefailShell", () => {
     const yaml = "on: push\njobs:\n  smoke:\n    runs-on: ubuntu-latest\n    steps:\n      - run: a | b\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1084"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1084"))).toHaveLength(1);
   });
 
   // Composite steps live under `runs.steps`, not `jobs`; an explicit `shell: sh` there is the same trap (#1089).
@@ -660,7 +873,7 @@ describe("requirePipefailShell", () => {
     const yaml = "name: Example\nruns:\n  using: composite\n  steps:\n    - run: a | b\n      shell: sh\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "action.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1089"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1089"))).toHaveLength(1);
   });
 });
 
@@ -851,7 +1064,7 @@ describe("requireJobTimeouts", () => {
     const yaml = "on: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });
 
@@ -1071,7 +1284,7 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
       "on:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: echo hi\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });
 
@@ -1133,7 +1346,7 @@ describe("requireBuildEngineSerialisesRunsPerRef", () => {
     const yaml = "on:\n  push:\njobs: {}\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1108"))).toHaveLength(2);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1108"))).toHaveLength(2);
   });
 });
 
@@ -1211,7 +1424,7 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
       "on:\n  push:\njobs:\n  release:\n    steps:\n      - uses: softprops/action-gh-release@3d0d9888c\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1115"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1115"))).toHaveLength(1);
   });
 });
 
@@ -1250,7 +1463,7 @@ describe("requireRustTestCancelsSupersededRuns", () => {
     const yaml = "on:\n  pull_request:\nconcurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1105"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
 });
 
@@ -1278,6 +1491,6 @@ describe("forbidNixBuildInCiAggregator", () => {
     const yaml = "on: push\njobs:\n  nix-build:\n    if: github.event_name == 'push'\n  ci:\n    needs: [nix-build]\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
     writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("nix-build"))).toHaveLength(1);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("nix-build"))).toHaveLength(1);
   });
 });

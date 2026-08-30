@@ -612,6 +612,13 @@ export function requireDepsBeforeBunTest(path: string, document: unknown): strin
   return errors;
 }
 
+const coveredBy = (patterns: string[], file: string) => {
+  const posixFile = file.replaceAll("\\", "/");
+  return patterns.some((pattern) =>
+    pattern.endsWith("/**") ? posixFile.startsWith(pattern.slice(0, -2)) : pattern === posixFile,
+  );
+};
+
 export function requireTestedScriptsInCodeFilter(
   path: string,
   document: unknown,
@@ -625,12 +632,139 @@ export function requireTestedScriptsInCodeFilter(
   const code = (parse(raw) as Record<string, string[]>)?.code;
   if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
 
-  const covers = (file: string) =>
-    code.some((pattern) => (pattern.endsWith("/**") ? file.startsWith(pattern.slice(0, -2)) : pattern === file));
-
   return testedScripts
-    .filter((file) => !covers(file))
+    .filter((file) => !coveredBy(code, file))
     .map((file) => `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`);
+}
+
+/**
+ * Every engine source holding a `ModelFile` literal anywhere, `#[cfg(test)]` bodies included — the
+ * sources ci.yml's `code` lane and cache-seed.yml's key both read, wherever `models` lives (#950).
+ *
+ * Test-only literals are collected on purpose. Two text scanners that tried to exclude them each
+ * opened a silent hole: the prefix cut dropped a production pin placed below a test module, and the
+ * brace-balanced cut dropped one below a `"{"` inside a test string literal. Over-inclusion only
+ * widens a path filter, so it is the safe direction for a coverage guard (#950 round 3).
+ *
+ * Deliberately narrower than `tests/helpers/rust-models-source.ts`'s `rustModelsSourcePaths`,
+ * which returns every `.rs` file under the models tree (paths.rs and staging.rs included) for
+ * the TS suites that read them as plain text. That wider dependency set gets its own enforcement:
+ * `collectModelsTreeSources` + `requireModelsTreeInCodeFilter` fail ci.yml when its `code`
+ * filter stops covering any models-tree file, so the narrowing hazard is a red check rather than
+ * a docstring (#950 round 2).
+ */
+export function collectManifestSources(root = "rust/src"): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
+    .map((entry) => join(root, entry))
+    .filter((file) => /ModelFile\s*\{/.test(readFileSync(file, "utf8")))
+    .sort();
+}
+
+/** Every .rs under the models tree — the files the TS pact suites read as plain text, a strict superset of the ModelFile-literal set (#950 round 2). */
+export function collectModelsTreeSources(root = "rust/src/models"): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
+    .map((entry) => join(root, entry))
+    .sort();
+}
+
+/** The pair main() feeds the two #950 rules. Exported so the pairing itself is pinnable: handing the
+ * models-tree rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
+export interface RuleSources {
+  manifestSources: string[];
+  modelsTreeSources: string[];
+}
+
+export function collectRuleSources(rustRoot?: string, modelsRoot?: string): RuleSources {
+  return {
+    manifestSources: collectManifestSources(rustRoot),
+    modelsTreeSources: collectModelsTreeSources(modelsRoot),
+  };
+}
+
+/** Fails when a models-tree source falls out of ci.yml's `code` filter: the TS pact suites read it, so an edit to it must fire unit-tests (#950 round 2). */
+export function requireModelsTreeInCodeFilter(
+  path: string,
+  document: unknown,
+  modelsTreeSources: string[],
+): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+
+  const code = (parse(raw) as Record<string, string[]>)?.code;
+  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+
+  if (modelsTreeSources.length === 0) {
+    return [
+      `${path}: collectModelsTreeSources() returned no files — it ran against the wrong cwd or the models tree moved, either way the guard cannot pass vacuously (#950)`,
+    ];
+  }
+
+  return modelsTreeSources
+    .filter((file) => !coveredBy(code, file))
+    .map(
+      (file) =>
+        `${path}: ${file} is read by the TS pact suites but no path in the \`code\` filter matches it, so an edit to it skips unit-tests (#950)`,
+    );
+}
+
+/** Fails when a pinned-manifest source falls out of ci.yml's `code` filter: the install-plan join then never runs, and a filter matching nothing reports nothing (#950). */
+export function requireManifestSourcesInCodeFilter(
+  path: string,
+  document: unknown,
+  manifestSources: string[],
+): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+
+  const code = (parse(raw) as Record<string, string[]>)?.code;
+  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+
+  if (manifestSources.length === 0) {
+    return [
+      `${path}: collectManifestSources() returned no files — it ran against the wrong cwd or nothing pins a ModelFile anymore, either way the guard cannot pass vacuously (#950)`,
+    ];
+  }
+
+  return manifestSources
+    .filter((file) => !coveredBy(code, file))
+    .map(
+      (file) =>
+        `${path}: ${file} contains ModelFile literals but no path in the \`code\` filter matches it, so a pin change skips the install-plan join (#950)`,
+    );
+}
+
+/** Fails when a pinned-manifest source falls out of cache-seed.yml's push filter: the shared model caches then never re-seed after a pin change (#950). */
+export function requireManifestSourcesInSeedFilter(
+  path: string,
+  document: unknown,
+  manifestSources: string[],
+): string[] {
+  if (!path.endsWith("cache-seed.yml")) return [];
+
+  const paths = (document as { on?: { push?: { paths?: unknown } } })?.on?.push?.paths;
+  if (!Array.isArray(paths)) return [`${path}: expected a \`push\` trigger with a \`paths\` list`];
+
+  if (manifestSources.length === 0) {
+    return [
+      `${path}: collectManifestSources() returned no files — it ran against the wrong cwd or nothing pins a ModelFile anymore, either way the guard cannot pass vacuously (#950)`,
+    ];
+  }
+
+  const patterns = paths.filter((entry): entry is string => typeof entry === "string");
+  return manifestSources
+    .filter((file) => !coveredBy(patterns, file))
+    .map(
+      (file) =>
+        `${path}: ${file} contains ModelFile literals but no path in the push \`paths\` filter matches it, so a pin change never re-seeds the shared model caches (#950)`,
+    );
 }
 
 /** Fails when ci.yml stops routing flake.nix changes to workflow-lint, the only lane that runs checkFlakeNix (#1088). */
@@ -939,6 +1073,7 @@ export function checkFile(
   testedScripts: string[],
   cacheWriters: CacheEntry[],
   rustToolchain: RustToolchainPin | undefined,
+  sources: RuleSources,
 ): string[] {
   try {
     const contents = readFileSync(path, "utf8");
@@ -963,6 +1098,9 @@ export function checkFile(
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
+      ...requireManifestSourcesInCodeFilter(path, document, sources.manifestSources),
+      ...requireModelsTreeInCodeFilter(path, document, sources.modelsTreeSources),
+      ...requireManifestSourcesInSeedFilter(path, document, sources.manifestSources),
       ...requireFlakeNixInWorkflowsFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
     ];
@@ -996,9 +1134,10 @@ function main(): void {
     ? collectCacheWriters(parse(readFileSync(SEED_WORKFLOW, "utf8")))
     : [];
   const { pin: rustToolchain, errors: rustToolchainErrors } = readRustToolchainPin();
+  const sources = collectRuleSources();
   const errors = [
     ...rustToolchainErrors,
-    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain)),
+    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, sources)),
     ...checkFlakeNix(FLAKE_NIX),
   ];
   for (const error of errors) console.error(error);

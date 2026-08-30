@@ -129,7 +129,9 @@ src/                  Bun/TS CLI + library
 rust/src/             kesha-engine (Rust)
   main.rs            clap CLI: transcribe / say / detect-lang / install / record / ...
   capabilities.rs    --capabilities-json (single source of truth for feature flags)
-  models.rs          HF download + cache + SHA-256 pins for every model
+  models/            HF download + cache + SHA-256 pins — manifest.rs (tables), paths.rs
+                     (cache dirs), download.rs (retry/verify), staging.rs (ANE bundles),
+                     progress.rs (stderr bar)
   audio.rs           symphonia decode + rubato resample to 16kHz mono f32
   lang_id.rs         SpeechBrain ONNX audio language detection (always built)
   text_lang.rs       macOS NLLanguageRecognizer (macOS only)
@@ -187,7 +189,7 @@ darwin) and the native `fluidaudio-rs` CoreML path (`coreml` / `system_diarize`)
 ## Models: cache + pinning
 
 - Cache lives under `~/.cache/kesha/models/` (override `KESHA_CACHE_DIR`).
-- Every model file in `rust/src/models.rs` carries a pinned **SHA-256**;
+- Every model file in `rust/src/models/manifest.rs` carries a pinned **SHA-256**;
   `download_verified` refuses to cache a file whose hash doesn't match. This
   makes `KESHA_MODEL_MIRROR` safe and turns an upstream re-publish into a
   deliberate pin bump (see the `verify-pin-bump` skill).
@@ -269,7 +271,7 @@ pre-#688 install also `~/Library/Application Support/FluidAudio`,
 | A CLI flag / output format | `src/cli.ts`, `src/cli/*`, `src/format.ts` | `bun test && bunx tsc --noEmit` |
 | ASR pipeline | `rust/src/backend/`, `rust/src/transcribe/` | `just rust-test` + `cargo check --features coreml --no-default-features` |
 | A TTS voice/engine | `rust/src/tts/`, `src/voice-routing.ts` | `just rust-test`; `cargo nextest run --features tts tts_` |
-| A model version/pin | `rust/src/models.rs` | `verify-pin-bump` skill; `cargo test models::manifest_tests` |
+| A model version/pin | `rust/src/models/manifest.rs` | `verify-pin-bump` skill; `cargo test models::manifest` |
 | Shell completions / manpage | regenerate, don't hand-edit | `bun run generate:shell-artifacts` |
 | A GitHub workflow | `.github/workflows/*` | `bun run check:workflows` + `actionlint` |
 | The OpenClaw skill | `SKILL.md` | cross-check against live `kesha <cmd> --help` |

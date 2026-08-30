@@ -3,7 +3,7 @@
 # rust/tests/vad_spans.rs actually run. No lane downloaded this before #990, so
 # the VAD had no cross-platform coverage at all.
 #
-# URL and hash mirror rust/src/models.rs::VAD_FILES; models.rs's
+# URL and hash mirror rust/src/models/manifest.rs::VAD_FILES; its
 # `ci_download_script_matches_the_pinned_vad_manifest` fails if they drift, so a
 # pin bump has to land in both places.
 # Wrapped in main() and sourceable — rust/tests/vad_download_script.rs sources this to call sha_of()/verify() directly, cross-platform, without downloading anything (#990 round 2).

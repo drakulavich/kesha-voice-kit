@@ -34,7 +34,7 @@ fetch() {
 if [[ "${WITH_REAL_KOKORO:-0}" == "1" ]]; then
   if [[ ! -f "$DEST/model.onnx" ]]; then
     echo "Downloading Kokoro model.onnx (kokoro-onnx official release)..."
-    # Mirrors rust/src/models.rs::kokoro_manifest URL — see #207 for why we
+    # Mirrors rust/src/models/manifest.rs::kokoro_manifest URL — see #207 for why we
     # switched off the HF onnx-community variant.
     fetch "$DEST/model.onnx" \
       https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
@@ -97,7 +97,7 @@ fi
 ls -lh "$DEST"
 
 # CharsiuG2P byt5-tiny ONNX (es/fr/it/pt phonemisation). URLs mirror
-# rust/src/models.rs; the loader (charsiu::load) opens exactly these three.
+# rust/src/models/manifest.rs; the loader (charsiu::load) opens exactly these three.
 # run-cargo-test.sh exports CHARSIU_ONNX pointing at this dir.
 G2P_DIR="$DEST/models/g2p/byt5-tiny"
 mkdir -p "$G2P_DIR"

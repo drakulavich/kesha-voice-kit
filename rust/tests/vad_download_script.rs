@@ -1,4 +1,4 @@
-//! Behavioral tests for `rust/ci/download-vad.sh` — the manifest pact in `src/models.rs` only checks the URL/hash literals, not that hashing or verification actually works (#990).
+//! Behavioral tests for `rust/ci/download-vad.sh` — the manifest pact in `src/models/manifest.rs` only checks the URL/hash literals, not that hashing or verification actually works (#990).
 
 use std::fs;
 use std::path::Path;

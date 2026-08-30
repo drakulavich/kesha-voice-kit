@@ -24,7 +24,7 @@ on:
     # to probe a guaranteed hit. Cargo.lock is here for the Parakeet key (#675).
     paths:
       - "rust/ci/download-kokoro.sh"
-      - "rust/src/models.rs"
+      - "rust/src/models/**"
       - "rust/Cargo.lock"
       - ".github/workflows/cache-seed.yml"
   # Eviction does not wait for pushes. Without this, a bundle evicted under budget

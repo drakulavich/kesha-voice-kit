@@ -760,7 +760,7 @@ mod tests {
     /// `ort` exposes no getter for a session's configured thread count, so no bit-identity test
     /// can pin `.with_intra_threads(1)` itself — every value this graph accepts (0, 1, 4, deleted
     /// entirely) produces bit-identical output, round-2 review confirmed by mutation. This pins
-    /// the source text instead, the same shape as `download-vad.sh`'s pin-drift pact in models.rs.
+    /// the source text instead, the same shape as `download-vad.sh`'s pin-drift pact in models/manifest.rs.
     #[test]
     fn load_pins_intra_threads_one_in_source() {
         let src = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/vad.rs"))

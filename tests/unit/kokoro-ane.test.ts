@@ -9,6 +9,7 @@ import {
 } from "../../src/kokoro-ane";
 import { collectDoctorReport } from "../../src/doctor";
 import { renderInstallPlan } from "../../src/install-plan";
+import { rustModelsSource } from "../helpers/rust-models-source";
 
 const DARWIN = { platform: "darwin", arch: "arm64" } as const;
 
@@ -150,9 +151,9 @@ describe("doctor and `install --plan` tell the same Kokoro ANE story", () => {
 // The staged set is written out in both languages; nothing else fails when only one side
 // is edited, and a divergence makes doctor call an unusable install healthy (#831).
 describe("Rust/TS Kokoro ANE manifest agreement", () => {
-  const rust = readFileSync(join(import.meta.dir, "..", "..", "rust", "src", "models.rs"), "utf8");
+  const rust = rustModelsSource();
 
-  /** Top-level entries of a `models.rs` `ModelFile` manifest, the granularity doctor probes. */
+  /** Top-level entries of a `models/manifest.rs` `ModelFile` manifest, the granularity doctor probes. */
   function stagedTopLevel(constName: string): string[] {
     const start = rust.indexOf(`const ${constName}: &[ModelFile] = &[`);
     expect(start).toBeGreaterThan(-1);
@@ -163,11 +164,11 @@ describe("Rust/TS Kokoro ANE manifest agreement", () => {
     return [...new Set(paths.map((p) => p.split("/")[0]!))].sort();
   }
 
-  test("the English ANE chain matches models.rs::ANE_EN_FILES", () => {
+  test("the English ANE chain matches models/manifest.rs::ANE_EN_FILES", () => {
     expect(stagedTopLevel("ANE_EN_FILES")).toEqual([...KOKORO_ANE_EN_REQUIRED].sort());
   });
 
-  test("the shared G2P set matches models.rs::KOKORO_G2P_FILES", () => {
+  test("the shared G2P set matches models/manifest.rs::KOKORO_G2P_FILES", () => {
     expect(stagedTopLevel("KOKORO_G2P_FILES")).toEqual([...KOKORO_G2P_REQUIRED].sort());
   });
 

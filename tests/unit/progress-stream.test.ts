@@ -124,7 +124,7 @@ describe("streamResponseToFile publishes atomically (#770)", () => {
   });
 
   // A Ctrl-C kills the process before cleanup runs, so the next download has to sweep.
-  // The sweep is Unix-only and age-gated, exactly as models.rs::cleanup_orphan_staging is.
+  // The sweep is Unix-only and age-gated, exactly as models/download.rs::cleanup_orphan_staging is.
   posixTest("a staging file orphaned by a killed process is swept once it is a day old", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-stream-orphan-"));
     try {
