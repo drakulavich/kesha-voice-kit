@@ -406,14 +406,29 @@ export function requirePipefailShell(path: string, document: unknown): string[] 
  */
 export function forbidFindPipedToHead(path: string, contents: string): string[] {
   const errors: string[] = [];
-  contents.split("\n").forEach((line, at) => {
-    if (/^\s*#/.test(line)) return;
-    if (!/\bfind\b/.test(line) || !/\|\s*head\b/.test(line)) return;
+  let logical = "";
+  let startAt = 0;
+
+  const check = () => {
+    if (/^\s*#/.test(logical)) return;
+    if (!/\bfind\b/.test(logical) || !/\|\s*head\b/.test(logical)) return;
     errors.push(
-      `${path}:${at + 1}: pipes \`find\` into \`head\` — under pipefail that is a SIGPIPE race (\`find\` can exit ` +
+      `${path}:${startAt + 1}: pipes \`find\` into \`head\` — under pipefail that is a SIGPIPE race (\`find\` can exit ` +
         `141 while still traversing), not a guaranteed success; use \`find ... -print -quit\` instead (#1088)`,
     );
+  };
+
+  // A trailing `\` continues a shell command onto the next physical line; join before matching, or the two halves of a wrapped find|head never meet.
+  contents.split("\n").forEach((line, at) => {
+    if (logical === "") startAt = at;
+    const continued = /\\\s*$/.test(line);
+    logical += continued ? `${line.replace(/\\\s*$/, "")} ` : line;
+    if (continued) return;
+    check();
+    logical = "";
   });
+  if (logical !== "") check();
+
   return errors;
 }
 

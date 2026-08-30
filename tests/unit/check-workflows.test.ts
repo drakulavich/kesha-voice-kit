@@ -210,6 +210,18 @@ describe("forbidFindPipedToHead", () => {
     expect(errors[0]).toContain(`${PATH}:3:`);
   });
 
+  test("catches a backslash-continued pipeline split across two lines", () => {
+    const contents = "sidecar=$(find . -name x \\\n  | head -1)\n";
+    const errors = forbidFindPipedToHead(PATH, contents);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(`${PATH}:1:`);
+  });
+
+  test("a continuation that never resolves to find|head is not flagged", () => {
+    const contents = "sidecar=$(find . -name x \\\n  -type f)\n";
+    expect(forbidFindPipedToHead(PATH, contents)).toEqual([]);
+  });
+
   test("accepts the -print -quit replacement", () => {
     const line = '          sidecar=$(find "rust/target/x/release/build" -name say-avspeech -type f -print -quit)';
     expect(forbidFindPipedToHead(PATH, line)).toEqual([]);

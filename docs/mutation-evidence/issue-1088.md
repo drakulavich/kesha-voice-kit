@@ -19,6 +19,12 @@ path filter naming `flake.nix` — with a `find|head` reintroduced, a PR touchin
 ran neither `unit-tests` nor `workflow-lint`, so the guard the ticket's own PR added never fired
 on the class of change it exists to police.
 
+Greptile's PR review then found a fourth gap in `forbidFindPipedToHead` itself: it matched each
+physical line independently, so a shell command wrapped across two lines with a trailing `\` —
+`find ... \` on one line, `| head -1)` on the next — matched neither line's regex and passed clean.
+Fixed by joining backslash-continued physical lines into one logical line before matching, keeping
+the first physical line's number for the error.
+
 ## Mutation proof
 
 | # | File | Mutation | Test | Result |
@@ -31,6 +37,7 @@ on the class of change it exists to police.
 | 6 | `.github/scripts/check-workflows.ts` | `requireFlakeNixInWorkflowsFilter`'s `workflows.includes(FLAKE_NIX)` → `true` — the membership check itself neutralised | `bun test tests/unit/check-workflows.test.ts` | **PINNED** — 174 pass, 2 fail |
 | 7 | `flake.nix` | `-print -quit` reverted to `\| head -1` | `bun run check:workflows` | **PINNED** — exit 1, `flake.nix:175: pipes find into head … (#1088)` |
 | 8 | `.github/workflows/ci.yml` | `'flake.nix'` entry removed from the `workflows` path filter | `bun run check:workflows` | **PINNED** — exit 1, `` ci.yml: `workflows` filter must include `flake.nix` … (#1088) `` |
+| 9 | `.github/scripts/check-workflows.ts` | `forbidFindPipedToHead`'s `const continued = /\\\s*$/.test(line);` → `const continued = false;` — line-joining disabled, restoring the per-line-only match | `bun test tests/unit/check-workflows.test.ts` | **PINNED** — 177 pass, 1 fail (`catches a backslash-continued pipeline split across two lines`) |
 
 Rows 3–5 are the load-bearing ones for review round 2: each mirrors row 2 of `issue-1105.md`'s
 table — a guard whose *definition* is correct and directly tested, but whose *registration* in
@@ -43,4 +50,5 @@ precisely when the registration line is gone or the constant no longer matches a
 Rows 7 and 8 reproduce the actual defect class end to end, independent of the unit-test suite:
 row 7 is the SIGPIPE race #1088 opened on, still live in `flake.nix` until this PR; row 8 is
 review round 2's second finding, that the guard existed but never ran on the change it was meant
-to catch.
+to catch. Row 9 is Greptile's finding on round 2: the matcher itself was structure-insensitive to
+line wrapping, not just unwired.
