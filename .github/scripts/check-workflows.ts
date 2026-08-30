@@ -796,9 +796,9 @@ export function requireReleaseVerifiesTagIsCurrent(path: string, document: unkno
   const steps = jobSteps(document, "release");
   if (!steps) return [`${path}: expected a \`release\` job with steps`];
 
+  // Checks the contract (tag ref resolved, compared to GITHUB_SHA), not the resolving command — pinning `git rev-parse` rejected the `git ls-remote ...^{}` fix for its own tag-object-vs-commit bug (#1115 review).
   const isGuard = (step: Step) =>
     typeof step?.run === "string" &&
-    /\bgit rev-parse\b/.test(step.run) &&
     /refs\/tags/.test(step.run) &&
     /GITHUB_SHA/.test(step.run) &&
     condition(step).trim() !== "false";

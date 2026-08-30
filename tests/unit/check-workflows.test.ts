@@ -970,6 +970,15 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
     const errors = requireReleaseVerifiesTagIsCurrent(PATH, { jobs: { build: {} } });
     expect(errors[0]).toContain("expected a `release` job");
   });
+
+  // `jobs: {}` alone reports "expected a `release` job", not #1115 — the probe needs a real job.
+  test("the file gate actually runs it", () => {
+    const yaml =
+      "on:\n  push:\njobs:\n  release:\n    steps:\n      - uses: softprops/action-gh-release@3d0d9888c\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1115"))).toHaveLength(1);
+  });
 });
 
 describe("requireRustTestCancelsSupersededRuns", () => {
