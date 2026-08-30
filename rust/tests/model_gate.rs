@@ -254,3 +254,31 @@ fn the_vad_gate_fails_loudly_rather_than_skipping_when_required() {
         "a lane that promised VAD models must fail loudly on a missing file, not skip"
     );
 }
+
+/// `common::assert_not_lfs_pointer` was added with no test exercising it — deleting the call site
+/// or neutralising its `starts_with` predicate both left every existing test green (#990 round 2).
+#[test]
+fn assert_not_lfs_pointer_rejects_a_pointer_stub_and_accepts_real_bytes() {
+    let dir = std::env::temp_dir().join(format!("kesha-lfs-guard-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let pointer = dir.join("pointer.ogg");
+    std::fs::write(
+        &pointer,
+        b"version https://git-lfs.github.com/spec/v1\noid sha256:deadbeef\nsize 12345\n",
+    )
+    .expect("write pointer stub");
+    let outcome = std::panic::catch_unwind(|| common::assert_not_lfs_pointer(&pointer));
+
+    let real = dir.join("real.ogg");
+    std::fs::write(
+        &real,
+        b"OggS not really audio but not an lfs pointer either",
+    )
+    .expect("write real-ish file");
+    common::assert_not_lfs_pointer(&real);
+
+    std::fs::remove_dir_all(&dir).ok();
+
+    assert!(outcome.is_err(), "an LFS pointer stub must be rejected");
+}

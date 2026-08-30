@@ -72,6 +72,44 @@ fn fixtures() -> Vec<PathBuf> {
     paths
 }
 
+/// Pulled out so a test can pin the `assert_not_lfs_pointer` call site itself, not just the
+/// standalone function — deleting the call from the loop below left this test green (#990 round 2).
+fn decode_fixture(path: &std::path::Path) -> (String, Vec<f32>) {
+    let name = path
+        .file_name()
+        .expect("fixture name")
+        .to_string_lossy()
+        .into_owned();
+    common::assert_not_lfs_pointer(path);
+    let audio = load_audio(path).unwrap_or_else(|e| panic!("decode {name}: {e}"));
+    (name, audio)
+}
+
+#[test]
+fn decode_fixture_rejects_a_pointer_stub() {
+    let dir =
+        std::env::temp_dir().join(format!("kesha-vad-spans-lfs-guard-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let pointer = dir.join("pointer.ogg");
+    std::fs::write(
+        &pointer,
+        b"version https://git-lfs.github.com/spec/v1\noid sha256:deadbeef\nsize 12345\n",
+    )
+    .expect("write pointer stub");
+    let outcome = std::panic::catch_unwind(|| decode_fixture(&pointer));
+    std::fs::remove_dir_all(&dir).ok();
+    let message = outcome.as_ref().err().map(|e| {
+        e.downcast_ref::<String>()
+            .cloned()
+            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_else(|| "<non-string panic payload>".to_string())
+    });
+    assert!(
+        message.as_deref().is_some_and(|m| m.contains("LFS pointer stub")),
+        "expected the actionable LFS-pointer message before decoding, got: {message:?} — a decode-failure panic from a deleted guard call would satisfy is_err() too"
+    );
+}
+
 fn render(rows: &[(String, Vec<(f32, f32)>)]) -> String {
     let mut out = String::from("const GOLDEN: &[(&str, &[(f32, f32)])] = &[\n");
     for (name, spans) in rows {
@@ -95,13 +133,7 @@ fn detect_segments_reproduces_the_committed_spans() {
 
     let mut actual: Vec<(String, Vec<(f32, f32)>)> = Vec::new();
     for path in fixtures() {
-        let name = path
-            .file_name()
-            .expect("fixture name")
-            .to_string_lossy()
-            .into_owned();
-        common::assert_not_lfs_pointer(&path);
-        let audio = load_audio(&path).unwrap_or_else(|e| panic!("decode {name}: {e}"));
+        let (name, audio) = decode_fixture(&path);
         let spans = vad
             .detect_segments(&audio, VadConfig::default())
             .unwrap_or_else(|e| panic!("detect_segments {name}: {e}"));

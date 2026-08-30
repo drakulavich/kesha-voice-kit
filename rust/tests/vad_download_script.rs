@@ -1,11 +1,53 @@
-//! Behavioral test for `rust/ci/download-vad.sh`'s SHA-256 verification: a corrupted or tampered
-//! download must be rejected and never staged. The manifest pact in `src/models.rs` only proves
-//! the script's URL/hash literals match the pin — it says nothing about whether the script's
-//! `verify` gate actually runs, which is the gap review found for #990.
+//! Behavioral tests for `rust/ci/download-vad.sh` — the manifest pact in `src/models.rs` only checks the URL/hash literals, not that hashing or verification actually works (#990).
 
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+fn script_path() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("ci/download-vad.sh")
+}
+
+/// Cross-platform (unlike the curl-stub test below): sources the script and calls `sha_of`
+/// directly on a path containing a literal backslash, reproducing the byte shape of Git-Bash's
+/// mixed-separator Windows paths (`D:\a\...\.vad-cache`) that broke Windows CI before #990's fix
+/// — the class of regression round-2 review found this file's `#[cfg(unix)]` test couldn't cover.
+#[test]
+fn sha_of_hashes_a_backslash_bearing_path_to_a_bare_hex_digest() {
+    let dir = std::env::temp_dir().join(format!("kesha-vad-shaof-{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("temp dir");
+    let target = dir.join("a\\b.onnx");
+    fs::write(&target, b"hello vad").expect("write fixture");
+
+    let inner = format!(
+        "source '{}'; sha_of '{}'",
+        script_path().display(),
+        target.to_string_lossy().replace('\'', "'\\''")
+    );
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(&inner)
+        .output()
+        .expect("run sha_of via bash");
+
+    fs::remove_dir_all(&dir).ok();
+
+    assert!(
+        output.status.success(),
+        "sourcing download-vad.sh and calling sha_of failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(
+        hash.len(),
+        64,
+        "sha_of must print a bare 64-hex-char hash, got {hash:?} — a leading backslash means the Windows escaping bug is back"
+    );
+    assert!(
+        hash.chars().all(|c| c.is_ascii_hexdigit()),
+        "sha_of output {hash:?} contains non-hex characters"
+    );
+}
 
 #[cfg(unix)]
 #[test]
@@ -30,7 +72,6 @@ fn download_vad_rejects_a_corrupted_download_and_never_stages_it() {
     std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
     fs::set_permissions(&fake_curl, perms).expect("chmod fake curl");
 
-    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("ci/download-vad.sh");
     let path_var = format!(
         "{}:{}",
         bin_dir.display(),
@@ -38,9 +79,11 @@ fn download_vad_rejects_a_corrupted_download_and_never_stages_it() {
     );
 
     let output = Command::new("bash")
-        .arg(&script)
+        .arg(script_path())
         .arg(&cache_dir)
         .env("PATH", path_var)
+        .env("DOWNLOAD_VAD_ATTEMPTS", "1")
+        .env("DOWNLOAD_VAD_RETRY_SECONDS", "0")
         .output()
         .expect("run download-vad.sh");
 

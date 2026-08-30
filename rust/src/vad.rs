@@ -123,7 +123,7 @@ pub struct VadDetector {
 
 impl VadDetector {
     pub fn load(model_path: &Path) -> Result<Self> {
-        // #990: decoder LSTM rejects >1 frame/call, so intra_threads(1) is the only lever that pays — bit-identical, unpinned since ort has no getter to assert against (see vad_990_measurement).
+        // #990: decoder LSTM rejects >1 frame/call; intra_threads(1) is bit-identical (tuned_session_matches_default_bit_for_bit) — the value itself is pinned only in source (load_pins_intra_threads_one_in_source), since ort has no getter.
         let session = Session::builder()
             .context("failed to create VAD session builder")?
             .with_intra_threads(1)
@@ -475,6 +475,7 @@ mod tests {
             "{}/../tests/fixtures/benchmark-en/03-review-pull-request.ogg",
             env!("CARGO_MANIFEST_DIR")
         );
+        reject_lfs_pointer(Path::new(&fixture));
         let mut samples = crate::audio::load_audio(Path::new(&fixture)).expect("decode fixture");
         let mut endpoint = StreamingVad::load(
             &path,
@@ -493,11 +494,13 @@ mod tests {
             );
         }
 
-        let silence = crate::audio::load_audio(Path::new(&format!(
+        let silence_path = format!(
             "{}/../tests/fixtures/silence.wav",
             env!("CARGO_MANIFEST_DIR")
-        )))
-        .expect("decode silence fixture");
+        );
+        reject_lfs_pointer(Path::new(&silence_path));
+        let silence =
+            crate::audio::load_audio(Path::new(&silence_path)).expect("decode silence fixture");
         for _ in 0..3 {
             samples.extend_from_slice(&silence);
         }
@@ -600,6 +603,55 @@ mod tests {
         }
     }
 
+    /// The shared per-file step `load_benchmark_fixtures` calls — pulled out so a test can call
+    /// it directly and pin the `reject_lfs_pointer` call site itself, not just the standalone
+    /// function (round-2 review: deleting the call site left every existing test green).
+    fn load_fixture(path: &Path) -> (String, Vec<f32>) {
+        reject_lfs_pointer(path);
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let audio = crate::audio::load_audio(path).unwrap_or_else(|e| panic!("decode {name}: {e}"));
+        (name, audio)
+    }
+
+    #[test]
+    fn load_fixture_rejects_a_pointer_stub_and_accepts_real_audio() {
+        let dir = std::env::temp_dir().join(format!("kesha-vad-lfs-guard-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+
+        let pointer = dir.join("pointer.ogg");
+        std::fs::write(
+            &pointer,
+            b"version https://git-lfs.github.com/spec/v1\noid sha256:deadbeef\nsize 12345\n",
+        )
+        .expect("write pointer stub");
+        let outcome = std::panic::catch_unwind(|| load_fixture(&pointer));
+
+        std::fs::remove_dir_all(&dir).ok();
+
+        let message = panic_message(&outcome);
+        assert!(
+            message.as_deref().is_some_and(|m| m.contains("LFS pointer stub")),
+            "expected the actionable LFS-pointer message before decoding, got: {message:?} — a decode-failure panic from a deleted guard call would satisfy is_err() too"
+        );
+    }
+
+    /// `catch_unwind`'s `Err` payload is a `Box<dyn Any>`, usually `String` or `&str` depending on
+    /// whether `panic!` formatted anything — checking only `is_err()` doesn't distinguish the
+    /// actionable LFS message from a decode failure that would panic anyway (round-2 review found
+    /// exactly that gap: deleting the guard call still "passed" a `.is_err()`-only assertion).
+    fn panic_message(outcome: &std::thread::Result<(String, Vec<f32>)>) -> Option<String> {
+        outcome.as_ref().err().map(|e| {
+            e.downcast_ref::<String>()
+                .cloned()
+                .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "<non-string panic payload>".to_string())
+        })
+    }
+
+    /// The benchmark corpus is 20 committed files (10 ru + 10 en); asserting non-empty pins
+    /// "some fixtures found" rather than "the full corpus" — a directory silently dropped from
+    /// the loop, or half of it missing `git lfs pull`, stayed green under that weaker check
+    /// (#990 review).
     fn load_benchmark_fixtures() -> Vec<(String, Vec<f32>)> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -615,20 +667,30 @@ mod tests {
                 .collect();
             paths.sort();
             for p in paths {
-                reject_lfs_pointer(&p);
-                let name = p.file_name().unwrap().to_string_lossy().into_owned();
-                let audio =
-                    crate::audio::load_audio(&p).unwrap_or_else(|e| panic!("decode {name}: {e}"));
-                fixtures.push((name, audio));
+                fixtures.push(load_fixture(&p));
             }
         }
         fixtures
     }
 
+    fn build_composite(fixtures: &[(String, Vec<f32>)]) -> Vec<f32> {
+        let mut composite: Vec<f32> = Vec::new();
+        while (composite.len() as f32 / SAMPLE_RATE as f32) < 129.0 {
+            for (_, audio) in fixtures {
+                composite.extend_from_slice(audio);
+            }
+        }
+        composite
+    }
+
     /// #990: proves `VadDetector::load`'s tuned session (`intra_threads(1)`) is bit-for-bit
-    /// identical to the untuned default over the full benchmark corpus — the correctness claim
-    /// this PR rests on. `vad_990_measurement` below reports timing separately, since a timing
-    /// assertion in an always-run test is the flaky class CLAUDE.md bans.
+    /// identical to the untuned default over the full benchmark corpus AND a synthetic ~185s
+    /// composite (whose continuous LSTM state crosses fixture boundaries the discrete corpus
+    /// loop never does) — the correctness claim this PR rests on, and the assertion round-2
+    /// review found missing from every CI lane after round 1 moved it into an `#[ignore]`d test.
+    /// `vad_990_measurement` below reports timing separately, since a timing assertion in an
+    /// always-run test is the flaky class CLAUDE.md bans; `load_pins_intra_threads_one_in_source`
+    /// pins the specific setting, since no thread count this graph accepts changes its output.
     #[test]
     fn tuned_session_matches_default_bit_for_bit() {
         let Some(path) = vad_model_path_or_skip("tuned_session_matches_default_bit_for_bit") else {
@@ -645,13 +707,22 @@ mod tests {
         let mut tuned = VadDetector::load(&path).expect("load VAD (tuned)");
 
         let fixtures = load_benchmark_fixtures();
-        assert!(
-            !fixtures.is_empty(),
-            "no benchmark fixtures found — run `git lfs pull`"
+        assert_eq!(
+            fixtures.len(),
+            20,
+            "expected all 20 benchmark fixtures (10 ru + 10 en) — got {}: was a directory dropped, or is `git lfs pull` needed?",
+            fixtures.len()
         );
 
-        let mut min_margin = f32::MAX;
-        for (name, audio) in &fixtures {
+        let mut cases = fixtures.clone();
+        cases.push((
+            "tiled-185s-composite".to_string(),
+            build_composite(&fixtures),
+        ));
+
+        let mut corpus_margin = f32::MAX;
+        let mut composite_margin = f32::MAX;
+        for (name, audio) in &cases {
             let base_probs = baseline
                 .frame_probs(audio)
                 .unwrap_or_else(|e| panic!("baseline frame_probs {name}: {e}"));
@@ -663,8 +734,13 @@ mod tests {
                 tuned_probs.len(),
                 "{name}: frame count differs"
             );
+            let margin = if name.starts_with("tiled-") {
+                &mut composite_margin
+            } else {
+                &mut corpus_margin
+            };
             for (i, (&b, &t)) in base_probs.iter().zip(&tuned_probs).enumerate() {
-                min_margin = min_margin.min((b - 0.5).abs());
+                *margin = margin.min((b - 0.5).abs());
                 assert_eq!(
                     b.to_bits(),
                     t.to_bits(),
@@ -672,7 +748,31 @@ mod tests {
                 );
             }
         }
-        eprintln!("#990 corpus decision margin: min|p-0.5|={min_margin:e}");
+        eprintln!(
+            "#990 decision margin: corpus min|p-0.5|={corpus_margin:e}, composite min|p-0.5|={composite_margin:e}"
+        );
+    }
+
+    /// `ort` exposes no getter for a session's configured thread count, so no bit-identity test
+    /// can pin `.with_intra_threads(1)` itself — every value this graph accepts (0, 1, 4, deleted
+    /// entirely) produces bit-identical output, round-2 review confirmed by mutation. This pins
+    /// the source text instead, the same shape as `download-vad.sh`'s pin-drift pact in models.rs.
+    #[test]
+    fn load_pins_intra_threads_one_in_source() {
+        let src = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/vad.rs"))
+            .expect("read src/vad.rs");
+        let start = src
+            .find("pub fn load(")
+            .expect("VadDetector::load not found in src/vad.rs");
+        let end = src[start..]
+            .find("\n    }\n")
+            .map(|i| start + i)
+            .unwrap_or(src.len());
+        let body = &src[start..end];
+        assert!(
+            body.contains(".with_intra_threads(1)"),
+            "VadDetector::load must call .with_intra_threads(1) — #990's measured, bit-identical setting"
+        );
     }
 
     /// #990 manual measurement, not a correctness gate (see the test above for that): wall-clock

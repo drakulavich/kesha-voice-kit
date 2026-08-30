@@ -2094,14 +2094,23 @@ mod manifest_tests {
 
     /// Reads the literal `VAR="value"` assignment line for `var`, ignoring comments —
     /// `script.contains(needle)` would pass on a decoy value reassigned in code while the
-    /// real one sits in a `# pinned: ...` comment, which defeats the drift guard entirely.
+    /// real one sits in a `# pinned: ...` comment. Requires exactly one such line rather than
+    /// taking the first: bash itself resolves a shadowed reassignment to the *last* one, so
+    /// "first" matching a decoy and "last" being real would still stage the wrong pin silently.
     fn shell_assignment<'a>(script: &'a str, var: &str) -> &'a str {
         let prefix = format!("{var}=\"");
-        script
+        let matches: Vec<&str> = script
             .lines()
-            .find_map(|line| line.trim().strip_prefix(prefix.as_str()))
-            .and_then(|rest| rest.strip_suffix('"'))
-            .unwrap_or_else(|| panic!("no `{prefix}...\"` assignment found in download-vad.sh"))
+            .filter_map(|line| line.trim().strip_prefix(prefix.as_str()))
+            .filter_map(|rest| rest.strip_suffix('"'))
+            .collect();
+        assert_eq!(
+            matches.len(),
+            1,
+            "expected exactly one `{prefix}...\"` assignment in download-vad.sh, found {}",
+            matches.len()
+        );
+        matches[0]
     }
 
     /// The CI staging script carries its own copy of the URL and hash, because a
