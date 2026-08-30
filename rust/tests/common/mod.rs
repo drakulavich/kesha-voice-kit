@@ -216,6 +216,33 @@ pub fn kokoro_voice_or_skip(
     None
 }
 
+/// `VAD_MODEL` env var, else the pinned Silero location under the cache base.
+///
+/// Deliberately not routed through [`assert_staged_tier_matches`]: Silero has no
+/// mini stand-in, and the PR matrix promises `KESHA_REQUIRE_MODEL_TESTS: mini`,
+/// so the tier check would fail the moment a lane actually staged the real 2.3 MB
+/// file. `KESHA_REQUIRE_VAD_TESTS` is the separate promise, following the
+/// `KESHA_REQUIRE_VOSK_TESTS` / `KESHA_REQUIRE_G2P_TESTS` precedent (#990).
+pub fn vad_model_or_skip(test: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("VAD_MODEL")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| cache_base().join("models/silero-vad/silero_vad.onnx"));
+    if path.is_file() {
+        return Some(path);
+    }
+    assert!(
+        std::env::var_os("KESHA_REQUIRE_VAD_TESTS").is_none(),
+        "Silero VAD not staged at {} while KESHA_REQUIRE_VAD_TESTS is set — \
+         this lane downloads it, so a missing file is a broken layout, not a laptop",
+        path.display()
+    );
+    eprintln!(
+        "Silero VAD not staged at {} — skipping {test}",
+        path.display()
+    );
+    None
+}
+
 /// Resolve the cache base used by every cache-based skip gate.
 /// `KESHA_CACHE_DIR` if set, else `$HOME/.cache/kesha`. Falls back to
 /// `/tmp/.cache/kesha` if `HOME` is unset (matches the historical
