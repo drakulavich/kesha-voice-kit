@@ -465,6 +465,12 @@ describe("requirePipefailShell", () => {
     expect(errors[0]).toContain("sets `shell: sh`");
   });
 
+  // Composite steps can't set defaults.run.shell — pointing authors at it would be a dead end.
+  test("does not suggest defaults.run.shell for a composite action", () => {
+    const errors = requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ ...PIPED, shell: "sh" }]));
+    expect(errors[0]).not.toContain("defaults.run.shell");
+  });
+
   test("passes when a composite action's run step names bash", () => {
     expect(
       requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ ...PIPED, shell: "bash" }])),

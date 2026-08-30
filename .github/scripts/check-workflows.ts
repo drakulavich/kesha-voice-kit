@@ -368,7 +368,13 @@ export function requireBashOnWindowsRunSteps(path: string, document: unknown): s
  */
 const PIPEFAIL_SHELLS = new Set(["bash", "pwsh", "powershell", "python"]);
 
-function pipefailErrorsForSteps(path: string, name: string, steps: Step[], defaultShell: unknown): string[] {
+function pipefailErrorsForSteps(
+  path: string,
+  name: string,
+  steps: Step[],
+  defaultShell: unknown,
+  remedy: string,
+): string[] {
   const errors: string[] = [];
   for (const [at, step] of steps.entries()) {
     if (typeof step?.run !== "string") continue;
@@ -381,12 +387,15 @@ function pipefailErrorsForSteps(path: string, name: string, steps: Step[], defau
         : `sets \`shell: ${String(shell)}\``;
     errors.push(
       `${path}: \`${name}\` step ${label} ${found} — no pipefail there, so a pipeline reports ` +
-        `only its last stage and a failed command inside one passes silently. Name \`shell: bash\`, ` +
-        `or set \`defaults.run.shell: bash\` once for the workflow (#1084, #1089)`,
+        `only its last stage and a failed command inside one passes silently. ${remedy} (#1084, #1089)`,
     );
   }
   return errors;
 }
+
+// A composite step can't inherit `defaults.run.shell` — GitHub requires it be explicit (#1089 review).
+const JOB_REMEDY = "Name `shell: bash`, or set `defaults.run.shell: bash` once for the workflow";
+const COMPOSITE_REMEDY = "Name `shell: bash` on the step";
 
 export function requirePipefailShell(path: string, document: unknown): string[] {
   const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
@@ -398,14 +407,16 @@ export function requirePipefailShell(path: string, document: unknown): string[] 
       if (!Array.isArray(job?.steps)) continue;
       const labels = runnerLabels(job);
       if (labels.length > 0 && labels.every((label) => /windows/i.test(label))) continue;
-      errors.push(...pipefailErrorsForSteps(path, name, job.steps as Step[], job.defaults?.run?.shell ?? workflowShell));
+      errors.push(
+        ...pipefailErrorsForSteps(path, name, job.steps as Step[], job.defaults?.run?.shell ?? workflowShell, JOB_REMEDY),
+      );
     }
     return errors;
   }
 
   const compositeSteps = (document as { runs?: { steps?: unknown[] } })?.runs?.steps;
   if (!Array.isArray(compositeSteps)) return [];
-  return pipefailErrorsForSteps(path, "runs", compositeSteps as Step[], undefined);
+  return pipefailErrorsForSteps(path, "runs", compositeSteps as Step[], undefined, COMPOSITE_REMEDY);
 }
 
 /**
