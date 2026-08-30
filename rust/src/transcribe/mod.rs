@@ -407,7 +407,7 @@ fn finalize_output(
 }
 
 /// Shared by plain and chunked paths to avoid duplicate timing+logging+create_backend blocks.
-fn create_timed_backend(model_dir: &str) -> Result<Box<dyn backend::TranscribeBackend>> {
+fn create_timed_backend(model_dir: &Path) -> Result<Box<dyn backend::TranscribeBackend>> {
     let t0 = Instant::now();
     let be = backend::create_backend(model_dir)?;
     let dt_ms = t0.elapsed().as_millis() as u64;
@@ -426,13 +426,13 @@ fn join_segment_texts(segments: &[TranscriptionSegment]) -> String {
 
 fn transcribe_plain(
     audio_path: &str,
-    model_dir: &str,
+    model_dir: &Path,
     duration: Option<f32>,
     timestamps_required: bool,
 ) -> Result<TranscriptionOutput> {
     let mut be = create_timed_backend(model_dir)?;
     let t1 = Instant::now();
-    let chunk = be.transcribe(audio_path)?;
+    let chunk = be.transcribe(Path::new(audio_path))?;
     let text = chunk.text;
     dtrace!(
         "asr::transcribe.end dt={}ms chars={}",
@@ -452,7 +452,7 @@ fn transcribe_plain(
 
 fn transcribe_chunked(
     audio_path: &str,
-    model_dir: &str,
+    model_dir: &Path,
     timestamps_required: bool,
 ) -> Result<TranscriptionOutput> {
     let t_audio = Instant::now();
@@ -483,7 +483,7 @@ fn transcribe_chunked(
 /// threshold never silently drops input and never forces unsafe full-file ASR.
 fn transcribe_via_vad(
     audio_path: &str,
-    model_dir: &str,
+    model_dir: &Path,
     vad_dir: &str,
     cfg: VadConfig,
 ) -> Result<TranscriptionOutput> {
@@ -1019,7 +1019,7 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
 /// Returns the cached ASR model dir or bails with the install hint. Takes the
 /// cache-root resolution rather than reading it, so a null home surfaces as the
 /// coded `E_INTERNAL` #953 established instead of "no models installed" (#969).
-fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<String> {
+fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<std::path::PathBuf> {
     let dir = models::model_dir_at(models::ModelKind::Asr, &cache?);
     if !models::is_cached_in(models::ModelKind::Asr, &dir) {
         anyhow::bail!(
@@ -1027,7 +1027,7 @@ fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<String> {
              Please run: kesha install"
         );
     }
-    Ok(dir.to_string_lossy().into_owned())
+    Ok(dir)
 }
 
 #[cfg(test)]
@@ -2239,10 +2239,7 @@ mod seam_long_form {
             eprintln!("SKIP seam_long_form: ASR weights not installed (`kesha install`)");
             return None;
         }
-        let dir = models::model_dir(models::ModelKind::Asr)
-            .expect("resolve ASR model dir")
-            .to_string_lossy()
-            .into_owned();
+        let dir = models::model_dir(models::ModelKind::Asr).expect("resolve ASR model dir");
         Some(backend::create_backend(&dir).expect("create ASR backend"))
     }
 

@@ -1,4 +1,5 @@
 use std::os::fd::OwnedFd;
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use fluidaudio_rs::{AsrWordTiming, FluidAudio};
@@ -41,7 +42,7 @@ impl FluidAudioBackend {
 impl TranscribeBackend for FluidAudioBackend {
     /// stdout stays silenced: a file FluidAudio rejects prints there, and the fallback
     /// below can still return a transcript, whose `--json` that chatter would corrupt.
-    fn transcribe(&mut self, audio_path: &str) -> Result<TranscriptionChunk> {
+    fn transcribe(&mut self, audio_path: &Path) -> Result<TranscriptionChunk> {
         let attempt = with_silenced_stdout(self.sink.as_ref(), || {
             self.audio.transcribe_file_with_words(audio_path)
         });
@@ -49,7 +50,7 @@ impl TranscribeBackend for FluidAudioBackend {
             Ok((result, words)) => Ok(chunk_from(result.text, words)),
             // FluidAudio refuses a file below ~0.25 s; the padding path serves it, and load_audio names a real fault better (#995).
             Err(_) => {
-                let samples = crate::audio::load_audio(audio_path)?;
+                let samples = crate::audio::load_audio(&audio_path.to_string_lossy())?;
                 super::ensure_transcribable(&samples)?;
                 self.transcribe_samples(&samples)
             }
@@ -113,7 +114,6 @@ fn pad_to_min(samples: &[f32], min_len: usize) -> std::borrow::Cow<'_, [f32]> {
 mod tests {
     use super::*;
     use std::fmt::Write as _;
-    use std::path::Path;
 
     /// #841: the warm-cache flake fails ~20 s in with a bare "Transcription
     /// failed" on a cleanly restored bundle, and a same-SHA rerun goes green —
@@ -429,7 +429,10 @@ mod tests {
         if skip_without_ane("a_sub_second_file_transcribes_instead_of_erroring") {
             return;
         }
-        let short = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tone-150ms.wav");
+        let short = Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/tone-150ms.wav"
+        ));
         let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
         be.transcribe(short)
             .expect("a 0.15 s file must transcribe, not fail as invalid audio data");
@@ -442,7 +445,10 @@ mod tests {
         if skip_without_ane("an_undecodable_file_is_coded_bad_audio") {
             return;
         }
-        let alac = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/alac.m4a");
+        let alac = Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/alac.m4a"
+        ));
         let mut be = FluidAudioBackend::new().expect("init FluidAudio CoreML backend");
         let err = be
             .transcribe(alac)

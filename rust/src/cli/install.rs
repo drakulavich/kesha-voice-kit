@@ -66,9 +66,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
     // first real `kesha audio.ogg` is fast. CoreML cache is keyed by (model bytes, signing
     // identity) and survives process exit; survives re-runs until next `kesha install` re-signs (#295).
     if !no_warmup {
-        let asr_dir = models::model_dir(models::ModelKind::Asr)?
-            .to_string_lossy()
-            .into_owned();
+        let asr_dir = models::model_dir(models::ModelKind::Asr)?;
         let cost_hint = if cfg!(feature = "coreml") {
             "one-time, ~20-30 s for the ANE compile on first install"
         } else {

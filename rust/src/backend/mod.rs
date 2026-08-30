@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::Result;
 
 use crate::transcribe::WordTiming;
@@ -43,13 +45,13 @@ pub fn ensure_transcribable(samples: &[f32]) -> Result<()> {
 }
 
 pub trait TranscribeBackend {
-    fn transcribe(&mut self, audio_path: &str) -> Result<TranscriptionChunk>;
+    fn transcribe(&mut self, audio_path: &Path) -> Result<TranscriptionChunk>;
     /// Transcribe a pre-decoded 16 kHz mono f32 waveform without re-reading
     /// from disk. Used by the VAD-segmented path to feed per-segment slices.
     fn transcribe_samples(&mut self, samples: &[f32]) -> Result<TranscriptionChunk>;
 }
 
-pub fn create_backend(model_dir: &str) -> Result<Box<dyn TranscribeBackend>> {
+pub fn create_backend(model_dir: &Path) -> Result<Box<dyn TranscribeBackend>> {
     #[cfg(feature = "coreml")]
     {
         let _ = model_dir;
@@ -87,5 +89,32 @@ mod tests {
     #[test]
     fn a_clip_at_the_floor_passes() {
         assert!(ensure_transcribable(&vec![0.0; MIN_TRANSCRIBABLE_SAMPLES]).is_ok());
+    }
+
+    struct StubBackend;
+
+    impl TranscribeBackend for StubBackend {
+        fn transcribe(&mut self, audio_path: &Path) -> Result<TranscriptionChunk> {
+            Ok(audio_path.display().to_string().into())
+        }
+
+        fn transcribe_samples(&mut self, _samples: &[f32]) -> Result<TranscriptionChunk> {
+            unimplemented!("not exercised by this test")
+        }
+    }
+
+    // A real `&Path` argument, not a `&str` one, is what proves this boundary takes `&Path` (#958).
+    #[test]
+    fn transcribe_takes_a_path_argument() {
+        let mut be = StubBackend;
+        let chunk = be
+            .transcribe(Path::new("/tmp/958.wav"))
+            .expect("stub never fails");
+        assert_eq!(chunk.text, "/tmp/958.wav");
+    }
+
+    #[test]
+    fn create_backend_takes_a_path_argument() {
+        let _ = create_backend(Path::new("/nonexistent-958-model-dir"));
     }
 }
