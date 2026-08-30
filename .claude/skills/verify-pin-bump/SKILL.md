@@ -8,7 +8,7 @@ description: Use when a model SHA-256 mismatch surfaces (download_verified error
 Use this skill when you see ANY of:
 
 - `download_verified` error: `expected sha256 ABC, got DEF`
-- `cargo test models::manifest::manifest_tests` failure
+- `cargo test models::manifest` failure
 - A user reporting `kesha install` is failing post-update
 - A `KESHA_MODEL_MIRROR` swap has produced a hash mismatch (could be legitimate mirror staleness — or an attack)
 - Upstream HuggingFace repo shows the model was re-uploaded
@@ -107,7 +107,7 @@ If the bump represents a model version change (not just a re-export), also:
 ### Step 6: Verify shape invariants
 
 ```bash
-cd rust && cargo test models::manifest::manifest_tests
+cd rust && cargo test models::manifest
 ```
 
 This catches: hash not 64 hex chars, URL malformed, rel_path duplicate, manifest count off.

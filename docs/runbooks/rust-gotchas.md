@@ -69,7 +69,7 @@ Post-#123 (v1.4.0), Kokoro + Piper synthesis flows through the ONNX G2P at `$KES
 
 Moved out of CLAUDE.md (2026-07-26) with the rest of the Rust detail.
 
-- Always `cargo nextest run`, never plain `cargo test`. CI uses nextest (`ci` profile, JUnit → Flakiness.io); it isolates tests in fresh processes, runs integration binaries in parallel, and streams `SLOW [>60.000s]` markers for Vosk/Kokoro. Install once: `cargo install cargo-nextest --locked`. The only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `cargo test models::manifest::manifest_tests`.
+- Always `cargo nextest run`, never plain `cargo test`. CI uses nextest (`ci` profile, JUnit → Flakiness.io); it isolates tests in fresh processes, runs integration binaries in parallel, and streams `SLOW [>60.000s]` markers for Vosk/Kokoro. Install once: `cargo install cargo-nextest --locked`. The only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `cargo test models::manifest`.
 - Keep `--all-targets` on clippy. Without it, local clippy misses `#[cfg(test)]` dead code that ubuntu CI catches (#125 M1).
 - The root `rust-toolchain.toml` pins CI and local Rust. Confirm the active compiler with `rustup show`; if CI-only clippy fails, read `gh run view <id> --log-failed` before changing code.
 - CI `rustfmt --check` wins over local formatting. If it rejects line wrapping, re-run `cargo fmt` and push the whitespace-only diff (#309).

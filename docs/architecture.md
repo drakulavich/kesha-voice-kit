@@ -271,7 +271,7 @@ pre-#688 install also `~/Library/Application Support/FluidAudio`,
 | A CLI flag / output format | `src/cli.ts`, `src/cli/*`, `src/format.ts` | `bun test && bunx tsc --noEmit` |
 | ASR pipeline | `rust/src/backend/`, `rust/src/transcribe/` | `just rust-test` + `cargo check --features coreml --no-default-features` |
 | A TTS voice/engine | `rust/src/tts/`, `src/voice-routing.ts` | `just rust-test`; `cargo nextest run --features tts tts_` |
-| A model version/pin | `rust/src/models/manifest.rs` | `verify-pin-bump` skill; `cargo test models::manifest::manifest_tests` |
+| A model version/pin | `rust/src/models/manifest.rs` | `verify-pin-bump` skill; `cargo test models::manifest` |
 | Shell completions / manpage | regenerate, don't hand-edit | `bun run generate:shell-artifacts` |
 | A GitHub workflow | `.github/workflows/*` | `bun run check:workflows` + `actionlint` |
 | The OpenClaw skill | `SKILL.md` | cross-check against live `kesha <cmd> --help` |
