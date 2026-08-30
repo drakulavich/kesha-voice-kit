@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { parse } from "yaml";
 import {
   checkFile,
+  checkFlakeNix,
   collectCacheWriters,
   forbidFindPipedToHead,
   forbidLinuxPackaging,
@@ -218,12 +219,46 @@ describe("forbidFindPipedToHead", () => {
     expect(forbidFindPipedToHead(PATH, comment)).toEqual([]);
   });
 
+  test("a commented-out find|head line is not flagged", () => {
+    const line = "      # sidecar=$(find . -name x | head -1)";
+    expect(forbidFindPipedToHead(PATH, line)).toEqual([]);
+  });
+
+  test("a trailing comment after a real find|head command does not hide it", () => {
+    const line = "      sidecar=$(find . -name x | head -1)  # stage it";
+    expect(forbidFindPipedToHead(PATH, line)).toHaveLength(1);
+  });
+
   // A dropped check wouldn't show up against the clean repo tree, only against a probe (see above).
   test("the file gate actually runs it", () => {
     const yaml = "on: push\njobs:\n  smoke:\n    runs-on: macos-14\n    steps:\n      - run: find . -name x | head -1\n";
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1088"))).toHaveLength(1);
+  });
+});
+
+describe("checkFlakeNix", () => {
+  const dir = () => mkdtempSync(join(tmpdir(), "kesha-flake-"));
+
+  test("catches find piped to head", () => {
+    const path = join(dir(), "flake.nix");
+    writeFileSync(path, "sidecar=$(find . -path '*/out/say-avspeech' -type f | head -1)\n");
+    expect(checkFlakeNix(path)).toHaveLength(1);
+  });
+
+  test("accepts the -print -quit replacement", () => {
+    const path = join(dir(), "flake.nix");
+    writeFileSync(path, "sidecar=$(find . -path '*/out/say-avspeech' -type f -print -quit)\n");
+    expect(checkFlakeNix(path)).toEqual([]);
+  });
+
+  test("a missing file is not an error", () => {
+    expect(checkFlakeNix(join(dir(), "does-not-exist.nix"))).toEqual([]);
+  });
+
+  test("the repo's own flake.nix is clean", () => {
+    expect(checkFlakeNix(repoPath("flake.nix"))).toEqual([]);
   });
 });
 

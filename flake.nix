@@ -172,7 +172,7 @@
           postInstall = ''
             echo "${cliPkg.keshaEngine.version}" > $out/bin/kesha-engine.version
           '' + lib.optionalString (isDarwin && isAarch64) ''
-            sidecar=$(find . -path '*/build/*/out/say-avspeech' -type f 2>/dev/null | head -1)
+            sidecar=$(find . -path '*/build/*/out/say-avspeech' -type f -print -quit 2>/dev/null)
             if [ -z "$sidecar" ]; then
               echo "error: say-avspeech sidecar not found — system_tts may not have compiled" >&2
               exit 1

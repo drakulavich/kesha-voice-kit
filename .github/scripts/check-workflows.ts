@@ -857,6 +857,17 @@ export function checkFile(
 }
 
 const SEED_WORKFLOW = ".github/workflows/cache-seed.yml";
+const FLAKE_NIX = "flake.nix";
+
+/**
+ * flake.nix stages the same `say-avspeech` sidecar as build-engine.yml's steps, under the same
+ * `find | head` SIGPIPE race (#1088) — but it isn't YAML, so it can't go through `checkFile`'s
+ * `parse(contents)`. `forbidFindPipedToHead` is plain-text already; run it here directly instead.
+ */
+export function checkFlakeNix(path: string): string[] {
+  if (!existsSync(path)) return [];
+  return forbidFindPipedToHead(path, readFileSync(path, "utf8"));
+}
 
 function main(): void {
   const files = dirs.flatMap((dir) => collectYamlFiles(dir)).sort();
@@ -874,6 +885,7 @@ function main(): void {
   const errors = [
     ...rustToolchainErrors,
     ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain)),
+    ...checkFlakeNix(FLAKE_NIX),
   ];
   for (const error of errors) console.error(error);
 
