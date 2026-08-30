@@ -178,9 +178,29 @@ describe("releaseIsPublished", () => {
     expect(await releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).toBe(true);
   });
 
+  test("a prerelease is not published even with a published_at timestamp", async () => {
+    const body = JSON.stringify({ draft: false, prerelease: true, published_at: "2026-01-01T00:00:00Z" });
+    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
+    expect(await releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).toBe(false);
+  });
+
   test("a non-404 error status throws instead of silently reading as not published", async () => {
     const fetchImpl = fakeFetch(new Response(null, { status: 500 }));
-    expect(releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).rejects.toThrow(/GitHub API request failed \(500\)/);
+    await expect(releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).rejects.toThrow(/GitHub API request failed \(500\)/);
+  });
+
+  test("a non-boolean draft field is refused instead of read as not-a-draft", async () => {
+    const body = JSON.stringify({ draft: "true", prerelease: false, published_at: "2026-01-01T00:00:00Z" });
+    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
+    await expect(releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).rejects.toThrow(/CLI marker release draft must be a boolean/);
+  });
+
+  test("a non-boolean prerelease field is refused instead of read as not-a-prerelease", async () => {
+    const body = JSON.stringify({ draft: false, prerelease: "false", published_at: "2026-01-01T00:00:00Z" });
+    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
+    await expect(releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).rejects.toThrow(
+      /CLI marker release prerelease must be a boolean/,
+    );
   });
 });
 
