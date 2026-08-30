@@ -612,8 +612,12 @@ export function requireDepsBeforeBunTest(path: string, document: unknown): strin
   return errors;
 }
 
-const coveredBy = (patterns: string[], file: string) =>
-  patterns.some((pattern) => (pattern.endsWith("/**") ? file.startsWith(pattern.slice(0, -2)) : pattern === file));
+const coveredBy = (patterns: string[], file: string) => {
+  const posixFile = file.replaceAll("\\", "/");
+  return patterns.some((pattern) =>
+    pattern.endsWith("/**") ? posixFile.startsWith(pattern.slice(0, -2)) : pattern === posixFile,
+  );
+};
 
 export function requireTestedScriptsInCodeFilter(
   path: string,

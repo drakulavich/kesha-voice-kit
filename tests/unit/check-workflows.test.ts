@@ -440,6 +440,12 @@ describe("manifest sources stay inside both path filters", () => {
     expect(requireManifestSourcesInSeedFilter(CI, codeFilter([]), ["rust/src/models.rs"])).toEqual([]);
   });
 
+  test("a backslash-separated source (win32's readdirSync/join output) still matches a forward-slash filter", () => {
+    const sources = ["rust\\src\\models\\manifest.rs", "rust\\src\\models\\download.rs"];
+    expect(requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), sources)).toEqual([]);
+    expect(requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/src/models/**"]), sources)).toEqual([]);
+  });
+
   test("fails when cache-seed.yml has no push paths filter at all", () => {
     expect(requireManifestSourcesInSeedFilter(SEED, { on: { push: {} } }, [])[0]).toContain(
       "expected a `push` trigger",
