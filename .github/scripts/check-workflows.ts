@@ -643,10 +643,10 @@ export function requireTestedScriptsInCodeFilter(
  *
  * Deliberately narrower than `tests/helpers/rust-models-source.ts`'s `rustModelsSourcePaths`,
  * which returns every `.rs` file under the models tree (paths.rs and staging.rs included) for
- * the TS suites that read them as plain text. ci.yml's actual `code` filter today covers the
- * whole directory with `rust/src/models/**`, so both requirements hold; narrowing that glob to
- * satisfy only this guard's literal-holding subset would silently stop `unit-tests` from firing
- * on a paths.rs/staging.rs edit even though the TS pact tests depend on them.
+ * the TS suites that read them as plain text. That wider dependency set gets its own enforcement:
+ * `collectModelsTreeSources` + `requireModelsTreeInCodeFilter` fail ci.yml when its `code`
+ * filter stops covering any models-tree file, so the narrowing hazard is a red check rather than
+ * a docstring (#950 round 2).
  */
 export function collectManifestSources(root = "rust/src"): string[] {
   if (!existsSync(root)) return [];
@@ -655,6 +655,43 @@ export function collectManifestSources(root = "rust/src"): string[] {
     .map((entry) => join(root, entry))
     .filter((file) => /ModelFile\s*\{/.test(readFileSync(file, "utf8")))
     .sort();
+}
+
+/** Every .rs under the models tree — the files the TS pact suites read as plain text, a strict superset of the ModelFile-literal set (#950 round 2). */
+export function collectModelsTreeSources(root = "rust/src/models"): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
+    .map((entry) => join(root, entry))
+    .sort();
+}
+
+/** Fails when a models-tree source falls out of ci.yml's `code` filter: the TS pact suites read it, so an edit to it must fire unit-tests (#950 round 2). */
+export function requireModelsTreeInCodeFilter(
+  path: string,
+  document: unknown,
+  modelsTreeSources: string[],
+): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+
+  const code = (parse(raw) as Record<string, string[]>)?.code;
+  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+
+  if (modelsTreeSources.length === 0) {
+    return [
+      `${path}: collectModelsTreeSources() returned no files — it ran against the wrong cwd or the models tree moved, either way the guard cannot pass vacuously (#950)`,
+    ];
+  }
+
+  return modelsTreeSources
+    .filter((file) => !coveredBy(code, file))
+    .map(
+      (file) =>
+        `${path}: ${file} is read by the TS pact suites but no path in the \`code\` filter matches it, so an edit to it skips unit-tests (#950)`,
+    );
 }
 
 /** Fails when a pinned-manifest source falls out of ci.yml's `code` filter: the install-plan join then never runs, and a filter matching nothing reports nothing (#950). */
@@ -1018,6 +1055,7 @@ export function checkFile(
   cacheWriters: CacheEntry[],
   rustToolchain: RustToolchainPin | undefined,
   manifestSources: string[] = [],
+  modelsTreeSources: string[] = manifestSources,
 ): string[] {
   try {
     const contents = readFileSync(path, "utf8");
@@ -1043,6 +1081,7 @@ export function checkFile(
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ...requireManifestSourcesInCodeFilter(path, document, manifestSources),
+      ...requireModelsTreeInCodeFilter(path, document, modelsTreeSources),
       ...requireManifestSourcesInSeedFilter(path, document, manifestSources),
       ...requireFlakeNixInWorkflowsFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
@@ -1078,9 +1117,10 @@ function main(): void {
     : [];
   const { pin: rustToolchain, errors: rustToolchainErrors } = readRustToolchainPin();
   const manifestSources = collectManifestSources();
+  const modelsTreeSources = collectModelsTreeSources();
   const errors = [
     ...rustToolchainErrors,
-    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, manifestSources)),
+    ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, manifestSources, modelsTreeSources)),
     ...checkFlakeNix(FLAKE_NIX),
   ];
   for (const error of errors) console.error(error);

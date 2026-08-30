@@ -24,6 +24,7 @@ import {
   requireDepsBeforeBunTest,
   requireFlakeNixInWorkflowsFilter,
   requireManifestSourcesInCodeFilter,
+  requireModelsTreeInCodeFilter,
   requireManifestSourcesInSeedFilter,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
@@ -429,6 +430,27 @@ describe("manifest sources stay inside both path filters", () => {
     expect(errors[0]).toContain("never re-seeds the shared model caches");
   });
 
+  // #950 round 2: the TS pact suites read every .rs under the models tree (paths.rs and staging.rs
+  // included), so narrowing ci.ymls code filter to only the ModelFile-literal files must fail loudly —
+  // documenting the hazard in a docstring was the round-1 answer, enforcing it is this rules job.
+  test("narrowing the code filter to the literal-holding files fails naming the tree files it drops", () => {
+    const filters = codeFilter(["rust/src/models/manifest.rs", "rust/src/models/download.rs"]);
+    const tree = [
+      "rust/src/models/download.rs", "rust/src/models/manifest.rs", "rust/src/models/mod.rs",
+      "rust/src/models/paths.rs", "rust/src/models/progress.rs", "rust/src/models/staging.rs",
+    ];
+    const errors = requireModelsTreeInCodeFilter("ci.yml", filters, tree);
+    expect(errors).toHaveLength(4);
+    expect(errors.join("\n")).toContain("rust/src/models/paths.rs");
+    expect(errors.join("\n")).toContain("rust/src/models/staging.rs");
+  });
+
+  test("the whole-directory wildcard satisfies the models-tree rule", () => {
+    const filters = codeFilter(["rust/src/models/**"]);
+    const tree = ["rust/src/models/paths.rs", "rust/src/models/staging.rs"];
+    expect(requireModelsTreeInCodeFilter("ci.yml", filters, tree)).toHaveLength(0);
+  });
+
   test("a directory wildcard covers the manifests under it", () => {
     const sources = ["rust/src/models/manifest.rs", "rust/src/models/mod.rs"];
     expect(requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), sources)).toEqual([]);
@@ -467,7 +489,9 @@ describe("manifest sources stay inside both path filters", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
     const ci = join(dir, "ci.yml");
     writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n");
-    expect(checkFile(ci, [], [], undefined, ["rust/src/models.rs"]).filter((e) => e.includes("#950"))).toHaveLength(1);
+    // Two errors, one per rule: the manifest rule and the models-tree rule both see the dropped file —
+    // this count is the wiring pin for requireModelsTreeInCodeFilter (unwire it and this drops to 1).
+    expect(checkFile(ci, [], [], undefined, ["rust/src/models.rs"]).filter((e) => e.includes("#950"))).toHaveLength(2);
 
     const seed = join(dir, "cache-seed.yml");
     writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'rust/Cargo.lock'\n");
