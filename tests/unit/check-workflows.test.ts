@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -20,6 +20,7 @@ import {
   requireRestoreOnlyCachesHaveAWriter,
   requireDarwinSmokeCoversBothEngines,
   requireDepsBeforeBunTest,
+  requireFlakeNixInWorkflowsFilter,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
   requirePinnedRustToolchain,
@@ -27,7 +28,7 @@ import {
   readRustToolchainPin,
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
-import { parseRepoYaml, readRepoFile, repoPath } from "../helpers/repo";
+import { parseRepoYaml, readRepoFile, repoPath, REPO_ROOT } from "../helpers/repo";
 
 const PATH = ".github/workflows/build-engine.yml";
 const CI = ".github/workflows/ci.yml";
@@ -260,6 +261,34 @@ describe("checkFlakeNix", () => {
   test("the repo's own flake.nix is clean", () => {
     expect(checkFlakeNix(repoPath("flake.nix"))).toEqual([]);
   });
+
+  // Drives the real entry point, unlike every other test here — pins main()'s wiring, not just checkFlakeNix itself.
+  test("check:workflows fails end-to-end when flake.nix reintroduces find|head", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-main-"));
+    try {
+      mkdirSync(join(dir, ".github/workflows"), { recursive: true });
+      mkdirSync(join(dir, ".github/actions"), { recursive: true });
+      mkdirSync(join(dir, "tests/unit"), { recursive: true });
+      writeFileSync(
+        join(dir, ".github/workflows/probe.yml"),
+        "on: push\njobs:\n  probe:\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n    steps: []\n",
+      );
+      writeFileSync(join(dir, "flake.nix"), "sidecar=$(find . -name x | head -1)\n");
+
+      const proc = Bun.spawn(["bun", join(REPO_ROOT, ".github/scripts/check-workflows.ts")], {
+        cwd: dir,
+        stdout: "ignore",
+        stderr: "pipe",
+      });
+      const stderr = await new Response(proc.stderr).text();
+
+      expect(await proc.exited).toBe(1);
+      expect(stderr).toContain("flake.nix:1:");
+      expect(stderr).toContain("#1088");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("requireNpmPublishAfterPackaging", () => {
@@ -347,6 +376,45 @@ describe("requireTestedScriptsInCodeFilter", () => {
 
   test("fails when the changes job has no inline filters", () => {
     expect(requireTestedScriptsInCodeFilter(CI, { jobs: { changes: {} } }, [])[0]).toContain("expected a `changes` job");
+  });
+});
+
+const workflowsFilter = (paths: string[]) =>
+  job("changes", [{ with: { filters: `workflows:\n${paths.map((p) => `  - '${p}'`).join("\n")}\n` } }]);
+
+describe("requireFlakeNixInWorkflowsFilter", () => {
+  test("passes on the real ci.yml", () => {
+    expect(requireFlakeNixInWorkflowsFilter(CI, parseRepoYaml(CI))).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireFlakeNixInWorkflowsFilter(PATH, workflowsFilter([]))).toEqual([]);
+  });
+
+  test("fails when flake.nix is missing from the workflows filter", () => {
+    const errors = requireFlakeNixInWorkflowsFilter(CI, workflowsFilter([".github/workflows/**"]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("must include `flake.nix`");
+  });
+
+  test("accepts flake.nix in the workflows filter", () => {
+    expect(requireFlakeNixInWorkflowsFilter(CI, workflowsFilter(["flake.nix"]))).toEqual([]);
+  });
+
+  test("fails when the workflows list is gone", () => {
+    const document = job("changes", [{ with: { filters: "code:\n  - 'src/**'\n" } }]);
+    expect(requireFlakeNixInWorkflowsFilter(CI, document)[0]).toContain("missing a `workflows` list");
+  });
+
+  test("fails when the changes job has no inline filters", () => {
+    expect(requireFlakeNixInWorkflowsFilter(CI, { jobs: { changes: {} } })[0]).toContain("expected a `changes` job");
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "jobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            workflows:\n              - '.github/workflows/**'\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined).filter((e) => e.includes("#1088"))).toHaveLength(1);
   });
 });
 

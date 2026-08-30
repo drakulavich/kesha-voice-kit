@@ -18,6 +18,7 @@ import { engineTargetEntries, targetKey } from "../../src/engine-targets";
 
 const dirs = [".github/workflows", ".github/actions"];
 const RUST_TOOLCHAIN_FILE = "rust-toolchain.toml";
+const FLAKE_NIX = "flake.nix";
 
 export type RustToolchainPin = {
   channel: string;
@@ -592,6 +593,21 @@ export function requireTestedScriptsInCodeFilter(
     .map((file) => `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`);
 }
 
+/** Fails when ci.yml stops routing flake.nix changes to workflow-lint, the only lane that runs checkFlakeNix (#1088). */
+export function requireFlakeNixInWorkflowsFilter(path: string, document: unknown): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+
+  const workflows = (parse(raw) as Record<string, string[]>)?.workflows;
+  if (!Array.isArray(workflows)) return [`${path}: paths-filter is missing a \`workflows\` list`];
+
+  return workflows.includes(FLAKE_NIX)
+    ? []
+    : [`${path}: \`workflows\` filter must include \`${FLAKE_NIX}\`, or checkFlakeNix's guard never runs in CI (#1088)`];
+}
+
 function collectTestedScripts(): string[] {
   const tests = readdirSync("tests/unit", { recursive: true })
     .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".test.ts"))
@@ -849,6 +865,7 @@ export function checkFile(
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
+      ...requireFlakeNixInWorkflowsFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
     ];
   } catch (err) {
@@ -857,7 +874,6 @@ export function checkFile(
 }
 
 const SEED_WORKFLOW = ".github/workflows/cache-seed.yml";
-const FLAKE_NIX = "flake.nix";
 
 /**
  * flake.nix stages the same `say-avspeech` sidecar as build-engine.yml's steps, under the same
