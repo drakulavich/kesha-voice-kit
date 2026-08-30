@@ -33,7 +33,7 @@ Install Kokoro + Vosk-TTS explicitly with `kesha install --tts` (~990 MB). `maco
 
 - `KESHA_ENGINE_BIN` — override the engine-binary path (useful when iterating on `rust/target/release/kesha-engine`).
 - `KESHA_CACHE_DIR` — isolated test cache.
-- `KESHA_MODEL_MIRROR` — redirect HF downloads to an internal mirror (#121), preserving `/<owner>/<repo>/resolve/<ref>/<file>` for `wget --mirror`; empty/unset = no-op. Rust `models.rs::apply_mirror` and TS `status.ts::activeModelMirror` both trim trailing slashes.
+- `KESHA_MODEL_MIRROR` — redirect HF downloads to an internal mirror (#121), preserving `/<owner>/<repo>/resolve/<ref>/<file>` for `wget --mirror`; empty/unset = no-op. Rust `models/download.rs::apply_mirror` and TS `status.ts::activeModelMirror` both trim trailing slashes.
 - `KESHA_KOKORO_COMPUTE_UNITS` — `default` (FluidAudio's tuned per-stage mapping; the RNN-bearing Albert/PostAlbert/Alignment/Prosody/Vocoder on the ANE, the all-fp32 Noise and Tail iSTFT on the GPU) · `cpu-and-gpu` · `all-ane` · `cpu-only`. Diagnostic only, and darwin-arm64 `system_kokoro` only: FluidAudio's `KokoroAne.md` recommends the CPU baseline when deciding whether an artefact is the model or the accelerator. Unset is `default`; blank is treated as unset (a conditional GHA `env:` exports an empty string); an unknown value fails before model init rather than falling back to the ANE the caller was avoiding. Nothing in CI sets it — a non-ANE preset does **not** rescue the `macos-14` image, which fails on the vocoder's shape contract regardless (#678). `default` is what makes M5 work out of the box (FluidAudio #667/#671, Noise-on-GPU #677): it is the only routing that keeps the prosody RNN off the GPU, where M5 aborts in `GPURNNOps`, while keeping the tail iSTFT off `libBNNS`. `cpu-and-gpu` deliberately breaks that invariant and must not be set on M5 (#717).
 - macOS dev runtime: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`. Release binaries fix up via `install_name_tool`.
 - macOS build env: `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`, `RUSTFLAGS="-L /opt/homebrew/lib"`.
@@ -91,7 +91,7 @@ Swift bridge (`fluidaudio-rs`, FluidAudio 0.14.8) maps it to a `KokoroAneVariant
 else → `.english` (en plus Latin-script es/fr/it/pt, which the English G2P handles
 acceptably). The `.mandarin` variant fetches its own `ANE-zh/` bundle (nested
 `voices/<id>.bin`) on first synth — zh voices are therefore **not** staged in
-`models.rs::ANE_KOKORO_VOICES` and are exempt from the staging-coverage test (like
+`models/manifest.rs::ANE_KOKORO_VOICES` and are exempt from the staging-coverage test (like
 `af_heart`). Default zh voice: `zh-zm_050` (male). Native-script `hi`/`ja` still fail fast
 (`E_SCRIPT_UNSUPPORTED`) — no FluidAudio KokoroAne variant for them yet. The
 `-Wl,-rpath,/usr/lib/swift` link arg in `build.rs` is emitted under

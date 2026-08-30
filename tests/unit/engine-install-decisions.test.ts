@@ -221,7 +221,7 @@ describe("an install only ever writes where it was pointed (#796)", () => {
 /**
  * `Bun.spawnSync`/`Bun.spawn` snapshot the environment at process start unless an `env` is
  * passed, and `kesha-engine install` is the child that decides where multi-GB model
- * downloads land — it resolves them from `KESHA_CACHE_DIR` (`rust/src/models.rs`).
+ * downloads land — it resolves them from `KESHA_CACHE_DIR` (`rust/src/models/paths.rs`).
  *
  * `isolateEngineCache()` sets that variable *after* startup, so under snapshot semantics a
  * test believed it was isolated while the model half of that isolation silently did not

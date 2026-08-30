@@ -130,10 +130,10 @@ describe("parseManifestUrls", () => {
   });
 
   // `parseManifestEntries` expands the `ModelFile`-building macros in place, so this sees
-  // every manifest models.rs declares regardless of `cfg` — including the `system_kokoro`
+  // every manifest the models sources declare regardless of `cfg` — including the `system_kokoro`
   // ANE ones no CI lane ever compiles as tests (#1093, #1096 review) — and every entry, not
   // just one per colliding `relPath` (the test above). `manifest_tests::
-  // every_huggingface_url_pins_an_immutable_revision` in models.rs covers the same rule with
+  // every_huggingface_url_pins_an_immutable_revision` in manifest.rs covers the same rule with
   // real Rust types where it does run; this is the one that runs everywhere.
   // Asserted positively — a denylist of `main` alone let `resolve//` through unseen.
   test("no Hugging Face manifest URL resolves through a mutable ref", () => {

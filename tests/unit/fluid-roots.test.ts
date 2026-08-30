@@ -111,7 +111,7 @@ describe("fluidSubsystemDirs", () => {
     });
   });
 
-  // Mirrors `models.rs::dir_has_entries`: keeping a legacy directory in use costs nothing,
+  // Mirrors `models/paths.rs::dir_has_entries`: keeping a legacy directory in use costs nothing,
   // re-downloading ~800 MB of ANE bundles costs a lot (#688).
   test("any entry at all pins the Kokoro and Sortformer caches in place", () => {
     withHome((home, cacheRoot) => {
@@ -237,7 +237,7 @@ describe("fluidExternalRoots", () => {
 describe("Rust/TS FluidAudio root agreement", () => {
   const rust = rustModelsSource();
 
-  test("relocated subpaths match models.rs", () => {
+  test("relocated subpaths match the engine's models sources", () => {
     withHome((home, cacheRoot) => {
       const byLabel = dirsByLabel(home, cacheRoot);
       for (const [subpath, label] of [
@@ -251,14 +251,14 @@ describe("Rust/TS FluidAudio root agreement", () => {
     });
   });
 
-  test("legacy directory names match models.rs", () => {
+  test("legacy directory names match the engine's models sources", () => {
     expect(rust).toContain(`.join("kokoro-82m-coreml")`);
     expect(rust).toContain(`.join("SortformerCompiled")`);
     expect(rust).toContain(`.join("fluidaudio-rs")`);
   });
 
   // Which probe each subsystem uses is the contract: strong for ASR, weak everywhere else.
-  test("each subsystem uses the same probe strength as models.rs", () => {
+  test("each subsystem uses the same probe strength as the engine's models sources", () => {
     expect(rust).toContain("let complete = fluidaudio_asr_ready_in(&legacy);");
     expect(rust).toContain("let staged = dir_has_entries(&legacy);");
     expect(rust).toContain("let compiled = dir_has_entries(&legacy);");
