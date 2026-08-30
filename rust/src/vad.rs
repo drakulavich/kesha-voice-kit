@@ -123,8 +123,11 @@ pub struct VadDetector {
 
 impl VadDetector {
     pub fn load(model_path: &Path) -> Result<Self> {
+        // #990: decoder LSTM rejects >1 frame/call, so intra_threads(1) — 15.4% faster, bit-identical — is the only lever that pays.
         let session = Session::builder()
             .context("failed to create VAD session builder")?
+            .with_intra_threads(1)
+            .map_err(|e| anyhow::anyhow!("failed to configure VAD session threading: {e}"))?
             .commit_from_file(model_path)
             .with_context(|| {
                 format!(
@@ -170,9 +173,7 @@ impl VadDetector {
     }
 
     fn frame_probability(&mut self, input_buf: &[f32], state: &mut [f32]) -> Result<f32> {
-        // ort 2.0 `Value::from_array` requires owned ndarrays, so two Vec
-        // clones per frame are unavoidable here. The caller reuses both
-        // buffers, and the clones free as soon as `run` returns.
+        // #990 spike: borrowed TensorRef measured 0% gain over these owned-Vec clones — kept simple.
         let input = Value::from_array(Array2::<f32>::from_shape_vec(
             (1, INPUT_SAMPLES),
             input_buf.to_vec(),
@@ -528,6 +529,103 @@ mod tests {
         assert!(
             probs.iter().all(|&p| (0.0..=1.0).contains(&p)),
             "probs out of [0,1] range"
+        );
+    }
+
+    /// #990: proves the tuned session above is bit-identical to the untuned default over the
+    /// benchmark corpus plus a synthetic ~129s composite, and reports the numbers the ticket
+    /// asks for. Gated like the tests above; `just vad-bench` runs it with printed output.
+    #[test]
+    fn tuned_session_matches_default_and_reports_990_measurement() {
+        let Some(path) = std::env::var_os("VAD_MODEL") else {
+            eprintln!("VAD_MODEL not set; skipping");
+            return;
+        };
+        let path = Path::new(&path);
+
+        let default_session = Session::builder()
+            .expect("session builder")
+            .commit_from_file(path)
+            .expect("load VAD (untuned default)");
+        let mut baseline = VadDetector {
+            session: default_session,
+        };
+        let mut tuned = VadDetector::load(path).expect("load VAD (tuned)");
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root");
+        let mut fixtures: Vec<(String, Vec<f32>)> = Vec::new();
+        for dir in ["tests/fixtures/benchmark", "tests/fixtures/benchmark-en"] {
+            let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
+                continue;
+            };
+            let mut paths: Vec<_> = entries
+                .map(|e| e.expect("dir entry").path())
+                .filter(|p| p.extension().is_some_and(|e| e == "ogg"))
+                .collect();
+            paths.sort();
+            for p in paths {
+                let name = p.file_name().unwrap().to_string_lossy().into_owned();
+                let audio =
+                    crate::audio::load_audio(&p).unwrap_or_else(|e| panic!("decode {name}: {e}"));
+                fixtures.push((name, audio));
+            }
+        }
+        if fixtures.is_empty() {
+            eprintln!("no benchmark fixtures found — run `git lfs pull`; skipping");
+            return;
+        }
+
+        let mut composite: Vec<f32> = Vec::new();
+        while (composite.len() as f32 / SAMPLE_RATE as f32) < 129.0 {
+            for (_, audio) in &fixtures {
+                composite.extend_from_slice(audio);
+            }
+        }
+        fixtures.push(("tiled-129s-composite".to_string(), composite));
+
+        let mut max_abs_delta = 0.0_f32;
+        let mut min_margin = f32::MAX;
+        let mut total_frames = 0usize;
+        let mut default_ns = 0u128;
+        let mut tuned_ns = 0u128;
+        for (name, audio) in &fixtures {
+            let t0 = std::time::Instant::now();
+            let base_probs = baseline
+                .frame_probs(audio)
+                .unwrap_or_else(|e| panic!("baseline frame_probs {name}: {e}"));
+            default_ns += t0.elapsed().as_nanos();
+
+            let t1 = std::time::Instant::now();
+            let tuned_probs = tuned
+                .frame_probs(audio)
+                .unwrap_or_else(|e| panic!("tuned frame_probs {name}: {e}"));
+            tuned_ns += t1.elapsed().as_nanos();
+
+            assert_eq!(
+                base_probs.len(),
+                tuned_probs.len(),
+                "{name}: frame count differs"
+            );
+            for (i, (&b, &t)) in base_probs.iter().zip(&tuned_probs).enumerate() {
+                max_abs_delta = max_abs_delta.max((b - t).abs());
+                min_margin = min_margin.min((b - 0.5).abs());
+                assert_eq!(
+                    b.to_bits(),
+                    t.to_bits(),
+                    "{name} frame {i}: default={b} tuned={t} (bit-for-bit mismatch)"
+                );
+            }
+            total_frames += base_probs.len();
+        }
+
+        eprintln!(
+            "#990 measurement -- {total_frames} frames: default {:.1}ms ({:.1}us/frame), tuned {:.1}ms ({:.1}us/frame), max|dp|={max_abs_delta:e}, min|p-0.5|={min_margin:e}",
+            default_ns as f64 / 1e6,
+            default_ns as f64 / total_frames as f64 / 1e3,
+            tuned_ns as f64 / 1e6,
+            tuned_ns as f64 / total_frames as f64 / 1e3,
         );
     }
 }
