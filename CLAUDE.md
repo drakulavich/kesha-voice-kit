@@ -118,7 +118,7 @@ Don't add struct fields, enum variants, or constants "for later" — clippy's `d
 
 ### MODEL HASHES ARE PINNED
 
-Every entry in `rust/src/models.rs` carries a pinned SHA-256, and `download_verified` refuses a file whose hash doesn't match — that's what makes `KESHA_MODEL_MIRROR` safe. **NEVER comment out verification to "get it working"** (the #174 regression). To bump a model, use the `verify-pin-bump` skill.
+Every entry in `rust/src/models/manifest.rs` carries a pinned SHA-256, and `download_verified` refuses a file whose hash doesn't match — that's what makes `KESHA_MODEL_MIRROR` safe. **NEVER comment out verification to "get it working"** (the #174 regression). To bump a model, use the `verify-pin-bump` skill.
 
 ### VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE
 

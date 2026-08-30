@@ -1,6 +1,6 @@
 ---
 name: verify-pin-bump
-description: Use when a model SHA-256 mismatch surfaces (download_verified errors, manifest_tests failures, fresh download produces a different hash than rust/src/models.rs pins). Walks through the safe bump procedure — verify the upstream weights deliberately, then update the pin. Refuses to suggest commenting out verification.
+description: Use when a model SHA-256 mismatch surfaces (download_verified errors, manifest_tests failures, fresh download produces a different hash than rust/src/models/manifest.rs pins). Walks through the safe bump procedure — verify the upstream weights deliberately, then update the pin. Refuses to suggest commenting out verification.
 ---
 
 # verify-pin-bump
@@ -8,7 +8,7 @@ description: Use when a model SHA-256 mismatch surfaces (download_verified error
 Use this skill when you see ANY of:
 
 - `download_verified` error: `expected sha256 ABC, got DEF`
-- `cargo test models::manifest_tests` failure
+- `cargo test models::manifest::manifest_tests` failure
 - A user reporting `kesha install` is failing post-update
 - A `KESHA_MODEL_MIRROR` swap has produced a hash mismatch (could be legitimate mirror staleness — or an attack)
 - Upstream HuggingFace repo shows the model was re-uploaded
@@ -17,7 +17,7 @@ Use this skill when you see ANY of:
 
 CLAUDE.md "MODEL HASHES ARE PINNED" rule:
 
-> Every entry in `rust/src/models.rs` (ASR, lang-id, TTS) carries a pinned SHA-256. `download_verified` refuses to cache a file whose hash doesn't match. This makes `KESHA_MODEL_MIRROR` safe (a compromised mirror can't silently swap weights) and turns an upstream HuggingFace republish into a deliberate decision rather than a silent swap.
+> Every entry in `rust/src/models/manifest.rs` (ASR, lang-id, TTS) carries a pinned SHA-256. `download_verified` refuses to cache a file whose hash doesn't match. This makes `KESHA_MODEL_MIRROR` safe (a compromised mirror can't silently swap weights) and turns an upstream HuggingFace republish into a deliberate decision rather than a silent swap.
 
 The pin exists *because* of incident #174 — a previous regression where verification was disabled "to get it working". Bumping the pin without confirming the new weights are intentional re-introduces that risk.
 
@@ -31,10 +31,10 @@ The pin exists *because* of incident #174 — a previous regression where verifi
 
 ### Step 1: Identify which pin failed
 
-The error message names the file. Find its `ModelFile` entry in `rust/src/models.rs`:
+The error message names the file. Find its `ModelFile` entry in `rust/src/models/manifest.rs`:
 
 ```bash
-grep -n "sha256:" rust/src/models.rs | head -40
+grep -n "sha256:" rust/src/models/manifest.rs | head -40
 # locate the entry whose URL or rel_path matches the failing download
 ```
 
@@ -45,8 +45,8 @@ Wipe the existing cache for that file (it may be a partial / corrupted download)
 ```bash
 rm -f ~/.cache/kesha/models/<subdir>/<file>
 KESHA_CACHE_DIR=/tmp/pin-bump ./rust/target/release/kesha-engine install --tts
-# or, for a single file, curl directly from the URL in models.rs:
-curl -fsSL "<url-from-models.rs>" -o /tmp/pin-bump-file
+# or, for a single file, curl directly from the URL in models/manifest.rs:
+curl -fsSL "<url-from-models-manifest-rs>" -o /tmp/pin-bump-file
 ```
 
 ### Step 3: Compute the actual hash
@@ -58,7 +58,7 @@ shasum -a 256 /tmp/pin-bump-file
 ```
 
 Compare to:
-- The pin in `rust/src/models.rs`
+- The pin in `rust/src/models/manifest.rs`
 - The HuggingFace UI's reported SHA (open the file URL, click "Copy SHA")
 
 ### Step 4: Decide intentional vs incident
@@ -68,7 +68,7 @@ Three possible scenarios:
 **A. Upstream legitimately re-published.** Verify by checking the HF repo's commit history:
 
 ```bash
-# the URL in models.rs already points at /resolve/main/<file> — get the latest commit:
+# the URL in models/manifest.rs already points at /resolve/main/<file> — get the latest commit:
 curl -sIL "<url>" | grep -i 'x-repo-commit:'
 # then inspect the commit:
 gh api "repos/<owner>/<repo>/commits/<sha>" --jq '.commit.message'
@@ -82,7 +82,7 @@ If the commit message says "fix tokenizer" / "re-export with new ONNX opset" / e
 
 ### Step 5: Update the pin (only after Step 4 confirms intentional)
 
-Edit `rust/src/models.rs`:
+Edit `rust/src/models/manifest.rs`:
 
 ```rust
 ModelFile {
@@ -107,7 +107,7 @@ If the bump represents a model version change (not just a re-export), also:
 ### Step 6: Verify shape invariants
 
 ```bash
-cd rust && cargo test models::manifest_tests
+cd rust && cargo test models::manifest::manifest_tests
 ```
 
 This catches: hash not 64 hex chars, URL malformed, rel_path duplicate, manifest count off.
@@ -142,7 +142,7 @@ For lang-id bumps: run the `lang_id_smoke` test.
 ### Step 9: Commit
 
 ```bash
-git add rust/src/models.rs
+git add rust/src/models/manifest.rs
 git commit -m "chore(models): bump <model> SHA pin for <reason>
 
 Upstream commit: <hf-commit-sha>

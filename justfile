@@ -150,7 +150,7 @@ verify-darwin-full:
         --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
         --no-default-features -- -D warnings
 
-# `--in-place` is not optional: models.rs include_str!s a file above the crate, so the copy build fails.
+# `--in-place` is not optional: models/manifest.rs include_str!s a file above the crate, so the copy build fails.
 # FEATURES and TEST_FILTER stay interpolated: they are set by whoever types the command, while
 # FILE is the argument a script or agent passes through.
 # Mutation-test one engine file, e.g. just mutants-rust src/errors.rs

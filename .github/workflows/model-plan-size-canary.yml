@@ -3,7 +3,7 @@ name: "📏 Model-Plan Size Canary"
 # Provider verification for the sizes `kesha install --plan` quotes (#920).
 #
 # The plan's `sizeBytes` are hand-written, and until now nothing could falsify one:
-# `models::manifest_tests::install_plan_model_paths_match_runtime_manifests` compares
+# `models::manifest::manifest_tests::install_plan_model_paths_match_runtime_manifests` compares
 # `relPath` and stops there, because an offline test cannot know what a URL serves.
 # That is how #509 shipped CharsiuG2P as "28.5 MB" against a 101 MB download and how
 # it survived two months until a human noticed (#887, #896).
@@ -78,7 +78,7 @@ jobs:
             echo "  quoting that number to users. Correct \`sizeBytes\` in model-plan.json from"
             echo "  the live figure; it is the truth by construction."
             echo "- **A plan entry has no URL.** The run stopped before any request, naming the"
-            echo "  entries it could not resolve. Either rust/src/models.rs dropped the file, or"
+            echo "  entries it could not resolve. Either rust/src/models/manifest.rs dropped the file, or"
             echo "  \`.github/scripts/check-model-plan-sizes.ts\` stopped being able to read it."
             echo "- **The sizes could not be checked.** Lines beginning \`UNCHECKED\` mean no"
             echo "  Content-Length came back. The plan is not implicated; the run proved nothing"
