@@ -13,7 +13,7 @@ use super::progress::{with_stderr, InFlight, ProgressReader, PROGRESS_MIN_BYTES}
     target_os = "macos",
     target_arch = "aarch64"
 ))]
-use super::{stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets};
+use super::staging::{stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets};
 use crate::coded_bail;
 use crate::errors::{code_of, CodedContext, CodedError, ErrorCode};
 
