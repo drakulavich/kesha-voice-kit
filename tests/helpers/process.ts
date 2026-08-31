@@ -163,3 +163,10 @@ export function installInterruptReaper(): void {
     });
   }
 }
+
+const STUBBORN_FIXTURE_TTL_S = 300;
+
+/** TERM-immune so the reaper's escalation stays exercised, clock-bounded so an interrupted run cannot strand it at PPID=1 (#1131). */
+export function stubbornShell(traps: string, ttlSeconds = STUBBORN_FIXTURE_TTL_S): string {
+  return `trap '' ${traps}; n=0; while [ $n -lt ${ttlSeconds} ]; do sleep 1; n=$((n+1)); done`;
+}

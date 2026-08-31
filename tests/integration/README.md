@@ -62,3 +62,11 @@ worth catching are the ones that trap SIGTERM.
 Nothing to do at a call site: `waitForPidFile` tracks what it returns. Only descendants and pids a
 test actually saw are ever signalled, so a parallel lane's processes are out of reach by
 construction.
+
+A run killed outright — Ctrl+C on the harness, a timed-out CI step, an interrupted agent session —
+reaches neither hook, so a fixture that traps SIGTERM outlives every reaper there is; fifteen of
+them accumulated at `PPID=1` over two days, the oldest at 45 hours, and only `kill -9` cleared them
+(#1131). Signal-immune fixtures therefore have to end themselves: build the command with
+`stubbornShell()` from `tests/helpers/process.ts`, which keeps the immunity the escalation is tested
+against and adds a five-minute clock. `tests/unit/process-leak-guard.test.ts` scans `tests/` and
+`rust/src/` for the unbounded shape and fails naming the file and line.

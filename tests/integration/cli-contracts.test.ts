@@ -14,7 +14,7 @@ import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { engineVersion } from "../../src/package-info";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
-import { pidIsAlive, waitForPidExit, waitForPidFile } from "../helpers/process";
+import { pidIsAlive, stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
   DEFAULT_TIMEOUT_MS,
   installFakeDiarizeModel,
@@ -188,7 +188,7 @@ function createSignalAwareEngine(dir: string, helperPidPath: string): string {
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
 if (args[0] === "transcribe") {
-  const child = Bun.spawn(["sh", "-c", "trap '' TERM; while :; do sleep 1; done"], {
+  const child = Bun.spawn(["sh", "-c", ${JSON.stringify(stubbornShell("TERM"))}], {
     stdout: "ignore",
     stderr: "ignore",
   });

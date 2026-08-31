@@ -89,7 +89,8 @@ mod tests {
     fn drop_kills_unreaped_child() {
         let child = Command::new("sh")
             .arg("-c")
-            .arg("trap '' TERM; while :; do sleep 1; done")
+            // Mortal by clock: an interrupted run drops no guard, and a TERM-immune child then parks at PPID=1 (#1131).
+            .arg("trap '' TERM; n=0; while [ $n -lt 300 ]; do sleep 1; n=$((n+1)); done")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
