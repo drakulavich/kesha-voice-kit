@@ -10,20 +10,30 @@ const INTEGRATION_ROOT = "tests/integration";
 const GENERATED_CONFIG = `stryker.generated.${process.pid}.json`;
 
 // `src/` alone left the CI gates and the repo's own scripts unmeasurable (#1091).
-export const MUTABLE_ROOTS = ["src/", "scripts/", ".github/scripts/"];
+const MUTABLE_ROOTS = ["src/", "scripts/", ".github/scripts/"];
+// The release path under `.github/scripts/` is written in `.mjs`; `.ts` alone hid all of it (#1091 review).
+const MUTABLE_EXTENSIONS = [".ts", ".mjs"];
 
 const USAGE = [
-  "usage: bun scripts/mutants-ts.ts [--with-integration] <file.ts> [more.ts ...]",
+  "usage: bun scripts/mutants-ts.ts [--with-integration] <file.ts|file.mjs> [more ...]",
   "",
   "Mutation-tests the named sources against whichever suites import them.",
   "A survivor is an edit no test noticed — read it as a missing assertion,",
   "not as a number to drive up. CLAUDE.md names the kinds worth leaving alive.",
 ].join("\n");
 
-/** The reason `source` cannot be mutated, naming the accepted roots, or null when it can. */
+/** The reason `source` cannot be mutated, naming what is accepted, or null when it can. */
 export function mutableSourceRejection(source: string): string | null {
-  if (source.endsWith(".ts") && MUTABLE_ROOTS.some((root) => source.startsWith(root))) return null;
-  return `not a mutable source file: ${source} — expected a .ts file under ${MUTABLE_ROOTS.join(", ")}`;
+  const mutable =
+    MUTABLE_EXTENSIONS.some((extension) => source.endsWith(extension)) &&
+    MUTABLE_ROOTS.some((root) => source.startsWith(root));
+  if (mutable) return null;
+  return `not a mutable source file: ${source} — expected a ${MUTABLE_EXTENSIONS.join(" or ")} file under ${MUTABLE_ROOTS.join(", ")}`;
+}
+
+/** The refusal when nothing measures `sources`; the retry is only named when it would find suites. */
+export function noSuiteRefusal(sources: string[], roots: string[], integrationHelps: boolean): string {
+  return `no suite in ${roots.join(", ")} reaches ${sources.join(", ")} — mutation testing measures assertions, so there is nothing to measure yet${integrationHelps ? " (retry with --with-integration)" : ""}`;
 }
 
 export function testFileCandidates(roots: string[] = TEST_ROOTS): string[] {
@@ -128,9 +138,12 @@ export function selectCoveringTests(
   return rankCoveringTests(sources, tests, readModule).map((test) => test.path);
 }
 
-/** Resolves an extensionless module path the way the bundler does: `x.ts`, then `x/index.ts`. */
+/** Resolves an extensionless module path the way the bundler does: `x.ts`, then `x/index.ts`; a `.mjs` specifier keeps its extension, so it resolves verbatim (#1091 review). */
 function readModuleSync(path: string): string | null {
-  for (const candidate of [`${path}.ts`, `${path}.tsx`, join(path, "index.ts")]) {
+  const candidates = path.endsWith(".mjs")
+    ? [path]
+    : [`${path}.ts`, `${path}.tsx`, join(path, "index.ts")];
+  for (const candidate of candidates) {
     try {
       return readFileSync(candidate, "utf8");
     } catch {
@@ -140,7 +153,7 @@ function readModuleSync(path: string): string | null {
   return null;
 }
 
-async function coveringTests(
+export async function coveringTests(
   sources: string[],
   roots: string[],
 ): Promise<Array<{ path: string; hops: number }>> {
@@ -175,9 +188,10 @@ async function main(argv: string[]): Promise<number> {
 
   const ranked = await coveringTests(sources, roots);
   if (ranked.length === 0) {
-    console.error(
-      `no suite in ${roots.join(", ")} reaches ${sources.join(", ")} — mutation testing measures assertions, so there is nothing to measure yet${withIntegration ? "" : " (retry with --with-integration)"}`,
-    );
+    // Probed rather than assumed: no integration suite imports anything under scripts/ or .github/scripts/, so the blanket hint sent the operator nowhere (#1091 review).
+    const integrationHelps =
+      !withIntegration && (await coveringTests(sources, [INTEGRATION_ROOT])).length > 0;
+    console.error(noSuiteRefusal(sources, roots, integrationHelps));
     return 1;
   }
 

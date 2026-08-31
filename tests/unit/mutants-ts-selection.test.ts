@@ -1,13 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
+  coveringTests,
   importedModules,
   mutableSourceRejection,
+  noSuiteRefusal,
   rankCoveringTests,
   reachableModules,
   selectCoveringTests,
   testFileCandidates,
   toPosix,
 } from "../../scripts/mutants-ts";
+import { REPO_ROOT } from "../helpers/repo";
 
 /**
  * Under `coverageAnalysis: "perTest"` a suite that never loads the mutant cannot kill it, so an
@@ -144,9 +147,16 @@ describe("which sources may be mutated", () => {
     expect(mutableSourceRejection(".github/scripts/check-workflows.ts")).toBeNull();
   });
 
-  test("a non-TypeScript file is rejected", () => {
+  // The release path — dist-tag, version bumps, the Homebrew formula — is `.mjs` (#1091 review).
+  test("the .mjs gates are mutable too", () => {
+    expect(mutableSourceRejection(".github/scripts/npm-dist-tag.mjs")).toBeNull();
+    expect(mutableSourceRejection(".github/scripts/update-homebrew-tap.mjs")).toBeNull();
+  });
+
+  test("a file in neither mutable language is rejected", () => {
     expect(mutableSourceRejection("src/engine.json")).toContain("src/engine.json");
     expect(mutableSourceRejection("rust/src/main.rs")).toContain("rust/src/main.rs");
+    expect(mutableSourceRejection(".github/scripts/npm-dist-tag.d.mts")).not.toBeNull();
   });
 
   test("a TypeScript file outside every mutable root is rejected", () => {
@@ -162,7 +172,66 @@ describe("which sources may be mutated", () => {
   // Whole message, not `toContain`: that reads `src/scripts/.github/scripts/` as three roots.
   test("the rejection lists every accepted root, legibly", () => {
     expect(mutableSourceRejection("docs/notes.ts")).toBe(
-      "not a mutable source file: docs/notes.ts — expected a .ts file under src/, scripts/, .github/scripts/",
+      "not a mutable source file: docs/notes.ts — expected a .ts or .mjs file under src/, scripts/, .github/scripts/",
     );
+  });
+});
+
+/**
+ * The guard above is only a guard once `main` consults it: neutralising the call left the whole
+ * unit suite green while `tests/unit/foo.test.ts` reached Stryker (#1091 review).
+ */
+describe("the command refuses before it reaches Stryker", () => {
+  const run = async (...args: string[]) => {
+    const proc = Bun.spawn(["bun", `${REPO_ROOT}/scripts/mutants-ts.ts`, ...args], {
+      cwd: REPO_ROOT,
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+    const stderr = await new Response(proc.stderr).text();
+    return { code: await proc.exited, stderr };
+  };
+
+  test("an existing file outside the mutable roots is refused, not mutated", async () => {
+    const { code, stderr } = await run("rust/src/main.rs");
+
+    expect(code).toBe(2);
+    expect(stderr.trim()).toBe(
+      "not a mutable source file: rust/src/main.rs — expected a .ts or .mjs file under src/, scripts/, .github/scripts/",
+    );
+  });
+
+  test("a gate no suite imports is refused without a hint that leads nowhere", async () => {
+    const { code, stderr } = await run(".github/scripts/check-versions.ts");
+
+    expect(code).toBe(1);
+    expect(stderr.trim()).toBe(
+      noSuiteRefusal([".github/scripts/check-versions.ts"], ["tests/unit"], false),
+    );
+    expect(stderr).not.toContain("--with-integration");
+  });
+});
+
+/** Selection is by import, and a `.mjs` gate is reached only through other `.mjs` (#1091 review). */
+describe("which suites measure a .mjs gate", () => {
+  test("a direct importer is found", async () => {
+    expect(await coveringTests([".github/scripts/npm-dist-tag.mjs"], ["tests/unit"])).toEqual([
+      { path: "tests/unit/npm-dist-tag.test.ts", hops: 1 },
+    ]);
+  });
+
+  test("a gate reached only through another .mjs is found too", async () => {
+    const ranked = await coveringTests([".github/scripts/script-entry.mjs"], ["tests/unit"]);
+
+    expect(ranked.map((test) => test.path)).toContain("tests/unit/release-tag-grammar.test.ts");
+  });
+});
+
+describe("the refusal when nothing measures a source", () => {
+  test("the retry is named only when the integration root would find suites", () => {
+    expect(noSuiteRefusal(["src/foo.ts"], ["tests/unit"], true)).toContain(
+      "(retry with --with-integration)",
+    );
+    expect(noSuiteRefusal(["src/foo.ts"], ["tests/unit"], false)).not.toContain("--with-integration");
   });
 });

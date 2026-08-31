@@ -91,6 +91,8 @@ jobs:
               - '.github/workflows/build-engine.yml'
               # Most of these scripts have unit tests; without this a script-only edit skips the tests that cover it (check-workflows.ts enforces it). Deliberately no count — the one that lived here read 16 against an actual 25.
               - '.github/scripts/**'
+              # Same reason for the repo's own scripts: mutants-ts.ts, mutate.ts and release-tag.ts all have unit suites, and a scripts-only edit skipped every one of them (#1091 review).
+              - 'scripts/**'
               # The two halves of the install-plan join (#920): the size canary's unit test
               # asserts every plan entry still resolves to a URL in the manifest, and a change
               # to either file alone would otherwise never run it.
