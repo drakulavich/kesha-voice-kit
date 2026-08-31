@@ -97,6 +97,9 @@ jobs:
               - 'model-plan.json'
               # Widened from `rust/src/models/**` in #1132: rust-cross-references.test.ts reads all of rust/src.
               - 'rust/src/**'
+              # resolveFile also accepts rust/build.rs and rust/tests/*.rs as reference targets, so a rename there must fire the cross-reference test too (#1132).
+              - 'rust/build.rs'
+              - 'rust/tests/**'
             integration:
               - 'src/**'
               - 'tests/integration/**'
