@@ -159,10 +159,10 @@ describe("which sources may be mutated", () => {
     expect(mutableSourceRejection("../other-worktree/src/engine.ts")).not.toBeNull();
   });
 
-  // "not mutable" without the accepted set leaves the caller guessing, as #1091 did.
-  test("the rejection names every accepted root", () => {
-    const message = mutableSourceRejection("docs/notes.ts") ?? "";
-
-    for (const root of ["src/", "scripts/", ".github/scripts/"]) expect(message).toContain(root);
+  // Whole message, not `toContain`: that reads `src/scripts/.github/scripts/` as three roots.
+  test("the rejection lists every accepted root, legibly", () => {
+    expect(mutableSourceRejection("docs/notes.ts")).toBe(
+      "not a mutable source file: docs/notes.ts — expected a .ts file under src/, scripts/, .github/scripts/",
+    );
   });
 });
