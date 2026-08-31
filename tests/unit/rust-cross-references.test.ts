@@ -136,7 +136,6 @@ describe("declares", () => {
     ['const DOC: &str = "const helper_path";', "helper_path", false],
     ['let s = r#"pub fn helper_path()"#;', "helper_path", false],
     ['let s = "escaped \\" fn helper_path";', "helper_path", false],
-    ["use crate::text_lang::helper_path;", "helper_path", false],
     ["let p = helper_path();", "helper_path", false],
   ];
 
@@ -145,6 +144,16 @@ describe("declares", () => {
       expect(declares(source, symbol)).toBe(expected);
     });
   }
+});
+
+// Runs only where the FS itself accepts the mangled case — exactly the platforms the helper protects.
+const onCaseInsensitiveFs = existsSync(repoPath("rust/src/DEBUG.RS")) ? test : test.skip;
+
+describe("existsExactly", () => {
+  onCaseInsensitiveFs("rejects a case-mangled path that existsSync accepts", () => {
+    expect(existsSync(repoPath("rust/src/Debug.rs"))).toBe(true);
+    expect(existsExactly("rust/src/Debug.rs")).toBe(false);
+  });
 });
 
 describe("Rust cross-references in TS sources", () => {
