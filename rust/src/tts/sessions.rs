@@ -306,7 +306,7 @@ mod tests {
 
     /// Gated on CHARSIU_ONNX env var (mirrors charsiu::tests); skipped in CI.
     #[test]
-    fn charsiu_cache_loads_once_and_reuses() {
+    fn charsiu_cache_reuses_one_session_and_evicts_a_different_dir() {
         let Some(dir_os) = std::env::var_os("CHARSIU_ONNX") else {
             assert!(
                 std::env::var_os("KESHA_REQUIRE_G2P_TESTS").is_none(),
@@ -337,5 +337,22 @@ mod tests {
 
         let ipa_fr = cache.to_ipa(&dir, "bonjour", "fr").unwrap();
         assert!(!ipa_fr.is_empty(), "French 'bonjour' returned empty IPA");
+
+        let empty = tempfile::tempdir().expect("tempdir");
+        let err = match cache.to_ipa(empty.path(), "hola", "es") {
+            Ok(ipa) => panic!("a g2p dir with no model must fail, got {ipa:?}"),
+            Err(e) => e,
+        };
+        assert!(
+            format!("{err:#}").contains("G2P model not installed"),
+            "wrong error for an empty g2p dir: {err:#}"
+        );
+        assert!(
+            !cache.is_loaded(),
+            "a different dir must evict the cached session before the file check fails"
+        );
+
+        let ipa3 = cache.to_ipa(&dir, "hola", "es").unwrap();
+        assert_eq!(ipa1, ipa3, "slot did not refill after eviction");
     }
 }
