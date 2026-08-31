@@ -450,6 +450,13 @@ describe("manifest sources stay inside both path filters", () => {
     expect(collectRustSources().map((file) => file.replaceAll("\\", "/"))).toContain("rust/src/text_lang.rs");
   });
 
+  // Same lesson as its sibling above: every test passes an explicit root, leaving the production default unpinned (#1132).
+  test("collectManifestSources' production default root is rust/src", () => {
+    expect(collectManifestSources().map((file) => file.replaceAll("\\", "/"))).toContain(
+      "rust/src/models/manifest.rs",
+    );
+  });
+
   test("collectRustSources returns every .rs under rust/src", () => {
     const tree = repoRelative(collectRustSources(repoPath("rust/src")));
     expect(tree.length).toBeGreaterThanOrEqual(6);

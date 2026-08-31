@@ -671,8 +671,7 @@ export function collectRustSources(root = "rust/src"): string[] {
     .sort();
 }
 
-/** The pair main() feeds the two #950 rules. Exported so the pairing itself is pinnable: handing the
- * models-tree rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
+/** The pair main() feeds the two #950 rules — exported so the pairing is pinnable: handing the all-rust/src rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
 export interface RuleSources {
   manifestSources: string[];
   rustSources: string[];
@@ -685,7 +684,7 @@ export function collectRuleSources(rustRoot?: string, rustSourcesRoot?: string):
   };
 }
 
-/** Fails when a models-tree source falls out of ci.yml's `code` filter: the TS pact suites read it, so an edit to it must fire unit-tests (#950 round 2). */
+/** Fails when any rust/src source falls out of ci.yml's `code` filter: a TS suite reads it, so an edit to it must fire unit-tests (#950 round 2; widened to all of rust/src in #1132). */
 export function requireRustSourcesInCodeFilter(
   path: string,
   document: unknown,
