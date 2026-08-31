@@ -41,7 +41,7 @@ export function legacyFluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
 }
 
 /**
- * Where the Parakeet bundle actually is. Mirrors `models.rs::fluidaudio_asr_location`: a
+ * Where the Parakeet bundle actually is. Mirrors `models/paths.rs::fluidaudio_asr_location`: a
  * complete legacy bundle keeps its place so an upgrade never re-downloads ~460 MB, and
  * anything else lives under the Kesha cache, where the engine roots a fresh install (#688).
  */
@@ -59,7 +59,7 @@ export function fluidAsrCachePath(
  * What FluidAudio's own `modelsExist` requires. The encoder is pinned to int8 because
  * the bridge calls `downloadAndLoad(to:)` with its default `useInt8Encoder: true` —
  * accepting `EncoderInt4.mlmodelc` would pass preflight and then let FluidAudio fetch
- * the int8 encoder on first transcribe. Keep in step with `models.rs::FLUID_ASR_REQUIRED`.
+ * the int8 encoder on first transcribe. Keep in step with `models/paths.rs::FLUID_ASR_REQUIRED`.
  */
 export const FLUID_ASR_REQUIRED = [
   "Preprocessor.mlmodelc",
@@ -70,7 +70,7 @@ export const FLUID_ASR_REQUIRED = [
 ];
 
 /**
- * Complete enough to transcribe. Mirrors `models.rs::fluidaudio_asr_ready` — a bare
+ * Complete enough to transcribe. Mirrors `models/paths.rs::fluidaudio_asr_ready` — a bare
  * directory check would call an interrupted fetch healthy, and the engine would then
  * download the remainder on first transcribe (#684).
  *

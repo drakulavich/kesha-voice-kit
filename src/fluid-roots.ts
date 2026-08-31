@@ -34,7 +34,7 @@ export interface FluidExternalRoot {
 }
 
 /**
- * Mirrors `models.rs::dir_has_entries`. Deliberately weak: a false positive keeps a legacy
+ * Mirrors `models/paths.rs::dir_has_entries`. Deliberately weak: a false positive keeps a legacy
  * directory in use, a false negative re-downloads it (#688).
  */
 function dirHasEntries(dir: string): boolean {
@@ -56,7 +56,7 @@ export function kokoroG2pDir(homeDir = diagnosticHomeDir()): string {
 
 /**
  * The Kokoro CoreML bundle root the engine reads. Mirrors
- * `models.rs::fluidaudio_kokoro_location`: any entry at all keeps a legacy tree in use,
+ * `models/paths.rs::fluidaudio_kokoro_location`: any entry at all keeps a legacy tree in use,
  * everything else roots under the Kesha cache (#688).
  */
 export function kokoroBundleRoot(options: FluidRootsOptions = {}): string {
@@ -66,7 +66,7 @@ export function kokoroBundleRoot(options: FluidRootsOptions = {}): string {
     : join(options.cacheRoot ?? keshaCacheDir(), "fluidaudio", "kokoro-82m-coreml");
 }
 
-/** Where `models.rs::stage_fluidaudio_kokoro_assets` puts the English ANE chain. */
+/** Where `models/staging.rs::stage_fluidaudio_kokoro_assets` puts the English ANE chain. */
 export function kokoroAneDir(options: FluidRootsOptions = {}): string {
   return join(kokoroBundleRoot(options), "ANE");
 }
@@ -94,7 +94,7 @@ export function fluidLegacyRootPaths(homeDir = diagnosticHomeDir()): string[] {
 }
 
 /**
- * Where each FluidAudio subsystem's files are. Mirrors `models.rs::fluidaudio_location` and
+ * Where each FluidAudio subsystem's files are. Mirrors `models/paths.rs::fluidaudio_location` and
  * the per-subsystem probes it is called with — strong for ASR (`fluidaudio_asr_ready_in`),
  * `dir_has_entries` for Kokoro and Sortformer — so a legacy bundle that is still being read
  * is counted where it is, and a relocated one is counted only inside the cache (#688).

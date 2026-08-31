@@ -259,8 +259,8 @@ spawn time (inheriting `process.env` from the CLI).
 > | Variable | Read by | Effect |
 > |---|---|---|
 > | `KESHA_ENGINE_BIN` | CLI | Override Engine binary path (`src/engine.ts:47`). |
-> | `KESHA_CACHE_DIR` | CLI + Engine | Override Model cache root (default `~/.cache/kesha/`). CLI: `src/paths.ts:5`. Engine: `rust/src/models.rs:614`. |
-> | `KESHA_MODEL_MIRROR` | Engine | Rewrite HuggingFace download base URLs; GitHub release URLs are never rewritten. Safe because of Pinned hashes (`rust/src/models.rs:628`). |
+> | `KESHA_CACHE_DIR` | CLI + Engine | Override Model cache root (default `~/.cache/kesha/`). CLI: `src/paths.ts:5`. Engine: `rust/src/models/paths.rs::cache_dir`. |
+> | `KESHA_MODEL_MIRROR` | Engine | Rewrite HuggingFace download base URLs; GitHub release URLs are never rewritten. Safe because of Pinned hashes (`rust/src/models/download.rs::model_mirror`). |
 > | `KESHA_DEBUG` | CLI + Engine | Enable debug trace output. Falsey values: `""`, `"0"`, `"false"`, `"no"`, `"off"` (case-insensitive). Truthy: any other non-empty value. CLI: `src/log.ts:30`. Engine: `rust/src/debug.rs:57`. |
 > | `KESHA_DEBUG_FD` | CLI + Engine | Forward a file descriptor number to the Engine for NDJSON debug event output. Values 0/1/2 are rejected (covered by stdin/stdout/stderr). Values above 1024 (`MAX_FORWARDED_FD`) are rejected. Must be a non-negative integer ≥ 3. CLI: `src/engine.ts:92`. Engine: `rust/src/debug.rs:159`. |
 > | `KESHA_DIARIZE_TIMEOUT_SECS` | Engine | Cap total diarization wall time (seconds). It can only cut a run short — the phase budgets still apply, so it never widens one. Unset or empty means no overall cap; any other non-positive or unparseable value fails with `E_INVALID_ARG` rather than silently removing the cap. Engine: `rust/src/transcribe/diarize.rs`. |

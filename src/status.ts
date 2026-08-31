@@ -1,5 +1,6 @@
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
+import modelPlan from "../model-plan.json" with { type: "json" };
 import {
   isEngineInstalled,
   getEngineBinPath,
@@ -238,7 +239,7 @@ function showDiskUsage(disk: StatusDiskUsage): void {
   log.info("");
 }
 
-/** Returns the effective `KESHA_MODEL_MIRROR` URL (#121), trimmed; null when unset. Mirrors `model_mirror()` in `rust/src/models.rs`. */
+/** Returns the effective `KESHA_MODEL_MIRROR` URL (#121), trimmed; null when unset. Mirrors `model_mirror()` in `rust/src/models/download.rs`. */
 export function activeModelMirror(): string | null {
   const raw = process.env.KESHA_MODEL_MIRROR ?? "";
   const trimmed = raw.trim().replace(/\/+$/, "");
@@ -257,9 +258,8 @@ function listInstalledVoices(): string[] {
     /* Kokoro not installed */
   }
   try {
-    // Mirror models::is_vosk_ru_cached — both files required to avoid advertising a partial install.
-    statSync(join(cache, "models", "vosk-ru", "model.onnx"));
-    statSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"));
+    // Joined to `models/manifest.rs::VOSK_RU_FILES` through the plan, so a sixth entry needs no edit here (#1132).
+    for (const { relPath } of modelPlan.voskRu) statSync(join(cache, relPath));
     for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
       voices.push(`ru-vosk-${id}`);
     }

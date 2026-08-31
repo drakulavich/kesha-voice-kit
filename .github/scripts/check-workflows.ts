@@ -649,9 +649,9 @@ export function requireTestedScriptsInCodeFilter(
  * Deliberately narrower than `tests/helpers/rust-models-source.ts`'s `rustModelsSourcePaths`,
  * which returns every `.rs` file under the models tree (paths.rs and staging.rs included) for
  * the TS suites that read them as plain text. That wider dependency set gets its own enforcement:
- * `collectModelsTreeSources` + `requireModelsTreeInCodeFilter` fail ci.yml when its `code`
- * filter stops covering any models-tree file, so the narrowing hazard is a red check rather than
- * a docstring (#950 round 2).
+ * `collectRustSources` + `requireRustSourcesInCodeFilter` fail ci.yml when its `code`
+ * filter stops covering any Rust source, so the narrowing hazard is a red check rather than
+ * a docstring (#950 round 2, widened from the models tree to all of rust/src in #1132).
  */
 export function collectManifestSources(root = "rust/src"): string[] {
   if (!existsSync(root)) return [];
@@ -662,8 +662,8 @@ export function collectManifestSources(root = "rust/src"): string[] {
     .sort();
 }
 
-/** Every .rs under the models tree — the files the TS pact suites read as plain text, a strict superset of the ModelFile-literal set (#950 round 2). */
-export function collectModelsTreeSources(root = "rust/src/models"): string[] {
+/** Every .rs under rust/src — the TS pact suites read the models tree, tests/unit/rust-cross-references.test.ts reads all of it (#1132). */
+export function collectRustSources(root = "rust/src"): string[] {
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true })
     .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
@@ -671,25 +671,24 @@ export function collectModelsTreeSources(root = "rust/src/models"): string[] {
     .sort();
 }
 
-/** The pair main() feeds the two #950 rules. Exported so the pairing itself is pinnable: handing the
- * models-tree rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
+/** The pair main() feeds the two #950 rules — exported so the pairing is pinnable: handing the all-rust/src rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
 export interface RuleSources {
   manifestSources: string[];
-  modelsTreeSources: string[];
+  rustSources: string[];
 }
 
-export function collectRuleSources(rustRoot?: string, modelsRoot?: string): RuleSources {
+export function collectRuleSources(rustRoot?: string, rustSourcesRoot?: string): RuleSources {
   return {
     manifestSources: collectManifestSources(rustRoot),
-    modelsTreeSources: collectModelsTreeSources(modelsRoot),
+    rustSources: collectRustSources(rustSourcesRoot),
   };
 }
 
-/** Fails when a models-tree source falls out of ci.yml's `code` filter: the TS pact suites read it, so an edit to it must fire unit-tests (#950 round 2). */
-export function requireModelsTreeInCodeFilter(
+/** Fails when any rust/src source falls out of ci.yml's `code` filter: a TS suite reads it, so an edit to it must fire unit-tests (#950 round 2; widened to all of rust/src in #1132). */
+export function requireRustSourcesInCodeFilter(
   path: string,
   document: unknown,
-  modelsTreeSources: string[],
+  rustSources: string[],
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
@@ -699,17 +698,17 @@ export function requireModelsTreeInCodeFilter(
   const code = (parse(raw) as Record<string, string[]>)?.code;
   if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
 
-  if (modelsTreeSources.length === 0) {
+  if (rustSources.length === 0) {
     return [
-      `${path}: collectModelsTreeSources() returned no files — it ran against the wrong cwd or the models tree moved, either way the guard cannot pass vacuously (#950)`,
+      `${path}: collectRustSources() returned no files — it ran against the wrong cwd or rust/src moved, either way the guard cannot pass vacuously (#950)`,
     ];
   }
 
-  return modelsTreeSources
+  return rustSources
     .filter((file) => !coveredBy(code, file))
     .map(
       (file) =>
-        `${path}: ${file} is read by the TS pact suites but no path in the \`code\` filter matches it, so an edit to it skips unit-tests (#950)`,
+        `${path}: ${file} is read by a TS suite but no path in the \`code\` filter matches it, so an edit to it skips unit-tests (#950, #1132)`,
     );
 }
 
@@ -1099,7 +1098,7 @@ export function checkFile(
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ...requireManifestSourcesInCodeFilter(path, document, sources.manifestSources),
-      ...requireModelsTreeInCodeFilter(path, document, sources.modelsTreeSources),
+      ...requireRustSourcesInCodeFilter(path, document, sources.rustSources),
       ...requireManifestSourcesInSeedFilter(path, document, sources.manifestSources),
       ...requireFlakeNixInWorkflowsFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),

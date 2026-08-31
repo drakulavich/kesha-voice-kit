@@ -56,5 +56,5 @@ weights fetched by the Backend outside the Model cache rather than omitting them
 - AND nothing is downloaded
 
 > *Technical Note — sources: `src/install-plan.ts` (`asr: ASR_FILES`, `modelBundle("ASR Parakeet
-> TDT v3", …)`), `rust/src/models.rs::install` (no backend branch today),
+> TDT v3", …)`), `rust/src/models/mod.rs::install` (no backend branch today),
 > `rust/src/backend/mod.rs::create_backend` (`let _ = model_dir` on the coreml arm).*

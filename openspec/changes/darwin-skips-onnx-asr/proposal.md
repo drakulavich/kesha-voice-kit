@@ -61,7 +61,8 @@ None.
 
 ## Impact
 
-- `rust/src/models.rs` (`ASR_FILES` gating, `is_cached_in`, `install`), `rust/src/transcribe/mod.rs`
+- `rust/src/models/manifest.rs` (`ASR_FILES` gating), `rust/src/models/paths.rs` (`is_cached_in`),
+  `rust/src/models/mod.rs` (`install`), `rust/src/transcribe/mod.rs`
   (`ensure_asr_installed`), `rust/src/cli/install.rs` (warm-up path).
 - `src/install-plan.ts`, `src/status.ts`, `src/doctor.ts` — the user-facing half.
 - macOS users: ~2.43 GB less downloaded and stored per install.

@@ -14,7 +14,7 @@ export const KOKORO_ANE_NOTE =
   "because FluidAudio resolves these paths and no other; the warm-up only compiles them";
 
 /**
- * Top level of `models.rs::ANE_EN_FILES`: the 7-stage ANE chain, its vocab, and the
+ * Top level of `models/manifest.rs::ANE_EN_FILES`: the 7-stage ANE chain, its vocab, and the
  * `af_heart` pack the bundle counts as its own.
  */
 export const KOKORO_ANE_EN_REQUIRED = [
@@ -29,7 +29,7 @@ export const KOKORO_ANE_EN_REQUIRED = [
   "vocab.json",
 ];
 
-/** Top level of `models.rs::KOKORO_G2P_FILES` — the shared BART G2P and the Misaki lexicon. */
+/** Top level of `models/manifest.rs::KOKORO_G2P_FILES` — the shared BART G2P and the Misaki lexicon. */
 export const KOKORO_G2P_REQUIRED = [
   "G2PDecoder.mlmodelc",
   "G2PEncoder.mlmodelc",
@@ -57,11 +57,11 @@ export interface KokoroAneOptions {
 }
 
 /**
- * The two sets `models.rs::stage_fluidaudio_kokoro_assets` stages for any non-`ru` TTS
+ * The two sets `models/staging.rs::stage_fluidaudio_kokoro_assets` stages for any non-`ru` TTS
  * language. The Mandarin (`ANE-zh/`) sibling is deliberately not here: `--tts zh` is a
  * separate opt-in, and its bytes already show up under the cache report's Kokoro ANE root.
  *
- * Top-level existence on purpose, one notch weaker than `models.rs::missing_kokoro_assets`.
+ * Top-level existence on purpose, one notch weaker than `models/staging.rs::missing_kokoro_assets`.
  * That per-file check gates synthesis and must be exact; this one answers "is this install
  * whole" without mirroring ~40 file names into a second language for a diagnostic (#828).
  */

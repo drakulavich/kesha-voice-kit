@@ -354,7 +354,7 @@ asset check SHALL NOT require them.
 - THEN the Vosk-TTS files land in the Model cache
 - AND no FluidAudio Kokoro asset is downloaded or staged
 
-> *Technical Note — sources: `rust/src/models.rs::download_tts` calls
+> *Technical Note — sources: `rust/src/models/download.rs::download_tts` calls
 > `stage_fluidaudio_kokoro_assets` (manifests `ANE_EN_FILES`,
 > `KOKORO_G2P_FILES`, `ANE_ZH_FILES`, `ANE_ZH_G2P_ASSETS`; the English variant
 > serves `ANE_ENGLISH_VARIANT_LANGS` = en/es/fr/hi/it/ja/pt) and
@@ -405,7 +405,7 @@ The CLI SHALL install the Sortformer diarization model only when `--diarize` is 
 ### Requirement: Every model file has a Pinned hash; mismatches are rejected, not cached
 
 The Engine SHALL verify the SHA-256 hash of every downloaded model file against the
-Pinned hash recorded in `rust/src/models.rs`. A file whose hash does not match SHALL
+Pinned hash recorded in `rust/src/models/manifest.rs`. A file whose hash does not match SHALL
 be deleted and the install SHALL fail with an error. The file SHALL NOT be left in the
 Model cache.
 
@@ -430,7 +430,7 @@ begin.
 - AND all HuggingFace model URLs are rewritten to use the mirror base
 - AND the Engine binary URL is not rewritten
 
-> *Technical Note — sources: `rust/src/models.rs` (SHA-256 per `ModelFile` entry,
+> *Technical Note — sources: `rust/src/models/manifest.rs` (SHA-256 per `ModelFile` entry,
 > `download_verified` function, `init_mirror_logging`, `model_mirror()`).
 > Error code `E_CACHE_CORRUPT` is used when a cached file fails hash verification.*
 
@@ -480,7 +480,7 @@ the first one is still streaming into.
 > (health-gated cache validity; skipped on a read-only engine directory, where nothing
 > could be repaired anyway), `src/engine-install.ts::sidecarNeedsDownload`,
 > `src/cli/install.ts::probeCapabilitiesForInstall`. Mirrors the staging and the
-> age-gated, Unix-only orphan sweep of `rust/src/models.rs` (`write_verified`,
+> age-gated, Unix-only orphan sweep of `rust/src/models/download.rs` (`write_verified`,
 > `cleanup_orphan_staging`): Windows keeps last-write time stale while a handle is open,
 > so an in-flight download there cannot be told apart from an orphan.*
 

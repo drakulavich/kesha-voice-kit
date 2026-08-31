@@ -1226,22 +1226,41 @@ mod characterization_tests {
     fn is_cached_in_vosk_ru_true_when_layout_present() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("models/vosk-ru");
-        fs::create_dir_all(dir.join("bert")).unwrap();
-        fs::write(dir.join("model.onnx"), b"dummy").unwrap();
-        fs::write(dir.join("dictionary"), b"dummy").unwrap();
-        fs::write(dir.join("bert/model.onnx"), b"dummy").unwrap();
+        for f in VOSK_RU_FILES {
+            let rel = f.rel_path.strip_prefix("models/vosk-ru/").unwrap();
+            let path = dir.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"dummy").unwrap();
+        }
         assert!(is_cached_in(ModelKind::VoskRu, &dir));
     }
 
+    /// One negative case per manifest file: `Vosk::load` opens every entry, so a
+    /// bundle missing any single one is not loadable however cached it looks.
+    /// Omitting exactly one file per iteration keeps each existence check
+    /// individually pinned (#1132).
     #[cfg(feature = "tts")]
     #[test]
-    fn is_cached_in_vosk_ru_false_when_bert_missing() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("models/vosk-ru");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("model.onnx"), b"dummy").unwrap();
-        fs::write(dir.join("dictionary"), b"dummy").unwrap();
-        assert!(!is_cached_in(ModelKind::VoskRu, &dir));
+    fn is_cached_in_vosk_ru_false_when_any_single_file_missing() {
+        for missing in VOSK_RU_FILES {
+            let tmp = tempfile::tempdir().unwrap();
+            let dir = tmp.path().join("models/vosk-ru");
+            fs::create_dir_all(dir.join("bert")).unwrap();
+            for f in VOSK_RU_FILES {
+                if f.rel_path == missing.rel_path {
+                    continue;
+                }
+                let rel = f.rel_path.strip_prefix("models/vosk-ru/").unwrap();
+                let path = dir.join(rel);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, b"dummy").unwrap();
+            }
+            assert!(
+                !is_cached_in(ModelKind::VoskRu, &dir),
+                "bundle missing {} still reported cached",
+                missing.rel_path
+            );
+        }
     }
 
     #[cfg(all(

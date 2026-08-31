@@ -230,7 +230,7 @@ the first few missing paths so the gap is identifiable, and the refusal exits 4
 > *Technical Note — model presence gates:
 > `rust/src/tts/voices.rs::build_kokoro_voice` (ONNX Kokoro) and
 > `::resolve_vosk_ru` (Vosk). `macos-*` voices need no model download.
-> The darwin-arm64 pre-check is `rust/src/models.rs::missing_kokoro_assets`,
+> The darwin-arm64 pre-check is `rust/src/models/staging.rs::missing_kokoro_assets`,
 > called from `tts/fluid_kokoro.rs::with_kokoro` alongside
 > `fluidaudio_rs::set_offline_mode(true)` — two defences because neither covers
 > the other: the flag stops upstream's repo downloads but not its
@@ -530,7 +530,7 @@ stderr note, because the upstream CharsiuG2P export has no Castilian θ tag.
 > by `is_castilian_region` while `es`/`es-419`/`es-MX` use the LatAm tag
 > directly. zh runs off FluidAudio's separate Mandarin (`ANE-zh/`) bundle,
 > which `kesha install --tts zh` stages like every other model — voice packs
-> and pinyin dictionaries included (`rust/src/models.rs::ANE_ZH_FILES`,
+> and pinyin dictionaries included (`rust/src/models/manifest.rs::ANE_ZH_FILES`,
 > `ANE_ZH_G2P_ASSETS`, #823).*
 
 ### Requirement: List installed voices

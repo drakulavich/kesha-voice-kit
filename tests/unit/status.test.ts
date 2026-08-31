@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
-import { join, sep } from "path";
+import { dirname, join, sep } from "path";
 import { tmpdir } from "os";
 import {
   formatStatusLine,
@@ -13,6 +13,28 @@ import {
 import { humanBytes } from "../../src/format";
 import { starSeenPath } from "../../src/star";
 import { saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
+import modelPlan from "../../model-plan.json" with { type: "json" };
+
+// Literals, not derived from model-plan.json: a dropped plan entry must go red here, since the Rust binding test skips plan-only PRs (#1132).
+const VOSK_RU_RELPATHS = [
+  "models/vosk-ru/model.onnx",
+  "models/vosk-ru/dictionary",
+  "models/vosk-ru/config.json",
+  "models/vosk-ru/bert/model.onnx",
+  "models/vosk-ru/bert/vocab.txt",
+];
+
+test("model-plan.json's voskRu carries exactly the files the status gate requires", () => {
+  expect(modelPlan.voskRu.map((file) => file.relPath).sort()).toEqual([...VOSK_RU_RELPATHS].sort());
+});
+
+function writeVoskBundle(cache: string): void {
+  for (const relPath of VOSK_RU_RELPATHS) {
+    const file = join(cache, relPath);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, relPath);
+  }
+}
 
 const posixEngineTest = process.platform === "win32" ? test.skip : test;
 
@@ -167,9 +189,7 @@ exit 2
     mkdirSync(join(cache, "models", "kokoro-82m", "voices"), { recursive: true });
     writeFileSync(join(cache, "models", "kokoro-82m", "voices", "am_michael.bin"), "voice");
     writeFileSync(join(cache, "models", "kokoro-82m", "voices", "README.txt"), "ignored");
-    mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
-    writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
-    writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
+    writeVoskBundle(cache);
 
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;
@@ -820,35 +840,39 @@ describe("collectStatus voice inventory", () => {
   beforeEach(restoreEnv);
   afterEach(restoreEnv);
 
-  posixEngineTest("a half-downloaded Vosk model advertises no Russian voices", async () => {
+  // One case per manifest file so none is masked by a later one, and the list is joined to VOSK_RU_FILES (#1132).
+  async function voicesWithVoskBundle(present: string[]): Promise<string[]> {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-vosk-partial-"));
     const cache = join(dir, ".cache", "kesha");
-    const binPath = writeFakeEngine(join(cache, "engine", "bin"));
-    const vosk = join(cache, "models", "vosk-ru");
-    mkdirSync(join(vosk, "bert"), { recursive: true });
-
-    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_ENGINE_BIN = writeFakeEngine(join(cache, "engine", "bin"));
     process.env.KESHA_CACHE_DIR = cache;
     process.env.HOME = dir;
     try {
-      writeFileSync(join(vosk, "bert", "model.onnx"), "bert");
-      expect((await collectStatus()).voices).toEqual([]);
-
-      rmSync(join(vosk, "bert", "model.onnx"));
-      writeFileSync(join(vosk, "model.onnx"), "model");
-      expect((await collectStatus()).voices).toEqual([]);
-
-      writeFileSync(join(vosk, "bert", "model.onnx"), "bert");
-      expect((await collectStatus()).voices).toEqual([
-        "ru-vosk-f01",
-        "ru-vosk-f02",
-        "ru-vosk-f03",
-        "ru-vosk-m01",
-        "ru-vosk-m02",
-      ]);
+      for (const relPath of present) {
+        const file = join(cache, relPath);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, relPath);
+      }
+      return (await collectStatus()).voices;
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  for (const missing of VOSK_RU_RELPATHS) {
+    posixEngineTest(`advertises no Russian voices while ${missing} is missing`, async () => {
+      expect(await voicesWithVoskBundle(VOSK_RU_RELPATHS.filter((p) => p !== missing))).toEqual([]);
+    });
+  }
+
+  posixEngineTest("advertises every speaker once the whole Vosk bundle is present", async () => {
+    expect(await voicesWithVoskBundle(VOSK_RU_RELPATHS)).toEqual([
+      "ru-vosk-f01",
+      "ru-vosk-f02",
+      "ru-vosk-f03",
+      "ru-vosk-m01",
+      "ru-vosk-m02",
+    ]);
   });
 
   posixEngineTest("voices are listed in sorted order across engines", async () => {
@@ -859,9 +883,7 @@ describe("collectStatus voice inventory", () => {
     for (const name of ["zf_xiaobei.bin", "am_michael.bin", "bf_emma.bin"]) {
       writeFileSync(join(cache, "models", "kokoro-82m", "voices", name), "voice");
     }
-    mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
-    writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
-    writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
+    writeVoskBundle(cache);
 
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;
