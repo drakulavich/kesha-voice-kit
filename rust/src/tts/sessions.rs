@@ -258,6 +258,52 @@ impl CharsiuCache {
 mod tests {
     use super::*;
 
+    fn mini_kokoro_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("rust/ has a parent")
+            .join("tests/fixtures/mini-models/kokoro")
+    }
+
+    /// The mini pins slot bookkeeping, never audio fidelity — no quality assertion belongs here.
+    #[test]
+    fn kokoro_slot_reuses_a_loaded_session_and_survives_a_failed_swap() {
+        let mini = mini_kokoro_dir();
+        let model = mini.join("model.onnx");
+        let voice = mini.join("am_michael.bin");
+
+        let mut slot = KokoroSlot::default();
+        let first = slot
+            .get(&model)
+            .expect("first get loads the mini")
+            .infer_ipa("həlˈoʊ", &voice, 1.0)
+            .expect("mini synthesises");
+        assert!(!first.is_empty(), "mini returned no samples");
+
+        let second = slot
+            .get(&model)
+            .expect("second get reuses the loaded session")
+            .infer_ipa("həlˈoʊ", &voice, 1.0)
+            .expect("mini synthesises");
+        assert_eq!(first, second, "reused session returned different samples");
+
+        let err = match slot.get(&mini.join("no-such-model.onnx")) {
+            Ok(_) => panic!("a swap to a missing checkpoint must fail"),
+            Err(e) => e,
+        };
+        assert!(
+            format!("{err:#}").contains("reload"),
+            "swap failure did not go through ensure_model: {err:#}"
+        );
+
+        let after = slot
+            .get(&model)
+            .expect("a failed swap must leave the slot loaded")
+            .infer_ipa("həlˈoʊ", &voice, 1.0)
+            .expect("mini synthesises");
+        assert_eq!(first, after, "slot lost its session after a failed swap");
+    }
+
     /// Gated on CHARSIU_ONNX env var (mirrors charsiu::tests); skipped in CI.
     #[test]
     fn charsiu_cache_loads_once_and_reuses() {
