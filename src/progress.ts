@@ -133,7 +133,7 @@ export async function applyBackpressure(
 }
 
 /**
- * Age threshold and platform gate mirror `rust/src/models.rs::cleanup_orphan_staging`: a
+ * Age threshold and platform gate mirror `rust/src/models/download.rs::cleanup_orphan_staging`: a
  * concurrent installer's staging file keeps a fresh mtime while bytes stream into it, and
  * Windows leaves last-write time stale while a handle is open, so an in-flight download
  * there could not be told apart from an orphan.
@@ -185,7 +185,7 @@ let stagingSeq = 0;
 /**
  * Downloads into a sibling `.part.<pid>.<n>` file and renames it into place, so an
  * interrupted download can never leave a truncated binary at `destPath` (#770). Mirrors the
- * staging `rust/src/models.rs::write_verified` already does for model files. Staging beside
+ * staging `rust/src/models/download.rs::write_verified` already does for model files. Staging beside
  * the destination keeps the rename within one filesystem, where it is atomic.
  */
 export async function streamResponseToFile(

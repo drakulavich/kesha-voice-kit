@@ -238,7 +238,7 @@ function showDiskUsage(disk: StatusDiskUsage): void {
   log.info("");
 }
 
-/** Returns the effective `KESHA_MODEL_MIRROR` URL (#121), trimmed; null when unset. Mirrors `model_mirror()` in `rust/src/models.rs`. */
+/** Returns the effective `KESHA_MODEL_MIRROR` URL (#121), trimmed; null when unset. Mirrors `model_mirror()` in `rust/src/models/download.rs`. */
 export function activeModelMirror(): string | null {
   const raw = process.env.KESHA_MODEL_MIRROR ?? "";
   const trimmed = raw.trim().replace(/\/+$/, "");
