@@ -1,7 +1,7 @@
 // Mutation testing for the TypeScript side. A surviving mutant is a coverage gap stated as the
 // exact edit no test noticed — this found `confidence < 0.5` never exercised at the boundary.
 //
-//   just mutants-ts src/foo.ts   # generates a config from this one; the pairing below is the fallback
+//   just mutants-ts src/foo.ts   # or scripts/, or .github/scripts/; the pairing below is the fallback
 //
 // Scoped runs are fast: 44 mutants in ~1s, 1.3 tests per mutant, because `perTest` coverage
 // re-runs only the covering tests rather than the suite.
