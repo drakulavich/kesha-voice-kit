@@ -129,13 +129,13 @@ pub struct KokoroSlot {
 impl KokoroSlot {
     pub fn get(&mut self, model_path: &Path) -> anyhow::Result<&mut KokoroSession> {
         use anyhow::Context;
-        match self.inner.as_mut() {
-            Some(sess) => sess.ensure_model(model_path).context("kokoro reload")?,
-            None => {
-                self.inner = Some(KokoroSession::load(model_path).context("kokoro load")?);
+        Ok(match &mut self.inner {
+            Some(sess) => {
+                sess.ensure_model(model_path).context("kokoro reload")?;
+                sess
             }
-        }
-        Ok(self.inner.as_mut().expect("kokoro session just ensured"))
+            slot => slot.insert(KokoroSession::load(model_path).context("kokoro load")?),
+        })
     }
 }
 
@@ -228,12 +228,14 @@ impl CharsiuCache {
                 self.inner = None;
             }
         }
-        if self.inner.is_none() {
-            super::g2p::check_charsiu_files(model_dir)?;
-            let g = Charsiu::load(model_dir)?;
-            self.inner = Some((model_dir.to_path_buf(), g));
-        }
-        Ok(&mut self.inner.as_mut().unwrap().1)
+        Ok(match &mut self.inner {
+            Some((_, g)) => g,
+            slot => {
+                super::g2p::check_charsiu_files(model_dir)?;
+                let g = Charsiu::load(model_dir)?;
+                &mut slot.insert((model_dir.to_path_buf(), g)).1
+            }
+        })
     }
 
     /// Phonemize `text` in `lang` (es/fr/it/pt) using the cached session.
@@ -258,9 +260,63 @@ impl CharsiuCache {
 mod tests {
     use super::*;
 
-    /// Gated on CHARSIU_ONNX env var (mirrors charsiu::tests); skipped in CI.
+    fn mini_kokoro_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("rust/ has a parent")
+            .join("tests/fixtures/mini-models/kokoro")
+    }
+
+    /// The mini pins slot bookkeeping, never audio fidelity — no quality assertion belongs here.
     #[test]
-    fn charsiu_cache_loads_once_and_reuses() {
+    fn kokoro_slot_reuses_a_loaded_session_and_survives_a_failed_swap() {
+        let mini = mini_kokoro_dir();
+        let voice = mini.join("am_michael.bin");
+
+        // Staged so it can be deleted: a slot that re-reads the checkpoint cannot answer below.
+        let staged = tempfile::tempdir().expect("tempdir");
+        let model = staged.path().join("model.onnx");
+        std::fs::copy(mini.join("model.onnx"), &model).expect("stage the mini checkpoint");
+
+        let mut slot = KokoroSlot::default();
+        let first = slot
+            .get(&model)
+            .expect("first get loads the mini")
+            .infer_ipa("həlˈoʊ", &voice, 1.0)
+            .expect("mini synthesises");
+        assert!(!first.is_empty(), "mini returned no samples");
+
+        std::fs::remove_file(&model).expect("unstage the mini checkpoint");
+
+        let second = slot
+            .get(&model)
+            .unwrap_or_else(|e| {
+                panic!("a loaded slot must answer without re-reading the checkpoint: {e:#}")
+            })
+            .infer_ipa("həlˈoʊ", &voice, 1.0)
+            .expect("mini synthesises");
+        assert_eq!(first, second, "reused session returned different samples");
+
+        let err = match slot.get(&staged.path().join("no-such-model.onnx")) {
+            Ok(_) => panic!("a swap to a missing checkpoint must fail"),
+            Err(e) => e,
+        };
+        assert!(
+            format!("{err:#}").contains("reload"),
+            "swap failure did not go through ensure_model: {err:#}"
+        );
+
+        let after = slot
+            .get(&model)
+            .expect("a failed swap must leave the slot loaded")
+            .infer_ipa("həlˈoʊ", &voice, 1.0)
+            .expect("mini synthesises");
+        assert_eq!(first, after, "slot lost its session after a failed swap");
+    }
+
+    /// Requires CHARSIU_ONNX; the coverage job stages byt5-tiny, so this is not skipped in CI.
+    #[test]
+    fn charsiu_cache_reuses_one_session_and_evicts_a_different_dir() {
         let Some(dir_os) = std::env::var_os("CHARSIU_ONNX") else {
             assert!(
                 std::env::var_os("KESHA_REQUIRE_G2P_TESTS").is_none(),
@@ -272,10 +328,24 @@ mod tests {
         };
         let dir = std::path::PathBuf::from(dir_os);
 
+        // Staged so a required file can be removed: a cache that reloads per call fails the last call.
+        let staged_dir = tempfile::tempdir().expect("tempdir");
+        let staged = staged_dir.path();
+        for file in [
+            "encoder_model.onnx",
+            "decoder_model.onnx",
+            "decoder_with_past_model.onnx",
+        ] {
+            let (src, dst) = (dir.join(file), staged.join(file));
+            std::fs::hard_link(&src, &dst)
+                .or_else(|_| std::fs::copy(&src, &dst).map(|_| ()))
+                .expect("stage the g2p model");
+        }
+
         let mut cache = CharsiuCache::default();
         assert!(!cache.is_loaded(), "cache must start empty");
 
-        let ipa1 = cache.to_ipa(&dir, "hola", "es").unwrap();
+        let ipa1 = cache.to_ipa(staged, "hola", "es").unwrap();
         assert!(!ipa1.is_empty(), "first call: empty IPA for 'hola'");
         assert!(
             cache.is_loaded(),
@@ -283,13 +353,31 @@ mod tests {
         );
 
         // Charsiu is deterministic; same input must return identical IPA and not reload.
-        let ipa2 = cache.to_ipa(&dir, "hola", "es").unwrap();
+        let ipa2 = cache.to_ipa(staged, "hola", "es").unwrap();
         assert_eq!(
             ipa1, ipa2,
             "second call returned different IPA — session may have been reloaded"
         );
 
-        let ipa_fr = cache.to_ipa(&dir, "bonjour", "fr").unwrap();
+        let ipa_fr = cache.to_ipa(staged, "bonjour", "fr").unwrap();
         assert!(!ipa_fr.is_empty(), "French 'bonjour' returned empty IPA");
+
+        let empty = tempfile::tempdir().expect("tempdir");
+        let err = match cache.to_ipa(empty.path(), "hola", "es") {
+            Ok(ipa) => panic!("a g2p dir with no model must fail, got {ipa:?}"),
+            Err(e) => e,
+        };
+        assert!(
+            format!("{err:#}").contains("G2P model not installed"),
+            "wrong error for an empty g2p dir: {err:#}"
+        );
+        let ipa3 = cache.to_ipa(staged, "hola", "es").unwrap();
+        assert_eq!(ipa1, ipa3, "slot did not refill after eviction");
+
+        std::fs::remove_file(staged.join("encoder_model.onnx")).expect("unstage the encoder");
+        let ipa4 = cache.to_ipa(staged, "hola", "es").unwrap_or_else(|e| {
+            panic!("a loaded cache must answer without re-reading the model: {e:#}")
+        });
+        assert_eq!(ipa1, ipa4, "reused session returned different IPA");
     }
 }
