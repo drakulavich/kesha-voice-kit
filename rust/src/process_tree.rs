@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use std::io;
-use std::process::{Child, ChildStdin, ExitStatus, Output};
+use std::process::{Child, ChildStdin, Output};
 
 pub(crate) struct ChildGuard {
     child: Option<Child>,
@@ -24,18 +24,11 @@ impl ChildGuard {
         }
     }
 
-    pub(crate) fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.child
-            .as_mut()
-            .expect("ChildGuard missing child")
-            .try_wait()
-    }
-
     pub(crate) fn wait_with_output(mut self) -> io::Result<Output> {
-        self.child
-            .take()
-            .expect("ChildGuard missing child")
-            .wait_with_output()
+        match self.child.take() {
+            Some(child) => child.wait_with_output(),
+            None => Err(io::Error::other("ChildGuard: child already reaped")),
+        }
     }
 
     pub(crate) fn kill_and_wait_with_output(mut self) -> io::Result<Output> {
