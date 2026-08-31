@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { chmodSync, mkdtempSync, mkdirSync, utimesSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
-import { waitForPidExit, waitForPidFile } from "../helpers/process";
+import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { readRepoFile } from "../helpers/repo";
 import { envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
@@ -62,7 +62,7 @@ function fakeLongRunningEngine(dir: string, helperPidFile: string): string {
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
 if (args[0] === "transcribe") {
-  const child = Bun.spawn(["sh", "-c", "trap '' TERM INT; while :; do sleep 1; done"], {
+  const child = Bun.spawn(["sh", "-c", ${JSON.stringify(stubbornShell("TERM INT"))}], {
     stdout: "ignore",
     stderr: "ignore",
   });
