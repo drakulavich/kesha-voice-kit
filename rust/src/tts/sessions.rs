@@ -129,13 +129,13 @@ pub struct KokoroSlot {
 impl KokoroSlot {
     pub fn get(&mut self, model_path: &Path) -> anyhow::Result<&mut KokoroSession> {
         use anyhow::Context;
-        match self.inner.as_mut() {
-            Some(sess) => sess.ensure_model(model_path).context("kokoro reload")?,
-            None => {
-                self.inner = Some(KokoroSession::load(model_path).context("kokoro load")?);
+        Ok(match &mut self.inner {
+            Some(sess) => {
+                sess.ensure_model(model_path).context("kokoro reload")?;
+                sess
             }
-        }
-        Ok(self.inner.as_mut().expect("kokoro session just ensured"))
+            slot => slot.insert(KokoroSession::load(model_path).context("kokoro load")?),
+        })
     }
 }
 
