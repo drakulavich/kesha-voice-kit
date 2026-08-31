@@ -224,10 +224,20 @@ just mutants-ts src/voice-routing.ts                           # TypeScript (Str
 just mutants-ts --with-integration src/engine.ts src/cli/main.ts # several files
 just mutants-ts --with-integration src/foo.ts # include integration suites (slower)
 
+just mutants-ts .github/scripts/check-workflows.ts             # the CI gates are mutable too
+just mutants-ts .github/scripts/npm-dist-tag.mjs               # so is the .mjs release path
+
 just mutants-rust src/errors.rs # Rust: cargo-mutants; clean rust/ tree required
 ```
 
 Or via npm scripts: `bun run mutants:ts -- src/voice-routing.ts`.
+
+Mutable roots are `src/`, `scripts/` and `.github/scripts/`, in `.ts` or `.mjs`
+— the gates enforce the rules in CLAUDE.md and the release path is written in
+`.mjs`, so both earn the same measurement (#1091). Selection is by import, so a
+suite that only *spawns* a script cannot be found automatically; the run says so
+and exits non-zero rather than reporting zero mutants, and it only points at
+`--with-integration` when an integration suite would actually reach the source.
 
 The default TypeScript roots are `tests/unit/` only. For engine spawn, CLI
 contracts, or install hints, pass `--with-integration` so the relevant

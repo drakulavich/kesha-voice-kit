@@ -164,7 +164,7 @@ mutants-rust FILE:
     @git diff --quiet -- rust || { echo "rust/ has uncommitted changes; --in-place mutates the tree" >&2; exit 2; }
     cd rust && cargo mutants --in-place -f "$1" --features {{ FEATURES }} -- -E '{{ if TEST_FILTER == "" { "all()" } else { TEST_FILTER } }}'
 
-# Mutation-test TypeScript sources against whichever suites import them, e.g. just mutants-ts src/engine.ts
+# Mutation-test src/, scripts/ or .github/scripts/ against whichever suites import them, e.g. just mutants-ts src/engine.ts
 [positional-arguments]
 mutants-ts *FILES:
     bun scripts/mutants-ts.ts "$@"
