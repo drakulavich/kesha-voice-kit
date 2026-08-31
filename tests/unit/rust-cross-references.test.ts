@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { readRepoFile, repoPath } from "../helpers/repo";
 
@@ -7,7 +7,7 @@ import { readRepoFile, repoPath } from "../helpers/repo";
  * TS comments and hint strings point readers at the Rust symbol they mirror. Nothing kept those
  * pointers honest, so the #950 `models.rs` split left 14 of them aimed at a deleted file (#1132).
  */
-const FILE_REFERENCE = /\b((?:rust\/)?(?:[a-z0-9_]+\/)*[a-z0-9_]+\.rs)(?:::([A-Za-z0-9_]+))?/g;
+const FILE_REFERENCE = /\b((?:rust\/)?(?:[A-Za-z0-9_]+\/)*[A-Za-z0-9_]+\.rs)(?:::([A-Za-z0-9_]+))?/g;
 
 /** The `mod::sym` form carries no `.rs`; the lookbehind keeps `init.ts::initCommand` and paths out. */
 const MODULE_REFERENCE = /(?<![\w./])([a-z][a-z0-9_]*(?:::[a-z][a-z0-9_]*)*)::([A-Za-z0-9_]+)/g;
@@ -79,6 +79,12 @@ function tsSources(dir: string): string[] {
   });
 }
 
+/** Case-exact: macOS and Windows resolve `rust/src/Debug.rs` to `debug.rs`, so `existsSync` alone passes here and fails on Linux CI (#1132 round 3). */
+function existsExactly(path: string): boolean {
+  const full = repoPath(path);
+  return existsSync(full) && realpathSync.native(full).replaceAll("\\", "/").endsWith(`/${path}`);
+}
+
 /** `rust/…` is repo-relative on purpose: `rust/build.rs` and `rust/tests/*.rs` are legal targets. */
 function resolveFile(path: string): string {
   return path.startsWith("rust/") ? path : `rust/src/${path}`;
@@ -86,7 +92,7 @@ function resolveFile(path: string): string {
 
 function resolveModule(path: string): string | undefined {
   const base = `rust/src/${path.split("::").join("/")}`;
-  return [`${base}.rs`, `${base}/mod.rs`].find((candidate) => existsSync(repoPath(candidate)));
+  return [`${base}.rs`, `${base}/mod.rs`].find((candidate) => existsExactly(candidate));
 }
 
 type Reference = { origin: string; label: string; file?: string; symbol?: string; kind: string };
@@ -149,16 +155,21 @@ describe("Rust cross-references in TS sources", () => {
     expect(countOf("module")).toBeGreaterThanOrEqual(1);
   });
 
+  // No reference lives below src/ today, so without this a narrowed walk would go unnoticed (#1132 round 3).
+  test("the scan walks below the top level of src/", () => {
+    expect(tsSources("src").filter((path) => path.split(/[\\/]/).length > 2)).not.toEqual([]);
+  });
+
   test("every referenced Rust file exists", () => {
     const dangling = references
-      .filter(({ file }) => !file || !existsSync(repoPath(file)))
+      .filter(({ file }) => !file || !existsExactly(file))
       .map(({ origin, label }) => `${origin} → ${label}`);
     expect(dangling).toEqual([]);
   });
 
   test("every referenced Rust symbol is declared in the file it names", () => {
     const missing = references
-      .filter(({ file, symbol }) => symbol && file && existsSync(repoPath(file)) && !declares(readRepoFile(file), symbol))
+      .filter(({ file, symbol }) => symbol && file && existsExactly(file) && !declares(readRepoFile(file), symbol))
       .map(({ origin, label }) => `${origin} → ${label}`);
     expect(missing).toEqual([]);
   });
