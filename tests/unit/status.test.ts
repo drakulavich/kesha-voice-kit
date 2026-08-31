@@ -17,6 +17,14 @@ import modelPlan from "../../model-plan.json" with { type: "json" };
 
 const VOSK_RU_RELPATHS = modelPlan.voskRu.map((file) => file.relPath);
 
+function writeVoskBundle(cache: string): void {
+  for (const relPath of VOSK_RU_RELPATHS) {
+    const file = join(cache, relPath);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, relPath);
+  }
+}
+
 const posixEngineTest = process.platform === "win32" ? test.skip : test;
 
 describe("formatStatusLine", () => {
@@ -170,12 +178,7 @@ exit 2
     mkdirSync(join(cache, "models", "kokoro-82m", "voices"), { recursive: true });
     writeFileSync(join(cache, "models", "kokoro-82m", "voices", "am_michael.bin"), "voice");
     writeFileSync(join(cache, "models", "kokoro-82m", "voices", "README.txt"), "ignored");
-    mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
-    writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
-    writeFileSync(join(cache, "models", "vosk-ru", "dictionary"), "dictionary");
-    writeFileSync(join(cache, "models", "vosk-ru", "config.json"), "{}");
-    writeFileSync(join(cache, "models", "vosk-ru", "bert", "vocab.txt"), "vocab");
-    writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
+    writeVoskBundle(cache);
 
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;
@@ -869,12 +872,7 @@ describe("collectStatus voice inventory", () => {
     for (const name of ["zf_xiaobei.bin", "am_michael.bin", "bf_emma.bin"]) {
       writeFileSync(join(cache, "models", "kokoro-82m", "voices", name), "voice");
     }
-    mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
-    writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
-    writeFileSync(join(cache, "models", "vosk-ru", "dictionary"), "dictionary");
-    writeFileSync(join(cache, "models", "vosk-ru", "config.json"), "{}");
-    writeFileSync(join(cache, "models", "vosk-ru", "bert", "vocab.txt"), "vocab");
-    writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
+    writeVoskBundle(cache);
 
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;

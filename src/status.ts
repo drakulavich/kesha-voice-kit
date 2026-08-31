@@ -1,5 +1,6 @@
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
+import modelPlan from "../model-plan.json" with { type: "json" };
 import {
   isEngineInstalled,
   getEngineBinPath,
@@ -257,12 +258,8 @@ function listInstalledVoices(): string[] {
     /* Kokoro not installed */
   }
   try {
-    // The whole `models/manifest.rs::VOSK_RU_FILES` bundle, which is what `Vosk::load` opens — fewer advertises a voice `say` then refuses.
-    statSync(join(cache, "models", "vosk-ru", "model.onnx"));
-    statSync(join(cache, "models", "vosk-ru", "dictionary"));
-    statSync(join(cache, "models", "vosk-ru", "config.json"));
-    statSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"));
-    statSync(join(cache, "models", "vosk-ru", "bert", "vocab.txt"));
+    // Joined to `models/manifest.rs::VOSK_RU_FILES` through the plan, so a sixth entry needs no edit here (#1132).
+    for (const { relPath } of modelPlan.voskRu) statSync(join(cache, relPath));
     for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
       voices.push(`ru-vosk-${id}`);
     }
