@@ -228,12 +228,14 @@ impl CharsiuCache {
                 self.inner = None;
             }
         }
-        if self.inner.is_none() {
-            super::g2p::check_charsiu_files(model_dir)?;
-            let g = Charsiu::load(model_dir)?;
-            self.inner = Some((model_dir.to_path_buf(), g));
-        }
-        Ok(&mut self.inner.as_mut().unwrap().1)
+        Ok(match &mut self.inner {
+            Some((_, g)) => g,
+            slot => {
+                super::g2p::check_charsiu_files(model_dir)?;
+                let g = Charsiu::load(model_dir)?;
+                &mut slot.insert((model_dir.to_path_buf(), g)).1
+            }
+        })
     }
 
     /// Phonemize `text` in `lang` (es/fr/it/pt) using the cached session.
