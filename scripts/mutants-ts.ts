@@ -9,13 +9,22 @@ const TEST_ROOTS = ["tests/unit"];
 const INTEGRATION_ROOT = "tests/integration";
 const GENERATED_CONFIG = `stryker.generated.${process.pid}.json`;
 
+// `src/` alone left the CI gates and the repo's own scripts unmeasurable (#1091).
+export const MUTABLE_ROOTS = ["src/", "scripts/", ".github/scripts/"];
+
 const USAGE = [
-  "usage: bun scripts/mutants-ts.ts [--with-integration] <src/file.ts> [more.ts ...]",
+  "usage: bun scripts/mutants-ts.ts [--with-integration] <file.ts> [more.ts ...]",
   "",
   "Mutation-tests the named sources against whichever suites import them.",
   "A survivor is an edit no test noticed — read it as a missing assertion,",
   "not as a number to drive up. CLAUDE.md names the kinds worth leaving alive.",
 ].join("\n");
+
+/** The reason `source` cannot be mutated, naming the accepted roots, or null when it can. */
+export function mutableSourceRejection(source: string): string | null {
+  if (source.endsWith(".ts") && MUTABLE_ROOTS.some((root) => source.startsWith(root))) return null;
+  return `not a mutable source file: ${source} — expected a .ts file under ${MUTABLE_ROOTS.join(", ")}`;
+}
 
 export function testFileCandidates(roots: string[] = TEST_ROOTS): string[] {
   const walk = (dir: string): string[] => {
@@ -153,8 +162,9 @@ async function main(argv: string[]): Promise<number> {
   }
 
   for (const source of sources) {
-    if (!source.startsWith("src/") || !source.endsWith(".ts")) {
-      console.error(`not a mutable source file: ${source}`);
+    const rejection = mutableSourceRejection(source);
+    if (rejection !== null) {
+      console.error(rejection);
       return 2;
     }
     if (!(await Bun.file(source).exists())) {

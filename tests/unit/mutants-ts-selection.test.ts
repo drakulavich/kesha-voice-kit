@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   importedModules,
+  mutableSourceRejection,
   rankCoveringTests,
   reachableModules,
   selectCoveringTests,
@@ -129,5 +130,39 @@ describe("which suites are measured against a source", () => {
     expect(testFileCandidates(["tests/integration"])).toContain(
       "tests/integration/cli-contracts.test.ts",
     );
+  });
+});
+
+/**
+ * The enumerator used to accept `src/` alone, so the CI gates and the repo's own scripts —
+ * the code that enforces every rule in CLAUDE.md — could not be mutated at all (#1091).
+ */
+describe("which sources may be mutated", () => {
+  test("the CLI, the repo scripts and the CI gates are all mutable", () => {
+    expect(mutableSourceRejection("src/voice-routing.ts")).toBeNull();
+    expect(mutableSourceRejection("scripts/mutate.ts")).toBeNull();
+    expect(mutableSourceRejection(".github/scripts/check-workflows.ts")).toBeNull();
+  });
+
+  test("a non-TypeScript file is rejected", () => {
+    expect(mutableSourceRejection("src/engine.json")).toContain("src/engine.json");
+    expect(mutableSourceRejection("rust/src/main.rs")).toContain("rust/src/main.rs");
+  });
+
+  test("a TypeScript file outside every mutable root is rejected", () => {
+    expect(mutableSourceRejection("tests/unit/engine.test.ts")).not.toBeNull();
+    expect(mutableSourceRejection("raycast/src/index.ts")).not.toBeNull();
+  });
+
+  // `relative()` renders a path outside the repo as `../…`, which no root prefix may swallow.
+  test("a path outside the repository is rejected", () => {
+    expect(mutableSourceRejection("../other-worktree/src/engine.ts")).not.toBeNull();
+  });
+
+  // "not mutable" without the accepted set leaves the caller guessing, as #1091 did.
+  test("the rejection names every accepted root", () => {
+    const message = mutableSourceRejection("docs/notes.ts") ?? "";
+
+    for (const root of ["src/", "scripts/", ".github/scripts/"]) expect(message).toContain(root);
   });
 });
