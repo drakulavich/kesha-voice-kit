@@ -170,6 +170,8 @@ exit 2
     mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
     writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
     writeFileSync(join(cache, "models", "vosk-ru", "dictionary"), "dictionary");
+    writeFileSync(join(cache, "models", "vosk-ru", "config.json"), "{}");
+    writeFileSync(join(cache, "models", "vosk-ru", "bert", "vocab.txt"), "vocab");
     writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
 
     process.env.KESHA_ENGINE_BIN = binPath;
@@ -844,6 +846,12 @@ describe("collectStatus voice inventory", () => {
       expect((await collectStatus()).voices).toEqual([]);
 
       writeFileSync(join(vosk, "dictionary"), "dictionary");
+      expect((await collectStatus()).voices).toEqual([]);
+
+      writeFileSync(join(vosk, "config.json"), "{}");
+      expect((await collectStatus()).voices).toEqual([]);
+
+      writeFileSync(join(vosk, "bert", "vocab.txt"), "vocab");
       expect((await collectStatus()).voices).toEqual([
         "ru-vosk-f01",
         "ru-vosk-f02",
@@ -867,6 +875,8 @@ describe("collectStatus voice inventory", () => {
     mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
     writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
     writeFileSync(join(cache, "models", "vosk-ru", "dictionary"), "dictionary");
+    writeFileSync(join(cache, "models", "vosk-ru", "config.json"), "{}");
+    writeFileSync(join(cache, "models", "vosk-ru", "bert", "vocab.txt"), "vocab");
     writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
 
     process.env.KESHA_ENGINE_BIN = binPath;

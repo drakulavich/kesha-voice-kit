@@ -257,10 +257,12 @@ function listInstalledVoices(): string[] {
     /* Kokoro not installed */
   }
   try {
-    // Mirror `models/paths.rs::has_vosk_ru_layout` — all three or we advertise a voice `resolve_vosk_ru` refuses.
+    // The whole `models/manifest.rs::VOSK_RU_FILES` bundle, which is what `Vosk::load` opens — fewer advertises a voice `say` then refuses.
     statSync(join(cache, "models", "vosk-ru", "model.onnx"));
     statSync(join(cache, "models", "vosk-ru", "dictionary"));
+    statSync(join(cache, "models", "vosk-ru", "config.json"));
     statSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"));
+    statSync(join(cache, "models", "vosk-ru", "bert", "vocab.txt"));
     for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
       voices.push(`ru-vosk-${id}`);
     }
