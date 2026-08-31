@@ -169,6 +169,7 @@ exit 2
     writeFileSync(join(cache, "models", "kokoro-82m", "voices", "README.txt"), "ignored");
     mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
     writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
+    writeFileSync(join(cache, "models", "vosk-ru", "dictionary"), "dictionary");
     writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
 
     process.env.KESHA_ENGINE_BIN = binPath;
@@ -838,7 +839,11 @@ describe("collectStatus voice inventory", () => {
       writeFileSync(join(vosk, "model.onnx"), "model");
       expect((await collectStatus()).voices).toEqual([]);
 
+      // Two of the three files `vosk_tts::Model::new` opens: advertising here offers a voice `resolve_vosk_ru` refuses (#1132).
       writeFileSync(join(vosk, "bert", "model.onnx"), "bert");
+      expect((await collectStatus()).voices).toEqual([]);
+
+      writeFileSync(join(vosk, "dictionary"), "dictionary");
       expect((await collectStatus()).voices).toEqual([
         "ru-vosk-f01",
         "ru-vosk-f02",
@@ -861,6 +866,7 @@ describe("collectStatus voice inventory", () => {
     }
     mkdirSync(join(cache, "models", "vosk-ru", "bert"), { recursive: true });
     writeFileSync(join(cache, "models", "vosk-ru", "model.onnx"), "model");
+    writeFileSync(join(cache, "models", "vosk-ru", "dictionary"), "dictionary");
     writeFileSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"), "bert");
 
     process.env.KESHA_ENGINE_BIN = binPath;

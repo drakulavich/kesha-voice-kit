@@ -257,8 +257,9 @@ function listInstalledVoices(): string[] {
     /* Kokoro not installed */
   }
   try {
-    // Mirror models::is_vosk_ru_cached — both files required to avoid advertising a partial install.
+    // Mirror `models/paths.rs::has_vosk_ru_layout` — all three or we advertise a voice `resolve_vosk_ru` refuses.
     statSync(join(cache, "models", "vosk-ru", "model.onnx"));
+    statSync(join(cache, "models", "vosk-ru", "dictionary"));
     statSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"));
     for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
       voices.push(`ru-vosk-${id}`);
