@@ -8,7 +8,7 @@ import {
   checkFlakeNix,
   collectCacheWriters,
   collectManifestSources,
-  collectModelsTreeSources,
+  collectRustSources,
   collectRuleSources,
   forbidFindPipedToHead,
   forbidLinuxPackaging,
@@ -26,7 +26,7 @@ import {
   requireDepsBeforeBunTest,
   requireFlakeNixInWorkflowsFilter,
   requireManifestSourcesInCodeFilter,
-  requireModelsTreeInCodeFilter,
+  requireRustSourcesInCodeFilter,
   requireManifestSourcesInSeedFilter,
   requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
@@ -403,7 +403,7 @@ const seedFilter = (paths: string[]) => ({ on: { push: { paths } } });
 
 // readdirSync/join emit win32 separators on Windows; the rules normalise at compare time, so the
 // real-tree assertions have to as well or they only hold on posix (#950 round 3).
-const NO_SOURCES = { manifestSources: [], modelsTreeSources: [] };
+const NO_SOURCES = { manifestSources: [], rustSources: [] };
 
 const repoRelative = (files: string[]) =>
   files.map((file) => file.slice(REPO_ROOT.length + 1).replaceAll("\\", "/"));
@@ -445,11 +445,18 @@ describe("manifest sources stay inside both path filters", () => {
     expect(sources).toContain("rust/src/models/manifest.rs");
   });
 
-  test("collectModelsTreeSources returns every .rs under the models tree", () => {
-    const tree = repoRelative(collectModelsTreeSources(repoPath("rust/src/models")));
+  test("collectRustSources returns every .rs under rust/src", () => {
+    const tree = repoRelative(collectRustSources(repoPath("rust/src")));
     expect(tree.length).toBeGreaterThanOrEqual(6);
     expect(tree).toContain("rust/src/models/paths.rs");
     expect(tree).toContain("rust/src/models/staging.rs");
+    expect(tree).toContain("rust/src/text_lang.rs");
+  });
+
+  // rust-cross-references.test.ts reads all of rust/src, so a rename outside models/ must still fire unit-tests (#1132).
+  test("the real ci.yml code filter covers every Rust source, not just the models tree", () => {
+    const sources = repoRelative(collectRustSources(repoPath("rust/src")));
+    expect(requireRustSourcesInCodeFilter(CI, parseRepoYaml(CI), sources)).toEqual([]);
   });
 
   test("the real ci.yml and cache-seed.yml cover every one of them", () => {
@@ -483,7 +490,7 @@ describe("manifest sources stay inside both path filters", () => {
       "rust/src/models/download.rs", "rust/src/models/manifest.rs", "rust/src/models/mod.rs",
       "rust/src/models/paths.rs", "rust/src/models/progress.rs", "rust/src/models/staging.rs",
     ];
-    const errors = requireModelsTreeInCodeFilter("ci.yml", filters, tree);
+    const errors = requireRustSourcesInCodeFilter("ci.yml", filters, tree);
     expect(errors).toHaveLength(4);
     expect(errors.join("\n")).toContain("rust/src/models/paths.rs");
     expect(errors.join("\n")).toContain("rust/src/models/staging.rs");
@@ -492,7 +499,7 @@ describe("manifest sources stay inside both path filters", () => {
   test("the whole-directory wildcard satisfies the models-tree rule", () => {
     const filters = codeFilter(["rust/src/models/**"]);
     const tree = ["rust/src/models/paths.rs", "rust/src/models/staging.rs"];
-    expect(requireModelsTreeInCodeFilter("ci.yml", filters, tree)).toHaveLength(0);
+    expect(requireRustSourcesInCodeFilter("ci.yml", filters, tree)).toHaveLength(0);
   });
 
   test("a directory wildcard covers the manifests under it", () => {
@@ -531,8 +538,8 @@ describe("manifest sources stay inside both path filters", () => {
     );
   });
 
-  test("an empty modelsTreeSources list fails loudly instead of passing vacuously", () => {
-    const errors = requireModelsTreeInCodeFilter(CI, codeFilter(["rust/src/models/**"]), []);
+  test("an empty rustSources list fails loudly instead of passing vacuously", () => {
+    const errors = requireRustSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), []);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("returned no files");
   });
@@ -548,10 +555,10 @@ describe("manifest sources stay inside both path filters", () => {
   });
 
   test("main pairs each rule with its own collector", () => {
-    const { manifestSources, modelsTreeSources } = collectRuleSources(
+    const { manifestSources, rustSources } = collectRuleSources(
       repoPath("rust/src"), repoPath("rust/src/models"),
     );
-    expect(repoRelative(modelsTreeSources)).toContain("rust/src/models/paths.rs");
+    expect(repoRelative(rustSources)).toContain("rust/src/models/paths.rs");
     expect(repoRelative(manifestSources)).not.toContain("rust/src/models/paths.rs");
   });
 
@@ -564,14 +571,14 @@ describe("manifest sources stay inside both path filters", () => {
     const seed = join(dir, "cache-seed.yml");
     writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'a.rs'\n");
 
-    const sources = { manifestSources: ["a.rs"], modelsTreeSources: ["a.rs", "b.rs"] };
+    const sources = { manifestSources: ["a.rs"], rustSources: ["a.rs", "b.rs"] };
     expect(checkFile(ci, [], [], undefined, sources).filter((e) => e.includes("#950"))).toEqual([]);
     expect(checkFile(seed, [], [], undefined, sources).filter((e) => e.includes("#950"))).toEqual([]);
 
     // Handing the seed rule the models-tree set instead names b.rs, which the push filter never covers.
     const swapped = checkFile(seed, [], [], undefined, {
-      manifestSources: sources.modelsTreeSources,
-      modelsTreeSources: sources.manifestSources,
+      manifestSources: sources.rustSources,
+      rustSources: sources.manifestSources,
     }).filter((e) => e.includes("#950"));
     expect(swapped).toHaveLength(1);
     expect(swapped[0]).toContain("b.rs");
@@ -585,21 +592,21 @@ describe("manifest sources stay inside both path filters", () => {
     const ci = join(dir, "ci.yml");
     writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n");
     // Distinct fifth and sixth arguments: each rule must name the file from its OWN set, so handing
-    // requireModelsTreeInCodeFilter the manifest set instead of the tree set is visible here (#950 round 3).
+    // requireRustSourcesInCodeFilter the manifest set instead of the tree set is visible here (#950 round 3).
     const errors = checkFile(ci, [], [], undefined, {
       manifestSources: ["rust/src/models/manifest.rs"],
-      modelsTreeSources: ["rust/src/models/paths.rs"],
+      rustSources: ["rust/src/models/paths.rs"],
     }).filter((e) => e.includes("#950"));
     expect(errors).toHaveLength(2);
     expect(errors.join("\n")).toContain("rust/src/models/manifest.rs contains ModelFile literals");
-    expect(errors.join("\n")).toContain("rust/src/models/paths.rs is read by the TS pact suites");
+    expect(errors.join("\n")).toContain("rust/src/models/paths.rs is read by a TS suite");
 
     const seed = join(dir, "cache-seed.yml");
     writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'rust/Cargo.lock'\n");
     expect(
       checkFile(seed, [], [], undefined, {
         manifestSources: ["rust/src/models.rs"],
-        modelsTreeSources: ["rust/src/models.rs"],
+        rustSources: ["rust/src/models.rs"],
       }).filter((e) => e.includes("#950")),
     ).toHaveLength(1);
   });

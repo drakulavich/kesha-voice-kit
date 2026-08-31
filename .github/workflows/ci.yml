@@ -95,7 +95,8 @@ jobs:
               # asserts every plan entry still resolves to a URL in the manifest, and a change
               # to either file alone would otherwise never run it.
               - 'model-plan.json'
-              - 'rust/src/models/**'
+              # Widened from `rust/src/models/**` in #1132: rust-cross-references.test.ts reads all of rust/src.
+              - 'rust/src/**'
             integration:
               - 'src/**'
               - 'tests/integration/**'
