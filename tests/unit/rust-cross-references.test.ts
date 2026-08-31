@@ -5,7 +5,7 @@ import { readRepoFile, repoPath } from "../helpers/repo";
 
 /**
  * TS comments and hint strings point readers at the Rust symbol they mirror. Nothing kept those
- * pointers honest, so the #950 `models.rs` split left ~15 of them aimed at a deleted file (#1132).
+ * pointers honest, so the #950 `models.rs` split left 14 of them aimed at a deleted file (#1132).
  */
 const REFERENCE = /\b((?:rust\/src\/)?(?:[a-z0-9_]+\/)*[a-z0-9_]+\.rs)(?:::([A-Za-z0-9_]+))?/g;
 
@@ -20,11 +20,9 @@ function tsSources(dir: string): string[] {
 type Reference = { origin: string; rustPath: string; symbol?: string };
 
 const references: Reference[] = tsSources("src").flatMap((origin) =>
-  [...readRepoFile(origin).matchAll(REFERENCE)].map(([, path, symbol]) => ({
-    origin,
-    rustPath: path.replace(/^rust\/src\//, ""),
-    symbol,
-  })),
+  [...readRepoFile(origin).matchAll(REFERENCE)].flatMap(([, path, symbol]) =>
+    path ? [{ origin, rustPath: path.replace(/^rust\/src\//, ""), symbol }] : [],
+  ),
 );
 
 describe("Rust cross-references in TS sources", () => {
