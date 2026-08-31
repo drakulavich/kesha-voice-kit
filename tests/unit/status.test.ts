@@ -15,7 +15,18 @@ import { starSeenPath } from "../../src/star";
 import { saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
 import modelPlan from "../../model-plan.json" with { type: "json" };
 
-const VOSK_RU_RELPATHS = modelPlan.voskRu.map((file) => file.relPath);
+// Literals, not derived from model-plan.json: a dropped plan entry must go red here, since the Rust binding test skips plan-only PRs (#1132).
+const VOSK_RU_RELPATHS = [
+  "models/vosk-ru/model.onnx",
+  "models/vosk-ru/dictionary",
+  "models/vosk-ru/config.json",
+  "models/vosk-ru/bert/model.onnx",
+  "models/vosk-ru/bert/vocab.txt",
+];
+
+test("model-plan.json's voskRu carries exactly the files the status gate requires", () => {
+  expect(modelPlan.voskRu.map((file) => file.relPath).sort()).toEqual([...VOSK_RU_RELPATHS].sort());
+});
 
 function writeVoskBundle(cache: string): void {
   for (const relPath of VOSK_RU_RELPATHS) {
