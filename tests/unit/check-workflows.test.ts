@@ -445,6 +445,11 @@ describe("manifest sources stay inside both path filters", () => {
     expect(sources).toContain("rust/src/models/manifest.rs");
   });
 
+  // main() calls collectRuleSources() with no arguments, so narrowing the default reverts the widening silently (#1132 round 3).
+  test("the production default root is rust/src, not the models tree", () => {
+    expect(collectRustSources().map((file) => file.replaceAll("\\", "/"))).toContain("rust/src/text_lang.rs");
+  });
+
   test("collectRustSources returns every .rs under rust/src", () => {
     const tree = repoRelative(collectRustSources(repoPath("rust/src")));
     expect(tree.length).toBeGreaterThanOrEqual(6);
