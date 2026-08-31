@@ -434,15 +434,17 @@ pub fn is_cached_in(kind: ModelKind, dir: &Path) -> bool {
     }
 }
 
-/// `vosk_tts::Model::new` opens these three files — keep this layout check
-/// aligned with the loader. `has_all_files` flattens the manifest to basenames,
-/// which would treat the top-level `model.onnx` and `bert/model.onnx` as
-/// duplicates; this custom walk handles the nested path instead.
+/// The five files `Vosk::load` opens — keep this layout check aligned with the
+/// loader. `has_all_files` flattens the manifest to basenames, which would treat
+/// the top-level `model.onnx` and `bert/model.onnx` as duplicates; this custom
+/// walk handles the nested path instead.
 #[cfg(feature = "tts")]
 fn has_vosk_ru_layout(dir: &Path) -> bool {
     dir.join("model.onnx").exists()
         && dir.join("dictionary").exists()
+        && dir.join("config.json").exists()
         && dir.join("bert/model.onnx").exists()
+        && dir.join("bert/vocab.txt").exists()
 }
 
 /// `.mlpackage` is a directory tree — the runtime-required files live at

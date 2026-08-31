@@ -1229,8 +1229,24 @@ mod characterization_tests {
         fs::create_dir_all(dir.join("bert")).unwrap();
         fs::write(dir.join("model.onnx"), b"dummy").unwrap();
         fs::write(dir.join("dictionary"), b"dummy").unwrap();
+        fs::write(dir.join("config.json"), b"{}").unwrap();
         fs::write(dir.join("bert/model.onnx"), b"dummy").unwrap();
+        fs::write(dir.join("bert/vocab.txt"), b"v").unwrap();
         assert!(is_cached_in(ModelKind::VoskRu, &dir));
+    }
+
+    /// `Vosk::load` reads `model.config.audio.sample_rate`, so a bundle without
+    /// `config.json` is not loadable however cached it looks (#1132).
+    #[cfg(feature = "tts")]
+    #[test]
+    fn is_cached_in_vosk_ru_false_without_config_and_vocab() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/vosk-ru");
+        fs::create_dir_all(dir.join("bert")).unwrap();
+        fs::write(dir.join("model.onnx"), b"dummy").unwrap();
+        fs::write(dir.join("dictionary"), b"dummy").unwrap();
+        fs::write(dir.join("bert/model.onnx"), b"dummy").unwrap();
+        assert!(!is_cached_in(ModelKind::VoskRu, &dir));
     }
 
     #[cfg(feature = "tts")]
