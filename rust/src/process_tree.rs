@@ -106,6 +106,18 @@ mod tests {
     }
 
     #[test]
+    fn wait_with_output_reports_a_reaped_guard_instead_of_asserting() {
+        let err = ChildGuard { child: None }
+            .wait_with_output()
+            .expect_err("a guard with no child cannot produce output");
+        assert_eq!(err.kind(), io::ErrorKind::Other);
+        assert!(
+            err.to_string().contains("already reaped"),
+            "unhelpful error for a reaped guard: {err}"
+        );
+    }
+
+    #[test]
     fn wait_with_output_disarms_drop_cleanup() {
         let child = Command::new("sh")
             .arg("-c")
