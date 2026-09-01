@@ -671,16 +671,31 @@ export function collectRustSources(root = "rust/src"): string[] {
     .sort();
 }
 
+/** rust/build.rs and every .rs under rust/tests: no TS suite reads them today, but tests/unit/rust-cross-references.test.ts's resolveFile accepts them as reference targets, so a rename there must still fire unit-tests (#1141). */
+export function collectRustReferenceTargets(crateRoot = "rust"): string[] {
+  const buildScript = join(crateRoot, "build.rs");
+  return [
+    ...(existsSync(buildScript) ? [buildScript] : []),
+    ...collectRustSources(join(crateRoot, "tests")),
+  ];
+}
+
 /** The pair main() feeds the two #950 rules — exported so the pairing is pinnable: handing the all-rust/src rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
 export interface RuleSources {
   manifestSources: string[];
   rustSources: string[];
+  referenceTargets: string[];
 }
 
-export function collectRuleSources(rustRoot?: string, rustSourcesRoot?: string): RuleSources {
+export function collectRuleSources(
+  rustRoot?: string,
+  rustSourcesRoot?: string,
+  crateRoot?: string,
+): RuleSources {
   return {
     manifestSources: collectManifestSources(rustRoot),
     rustSources: collectRustSources(rustSourcesRoot),
+    referenceTargets: collectRustReferenceTargets(crateRoot),
   };
 }
 
@@ -709,6 +724,34 @@ export function requireRustSourcesInCodeFilter(
     .map(
       (file) =>
         `${path}: ${file} is read by a TS suite but no path in the \`code\` filter matches it, so an edit to it skips unit-tests (#950, #1132)`,
+    );
+}
+
+/** Fails when a rust/ cross-reference target falls out of ci.yml's `code` filter: renaming it then skips the suite that catches the now-stale pointer (#1141). */
+export function requireRustReferenceTargetsInCodeFilter(
+  path: string,
+  document: unknown,
+  referenceTargets: string[],
+): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+
+  const code = (parse(raw) as Record<string, string[]>)?.code;
+  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+
+  if (referenceTargets.length === 0) {
+    return [
+      `${path}: collectRustReferenceTargets() returned no files — it ran against the wrong cwd or rust/build.rs and rust/tests/ both moved, either way the guard cannot pass vacuously (#1141)`,
+    ];
+  }
+
+  return referenceTargets
+    .filter((file) => !coveredBy(code, file))
+    .map(
+      (file) =>
+        `${path}: ${file} is a legal rust/… cross-reference target for rust-cross-references.test.ts but no path in the \`code\` filter matches it, so a rename there skips the test that catches the stale pointer (#1141)`,
     );
 }
 
@@ -1099,6 +1142,7 @@ export function checkFile(
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),
       ...requireManifestSourcesInCodeFilter(path, document, sources.manifestSources),
       ...requireRustSourcesInCodeFilter(path, document, sources.rustSources),
+      ...requireRustReferenceTargetsInCodeFilter(path, document, sources.referenceTargets),
       ...requireManifestSourcesInSeedFilter(path, document, sources.manifestSources),
       ...requireFlakeNixInWorkflowsFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
