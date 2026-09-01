@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createSilenceTracker,
+  normalizeLiveTranscript,
   normalizeTranscribeResult,
   pruneOldRecordings,
   staleRecordingDirs,
@@ -855,6 +856,44 @@ describe("dictation controller", () => {
     expect(deps.states.at(-1)).toMatchObject({
       status: "ok",
       result: { text: "tail words" },
+    });
+  });
+
+  it("tells a live user to check microphone permission when nothing was transcribed (#947)", async () => {
+    const deps = createDeps({
+      preflight: livePreflight(),
+      startLiveRecorder: vi.fn(() => resolvedTask(Promise.resolve("   \n"))),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.copyToClipboard).not.toHaveBeenCalled();
+    const last = deps.states.at(-1);
+    expect(last?.status).toBe("error");
+    expect(last?.status === "error" && last.message).toContain(
+      "No speech was detected",
+    );
+    expect(last?.status === "error" && last.message).toContain(
+      "Microphone permission",
+    );
+    expect(last?.status === "error" && last.hint).toBeUndefined();
+  });
+
+  it("keeps the live empty-transcript message distinct from the fallback's (#947)", () => {
+    // Live has no WAV, so it merges the two fallback causes; the fallback keeps both apart.
+    expect(() => normalizeLiveTranscript("   \n")).toThrow(
+      "Microphone permission",
+    );
+    expect(() => normalizeTranscribeResult("/tmp/a.wav", "   \n")).toThrow(
+      "No speech was detected in the recording.",
+    );
+    expect(() =>
+      normalizeTranscribeResult("/tmp/a.wav", "   \n"),
+    ).not.toThrow("Microphone permission");
+    expect(normalizeLiveTranscript(" said something \n")).toEqual({
+      file: "",
+      text: "said something",
     });
   });
 });

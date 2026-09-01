@@ -129,7 +129,7 @@ export function startDictationSession(
           maxSeconds,
         );
         if (!live.ok) return;
-        await deliverTranscript({ file: "", text: live.value.trim() });
+        await deliverTranscript(normalizeLiveTranscript(live.value));
         return;
       }
 
@@ -480,6 +480,17 @@ export function normalizeTranscribeResult(
     throw new Error("No speech was detected in the recording.");
   }
   return { file: audioPath, text };
+}
+
+/** Live has no WAV for the silence check, so the empty transcript carries both causes (#947). */
+export function normalizeLiveTranscript(stdout: string): TranscribeResult {
+  const text = stdout.trim();
+  if (!text) {
+    throw new Error(
+      "No speech was detected. Check macOS Microphone permission for Raycast and the selected input device.",
+    );
+  }
+  return { file: "", text };
 }
 
 export function startTranscribingTimer(
