@@ -2,6 +2,11 @@ import { spawn as defaultSpawn } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { KeshaSpawn } from "./kesha-bin";
 import type { RunningTask } from "./dictation-types";
+import {
+  LIVE_FORCE_KILL_MS,
+  LIVE_STDOUT_FLUSH_MS,
+  LIVE_STOP_GRACE_MS,
+} from "./dictation-config";
 
 type SpawnFn = (
   command: string,
@@ -32,9 +37,11 @@ export function killProcessGroup(proc: ChildProcess, signal: NodeJS.Signals) {
   proc.kill(signal);
 }
 
-export function stopProcessWithWatchdog(
+function stopWithLadder(
   proc: ChildProcess | null,
-  deps: ProcessTaskDeps = {},
+  deps: ProcessTaskDeps,
+  termMs: number,
+  killMs: number,
 ) {
   if (!proc) return;
   const kill = deps.kill ?? killProcessGroup;
@@ -49,11 +56,25 @@ export function stopProcessWithWatchdog(
 
   schedule(() => {
     if (proc.exitCode == null) kill(proc, "SIGTERM");
-  }, 1500).unref?.();
+  }, termMs).unref?.();
 
   schedule(() => {
     if (proc.exitCode == null) kill(proc, "SIGKILL");
-  }, 5000).unref?.();
+  }, killMs).unref?.();
+}
+
+export function stopProcessWithWatchdog(
+  proc: ChildProcess | null,
+  deps: ProcessTaskDeps = {},
+) {
+  stopWithLadder(proc, deps, 1500, 5000);
+}
+
+export function stopLiveProcessWithWatchdog(
+  proc: ChildProcess | null,
+  deps: ProcessTaskDeps = {},
+) {
+  stopWithLadder(proc, deps, LIVE_STOP_GRACE_MS, LIVE_FORCE_KILL_MS);
 }
 
 export function terminateProcessWithWatchdog(
@@ -101,6 +122,65 @@ export function startKeshaRecorder(
           stderr.trim() || `kesha record exited with code ${exitCode}`,
         );
       }
+    }),
+  };
+}
+
+// A live session prints its transcript and then exits 128+signal, so a signalled stop succeeded (#962).
+const LIVE_SUCCESS_EXIT_CODES = new Set([0, 130, 143]);
+
+export function startKeshaLiveRecorder(
+  kesha: KeshaSpawn,
+  maxSeconds: number,
+  deps: ProcessTaskDeps = {},
+): RunningTask<string> {
+  const spawn = deps.spawn ?? defaultSpawn;
+  const schedule = deps.setTimeout ?? setTimeout;
+  const proc = spawn(
+    kesha.command,
+    [
+      ...kesha.prefixArgs,
+      "record",
+      "--live",
+      "--max-seconds",
+      String(maxSeconds),
+    ],
+    { stdio: ["pipe", "pipe", "pipe"], detached: true },
+  );
+
+  let stdout = "";
+  let stderr = "";
+  proc.stdout?.on("data", (chunk: Buffer) => {
+    stdout = capTail(stdout + chunk.toString("utf8"), 16 * 1024 * 1024);
+  });
+  proc.stderr?.on("data", (chunk: Buffer) => {
+    stderr = capTail(stderr + chunk.toString("utf8"), 8000);
+  });
+
+  const stdoutEnded = new Promise<void>((resolve) => {
+    if (!proc.stdout) {
+      resolve();
+      return;
+    }
+    proc.stdout.once("end", () => resolve());
+  });
+
+  return {
+    stop: () => stopLiveProcessWithWatchdog(proc, deps),
+    done: waitForExit(proc).then(async (exitCode) => {
+      // The engine writes the transcript to the CLI's inherited stdout, so it can still be in flight at exit.
+      await Promise.race([
+        stdoutEnded,
+        new Promise<void>((resolve) => {
+          schedule(resolve, LIVE_STDOUT_FLUSH_MS).unref?.();
+        }),
+      ]);
+      if (!LIVE_SUCCESS_EXIT_CODES.has(exitCode ?? -1)) {
+        throw new Error(
+          stderr.trim() || `kesha record --live exited with code ${exitCode}`,
+        );
+      }
+      return stdout;
     }),
   };
 }

@@ -23,6 +23,10 @@ export class FakeProcess extends EventEmitter {
     this.stderr.emit("data", Buffer.from(value));
   }
 
+  endStdout() {
+    this.stdout.emit("end");
+  }
+
   exit(code: number | null) {
     this.exitCode = code;
     this.emit("exit", code);
