@@ -614,10 +614,25 @@ export function requireDepsBeforeBunTest(path: string, document: unknown): strin
 
 const coveredBy = (patterns: string[], file: string) => {
   const posixFile = file.replaceAll("\\", "/");
-  return patterns.some((pattern) =>
-    pattern.endsWith("/**") ? posixFile.startsWith(pattern.slice(0, -2)) : pattern === posixFile,
-  );
+  const matches = (pattern: string) =>
+    pattern.endsWith("/**") ? posixFile.startsWith(pattern.slice(0, -2)) : pattern === posixFile;
+  // dorny/paths-filter drops what a `!` entry matches, so an exclusion is the absence of coverage, never coverage (#1141 review round 1).
+  if (patterns.some((pattern) => pattern.startsWith("!") && matches(pattern.slice(1)))) return false;
+  return patterns.some((pattern) => !pattern.startsWith("!") && matches(pattern));
 };
+
+export type CodeFilter = { code: string[] } | { errors: string[] };
+
+/** ci.yml's `changes` job inline paths-filter `code` list, or the error the caller returns verbatim — four rules read it and each private copy of the parser was one more place to drift (#1141 review round 1). */
+export function codeFilterOf(path: string, document: unknown): CodeFilter {
+  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
+  if (typeof raw !== "string") return { errors: [`${path}: expected a \`changes\` job with inline paths-filter filters`] };
+
+  const code = (parse(raw) as Record<string, string[]>)?.code;
+  if (!Array.isArray(code)) return { errors: [`${path}: paths-filter is missing a \`code\` list`] };
+
+  return { code };
+}
 
 export function requireTestedScriptsInCodeFilter(
   path: string,
@@ -626,11 +641,9 @@ export function requireTestedScriptsInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
-  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
-
-  const code = (parse(raw) as Record<string, string[]>)?.code;
-  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+  const filter = codeFilterOf(path, document);
+  if ("errors" in filter) return filter.errors;
+  const { code } = filter;
 
   return testedScripts
     .filter((file) => !coveredBy(code, file))
@@ -671,13 +684,9 @@ export function collectRustSources(root = "rust/src"): string[] {
     .sort();
 }
 
-/** rust/build.rs and every .rs under rust/tests: no TS suite reads them today, but tests/unit/rust-cross-references.test.ts's resolveFile accepts them as reference targets, so a rename there must still fire unit-tests (#1141). */
+/** Every .rs under rust/: tests/unit/rust-cross-references.test.ts's resolveFile returns any `rust/…` path unchanged, so the guarded set is the whole tree — naming build.rs and tests/ left rust/vendor out and a future rust/benches would too (#1141, review round 1). */
 export function collectRustReferenceTargets(crateRoot = "rust"): string[] {
-  const buildScript = join(crateRoot, "build.rs");
-  return [
-    ...(existsSync(buildScript) ? [buildScript] : []),
-    ...collectRustSources(join(crateRoot, "tests")),
-  ];
+  return collectRustSources(crateRoot);
 }
 
 /** The pair main() feeds the two #950 rules — exported so the pairing is pinnable: handing the all-rust/src rule the manifest set is silent inside main(), and the sets overlap enough to look right. */
@@ -707,11 +716,9 @@ export function requireRustSourcesInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
-  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
-
-  const code = (parse(raw) as Record<string, string[]>)?.code;
-  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+  const filter = codeFilterOf(path, document);
+  if ("errors" in filter) return filter.errors;
+  const { code } = filter;
 
   if (rustSources.length === 0) {
     return [
@@ -735,11 +742,9 @@ export function requireRustReferenceTargetsInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
-  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
-
-  const code = (parse(raw) as Record<string, string[]>)?.code;
-  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+  const filter = codeFilterOf(path, document);
+  if ("errors" in filter) return filter.errors;
+  const { code } = filter;
 
   if (referenceTargets.length === 0) {
     return [
@@ -763,11 +768,9 @@ export function requireManifestSourcesInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
-  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
-
-  const code = (parse(raw) as Record<string, string[]>)?.code;
-  if (!Array.isArray(code)) return [`${path}: paths-filter is missing a \`code\` list`];
+  const filter = codeFilterOf(path, document);
+  if ("errors" in filter) return filter.errors;
+  const { code } = filter;
 
   if (manifestSources.length === 0) {
     return [

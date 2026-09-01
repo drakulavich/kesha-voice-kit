@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { parse } from "yaml";
 import {
   checkFile,
+  codeFilterOf,
   checkFlakeNix,
   collectCacheWriters,
   collectManifestSources,
@@ -360,6 +361,46 @@ describe("requireNpmPublishAfterPackaging", () => {
 const codeFilter = (paths: string[]) =>
   job("changes", [{ with: { filters: `code:\n${paths.map((p) => `  - '${p}'`).join("\n")}\n` } }]);
 
+const NO_CODE_LIST = job("changes", [{ with: { filters: "integration:\n  - 'src/**'\n" } }]);
+const NO_INLINE_FILTERS = { jobs: { changes: {} } };
+
+describe("codeFilterOf", () => {
+  test("returns the code list", () => {
+    expect(codeFilterOf(CI, codeFilter(["src/**"]))).toEqual({ code: ["src/**"] });
+  });
+
+  test("names a filters block carrying no code list", () => {
+    expect(codeFilterOf(CI, NO_CODE_LIST)).toEqual({
+      errors: [`${CI}: paths-filter is missing a \`code\` list`],
+    });
+  });
+
+  test("names a changes job with no inline filters", () => {
+    expect(codeFilterOf(CI, NO_INLINE_FILTERS)).toEqual({
+      errors: [`${CI}: expected a \`changes\` job with inline paths-filter filters`],
+    });
+  });
+});
+
+// One parameterised pin replaces the per-rule copies of this pair: every rule reads the same parser,
+// so what needs pinning is that each one surfaces its errors rather than crashing (#1141 review round 1).
+describe("every code-filter rule surfaces the shared parser's errors", () => {
+  const rules: Array<[string, (document: unknown) => string[]]> = [
+    ["requireTestedScriptsInCodeFilter", (d) => requireTestedScriptsInCodeFilter(CI, d, [".github/scripts/check-versions.ts"])],
+    ["requireManifestSourcesInCodeFilter", (d) => requireManifestSourcesInCodeFilter(CI, d, ["rust/src/models.rs"])],
+    ["requireRustSourcesInCodeFilter", (d) => requireRustSourcesInCodeFilter(CI, d, ["rust/src/models.rs"])],
+    ["requireRustReferenceTargetsInCodeFilter", (d) => requireRustReferenceTargetsInCodeFilter(CI, d, ["rust/build.rs"])],
+  ];
+
+  test.each(rules)("%s reports a missing code list", (_name, rule) => {
+    expect(rule(NO_CODE_LIST)[0]).toContain("missing a `code` list");
+  });
+
+  test.each(rules)("%s reports a changes job with no inline filters", (_name, rule) => {
+    expect(rule(NO_INLINE_FILTERS)[0]).toContain("expected a `changes` job");
+  });
+});
+
 describe("requireTestedScriptsInCodeFilter", () => {
   test("passes on the real ci.yml", () => {
     const document = parseRepoYaml(CI);
@@ -388,15 +429,6 @@ describe("requireTestedScriptsInCodeFilter", () => {
     const errors = requireTestedScriptsInCodeFilter(CI, document, scripts);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("check-versions.ts");
-  });
-
-  test("fails when the code list is gone", () => {
-    const document = job("changes", [{ with: { filters: "integration:\n  - 'src/**'\n" } }]);
-    expect(requireTestedScriptsInCodeFilter(CI, document, [])[0]).toContain("missing a `code` list");
-  });
-
-  test("fails when the changes job has no inline filters", () => {
-    expect(requireTestedScriptsInCodeFilter(CI, { jobs: { changes: {} } }, [])[0]).toContain("expected a `changes` job");
   });
 });
 
@@ -634,14 +666,18 @@ describe("manifest sources stay inside both path filters", () => {
   });
 });
 
-describe("cross-reference targets outside rust/src stay inside the code filter", () => {
+describe("cross-reference targets stay inside the code filter", () => {
   const TARGETS = ["rust/build.rs", "rust/tests/model_gate.rs"];
 
-  test("collectRustReferenceTargets finds build.rs and every .rs under rust/tests", () => {
+  // resolveFile returns any `rust/…` path unchanged, so the set is the whole tree: naming build.rs and
+  // tests/ left rust/vendor unguarded and a future rust/benches would reopen the gap (#1141 review round 1).
+  test("collectRustReferenceTargets finds every .rs under rust, not just build.rs and tests", () => {
     const targets = repoRelative(collectRustReferenceTargets(repoPath("rust")));
     expect(targets).toContain("rust/build.rs");
     expect(targets).toContain("rust/tests/model_gate.rs");
     expect(targets).toContain("rust/tests/common/mod.rs");
+    expect(targets).toContain("rust/vendor/vosk-tts/src/lib.rs");
+    expect(targets).toContain("rust/src/text_lang.rs");
     expect(targets.length).toBeGreaterThanOrEqual(20);
   });
 
@@ -684,15 +720,17 @@ describe("cross-reference targets outside rust/src stay inside the code filter",
     expect(requireRustReferenceTargetsInCodeFilter(PATH, codeFilter([]), ["rust/build.rs"])).toEqual([]);
   });
 
-  test("fails when the code list is gone", () => {
-    const document = job("changes", [{ with: { filters: "integration:\n  - 'src/**'\n" } }]);
-    expect(requireRustReferenceTargetsInCodeFilter(CI, document, [])[0]).toContain("missing a `code` list");
+  // A dorny `!` entry excludes the file it matches, so reading it as coverage is the silent skip #1141 exists to prevent (#1141 review round 1).
+  test("a negation entry excluding a target is not coverage", () => {
+    const document = codeFilter(["rust/tests/**", "!rust/tests/model_gate.rs"]);
+    const errors = requireRustReferenceTargetsInCodeFilter(CI, document, ["rust/tests/model_gate.rs"]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("rust/tests/model_gate.rs");
   });
 
-  test("fails when the changes job has no inline filters", () => {
-    expect(requireRustReferenceTargetsInCodeFilter(CI, { jobs: { changes: {} } }, [])[0]).toContain(
-      "expected a `changes` job",
-    );
+  test("a negation entry matching nothing leaves the rest covered", () => {
+    const document = codeFilter(["rust/tests/**", "!rust/tests/absent.rs"]);
+    expect(requireRustReferenceTargetsInCodeFilter(CI, document, ["rust/tests/model_gate.rs"])).toEqual([]);
   });
 
   test("collectRuleSources fills all three sets from their own roots", () => {
@@ -701,8 +739,9 @@ describe("cross-reference targets outside rust/src stay inside the code filter",
     expect(normalise(rustSources)).toContain("rust/src/text_lang.rs");
     expect(normalise(rustSources)).not.toContain("rust/build.rs");
     expect(normalise(referenceTargets)).toContain("rust/build.rs");
-    expect(normalise(referenceTargets)).not.toContain("rust/src/text_lang.rs");
+    expect(normalise(referenceTargets)).toContain("rust/vendor/vosk-tts/src/lib.rs");
     expect(normalise(manifestSources)).toContain("rust/src/models/manifest.rs");
+    expect(normalise(manifestSources)).not.toContain("rust/build.rs");
   });
 });
 
