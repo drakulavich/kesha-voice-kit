@@ -34,7 +34,7 @@ import {
   type EngineCapabilities,
 } from "../../src/engine";
 import { buildEngineInstallArgs, validateDiarize } from "../../src/engine-install";
-import { engineTargetEntries, targetKey } from "../../src/engine-targets";
+import { engineTarget, engineTargetEntries, targetKey } from "../../src/engine-targets";
 import { buildSayArgs, type SayOptions } from "../../src/synth";
 import { pickVoiceForLang } from "../../src/voice-routing";
 import { readRepoFile, repoPath } from "../helpers/repo";
@@ -147,9 +147,20 @@ describe("capability pact — recordings", () => {
     expect([...new Set(TARGETS.map((t) => t.provenance.engineVersion))]).toHaveLength(1);
   });
 
-  for (const { key, backend, pact } of TARGETS) {
+  for (const { key, platform, arch, backend, pact, provenance } of TARGETS) {
     it(`${key} reports the backend src/engine-targets.ts claims it ships`, () => {
       expect(pact.backend).toBe(backend);
+    });
+
+    // assetName is pinned against an independent authority; recordedFrom below is only shape-consistency (a consistent multi-field edit passes) — the hash itself belongs to the pact workflow's verify mode (#1138).
+    it(`${key} names the asset src/engine-targets.ts publishes`, () => {
+      expect(provenance.assetName).toBe(engineTarget(platform, arch)!.assetName);
+    });
+
+    it(`${key} says it was recorded from the asset and release it recorded`, () => {
+      expect(provenance.recordedFrom).toBe(
+        `${provenance.assetName} from release v${provenance.engineVersion}`,
+      );
     });
   }
 
