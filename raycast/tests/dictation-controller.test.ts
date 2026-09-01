@@ -10,6 +10,7 @@ import {
 } from "../src/lib/dictation-controller";
 import type {
   DictationControllerDeps,
+  DictationSession,
   DictationState,
   LiveRecorderTask,
   RecordingPatch,
@@ -772,7 +773,7 @@ describe("dictation controller", () => {
   });
 
   it("does not claim to record while the live engine is still warming up (#947)", async () => {
-    const micOpen = deferred<void>();
+    const micOpen = deferred<"listening" | "ended">();
     const live = deferred<string>();
     let meterStarted = false;
     const deps = createDeps({
@@ -796,7 +797,7 @@ describe("dictation controller", () => {
       expect.objectContaining({ title: "Recording" }),
     );
 
-    micOpen.resolve();
+    micOpen.resolve("listening");
     await waitFor(() => expect(deps.current().status).toBe("recording"));
     expect(meterStarted).toBe(true);
 
@@ -806,7 +807,7 @@ describe("dictation controller", () => {
   });
 
   it("never opens the meter when the view is dismissed during the live warmup", async () => {
-    const micOpen = deferred<void>();
+    const micOpen = deferred<"listening" | "ended">();
     const live = deferred<string>();
     let meterStarted = false;
     const deps = createDeps({
@@ -824,7 +825,7 @@ describe("dictation controller", () => {
     await waitFor(() => expect(deps.startLiveRecorder).toHaveBeenCalled());
 
     session.cancel();
-    micOpen.resolve();
+    micOpen.resolve("listening");
     live.resolve("discarded\n");
     await session.done;
 
@@ -833,8 +834,86 @@ describe("dictation controller", () => {
     expect(deps.copyToClipboard).not.toHaveBeenCalled();
   });
 
+  it("never shows a recording view for a live session that died before the mic opened (#947)", async () => {
+    let meterStarted = false;
+    const deps = createDeps({
+      preflight: livePreflight(),
+      startLiveRecorder: vi.fn(() =>
+        liveTask(
+          Promise.reject(
+            new Error(
+              "E_UNSUPPORTED_PLATFORM: live transcription requires a CoreML engine",
+            ),
+          ),
+          { micOpen: Promise.resolve("ended" as const) },
+        ),
+      ),
+      startRecordingMonitor: vi.fn(() => {
+        meterStarted = true;
+        return vi.fn();
+      }),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(meterStarted).toBe(false);
+    expect(deps.states.map((state) => state.status)).toEqual(["error"]);
+    expect(deps.toasts).not.toContainEqual(
+      expect.objectContaining({ title: "Recording" }),
+    );
+    expect(deps.states.at(-1)).toMatchObject({
+      status: "error",
+      message:
+        "E_UNSUPPORTED_PLATFORM: live transcription requires a CoreML engine",
+    });
+  });
+
+  it("copies nothing when a dismissal lands before a late live transcript", async () => {
+    const live = deferred<string>();
+    const deps = createDeps({
+      preflight: livePreflight(),
+      startLiveRecorder: vi.fn(() =>
+        liveTask(live.promise, { micOpen: Promise.resolve("ended" as const) }),
+      ),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await waitFor(() => expect(deps.startLiveRecorder).toHaveBeenCalled());
+
+    session.cancel();
+    live.resolve("late text\n");
+    await session.done;
+
+    expect(deps.copyToClipboard).not.toHaveBeenCalled();
+  });
+
+  it("does not claim success for a live transcript copied as the view is dismissed", async () => {
+    const copy = deferred<void>();
+    const copied: string[] = [];
+    let session: DictationSession;
+    const deps = createDeps({
+      preflight: livePreflight(),
+      copyToClipboard: vi.fn(async (text: string) => {
+        copied.push(text);
+        session.cancel();
+        await copy.promise;
+      }),
+    });
+
+    session = startDictationSession({}, deps.setState, deps);
+    await waitFor(() => expect(copied).toEqual(["live text"]));
+    copy.resolve();
+    await session.done;
+
+    expect(deps.states.some((state) => state.status === "ok")).toBe(false);
+    expect(deps.toasts).not.toContainEqual(
+      expect.objectContaining({ title: "Copied transcript" }),
+    );
+  });
+
   it("does not leave an abandoned live failure unhandled (#947)", async () => {
-    const micOpen = deferred<void>();
+    const micOpen = deferred<"listening" | "ended">();
     const live = deferred<string>();
     const unhandled: unknown[] = [];
     const record = (reason: unknown) => {
@@ -853,7 +932,7 @@ describe("dictation controller", () => {
       await waitFor(() => expect(deps.startLiveRecorder).toHaveBeenCalled());
 
       session.cancel();
-      micOpen.resolve();
+      micOpen.resolve("listening");
       live.reject(new Error("live session died during warmup"));
       await session.done;
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1390,7 +1469,7 @@ function liveTask(
 ): LiveRecorderTask {
   return {
     done,
-    micOpen: Promise.resolve(),
+    micOpen: Promise.resolve("listening" as const),
     stop: vi.fn(),
     abort: vi.fn(),
     ...overrides,

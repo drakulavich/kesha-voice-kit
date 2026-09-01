@@ -191,8 +191,10 @@ export function startDictationSession(
     // A cancel or early stop abandons the task before anything awaits it (#947).
     void task.done.catch(() => {});
     // The engine compiles its streaming models before opening the device, ~20 s on a first run (#947).
-    await task.micOpen;
+    const opened = await task.micOpen;
     if (cancelled) return { ok: false };
+    // The device never opened: report the session's own outcome, not a recording view (#947).
+    if (opened === "ended") return { ok: true, value: await task.done };
     return recordPhase(() => task, maxSeconds);
   }
 
@@ -303,7 +305,10 @@ export function startDictationSession(
   }
 
   async function deliverTranscript(result: TranscribeResult) {
+    if (cancelled) return;
     await deps.copyToClipboard(result.text);
+    // A dismissal landing mid-copy must not resurrect the view or claim success (#947).
+    if (cancelled) return;
     await deps.showToast({
       style: "success",
       title: "Copied transcript",

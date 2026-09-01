@@ -45,9 +45,11 @@ export interface RunningTask<T> {
   stop: () => void;
 }
 
+/** `listening` once the engine reports the microphone open; `ended` when the session finished first. */
+export type LiveMicOutcome = "listening" | "ended";
+
 export interface LiveRecorderTask extends RunningTask<string> {
-  /** Resolves when the engine reports the microphone open, or when the session ended before it did. */
-  micOpen: Promise<void>;
+  micOpen: Promise<LiveMicOutcome>;
   /** Releases the device now, for a session whose transcript will be discarded. */
   abort: () => void;
 }

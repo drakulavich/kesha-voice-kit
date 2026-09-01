@@ -1,7 +1,11 @@
 import { spawn as defaultSpawn } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { KeshaSpawn } from "./kesha-bin";
-import type { LiveRecorderTask, RunningTask } from "./dictation-types";
+import type {
+  LiveMicOutcome,
+  LiveRecorderTask,
+  RunningTask,
+} from "./dictation-types";
 import {
   LIVE_FORCE_KILL_MS,
   LIVE_STDOUT_FLUSH_MS,
@@ -132,6 +136,14 @@ const LIVE_SUCCESS_EXIT_CODES = new Set([0, 130, 143]);
 // The engine opens the device only after streaming ASR is up, ~20 s on a first run (rust/src/record.rs).
 const LIVE_LISTENING_MARKER = "Listening (";
 
+// The engine repaints one progress line per second with \r; keeping every fragment buries the real error (#947).
+function renderCarriageReturns(raw: string): string {
+  return raw
+    .split("\n")
+    .map((line) => line.slice(line.lastIndexOf("\r") + 1))
+    .join("\n");
+}
+
 export function startKeshaLiveRecorder(
   kesha: KeshaSpawn,
   maxSeconds: number,
@@ -153,8 +165,8 @@ export function startKeshaLiveRecorder(
 
   let stdout = "";
   let stderr = "";
-  let reportMicOpen = () => {};
-  const micOpen = new Promise<void>((resolve) => {
+  let reportMicOpen: (outcome: LiveMicOutcome) => void = () => {};
+  const micOpen = new Promise<LiveMicOutcome>((resolve) => {
     reportMicOpen = resolve;
   });
   proc.stdout?.on("data", (chunk: Buffer) => {
@@ -162,10 +174,10 @@ export function startKeshaLiveRecorder(
   });
   proc.stderr?.on("data", (chunk: Buffer) => {
     stderr = capTail(stderr + chunk.toString("utf8"), 8000);
-    if (stderr.includes(LIVE_LISTENING_MARKER)) reportMicOpen();
+    if (stderr.includes(LIVE_LISTENING_MARKER)) reportMicOpen("listening");
   });
-  proc.once("exit", () => reportMicOpen());
-  proc.once("error", () => reportMicOpen());
+  proc.once("exit", () => reportMicOpen("ended"));
+  proc.once("error", () => reportMicOpen("ended"));
 
   const stdoutEnded = new Promise<void>((resolve) => {
     if (!proc.stdout) {
@@ -189,7 +201,8 @@ export function startKeshaLiveRecorder(
       ]);
       if (!LIVE_SUCCESS_EXIT_CODES.has(exitCode ?? -1)) {
         throw new Error(
-          stderr.trim() || `kesha record --live exited with code ${exitCode}`,
+          renderCarriageReturns(stderr).trim() ||
+            `kesha record --live exited with code ${exitCode}`,
         );
       }
       return stdout;

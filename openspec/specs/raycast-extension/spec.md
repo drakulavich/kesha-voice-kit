@@ -263,6 +263,13 @@ then blame macOS Microphone permission for the empty transcript.
 - AND it flips to Recording only once the Engine reports the microphone open,
   so the first words spoken are captured
 
+#### Scenario: A live session fails before the microphone opens
+
+- GIVEN a live session that exits with an Error before it reports listening
+- WHEN the failure arrives
+- THEN the view goes from preparing straight to the Error, with no Signal meter
+  started, no idle countdown and no Recording toast
+
 #### Scenario: An Engine advertising the feature to a CLI too old for the flag
 
 - GIVEN the probe reports `record.live` but a CLI version older than the release
@@ -303,10 +310,12 @@ then blame macOS Microphone permission for the empty transcript.
 > over a `recordPhase` generic in the task it starts so the meter, the idle
 > tracker and cancellation are shared by both paths; `liveRecordPhase` starts the
 > live task first and awaits its `micOpen` before handing it over. `micOpen`
-> resolves on the Engine's `Listening (` stderr line — `rust/src/record.rs`
-> prints it right after `stream.play()`, with `StreamingAsrSession::start` ahead
-> of that — or on the process ending first, so a failed spawn cannot hang the
-> session. `kesha install`'s warmup covers `backend::create_backend`, not
+> resolves `listening` on the Engine's `Listening (` stderr line —
+> `rust/src/record.rs` prints it right after `stream.play()`, with
+> `StreamingAsrSession::start` ahead of that — and `ended` when the process
+> finished first, so a failed spawn neither hangs the session nor drives it
+> through a recording view; that branch awaits `task.done` so the Engine's own
+> failure is what Maks sees. `kesha install`'s warmup covers `backend::create_backend`, not
 > `init_streaming_asr`, so the first live session pays that cost.*
 
 ### Requirement: Silent audio is rejected before Transcription with a permission hint
@@ -374,6 +383,14 @@ kept recording left by an earlier session SHALL be pruned once it is older than
 a week. A non-zero Exit code SHALL be surfaced using the CLI's own stderr text
 so the Engine's Error code and hint reach Maks unedited.
 
+A live session is the one case where "unedited" needs saying precisely: its
+stderr also carries a progress line the Engine repaints in place once a second
+with a carriage return, and surfacing every fragment would bury the Error under
+thousands of characters. The extension SHALL render those carriage returns the
+way a terminal does — keeping only the final state of each line — and SHALL
+change nothing else, so a multi-line Error keeps its blank lines and its install
+hint.
+
 #### Scenario: Maks dictates a short note
 
 - GIVEN a recording with speech and an installed Engine and models
@@ -412,6 +429,14 @@ so the Engine's Error code and hint reach Maks unedited.
 - WHEN Maks cancels it, or the view is dismissed
 - THEN the recording is kept rather than deleted, and — when a view is still
   shown — the Error names its path and the `kesha "<path>"` command
+
+#### Scenario: A live session fails after minutes of progress output
+
+- GIVEN a live Dictation session that printed its progress line every second for
+  the whole session and then failed
+- WHEN the Error is shown
+- THEN it names the Engine's own Error, and the progress line takes the single
+  line it would take in a terminal rather than one fragment per second
 
 #### Scenario: A live session is interrupted before it finishes
 
