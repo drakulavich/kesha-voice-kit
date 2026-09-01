@@ -214,12 +214,68 @@ session.
 > 214–241 (reset on any non-`listening` state, line 226). Idle copy:
 > `raycast/src/lib/recording-view.ts` lines 17–19.*
 
+### Requirement: Dictation uses live Transcription when the Engine advertises `record.live`
+
+The extension SHALL read the Engine's advertised feature list from the CLI's
+machine-readable status output, and SHALL run a single `kesha record --live`
+process — which transcribes the microphone as it captures and prints the
+transcript when recording stops — whenever `record.live` appears in it. When it
+does not, the extension SHALL record a WAV and transcribe that file in a second
+process, exactly as before. An unreadable, malformed, or absent feature list
+SHALL be treated as the feature being absent, never as an Error: the fallback
+path works everywhere, so guessing wrong in that direction costs nothing.
+
+Live Transcription removes the separate Transcription phase rather than adding a
+progressive one. `--live` prints its transcript once, when recording stops; the
+extension SHALL not present it as text appearing while Maks speaks.
+
+#### Scenario: Apple Silicon with an Engine that advertises the feature
+
+- GIVEN the probe reports `record.live` among the Engine's features
+- WHEN Maks dictates and stops
+- THEN one CLI process ran for the whole session, no WAV was written, and no
+  separate Transcription phase was entered
+- AND the transcript is on the clipboard as soon as the live session ends
+
+#### Scenario: An Intel Mac, or any Engine without the feature
+
+- GIVEN the probe reports the Engine's features and `record.live` is not among
+  them, as on the ONNX Engine an Intel Mac runs
+- WHEN Maks dictates
+- THEN the session records to a WAV and transcribes it in a second process,
+  behaving exactly as it did before live Transcription existed
+
+#### Scenario: A CLI too old to report an Engine feature list
+
+- GIVEN the resolved CLI produces no machine-readable status output, so no
+  feature list is available
+- WHEN Maks dictates
+- THEN the extension takes the record-then-transcribe path rather than failing
+- AND no setup Error is shown on account of the missing feature list
+
+> *Technical Note — the feature list is read by `probeEngineAvailability`
+> (`raycast/src/lib/kesha-bin.ts`), which already ran `kesha status --json` for
+> the setup probe and now returns `engine.capabilities.features`; a value that is
+> not an array of strings degrades to an empty list. The flag name is
+> `RECORD_LIVE_FEATURE`, matching what `rust/src/capabilities.rs` advertises under
+> the same `cfg` that compiles `cli::record::run_live`. Live spawn:
+> `startKeshaLiveRecorder` in `raycast/src/lib/process-tasks.ts`. Branch:
+> `startDictationSession`'s `run()` in `raycast/src/lib/dictation-controller.ts`,
+> over a `recordPhase` generic in the task it starts so the meter, the idle
+> tracker and cancellation are shared by both paths.*
+
 ### Requirement: Silent audio is rejected before Transcription with a permission hint
 
-The extension SHALL fail the Dictation session when the recorded WAV contains no
-sample above the silence threshold, naming the two plausible causes — macOS
-Microphone permission for Raycast, and the selected input device — instead of
-spending time on a Transcription that would return nothing.
+On the record-then-transcribe path the extension SHALL fail the Dictation
+session when the recorded WAV contains no sample above the silence threshold,
+naming the two plausible causes — macOS Microphone permission for Raycast, and
+the selected input device — instead of spending time on a Transcription that
+would return nothing.
+
+The live path has no WAV to inspect, so its equivalent signal is an empty
+transcript. It SHALL carry the same guidance, in a single message naming the
+permission cause, because nothing on that path can tell a silent capture apart
+from speech that produced no text.
 
 #### Scenario: Raycast lacks Microphone permission
 
@@ -236,6 +292,14 @@ spending time on a Transcription that would return nothing.
 - WHEN the Dictation session finishes recording
 - THEN the silence check passes and Transcription starts immediately
 
+#### Scenario: A live session captures nothing
+
+- GIVEN a live Dictation session whose transcript is empty
+- WHEN the session ends
+- THEN the view names macOS Microphone permission for Raycast and the selected
+  input device, the same guidance the WAV silence check produces
+- AND the clipboard is left untouched
+
 > *Technical Note — check invoked at
 > `raycast/src/lib/dictation-controller.ts` lines 129–133. Detection reads the
 > `fmt `/`data` chunks and scans samples: `isSilentWav` in
@@ -243,12 +307,17 @@ spending time on a Transcription that would return nothing.
 > `kesha record` writes) and 16-bit PCM, including `WAVE_FORMAT_EXTENSIBLE`
 > payloads (lines 47–60). Threshold: `SILENCE_PEAK_THRESHOLD = 0.0001`.
 > Unrecognised formats return "not silent" so the check can never block a valid
-> recording (line 29).*
+> recording (line 29). The live equivalent is `normalizeLiveTranscript` in
+> `raycast/src/lib/dictation-controller.ts`, kept separate from
+> `normalizeTranscribeResult` so the fallback's two distinct messages survive.*
 
 ### Requirement: Transcription runs through the CLI and times out proportionally to the recording length
 
-The extension SHALL obtain the transcript by running the CLI's default
-Transcription command on the recorded file and reading its stdout. It SHALL
+On the record-then-transcribe path the extension SHALL obtain the transcript by
+running the CLI's default Transcription command on the recorded file and reading
+its stdout. The scaled timeout, the kept recording and its named path below all
+belong to that path: the live path has no separate Transcription window to
+outrun and no recording of its own to keep. It SHALL
 abandon a Transcription that has not finished within a timeout that scales with
 the length of the recording — a fixed floor plus a per-second allowance — so a
 recording made at the default `maxSeconds` cannot fail Transcription purely
@@ -298,6 +367,16 @@ so the Engine's Error code and hint reach Maks unedited.
 - WHEN Maks cancels it, or the view is dismissed
 - THEN the recording is kept rather than deleted, and — when a view is still
   shown — the Error names its path and the `kesha "<path>"` command
+
+#### Scenario: A live session is interrupted before it finishes
+
+- GIVEN a live Dictation session that has not yet stopped
+- WHEN Maks dismisses the view
+- THEN no transcript is produced and none is written to the clipboard, because
+  `--live` prints its transcript once, at the end
+- AND the extension names no recovery artifact of its own; the Engine's own
+  recovery audio (#962) is the only copy and lives under its cache, not the
+  extension's temp directory
 
 > *Technical Note — the timeout is `transcribeTimeoutMs(recordingSeconds)`:
 > `raycast/src/lib/dictation-config.ts` (`TRANSCRIBE_TIMEOUT_FLOOR_MS = 60_000`
@@ -351,6 +430,10 @@ explicit cancel action while transcribing, and SHALL also treat closing the
 command as a cancel. Stopping mid-recording SHALL still transcribe what was
 captured; cancelling a Transcription SHALL abandon it.
 
+The Cancel Transcription action belongs to the record-then-transcribe path,
+which is the only one with a Transcription phase to cancel. On the live path
+**Stop and Transcribe** is the single control.
+
 #### Scenario: Maks stops as soon as he finishes the sentence
 
 - GIVEN a Dictation session is recording
@@ -379,6 +462,11 @@ command closing. Termination SHALL escalate: a cooperative stop first, then
 SIGTERM, then SIGKILL, targeting the whole process group so an interpreter
 wrapper cannot leave the CLI behind.
 
+The live path starts one child where the fallback starts two, and its escalation
+SHALL be slower, because a live session produces its transcript *after* the
+cooperative stop: signalling it on the fallback recorder's schedule would destroy
+the transcript the session exists to deliver.
+
 #### Scenario: A stopped recorder exits promptly
 
 - GIVEN a Dictation session is recording
@@ -393,10 +481,25 @@ wrapper cannot leave the CLI behind.
 - WHEN cancellation or the timeout fires
 - THEN SIGKILL follows 3 s later and the process group is gone
 
+#### Scenario: A stopped live session is given time to finish its transcript
+
+- GIVEN a live Dictation session
+- WHEN Maks stops it
+- THEN the cooperative stop goes out first and no signal follows for several
+  seconds, so the streaming session can print its transcript
+- AND SIGTERM and then SIGKILL still follow if it never exits
+
 > *Technical Note — escalation ladders: `stopProcessWithWatchdog`
-> (stdin EOF → SIGTERM at 1500 ms → SIGKILL at 5000 ms) and
-> `terminateProcessWithWatchdog` (SIGTERM now → SIGKILL at 3000 ms) in
-> `raycast/src/lib/process-tasks.ts` lines 39–74. The Signal meter helper has
+> (stdin EOF → SIGTERM at 1500 ms → SIGKILL at 5000 ms),
+> `stopLiveProcessWithWatchdog` (stdin EOF → SIGTERM at `LIVE_STOP_GRACE_MS`
+> 10 s → SIGKILL at `LIVE_FORCE_KILL_MS` 15 s, both in
+> `raycast/src/lib/dictation-config.ts`) and `terminateProcessWithWatchdog`
+> (SIGTERM now → SIGKILL at 3000 ms) in `raycast/src/lib/process-tasks.ts`. The
+> live grace exists because the CLI's own SIGTERM handler SIGKILLs the Engine
+> 1 s later (`FORCE_KILL_GRACE_MS` in `src/process-tree.ts`), which would leave a
+> live session ~2.5 s in total under the fallback ladder. A live session that
+> exits 130 or 143 after printing its transcript is a success, not a failure
+> (#962). The Signal meter helper has
 > its own shorter ladder — SIGTERM, then SIGKILL after 1 s —
 > `raycast/src/lib/signal-meter.ts` lines 134–139. Group targeting:
 > `killProcessGroup` lines 27–37, paired with `detached: true` at spawn

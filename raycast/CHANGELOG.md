@@ -1,5 +1,11 @@
 # Kesha Voice Kit Changelog
 
+## [Transcribe while you speak on Apple Silicon] - 2026-09-01
+
+- Transcribe during recording on Macs whose engine supports it, so the transcript is ready the moment you stop instead of after a separate wait. The session now runs one process rather than two, and no audio file is written or cleaned up.
+- Keep the previous record-then-transcribe flow everywhere else, including Intel Macs and older CLI versions, with no change in behaviour.
+- Tell you to check macOS Microphone permission when a session produces no text, on both flows.
+
 ## [Sturdier setup detection] - 2026-08-03
 
 - Detect whether the engine is installed from the CLI's machine-readable status output instead of matching its wording, so a reworded CLI message can no longer be mistaken for a broken install. Older CLIs keep working through the previous check.
