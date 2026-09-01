@@ -6,11 +6,6 @@ import {
   startKeshaTranscriber,
   stopProcessWithWatchdog,
 } from "../src/lib/process-tasks";
-import {
-  LIVE_FORCE_KILL_MS,
-  LIVE_STDOUT_FLUSH_MS,
-  LIVE_STOP_GRACE_MS,
-} from "../src/lib/dictation-config";
 import { FakeProcess, createSpawnRecorder } from "./helpers/fake-process";
 import { flushPromises } from "./helpers/async";
 
@@ -175,6 +170,7 @@ describe("process task helpers", () => {
 
     // The engine inherits the CLI's stdout, so it can outlive the wrapper's exit.
     processes[0].exit(0);
+    await flushPromises();
     processes[0].emitStdout("late transcript\n");
     processes[0].endStdout();
 
@@ -189,10 +185,44 @@ describe("process task helpers", () => {
     processes[0].emitStdout("partial\n");
     processes[0].exit(0);
     await flushPromises();
-    vi.advanceTimersByTime(LIVE_STDOUT_FLUSH_MS);
+    vi.advanceTimersByTime(2_000);
 
     await expect(task.done).resolves.toBe("partial\n");
     vi.useRealTimers();
+  });
+
+  it("keeps waiting for a transcript through the flush window", async () => {
+    vi.useFakeTimers();
+    const { spawn, processes } = createSpawnRecorder();
+    const task = startKeshaLiveRecorder(kesha, 30, { spawn });
+    let settled = false;
+    void task.done.then(() => {
+      settled = true;
+    });
+
+    processes[0].exit(0);
+    await flushPromises();
+    vi.advanceTimersByTime(1_999);
+    await flushPromises();
+    expect(settled).toBe(false);
+
+    processes[0].emitStdout("slow transcript\n");
+    processes[0].endStdout();
+
+    await expect(task.done).resolves.toBe("slow transcript\n");
+    vi.useRealTimers();
+  });
+
+  it("finishes a live session that was spawned without a stdout pipe", async () => {
+    const proc = new FakeProcess();
+    proc.stdout = null;
+    const task = startKeshaLiveRecorder(kesha, 30, {
+      spawn: () => proc.asChild(),
+    });
+
+    proc.exit(0);
+
+    await expect(task.done).resolves.toBe("");
   });
 
   it("does not signal a live session that is still finalising its transcript", () => {
@@ -204,13 +234,17 @@ describe("process task helpers", () => {
     task.stop();
     expect(processes[0].stdin.end).toHaveBeenCalledWith("\n");
 
-    vi.advanceTimersByTime(1500);
+    vi.advanceTimersByTime(9_999);
     expect(kill).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(LIVE_STOP_GRACE_MS - 1500);
+    vi.advanceTimersByTime(1);
     expect(kill).toHaveBeenCalledWith(processes[0].asChild(), "SIGTERM");
+    expect(kill).not.toHaveBeenCalledWith(processes[0].asChild(), "SIGKILL");
 
-    vi.advanceTimersByTime(LIVE_FORCE_KILL_MS - LIVE_STOP_GRACE_MS);
+    vi.advanceTimersByTime(4_999);
+    expect(kill).not.toHaveBeenCalledWith(processes[0].asChild(), "SIGKILL");
+
+    vi.advanceTimersByTime(1);
     expect(kill).toHaveBeenCalledWith(processes[0].asChild(), "SIGKILL");
     vi.useRealTimers();
   });

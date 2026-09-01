@@ -5,7 +5,7 @@ import { vi } from "vitest";
 export class FakeProcess extends EventEmitter {
   pid = 1234;
   exitCode: number | null = null;
-  stdout = new EventEmitter();
+  stdout: EventEmitter | null = new EventEmitter();
   stderr = new EventEmitter();
   stdin = {
     destroyed: false,
@@ -16,7 +16,7 @@ export class FakeProcess extends EventEmitter {
   kill = vi.fn();
 
   emitStdout(value: string) {
-    this.stdout.emit("data", Buffer.from(value));
+    this.stdout?.emit("data", Buffer.from(value));
   }
 
   emitStderr(value: string) {
@@ -24,7 +24,7 @@ export class FakeProcess extends EventEmitter {
   }
 
   endStdout() {
-    this.stdout.emit("end");
+    this.stdout?.emit("end");
   }
 
   exit(code: number | null) {
