@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { parse } from "yaml";
 import {
   checkFile,
-  codeFilterOf,
+  namedFilterOf,
   checkFlakeNix,
   collectCacheWriters,
   collectManifestSources,
@@ -19,6 +19,7 @@ import {
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
   requireBuildEngineSerialisesRunsPerRef,
+  requireBuildScriptInCoremlFilter,
   requireReleaseVerifiesTagIsCurrent,
   requireRustTestCancelsSupersededRuns,
   requirePipefailShell,
@@ -42,6 +43,7 @@ import { parseRepoYaml, readRepoFile, repoPath, REPO_ROOT } from "../helpers/rep
 
 const PATH = ".github/workflows/build-engine.yml";
 const CI = ".github/workflows/ci.yml";
+const RUST_TEST = ".github/workflows/rust-test.yml";
 const RELEASE_CLI = ".github/workflows/release-cli.yml";
 const PACT = ".github/workflows/capability-pact.yml";
 
@@ -364,19 +366,31 @@ const codeFilter = (paths: string[]) =>
 const NO_CODE_LIST = job("changes", [{ with: { filters: "integration:\n  - 'src/**'\n" } }]);
 const NO_INLINE_FILTERS = { jobs: { changes: {} } };
 
-describe("codeFilterOf", () => {
-  test("returns the code list", () => {
-    expect(codeFilterOf(CI, codeFilter(["src/**"]))).toEqual({ code: ["src/**"] });
+describe("namedFilterOf", () => {
+  test("returns the named list", () => {
+    expect(namedFilterOf(CI, codeFilter(["src/**"]), "code")).toEqual({ entries: ["src/**"] });
+  });
+
+  test("reads a filter other than code, from the real rust-test.yml", () => {
+    expect(namedFilterOf(RUST_TEST, parseRepoYaml(RUST_TEST), "coreml")).toEqual({
+      entries: expect.arrayContaining(["rust/build.rs"]),
+    });
+  });
+
+  test("names the list it was asked for, not code", () => {
+    expect(namedFilterOf(CI, codeFilter(["src/**"]), "coreml")).toEqual({
+      errors: [`${CI}: paths-filter is missing a \`coreml\` list`],
+    });
   });
 
   test("names a filters block carrying no code list", () => {
-    expect(codeFilterOf(CI, NO_CODE_LIST)).toEqual({
+    expect(namedFilterOf(CI, NO_CODE_LIST, "code")).toEqual({
       errors: [`${CI}: paths-filter is missing a \`code\` list`],
     });
   });
 
   test("names a changes job with no inline filters", () => {
-    expect(codeFilterOf(CI, NO_INLINE_FILTERS)).toEqual({
+    expect(namedFilterOf(CI, NO_INLINE_FILTERS, "code")).toEqual({
       errors: [`${CI}: expected a \`changes\` job with inline paths-filter filters`],
     });
   });
@@ -384,16 +398,17 @@ describe("codeFilterOf", () => {
 
 // One parameterised pin replaces the per-rule copies of this pair: every rule reads the same parser,
 // so what needs pinning is that each one surfaces its errors rather than crashing (#1141 review round 1).
-describe("every code-filter rule surfaces the shared parser's errors", () => {
-  const rules: Array<[string, (document: unknown) => string[]]> = [
-    ["requireTestedScriptsInCodeFilter", (d) => requireTestedScriptsInCodeFilter(CI, d, [".github/scripts/check-versions.ts"])],
-    ["requireManifestSourcesInCodeFilter", (d) => requireManifestSourcesInCodeFilter(CI, d, ["rust/src/models.rs"])],
-    ["requireRustSourcesInCodeFilter", (d) => requireRustSourcesInCodeFilter(CI, d, ["rust/src/models.rs"])],
-    ["requireRustReferenceTargetsInCodeFilter", (d) => requireRustReferenceTargetsInCodeFilter(CI, d, ["rust/build.rs"])],
+describe("every paths-filter rule surfaces the shared parser's errors", () => {
+  const rules: Array<[string, (document: unknown) => string[], string]> = [
+    ["requireTestedScriptsInCodeFilter", (d) => requireTestedScriptsInCodeFilter(CI, d, [".github/scripts/check-versions.ts"]), "code"],
+    ["requireManifestSourcesInCodeFilter", (d) => requireManifestSourcesInCodeFilter(CI, d, ["rust/src/models.rs"]), "code"],
+    ["requireRustSourcesInCodeFilter", (d) => requireRustSourcesInCodeFilter(CI, d, ["rust/src/models.rs"]), "code"],
+    ["requireRustReferenceTargetsInCodeFilter", (d) => requireRustReferenceTargetsInCodeFilter(CI, d, ["rust/build.rs"]), "code"],
+    ["requireFlakeNixInWorkflowsFilter", (d) => requireFlakeNixInWorkflowsFilter(CI, d), "workflows"],
   ];
 
-  test.each(rules)("%s reports a missing code list", (_name, rule) => {
-    expect(rule(NO_CODE_LIST)[0]).toContain("missing a `code` list");
+  test.each(rules)("%s reports a missing list", (_name, rule, expectedList) => {
+    expect(rule(NO_CODE_LIST)[0]).toContain(`missing a \`${expectedList}\` list`);
   });
 
   test.each(rules)("%s reports a changes job with no inline filters", (_name, rule) => {
@@ -781,6 +796,54 @@ describe("requireFlakeNixInWorkflowsFilter", () => {
     const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1088"))).toHaveLength(1);
+  });
+});
+
+const coremlFilter = (paths: string[]) =>
+  job("changes", [{ with: { filters: `coreml:\n${paths.map((p) => `  - '${p}'`).join("\n")}\n` } }]);
+
+describe("requireBuildScriptInCoremlFilter", () => {
+  test("passes on the real rust-test.yml", () => {
+    expect(requireBuildScriptInCoremlFilter(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
+  });
+
+  test("dropping the rust/build.rs entry names it", () => {
+    const errors = requireBuildScriptInCoremlFilter(
+      RUST_TEST,
+      coremlFilter(["rust/src/backend/fluidaudio.rs", "rust/Cargo.lock"]),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("rust/build.rs");
+    expect(errors[0]).toContain("coreml-regression");
+  });
+
+  test("a narrowing that misses the build script is caught", () => {
+    expect(requireBuildScriptInCoremlFilter(RUST_TEST, coremlFilter(["rust/src/**"]))).toHaveLength(1);
+  });
+
+  test("a broader rust wildcard satisfies the rule", () => {
+    expect(requireBuildScriptInCoremlFilter(RUST_TEST, coremlFilter(["rust/**"]))).toEqual([]);
+  });
+
+  test("a negation excluding the build script is not coverage", () => {
+    expect(requireBuildScriptInCoremlFilter(RUST_TEST, coremlFilter(["rust/**", "!rust/build.rs"]))).toHaveLength(1);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireBuildScriptInCoremlFilter(CI, parseRepoYaml(CI))).toEqual([]);
+  });
+
+  test("reports a coreml filter that is gone entirely", () => {
+    const document = job("changes", [{ with: { filters: "rust:\n  - 'rust/**'\n" } }]);
+    expect(requireBuildScriptInCoremlFilter(RUST_TEST, document)[0]).toContain("missing a `coreml` list");
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml =
+      "on:\n  pull_request:\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            coreml:\n              - 'rust/src/backend/fluidaudio.rs'\n";
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1145"))).toHaveLength(1);
   });
 });
 

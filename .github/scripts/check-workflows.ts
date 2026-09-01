@@ -19,6 +19,7 @@ import { engineTargetEntries, targetKey } from "../../src/engine-targets";
 const dirs = [".github/workflows", ".github/actions"];
 const RUST_TOOLCHAIN_FILE = "rust-toolchain.toml";
 const FLAKE_NIX = "flake.nix";
+const RUST_BUILD_SCRIPT = "rust/build.rs";
 
 export type RustToolchainPin = {
   channel: string;
@@ -621,17 +622,17 @@ const coveredBy = (patterns: string[], file: string) => {
   return patterns.some((pattern) => !pattern.startsWith("!") && matches(pattern));
 };
 
-export type CodeFilter = { code: string[] } | { errors: string[] };
+export type NamedFilter = { entries: string[] } | { errors: string[] };
 
-/** ci.yml's `changes` job inline paths-filter `code` list, or the error the caller returns verbatim — four rules read it and each private copy of the parser was one more place to drift (#1141 review round 1). */
-export function codeFilterOf(path: string, document: unknown): CodeFilter {
+/** The named list from a `changes` job's inline paths-filter, or the error the caller returns verbatim — every paths-filter rule reads one of these and each private copy of the parser was one more place to drift (#1141 review round 1, generalised over the filter name in #1145). */
+export function namedFilterOf(path: string, document: unknown, name: string): NamedFilter {
   const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
   if (typeof raw !== "string") return { errors: [`${path}: expected a \`changes\` job with inline paths-filter filters`] };
 
-  const code = (parse(raw) as Record<string, string[]>)?.code;
-  if (!Array.isArray(code)) return { errors: [`${path}: paths-filter is missing a \`code\` list`] };
+  const entries = (parse(raw) as Record<string, string[]>)?.[name];
+  if (!Array.isArray(entries)) return { errors: [`${path}: paths-filter is missing a \`${name}\` list`] };
 
-  return { code };
+  return { entries };
 }
 
 export function requireTestedScriptsInCodeFilter(
@@ -641,9 +642,9 @@ export function requireTestedScriptsInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const filter = codeFilterOf(path, document);
+  const filter = namedFilterOf(path, document, "code");
   if ("errors" in filter) return filter.errors;
-  const { code } = filter;
+  const code = filter.entries;
 
   return testedScripts
     .filter((file) => !coveredBy(code, file))
@@ -716,9 +717,9 @@ export function requireRustSourcesInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const filter = codeFilterOf(path, document);
+  const filter = namedFilterOf(path, document, "code");
   if ("errors" in filter) return filter.errors;
-  const { code } = filter;
+  const code = filter.entries;
 
   if (rustSources.length === 0) {
     return [
@@ -742,9 +743,9 @@ export function requireRustReferenceTargetsInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const filter = codeFilterOf(path, document);
+  const filter = namedFilterOf(path, document, "code");
   if ("errors" in filter) return filter.errors;
-  const { code } = filter;
+  const code = filter.entries;
 
   if (referenceTargets.length === 0) {
     return [
@@ -768,9 +769,9 @@ export function requireManifestSourcesInCodeFilter(
 ): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const filter = codeFilterOf(path, document);
+  const filter = namedFilterOf(path, document, "code");
   if ("errors" in filter) return filter.errors;
-  const { code } = filter;
+  const code = filter.entries;
 
   if (manifestSources.length === 0) {
     return [
@@ -816,15 +817,26 @@ export function requireManifestSourcesInSeedFilter(
 export function requireFlakeNixInWorkflowsFilter(path: string, document: unknown): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
-  const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
-  if (typeof raw !== "string") return [`${path}: expected a \`changes\` job with inline paths-filter filters`];
+  const filter = namedFilterOf(path, document, "workflows");
+  if ("errors" in filter) return filter.errors;
 
-  const workflows = (parse(raw) as Record<string, string[]>)?.workflows;
-  if (!Array.isArray(workflows)) return [`${path}: paths-filter is missing a \`workflows\` list`];
-
-  return workflows.includes(FLAKE_NIX)
+  return filter.entries.includes(FLAKE_NIX)
     ? []
     : [`${path}: \`workflows\` filter must include \`${FLAKE_NIX}\`, or checkFlakeNix's guard never runs in CI (#1088)`];
+}
+
+/** Fails when rust-test.yml's `coreml` filter stops covering rust/build.rs: `coreml-regression` is the only lane that links and runs the coreml feature, and CLAUDE.md's build triple makes the build script's `/usr/lib/swift` rpath emit part of that link surface (#1145). */
+export function requireBuildScriptInCoremlFilter(path: string, document: unknown): string[] {
+  if (!path.endsWith("rust-test.yml")) return [];
+
+  const filter = namedFilterOf(path, document, "coreml");
+  if ("errors" in filter) return filter.errors;
+
+  return coveredBy(filter.entries, RUST_BUILD_SCRIPT)
+    ? []
+    : [
+        `${path}: no path in the \`coreml\` filter matches ${RUST_BUILD_SCRIPT}, so an edit breaking its \`/usr/lib/swift\` rpath emit skips coreml-regression — the only lane that links and runs the coreml feature (#1145)`,
+      ];
 }
 
 function collectTestedScripts(): string[] {
@@ -1148,6 +1160,7 @@ export function checkFile(
       ...requireRustReferenceTargetsInCodeFilter(path, document, sources.referenceTargets),
       ...requireManifestSourcesInSeedFilter(path, document, sources.manifestSources),
       ...requireFlakeNixInWorkflowsFilter(path, document),
+      ...requireBuildScriptInCoremlFilter(path, document),
       ...(rustToolchain ? requirePinnedRustToolchain(path, document, rustToolchain) : []),
     ];
   } catch (err) {
