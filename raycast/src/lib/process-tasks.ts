@@ -1,7 +1,7 @@
 import { spawn as defaultSpawn } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { KeshaSpawn } from "./kesha-bin";
-import type { RunningTask } from "./dictation-types";
+import type { LiveRecorderTask, RunningTask } from "./dictation-types";
 import {
   LIVE_FORCE_KILL_MS,
   LIVE_STDOUT_FLUSH_MS,
@@ -129,11 +129,14 @@ export function startKeshaRecorder(
 // A live session prints its transcript and then exits 128+signal, so a signalled stop succeeded (#962).
 const LIVE_SUCCESS_EXIT_CODES = new Set([0, 130, 143]);
 
+// The engine opens the device only after streaming ASR is up, ~20 s on a first run (rust/src/record.rs).
+const LIVE_LISTENING_MARKER = "Listening (";
+
 export function startKeshaLiveRecorder(
   kesha: KeshaSpawn,
   maxSeconds: number,
   deps: ProcessTaskDeps = {},
-): RunningTask<string> {
+): LiveRecorderTask {
   const spawn = deps.spawn ?? defaultSpawn;
   const schedule = deps.setTimeout ?? setTimeout;
   const proc = spawn(
@@ -150,12 +153,19 @@ export function startKeshaLiveRecorder(
 
   let stdout = "";
   let stderr = "";
+  let reportMicOpen = () => {};
+  const micOpen = new Promise<void>((resolve) => {
+    reportMicOpen = resolve;
+  });
   proc.stdout?.on("data", (chunk: Buffer) => {
     stdout = capTail(stdout + chunk.toString("utf8"), 16 * 1024 * 1024);
   });
   proc.stderr?.on("data", (chunk: Buffer) => {
     stderr = capTail(stderr + chunk.toString("utf8"), 8000);
+    if (stderr.includes(LIVE_LISTENING_MARKER)) reportMicOpen();
   });
+  proc.once("exit", () => reportMicOpen());
+  proc.once("error", () => reportMicOpen());
 
   const stdoutEnded = new Promise<void>((resolve) => {
     if (!proc.stdout) {
@@ -166,7 +176,9 @@ export function startKeshaLiveRecorder(
   });
 
   return {
+    micOpen,
     stop: () => stopLiveProcessWithWatchdog(proc, deps),
+    abort: () => terminateProcessWithWatchdog(proc, deps),
     done: waitForExit(proc).then(async (exitCode) => {
       // The engine writes the transcript to the CLI's inherited stdout, so it can still be in flight at exit.
       await Promise.race([

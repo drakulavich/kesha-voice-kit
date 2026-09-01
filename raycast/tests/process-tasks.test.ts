@@ -225,6 +225,53 @@ describe("process task helpers", () => {
     await expect(task.done).resolves.toBe("");
   });
 
+  it("reports the microphone open only once the engine is listening (#947)", async () => {
+    const { spawn, processes } = createSpawnRecorder();
+    const task = startKeshaLiveRecorder(kesha, 30, { spawn });
+    let open = false;
+    void task.micOpen.then(() => {
+      open = true;
+    });
+
+    processes[0].emitStderr(
+      "Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...\n",
+    );
+    await flushPromises();
+    expect(open).toBe(false);
+
+    processes[0].emitStderr("Listening (48000 Hz)... transcript prints when ");
+    await flushPromises();
+    expect(open).toBe(true);
+  });
+
+  it("stops waiting for the microphone when the live session dies first", async () => {
+    const { spawn, processes } = createSpawnRecorder();
+    const task = startKeshaLiveRecorder(kesha, 30, { spawn });
+
+    processes[0].emitStderr("E_UNSUPPORTED_PLATFORM\n");
+    processes[0].exit(1);
+    processes[0].endStdout();
+
+    await expect(task.micOpen).resolves.toBeUndefined();
+    await expect(task.done).rejects.toThrow("E_UNSUPPORTED_PLATFORM");
+  });
+
+  it("releases the microphone at once when a live session is abandoned (#947)", () => {
+    vi.useFakeTimers();
+    const { spawn, processes } = createSpawnRecorder();
+    const kill = vi.fn();
+    const task = startKeshaLiveRecorder(kesha, 30, { spawn, kill });
+
+    task.abort();
+    expect(kill).toHaveBeenCalledWith(processes[0].asChild(), "SIGTERM");
+
+    vi.advanceTimersByTime(2_999);
+    expect(kill).not.toHaveBeenCalledWith(processes[0].asChild(), "SIGKILL");
+    vi.advanceTimersByTime(1);
+    expect(kill).toHaveBeenCalledWith(processes[0].asChild(), "SIGKILL");
+    vi.useRealTimers();
+  });
+
   it("does not signal a live session that is still finalising its transcript", () => {
     vi.useFakeTimers();
     const { spawn, processes } = createSpawnRecorder();

@@ -11,8 +11,8 @@ import {
 import {
   notFoundMessage,
   probeEngineAvailability,
-  RECORD_LIVE_FEATURE,
   resolveKeshaBin,
+  supportsLiveDictation,
 } from "./kesha-bin";
 import type { EnginePreflightResult, KeshaSpawn } from "./kesha-bin";
 import {
@@ -27,6 +27,7 @@ import type {
   DictationPrefs,
   DictationSession,
   DictationState,
+  LiveRecorderTask,
   RecordingPatch,
   RunningTask,
   TranscribeResult,
@@ -56,6 +57,7 @@ export function startDictationSession(
   let keepAudio = false;
   let stopMonitoring: (() => void) | null = null;
   let recorder: RunningTask<unknown> | null = null;
+  let liveRecorder: LiveRecorderTask | null = null;
   let transcriber: RunningTask<string> | null = null;
   let stopTranscribeTimer: (() => void) | null = null;
 
@@ -85,7 +87,9 @@ export function startDictationSession(
     cancel: () => {
       cancelled = true;
       if (captureComplete) keepAudio = true;
-      recorder?.stop();
+      // A dismissed live session discards its transcript, so nothing waits on the stop ladder (#947).
+      if (liveRecorder) liveRecorder.abort();
+      else recorder?.stop();
       transcriber?.stop();
       stopMonitoring?.();
       stopTranscribeTimer?.();
@@ -123,11 +127,8 @@ export function startDictationSession(
       }
       if (cancelled) return;
 
-      if (preflight.features?.includes(RECORD_LIVE_FEATURE)) {
-        const live = await recordPhase(
-          () => deps.startLiveRecorder(kesha, maxSeconds),
-          maxSeconds,
-        );
+      if (supportsLiveDictation(preflight)) {
+        const live = await liveRecordPhase(kesha, maxSeconds);
         if (!live.ok) return;
         await deliverTranscript(normalizeLiveTranscript(live.value));
         return;
@@ -178,6 +179,19 @@ export function startDictationSession(
       // from the CLI; otherwise the private temp dir is cleaned up (#944).
       if (tempDir && !keepAudio) await deps.cleanupTempDir(tempDir);
     }
+  }
+
+  async function liveRecordPhase(
+    kesha: KeshaSpawn,
+    maxSeconds: number,
+  ): Promise<{ ok: true; value: string } | { ok: false }> {
+    const task = deps.startLiveRecorder(kesha, maxSeconds);
+    liveRecorder = task;
+    recorder = task;
+    // The engine compiles its streaming models before opening the device, ~20 s on a first run (#947).
+    await task.micOpen;
+    if (cancelled) return { ok: false };
+    return recordPhase(() => task, maxSeconds);
   }
 
   async function recordPhase<T>(
@@ -297,6 +311,7 @@ export function startDictationSession(
 
   function releaseResources() {
     recorder = null;
+    liveRecorder = null;
     transcriber = null;
     stopMonitoring?.();
     stopMonitoring = null;
