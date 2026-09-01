@@ -237,6 +237,37 @@ describe("supportsLiveDictation (#947)", () => {
     ).toBe(false);
   });
 
+  it("refuses a version string that only starts like a version", () => {
+    const features = ["transcribe", "record.live"];
+    // A numeric prefix is not a version: whatever follows may mean anything.
+    for (const cliVersion of [
+      "1.28.0garbage",
+      "1.28.0.1",
+      "1.28.0 garbage",
+      "1.28.0/2.0.0",
+      "1.28",
+    ]) {
+      expect(supportsLiveDictation({ ok: true, features, cliVersion })).toBe(
+        false,
+      );
+    }
+  });
+
+  it("accepts the version shapes the CLI actually reports", () => {
+    const features = ["transcribe", "record.live"];
+    for (const cliVersion of [
+      "1.28.0",
+      "v1.28.0",
+      " 1.29.1 ",
+      "1.28.0-alpha.1",
+      "1.28.0+build.5",
+    ]) {
+      expect(supportsLiveDictation({ ok: true, features, cliVersion })).toBe(
+        true,
+      );
+    }
+  });
+
   it("refuses an engine that does not advertise the feature", () => {
     expect(
       supportsLiveDictation({

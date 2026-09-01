@@ -190,11 +190,13 @@ function atLeastVersion(version: string | undefined, minimum: string): boolean {
   return true;
 }
 
-// A prerelease of the same triple already carries the flag, so the suffix is ignored.
+// Anchored end: a numeric prefix is not a version, and only a semver prerelease or build suffix may follow.
 function parseVersion(
   value: string | undefined,
 ): [number, number, number] | null {
-  const match = value?.trim().match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  const match = value
+    ?.trim()
+    .match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/);
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
 }
 
