@@ -387,9 +387,10 @@ A live session is the one case where "unedited" needs saying precisely: its
 stderr also carries a progress line the Engine repaints in place once a second
 with a carriage return, and surfacing every fragment would bury the Error under
 thousands of characters. The extension SHALL render those carriage returns the
-way a terminal does — keeping only the final state of each line — and SHALL
-change nothing else, so a multi-line Error keeps its blank lines and its install
-hint.
+way a terminal does — keeping only the final state of each line, and treating a
+carriage return that merely terminates a CRLF line as part of the line ending
+rather than as an overwrite — and SHALL change nothing else, so a multi-line
+Error keeps its blank lines and its install hint.
 
 #### Scenario: Maks dictates a short note
 
@@ -517,6 +518,15 @@ which is the only one with a Transcription phase to cancel. On the live path
 - WHEN Maks dismisses the Raycast window
 - THEN the Transcription is abandoned, no clipboard write happens, and no
   further view update is attempted
+
+#### Scenario: Maks closes the command as the transcript is being copied
+
+- GIVEN a Dictation session whose clipboard write has already begun
+- WHEN Maks dismisses the Raycast window
+- THEN the transcript still reaches the clipboard, because a write handed to the
+  OS cannot be recalled and the transcript is what the session exists to produce
+- AND no success toast is shown and the view is not updated, so the dismissal is
+  what Maks sees
 
 > *Technical Note — session handles: `stopRecording`, `cancelTranscription` and
 > `cancel` in `raycast/src/lib/dictation-controller.ts` lines 42–62; the

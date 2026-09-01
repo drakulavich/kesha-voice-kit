@@ -888,24 +888,26 @@ describe("dictation controller", () => {
     expect(deps.copyToClipboard).not.toHaveBeenCalled();
   });
 
-  it("does not claim success for a live transcript copied as the view is dismissed", async () => {
+  // A clipboard write handed to the OS cannot be recalled: it stays, the UI does not.
+  it("keeps a transcript whose copy was already in flight when the view was dismissed", async () => {
     const copy = deferred<void>();
     const copied: string[] = [];
     let session: DictationSession;
     const deps = createDeps({
       preflight: livePreflight(),
       copyToClipboard: vi.fn(async (text: string) => {
-        copied.push(text);
         session.cancel();
         await copy.promise;
+        copied.push(text);
       }),
     });
 
     session = startDictationSession({}, deps.setState, deps);
-    await waitFor(() => expect(copied).toEqual(["live text"]));
+    await waitFor(() => expect(deps.copyToClipboard).toHaveBeenCalled());
     copy.resolve();
     await session.done;
 
+    expect(copied).toEqual(["live text"]);
     expect(deps.states.some((state) => state.status === "ok")).toBe(false);
     expect(deps.toasts).not.toContainEqual(
       expect.objectContaining({ title: "Copied transcript" }),

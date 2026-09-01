@@ -274,6 +274,25 @@ describe("process task helpers", () => {
     expect(message.length).toBeLessThan(400);
   });
 
+  it("keeps a CRLF-terminated live error intact", async () => {
+    const { spawn, processes } = createSpawnRecorder();
+    const task = startKeshaLiveRecorder(kesha, 30, { spawn });
+
+    processes[0].emitStderr(
+      "Error: VAD model not installed\r\n\r\nPlease run: kesha install --vad\r\n",
+    );
+    processes[0].exit(1);
+    processes[0].endStdout();
+
+    const message = await task.done.then(
+      () => "resolved",
+      (err: Error) => err.message,
+    );
+    expect(message).toBe(
+      "Error: VAD model not installed\n\nPlease run: kesha install --vad",
+    );
+  });
+
   it("keeps a multi-line live error intact, blank line and hint included", async () => {
     const { spawn, processes } = createSpawnRecorder();
     const task = startKeshaLiveRecorder(kesha, 30, { spawn });

@@ -140,7 +140,11 @@ const LIVE_LISTENING_MARKER = "Listening (";
 function renderCarriageReturns(raw: string): string {
   return raw
     .split("\n")
-    .map((line) => line.slice(line.lastIndexOf("\r") + 1))
+    .map((line) => {
+      // A CRLF line ends in the \r that terminates it, not in an overwrite.
+      const body = line.endsWith("\r") ? line.slice(0, -1) : line;
+      return body.slice(body.lastIndexOf("\r") + 1);
+    })
     .join("\n");
 }
 
