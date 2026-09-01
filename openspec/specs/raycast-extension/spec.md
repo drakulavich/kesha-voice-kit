@@ -219,23 +219,57 @@ session.
 The extension SHALL read the Engine's advertised feature list from the CLI's
 machine-readable status output, and SHALL run a single `kesha record --live`
 process — which transcribes the microphone as it captures and prints the
-transcript when recording stops — whenever `record.live` appears in it. When it
-does not, the extension SHALL record a WAV and transcribe that file in a second
-process, exactly as before. An unreadable, malformed, or absent feature list
-SHALL be treated as the feature being absent, never as an Error: the fallback
-path works everywhere, so guessing wrong in that direction costs nothing.
+transcript when recording stops — whenever `record.live` appears in it **and**
+the reported CLI version is one that accepts the `--live` flag. When either half
+is missing, the extension SHALL record a WAV and transcribe that file in a
+second process, exactly as before. An unreadable, malformed, or absent feature
+list SHALL be treated as the feature being absent, never as an Error: the
+fallback path works everywhere, so guessing wrong in that direction costs
+nothing.
+
+Both halves are required because the Engine and the CLI version independently.
+The Engine advertises what it can do; the CLI is what has to accept the flag,
+and it ignores a flag it does not know rather than rejecting it — so an Engine
+newer than the CLI's pin would otherwise reach a CLI that exits 2 asking for
+`--out`, with the recording already lost.
 
 Live Transcription removes the separate Transcription phase rather than adding a
 progressive one. `--live` prints its transcript once, when recording stops; the
 extension SHALL not present it as text appearing while Maks speaks.
 
+A live session prepares its streaming Transcription before it opens the input
+device — a first run compiles models for the ANE and takes about 20 s. The
+extension SHALL keep showing the preparing view, with no Signal meter, no idle
+countdown and no Stop action, until the Engine reports that it is listening.
+Claiming to record through that window would lose everything spoken in it and
+then blame macOS Microphone permission for the empty transcript.
+
 #### Scenario: Apple Silicon with an Engine that advertises the feature
 
-- GIVEN the probe reports `record.live` among the Engine's features
+- GIVEN the probe reports `record.live` among the Engine's features, and a CLI
+  version that accepts `--live`
 - WHEN Maks dictates and stops
 - THEN one CLI process ran for the whole session, no WAV was written, and no
   separate Transcription phase was entered
 - AND the transcript is on the clipboard as soon as the live session ends
+
+#### Scenario: The first live session of the day warms up
+
+- GIVEN a live Dictation session whose Engine has not compiled its streaming
+  models yet
+- WHEN the command opens
+- THEN the view says it is preparing, no Signal meter runs, and the idle
+  auto-stop is not counting
+- AND it flips to Recording only once the Engine reports the microphone open,
+  so the first words spoken are captured
+
+#### Scenario: An Engine advertising the feature to a CLI too old for the flag
+
+- GIVEN the probe reports `record.live` but a CLI version older than the release
+  that added `kesha record --live`
+- WHEN Maks dictates
+- THEN the session takes the record-then-transcribe path rather than spawning a
+  flag the CLI would ignore
 
 #### Scenario: An Intel Mac, or any Engine without the feature
 
@@ -255,14 +289,25 @@ extension SHALL not present it as text appearing while Maks speaks.
 
 > *Technical Note — the feature list is read by `probeEngineAvailability`
 > (`raycast/src/lib/kesha-bin.ts`), which already ran `kesha status --json` for
-> the setup probe and now returns `engine.capabilities.features`; a value that is
-> not an array of strings degrades to an empty list. The flag name is
-> `RECORD_LIVE_FEATURE`, matching what `rust/src/capabilities.rs` advertises under
-> the same `cfg` that compiles `cli::record::run_live`. Live spawn:
+> the setup probe and now returns `engine.capabilities.features` and
+> `cliVersion`; a value that is not an array of strings degrades to an empty
+> list. Both halves are weighed by `supportsLiveDictation` in the same file,
+> against `RECORD_LIVE_FEATURE` — matching what `rust/src/capabilities.rs`
+> advertises under the same `cfg` that compiles `cli::record::run_live` — and
+> `RECORD_LIVE_MIN_CLI_VERSION = "1.28.0"`, the first CLI release containing
+> `record --live` (`git tag --contains 50511a0`). A prerelease of the same
+> triple counts, and an unparseable or absent version fails closed to the
+> fallback. Live spawn:
 > `startKeshaLiveRecorder` in `raycast/src/lib/process-tasks.ts`. Branch:
 > `startDictationSession`'s `run()` in `raycast/src/lib/dictation-controller.ts`,
 > over a `recordPhase` generic in the task it starts so the meter, the idle
-> tracker and cancellation are shared by both paths.*
+> tracker and cancellation are shared by both paths; `liveRecordPhase` starts the
+> live task first and awaits its `micOpen` before handing it over. `micOpen`
+> resolves on the Engine's `Listening (` stderr line — `rust/src/record.rs`
+> prints it right after `stream.play()`, with `StreamingAsrSession::start` ahead
+> of that — or on the process ending first, so a failed spawn cannot hang the
+> session. `kesha install`'s warmup covers `backend::create_backend`, not
+> `init_streaming_asr`, so the first live session pays that cost.*
 
 ### Requirement: Silent audio is rejected before Transcription with a permission hint
 
@@ -462,10 +507,15 @@ command closing. Termination SHALL escalate: a cooperative stop first, then
 SIGTERM, then SIGKILL, targeting the whole process group so an interpreter
 wrapper cannot leave the CLI behind.
 
-The live path starts one child where the fallback starts two, and its escalation
-SHALL be slower, because a live session produces its transcript *after* the
-cooperative stop: signalling it on the fallback recorder's schedule would destroy
-the transcript the session exists to deliver.
+The live path starts one child where the fallback starts two, and the escalation
+after a **Stop and Transcribe** SHALL be slower, because a live session produces
+its transcript *after* the cooperative stop: signalling it on the fallback
+recorder's schedule would destroy the transcript the session exists to deliver.
+
+That patience is owed only to a stop that is waiting for a transcript. A
+cancelled live session — the command being dismissed — discards its transcript,
+so it SHALL release the input device immediately rather than hold the microphone
+for the length of the finish ladder.
 
 #### Scenario: A stopped recorder exits promptly
 
@@ -489,6 +539,13 @@ the transcript the session exists to deliver.
   seconds, so the streaming session can print its transcript
 - AND SIGTERM and then SIGKILL still follow if it never exits
 
+#### Scenario: A live session is dismissed rather than stopped
+
+- GIVEN a live Dictation session
+- WHEN Maks closes the command instead of stopping it
+- THEN SIGTERM goes out at once, with SIGKILL 3 s behind it, and the microphone
+  is free for the next app rather than held for the finish ladder
+
 > *Technical Note — escalation ladders: `stopProcessWithWatchdog`
 > (stdin EOF → SIGTERM at 1500 ms → SIGKILL at 5000 ms),
 > `stopLiveProcessWithWatchdog` (stdin EOF → SIGTERM at `LIVE_STOP_GRACE_MS`
@@ -497,7 +554,10 @@ the transcript the session exists to deliver.
 > (SIGTERM now → SIGKILL at 3000 ms) in `raycast/src/lib/process-tasks.ts`. The
 > live grace exists because the CLI's own SIGTERM handler SIGKILLs the Engine
 > 1 s later (`FORCE_KILL_GRACE_MS` in `src/process-tree.ts`), which would leave a
-> live session ~2.5 s in total under the fallback ladder. A live session that
+> live session ~2.5 s in total under the fallback ladder. `startKeshaLiveRecorder`
+> returns both ladders: `stop` for the finish, `abort` — the
+> `terminateProcessWithWatchdog` one — for a dismissal, chosen by
+> `DictationSession.cancel`. A live session that
 > exits 130 or 143 after printing its transcript is a success, not a failure
 > (#962). The Signal meter helper has
 > its own shorter ladder — SIGTERM, then SIGKILL after 1 s —
