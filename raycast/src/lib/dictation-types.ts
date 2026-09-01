@@ -71,6 +71,10 @@ export interface DictationControllerDeps {
     audioPath: string,
     maxSeconds: number,
   ) => RunningTask<void>;
+  startLiveRecorder: (
+    kesha: KeshaSpawn,
+    maxSeconds: number,
+  ) => RunningTask<string>;
   startTranscriber: (
     kesha: KeshaSpawn,
     audioPath: string,

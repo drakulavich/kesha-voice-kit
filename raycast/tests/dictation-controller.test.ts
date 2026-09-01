@@ -697,6 +697,166 @@ describe("dictation controller", () => {
     recorder.resolve();
     await session.done;
   });
+
+  it("runs one process and skips the transcription phase on a live engine (#947)", async () => {
+    const deps = createDeps({ preflight: livePreflight() });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.startLiveRecorder).toHaveBeenCalledTimes(1);
+    expect(deps.startLiveRecorder).toHaveBeenCalledWith(
+      { command: "kesha", prefixArgs: [] },
+      300,
+    );
+    expect(deps.startRecorder).not.toHaveBeenCalled();
+    expect(deps.startTranscriber).not.toHaveBeenCalled();
+    expect(deps.createTempDir).not.toHaveBeenCalled();
+    expect(deps.isSilentAudio).not.toHaveBeenCalled();
+    expect(deps.states.some((state) => state.status === "transcribing")).toBe(
+      false,
+    );
+    expect(deps.copyToClipboard).toHaveBeenCalledWith("live text");
+    expect(deps.states.at(-1)).toMatchObject({
+      status: "ok",
+      result: { text: "live text" },
+    });
+  });
+
+  it("keeps the record-then-transcribe path on an engine without record.live", async () => {
+    const deps = createDeps({
+      preflight: vi.fn(async () => ({ ok: true, features: ["transcribe"] })),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.startLiveRecorder).not.toHaveBeenCalled();
+    expect(deps.startRecorder).toHaveBeenCalled();
+    expect(deps.createTempDir).toHaveBeenCalled();
+    expect(deps.isSilentAudio).toHaveBeenCalled();
+    expect(deps.startTranscriber).toHaveBeenCalled();
+    expect(deps.states.some((state) => state.status === "transcribing")).toBe(
+      true,
+    );
+  });
+
+  it("keeps the record-then-transcribe path when the CLI is too old to report features", async () => {
+    const deps = createDeps();
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.startLiveRecorder).not.toHaveBeenCalled();
+    expect(deps.startRecorder).toHaveBeenCalled();
+    expect(deps.createTempDir).toHaveBeenCalled();
+    expect(deps.isSilentAudio).toHaveBeenCalled();
+    expect(deps.startTranscriber).toHaveBeenCalled();
+  });
+
+  it("stops a live session and delivers the transcript it produced", async () => {
+    const live = deferred<string>();
+    const liveStop = vi.fn();
+    const deps = createDeps({
+      preflight: livePreflight(),
+      startLiveRecorder: vi.fn(() => ({ done: live.promise, stop: liveStop })),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await waitFor(() => expect(deps.startLiveRecorder).toHaveBeenCalled());
+
+    session.stopRecording();
+    expect(deps.states.some((state) => state.status === "stopping")).toBe(true);
+    expect(liveStop).toHaveBeenCalled();
+
+    live.resolve("stopped text\n");
+    await session.done;
+
+    expect(deps.states.at(-1)).toMatchObject({
+      status: "ok",
+      result: { text: "stopped text" },
+    });
+  });
+
+  it("surfaces a failed live session with the CLI's own message", async () => {
+    const deps = createDeps({
+      preflight: livePreflight(),
+      startLiveRecorder: vi.fn(() =>
+        resolvedTask(
+          Promise.reject(
+            new Error(
+              "E_UNSUPPORTED_PLATFORM: live transcription requires a CoreML engine",
+            ),
+          ),
+        ),
+      ),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    const last = deps.states.at(-1);
+    expect(last).toMatchObject({
+      status: "error",
+      message:
+        "E_UNSUPPORTED_PLATFORM: live transcription requires a CoreML engine",
+    });
+    // There is no kept recording on the live path, so no path may be named.
+    expect(last?.status === "error" && last.hint).toBeUndefined();
+    expect(deps.toasts).toContainEqual({
+      style: "failure",
+      title: "Dictation failed",
+    });
+  });
+
+  it("still prunes recordings left by earlier sessions on the live path", async () => {
+    const deps = createDeps({ preflight: livePreflight() });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await session.done;
+
+    expect(deps.pruneOldRecordings).toHaveBeenCalled();
+    expect(deps.cleanupTempDir).not.toHaveBeenCalled();
+  });
+
+  it("keeps the meter and idle auto-stop running on the live path", async () => {
+    let clock = 0;
+    let emit!: (patch: RecordingPatch) => void;
+    const live = deferred<string>();
+    const liveStop = vi.fn(() => live.resolve("tail words\n"));
+    const deps = createDeps({
+      now: () => clock,
+      preflight: livePreflight(),
+      startLiveRecorder: vi.fn(() => ({ done: live.promise, stop: liveStop })),
+      startRecordingMonitor: vi.fn((onPatch) => {
+        emit = onPatch;
+        return vi.fn();
+      }),
+    });
+
+    const session = startDictationSession({}, deps.setState, deps);
+    await waitFor(() => expect(deps.startLiveRecorder).toHaveBeenCalled());
+
+    emit({ signal: emptySignal("listening") });
+    clock = 30_000;
+    emit({ signal: emptySignal("listening") });
+    expect(deps.current()).toMatchObject({ status: "recording", idle: true });
+    expect(liveStop).not.toHaveBeenCalled();
+
+    clock = 45_000;
+    emit({ signal: emptySignal("listening") });
+    expect(liveStop).toHaveBeenCalledTimes(1);
+
+    await session.done;
+    expect(deps.toasts).toContainEqual({
+      style: "animated",
+      title: "Stopped after silence.",
+    });
+    expect(deps.states.at(-1)).toMatchObject({
+      status: "ok",
+      result: { text: "tail words" },
+    });
+  });
 });
 
 describe("createSilenceTracker", () => {
@@ -970,6 +1130,7 @@ function createDeps(
     cleanupTempDir: vi.fn(async () => undefined),
     startRecordingMonitor: vi.fn(() => vi.fn()),
     startRecorder: vi.fn(() => resolvedTask(Promise.resolve())),
+    startLiveRecorder: vi.fn(() => resolvedTask(Promise.resolve(" live text\n"))),
     startTranscriber: vi.fn(() =>
       resolvedTask(Promise.resolve(" hello world\n")),
     ),
@@ -991,6 +1152,13 @@ function createDeps(
     current: () => current,
     toasts,
   };
+}
+
+function livePreflight() {
+  return vi.fn(async () => ({
+    ok: true,
+    features: ["transcribe", "record.live"],
+  }));
 }
 
 function resolvedTask<T>(done: Promise<T>): RunningTask<T> {

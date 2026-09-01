@@ -11,10 +11,15 @@ import {
 import {
   notFoundMessage,
   probeEngineAvailability,
+  RECORD_LIVE_FEATURE,
   resolveKeshaBin,
 } from "./kesha-bin";
 import type { EnginePreflightResult, KeshaSpawn } from "./kesha-bin";
-import { startKeshaRecorder, startKeshaTranscriber } from "./process-tasks";
+import {
+  startKeshaLiveRecorder,
+  startKeshaRecorder,
+  startKeshaTranscriber,
+} from "./process-tasks";
 import { startRecordingMonitor } from "./recording-monitor";
 import { emptySignal } from "./recording-view";
 import type {
@@ -50,7 +55,7 @@ export function startDictationSession(
   let confirmedSilent = false;
   let keepAudio = false;
   let stopMonitoring: (() => void) | null = null;
-  let recorder: RunningTask<void> | null = null;
+  let recorder: RunningTask<unknown> | null = null;
   let transcriber: RunningTask<string> | null = null;
   let stopTranscribeTimer: (() => void) | null = null;
 
@@ -118,10 +123,25 @@ export function startDictationSession(
       }
       if (cancelled) return;
 
-      tempDir = await deps.createTempDir();
-      audioPath = join(tempDir, "dictation.wav");
+      if (preflight.features?.includes(RECORD_LIVE_FEATURE)) {
+        const live = await recordPhase(
+          () => deps.startLiveRecorder(kesha, maxSeconds),
+          maxSeconds,
+        );
+        if (!live.ok) return;
+        await deliverTranscript({ file: "", text: live.value.trim() });
+        return;
+      }
 
-      if (!(await recordPhase(kesha, audioPath, maxSeconds))) return;
+      tempDir = await deps.createTempDir();
+      const file = join(tempDir, "dictation.wav");
+      audioPath = file;
+
+      const captured = await recordPhase(
+        () => deps.startRecorder(kesha, file, maxSeconds),
+        maxSeconds,
+      );
+      if (!captured.ok) return;
 
       // The WAV is on disk now; a dismiss or failure past this point — even
       // during the silence read below — must not discard it (#944).
@@ -160,11 +180,10 @@ export function startDictationSession(
     }
   }
 
-  async function recordPhase(
-    kesha: KeshaSpawn,
-    audioPath: string,
+  async function recordPhase<T>(
+    startTask: () => RunningTask<T>,
     maxSeconds: number,
-  ): Promise<boolean> {
+  ): Promise<{ ok: true; value: T } | { ok: false }> {
     setState({
       status: "recording",
       maxSeconds,
@@ -215,19 +234,21 @@ export function startDictationSession(
       title: "Recording",
       message: "Stops automatically when you pause",
     });
-    if (cancelled) return false;
+    if (cancelled) return { ok: false };
     if (stopRequested) {
       setState({
         status: "error",
         message: "Recording stopped before any audio was captured.",
       });
-      return false;
+      return { ok: false };
     }
 
-    recorder = deps.startRecorder(kesha, audioPath, maxSeconds);
+    const task = startTask();
+    recorder = task;
     const recorderStartedAt = now();
+    let value: T;
     try {
-      await recorder.done;
+      value = await task.done;
     } finally {
       // Wall-clock capture length ≈ audio duration; it feeds the scaled
       // transcription timeout so a long recording keeps proportional room (#944).
@@ -236,7 +257,7 @@ export function startDictationSession(
       stopMonitoring?.();
       stopMonitoring = null;
     }
-    return !cancelled;
+    return cancelled ? { ok: false } : { ok: true, value };
   }
 
   async function transcribePhase(
@@ -395,6 +416,8 @@ export function createDefaultDictationDeps(
     startRecordingMonitor,
     startRecorder: (kesha, audioPath, maxSeconds) =>
       startKeshaRecorder(kesha, audioPath, maxSeconds),
+    startLiveRecorder: (kesha, maxSeconds) =>
+      startKeshaLiveRecorder(kesha, maxSeconds),
     startTranscriber: (kesha, audioPath, timeoutMs) =>
       startKeshaTranscriber(kesha, audioPath, timeoutMs),
     isSilentAudio: isSilentWavFile,
