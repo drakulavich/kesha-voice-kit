@@ -1,9 +1,10 @@
 # Mutation evidence — #1145 (`rust-test.yml`'s own `rust/build.rs` code-filter entry was not pinned)
 
 `.github/workflows/rust-test.yml`'s `changes` job carries a curated eight-entry `coreml` filter,
-and `rust/build.rs` is one of them. Nothing read that filter: before this ticket the only rule in
-`check-workflows.ts` that touched `rust-test.yml` at all was
-`requireRustTestCancelsSupersededRuns` (#1105, concurrency). Deleting the entry left
+and `rust/build.rs` is one of them. Nothing read that filter: before this ticket the only
+rust-test.yml-specific rule in `check-workflows.ts` was
+`requireRustTestCancelsSupersededRuns` (#1105, concurrency), and none of the dozen file-agnostic
+rules `checkFile` dispatches over every workflow looks at a paths-filter. Deleting the entry left
 `bun run check:workflows` green.
 
 #1141/#1144 closed the same reach-gap class one workflow over, for `ci.yml`'s `code` filter, and
@@ -46,7 +47,7 @@ the `a narrowing that misses the build script is caught` case covers the other d
 
 | Guard | Asserts | Where it runs |
 |---|---|---|
-| `namedFilterOf(path, document, name)` | The named list from a `changes` job's inline paths-filter, or the caller's verbatim error | Five rules across `ci.yml` and `rust-test.yml` |
+| `namedFilterOf(path, document, name)` | The named list from a `changes` job's inline paths-filter, or the caller's verbatim error | Every paths-filter rule, across `ci.yml` and `rust-test.yml` |
 | `requireBuildScriptInCoremlFilter` | Some path in `rust-test.yml`'s `coreml` filter covers `rust/build.rs` | `checkFile`, `rust-test.yml` only |
 
 `codeFilterOf` became `namedFilterOf` rather than gaining a sibling: #1144's round-1 P3 noted the
@@ -97,3 +98,32 @@ new one asks for `code`.
   `unit-tests` and never runs that suite. It does not block this ticket — the new rule runs in
   `workflow-lint`, which *is* gated on `.github/workflows/**` — and the fix widens which jobs run
   on every workflow PR, so it is left for its own ticket.
+
+## Review round 1
+
+**The real-file case over-pinned.** Its first cut asserted
+`arrayContaining(["rust/build.rs", "rust/src/backend/fluidaudio.rs"])`, which pinned a second
+`coreml` entry — contradicting this document's own scope above, and pinning it in the wrong lane.
+`unit-tests` rides `ci.yml`'s `code` filter, and `.github/workflows/rust-test.yml` appears nowhere
+in that filter, so a re-curation PR touching only `rust-test.yml` would have merged green and
+reddened the *next* unrelated PR touching `tests/**`, `src/**` or `.github/scripts/**`. The
+assertion now names `rust/build.rs` only.
+
+| Probe | Before the fix | After |
+|---|---|---|
+| `- 'rust/src/backend/fluidaudio.rs'` deleted → `bun test tests/unit/check-workflows.test.ts` | **PINNED**, failing `namedFilterOf > reads a filter other than code, from the real rust-test.yml` | **NOT PINNED** — 252 pass, 0 fail |
+| `- 'rust/src/backend/fluidaudio.rs'` deleted → `bun run check:workflows` | **NOT PINNED** (unchanged: that entry is out of scope by design) | **NOT PINNED** |
+| row 7, `?.[name]` → `?.code` | 241 pass, 11 fail | **unchanged** — 241 pass, 11 fail, still including `namedFilterOf > reads a filter other than code…`, `requireBuildScriptInCoremlFilter > passes on the real rust-test.yml` and `requireFlakeNixInWorkflowsFilter > passes on the real ci.yml` |
+| row 1, the entry deleted → `bun run check:workflows` | **PINNED** | **PINNED** — exit 1, 1 check failed |
+
+Narrowing the assertion costs nothing: the generalisation it exists to pin is still held by eleven
+assertions, two of which read real workflow files.
+
+**Two checkable comment claims were false.** `namedFilterOf`'s doc counted "five rules" against an
+actual six — the count was right pre-diff at four and was updated to five while *two* callers were
+added. The numeral is gone rather than corrected, following the ruling already recorded beside
+`ci.yml`'s `code` filter ("Deliberately no count — the one that lived here read 16 against an
+actual 25"). And the opening paragraph's "the only rule that touched `rust-test.yml` at all" was
+false as written: `checkFile` dispatches a dozen file-agnostic rules over every workflow. Only the
+*rust-test.yml-specific* rules numbered one, and the load-bearing claim — that nothing read the
+`coreml` filter — stands: row 1 runs **NOT PINNED** against base `4dbe3b5` and **PINNED** at head.

@@ -624,7 +624,7 @@ const coveredBy = (patterns: string[], file: string) => {
 
 export type NamedFilter = { entries: string[] } | { errors: string[] };
 
-/** The named list from a `changes` job's inline paths-filter, or the error the caller returns verbatim — five rules read one of these and each private copy of the parser was one more place to drift (#1141 review round 1, generalised over the filter name in #1145). */
+/** The named list from a `changes` job's inline paths-filter, or the error the caller returns verbatim — every paths-filter rule reads one of these and each private copy of the parser was one more place to drift (#1141 review round 1, generalised over the filter name in #1145). */
 export function namedFilterOf(path: string, document: unknown, name: string): NamedFilter {
   const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
   if (typeof raw !== "string") return { errors: [`${path}: expected a \`changes\` job with inline paths-filter filters`] };

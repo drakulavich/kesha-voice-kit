@@ -373,7 +373,7 @@ describe("namedFilterOf", () => {
 
   test("reads a filter other than code, from the real rust-test.yml", () => {
     expect(namedFilterOf(RUST_TEST, parseRepoYaml(RUST_TEST), "coreml")).toEqual({
-      entries: expect.arrayContaining(["rust/build.rs", "rust/src/backend/fluidaudio.rs"]),
+      entries: expect.arrayContaining(["rust/build.rs"]),
     });
   });
 
