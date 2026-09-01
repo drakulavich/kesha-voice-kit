@@ -833,6 +833,37 @@ describe("dictation controller", () => {
     expect(deps.copyToClipboard).not.toHaveBeenCalled();
   });
 
+  it("does not leave an abandoned live failure unhandled (#947)", async () => {
+    const micOpen = deferred<void>();
+    const live = deferred<string>();
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", record);
+    try {
+      const deps = createDeps({
+        preflight: livePreflight(),
+        startLiveRecorder: vi.fn(() =>
+          liveTask(live.promise, { micOpen: micOpen.promise }),
+        ),
+      });
+
+      const session = startDictationSession({}, deps.setState, deps);
+      await waitFor(() => expect(deps.startLiveRecorder).toHaveBeenCalled());
+
+      session.cancel();
+      micOpen.resolve();
+      live.reject(new Error("live session died during warmup"));
+      await session.done;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+  });
+
   it("does not deliver a live transcript that arrives after the view was dismissed", async () => {
     const live = deferred<string>();
     const deps = createDeps({

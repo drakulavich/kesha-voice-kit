@@ -188,6 +188,8 @@ export function startDictationSession(
     const task = deps.startLiveRecorder(kesha, maxSeconds);
     liveRecorder = task;
     recorder = task;
+    // A cancel or early stop abandons the task before anything awaits it (#947).
+    void task.done.catch(() => {});
     // The engine compiles its streaming models before opening the device, ~20 s on a first run (#947).
     await task.micOpen;
     if (cancelled) return { ok: false };
