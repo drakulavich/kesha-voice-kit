@@ -12,6 +12,7 @@ import {
   LIVE_STOP_GRACE_MS,
 } from "../src/lib/dictation-config";
 import { FakeProcess, createSpawnRecorder } from "./helpers/fake-process";
+import { flushPromises } from "./helpers/async";
 
 const TIMEOUT_MS = 90_000;
 
@@ -187,7 +188,8 @@ describe("process task helpers", () => {
 
     processes[0].emitStdout("partial\n");
     processes[0].exit(0);
-    await vi.advanceTimersByTimeAsync(LIVE_STDOUT_FLUSH_MS);
+    await flushPromises();
+    vi.advanceTimersByTime(LIVE_STDOUT_FLUSH_MS);
 
     await expect(task.done).resolves.toBe("partial\n");
     vi.useRealTimers();
