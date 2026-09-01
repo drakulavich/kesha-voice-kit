@@ -152,7 +152,7 @@ describe("capability pact — recordings", () => {
       expect(pact.backend).toBe(backend);
     });
 
-    // Unlike engineVersion, neither moves in a release PR, so drift here is a hand-edit (#1138).
+    // assetName is pinned against an independent authority; recordedFrom below is only shape-consistency (a consistent multi-field edit passes) — the hash itself belongs to the pact workflow's verify mode (#1138).
     it(`${key} names the asset src/engine-targets.ts publishes`, () => {
       expect(provenance.assetName).toBe(engineTarget(platform, arch)!.assetName);
     });
