@@ -146,6 +146,8 @@ export interface ProbeDeps {
   ) => Promise<{ stdout: string; stderr: string }>;
 }
 
+export const RECORD_LIVE_FEATURE = "record.live";
+
 export interface EnginePreflightResult {
   ok: boolean;
   hint?: string;
@@ -155,6 +157,8 @@ export interface EnginePreflightResult {
    * those users to re-download would fix nothing (#647).
    */
   reason?: "missing" | "unusable" | "contract";
+  /** Engine `features` from `kesha status --json`; absent when the CLI predates it. */
+  features?: string[];
 }
 
 const MISSING_ENGINE_MARKER = "not installed";
@@ -210,6 +214,15 @@ function capabilitiesAreReadable(capabilities: unknown): boolean {
   );
 }
 
+// A malformed list degrades to "no features" so the caller falls back rather than guessing (#947).
+function readFeatures(capabilities: unknown): string[] {
+  const value = (capabilities as Record<string, unknown> | null)?.features;
+  if (!Array.isArray(value)) return [];
+  return value.every((entry) => typeof entry === "string")
+    ? (value as string[])
+    : [];
+}
+
 function readStructuredStatus(
   payload: Record<string, unknown>,
 ): EnginePreflightResult {
@@ -231,7 +244,7 @@ function readStructuredStatus(
   if (!capabilitiesAreReadable(capabilities)) {
     return { ok: false, reason: "unusable", hint: REPAIR_HINT };
   }
-  return { ok: true };
+  return { ok: true, features: readFeatures(capabilities) };
 }
 
 /**

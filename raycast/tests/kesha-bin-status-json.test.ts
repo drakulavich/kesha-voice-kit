@@ -38,7 +38,66 @@ describe("probeEngineAvailability — structured status (#647)", () => {
       },
       hint: null,
     });
-    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({ ok: true });
+    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
+      ok: true,
+      features: ["tts"],
+    });
+  });
+
+  it("reports the engine's feature list so a caller can detect record.live (#947)", async () => {
+    const execFile = jsonStdout({
+      engine: {
+        installed: true,
+        path: "/x",
+        capabilities: {
+          protocolVersion: 3,
+          backend: "coreml",
+          features: ["transcribe", "record.live"],
+        },
+      },
+      hint: null,
+    });
+    const result = await probeEngineAvailability(kesha, { execFile });
+    expect(result.ok).toBe(true);
+    expect(result.features).toContain("record.live");
+  });
+
+  it("reports no features for an engine whose capabilities omit them", async () => {
+    const execFile = jsonStdout({
+      engine: {
+        installed: true,
+        path: "/x",
+        capabilities: { protocolVersion: 3, backend: "onnx" },
+      },
+      hint: null,
+    });
+    const result = await probeEngineAvailability(kesha, { execFile });
+    expect(result.ok).toBe(true);
+    expect(result.features).toEqual([]);
+  });
+
+  it("reports no features when the CLI is too old for status --json", async () => {
+    const result = await probeEngineAvailability(kesha, {
+      execFile: textStdout("Engine:\n  \u2713 Binary: /x\n"),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.features).toBeFalsy();
+  });
+
+  it("ignores a features value that is not an array of strings", async () => {
+    for (const features of ["record.live", ["transcribe", 7], 42, null]) {
+      const execFile = jsonStdout({
+        engine: {
+          installed: true,
+          path: "/x",
+          capabilities: { protocolVersion: 3, backend: "coreml", features },
+        },
+        hint: null,
+      });
+      const result = await probeEngineAvailability(kesha, { execFile });
+      expect(result.ok).toBe(true);
+      expect(result.features).toEqual([]);
+    }
   });
 
   it("takes the hint from the payload when the engine is missing", async () => {
