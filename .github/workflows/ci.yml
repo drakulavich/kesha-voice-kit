@@ -102,6 +102,8 @@ jobs:
               # resolveFile also accepts rust/build.rs and rust/tests/*.rs as reference targets, so a rename there must fire the cross-reference test too (#1132).
               - 'rust/build.rs'
               - 'rust/tests/**'
+              # Same reason, and tracked: rust/vendor/vosk-tts/src/*.rs are legal rust/… reference targets too (#1141 review round 1).
+              - 'rust/vendor/**'
             integration:
               - 'src/**'
               - 'tests/integration/**'

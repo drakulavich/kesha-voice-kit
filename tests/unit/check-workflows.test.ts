@@ -5,9 +5,11 @@ import { describe, expect, test } from "bun:test";
 import { parse } from "yaml";
 import {
   checkFile,
+  codeFilterOf,
   checkFlakeNix,
   collectCacheWriters,
   collectManifestSources,
+  collectRustReferenceTargets,
   collectRustSources,
   collectRuleSources,
   forbidFindPipedToHead,
@@ -26,6 +28,7 @@ import {
   requireDepsBeforeBunTest,
   requireFlakeNixInWorkflowsFilter,
   requireManifestSourcesInCodeFilter,
+  requireRustReferenceTargetsInCodeFilter,
   requireRustSourcesInCodeFilter,
   requireManifestSourcesInSeedFilter,
   requireNpmPublishAfterPackaging,
@@ -358,6 +361,46 @@ describe("requireNpmPublishAfterPackaging", () => {
 const codeFilter = (paths: string[]) =>
   job("changes", [{ with: { filters: `code:\n${paths.map((p) => `  - '${p}'`).join("\n")}\n` } }]);
 
+const NO_CODE_LIST = job("changes", [{ with: { filters: "integration:\n  - 'src/**'\n" } }]);
+const NO_INLINE_FILTERS = { jobs: { changes: {} } };
+
+describe("codeFilterOf", () => {
+  test("returns the code list", () => {
+    expect(codeFilterOf(CI, codeFilter(["src/**"]))).toEqual({ code: ["src/**"] });
+  });
+
+  test("names a filters block carrying no code list", () => {
+    expect(codeFilterOf(CI, NO_CODE_LIST)).toEqual({
+      errors: [`${CI}: paths-filter is missing a \`code\` list`],
+    });
+  });
+
+  test("names a changes job with no inline filters", () => {
+    expect(codeFilterOf(CI, NO_INLINE_FILTERS)).toEqual({
+      errors: [`${CI}: expected a \`changes\` job with inline paths-filter filters`],
+    });
+  });
+});
+
+// One parameterised pin replaces the per-rule copies of this pair: every rule reads the same parser,
+// so what needs pinning is that each one surfaces its errors rather than crashing (#1141 review round 1).
+describe("every code-filter rule surfaces the shared parser's errors", () => {
+  const rules: Array<[string, (document: unknown) => string[]]> = [
+    ["requireTestedScriptsInCodeFilter", (d) => requireTestedScriptsInCodeFilter(CI, d, [".github/scripts/check-versions.ts"])],
+    ["requireManifestSourcesInCodeFilter", (d) => requireManifestSourcesInCodeFilter(CI, d, ["rust/src/models.rs"])],
+    ["requireRustSourcesInCodeFilter", (d) => requireRustSourcesInCodeFilter(CI, d, ["rust/src/models.rs"])],
+    ["requireRustReferenceTargetsInCodeFilter", (d) => requireRustReferenceTargetsInCodeFilter(CI, d, ["rust/build.rs"])],
+  ];
+
+  test.each(rules)("%s reports a missing code list", (_name, rule) => {
+    expect(rule(NO_CODE_LIST)[0]).toContain("missing a `code` list");
+  });
+
+  test.each(rules)("%s reports a changes job with no inline filters", (_name, rule) => {
+    expect(rule(NO_INLINE_FILTERS)[0]).toContain("expected a `changes` job");
+  });
+});
+
 describe("requireTestedScriptsInCodeFilter", () => {
   test("passes on the real ci.yml", () => {
     const document = parseRepoYaml(CI);
@@ -387,15 +430,6 @@ describe("requireTestedScriptsInCodeFilter", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("check-versions.ts");
   });
-
-  test("fails when the code list is gone", () => {
-    const document = job("changes", [{ with: { filters: "integration:\n  - 'src/**'\n" } }]);
-    expect(requireTestedScriptsInCodeFilter(CI, document, [])[0]).toContain("missing a `code` list");
-  });
-
-  test("fails when the changes job has no inline filters", () => {
-    expect(requireTestedScriptsInCodeFilter(CI, { jobs: { changes: {} } }, [])[0]).toContain("expected a `changes` job");
-  });
 });
 
 const SEED = ".github/workflows/cache-seed.yml";
@@ -403,7 +437,7 @@ const seedFilter = (paths: string[]) => ({ on: { push: { paths } } });
 
 // readdirSync/join emit win32 separators on Windows; the rules normalise at compare time, so the
 // real-tree assertions have to as well or they only hold on posix (#950 round 3).
-const NO_SOURCES = { manifestSources: [], rustSources: [] };
+const NO_SOURCES = { manifestSources: [], rustSources: [], referenceTargets: [] };
 
 const repoRelative = (files: string[]) =>
   files.map((file) => file.slice(REPO_ROOT.length + 1).replaceAll("\\", "/"));
@@ -583,7 +617,7 @@ describe("manifest sources stay inside both path filters", () => {
     const seed = join(dir, "cache-seed.yml");
     writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'a.rs'\n");
 
-    const sources = { manifestSources: ["a.rs"], rustSources: ["a.rs", "b.rs"] };
+    const sources = { manifestSources: ["a.rs"], rustSources: ["a.rs", "b.rs"], referenceTargets: ["a.rs"] };
     expect(checkFile(ci, [], [], undefined, sources).filter((e) => e.includes("#950"))).toEqual([]);
     expect(checkFile(seed, [], [], undefined, sources).filter((e) => e.includes("#950"))).toEqual([]);
 
@@ -591,6 +625,7 @@ describe("manifest sources stay inside both path filters", () => {
     const swapped = checkFile(seed, [], [], undefined, {
       manifestSources: sources.rustSources,
       rustSources: sources.manifestSources,
+      referenceTargets: sources.referenceTargets,
     }).filter((e) => e.includes("#950"));
     expect(swapped).toHaveLength(1);
     expect(swapped[0]).toContain("b.rs");
@@ -599,19 +634,25 @@ describe("manifest sources stay inside both path filters", () => {
   });
 
   // A gate is only a gate if checkFile still calls it; the real tree cannot notice an unwired one.
-  test("the file gate actually runs both", () => {
+  test("the file gate actually runs all three", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
     const ci = join(dir, "ci.yml");
     writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n");
     // Distinct fifth and sixth arguments: each rule must name the file from its OWN set, so handing
     // requireRustSourcesInCodeFilter the manifest set instead of the tree set is visible here (#950 round 3).
-    const errors = checkFile(ci, [], [], undefined, {
+    const sources = {
       manifestSources: ["rust/src/models/manifest.rs"],
       rustSources: ["rust/src/models/paths.rs"],
-    }).filter((e) => e.includes("#950"));
+      referenceTargets: ["rust/build.rs"],
+    };
+    const errors = checkFile(ci, [], [], undefined, sources).filter((e) => e.includes("#950"));
     expect(errors).toHaveLength(2);
     expect(errors.join("\n")).toContain("rust/src/models/manifest.rs contains ModelFile literals");
     expect(errors.join("\n")).toContain("rust/src/models/paths.rs is read by a TS suite");
+
+    const stranded = checkFile(ci, [], [], undefined, sources).filter((e) => e.includes("#1141"));
+    expect(stranded).toHaveLength(1);
+    expect(stranded[0]).toContain("rust/build.rs");
 
     const seed = join(dir, "cache-seed.yml");
     writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'rust/Cargo.lock'\n");
@@ -619,8 +660,88 @@ describe("manifest sources stay inside both path filters", () => {
       checkFile(seed, [], [], undefined, {
         manifestSources: ["rust/src/models.rs"],
         rustSources: ["rust/src/models.rs"],
+        referenceTargets: ["rust/build.rs"],
       }).filter((e) => e.includes("#950")),
     ).toHaveLength(1);
+  });
+});
+
+describe("cross-reference targets stay inside the code filter", () => {
+  const TARGETS = ["rust/build.rs", "rust/tests/model_gate.rs"];
+
+  // resolveFile returns any `rust/…` path unchanged, so the set is the whole tree: naming build.rs and
+  // tests/ left rust/vendor unguarded and a future rust/benches would reopen the gap (#1141 review round 1).
+  test("collectRustReferenceTargets finds every .rs under rust, not just build.rs and tests", () => {
+    const targets = repoRelative(collectRustReferenceTargets(repoPath("rust")));
+    expect(targets).toContain("rust/build.rs");
+    expect(targets).toContain("rust/tests/model_gate.rs");
+    expect(targets).toContain("rust/tests/common/mod.rs");
+    expect(targets).toContain("rust/vendor/vosk-tts/src/lib.rs");
+    expect(targets).toContain("rust/src/text_lang.rs");
+    expect(targets.length).toBeGreaterThanOrEqual(20);
+  });
+
+  // #1132 round 3's lesson: every test passed an explicit root, so the default main() actually uses went unpinned.
+  test("the production default crate root is rust", () => {
+    expect(collectRustReferenceTargets().map((file) => file.replaceAll("\\", "/"))).toContain("rust/build.rs");
+  });
+
+  test("the real ci.yml covers every cross-reference target", () => {
+    const targets = repoRelative(collectRustReferenceTargets(repoPath("rust")));
+    expect(requireRustReferenceTargetsInCodeFilter(CI, parseRepoYaml(CI), targets)).toEqual([]);
+  });
+
+  test("dropping the rust/tests entry names the files it strands", () => {
+    const document = codeFilter(["rust/src/**", "rust/build.rs"]);
+    const errors = requireRustReferenceTargetsInCodeFilter(CI, document, TARGETS);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("rust/tests/model_gate.rs");
+  });
+
+  test("dropping the rust/build.rs entry names it", () => {
+    const document = codeFilter(["rust/src/**", "rust/tests/**"]);
+    const errors = requireRustReferenceTargetsInCodeFilter(CI, document, TARGETS);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("rust/build.rs");
+  });
+
+  // A legitimate widening must not read as a regression, which is why the rule probes coverage, not the literal entries.
+  test("a broader rust wildcard satisfies the rule", () => {
+    expect(requireRustReferenceTargetsInCodeFilter(CI, codeFilter(["rust/**"]), TARGETS)).toEqual([]);
+  });
+
+  test("an empty target list fails loudly instead of passing vacuously", () => {
+    const errors = requireRustReferenceTargetsInCodeFilter(CI, codeFilter(["rust/**"]), []);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("returned no files");
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireRustReferenceTargetsInCodeFilter(PATH, codeFilter([]), ["rust/build.rs"])).toEqual([]);
+  });
+
+  // A dorny `!` entry excludes the file it matches, so reading it as coverage is the silent skip #1141 exists to prevent (#1141 review round 1).
+  test("a negation entry excluding a target is not coverage", () => {
+    const document = codeFilter(["rust/tests/**", "!rust/tests/model_gate.rs"]);
+    const errors = requireRustReferenceTargetsInCodeFilter(CI, document, ["rust/tests/model_gate.rs"]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("rust/tests/model_gate.rs");
+  });
+
+  test("a negation entry matching nothing leaves the rest covered", () => {
+    const document = codeFilter(["rust/tests/**", "!rust/tests/absent.rs"]);
+    expect(requireRustReferenceTargetsInCodeFilter(CI, document, ["rust/tests/model_gate.rs"])).toEqual([]);
+  });
+
+  test("collectRuleSources fills all three sets from their own roots", () => {
+    const normalise = (files: string[]) => files.map((file) => file.replaceAll("\\", "/"));
+    const { manifestSources, rustSources, referenceTargets } = collectRuleSources();
+    expect(normalise(rustSources)).toContain("rust/src/text_lang.rs");
+    expect(normalise(rustSources)).not.toContain("rust/build.rs");
+    expect(normalise(referenceTargets)).toContain("rust/build.rs");
+    expect(normalise(referenceTargets)).toContain("rust/vendor/vosk-tts/src/lib.rs");
+    expect(normalise(manifestSources)).toContain("rust/src/models/manifest.rs");
+    expect(normalise(manifestSources)).not.toContain("rust/build.rs");
   });
 });
 

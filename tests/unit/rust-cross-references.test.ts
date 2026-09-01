@@ -124,6 +124,58 @@ const references: Reference[] = tsSources("src").flatMap(referencesIn);
 
 const countOf = (kind: string) => references.filter((reference) => reference.kind === kind).length;
 
+const isDangling = ({ file }: Reference) => !file || !existsExactly(file);
+
+/** A pointer into a file that is not on disk is the dangling report's finding, so this one stays silent on it. */
+const isMissingSymbol = ({ file, symbol }: Reference) =>
+  Boolean(symbol && file && existsExactly(file) && !declares(readRepoFile(file), symbol));
+
+const report = (refs: Reference[], flagged: (reference: Reference) => boolean) =>
+  refs.filter(flagged).map(({ origin, label }) => `${origin} → ${label}`);
+
+// The real tree is clean, so both reports below can be neutralised with no assertion firing — these
+// synthetic references pin the predicates and the report itself instead (#1141 review round 1).
+describe("the dangling and missing-symbol predicates", () => {
+  const reference = (over: Partial<Reference>): Reference => ({
+    origin: "src/synthetic.ts",
+    label: "synthetic",
+    kind: "file",
+    ...over,
+  });
+
+  test("a reference to a file that is not on disk is dangling", () => {
+    expect(isDangling(reference({ file: "rust/src/no_such_file.rs" }))).toBe(true);
+  });
+
+  test("a reference the scan could not resolve to any file is dangling", () => {
+    expect(isDangling(reference({ file: undefined }))).toBe(true);
+  });
+
+  test("a reference to a file that is on disk is not dangling", () => {
+    expect(isDangling(reference({ file: "rust/src/text_lang.rs" }))).toBe(false);
+  });
+
+  test("a symbol the named file does not declare is missing", () => {
+    expect(isMissingSymbol(reference({ file: "rust/src/text_lang.rs", symbol: "no_such_symbol" }))).toBe(true);
+  });
+
+  test("a symbol the named file declares is not missing", () => {
+    expect(isMissingSymbol(reference({ file: "rust/src/text_lang.rs", symbol: "detect_text_language" }))).toBe(false);
+  });
+
+  test("a symbol inside a file that is not on disk is left to the dangling report", () => {
+    expect(isMissingSymbol(reference({ file: "rust/src/no_such_file.rs", symbol: "anything" }))).toBe(false);
+  });
+
+  test("the report names the origin and label of every flagged reference and nothing else", () => {
+    const refs = [
+      reference({ origin: "src/a.ts", label: "gone.rs", file: "rust/src/gone.rs" }),
+      reference({ origin: "src/b.ts", label: "text_lang.rs", file: "rust/src/text_lang.rs" }),
+    ];
+    expect(report(refs, isDangling)).toEqual(["src/a.ts → gone.rs"]);
+  });
+});
+
 describe("declares", () => {
   const cases: Array<[string, string, boolean]> = [
     ["pub(super) const ANE_EN_FILES: &[ModelFile] = &[];", "ANE_EN_FILES", true],
@@ -170,16 +222,10 @@ describe("Rust cross-references in TS sources", () => {
   });
 
   test("every referenced Rust file exists", () => {
-    const dangling = references
-      .filter(({ file }) => !file || !existsExactly(file))
-      .map(({ origin, label }) => `${origin} → ${label}`);
-    expect(dangling).toEqual([]);
+    expect(report(references, isDangling)).toEqual([]);
   });
 
   test("every referenced Rust symbol is declared in the file it names", () => {
-    const missing = references
-      .filter(({ file, symbol }) => symbol && file && existsExactly(file) && !declares(readRepoFile(file), symbol))
-      .map(({ origin, label }) => `${origin} → ${label}`);
-    expect(missing).toEqual([]);
+    expect(report(references, isMissingSymbol)).toEqual([]);
   });
 });
