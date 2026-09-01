@@ -67,6 +67,27 @@ describe("probeEngineAvailability — structured status (#647)", () => {
     expect(result.cliVersion).toBe("1.29.1");
   });
 
+  it("falls back when the payload's cliVersion is not a string (#947)", async () => {
+    for (const cliVersion of [1.28, null, ["1.28.0"], { major: 1 }]) {
+      const execFile = jsonStdout({
+        cliVersion,
+        engine: {
+          installed: true,
+          path: "/x",
+          capabilities: {
+            protocolVersion: 3,
+            backend: "coreml",
+            features: ["transcribe", "record.live"],
+          },
+        },
+        hint: null,
+      });
+      const result = await probeEngineAvailability(kesha, { execFile });
+      expect(result.ok).toBe(true);
+      expect(supportsLiveDictation(result)).toBe(false);
+    }
+  });
+
   it("reports no features for an engine whose capabilities omit them", async () => {
     const execFile = jsonStdout({
       engine: {

@@ -48,7 +48,7 @@ describe("process task helpers", () => {
 
     stopProcessWithWatchdog(proc.asChild(), { kill });
 
-    expect(proc.stdin.end).toHaveBeenCalledWith("\n");
+    expect(proc.stdin?.end).toHaveBeenCalledWith("\n");
     vi.advanceTimersByTime(1500);
     expect(kill).toHaveBeenCalledWith(proc.asChild(), "SIGTERM");
     vi.advanceTimersByTime(3500);
@@ -120,11 +120,21 @@ describe("process task helpers", () => {
 
     const { command, args, options } = calls[0];
     expect(command).toBe("kesha");
+    // A bun-installed CLI is spawned as `bun <resolved kesha>`: no prefix, no live session.
+    expect(args[0]).toBe("--prefix");
     expect(args).toContain("record");
     expect(args).toContain("--live");
     expect(args).not.toContain("--out");
-    expect(args[args.indexOf("--max-seconds") + 1]).toBe("30");
     expect(options).toMatchObject({ detached: true });
+  });
+
+  it("can still be stopped cooperatively after a live spawn", () => {
+    const { spawn, processes } = createSpawnRecorder();
+    const task = startKeshaLiveRecorder(kesha, 30, { spawn, kill: vi.fn() });
+
+    task.stop();
+
+    expect(processes[0].stdin?.end).toHaveBeenCalledWith("\n");
   });
 
   it("resolves the transcript printed when the live session ends", async () => {
@@ -213,35 +223,93 @@ describe("process task helpers", () => {
     vi.useRealTimers();
   });
 
-  it("finishes a live session that was spawned without a stdout pipe", async () => {
-    const proc = new FakeProcess();
-    proc.stdout = null;
+  it("finishes a live session without a stdout pipe without waiting out the flush window", async () => {
+    vi.useFakeTimers();
+    const proc = new FakeProcess({ stdio: ["pipe", "ignore", "pipe"] });
     const task = startKeshaLiveRecorder(kesha, 30, {
       spawn: () => proc.asChild(),
     });
+    let settled = false;
+    void task.done.then(() => {
+      settled = true;
+    });
 
     proc.exit(0);
+    await flushPromises();
+    await flushPromises();
 
+    // Nothing has advanced the clock, so only the guard can have settled this.
+    expect(settled).toBe(true);
     await expect(task.done).resolves.toBe("");
+    vi.useRealTimers();
+  });
+
+  it("does not bury a live failure under the engine's progress ticker (#947)", async () => {
+    const { spawn, processes } = createSpawnRecorder();
+    const task = startKeshaLiveRecorder(kesha, 300, { spawn });
+
+    processes[0].emitStderr(
+      "Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...\n",
+    );
+    processes[0].emitStderr(
+      "Listening (48000 Hz)... transcript prints when recording stops; Ctrl-C stops and still prints.\n",
+    );
+    for (let second = 1; second <= 300; second++) {
+      processes[0].emitStderr(`\rListening... ${second}s`);
+    }
+    processes[0].emitStderr(
+      "\nerror [E_INTERNAL]: streaming session failed to finish\n",
+    );
+    processes[0].exit(1);
+    processes[0].endStdout();
+
+    const message = await task.done.then(
+      () => "resolved",
+      (err: Error) => err.message,
+    );
+    expect(message).toContain(
+      "error [E_INTERNAL]: streaming session failed to finish",
+    );
+    expect(message).not.toContain("Listening... 42s");
+    expect(message.length).toBeLessThan(400);
+  });
+
+  it("keeps a multi-line live error intact, blank line and hint included", async () => {
+    const { spawn, processes } = createSpawnRecorder();
+    const task = startKeshaLiveRecorder(kesha, 30, { spawn });
+
+    processes[0].emitStderr(
+      "Error: VAD model not installed\n\nPlease run: kesha install --vad\n",
+    );
+    processes[0].exit(1);
+    processes[0].endStdout();
+
+    const message = await task.done.then(
+      () => "resolved",
+      (err: Error) => err.message,
+    );
+    expect(message).toBe(
+      "Error: VAD model not installed\n\nPlease run: kesha install --vad",
+    );
   });
 
   it("reports the microphone open only once the engine is listening (#947)", async () => {
     const { spawn, processes } = createSpawnRecorder();
     const task = startKeshaLiveRecorder(kesha, 30, { spawn });
-    let open = false;
-    void task.micOpen.then(() => {
-      open = true;
+    let opened: string | null = null;
+    void task.micOpen.then((outcome) => {
+      opened = outcome;
     });
 
     processes[0].emitStderr(
       "Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...\n",
     );
     await flushPromises();
-    expect(open).toBe(false);
+    expect(opened).toBeNull();
 
     processes[0].emitStderr("Listening (48000 Hz)... transcript prints when ");
     await flushPromises();
-    expect(open).toBe(true);
+    expect(opened).toBe("listening");
   });
 
   it("stops waiting for the microphone when the live session dies first", async () => {
@@ -252,7 +320,7 @@ describe("process task helpers", () => {
     processes[0].exit(1);
     processes[0].endStdout();
 
-    await expect(task.micOpen).resolves.toBeUndefined();
+    await expect(task.micOpen).resolves.toBe("ended");
     await expect(task.done).rejects.toThrow("E_UNSUPPORTED_PLATFORM");
   });
 
@@ -279,7 +347,7 @@ describe("process task helpers", () => {
     const task = startKeshaLiveRecorder(kesha, 30, { spawn, kill });
 
     task.stop();
-    expect(processes[0].stdin.end).toHaveBeenCalledWith("\n");
+    expect(processes[0].stdin?.end).toHaveBeenCalledWith("\n");
 
     vi.advanceTimersByTime(9_999);
     expect(kill).not.toHaveBeenCalled();
