@@ -56,7 +56,6 @@ just worktree-rm <slug>
 - `just preflight` before every push — the executable definition of the default gate: TS and every `check:*` CI runs, always; the Rust gate when `rust/**` changed; the CoreML check when `rust/src/backend/**` changed; `just ALL=1 preflight` runs every gate regardless of the diff. `tests/unit/preflight-parity.test.ts` keeps that list equal to what the pull-request workflows invoke, because a shell-injecting recipe once passed a green preflight and was caught only in CI. Read the recipe rather than reconstructing the commands.
 - Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
 - `preflight` does **not** build the darwin feature set, so it goes green on code that never compiled: touching `rust/src/tts/**` or anything fluidaudio-rs-adjacent (`system_kokoro` / `system_diarize` / `system_text_lang`) also needs `just verify-darwin-full`, the recipe `rust-test.yml` runs.
-- Do NOT push broken code.
 
 Rust toolchain quirks (CI rustc drift, rustfmt, `protoc`) and language gotchas: `docs/runbooks/rust-gotchas.md`.
 
@@ -76,7 +75,7 @@ A guard is only a guard if removing it goes red. `just mutate <file> <find> <rep
 
 **Fix a flaky test before doing anything else.** A suite that fails at random teaches everyone to re-run it, and the next genuine failure gets re-run too. Never `skip` a flaky or failing test to force green — fix it, or quarantine it behind an issue. That ban is about hiding red; the environmental guards below are the opposite and must stay.
 
-When deciding whether some change caused a flake, one run per arm settles nothing — check CI on the same SHA first, then repeat each arm enough times to separate signal from noise. Background for install timeouts in `cli-contracts`: macOS scans every freshly written executable on first exec, which cost these scenarios 2–9 s. #649 widened `cli-scenario.ts`'s `DEFAULT_TIMEOUT_MS` from 4 s to 15 s to cover it, so a timeout there is no longer explained away as that flake — treat it as real until proven otherwise.
+When deciding whether some change caused a flake, one run per arm settles nothing — check CI on the same SHA first, then repeat each arm enough times to separate signal from noise. A `cli-contracts` timeout is real until proven otherwise: the one environmental cause that existed — `kesha install` blocking on an unauthenticated `gh auth status` under the scenario's throwaway HOME — is stubbed in `cli-scenario.ts` (#805, #809), and the scan macOS runs on a fresh executable costs about a second, not the budget. When a scenario's runtime tracks an external tool's latency, that is an isolation defect: stub the tool.
 
 Coverage is a merge gate, not a vanity metric. `bun run coverage:check:ts` holds total TS lines at ≥70% plus risk-based floors on the surfaces that invoke, install or route the engine (`src/engine.ts` 80%, `src/cli/say.ts` 50%, `src/cli/main.ts` 35%, `src/engine-install.ts` 15%); `bun run coverage:check:rust` holds Rust at ≥70%. Both are **path-filtered PR jobs** — `ts-coverage` in `ci.yml` feeding `🧪 CI`, `coverage` in `rust-test.yml` feeding `🧪 Rust Tests` — so a docs- or skill-only PR never exercises them, and no release workflow runs coverage at all. Raise a floor when a surface earns it; lowering one needs its reason in the PR body. These are deliberately not per-file ratchets — the floors protect critical paths without inviting coverage-padding tests everywhere else.
 
@@ -104,9 +103,9 @@ Every PR gets an adversarial review the moment it exists, and it is **aimed at a
 claim** rather than at the PR — "review this" returns agreement, "prove or refute
 that X, and say which assertion fires if it is wrong" returns findings. One
 durable comment carries the full 40-hex head SHA and every finding; confirmed
-blockers get a fix pass, and the review restarts on the new head. 43% of merged
-PRs used to skip the review entirely, and that gap cost more than any wording
-did — which is why the claim is required rather than optional.
+blockers get a fix pass, and the review restarts on the new head. The claim is
+required rather than optional because a review with no claim to refute returns
+agreement, and agreement and non-examination look identical from outside.
 
 ### ERROR HANDLING
 

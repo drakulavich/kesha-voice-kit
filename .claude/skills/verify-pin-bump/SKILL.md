@@ -1,17 +1,9 @@
 ---
 name: verify-pin-bump
-description: Use when a model SHA-256 mismatch surfaces (download_verified errors, manifest_tests failures, fresh download produces a different hash than rust/src/models/manifest.rs pins). Walks through the safe bump procedure — verify the upstream weights deliberately, then update the pin. Refuses to suggest commenting out verification.
+description: Use when a model SHA-256 mismatch surfaces (download_verified errors, manifest_tests failures, a fresh download hashing differently from the rust/src/models/manifest.rs pin, kesha install failing after an update, a KESHA_MODEL_MIRROR swap producing a different hash, or an upstream HuggingFace re-upload). Walks through the safe bump procedure — verify the upstream weights deliberately, then update the pin. Refuses to suggest commenting out verification.
 ---
 
 # verify-pin-bump
-
-Use this skill when you see ANY of:
-
-- `download_verified` error: `expected sha256 ABC, got DEF`
-- `cargo test models::manifest` failure
-- A user reporting `kesha install` is failing post-update
-- A `KESHA_MODEL_MIRROR` swap has produced a hash mismatch (could be legitimate mirror staleness — or an attack)
-- Upstream HuggingFace repo shows the model was re-uploaded
 
 ## Why this skill exists
 
@@ -127,8 +119,9 @@ For TTS bumps:
 
 ```bash
 KESHA_CACHE_DIR=/tmp/pin-bump-cache ./rust/target/release/kesha-engine say --voice <voice-id> "Привет, мир." > /tmp/pin-bump.wav
-afplay /tmp/pin-bump.wav  # listen — does it sound right?
 ```
+
+Run the `audio-quality-check` agent over `/tmp/pin-bump.wav`: it reports RMS, silence ratio, sample rate and length-versus-text ratio and flags all-silence or header-only output. A human listen (`afplay`) is the tiebreaker, not the gate.
 
 For ASR bumps:
 
@@ -157,18 +150,9 @@ Verified intentional re-export; smoke test passes for <voice/lang>.
 
 If this bump should ship, invoke `/release-engine vX.Y.Z` for the engine release.
 
-## Output
+## Report
 
-At the end, print:
-
-```
-✅ Pin bumped for <file>
-   Old: <old-hash[:16]>...
-   New: <new-hash[:16]>...
-   Reason: <intentional upstream / our re-mirror / model version change>
-   Smoke: <pass/fail>
-   Commit: <sha>
-```
+Name the file bumped, the old and new hashes, the evidence that the change is intentional, the smoke result, and the commit.
 
 ## Anti-patterns to refuse
 

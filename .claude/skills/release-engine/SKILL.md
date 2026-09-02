@@ -39,15 +39,11 @@ grep '^default =' rust/Cargo.toml
 gh run list --workflow ci.yml --branch main --limit 1
 gh run list --workflow rust-test.yml --branch main --limit 1
 
-# 4. Local sanity — nextest, not `cargo test` (CLAUDE.md)
-cargo fmt --check --manifest-path rust/Cargo.toml
-cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
-cargo check --manifest-path rust/Cargo.toml --features coreml --no-default-features
-just rust-test
-bunx tsc --noEmit && bun test && bun run check:versions
+# 4. Local sanity — the gate CI runs, every lane forced (fmt, clippy, nextest, CoreML check, TS, every check:*)
+just ALL=1 preflight
 ```
 
-If anything fails, STOP. Do not bump versions. A `bun test` failure that does not reproduce on a second run is the documented timing flake — confirm against CI on the same SHA rather than chasing it.
+If anything fails, STOP. Do not bump versions. A failure that does not reproduce on a second run is still a failure — confirm against CI on the same SHA rather than chasing it.
 
 ## Procedure
 
@@ -82,7 +78,7 @@ git push origin refs/tags/vX.Y.Z
 
 The build produces 3 platform binaries, smoke-tests each with `--capabilities-json`, and creates a **draft** release with SBOM, manifest, `SHA256SUMS` and Sigstore bundles. Engine tags do **not** attach Linux `.deb`/`.rpm` — those ship on the `-cli` marker release now (#728).
 
-Expect `Darwin synthesis smoke (advisory)` to fail — it is `continue-on-error` and tracked as #742 / #678.
+`Darwin synthesis smoke (advisory)` is `continue-on-error`, so it cannot block the release — read its log anyway; a red result there is a real synthesis signal, not an expected failure.
 
 ### Step 4 — Validate the draft before publishing
 

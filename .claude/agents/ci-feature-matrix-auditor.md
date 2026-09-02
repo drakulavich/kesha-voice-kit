@@ -89,10 +89,9 @@ Reference: CLAUDE.md "BUILD-ENGINE FEATURE MATRIX MIRRORS CARGO DEFAULTS",
 v1.1.0 → v1.1.3 incident.
 ```
 
-### Step 5: Exit code
+### Step 5: Verdict
 
-- 0 if all rows match
-- 1 if drift detected (callers can use this as a gate)
+End the report with `VERDICT: PASS` or `VERDICT: DRIFT` on its own line, so a caller can gate on it without parsing the table.
 
 ## Edge cases
 

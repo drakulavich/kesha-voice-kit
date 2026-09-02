@@ -42,14 +42,14 @@ git fetch origin main && git status -sb | head -3
 # 2. Version fields agree, and the pinned engine is a published, non-draft release
 bun run check:versions
 node -p "require('./package.json').version"
-python3 -c "import json;d=json.load(open('server.json'));print(d['version'], d['packages'][0]['version'])"
+bun -e "const s = await Bun.file('server.json').json(); console.log(s.version, s.packages[0].version)"
 gh release view "v$(node -p "require('./package.json').keshaEngine.version")" --json isDraft --jq 'if .isDraft then error("engine pin is still a draft") else "pin published" end'
 
 # 3. CI green on main
 gh run list --workflow ci.yml --branch main --limit 1
 
-# 4. Local sanity
-bunx tsc --noEmit && bun test
+# 4. Local sanity — the gate CI runs, every lane forced
+just ALL=1 preflight
 ```
 
 Two things sink a run if they are wrong:
