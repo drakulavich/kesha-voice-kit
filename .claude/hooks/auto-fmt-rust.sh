@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse hook: auto-format Rust files after Edit/Write/MultiEdit.
+# PostToolUse hook: auto-format Rust files after Edit/Write.
 #
 # Why: Implementer subagents have shipped unformatted Rust mid-session, only
 # for clippy --all-targets to fail at the next commit. Catching fmt drift
@@ -28,18 +28,17 @@ case "$FILE" in
         ;;
 esac
 
-# Need a Cargo.toml at rust/ — defensive (skip if invoked outside the repo).
-if [ ! -f "rust/Cargo.toml" ]; then
+# Resolve the checkout from the edited file: the hook's cwd is the session root, which is the wrong tree when the edit lands in .worktrees/<slug>.
+ROOT="$(cd "$(dirname "$FILE")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$ROOT" ] || [ ! -f "$ROOT/rust/Cargo.toml" ]; then
     exit 0
 fi
 
-# Fast path: clean.
-if (cd rust && cargo fmt --check >/dev/null 2>&1); then
+if (cd "$ROOT/rust" && cargo fmt --check >/dev/null 2>&1); then
     exit 0
 fi
 
-# Dirty: format and report.
-if (cd rust && cargo fmt 2>&1); then
+if (cd "$ROOT/rust" && cargo fmt 2>&1); then
     echo "post-edit hook: cargo fmt auto-formatted rust/ (was dirty)" >&2
     exit 0
 else

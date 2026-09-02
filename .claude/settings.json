@@ -37,28 +37,28 @@
       "Bash(tail *)",
       "Bash(wc *)",
       "Bash(grep *)",
-      "Bash(just:*)"
+      "Bash(just *)"
     ]
   },
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/auto-fmt-rust.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto-fmt-rust.sh"
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/guard-sha-bump.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-sha-bump.sh"
           }
         ]
       }
