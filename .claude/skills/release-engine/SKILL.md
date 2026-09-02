@@ -78,7 +78,7 @@ git push origin refs/tags/vX.Y.Z
 
 The build produces 3 platform binaries, smoke-tests each with `--capabilities-json`, and creates a **draft** release with SBOM, manifest, `SHA256SUMS` and Sigstore bundles. Engine tags do **not** attach Linux `.deb`/`.rpm` — those ship on the `-cli` marker release now (#728).
 
-`Darwin synthesis smoke (advisory)` is `continue-on-error`, so it cannot block the release — read its log anyway; a red result there is a real synthesis signal, not an expected failure.
+The `Darwin synthesis smoke` job is required — `release` lists it in `needs`, so a red smoke leaves the draft release unbuilt with the `release` job skipped, not failed. Read the smoke log (`KESHA_DEBUG=1` routes FluidAudio's CoreML errors to stderr there): it is a real synthesis failure to fix before re-tagging, never an expected one.
 
 ### Step 4 — Validate the draft before publishing
 
