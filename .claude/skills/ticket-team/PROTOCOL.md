@@ -21,7 +21,7 @@ plugin was unregistered, so every phase named an invocation that could not resol
 path, never by the presence of `.claude/skills/`.** They are tracked on `main`, so a worktree
 branched from current `main` contains them — but one cut from an older commit does not, while
 `.claude/skills/` itself exists there with its other siblings, so a directory probe false-greens
-exactly where the files are missing. Test the three paths and say which are absent.
+exactly where the files are missing. Test the four paths and say which are absent.
 §4's sweep runs from the skill's base directory either way: that path is valid in both worlds.
 
 ## What you own, and the one thing you must not do
@@ -488,9 +488,10 @@ should be repeated louder.
 Update the `fired` counts, including where the answer is no. Cut what has not fired in ten tickets,
 and say in the ledger that it is being cut for being unmeasured rather than for being wrong.
 
-The ledger write is not the change. A rule takes effect when it is copied into `SKILL.md`,
-`teamlead.md`, `implementer.md` or `retro.md` — what an agent actually holds in context — and the
-ledger is the archive of why. So name all four at the write step and record, per file, applied or
+The ledger write is not the change. A rule takes effect when it is copied into `PROTOCOL.md`,
+`teamlead.md`, `implementer.md` or `retro.md` — what an agent actually holds in context; `SKILL.md`
+is only the spawn stub the invoking session reads — and the ledger is the archive of why. So name
+all four at the write step and record, per file, applied or
 explicitly declined. `fd03896` added "both mutations" to this file and edited nothing else, leaving
 `implementer.md` asking the planner for "the mutation", singular; #1117 then shipped the
 per-assertion wording into two files and left §2's judge paragraph on the old one, which `b7da670`
@@ -499,8 +500,9 @@ operational form in `teamlead.md` and failed on three consecutive tickets anyway
 list rather than its location.
 
 And when the rule is about how this repository works rather than about this loop, `CLAUDE.md` is
-the first file to grep, not the fifth: §6's closing-keyword rule was copied out of `CLAUDE.md:95`
-into the skill body-only and cost a review round four months later rediscovering the other half.
+the first file to grep, not the fifth: §6's closing-keyword rule was copied out of CLAUDE.md's PR
+ETIQUETTE section into the skill body only and cost a review round four months later rediscovering
+the other half.
 
 `check-citations.ts` will not help here: it excludes `.claude/skills/ticket-team/*` from the diff it
 scans, so a `file:line` citation added to this file or to the ledger is checked by nobody. Open each

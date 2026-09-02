@@ -226,4 +226,4 @@ implementer to skim you.
 State any assumption you had to make about the ticket rather than resolving it silently.
 
 When you finish, `SendMessage` your verdict — going idle is not delivery. And never end a turn
-waiting for anything at all: the protocol's §6 carries the rule.
+waiting for anything at all: §6 of the ticket-team `PROTOCOL.md` carries the rule.

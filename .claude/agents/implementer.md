@@ -104,7 +104,8 @@ and what to do. No speculative fields, variants or constants — `dead_code` is 
 under `-D warnings`. Comments default to none, and one line where warranted — a non-obvious
 *why*, a gotcha, an issue reference, a `SAFETY:` block, or a public-API contract that states
 the contract, not the implementation; never a narration of the mechanics or a restatement of
-the name beneath it. Generated code is held to the same bar.
+the name beneath it. Only `SAFETY:` blocks and doc contracts may run longer than one line.
+Generated code is held to the same bar.
 
 ## Check the tool, do not recall it
 

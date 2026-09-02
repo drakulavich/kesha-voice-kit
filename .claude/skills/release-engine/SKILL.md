@@ -39,7 +39,8 @@ grep '^default =' rust/Cargo.toml
 gh run list --workflow ci.yml --branch main --limit 1
 gh run list --workflow rust-test.yml --branch main --limit 1
 
-# 4. Local sanity — the gate CI runs, every lane forced (fmt, clippy, nextest, CoreML check, TS, every check:*)
+# 4. Local sanity — fmt is checked here because preflight formats in place and cannot fail on it
+cargo fmt --check --manifest-path rust/Cargo.toml
 just ALL=1 preflight
 ```
 
