@@ -39,15 +39,12 @@ grep '^default =' rust/Cargo.toml
 gh run list --workflow ci.yml --branch main --limit 1
 gh run list --workflow rust-test.yml --branch main --limit 1
 
-# 4. Local sanity — nextest, not `cargo test` (CLAUDE.md)
+# 4. Local sanity — fmt is checked here because preflight formats in place and cannot fail on it
 cargo fmt --check --manifest-path rust/Cargo.toml
-cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
-cargo check --manifest-path rust/Cargo.toml --features coreml --no-default-features
-just rust-test
-bunx tsc --noEmit && bun test && bun run check:versions
+just ALL=1 preflight
 ```
 
-If anything fails, STOP. Do not bump versions. A `bun test` failure that does not reproduce on a second run is the documented timing flake — confirm against CI on the same SHA rather than chasing it.
+If anything fails, STOP. Do not bump versions. A failure that does not reproduce on a second run is still a failure — confirm against CI on the same SHA rather than chasing it.
 
 ## Procedure
 
@@ -82,7 +79,7 @@ git push origin refs/tags/vX.Y.Z
 
 The build produces 3 platform binaries, smoke-tests each with `--capabilities-json`, and creates a **draft** release with SBOM, manifest, `SHA256SUMS` and Sigstore bundles. Engine tags do **not** attach Linux `.deb`/`.rpm` — those ship on the `-cli` marker release now (#728).
 
-Expect `Darwin synthesis smoke (advisory)` to fail — it is `continue-on-error` and tracked as #742 / #678.
+The `Darwin synthesis smoke` job is required — `release` lists it in `needs`, so a red smoke leaves the draft release unbuilt with the `release` job skipped, not failed. Read the smoke log (`KESHA_DEBUG=1` routes FluidAudio's CoreML errors to stderr there): it is a real synthesis failure to fix before re-tagging, never an expected one.
 
 ### Step 4 — Validate the draft before publishing
 

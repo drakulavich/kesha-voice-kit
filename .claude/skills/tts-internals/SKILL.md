@@ -86,7 +86,7 @@ with no warning. Per-language acronym stop-lists (`ES/FR/IT/PT_STOP_LIST` in
 
 On `system_kokoro` (darwin/ANE), `tts::fluid_kokoro::with_kokoro` resolves the voice's
 language (`lang_for_fluid_id`) and passes it to `init_kokoro(voice, lang)`. The fork's
-Swift bridge (`fluidaudio-rs`, FluidAudio 0.14.8) maps it to a `KokoroAneVariant`:
+Swift bridge (`fluidaudio-rs`, version pinned in `rust/Cargo.toml`) maps it to a `KokoroAneVariant`:
 `zh` → `.mandarin` (tone-aware G2P: jieba + g2pw + bopomofo + tone sandhi), everything
 else → `.english` (en plus Latin-script es/fr/it/pt, which the English G2P handles
 acceptably). The `.mandarin` variant fetches its own `ANE-zh/` bundle (nested
