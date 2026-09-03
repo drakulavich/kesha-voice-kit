@@ -157,8 +157,7 @@ kesha-voice-kit/
 - Squash-merge preferred. Greptile reviews are advisory but their P1/P2
   findings should be addressed before merge.
 - Active work is visible as a branch, a worktree, and an open PR — there is
-  no label to apply. See [`docs/runbooks/conveyor.md`](docs/runbooks/conveyor.md)
-  for the loop.
+  no label to apply.
 
 ## Code style
 

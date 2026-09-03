@@ -5,7 +5,7 @@ widened the first from `rust/src/models/**` to `rust/src/**` and pinned that wid
 collector (`collectRustSources`) plus a rule (`requireRustSourcesInCodeFilter`). The other two —
 `rust/build.rs` and `rust/tests/**` — landed in #1134, #1132's review fix pass, with a justifying
 comment but no guard: deleting either left `bun run check:workflows` green and no test in the repo
-mentioned the strings. Conveyor review round 1 on PR #1140 found this and ruled it out of that
+mentioned the strings. Review round 1 on PR #1140 found this and ruled it out of that
 PR's scope.
 
 The gap matters because those entries are what routes a rename under `rust/tests/` or an edit to

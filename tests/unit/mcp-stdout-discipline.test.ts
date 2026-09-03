@@ -37,6 +37,8 @@ describe("mcp stdout discipline", () => {
       if (buf.includes('"id":2')) break;
     }
     proc.kill();
+    // A killed child stays <defunct> until awaited, and the leak guard counts it as a leak.
+    await proc.exited;
 
     const lines = buf.split("\n").filter((l) => l.trim().length > 0);
     expect(lines.length).toBeGreaterThan(0);
