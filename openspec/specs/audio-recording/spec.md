@@ -285,11 +285,10 @@ parsing.
 - With `--out` the sample rate is device-native (commonly 44100 Hz or 48000 Hz).
   The transcription pipeline resamples to 16 kHz internally; no explicit
   `--rate` flag exists on `kesha record`.
-- `--live` is unreleased. It is on `main` only — no release tag contains #757,
-  and the Pinned Engine version is older — so nothing a user installs today
-  advertises `record.live`. Anything adopting it, the Raycast extension
-  included (#947), is blocked on a CLI + Engine release and needs the
-  capability probe regardless, for every older CLI in the wild.
+- `--live` shipped in Engine v1.24.10 and the Pinned Engine is v1.24.11, so a
+  current CoreML install advertises `record.live`. Consumers still probe for it
+  rather than assuming it — the Raycast extension does (#947) — because the ONNX
+  Engine never advertises it and older CLIs remain in the wild.
 - An interrupted `--live` session yields nothing: there is no intermediate
   artifact, so a killed process loses the audio and the transcript together.
   The `--out` path at least leaves the WAV. Tracked as #962.
