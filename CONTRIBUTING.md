@@ -194,8 +194,6 @@ kesha-voice-kit/
   these the moment behaviour crosses the CLI or engine boundary.
 - Rust integration tests in `rust/tests/` — `cargo nextest run` / `just rust-test`
   (matches CI). Do not rely on plain `cargo test` for the suite.
-- `audio-quality-check` agent runs after every commit touching
-  `rust/src/tts/**` (see `.claude/agents/audio-quality-check.md`).
 
 ### Fast path vs slow path
 
