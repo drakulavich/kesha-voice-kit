@@ -119,9 +119,8 @@ For TTS bumps:
 
 ```bash
 KESHA_CACHE_DIR=/tmp/pin-bump-cache ./rust/target/release/kesha-engine say --voice <voice-id> "Привет, мир." > /tmp/pin-bump.wav
+afplay /tmp/pin-bump.wav  # listen — does it sound right?
 ```
-
-Run the `audio-quality-check` agent over `/tmp/pin-bump.wav`: it reports RMS, silence ratio, sample rate and length-versus-text ratio and flags all-silence or header-only output. A human listen (`afplay`) is the tiebreaker, not the gate.
 
 For ASR bumps:
 

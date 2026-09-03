@@ -105,39 +105,90 @@ default gate, but it does **not** build the darwin feature set: anything touchin
 also needs `just verify-darwin-full`. A plan that touches those and plans only preflight
 will go green on code that never compiled.
 
-**Does the plan's justification measure the waste, or only the thing that wastes?** A cost
-figure — "this job is 26.5% of CI spend", "this runs on every push" — is a denominator. Ask
-for the numerator: how often does the wasteful case actually occur, and what does the change
-recover when it does? A rate is usually one query away, and a plan that cannot produce one is
-proposing an unranked change. This fires on an incident-shaped justification too: "this cost
-us 360 minutes once" is an anecdote until you say over what window, how many times, and
-whether the observed instances fall inside the class the change covers.
+**Does the plan's justification measure the waste, or only the thing that wastes?** A plan
+that cites a cost — "this job is 26.5% of CI spend", "this runs on every push" — has named a
+denominator, not a saving. Ask for the numerator: how often does the wasteful case actually
+occur, and what does the change recover when it does? A rate is usually one query away, and a
+plan that cannot produce one is proposing an unranked change, whatever its cost figure says.
 
-**Date every cited instance against the rule that now forbids it.** An undated rate averages
-over a regime that no longer exists, and evidence at the edge of a window can be inverted —
-the incident that got a practice prohibited is not a sample of ongoing behaviour. If the
-instances cluster at one edge of the window, the clustering is the finding, and spotting it
-needs no guess about which rule to look for.
+**A rate is computed over the window in which the practice was still permitted.** Date every
+cited instance against the rule that now forbids it. An undated rate silently averages over a
+regime that no longer exists.
 
-Finding that date takes a walk-back, not a query. `git log -S '<text>' --reverse -- <file> | head -1`
-gives a *candidate*; `git show <sha> -- <file>` then says whether that commit **adds** the rule
-or **rewords** an existing one. On a reword, take the `-` line and search that instead. Repeat
-until a commit adds it. `--reverse` alone returns the newest count-change, and a reword shares
-no text with today's file — so the `git show` confirmation is the step and the query is not.
-`-S` finding nothing means the rule was never written down: a practice retired by branch
+**Finding that date takes a walk-back, not a query.** `git log -S '<text>' --reverse … | head -1`
+gives a *candidate*; the mandated step is `git show <sha> -- <file>` to see whether that commit
+**adds** the rule or **rewords** an existing one. On a reword, take the `-` line and search that
+instead. Repeat until a commit adds it.
+
+Two failure modes, both producing a confident wrong date, and this paragraph shipped with each in
+turn. Without `--reverse` you get the newest count-change: 2026-07-26 for `TAG NAMES ARE ONE-USE`,
+not the 2026-04-15 introduction. With `--reverse` you still get 2026-07-26, because that commit
+*reworded* the heading and the original string is absent from CLAUDE.md today — so a reader greps
+the current file, finds `Tag names are one-use.`, searches the only text that still exists, and
+lands 74% into the window either way. `--reverse` fixes persistence; nothing but the walk-back
+fixes rewording, and rewording is the default case because you can only search what is there now.
+
+Even the walk-back succeeded here partly by luck: `6d9e6da` introduced
+`### TAG NAMES ARE ONE-USE UNDER IMMUTABLE RELEASES`, and the search string matched as a
+substring. A reword sharing no substring breaks the chain silently. That is why the `git show`
+confirmation is the step and the query is not.
+
+**Ask whether the last instance *caused* the boundary.** `6d9e6da` landed 125 minutes after the
+last repeat-instance began, and its subject is "apply lessons learned from v1.0.2 release" —
+the re-push loop #1108's plan cited as evidence is the incident that produced the rule banning it.
+Incidents cluster immediately before their rule *because the incident is why the rule exists*. So
+evidence at the edge of a window is not merely weak-for-non-stationarity: it can be **inverted** —
+citing the case that got a practice prohibited as though it were a sample of ongoing behaviour.
+That names the error better than "regime boundary" does, and it is `impl-1108`'s formulation.
+
+**`-S` finding nothing means the rule was never written down, not that the window is homogeneous.**
+This works only where the governing regime is versioned text. A practice retired by branch
 protection, an org setting, or an unwritten maintainer habit leaves no commit to find.
 
-**Check that any guard you cite covers the path the instance took.** A check gated
-`if: github.event_name == 'workflow_dispatch'` never sees a push event, and citing it makes a
-dated claim look stronger than it is.
+**Run history is evidence about a regime, not about a repository, and the cheapest tell needs no
+guess about which rule to look for: if the instances cluster at one edge of the window, the
+clustering is the finding.** That is `impl-1108`'s formulation and it is better than dating alone,
+because dating requires already suspecting a boundary. On #1108 both instances sat on days 1 and 2
+of 136, visible in the implementer's own table, whose timestamps it quoted and computed gap
+arithmetic from — and neither it nor any of three review passes read the shape. Treating a history
+as a stationary process is the default failure; ask where the regime changed before computing a
+rate over it.
 
-**When the change trades one failure for another, make the plan write that sentence.** An
-unobserved loud failure swapped for an unobserved silent one is a trade; disclosed separately
-and never set against each other, it is a trade nobody judged.
+**Date it against the rule, and check any guard you cite actually covers the path the instance
+took.** The first draft of this paragraph offered `dce4bef`'s uniqueness check as corroboration;
+that check lives in a job gated `if: github.event_name == 'workflow_dispatch'`, so it never sees
+a push event, and every observed instance was push-path. A guard on the wrong path is not
+evidence, and citing one makes a dated claim look stronger than it is.
 
-None of this argues for smaller guards. It argues about what gets worked on first: a guard can
-be proven necessary while the ticket carrying it was ranked on what a job costs to run rather
-than on how often it runs wastefully.
+This is the third consecutive ticket out of the #1105 audit whose ranking rested on a figure
+that does not describe the live rate: #1105 cited 26.5% of CI spend against 2.9% actual waste,
+#1110 newly bounded 24 jobs with zero observed instances, and #1108 cited 5 runs across 2 tag
+refs — **both of them 2026-04-14 and 2026-04-15, days 1 and 2 of a 136-day window.** `6d9e6da`
+added TAG NAMES ARE ONE-USE to CLAUDE.md on 2026-04-15, the same day as the last instance, and
+zero tag ref has hosted a second run in the 55 non-cli tags since. The live rate was 0/55,
+not 5/96, and the plan
+rejected doing nothing *solely* on those April SHAs. Dated, that rejection reads "false for a
+practice retired four months ago", which is a different sentence and might have decided the
+ticket differently.
+
+**And when the change trades one failure for another, make the plan write that sentence.**
+#1108 exchanged an unobserved *loud* failure — a draft short a binary, `kesha install` 404s —
+for an unobserved *silent* one: a release built from the wrong commit, silent for stable and
+beta. Both were disclosed separately and neither was ever set against the other. A trade
+nobody states is a trade nobody judged.
+
+This fires on an **incident-shaped** justification too, not only a cost figure. "This failure
+mode cost us 360 minutes once" is an anecdote until you say over what window, how many times,
+and — the question that actually bites — **whether the observed instances fall inside the class
+the change covers**. On #1110 both known instances were the same apt step on the same Ubuntu
+file, already covered by the narrow guard the change replaced, while the 24 jobs it newly bound
+had none. The plan led with the incident, so the numerator question never engaged.
+
+This is not an argument for smaller guards. On #1105 the guard was proven necessary — the line
+carrying the entire saving could be deleted with every test still green. It is an argument
+about **what gets worked on first**: that ticket was ranked above an item worth three years of
+its saving per incident, because the audit behind it measured what a job costs to run rather
+than how often it runs wastefully.
 
 **Does it respect the boundaries that have already cost this repo something?**
 Model hashes stay pinned and verification is never disabled (#174). No speculative struct
@@ -173,9 +224,12 @@ version changed a behaviour — the moments where being nearly right is indistin
 being right until it ships. Do not reach for it to look diligent: for repository facts, read
 the file; for what a command does *here*, run it and paste what it printed.
 
-Skipping it has put a confidently wrong diagnosis into a pull request body and a commit
-message here: `npm view --json a b c` does flatten keys, but the script under review passed
-`--json a,b,c` — one argument, a different failure, a different fix.
+The cost of skipping it, from this repository: a release gate was diagnosed as failing
+because `npm view --json a b c` returns flattened keys. That is true of the space-separated
+form. The script used `--json a,b,c`, one comma-joined argument, which returns nothing at
+all — a different mechanism with a different fix. The analysis reproduced a similar-looking
+command instead of checking what npm documents, was confidently wrong in the pull request
+body and the commit message, and was caught only by an adversarial review two rounds later.
 
 **Run the thing you are judging, do not read it.** When a plan proposes a guard, a matcher or
 an algorithm, implement it yourself against the real tree and see what it returns. Copy the
@@ -183,10 +237,14 @@ helpers it depends on out of the source, paste the proposed code beside them, an
 every real input — not a sample. That is the difference between a verdict and an opinion, and
 it is cheap: minutes, against a round.
 
-It is cheap and decisive: a proposed guard run against the real tree either produces the
-errors its author promised or it does not, and a condition parser run over every real `if:`
-in the workflow settles what reading it cannot. When you catch yourself having inferred a
-link rather than measured it, go back and measure it before the verdict ships.
+It is what settled #1110 — the proposed guard produced 26 errors against the tree and 0 after
+the values were injected, so "the green commit turns the red test green" stopped being a
+promise. And #1105 item 3, where a four-step condition parser was run over all fourteen real
+`if:` conditions plus two adversarial shapes its author had not named. On #1109 the same class
+of claim was left as an inference and the ledger had to record it as "not a measurement".
+
+When you catch yourself having inferred a link rather than measured it, go back and measure it
+before the verdict ships. One lead did exactly that mid-verdict and it is the standard.
 
 Send your verdict to the **implementer** directly. It is waiting on you, and a verdict that
 has to be relayed arrives a revision late — the plan is usually still moving while the relay
@@ -211,7 +269,7 @@ The shape is closed on purpose. A verdict the implementer cannot parse must not 
 "nothing to object to" — an unrecognised first line is treated as CHANGES REQUIRED, never
 as approval, so a malformed verdict costs a round rather than shipping unreviewed work.
 
-The digest is `shasum -a 256 <handoff path>` — computed by you, per the protocol's binding-block
+The digest is `shasum -a 256 <handoff path>` — computed by you, per the skill's binding-block
 rules; an edited plan stops matching and the approval no longer applies.
 
 For changes, give a numbered list. Each item names the problem, why it matters here, and
@@ -226,4 +284,4 @@ implementer to skim you.
 State any assumption you had to make about the ticket rather than resolving it silently.
 
 When you finish, `SendMessage` your verdict — going idle is not delivery. And never end a turn
-waiting for anything at all: §6 of the ticket-team `PROTOCOL.md` carries the rule.
+waiting for anything at all: the skill's §6 carries the rule and the two tickets it cost.

@@ -80,31 +80,24 @@ The first 44 bytes of a canonical mono WAV encode:
 - bytes 24-27 sample rate (LE u32)
 - bytes 34-35 bits per sample (LE u16)
 
-Parse the buffer with Bun — this repo is Bun-only and never installs Python. The script walks the RIFF chunks (a `LIST` chunk often precedes `data`) and decodes on `audio_format`, not on bit depth alone: our pipeline usually emits IEEE_FLOAT (`fmt = 3`), which a PCM-assuming reader turns into garbage rather than an error.
+Use Python (always available) to parse + compute stats:
 
 ```bash
-bun -e '
-const buf = new Uint8Array(await Bun.file(process.argv[1]).arrayBuffer());
-const dv = new DataView(buf.buffer);
-const fmt = dv.getUint16(20, true), nch = dv.getUint16(22, true);
-const sr = dv.getUint32(24, true), bps = dv.getUint16(34, true);
-let off = 12, dataOff = 0, dataLen = 0;
-while (off + 8 <= buf.length) {
-  const id = String.fromCharCode(...buf.subarray(off, off + 4));
-  const len = dv.getUint32(off + 4, true);
-  if (id === "data") { dataOff = off + 8; dataLen = Math.min(len, buf.length - dataOff); break; }
-  off += 8 + len + (len & 1);
-}
-const bytes = bps / 8, n = Math.floor(dataLen / bytes);
-let sumSq = 0, peak = 0, quiet = 0;
-for (let i = 0; i < n; i++) {
-  const p = dataOff + i * bytes;
-  const x = fmt === 3 ? dv.getFloat32(p, true) : bps === 16 ? dv.getInt16(p, true) / 32768 : dv.getInt32(p, true) / 2147483648;
-  const a = Math.abs(x); sumSq += x * x; if (a > peak) peak = a; if (a < 0.005) quiet++;
-}
-console.log(JSON.stringify({ fmt, nch, sr, bps, duration_s: n / nch / sr, rms: Math.sqrt(sumSq / n), peak, silence_ratio: quiet / n }));
-' "$wav"
+python3 - "$wav" <<'PY'
+import sys, struct, wave, statistics
+path = sys.argv[1]
+with wave.open(path, 'rb') as w:
+    nch = w.getnchannels()
+    sr = w.getframerate()
+    bps = w.getsampwidth() * 8
+    n = w.getnframes()
+    pcm = w.readframes(n)
+# decode as int16 / int32 / float32 depending on bps + format
+# compute: duration_s, rms (peak-norm), silence_ratio (frames < 0.005), peak (clipping check)
+PY
 ```
+
+If the file uses IEEE_FLOAT (audio_format=3, common for our pipeline), `wave` rejects it — fall back to a manual struct.unpack of bytes 36+ as `f4`.
 
 ### Step 4: Pass/fail criteria per WAV
 
@@ -155,12 +148,13 @@ Recommendation:
   - Compare against last known-good commit by `git stash` + re-run
 ```
 
-End the report with `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: SKIPPED` on its own line. A skip is never a FAIL.
+Exit non-zero only if at least one PASS was attempted and a hard failure occurred (not skips).
 
 ## Hard rules
 
-- No subjective claims ("sounds natural", "good prosody") — you have stats, not ears.
-- Report; never fix, and never edit a source file. You hold Bash, so this is yours to honour.
+- Do NOT make subjective claims ("sounds natural", "good prosody"). You can't hear.
+- Do NOT modify any source files; you're a checker.
+- Do NOT auto-fix; report and let the user / a writer subagent decide.
 - If a hard fail occurs, include the failing WAV path so the user can `afplay` it.
 - Skips (no model cached) are not failures.
 

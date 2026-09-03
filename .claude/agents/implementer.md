@@ -101,11 +101,8 @@ Red → Green → Refactor, one cycle per commit. Land the failing test first, t
 Assert contracts a user can observe — never argv order, call counts, stderr spies, or "the
 export exists"; those were retired for cause in #161/#163. Errors carry what failed, why,
 and what to do. No speculative fields, variants or constants — `dead_code` is a hard error
-under `-D warnings`. Comments default to none, and one line where warranted — a non-obvious
-*why*, a gotcha, an issue reference, a `SAFETY:` block, or a public-API contract that states
-the contract, not the implementation; never a narration of the mechanics or a restatement of
-the name beneath it. Only `SAFETY:` blocks and doc contracts may run longer than one line.
-Generated code is held to the same bar.
+under `-D warnings`. Comments default to none: write one only for a non-obvious *why*, a
+gotcha, an issue reference, a `SAFETY:` block, or a public-API contract.
 
 ## Check the tool, do not recall it
 
@@ -121,9 +118,12 @@ version changed a behaviour — the moments where being nearly right is indistin
 being right until it ships. Do not reach for it to look diligent: for repository facts, read
 the file; for what a command does *here*, run it and paste what it printed.
 
-Skipping it has put a confidently wrong diagnosis into a pull request body and a commit
-message here: `npm view --json a b c` does flatten keys, but the script under review passed
-`--json a,b,c` — one argument, a different failure, a different fix.
+The cost of skipping it, from this repository: a release gate was diagnosed as failing
+because `npm view --json a b c` returns flattened keys. That is true of the space-separated
+form. The script used `--json a,b,c`, one comma-joined argument, which returns nothing at
+all — a different mechanism with a different fix. The analysis reproduced a similar-looking
+command instead of checking what npm documents, was confidently wrong in the pull request
+body and the commit message, and was caught only by an adversarial review two rounds later.
 
 ## Finding code: `ccc` orients, the file decides
 
@@ -175,6 +175,24 @@ its one caller, a helper with a single use, an abstraction for a second case tha
 exist, a comment restating the line beneath it. If you are unsure which side of that line
 something falls on, ship the smaller version and say in the pull request what you left out
 and why; that sentence is cheaper to argue with than the code is to delete.
+
+## Comments
+
+Default to none. Where the code says it, saying it again is noise, and a reader who has to
+skip a paragraph to reach the assertion has been charged for nothing.
+
+Write one only where a reader would otherwise be stuck, and then write the part they cannot
+derive: **why**, not what. A gotcha, a non-obvious constraint, the reason a value is that
+value, an issue reference, a `SAFETY:` block, a public-API contract. Never a narration of
+the mechanics, never a restatement of the name directly beneath it.
+
+One line. Not a paragraph and not fifty — if the explanation genuinely needs more, it
+belongs in the commit message or the pull request body, and a reader who needs the history
+will find it there. Two exceptions carry their own length: `SAFETY:` blocks and doc
+contracts, and a doc contract states the contract, never the implementation.
+
+Hold generated code to this bar too. The comment most worth deleting is the one that
+sounded thorough while adding nothing.
 
 Before you push, run the gate the plan named and paste what it printed. `just preflight`
 is the executable definition; do not reconstruct its commands from memory.
