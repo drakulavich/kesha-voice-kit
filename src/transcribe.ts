@@ -1,13 +1,14 @@
 import {
-  assertSpeakersVadCompatible,
+  assertSpeakerModelsInstalled,
+  buildTranscribeArgs,
+  getDescribe,
   isEngineInstalled,
-  preflightTranscribeEngineItn,
-  preflightTranscribeEngineWithSegments,
   transcribeEngine,
   transcribeEngineWithSegments,
   type TranscriptionOutput,
   type VadMode,
 } from "./engine";
+import { validateArgv } from "./engine/describe";
 import { installHint } from "./install-hint";
 
 export type { VadMode };
@@ -39,36 +40,27 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
   return (await transcribeWithSegments(audioPath, opts)).text;
 }
 
-export async function preflightTranscribeWithSegments(opts: TranscribeOptions = {}): Promise<void> {
-  // #768: ahead of isEngineInstalled(), so an invalid pair never reads as a missing install.
-  assertSpeakersVadCompatible(opts);
-
+/** Refuses a request the installed engine cannot serve, before any progress UI or spawn. */
+export async function validateTranscribeRequest(opts: TranscribeOptions = {}): Promise<void> {
   if (!isEngineInstalled()) {
     throw new Error(
       "Error: No transcription backend is installed.\n\n" +
-      "Run the following to get started:\n\n" +
-      "    bun add -g @drakulavich/kesha-voice-kit\n" +
-      `    ${installHint()}`,
+        "Run the following to get started:\n\n" +
+        "    bun add -g @drakulavich/kesha-voice-kit\n" +
+        `    ${installHint()}`,
     );
   }
-
-  // Above the timestamps short-circuit: `--itn` is meaningful with plain text
-  // output too, which otherwise reaches the engine with no preflight at all.
-  await preflightTranscribeEngineItn({ itn: opts.itn });
-
-  if (opts.timestamps || opts.speakers) {
-    await preflightTranscribeEngineWithSegments({
-      vad: opts.vad,
-      speakers: opts.speakers,
-    });
-  }
+  const json = Boolean(opts.timestamps || opts.speakers);
+  const engineOpts = { vad: opts.vad, speakers: opts.speakers, itn: opts.itn };
+  validateArgv(buildTranscribeArgs("<input>", engineOpts, json), await getDescribe());
+  if (opts.speakers) assertSpeakerModelsInstalled();
 }
 
 export async function transcribeWithSegments(
   audioPath: string,
   opts: TranscribeOptions = {},
 ): Promise<TranscriptionOutput> {
-  await preflightTranscribeWithSegments(opts);
+  await validateTranscribeRequest(opts);
 
   if (opts.timestamps || opts.speakers) {
     return transcribeEngineWithSegments(audioPath, {

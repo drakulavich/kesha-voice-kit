@@ -3,7 +3,6 @@ import {
   isEngineInstalled,
   getEngineCapabilities,
   spawnEngineProcess,
-  spawnStdioWithDebugFd,
   type EngineCapabilities,
 } from "./engine";
 import { engineErrorCode, TS_NATIVE_CODES } from "./error-codes";
@@ -181,9 +180,8 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   const args = buildSayArgs({ ...opts, text: undefined }, capabilities);
   const startedAt = performance.now();
   log.debug(`spawn ${getEngineBinPath()} ${args.join(" ")} (text: ${opts.text?.length ?? 0} chars)`);
-  const proc = spawnEngineProcess(getEngineBinPath(), args, spawnStdioWithDebugFd(["pipe", "pipe", "pipe"]));
+  const proc = spawnEngineProcess(getEngineBinPath(), args, ["pipe", "pipe", "pipe"]);
   const tree = registerProcessTree(proc);
-  // spawnStdioWithDebugFd widens the tuple to a union; cast back to the known "pipe" types.
   const stdin = proc.stdin as Bun.FileSink;
   const stdout = proc.stdout as ReadableStream<Uint8Array>;
   const stderr = proc.stderr as ReadableStream<Uint8Array>;

@@ -184,6 +184,10 @@ function createSignalAwareEngine(dir: string, helperPidPath: string): string {
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
 if (args[0] === "transcribe") {
   const child = Bun.spawn(["sh", "-c", ${JSON.stringify(stubbornShell("TERM"))}], {
     stdout: "ignore",
@@ -241,6 +245,10 @@ function createHangingTranscribeEngine(dir: string, enginePidPath: string): stri
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
 if (args[0] === "transcribe") {
   await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
   await new Promise(() => {});

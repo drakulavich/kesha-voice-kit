@@ -1,11 +1,6 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import {
-  getEngineBinPath,
-  isEngineInstalled,
-  spawnEngineProcess,
-  spawnStdioWithDebugFd,
-} from "../engine";
+import { getEngineBinPath, isEngineInstalled, spawnEngineProcess } from "../engine";
 import { installHint } from "../install-hint";
 import { registerProcessTree } from "../process-tree";
 import { log } from "../log";
@@ -295,11 +290,7 @@ export const sayCommand = defineCommand({
         process.exit(1);
       }
       // The engine prints the list directly — just relay its stdout + exit code.
-      const proc = spawnEngineProcess(
-        getEngineBinPath(),
-        ["say", "--list-voices"],
-        spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
-      );
+      const proc = spawnEngineProcess(getEngineBinPath(), ["say", "--list-voices"], ["inherit", "inherit", "inherit"]);
       // Register so a Ctrl-C during a cold Engine load terminates it and exits 130/143 (#939);
       // dispose before the process.exit below so the registration never outlives the run.
       const tree = registerProcessTree(proc);

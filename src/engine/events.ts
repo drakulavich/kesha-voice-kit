@@ -136,7 +136,11 @@ export async function readEvents(
   const outcome: StderrOutcome = { stderr: "", error: null, invalid: [] };
   const take = (raw: string) => {
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    if (line.length === 0) return;
+    if (line.length === 0) {
+      // Mid-transcript, a blank line is prose to preserve; a leading/trailing one is a stray artifact.
+      if (outcome.stderr.length > 0) outcome.stderr += "\n";
+      return;
+    }
     const parsed = parseEventLine(line);
     if (!parsed.ok) {
       outcome.invalid.push(line);

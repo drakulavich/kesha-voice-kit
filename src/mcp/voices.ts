@@ -1,4 +1,4 @@
-import { getEngineBinPath, isEngineInstalled, spawnEngineProcess, spawnStdioWithDebugFd } from "../engine";
+import { getEngineBinPath, isEngineInstalled, spawnEngineProcess } from "../engine";
 import { installHint } from "../install-hint";
 import { registerProcessTree } from "../process-tree";
 
@@ -113,11 +113,7 @@ export async function listVoices(): Promise<VoiceInfo[]> {
   if (!isEngineInstalled()) {
     throw new Error(`kesha-engine not installed. run: ${installHint()}`);
   }
-  const proc = spawnEngineProcess(
-    getEngineBinPath(),
-    ["say", "--list-voices"],
-    spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
-  );
+  const proc = spawnEngineProcess(getEngineBinPath(), ["say", "--list-voices"], ["ignore", "pipe", "pipe"]);
   // Register so an interrupt of the long-lived MCP stdio server terminates this spawn
   // instead of orphaning it; dispose in finally keeps the registration request-scoped
   // so a persistent server never leaks one per call (#939).

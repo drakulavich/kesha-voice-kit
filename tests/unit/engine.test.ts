@@ -1,26 +1,37 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import { chmodSync, mkdtempSync, mkdirSync, utimesSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
-import { readRepoFile } from "../helpers/repo";
 import { describeJson, envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
 import {
   detectTextLanguageEngine,
-  parseLangResult,
+  getDescribe,
   getEngineBinPath,
   getEngineCapabilities,
-  preflightRecordLive,
-  preflightTranscribeEngineItn,
-  preflightTranscribeEngineWithSegments,
+  parseLangResult,
   recordEngine,
   spawnEngineProcess,
-  spawnStdioWithDebugFd,
   textLangFailureWarning,
   transcribeEngine,
   transcribeEngineWithSegments,
+  validateRecordRequest,
 } from "../../src/engine";
+import { KeshaError } from "../../src/engine/events";
+import { errorMessage } from "../../src/error-utils";
+import { validateTranscribeRequest } from "../../src/transcribe";
+
+/** The thrown KeshaError, so a test can assert on code and hint rather than on prose. */
+async function failure(run: () => Promise<unknown>): Promise<KeshaError> {
+  try {
+    await run();
+  } catch (err) {
+    if (err instanceof KeshaError) return err;
+    throw err;
+  }
+  throw new Error("expected a KeshaError");
+}
 
 function fakeEngine(features: string[]): string {
   return writeTranscribingEngine(
@@ -55,12 +66,26 @@ exit 2
   return path;
 }
 
+function capsEngineWithVersion(protocolVersion: number): string {
+  const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-proto-")), "kesha-engine");
+  writeFileSync(
+    path,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["transcribe"], protocolVersion })}'\n  exit 0\nfi\nexit 2\n`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
 function fakeLongRunningEngine(dir: string, helperPidFile: string): string {
   const path = join(dir, "kesha-engine-long-running");
   writeFileSync(
     path,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ features: [] }))});
+  process.exit(0);
+}
 if (args[0] === "transcribe") {
   const child = Bun.spawn(["sh", "-c", ${JSON.stringify(stubbornShell("TERM INT"))}], {
     stdout: "ignore",
@@ -180,26 +205,6 @@ describe("engine", () => {
     expect(parseLangResult('{"confidence":0.94}')).toBeNull();
   });
 
-  fakeEngineTest("itn preflight rejects when the engine does not advertise transcribe.itn (#710)", async () => {
-    await withEngineEnv(fakeEngine(["transcribe.segments"]), async () => {
-      await expect(preflightTranscribeEngineItn({ itn: true })).rejects.toThrow(
-        "--itn requires a newer kesha-engine",
-      );
-    });
-  });
-
-  fakeEngineTest("itn preflight is a no-op when itn was not requested", async () => {
-    await withEngineEnv(fakeEngine([]), async () => {
-      await expect(preflightTranscribeEngineItn({})).resolves.toBeUndefined();
-    });
-  });
-
-  fakeEngineTest("itn preflight passes when the engine advertises the capability", async () => {
-    await withEngineEnv(fakeEngine(["transcribe.itn"]), async () => {
-      await expect(preflightTranscribeEngineItn({ itn: true })).resolves.toBeUndefined();
-    });
-  });
-
   fakeEngineTest("--itn forwards to the engine on the plain-text path", async () => {
     await withEngineEnv(await argEchoEngine(["transcribe.itn"]), async () => {
       expect(await transcribeEngine("audio.wav", { itn: true })).toBe("audio.wav --itn");
@@ -216,82 +221,82 @@ describe("engine", () => {
     });
   });
 
-  fakeEngineTest("the plain-text helper refuses --itn on an engine without the capability", async () => {
-    // Direct ./engine callers bypass the CLI preflight, and would otherwise get
-    // clap usage noise from the old engine instead of the upgrade hint.
+  fakeEngineTest("--itn on an engine without the pass is E_INVALID_ARG with the upgrade path (#710)", async () => {
     await withEngineEnv(await argEchoEngine(["transcribe.segments"]), async () => {
-      await expect(transcribeEngine("audio.wav", { itn: true })).rejects.toThrow(
-        "--itn requires a newer kesha-engine",
-      );
+      for (const run of [
+        () => transcribeEngine("audio.wav", { itn: true }),
+        () => transcribeEngineWithSegments("audio.wav", { itn: true }),
+        () => validateTranscribeRequest({ itn: true }),
+      ]) {
+        const err = await failure(run);
+        expect(err.code).toBe("E_INVALID_ARG");
+        expect(err.message).toContain("--itn");
+        expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit@latest");
+      }
     });
   });
 
-  fakeEngineTest("the --json helper refuses --itn on an engine without the capability", async () => {
-    await withEngineEnv(await argEchoEngine(["transcribe.segments"]), async () => {
-      await expect(
-        transcribeEngineWithSegments("audio.wav", { itn: true }),
-      ).rejects.toThrow("--itn requires a newer kesha-engine");
-    });
-  });
-
-  fakeEngineTest("preflight rejects timestamp requests when the engine lacks segment support", async () => {
-    await withEngineEnv(fakeEngine([]), async () => {
-      await expect(preflightTranscribeEngineWithSegments()).rejects.toThrow("Timestamped segments require");
-    });
-  });
-
-  fakeEngineTest("preflight rejects speakers when the engine lacks diarization support", async () => {
+  fakeEngineTest("speakers on a build without diarization is E_INVALID_ARG naming the platform", async () => {
     await withEngineEnv(fakeEngine(["transcribe.segments"]), async () => {
-      await expect(preflightTranscribeEngineWithSegments({ speakers: true })).rejects.toThrow(
-        "speaker diarization is currently darwin-arm64 only",
-      );
+      const err = await failure(() => transcribeEngineWithSegments("audio.wav", { speakers: true }));
+      expect(err.code).toBe("E_INVALID_ARG");
+      expect(err.hint).toContain("darwin-arm64");
     });
   });
 
-  fakeEngineTest("preflight rejects --live when the engine lacks record.live", async () => {
+  fakeEngineTest("speakers with vad off is E_INVALID_ARG before any model is looked for (#768)", async () => {
+    await withEngineEnv(
+      fakeEngine(["transcribe.segments", "transcribe.diarize"]),
+      async () => {
+        const err = await failure(() => validateTranscribeRequest({ speakers: true, vad: "off" }));
+        expect(err.code).toBe("E_INVALID_ARG");
+        expect(err.message).toContain("--no-vad");
+      },
+      { KESHA_DIARIZE_MODEL_PATH: "/tmp/kesha-missing-diarize-model" },
+    );
+  });
+
+  fakeEngineTest("--live is refused where record.live is absent, with the two-step remedy", async () => {
     await withEngineEnv(fakeEngine(["transcribe"]), async () => {
-      await expect(preflightRecordLive()).rejects.toThrow(
-        "live transcription requires a CoreML engine on Apple Silicon",
-      );
-      await expect(preflightRecordLive()).rejects.toThrow("kesha record --out note.wav");
+      const err = await failure(() => validateRecordRequest({ live: true }, 10));
+      expect(err.code).toBe("E_INVALID_ARG");
+      expect(err.hint).toContain("kesha record --out note.wav");
     });
-  });
-
-  fakeEngineTest("preflight accepts --live when the engine advertises record.live", async () => {
     await withEngineEnv(fakeEngine(["transcribe", "record.live"]), async () => {
-      await expect(preflightRecordLive()).resolves.toBeUndefined();
+      await expect(validateRecordRequest({ live: true }, 10)).resolves.toBeUndefined();
     });
   });
 
-  fakeEngineTest("preflight rejects auto-stop when the live engine does not advertise it", async () => {
+  fakeEngineTest("auto-stop needs record.live.auto-stop", async () => {
+    const autoStop = { silenceMs: 800, threshold: 0.5, minSpeechMs: 250 };
     await withEngineEnv(fakeEngine(["transcribe", "record.live"]), async () => {
-      await expect(preflightRecordLive(true)).rejects.toThrow(
-        "live auto-stop requires a newer CoreML engine",
-      );
+      const err = await failure(() => validateRecordRequest({ live: true, autoStop }, 10));
+      expect(err.code).toBe("E_INVALID_ARG");
+      expect(err.message).toContain("--auto-stop");
     });
-  });
-
-  fakeEngineTest("preflight accepts auto-stop only when the engine advertises endpointing", async () => {
     await withEngineEnv(fakeEngine(["transcribe", "record.live", "record.live.auto-stop"]), async () => {
-      await expect(preflightRecordLive(true)).resolves.toBeUndefined();
+      await expect(validateRecordRequest({ live: true, autoStop }, 10)).resolves.toBeUndefined();
     });
   });
 
-  // An unreadable probe must not be read as "supported" — that would forward
-  // --live into an engine that has no such flag. It is also not the same failure
-  // as an engine that answered and lacks the feature, so it says so.
-  fakeEngineTest("preflight rejects --live when capabilities cannot be read", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-caps-fail-"));
-    const broken = join(dir, "kesha-engine");
-    writeFileSync(broken, "#!/bin/sh\nexit 3\n");
-    chmodSync(broken, 0o755);
-    await withEngineEnv(broken, async () => {
-      const err = await preflightRecordLive().then(
-        () => null,
-        (e: unknown) => String(e),
-      );
-      expect(err).toContain("could not read kesha-engine's capabilities");
-      expect(err).not.toContain("requires a CoreML engine on Apple Silicon");
+  fakeEngineTest("an engine that cannot describe itself is E_ENGINE_PROTOCOL pointing at kesha install", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-old-"));
+    const old = join(dir, "kesha-engine");
+    writeFileSync(old, "#!/bin/sh\necho 'error: unrecognized subcommand describe' >&2\nexit 2\n");
+    chmodSync(old, 0o755);
+    await withEngineEnv(old, async () => {
+      const err = await failure(() => validateRecordRequest({ out: join(dir, "o.wav") }, 10));
+      expect(err.code).toBe("E_ENGINE_PROTOCOL");
+      expect(err.hint).toContain("kesha install");
+      expect(await getEngineCapabilities()).toBeNull();
+    });
+  });
+
+  fakeEngineTest("a newer protocol is E_ENGINE_PROTOCOL pointing at the CLI upgrade", async () => {
+    await withEngineEnv(capsEngineWithVersion(5), async () => {
+      const err = await failure(() => transcribeEngine("audio.wav"));
+      expect(err.code).toBe("E_ENGINE_PROTOCOL");
+      expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit@latest");
     });
   });
 
@@ -299,24 +304,11 @@ describe("engine", () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
       async () => {
-        await expect(preflightTranscribeEngineWithSegments({ speakers: true })).rejects.toThrow(
+        await expect(transcribeEngineWithSegments("audio.wav", { speakers: true })).rejects.toThrow(
           "KESHA_DIARIZE_MODEL_PATH set but path does not exist",
         );
       },
       { KESHA_DIARIZE_MODEL_PATH: "/tmp/kesha-missing-diarize-model" },
-    );
-  });
-
-  test("preflight rejects speakers + vad:off before resolving capabilities or models (#768)", async () => {
-    const emptyCache = mkdtempSync(join(tmpdir(), "kesha-cache-empty-"));
-    await withEngineEnv(
-      join(emptyCache, "no-such-kesha-engine"),
-      async () => {
-        await expect(
-          preflightTranscribeEngineWithSegments({ speakers: true, vad: "off" }),
-        ).rejects.toThrow("E_INVALID_ARG");
-      },
-      { KESHA_CACHE_DIR: emptyCache, KESHA_DIARIZE_MODEL_PATH: undefined },
     );
   });
 
@@ -326,7 +318,7 @@ describe("engine", () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
       async () => {
-        await expect(preflightTranscribeEngineWithSegments({ speakers: true })).rejects.toThrow(
+        await expect(transcribeEngineWithSegments("audio.wav", { speakers: true })).rejects.toThrow(
           "speaker diarization requires the VAD model",
         );
       },
@@ -426,9 +418,11 @@ describe("engine", () => {
     writeFileSync(notExecutable, "not a binary");
     chmodSync(notExecutable, 0o644);
     await withEngineEnv(notExecutable, async () => {
-      await expect(transcribeEngine("audio.wav")).rejects.toThrow(
-        new RegExp(`error \\[E_ENGINE_SPAWN\\]: failed to launch kesha-engine at ${notExecutable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
-      );
+      const err = await failure(() => transcribeEngine("audio.wav"));
+      expect(err.code).toBe("E_ENGINE_SPAWN");
+      expect(err.message).toContain(notExecutable);
+      expect(errorMessage(err)).toMatch(/^error \[E_ENGINE_SPAWN\]: failed to launch kesha-engine at /);
+      expect(err.hint).toContain("kesha install");
     });
   });
 
@@ -439,8 +433,8 @@ describe("engine", () => {
     chmodSync(notExecutable, 0o644);
     await withEngineEnv(notExecutable, async () => {
       const out = join(dir, "out.wav");
-      await expect(recordEngine({ out }, 10)).rejects.toThrow(/error \[E_ENGINE_SPAWN\]: failed to launch kesha-engine at/);
-      await expect(recordEngine({ out }, 10)).rejects.toThrow(/Run `kesha install` \(or set KESHA_ENGINE_BIN\)/);
+      await expect(recordEngine({ out }, 10)).rejects.toThrow(/failed to launch kesha-engine at/);
+      expect((await failure(() => recordEngine({ out }, 10))).code).toBe("E_ENGINE_SPAWN");
     });
   });
 
@@ -510,7 +504,7 @@ describe("engine", () => {
     const engine = writeTranscribingEngine(
       "kesha-engine-live-progress-",
       ["transcribe.segments"],
-      `  echo 'diarize: loading the CoreML model on all' >&2
+      `  printf '%s\\n' '{"kind":"progress","phase":"diarize","message":"loading the CoreML model on all"}' >&2
   i=0
   while [ "$i" -lt 20 ]; do
     if [ -e '${ack}' ]; then
@@ -543,84 +537,54 @@ describe("engine", () => {
     const engine = writeTranscribingEngine(
       "kesha-engine-progress-failure-",
       ["transcribe.segments"],
-      `  echo 'diarize: loading the CoreML model on all' >&2
-  echo 'error [E_DIARIZE_TIMEOUT]: speaker diarization stalled while loading the model' >&2
+      `  printf '%s\\n' '{"kind":"progress","phase":"diarize","message":"loading the CoreML model on all"}' >&2
+  printf '%s\\n' '{"kind":"error","code":"E_DIARIZE_TIMEOUT","message":"speaker diarization stalled while loading the model"}' >&2
   exit 1`,
     );
 
     const seen: string[] = [];
-    const failure = await withEngineEnv(engine, () =>
-      transcribeEngineWithSegments("audio.wav", {
-        onProgressLine: (line) => seen.push(line),
-      }).then(
-        () => null,
-        (err: unknown) => String(err),
+    const err = await withEngineEnv(engine, () =>
+      failure(() =>
+        transcribeEngineWithSegments("audio.wav", {
+          onProgressLine: (line) => seen.push(line),
+        }),
       ),
     );
 
     expect(seen).toEqual(["diarize: loading the CoreML model on all"]);
-    expect(failure).toContain("error [E_DIARIZE_TIMEOUT]: speaker diarization stalled");
-    expect(failure).not.toContain("loading the CoreML model");
-  });
-});
-
-describe("spawnStdioWithDebugFd", () => {
-  let savedFd: string | undefined;
-  beforeEach(() => {
-    savedFd = process.env.KESHA_DEBUG_FD;
-    delete process.env.KESHA_DEBUG_FD;
-  });
-  afterEach(() => {
-    if (savedFd === undefined) {
-      delete process.env.KESHA_DEBUG_FD;
-    } else {
-      process.env.KESHA_DEBUG_FD = savedFd;
-    }
+    expect(err.code).toBe("E_DIARIZE_TIMEOUT");
+    expect(err.exitCode).toBe(1);
+    expect(errorMessage(err)).toContain("error [E_DIARIZE_TIMEOUT]: speaker diarization stalled");
+    expect(errorMessage(err)).not.toContain("loading the CoreML model");
   });
 
-  test("returns base unchanged when KESHA_DEBUG_FD is unset", () => {
-    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
+  fakeEngineTest("a stderr line that is not an event is E_INTERNAL quoting the line", async () => {
+    const engine = writeTranscribingEngine(
+      "kesha-engine-prose-",
+      ["transcribe.segments"],
+      `  echo 'Segmentation fault (core dumped)' >&2
+  printf '%s\\n' '{"text":"ok","segments":[]}'`,
+    );
+    await withEngineEnv(engine, async () => {
+      const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
+      expect(err.code).toBe("E_INTERNAL");
+      expect(err.message).toContain("Segmentation fault (core dumped)");
+    });
   });
 
-  test("returns base unchanged on invalid KESHA_DEBUG_FD values", () => {
-    const invalidValues = ["", "abc", "-1", "3.5", "1000000"];
-    for (const value of invalidValues) {
-      process.env.KESHA_DEBUG_FD = value;
-      expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
-    }
+  fakeEngineTest("the engine is spawned with KESHA_PROTOCOL=4 and CRLF events are accepted", async () => {
+    const engine = writeTranscribingEngine(
+      "kesha-engine-crlf-",
+      ["transcribe.segments"],
+      `  printf '{"kind":"progress","message":"proto=%s"}\\r\\n' "$KESHA_PROTOCOL" >&2
+  printf '%s\\n' '{"text":"ok","segments":[]}'`,
+    );
+    const seen: string[] = [];
+    await withEngineEnv(engine, async () => {
+      await transcribeEngineWithSegments("audio.wav", { onProgressLine: (line) => seen.push(line) });
+    });
+    expect(seen).toEqual(["proto=4"]);
   });
-
-  test("returns base unchanged for stdio range fd (0/1/2)", () => {
-    for (const fd of ["0", "1", "2"]) {
-      process.env.KESHA_DEBUG_FD = fd;
-      expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
-    }
-  });
-
-  test("forwards parent fd 3 as child fd 3 (no padding needed)", () => {
-    process.env.KESHA_DEBUG_FD = "3";
-    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe", 3]);
-  });
-
-  test("pads with ignore up to the target fd and identity-maps it", () => {
-    process.env.KESHA_DEBUG_FD = "5";
-    // fd 5 needs ignore at slots 3, 4 then identity-map at 5.
-    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual([
-      "ignore",
-      "pipe",
-      "pipe",
-      "ignore",
-      "ignore",
-      5,
-    ]);
-  });
-
-  test("preserves alternative base stdin choices (e.g. say-side 'pipe')", () => {
-    process.env.KESHA_DEBUG_FD = "3";
-    // `kesha say` opens stdin to write the text payload through.
-    expect(spawnStdioWithDebugFd(["pipe", "pipe", "pipe"])).toEqual(["pipe", "pipe", "pipe", 3]);
-  });
-
 });
 
 describe("text language detection degrades loudly (#770)", () => {
@@ -668,7 +632,7 @@ describe("text language detection degrades loudly (#770)", () => {
 describe("engine subprocess env", () => {
   const readStdout = async (vars: string[]) => {
     const { binPath, args } = envEchoEngine(vars);
-    const proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]));
+    const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"]);
     return (await new Response(proc.stdout as ReadableStream).text()).trim();
   };
 
@@ -694,8 +658,8 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     return writeTranscribingEngine("kesha-engine-malformed-", ["transcribe.segments"], `  printf '%s\\n' '${payload}'`);
   }
 
-  function capabilitiesEngine(payload: string, exitCode = 0): string {
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-caps-")), "kesha-engine");
+  function describingEngine(payload: string, exitCode = 0): string {
+    const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-describe-")), "kesha-engine");
     writeFileSync(
       path,
       `#!/bin/sh\nif [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${payload}'\n  exit ${exitCode}\nfi\nexit 2\n`,
@@ -760,38 +724,34 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     ["a JSON array", "[]"],
     ["a JSON scalar", '"onnx"'],
     ["null", "null"],
-    ["no protocolVersion", '{"backend":"onnx","features":[]}'],
-    ["a non-numeric protocolVersion", '{"protocolVersion":"3","backend":"onnx","features":[]}'],
-    ["a non-string backend", '{"protocolVersion":3,"backend":3,"features":[]}'],
-    ["features that are not an array", '{"protocolVersion":3,"backend":"onnx","features":"tts"}'],
-    ["a non-string among the features", '{"protocolVersion":3,"backend":"onnx","features":["tts",7]}'],
-    // #928: `.tts.languages` is dereferenced as an array by init and install, so a present-but-
-    // wrong tts is an engine that failed to describe itself, not one without TTS.
-    ["a tts key that is not an object", '{"protocolVersion":3,"backend":"onnx","features":[],"tts":"yes"}'],
-    ["an explicitly null tts key", '{"protocolVersion":3,"backend":"onnx","features":[],"tts":null}'],
+    ["no protocolVersion", '{"backend":"onnx","profile":"linux","features":[],"commands":{}}'],
+    [
+      "a non-numeric protocolVersion",
+      '{"protocolVersion":"4","backend":"onnx","profile":"linux","features":[],"commands":{}}',
+    ],
+    ["a non-string backend", '{"protocolVersion":4,"backend":3,"profile":"linux","features":[],"commands":{}}'],
+    ["no profile", '{"protocolVersion":4,"backend":"onnx","features":[],"commands":{}}'],
+    ["no commands", '{"protocolVersion":4,"backend":"onnx","profile":"linux","features":[]}'],
+    [
+      "features that are not an array",
+      '{"protocolVersion":4,"backend":"onnx","profile":"linux","features":"tts","commands":{}}',
+    ],
+    // #928: a present-but-malformed tts is an engine that failed to describe itself, not one without TTS.
+    [
+      "a tts key that is not an object",
+      '{"protocolVersion":4,"backend":"onnx","profile":"linux","features":[],"commands":{},"tts":"yes"}',
+    ],
     [
       "tts languages that are not an array",
-      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":{}}}',
-    ],
-    [
-      "a tts language with no code",
-      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":[{}]}}',
-    ],
-    [
-      "a non-string code on a tts language",
-      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":[{"code":123,"engines":["kokoro"]}]}}',
+      '{"protocolVersion":4,"backend":"onnx","profile":"linux","features":[],"commands":{},"tts":{"languages":{}}}',
     ],
     [
       "a tts language with no engines",
-      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":[{"code":"en"}]}}',
-    ],
-    [
-      "a non-string among a tts language's engines",
-      '{"protocolVersion":3,"backend":"onnx","features":[],"tts":{"languages":[{"code":"en","engines":[7]}]}}',
+      '{"protocolVersion":4,"backend":"onnx","profile":"linux","features":[],"commands":{},"tts":{"languages":[{"code":"en"}]}}',
     ],
   ] as const) {
-    fakeEngineTest(`capabilities carrying ${shape} read as no capabilities`, async () => {
-      await withEngineEnv(capabilitiesEngine(payload), async () => {
+    fakeEngineTest(`describe carrying ${shape} reads as no capabilities`, async () => {
+      await withEngineEnv(describingEngine(payload), async () => {
         expect(await getEngineCapabilities()).toBeNull();
       });
     });
@@ -800,38 +760,40 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
   // The exit code is the engine's own verdict on what it just printed: a probe that failed
   // must read as no capabilities even when the bytes on stdout happen to parse.
   fakeEngineTest("capabilities printed by a failing probe are not trusted", async () => {
-    await withEngineEnv(
-      capabilitiesEngine('{"protocolVersion":3,"backend":"onnx","features":["tts"]}', 3),
-      async () => {
-        expect(await getEngineCapabilities()).toBeNull();
-      },
-    );
+    await withEngineEnv(describingEngine(describeJson({ features: ["tts"] }), 3), async () => {
+      expect(await getEngineCapabilities()).toBeNull();
+    });
   });
 
   // Null, not undefined: callers branch on `caps === null` for the "could not read it" message.
   fakeEngineTest("stdout that is not JSON at all reads as no capabilities", async () => {
-    await withEngineEnv(capabilitiesEngine("not json"), async () => {
+    await withEngineEnv(describingEngine("not json"), async () => {
       expect(await getEngineCapabilities()).toBeNull();
     });
   });
 
   fakeEngineTest("well-formed capabilities are returned as they came", async () => {
-    await withEngineEnv(
-      capabilitiesEngine('{"protocolVersion":3,"backend":"onnx","features":["tts"]}'),
-      async () => {
-        expect(await getEngineCapabilities()).toMatchObject({
-          protocolVersion: 3,
-          backend: "onnx",
-          features: ["tts"],
-        });
-      },
-    );
+    await withEngineEnv(describingEngine(describeJson({ backend: "onnx", features: ["tts"] })), async () => {
+      expect(await getEngineCapabilities()).toMatchObject({
+        protocolVersion: 4,
+        backend: "onnx",
+        features: ["tts"],
+      });
+    });
   });
 
   fakeEngineTest("an advertised tts language list survives the probe", async () => {
-    const payload =
-      '{"protocolVersion":3,"backend":"onnx","features":["tts"],"tts":{"languages":[{"code":"en","engines":["kokoro"]},{"code":"ru","engines":["vosk"]}]}}';
-    await withEngineEnv(capabilitiesEngine(payload), async () => {
+    const payload = describeJson({
+      backend: "onnx",
+      features: ["tts"],
+      tts: {
+        languages: [
+          { code: "en", engines: ["kokoro"] },
+          { code: "ru", engines: ["vosk"] },
+        ],
+      },
+    });
+    await withEngineEnv(describingEngine(payload), async () => {
       const caps = await getEngineCapabilities();
       expect(caps?.tts?.languages).toEqual([
         { code: "en", engines: ["kokoro"] },
@@ -839,22 +801,6 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
       ]);
     });
   });
-
-  // Validation strict enough to reject a published binary would take init's language list with it (#928).
-  for (const key of ["darwin-arm64", "linux-x64", "win32-x64"] as const) {
-    fakeEngineTest(`the recorded ${key} pact still reads as capabilities`, async () => {
-      const recorded = JSON.parse(readRepoFile(`tests/fixtures/capabilities/${key}.json`));
-      await withEngineEnv(capabilitiesEngine(JSON.stringify(recorded)), async () => {
-        const caps = await getEngineCapabilities();
-        expect(caps).toMatchObject({
-          protocolVersion: recorded.protocolVersion,
-          backend: recorded.backend,
-          features: recorded.features,
-        });
-        expect(caps?.tts?.languages).toEqual(recorded.tts?.languages);
-      });
-    });
-  }
 });
 
 describe("the capability probe stays in step with the installed binary", () => {
@@ -872,16 +818,13 @@ describe("the capability probe stays in step with the installed binary", () => {
   fakeEngineTest("an in-place reinstall is not served from the cache", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-engine-recache-"));
     await withEngineEnv(capsEngine(dir, ["transcribe.segments"]), async () => {
-      expect((await getEngineCapabilities())?.features).toEqual(["transcribe.segments"]);
+      expect((await getDescribe()).features).toEqual(["transcribe.segments"]);
 
       const path = capsEngine(dir, ["transcribe.segments", "transcribe.itn"]);
       const later = new Date(Date.now() + 2000);
       utimesSync(path, later, later);
 
-      expect((await getEngineCapabilities())?.features).toEqual([
-        "transcribe.segments",
-        "transcribe.itn",
-      ]);
+      expect((await getDescribe()).features).toEqual(["transcribe.segments", "transcribe.itn"]);
     });
   });
 
@@ -889,6 +832,7 @@ describe("the capability probe stays in step with the installed binary", () => {
     const missing = join(mkdtempSync(join(tmpdir(), "kesha-engine-absent-")), "kesha-engine");
     await withEngineEnv(missing, async () => {
       expect(await getEngineCapabilities()).toBeNull();
+      expect((await failure(() => getDescribe())).code).toBe("E_ENGINE_SPAWN");
     });
   });
 

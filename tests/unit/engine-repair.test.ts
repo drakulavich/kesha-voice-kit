@@ -223,12 +223,11 @@ describe("install repairs a corrupt engine (#770)", () => {
     expect(engineDownloads(urls)).toHaveLength(0);
   }, 30_000);
 
-  // The probe used to run before any install work and threw E_ENGINE_SPAWN, so the command
-  // died recommending the very command the user had just run.
+  // getEngineCapabilities() reads null on any KeshaError since protocol v4 (Task 4) — no reject to survive here anymore.
   posixTest("the pre-install capabilities probe survives an unspawnable engine", async () => {
     stageEngine("kesha-repair-caps-", CORRUPT_ENGINE);
 
-    await expect(getEngineCapabilities()).rejects.toThrow(/E_ENGINE_SPAWN/);
+    expect(await getEngineCapabilities()).toBeNull();
     expect(await probeCapabilitiesForInstall()).toBeNull();
   });
 

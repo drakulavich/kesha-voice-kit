@@ -1,13 +1,12 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { engineGate } from "../helpers/model-gate";
-import {
-  getEngineBinPath,
-  TRANSCRIBE_SEGMENTS_FEATURE,
-  TRANSCRIBE_DIARIZE_FEATURE,
-  TRANSCRIBE_ITN_FEATURE,
-  TRANSCRIBE_WORDS_FEATURE,
-} from "../../src/engine";
+import { getEngineBinPath, TRANSCRIBE_DIARIZE_FEATURE } from "../../src/engine";
 import type { WordTiming } from "../../src/engine";
+
+// These predate protocol 4's describe schema; TS no longer keeps its own copy (Task 4, protocol-v4).
+const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
+const TRANSCRIBE_ITN_FEATURE = "transcribe.itn";
+const TRANSCRIBE_WORDS_FEATURE = "transcribe.words";
 
 const CWD = import.meta.dir + "/../..";
 const FIXTURE_RU = "tests/fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";

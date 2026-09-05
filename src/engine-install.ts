@@ -6,7 +6,6 @@ import {
   getEngineBinPath,
   getEngineCapabilities,
   spawnEngineProcess,
-  spawnStdioWithDebugFd,
   TRANSCRIBE_DIARIZE_FEATURE,
   type EngineCapabilities,
 } from "./engine";
@@ -230,7 +229,7 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
   const proc = spawnEngineProcess(
     binPath,
     ["say", "--voice", "en-am_michael", "--out", outPath, "Kesha warmup."],
-    spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
+    ["ignore", "pipe", "pipe"],
   );
   const tree = registerProcessTree(proc);
 
@@ -555,11 +554,7 @@ async function runEngineModelInstall(
   // `env` is load-bearing, not tidiness: this child resolves the model destination from
   // `KESHA_CACHE_DIR`, and without it Bun's startup snapshot sends a redirected install
   // to the real `~/.cache/kesha` anyway (#876).
-  const proc = spawnEngineProcess(
-    binPath,
-    installArgs,
-    spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
-  );
+  const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "inherit"]);
   const tree = registerProcessTree(proc);
   let exitCode: number;
   try {

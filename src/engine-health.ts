@@ -4,7 +4,6 @@ import {
   getEngineBinPath,
   getEngineCapabilities,
   spawnEngineProcess,
-  spawnStdioWithDebugFd,
   type EngineCapabilities,
 } from "./engine";
 import { registerProcessTree } from "./process-tree";
@@ -35,7 +34,7 @@ export async function probeExecutable(
 
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["ignore", "ignore", "ignore"]));
+    proc = spawnEngineProcess(binPath, args, ["ignore", "ignore", "ignore"]);
   } catch (err) {
     return { status: "unusable", detail: errorMessage(err) };
   }
@@ -78,11 +77,7 @@ export async function readExecutableVersion(
 
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = spawnEngineProcess(
-      binPath,
-      ["--version"],
-      spawnStdioWithDebugFd(["ignore", "pipe", "ignore"]),
-    );
+    proc = spawnEngineProcess(binPath, ["--version"], ["ignore", "pipe", "ignore"]);
   } catch {
     return null;
   }

@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { existsSync, statSync } from "fs";
 import { detectAll } from "tinyld";
-import { preflightTranscribeWithSegments, transcribeWithSegments } from "../transcribe";
+import { transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
@@ -343,7 +343,7 @@ async function processFile(
     else write();
   };
   try {
-    await preflightTranscribeWithSegments({ vad: vadMode, timestamps, speakers, itn });
+    await validateTranscribeRequest({ vad: vadMode, timestamps, speakers, itn });
     progress = reportProgress
       ? createPercentProgress(`Transcribing ${file}`, {
           estimatedTotalMs: speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
