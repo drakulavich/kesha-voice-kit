@@ -106,3 +106,51 @@ describe("kesha say relays an engine failure", () => {
     expect(stderr).toContain("synthesis aborted");
   });
 });
+
+/** A stub engine that answers `describe` with the given features and refuses anything else. */
+function engineAdvertising(features: string[]): string {
+  const dir = tempDir("kesha-say-describe-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features })}'\n  exit 0\nfi\necho "unexpected invocation: $@" >&2\nexit 9\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+/** A stub engine that fails `describe` outright, the way an engine predating protocol 4 would. */
+function engineWithoutDescribe(exitCode: number): string {
+  const dir = tempDir("kesha-say-nodescribe-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(binPath, `#!/bin/sh\nexit ${exitCode}\n`);
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+// getDescribe()/validateArgv() throw a bare KeshaError, not SayError — must not flatten to E_INTERNAL/exit 4.
+describe("kesha say relays a bare KeshaError from the describe/validateArgv preflight", () => {
+  skipOnWin32("an ungated flag reports E_INVALID_ARG and exits 2, never spawning `say`", async () => {
+    engineAdvertising(["tts"]);
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.2" });
+
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("error [E_INVALID_ARG]:");
+    expect(stderr).not.toContain("unexpected invocation");
+  });
+
+  skipOnWin32("an engine that fails `describe` reports E_ENGINE_PROTOCOL with its own exit code", async () => {
+    engineWithoutDescribe(2);
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(stderr).toContain("kesha install");
+  });
+});

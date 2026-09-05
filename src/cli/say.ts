@@ -1,12 +1,12 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { getEngineBinPath, isEngineInstalled, spawnEngineProcess } from "../engine";
+import { KeshaError } from "../engine/events";
 import { installHint } from "../install-hint";
 import { registerProcessTree } from "../process-tree";
 import { log } from "../log";
 import {
   say,
-  SayError,
   SUPPORTED_SAMPLE_RATES,
   type SayFormat,
   type SayOptions,
@@ -211,16 +211,16 @@ async function synthesizeAndEmit(
       },
     };
   } catch (err) {
-    const code = err instanceof SayError ? err.code : "E_INTERNAL";
-    const exitCode = err instanceof SayError ? (err.exitCode ?? 4) : 4;
+    const code = err instanceof KeshaError ? err.code : "E_INTERNAL";
+    const exitCode = err instanceof KeshaError ? (err.exitCode ?? (err.code === "E_INVALID_ARG" ? 2 : 4)) : 4;
     stats.recordError("tts", err, code);
-    log.error(err instanceof SayError ? (err.stderr ?? "").trim() || err.message : errorMessage(err));
+    log.error(errorMessage(err));
     return {
       status: "failed",
       itemCount: 1,
       exitCode,
       finishFields: {
-        errorKind: err instanceof SayError ? "say_error" : "error",
+        errorKind: err instanceof KeshaError ? "say_error" : "error",
         exitCode,
         error_code: code,
       },
