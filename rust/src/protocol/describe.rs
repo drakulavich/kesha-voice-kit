@@ -161,8 +161,14 @@ pub fn gate_rows() -> Vec<GateRow> {
         row("say", "format", Gate::One("tts")),
         row("say", "bitrate", Gate::One("tts")),
         row("say", "sample-rate", Gate::One("tts")),
-        row("say", "model", Gate::One("tts")),
-        row("say", "voice-file", Gate::One("tts")),
+        GateRow {
+            requires: &["voice-file"],
+            ..row("say", "model", Gate::One("tts"))
+        },
+        GateRow {
+            requires: &["model"],
+            ..row("say", "voice-file", Gate::One("tts"))
+        },
         row("say", "stdin-loop", Gate::One("tts")),
         GateRow {
             when_ungated: WhenUngated::Drop,
@@ -384,6 +390,11 @@ mod tests {
         let vad = &d.commands["transcribe"].flags["vad"];
         assert_eq!(vad.conflicts, &["no-vad"]);
         assert!(d.features.contains(&"transcribe"));
+        #[cfg(feature = "tts")]
+        {
+            assert_eq!(d.commands["say"].flags["model"].requires, &["voice-file"]);
+            assert_eq!(d.commands["say"].flags["voice-file"].requires, &["model"]);
+        }
     }
 
     #[cfg(feature = "tts")]
