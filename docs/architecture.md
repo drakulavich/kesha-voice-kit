@@ -118,8 +118,10 @@ AAC, M4A. No ffmpeg.
 src/                  Bun/TS CLI + library
   cli.ts              argument parsing, --format/--json/--toon, top-level flags
   cli/                subcommands: install, init, logs, doctor, completions, dispatch
-  engine.ts          engine subprocess wrapper + getEngineCapabilities
-  engine-install.ts  engine binary download (uses keshaEngine.version)
+  engine.ts           engine subprocess wrapper + getDescribe/getEngineCapabilities
+  engine/describe.ts  describe-document schema, argv validation (validateArgv)
+  engine/events.ts    protocol-4 stderr event parsing (readEvents), KeshaError
+  engine-install.ts   engine binary download (uses keshaEngine.version)
   transcribe.ts      thin forwarder to `kesha-engine transcribe`
   synth.ts           thin forwarder to `kesha-engine say`
   voice-routing.ts   omitted-`--voice` language→voice picker
@@ -156,10 +158,15 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    the engine via `src/engine.ts`, which locates the binary
    (`KESHA_ENGINE_BIN` override → installed cache path) and spawns it with
    `Bun.spawn`.
-3. The CLI reads the engine's capability surface via
-   `kesha-engine --capabilities-json` (`src/engine.ts::getEngineCapabilities`)
-   and validates flags against it instead of blindly forwarding — see the
-   "DO NOT BLINDLY FORWARD CLI FLAGS" rule in [CLAUDE.md](../CLAUDE.md).
+3. The CLI reads `kesha-engine describe` once per binary path (cached by path
+   + mtime) through `getDescribe` in `src/engine.ts`, and validates every
+   engine argv against that document with `validateArgv`
+   (`src/engine/describe.ts`) before spawning — instead of blindly
+   forwarding flags, see the "DO NOT BLINDLY FORWARD CLI FLAGS" rule in
+   [CLAUDE.md](../CLAUDE.md). Every piped-and-parsed spawn's stderr is read
+   as protocol-4 NDJSON events (`readEvents` in `src/engine/events.ts`).
+   `getEngineCapabilities` is a thin view over the describe document kept
+   for the status/doctor/install screens that predate `describe`.
 4. **stdout is the result** (transcript / JSON / WAV bytes); **stderr is
    progress + errors**. This keeps stdout pipe-friendly.
 5. **Assets are install-only.** `kesha install` (and opt-in `--tts` / `--vad` /
