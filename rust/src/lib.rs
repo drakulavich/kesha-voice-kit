@@ -45,6 +45,7 @@ mod fluid_stdout;
 pub mod lang_id;
 pub mod models;
 mod process_tree;
+pub mod protocol;
 pub mod record;
 #[cfg(feature = "tts")]
 pub mod say_loop;

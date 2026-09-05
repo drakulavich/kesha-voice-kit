@@ -49,9 +49,9 @@ run_draft_engine() {
   [ "$actual_version" = "kesha-engine $ENGINE_VERSION" ] ||
     fail "draft binary version was '$actual_version', expected 'kesha-engine $ENGINE_VERSION'"
 
-  "$assets/$asset" --capabilities-json > "$scratch/capabilities.json"
-  jq -e '.backend == "onnx" and (.features | index("tts"))' "$scratch/capabilities.json" >/dev/null ||
-    fail "draft Linux engine does not advertise the required onnx + tts capabilities"
+  "$assets/$asset" describe > "$scratch/describe.json"
+  jq -e '.protocolVersion == 4 and .backend == "onnx" and (.features | index("tts"))' "$scratch/describe.json" >/dev/null ||
+    fail "draft Linux engine does not describe protocol 4 with onnx + tts"
 
   # This is the marker `kesha install` writes after its normal download.  We stage the authenticated
   # draft asset at that final location so the CLI can perform the user-facing model install without

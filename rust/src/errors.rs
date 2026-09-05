@@ -173,10 +173,9 @@ pub fn code_of(err: &anyhow::Error) -> ErrorCode {
         .unwrap_or(ErrorCode::Internal)
 }
 
-/// Print `error [CODE]: <message>` to stderr; always returns 1.
+/// Emit the fatal error as an event (`error [CODE]: …` under protocol 3); always returns 1.
 pub fn report(err: &anyhow::Error) -> i32 {
-    let code = code_of(err);
-    eprintln!("error [{}]: {:#}", code.as_str(), err);
+    crate::protocol::events::error(code_of(err), format!("{err:#}"), None);
     1
 }
 

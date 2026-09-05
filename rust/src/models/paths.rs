@@ -8,6 +8,8 @@ use super::manifest::*;
 use super::progress::with_stderr;
 use crate::coded_bail;
 use crate::errors::ErrorCode;
+#[cfg(feature = "coreml")]
+use crate::protocol::events;
 
 /// Where one FluidAudio subsystem's files live, and the root that puts them there.
 pub struct FluidAudioLocation {
@@ -210,7 +212,7 @@ pub fn fluidaudio_asr_location() -> Result<FluidAudioLocation> {
     let legacy = legacy_fluidaudio_asr_dir()?;
     let complete = fluidaudio_asr_ready_in(&legacy);
     if let Some(notice) = stale_legacy_notice(&legacy, complete, &ANNOUNCED) {
-        with_stderr(|| eprintln!("{notice}"));
+        with_stderr(|| events::warn(events::W_GENERIC, notice));
     }
     fluidaudio_location(&legacy, complete, FLUID_ASR_REPO_DIR)
 }

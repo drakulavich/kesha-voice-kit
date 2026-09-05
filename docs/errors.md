@@ -31,20 +31,22 @@ code never needs sanitizing.
 | `E_SCRIPT_UNSUPPORTED` | tts | no | The text uses a script the chosen voice's G2P can't phonemize (e.g. Devanagari / kana-kanji / Han for the FluidAudio Kokoro `hi`/`ja`/`zh` voices, which only handle Latin input). | Romanize the text (transliterate to Latin), or use a voice whose engine supports the script. See [#492](https://github.com/drakulavich/kesha-voice-kit/issues/492). |
 | `E_TRANSCRIBE_FAILED` | transcribe | no | The ASR pipeline failed. | Re-run; file a bug with a support bundle. |
 | `E_DIARIZE_TIMEOUT` | transcribe | yes | A diarization phase exceeded its budget, or `KESHA_DIARIZE_TIMEOUT_SECS` cut the run short. The message names the phase: model load, reading the audio, or processing chunks. | Model load: re-run once warm (`kesha install --diarize`), or `KESHA_DIARIZE_COMPUTE_UNITS=cpu-and-gpu`, or raise `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` (default 300). Own cap: raise or unset `KESHA_DIARIZE_TIMEOUT_SECS`. Otherwise file a bug. |
-| `E_ENGINE_SPAWN` | internal | no | The CLI couldn't spawn the engine subprocess. | `kesha install`; check the engine binary path (`KESHA_ENGINE_BIN`). |
+| `E_ENGINE_SPAWN` | platform | no | The Engine binary is missing or failed to start (CLI-side). | `kesha install`; or set `KESHA_ENGINE_BIN`. |
+| `E_ENGINE_PROTOCOL` | platform | no | The installed Engine speaks a protocol version this CLI does not (CLI-side). | `kesha install` for a stale Engine; `bun add -g @drakulavich/kesha-voice-kit@latest` for a stale CLI. |
 | `E_INSTALL_RACE` | internal | yes | Another `kesha install` reached the same cache: either it overwrote the engine during our run (the recorded version or the binary's own `--version` names something else), or it still holds the cache and we gave up waiting for it. Nothing is written in the waiting case. | Re-run the install once no other one is in flight; give concurrent jobs private caches via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`. A wait that must fail sooner than the 6 h ceiling: `KESHA_INSTALL_LOCK_WAIT_SECS`, in seconds, positive numbers only — and lowering it costs the one-retry takeover ([concurrent installs](architecture.md#runtime-data-flow)). If the message names a lock no install owns, delete the `.lock` directory it names. |
 | `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid — including a directory passed where an audio file is expected, and a `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN` path the engine cannot be written into: one the engine directory cannot be created under, or an existing engine directory this user cannot write (a read-only Nix store install reaches the second). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |
 
 ## Where codes come from
 
-- **Engine codes** (everything except `E_ENGINE_SPAWN` and `E_INSTALL_RACE`) are defined in the Rust
+- **Engine codes** (everything except `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE`) are defined in the Rust
   engine and emitted on its stderr as `error [CODE]: …`. List them with
   `kesha-engine --error-codes-json`.
-- **`E_ENGINE_SPAWN`** and **`E_INSTALL_RACE`** originate only in the TypeScript
-  CLI — the failure to spawn the engine subprocess at all, and an install that
-  lost the cache to another one, whether by being overwritten before it could
-  report success or by giving up waiting for the lock.
+- **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`** and **`E_INSTALL_RACE`** originate
+  only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
+  an installed engine whose protocol version the CLI does not speak, and an
+  install that lost the cache to another one, whether by being overwritten before
+  it could report success or by giving up waiting for the lock.
 - **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
   engine and the TypeScript CLI: the CLI validates arguments, checks input
   existence up front and refuses a cache path it cannot write the engine into,

@@ -2,6 +2,8 @@ use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use crate::protocol::events;
+
 /// Below this a download finishes fast enough that a bar is noise, not feedback.
 pub(super) const PROGRESS_MIN_BYTES: u64 = 16 * 1024 * 1024;
 const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
@@ -18,13 +20,13 @@ fn lock_stderr() -> std::sync::MutexGuard<'static, bool> {
 
 fn end_open_bar_line(open: &mut bool) {
     if *open {
-        eprintln!();
+        events::progress(None, "");
         *open = false;
     }
 }
 
 /// Serializes install-progress writes and ends any open bar row first: the bar paints
-/// with `\r` and no newline, so an `eprintln!` would otherwise land inside that row.
+/// with `\r` and no newline, so a stray write would otherwise land inside that row.
 pub(super) fn with_stderr<T>(write: impl FnOnce() -> T) -> T {
     let mut open = lock_stderr();
     end_open_bar_line(&mut open);
@@ -47,8 +49,8 @@ impl Drop for InFlight {
     }
 }
 
-/// Redraws a single `\r` line as bytes arrive (#680). Silent unless stderr is a
-/// terminal, so redirected installs and CI logs keep the plain `GET`/`OK` lines.
+/// Redraws a single `\r` line as bytes arrive (#680). Silent unless stderr is a terminal on
+/// protocol 3, so redirected installs, CI logs and v4 consumers keep parseable lines.
 ///
 /// Draws only while it is the sole download in flight: `parallel_download` runs
 /// 4 rayon workers over one stderr, and concurrent bars plus other workers'
@@ -60,6 +62,11 @@ pub(super) struct ProgressReader<R> {
     total: u64,
     read: u64,
     last_draw: std::time::Instant,
+}
+
+/// A v4 consumer parses events and renders its own progress, so the `\r` row would be noise it cannot parse.
+fn bar_paints(mode: events::Mode, in_flight: usize) -> bool {
+    mode == events::Mode::V3 && in_flight == 1
 }
 
 impl<R: io::Read> ProgressReader<R> {
@@ -74,7 +81,7 @@ impl<R: io::Read> ProgressReader<R> {
 
     fn draw(&mut self) {
         let mut open = lock_stderr();
-        if DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst) != 1 {
+        if !bar_paints(events::mode(), DOWNLOADS_IN_FLIGHT.load(Ordering::SeqCst)) {
             end_open_bar_line(&mut open);
             return;
         }
@@ -117,6 +124,14 @@ impl<R> Drop for ProgressReader<R> {
 mod progress_tests {
     use super::*;
     use std::io::Read;
+
+    #[test]
+    fn the_bar_paints_only_for_a_lone_download_on_protocol_3() {
+        assert!(bar_paints(events::Mode::V3, 1));
+        assert!(!bar_paints(events::Mode::V4, 1));
+        assert!(!bar_paints(events::Mode::V3, 2));
+        assert!(!bar_paints(events::Mode::V4, 2));
+    }
 
     #[test]
     fn progress_reader_is_byte_transparent() {

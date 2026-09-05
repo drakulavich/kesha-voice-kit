@@ -16,6 +16,7 @@ use super::progress::{with_stderr, InFlight, ProgressReader, PROGRESS_MIN_BYTES}
 use super::staging::{stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets};
 use crate::coded_bail;
 use crate::errors::{code_of, CodedContext, CodedError, ErrorCode};
+use crate::protocol::events;
 
 /// Optional HuggingFace mirror base URL. Respects `KESHA_MODEL_MIRROR` (#121).
 ///
@@ -65,7 +66,7 @@ pub fn init_mirror_logging() {
     static LOGGED: OnceLock<()> = OnceLock::new();
     LOGGED.get_or_init(|| {
         if let Some(base) = model_mirror() {
-            eprintln!("Model mirror active: {base}");
+            events::progress(None, format!("Model mirror active: {base}"));
         }
     });
 }
@@ -86,6 +87,10 @@ fn download_pool() -> &'static rayon::ThreadPool {
 /// 4 concurrent downloads. Each file runs its own retry budget to completion, so
 /// one file's transient 429 no longer cancels the three siblings mid-flight
 /// (#724); the install then fails naming every file that exhausted its retries.
+fn secondary_failure(path: &str, err: &anyhow::Error) -> events::Event<'static> {
+    events::Event::warn(events::W_DOWNLOAD, format!("FAIL {path}: {err:#}"))
+}
+
 pub(super) fn parallel_download(
     cache: &Path,
     manifest: &[&ModelFile],
@@ -121,7 +126,7 @@ pub(super) fn parallel_download(
     // The returned chain can only carry one root cause, so the others are
     // reported here rather than dropped.
     for (path, err) in failures.iter().skip(1) {
-        with_stderr(|| eprintln!("FAIL {path}: {err:#}"));
+        with_stderr(|| secondary_failure(path, err).emit());
     }
     Err(failures.remove(0).1.context(summary))
 }
@@ -256,7 +261,7 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     if target.exists() {
         if verify_sha256(&target, f.sha256)? {
             if !no_cache {
-                with_stderr(|| eprintln!("OK  {} (cached)", f.rel_path));
+                with_stderr(|| events::progress(None, format!("OK  {} (cached)", f.rel_path)));
                 return Ok(());
             }
             // no_cache over a valid file: keep it in place until a verified
@@ -272,7 +277,7 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         fs::create_dir_all(parent)?;
     }
     download_with_retries(&apply_mirror(f.url), f, &target)?;
-    with_stderr(|| eprintln!("OK  {}", f.rel_path));
+    with_stderr(|| events::progress(None, format!("OK  {}", f.rel_path)));
     Ok(())
 }
 
@@ -287,13 +292,16 @@ fn download_with_retries(url: &str, f: &ModelFile, target: &Path) -> Result<()> 
             Err(fail) if attempt < fail.max_attempts => {
                 let delay = backoff_delay(attempt, fail.retry_after, jitter_fraction());
                 with_stderr(|| {
-                    eprintln!(
-                        "retrying {} in {:.1}s (attempt {}/{}, {})",
-                        f.rel_path,
-                        delay.as_secs_f64(),
-                        attempt + 1,
-                        fail.max_attempts,
-                        fail.reason
+                    events::progress(
+                        None,
+                        format!(
+                            "retrying {} in {:.1}s (attempt {}/{}, {})",
+                            f.rel_path,
+                            delay.as_secs_f64(),
+                            attempt + 1,
+                            fail.max_attempts,
+                            fail.reason
+                        ),
                     )
                 });
                 std::thread::sleep(delay);
@@ -396,7 +404,7 @@ fn download_attempt(
     // Claim in-flight before announcing: the request below blocks on headers, and a
     // sibling's bar must stop repainting over this row first (Greptile P1 on #681).
     let _in_flight = InFlight::new();
-    with_stderr(|| eprintln!("GET {}", f.rel_path));
+    with_stderr(|| events::progress(None, format!("GET {}", f.rel_path)));
 
     // Whatever an earlier attempt managed to stage is the prefix this one
     // resumes from (#889).
@@ -646,12 +654,12 @@ fn compute_sha256(path: &Path) -> Result<String> {
 pub(super) fn cleanup_legacy(cache: &Path) {
     let old_onnx = cache.join("v3");
     if old_onnx.exists() {
-        eprintln!("Cleaning up legacy ONNX models...");
+        events::progress(None, "Cleaning up legacy ONNX models...");
         let _ = fs::remove_dir_all(&old_onnx);
     }
     let old_swift = cache.join("coreml").join("bin").join("parakeet-coreml");
     if old_swift.exists() {
-        eprintln!("Cleaning up legacy CoreML binary...");
+        events::progress(None, "Cleaning up legacy CoreML binary...");
         let _ = fs::remove_file(&old_swift);
     }
     #[cfg(unix)]
@@ -693,7 +701,10 @@ fn cleanup_orphan_staging(dir: &Path) {
             .and_then(|t| t.elapsed().ok())
             .is_some_and(|age| age.as_secs() > STALE_STAGING_SECS);
         if stale {
-            eprintln!("Cleaning up orphaned download staging: {name}");
+            events::progress(
+                None,
+                format!("Cleaning up orphaned download staging: {name}"),
+            );
             let _ = fs::remove_file(&path);
         }
     }
@@ -1615,6 +1626,20 @@ mod retry_tests {
         );
         assert_eq!(good.join().expect("good server").len(), 1);
         assert_eq!(bad.join().expect("bad server").len(), 1);
+    }
+
+    #[test]
+    fn a_reported_sibling_failure_is_a_warning_and_keeps_its_v3_line() {
+        let err = anyhow::anyhow!("connection reset");
+        let e = secondary_failure("models/retry/b.bin", &err);
+        assert_eq!(
+            e.render(crate::protocol::events::Mode::V3),
+            "FAIL models/retry/b.bin: connection reset"
+        );
+        let v: serde_json::Value =
+            serde_json::from_str(&e.render(crate::protocol::events::Mode::V4)).unwrap();
+        assert_eq!(v["kind"], "warn");
+        assert_eq!(v["code"], "W_DOWNLOAD");
     }
 
     #[test]

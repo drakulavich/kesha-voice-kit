@@ -18,6 +18,7 @@ export function extractEngineErrorCode(stderr: string): string | undefined {
 export const TS_NATIVE_CODES = {
   INPUT_NOT_FOUND: "E_INPUT_NOT_FOUND",
   ENGINE_SPAWN: "E_ENGINE_SPAWN",
+  ENGINE_PROTOCOL: "E_ENGINE_PROTOCOL",
   INVALID_ARG: "E_INVALID_ARG",
   INSTALL_RACE: "E_INSTALL_RACE",
   INTERNAL: "E_INTERNAL",

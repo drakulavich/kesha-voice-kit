@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
+use crate::protocol::events;
 use crate::{models, say_loop, tts};
 
 #[derive(clap::Args)]
@@ -165,7 +166,11 @@ fn read_stdin() -> Result<String, i32> {
     use std::io::Read;
     let mut buf = String::new();
     if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
-        eprintln!("error [E_INTERNAL]: failed to read stdin: {e}");
+        events::error(
+            crate::errors::ErrorCode::Internal,
+            format!("failed to read stdin: {e}"),
+            None,
+        );
         return Err(4);
     }
     Ok(buf.trim().to_string())
@@ -176,7 +181,7 @@ fn read_stdin() -> Result<String, i32> {
 fn validate_text(text: String) -> Result<String, i32> {
     if text.is_empty() {
         let err = tts::TtsError::EmptyText;
-        eprintln!("error [{}]: {err}", err.code().as_str());
+        events::error(err.code(), format!("{err}"), None);
         return Err(exit_code_for_tts_err(&err));
     }
     let len = text.chars().count();
@@ -185,7 +190,7 @@ fn validate_text(text: String) -> Result<String, i32> {
             max: tts::MAX_TEXT_CHARS,
             actual: len,
         };
-        eprintln!("error [{}]: {err}", err.code().as_str());
+        events::error(err.code(), format!("{err}"), None);
         return Err(exit_code_for_tts_err(&err));
     }
     Ok(text)
@@ -205,22 +210,17 @@ fn resolve_voice(
             espeak_lang: "en-us",
         }),
         (Some(_), None) | (None, Some(_)) => {
-            eprintln!(
-                "error [{}]: pass both --model and --voice-file or neither",
-                crate::errors::ErrorCode::InvalidArg.as_str()
+            events::error(
+                crate::errors::ErrorCode::InvalidArg,
+                "pass both --model and --voice-file or neither",
+                None,
             );
             Err(2)
         }
         (None, None) => {
             let id = voice_id.unwrap_or(tts::voices::DEFAULT_VOICE_ID);
-            let cache = models::cache_dir().map_err(|err| {
-                eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
-                1
-            })?;
-            tts::voices::resolve_voice(&cache, id).map_err(|err| {
-                eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
-                1
-            })
+            let cache = models::cache_dir().map_err(|err| crate::errors::report(&err))?;
+            tts::voices::resolve_voice(&cache, id).map_err(|err| crate::errors::report(&err))
         }
     }
 }
@@ -274,7 +274,11 @@ fn write_output(out: Option<&std::path::Path>, bytes: &[u8]) -> Result<(), i32> 
             .map_err(|e| e.to_string()),
     };
     result.map_err(|msg| {
-        eprintln!("error [E_INTERNAL]: write failed: {msg}");
+        events::error(
+            crate::errors::ErrorCode::Internal,
+            format!("write failed: {msg}"),
+            None,
+        );
         4
     })
 }
@@ -283,10 +287,7 @@ pub fn run(a: SayArgs) -> i32 {
     if a.list_voices {
         let cache = match models::cache_dir() {
             Ok(c) => c,
-            Err(err) => {
-                eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
-                return 1;
-            }
+            Err(err) => return crate::errors::report(&err),
         };
         let mut voice_ids: Vec<String> = list_kokoro_voices(&cache)
             .into_iter()
@@ -320,10 +321,7 @@ pub fn run(a: SayArgs) -> i32 {
     ) {
         Ok(f) => f,
         Err(msg) => {
-            eprintln!(
-                "error [{}]: {msg}",
-                crate::errors::ErrorCode::InvalidArg.as_str()
-            );
+            events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
             return 2;
         }
     };
@@ -362,7 +360,7 @@ pub fn run(a: SayArgs) -> i32 {
     }) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("error [{}]: {e}", e.code().as_str());
+            events::error(e.code(), format!("{e}"), None);
             return exit_code_for_tts_err(&e);
         }
     };
