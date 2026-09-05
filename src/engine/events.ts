@@ -110,9 +110,11 @@ export class KeshaError extends Error {
     if (extra.versionMismatch !== undefined) this.versionMismatch = extra.versionMismatch;
   }
 
-  /** The engine's transcript already carries the rendered error line; without one, render this error. */
+  /** The coded line comes first unless the engine's transcript already renders it; the transcript follows. */
   render(): string {
-    return this.stderr?.trim() || renderError(this);
+    const transcript = this.stderr?.trim();
+    if (!transcript) return renderError(this);
+    return transcript.includes(`error [${this.code}]:`) ? transcript : `${renderError(this)}\n${transcript}`;
   }
 }
 

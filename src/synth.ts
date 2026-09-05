@@ -155,15 +155,15 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     if (stderrText.length > 0) process.stderr.write(stderrText);
     return new Uint8Array(stdoutBuf);
   }
-  // The crash line goes into `stderr` too: cli/say.ts prints that in preference to the message.
+  // The crash explanation rides in `stderr`, rendered after the coded line.
   const detail = [stderrText.trim(), engineCrashMessage(exitCode, proc.signalCode)]
     .filter((part): part is string => Boolean(part))
     .join("\n");
   if (events.invalid.length > 0) {
-    throw new SayError(`kesha-engine wrote a line that is not a protocol event: "${events.invalid[0]}"`, exitCode || 4, "");
+    throw new SayError(`kesha-engine wrote a line that is not a protocol event: "${events.invalid[0]}"`, exitCode || 4, detail);
   }
   throw new SayError(
-    events.error?.message ?? (detail || `kesha-engine say exited ${exitCode}`),
+    events.error?.message ?? `kesha-engine say exited ${exitCode}`,
     exitCode,
     detail,
     events.error?.code ?? "E_INTERNAL",

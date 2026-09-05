@@ -599,6 +599,28 @@ exit 2
     });
   });
 
+  fakeEngineTest("a newer protocol plus a stray stderr line is still E_ENGINE_PROTOCOL", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-newer-babble-"));
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  echo "ld.so: warning: cannot enable executable stack" >&2
+  printf '%s\\n' '${describeJson({ protocolVersion: 5, features: ["transcribe"] })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(path, 0o755);
+    await withEngineEnv(path, async () => {
+      const err = await failure(() => transcribeEngine("audio.wav"));
+      expect(err.code).toBe("E_ENGINE_PROTOCOL");
+      expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit@latest");
+    });
+  });
+
   fakeEngineTest("the engine is spawned with KESHA_PROTOCOL=4 and CRLF events are accepted", async () => {
     const engine = writeTranscribingEngine(
       "kesha-engine-crlf-",

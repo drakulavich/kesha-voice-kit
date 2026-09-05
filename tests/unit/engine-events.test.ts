@@ -151,3 +151,11 @@ describe("readEvents", () => {
     expect(out.invalid).toEqual(["second paragraph"]);
   });
 });
+
+describe("KeshaError.render() keeps the transcript without letting it hide the code", () => {
+  test("the coded line comes first when the transcript does not carry it", () => {
+    const transcript = "warning: slow disk\nthread 'main' panicked at src/tts/kokoro.rs:88";
+    const err = new KeshaError("E_INTERNAL", "kesha-engine transcribe exited with code 101", { exitCode: 101, stderr: transcript });
+    expect(errorMessage(err)).toBe(`error [E_INTERNAL]: kesha-engine transcribe exited with code 101\n${transcript}`);
+  });
+});

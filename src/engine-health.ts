@@ -141,8 +141,8 @@ export async function engineFunctionalHealth(
     const doc = await getDescribe({ signal: controller.signal });
     return { status: "ok", capabilities: describeToCapabilities(doc) };
   } catch (err) {
-    // Everything but a protocol mismatch is classified below rather than reported as a bare stack trace.
-    if (err instanceof KeshaError && err.versionMismatch) protocolError = err;
+    // A version mismatch or a describe that broke the event stream is a protocol fault; the rest is classified below.
+    if (err instanceof KeshaError && (err.versionMismatch || err.code === "E_INTERNAL")) protocolError = err;
   } finally {
     clearTimeout(timer);
   }

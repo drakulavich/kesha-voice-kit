@@ -166,6 +166,40 @@ describe("say on protocol 4", () => {
     }
   });
 
+  posixIt("a panic before a signal death keeps the crash explanation after the coded line", async () => {
+    const engine = sayEngine(`  echo "thread 'main' panicked at src/tts/kokoro.rs:88" >&2
+  exit 134`);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err!.code).toBe("E_INTERNAL");
+      const rendered = errorMessage(err);
+      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine wrote a line that is not a protocol event: "thread 'main' panicked/);
+      expect(rendered).toContain("kesha-engine was killed by SIGABRT and produced no audio");
+    } finally {
+      restore();
+    }
+  });
+
+  posixIt("a signal death with no event renders one coded line and the crash explanation", async () => {
+    const engine = sayEngine(`  printf '%s\\n' '{"kind":"warn","code":"W_GENERIC","message":"warning: slow"}' >&2
+  exit 134`);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err!.code).toBe("E_INTERNAL");
+      expect(err!.exitCode).toBe(134);
+      const rendered = errorMessage(err);
+      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say exited 134\nwarning: slow\n/);
+      expect(rendered).toContain("killed by SIGABRT");
+      expect(rendered.match(/error \[/g)).toHaveLength(1);
+    } finally {
+      restore();
+    }
+  });
+
   posixIt("returns the audio and is spawned with KESHA_PROTOCOL=4", async () => {
     const engine = sayEngine(`  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2\n  printf 'RIFF'\n  exit 0`);
     const restore = saveEngineEnv();

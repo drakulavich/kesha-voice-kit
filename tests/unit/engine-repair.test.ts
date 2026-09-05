@@ -35,6 +35,13 @@ if [ "$1" = "describe" ]; then
 fi
 exit 0
 `;
+const LOADER_NOISE_ENGINE = `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  echo "ld.so: warning: cannot enable executable stack" >&2
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
+fi
+exit 0
+`;
 /**
  * `exec` so the terminate signal lands on `sleep` itself, not on a shell that ignores it.
  * The duration doubles as a per-test marker, so one hang test never observes another's child.
@@ -203,6 +210,14 @@ describe("engineFunctionalHealth (#801)", () => {
     expect(health.status).toBe("protocol");
     expect(health.status === "protocol" && health.detail).toContain("error [E_ENGINE_PROTOCOL]:");
     expect(health.status === "protocol" && health.detail).toContain("kesha install");
+  });
+
+  // A describe that breaks the event stream is a protocol fault, not the corrupt binary `mute` reports.
+  posixTest("a describe that also writes a non-event line is a protocol fault, not mute", async () => {
+    stageEngine("kesha-functional-noise-", LOADER_NOISE_ENGINE);
+    const health = await engineFunctionalHealth();
+    expect(health.status).toBe("protocol");
+    expect(health.status === "protocol" && health.detail).toContain("error [E_INTERNAL]: kesha-engine describe wrote a line that is not a protocol event: \"ld.so: warning: cannot enable executable stack\"");
   });
 });
 
