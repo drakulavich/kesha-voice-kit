@@ -1,4 +1,6 @@
 //! `warn` events carry a code the contract calls published, so every call site's code must be in the table.
+mod common;
+use common::non_test_prefix;
 use kesha_engine::protocol::events::WARN_CODES;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -21,28 +23,6 @@ fn collect_codes(text: &str, out: &mut BTreeSet<String>) {
     }
 }
 
-/// A code named only inside a `#[cfg(test)]` module is not a call site, so the split keeps it from publishing itself.
-fn non_test_prefix(text: &str) -> &str {
-    const MARKERS: [&str; 2] = ["#[cfg(test)]", "#[cfg(all(test,"];
-    let mut from = 0;
-    loop {
-        let Some((at, marker)) = MARKERS
-            .iter()
-            .filter_map(|m| text[from..].find(m).map(|i| (from + i, *m)))
-            .min_by_key(|(i, _)| *i)
-        else {
-            return text;
-        };
-        let Some(close) = text[at..].find(']') else {
-            return text;
-        };
-        if text[at + close + 1..].trim_start().starts_with("mod ") {
-            return &text[..at];
-        }
-        from = at + marker.len();
-    }
-}
-
 fn walk(dir: &Path, skip: &Path, out: &mut BTreeSet<String>) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let p = entry.unwrap().path();
@@ -50,6 +30,7 @@ fn walk(dir: &Path, skip: &Path, out: &mut BTreeSet<String>) {
             walk(&p, skip, out);
         } else if p.extension().and_then(|e| e.to_str()) == Some("rs") && p != skip {
             let text = std::fs::read_to_string(&p).unwrap();
+            // A code named only inside a test module is not a call site, so the split keeps it from publishing itself.
             collect_codes(non_test_prefix(&text), out);
         }
     }
@@ -65,12 +46,6 @@ fn every_call_site_code_is_published_and_every_published_code_is_used() {
         used, published,
         "the warning taxonomy drifted from its call sites"
     );
-}
-
-#[test]
-fn the_split_also_stops_at_a_feature_gated_test_module() {
-    let text = "events::W_GENERIC;\n#[cfg(all(test, feature = \"x\"))]\nmod gated {\n W_PHANTOM\n}\n#[cfg(test)]\nmod tests {}";
-    assert!(!non_test_prefix(text).contains("W_PHANTOM"));
 }
 
 #[test]

@@ -1,4 +1,6 @@
 //! Every non-payload line goes through protocol::events; a raw stderr write bypasses both renderers.
+mod common;
+use common::non_test_prefix;
 use std::path::Path;
 
 /// Each entry allows one occurrence in that file, so the count is the ledger of remaining prose.
@@ -28,28 +30,6 @@ const ALLOWED: &[(&str, &str)] = &[
 ];
 
 const PATTERNS: &[&str] = &["eprintln!", "eprint!(", "io::stderr()"];
-
-/// Split at the first `#[cfg(test)] mod` or `#[cfg(all(test, …))] mod`: the attribute on a single item would otherwise un-scan everything after it.
-fn non_test_prefix(text: &str) -> &str {
-    const MARKERS: [&str; 2] = ["#[cfg(test)]", "#[cfg(all(test,"];
-    let mut from = 0;
-    loop {
-        let Some((at, marker)) = MARKERS
-            .iter()
-            .filter_map(|m| text[from..].find(m).map(|i| (from + i, *m)))
-            .min_by_key(|(i, _)| *i)
-        else {
-            return text;
-        };
-        let Some(close) = text[at..].find(']') else {
-            return text;
-        };
-        if text[at + close + 1..].trim_start().starts_with("mod ") {
-            return &text[..at];
-        }
-        from = at + marker.len();
-    }
-}
 
 /// Windows keeps `\` in the stripped path, so ALLOWED's forward-slash keys would never match.
 fn relative(root: &Path, p: &Path) -> String {
