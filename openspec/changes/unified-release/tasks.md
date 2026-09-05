@@ -6,9 +6,9 @@
 ## 2. `release.yml`
 
 - [ ] 2.1 Skeleton: `classify` → `build-engine` (two profile rows) → `smoke` on artifacts → `github-release`, which publishes at once and drafts nothing
-- [ ] 2.2 `npm` job publishing with provenance through the `setup-bun` composite action; dist-tag `latest`/`beta`/`alpha` per channel; no `workflow_call`
+- [ ] 2.2 `npm` job publishing with provenance through the `setup-bun` composite action; dist-tag `latest`/`beta`/`alpha` per channel; no `workflow_call`; `if: !cancelled() && (cli-alpha path || github-release succeeded)` so the per-merge alpha publishes although `github-release` is skipped
 - [ ] 2.3 `packages`, `homebrew`, `docker`, `nix-version` jobs with `needs: github-release`, stable only
-- [ ] 2.4 Alpha derivation jobs moved in from `release-alpha.yml`; the `cli-alpha` path skips every Engine-building job and records its tag without triggering a run
+- [ ] 2.4 Alpha derivation jobs moved in from `release-alpha.yml`; the `cli-alpha` path skips every Engine-building job and records its tag without triggering a run; `concurrency: release-publish` with `queue: max`, no cancel-in-progress (the queue `npm-publish.yml:37-39` provides today)
 
 ## 3. Deletions, one PR each
 
