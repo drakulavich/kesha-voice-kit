@@ -3,7 +3,7 @@
 - [ ] 1.1 Rewrite `src/lib.ts` to the D1 surface; `transcribe` returns `TranscribeResult`
 - [ ] 1.2 `install()` over `installEngine`; delete `downloadModel`, `downloadEngine` export, `downloadCoreML`, `downloadTts`
 - [ ] 1.3 `capabilities()` over the cached `describe`
-- [ ] 1.4 Replace `SayError` with `KeshaError`; every rejection path constructs one
+- [ ] 1.4 Replace `SayError` with `KeshaError` keeping `exitCode` and `stderr`; every rejection path constructs one
 
 ## 2. Tests and docs
 

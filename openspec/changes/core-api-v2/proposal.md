@@ -9,7 +9,7 @@ The Core API carries three aliases whose names no longer say what they do: `down
 - `transcribe(path, opts?)` returns `TranscribeResult`; the text is `.text`. `transcribeWithTimestamps` and `transcribeWithSegments` are removed; `opts.timestamps` selects segments.
 - `install(opts?)` replaces `downloadModel`, `downloadEngine`, `downloadCoreML` and `downloadTts`; one call, one options object mirroring `kesha install` flags.
 - `capabilities()` exposes the `describe` document.
-- Every rejection is a `KeshaError` with `code` and, when known, `hint`; `SayError` becomes `KeshaError`.
+- Every rejection is a `KeshaError` with `code` and, when known, `hint`; `SayError` becomes `KeshaError`, keeping `exitCode` and `stderr`.
 - The exported types drop `TranscriptionOutput` and add `EngineDescription`; `TranscribeResult` and the `kesha status --json` shape are unchanged.
 - Ships in CLI 2.0.0.
 

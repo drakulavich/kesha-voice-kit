@@ -16,7 +16,7 @@ export function say(opts: SayOptions): Promise<Uint8Array>;
 export function install(opts?: InstallOptions): Promise<void>;
 export function capabilities(): Promise<EngineDescription>;
 export function toToon(results: TranscribeResult[], errors?: TranscribeErrorRecord[]): string;
-export class KeshaError extends Error { readonly code: string; readonly hint?: string }
+export class KeshaError extends Error { readonly code: string; readonly hint?: string; readonly exitCode?: number; readonly stderr?: string }
 export type InstallOptions = { engine?: boolean; tts?: string[]; vad?: boolean; diarize?: boolean; noCache?: boolean; engineVersion?: string };
 export type { TranscribeOptions, TranscribeResult, TranscribeErrorRecord, TranscribeJsonOutput, TranscriptionSegment, WordTiming, SayOptions, VadMode, EngineDescription };
 ```
@@ -29,7 +29,7 @@ export type { TranscribeOptions, TranscribeResult, TranscribeErrorRecord, Transc
 
 ### D3. Errors
 
-`KeshaError` is the only rejection type. `code` is a published Error code (Engine or CLI origin, both listed by `describe`); `hint` is the remedy the CLI would print. `SayError` is removed; its `code` semantics carry over unchanged.
+`KeshaError` is the only rejection type. `code` is a published Error code (Engine or CLI origin, both listed by `describe`); `hint` is the remedy the CLI would print. `SayError` is removed; its `code`, `exitCode` and `stderr` carry over unchanged — `exitCode` and `stderr` are set whenever an Engine subprocess ran or a pre-flight assigned an exit code (2 for empty text, 5 for text too long, 1 for a missing Engine), so callers branching on them keep working.
 
 ## Risks / Trade-offs
 
@@ -37,7 +37,7 @@ export type { TranscribeOptions, TranscribeResult, TranscribeErrorRecord, Transc
 
 ## Migration Plan
 
-Stage 4, one PR: `src/lib.ts` rewrite, `docs/api.md` rewrite with the rename table, `CLAUDE.md:207`, `docs/architecture.md:265`, GLOSSARY entry, tests.
+Stage 4, one PR: `src/lib.ts` rewrite, `docs/api.md` rewrite with the rename table, `CLAUDE.md:207`, `docs/architecture.md:265`, GLOSSARY entry, tests. The rename table records that `SayError` becomes `KeshaError` with `code`, `exitCode` and `stderr` unchanged, so a caller that branched on `err.exitCode` needs only the type name changed.
 
 ## Open Questions
 
