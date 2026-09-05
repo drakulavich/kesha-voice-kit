@@ -81,6 +81,8 @@ pub enum Commands {
         #[arg(long = "auto-stop-min-speech-ms", requires = "auto_stop")]
         auto_stop_min_speech_ms: Option<u32>,
     },
+    /// Print the protocol schema as JSON
+    Describe,
     /// Download models
     Install(crate::cli::install::InstallArgs),
     /// Synthesize speech from text (TTS)
