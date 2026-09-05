@@ -219,14 +219,8 @@ fn resolve_voice(
         }
         (None, None) => {
             let id = voice_id.unwrap_or(tts::voices::DEFAULT_VOICE_ID);
-            let cache = models::cache_dir().map_err(|err| {
-                events::error(crate::errors::code_of(&err), format!("{err:#}"), None);
-                1
-            })?;
-            tts::voices::resolve_voice(&cache, id).map_err(|err| {
-                events::error(crate::errors::code_of(&err), format!("{err:#}"), None);
-                1
-            })
+            let cache = models::cache_dir().map_err(|err| crate::errors::report(&err))?;
+            tts::voices::resolve_voice(&cache, id).map_err(|err| crate::errors::report(&err))
         }
     }
 }
@@ -293,10 +287,7 @@ pub fn run(a: SayArgs) -> i32 {
     if a.list_voices {
         let cache = match models::cache_dir() {
             Ok(c) => c,
-            Err(err) => {
-                events::error(crate::errors::code_of(&err), format!("{err:#}"), None);
-                return 1;
-            }
+            Err(err) => return crate::errors::report(&err),
         };
         let mut voice_ids: Vec<String> = list_kokoro_voices(&cache)
             .into_iter()
