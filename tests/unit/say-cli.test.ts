@@ -132,6 +132,15 @@ function engineWithoutDescribe(exitCode: number): string {
   return binPath;
 }
 
+/** Points `KESHA_ENGINE_BIN` at a path with nothing there, the way an unfinished install would. */
+function missingEngine(): string {
+  const dir = tempDir("kesha-say-missing-");
+  const binPath = join(dir, "kesha-engine");
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
 // getDescribe()/validateArgv() throw a bare KeshaError, not SayError — must not flatten to E_INTERNAL/exit 4.
 describe("kesha say relays a bare KeshaError from the describe/validateArgv preflight", () => {
   skipOnWin32("an ungated flag reports E_INVALID_ARG and exits 2, never spawning `say`", async () => {
@@ -144,13 +153,23 @@ describe("kesha say relays a bare KeshaError from the describe/validateArgv pref
     expect(stderr).not.toContain("unexpected invocation");
   });
 
-  skipOnWin32("an engine that fails `describe` reports E_ENGINE_PROTOCOL with its own exit code", async () => {
+  skipOnWin32("an engine that fails `describe` reports E_ENGINE_PROTOCOL and exits 1, not the probe's own status", async () => {
     engineWithoutDescribe(2);
 
     const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
 
-    expect(exitCode).toBe(2);
+    expect(exitCode).toBe(1);
     expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(stderr).toContain("kesha install");
+  });
+
+  skipOnWin32("a missing/unspawnable engine reports E_ENGINE_SPAWN and exits 1", async () => {
+    missingEngine();
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_SPAWN]:");
     expect(stderr).toContain("kesha install");
   });
 });
