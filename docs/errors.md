@@ -42,6 +42,9 @@ code never needs sanitizing.
 - **Engine codes** (everything except `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE`) are defined in the Rust
   engine and emitted on its stderr as an `error` event that the CLI renders as `error [CODE]: …`.
   List them with `kesha-engine describe` (the `errors` section, each with its `origin`).
+  When the engine also writes a line that is not an event, the CLI reports `E_INTERNAL` quoting
+  that line and appends the engine's own transcript, so stderr may show two coded lines; the
+  `code` field (JSON output, `SayError.code`) names one.
 - **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`** and **`E_INSTALL_RACE`** originate
   only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
   an installed engine whose protocol version the CLI does not speak, and an

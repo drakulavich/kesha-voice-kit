@@ -159,3 +159,15 @@ describe("KeshaError.render() keeps the transcript without letting it hide the c
     expect(errorMessage(err)).toBe(`error [E_INTERNAL]: kesha-engine transcribe exited with code 101\n${transcript}`);
   });
 });
+
+describe("KeshaError.render() only trusts a transcript that renders this very error", () => {
+  test("a legacy line with the same code but another message does not hide the diagnosis", () => {
+    const err = new KeshaError("E_INTERNAL", 'kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"', {
+      exitCode: 1,
+      stderr: "error [E_INTERNAL]: kokoro session init failed",
+    });
+    expect(errorMessage(err)).toBe(
+      'error [E_INTERNAL]: kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"\nerror [E_INTERNAL]: kokoro session init failed',
+    );
+  });
+});

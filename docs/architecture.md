@@ -160,13 +160,14 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    `Bun.spawn`.
 3. The CLI reads `kesha-engine describe` once per binary path (cached by path
    + mtime) through `getDescribe` in `src/engine.ts`, and validates the argv of
-   every flag-carrying spawn (`transcribe`, `record`, `say`, MCP `list_voices`)
-   against that document with `validateArgv` (`src/engine/describe.ts`)
-   before spawning — instead of blindly forwarding flags, see the "DO NOT
-   BLINDLY FORWARD CLI FLAGS" rule in [CLAUDE.md](../CLAUDE.md). Those
-   spawns read stderr as protocol-4 NDJSON events (`readEvents` in
-   `src/engine/events.ts`); `install`, `record`, CLI `say --list-voices` and
-   the Kokoro warmup inherit stderr on protocol 3 until their stage-2 PRs.
+   every flag-carrying spawn on the parsed path (`transcribe`, `say`, MCP
+   `list_voices`) and of `record` against that document with `validateArgv`
+   (`src/engine/describe.ts`) before spawning — instead of blindly forwarding
+   flags, see the "DO NOT BLINDLY FORWARD CLI FLAGS" rule in
+   [CLAUDE.md](../CLAUDE.md). The parsed spawns read stderr as protocol-4
+   NDJSON events (`readEvents` in `src/engine/events.ts`); `install` and the
+   Kokoro warmup are not validated yet, and they, `record` and CLI
+   `say --list-voices` inherit stderr on protocol 3 until their stage-2 PRs.
    `getEngineCapabilities` is a thin view over the describe document kept
    for the status/doctor/install screens that predate `describe`.
 4. **stdout is the result** (transcript / JSON / WAV bytes); **stderr is
