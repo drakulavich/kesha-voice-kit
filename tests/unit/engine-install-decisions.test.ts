@@ -18,17 +18,13 @@ import {
 } from "../../src/engine-install";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
-import { isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 
-const DIARIZE_CAPS = {
-  protocolVersion: 3,
-  backend: "coreml",
-  features: ["tts", "transcribe.diarize"],
-};
-const PLAIN_CAPS = { protocolVersion: 3, backend: "onnx", features: ["tts"] };
+const DIARIZE_CAPS = describeJson({ backend: "coreml", features: ["tts", "transcribe.diarize"] });
+const PLAIN_CAPS = describeJson({ backend: "onnx", features: ["tts"] });
 
 interface EngineStub {
-  caps?: Record<string, unknown> | null;
+  caps?: string | null;
   installExit?: number;
   sayExit?: number;
 }
@@ -49,8 +45,8 @@ function shQuote(value: string): string {
  */
 function engineScript({ caps = PLAIN_CAPS, installExit = 0, sayExit = 0 }: EngineStub = {}): string {
   const capsCase = caps
-    ? `  --capabilities-json) printf '%s\\n' ${shQuote(JSON.stringify(caps))}; exit 0 ;;\n`
-    : `  --capabilities-json) exit 2 ;;\n`;
+    ? `  describe|--capabilities-json) printf '%s\\n' ${shQuote(caps)}; exit 0 ;;\n`
+    : `  describe|--capabilities-json) exit 2 ;;\n`;
   return (
     `#!/bin/sh\n` +
     `echo "$*" >> ${shQuote(argvLog)}\n` +
@@ -293,7 +289,7 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
     await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
 
     expect(engineDownloads(urls)).toHaveLength(1);
-    expect(readFileSync(binPath, "utf8")).toContain("--capabilities-json");
+    expect(readFileSync(binPath, "utf8")).toContain("describe");
   }, 30_000);
 
   posixTest("--diarize reaches the engine, and pulls --vad with it (#768)", async () => {

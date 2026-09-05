@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { installEngine, readInstalledEngineVersion } from "../../src/engine-install";
 import { log } from "../../src/log";
-import { isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 
 const VERSION_A = "9.9.9-alpha.1";
 const VERSION_B = "9.9.8";
@@ -21,8 +21,8 @@ if [ "$1" = "--version" ]; then
   echo "kesha-engine ${version}"
   exit 0
 fi
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":["tts"]}'
+if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: ["tts"] })}'
   exit 0
 fi
 if [ "$1" = "install" ]; then

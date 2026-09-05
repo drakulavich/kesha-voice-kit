@@ -19,18 +19,18 @@ import {
   type DoctorReport,
 } from "../../src/doctor";
 import { collectStatus } from "../../src/status";
-import { stageEngineHome } from "../helpers/fake-engine";
+import { describeDocument, describeJson, stageEngineHome } from "../helpers/fake-engine";
+import { describeToCapabilities } from "../../src/engine/describe";
 import { createSupportBundle } from "../../src/support-bundle";
 import { engineVersion, packageName, packageVersion } from "../../src/package-info";
 import { enableStats } from "../../src/stats";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { KOKORO_ANE_EN_REQUIRED, KOKORO_G2P_REQUIRED } from "../../src/kokoro-ane";
 
-const fakeCapabilities = {
-  protocolVersion: 2,
+const fakeCapabilities = describeDocument({
   backend: "fake-coreml",
   features: ["transcribe.segments", "transcribe.diarize"],
-};
+});
 
 function writeEngineStub(path: string, body: string): void {
   writeFileSync(path, body);
@@ -360,7 +360,7 @@ describe("collectDoctorReport", () => {
       writeEngineStub(
         binPath,
         `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
   printf '%s\\n' '${JSON.stringify(fakeCapabilities)}'
   exit 0
 fi
@@ -374,11 +374,11 @@ exit 2
 
       const report = await collectDoctorReport({ redact: true });
       expect(report.engine.installed).toBe(true);
-      expect(report.engine.capabilities).toEqual(fakeCapabilities);
+      expect(report.engine.capabilities).toEqual(describeToCapabilities(fakeCapabilities));
       expect(report.engine.probeError).toBeNull();
 
       const output = formatDoctorReport(report);
-      expect(output).toContain("fake-coreml, protocol v2");
+      expect(output).toContain("fake-coreml, protocol v4");
       expect(output).toContain("transcribe.diarize");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -711,8 +711,8 @@ describe("collectDoctorReport probe and cache accounting", () => {
     writeEngineStub(
       join(binDir, "kesha-engine"),
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"coreml","features":[]}'
+if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${describeJson({ backend: "coreml", features: [] })}'
   exit 0
 fi
 exit 2
@@ -734,8 +734,8 @@ exit 2
     writeEngineStub(
       join(binDir, "kesha-engine"),
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
   exit 0
 fi
 exit 2
@@ -1141,8 +1141,8 @@ describe("doctor and status agree on the disk total (#790)", () => {
     writeEngineStub(
       binPath,
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
   exit 0
 fi
 exit 2
@@ -1178,8 +1178,8 @@ exit 2
     writeEngineStub(
       binPath,
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"coreml","features":[]}'
+if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${describeJson({ backend: "coreml", features: [] })}'
   exit 0
 fi
 exit 2

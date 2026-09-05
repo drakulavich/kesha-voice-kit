@@ -15,6 +15,7 @@ import { delimiter, dirname, join } from "path";
 import { engineVersion } from "../../src/package-info";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
 import { pidIsAlive, stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
+import { describeJson } from "../helpers/fake-engine";
 import {
   DEFAULT_TIMEOUT_MS,
   installFakeDiarizeModel,
@@ -77,12 +78,8 @@ function createFakeEngine(dir: string): string {
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
 
-if (args[0] === "--capabilities-json") {
-  console.log(JSON.stringify({
-    protocolVersion: 1,
-    backend: "fake",
-    features: ["transcribe.segments", "transcribe.diarize"],
-  }));
+if (args[0] === "describe" || args[0] === "--capabilities-json") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["transcribe.segments", "transcribe.diarize"] }))});
   process.exit(0);
 }
 
@@ -213,8 +210,8 @@ function createSiblingCancellationEngine(dir: string, langPidPath: string): stri
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "--capabilities-json") {
-  console.log(JSON.stringify({ protocolVersion: 1, backend: "fake", features: [] }));
+if (args[0] === "describe" || args[0] === "--capabilities-json") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
   process.exit(0);
 }
 if (args[0] === "detect-lang") {
@@ -264,7 +261,7 @@ function createLifecycleEngine(
   const enginePath = join(dir, `kesha-engine-${hangsDuring}`);
   const capabilities = hangsDuring === "probe"
     ? ""
-    : "console.log(JSON.stringify({ protocolVersion: 1, backend: \"fake\", features: [] }));";
+    : `console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});`;
   const hang = `
   await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
   await new Promise(() => {});
@@ -273,7 +270,7 @@ function createLifecycleEngine(
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "--capabilities-json") {
+if (args[0] === "describe" || args[0] === "--capabilities-json") {
   ${capabilities}
   process.exit(0);
 }

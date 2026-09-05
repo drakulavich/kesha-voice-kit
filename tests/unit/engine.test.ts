@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { readRepoFile } from "../helpers/repo";
-import { envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
+import { describeJson, envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
 import {
   detectTextLanguageEngine,
@@ -39,8 +39,8 @@ async function argEchoEngine(features: string[]): Promise<string> {
   await Bun.write(
     path,
     `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '${JSON.stringify({ protocolVersion: 3, backend: "fake", features })}'
+if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${describeJson({ features })}'
   exit 0
 fi
 if [ "$1" = "transcribe" ]; then
@@ -698,7 +698,7 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-caps-")), "kesha-engine");
     writeFileSync(
       path,
-      `#!/bin/sh\nif [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${payload}'\n  exit ${exitCode}\nfi\nexit 2\n`,
+      `#!/bin/sh\nif [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${payload}'\n  exit ${exitCode}\nfi\nexit 2\n`,
     );
     chmodSync(path, 0o755);
     return path;
@@ -862,7 +862,7 @@ describe("the capability probe stays in step with the installed binary", () => {
     const path = join(dir, "kesha-engine");
     writeFileSync(
       path,
-      `#!/bin/sh\nif [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${JSON.stringify({ protocolVersion: 3, backend: "fake", features })}'\n  exit 0\nfi\nexit 2\n`,
+      `#!/bin/sh\nif [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${describeJson({ features })}'\n  exit 0\nfi\nexit 2\n`,
     );
     chmodSync(path, 0o755);
     return path;

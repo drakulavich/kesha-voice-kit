@@ -11,14 +11,14 @@ import {
 } from "../../src/engine-install";
 import { resolveEngineVersionFlag } from "../../src/cli/install";
 import { engineVersion } from "../../src/package-info";
-import { isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 
 const OVERRIDE = "9.9.9-alpha.1";
-// It has to answer `--capabilities-json`: an engine that describes nothing is re-downloaded
+// It has to answer `describe`/`--capabilities-json`: an engine that describes nothing is re-downloaded
 // rather than treated as a cache hit (#801).
 const FAKE_ENGINE = `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
 fi
 exit 0
 `;
