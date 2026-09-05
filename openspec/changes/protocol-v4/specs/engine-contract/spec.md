@@ -4,7 +4,7 @@
 
 Running `kesha-engine describe` SHALL print a single JSON object to stdout and exit 0, and that describe document SHALL be the only place the CLI learns what the Engine accepts. It SHALL carry `protocolVersion` (the integer 4), `backend`, `profile`, `commands` (each subcommand with each accepted flag and the feature that gates it), `features`, `errors` (every Error code with title, category, retryability and origin) and, on builds that synthesize speech, `tts.languages`.
 
-The `errors` section SHALL mark exactly `E_MODEL_DOWNLOAD` and `E_DIARIZE_TIMEOUT` as retryable.
+The `errors` section SHALL mark exactly `E_MODEL_DOWNLOAD`, `E_DIARIZE_TIMEOUT` and `E_INSTALL_RACE` as retryable.
 
 The CLI SHALL validate any argv against `commands` before spawning the Engine: a flag the schema does not list for that subcommand, a flag whose gate is absent from `features`, or a flag whose `requires` is missing or whose `conflicts` is present SHALL be rejected on the CLI side with `E_INVALID_ARG` and no subprocess. A flag whose schema row carries `whenUngated: drop` SHALL instead be omitted from the argv with one `warn` event when its gate is absent from `features`, and the command SHALL proceed; the default is `reject`. A `gate` names one feature or an any-of list of features.
 
@@ -65,6 +65,7 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 > | `E_SCRIPT_UNSUPPORTED` | tts | no | engine | Text script not supported for this voice |
 > | `E_TRANSCRIBE_FAILED` | transcribe | no | engine | Transcription failed |
 > | `E_DIARIZE_TIMEOUT` | transcribe | **yes** | engine | Speaker diarization timed out |
+> | `E_INSTALL_RACE` | internal | **yes** | cli | Another install reached the same cache first |
 > | `E_INTERNAL` | internal | no | both | Unexpected internal error |
 >
 > *Feature strings and their gates (today `rust/src/capabilities.rs:34-75`; the gates become Profile names once `build-profiles` lands):*
@@ -180,9 +181,9 @@ Before spawning the Engine the CLI SHALL validate the full argv against the `com
 
 ### Requirement: TS-native codes cover CLI-side failures
 
-The CLI SHALL report failures that happen before or around the Engine with the same Error code vocabulary the Engine publishes in its describe document: `E_INPUT_NOT_FOUND`, `E_ENGINE_SPAWN`, `E_INVALID_ARG`, `E_ENGINE_PROTOCOL` and `E_INTERNAL` SHALL appear in `errors`, and every failure the Core API throws SHALL be a `KeshaError` carrying `code`, `hint` when known, and `exitCode` and `stderr` whenever an Engine subprocess ran.
+The CLI SHALL report failures that happen before or around the Engine with the same Error code vocabulary the Engine publishes in its describe document: `E_INPUT_NOT_FOUND`, `E_ENGINE_SPAWN`, `E_INVALID_ARG`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE` and `E_INTERNAL` SHALL appear in `errors`, and every failure the Core API throws SHALL be a `KeshaError` carrying `code`, `hint` when known, and `exitCode` and `stderr` whenever an Engine subprocess ran.
 
-Each entry's `origin` SHALL be `engine`, `cli` or `both`: `E_INPUT_NOT_FOUND`, `E_INVALID_ARG` and `E_INTERNAL` are `both` because either side raises them, while `E_ENGINE_SPAWN` and `E_ENGINE_PROTOCOL` are `cli` because only the CLI can observe them.
+Each entry's `origin` SHALL be `engine`, `cli` or `both`: `E_INPUT_NOT_FOUND`, `E_INVALID_ARG` and `E_INTERNAL` are `both` because either side raises them, while `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE` are `cli` because only the CLI can observe them.
 
 These codes SHALL appear in structured error records (`TranscribeErrorRecord.code`).
 
