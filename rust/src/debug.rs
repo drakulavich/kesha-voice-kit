@@ -29,6 +29,7 @@
 //!
 //! Independent of `KESHA_DEBUG` — both paths can be active simultaneously.
 
+use crate::protocol::events::{self, Event, Mode};
 use std::fs::File;
 use std::io::Write;
 #[cfg(unix)]
@@ -81,8 +82,13 @@ pub fn init() {
 /// path is the macro-level `enabled()` check.
 pub fn trace_fmt(args: std::fmt::Arguments<'_>) {
     if enabled() {
-        let t = engine_t0().elapsed().as_millis();
-        eprintln!("[debug/engine +{t}ms] {args}");
+        Event::Debug {
+            t_ms: engine_t0().elapsed().as_millis(),
+            event: None,
+            message: args.to_string(),
+            fields: serde_json::Value::Null,
+        }
+        .emit();
     }
 }
 
@@ -134,9 +140,14 @@ fn json_sink() -> Option<&'static Mutex<File>> {
 }
 
 /// `pub` so [`dtrace_json!`] can skip the `serde_json::json!` allocation
-/// when the sink is inactive — same zero-cost contract as [`dtrace!`] (#321).
+/// when inactive — same zero-cost contract as [`dtrace!`] (#321). In
+/// [`Mode::V4`] "active" tracks `KESHA_DEBUG` instead of the fd sink,
+/// which [`trace_json`] never opens under that mode.
 pub fn json_sink_is_active() -> bool {
-    json_sink().is_some()
+    match events::mode() {
+        Mode::V4 => enabled(),
+        Mode::V3 => json_sink().is_some(),
+    }
 }
 
 /// Emit one NDJSON event to the JSON sink, if configured.
@@ -146,6 +157,18 @@ pub fn json_sink_is_active() -> bool {
 /// Reserved keys `t_ms` and `event` are always injected by the writer.
 /// Prefer the [`dtrace_json!`] macro — it gates allocation on [`json_sink_is_active`].
 pub fn trace_json(event: &str, fields: serde_json::Value) {
+    if events::mode() == Mode::V4 {
+        if enabled() {
+            Event::Debug {
+                t_ms: engine_t0().elapsed().as_millis(),
+                event: Some(event),
+                message: String::new(),
+                fields,
+            }
+            .emit();
+        }
+        return;
+    }
     let Some(sink) = json_sink() else {
         return;
     };

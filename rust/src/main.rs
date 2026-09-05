@@ -71,7 +71,11 @@ fn run_command(command: Option<Commands>) -> Result<()> {
             )?;
             cli::record::run(out, live, max_seconds, endpoint)?
         }
-        Some(Commands::Describe) => println!("{}", kesha_engine::protocol::describe::render()?),
+        Some(Commands::Describe) => {
+            let s = kesha_engine::protocol::describe::render()?;
+            kesha_engine::dtrace!("describe: rendered {} bytes", s.len());
+            println!("{s}");
+        }
         Some(Commands::Install(args)) => cli::install::run(args)?,
         #[cfg(feature = "tts")]
         Some(Commands::Say(args)) => {

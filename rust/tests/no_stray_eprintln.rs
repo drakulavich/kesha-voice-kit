@@ -3,10 +3,6 @@ use std::path::Path;
 
 const ALLOWED: &[(&str, &str)] = &[
     ("src/protocol/events.rs", "the renderer itself"),
-    (
-        "src/debug.rs",
-        "v3 debug trace until the shim removal (protocol-v4 Migration)",
-    ),
     ("src/record.rs", "one blank separator line"),
 ];
 
