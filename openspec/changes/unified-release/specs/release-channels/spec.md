@@ -46,7 +46,7 @@ An alpha tag SHALL be a record rather than a trigger: the alpha jobs write it af
 - THEN no release run starts from it
 - AND the published `2.2.0-alpha.3` is not republished
 
-> *Technical Note — Grammar today at `.github/scripts/release-tags.mjs:11-39`; the `-cli` arm is deleted. The tag trigger filter excludes `v*-alpha.*` so a recorded tag cannot re-enter the workflow.*
+> *Technical Note — Grammar today at `.github/scripts/release-tags.mjs:11-39`; the `-cli` arm is deleted. The tag trigger filter excludes `v*-alpha.*` so a recorded tag cannot re-enter the workflow. Three baseline scenarios are deliberately not carried over, because each asserts a two-artifact world this change ends: "A CLI alpha tag does not trigger an Engine build" and "An Engine alpha tag passes Engine validators" both describe a tag reaching a separate Engine build workflow, which no longer exists — alpha tags are records that start no run at all, which "A recorded alpha tag starts nothing" asserts more strongly; "A tag belonging to another artifact is rejected" has no other artifact to reject, and "A legacy marker tag is refused" is what it becomes.*
 
 ### Requirement: CLI alphas publish on every merge that changes the CLI
 
@@ -65,9 +65,18 @@ Every push to the default branch that changes CLI sources SHALL produce a publis
 - GIVEN a pull request that changes only documentation merges
 - WHEN the alpha jobs evaluate the change
 - THEN no alpha is published
-- AND the run records that it deliberately skipped
+- AND the run records that it deliberately skipped, in a form a person can read
+  afterwards without inferring it from an absent run
 
-> *Technical Note — `derive-alpha-version.ts` and `alpha-publishable.ts` move under `release.yml`; behaviour is unchanged except the Engine resolution and the `if: needs.classify.outputs.path != 'cli-alpha'` guard that skips `build-engine`, `smoke`, `packages`, `homebrew`, `docker` and `nix-version`.*
+#### Scenario: Three merges land in quick succession
+
+- GIVEN an alpha publish is already in flight
+- WHEN two further qualifying merges land before it finishes
+- THEN each of the three merges SHALL end with its own published alpha version
+- AND no qualifying merge is silently dropped because a later one superseded it
+- AND no published alpha version is ever reused for different source
+
+> *Technical Note — `derive-alpha-version.ts` and `alpha-publishable.ts` move under `release.yml`; behaviour is unchanged except the Engine resolution and the `if: needs.classify.outputs.path != 'cli-alpha'` guard that skips `build-engine`, `smoke` and `github-release` (`packages`, `homebrew`, `docker` and `nix-version` are guarded on the stable Channel instead, so a beta does not ship them either). Ordering across concurrent merges is a queue, not a cancelling concurrency group: GitHub cancels a pending run when a newer one joins the group, which would drop the middle merge, and the skip decision is made inside a job because a workflow-level path filter leaves no run to report from.*
 
 ### Requirement: Engine alphas are published deliberately, not per merge
 
@@ -99,7 +108,7 @@ An Engine alpha SHALL be resolvable by the CLI through the same mechanism that r
 - AND npm carries `2.3.0-alpha.1` on the alpha Channel resolving that Engine
 - AND neither artifact is published without the other
 
-> *Technical Note — `.github/workflows/build-engine.yml:547-562` publishes every build as a draft and then un-drafts alphas by hand today; `release.yml`'s `github-release` job publishes a Prerelease directly for both pre-release Channels. `src/engine-install.ts:187` and `:447` build the asset URL as `releases/download/v${engineVersion}/…`, and under one version that name is injected at publish rather than read from `package.json#keshaEngine.version` (`src/package-info.ts:5-6`).*
+> *Technical Note — The baseline scenario "Publishing an Engine alpha does not publish a CLI" is deliberately not carried over: under one version a dispatched alpha publishes both artifacts in the same run by design, which is what "A dispatched alpha publishes both artifacts at one version" asserts instead. `.github/workflows/build-engine.yml:547-562` publishes every build as a draft and then un-drafts alphas by hand today; `release.yml`'s `github-release` job publishes a Prerelease directly for both pre-release Channels. `src/engine-install.ts:187` and `:447` build the asset URL as `releases/download/v${engineVersion}/…`, and under one version that name is injected at publish rather than read from `package.json#keshaEngine.version` (`src/package-info.ts:5-6`).*
 
 ### Requirement: Alpha and stable publish through one path
 
@@ -107,12 +116,20 @@ The steps that publish a build SHALL exist once, as jobs of one release workflow
 
 A release SHALL be published in the run that built and smoked its assets, never left as a draft for a person to un-draft, because the smoke on the just-built assets is the verification a draft used to stand in for. Stable is published as Latest; beta and a dispatched alpha are published as Prereleases.
 
+This is the property that makes an alpha meaningful as a rehearsal: a change to the publish path SHALL be exercised by alphas before a stable release depends on it.
+
 #### Scenario: A change to the publish path is rehearsed
 
 - GIVEN the shared publish jobs are modified
 - WHEN the next alpha publishes
 - THEN that alpha exercised the modified jobs
 - AND a subsequent stable release runs the same jobs
+
+#### Scenario: A channel cannot silently diverge
+
+- GIVEN a fix is applied to the publish path for one Channel
+- WHEN the other Channel next publishes
+- THEN it SHALL use the fixed path rather than an unfixed copy
 
 #### Scenario: A release created by the workflow reaches npm
 
