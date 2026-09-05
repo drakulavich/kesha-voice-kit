@@ -18,6 +18,22 @@ pub const W_MIC_DROPPED: &str = "W_MIC_DROPPED";
 pub const W_INSTALL: &str = "W_INSTALL";
 pub const W_GENERIC: &str = "W_GENERIC";
 
+/// The published warning taxonomy `describe` serves; the `W_*` constants above are its call-site names.
+pub const WARN_CODES: &[(&str, &str)] = &[
+    (
+        W_VAD_NOT_INSTALLED,
+        "Voice activity detection not installed",
+    ),
+    (
+        W_VAD_NO_SPEECH,
+        "No speech found by voice activity detection",
+    ),
+    (W_RECOVERY_AUDIO, "Interrupted recording was recovered"),
+    (W_MIC_DROPPED, "Microphone input was dropped"),
+    (W_INSTALL, "Install step reported a problem"),
+    (W_GENERIC, "Unclassified engine warning"),
+];
+
 pub fn mode_for(value: Option<&str>) -> Mode {
     match value.map(str::trim) {
         Some("4") => Mode::V4,

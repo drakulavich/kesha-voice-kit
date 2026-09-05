@@ -207,6 +207,13 @@ pub struct ErrorEntry {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WarnEntry {
+    pub code: &'static str,
+    pub title: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Describe {
     pub protocol_version: u32,
     pub backend: &'static str,
@@ -214,6 +221,7 @@ pub struct Describe {
     pub commands: BTreeMap<String, CommandSchema>,
     pub features: Vec<&'static str>,
     pub errors: Vec<ErrorEntry>,
+    pub warnings: Vec<WarnEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tts: Option<crate::capabilities::TtsCapabilities>,
 }
@@ -302,6 +310,10 @@ pub fn document() -> Describe {
         commands,
         features: caps.features,
         errors,
+        warnings: crate::protocol::events::WARN_CODES
+            .iter()
+            .map(|&(code, title)| WarnEntry { code, title })
+            .collect(),
         tts: caps.tts,
     }
 }
@@ -424,6 +436,26 @@ mod tests {
         assert_eq!(origin("E_INTERNAL"), Origin::Both);
         assert_eq!(origin("E_MODEL_MISSING"), Origin::Engine);
         assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 3);
+    }
+
+    #[test]
+    fn describe_publishes_the_whole_warning_taxonomy() {
+        let d = document();
+        let published: Vec<(&str, &str)> = d.warnings.iter().map(|w| (w.code, w.title)).collect();
+        assert_eq!(published, crate::protocol::events::WARN_CODES.to_vec());
+        assert!(published.iter().any(|(c, _)| *c == "W_VAD_NOT_INSTALLED"));
+    }
+
+    #[test]
+    fn warnings_serialize_as_code_and_title_objects() {
+        let v: serde_json::Value = serde_json::from_str(&render().unwrap()).unwrap();
+        let warnings = v["warnings"].as_array().expect("warnings array");
+        assert_eq!(warnings.len(), crate::protocol::events::WARN_CODES.len());
+        let generic = warnings
+            .iter()
+            .find(|w| w["code"] == "W_GENERIC")
+            .expect("W_GENERIC published");
+        assert!(generic["title"].as_str().is_some_and(|t| !t.is_empty()));
     }
 
     #[test]

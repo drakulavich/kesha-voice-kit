@@ -117,7 +117,7 @@ The CLI SHALL refuse to use an Engine whose describe document reports a `protoco
 
 ### Requirement: Engine stderr is an event stream
 
-The Engine SHALL write every non-payload line to stderr as one JSON object per line with a `kind` of `progress`, `warn`, `error` or `debug` and a `message`; `error` and `warn` SHALL carry a `code` that is a published Error code; `error` MAY carry a `hint`. stdout SHALL carry only the command's payload. A fatal `error` SHALL be followed by exit code 1, except where the tts-synthesis spec assigns another Exit code.
+The Engine SHALL write every non-payload line to stderr as one JSON object per line with a `kind` of `progress`, `warn`, `error` or `debug` and a `message`; `error` and `warn` SHALL each carry a `code` that is a published Error code (`error`) or a published Warning code from `warnings` (`warn`); `error` MAY carry a `hint`. stdout SHALL carry only the command's payload. A fatal `error` SHALL be followed by exit code 1, except where the tts-synthesis spec assigns another Exit code.
 
 Argument-parsing failures SHALL join the Event stream rather than bypass it: a clap parse error and a missing subcommand SHALL each be emitted as one `error` event whose `code` is `E_INVALID_ARG` and whose `message` carries clap's own text including the usage line, and the process SHALL exit 2. `--help` and `--version` SHALL remain plain prose on stdout and are the only prose exemption.
 

@@ -19,7 +19,7 @@ Every non-payload line the Engine emits is one JSON object on stderr:
 {"kind":"debug","t_ms":412,"event":"asr.decode.start"}
 ```
 
-`kind` and `message` are required; `code` is required on `error` and `warn`; `hint` is optional and is what the CLI prints after the message. A fatal `error` is followed by exit code 1 (the `say` exit-code exceptions in the tts-synthesis spec stay). Lines are `\n`-terminated; the CLI parser strips a trailing `\r` so Windows output parses identically. A line that is not valid JSON is a protocol violation the CLI reports as `E_INTERNAL` with the raw line in the message.
+`kind` and `message` are required; `code` is required on `error` and `warn` — an Error code from `errors` on the former, a Warning code (the `W_*` taxonomy) from `warnings` on the latter; `hint` is optional and is what the CLI prints after the message. A fatal `error` is followed by exit code 1 (the `say` exit-code exceptions in the tts-synthesis spec stay). Lines are `\n`-terminated; the CLI parser strips a trailing `\r` so Windows output parses identically. A line that is not valid JSON is a protocol violation the CLI reports as `E_INTERNAL` with the raw line in the message.
 
 Argument parsing joins the stream. `rust/src/main.rs` uses `try_parse` instead of `Cli::parse()` (`rust/src/main.rs:99`), and both a clap parse error and a missing subcommand become one `error` event with code `E_INVALID_ARG` whose message carries clap's own text including the usage line; the process exits 2. `--help` and `--version` keep printing prose to stdout and are the only prose exemption, because they are the one output a person asks for by name.
 
@@ -49,13 +49,14 @@ Why stderr and not a third fd: stderr is what every runner, CI log and `2>` redi
   },
   "features": ["transcribe", "transcribe.segments", "transcribe.itn", "transcribe.diarize", "detect-lang", "vad", "tts", "record.live"],
   "errors": [{"code": "E_MODEL_MISSING", "title": "Model or voice not installed", "category": "model", "retryable": false, "origin": "engine"}],
+  "warnings": [{"code": "W_VAD_NOT_INSTALLED", "title": "Voice activity detection not installed"}],
   "tts": {"languages": [{"code": "en", "engines": ["kokoro"]}]}
 }
 ```
 
 The flag list is derived from clap at runtime (`CommandFactory::command()`); the gates live in a table beside it, and a unit test asserts the two sets are equal, so a flag cannot exist without a schema row. `features` stays for consumers that only need a boolean. The CLI validates any argv with one function: every flag must exist for the command, its gate (if any) must be in `features`, its `requires` must be present and its `conflicts` absent. `whenUngated` is `reject` (default) or `drop`; `drop` reproduces today's `applyNoExpandAbbrev` behaviour (`src/synth.ts:69-85`): the flag is omitted with a warning instead of failing the call. A `gate` is a feature name or an any-of array.
 
-Every entry in `errors` carries an `origin` of `engine`, `cli` or `both`. `E_INPUT_NOT_FOUND`, `E_INVALID_ARG` and `E_INTERNAL` are `both` — either side raises them. `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE` are `cli`: only the CLI can observe a binary that will not start, a protocol it does not speak, or a lost race for the install cache. With origins published, `docs/errors.md` is generated from `describe` and no TS registry needs a drift test.
+Every entry in `errors` carries an `origin` of `engine`, `cli` or `both`. `E_INPUT_NOT_FOUND`, `E_INVALID_ARG` and `E_INTERNAL` are `both` — either side raises them. `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE` are `cli`: only the CLI can observe a binary that will not start, a protocol it does not speak, or a lost race for the install cache. With origins published, `docs/errors.md` is generated from `describe` and no TS registry needs a drift test. `warnings` publishes the `W_*` taxonomy the same way — code and title only, since a warning is never fatal and carries no category, retryability or origin — so a consumer can resolve every `code` a `warn` event carries.
 
 The `install` platform pre-check is deliberately not schema-driven: `kesha install --diarize` on linux-x64 with no Engine on disk has nothing to validate against, so that check stays where it is and the platform pre-check reports `E_UNSUPPORTED_PLATFORM` (today it throws a bare `Error` at `src/cli/install.ts:228-233`; v4 assigns the code). Schema validation applies from the moment an Engine binary exists, and a gated flag on a build that lacks the gate is `E_INVALID_ARG`.
 
