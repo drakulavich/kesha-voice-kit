@@ -25,7 +25,7 @@ The granular features are not removed because four non-release builds need them 
 
 ### D3. Release rows name a profile
 
-`build-engine.yml` rows become `features: darwin` and `features: portable` with `--no-default-features`; `tests/unit/check-workflows.test.ts` gains the assertion "every `build-engine.yml` row's `features` is exactly one of `portable`, `darwin`", replacing the CLAUDE.md matrix rule.
+The release workflow's build rows become `features: darwin` and `features: portable` with `--no-default-features` (`.github/workflows/build-engine.yml:106-117` today; `unified-release` folds them into `release.yml`); `tests/unit/check-workflows.test.ts` gains the assertion "every release build row's `features` is exactly one of `portable`, `darwin`", replacing the CLAUDE.md matrix rule.
 
 ### D4. Gates
 

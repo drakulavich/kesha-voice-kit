@@ -14,7 +14,7 @@ The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `
 #### Scenario: The CLI Nix path is not presented as an install method
 
 - GIVEN the CLI's dependency derivation carries a placeholder output hash
-- WHEN a user reads the README or `docs/nix-install.md`
+- WHEN Maks reads the README or `docs/nix-install.md`
 - THEN no doc presents `nix run` / `nix profile install .#kesha` as a working install method
 - AND no release lane fails as a result
 
