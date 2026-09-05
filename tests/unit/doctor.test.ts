@@ -359,7 +359,7 @@ describe("collectDoctorReport", () => {
       writeEngineStub(
         binPath,
         `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${JSON.stringify(fakeCapabilities)}'
   exit 0
 fi
@@ -710,7 +710,7 @@ describe("collectDoctorReport probe and cache accounting", () => {
     writeEngineStub(
       join(binDir, "kesha-engine"),
       `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ backend: "coreml", features: [] })}'
   exit 0
 fi
@@ -733,7 +733,7 @@ exit 2
     writeEngineStub(
       join(binDir, "kesha-engine"),
       `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
   exit 0
 fi
@@ -1139,7 +1139,7 @@ describe("doctor and status agree on the disk total (#790)", () => {
     writeEngineStub(
       binPath,
       `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
   exit 0
 fi
@@ -1176,7 +1176,7 @@ exit 2
     writeEngineStub(
       binPath,
       `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ backend: "coreml", features: [] })}'
   exit 0
 fi

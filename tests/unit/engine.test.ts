@@ -50,7 +50,7 @@ async function argEchoEngine(features: string[]): Promise<string> {
   await Bun.write(
     path,
     `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ features })}'
   exit 0
 fi
@@ -664,7 +664,7 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-describe-")), "kesha-engine");
     writeFileSync(
       path,
-      `#!/bin/sh\nif [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${payload}'\n  exit ${exitCode}\nfi\nexit 2\n`,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${payload}'\n  exit ${exitCode}\nfi\nexit 2\n`,
     );
     chmodSync(path, 0o755);
     return path;
@@ -810,7 +810,7 @@ describe("the capability probe stays in step with the installed binary", () => {
     const path = join(dir, "kesha-engine");
     writeFileSync(
       path,
-      `#!/bin/sh\nif [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${describeJson({ features })}'\n  exit 0\nfi\nexit 2\n`,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features })}'\n  exit 0\nfi\nexit 2\n`,
     );
     chmodSync(path, 0o755);
     return path;

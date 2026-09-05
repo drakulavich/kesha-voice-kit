@@ -7,9 +7,10 @@
  * by the target it emits them at — that matrix is observable only from the real binaries,
  * which until now only the model-downloading lanes ever saw.
  *
- * These tests read `tests/fixtures/capabilities/<target>.json` — recordings of
- * `--capabilities-json` from the published binaries — and drive the production seams against
- * them. No engine, no models, no network. `.github/workflows/capability-pact.yml` re-records
+ * These tests read `tests/fixtures/capabilities/<target>.json` — recordings of the published
+ * binaries' capabilities (re-recorded as `describe` with the beta.2 pin, openspec task 5.4) —
+ * and drive the production seams against them. No engine, no models, no network.
+ * `.github/workflows/capability-pact.yml` re-records
  * from the real artifacts and fails on drift, which is what stops a pact from rotting into a
  * false green; it also owns the pinned-version check, which cannot live here because a release
  * PR bumps `keshaEngine.version` before the tag it names exists.

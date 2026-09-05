@@ -14,7 +14,7 @@ import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 // load, while the `.version` marker still vouched for it. Every repair path then failed.
 
 const WORKING_ENGINE = `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
 fi
 exit 0
@@ -24,7 +24,7 @@ const CORRUPT_ENGINE = "\x7fELF\x00\x01\x02truncated";
 /** The #796 stub verbatim: it spawns and exits 0, and describes nothing (#801). */
 const MUTE_ENGINE = "#!/bin/sh\nexit 0\n";
 const BABBLING_ENGINE = `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' 'not json'
 fi
 exit 0
@@ -37,7 +37,7 @@ function hangingEngine(marker: string): string {
   return `#!/bin/sh\nexec sleep ${marker}\n`;
 }
 const SLOW_ENGINE = `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   sleep 1
   printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
 fi

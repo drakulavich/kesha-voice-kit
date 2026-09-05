@@ -78,7 +78,7 @@ function createFakeEngine(dir: string): string {
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
 
-if (args[0] === "describe" || args[0] === "--capabilities-json") {
+if (args[0] === "describe") {
   console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["transcribe.segments", "transcribe.diarize", "tts"] }))});
   process.exit(0);
 }
@@ -220,7 +220,7 @@ function createSiblingCancellationEngine(dir: string, langPidPath: string): stri
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "describe" || args[0] === "--capabilities-json") {
+if (args[0] === "describe") {
   console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
   process.exit(0);
 }
@@ -284,7 +284,7 @@ function createLifecycleEngine(
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "describe" || args[0] === "--capabilities-json") {
+if (args[0] === "describe") {
   ${capabilities}
   process.exit(0);
 }

@@ -36,7 +36,7 @@ function shQuote(value: string): string {
 
 /**
  * A shell stub answering the three things `installEngine` asks of a real engine:
- * `--capabilities-json`, `install`, and `say` (the Kokoro warmup). Each invocation appends
+ * `describe`, `install`, and `say` (the Kokoro warmup). Each invocation appends
  * its argv to `argvLog` and the cache dir it was handed to `envLog`, so a test can state
  * both what the engine was asked to do and which cache it would have acted on.
  *
@@ -45,8 +45,8 @@ function shQuote(value: string): string {
  */
 function engineScript({ caps = PLAIN_CAPS, installExit = 0, sayExit = 0 }: EngineStub = {}): string {
   const capsCase = caps
-    ? `  describe|--capabilities-json) printf '%s\\n' ${shQuote(caps)}; exit 0 ;;\n`
-    : `  describe|--capabilities-json) exit 2 ;;\n`;
+    ? `  describe) printf '%s\\n' ${shQuote(caps)}; exit 0 ;;\n`
+    : `  describe) exit 2 ;;\n`;
   return (
     `#!/bin/sh\n` +
     `echo "$*" >> ${shQuote(argvLog)}\n` +

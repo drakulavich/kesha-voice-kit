@@ -85,11 +85,12 @@ async function runEngine(
 }
 
 describe.skipIf(!engineInstalled)("e2e-engine", () => {
-  test("engine --capabilities-json returns valid JSON", async () => {
-    const { stdout, exitCode } = await runEngine(["--capabilities-json"]);
+  test("engine describe returns valid JSON", async () => {
+    const { stdout, exitCode } = await runEngine(["describe"]);
     expect(exitCode).toBe(0);
     const caps = JSON.parse(stdout);
-    expect(caps.protocolVersion).toBe(3);
+    expect(caps.protocolVersion).toBe(4);
+    expect(typeof caps.commands).toBe("object");
     // Exactly one backend is compiled in; "some string" would accept a build that named none.
     expect(["coreml", "onnx"]).toContain(caps.backend);
     expect(caps.features).toContain("transcribe");
@@ -97,7 +98,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   });
 
   test("transcribe.diarize present iff darwin-arm64 (#199)", async () => {
-    const { stdout, exitCode } = await runEngine(["--capabilities-json"]);
+    const { stdout, exitCode } = await runEngine(["describe"]);
     expect(exitCode).toBe(0);
     const caps = JSON.parse(stdout);
     const isDarwinArm64 = process.platform === "darwin" && process.arch === "arm64";
@@ -116,7 +117,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   });
 
   async function engineDiarizes(): Promise<boolean> {
-    const capsRun = await runEngine(["--capabilities-json"]);
+    const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
     if (!caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
       console.warn(`engine lacks ${TRANSCRIBE_DIARIZE_FEATURE}; skipping --speakers e2e`);
@@ -250,7 +251,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   }, 60_000);
 
   test("engine transcribe --json returns text and segments", async () => {
-    const capsRun = await runEngine(["--capabilities-json"]);
+    const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
     if (!caps.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
       console.warn(`engine lacks ${TRANSCRIBE_SEGMENTS_FEATURE}; skipping timestamp e2e`);
@@ -270,7 +271,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   }, 60_000);
 
   test("word timings track real speech and stay inside their segment (#720)", async () => {
-    const capsRun = await runEngine(["--capabilities-json"]);
+    const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
     const advertises = caps.features.includes(TRANSCRIBE_WORDS_FEATURE);
     // The flag is backend-gated, so an engine without one must omit the key too.
@@ -305,7 +306,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   /** The engine-direct case above cannot see the TS parser, which rebuilds every
    * segment field by field — this walks the path a user actually types (#720). */
   test("kesha --json --timestamps carries word timings through the CLI (#720)", async () => {
-    const capsRun = await runEngine(["--capabilities-json"]);
+    const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
 
     const { stdout, exitCode } = await runCli(["--json", "--timestamps", FIXTURE_EN]);
@@ -328,7 +329,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   }, 120_000);
 
   test("--itn keeps --json --timestamps output well-formed (#710)", async () => {
-    const capsRun = await runEngine(["--capabilities-json"]);
+    const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
     if (!caps.features.includes(TRANSCRIBE_ITN_FEATURE)) {
       console.warn(`engine lacks ${TRANSCRIBE_ITN_FEATURE}; skipping itn e2e`);
@@ -357,7 +358,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   }, 120_000);
 
   test("--itn leaves Russian transcripts unchanged (#710)", async () => {
-    const capsRun = await runEngine(["--capabilities-json"]);
+    const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
     if (!caps.features.includes(TRANSCRIBE_ITN_FEATURE)) {
       console.warn(`engine lacks ${TRANSCRIBE_ITN_FEATURE}; skipping itn e2e`);
@@ -417,7 +418,7 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
   }, 60_000);
 
   test("kesha --json --timestamps includes transcript segments", async () => {
-    const capsRun = await runEngine(["--capabilities-json"]);
+    const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
     if (!caps.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
       console.warn(`engine lacks ${TRANSCRIBE_SEGMENTS_FEATURE}; skipping timestamp e2e`);

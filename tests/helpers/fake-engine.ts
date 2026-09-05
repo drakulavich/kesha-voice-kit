@@ -138,14 +138,14 @@ export function describeJson(opts: DescribeOptions = {}): string {
   return JSON.stringify(describeDocument(opts));
 }
 
-/** Answers `describe` (and, until Task 7, `--capabilities-json`) and exits 2 otherwise; `null` writes a mute engine. */
+/** Answers `describe` and exits 2 otherwise; `null` writes a mute engine. */
 export function writeFakeEngine(binDir: string, features: string[] | null = ["tts"]): string {
   mkdirSync(binDir, { recursive: true });
   const binPath = join(binDir, "kesha-engine");
   const body =
     features === null
       ? ""
-      : `if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then\n  printf '%s\\n' '${describeJson({ backend: "fake-coreml", profile: "darwin", features })}'\n  exit 0\nfi\n`;
+      : `if [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ backend: "fake-coreml", profile: "darwin", features })}'\n  exit 0\nfi\n`;
   writeFileSync(binPath, `#!/bin/sh\n${body}exit 2\n`);
   chmodSync(binPath, 0o755);
   return binPath;
@@ -157,7 +157,7 @@ export function writeTranscribingEngine(prefix: string, features: string[], tran
   writeFileSync(
     path,
     `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ features })}'
   exit 0
 fi

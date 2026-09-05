@@ -15,7 +15,7 @@ function createListVoicesHangEngine(dir: string, enginePidPath: string): string 
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "describe" || args[0] === "--capabilities-json") {
+if (args[0] === "describe") {
   console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["tts"] }))});
   process.exit(0);
 }

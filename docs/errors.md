@@ -40,8 +40,8 @@ code never needs sanitizing.
 ## Where codes come from
 
 - **Engine codes** (everything except `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE`) are defined in the Rust
-  engine and emitted on its stderr as `error [CODE]: …`. List them with
-  `kesha-engine --error-codes-json`.
+  engine and emitted on its stderr as an `error` event that the CLI renders as `error [CODE]: …`.
+  List them with `kesha-engine describe` (the `errors` section, each with its `origin`).
 - **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`** and **`E_INSTALL_RACE`** originate
   only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
   an installed engine whose protocol version the CLI does not speak, and an

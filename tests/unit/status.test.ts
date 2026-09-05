@@ -178,7 +178,7 @@ describe("collectStatus + renderStatus", () => {
     writeFileSync(
       binPath,
       `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ backend: "fake-coreml", features: ["transcribe.segments", "transcribe.diarize"] })}'
   exit 0
 fi
@@ -323,7 +323,7 @@ describe("collectStatus --json payload (#647)", () => {
     writeFileSync(
       binPath,
       `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '{"protocolVersion":"three","backend":42}'
   exit 0
 fi
@@ -748,7 +748,7 @@ describe("collectStatus FluidAudio accounting (#688)", () => {
     writeFileSync(
       binPath,
       `#!/bin/sh
-if [ "$1" = "describe" ] || [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ backend, features: [] })}'
   exit 0
 fi
