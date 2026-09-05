@@ -422,6 +422,10 @@ async function engineWorks(binPath: string): Promise<boolean> {
     );
     return false;
   }
+  if (health.status === "protocol") {
+    log.warn(`${health.detail} — re-downloading it.`);
+    return false;
+  }
   const detail = health.status === "unusable" ? health.detail : "binary disappeared";
   log.warn(
     `Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` +

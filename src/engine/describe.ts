@@ -149,6 +149,7 @@ export function protocolMismatch(doc: DescribeDocument, binPath: string): KeshaE
       hint: stale
         ? "run `kesha install` to fetch the engine this CLI expects"
         : `the engine is newer than this CLI; run \`${UPGRADE_CLI}\``,
+      versionMismatch: true,
     },
   );
 }

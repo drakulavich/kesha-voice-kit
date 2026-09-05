@@ -93,14 +93,21 @@ export class KeshaError extends Error {
   readonly hint?: string;
   readonly exitCode?: number;
   readonly stderr?: string;
+  /** True only for `protocolMismatch()`'s `E_ENGINE_PROTOCOL`: the engine answered `describe` with a coherent, wrong-version document, as opposed to nothing parseable at all. */
+  readonly versionMismatch?: boolean;
 
-  constructor(code: string, message: string, extra: { hint?: string; exitCode?: number; stderr?: string } = {}) {
+  constructor(
+    code: string,
+    message: string,
+    extra: { hint?: string; exitCode?: number; stderr?: string; versionMismatch?: boolean } = {},
+  ) {
     super(message);
     this.name = "KeshaError";
     this.code = code;
     if (extra.hint !== undefined) this.hint = extra.hint;
     if (extra.exitCode !== undefined) this.exitCode = extra.exitCode;
     if (extra.stderr !== undefined) this.stderr = extra.stderr;
+    if (extra.versionMismatch !== undefined) this.versionMismatch = extra.versionMismatch;
   }
 
   /** The engine's transcript already carries the rendered error line; without one, render this error. */

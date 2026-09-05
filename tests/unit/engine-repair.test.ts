@@ -29,6 +29,12 @@ if [ "$1" = "describe" ]; then
 fi
 exit 0
 `;
+const STALE_ENGINE = `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [], protocolVersion: 3 })}'
+fi
+exit 0
+`;
 /**
  * `exec` so the terminate signal lands on `sleep` itself, not on a shell that ignores it.
  * The duration doubles as a per-test marker, so one hang test never observes another's child.
@@ -189,6 +195,15 @@ describe("engineFunctionalHealth (#801)", () => {
     const health = await engineFunctionalHealth(10_000);
     expect(health.status).toBe("ok");
   }, 20_000);
+
+  // A protocol mismatch used to fall through to `mute`, hiding the real cause from status/doctor.
+  posixTest("a stale engine is protocol-mismatched, not mute", async () => {
+    stageEngine("kesha-functional-protocol-", STALE_ENGINE);
+    const health = await engineFunctionalHealth();
+    expect(health.status).toBe("protocol");
+    expect(health.status === "protocol" && health.detail).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(health.status === "protocol" && health.detail).toContain("kesha install");
+  });
 });
 
 describe("install repairs a corrupt engine (#770)", () => {
@@ -206,6 +221,17 @@ describe("install repairs a corrupt engine (#770)", () => {
   // could not answer a single question about itself.
   posixTest("a cached engine that describes nothing is re-downloaded, marker or not", async () => {
     const binPath = stageEngine("kesha-repair-mute-", MUTE_ENGINE);
+    const urls = stubRelease();
+
+    await installEngine();
+
+    expect(engineDownloads(urls)).toHaveLength(1);
+    expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
+  }, 30_000);
+
+  // A stale protocol used to fall through with a wrong "binary disappeared" diagnosis, but must still repair.
+  posixTest("a cached engine that speaks a stale protocol is re-downloaded", async () => {
+    const binPath = stageEngine("kesha-repair-protocol-", STALE_ENGINE);
     const urls = stubRelease();
 
     await installEngine();

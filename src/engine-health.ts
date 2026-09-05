@@ -1,11 +1,13 @@
 import { existsSync } from "fs";
 import { errorMessage } from "./error-utils";
 import {
+  getDescribe,
   getEngineBinPath,
-  getEngineCapabilities,
   spawnEngineProcess,
   type EngineCapabilities,
 } from "./engine";
+import { describeToCapabilities } from "./engine/describe";
+import { KeshaError } from "./engine/events";
 import { registerProcessTree } from "./process-tree";
 
 export type ExecutableHealth =
@@ -108,7 +110,8 @@ export type EngineFunctionalHealth =
   | { status: "ok"; capabilities: EngineCapabilities }
   | { status: "missing" }
   | { status: "unusable"; detail: string }
-  | { status: "mute"; detail: string };
+  | { status: "mute"; detail: string }
+  | { status: "protocol"; detail: string };
 
 export const CORRUPT_STATE = "installed but not executable (corrupt) - re-run `kesha install`";
 export const NOT_FUNCTIONAL_STATE =
@@ -133,15 +136,17 @@ export async function engineFunctionalHealth(
 ): Promise<EngineFunctionalHealth> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let protocolError: KeshaError | null = null;
   try {
-    const capabilities = await getEngineCapabilities({ signal: controller.signal });
-    if (capabilities) return { status: "ok", capabilities };
-  } catch {
-    // Nothing is swallowed: an engine that cannot be spawned, or that outlived the
-    // deadline, is classified below rather than reported as a bare stack trace.
+    const doc = await getDescribe({ signal: controller.signal });
+    return { status: "ok", capabilities: describeToCapabilities(doc) };
+  } catch (err) {
+    // Everything but a protocol mismatch is classified below rather than reported as a bare stack trace.
+    if (err instanceof KeshaError && err.versionMismatch) protocolError = err;
   } finally {
     clearTimeout(timer);
   }
+  if (protocolError) return { status: "protocol", detail: protocolError.render() };
   if (controller.signal.aborted) {
     return { status: "unusable", detail: `no exit within ${timeoutMs / 1000}s` };
   }

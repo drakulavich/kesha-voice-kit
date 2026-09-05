@@ -94,7 +94,7 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
     voices: installed ? listInstalledVoices() : [],
     runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
     modelMirror: activeModelMirror(),
-    hint: engineHint(path, health.status),
+    hint: engineHint(path, health),
     // Absent engine means no disk walk, matching the human path (#647).
     disk:
       installed && options.disk
@@ -104,14 +104,16 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
 }
 
 /** An engine that runs but describes nothing needs the same repair as a missing one (#801). */
-function engineHint(path: string, health: EngineFunctionalHealth["status"]): string | null {
-  switch (health) {
+function engineHint(path: string, health: EngineFunctionalHealth): string | null {
+  switch (health.status) {
     case "missing":
       return `Run \`${installHint()}\` to download the engine and models.`;
     case "mute":
       return `Engine at ${path} is ${NOT_FUNCTIONAL_STATE}`;
     case "unusable":
       return `Engine at ${path} is ${CORRUPT_STATE}`;
+    case "protocol":
+      return health.detail;
     default:
       return null;
   }

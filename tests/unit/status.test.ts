@@ -344,6 +344,37 @@ exit 2
     }
   });
 
+  posixEngineTest("a stale engine is reported as a protocol mismatch, not a mute one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-protocol-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ features: [], protocolVersion: 3 })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(binPath, 0o755);
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const report = await collectStatus();
+      expect(report.engine.installed).toBe(true);
+      expect(report.engine.capabilities).toBeNull();
+      expect(report.hint).toContain("E_ENGINE_PROTOCOL");
+      expect(report.hint).toContain("kesha install");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("--disk with no engine reports null without walking the cache", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-nodisk-"));
     const cache = join(dir, ".cache", "kesha");

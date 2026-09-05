@@ -705,6 +705,31 @@ describe("collectDoctorReport probe and cache accounting", () => {
     }
   });
 
+  posixEngineTest("a stale engine is named as a protocol mismatch, not a mute one", async () => {
+    const { dir, binDir } = stage("kesha-doctor-protocol-engine-");
+    writeEngineStub(
+      join(binDir, "kesha-engine"),
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ features: [], protocolVersion: 3 })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    try {
+      const report = await collectDoctorReport();
+      expect(report.engine.runnable).toBe(true);
+      expect(report.engine.capabilities).toBeNull();
+      expect(report.engine.probeError).toContain("E_ENGINE_PROTOCOL");
+      const rendered = formatDoctorReport(report);
+      expect(rendered).toContain("E_ENGINE_PROTOCOL");
+      expect(rendered).toContain("kesha install");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   posixEngineTest("a CoreML engine gets the in-cache FluidAudio row, not the ONNX model dir", async () => {
     const { dir, binDir } = stage("kesha-doctor-coreml-cache-");
     writeEngineStub(
