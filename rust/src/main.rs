@@ -1,15 +1,27 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{error::ErrorKind, Parser};
 
 use kesha_engine::cli::args::{Cli, Commands};
+use kesha_engine::errors::ErrorCode;
+use kesha_engine::protocol::events;
 use kesha_engine::{capabilities, cli, debug, errors};
 
 fn main() {
-    // Anchor the `KESHA_DEBUG=1` `+Nms` timeline before `Cli::parse()` so
+    // Anchor the `KESHA_DEBUG=1` `+Nms` timeline before `Cli::try_parse()` so
     // clap parsing + env probes are counted toward the first `dtrace!`'s
     // prefix (Greptile P2 on #293). No-op when debug is off.
     debug::init();
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => {
+            let _ = e.print();
+            return;
+        }
+        Err(e) => {
+            events::error(ErrorCode::InvalidArg, e.to_string().trim_end(), None);
+            std::process::exit(2);
+        }
+    };
 
     if cli.capabilities_json {
         let caps = capabilities::get_capabilities();
@@ -66,9 +78,12 @@ fn run_command(command: Option<Commands>) -> Result<()> {
             std::process::exit(cli::say::run(args));
         }
         None => {
-            eprintln!("Usage: kesha-engine <command>");
-            eprintln!("Run --help for usage information");
-            std::process::exit(1);
+            events::error(
+                ErrorCode::InvalidArg,
+                "Usage: kesha-engine <command>\nRun --help for usage information",
+                None,
+            );
+            std::process::exit(2);
         }
     }
 
