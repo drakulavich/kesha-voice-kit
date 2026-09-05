@@ -160,7 +160,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     .filter((part): part is string => Boolean(part))
     .join("\n");
   if (events.invalid.length > 0) {
-    throw new SayError(`kesha-engine wrote a line that is not a protocol event: "${events.invalid[0]}"`, exitCode || 4, detail);
+    throw new SayError(`kesha-engine wrote a line that is not a protocol event: "${events.invalid[0]}"`, exitCode || 4, "");
   }
   throw new SayError(
     events.error?.message ?? (detail || `kesha-engine say exited ${exitCode}`),

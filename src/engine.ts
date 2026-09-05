@@ -159,16 +159,15 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   return { stdout: stdout.trim(), stderr, exitCode, error: events.error, invalid: events.invalid };
 }
 
+// No `stderr`: the raw transcript would win over the coded line in KeshaError.render() and hide the diagnosis.
+function invalidLineError(command: string, invalid: string[], exitCode?: number): KeshaError {
+  return new KeshaError("E_INTERNAL", `kesha-engine ${command} wrote a line that is not a protocol event: "${invalid[0]}"`, { exitCode });
+}
+
 /** The KeshaError for a run that failed, or wrote something that is not an event. */
 function engineFailure(args: string[], run: EngineRun): KeshaError {
+  if (run.invalid.length > 0) return invalidLineError(args[0] ?? "", run.invalid, run.exitCode);
   const extra = { exitCode: run.exitCode, stderr: run.stderr };
-  if (run.invalid.length > 0) {
-    return new KeshaError(
-      "E_INTERNAL",
-      `kesha-engine ${args[0]} wrote a line that is not a protocol event: "${run.invalid[0]}"`,
-      extra,
-    );
-  }
   if (run.error) return new KeshaError(run.error.code, run.error.message, { ...extra, hint: run.error.hint });
   return new KeshaError("E_INTERNAL", `kesha-engine ${args[0]} exited with code ${run.exitCode}`, extra);
 }
@@ -206,6 +205,7 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
       hint: "run `kesha install` to fetch the engine this CLI expects",
     });
   }
+  if (run.invalid.length > 0) throw invalidLineError("describe", run.invalid);
   const mismatch = protocolMismatch(doc, binPath);
   if (mismatch) throw mismatch;
   cachedDescribe = { binPath, mtime, doc };

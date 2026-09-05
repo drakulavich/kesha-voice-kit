@@ -571,6 +571,31 @@ describe("engine", () => {
       const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
       expect(err.code).toBe("E_INTERNAL");
       expect(err.message).toContain("Segmentation fault (core dumped)");
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine transcribe wrote a line that is not a protocol event: "Segmentation fault \(core dumped\)"/);
+    });
+  });
+
+  fakeEngineTest("a describe that also writes a non-event line is E_INTERNAL, never a cached document", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-babble-"));
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  echo "loading models..." >&2
+  printf '%s\\n' '${describeJson({ features: ["transcribe"] })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(path, 0o755);
+    await withEngineEnv(path, async () => {
+      const err = await failure(() => transcribeEngine("audio.wav"));
+      expect(err.code).toBe("E_INTERNAL");
+      expect(err.exitCode).toBeUndefined();
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine describe wrote a line that is not a protocol event: "loading models\.\.\."/);
+      expect(await getEngineCapabilities()).toBeNull();
     });
   });
 

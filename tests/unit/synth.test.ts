@@ -6,6 +6,7 @@ import { buildSayArgs, engineCrashMessage, say, SayError, type SayOptions } from
 import { validateArgv } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
 import { describeDocument, describeJson, saveEngineEnv } from "../helpers/fake-engine";
+import { errorMessage } from "../../src/error-utils";
 
 describe("SayOptions type contract", () => {
   const oggOpusOptions: SayOptions = {
@@ -143,6 +144,23 @@ describe("say on protocol 4", () => {
       expect(err!.hint).toBe("kesha say --list-voices");
       expect(err!.exitCode).toBe(1);
       expect(err!.stderr).toContain("error [E_VOICE_UNKNOWN]: no such voice: xx");
+    } finally {
+      restore();
+    }
+  });
+
+  posixIt("a non-event stderr line renders as E_INTERNAL, not as the raw line", async () => {
+    const engine = sayEngine(`  echo "loading voice pack..." >&2
+  printf 'RIFF'
+  exit 0`);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err).toBeInstanceOf(SayError);
+      expect(err!.code).toBe("E_INTERNAL");
+      expect(err!.exitCode).toBe(4);
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
     } finally {
       restore();
     }
