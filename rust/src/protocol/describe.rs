@@ -66,8 +66,6 @@ const fn row(command: &'static str, flag: &'static str, gate: Gate) -> GateRow {
 
 /// The only place a flag's feature gate is written down; `every_clap_flag_has_a_gate_row_and_vice_versa` keeps it equal to clap.
 pub fn gate_rows() -> Vec<GateRow> {
-    // A build without `tts` or `system_diarize` pushes no extra rows.
-    #[allow(unused_mut)]
     let mut rows = vec![
         row("transcribe", "json", Gate::None),
         GateRow {
@@ -137,21 +135,15 @@ pub fn gate_rows() -> Vec<GateRow> {
         row("install", "no-cache", Gate::None),
         row("install", "vad", Gate::None),
         row("install", "no-warmup", Gate::None),
-    ];
-    // `install --tts` / `--diarize` are `#[cfg]`-gated in clap, so an unconditional row would drift on a build without the feature.
-    #[cfg(feature = "tts")]
-    rows.push(GateRow {
-        values: Some("langs"),
-        ..row("install", "tts", Gate::One("tts"))
-    });
-    #[cfg(feature = "system_diarize")]
-    rows.push(row(
-        "install",
-        "diarize",
-        Gate::One(crate::transcribe::TRANSCRIBE_DIARIZE_FEATURE),
-    ));
-    #[cfg(feature = "tts")]
-    rows.extend([
+        GateRow {
+            values: Some("langs"),
+            ..row("install", "tts", Gate::One("tts"))
+        },
+        row(
+            "install",
+            "diarize",
+            Gate::One(crate::transcribe::TRANSCRIBE_DIARIZE_FEATURE),
+        ),
         row("say", "voice", Gate::One("tts")),
         row("say", "lang", Gate::One("tts")),
         row("say", "out", Gate::One("tts")),
@@ -178,7 +170,15 @@ pub fn gate_rows() -> Vec<GateRow> {
                 Gate::AnyOf(&["tts.ru_acronym_expansion", "tts.en_acronym_expansion"]),
             )
         },
-    ]);
+    ];
+    // clap only carries these flags on builds with the feature (`cli/install.rs`, `cli/say.rs`), and the parity test holds both ways.
+    const TTS_BUILD: bool = cfg!(feature = "tts");
+    const DIARIZE_BUILD: bool = cfg!(feature = "system_diarize");
+    rows.retain(|r| match (r.command, r.flag) {
+        ("say", _) | ("install", "tts") => TTS_BUILD,
+        ("install", "diarize") => DIARIZE_BUILD,
+        _ => true,
+    });
     rows
 }
 
