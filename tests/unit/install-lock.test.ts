@@ -203,9 +203,10 @@ describe("acquireInstallLock (#997)", () => {
     const binPath = stageBinPath("kesha-lock-timeout-");
     const release = await acquireInstallLock(binPath, 2_000);
     try {
-      await expect(acquireInstallLock(binPath, 200)).rejects.toThrow(
-        new RegExp(`E_INSTALL_RACE[\\s\\S]*held by pid ${process.pid}[\\s\\S]*\\.lock and re-run`),
-      );
+      await expect(acquireInstallLock(binPath, 200)).rejects.toMatchObject({
+        code: "E_INSTALL_RACE",
+        message: expect.stringMatching(new RegExp(`held by pid ${process.pid}[\\s\\S]*\\.lock and re-run`)),
+      });
     } finally {
       release();
     }
@@ -216,7 +217,7 @@ describe("acquireInstallLock (#997)", () => {
     const release = await acquireInstallLock(binPath, 2_000);
     const restoreEnv = withLockWaitSecs("1");
     try {
-      await expect(acquireInstallLock(binPath)).rejects.toThrow(/E_INSTALL_RACE/);
+      await expect(acquireInstallLock(binPath)).rejects.toMatchObject({ code: "E_INSTALL_RACE" });
     } finally {
       restoreEnv();
       release();
@@ -227,9 +228,10 @@ describe("acquireInstallLock (#997)", () => {
     const binPath = stageBinPath("kesha-lock-env-bad-");
     const restoreEnv = withLockWaitSecs("soon");
     try {
-      await expect(acquireInstallLock(binPath)).rejects.toThrow(
-        /E_INVALID_ARG[\s\S]*KESHA_INSTALL_LOCK_WAIT_SECS/,
-      );
+      await expect(acquireInstallLock(binPath)).rejects.toMatchObject({
+        code: "E_INVALID_ARG",
+        message: expect.stringContaining("KESHA_INSTALL_LOCK_WAIT_SECS"),
+      });
     } finally {
       restoreEnv();
     }

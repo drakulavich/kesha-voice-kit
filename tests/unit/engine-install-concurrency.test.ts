@@ -167,7 +167,7 @@ describe("concurrent kesha install (#997)", () => {
     stubReleases(`  printf '%s\\n' '1.0.0' > "$0.version"`);
     const claims = captureSuccessClaims(binPath);
 
-    await expect(installEngine({ version: VERSION_A })).rejects.toThrow(/E_INSTALL_RACE/);
+    await expect(installEngine({ version: VERSION_A })).rejects.toMatchObject({ code: "E_INSTALL_RACE" });
 
     expect(claims).toEqual([]);
   }, 30_000);
@@ -185,9 +185,10 @@ describe("concurrent kesha install (#997)", () => {
     );
     const claims = captureSuccessClaims(binPath);
 
-    await expect(installEngine({ version: VERSION_A })).rejects.toThrow(
-      new RegExp(`E_INSTALL_RACE.*reports v${VERSION_B.replace(/\./g, "\\.")}`, "s"),
-    );
+    await expect(installEngine({ version: VERSION_A })).rejects.toMatchObject({
+      code: "E_INSTALL_RACE",
+      message: expect.stringMatching(new RegExp(`reports v${VERSION_B.replace(/\./g, "\\.")}`, "s")),
+    });
 
     expect(claims).toEqual([]);
     expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);

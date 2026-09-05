@@ -112,7 +112,6 @@ describe("collectDoctorReport", () => {
     KESHA_STATS_DB: process.env.KESHA_STATS_DB,
     KESHA_LOG_DIR: process.env.KESHA_LOG_DIR,
     KESHA_DEBUG: process.env.KESHA_DEBUG,
-    KESHA_DEBUG_FD: process.env.KESHA_DEBUG_FD,
   };
 
   function restoreEnv() {
@@ -830,7 +829,6 @@ describe("createSupportBundle", () => {
     KESHA_MODEL_MIRROR: process.env.KESHA_MODEL_MIRROR,
     KESHA_STATS_DB: process.env.KESHA_STATS_DB,
     KESHA_DEBUG: process.env.KESHA_DEBUG,
-    KESHA_DEBUG_FD: process.env.KESHA_DEBUG_FD,
   };
 
   function restoreEnv() {

@@ -75,15 +75,7 @@ export class SayError extends KeshaError {
 /** Fault signals, by number. SIGBUS is 10 on darwin but 7 on linux. */
 const FAULT_SIGNALS: Record<number, string> = { 4: "SIGILL", 6: "SIGABRT", 8: "SIGFPE", 11: "SIGSEGV" };
 
-/**
- * Explain an engine death that produced no error of its own, or null when the
- * engine exited normally with a non-zero status. A signal kill leaves stderr
- * without an `error [CODE]:` line, so without this the caller only sees a bare
- * "exited 138".
- *
- * The wait status is the authority, not `signalCode`: Bun names signal 10
- * SIGUSR1 (its linux value) even on darwin, where it is SIGBUS.
- */
+/** Explains a signal death, which leaves no error event; the wait status outranks Bun's signalCode (10 is SIGBUS on darwin, SIGUSR1 to Bun). */
 export function engineCrashMessage(
   exitCode: number,
   signalCode: string | null,

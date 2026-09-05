@@ -102,7 +102,13 @@ if (args[0] === "detect-text-lang") {
 
 if (args[0] === "transcribe") {
   if (process.env.KESHA_FAKE_TRANSCRIBE_ERROR) {
-    console.error(process.env.KESHA_FAKE_TRANSCRIBE_ERROR);
+    const raw = process.env.KESHA_FAKE_TRANSCRIBE_ERROR;
+    const coded = raw.match(/^error \\[([A-Z0-9_]+)\\]: ([\\s\\S]*)$/);
+    console.error(JSON.stringify({
+      kind: "error",
+      code: coded ? coded[1] : "E_TRANSCRIBE_FAILED",
+      message: coded ? coded[2] : raw,
+    }));
     process.exit(42);
   }
   const text = args.includes("--no-vad") ? "Привет без VAD" : "Привет с воркшопа";
@@ -813,7 +819,7 @@ describe("CLI contracts", () => {
       exitCode: 1,
       stdoutNotContains: ["Transcribing"],
       stderrContains: [
-        `${mediaPath}: speaker diarization failed`,
+        `${mediaPath}: error [E_TRANSCRIBE_FAILED]: speaker diarization failed`,
         "kesha-diarize timed out after 600s for 12894s audio",
       ],
     });
@@ -823,7 +829,7 @@ describe("CLI contracts", () => {
       {
         file: mediaPath,
         code: "E_TRANSCRIBE_FAILED",
-        message: diarizeError,
+        message: `error [E_TRANSCRIBE_FAILED]: ${diarizeError}`,
       },
     ]);
   });
