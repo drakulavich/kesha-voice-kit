@@ -38,6 +38,23 @@ fn describe_prints_one_json_object_and_nothing_on_stderr() {
 }
 
 #[test]
+fn legacy_error_codes_flag_still_answers_during_the_window() {
+    let out = Command::new(common::engine_bin())
+        .arg("--error-codes-json")
+        .output()
+        .expect("spawn");
+    assert_eq!(out.status.code(), Some(0));
+    assert!(
+        out.stderr.is_empty(),
+        "stderr must be empty: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let codes: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(!codes.is_empty(), "the code registry must not be empty");
+    assert!(codes.iter().any(|e| e["code"] == "E_INVALID_ARG"));
+}
+
+#[test]
 fn legacy_capabilities_flag_still_answers_during_the_window() {
     let out = Command::new(common::engine_bin())
         .arg("--capabilities-json")

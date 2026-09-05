@@ -138,8 +138,7 @@ pub fn gate_rows() -> Vec<GateRow> {
         row("install", "vad", Gate::None),
         row("install", "no-warmup", Gate::None),
     ];
-    // `install --tts` and `--diarize` are themselves `#[cfg]`-gated in clap, so an
-    // unconditional row would drift from clap on a build without the feature.
+    // `install --tts` / `--diarize` are `#[cfg]`-gated in clap, so an unconditional row would drift on a build without the feature.
     #[cfg(feature = "tts")]
     rows.push(GateRow {
         values: Some("langs"),

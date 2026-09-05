@@ -28,6 +28,10 @@ fn v4_mode_reports_a_missing_input_as_one_error_event() {
         .output()
         .expect("spawn engine");
     assert_eq!(out.status.code(), Some(1));
+    assert!(
+        out.stdout.is_empty(),
+        "protocol-v4 D1: stdout carries only the payload"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     let lines: Vec<&str> = stderr.lines().collect();
     assert_eq!(lines.len(), 1, "exactly one event, got: {stderr}");

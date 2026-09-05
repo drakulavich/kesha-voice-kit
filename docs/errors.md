@@ -39,13 +39,14 @@ code never needs sanitizing.
 
 ## Where codes come from
 
-- **Engine codes** (everything except `E_ENGINE_SPAWN` and `E_INSTALL_RACE`) are defined in the Rust
+- **Engine codes** (everything except `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE`) are defined in the Rust
   engine and emitted on its stderr as `error [CODE]: …`. List them with
   `kesha-engine --error-codes-json`.
-- **`E_ENGINE_SPAWN`** and **`E_INSTALL_RACE`** originate only in the TypeScript
-  CLI — the failure to spawn the engine subprocess at all, and an install that
-  lost the cache to another one, whether by being overwritten before it could
-  report success or by giving up waiting for the lock.
+- **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`** and **`E_INSTALL_RACE`** originate
+  only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
+  an installed engine whose protocol version the CLI does not speak, and an
+  install that lost the cache to another one, whether by being overwritten before
+  it could report success or by giving up waiting for the lock.
 - **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
   engine and the TypeScript CLI: the CLI validates arguments, checks input
   existence up front and refuses a cache path it cannot write the engine into,
