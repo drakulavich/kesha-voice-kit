@@ -955,7 +955,7 @@ dependencies = [
 
 [[package]]
 name = "kesha-engine"
-version = "1.24.11"
+version = "1.25.0-beta.1"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
