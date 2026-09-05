@@ -29,18 +29,26 @@ const ALLOWED: &[(&str, &str)] = &[
 
 const PATTERNS: &[&str] = &["eprintln!", "eprint!(", "io::stderr()"];
 
-/// Split at the first `#[cfg(test)] mod`: the attribute on a single item would otherwise un-scan everything after it.
+/// Split at the first `#[cfg(test)] mod` or `#[cfg(all(test, …))] mod`: the attribute on a single item would otherwise un-scan everything after it.
 fn non_test_prefix(text: &str) -> &str {
-    const ATTR: &str = "#[cfg(test)]";
+    const MARKERS: [&str; 2] = ["#[cfg(test)]", "#[cfg(all(test,"];
     let mut from = 0;
-    while let Some(idx) = text[from..].find(ATTR) {
-        let at = from + idx;
-        if text[at + ATTR.len()..].trim_start().starts_with("mod ") {
+    loop {
+        let Some((at, marker)) = MARKERS
+            .iter()
+            .filter_map(|m| text[from..].find(m).map(|i| (from + i, *m)))
+            .min_by_key(|(i, _)| *i)
+        else {
+            return text;
+        };
+        let Some(close) = text[at..].find(']') else {
+            return text;
+        };
+        if text[at + close + 1..].trim_start().starts_with("mod ") {
             return &text[..at];
         }
-        from = at + ATTR.len();
+        from = at + marker.len();
     }
-    text
 }
 
 /// Windows keeps `\` in the stripped path, so ALLOWED's forward-slash keys would never match.
@@ -98,6 +106,12 @@ fn no_raw_stderr_writes_outside_the_emitter() {
 fn the_split_ignores_a_cfg_test_attribute_on_a_single_item() {
     let text =
         "#[cfg(test)]\nfn helper() {}\neprintln!();\n#[cfg(test)]\nmod tests {\n eprintln!();\n}";
+    assert_eq!(non_test_prefix(text).matches("eprintln!").count(), 1);
+}
+
+#[test]
+fn the_split_also_stops_at_a_feature_gated_test_module() {
+    let text = "eprintln!();\n#[cfg(all(test, feature = \"x\"))]\nmod gated {\n eprintln!();\n}\n#[cfg(test)]\nmod tests {}";
     assert_eq!(non_test_prefix(text).matches("eprintln!").count(), 1);
 }
 

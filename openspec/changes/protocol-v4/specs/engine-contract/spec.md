@@ -2,7 +2,7 @@
 
 ### Requirement: `kesha-engine describe` publishes the protocol schema
 
-Running `kesha-engine describe` SHALL print a single JSON object to stdout and exit 0, and that describe document SHALL be the only place the CLI learns what the Engine accepts. It SHALL carry `protocolVersion` (the integer 4), `backend`, `profile`, `commands` (each subcommand with each accepted flag and the feature that gates it), `features`, `errors` (every Error code with title, category, retryability and origin) and, on builds that synthesize speech, `tts.languages`.
+Running `kesha-engine describe` SHALL print a single JSON object to stdout and exit 0, and that describe document SHALL be the only place the CLI learns what the Engine accepts. It SHALL carry `protocolVersion` (the integer 4), `backend`, `profile`, `commands` (each subcommand with each accepted flag and the feature that gates it), `features`, `errors` (every Error code with title, category, retryability and origin), `warnings` (every Warning code with title) and, on builds that synthesize speech, `tts.languages`.
 
 The `errors` section SHALL mark exactly `E_MODEL_DOWNLOAD`, `E_DIARIZE_TIMEOUT` and `E_INSTALL_RACE` as retryable.
 

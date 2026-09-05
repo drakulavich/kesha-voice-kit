@@ -23,16 +23,24 @@ fn collect_codes(text: &str, out: &mut BTreeSet<String>) {
 
 /// A code named only inside a `#[cfg(test)]` module is not a call site, so the split keeps it from publishing itself.
 fn non_test_prefix(text: &str) -> &str {
-    const ATTR: &str = "#[cfg(test)]";
+    const MARKERS: [&str; 2] = ["#[cfg(test)]", "#[cfg(all(test,"];
     let mut from = 0;
-    while let Some(idx) = text[from..].find(ATTR) {
-        let at = from + idx;
-        if text[at + ATTR.len()..].trim_start().starts_with("mod ") {
+    loop {
+        let Some((at, marker)) = MARKERS
+            .iter()
+            .filter_map(|m| text[from..].find(m).map(|i| (from + i, *m)))
+            .min_by_key(|(i, _)| *i)
+        else {
+            return text;
+        };
+        let Some(close) = text[at..].find(']') else {
+            return text;
+        };
+        if text[at + close + 1..].trim_start().starts_with("mod ") {
             return &text[..at];
         }
-        from = at + ATTR.len();
+        from = at + marker.len();
     }
-    text
 }
 
 fn walk(dir: &Path, skip: &Path, out: &mut BTreeSet<String>) {
@@ -57,6 +65,12 @@ fn every_call_site_code_is_published_and_every_published_code_is_used() {
         used, published,
         "the warning taxonomy drifted from its call sites"
     );
+}
+
+#[test]
+fn the_split_also_stops_at_a_feature_gated_test_module() {
+    let text = "events::W_GENERIC;\n#[cfg(all(test, feature = \"x\"))]\nmod gated {\n W_PHANTOM\n}\n#[cfg(test)]\nmod tests {}";
+    assert!(!non_test_prefix(text).contains("W_PHANTOM"));
 }
 
 #[test]
