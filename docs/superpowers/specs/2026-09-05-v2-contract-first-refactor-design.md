@@ -12,7 +12,7 @@ Measured on `main` at `b86313f` (2026-09-05). Commands to reproduce are in the a
 |---|---|---|
 | Rust engine | ~28k lines, ~9k of them inline `#[cfg(test)]` | 405 `cfg` attributes over 20 distinct predicates; 7 cargo features, of which the release matrix ships exactly 2 combinations and dev/CI lanes exercise 4 more |
 | TS CLI | ~10.5k lines in 66 files | `cli/main.ts` 645 lines; the install/engine cluster is 10 files and ~2.5k lines; `engine.ts` has 19 importers |
-| CI + scripts | 23 workflows (4.3k lines), 60 scripts in `.github/scripts` across `.ts`, `.mjs` + 12 `.d.mts`, `.sh`, `.py` (5.3k lines) | `ci.yml` 51 commits, `rust-test.yml` 45, `check-workflows.ts` 28 in the last 90 days; its test file is the single hottest file in the repo |
+| CI + scripts | 23 workflows (4.3k lines), 62 scripts in `.github/scripts` across `.ts`, `.mjs` + 12 `.d.mts`, `.sh`, `.py` (5.3k lines) | `ci.yml` 51 commits, `rust-test.yml` 45, `check-workflows.ts` 28 in the last 90 days; its test file is the single hottest file in the repo |
 | Tests | 26k lines; 104 TS test files for 66 source files | `tests/unit` is the top churn module |
 | Docs and process | `CLAUDE.md` 231 lines / 19 rule sections; 10 skills (1.6k lines); openspec specs; decision log; runbooks | seven documents restate the nextest/preflight procedure |
 
@@ -45,7 +45,7 @@ v4:
 - **`kesha-engine describe`** replaces `--capabilities-json` and `--error-codes-json` with one document: `protocolVersion: 4`, `backend`, `profile` (see C2), every subcommand with its accepted flags and their gates, the error-code taxonomy with category and retryability, TTS languages and engines. The CLI validates argv against this schema with one generic function before spawning; the hand-written `preflight*` / `assert*Supported` family and the "do not blindly forward flags" rule become code.
 - **Protocol version is a gate.** A `describe` that reports a version other than 4 is an actionable error naming `kesha install`, never a silent success.
 - **`say --stdin-loop`** keeps its stdin framing; its status lines move to the NDJSON stream so no v3 island remains.
-- One error class on the TS side, `KeshaError { code, hint }`, for engine-reported and CLI-native failures alike; CLI-native codes (`E_ENGINE_SPAWN`, `E_INPUT_NOT_FOUND`, `E_INVALID_ARG`) join the taxonomy the engine publishes, so the drift test disappears.
+- One error class on the TS side, `KeshaError { code, hint, exitCode, stderr }`, for engine-reported and CLI-native failures alike; `exitCode` and `stderr` are what `SayError` carries today and callers keep branching on them. CLI-native codes (`E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL`, `E_INPUT_NOT_FOUND`, `E_INVALID_ARG`) join the taxonomy the engine publishes with an `origin` field, so the drift test disappears.
 
 Recommended, to decide in stage 0: derive the flag list in `describe` from clap at runtime (`CommandFactory::command()`), keep the gates in a table beside it, and test that the two sets match, so a new flag cannot be forgotten in the schema.
 
@@ -53,7 +53,7 @@ Recommended, to decide in stage 0: derive the flag list in `describe` from clap 
 
 `build-engine.yml` ships exactly two feature sets: darwin with `coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang`, everything else with `onnx,tts`. Four more combinations are built or tested outside the release matrix and must keep working: `coreml` alone (the fast CoreML compile check, `justfile:137`), `coreml,system_diarize` (the diarize regression lane, `rust-test.yml:533`), `coreml,tts,system_tts` (the dev recipe in `CONTRIBUTING.md:99`), and `onnx,tts,system_tts` (Nix on darwin-arm64: `fluidaudio-rs` clones a SwiftPM dependency at build time, which the offline Nix sandbox cannot do, `flake.nix:47-60`).
 
-v2: two cargo **profile features** that are bundles over the granular ones — `portable = ["onnx", "tts"]` (default; builds anywhere, including a Mac without Xcode) and `darwin = ["coreml", "tts", "system_tts", "system_kokoro", "system_diarize", "system_text_lang"]`. The granular features stay as implementation and for the four facets above; every release row, doc and `CLAUDE.md` rule speaks in profiles, and the release-row invariant becomes a test: each `build-engine.yml` row names exactly one profile. The 20 distinct `cfg` predicates collapse into named aliases emitted by `build.rs` (`darwin_native`, `portable`), consumed from one `platform.rs`; `system_tts` keeps its own alias because Nix combines it with `portable`. `diarize.rs` stops being invisible to the standard Mac verify set because `darwin` is the profile that set builds.
+v2: two cargo **profile features** that are bundles over the granular ones — `portable = ["onnx", "tts"]` (default; builds anywhere, including a Mac without Xcode) and `darwin = ["coreml", "tts", "system_tts", "system_kokoro", "system_diarize", "system_text_lang"]`. The granular features stay as implementation and for the four facets above; every release row, doc and `CLAUDE.md` rule speaks in profiles, and the release-row invariant becomes a test: each release workflow build row names exactly one profile. The 20 distinct `cfg` predicates collapse into named aliases emitted by `build.rs` (`darwin_native`, `portable`), consumed from one `platform.rs`; `system_tts` keeps its own alias because Nix combines it with `portable`. `diarize.rs` stops being invisible to the standard Mac verify set because `darwin` is the profile that set builds.
 
 ### C3. Public API `/core`, version 2
 
@@ -61,11 +61,11 @@ Remove `downloadCoreML`, `transcribeWithSegments` (alias) and `downloadModel` (w
 
 ### C4. One version, one tag
 
-CLI and engine share `package.json#version`; `rust/Cargo.toml` mirrors it and `bun run check:versions` keeps them equal. A single `vX.Y.Z` tag builds the three engine binaries and sidecars, smoke-tests them, publishes the GitHub release, publishes npm with provenance pinned to the same version, and updates the tap, deb/rpm, Docker and the Nix version file. Both pre-release channels stay: `-alpha.N` (auto-published, pruned after 30 days by `prune-alpha-releases`) and `-beta.N` (draft, un-drafted by hand, never pruned, and the only pre-release `check:versions` accepts as a pin). The beta channel is the carrier for the migration (section 4). The `-cli` marker and the post-release pin bump are removed; stable binary validation moves into the release workflow, before publication, using the just-built assets.
+CLI and engine share `package.json#version`; `rust/Cargo.toml` mirrors it and `bun run check:versions` keeps them equal. A single `vX.Y.Z` tag builds the three engine binaries and sidecars, smoke-tests them, publishes the GitHub release at once with nothing left as a draft, publishes npm with provenance pinned to the same version, and updates the tap, deb/rpm, Docker and the Nix version file. Both pre-release channels stay: `-alpha.N` (published per qualifying merge as a CLI-only release that builds no engine, or dispatched by a person to publish engine and CLI together at one version; pruned after 30 days by `prune-alpha-releases`) and `-beta.N` (today: draft, un-drafted by hand, never pruned, the only pre-release `check:versions` accepts as a pin — which is why it carries the migration in stages 1–3; under `release.yml`: a published pre-release built and smoked in one run). The beta channel is the carrier for the migration (section 4). The `-cli` marker and the post-release pin bump are removed; stable binary validation moves into the release workflow, before publication, using the just-built assets.
 
-The Engine pin is derived at publish time, never committed: a stable CLI resolves the Engine of its own version, a beta resolves the Engine beta of its own version, and a per-merge CLI alpha resolves the newest stable Engine unless the dispatcher names an Engine pre-release. `package.json#keshaEngine.version` is removed and `check:versions` refuses any pin field on `main`. This is what keeps "Engine alphas are published deliberately" (`openspec/specs/release-channels/spec.md:132`) true under one version: a CLI alpha must not cost an Engine build.
+The Engine pin is derived at publish time, never committed: a stable CLI resolves the Engine of its own version; a beta resolves the Engine beta of its own version; a per-merge CLI alpha resolves the newest stable Engine and builds none; a dispatched alpha resolves the Engine built in the same run, or an Engine pre-release the dispatcher names. `package.json#keshaEngine.version` is removed and `check:versions` refuses any pin field on `main`. This is what keeps "Engine alphas are published deliberately" (`openspec/specs/release-channels/spec.md:132`) true under one version: a per-merge CLI alpha must not cost an Engine build, while a dispatched one is exactly the deliberate Engine alpha that requirement asks for.
 
-Orchestration is explicit. A release created with `GITHUB_TOKEN` fires no `release: published` event, and today npm (`npm-publish.yml:18`), the tap (`homebrew-tap.yml:3`) and the post-release job (`post-engine-release.yml:3`) all hang off that event, which is why `dispatch-npm-publish.sh` already dispatches npm by hand. `release.yml` therefore calls npm, tap, deb/rpm, Docker and the Nix version bump as jobs (`workflow_call`), in dependency order, after the assets exist; `linux-packages.yml`, which keys on the `-cli` marker today, and `docker.yml`, which excludes alpha tags, fold into it. The cost: a CLI-only release takes ~9 minutes instead of ~2 and re-uploads ~190 MB.
+Orchestration is explicit. A release created with `GITHUB_TOKEN` fires no `release: published` event, and today npm (`npm-publish.yml:18`), the tap (`homebrew-tap.yml:3`) and the post-release job (`post-engine-release.yml:3`) all hang off that event, which is why `dispatch-npm-publish.sh` already dispatches npm by hand. `release.yml` therefore runs npm, tap, deb/rpm, Docker and the Nix version bump as jobs of the same file, in dependency order, after the assets exist, sharing steps through composite actions under `.github/actions/` rather than reusable workflows (a `workflow_call` target is its own file, which would break the four-file count); `linux-packages.yml`, which keys on the `-cli` marker today, and `docker.yml`, which excludes alpha tags, fold into it. The cost: a CLI-only release takes ~9 minutes instead of ~2 and re-uploads ~190 MB.
 
 ### C5. Four workflows
 
@@ -74,7 +74,7 @@ Orchestration is explicit. A release created with `GITHUB_TOKEN` fires no `relea
 - `release.yml` — C4.
 - `security.yml` — unchanged.
 
-`actionlint` is added and takes over pinned actions, shell selection, timeouts and syntax; `check-workflows.ts` keeps only repo-specific invariants (packaging job ordering, pact coverage of every target, cache writers for restore-only caches). Scripts move to one language, TypeScript under bun; the `.mjs` files exist only because release jobs run them with `node`, and the twelve `.d.mts` sidecars exist only for them.
+`actionlint` is added for workflow syntax, expression typing and shellcheck of `run:` blocks — policies it does not enforce stay in `check-workflows.ts`: pinned action SHAs, mandatory job timeouts, `shell: bash` on Windows runners, pipefail-capable shells. `check-workflows.ts` therefore keeps those four policy rules plus the repository-specific invariants (packaging job ordering, pact coverage of every target, cache writers for restore-only caches, the profile-row assertion from `build-profiles`) and loses only what `actionlint` genuinely covers. Scripts move to one language, TypeScript under bun; the `.mjs` files exist only because release jobs run them with `node`, and the twelve `.d.mts` sidecars exist only for them.
 
 ## 4. Delivery without a long-lived branch
 
@@ -82,7 +82,7 @@ Contract-first means spec and pact tests before code, not one branch for everyth
 
 | Stage | Content | PRs | Ends with |
 |---|---|---|---|
-| 0 | Four openspec changes: `protocol-v4` (C1), `build-profiles` (C2), `core-api-v2` (C3), `unified-release` (C4+C5), each with delta specs to `engine-contract`, `programmatic-api`, `cli-distribution`, `installation`, written to the openspec rules (`SHALL` on the first line, personas, one error scenario per requirement, `file:line` technical notes, Open Issues for anything unresolved). The v4 pact tests are drafted here but land with the first stage-1 PR, so `main` never carries a red or skipped test. | 1–2 | four proposals validated by `bun run check:specs` |
+| 0 | Four openspec changes: `protocol-v4` (C1), `build-profiles` (C2), `core-api-v2` (C3), `unified-release` (C4+C5), each with delta specs to `engine-contract`, `programmatic-api`, `cli-distribution`, `installation`, `release-channels`, `diagnostics` and `tts-synthesis`, written to the openspec rules (`SHALL` on the first line, personas, one error scenario per requirement, `file:line` technical notes, Open Issues for anything unresolved). The v4 pact tests are drafted here but land with the first stage-1 PR, so `main` never carries a red or skipped test. | 1–2 | four proposals validated by `bun run check:specs` |
 | 1 | Engine speaks v4: `describe`, NDJSON stderr, `protocolVersion: 4`, `stdin-loop` status on the stream. The old flags and the 84 `eprintln!` calls across 21 files are deleted in the same PRs that replace them, together with the direct consumers: pact recorder and fixtures, release install smoke, the Rust stderr-reading tests, `docs/errors.md`. | 4–5 | tag `v1.25.0-beta.1`, un-drafted by hand |
 | 2 | CLI moves to v4. First PR: beta pin, generic argv validation from `describe`, NDJSON renderer, `KeshaError`; deletes `preflight*`, `assert*Supported`, `isProgressLine`, the stderr regex, `TS_NATIVE_CODES`, the drift test, `KESHA_DEBUG_FD` forwarding. Then one PR each for `transcribe`, `say`, `install`, `record`, MCP. | 5–6 | `integration-tests-full` green on the beta pin |
 | 3 | Build profiles (C2), in parallel with 1–2: `Cargo.toml`, cfg aliases via `build.rs`, `platform.rs`, `build-engine.yml` matrix, `rust-test.yml`, `justfile`. Lands before `describe` so the schema reports `profile`. | 2–3 | both profiles green in CI |
@@ -107,7 +107,7 @@ src/
   engine/         everything that talks to the subprocess (today engine.ts 697 + synth.ts 231 + parts of transcribe.ts)
     spawn.ts        Bun.spawn, process tree, abort
     describe.ts     v4 schema cache + the one generic argv validation
-    events.ts       NDJSON stderr -> progress/warn/error/debug; KeshaError { code, hint }
+    events.ts       NDJSON stderr -> progress/warn/error/debug; KeshaError { code, hint, exitCode, stderr }
     transcribe.ts   say.ts   record.ts   lang.ts
   install/        plan -> execute -> verify (today 10 files, ~2.5k lines, three defect magnets)
     components.ts   Component model: engine, asr, tts-pack, vad, diarize, sidecar
@@ -151,7 +151,7 @@ What it buys on the goal metric, measured on the last flag added to transcribe (
 
 ## 6. Tests, gates, coverage
 
-**Contract tests are the spine.** Stage 0 rewrites the pact tests to v4 and leaves them red: Rust `transcribe_schema_pact`, `error_codes_cli`, `public_api_paths`; TS `capabilities-pact`, `transcribe-schema-pact`, `error-codes-cli`, `cli-contracts`. Three are added: `describe-schema-pact` (the TS parser against the Rust emitter on one shared JSON fixture), `protocol-events` (NDJSON line shape, including CRLF normalisation for Windows), and the protocol-version gate (a stub answering `protocolVersion: 3` must produce an actionable error, not run). `tests/helpers/fake-engine.ts` becomes the single stub: answers `describe`, writes NDJSON.
+**Contract tests are the spine.** Stage 0 drafts the v4 pact tests and they land with the first stage-1 PR (section 4), so `main` never carries a red or skipped test: Rust `transcribe_schema_pact`, `error_codes_cli`, `public_api_paths`; TS `capabilities-pact`, `transcribe-schema-pact`, `error-codes-cli`, `cli-contracts`. Three are added: `describe-schema-pact` (the TS parser against the Rust emitter on one shared JSON fixture), `protocol-events` (NDJSON line shape, including CRLF normalisation for Windows), and the protocol-version gate (a stub answering `protocolVersion: 3` must produce an actionable error, not run). `tests/helpers/fake-engine.ts` becomes the single stub: answers `describe`, writes NDJSON.
 
 **Unit tests follow the structure.** `tests/unit/` mirrors the `src/` directories. The install cluster's 17 files (3.1k lines) consolidate into four by contract (`components`, `plan`, `execute`, `health`); `engine.test.ts` (909 lines) splits with `engine/`. Tests of `preflight*`, argv order and `TS_NATIVE_CODES` are deleted; schema validation gets one property test, "any flag outside the schema is rejected before spawn". Release-shaped tests (~2.2k lines) leave with their scripts; the new `release.yml` keeps one tag-grammar test. Rust: inline test modules over 300 lines move to a sibling `tests.rs` as a pure move; e2e suites and model gates are untouched.
 
@@ -174,7 +174,7 @@ Measured at the end of stage 5, baseline from section 1.
 |---|---|---|
 | Hand-edited runtime source files for a new transcribe flag (measured on `--itn`, #756) | 9 + a `CLAUDE.md` rule | 5 |
 | `CLAUDE.md` | 231 lines, 19 rules | ≤130, ≤11 |
-| Workflows / scripts | 23 / 60 in four languages | 4 / ≤25 in TypeScript (+ sh where unavoidable) |
+| Workflows / scripts | 23 / 62 in four languages | 4 / ≤25 in TypeScript (+ sh where unavoidable) |
 | Commits into CI plumbing per 90 days | 124 | <30 at the next measurement |
 | Files in `src/`, largest file | 66, 1205 lines | ~45, ≤400 (except `stats.ts`) |
 | Distinct `cfg` predicates in Rust | 20 | ≤6 |
@@ -197,8 +197,8 @@ Rewriting the ONNX backend (worst health score, but stable churn and three fixes
 
 ## 11. Open issues, with recommendations
 
-1. **`describe` schema source.** Recommended: flags derived from clap at runtime, gates in a table beside them, a test that the sets match. Decide in stage 0.
-2. **`KESHA_DEBUG_FD`.** C1 folds it into `kind: "debug"` on the NDJSON stream and deletes the fd forwarding. Confirm in stage 0 that `doctor.ts` and the support bundle need nothing the stream cannot carry.
+1. **`describe` schema source.** Recommended: flags derived from clap at runtime, gates in a table beside them, a test that the sets match. Decided in stage 0 and recorded in `openspec/changes/protocol-v4/design.md` D2.
+2. **`KESHA_DEBUG_FD`.** C1 folds it into `kind: "debug"` on the NDJSON stream and deletes the fd forwarding. Confirmed in stage 0 (`openspec/changes/protocol-v4/design.md` D1): `doctor.ts` drops it from its env list (`src/doctor.ts:37`) and the support bundle already reads the diagnostic log, where `debug` events land, so nothing else changes.
 
 ## Review log
 
