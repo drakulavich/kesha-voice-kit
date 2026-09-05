@@ -1,14 +1,14 @@
 ## 1. Version
 
 - [ ] 1.1 Remove `package.json#keshaEngine.version`; `check:versions` asserts `package.json#version == Cargo.toml version` and that no pin field exists
-- [ ] 1.2 `src/install/execute.ts` resolves the Engine from `package.json#kesha.engine` injected at publish, falling back to `version`
+- [ ] 1.2 `src/package-info.ts:6` (today; `src/install/execute.ts` after stage 5) resolves the Engine from `package.json#kesha.engine` injected at publish, falling back to `version`
 
 ## 2. `release.yml`
 
-- [ ] 2.1 Skeleton: `classify` → `build-engine` (two profile rows) → `smoke` on artifacts → `github-release`
-- [ ] 2.2 `npm` job via `workflow_call` with provenance; beta skipped
-- [ ] 2.3 `packages`, `homebrew`, `docker`, `nix-version` jobs with `needs:`
-- [ ] 2.4 Alpha derivation jobs moved in from `release-alpha.yml`
+- [ ] 2.1 Skeleton: `classify` → `build-engine` (two profile rows) → `smoke` on artifacts → `github-release`, which publishes at once and drafts nothing
+- [ ] 2.2 `npm` job publishing with provenance through the `setup-bun` composite action; dist-tag `latest`/`beta`/`alpha` per channel; no `workflow_call`
+- [ ] 2.3 `packages`, `homebrew`, `docker`, `nix-version` jobs with `needs: github-release`, stable only
+- [ ] 2.4 Alpha derivation jobs moved in from `release-alpha.yml`; the `cli-alpha` path skips every Engine-building job and records its tag without triggering a run
 
 ## 3. Deletions, one PR each
 
@@ -17,6 +17,6 @@
 ## 4. `nightly.yml`, lint, docs
 
 - [ ] 4.1 `nightly.yml` with the six canary jobs
-- [ ] 4.2 `actionlint` in `ci.yml`; cut `check-workflows.ts` to the four repository-specific rules
+- [ ] 4.2 `actionlint` in `ci.yml`; cut `check-workflows.ts` to the four policy rules (pins, timeouts, Windows bash, pipefail) plus the four repository-specific rules
 - [ ] 4.3 `docs/distribution.md` from the four distribution docs; one `release` skill; CLAUDE.md Releases section to one paragraph
 - [ ] 4.4 Tag `v2.0.0`

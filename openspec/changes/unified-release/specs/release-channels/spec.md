@@ -2,7 +2,7 @@
 
 ### Requirement: The CLI's Engine is resolved at publish time, never committed
 
-A published CLI SHALL name the Engine it resolves, and that name SHALL be derived when the CLI is published rather than stored in the default branch: a stable CLI resolves the Engine of its own version, a beta resolves the Engine beta of its own version, and an alpha resolves the newest stable Engine unless the person dispatching it names an Engine Prerelease.
+A published CLI SHALL name the Engine it resolves, and that name SHALL be derived when the CLI is published rather than stored in the default branch: a stable CLI resolves the Engine of its own version, a beta resolves the Engine beta of its own version, a per-merge alpha resolves the newest stable Engine and builds none, and a dispatched alpha resolves the Engine built in the same run unless the person dispatching it names an Engine Prerelease.
 
 #### Scenario: A CLI alpha after a docs-only Engine period
 
@@ -17,13 +17,15 @@ A published CLI SHALL name the Engine it resolves, and that name SHALL be derive
 - WHEN `check:versions` runs
 - THEN it fails naming the field and this requirement
 
-> *Technical Note — Replaces `package.json#keshaEngine.version` and rule 3 at `.github/scripts/check-versions.ts:82-91`; injection at publish reuses the alpha version injection in `npm-publish.yml:104-106`.*
+> *Technical Note — Replaces `package.json#keshaEngine.version` (read at `src/package-info.ts:5-6`, turned into an asset URL at `src/engine-install.ts:187` and `:447`) and rule 3 at `.github/scripts/check-versions.ts:82-91`; injection at publish reuses the alpha version injection in `npm-publish.yml:104-106`.*
 
 ## MODIFIED Requirements
 
 ### Requirement: A tag names exactly one artifact and one channel
 
 Every release tag SHALL name one version of both artifacts and one Channel by its shape alone: `vX.Y.Z` is stable, `vX.Y.Z-alpha.N` is alpha, `vX.Y.Z-beta.N` is beta, and no other shape SHALL start any release work. A pipeline SHALL decide what to do with a tag without inspecting the commit it points at.
+
+An alpha tag SHALL be a record rather than a trigger: the alpha jobs write it after they publish, and pushing it SHALL start no run, so a published alpha version can never be published twice.
 
 #### Scenario: A stable tag publishes both artifacts
 
@@ -37,11 +39,18 @@ Every release tag SHALL name one version of both artifacts and one Channel by it
 - WHEN the release workflow classifies it
 - THEN it fails before building, naming the accepted shapes
 
-> *Technical Note — Grammar today at `.github/scripts/release-tags.mjs:11-39`; the `-cli` arm is deleted.*
+#### Scenario: A recorded alpha tag starts nothing
+
+- GIVEN the alpha jobs record `v2.2.0-alpha.3` after publishing it
+- WHEN that tag reaches the remote
+- THEN no release run starts from it
+- AND the published `2.2.0-alpha.3` is not republished
+
+> *Technical Note — Grammar today at `.github/scripts/release-tags.mjs:11-39`; the `-cli` arm is deleted. The tag trigger filter excludes `v*-alpha.*` so a recorded tag cannot re-enter the workflow.*
 
 ### Requirement: CLI alphas publish on every merge that changes the CLI
 
-Every push to the default branch that changes CLI sources SHALL produce a published CLI alpha without further human action, resolving its Engine as the previous requirement states; a merge that changes nothing a user could run SHALL NOT produce an alpha. Publishing SHALL remain a pipeline action performed with provenance, never from a workstation.
+Every push to the default branch that changes CLI sources SHALL produce a published CLI alpha without further human action, resolving its Engine as the previous requirement states and building no Engine; a merge that changes nothing Ira could run SHALL NOT produce an alpha. Publishing SHALL remain a pipeline action performed with provenance, never from a workstation.
 
 #### Scenario: A merge to the default branch produces an alpha
 
@@ -49,6 +58,7 @@ Every push to the default branch that changes CLI sources SHALL produce a publis
 - WHEN the release workflow's alpha jobs run
 - THEN a CLI alpha is published on the alpha Channel resolving the newest stable Engine
 - AND its release notes list the commits since the previous alpha
+- AND the Engine-building jobs were skipped
 
 #### Scenario: A docs-only merge publishes nothing
 
@@ -57,11 +67,45 @@ Every push to the default branch that changes CLI sources SHALL produce a publis
 - THEN no alpha is published
 - AND the run records that it deliberately skipped
 
-> *Technical Note — `derive-alpha-version.ts` and `alpha-publishable.ts` move under `release.yml`; behaviour is unchanged except the Engine resolution.*
+> *Technical Note — `derive-alpha-version.ts` and `alpha-publishable.ts` move under `release.yml`; behaviour is unchanged except the Engine resolution and the `if: needs.classify.outputs.path != 'cli-alpha'` guard that skips `build-engine`, `smoke`, `packages`, `homebrew`, `docker` and `nix-version`.*
+
+### Requirement: Engine alphas are published deliberately, not per merge
+
+An Engine alpha SHALL be published only when a person dispatches one, and that dispatch SHALL publish the CLI at the same version in the same run, so neither artifact is consumable without the other. Engine alphas SHALL be Prereleases and SHALL be immediately consumable — an Engine alpha that requires a manual un-drafting step before it can be installed does not satisfy this requirement.
+
+A per-merge CLI alpha SHALL NOT build or publish an Engine; it resolves the newest stable Engine instead.
+
+An Engine alpha SHALL be resolvable by the CLI through the same mechanism that resolves a stable Engine, so that installing an alpha exercises the real download path.
+
+#### Scenario: Maks requests an Engine alpha
+
+- GIVEN a change to Engine sources has merged
+- WHEN Maks dispatches an alpha build
+- THEN the Engine alpha is published as a Prerelease in that same run
+- AND `kesha install` against the CLI of that alpha version downloads it without any manual release step in between
+
+#### Scenario: A CLI alpha that does not change the Engine
+
+- GIVEN a per-merge CLI alpha whose merge changed no Engine sources
+- WHEN that alpha is published
+- THEN it SHALL resolve the current stable Engine
+- AND publishing it SHALL NOT require an Engine build
+
+#### Scenario: A dispatched alpha publishes both artifacts at one version
+
+- GIVEN Maks dispatches an alpha at `2.3.0-alpha.1`
+- WHEN the release workflow runs
+- THEN the GitHub Prerelease carries the Engine assets for that version
+- AND npm carries `2.3.0-alpha.1` on the alpha Channel resolving that Engine
+- AND neither artifact is published without the other
+
+> *Technical Note — `.github/workflows/build-engine.yml:547-562` publishes every build as a draft and then un-drafts alphas by hand today; `release.yml`'s `github-release` job publishes a Prerelease directly for both pre-release Channels. `src/engine-install.ts:187` and `:447` build the asset URL as `releases/download/v${engineVersion}/…`, and under one version that name is injected at publish rather than read from `package.json#keshaEngine.version` (`src/package-info.ts:5-6`).*
 
 ### Requirement: Alpha and stable publish through one path
 
 The steps that publish a build SHALL exist once, as jobs of one release workflow invoked by every Channel, and every downstream publication (npm, Homebrew tap, Linux packages, container image, Nix version) SHALL run as a job that depends on the job that built and verified the assets, never as a reaction to a GitHub release event. A Channel SHALL differ from another only in the inputs it supplies.
+
+A release SHALL be published in the run that built and smoked its assets, never left as a draft for a person to un-draft, because the smoke on the just-built assets is the verification a draft used to stand in for. Stable is published as Latest; beta and a dispatched alpha are published as Prereleases.
 
 #### Scenario: A change to the publish path is rehearsed
 
@@ -72,10 +116,10 @@ The steps that publish a build SHALL exist once, as jobs of one release workflow
 
 #### Scenario: A release created by the workflow reaches npm
 
-- GIVEN the release workflow created the GitHub release with its own token
+- GIVEN the release workflow smoked the built assets and published the GitHub release with its own token
 - WHEN the npm job runs
 - THEN it runs because it depends on the release job, not because an event fired
-- AND the package on npm resolves the Engine that release carries
+- AND the package on npm resolves an Engine that is already published, never a draft
 
 #### Scenario: A downstream job never runs past a failed upstream
 
@@ -84,4 +128,4 @@ The steps that publish a build SHALL exist once, as jobs of one release workflow
 - THEN none of them runs
 - AND the run names the failed upstream job
 
-> *Technical Note — Today npm, tap and post-release listen to `release: published` (`npm-publish.yml:18-20`, `homebrew-tap.yml:3-5`, `post-engine-release.yml:3-5`) and `dispatch-npm-publish.sh:15` works around the missing event; `release.yml` replaces all three with `needs:`.*
+> *Technical Note — Today npm, tap and post-release listen to `release: published` (`npm-publish.yml:18-20`, `homebrew-tap.yml:3-5`, `post-engine-release.yml:3-5`) and `dispatch-npm-publish.sh:15` works around the missing event; `release.yml` replaces all three with `needs: github-release`. The draft-and-un-draft pair at `.github/workflows/build-engine.yml:547-562` disappears with it.*
