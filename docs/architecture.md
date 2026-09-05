@@ -160,7 +160,7 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    `Bun.spawn`.
 3. The CLI reads `kesha-engine describe` once per binary path (cached by path
    + mtime) through `getDescribe` in `src/engine.ts`, and validates the argv of
-   every flag-carrying parsed spawn (`transcribe`, `say`, MCP `list_voices`)
+   every flag-carrying spawn (`transcribe`, `record`, `say`, MCP `list_voices`)
    against that document with `validateArgv` (`src/engine/describe.ts`)
    before spawning — instead of blindly forwarding flags, see the "DO NOT
    BLINDLY FORWARD CLI FLAGS" rule in [CLAUDE.md](../CLAUDE.md). Those
