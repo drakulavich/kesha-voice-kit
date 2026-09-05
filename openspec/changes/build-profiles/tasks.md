@@ -3,6 +3,7 @@
 - [ ] 1.1 Add `portable` and `darwin` bundle features; `default = ["portable"]`
 - [ ] 1.2 `build.rs`: emit `portable`, `darwin_native`, `system_tts` cfg aliases with `rustc-check-cfg`
 - [ ] 1.3 `rust/src/platform.rs` with `PROFILE`; rewrite every `#[cfg(all(feature = ..., target_os = "macos"))]` to an alias; assert `grep -rhoE '#\[cfg\([^]]+\)\]' rust/src | sort -u | wc -l` ≤ 6
+- [ ] 1.4 `kesha-engine describe` reports `profile` from `platform::PROFILE` (the `protocol-v4` change's `rust/src/protocol/describe.rs`); a unit test asserts `profile` equals the compiled bundle (`portable` or `darwin`)
 
 ## 2. Rows and gates
 
