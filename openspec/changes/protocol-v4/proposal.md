@@ -7,7 +7,7 @@ The CLI and the Engine talk through four ad-hoc conventions: a regex over stderr
 ## What Changes
 
 - **stdout carries payload only**; everything else the Engine says goes to stderr as NDJSON, one object per line with a `kind` of `progress`, `warn`, `error` or `debug`. The CLI renders these for humans; the Engine never prints prose.
-- **`kesha-engine describe`** replaces `--capabilities-json` and `--error-codes-json` with one document: `protocolVersion: 4`, `backend`, `profile`, every subcommand with its flags and gates, the Error code taxonomy, TTS languages.
+- **`kesha-engine describe`** replaces `--capabilities-json` and `--error-codes-json` with one document: `protocolVersion: 4`, `backend`, `profile`, every subcommand with its flags and gates, the Error code taxonomy, TTS languages. Flags that today degrade gracefully (`--no-expand-abbrev`) keep doing so through a per-flag `whenUngated: drop` marker; everything else is rejected before spawn.
 - **The protocol version becomes a gate**: a `describe` reporting any version other than 4 is an actionable Error code, not a silent success.
 - **One error class on the CLI side**, `KeshaError { code, hint, exitCode, stderr }`, for Engine-reported and CLI-native failures; the CLI-native codes join the taxonomy `describe` publishes with an `origin` of `cli` or `both`, and the drift test disappears.
 - **`KESHA_DEBUG_FD` is removed**; the debug timeline rides the same stream as `kind: "debug"`.
@@ -24,6 +24,7 @@ The CLI and the Engine talk through four ad-hoc conventions: a regex over stderr
 - `engine-contract`: Capabilities JSON and the error-code flag are replaced by the describe document; stderr becomes the Event stream; the version is gated; TS-native codes fold into the published taxonomy with an `origin`; `KESHA_DEBUG_FD` is removed; the cache requirement keys on the describe document.
 - `diagnostics`: `kesha doctor` and `kesha status` read the describe document, and `KESHA_DEBUG_FD` leaves the env snapshot.
 - `tts-synthesis`: the `--no-expand-abbrev` gate becomes schema validation, and `SayError.exitCode` becomes `KeshaError.exitCode`.
+- `audio-recording`: the `record.live` gate reads the describe document instead of Capabilities JSON.
 
 ## Impact
 

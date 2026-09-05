@@ -6,9 +6,9 @@ Running `kesha-engine describe` SHALL print a single JSON object to stdout and e
 
 The `errors` section SHALL mark exactly `E_MODEL_DOWNLOAD` and `E_DIARIZE_TIMEOUT` as retryable.
 
-The CLI SHALL validate any argv against `commands` before spawning the Engine: a flag the schema does not list for that subcommand, a flag whose gate is absent from `features`, or a flag whose `requires` is missing or whose `conflicts` is present SHALL be rejected on the CLI side with `E_INVALID_ARG` and no subprocess.
+The CLI SHALL validate any argv against `commands` before spawning the Engine: a flag the schema does not list for that subcommand, a flag whose gate is absent from `features`, or a flag whose `requires` is missing or whose `conflicts` is present SHALL be rejected on the CLI side with `E_INVALID_ARG` and no subprocess. A flag whose schema row carries `whenUngated: drop` SHALL instead be omitted from the argv with one `warn` event when its gate is absent from `features`, and the command SHALL proceed; the default is `reject`. A `gate` names one feature or an any-of list of features.
 
-A platform pre-check that runs before anything is downloaded SHALL keep reporting `E_UNSUPPORTED_PLATFORM`, because no Engine is needed to know the platform; once an Engine binary exists, `kesha install` SHALL validate its argv against the describe document before spawning `kesha-engine install`, so a flag whose gate the build does not carry is `E_INVALID_ARG`.
+A platform pre-check that runs before anything is downloaded SHALL report `E_UNSUPPORTED_PLATFORM`, because no Engine is needed to know the platform; once an Engine binary exists, `kesha install` SHALL validate its argv against the describe document before spawning `kesha-engine install`, so a flag whose gate the build does not carry is `E_INVALID_ARG`.
 
 #### Scenario: Sona probes the Engine before calling `say`
 
@@ -30,9 +30,16 @@ A platform pre-check that runs before anything is downloaded SHALL keep reportin
 - GIVEN no Engine is installed on a linux-x64 host
 - WHEN Sona calls `install({ diarize: true })`
 - THEN the CLI rejects with `E_UNSUPPORTED_PLATFORM` before downloading anything
-- AND once an Engine exists, `install --diarize` on a build without `transcribe.diarize` is `E_INVALID_ARG` from the schema
+- AND on a darwin-arm64 host whose installed Engine is a `portable` build, `install --diarize` is `E_INVALID_ARG` from the schema because `transcribe.diarize` is absent from `features`
 
-> *Technical Note — Subcommand `Describe` in `rust/src/main.rs` (to be added beside `Commands`); schema assembly in `rust/src/protocol/describe.rs`; the gate table and the clap-parity test live there. CLI validation in `src/engine/describe.ts`. Baseline flags today: `rust/src/main.rs:12-18`. The platform pre-check is `src/cli/install.ts:228-233` today.*
+#### Scenario: An optional flag on an Engine without its feature
+
+- GIVEN the Engine advertises neither `tts.ru_acronym_expansion` nor `tts.en_acronym_expansion`
+- WHEN Sona calls `say({ text: "NASA", noExpandAbbrev: true })`
+- THEN the CLI omits `--no-expand-abbrev` from the argv and renders one `warn` event naming the flag
+- AND synthesis proceeds and resolves with audio
+
+> *Technical Note — Subcommand `Describe` in `rust/src/main.rs` (to be added beside `Commands`); schema assembly in `rust/src/protocol/describe.rs`; the gate table and the clap-parity test live there. CLI validation in `src/engine/describe.ts`. Baseline flags today: `rust/src/main.rs:12-18`. The platform pre-check throws a bare `Error` at `src/cli/install.ts:228-233` today; v4 assigns it `E_UNSUPPORTED_PLATFORM`. The `whenUngated: drop` row for `--no-expand-abbrev` replaces `applyNoExpandAbbrev` (`src/synth.ts:69-85`).*
 >
 > *Error code taxonomy carried in `errors` (today `rust/src/errors.rs:36-56` for the codes, `:69-119` for title/category/retryable):*
 >

@@ -3,6 +3,7 @@
 - [ ] 1.1 Add `Describe` to `Commands` in `rust/src/main.rs` and `rust/src/protocol/describe.rs` that assembles the document from `CommandFactory::command()` plus a gate table
 - [ ] 1.2 Unit test: the set of flags clap knows equals the set the gate table lists, per subcommand
 - [ ] 1.3 Fold `errors::error_codes_json` and `capabilities::get_capabilities` into the document; delete the two flags
+- [ ] 1.4 Gate table rows carry `whenUngated` (`reject` by default, `drop` for `--no-expand-abbrev`) and a `gate` that is one feature or an any-of list
 
 ## 2. Event stream
 
@@ -31,5 +32,6 @@
 ## 6. Downstream spec sweeps
 
 - [ ] 6.1 `kesha doctor` drops `KESHA_DEBUG_FD` from `KNOWN_ENV_KEYS` (`src/doctor.ts:37`); `kesha status` reads the describe document, keeping the nested capabilities value's shape
-- [ ] 6.2 `src/synth.ts` loses `applyNoExpandAbbrev` (`src/synth.ts:69-85`); the gate comes from `validateArgv`
-- [ ] 6.3 Sweep the Technical-Note-only mentions of the old protocol listed in the design's Open Questions
+- [ ] 6.2 `src/synth.ts` loses `applyNoExpandAbbrev` (`src/synth.ts:69-85`); the gate comes from `validateArgv` on its `whenUngated: drop` row
+- [ ] 6.3 `preflightRecordLive` (`src/engine.ts:481-505`) loses its hand-written `record.live` check to `validateArgv`, and its three bare `Error` throws become `KeshaError`
+- [ ] 6.4 Sweep the Technical-Note-only mentions of the old protocol listed in the design's Open Questions

@@ -44,7 +44,7 @@ Why stderr and not a third fd: stderr is what every runner, CI log and `2>` redi
       }
     },
     "install": {"flags": {"no-cache": {"gate": null}, "tts": {"gate": "tts", "values": "langs"}, "vad": {"gate": null}, "diarize": {"gate": "transcribe.diarize"}, "no-warmup": {"gate": null}}},
-    "say": {"flags": {"voice": {"gate": "tts"}, "stdin-loop": {"gate": "tts"}}},
+    "say": {"flags": {"voice": {"gate": "tts"}, "stdin-loop": {"gate": "tts"}, "no-expand-abbrev": {"gate": ["tts.ru_acronym_expansion", "tts.en_acronym_expansion"], "whenUngated": "drop"}}},
     "record": {"flags": {"live": {"gate": "record.live"}, "auto-stop": {"gate": "record.live.auto-stop", "requires": ["live"]}}}
   },
   "features": ["transcribe", "transcribe.segments", "transcribe.itn", "transcribe.diarize", "detect-lang", "vad", "tts", "record.live"],
@@ -53,11 +53,11 @@ Why stderr and not a third fd: stderr is what every runner, CI log and `2>` redi
 }
 ```
 
-The flag list is derived from clap at runtime (`CommandFactory::command()`); the gates live in a table beside it, and a unit test asserts the two sets are equal, so a flag cannot exist without a schema row. `features` stays for consumers that only need a boolean. The CLI validates any argv with one function: every flag must exist for the command, its gate (if any) must be in `features`, its `requires` must be present and its `conflicts` absent.
+The flag list is derived from clap at runtime (`CommandFactory::command()`); the gates live in a table beside it, and a unit test asserts the two sets are equal, so a flag cannot exist without a schema row. `features` stays for consumers that only need a boolean. The CLI validates any argv with one function: every flag must exist for the command, its gate (if any) must be in `features`, its `requires` must be present and its `conflicts` absent. `whenUngated` is `reject` (default) or `drop`; `drop` reproduces today's `applyNoExpandAbbrev` behaviour (`src/synth.ts:69-85`): the flag is omitted with a warning instead of failing the call. A `gate` is a feature name or an any-of array.
 
 Every entry in `errors` carries an `origin` of `engine`, `cli` or `both`. `E_INPUT_NOT_FOUND`, `E_INVALID_ARG` and `E_INTERNAL` are `both` — either side raises them. `E_ENGINE_SPAWN` and `E_ENGINE_PROTOCOL` are `cli`: only the CLI can observe a binary that will not start or a protocol it does not speak. With origins published, `docs/errors.md` is generated from `describe` and no TS registry needs a drift test.
 
-The `install` platform pre-check is deliberately not schema-driven: `kesha install --diarize` on linux-x64 with no Engine on disk has nothing to validate against, so that check stays where it is (`src/cli/install.ts:228-233`) and keeps reporting `E_UNSUPPORTED_PLATFORM`. Schema validation applies from the moment an Engine binary exists, and a gated flag on a build that lacks the gate is `E_INVALID_ARG`.
+The `install` platform pre-check is deliberately not schema-driven: `kesha install --diarize` on linux-x64 with no Engine on disk has nothing to validate against, so that check stays where it is and the platform pre-check reports `E_UNSUPPORTED_PLATFORM` (today it throws a bare `Error` at `src/cli/install.ts:228-233`; v4 assigns the code). Schema validation applies from the moment an Engine binary exists, and a gated flag on a build that lacks the gate is `E_INVALID_ARG`.
 
 MODIFIED requirement titles that still say Capabilities JSON or TS-native are kept for baseline matching; they are legacy names.
 
@@ -83,4 +83,4 @@ One observable exit code changes: `kesha-engine` with no subcommand exits 2 inst
 ## Open Questions
 
 - Whether `progress` events carry `pct` for every phase or only diarization. Resolve in the first stage-1 PR by emitting `pct` where a phase knows its total and omitting it otherwise; the field is optional in D1 for this reason.
-- Technical-Note-only mentions of the old protocol remain in `audio-recording/spec.md:113,122`, `speaker-diarization/spec.md:415`, `audio-ingest/spec.md:141`, `installation/spec.md:48,99,148,299`, `cli-distribution/spec.md:224,241`; stage 1's last PR sweeps them.
+- Technical-Note-only mentions of the old protocol remain in `audio-recording/spec.md:122`, `speaker-diarization/spec.md:415`, `audio-ingest/spec.md:141`, `installation/spec.md:48,99,148,299`, `cli-distribution/spec.md:241`; stage 1's last PR sweeps them. The two normative mentions are handled here instead: `audio-recording/spec.md:113` by this change's `audio-recording` delta, and `cli-distribution/spec.md:224` by the Nix requirement `build-profiles` already modifies.
