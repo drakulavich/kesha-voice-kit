@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { spawn } from "bun";
 import { chmodSync, mkdirSync, readFileSync } from "fs";
+import { describeJson } from "../helpers/fake-engine";
 
 const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
 
@@ -9,6 +10,10 @@ async function createFakeEngine(dir: string): Promise<string> {
   const enginePath = `${dir}/kesha-engine`;
   await Bun.write(enginePath, `#!/usr/bin/env bun
 const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ features: ["tts"] }))});
+  process.exit(0);
+}
 if (args[0] !== "say") {
   console.error("unexpected args: " + args.join(" "));
   process.exit(2);

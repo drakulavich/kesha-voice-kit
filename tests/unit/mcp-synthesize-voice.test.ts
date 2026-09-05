@@ -6,6 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
+import { describeJson } from "../helpers/fake-engine";
 
 const skipOnWin32 = process.platform === "win32" ? test.skip : test;
 
@@ -29,6 +30,10 @@ function synthesizingEngine(lang: { code: string; confidence: number } | null): 
   writeFileSync(
     binPath,
     `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ features: ["tts"] })}'
+  exit 0
+fi
 if [ "$1" = "detect-text-lang" ]; then
   ${detect}
 fi

@@ -10,6 +10,7 @@ export type { TranscribeOptions };
 export type { TranscriptionOutput, TranscriptionSegment, WordTiming } from "./engine";
 export { downloadEngine as downloadModel };
 export { say, type SayOptions, SayError } from "./synth";
+export { KeshaError } from "./engine/events";
 
 /**
  * Encode a `TranscribeResult[]` as TOON (#138). Same data shape as the

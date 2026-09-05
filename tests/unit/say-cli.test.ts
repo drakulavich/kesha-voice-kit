@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
-import { saveEngineEnv } from "../helpers/fake-engine";
+import { describeJson, saveEngineEnv } from "../helpers/fake-engine";
 
 describe("say CLI input guard (#324 P1)", () => {
   test("rejects missing text only when stdin is a TTY", () => {
@@ -39,13 +39,13 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-/** A stub engine whose `say` fails the way the real one does: an `error [CODE]:` line and a status. */
-function failingEngine(exitCode: number, stderrLine: string): string {
+/** A stub engine whose `say` fails the way the real one does: a protocol 4 error event and a status. */
+function failingEngine(exitCode: number, code: string, message: string): string {
   const dir = tempDir("kesha-say-fail-");
   const binPath = join(dir, "kesha-engine");
   writeFileSync(
     binPath,
-    `#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '${stderrLine}' >&2\nexit ${exitCode}\n`,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ncat > /dev/null\nprintf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\nexit ${exitCode}\n`,
   );
   chmodSync(binPath, 0o755);
   cleanups.push(saveEngineEnv());
@@ -83,7 +83,7 @@ const skipOnWin32 = process.platform === "win32" ? test.skip : test;
 // so a failure flattened into "exit 1, generic message" would have gone unnoticed.
 describe("kesha say relays an engine failure", () => {
   skipOnWin32("exits with the engine's own status and prints its stderr", async () => {
-    failingEngine(3, "error [E_VOICE_NOT_FOUND]: voice zz-nobody is not installed");
+    failingEngine(3, "E_VOICE_NOT_FOUND", "voice zz-nobody is not installed");
 
     const { exitCode, stderr } = await runSay({
       text: "Hello",
@@ -98,7 +98,7 @@ describe("kesha say relays an engine failure", () => {
   });
 
   skipOnWin32("does not swallow a failure into a success exit", async () => {
-    failingEngine(1, "error [E_INTERNAL]: synthesis aborted");
+    failingEngine(1, "E_INTERNAL", "synthesis aborted");
 
     const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
 

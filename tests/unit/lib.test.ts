@@ -52,6 +52,12 @@ describe("lib API", () => {
     expect(e.stderr).toBe("stderr");
   });
 
+  it("exports KeshaError, and SayError extends it", async () => {
+    const core = await import("../../src/lib");
+    expect(core.KeshaError).toBeDefined();
+    expect(new core.SayError("m", 1, "")).toBeInstanceOf(core.KeshaError);
+  });
+
   it("uses canonical Bun install commands when transcription backend is missing", async () => {
     const saved = process.env.KESHA_ENGINE_BIN;
     process.env.KESHA_ENGINE_BIN = `/tmp/kesha-missing-engine-${Date.now()}`;

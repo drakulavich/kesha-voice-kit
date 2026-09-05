@@ -27,6 +27,7 @@ import { KeshaError } from "../../src/engine/events";
 import { buildEngineInstallArgs } from "../../src/engine-install";
 import { engineTarget, engineTargetEntries, targetKey } from "../../src/engine-targets";
 import { pickVoiceForLang } from "../../src/voice-routing";
+import { buildSayArgs, type SayOptions } from "../../src/synth";
 import { describeDocument } from "../helpers/fake-engine";
 import { readRepoFile, repoPath } from "../helpers/repo";
 
@@ -56,6 +57,11 @@ for (const { platform, arch, target } of engineTargetEntries()) {
     provenance: JSON.parse(readRepoFile(provenancePath(key))) as PactProvenance,
   });
 }
+
+const EVERY_SAY_OPTION: SayOptions = {
+  text: "hi", voice: "en-am_michael", lang: "en", out: "x.wav", rate: 1.2, ssml: true,
+  format: "ogg-opus", bitrate: 32000, sampleRate: 24000, noExpandAbbrev: true,
+};
 
 const PROFILE: Record<string, string> = { darwin: "darwin", linux: "linux", win32: "windows" };
 
@@ -129,6 +135,13 @@ for (const t of TARGETS) describe(`${t.key} accepts what the CLI would send it`,
 
   it("advertises record.live only on the CoreML build", () => {
     expect(t.pact.features.includes("record.live")).toBe(t.backend === "coreml");
+  });
+
+  it("takes every say flag, dropping only --no-expand-abbrev where the build cannot expand", () => {
+    const { argv, warnings } = validateArgv(buildSayArgs(EVERY_SAY_OPTION), doc);
+    const expands = t.pact.features.some((f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion");
+    expect(argv.includes("--no-expand-abbrev")).toBe(expands);
+    expect(warnings).toHaveLength(expands ? 0 : 1);
   });
 });
 

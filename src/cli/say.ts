@@ -212,9 +212,9 @@ async function synthesizeAndEmit(
     };
   } catch (err) {
     const code = err instanceof SayError ? err.code : "E_INTERNAL";
-    const exitCode = err instanceof SayError ? err.exitCode : 4;
+    const exitCode = err instanceof SayError ? (err.exitCode ?? 4) : 4;
     stats.recordError("tts", err, code);
-    log.error(err instanceof SayError ? err.stderr.trim() || err.message : errorMessage(err));
+    log.error(err instanceof SayError ? (err.stderr ?? "").trim() || err.message : errorMessage(err));
     return {
       status: "failed",
       itemCount: 1,
