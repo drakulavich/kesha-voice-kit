@@ -220,16 +220,24 @@ pub struct Describe {
 }
 
 /// Codes the TS wrapper raises on its own; the engine never emits them.
-const CLI_ONLY: &[(&str, &str, Category)] = &[
+const CLI_ONLY: &[(&str, &str, Category, bool)] = &[
     (
         "E_ENGINE_SPAWN",
         "Engine binary not installed or failed to start",
         Category::Platform,
+        false,
     ),
     (
         "E_ENGINE_PROTOCOL",
         "Engine speaks a protocol this CLI does not",
         Category::Platform,
+        false,
+    ),
+    (
+        "E_INSTALL_RACE",
+        "Another install reached the same cache first",
+        Category::Internal,
+        true,
     ),
 ];
 
@@ -277,13 +285,17 @@ pub fn document() -> Describe {
             origin: origin_of(c),
         })
         .collect();
-    errors.extend(CLI_ONLY.iter().map(|&(code, title, category)| ErrorEntry {
-        code,
-        title,
-        category,
-        retryable: false,
-        origin: Origin::Cli,
-    }));
+    errors.extend(
+        CLI_ONLY
+            .iter()
+            .map(|&(code, title, category, retryable)| ErrorEntry {
+                code,
+                title,
+                category,
+                retryable,
+                origin: Origin::Cli,
+            }),
+    );
     Describe {
         protocol_version: 4,
         backend: caps.backend,
@@ -386,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn errors_carry_origin_and_exactly_two_retryable_codes() {
+    fn errors_carry_origin_and_exactly_three_retryable_codes() {
         let d = document();
         let retryable: Vec<&str> = d
             .errors
@@ -394,7 +406,10 @@ mod tests {
             .filter(|e| e.retryable)
             .map(|e| e.code)
             .collect();
-        assert_eq!(retryable, vec!["E_MODEL_DOWNLOAD", "E_DIARIZE_TIMEOUT"]);
+        assert_eq!(
+            retryable,
+            vec!["E_MODEL_DOWNLOAD", "E_DIARIZE_TIMEOUT", "E_INSTALL_RACE"]
+        );
         let origin = |c: &str| {
             d.errors
                 .iter()
@@ -404,11 +419,12 @@ mod tests {
         };
         assert_eq!(origin("E_ENGINE_SPAWN"), Origin::Cli);
         assert_eq!(origin("E_ENGINE_PROTOCOL"), Origin::Cli);
+        assert_eq!(origin("E_INSTALL_RACE"), Origin::Cli);
         assert_eq!(origin("E_INVALID_ARG"), Origin::Both);
         assert_eq!(origin("E_INPUT_NOT_FOUND"), Origin::Both);
         assert_eq!(origin("E_INTERNAL"), Origin::Both);
         assert_eq!(origin("E_MODEL_MISSING"), Origin::Engine);
-        assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 2);
+        assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 3);
     }
 
     #[test]
