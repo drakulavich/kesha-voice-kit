@@ -1,6 +1,6 @@
 ## Context
 
-Today's boundary (baseline `engine-contract`): `--capabilities-json` (protocol 3), `--error-codes-json`, `error [E_CODE]: <message>` on stderr, `diarize: ` progress prefix detected at `src/engine.ts:140`, `KESHA_DEBUG_FD` forwarded at `src/engine.ts:103-115`. The CLI mirrors Engine gates by hand in `preflightTranscribeEngineItn`, `preflightTranscribeEngineWithSegments`, `assertSpeakersSupported` (`src/engine.ts:326-380`) and keeps `TS_NATIVE_CODES` with a drift test (`src/error-codes.ts`).
+Today's boundary (baseline `engine-contract`): `--capabilities-json` (protocol 3), `--error-codes-json`, `error [E_CODE]: <message>` on stderr, `diarize: ` progress prefix detected at `src/engine.ts:131-133`, `KESHA_DEBUG_FD` forwarded at `src/engine.ts:103-115`. The CLI mirrors Engine gates by hand in `preflightTranscribeEngineItn`, `preflightTranscribeEngineWithSegments`, `assertSpeakersSupported` (`src/engine.ts:326-380`) and keeps `TS_NATIVE_CODES` with a drift test (`src/error-codes.ts`).
 
 ## Goals / Non-Goals
 

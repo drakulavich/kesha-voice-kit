@@ -27,6 +27,13 @@ The CLI SHALL validate any argv against `commands` before spawning the Engine: a
 
 The CLI SHALL refuse to use an Engine whose `describe` reports a `protocolVersion` other than 4, and SHALL report the refusal as the Error code `E_ENGINE_PROTOCOL` with a hint naming the remedy.
 
+#### Scenario: The installed Engine speaks the current protocol
+
+- GIVEN the installed Engine's `describe` reports `protocolVersion: 4`
+- WHEN Ira runs `kesha note.ogg`
+- THEN the CLI validates the argv against the schema and spawns the transcription
+- AND no `E_ENGINE_PROTOCOL` is reported
+
 #### Scenario: A stale Engine after a CLI upgrade
 
 - GIVEN Maks upgraded the CLI but the cached Engine still answers protocol 3
@@ -68,7 +75,7 @@ The CLI SHALL render events for humans and SHALL treat a stderr line that is not
 - WHEN the CLI parses stderr
 - THEN the failure is reported as `E_INTERNAL` with the raw line in the message
 
-> *Technical Note — Emitter in `rust/src/protocol/events.rs` replacing the 84 `eprintln!` calls across 21 files (`grep -rc 'eprintln!' rust/src`); parser in `src/engine/events.ts` replacing `partitionProgress` and `isProgressLine` at `src/engine.ts:136-170` and the regex at `src/error-codes.ts:9`.*
+> *Technical Note — Emitter in `rust/src/protocol/events.rs` replacing the 84 `eprintln!` calls across 21 files (`grep -rc 'eprintln!' rust/src`); parser in `src/engine/events.ts` replacing `partitionProgress` at `src/engine.ts:137-163` and `isProgressLine` at `src/engine.ts:131-133` and the regex at `src/error-codes.ts:9`.*
 
 ## MODIFIED Requirements
 
