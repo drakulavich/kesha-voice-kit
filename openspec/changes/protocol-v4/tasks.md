@@ -24,6 +24,12 @@
 
 ## 5. CLI (stage 2, tracked here for completeness)
 
-- [ ] 5.1 Pin the beta; `src/engine/describe.ts` with cache, version gate and `validateArgv`
-- [ ] 5.2 `src/engine/events.ts` parser and `KeshaError`; delete `src/error-codes.ts`, `preflight*`, `assert*Supported`, `spawnStdioWithDebugFd`
+- [ ] 5.1 Pin the beta; `src/engine/describe.ts` with cache, version gate and `validateArgv` (files created in stage 2; the `src/engine/` layout is finalised in stage 5)
+- [ ] 5.2 `src/engine/events.ts` parser and `KeshaError` carrying `code`, `hint`, `exitCode`, `stderr`; delete `src/error-codes.ts`, `preflight*`, `assert*Supported`, `spawnStdioWithDebugFd` (files created in stage 2; the `src/engine/` layout is finalised in stage 5)
 - [ ] 5.3 One PR per command: transcribe, say, install, record, MCP
+
+## 6. Downstream spec sweeps
+
+- [ ] 6.1 `kesha doctor` drops `KESHA_DEBUG_FD` from `KNOWN_ENV_KEYS` (`src/doctor.ts:37`); `kesha status` reads the describe document, keeping the nested capabilities value's shape
+- [ ] 6.2 `src/synth.ts` loses `applyNoExpandAbbrev` (`src/synth.ts:69-85`); the gate comes from `validateArgv`
+- [ ] 6.3 Sweep the Technical-Note-only mentions of the old protocol listed in the design's Open Questions

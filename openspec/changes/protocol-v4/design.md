@@ -21,11 +21,13 @@ Every non-payload line the Engine emits is one JSON object on stderr:
 
 `kind` and `message` are required; `code` is required on `error` and `warn`; `hint` is optional and is what the CLI prints after the message. A fatal `error` is followed by exit code 1 (the `say` exit-code exceptions in the tts-synthesis spec stay). Lines are `\n`-terminated; the CLI parser strips a trailing `\r` so Windows output parses identically. A line that is not valid JSON is a protocol violation the CLI reports as `E_INTERNAL` with the raw line in the message.
 
-Why stderr and not a third fd: stderr is what every runner, CI log and `2>` redirection already captures; the fd forwarding existed only to keep debug lines out of prose stderr, and with no prose left there is nothing to keep apart.
+Argument parsing joins the stream. `rust/src/main.rs` uses `try_parse` instead of `Cli::parse()` (`rust/src/main.rs:99`), and both a clap parse error and a missing subcommand become one `error` event with code `E_INVALID_ARG` whose message carries clap's own text including the usage line; the process exits 2. `--help` and `--version` keep printing prose to stdout and are the only prose exemption, because they are the one output a person asks for by name.
+
+Why stderr and not a third fd: stderr is what every runner, CI log and `2>` redirection already captures; the fd forwarding existed only to keep debug lines out of prose stderr, and with no prose left there is nothing to keep apart. This answers design-spec section 11 item 2: `doctor.ts` drops `KESHA_DEBUG_FD` from its env list (`src/doctor.ts:37`); the support bundle already reads the Diagnostic log, where `debug` events land, so nothing else changes.
 
 ### D2. `describe` is the whole schema
 
-`kesha-engine describe` prints one JSON object on stdout and exits 0:
+`kesha-engine describe` prints one JSON object on stdout and exits 0 (abridged: `features` lists a subset):
 
 ```json
 {
@@ -46,12 +48,18 @@ Why stderr and not a third fd: stderr is what every runner, CI log and `2>` redi
     "record": {"flags": {"live": {"gate": "record.live"}, "auto-stop": {"gate": "record.live.auto-stop", "requires": ["live"]}}}
   },
   "features": ["transcribe", "transcribe.segments", "transcribe.itn", "transcribe.diarize", "detect-lang", "vad", "tts", "record.live"],
-  "errors": [{"code": "E_MODEL_MISSING", "title": "Model or voice not installed", "category": "model", "retryable": false}],
+  "errors": [{"code": "E_MODEL_MISSING", "title": "Model or voice not installed", "category": "model", "retryable": false, "origin": "engine"}],
   "tts": {"languages": [{"code": "en", "engines": ["kokoro"]}]}
 }
 ```
 
-The flag list is derived from clap at runtime (`CommandFactory::command()`); the gates live in a table beside it, and a unit test asserts the two sets are equal, so a flag cannot exist without a schema row. `features` stays for consumers that only need a boolean. The CLI validates any argv with one function: every flag must exist for the command, its gate (if any) must be in `features`, its `requires` must be present and its `conflicts` absent. The CLI-native codes `E_INPUT_NOT_FOUND`, `E_ENGINE_SPAWN`, `E_INVALID_ARG`, `E_INTERNAL` are listed in `errors` with `"origin": "cli"`, so `docs/errors.md` can be generated from `describe` and no TS registry needs a drift test.
+The flag list is derived from clap at runtime (`CommandFactory::command()`); the gates live in a table beside it, and a unit test asserts the two sets are equal, so a flag cannot exist without a schema row. `features` stays for consumers that only need a boolean. The CLI validates any argv with one function: every flag must exist for the command, its gate (if any) must be in `features`, its `requires` must be present and its `conflicts` absent.
+
+Every entry in `errors` carries an `origin` of `engine`, `cli` or `both`. `E_INPUT_NOT_FOUND`, `E_INVALID_ARG` and `E_INTERNAL` are `both` — either side raises them. `E_ENGINE_SPAWN` and `E_ENGINE_PROTOCOL` are `cli`: only the CLI can observe a binary that will not start or a protocol it does not speak. With origins published, `docs/errors.md` is generated from `describe` and no TS registry needs a drift test.
+
+The `install` platform pre-check is deliberately not schema-driven: `kesha install --diarize` on linux-x64 with no Engine on disk has nothing to validate against, so that check stays where it is (`src/cli/install.ts:228-233`) and keeps reporting `E_UNSUPPORTED_PLATFORM`. Schema validation applies from the moment an Engine binary exists, and a gated flag on a build that lacks the gate is `E_INVALID_ARG`.
+
+MODIFIED requirement titles that still say Capabilities JSON or TS-native are kept for baseline matching; they are legacy names.
 
 ### D3. Version gate
 
@@ -59,7 +67,7 @@ The CLI refuses a `describe` whose `protocolVersion` is not 4 with `E_ENGINE_PRO
 
 ### D4. Migration carrier
 
-The Engine ships v4 as `v1.25.0-beta.1` (draft, un-drafted by hand); the CLI's first stage-2 PR pins that beta. `check:versions` rule 3 accepts a `-beta.N` pin and refuses an alpha, and beta releases are never pruned (design spec section 4).
+The Engine ships v4 as `v1.25.0-beta.1` under the machinery that exists during stages 1–3 (draft, un-drafted by hand); the CLI's first stage-2 PR pins that beta. `check:versions` rule 3 accepts a `-beta.N` pin and refuses an alpha, and beta releases are never pruned (design spec section 4). The `unified-release` change replaces that draft flow with a published Prerelease in stage 4, after this migration has finished.
 
 ## Risks / Trade-offs
 
@@ -70,6 +78,9 @@ The Engine ships v4 as `v1.25.0-beta.1` (draft, un-drafted by hand); the CLI's f
 
 Stage 1 (Engine, 4–5 PRs): `describe` + gate table + parity test; event emitter replacing `eprintln!`; delete `--capabilities-json`, `--error-codes-json`, `KESHA_DEBUG_FD`; migrate the pact recorder, release smoke, Rust tests, `docs/errors.md`; tag `v1.25.0-beta.1`. Stage 2 (CLI, 5–6 PRs): beta pin, generic validation, event renderer, `KeshaError`; then one PR per command.
 
+One observable exit code changes: `kesha-engine` with no subcommand exits 2 instead of 1 (`rust/src/main.rs:155-157`), because a missing subcommand is an invalid argument and now reports as one. `kesha` itself is unaffected — it never invokes the Engine without a subcommand.
+
 ## Open Questions
 
 - Whether `progress` events carry `pct` for every phase or only diarization. Resolve in the first stage-1 PR by emitting `pct` where a phase knows its total and omitting it otherwise; the field is optional in D1 for this reason.
+- Technical-Note-only mentions of the old protocol remain in `audio-recording/spec.md:113,122`, `speaker-diarization/spec.md:415`, `audio-ingest/spec.md:141`, `installation/spec.md:48,99,148,299`, `cli-distribution/spec.md:224,241`; stage 1's last PR sweeps them.

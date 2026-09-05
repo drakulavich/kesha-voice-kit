@@ -9,7 +9,7 @@ The CLI and the Engine talk through four ad-hoc conventions: a regex over stderr
 - **stdout carries payload only**; everything else the Engine says goes to stderr as NDJSON, one object per line with a `kind` of `progress`, `warn`, `error` or `debug`. The CLI renders these for humans; the Engine never prints prose.
 - **`kesha-engine describe`** replaces `--capabilities-json` and `--error-codes-json` with one document: `protocolVersion: 4`, `backend`, `profile`, every subcommand with its flags and gates, the Error code taxonomy, TTS languages.
 - **The protocol version becomes a gate**: a `describe` reporting any version other than 4 is an actionable Error code, not a silent success.
-- **One error class on the CLI side**, `KeshaError { code, hint }`, for Engine-reported and CLI-native failures; the CLI-native codes join the taxonomy `describe` publishes and the drift test disappears.
+- **One error class on the CLI side**, `KeshaError { code, hint, exitCode, stderr }`, for Engine-reported and CLI-native failures; the CLI-native codes join the taxonomy `describe` publishes with an `origin` of `cli` or `both`, and the drift test disappears.
 - **`KESHA_DEBUG_FD` is removed**; the debug timeline rides the same stream as `kind: "debug"`.
 - **`say --stdin-loop`** keeps its stdin framing; its status lines move to the event stream.
 
@@ -21,12 +21,15 @@ The CLI and the Engine talk through four ad-hoc conventions: a regex over stderr
 
 ### Modified Capabilities
 
-- `engine-contract`: Capabilities JSON and the error-code flag are replaced by `describe`; stderr becomes an event stream; the version is gated; TS-native codes fold into the published taxonomy; `KESHA_DEBUG_FD` is removed; the cache requirement keys on the `describe` document.
+- `engine-contract`: Capabilities JSON and the error-code flag are replaced by the describe document; stderr becomes the Event stream; the version is gated; TS-native codes fold into the published taxonomy with an `origin`; `KESHA_DEBUG_FD` is removed; the cache requirement keys on the describe document.
+- `diagnostics`: `kesha doctor` and `kesha status` read the describe document, and `KESHA_DEBUG_FD` leaves the env snapshot.
+- `tts-synthesis`: the `--no-expand-abbrev` gate becomes schema validation, and `SayError.exitCode` becomes `KeshaError.exitCode`.
 
 ## Impact
 
 - Engine: `rust/src/main.rs`, `rust/src/capabilities.rs`, `rust/src/errors.rs`, `rust/src/debug.rs`, every `eprintln!` site (84 calls in 21 files), `rust/src/say_loop.rs`.
-- CLI: `src/engine.ts`, `src/synth.ts`, `src/transcribe.ts`, `src/error-codes.ts`, `src/doctor.ts`, `src/cli/main.ts`.
+- CLI: `src/engine.ts`, `src/synth.ts`, `src/transcribe.ts`, `src/error-codes.ts`, `src/doctor.ts`, `src/status.ts`, `src/cli/main.ts`, `src/mcp/tools.ts`, `src/mcp/voices.ts`.
+- Specs: `openspec/specs/GLOSSARY.md` (`Capabilities JSON`, `Error code`, and the new `describe document`, `Event stream`, `KeshaError` entries).
 - Direct protocol consumers that migrate with the Engine: `.github/scripts/record-capability-pacts.ts` and `tests/fixtures/capabilities/*.json`, `.github/scripts/release-install-smoke.sh`, `rust/tests/error_codes_cli.rs`, `rust/tests/diarize_e2e.rs`, `rust/tests/kokoro_rate_e2e.rs`, `rust/tests/tts_smoke.rs`, `rust/tests/debug_ndjson_fd.rs`, `docs/errors.md`.
 - Not affected: `kesha status --json` (a CLI contract Raycast reads; unchanged shape), OpenClaw and Hermes (CLI only).
 
