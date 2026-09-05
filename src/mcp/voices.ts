@@ -125,7 +125,14 @@ export async function listVoices(): Promise<VoiceInfo[]> {
       readEvents(proc.stderr as ReadableStream<Uint8Array>),
       proc.exited,
     ]);
-    if (code !== 0 || events.invalid.length > 0) {
+    if (events.invalid.length > 0) {
+      throw new KeshaError(
+        "E_INTERNAL",
+        `kesha-engine say --list-voices wrote a line that is not a protocol event: "${events.invalid[0]}"`,
+        { exitCode: code, stderr: events.stderr.trim() },
+      );
+    }
+    if (code !== 0) {
       throw new KeshaError(
         events.error?.code ?? "E_INTERNAL",
         events.error?.message ?? `engine list-voices failed (exit ${code})`,

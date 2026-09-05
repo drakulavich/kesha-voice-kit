@@ -100,6 +100,33 @@ function voiceListingEngine(voiceIds: string[]): string {
 
 const STUB_VOICES = ["en-am_michael", "en-bf_emma", "ru-vosk-m02"];
 
+// A stub that answers on stdout but writes plain prose to stderr instead of a protocol 4 event.
+function babblingVoicesEngine(): string {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-voices-babble-"));
+  const path = join(dir, "kesha-engine");
+  writeFileSync(
+    path,
+    `#!/bin/sh\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' 'en-am_michael'\n  echo "loading voice pack..." >&2\n  exit 0\nfi\nexit 2\n`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+describe("list_voices() surfaces a non-event stderr line even on a clean exit", () => {
+  skipOnWin32("rejects with E_INTERNAL quoting the offending line", async () => {
+    await withEngineBin(babblingVoicesEngine(), async () => {
+      await expect(listVoices()).rejects.toThrow('kesha-engine say --list-voices wrote a line that is not a protocol event: "loading voice pack..."');
+      try {
+        await listVoices();
+        throw new Error("expected listVoices() to reject");
+      } catch (err) {
+        expect(err).toBeInstanceOf(Error);
+        expect((err as { code?: string }).code).toBe("E_INTERNAL");
+      }
+    });
+  });
+});
+
 describe("list_voices tool", () => {
   skipOnWin32("returns structured voices with new schema", async () => {
     await withEngineBin(voiceListingEngine(STUB_VOICES), async () => {
