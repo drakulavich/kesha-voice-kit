@@ -7,9 +7,10 @@
  * by the target it emits them at — that matrix is observable only from the real binaries,
  * which until now only the model-downloading lanes ever saw.
  *
- * These tests read `tests/fixtures/capabilities/<target>.json` — recordings of the published
- * binaries' capabilities (re-recorded as `describe` with the beta.2 pin, openspec task 5.4) —
- * and drive the production seams against them. No engine, no models, no network.
+ * These tests read `tests/fixtures/capabilities/<target>.json` — the published binaries'
+ * protocol-3 capabilities recordings (engine 1.24.11), turned into a describe
+ * document by `docFor` — and drive the production seams against them. Re-recording them
+ * as `describe` on the beta.2 pin is openspec task 5.4. No engine, no models, no network.
  * `.github/workflows/capability-pact.yml` re-records
  * from the real artifacts and fails on drift, which is what stops a pact from rotting into a
  * false green; it also owns the pinned-version check, which cannot live here because a release

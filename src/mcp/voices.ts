@@ -1,4 +1,5 @@
-import { getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "../engine";
+import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "../engine";
+import { validateArgv } from "../engine/describe";
 import { KeshaError, readEvents } from "../engine/events";
 import { installHint } from "../install-hint";
 import { registerProcessTree } from "../process-tree";
@@ -114,7 +115,8 @@ export async function listVoices(): Promise<VoiceInfo[]> {
   if (!isEngineInstalled()) {
     throw new Error(`kesha-engine not installed. run: ${installHint()}`);
   }
-  const proc = spawnEngineProcess(getEngineBinPath(), ["say", "--list-voices"], ["ignore", "pipe", "pipe"], protocolEnv());
+  const { argv } = validateArgv(["say", "--list-voices"], await getDescribe());
+  const proc = spawnEngineProcess(getEngineBinPath(), argv, ["ignore", "pipe", "pipe"], protocolEnv());
   // Register so an interrupt of the long-lived MCP stdio server terminates this spawn
   // instead of orphaning it; dispose in finally keeps the registration request-scoped
   // so a persistent server never leaks one per call (#939).
@@ -129,7 +131,7 @@ export async function listVoices(): Promise<VoiceInfo[]> {
       throw new KeshaError(
         "E_INTERNAL",
         `kesha-engine say --list-voices wrote a line that is not a protocol event: "${events.invalid[0]}"`,
-        { exitCode: code, stderr: events.stderr.trim() },
+        { exitCode: code },
       );
     }
     if (code !== 0) {

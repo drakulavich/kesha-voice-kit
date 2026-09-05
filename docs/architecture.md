@@ -130,7 +130,7 @@ src/                  Bun/TS CLI + library
 
 rust/src/             kesha-engine (Rust)
   main.rs            clap CLI: transcribe / say / detect-lang / install / record / ...
-  capabilities.rs    --capabilities-json (single source of truth for feature flags)
+  capabilities.rs    feature-flag table read by `describe` (and by the legacy --capabilities-json until beta.2)
   models/            HF download + cache + SHA-256 pins — manifest.rs (tables), paths.rs
                      (cache dirs), download.rs (retry/verify), staging.rs (ANE bundles),
                      progress.rs (stderr bar)
@@ -159,12 +159,14 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    (`KESHA_ENGINE_BIN` override → installed cache path) and spawns it with
    `Bun.spawn`.
 3. The CLI reads `kesha-engine describe` once per binary path (cached by path
-   + mtime) through `getDescribe` in `src/engine.ts`, and validates every
-   engine argv against that document with `validateArgv`
-   (`src/engine/describe.ts`) before spawning — instead of blindly
-   forwarding flags, see the "DO NOT BLINDLY FORWARD CLI FLAGS" rule in
-   [CLAUDE.md](../CLAUDE.md). Every piped-and-parsed spawn's stderr is read
-   as protocol-4 NDJSON events (`readEvents` in `src/engine/events.ts`).
+   + mtime) through `getDescribe` in `src/engine.ts`, and validates the argv of
+   every flag-carrying parsed spawn (`transcribe`, `say`, MCP `list_voices`)
+   against that document with `validateArgv` (`src/engine/describe.ts`)
+   before spawning — instead of blindly forwarding flags, see the "DO NOT
+   BLINDLY FORWARD CLI FLAGS" rule in [CLAUDE.md](../CLAUDE.md). Those
+   spawns read stderr as protocol-4 NDJSON events (`readEvents` in
+   `src/engine/events.ts`); `install`, `record`, CLI `say --list-voices` and
+   the Kokoro warmup inherit stderr on protocol 3 until their stage-2 PRs.
    `getEngineCapabilities` is a thin view over the describe document kept
    for the status/doctor/install screens that predate `describe`.
 4. **stdout is the result** (transcript / JSON / WAV bytes); **stderr is

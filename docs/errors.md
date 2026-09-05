@@ -7,7 +7,7 @@ error [E_MODEL_MISSING]: voice 'ru-vosk-m02' not installed. run: kesha install -
 ```
 
 The code is stable across releases — quote it in bug reports. Engine codes are
-introspectable via `kesha-engine --error-codes-json`. Codes are recorded
+introspectable via `kesha-engine describe` (the `errors` section). Codes are recorded
 (leak-free) in [Stats](local-stats.md) and [diagnostic logs](diagnostic-logs.md);
 the human message may contain a path and is sanitized before storage, but the
 code never needs sanitizing.

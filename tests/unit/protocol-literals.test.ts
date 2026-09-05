@@ -40,7 +40,7 @@ describe("the protocol 3 surface is gone from src/", () => {
 });
 
 describe("the protocol 3 surface is gone from tests/", () => {
-  test.each(["--capabilities-json", "--error-codes-json"])("no test stub answers %s any more", (needle) => {
+  test.each(["--capabilities-json", "--error-codes-json", "KESHA_DEBUG_FD"])("no test stub answers %s any more", (needle) => {
     const stubs = sources(repoPath("tests"))
       .map((p) => [relative(repoPath("."), p).replace(/\\/g, "/"), readFileSync(p, "utf8")] as const)
       .filter(([path, text]) => path !== "tests/unit/protocol-literals.test.ts" && text.includes(needle))

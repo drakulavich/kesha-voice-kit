@@ -1,11 +1,14 @@
 import { describe, test, expect } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { listVoices } from "../../src/mcp/voices";
+import { errorMessage } from "../../src/error-utils";
+import { describeJson } from "../helpers/fake-engine";
+import { KeshaError } from "../../src/engine/events";
 
 const skipOnWin32 = process.platform === "win32" ? test.skip : test;
 
@@ -92,7 +95,7 @@ function voiceListingEngine(voiceIds: string[]): string {
   const args = voiceIds.map((id) => `'${id}'`).join(" ");
   writeFileSync(
     path,
-    `#!/bin/sh\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' ${args}\n  exit 0\nfi\nexit 2\n`,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' ${args}\n  exit 0\nfi\nexit 2\n`,
   );
   chmodSync(path, 0o755);
   return path;
@@ -106,7 +109,7 @@ function babblingVoicesEngine(): string {
   const path = join(dir, "kesha-engine");
   writeFileSync(
     path,
-    `#!/bin/sh\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' 'en-am_michael'\n  echo "loading voice pack..." >&2\n  exit 0\nfi\nexit 2\n`,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' 'en-am_michael'\n  echo "loading voice pack..." >&2\n  exit 0\nfi\nexit 2\n`,
   );
   chmodSync(path, 0o755);
   return path;
@@ -122,6 +125,7 @@ describe("list_voices() surfaces a non-event stderr line even on a clean exit", 
       } catch (err) {
         expect(err).toBeInstanceOf(Error);
         expect((err as { code?: string }).code).toBe("E_INTERNAL");
+        expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine say --list-voices wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
       }
     });
   });
@@ -162,6 +166,41 @@ describe("list_languages tool", () => {
         { languageCode: "en-US", languageName: "American English", voiceCount: 1 },
         { languageCode: "ru", languageName: "Russian", voiceCount: 1 },
       ]);
+    });
+  });
+});
+
+describe("list_voices() validates against describe before spawning", () => {
+  skipOnWin32("a stale engine that cannot describe itself is E_ENGINE_PROTOCOL pointing at kesha install", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-voices-stale-"));
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "say" ]; then\n  printf '%s\\n' 'en-am_michael'\n  echo "Model mirror active: https://example" >&2\n  exit 0\nfi\necho "error: unrecognized subcommand describe" >&2\nexit 2\n`,
+    );
+    chmodSync(path, 0o755);
+    await withEngineBin(path, async () => {
+      const err = await listVoices().then(() => null, (e: unknown) => e as KeshaError);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect(err!.code).toBe("E_ENGINE_PROTOCOL");
+      expect(errorMessage(err)).toContain("hint: run `kesha install`");
+    });
+  });
+
+  skipOnWin32("a build without tts is E_INVALID_ARG and the engine is never asked", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-voices-notts-"));
+    const path = join(dir, "kesha-engine");
+    const marker = join(dir, "say-was-spawned");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["transcribe"] })}'\n  exit 0\nfi\ntouch '${marker}'\nexit 2\n`,
+    );
+    chmodSync(path, 0o755);
+    await withEngineBin(path, async () => {
+      const err = await listVoices().then(() => null, (e: unknown) => e as KeshaError);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect(err!.code).toBe("E_INVALID_ARG");
+      expect(existsSync(marker)).toBe(false);
     });
   });
 });
