@@ -43,11 +43,19 @@ fn non_test_prefix(text: &str) -> &str {
     text
 }
 
-fn scan(dir: &Path, hits: &mut Vec<String>) {
+/// Windows keeps `\` in the stripped path, so ALLOWED's forward-slash keys would never match.
+fn relative(root: &Path, p: &Path) -> String {
+    p.strip_prefix(root)
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn scan(root: &Path, dir: &Path, allowed: &[(&str, &str)], hits: &mut Vec<String>) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let p = entry.unwrap().path();
         if p.is_dir() {
-            scan(&p, hits);
+            scan(root, &p, allowed, hits);
             continue;
         }
         if p.extension().and_then(|e| e.to_str()) != Some("rs") {
@@ -55,12 +63,8 @@ fn scan(dir: &Path, hits: &mut Vec<String>) {
         }
         let text = std::fs::read_to_string(&p).unwrap();
         let non_test = non_test_prefix(&text);
-        let rel = p
-            .strip_prefix(concat!(env!("CARGO_MANIFEST_DIR"), "/"))
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-        let allowed = ALLOWED.iter().filter(|(f, _)| *f == rel).count();
+        let rel = relative(root, &p);
+        let allowed = allowed.iter().filter(|(f, _)| *f == rel).count();
         let found: Vec<String> = PATTERNS
             .iter()
             .filter_map(|pat| match non_test.matches(pat).count() {
@@ -80,11 +84,9 @@ fn scan(dir: &Path, hits: &mut Vec<String>) {
 
 #[test]
 fn no_raw_stderr_writes_outside_the_emitter() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut hits = Vec::new();
-    scan(
-        Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
-        &mut hits,
-    );
+    scan(root, &root.join("src"), ALLOWED, &mut hits);
     assert!(
         hits.is_empty(),
         "stderr sites bypassing protocol::events:\n{}",
@@ -97,4 +99,32 @@ fn the_split_ignores_a_cfg_test_attribute_on_a_single_item() {
     let text =
         "#[cfg(test)]\nfn helper() {}\neprintln!();\n#[cfg(test)]\nmod tests {\n eprintln!();\n}";
     assert_eq!(non_test_prefix(text).matches("eprintln!").count(), 1);
+}
+
+#[test]
+fn a_relative_path_is_reported_with_forward_slashes() {
+    let root = Path::new("root");
+    let nested = Path::new("root").join("src\\models\\download.rs");
+    assert_eq!(relative(root, &nested), "src/models/download.rs");
+}
+
+#[test]
+fn the_scan_reads_crlf_sources_and_stops_at_the_test_module() {
+    let dir = std::env::temp_dir().join(format!("kesha-scan-{}", std::process::id()));
+    let nested = dir.join("models");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::write(
+        nested.join("progress.rs"),
+        "fn paint() {\r\n    eprintln!(\"bar\");\r\n}\r\n#[cfg(test)]\r\nmod tests {\r\n    eprintln!(\"x\");\r\n    eprint!(\"y\");\r\n}\r\n",
+    )
+    .unwrap();
+    let mut hits = Vec::new();
+    scan(
+        &dir,
+        &dir,
+        &[("models/progress.rs", "the painter")],
+        &mut hits,
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(hits.is_empty(), "unexpected hits: {hits:?}");
 }
