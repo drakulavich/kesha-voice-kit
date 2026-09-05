@@ -16,6 +16,7 @@ use crate::backend::TranscriptionChunk;
 use crate::coded_bail;
 use crate::errors::ErrorCode;
 use crate::models;
+use crate::protocol::events;
 use crate::vad::{VadConfig, VadDetector, SAMPLE_RATE as VAD_SAMPLE_RATE};
 use crate::{dtrace, dtrace_json};
 
@@ -353,16 +354,22 @@ pub fn transcribe_with_options(
         }
         VadDecision::PlainWithHint => {
             let secs = duration.unwrap_or(0.0);
-            eprintln!(
-                "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
+            events::warn(
+                events::W_VAD_NOT_INSTALLED,
+                format!(
+                    "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
+                ),
             );
             transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
         }
         VadDecision::ChunkedWithHint => {
             let secs = duration.unwrap_or(0.0);
-            eprintln!(
-                "hint: audio is {secs:.0}s; VAD is not installed, so Kesha is using fixed-window ASR chunks. \
-                 Run `kesha install --vad` for better long-audio boundaries."
+            events::warn(
+                events::W_VAD_NOT_INSTALLED,
+                format!(
+                    "hint: audio is {secs:.0}s; VAD is not installed, so Kesha is using fixed-window ASR chunks. \
+                     Run `kesha install --vad` for better long-audio boundaries."
+                ),
             );
             transcribe_chunked(audio_path, &model_dir, timestamps_required)
         }
@@ -530,16 +537,18 @@ fn transcribe_via_vad(
         );
         if samples.len() >= min_speech_samples {
             if total_secs >= FULL_FILE_SINGLE_PASS_MAX_SECONDS {
-                eprintln!(
-                    "warning: VAD produced no speech segments for very long audio; using fixed-window ASR chunks instead of unsafe full-file ASR"
+                events::warn(
+                    events::W_VAD_NO_SPEECH,
+                    "warning: VAD produced no speech segments for very long audio; using fixed-window ASR chunks instead of unsafe full-file ASR",
                 );
                 return transcribe_chunked_samples(&samples, &mut |slice| {
                     be.transcribe_samples(slice)
                 });
             } else {
-                eprintln!(
-                    // No flag advice here: --no-vad is refused under --speakers (#768).
-                    "warning: VAD produced no speech segments; transcribing full file (the audio may be silent, or its speech quieter than the VAD threshold)"
+                // No flag advice here: --no-vad is refused under --speakers (#768).
+                events::warn(
+                    events::W_VAD_NO_SPEECH,
+                    "warning: VAD produced no speech segments; transcribing full file (the audio may be silent, or its speech quieter than the VAD threshold)",
                 );
             }
         }
@@ -612,9 +621,9 @@ where
             }
             Err(e) => {
                 // One failing segment shouldn't kill the whole transcript.
-                eprintln!(
-                    "warning: VAD segment {:.2}-{:.2}s failed: {e}",
-                    start_s, end_s
+                events::warn(
+                    events::W_GENERIC,
+                    format!("warning: VAD segment {start_s:.2}-{end_s:.2}s failed: {e}"),
                 );
             }
         }
@@ -706,9 +715,12 @@ where
                 if first_failure.is_none() {
                     first_failure = Some(e.to_string());
                 }
-                eprintln!(
-                    "warning: fixed-window ASR chunk {:.2}-{:.2}s failed: {e}",
-                    window.output_start_s, window.output_end_s
+                events::warn(
+                    events::W_GENERIC,
+                    format!(
+                        "warning: fixed-window ASR chunk {:.2}-{:.2}s failed: {e}",
+                        window.output_start_s, window.output_end_s
+                    ),
                 );
             }
         }

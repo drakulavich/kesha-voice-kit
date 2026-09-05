@@ -2,6 +2,8 @@ use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use crate::protocol::events;
+
 /// Below this a download finishes fast enough that a bar is noise, not feedback.
 pub(super) const PROGRESS_MIN_BYTES: u64 = 16 * 1024 * 1024;
 const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
@@ -18,13 +20,13 @@ fn lock_stderr() -> std::sync::MutexGuard<'static, bool> {
 
 fn end_open_bar_line(open: &mut bool) {
     if *open {
-        eprintln!();
+        events::progress(None, "");
         *open = false;
     }
 }
 
 /// Serializes install-progress writes and ends any open bar row first: the bar paints
-/// with `\r` and no newline, so an `eprintln!` would otherwise land inside that row.
+/// with `\r` and no newline, so a stray write would otherwise land inside that row.
 pub(super) fn with_stderr<T>(write: impl FnOnce() -> T) -> T {
     let mut open = lock_stderr();
     end_open_bar_line(&mut open);

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::coded_bail;
 use crate::errors::ErrorCode;
+use crate::protocol::events;
 use std::collections::HashMap;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -144,10 +145,13 @@ pub(crate) fn run(
     let spans: Vec<DiarizeSpan> = run_supervised(job, total_deadline, load_budget, audio_secs)?;
 
     if let Some(secs) = below_diarizer_floor(&spans, asr_segments, audio_path, duration) {
-        eprintln!(
-            "diarize: no speaker spans — the clip is {secs:.2}s and the model needs \
-             {MIN_DIARIZABLE_SECONDS:.2}s of audio before it can label anything; \
-             returning the transcript without speaker labels"
+        events::progress(
+            Some("diarize"),
+            format!(
+                "no speaker spans — the clip is {secs:.2}s and the model needs \
+                 {MIN_DIARIZABLE_SECONDS:.2}s of audio before it can label anything; \
+                 returning the transcript without speaker labels"
+            ),
         );
         dtrace!("diarize::below_floor clip_secs={secs:.3}");
         dtrace_json!("diarize.below_floor", { "clip_secs": secs });
@@ -309,7 +313,10 @@ fn run_supervised(
     let units = job.units;
     spawn_worker(job, std::sync::Arc::clone(&cancel), tx);
 
-    eprintln!("diarize: loading the CoreML model on {}", units.as_str());
+    events::progress(
+        Some("diarize"),
+        format!("loading the CoreML model on {}", units.as_str()),
+    );
 
     let now = Instant::now();
     let mut supervisor = PhaseSupervisor {
@@ -394,7 +401,7 @@ fn stop_and_report(
 ) -> Result<Vec<DiarizeSpan>> {
     let grace = supervisor.cancel_grace();
     if grace > CANCEL_GRACE {
-        eprintln!("diarize: {}", cancel_wait_notice(supervisor.phase, grace));
+        events::progress(Some("diarize"), cancel_wait_notice(supervisor.phase, grace));
     }
     if let Some(spans) = stop_worker(cancel, rx, grace) {
         return Ok(supervisor.report_done(spans));
@@ -529,7 +536,10 @@ impl PhaseSupervisor {
     fn on_model_ready(&mut self) {
         self.phase = Phase::Preparing;
         let load_secs = self.started.elapsed().as_secs_f32();
-        eprintln!("diarize: model ready in {load_secs:.1}s; reading the audio");
+        events::progress(
+            Some("diarize"),
+            format!("model ready in {load_secs:.1}s; reading the audio"),
+        );
         dtrace!("diarize::model_loaded dt={:.1}s", load_secs);
         dtrace_json!("diarize.model_loaded", { "load_secs": load_secs });
         let now = Instant::now();
@@ -548,11 +558,14 @@ impl PhaseSupervisor {
         self.last_progress = Some((processed, total, chunks));
         if self.last_report.elapsed() >= PROGRESS_REPORT_INTERVAL {
             self.last_report = Instant::now();
-            eprintln!(
-                "diarize: {:.0}% ({} chunks, {:.0}s elapsed)",
-                progress_ratio(processed, total) * 100.0,
-                chunks,
-                self.started.elapsed().as_secs_f32()
+            events::progress(
+                Some("diarize"),
+                format!(
+                    "{:.0}% ({} chunks, {:.0}s elapsed)",
+                    progress_ratio(processed, total) * 100.0,
+                    chunks,
+                    self.started.elapsed().as_secs_f32()
+                ),
             );
         }
     }
@@ -573,20 +586,23 @@ impl PhaseSupervisor {
     fn report_slow_phase(&mut self, stalled_for: Duration) {
         if !self.warned_slow_phase {
             self.warned_slow_phase = true;
-            eprintln!(
-                "diarize: {}",
-                slow_phase_hint(self.phase, stalled_for, self.audio_secs)
+            events::progress(
+                Some("diarize"),
+                slow_phase_hint(self.phase, stalled_for, self.audio_secs),
             );
             self.last_report = Instant::now();
         } else if self.last_report.elapsed() >= SLOW_PHASE_TICK_INTERVAL {
             self.last_report = Instant::now();
-            eprintln!(
-                "diarize: still {} ({:.0}s)",
-                match self.phase {
-                    Phase::Loading => "loading",
-                    _ => "reading the audio",
-                },
-                stalled_for.as_secs_f32()
+            events::progress(
+                Some("diarize"),
+                format!(
+                    "still {} ({:.0}s)",
+                    match self.phase {
+                        Phase::Loading => "loading",
+                        _ => "reading the audio",
+                    },
+                    stalled_for.as_secs_f32()
+                ),
             );
         }
     }
@@ -607,7 +623,10 @@ impl PhaseSupervisor {
     /// Announce a completed run on stderr and hand the spans back.
     fn report_done(&self, spans: Vec<DiarizeSpan>) -> Vec<DiarizeSpan> {
         let elapsed = self.started.elapsed().as_secs_f32();
-        eprintln!("diarize: done in {elapsed:.1}s ({} spans)", spans.len());
+        events::progress(
+            Some("diarize"),
+            format!("done in {elapsed:.1}s ({} spans)", spans.len()),
+        );
         dtrace!("diarize::finished dt={:.1}s spans={}", elapsed, spans.len());
         dtrace_json!(
             "diarize.finished",

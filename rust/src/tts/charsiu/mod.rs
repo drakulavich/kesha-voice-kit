@@ -11,6 +11,8 @@ use std::path::Path;
 use anyhow::Result;
 use ort::session::Session;
 
+use crate::protocol::events;
+
 pub(crate) mod decode;
 pub(crate) mod remap;
 pub(crate) mod tokenizer;
@@ -96,9 +98,10 @@ impl Charsiu {
                     use std::sync::Once;
                     static NOTE: Once = Once::new();
                     NOTE.call_once(|| {
-                        eprintln!(
+                        events::warn(
+                            events::W_GENERIC,
                             "note: Castilian (θ) pronunciation is unavailable; \
-                             using Latin-American Spanish."
+                             using Latin-American Spanish.",
                         );
                     });
                     "<spa>"

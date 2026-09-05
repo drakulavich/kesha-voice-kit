@@ -20,6 +20,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 
 #[cfg(any(target_os = "macos", test))]
+use crate::protocol::events;
+
+#[cfg(any(target_os = "macos", test))]
 const OUTPUT_CHANNELS: u16 = 1;
 #[cfg(any(target_os = "macos", test))]
 const FORMAT_IEEE_FLOAT: u16 = 0x0003;
@@ -172,7 +175,10 @@ pub fn record_default_input_live(
     let input = open_default_input()?;
     let sample_rate = input.config.sample_rate.0;
 
-    eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
+    events::progress(
+        None,
+        "Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...",
+    );
     let mut feed = LiveFeed {
         session: crate::streaming_asr::StreamingAsrSession::start(sample_rate)?,
         mono: Vec::new(),
@@ -197,9 +203,12 @@ pub fn record_default_input_live(
     stream
         .play()
         .context("failed to start microphone recording")?;
-    eprintln!(
-        "Listening ({sample_rate} Hz)... transcript prints when recording stops; \
-         Ctrl-C stops and still prints."
+    events::progress(
+        None,
+        format!(
+            "Listening ({sample_rate} Hz)... transcript prints when recording stops; \
+             Ctrl-C stops and still prints."
+        ),
     );
 
     let ended_by_endpoint = feed.listen(&sample_rx, &stop_rx, max_duration)?;
@@ -266,21 +275,30 @@ fn open_recovery_spill(sample_rate: u32) -> Option<spill::SpillWav> {
     let dir = match spill::recovery_dir() {
         Ok(dir) => dir,
         Err(err) => {
-            eprintln!("warning: this session has no recovery audio: {err:#}");
+            events::warn(
+                events::W_RECOVERY_AUDIO,
+                format!("warning: this session has no recovery audio: {err:#}"),
+            );
             return None;
         }
     };
     spill::prune_stale_spills(&dir, spill::RETENTION);
     match spill::SpillWav::create(&spill::spill_path(&dir), sample_rate) {
         Ok(spill) => {
-            eprintln!(
-                "Recovery audio: {} (removed once the transcript is delivered).",
-                spill.path().display()
+            events::progress(
+                None,
+                format!(
+                    "Recovery audio: {} (removed once the transcript is delivered).",
+                    spill.path().display()
+                ),
             );
             Some(spill)
         }
         Err(err) => {
-            eprintln!("warning: this session has no recovery audio: {err:#}");
+            events::warn(
+                events::W_RECOVERY_AUDIO,
+                format!("warning: this session has no recovery audio: {err:#}"),
+            );
             None
         }
     }
@@ -294,11 +312,17 @@ fn settle_recovery_spill(spill: Option<spill::SpillWav>, ended_normally: bool) {
         return;
     }
     if let Err(err) = spill.flush() {
-        eprintln!("warning: recovery audio may be truncated: {err:#}");
+        events::warn(
+            events::W_RECOVERY_AUDIO,
+            format!("warning: recovery audio may be truncated: {err:#}"),
+        );
     }
-    eprintln!(
-        "Recovery audio kept: {0} — transcribe it with `kesha {0}`.",
-        spill.path().display()
+    events::warn(
+        events::W_RECOVERY_AUDIO,
+        format!(
+            "Recovery audio kept: {0} — transcribe it with `kesha {0}`.",
+            spill.path().display()
+        ),
     );
 }
 
@@ -330,7 +354,10 @@ impl LiveFeed {
         );
         if let Some(active) = spill.as_mut() {
             if let Err(err) = active.push(mono) {
-                eprintln!("warning: recovery audio stopped early: {err:#}");
+                events::warn(
+                    events::W_RECOVERY_AUDIO,
+                    format!("warning: recovery audio stopped early: {err:#}"),
+                );
                 *spill = None;
             }
         }
@@ -360,7 +387,7 @@ impl LiveFeed {
             }
             match sample_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(samples) if self.feed(&samples)? => {
-                    eprintln!("End of utterance detected.");
+                    events::progress(None, "End of utterance detected.");
                     ended_by_endpoint = true;
                     break;
                 }
@@ -375,6 +402,7 @@ impl LiveFeed {
             }
         }
         if announced > 0 {
+            // blank separator; the v4 stream has no empty events
             eprintln!();
         }
         Ok(ended_by_endpoint)
@@ -395,9 +423,12 @@ impl LiveFeed {
 #[cfg(target_os = "macos")]
 fn warn_dropped_buffers(dropped: usize) {
     if dropped > 0 {
-        eprintln!(
-            "warning: dropped {dropped} microphone buffer(s) — recording could not keep up, \
-             so audio may have gaps"
+        events::warn(
+            events::W_MIC_DROPPED,
+            format!(
+                "warning: dropped {dropped} microphone buffer(s) — recording could not keep up, \
+                 so audio may have gaps"
+            ),
         );
     }
 }
@@ -470,7 +501,7 @@ fn build_input_stream_for_format(
     input: &DefaultInput,
     sink: impl FnMut(Vec<f32>) + Send + 'static,
 ) -> Result<cpal::Stream> {
-    let err_fn = |err| eprintln!("recording stream error: {err}");
+    let err_fn = |err| events::warn(events::W_GENERIC, format!("recording stream error: {err}"));
     match input.sample_format {
         SampleFormat::F32 => build_input_stream::<f32>(&input.device, &input.config, sink, err_fn),
         SampleFormat::I16 => build_input_stream::<i16>(&input.device, &input.config, sink, err_fn),

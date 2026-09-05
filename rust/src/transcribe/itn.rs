@@ -1,5 +1,7 @@
 use super::{join_segment_texts, TranscriptionOutput};
 
+use crate::protocol::events;
+
 /// Rewrite spoken-form numbers, money, dates and times to written form.
 ///
 /// Applies per segment so `--timestamps` survives: the pass changes token
@@ -150,11 +152,14 @@ fn normalize_text(text: &str) -> String {
         Some((_, names)) => match restore_protected_words(&normalized, names) {
             Some(restored) => restored,
             None => {
-                eprintln!(
-                    "warning: --itn left a segment unnormalized: the text pass returned {} of {} protected-word placeholders, \
-                     so the pinned text-processing-rs revision no longer treats U+FFFC as inert. Report this against #822.",
-                    normalized.matches(PROTECTED_MASK).count(),
-                    names.len()
+                events::warn(
+                    events::W_GENERIC,
+                    format!(
+                        "warning: --itn left a segment unnormalized: the text pass returned {} of {} protected-word placeholders, \
+                         so the pinned text-processing-rs revision no longer treats U+FFFC as inert. Report this against #822.",
+                        normalized.matches(PROTECTED_MASK).count(),
+                        names.len()
+                    ),
                 );
                 return text.to_string();
             }
