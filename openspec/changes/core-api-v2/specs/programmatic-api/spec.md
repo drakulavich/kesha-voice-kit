@@ -41,7 +41,7 @@ The Core API SHALL expose `install(opts?)`, which performs what `kesha install` 
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_UNSUPPORTED_PLATFORM`
 - AND nothing was downloaded
 
-> *Technical Note — Wraps `installEngine` in `src/engine-install.ts` (today reached through `downloadEngine` at `src/lib.ts:11` and `downloadTts` at `src/lib.ts:37`). The platform pre-check lives at `src/cli/install.ts:228-233` today and stays there, per the engine-contract rule that platform pre-checks precede schema validation (protocol-v4): with no Engine on disk there is no describe document to validate against, so the failure is `E_UNSUPPORTED_PLATFORM` rather than `E_INVALID_ARG`.*
+> *Technical Note — Wraps `installEngine` in `src/engine-install.ts` (today reached through `downloadEngine` at `src/lib.ts:11` and `downloadTts` at `src/lib.ts:37`). The platform pre-check stays where it is, per the engine-contract rule that platform pre-checks precede schema validation (protocol-v4): with no Engine on disk there is no describe document to validate against, so the platform pre-check reports `E_UNSUPPORTED_PLATFORM` (today it throws a bare `Error` at `src/cli/install.ts:228-233`; v4 assigns the code) rather than `E_INVALID_ARG`.*
 
 ### Requirement: `capabilities()` exposes the Engine's schema
 
@@ -111,8 +111,9 @@ file and the returned `Uint8Array` is empty.
   `code: "E_ENGINE_SPAWN"`.
 
 When `opts.noExpandAbbrev` is set and the Engine does not advertise
-`tts.ru_acronym_expansion` or `tts.en_acronym_expansion`, the flag is silently
-dropped and a `log.warn` message is emitted (not a thrown error).
+`tts.ru_acronym_expansion` or `tts.en_acronym_expansion`, the flag is dropped and
+one `warn` event is rendered (not a thrown error), per the `whenUngated: drop`
+rule of the `describe` schema (engine-contract, protocol-v4).
 
 #### Scenario: Sona synthesizes a Russian reply
 
@@ -156,7 +157,8 @@ dropped and a `log.warn` message is emitted (not a thrown error).
 > message embeds `installHint("--tts")` (`src/install-hint.ts:9`) — `kesha init
 > --tts` when `process.stderr.isTTY`, `kesha install --tts` otherwise. The
 > `noExpandAbbrev` capability check is `applyNoExpandAbbrev` at
-> `src/synth.ts:69-85`, reached from `buildSayArgs` at `src/synth.ts:98`.
+> `src/synth.ts:69-85`, reached from `buildSayArgs` at `src/synth.ts:98` — today;
+> under v4 the drop is schema-driven in `src/engine/describe.ts`.
 > `KeshaError` in `src/engine/events.ts` carries `exitCode` and `stderr` exactly
 > as `SayError` did (`src/synth.ts:103-113`).*
 
