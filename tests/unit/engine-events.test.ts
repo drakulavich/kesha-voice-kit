@@ -134,11 +134,20 @@ describe("readEvents", () => {
     }
   });
 
-  test("the last error event wins and a blank trailing line is ignored", async () => {
+  test("the last error event wins, and a blank line after it survives into stderr", async () => {
     const out = await readEvents(
       streamOf('{"kind":"error","code":"E_A","message":"1"}\n{"kind":"error","code":"E_B","message":"2"}\n\n'),
     );
     expect(out.error?.code).toBe("E_B");
     expect(out.invalid).toEqual([]);
+    expect(out.stderr).toBe("error [E_A]: 1\nerror [E_B]: 2\n\n");
+  });
+
+  test("an interior blank line separates an error render from a following prose paragraph", async () => {
+    const out = await readEvents(
+      streamOf('{"kind":"error","code":"E_A","message":"1"}\n\nsecond paragraph\n'),
+    );
+    expect(out.stderr).toBe("error [E_A]: 1\n\nsecond paragraph\n");
+    expect(out.invalid).toEqual(["second paragraph"]);
   });
 });
