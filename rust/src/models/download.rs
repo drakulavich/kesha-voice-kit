@@ -87,6 +87,10 @@ fn download_pool() -> &'static rayon::ThreadPool {
 /// 4 concurrent downloads. Each file runs its own retry budget to completion, so
 /// one file's transient 429 no longer cancels the three siblings mid-flight
 /// (#724); the install then fails naming every file that exhausted its retries.
+fn secondary_failure(path: &str, err: &anyhow::Error) -> events::Event<'static> {
+    events::Event::warn(events::W_DOWNLOAD, format!("FAIL {path}: {err:#}"))
+}
+
 pub(super) fn parallel_download(
     cache: &Path,
     manifest: &[&ModelFile],
@@ -122,7 +126,7 @@ pub(super) fn parallel_download(
     // The returned chain can only carry one root cause, so the others are
     // reported here rather than dropped.
     for (path, err) in failures.iter().skip(1) {
-        with_stderr(|| events::progress(None, format!("FAIL {path}: {err:#}")));
+        with_stderr(|| secondary_failure(path, err).emit());
     }
     Err(failures.remove(0).1.context(summary))
 }
@@ -1622,6 +1626,20 @@ mod retry_tests {
         );
         assert_eq!(good.join().expect("good server").len(), 1);
         assert_eq!(bad.join().expect("bad server").len(), 1);
+    }
+
+    #[test]
+    fn a_reported_sibling_failure_is_a_warning_and_keeps_its_v3_line() {
+        let err = anyhow::anyhow!("connection reset");
+        let e = secondary_failure("models/retry/b.bin", &err);
+        assert_eq!(
+            e.render(crate::protocol::events::Mode::V3),
+            "FAIL models/retry/b.bin: connection reset"
+        );
+        let v: serde_json::Value =
+            serde_json::from_str(&e.render(crate::protocol::events::Mode::V4)).unwrap();
+        assert_eq!(v["kind"], "warn");
+        assert_eq!(v["code"], "W_DOWNLOAD");
     }
 
     #[test]

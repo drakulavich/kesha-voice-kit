@@ -21,13 +21,28 @@ fn collect_codes(text: &str, out: &mut BTreeSet<String>) {
     }
 }
 
+/// A code named only inside a `#[cfg(test)]` module is not a call site, so the split keeps it from publishing itself.
+fn non_test_prefix(text: &str) -> &str {
+    const ATTR: &str = "#[cfg(test)]";
+    let mut from = 0;
+    while let Some(idx) = text[from..].find(ATTR) {
+        let at = from + idx;
+        if text[at + ATTR.len()..].trim_start().starts_with("mod ") {
+            return &text[..at];
+        }
+        from = at + ATTR.len();
+    }
+    text
+}
+
 fn walk(dir: &Path, skip: &Path, out: &mut BTreeSet<String>) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let p = entry.unwrap().path();
         if p.is_dir() {
             walk(&p, skip, out);
         } else if p.extension().and_then(|e| e.to_str()) == Some("rs") && p != skip {
-            collect_codes(&std::fs::read_to_string(&p).unwrap(), out);
+            let text = std::fs::read_to_string(&p).unwrap();
+            collect_codes(non_test_prefix(&text), out);
         }
     }
 }
