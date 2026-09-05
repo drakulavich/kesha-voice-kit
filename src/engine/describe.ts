@@ -50,6 +50,12 @@ const GATE_HINTS: Record<string, string> = {
   "install --diarize": "the installed engine was built without diarization (the Nix build is one such); use an official release build",
 };
 
+/** Remedies validateArgv attaches when two present flags conflict; keyed `<command> --<flag> --<other>`. */
+const CONFLICT_HINTS: Record<string, string> = {
+  "transcribe --speakers --no-vad":
+    "speaker labels attach to VAD-windowed speech segments, and disabling VAD leaves the whole file as one segment with nothing to label; drop --no-vad (VAD engages automatically for --speakers), or drop --speakers",
+};
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
@@ -211,7 +217,9 @@ export function validateArgv(argv: string[], doc: DescribeDocument): { argv: str
     }
     for (const other of flag.conflicts ?? []) {
       if (present.has(other)) {
-        throw new KeshaError("E_INVALID_ARG", `--${name} cannot be combined with --${other}`);
+        throw new KeshaError("E_INVALID_ARG", `--${name} cannot be combined with --${other}`, {
+          hint: CONFLICT_HINTS[`${command} --${name} --${other}`],
+        });
       }
     }
   }

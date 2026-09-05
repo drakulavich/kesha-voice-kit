@@ -201,10 +201,10 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
     }
   }
   if (!doc) {
+    // No `stderr`: clap prose is not an event transcript, and render() prefers stderr over the code+hint.
     throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\``, {
       hint: "run `kesha install` to fetch the engine this CLI expects",
       exitCode: run.exitCode,
-      stderr: run.stderr,
     });
   }
   const mismatch = protocolMismatch(doc, binPath);

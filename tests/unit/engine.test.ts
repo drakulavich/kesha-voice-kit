@@ -288,6 +288,8 @@ describe("engine", () => {
       const err = await failure(() => validateRecordRequest({ out: join(dir, "o.wav") }, 10));
       expect(err.code).toBe("E_ENGINE_PROTOCOL");
       expect(err.hint).toContain("kesha install");
+      expect(errorMessage(err)).toMatch(/^error \[E_ENGINE_PROTOCOL\]:/);
+      expect(errorMessage(err)).toContain("hint: run `kesha install`");
       expect(await getEngineCapabilities()).toBeNull();
     });
   });

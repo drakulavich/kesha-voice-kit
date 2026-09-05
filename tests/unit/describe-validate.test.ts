@@ -99,6 +99,19 @@ describe("validateArgv", () => {
     expect(failure(() => validateArgv(["record", "--auto-stop"], DOC)).code).toBe("E_INVALID_ARG");
   });
 
+  test("a conflict with a documented remedy carries it as a hint (#768)", () => {
+    const withDiarize = { ...DOC, features: [...DOC.features, "transcribe.diarize"] };
+    const err = failure(() =>
+      validateArgv(["transcribe", "a.wav", "--json", "--speakers", "--no-vad"], withDiarize),
+    );
+    expect(err.hint).toContain("VAD engages automatically");
+  });
+
+  test("an unlisted conflict pair carries no hint", () => {
+    const err = failure(() => validateArgv(["transcribe", "a.wav", "--vad", "--no-vad"], DOC));
+    expect(err.hint).toBeUndefined();
+  });
+
   test("a whenUngated: drop flag is omitted with one warning and the command proceeds", () => {
     const out = validateArgv(["say", "--voice", "en-am_michael", "--no-expand-abbrev", "hello"], DOC);
     expect(out.argv).toEqual(["say", "--voice", "en-am_michael", "hello"]);
