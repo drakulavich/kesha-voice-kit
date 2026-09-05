@@ -1,6 +1,6 @@
 ## Context
 
-Baseline `programmatic-api`: `transcribe -> Promise<string>` (`src/lib.ts:44`), `transcribeWithTimestamps` (`src/lib.ts:60`), alias `transcribeWithSegments` (`src/lib.ts:74`), `downloadModel`/`downloadEngine`/`downloadCoreML` (`src/lib.ts:11,42`), `downloadTts` (`src/lib.ts:36`), `SayError` (`src/synth.ts`). The only external references to the removed names outside `src/` and tests: `docs/api.md:7-9`, `docs/architecture.md:265`, `CLAUDE.md:207`, `openspec/specs/programmatic-api/spec.md:78-184`, `openspec/specs/GLOSSARY.md:53`, `openspec/changes/engine-version-override/design.md:129-131`, `CHANGELOG.md:123,175`.
+Baseline `programmatic-api`: `transcribe -> Promise<string>` (`src/lib.ts:44`), `transcribeWithTimestamps` (`src/lib.ts:55`), alias `transcribeWithSegments` (`src/lib.ts:74`), `downloadModel`/`downloadEngine`/`downloadCoreML` (`src/lib.ts:11,42`), `downloadTts` (`src/lib.ts:37`), `SayError` (`src/synth.ts`). The only external references to the removed names outside `src/` and tests: `docs/api.md:7-9`, `docs/architecture.md:265`, `CLAUDE.md:207`, `openspec/specs/programmatic-api/spec.md:78-184`, `openspec/specs/GLOSSARY.md:53`, `openspec/changes/engine-version-override/design.md:129-131`, `CHANGELOG.md:123,175`.
 
 ## Goals / Non-Goals
 

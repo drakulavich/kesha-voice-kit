@@ -17,7 +17,7 @@ The Core API SHALL expose `install(opts?)`, which performs what `kesha install` 
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_UNSUPPORTED_PLATFORM`
 - AND nothing was downloaded
 
-> *Technical Note — Wraps `installEngine` in `src/engine-install.ts` (today reached through `downloadEngine` at `src/lib.ts:11` and `downloadTts` at `src/lib.ts:36`).*
+> *Technical Note — Wraps `installEngine` in `src/engine-install.ts` (today reached through `downloadEngine` at `src/lib.ts:11` and `downloadTts` at `src/lib.ts:37`).*
 
 ### Requirement: `capabilities()` exposes the Engine's schema
 
@@ -41,6 +41,13 @@ The Core API SHALL expose `capabilities()`, resolving to the `describe` document
 
 Every promise the Core API returns SHALL reject with a `KeshaError` carrying `code` (a published Error code) and, when a remedy is known, `hint`; no Core API function SHALL reject with a bare `Error`.
 
+#### Scenario: A successful call raises nothing
+
+- GIVEN the Engine and ASR models are installed and `note.ogg` exists
+- WHEN Sona calls `await transcribe("note.ogg")`
+- THEN the promise resolves to a `TranscribeResult`
+- AND no `KeshaError` is constructed or thrown
+
 #### Scenario: Engine failure surfaces its code
 
 - GIVEN the ASR model is not installed
@@ -53,7 +60,7 @@ Every promise the Core API returns SHALL reject with a `KeshaError` carrying `co
 - THEN the rejection is a `KeshaError` with `code` `E_INPUT_NOT_FOUND`
 - AND `message` contains `ghost.ogg`
 
-> *Technical Note — `KeshaError` in `src/engine/events.ts`; replaces `SayError` (`src/synth.ts`) and the `Error("File not found: ...")` at `src/lib.ts:46`.*
+> *Technical Note — `KeshaError` in `src/engine/events.ts`; replaces `SayError` (`src/synth.ts`) and the `Error("File not found: ...")` at `src/lib.ts:49`.*
 
 ## MODIFIED Requirements
 
@@ -79,7 +86,7 @@ Every promise the Core API returns SHALL reject with a `KeshaError` carrying `co
 - WHEN Sona calls `await transcribe("ghost.ogg")`
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_INPUT_NOT_FOUND`
 
-> *Technical Note — `src/lib.ts:44-70` today; `transcribeWithTimestamps` (`src/lib.ts:60`) and the alias `transcribeWithSegments` (`src/lib.ts:74`) are removed by this change.*
+> *Technical Note — `src/lib.ts:44-70` today; `transcribeWithTimestamps` (`src/lib.ts:55`) and the alias `transcribeWithSegments` (`src/lib.ts:74`) are removed by this change.*
 
 ### Requirement: Exported types cover the full public surface
 
