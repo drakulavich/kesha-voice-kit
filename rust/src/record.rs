@@ -376,7 +376,7 @@ impl LiveFeed {
     ) -> Result<bool> {
         let started = Instant::now();
         let mut announced = 0u64;
-        let tick = io::stderr().is_terminal();
+        let tick = io::stderr().is_terminal() && events::mode() == events::Mode::V3;
         let mut ended_by_endpoint = false;
         loop {
             if stop_rx.try_recv().is_ok()
@@ -402,7 +402,7 @@ impl LiveFeed {
             }
         }
         if announced > 0 {
-            // blank separator; the v4 stream has no empty events
+            // closes the \r row the painter left open, so only ever reached on v3 + tty
             eprintln!();
         }
         Ok(ended_by_endpoint)
