@@ -11,7 +11,6 @@ import {
   getEngineBinPath,
   getEngineCapabilities,
   parseLangResult,
-  parseTranscriptionOutput,
   recordEngine,
   spawnEngineProcess,
   textLangFailureWarning,
@@ -794,6 +793,14 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     });
   }
 
+  fakeEngineTest("a reply that is not JSON at all is rejected, with the payload named", async () => {
+    await withEngineEnv(transcribingEngine("kesha-engine: segfault"), async () => {
+      const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
+      expect(err.code).toBe("E_INTERNAL");
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: .+: kesha-engine: segfault$/);
+    });
+  });
+
   // A speaker label is optional, so a bad one is dropped rather than failing the transcript.
   fakeEngineTest("a non-numeric speaker is dropped instead of forwarded", async () => {
     const payload = '{"text":"ok","segments":[{"start":0,"end":1,"text":"ok","speaker":"alice"}]}';
@@ -811,18 +818,6 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
         segments: [{ start: 0, end: 1.5, text: "ok", speaker: 2 }],
       });
     });
-  });
-
-  // Pinned by inspection only: transcribeEngineWithSegments's catch forwards this code rather than hardcoding it.
-  test("parseTranscriptionOutput throws a KeshaError with code E_INTERNAL on a malformed reply", () => {
-    let thrown: unknown;
-    try {
-      parseTranscriptionOutput('{"text":1,"segments":[]}');
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(KeshaError);
-    expect((thrown as KeshaError).code).toBe("E_INTERNAL");
   });
 
   // #647: a non-null return means "it described itself" — callers reach straight for .features.
