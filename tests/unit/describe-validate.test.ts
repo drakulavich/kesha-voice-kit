@@ -107,6 +107,13 @@ describe("validateArgv", () => {
     expect(err.hint).toContain("VAD engages automatically");
   });
 
+  test("a gate hint names its remedy (record --auto-stop)", () => {
+    const err = failure(() => validateArgv(["record", "--live", "--auto-stop"], DOC));
+    expect(err.code).toBe("E_INVALID_ARG");
+    expect(err.message).toContain("record.live.auto-stop");
+    expect(err.hint).toContain("kesha install");
+  });
+
   test("an unlisted conflict pair carries no hint", () => {
     const err = failure(() => validateArgv(["transcribe", "a.wav", "--vad", "--no-vad"], DOC));
     expect(err.hint).toBeUndefined();

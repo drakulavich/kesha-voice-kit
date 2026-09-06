@@ -1,6 +1,8 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { engineGate } from "../helpers/model-gate";
 import { getEngineBinPath, TRANSCRIBE_DIARIZE_FEATURE } from "../../src/engine";
+import { parseDescribe } from "../../src/engine/describe";
+import { describeDocument } from "../helpers/fake-engine";
 import type { WordTiming } from "../../src/engine";
 
 // These predate protocol 4's describe schema; TS no longer keeps its own copy (Task 4, protocol-v4).
@@ -95,6 +97,15 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(["coreml", "onnx"]).toContain(caps.backend);
     expect(caps.features).toContain("transcribe");
     expect(caps.features).toContain("detect-lang");
+  });
+
+  // The only live anchor for the TS mirror of gate_rows(): the unit pin is a recorded fixture nothing regenerates.
+  test("describe is the fake engine's template for its own backend, profile and features", async () => {
+    const { stdout, exitCode } = await runEngine(["describe"]);
+    expect(exitCode).toBe(0);
+    const live = parseDescribe(JSON.parse(stdout));
+    expect(live).not.toBeNull();
+    expect(describeDocument({ backend: live!.backend, profile: live!.profile, features: live!.features, tts: live!.tts })).toEqual(live!);
   });
 
   test("transcribe.diarize present iff darwin-arm64 (#199)", async () => {

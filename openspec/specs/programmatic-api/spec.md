@@ -115,7 +115,7 @@ file and the returned `Uint8Array` is empty.
 - `text` exceeds `MAX_TEXT_CHARS` (5000 Unicode code points) → `SayError`
   with `exitCode: 5` and `code: "E_TEXT_TOO_LONG"`.
 - Engine not installed → `SayError` with `exitCode: 1` and
-  `code: "E_ENGINE_SPAWN"` (the `TS_NATIVE_CODES.ENGINE_SPAWN` value).
+  `code: "E_ENGINE_SPAWN"`.
 
 When `opts.noExpandAbbrev` is set and the Engine does not advertise
 `tts.ru_acronym_expansion` or `tts.en_acronym_expansion`, the flag is silently
@@ -160,7 +160,7 @@ dropped and a `log.warn` message is emitted (not a thrown error).
 > `src/synth.ts:22`. `SayError` at `src/synth.ts:96` carries `exitCode`,
 > `stderr`, `code`. `E_TEXT_EMPTY` exit code 2 at `src/synth.ts:115`;
 > `E_TEXT_TOO_LONG` exit code 5 at `src/synth.ts:118`. Engine-not-installed
-> throws `TS_NATIVE_CODES.ENGINE_SPAWN` (`"E_ENGINE_SPAWN"`) with exit code 1 at
+> throws `E_ENGINE_SPAWN` with exit code 1 at
 > `src/synth.ts:127-134`; its message embeds `installHint("--tts")`
 > (`src/install-hint.ts:9`) — `kesha init --tts` when `process.stderr.isTTY`,
 > `kesha install --tts` otherwise. The `noExpandAbbrev`
@@ -252,9 +252,9 @@ message naming the `kesha install` command needed to fix the situation.
   `kesha init` on an interactive TTY, `kesha install` when stderr is piped
 
 > *Technical Note — `isEngineInstalled()` in `src/engine.ts:50` gates
-> Engine-dependent calls. `preflightTranscribeWithSegments` in
-> `src/transcribe.ts:32` checks `isEngineInstalled()` and throws a `bun add -g`
-> + `installHint()` block when false (`src/transcribe.ts:34-39`); `installHint()`
+> Engine-dependent calls. `validateTranscribeRequest` in `src/transcribe.ts`
+> checks `isEngineInstalled()` and throws a `bun add -g` + `installHint()` block
+> when false, then validates the argv against `kesha-engine describe`; `installHint()`
 > (`src/install-hint.ts:9`) yields `kesha init` on a TTY, `kesha install`
 > otherwise.*
 
