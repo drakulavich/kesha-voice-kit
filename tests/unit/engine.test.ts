@@ -746,6 +746,18 @@ exit 2
       expect(await detectAudioLanguageEngine("audio.wav")).toBeNull();
     });
   });
+
+  fakeEngineTest("a stray non-event line on detect-lang does not blind language detection (#1166 follow-up)", async () => {
+    const engine = langDetectEngine(
+      "kesha-engine-detect-lang-noisy-",
+      "detect-lang",
+      `  echo 'onnxruntime: some warning' >&2
+  printf '%s\\n' '{"code":"ru","confidence":0.87}'`,
+    );
+    await withEngineEnv(engine, async () => {
+      expect(await detectAudioLanguageEngine("audio.wav")).toEqual({ code: "ru", confidence: 0.87 });
+    });
+  });
 });
 
 describe("text language detection degrades loudly (#770)", () => {
@@ -805,6 +817,18 @@ describe("text language detection degrades loudly (#770)", () => {
     }
     const plain = captured.join("").replace(/\x1b\[[0-9;]*m/g, "");
     expect(plain.includes("Text language detection failed")).toBe(process.platform === "darwin");
+  });
+
+  fakeEngineTest("a stray non-event line on detect-text-lang does not blind language detection (#1166 follow-up)", async () => {
+    const engine = langDetectEngine(
+      "kesha-engine-detect-text-lang-noisy-",
+      "detect-text-lang",
+      `  echo 'onnxruntime: some warning' >&2
+  printf '%s\\n' '{"code":"ru","confidence":0.87}'`,
+    );
+    await withEngineEnv(engine, async () => {
+      expect(await detectTextLanguageEngine("hello")).toEqual({ code: "ru", confidence: 0.87 });
+    });
   });
 });
 

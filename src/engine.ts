@@ -454,7 +454,8 @@ export async function detectAudioLanguageEngine(
 ): Promise<LangDetectResult | null> {
   if (!isEngineInstalled()) return null;
   const run = await runEngine(["detect-lang", audioPath], opts);
-  if (failed(run)) return null;
+  // Unlike failed(), tolerates a stray non-event line — a noisy onnxruntime warning must not blind a best-effort guess.
+  if (run.exitCode !== 0 || run.error !== null) return null;
   return parseLangResult(run.stdout);
 }
 
@@ -465,7 +466,7 @@ export async function detectTextLanguageEngine(
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
   const run = await runEngine(["detect-text-lang", text], opts);
-  if (failed(run)) {
+  if (run.exitCode !== 0 || run.error !== null) {
     const warning = textLangFailureWarning(run.stderr);
     if (warning) log.warn(warning);
     return null;
