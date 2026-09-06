@@ -335,9 +335,10 @@ describe("engine", () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
       async () => {
-        await expect(transcribeEngineWithSegments("audio.wav", { speakers: true })).rejects.toThrow(
-          "KESHA_DIARIZE_MODEL_PATH set but path does not exist",
-        );
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav", { speakers: true }));
+        expect(err.code).toBe("E_MODEL_MISSING");
+        expect(err.hint).toContain("kesha install --diarize");
+        expect(err.message).toContain("KESHA_DIARIZE_MODEL_PATH set but path does not exist");
       },
       { KESHA_DIARIZE_MODEL_PATH: "/tmp/kesha-missing-diarize-model" },
     );
@@ -349,9 +350,10 @@ describe("engine", () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
       async () => {
-        await expect(transcribeEngineWithSegments("audio.wav", { speakers: true })).rejects.toThrow(
-          "speaker diarization requires the VAD model",
-        );
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav", { speakers: true }));
+        expect(err.code).toBe("E_MODEL_MISSING");
+        expect(err.hint).toContain("kesha install --vad");
+        expect(err.message).toContain("speaker diarization requires the VAD model");
       },
       {
         KESHA_DIARIZE_MODEL_PATH: modelPath,

@@ -906,7 +906,11 @@ describe("CLI contracts", () => {
     const missingDiarize = await runCli([mediaPath, "--json", "--speakers"], { env: missingDiarizeEnv });
     expectContract(missingDiarize, {
       exitCode: 1,
-      stderrContains: ["diarization model not found"],
+      stderrContains: [
+        "error [E_MODEL_MISSING]: ",
+        "diarization model not found",
+        "hint: run `kesha install --diarize`",
+      ],
       stderrNotContains: ["Transcribing", "Transcribed"],
       stdoutNotContains: ["Привет с воркшопа"],
     });
