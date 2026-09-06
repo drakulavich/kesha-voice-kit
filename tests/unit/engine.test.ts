@@ -247,6 +247,18 @@ describe("engine", () => {
     });
   });
 
+  fakeEngineTest("validateTranscribeRequest against an engine that cannot describe itself is E_ENGINE_PROTOCOL", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-old-transcribe-"));
+    const old = join(dir, "kesha-engine");
+    writeFileSync(old, "#!/bin/sh\necho 'error: unrecognized subcommand describe' >&2\nexit 2\n");
+    chmodSync(old, 0o755);
+    await withEngineEnv(old, async () => {
+      const err = await failure(() => validateTranscribeRequest({}));
+      expect(err.code).toBe("E_ENGINE_PROTOCOL");
+      expect(err.hint).toContain("kesha install");
+    });
+  });
+
   fakeEngineTest("validateTranscribeRequest leaves argv validation to the engine layer", async () => {
     // A build without diarization: the request is accepted here, refused at the spawn.
     await withEngineEnv(fakeEngine(["transcribe", "transcribe.segments"]), async () => {

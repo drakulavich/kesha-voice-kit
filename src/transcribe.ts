@@ -1,5 +1,6 @@
 import {
   assertSpeakerModelsInstalled,
+  getDescribe,
   isEngineInstalled,
   transcribeEngine,
   transcribeEngineWithSegments,
@@ -38,13 +39,14 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
   return (await transcribeWithSegments(audioPath, opts)).text;
 }
 
-/** The CLI's gate before any progress UI: the engine and the model files a request needs; argv is checked at the spawn. */
+/** The CLI's gate before any progress UI: the engine, its describe document, and the model files a request needs; argv is checked at the spawn. */
 export async function validateTranscribeRequest(opts: TranscribeOptions = {}): Promise<void> {
   if (!isEngineInstalled()) {
     throw new KeshaError("E_ENGINE_SPAWN", "No transcription backend is installed", {
       hint: `bun add -g @drakulavich/kesha-voice-kit, then ${installHint()}`,
     });
   }
+  await getDescribe();
   if (opts.speakers) assertSpeakerModelsInstalled();
 }
 

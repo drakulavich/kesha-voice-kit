@@ -606,6 +606,7 @@ describe("CLI contracts", () => {
     expectContract(res, {
       exitCode: 1,
       stderrContains: ["error [E_ENGINE_PROTOCOL]: ", "hint: run `kesha install`"],
+      stderrNotContains: ["Transcribing"],
     });
     const parsed = JSON.parse(res.stdout);
     expect(parsed.errors[0]).toMatchObject({ file: mediaPath, code: "E_ENGINE_PROTOCOL" });
