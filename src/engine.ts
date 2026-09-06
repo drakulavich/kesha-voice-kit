@@ -336,7 +336,7 @@ function parseWordTimings(raw: unknown): WordTiming[] | undefined {
 export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
   const parsed = JSON.parse(stdout);
   if (typeof parsed?.text !== "string" || !Array.isArray(parsed?.segments)) {
-    throw new Error("Invalid transcription JSON returned by kesha-engine");
+    throw new KeshaError("E_INTERNAL", "Invalid transcription JSON returned by kesha-engine");
   }
 
   const segments = parsed.segments.map((segment: unknown) => {
@@ -346,7 +346,7 @@ export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
       typeof s.end !== "number" ||
       typeof s.text !== "string"
     ) {
-      throw new Error("Invalid transcription segment returned by kesha-engine");
+      throw new KeshaError("E_INTERNAL", "Invalid transcription segment returned by kesha-engine");
     }
     const out: TranscriptionSegment = { start: s.start, end: s.end, text: s.text };
     if (typeof s.speaker === "number") out.speaker = s.speaker;
@@ -369,7 +369,8 @@ export async function transcribeEngineWithSegments(
   try {
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
-    throw new Error(`${errorMessage(err)}: ${run.stdout}`);
+    const message = err instanceof Error ? err.message : String(err);
+    throw new KeshaError("E_INTERNAL", `${message}: ${run.stdout}`);
   }
 }
 

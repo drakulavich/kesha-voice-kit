@@ -759,9 +759,9 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
   ] as const) {
     fakeEngineTest(`${shape} is rejected, with the payload named`, async () => {
       await withEngineEnv(transcribingEngine(payload), async () => {
-        await expect(transcribeEngineWithSegments("audio.wav")).rejects.toThrow(
-          `Invalid transcription JSON returned by kesha-engine: ${payload}`,
-        );
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
+        expect(err.code).toBe("E_INTERNAL");
+        expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: Invalid transcription JSON returned by kesha-engine/);
       });
     });
   }
@@ -773,9 +773,9 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
   ] as const) {
     fakeEngineTest(`a segment whose ${field} has the wrong type is rejected`, async () => {
       await withEngineEnv(transcribingEngine(payload), async () => {
-        await expect(transcribeEngineWithSegments("audio.wav")).rejects.toThrow(
-          "Invalid transcription segment returned by kesha-engine",
-        );
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
+        expect(err.code).toBe("E_INTERNAL");
+        expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: Invalid transcription segment returned by kesha-engine/);
       });
     });
   }
