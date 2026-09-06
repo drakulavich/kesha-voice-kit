@@ -343,6 +343,10 @@ function createListVoicesHangEngine(dir: string, enginePidPath: string): string 
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["tts"] }))});
+  process.exit(0);
+}
 if (args[0] === "say" && args[1] === "--list-voices") {
   await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
   await new Promise(() => {});
@@ -672,6 +676,39 @@ describe("CLI contracts", () => {
       stderrNotContains: ["ENOENT", "posix_spawn"],
     });
     expect(run.stderr).not.toMatch(/^\s+at /m);
+  });
+
+  test("kesha say --list-voices prints the engine's voice ids on stdout, one per line, and exits 0", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-listvoices-");
+    const enginePath = join(dir, "kesha-engine-listvoices");
+    writeFileSync(
+      enginePath,
+      `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["tts"] }))});
+  process.exit(0);
+}
+if (args[0] === "say" && args[1] === "--list-voices") {
+  console.error(JSON.stringify({ kind: "progress", message: "Loading voices" }));
+  console.log("en-am_michael\\nru-vosk-m02\\n");
+  process.exit(0);
+}
+process.exit(99);
+`,
+    );
+    chmodSync(enginePath, 0o755);
+    const run = await runCli(["say", "--list-voices"], {
+      env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      trimOutput: false,
+    });
+    expectContract(run, {
+      exitCode: 0,
+      stderrContains: ["Loading voices"],
+      stderrNotContains: ["kind"],
+    });
+    expect(run.stdout).toBe("en-am_michael\nru-vosk-m02\n");
   });
 
   test("a batch where every file failed writes nothing to stdout", async () => {
