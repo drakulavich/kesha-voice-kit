@@ -146,6 +146,20 @@ function engineWithoutDescribe(exitCode: number): string {
   return binPath;
 }
 
+/** A stub engine whose `describe` answers with a genuine protocol 4 error event, not just a bad exit status. */
+function engineDescribeReportsError(exitCode: number, code: string, message: string): string {
+  const dir = tempDir("kesha-say-describe-err-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\n  exit ${exitCode}\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
 /** Points `KESHA_ENGINE_BIN` at a path with nothing there, the way an unfinished install would. */
 function missingEngine(): string {
   const dir = tempDir("kesha-say-missing-");
@@ -212,5 +226,12 @@ describe("kesha say --list-voices speaks protocol 4", () => {
     expect(exitCode).toBe(1);
     expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
     expect(stderr).toContain("kesha install");
+  });
+
+  skipOnWin32("an engine whose describe reports an error event exits with its own status, not 4", async () => {
+    engineDescribeReportsError(1, "E_MODEL_MISSING", "the TTS bundle is missing");
+    const { exitCode, stderr } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
   });
 });
