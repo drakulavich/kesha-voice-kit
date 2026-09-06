@@ -538,7 +538,7 @@ export async function validateInstallRequest(
 }
 
 /** Runs `kesha-engine install` to download/verify models. */
-export async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
+async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
   log.progress("Installing models...");
   // #680: a piped child read only at exit looks hung on a multi-GB download; the sink renders each event as it arrives.
   const proc = spawnEngineProcess(binPath, installArgs, ["ignore", "inherit", "pipe"], protocolEnv());

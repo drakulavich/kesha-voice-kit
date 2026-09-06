@@ -1,4 +1,4 @@
-import { describe, test, expect, spyOn } from "bun:test";
+import { afterEach, describe, test, expect } from "bun:test";
 import {
   buildEngineInstallArgs,
   cleanupRetiredSidecars,
@@ -9,15 +9,16 @@ import {
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
   validateInstallRequest,
-  runEngineModelInstall,
+  installEngine,
+  SIDECARS,
 } from "../../src/engine-install";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { defaultEngineBinPath } from "../../src/paths";
 import { KeshaError } from "../../src/engine/events";
-import { log } from "../../src/log";
-import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
+import { engineVersion } from "../../src/package-info";
+import { describeJson, isolateEngineCache, saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
 
 /** The thrown KeshaError, so a test can assert on code and hint rather than on prose. */
 async function failure(run: () => Promise<unknown>): Promise<KeshaError> {
@@ -307,47 +308,76 @@ describe("waitUntilSpawnable (#216)", () => {
   });
 });
 
-describe("runEngineModelInstall speaks protocol 4 (#1163)", () => {
+describe("the model install speaks protocol 4 (#1163)", () => {
   const posixTest = process.platform === "win32" ? test.skip : test;
+  let releaseCacheIsolation: () => void = () => {};
+  const tempDirs: string[] = [];
 
-  function writeInstallEngine(dir: string, body: string): string {
-    const binPath = join(dir, "kesha-engine");
-    writeFileSync(binPath, `#!/bin/sh\n${body}\n`);
+  afterEach(() => {
+    releaseCacheIsolation();
+    releaseCacheIsolation = () => {};
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A cache-valid engine dir: `installEngine()` skips straight to the model install, no download. */
+  function stageInstallableEngine(prefix: string): string {
+    releaseCacheIsolation = isolateEngineCache();
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    tempDirs.push(dir);
+    mkdirSync(join(dir, "bin"), { recursive: true });
+    // An unhealthy sidecar makes the cache-hit path re-download it for real (refreshCachedEngine).
+    for (const spec of SIDECARS) {
+      const path = join(dir, "bin", spec.fileBasename);
+      writeFileSync(path, "#!/bin/sh\nexit 0\n");
+      chmodSync(path, 0o755);
+    }
+    return dir;
+  }
+
+  /** Answers `describe` and `--version` for the cache-validity checks, and `install` with `body`. */
+  function writeEngineWithInstallBody(dir: string, body: string): string {
+    const binPath = join(dir, "bin", "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+case "$1" in
+  describe) printf '%s\\n' '${describeJson({ features: ["tts"] })}'; exit 0 ;;
+  --version) printf 'kesha-engine ${engineVersion}\\n'; exit 0 ;;
+esac
+if [ "$1" = "install" ]; then
+${body}
+fi
+exit 0
+`,
+    );
     chmodSync(binPath, 0o755);
+    writeFileSync(`${binPath}.version`, `${engineVersion}\n`);
+    process.env.KESHA_ENGINE_BIN = binPath;
     return binPath;
   }
 
-  posixTest("an engine error event fails the run as a coded KeshaError, not a plain Error", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-install-v4-error-"));
-    const binPath = writeInstallEngine(
-      dir,
-      `printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"manifest hash mismatch"}' >&2\nexit 1`,
+  posixTest("a stderr line that is not an event fails as E_INTERNAL naming that line", async () => {
+    const dir = stageInstallableEngine("kesha-install-v4-raw-line-");
+    writeEngineWithInstallBody(dir, `echo "downloading model-a.bin..." >&2`);
+
+    const err = await failure(() => installEngine());
+
+    expect(err.code).toBe("E_INTERNAL");
+    expect(err.message).toContain(
+      'kesha-engine install wrote a line that is not a protocol event: "downloading model-a.bin..."',
     );
-    try {
-      const err = await runEngineModelInstall(binPath, ["install"]).then(
-        () => null,
-        (e: unknown) => e as KeshaError,
-      );
-      expect(err).toBeInstanceOf(KeshaError);
-      expect(err!.code).toBe("E_MODEL_MISSING");
-      expect(err!.message).toBe("manifest hash mismatch");
-      expect(err!.origin).toBe("engine");
-      expect(err!.exitCode).toBe(1);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
   });
 
   /**
-   * #680: a piped child read only at exit looks hung on a multi-GB download. The stub
-   * blocks after its first progress event until the caller's sink has actually seen it
-   * (by writing an ack file), so a buffered (non-live) implementation would time out
-   * here instead of the fallback message arriving with the wrong text.
+   * #680: a piped child read only at exit looks hung on a multi-GB download. The stub blocks
+   * after its first progress event until the ack file appears, so breaking the streaming
+   * (reading stderr to completion before the sink runs) makes the wait time out and the
+   * fallback line surface instead of the expected second line.
    */
   posixTest("progress events reach the caller live and in order", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-install-v4-progress-"));
+    const dir = stageInstallableEngine("kesha-install-v4-progress-");
     const ack = join(dir, "ack");
-    const binPath = writeInstallEngine(
+    writeEngineWithInstallBody(
       dir,
       `printf '%s\\n' '{"kind":"progress","message":"GET model-a.bin"}' >&2
 i=0
@@ -359,20 +389,26 @@ if [ -e '${ack}' ]; then
   printf '%s\\n' '{"kind":"progress","message":"OK model-a.bin"}' >&2
 else
   printf '%s\\n' '{"kind":"progress","message":"TIMED OUT WAITING FOR ACK"}' >&2
-fi
-exit 0`,
+fi`,
     );
-    const seen: string[] = [];
-    const progressSpy = spyOn(log, "progress").mockImplementation((msg: string) => {
-      seen.push(msg);
-      if (msg === "GET model-a.bin") writeFileSync(ack, "");
-    });
+
+    const savedWrite = process.stderr.write;
+    const captured: string[] = [];
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      const text = typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
+      captured.push(text);
+      if (text.includes("GET model-a.bin")) writeFileSync(ack, "");
+      return true;
+    }) as typeof process.stderr.write;
     try {
-      await runEngineModelInstall(binPath, ["install"]);
+      await installEngine();
     } finally {
-      progressSpy.mockRestore();
-      rmSync(dir, { recursive: true, force: true });
+      process.stderr.write = savedWrite;
     }
-    expect(seen).toEqual(["Installing models...", "GET model-a.bin", "OK model-a.bin"]);
+
+    const stripped = captured.join("").replace(/\[[0-9;]*m/g, "");
+    expect(stripped).not.toContain("TIMED OUT WAITING FOR ACK");
+    expect(stripped.indexOf("GET model-a.bin")).toBeGreaterThanOrEqual(0);
+    expect(stripped.indexOf("OK model-a.bin")).toBeGreaterThan(stripped.indexOf("GET model-a.bin"));
   });
 });

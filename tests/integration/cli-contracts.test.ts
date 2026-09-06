@@ -131,10 +131,12 @@ if (args[0] === "say") {
 
 if (args[0] === "install") {
   if (process.env.KESHA_FAKE_INSTALL_ERROR) {
+    const raw = process.env.KESHA_FAKE_INSTALL_ERROR;
+    const coded = raw.match(/^error \\[([A-Z0-9_]+)\\]: ([\\s\\S]*)$/);
     console.error(JSON.stringify({
       kind: "error",
-      code: "E_MODEL_DOWNLOAD",
-      message: process.env.KESHA_FAKE_INSTALL_ERROR,
+      code: coded ? coded[1] : "E_MODEL_DOWNLOAD",
+      message: coded ? coded[2] : raw,
     }));
     process.exit(42);
   }
@@ -1190,6 +1192,25 @@ process.exit(99);
       command: "install",
       status: "failed",
       errorKind: "install_failed",
+    });
+  });
+
+  // #1163: an install failure carries the engine's own coded error event, not a generic exit-code message.
+  test("an install error event fails with the engine's own code, not a generic exit-code message", async () => {
+    const dir = makeTempDir("kesha-cli-contract-install-error-shape-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const env = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_INSTALL_ERROR: "error [E_MODEL_MISSING]: manifest hash mismatch",
+    };
+
+    const run = await runCli(["install", "--vad"], { env });
+    expectContract(run, {
+      exitCode: 1,
+      stderrContains: ["error [E_MODEL_MISSING]: manifest hash mismatch"],
+      stderrNotContains: ["Failed to install models:", "exited with code"],
     });
   });
 
