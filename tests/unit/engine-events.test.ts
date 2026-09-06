@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   engineFailure,
+  exitCodeFor,
   KeshaError,
   parseEventLine,
   readEvents,
@@ -203,5 +204,47 @@ describe("engineFailure() is the one way a run becomes a KeshaError", () => {
   test("with no exit code of its own the error leaves exitCode unset", () => {
     const err = engineFailure("describe", { stderr: "noise\n", error: null, invalid: ["noise"] }, undefined);
     expect(err.exitCode).toBeUndefined();
+  });
+});
+
+describe("origin says who raised the error", () => {
+  const silent = { stderr: "", error: null, invalid: [] };
+
+  test("engineFailure() is the engine's, a bare KeshaError is the CLI's", () => {
+    expect(engineFailure("say", silent, 1).origin).toBe("engine");
+    expect(new KeshaError("E_INVALID_ARG", "x").origin).toBe("cli");
+  });
+});
+
+describe("exitCodeFor() is the one rule behind every kesha say exit status", () => {
+  const silent = { stderr: "", error: null, invalid: [] };
+  const noise = { stderr: "loading\n", error: null, invalid: ["loading"] };
+
+  test("an engine that ran and failed exits with its own status", () => {
+    expect(exitCodeFor(engineFailure("say", silent, 3))).toBe(3);
+  });
+
+  test("an engine that broke the protocol on a clean exit is 4, never 0", () => {
+    expect(exitCodeFor(engineFailure("say", noise, 0))).toBe(4);
+    expect(exitCodeFor(engineFailure("describe", noise, undefined))).toBe(4);
+  });
+
+  test("a CLI-side code maps through the documented table", () => {
+    expect(exitCodeFor(new KeshaError("E_INVALID_ARG", "x"))).toBe(2);
+    expect(exitCodeFor(new KeshaError("E_TEXT_EMPTY", "x"))).toBe(2);
+    expect(exitCodeFor(new KeshaError("E_TEXT_TOO_LONG", "x"))).toBe(5);
+    expect(exitCodeFor(new KeshaError("E_INTERNAL", "x"))).toBe(4);
+    expect(exitCodeFor(new KeshaError("E_ENGINE_PROTOCOL", "x"))).toBe(1);
+    expect(exitCodeFor(new KeshaError("E_ENGINE_SPAWN", "x"))).toBe(1);
+    expect(exitCodeFor(new KeshaError("E_SOMETHING_NEW", "x"))).toBe(1);
+  });
+
+  test("an explicit exitCode on a CLI-side error wins over the table", () => {
+    expect(exitCodeFor(new KeshaError("E_INVALID_ARG", "x", { exitCode: 7 }))).toBe(7);
+  });
+
+  test("anything that is not a KeshaError is the uncoded 4", () => {
+    expect(exitCodeFor(new Error("boom"))).toBe(4);
+    expect(exitCodeFor("boom")).toBe(4);
   });
 });

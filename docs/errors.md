@@ -89,3 +89,9 @@ that treats every non-zero status as a crash will misreport a cancellation.
 own** non-zero status when the engine itself fails. For fine-grained handling,
 match on the stable `error [CODE]` line — it is the reliable signal; the numeric
 exit status only distinguishes the broad categories above.
+
+`kesha say` (including `--list-voices`) derives that status from one rule: an
+error the engine reported exits with the engine's own status (`4` if it broke
+the protocol on a clean exit), an error the CLI raised before the spawn — a
+flag the installed build lacks, a missing engine, a protocol mismatch — maps its
+code through the table above.

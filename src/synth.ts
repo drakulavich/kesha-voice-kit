@@ -1,6 +1,13 @@
 import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "./engine";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, KeshaError, readEvents } from "./engine/events";
+import {
+  engineFailure,
+  KeshaError,
+  readEvents,
+  type ErrorOrigin,
+  type EventSinks,
+  type StderrOutcome,
+} from "./engine/events";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { registerProcessTree } from "./process-tree";
@@ -66,8 +73,15 @@ export function buildSayArgs(o: SayOptions): string[] {
 }
 
 export class SayError extends KeshaError {
-  constructor(message: string, exitCode: number, stderr: string, code: string = "E_INTERNAL", hint?: string) {
-    super(code, message, { exitCode, stderr, hint });
+  constructor(
+    message: string,
+    exitCode: number,
+    stderr: string,
+    code: string = "E_INTERNAL",
+    hint?: string,
+    origin: ErrorOrigin = "cli",
+  ) {
+    super(code, message, { exitCode, stderr, hint, origin });
     this.name = "SayError";
   }
 }
@@ -151,7 +165,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms bytes=${stdoutBuf.byteLength}`);
 
   const stderrText = events.stderr;
-  if (exitCode === 0 && events.invalid.length === 0) {
+  if (exitCode === 0 && events.invalid.length === 0 && !events.error) {
     if (stderrText.length > 0) process.stderr.write(stderrText);
     return new Uint8Array(stdoutBuf);
   }
@@ -160,5 +174,35 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     .filter((part): part is string => Boolean(part))
     .join("\n");
   const failure = engineFailure("say", events, exitCode, detail);
-  throw new SayError(failure.message, failure.exitCode || 4, failure.stderr ?? "", failure.code, failure.hint);
+  throw new SayError(failure.message, failure.exitCode || 4, failure.stderr ?? "", failure.code, failure.hint, failure.origin);
+}
+
+/** Installed voice ids as the engine lists them, one per line; a missing engine, a build without tts or a failed run is a KeshaError. */
+export async function listVoiceIds(sinks: EventSinks = {}): Promise<string[]> {
+  if (!isEngineInstalled()) {
+    throw new KeshaError("E_ENGINE_SPAWN", `kesha-engine not installed. run: ${installHint()}`);
+  }
+  const { argv, warnings } = validateArgv(["say", "--list-voices"], await getDescribe());
+  for (const warning of warnings) log.warn(warning);
+  const proc = spawnEngineProcess(getEngineBinPath(), argv, ["ignore", "pipe", "pipe"], protocolEnv());
+  // Registered so Ctrl-C during a cold Engine load terminates it (#939); disposed here so a long-lived MCP server never leaks one per call.
+  const tree = registerProcessTree(proc);
+  let out: string;
+  let events: StderrOutcome;
+  let exitCode: number;
+  try {
+    [out, events, exitCode] = await Promise.all([
+      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
+      readEvents(proc.stderr as ReadableStream<Uint8Array>, sinks),
+      proc.exited,
+    ]);
+  } finally {
+    tree.dispose();
+  }
+  if (exitCode !== 0 || events.invalid.length > 0 || events.error) throw engineFailure("say --list-voices", events, exitCode);
+  if (events.stderr.length > 0) process.stderr.write(events.stderr);
+  return out
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }

@@ -88,8 +88,12 @@ export function renderEvent(event: EngineEvent): string {
   }
 }
 
+export type ErrorOrigin = "cli" | "engine";
+
 export class KeshaError extends Error {
   readonly code: string;
+  /** `"engine"` only through `engineFailure()`: the outcome of a spawn; everything the CLI raises itself is `"cli"`. */
+  readonly origin: ErrorOrigin;
   readonly hint?: string;
   readonly exitCode?: number;
   readonly stderr?: string;
@@ -99,11 +103,12 @@ export class KeshaError extends Error {
   constructor(
     code: string,
     message: string,
-    extra: { hint?: string; exitCode?: number; stderr?: string; versionMismatch?: boolean } = {},
+    extra: { hint?: string; exitCode?: number; stderr?: string; versionMismatch?: boolean; origin?: ErrorOrigin } = {},
   ) {
     super(message);
     this.name = "KeshaError";
     this.code = code;
+    this.origin = extra.origin ?? "cli";
     if (extra.hint !== undefined) this.hint = extra.hint;
     if (extra.exitCode !== undefined) this.exitCode = extra.exitCode;
     if (extra.stderr !== undefined) this.stderr = extra.stderr;
@@ -189,9 +194,24 @@ export async function readEvents(
   return outcome;
 }
 
+/** Codes the CLI raises itself whose documented exit status is not the operational 1 (docs/errors.md). */
+const CLI_EXIT_CODES: Record<string, number> = {
+  E_INVALID_ARG: 2,
+  E_TEXT_EMPTY: 2,
+  E_TEXT_TOO_LONG: 5,
+  E_INTERNAL: 4,
+};
+
+/** Process exit status for a failure: an engine-origin error exits with the subprocess's own status (4 when it left none), a CLI-origin one by its code; anything else is the uncoded 4. */
+export function exitCodeFor(err: unknown): number {
+  if (!(err instanceof KeshaError)) return 4;
+  if (err.origin === "engine") return err.exitCode || 4;
+  return err.exitCode ?? CLI_EXIT_CODES[err.code] ?? 1;
+}
+
 /** The KeshaError for a run that wrote a non-event line, reported an error event, or exited non-zero in silence; `stderr` is the transcript unless the caller substitutes one. */
 export function engineFailure(command: string, outcome: StderrOutcome, exitCode: number | undefined, stderr = outcome.stderr.trim()): KeshaError {
-  const extra = { exitCode, stderr };
+  const extra = { exitCode, stderr, origin: "engine" as const };
   if (outcome.invalid.length > 0) {
     return new KeshaError("E_INTERNAL", `kesha-engine ${command} wrote a line that is not a protocol event: "${outcome.invalid[0]}"`, extra);
   }

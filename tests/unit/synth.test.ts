@@ -144,6 +144,7 @@ describe("say on protocol 4", () => {
       expect(err!.hint).toBe("kesha say --list-voices");
       expect(err!.exitCode).toBe(1);
       expect(err!.stderr).toContain("error [E_VOICE_UNKNOWN]: no such voice: xx");
+      expect(err!.origin).toBe("engine");
     } finally {
       restore();
     }
@@ -200,6 +201,24 @@ describe("say on protocol 4", () => {
     }
   });
 
+  posixIt("an error event fails the run even though the engine exits 0 with audio bytes", async () => {
+    const engine = sayEngine(
+      `  printf '%s\\n' '{"kind":"error","code":"E_VOICE_UNKNOWN","message":"no such voice: xx"}' >&2\n  printf 'RIFF'\n  exit 0`,
+    );
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err).toBeInstanceOf(SayError);
+      expect(err!.code).toBe("E_VOICE_UNKNOWN");
+      expect(err!.exitCode).toBe(4);
+      expect(err!.stderr).toContain("error [E_VOICE_UNKNOWN]: no such voice: xx");
+      expect(err!.origin).toBe("engine");
+    } finally {
+      restore();
+    }
+  });
+
   posixIt("returns the audio and is spawned with KESHA_PROTOCOL=4", async () => {
     const engine = sayEngine(`  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2\n  printf 'RIFF'\n  exit 0`);
     const restore = saveEngineEnv();
@@ -226,6 +245,7 @@ describe("say input preflight", () => {
       expect(err).toBeInstanceOf(SayError);
       expect((err as SayError).exitCode).toBe(2);
       expect((err as Error).message).toBe("text is empty");
+      expect((err as SayError).origin).toBe("cli");
     }
   });
 });
