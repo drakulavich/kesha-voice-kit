@@ -453,9 +453,9 @@ export async function detectAudioLanguageEngine(
   opts: RunEngineOptions = {},
 ): Promise<LangDetectResult | null> {
   if (!isEngineInstalled()) return null;
-  const { stdout, exitCode } = await runEngine(["detect-lang", audioPath], opts);
-  if (exitCode !== 0) return null;
-  return parseLangResult(stdout);
+  const run = await runEngine(["detect-lang", audioPath], opts);
+  if (failed(run)) return null;
+  return parseLangResult(run.stdout);
 }
 
 export async function detectTextLanguageEngine(
@@ -464,13 +464,13 @@ export async function detectTextLanguageEngine(
 ): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
-  const { stdout, stderr, exitCode } = await runEngine(["detect-text-lang", text], opts);
-  if (exitCode !== 0) {
-    const warning = textLangFailureWarning(stderr);
+  const run = await runEngine(["detect-text-lang", text], opts);
+  if (failed(run)) {
+    const warning = textLangFailureWarning(run.stderr);
     if (warning) log.warn(warning);
     return null;
   }
-  return parseLangResult(stdout);
+  return parseLangResult(run.stdout);
 }
 
 /**
