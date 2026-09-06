@@ -6,7 +6,7 @@ import { getDescribe, getEngineBinPath, protocolEnv, spawnEngineProcess } from "
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, KeshaError, readEvents, type StderrOutcome } from "./engine/events";
+import { engineFailure, KeshaError, readEvents } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
@@ -539,23 +539,24 @@ export async function validateInstallRequest(
 /** Runs `kesha-engine install` to download/verify models. */
 async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
   log.progress("Installing models...");
-  // #680: a piped child read only at exit looks hung on a multi-GB download; the sink renders each event as it arrives.
-  const proc = spawnEngineProcess(binPath, installArgs, ["ignore", "inherit", "pipe"], protocolEnv());
+  // #680/#1164: the byte-progress bar needs a terminal and protocol 3; move once the engine emits it as events.
+  const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "inherit"]);
   const tree = registerProcessTree(proc);
-  let events: StderrOutcome;
   let exitCode: number;
   try {
-    [events, exitCode] = await Promise.all([
-      readEvents(proc.stderr as ReadableStream<Uint8Array>, { onProgress: (line) => log.progress(line) }),
-      proc.exited,
-    ]);
+    exitCode = await proc.exited;
   } finally {
     tree.dispose();
   }
-  if (exitCode !== 0 || events.invalid.length > 0 || events.error) {
-    throw engineFailure("install", events, exitCode);
+
+  if (exitCode !== 0) {
+    throw new KeshaError(
+      "E_INTERNAL",
+      `Failed to install models: kesha-engine install exited with code ${exitCode}. ` +
+        "See the engine output above for the failing file.",
+      { exitCode },
+    );
   }
-  if (events.stderr.length > 0) process.stderr.write(events.stderr);
 }
 
 /**

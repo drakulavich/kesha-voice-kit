@@ -131,13 +131,7 @@ if (args[0] === "say") {
 
 if (args[0] === "install") {
   if (process.env.KESHA_FAKE_INSTALL_ERROR) {
-    const raw = process.env.KESHA_FAKE_INSTALL_ERROR;
-    const coded = raw.match(/^error \\[([A-Z0-9_]+)\\]: ([\\s\\S]*)$/);
-    console.error(JSON.stringify({
-      kind: "error",
-      code: coded ? coded[1] : "E_MODEL_DOWNLOAD",
-      message: coded ? coded[2] : raw,
-    }));
+    console.error(process.env.KESHA_FAKE_INSTALL_ERROR);
     process.exit(42);
   }
   if (process.env.KESHA_FAKE_INSTALL_ARGS_PATH) {
@@ -1180,7 +1174,7 @@ process.exit(99);
     expectContract(run, {
       exitCode: 1,
       stdoutContains: ["Engine binary already installed"],
-      stderrContains: [`error [E_MODEL_DOWNLOAD]: fake model install failed in ${dir}`],
+      stderrContains: ["Failed to install models:"],
     });
 
     const { raw: diagnosticLog, events } = readDiagnosticLog(env.KESHA_LOG_DIR);
@@ -1192,25 +1186,6 @@ process.exit(99);
       command: "install",
       status: "failed",
       errorKind: "install_failed",
-    });
-  });
-
-  // #1163: an install failure carries the engine's own coded error event, not a generic exit-code message.
-  test("an install error event fails with the engine's own code, not a generic exit-code message", async () => {
-    const dir = makeTempDir("kesha-cli-contract-install-error-shape-");
-    const enginePath = createFakeEngine(dir);
-    markFakeEngineInstalled(enginePath);
-    const env = {
-      ...isolatedEnv(dir),
-      KESHA_ENGINE_BIN: enginePath,
-      KESHA_FAKE_INSTALL_ERROR: "error [E_MODEL_MISSING]: manifest hash mismatch",
-    };
-
-    const run = await runCli(["install", "--vad"], { env });
-    expectContract(run, {
-      exitCode: 1,
-      stderrContains: ["error [E_MODEL_MISSING]: manifest hash mismatch"],
-      stderrNotContains: ["Failed to install models:", "exited with code"],
     });
   });
 
