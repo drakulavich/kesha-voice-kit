@@ -42,6 +42,13 @@ if [ "$1" = "describe" ]; then
 fi
 exit 0
 `;
+const DESCRIBE_ERROR_ENGINE = `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the TTS bundle is missing"}' >&2
+  exit 1
+fi
+exit 0
+`;
 /**
  * `exec` so the terminate signal lands on `sleep` itself, not on a shell that ignores it.
  * The duration doubles as a per-test marker, so one hang test never observes another's child.
@@ -218,6 +225,13 @@ describe("engineFunctionalHealth (#801)", () => {
     const health = await engineFunctionalHealth();
     expect(health.status).toBe("protocol");
     expect(health.status === "protocol" && health.detail).toContain("error [E_INTERNAL]: kesha-engine describe wrote a line that is not a protocol event: \"ld.so: warning: cannot enable executable stack\"");
+  });
+
+  posixTest("a describe the engine itself fails is a protocol fault, not mute", async () => {
+    stageEngine("kesha-functional-describe-error-", DESCRIBE_ERROR_ENGINE);
+    const health = await engineFunctionalHealth();
+    expect(health.status).toBe("protocol");
+    expect(health.status === "protocol" && health.detail).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
   });
 });
 
