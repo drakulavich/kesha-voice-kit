@@ -11,6 +11,7 @@ import {
   getEngineBinPath,
   getEngineCapabilities,
   parseLangResult,
+  parseTranscriptionOutput,
   recordEngine,
   spawnEngineProcess,
   textLangFailureWarning,
@@ -810,6 +811,18 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
         segments: [{ start: 0, end: 1.5, text: "ok", speaker: 2 }],
       });
     });
+  });
+
+  // Pinned by inspection only: transcribeEngineWithSegments's catch forwards this code rather than hardcoding it.
+  test("parseTranscriptionOutput throws a KeshaError with code E_INTERNAL on a malformed reply", () => {
+    let thrown: unknown;
+    try {
+      parseTranscriptionOutput('{"text":1,"segments":[]}');
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(KeshaError);
+    expect((thrown as KeshaError).code).toBe("E_INTERNAL");
   });
 
   // #647: a non-null return means "it described itself" — callers reach straight for .features.

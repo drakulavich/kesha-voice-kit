@@ -370,7 +370,7 @@ export async function transcribeEngineWithSegments(
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new KeshaError("E_INTERNAL", `${message}: ${run.stdout}`);
+    throw new KeshaError(err instanceof KeshaError ? err.code : "E_INTERNAL", `${message}: ${run.stdout}`);
   }
 }
 
