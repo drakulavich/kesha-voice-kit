@@ -208,12 +208,12 @@ export const recordCommand = defineCommand({
       await validateRecordRequest(resolved.target, resolved.maxSeconds);
       await recordEngine(resolved.target, resolved.maxSeconds);
     } catch (err) {
-      log.error(errorMessage(err));
       const signalExitCode = getPendingSignalExitCode();
       if (signalExitCode !== null) {
         await waitForPendingSignalCleanup();
         process.exit(signalExitCode);
       }
+      log.error(errorMessage(err));
       process.exit(err instanceof KeshaError ? exitCodeFor(err) : 1);
     }
   },

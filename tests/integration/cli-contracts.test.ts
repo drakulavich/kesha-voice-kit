@@ -755,8 +755,9 @@ describe("CLI contracts", () => {
 
       proc.kill(signal);
 
-      const [, actualExitCode] = await Promise.all([drained, proc.exited]);
+      const [[, stderr], actualExitCode] = await Promise.all([drained, proc.exited]);
       expect(actualExitCode).toBe(exitCode);
+      expect(stderr).toBe("");
       expect(await waitForPidExit(enginePid)).toBe(true);
     });
   }
