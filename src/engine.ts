@@ -188,8 +188,8 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
     }
   }
   if (!doc) {
-    // An error event or a non-event line names the engine-side cause; no exitCode, because the probe's status is not the caller's command status.
-    if (run.error || run.invalid.length > 0) throw engineFailure("describe", run, undefined);
+    // An error event names the engine-side cause; a non-event line is still the generic protocol fault, with the install hint.
+    if (run.error) throw engineFailure("describe", run, undefined);
     throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\``, {
       hint: "run `kesha install` to fetch the engine this CLI expects",
     });
