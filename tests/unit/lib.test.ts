@@ -4,11 +4,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { transcribe } from "../../src/lib";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
-import {
-  transcribe as transcribeWrapper,
-  transcribeWithSegments,
-  validateTranscribeRequest,
-} from "../../src/transcribe";
+import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
+import { KeshaError } from "../../src/engine/events";
 
 function fakeEngine(features: string[]): string {
   return writeTranscribingEngine(
@@ -62,15 +59,15 @@ describe("lib API", () => {
     const saved = process.env.KESHA_ENGINE_BIN;
     process.env.KESHA_ENGINE_BIN = `/tmp/kesha-missing-engine-${Date.now()}`;
     try {
-      let message = "";
+      let hint = "";
       try {
-        await transcribeWrapper("audio.wav");
+        await validateTranscribeRequest({});
       } catch (err) {
-        message = err instanceof Error ? err.message : String(err);
+        hint = err instanceof KeshaError ? (err.hint ?? "") : String(err);
       }
-      expect(message).toContain("bun add -g @drakulavich/kesha-voice-kit");
-      expect(message).toContain("kesha install");
-      expect(message).not.toContain("bunx");
+      expect(hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
+      expect(hint).toContain("kesha install");
+      expect(hint).not.toContain("bunx");
     } finally {
       if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
       else process.env.KESHA_ENGINE_BIN = saved;
@@ -81,9 +78,15 @@ describe("lib API", () => {
     const saved = process.env.KESHA_ENGINE_BIN;
     try {
       process.env.KESHA_ENGINE_BIN = join(mkdtempSync(join(tmpdir(), "kesha-no-engine-")), "absent");
-      await expect(
-        validateTranscribeRequest({ speakers: true, vad: "off" }),
-      ).rejects.toThrow("No transcription backend is installed");
+      let err: unknown;
+      try {
+        await validateTranscribeRequest({ speakers: true, vad: "off" });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_ENGINE_SPAWN");
+      expect((err as KeshaError).hint).toContain("kesha install");
     } finally {
       if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
       else process.env.KESHA_ENGINE_BIN = saved;
@@ -108,12 +111,10 @@ describe("lib API", () => {
     });
   });
 
-  // The itn gate sits above the `timestamps || speakers` short-circuit, so it
-  // has to fire on the plain-text path too — the one that otherwise reaches the
-  // engine with no preflight at all (#710).
+  // validateTranscribeRequest no longer checks argv, so this fires at the transcribeEngine spawn (#710).
   fakeEngineIt("preflights itn support on the plain-text path", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
-      await expect(validateTranscribeRequest({ itn: true })).rejects.toThrow(
+      await expect(transcribeWithSegments("audio.wav", { itn: true })).rejects.toThrow(
         "--itn needs transcribe.itn",
       );
     });
@@ -122,7 +123,7 @@ describe("lib API", () => {
   fakeEngineIt("preflights itn support alongside timestamps", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
       await expect(
-        validateTranscribeRequest({ timestamps: true, itn: true }),
+        transcribeWithSegments("audio.wav", { timestamps: true, itn: true }),
       ).rejects.toThrow("--itn needs transcribe.itn");
     });
   });
