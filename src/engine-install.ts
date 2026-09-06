@@ -225,6 +225,7 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
     binPath,
     ["say", "--voice", "en-am_michael", "--out", outPath, "Kesha warmup."],
     ["ignore", "pipe", "pipe"],
+    protocolEnv(),
   );
   const tree = registerProcessTree(proc);
 
@@ -234,22 +235,20 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
     proc.kill();
   }, 180_000);
 
-  let stderr = "";
   try {
-    const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
-    const [stderrText, exitCode] = await Promise.all([
-      new Response(stderrStream).text(),
+    const [events, exitCode] = await Promise.all([
+      readEvents(proc.stderr as ReadableStream<Uint8Array>),
       proc.exited,
     ]);
-    stderr = stderrText.trim();
 
     if (timedOut) {
       log.warn("FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow.");
       return;
     }
-    if (exitCode !== 0) {
+    if (exitCode !== 0 || events.invalid.length > 0 || events.error) {
+      const err = engineFailure("say", events, exitCode);
       log.warn(
-        `FluidAudio Kokoro warmup failed${stderr ? `: ${stderr}` : ""}; first ` +
+        `FluidAudio Kokoro warmup failed (${errorMessage(err)}); first ` +
           "`kesha say en-*` may still be slow.",
       );
       return;
