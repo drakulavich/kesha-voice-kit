@@ -161,8 +161,14 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   return { stdout: stdout.trim(), stderr, exitCode, error: events.error, invalid: events.invalid };
 }
 
+/** The run failed and said so: a non-zero status, or an error event whatever the status. */
+function reportedFailure(run: EngineRun): boolean {
+  return run.exitCode !== 0 || run.error !== null;
+}
+
+/** `reportedFailure` plus a line that is not a protocol event — the strict form, for paths that throw. */
 function failed(run: EngineRun): boolean {
-  return run.exitCode !== 0 || run.invalid.length > 0 || run.error !== null;
+  return reportedFailure(run) || run.invalid.length > 0;
 }
 
 let cachedDescribe: { binPath: string; mtime: number; doc: DescribeDocument } | null = null;
@@ -454,8 +460,8 @@ export async function detectAudioLanguageEngine(
 ): Promise<LangDetectResult | null> {
   if (!isEngineInstalled()) return null;
   const run = await runEngine(["detect-lang", audioPath], opts);
-  // Unlike failed(), tolerates a stray non-event line — a noisy onnxruntime warning must not blind a best-effort guess.
-  if (run.exitCode !== 0 || run.error !== null) return null;
+  // The tolerant form: a noisy onnxruntime warning must not blind a best-effort guess.
+  if (reportedFailure(run)) return null;
   return parseLangResult(run.stdout);
 }
 
@@ -466,7 +472,7 @@ export async function detectTextLanguageEngine(
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
   const run = await runEngine(["detect-text-lang", text], opts);
-  if (run.exitCode !== 0 || run.error !== null) {
+  if (reportedFailure(run)) {
     const warning = textLangFailureWarning(run.stderr);
     if (warning) log.warn(warning);
     return null;
