@@ -562,11 +562,10 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
   }
 
   if (exitCode !== 0) {
-    throw new KeshaError(
-      "E_INTERNAL",
+    // No code of our own: inherited stderr already carried the engine's coded line to the user.
+    throw new Error(
       `Failed to install models: kesha-engine install exited with code ${exitCode}. ` +
         "See the engine output above for the failing file.",
-      { exitCode },
     );
   }
 }

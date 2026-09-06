@@ -378,9 +378,8 @@ describe("cache validity (#775)", () => {
     expect(engineInvocations().find((a) => a.startsWith("install"))).toContain("--no-cache");
   }, 30_000);
 
-  // A read-only dir's skipped health probe (#801) must not force a bare install through describe too (#1163).
-  posixTest("a bare install on a read-only engine dir does not need the engine to describe itself", async () => {
-    if (process.getuid?.() === 0) return; // root writes through the mode bits
+  // A read-only dir's skipped health probe (#801) must not force a bare install through describe too.
+  posixTest.skipIf(process.getuid?.() === 0)("a bare install on a read-only engine dir does not need the engine to describe itself", async () => {
     const binPath = stageInstalledEngine("kesha-bare-readonly-no-describe-", { caps: null });
     chmodSync(dirname(binPath), 0o555);
     stubRelease();
