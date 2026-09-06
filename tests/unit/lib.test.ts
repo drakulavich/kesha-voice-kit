@@ -34,7 +34,10 @@ async function withEngine<T>(enginePath: string, fn: () => T | Promise<T>): Prom
 
 describe("lib API", () => {
   it("rejects missing file", async () => {
-    await expect(transcribe("/nonexistent/audio.wav")).rejects.toThrow("File not found");
+    const err = await transcribe("/nonexistent/audio.wav").catch((e) => e);
+    expect(err).toBeInstanceOf(KeshaError);
+    expect((err as KeshaError).code).toBe("E_INPUT_NOT_FOUND");
+    expect((err as KeshaError).message).toContain("File not found");
   });
 
   it("keeps transcribeWithSegments as a compatibility alias", async () => {
