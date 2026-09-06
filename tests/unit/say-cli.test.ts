@@ -53,27 +53,37 @@ function failingEngine(exitCode: number, code: string, message: string): string 
   return binPath;
 }
 
-/** Runs `kesha say` in-process and returns the status it exits with plus everything it wrote to stderr. */
-async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number; stderr: string }> {
+/** Runs `kesha say` in-process and returns the status it exits with plus everything it wrote to stderr/stdout. */
+async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number; stderr: string; stdout: string }> {
   const savedExit = process.exit;
   const savedWrite = process.stderr.write;
+  const savedBunWrite = Bun.write;
   let stderr = "";
+  let stdout = "";
   process.stderr.write = ((chunk: unknown) => {
     stderr += String(chunk);
     return true;
   }) as typeof process.stderr.write;
+  Bun.write = (async (dest: unknown, data: unknown) => {
+    if (dest === Bun.stdout) {
+      stdout += String(data);
+      return String(data).length;
+    }
+    return savedBunWrite(dest as never, data as never);
+  }) as typeof Bun.write;
   process.exit = ((code?: number) => {
     throw new ExitCalled(code ?? 0);
   }) as typeof process.exit;
   try {
     await sayCommand.run?.({ args } as never);
-    return { exitCode: 0, stderr };
+    return { exitCode: 0, stderr, stdout };
   } catch (err) {
-    if (err instanceof ExitCalled) return { exitCode: err.code, stderr };
+    if (err instanceof ExitCalled) return { exitCode: err.code, stderr, stdout };
     throw err;
   } finally {
     process.exit = savedExit;
     process.stderr.write = savedWrite;
+    Bun.write = savedBunWrite;
   }
 }
 
@@ -114,6 +124,20 @@ function failingListVoicesEngine(exitCode: number, code: string, message: string
   writeFileSync(
     binPath,
     `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\n  exit ${exitCode}\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+/** A stub engine whose `say --list-voices` succeeds but writes untrimmed ids with a blank line, after answering `describe`. */
+function untrimmedListVoicesEngine(): string {
+  const dir = tempDir("kesha-say-listuntrim-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '  en-am_adam  \\n\\nru-vosk-m02\\n'\n  exit 0\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
   );
   chmodSync(binPath, 0o755);
   cleanups.push(saveEngineEnv());
@@ -233,5 +257,12 @@ describe("kesha say --list-voices speaks protocol 4", () => {
     const { exitCode, stderr } = await runSay({ "list-voices": true });
     expect(exitCode).toBe(1);
     expect(stderr).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
+  });
+
+  skipOnWin32("trims each id and drops blank lines before printing them", async () => {
+    untrimmedListVoicesEngine();
+    const { exitCode, stdout } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe("en-am_adam\nru-vosk-m02\n");
   });
 });

@@ -1,112 +1,13 @@
 import { describe, test, expect } from "bun:test";
-import { parseVoiceLines, aggregateLanguages } from "../../src/mcp/voices";
-
-describe("parseVoiceLines", () => {
-  test("maps ids to new VoiceInfo shape", () => {
-    const out = parseVoiceLines(
-      "en-am_michael\nen-bf_emma\nru-vosk-m02\nru-vosk-f01\nmacos-com.apple.eloquence.de-DE.Eddy\n",
-    );
-    expect(out).toEqual([
-      {
-        voiceId: "en-am_michael",
-        modelId: "kokoro",
-        modelName: "Kokoro-82M",
-        languageCode: "en-US",
-        languageName: "American English",
-        gender: "male",
-      },
-      {
-        voiceId: "en-bf_emma",
-        modelId: "kokoro",
-        modelName: "Kokoro-82M",
-        languageCode: "en-GB",
-        languageName: "British English",
-        gender: "female",
-      },
-      {
-        voiceId: "ru-vosk-m02",
-        modelId: "vosk",
-        modelName: "Vosk-TTS",
-        languageCode: "ru",
-        languageName: "Russian",
-        gender: "male",
-      },
-      {
-        voiceId: "ru-vosk-f01",
-        modelId: "vosk",
-        modelName: "Vosk-TTS",
-        languageCode: "ru",
-        languageName: "Russian",
-        gender: "female",
-      },
-      {
-        voiceId: "macos-com.apple.eloquence.de-DE.Eddy",
-        modelId: "avspeech",
-        modelName: "macOS AVSpeech",
-        languageCode: "de-DE",
-        languageName: "German (Germany)",
-        gender: null,
-      },
-    ]);
-  });
-
-  test("ignores blank lines and trims", () => {
-    const out = parseVoiceLines("  en-am_adam  \n\n");
-    expect(out).toEqual([
-      {
-        voiceId: "en-am_adam",
-        modelId: "kokoro",
-        modelName: "Kokoro-82M",
-        languageCode: "en-US",
-        languageName: "American English",
-        gender: "male",
-      },
-    ]);
-  });
-
-  test("malformed en- id falls through to unknown", () => {
-    const [v] = parseVoiceLines("en-zzz");
-    expect(v?.modelId).toBe("unknown");
-    expect(v?.modelName).toBe("Unknown");
-    expect(v?.gender).toBeNull();
-    expect(v?.languageCode).toBe("");
-  });
-
-  test("maps multilingual Kokoro ids", () => {
-    const out = parseVoiceLines("es-em_alex\nja-jm_kumo\nfr-ff_siwis\n");
-    expect(out).toEqual([
-      {
-        voiceId: "es-em_alex",
-        modelId: "kokoro",
-        modelName: "Kokoro-82M",
-        languageCode: "es",
-        languageName: "Spanish",
-        gender: "male",
-      },
-      {
-        voiceId: "ja-jm_kumo",
-        modelId: "kokoro",
-        modelName: "Kokoro-82M",
-        languageCode: "ja",
-        languageName: "Japanese",
-        gender: "male",
-      },
-      {
-        voiceId: "fr-ff_siwis",
-        modelId: "kokoro",
-        modelName: "Kokoro-82M",
-        languageCode: "fr",
-        languageName: "French",
-        gender: "female",
-      },
-    ]);
-  });
-
-});
+import { aggregateLanguages, type VoiceInfo } from "../../src/mcp/voices";
 
 describe("aggregateLanguages", () => {
   test("counts voices per language and sorts by code", () => {
-    const voices = parseVoiceLines("en-am_michael\nen-am_adam\nru-vosk-m02");
+    const voices: VoiceInfo[] = [
+      { voiceId: "en-am_michael", modelId: "kokoro", modelName: "Kokoro-82M", languageCode: "en-US", languageName: "American English", gender: "male" },
+      { voiceId: "en-am_adam", modelId: "kokoro", modelName: "Kokoro-82M", languageCode: "en-US", languageName: "American English", gender: "male" },
+      { voiceId: "ru-vosk-m02", modelId: "vosk", modelName: "Vosk-TTS", languageCode: "ru", languageName: "Russian", gender: "male" },
+    ];
     const langs = aggregateLanguages(voices);
     expect(langs).toEqual([
       { languageCode: "en-US", languageName: "American English", voiceCount: 2 },

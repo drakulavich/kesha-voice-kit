@@ -99,14 +99,6 @@ function parseVoiceInfo(id: string): VoiceInfo {
   };
 }
 
-export function parseVoiceLines(text: string): VoiceInfo[] {
-  return text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-    .map((id) => parseVoiceInfo(id));
-}
-
 export async function listVoices(): Promise<VoiceInfo[]> {
   return (await listVoiceIds()).map(parseVoiceInfo);
 }
