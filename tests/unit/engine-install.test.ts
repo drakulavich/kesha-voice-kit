@@ -501,7 +501,7 @@ exit 1`,
     expect(stderr).toContain("error [E_MODEL_MISSING]: kokoro weights missing");
   });
 
-  // Driving the real 180s deadline via `jest.useFakeTimers()` starves the pipeline's earlier real subprocess phases instead (see task-3-report.md); this proves the same post-kill contract via a child that dies by signal, as `proc.kill()` also produces once the timer fires.
+  // Fake timers destabilise the install pipeline's other real subprocess phases, so this covers the sibling warn-and-resolve path via a signal kill instead of the real 180s deadline.
   darwinArmTest("a say child killed by a signal still warns generically, and the install still resolves", async () => {
     const dir = stageInstallableEngine("kesha-warmup-killed-");
     writeEngineWithSayBody(dir, "kill -TERM $$\nsleep 5");
