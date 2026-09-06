@@ -5,6 +5,7 @@ import {
   type TranscribeOptions,
 } from "./transcribe";
 import { downloadEngine } from "./engine-install";
+import { KeshaError } from "./engine/events";
 
 export type { TranscribeOptions };
 export type { TranscriptionOutput, TranscriptionSegment, WordTiming } from "./engine";
@@ -47,7 +48,7 @@ export async function transcribe(
   options: TranscribeOptions = {},
 ): Promise<string> {
   if (!existsSync(audioPath)) {
-    throw new Error(`File not found: ${audioPath}`);
+    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`);
   }
 
   return internalTranscribe(audioPath, options);
@@ -58,7 +59,7 @@ export async function transcribeWithTimestamps(
   options: TranscribeOptions = {},
 ) {
   if (!existsSync(audioPath)) {
-    throw new Error(`File not found: ${audioPath}`);
+    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`);
   }
 
   return internalTranscribeWithSegments(audioPath, {

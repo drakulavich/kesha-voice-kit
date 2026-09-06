@@ -9,6 +9,7 @@ import {
   type VadMode,
 } from "./engine";
 import { validateArgv } from "./engine/describe";
+import { KeshaError } from "./engine/events";
 import { installHint } from "./install-hint";
 
 export type { VadMode };
@@ -40,19 +41,21 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
   return (await transcribeWithSegments(audioPath, opts)).text;
 }
 
-/** Refuses a request the installed engine cannot serve, before any progress UI or spawn. */
+/** The CLI's gate before any progress UI: the engine, its describe document, the request's flags, and the model files a request needs; the argv actually sent is validated again at the spawn. */
 export async function validateTranscribeRequest(opts: TranscribeOptions = {}): Promise<void> {
   if (!isEngineInstalled()) {
-    throw new Error(
-      "Error: No transcription backend is installed.\n\n" +
-        "Run the following to get started:\n\n" +
-        "    bun add -g @drakulavich/kesha-voice-kit\n" +
-        `    ${installHint()}`,
-    );
+    throw new KeshaError("E_ENGINE_SPAWN", "No transcription backend is installed", {
+      hint: `bun add -g @drakulavich/kesha-voice-kit, then ${installHint()}`,
+    });
   }
-  const json = Boolean(opts.timestamps || opts.speakers);
-  const engineOpts = { vad: opts.vad, speakers: opts.speakers, itn: opts.itn };
-  validateArgv(buildTranscribeArgs("<input>", engineOpts, json), await getDescribe());
+  validateArgv(
+    buildTranscribeArgs(
+      "<input>",
+      { vad: opts.vad, speakers: opts.speakers, itn: opts.itn },
+      Boolean(opts.timestamps || opts.speakers),
+    ),
+    await getDescribe(),
+  );
   if (opts.speakers) assertSpeakerModelsInstalled();
 }
 
@@ -60,8 +63,6 @@ export async function transcribeWithSegments(
   audioPath: string,
   opts: TranscribeOptions = {},
 ): Promise<TranscriptionOutput> {
-  await validateTranscribeRequest(opts);
-
   if (opts.timestamps || opts.speakers) {
     return transcribeEngineWithSegments(audioPath, {
       vad: opts.vad,

@@ -20,7 +20,7 @@ import {
 } from "../../src/engine";
 import { KeshaError } from "../../src/engine/events";
 import { errorMessage } from "../../src/error-utils";
-import { validateTranscribeRequest } from "../../src/transcribe";
+import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
 
 /** The thrown KeshaError, so a test can assert on code and hint rather than on prose. */
 async function failure(run: () => Promise<unknown>): Promise<KeshaError> {
@@ -226,13 +226,55 @@ describe("engine", () => {
       for (const run of [
         () => transcribeEngine("audio.wav", { itn: true }),
         () => transcribeEngineWithSegments("audio.wav", { itn: true }),
-        () => validateTranscribeRequest({ itn: true }),
       ]) {
         const err = await failure(run);
         expect(err.code).toBe("E_INVALID_ARG");
         expect(err.message).toContain("--itn");
         expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit@latest");
       }
+    });
+  });
+
+  fakeEngineTest("validateTranscribeRequest with no engine is E_ENGINE_SPAWN naming the install step", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "kesha-engine-absent-"));
+    await withEngineEnv(join(empty, "kesha-engine"), async () => {
+      const err = await failure(() => validateTranscribeRequest({}));
+      expect(err.code).toBe("E_ENGINE_SPAWN");
+      expect(err.message).toContain("No transcription backend is installed");
+      expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
+      expect(err.hint).toContain("kesha install");
+      expect(errorMessage(err)).toMatch(/^error \[E_ENGINE_SPAWN\]: No transcription backend is installed\n  hint: /);
+    });
+  });
+
+  fakeEngineTest("validateTranscribeRequest against an engine that cannot describe itself is E_ENGINE_PROTOCOL", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-old-transcribe-"));
+    const old = join(dir, "kesha-engine");
+    writeFileSync(old, "#!/bin/sh\necho 'error: unrecognized subcommand describe' >&2\nexit 2\n");
+    chmodSync(old, 0o755);
+    await withEngineEnv(old, async () => {
+      const err = await failure(() => validateTranscribeRequest({}));
+      expect(err.code).toBe("E_ENGINE_PROTOCOL");
+      expect(err.hint).toContain("kesha install");
+    });
+  });
+
+  fakeEngineTest("validateTranscribeRequest refuses a flag the build lacks before any spawn", async () => {
+    await withEngineEnv(fakeEngine(["transcribe", "transcribe.segments"]), async () => {
+      const err = await failure(() => validateTranscribeRequest({ itn: true }));
+      expect(err.code).toBe("E_INVALID_ARG");
+      expect(err.message).toContain("--itn");
+      const engineErr = await failure(() => transcribeEngineWithSegments("audio.wav", { itn: true }));
+      expect(engineErr.code).toBe("E_INVALID_ARG");
+    });
+  });
+
+  fakeEngineTest("a library call with no engine is E_ENGINE_SPAWN from the engine layer", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "kesha-engine-absent-lib-"));
+    await withEngineEnv(join(empty, "kesha-engine"), async () => {
+      const err = await failure(() => transcribeWithSegments("audio.wav"));
+      expect(err.code).toBe("E_ENGINE_SPAWN");
+      expect(err.hint).toContain("kesha install");
     });
   });
 
@@ -248,7 +290,7 @@ describe("engine", () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
       async () => {
-        const err = await failure(() => validateTranscribeRequest({ speakers: true, vad: "off" }));
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav", { speakers: true, vad: "off" }));
         expect(err.code).toBe("E_INVALID_ARG");
         expect(err.message).toContain("--no-vad");
       },
@@ -306,9 +348,10 @@ describe("engine", () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
       async () => {
-        await expect(transcribeEngineWithSegments("audio.wav", { speakers: true })).rejects.toThrow(
-          "KESHA_DIARIZE_MODEL_PATH set but path does not exist",
-        );
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav", { speakers: true }));
+        expect(err.code).toBe("E_MODEL_MISSING");
+        expect(err.hint).toContain("kesha install --diarize");
+        expect(err.message).toContain("KESHA_DIARIZE_MODEL_PATH set but path does not exist");
       },
       { KESHA_DIARIZE_MODEL_PATH: "/tmp/kesha-missing-diarize-model" },
     );
@@ -320,9 +363,10 @@ describe("engine", () => {
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
       async () => {
-        await expect(transcribeEngineWithSegments("audio.wav", { speakers: true })).rejects.toThrow(
-          "speaker diarization requires the VAD model",
-        );
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav", { speakers: true }));
+        expect(err.code).toBe("E_MODEL_MISSING");
+        expect(err.hint).toContain("kesha install --vad");
+        expect(err.message).toContain("speaker diarization requires the VAD model");
       },
       {
         KESHA_DIARIZE_MODEL_PATH: modelPath,
@@ -728,9 +772,9 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
   ] as const) {
     fakeEngineTest(`${shape} is rejected, with the payload named`, async () => {
       await withEngineEnv(transcribingEngine(payload), async () => {
-        await expect(transcribeEngineWithSegments("audio.wav")).rejects.toThrow(
-          `Invalid transcription JSON returned by kesha-engine: ${payload}`,
-        );
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
+        expect(err.code).toBe("E_INTERNAL");
+        expect(errorMessage(err)).toBe(`error [E_INTERNAL]: Invalid transcription JSON returned by kesha-engine: ${payload}`);
       });
     });
   }
@@ -742,12 +786,20 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
   ] as const) {
     fakeEngineTest(`a segment whose ${field} has the wrong type is rejected`, async () => {
       await withEngineEnv(transcribingEngine(payload), async () => {
-        await expect(transcribeEngineWithSegments("audio.wav")).rejects.toThrow(
-          "Invalid transcription segment returned by kesha-engine",
-        );
+        const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
+        expect(err.code).toBe("E_INTERNAL");
+        expect(errorMessage(err)).toBe(`error [E_INTERNAL]: Invalid transcription segment returned by kesha-engine: ${payload}`);
       });
     });
   }
+
+  fakeEngineTest("a reply that is not JSON at all is rejected, with the payload named", async () => {
+    await withEngineEnv(transcribingEngine("kesha-engine: segfault"), async () => {
+      const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
+      expect(err.code).toBe("E_INTERNAL");
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: .+: kesha-engine: segfault$/);
+    });
+  });
 
   // A speaker label is optional, so a bad one is dropped rather than failing the transcript.
   fakeEngineTest("a non-numeric speaker is dropped instead of forwarded", async () => {

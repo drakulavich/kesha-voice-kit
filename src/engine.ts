@@ -253,16 +253,19 @@ function assertDiarizeModelInstalled(): void {
   const envPath = process.env.KESHA_DIARIZE_MODEL_PATH;
   if (envPath !== undefined) {
     if (existsSync(envPath)) return;
-    throw new Error(
-      `speaker diarization requires a model path\n\nCaused by:\n    KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`,
+    throw new KeshaError(
+      "E_MODEL_MISSING",
+      `speaker diarization requires a model path: KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`,
+      { hint: `point KESHA_DIARIZE_MODEL_PATH at the model, or unset it and run \`${installHint("--diarize")}\`` },
     );
   }
 
   const modelPath = defaultDiarizeModelPath();
   if (hasDiarizeModelLayout(modelPath)) return;
-  throw new Error(
-    `speaker diarization requires a model path\n\nCaused by:\n    diarization model not found at ${modelPath}. ` +
-      `Run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH).`,
+  throw new KeshaError(
+    "E_MODEL_MISSING",
+    `speaker diarization requires a model path: diarization model not found at ${modelPath}`,
+    { hint: `run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH)` },
   );
 }
 
@@ -270,10 +273,10 @@ function assertDiarizeModelInstalled(): void {
 function assertVadModelInstalled(): void {
   const modelPath = join(keshaCacheDir(), "models", "silero-vad", "silero_vad.onnx");
   if (existsSync(modelPath)) return;
-  throw new Error(
-    "speaker diarization requires the VAD model: --speakers windows the audio with Silero VAD " +
-      `so each speech span can be labeled.\n\nCaused by:\n    VAD model not found at ${modelPath}. ` +
-      `Run \`${installHint("--vad")}\`.`,
+  throw new KeshaError(
+    "E_MODEL_MISSING",
+    `speaker diarization requires the VAD model: --speakers windows the audio with Silero VAD so each speech span can be labeled; VAD model not found at ${modelPath}`,
+    { hint: `run \`${installHint("--vad")}\`` },
   );
 }
 
@@ -333,7 +336,7 @@ function parseWordTimings(raw: unknown): WordTiming[] | undefined {
 export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
   const parsed = JSON.parse(stdout);
   if (typeof parsed?.text !== "string" || !Array.isArray(parsed?.segments)) {
-    throw new Error("Invalid transcription JSON returned by kesha-engine");
+    throw new KeshaError("E_INTERNAL", "Invalid transcription JSON returned by kesha-engine");
   }
 
   const segments = parsed.segments.map((segment: unknown) => {
@@ -343,7 +346,7 @@ export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
       typeof s.end !== "number" ||
       typeof s.text !== "string"
     ) {
-      throw new Error("Invalid transcription segment returned by kesha-engine");
+      throw new KeshaError("E_INTERNAL", "Invalid transcription segment returned by kesha-engine");
     }
     const out: TranscriptionSegment = { start: s.start, end: s.end, text: s.text };
     if (typeof s.speaker === "number") out.speaker = s.speaker;
@@ -366,7 +369,8 @@ export async function transcribeEngineWithSegments(
   try {
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
-    throw new Error(`${errorMessage(err)}: ${run.stdout}`);
+    const message = err instanceof Error ? err.message : String(err);
+    throw new KeshaError(err instanceof KeshaError ? err.code : "E_INTERNAL", `${message}: ${run.stdout}`);
   }
 }
 
