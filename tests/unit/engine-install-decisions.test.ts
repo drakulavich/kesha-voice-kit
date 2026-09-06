@@ -17,10 +17,23 @@ import {
   SIDECARS,
 } from "../../src/engine-install";
 import { isDarwinArm64 } from "../../src/engine-targets";
+import { KeshaError } from "../../src/engine/events";
 import { engineVersion } from "../../src/package-info";
 import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 
+/** The thrown KeshaError, so a test can assert on code and hint rather than on prose. */
+async function failure(run: () => Promise<unknown>): Promise<KeshaError> {
+  try {
+    await run();
+  } catch (err) {
+    if (err instanceof KeshaError) return err;
+    throw err;
+  }
+  throw new Error("expected a KeshaError");
+}
+
 const DIARIZE_CAPS = describeJson({ backend: "coreml", features: ["tts", "transcribe.diarize"] });
+const DIARIZE_NO_TTS_CAPS = describeJson({ backend: "coreml", features: ["transcribe.diarize"] });
 const PLAIN_CAPS = describeJson({ backend: "onnx", features: ["tts"] });
 
 interface EngineStub {
@@ -262,24 +275,34 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
     expect(await installEngine({ backend: "onnx" })).toBe(binPath);
   }, 30_000);
 
-  posixTest("--diarize on an engine built without it names the missing feature", async () => {
+  // A non-diarize build omits the `--diarize` row entirely (gate_rows retention), so this is an unknown-flag rejection, not an ungated one.
+  posixTest("--diarize on an engine built without it is refused with the npm-release remedy", async () => {
     const binPath = stageInstalledEngine("kesha-caps-no-diarize-");
     const before = readFileSync(binPath, "utf8");
     stubRelease();
 
-    await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
+    const err = await failure(() => installEngine({ diarize: true }));
+    expect(err.message).toContain("system_diarize");
+    expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
 
     expect(readFileSync(binPath, "utf8")).toBe(before);
   }, 30_000);
 
-  // A pre-capabilities engine cannot be asked, and forwarding --diarize blind would surface
-  // as clap's generic "unexpected argument". Reached through a download because a cached
-  // engine that describes nothing is repaired before any flag is validated (#801).
+  posixTest("a supported --tts request reaches the engine unmangled", async () => {
+    stageInstalledEngine("kesha-caps-tts-argv-");
+    stubRelease();
+
+    await installEngine({ noCache: true, ttsLangs: ["en"] });
+
+    expect(engineInvocations().find((a) => a.startsWith("install"))).toBe("install --no-cache --tts en");
+  }, 30_000);
+
+  // Reached through a download because a cached engine that describes nothing is repaired before any flag is validated (#801); every protocol-4 gate treats a silent `describe` as E_ENGINE_PROTOCOL, not a command-specific message (see validateRecordRequest's equivalent case).
   posixTest("--diarize is refused when the engine cannot describe itself", async () => {
     stageEmptyEngineDir("kesha-caps-silent-");
     stubRelease({ caps: null });
 
-    await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
+    await expect(installEngine({ diarize: true })).rejects.toThrow(/did not answer `describe`/);
   }, 30_000);
 
   posixTest("a cached engine that describes nothing is repaired before the flag is judged", async () => {
@@ -290,6 +313,14 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
 
     expect(engineDownloads(urls)).toHaveLength(1);
     expect(readFileSync(binPath, "utf8")).toContain("describe");
+  }, 30_000);
+
+  // The rewrap fires on `opts.diarize`, not on which flag actually failed; a build with diarize but not tts must still report the real --tts failure.
+  posixTest("--diarize present but --tts is the actual failure keeps the --tts message", async () => {
+    stageInstalledEngine("kesha-caps-diarize-no-tts-", { caps: DIARIZE_NO_TTS_CAPS });
+    stubRelease();
+
+    await expect(installEngine({ diarize: true, ttsLangs: ["en"] })).rejects.toThrow(/--tts/);
   }, 30_000);
 
   posixTest("--diarize reaches the engine, and pulls --vad with it (#768)", async () => {
@@ -345,6 +376,17 @@ describe("cache validity (#775)", () => {
     expect(engineDownloads(urls)).toHaveLength(0);
     // The flag is still forwarded: only the engine binary is uncacheable here, not the models.
     expect(engineInvocations().find((a) => a.startsWith("install"))).toContain("--no-cache");
+  }, 30_000);
+
+  // A read-only dir's skipped health probe (#801) must not force a bare install through describe too.
+  posixTest.skipIf(process.getuid?.() === 0)("a bare install on a read-only engine dir does not need the engine to describe itself", async () => {
+    const binPath = stageInstalledEngine("kesha-bare-readonly-no-describe-", { caps: null });
+    chmodSync(dirname(binPath), 0o555);
+    stubRelease();
+
+    await installEngine();
+
+    expect(engineInvocations()).toContain("install");
   }, 30_000);
 });
 

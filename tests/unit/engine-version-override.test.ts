@@ -18,7 +18,7 @@ const OVERRIDE = "9.9.9-alpha.1";
 // rather than treated as a cache hit (#801).
 const FAKE_ENGINE = `#!/bin/sh
 if [ "$1" = "describe" ]; then
-  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: ["tts"] })}'
 fi
 exit 0
 `;

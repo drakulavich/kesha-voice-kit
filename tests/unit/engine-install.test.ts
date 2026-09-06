@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { afterEach, describe, test, expect } from "bun:test";
 import {
   buildEngineInstallArgs,
   cleanupRetiredSidecars,
@@ -8,11 +8,21 @@ import {
   waitUntilSpawnable,
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
+  installEngine,
+  SIDECARS,
 } from "../../src/engine-install";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { defaultEngineBinPath } from "../../src/paths";
+import { engineVersion } from "../../src/package-info";
+import { isDarwinArm64 } from "../../src/engine-targets";
+import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
+
+/** Strips ANSI SGR sequences so captured `process.stderr.write` output can be asserted on plainly. */
+function stripAnsi(text: string): string {
+  return text.replace(/\[[0-9;]*m/g, "");
+}
 
 function mkTmpBinPath(): string {
   const dir = mkdtempSync(join(tmpdir(), "kesha-install-test-"));
@@ -229,5 +239,99 @@ describe("waitUntilSpawnable (#216)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("the Kokoro warmup speaks protocol 4 (#1163)", () => {
+  // The warmup only ever spawns on darwin-arm64 — same gate `engine-install-decisions.test.ts` uses.
+  const darwinArmTest = isDarwinArm64() ? test : test.skip;
+  let releaseCacheIsolation: () => void = () => {};
+  const tempDirs: string[] = [];
+
+  afterEach(() => {
+    releaseCacheIsolation();
+    releaseCacheIsolation = () => {};
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A cache-valid engine dir, staged the same way as the model-install suite above. */
+  function stageInstallableEngine(prefix: string): string {
+    releaseCacheIsolation = isolateEngineCache();
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    tempDirs.push(dir);
+    mkdirSync(join(dir, "bin"), { recursive: true });
+    for (const spec of SIDECARS) {
+      const path = join(dir, "bin", spec.fileBasename);
+      writeFileSync(path, "#!/bin/sh\nexit 0\n");
+      chmodSync(path, 0o755);
+    }
+    return dir;
+  }
+
+  /** Answers `describe`, `--version` and `install` for the cache-validity/model-install phases, and `say` (the warmup) with `sayBody`. */
+  function writeEngineWithSayBody(dir: string, sayBody: string): string {
+    const binPath = join(dir, "bin", "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+case "$1" in
+  describe) printf '%s\\n' '${describeJson({ features: ["tts"] })}'; exit 0 ;;
+  --version) printf 'kesha-engine ${engineVersion}\\n'; exit 0 ;;
+  install) exit 0 ;;
+esac
+if [ "$1" = "say" ]; then
+${sayBody}
+fi
+exit 0
+`,
+    );
+    chmodSync(binPath, 0o755);
+    writeFileSync(`${binPath}.version`, `${engineVersion}\n`);
+    process.env.KESHA_ENGINE_BIN = binPath;
+    return binPath;
+  }
+
+  /** Captures everything written to stderr for the duration of `run`, ANSI stripped. */
+  async function captureStderr(run: () => Promise<void>): Promise<string> {
+    const savedWrite = process.stderr.write;
+    const chunks: string[] = [];
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      await run();
+    } finally {
+      process.stderr.write = savedWrite;
+    }
+    return stripAnsi(chunks.join(""));
+  }
+
+  darwinArmTest("a say error event warns with the rendered coded line, and the install still resolves", async () => {
+    const dir = stageInstallableEngine("kesha-warmup-error-");
+    writeEngineWithSayBody(
+      dir,
+      `printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"kokoro weights missing"}' >&2
+exit 1`,
+    );
+
+    const stderr = await captureStderr(async () => {
+      await installEngine({ ttsLangs: ["en"] });
+    });
+
+    expect(stderr).toContain("error [E_MODEL_MISSING]: kokoro weights missing");
+  });
+
+  // Fake timers destabilise the install pipeline's other real subprocess phases, so this covers the sibling warn-and-resolve path via a signal kill instead of the real 180s deadline.
+  darwinArmTest("a say child killed by a signal still warns generically, and the install still resolves", async () => {
+    const dir = stageInstallableEngine("kesha-warmup-killed-");
+    writeEngineWithSayBody(dir, "kill -TERM $$\nsleep 5");
+
+    const stderr = await captureStderr(async () => {
+      await installEngine({ ttsLangs: ["en"] });
+    });
+
+    expect(stderr).toContain("FluidAudio Kokoro warmup failed");
+    expect(stderr).toContain("first `kesha say en-*` may still be slow");
   });
 });
