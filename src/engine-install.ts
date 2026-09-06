@@ -502,10 +502,23 @@ function checkEngineWritable(engineDir: string): boolean {
  * document, then validates the built engine argv through it. `--diarize` on a build that
  * lacks `system_diarize` (the Nix build, which omits it on purpose — docs/nix-install.md)
  * gets the npm-release remedy instead of `validateArgv`'s generic "needs" message.
+ *
+ * A bare `install` (no backend, no flags) skips `getDescribe()` entirely: a read-only
+ * engine dir never probes the cached binary's health, so a pre-protocol-4 engine there
+ * would otherwise fail a plain `kesha install` on a describe call that argv has nothing
+ * for `validateArgv` to check anyway.
  */
-export async function validateInstallRequest(
+async function validateInstallRequest(
   opts: { noCache: boolean; backend?: string } & InstallOptions,
 ): Promise<string[]> {
+  const wanted = buildEngineInstallArgs({
+    noCache: opts.noCache,
+    ttsLangs: opts.ttsLangs,
+    vad: opts.vad,
+    diarize: opts.diarize,
+  });
+  if (!opts.backend && wanted.length === 1) return wanted;
+
   const doc = await getDescribe();
   if (opts.backend && doc.backend !== opts.backend) {
     throw new KeshaError(
@@ -516,21 +529,20 @@ export async function validateInstallRequest(
       },
     );
   }
-  const wanted = buildEngineInstallArgs({
-    noCache: opts.noCache,
-    ttsLangs: opts.ttsLangs,
-    vad: opts.vad,
-    diarize: opts.diarize,
-  });
   try {
     const { argv, warnings } = validateArgv(wanted, doc);
     for (const warning of warnings) log.warn(warning);
     return argv;
   } catch (err) {
-    if (opts.diarize && err instanceof KeshaError && err.code === "E_INVALID_ARG") {
-      throw new KeshaError("E_INVALID_ARG", err.message, {
-        hint: "install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, which ships the diarize-enabled engine on darwin-arm64",
-      });
+    if (opts.diarize && err instanceof KeshaError && err.code === "E_INVALID_ARG" && err.message.includes("--diarize")) {
+      throw new KeshaError(
+        "E_INVALID_ARG",
+        "The installed engine was built without the system_diarize feature, so --diarize is unavailable " +
+          "(the Nix build in docs/nix-install.md is one such case).",
+        {
+          hint: "install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, which ships the diarize-enabled engine on darwin-arm64",
+        },
+      );
     }
     throw err;
   }
