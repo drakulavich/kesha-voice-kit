@@ -581,6 +581,36 @@ describe("CLI contracts", () => {
     ]);
   });
 
+  test("transcribe with no engine installed exits 1 with E_ENGINE_SPAWN and the install hint", async () => {
+    const dir = makeTempDir("kesha-cli-contract-no-engine-");
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: join(dir, "absent-kesha-engine") };
+    const res = await runCli([mediaPath], { env });
+    expectContract(res, {
+      exitCode: 1,
+      stderrContains: [`${mediaPath}: error [E_ENGINE_SPAWN]: No transcription backend is installed`, "hint: bun add -g @drakulavich/kesha-voice-kit"],
+      stderrNotContains: ["Transcribing", "npm i"],
+    });
+  });
+
+  test("transcribe against a protocol-3 engine exits 1 with E_ENGINE_PROTOCOL pointing at kesha install", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-stale-engine-");
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(enginePath, "#!/bin/sh\necho 'error: unrecognized subcommand describe' >&2\nexit 2\n");
+    chmodSync(enginePath, 0o755);
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+    const res = await runCli([mediaPath, "--json", "--include-errors"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
+    expectContract(res, {
+      exitCode: 1,
+      stderrContains: ["error [E_ENGINE_PROTOCOL]: ", "hint: run `kesha install`"],
+    });
+    const parsed = JSON.parse(res.stdout);
+    expect(parsed.errors[0]).toMatchObject({ file: mediaPath, code: "E_ENGINE_PROTOCOL" });
+  });
+
   test("kesha record without an installed engine fails with an install hint, not a stack trace", async () => {
     const dir = makeTempDir("kesha-cli-contract-record-");
     const outPath = join(dir, "hello.wav");
