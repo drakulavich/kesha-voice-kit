@@ -372,7 +372,9 @@ exit 0
    * #680: a piped child read only at exit looks hung on a multi-GB download. The stub blocks
    * after its first progress event until the ack file appears, so breaking the streaming
    * (reading stderr to completion before the sink runs) makes the wait time out and the
-   * fallback line surface instead of the expected second line.
+   * fallback line surface instead of the expected second line. The 2s cap sits well inside
+   * bun's 5s default per-test timeout, so a broken run fails on the stub's own timeout line,
+   * not on the runner cutting the test off first.
    */
   posixTest("progress events reach the caller live and in order", async () => {
     const dir = stageInstallableEngine("kesha-install-v4-progress-");
@@ -381,7 +383,7 @@ exit 0
       dir,
       `printf '%s\\n' '{"kind":"progress","message":"GET model-a.bin"}' >&2
 i=0
-while [ ! -e '${ack}' ] && [ "$i" -lt 100 ]; do
+while [ ! -e '${ack}' ] && [ "$i" -lt 40 ]; do
   sleep 0.05
   i=$((i + 1))
 done
