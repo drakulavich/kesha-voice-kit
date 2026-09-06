@@ -145,6 +145,20 @@ function untrimmedListVoicesEngine(): string {
   return binPath;
 }
 
+/** A stub engine whose `say --list-voices` reports a genuine error event on stderr, still prints voice ids on stdout, and exits 0 — the well-formed-error-but-exit-0 case Greptile flagged on #1162. */
+function listVoicesErrorEventExitsZero(code: string, message: string): string {
+  const dir = tempDir("kesha-say-listerr0-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\n  printf 'en-am_michael\\nru-vosk-m02\\n'\n  exit 0\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
 /** A stub engine that answers `describe` with the given features and refuses anything else. */
 function engineAdvertising(features: string[]): string {
   const dir = tempDir("kesha-say-describe-");
@@ -264,5 +278,13 @@ describe("kesha say --list-voices speaks protocol 4", () => {
     const { exitCode, stdout } = await runSay({ "list-voices": true });
     expect(exitCode).toBe(0);
     expect(stdout).toBe("en-am_adam\nru-vosk-m02\n");
+  });
+
+  skipOnWin32("an error event fails the listing even though the engine exits 0, and no ids reach stdout", async () => {
+    listVoicesErrorEventExitsZero("E_MODEL_MISSING", "the TTS bundle is missing");
+    const { exitCode, stderr, stdout } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(4);
+    expect(stderr).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
+    expect(stdout).toBe("");
   });
 });

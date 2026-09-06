@@ -165,7 +165,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms bytes=${stdoutBuf.byteLength}`);
 
   const stderrText = events.stderr;
-  if (exitCode === 0 && events.invalid.length === 0) {
+  if (exitCode === 0 && events.invalid.length === 0 && !events.error) {
     if (stderrText.length > 0) process.stderr.write(stderrText);
     return new Uint8Array(stdoutBuf);
   }
@@ -199,7 +199,7 @@ export async function listVoiceIds(sinks: EventSinks = {}): Promise<string[]> {
   } finally {
     tree.dispose();
   }
-  if (exitCode !== 0 || events.invalid.length > 0) throw engineFailure("say --list-voices", events, exitCode);
+  if (exitCode !== 0 || events.invalid.length > 0 || events.error) throw engineFailure("say --list-voices", events, exitCode);
   if (events.stderr.length > 0) process.stderr.write(events.stderr);
   return out
     .split("\n")
