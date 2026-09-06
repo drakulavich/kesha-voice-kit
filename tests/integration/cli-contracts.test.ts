@@ -612,6 +612,25 @@ describe("CLI contracts", () => {
     expect(parsed.errors[0]).toMatchObject({ file: mediaPath, code: "E_ENGINE_PROTOCOL" });
   });
 
+  test("transcribe with a flag the build lacks exits 1 with E_INVALID_ARG before any progress line", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-flag-gate-");
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(
+      enginePath,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["transcribe", "transcribe.segments"] })}'\n  exit 0\nfi\nexit 2\n`,
+    );
+    chmodSync(enginePath, 0o755);
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+    const res = await runCli([mediaPath, "--itn"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
+    expectContract(res, {
+      exitCode: 1,
+      stderrContains: ["error [E_INVALID_ARG]: ", "--itn"],
+      stderrNotContains: ["Transcribing"],
+    });
+  });
+
   test("kesha record without an installed engine fails with an install hint, not a stack trace", async () => {
     const dir = makeTempDir("kesha-cli-contract-record-");
     const outPath = join(dir, "hello.wav");

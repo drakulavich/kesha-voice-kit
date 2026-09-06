@@ -1,5 +1,6 @@
 import {
   assertSpeakerModelsInstalled,
+  buildTranscribeArgs,
   getDescribe,
   isEngineInstalled,
   transcribeEngine,
@@ -7,6 +8,7 @@ import {
   type TranscriptionOutput,
   type VadMode,
 } from "./engine";
+import { validateArgv } from "./engine/describe";
 import { KeshaError } from "./engine/events";
 import { installHint } from "./install-hint";
 
@@ -39,14 +41,21 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
   return (await transcribeWithSegments(audioPath, opts)).text;
 }
 
-/** The CLI's gate before any progress UI: the engine, its describe document, and the model files a request needs; argv is checked at the spawn. */
+/** The CLI's gate before any progress UI: the engine, its describe document, the request's flags, and the model files a request needs; the argv actually sent is validated again at the spawn. */
 export async function validateTranscribeRequest(opts: TranscribeOptions = {}): Promise<void> {
   if (!isEngineInstalled()) {
     throw new KeshaError("E_ENGINE_SPAWN", "No transcription backend is installed", {
       hint: `bun add -g @drakulavich/kesha-voice-kit, then ${installHint()}`,
     });
   }
-  await getDescribe();
+  validateArgv(
+    buildTranscribeArgs(
+      "<input>",
+      { vad: opts.vad, speakers: opts.speakers, itn: opts.itn },
+      Boolean(opts.timestamps || opts.speakers),
+    ),
+    await getDescribe(),
+  );
   if (opts.speakers) assertSpeakerModelsInstalled();
 }
 

@@ -259,12 +259,13 @@ describe("engine", () => {
     });
   });
 
-  fakeEngineTest("validateTranscribeRequest leaves argv validation to the engine layer", async () => {
-    // A build without diarization: the request is accepted here, refused at the spawn.
+  fakeEngineTest("validateTranscribeRequest refuses a flag the build lacks before any spawn", async () => {
     await withEngineEnv(fakeEngine(["transcribe", "transcribe.segments"]), async () => {
-      await expect(validateTranscribeRequest({ speakers: false, itn: true })).resolves.toBeUndefined();
-      const err = await failure(() => transcribeEngineWithSegments("audio.wav", { itn: true }));
+      const err = await failure(() => validateTranscribeRequest({ itn: true }));
       expect(err.code).toBe("E_INVALID_ARG");
+      expect(err.message).toContain("--itn");
+      const engineErr = await failure(() => transcribeEngineWithSegments("audio.wav", { itn: true }));
+      expect(engineErr.code).toBe("E_INVALID_ARG");
     });
   });
 
