@@ -678,6 +678,43 @@ exit 2
     });
     expect(seen).toEqual(["proto=4"]);
   });
+
+  fakeEngineTest("an error event fails the run even when the engine exits 0 (#1163)", async () => {
+    const engine = writeTranscribingEngine(
+      "kesha-engine-error-exit-0-",
+      ["transcribe"],
+      `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the ASR model is missing"}' >&2
+  printf '%s\\n' 'this looks like a transcript but must not be returned'`,
+    );
+    await withEngineEnv(engine, async () => {
+      const err = await failure(() => transcribeEngine("audio.wav"));
+      expect(err.code).toBe("E_MODEL_MISSING");
+      expect(errorMessage(err)).toBe("error [E_MODEL_MISSING]: the ASR model is missing");
+    });
+  });
+
+  fakeEngineTest("a run that fails on the error event alone is not also echoed to stderr as a warning (#1163)", async () => {
+    const engine = writeTranscribingEngine(
+      "kesha-engine-error-no-echo-",
+      ["transcribe"],
+      `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the ASR model is missing"}' >&2
+  printf '%s\\n' 'this looks like a transcript but must not be returned'`,
+    );
+    const savedWrite = process.stderr.write;
+    const captured: string[] = [];
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      await withEngineEnv(engine, async () => {
+        await failure(() => transcribeEngine("audio.wav"));
+      });
+    } finally {
+      process.stderr.write = savedWrite;
+    }
+    expect(captured.join("")).not.toContain("E_MODEL_MISSING");
+  });
 });
 
 describe("text language detection degrades loudly (#770)", () => {

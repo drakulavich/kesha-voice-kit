@@ -156,12 +156,13 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   }
   const stderr = events.stderr.trim();
   // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
-  if (exitCode === 0 && events.invalid.length === 0 && stderr.length > 0) process.stderr.write(`${stderr}\n`);
+  if (exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
+    process.stderr.write(`${stderr}\n`);
   return { stdout: stdout.trim(), stderr, exitCode, error: events.error, invalid: events.invalid };
 }
 
 function failed(run: EngineRun): boolean {
-  return run.exitCode !== 0 || run.invalid.length > 0;
+  return run.exitCode !== 0 || run.invalid.length > 0 || run.error !== null;
 }
 
 let cachedDescribe: { binPath: string; mtime: number; doc: DescribeDocument } | null = null;
