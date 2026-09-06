@@ -2,11 +2,11 @@ import { dirname, join, resolve, sep } from "path";
 import { errorMessage } from "./error-utils";
 import { homedir, tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
-import { getDescribe, getEngineBinPath, spawnEngineProcess } from "./engine";
+import { getDescribe, getEngineBinPath, protocolEnv, spawnEngineProcess } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
-import { KeshaError } from "./engine/events";
+import { engineFailure, KeshaError, readEvents, type StderrOutcome } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
@@ -537,31 +537,26 @@ export async function validateInstallRequest(
   }
 }
 
-/**
- * Runs `kesha-engine install` to download/verify models.
- * Inherits stdio so per-file progress reaches the user live, and throws on non-zero exit.
- */
-async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
+/** Runs `kesha-engine install` to download/verify models. */
+export async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
   log.progress("Installing models...");
-  // #680: piping buffers the child until exit, so multi-GB downloads looked hung.
-  // `env` is load-bearing, not tidiness: this child resolves the model destination from
-  // `KESHA_CACHE_DIR`, and without it Bun's startup snapshot sends a redirected install
-  // to the real `~/.cache/kesha` anyway (#876).
-  const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "inherit"]);
+  // #680: a piped child read only at exit looks hung on a multi-GB download; the sink renders each event as it arrives.
+  const proc = spawnEngineProcess(binPath, installArgs, ["ignore", "inherit", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
+  let events: StderrOutcome;
   let exitCode: number;
   try {
-    exitCode = await proc.exited;
+    [events, exitCode] = await Promise.all([
+      readEvents(proc.stderr as ReadableStream<Uint8Array>, { onProgress: (line) => log.progress(line) }),
+      proc.exited,
+    ]);
   } finally {
     tree.dispose();
   }
-
-  if (exitCode !== 0) {
-    throw new Error(
-      `Failed to install models: kesha-engine install exited with code ${exitCode}. ` +
-        "See the engine output above for the failing file.",
-    );
+  if (exitCode !== 0 || events.invalid.length > 0 || events.error) {
+    throw engineFailure("install", events, exitCode);
   }
+  if (events.stderr.length > 0) process.stderr.write(events.stderr);
 }
 
 /**

@@ -131,7 +131,11 @@ if (args[0] === "say") {
 
 if (args[0] === "install") {
   if (process.env.KESHA_FAKE_INSTALL_ERROR) {
-    console.error(process.env.KESHA_FAKE_INSTALL_ERROR);
+    console.error(JSON.stringify({
+      kind: "error",
+      code: "E_MODEL_DOWNLOAD",
+      message: process.env.KESHA_FAKE_INSTALL_ERROR,
+    }));
     process.exit(42);
   }
   if (process.env.KESHA_FAKE_INSTALL_ARGS_PATH) {
@@ -1174,7 +1178,7 @@ process.exit(99);
     expectContract(run, {
       exitCode: 1,
       stdoutContains: ["Engine binary already installed"],
-      stderrContains: ["Failed to install models:"],
+      stderrContains: [`error [E_MODEL_DOWNLOAD]: fake model install failed in ${dir}`],
     });
 
     const { raw: diagnosticLog, events } = readDiagnosticLog(env.KESHA_LOG_DIR);

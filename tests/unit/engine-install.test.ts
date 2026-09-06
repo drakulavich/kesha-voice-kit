@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import {
   buildEngineInstallArgs,
   cleanupRetiredSidecars,
@@ -9,12 +9,14 @@ import {
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
   validateInstallRequest,
+  runEngineModelInstall,
 } from "../../src/engine-install";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { defaultEngineBinPath } from "../../src/paths";
 import { KeshaError } from "../../src/engine/events";
+import { log } from "../../src/log";
 import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
 
 /** The thrown KeshaError, so a test can assert on code and hint rather than on prose. */
@@ -302,5 +304,75 @@ describe("waitUntilSpawnable (#216)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("runEngineModelInstall speaks protocol 4 (#1163)", () => {
+  const posixTest = process.platform === "win32" ? test.skip : test;
+
+  function writeInstallEngine(dir: string, body: string): string {
+    const binPath = join(dir, "kesha-engine");
+    writeFileSync(binPath, `#!/bin/sh\n${body}\n`);
+    chmodSync(binPath, 0o755);
+    return binPath;
+  }
+
+  posixTest("an engine error event fails the run as a coded KeshaError, not a plain Error", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-v4-error-"));
+    const binPath = writeInstallEngine(
+      dir,
+      `printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"manifest hash mismatch"}' >&2\nexit 1`,
+    );
+    try {
+      const err = await runEngineModelInstall(binPath, ["install"]).then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
+      expect(err).toBeInstanceOf(KeshaError);
+      expect(err!.code).toBe("E_MODEL_MISSING");
+      expect(err!.message).toBe("manifest hash mismatch");
+      expect(err!.origin).toBe("engine");
+      expect(err!.exitCode).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * #680: a piped child read only at exit looks hung on a multi-GB download. The stub
+   * blocks after its first progress event until the caller's sink has actually seen it
+   * (by writing an ack file), so a buffered (non-live) implementation would time out
+   * here instead of the fallback message arriving with the wrong text.
+   */
+  posixTest("progress events reach the caller live and in order", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-v4-progress-"));
+    const ack = join(dir, "ack");
+    const binPath = writeInstallEngine(
+      dir,
+      `printf '%s\\n' '{"kind":"progress","message":"GET model-a.bin"}' >&2
+i=0
+while [ ! -e '${ack}' ] && [ "$i" -lt 100 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+if [ -e '${ack}' ]; then
+  printf '%s\\n' '{"kind":"progress","message":"OK model-a.bin"}' >&2
+else
+  printf '%s\\n' '{"kind":"progress","message":"TIMED OUT WAITING FOR ACK"}' >&2
+fi
+exit 0`,
+    );
+    const seen: string[] = [];
+    const progressSpy = spyOn(log, "progress").mockImplementation((msg: string) => {
+      seen.push(msg);
+      if (msg === "GET model-a.bin") writeFileSync(ack, "");
+    });
+    try {
+      await runEngineModelInstall(binPath, ["install"]);
+    } finally {
+      progressSpy.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+    expect(seen).toEqual(["Installing models...", "GET model-a.bin", "OK model-a.bin"]);
   });
 });
