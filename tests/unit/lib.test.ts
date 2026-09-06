@@ -115,7 +115,7 @@ describe("lib API", () => {
   });
 
   // transcribeWithSegments skips the CLI gate, so the refusal comes from the spawn-side validation (#710).
-  fakeEngineIt("preflights itn support on the plain-text path", async () => {
+  fakeEngineIt("refuses itn on the plain-text path when the engine lacks it", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
       await expect(transcribeWithSegments("audio.wav", { itn: true })).rejects.toThrow(
         "--itn needs transcribe.itn",
@@ -123,7 +123,7 @@ describe("lib API", () => {
     });
   });
 
-  fakeEngineIt("preflights itn support alongside timestamps", async () => {
+  fakeEngineIt("refuses itn alongside timestamps when the engine lacks it", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
       await expect(
         transcribeWithSegments("audio.wav", { timestamps: true, itn: true }),

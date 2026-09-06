@@ -52,7 +52,8 @@ code never needs sanitizing.
   it could report success or by giving up waiting for the lock.
 - The CLI also raises `E_MODEL_MISSING` before spawning when `--speakers` needs a diarization
   or VAD model that `kesha install --diarize` / `--vad` has not placed, and `E_INTERNAL` when the
-  engine's transcription JSON cannot be read; both render exactly like the engine's own.
+  engine's transcription JSON cannot be read or the engine exits non-zero without reporting an
+  error event; both render exactly like the engine's own.
 - **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
   engine and the TypeScript CLI: the CLI validates arguments, checks input
   existence up front and refuses a cache path it cannot write the engine into,
