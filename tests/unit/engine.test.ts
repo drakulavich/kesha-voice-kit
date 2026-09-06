@@ -6,6 +6,7 @@ import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/proces
 import { describeJson, envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
 import {
+  detectAudioLanguageEngine,
   detectTextLanguageEngine,
   getDescribe,
   getEngineBinPath,
@@ -42,6 +43,24 @@ function fakeEngine(features: string[]): string {
 }
 
 const fakeEngineTest = process.platform === "win32" ? test.skip : test;
+
+/** A stub answering one flagless lang-detect command; `body` runs before the forced `exit 0`. */
+function langDetectEngine(prefix: string, command: string, body: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const path = join(dir, "kesha-engine");
+  writeFileSync(
+    path,
+    `#!/bin/sh
+if [ "$1" = "${command}" ]; then
+${body}
+  exit 0
+fi
+exit 2
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
 
 /** Echoes the `transcribe` argv it was handed as the transcript, so a test can assert which flags were forwarded. */
 async function argEchoEngine(features: string[]): Promise<string> {
@@ -678,6 +697,67 @@ exit 2
     });
     expect(seen).toEqual(["proto=4"]);
   });
+
+  fakeEngineTest("an error event fails the run even when the engine exits 0 (#1163)", async () => {
+    const engine = writeTranscribingEngine(
+      "kesha-engine-error-exit-0-",
+      ["transcribe"],
+      `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the ASR model is missing"}' >&2
+  printf '%s\\n' 'this looks like a transcript but must not be returned'`,
+    );
+    await withEngineEnv(engine, async () => {
+      const err = await failure(() => transcribeEngine("audio.wav"));
+      expect(err.code).toBe("E_MODEL_MISSING");
+      expect(errorMessage(err)).toBe("error [E_MODEL_MISSING]: the ASR model is missing");
+    });
+  });
+
+  fakeEngineTest("a run that fails on the error event alone is not also echoed to stderr as a warning (#1163)", async () => {
+    const engine = writeTranscribingEngine(
+      "kesha-engine-error-no-echo-",
+      ["transcribe"],
+      `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the ASR model is missing"}' >&2
+  printf '%s\\n' 'this looks like a transcript but must not be returned'`,
+    );
+    const savedWrite = process.stderr.write;
+    const captured: string[] = [];
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      await withEngineEnv(engine, async () => {
+        await failure(() => transcribeEngine("audio.wav"));
+      });
+    } finally {
+      process.stderr.write = savedWrite;
+    }
+    expect(captured.join("")).not.toContain("E_MODEL_MISSING");
+  });
+
+  fakeEngineTest("an error event on detect-lang is null, not a confident wrong guess (#1166)", async () => {
+    const engine = langDetectEngine(
+      "kesha-engine-detect-lang-error-",
+      "detect-lang",
+      `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the language-id model is missing"}' >&2
+  printf '%s\\n' '{"code":"xx","confidence":0.99}'`,
+    );
+    await withEngineEnv(engine, async () => {
+      expect(await detectAudioLanguageEngine("audio.wav")).toBeNull();
+    });
+  });
+
+  fakeEngineTest("a stray non-event line on detect-lang does not blind language detection (#1166 follow-up)", async () => {
+    const engine = langDetectEngine(
+      "kesha-engine-detect-lang-noisy-",
+      "detect-lang",
+      `  echo 'onnxruntime: some warning' >&2
+  printf '%s\\n' '{"code":"ru","confidence":0.87}'`,
+    );
+    await withEngineEnv(engine, async () => {
+      expect(await detectAudioLanguageEngine("audio.wav")).toEqual({ code: "ru", confidence: 0.87 });
+    });
+  });
 });
 
 describe("text language detection degrades loudly (#770)", () => {
@@ -713,6 +793,42 @@ describe("text language detection degrades loudly (#770)", () => {
 
     const warned = captured.some((line) => line.includes("Text language detection failed"));
     expect(warned).toBe(process.platform === "darwin");
+  });
+
+  fakeEngineTest("an error event on detect-text-lang is null, not a confident wrong guess, and still warns (#1166)", async () => {
+    const engine = langDetectEngine(
+      "kesha-engine-detect-text-lang-error-",
+      "detect-text-lang",
+      `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the language-id model is missing"}' >&2
+  printf '%s\\n' '{"code":"xx","confidence":0.99}'`,
+    );
+    const savedWrite = process.stderr.write;
+    const captured: string[] = [];
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      await withEngineEnv(engine, async () => {
+        expect(await detectTextLanguageEngine("hello")).toBeNull();
+      });
+    } finally {
+      process.stderr.write = savedWrite;
+    }
+    const plain = captured.join("").replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain.includes("Text language detection failed")).toBe(process.platform === "darwin");
+  });
+
+  fakeEngineTest("a stray non-event line on detect-text-lang does not blind language detection (#1166 follow-up)", async () => {
+    const engine = langDetectEngine(
+      "kesha-engine-detect-text-lang-noisy-",
+      "detect-text-lang",
+      `  echo 'onnxruntime: some warning' >&2
+  printf '%s\\n' '{"code":"ru","confidence":0.87}'`,
+    );
+    await withEngineEnv(engine, async () => {
+      expect(await detectTextLanguageEngine("hello")).toEqual({ code: "ru", confidence: 0.87 });
+    });
   });
 });
 
@@ -934,6 +1050,28 @@ describe("the capability probe stays in step with the installed binary", () => {
     await withEngineEnv(missing, async () => {
       expect(await getEngineCapabilities()).toBeNull();
       expect((await failure(() => getDescribe())).code).toBe("E_ENGINE_SPAWN");
+    });
+  });
+
+  fakeEngineTest("a describe that reports an error event fails even though its document parses (#1163 follow-up)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-describe-error-"));
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the language-id model is missing"}' >&2
+  printf '%s\\n' '${describeJson({ features: ["transcribe.segments"] })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(path, 0o755);
+    await withEngineEnv(path, async () => {
+      const err = await failure(() => getDescribe());
+      expect(err.code).toBe("E_MODEL_MISSING");
+      expect(errorMessage(err)).toBe("error [E_MODEL_MISSING]: the language-id model is missing");
     });
   });
 

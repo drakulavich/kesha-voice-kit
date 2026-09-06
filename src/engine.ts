@@ -156,12 +156,19 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   }
   const stderr = events.stderr.trim();
   // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
-  if (exitCode === 0 && events.invalid.length === 0 && stderr.length > 0) process.stderr.write(`${stderr}\n`);
+  if (exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
+    process.stderr.write(`${stderr}\n`);
   return { stdout: stdout.trim(), stderr, exitCode, error: events.error, invalid: events.invalid };
 }
 
+/** The run failed and said so: a non-zero status, or an error event whatever the status. */
+function reportedFailure(run: EngineRun): boolean {
+  return run.exitCode !== 0 || run.error !== null;
+}
+
+/** `reportedFailure` plus a line that is not a protocol event — the strict form, for paths that throw. */
 function failed(run: EngineRun): boolean {
-  return run.exitCode !== 0 || run.invalid.length > 0;
+  return reportedFailure(run) || run.invalid.length > 0;
 }
 
 let cachedDescribe: { binPath: string; mtime: number; doc: DescribeDocument } | null = null;
@@ -187,9 +194,9 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
       doc = null;
     }
   }
+  // An error event names the engine-side cause even when a document parsed alongside it (#1163).
+  if (run.error) throw engineFailure("describe", run, run.exitCode);
   if (!doc) {
-    // An error event names the engine-side cause and carries the engine's own exit status; a non-event line is still the generic protocol fault, with the install hint.
-    if (run.error) throw engineFailure("describe", run, run.exitCode);
     throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\``, {
       hint: "run `kesha install` to fetch the engine this CLI expects",
     });
@@ -452,9 +459,10 @@ export async function detectAudioLanguageEngine(
   opts: RunEngineOptions = {},
 ): Promise<LangDetectResult | null> {
   if (!isEngineInstalled()) return null;
-  const { stdout, exitCode } = await runEngine(["detect-lang", audioPath], opts);
-  if (exitCode !== 0) return null;
-  return parseLangResult(stdout);
+  const run = await runEngine(["detect-lang", audioPath], opts);
+  // The tolerant form: a noisy onnxruntime warning must not blind a best-effort guess.
+  if (reportedFailure(run)) return null;
+  return parseLangResult(run.stdout);
 }
 
 export async function detectTextLanguageEngine(
@@ -463,13 +471,13 @@ export async function detectTextLanguageEngine(
 ): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
-  const { stdout, stderr, exitCode } = await runEngine(["detect-text-lang", text], opts);
-  if (exitCode !== 0) {
-    const warning = textLangFailureWarning(stderr);
+  const run = await runEngine(["detect-text-lang", text], opts);
+  if (reportedFailure(run)) {
+    const warning = textLangFailureWarning(run.stderr);
     if (warning) log.warn(warning);
     return null;
   }
-  return parseLangResult(stdout);
+  return parseLangResult(run.stdout);
 }
 
 /**
