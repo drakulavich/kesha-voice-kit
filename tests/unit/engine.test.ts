@@ -1029,6 +1029,28 @@ describe("the capability probe stays in step with the installed binary", () => {
     });
   });
 
+  fakeEngineTest("a describe that reports an error event fails even though its document parses (#1163 follow-up)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-describe-error-"));
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the language-id model is missing"}' >&2
+  printf '%s\\n' '${describeJson({ features: ["transcribe.segments"] })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(path, 0o755);
+    await withEngineEnv(path, async () => {
+      const err = await failure(() => getDescribe());
+      expect(err.code).toBe("E_MODEL_MISSING");
+      expect(errorMessage(err)).toBe("error [E_MODEL_MISSING]: the language-id model is missing");
+    });
+  });
+
   // Blank text has no language to detect; spending a subprocess on it would be pure latency.
   fakeEngineTest("blank text resolves null while real text still reaches the engine", async () => {
     const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-textlang-")), "kesha-engine");
