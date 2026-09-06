@@ -144,6 +144,7 @@ describe("say on protocol 4", () => {
       expect(err!.hint).toBe("kesha say --list-voices");
       expect(err!.exitCode).toBe(1);
       expect(err!.stderr).toContain("error [E_VOICE_UNKNOWN]: no such voice: xx");
+      expect(err!.origin).toBe("engine");
     } finally {
       restore();
     }
@@ -226,6 +227,7 @@ describe("say input preflight", () => {
       expect(err).toBeInstanceOf(SayError);
       expect((err as SayError).exitCode).toBe(2);
       expect((err as Error).message).toBe("text is empty");
+      expect((err as SayError).origin).toBe("cli");
     }
   });
 });

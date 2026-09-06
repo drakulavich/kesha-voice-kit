@@ -1,6 +1,6 @@
 import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "./engine";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, KeshaError, readEvents } from "./engine/events";
+import { engineFailure, KeshaError, readEvents, type ErrorOrigin } from "./engine/events";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { registerProcessTree } from "./process-tree";
@@ -66,8 +66,15 @@ export function buildSayArgs(o: SayOptions): string[] {
 }
 
 export class SayError extends KeshaError {
-  constructor(message: string, exitCode: number, stderr: string, code: string = "E_INTERNAL", hint?: string) {
-    super(code, message, { exitCode, stderr, hint });
+  constructor(
+    message: string,
+    exitCode: number,
+    stderr: string,
+    code: string = "E_INTERNAL",
+    hint?: string,
+    origin: ErrorOrigin = "cli",
+  ) {
+    super(code, message, { exitCode, stderr, hint, origin });
     this.name = "SayError";
   }
 }
@@ -160,5 +167,5 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     .filter((part): part is string => Boolean(part))
     .join("\n");
   const failure = engineFailure("say", events, exitCode, detail);
-  throw new SayError(failure.message, failure.exitCode || 4, failure.stderr ?? "", failure.code, failure.hint);
+  throw new SayError(failure.message, failure.exitCode || 4, failure.stderr ?? "", failure.code, failure.hint, failure.origin);
 }
