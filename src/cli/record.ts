@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
+import { exitCodeFor, KeshaError } from "../engine/events";
 import {
   isEngineInstalled,
   recordEngine,
@@ -9,6 +10,7 @@ import {
 } from "../engine";
 import { installHint } from "../install-hint";
 import { log } from "../log";
+import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 
 export interface RecordArgs {
   out?: string;
@@ -207,7 +209,12 @@ export const recordCommand = defineCommand({
       await recordEngine(resolved.target, resolved.maxSeconds);
     } catch (err) {
       log.error(errorMessage(err));
-      process.exit(1);
+      const signalExitCode = getPendingSignalExitCode();
+      if (signalExitCode !== null) {
+        await waitForPendingSignalCleanup();
+        process.exit(signalExitCode);
+      }
+      process.exit(err instanceof KeshaError ? exitCodeFor(err) : 1);
     }
   },
 });

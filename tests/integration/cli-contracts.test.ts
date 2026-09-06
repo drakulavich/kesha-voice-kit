@@ -267,6 +267,28 @@ process.exit(2);
   return enginePath;
 }
 
+function createHangingRecordEngine(dir: string, enginePidPath: string): string {
+  const enginePath = join(dir, "kesha-engine-record-hang");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
+if (args[0] === "record") {
+  await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
+  await new Promise(() => {});
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
 function createLifecycleEngine(
   dir: string,
   enginePidPath: string,
@@ -667,6 +689,77 @@ describe("CLI contracts", () => {
     expect(run.stderr).not.toMatch(/^\s+at /m);
     expect(existsSync(outPath)).toBe(false);
   });
+
+  test("kesha record --live against a build lacking record.live exits 2 with E_INVALID_ARG", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-record-flag-gate-");
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(
+      enginePath,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: [] })}'\n  exit 0\nfi\nexit 2\n`,
+    );
+    chmodSync(enginePath, 0o755);
+    const run = await runCli(["record", "--live"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: ", "--live"],
+    });
+  });
+
+  test("kesha record against a stub that exits non-zero with no coded error line still exits 1", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-record-uncoded-fail-");
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(
+      enginePath,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: [] })}'\n  exit 0\nfi\nexit 3\n`,
+    );
+    chmodSync(enginePath, 0o755);
+    const outPath = join(dir, "hello.wav");
+    const run = await runCli(["record", "--out", outPath], {
+      env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+    });
+    expectContract(run, {
+      exitCode: 1,
+      stderrContains: ["kesha-engine record exited with code 3"],
+      stderrNotContains: ["error [E_"],
+    });
+  });
+
+  for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
+    test(`${signal} mid-recording exits ${exitCode} and leaves no engine running`, async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir(`kesha-cli-contract-record-${signal.toLowerCase()}-exit-`);
+      const enginePidPath = join(dir, "engine.pid");
+      const enginePath = createHangingRecordEngine(dir, enginePidPath);
+      const outPath = join(dir, "hello.wav");
+
+      const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", "record", "--out", outPath], {
+        cwd: DEFAULT_CWD,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          NO_COLOR: "1",
+          FORCE_COLOR: "0",
+          ...isolatedEnv(dir),
+          KESHA_ENGINE_BIN: enginePath,
+        },
+      });
+      const drained = Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      const enginePid = await waitForPidFile(enginePidPath);
+
+      proc.kill(signal);
+
+      const [, actualExitCode] = await Promise.all([drained, proc.exited]);
+      expect(actualExitCode).toBe(exitCode);
+      expect(await waitForPidExit(enginePid)).toBe(true);
+    });
+  }
 
   test("kesha say --list-voices without an installed engine prints the install hint, not a raw ENOENT", async () => {
     const run = await runCli(["say", "--list-voices"], { env: isolatedEnv() });
