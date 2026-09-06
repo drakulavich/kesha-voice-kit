@@ -28,7 +28,7 @@ function langNameFor(code: string): string {
   }
 }
 
-function parseVoiceInfo(id: string): VoiceInfo {
+export function parseVoiceInfo(id: string): VoiceInfo {
   if (id.startsWith("ru-vosk-")) {
     const suffix = id.slice("ru-vosk-".length); // e.g. "m02" or "f01"
     const genderChar = suffix[0];
