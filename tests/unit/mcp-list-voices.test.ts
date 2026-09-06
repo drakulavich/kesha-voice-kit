@@ -204,3 +204,43 @@ describe("list_voices() validates against describe before spawning", () => {
     });
   });
 });
+
+// A stub whose describe answers normally but whose `say --list-voices` reports a coded failure.
+function voiceListingErrorEngine(): string {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-voices-error-"));
+  const path = join(dir, "kesha-engine");
+  const errorEvent = JSON.stringify({
+    kind: "error",
+    code: "E_MODEL_MISSING",
+    message: "the TTS bundle is missing",
+    hint: "run kesha install --tts",
+  });
+  writeFileSync(
+    path,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' '${errorEvent}' >&2\n  exit 1\nfi\nexit 2\n`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+describe("list_voices / list_languages surface an engine-reported failure coded", () => {
+  skipOnWin32("list_voices tool returns isError carrying the engine's code and hint", async () => {
+    await withEngineBin(voiceListingErrorEngine(), async () => {
+      const res = await call("list_voices");
+      expect(res.isError).toBe(true);
+      const text = (res.content as Array<{ text: string }>)[0]?.text;
+      expect(text).toContain("E_MODEL_MISSING");
+      expect(text).toContain("run kesha install --tts");
+    });
+  });
+
+  skipOnWin32("list_languages tool returns isError carrying the engine's code and hint", async () => {
+    await withEngineBin(voiceListingErrorEngine(), async () => {
+      const res = await call("list_languages");
+      expect(res.isError).toBe(true);
+      const text = (res.content as Array<{ text: string }>)[0]?.text;
+      expect(text).toContain("E_MODEL_MISSING");
+      expect(text).toContain("run kesha install --tts");
+    });
+  });
+});
