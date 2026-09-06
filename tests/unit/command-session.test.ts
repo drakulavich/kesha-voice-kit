@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { runCommandSession, type CommandSessionFactories } from "../../src/cli/command-session";
 import type { DiagnosticLogFields, DiagnosticLogSession, DiagnosticSessionStatus } from "../../src/diagnostic-log";
+import { readEvents } from "../../src/engine/events";
 import type { StatsRecorder, StatsRunStatus } from "../../src/stats";
 
 type LoggedEvent = { event: string; fields: DiagnosticLogFields };
@@ -193,5 +194,25 @@ describe("runCommandSession", () => {
     expect(f.events[1]?.fields.status).toBe("failed");
     expect(f.statsFinishes).toEqual([{ status: "failed", itemCount: 0 }]);
     expect(f.finishes).toEqual(["failed"]);
+  });
+
+  test("engine debug events reach the diagnostic log while a command runs, and not after", async () => {
+    const f = fakeSession();
+    await runCommandSession(
+      "transcribe",
+      {},
+      async () => {
+        await readEvents(new Response('{"kind":"debug","t_ms":5,"message":"tick"}\n').body!);
+        return { status: "success", itemCount: 0, finishFields: {} };
+      },
+      f.factories,
+    );
+    expect(f.events).toContainEqual({
+      event: "engine.debug",
+      fields: { t_ms: 5, event: null, message: "tick", fields: null },
+    });
+    const before = f.events.length;
+    await readEvents(new Response('{"kind":"debug","t_ms":6,"message":"late"}\n').body!);
+    expect(f.events).toHaveLength(before);
   });
 });

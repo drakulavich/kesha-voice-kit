@@ -6,13 +6,12 @@ import {
   getEngineBinPath,
   getEngineCapabilities,
   spawnEngineProcess,
-  spawnStdioWithDebugFd,
   TRANSCRIBE_DIARIZE_FEATURE,
   type EngineCapabilities,
 } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";
-import { TS_NATIVE_CODES } from "./error-codes";
+import { KeshaError } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
@@ -230,7 +229,7 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
   const proc = spawnEngineProcess(
     binPath,
     ["say", "--voice", "en-am_michael", "--out", outPath, "Kesha warmup."],
-    spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
+    ["ignore", "pipe", "pipe"],
   );
   const tree = registerProcessTree(proc);
 
@@ -423,6 +422,10 @@ async function engineWorks(binPath: string): Promise<boolean> {
     );
     return false;
   }
+  if (health.status === "protocol") {
+    log.warn(`${health.detail} — re-downloading it.`);
+    return false;
+  }
   const detail = health.status === "unusable" ? health.detail : "binary disappeared";
   log.warn(
     `Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` +
@@ -555,11 +558,7 @@ async function runEngineModelInstall(
   // `env` is load-bearing, not tidiness: this child resolves the model destination from
   // `KESHA_CACHE_DIR`, and without it Bun's startup snapshot sends a redirected install
   // to the real `~/.cache/kesha` anyway (#876).
-  const proc = spawnEngineProcess(
-    binPath,
-    installArgs,
-    spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
-  );
+  const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "inherit"]);
   const tree = registerProcessTree(proc);
   let exitCode: number;
   try {
@@ -625,8 +624,9 @@ async function assertRequestedVersionLanded(binPath: string, version: string): P
   const landed = readInstalledEngineVersion(binPath);
   const reported = await readExecutableVersion(binPath);
   if (reported && reported !== version) {
-    throw new Error(
-      `error [${TS_NATIVE_CODES.INSTALL_RACE}]: installed engine v${version}, but the binary in ` +
+    throw new KeshaError(
+      "E_INSTALL_RACE",
+      `installed engine v${version}, but the binary in ` +
         `${dirname(binPath)} reports v${reported} — something else published an engine there ` +
         "during this install.\n" +
         `  Fix: re-run \`kesha install --engine-version ${version}\` once no other install is ` +
@@ -634,8 +634,9 @@ async function assertRequestedVersionLanded(binPath: string, version: string): P
     );
   }
   if (landed === version && existsSync(binPath)) return;
-  throw new Error(
-    `error [${TS_NATIVE_CODES.INSTALL_RACE}]: installed engine v${version}, but ${dirname(binPath)} ` +
+  throw new KeshaError(
+    "E_INSTALL_RACE",
+    `installed engine v${version}, but ${dirname(binPath)} ` +
       `now holds ${landed ? `v${landed}` : "no recorded engine"} — something else wrote there ` +
       "during this install.\n" +
       `  Fix: re-run \`kesha install --engine-version ${version}\` once no other install is ` +
@@ -694,13 +695,14 @@ function ensureEngineDirCreatable(binPath: string): void {
       ? `${setting.name}="${setting.value}" cannot hold the engine directory ${engineDir}: ${why ?? errorMessage(e)}`
       : `cannot create the engine directory ${engineDir}: ${why ?? errorMessage(e)}`;
     if (!why) {
-      throw new Error(
-        `error [${TS_NATIVE_CODES.INTERNAL}]: ${what}.\n  Fix: resolve that filesystem error and ` +
+      throw new KeshaError(
+        "E_INTERNAL",
+        `${what}.\n  Fix: resolve that filesystem error and ` +
           "re-run `kesha install`; if it persists, file a bug with `kesha support-bundle`.",
       );
     }
     const fix = engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir);
-    throw new Error(`error [${TS_NATIVE_CODES.INVALID_ARG}]: ${what}.\n  Fix: ${fix}`);
+    throw new KeshaError("E_INVALID_ARG", `${what}.\n  Fix: ${fix}`);
   }
 }
 
@@ -761,11 +763,10 @@ async function installLockedEngine(
     await refreshCachedEngine(binPath, canWriteEngineDir, noCache, version);
   } else {
     if (!canWriteEngineDir) {
-      throw new Error(
-        // The sibling of the engine dir that cannot be *created*, which #998 coded the same way:
-        // both are a configured path this user cannot write the engine into.
-        `error [${TS_NATIVE_CODES.INVALID_ARG}]: ` +
-          `Cannot install engine v${version}: ${engineDir} is not writable ` +
+      // The sibling of the engine dir that cannot be *created* — #998 coded both the same way.
+      throw new KeshaError(
+        "E_INVALID_ARG",
+        `Cannot install engine v${version}: ${engineDir} is not writable ` +
           `(installed: ${installedVersion ? `v${installedVersion}` : "no recorded version"}).\n` +
           "  Fix: point KESHA_ENGINE_BIN at a writable path, or install into a writable prefix.",
       );

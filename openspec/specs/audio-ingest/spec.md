@@ -137,8 +137,8 @@ The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` 
 > decode faults (`:119`, `:137`) via `CodedContext::coded`, and the
 > decoded-nothing guard in `measure_duration_seconds` via `coded_bail!`. No
 > ingest failure falls through to `code_of`'s `ErrorCode::Internal` default
-> (`rust/src/errors.rs:193-197`). `E_BAD_AUDIO` is in the taxonomy printed by
-> `--error-codes-json` and mirrored TS-side in `src/error-codes.ts`; its
+> (`rust/src/errors.rs:193-197`). `E_BAD_AUDIO` is in the taxonomy listed by
+> `kesha-engine describe` (the `errors` section) and documented in `docs/errors.md`; its
 > category is `Input` (`rust/src/errors.rs:266-267`). Real-input regression
 > tests cover unsupported format, no audio tracks (a video-only MP4) and
 > unsupported codec (ALAC in M4A) in `rust/tests/audio_format.rs`; the unknown

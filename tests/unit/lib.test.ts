@@ -5,9 +5,9 @@ import { join } from "path";
 import { transcribe } from "../../src/lib";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
 import {
-  preflightTranscribeWithSegments,
   transcribe as transcribeWrapper,
   transcribeWithSegments,
+  validateTranscribeRequest,
 } from "../../src/transcribe";
 
 function fakeEngine(features: string[]): string {
@@ -52,6 +52,12 @@ describe("lib API", () => {
     expect(e.stderr).toBe("stderr");
   });
 
+  it("exports KeshaError, and SayError extends it", async () => {
+    const core = await import("../../src/lib");
+    expect(core.KeshaError).toBeDefined();
+    expect(new core.SayError("m", 1, "")).toBeInstanceOf(core.KeshaError);
+  });
+
   it("uses canonical Bun install commands when transcription backend is missing", async () => {
     const saved = process.env.KESHA_ENGINE_BIN;
     process.env.KESHA_ENGINE_BIN = `/tmp/kesha-missing-engine-${Date.now()}`;
@@ -71,25 +77,17 @@ describe("lib API", () => {
     }
   });
 
-  it("rejects speakers + vad:off before the engine-installed check (#768)", async () => {
+  it("reports the missing engine even for an invalid combo like speakers + vad:off (#768)", async () => {
     const saved = process.env.KESHA_ENGINE_BIN;
     try {
       process.env.KESHA_ENGINE_BIN = join(mkdtempSync(join(tmpdir(), "kesha-no-engine-")), "absent");
       await expect(
-        preflightTranscribeWithSegments({ speakers: true, vad: "off" }),
-      ).rejects.toThrow("E_INVALID_ARG");
+        validateTranscribeRequest({ speakers: true, vad: "off" }),
+      ).rejects.toThrow("No transcription backend is installed");
     } finally {
       if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
       else process.env.KESHA_ENGINE_BIN = saved;
     }
-  });
-
-  fakeEngineIt("preflights timestamp support before segment transcription", async () => {
-    await withEngine(fakeEngine([]), async () => {
-      await expect(preflightTranscribeWithSegments({ timestamps: true })).rejects.toThrow(
-        "Timestamped segments require",
-      );
-    });
   });
 
   fakeEngineIt("routes timestamp requests through the JSON segment path", async () => {
@@ -115,8 +113,8 @@ describe("lib API", () => {
   // engine with no preflight at all (#710).
   fakeEngineIt("preflights itn support on the plain-text path", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
-      await expect(preflightTranscribeWithSegments({ itn: true })).rejects.toThrow(
-        "--itn requires a newer kesha-engine",
+      await expect(validateTranscribeRequest({ itn: true })).rejects.toThrow(
+        "--itn needs transcribe.itn",
       );
     });
   });
@@ -124,8 +122,8 @@ describe("lib API", () => {
   fakeEngineIt("preflights itn support alongside timestamps", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
       await expect(
-        preflightTranscribeWithSegments({ timestamps: true, itn: true }),
-      ).rejects.toThrow("--itn requires a newer kesha-engine");
+        validateTranscribeRequest({ timestamps: true, itn: true }),
+      ).rejects.toThrow("--itn needs transcribe.itn");
     });
   });
 

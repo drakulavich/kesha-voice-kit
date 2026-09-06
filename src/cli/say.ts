@@ -1,17 +1,12 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import {
-  getEngineBinPath,
-  isEngineInstalled,
-  spawnEngineProcess,
-  spawnStdioWithDebugFd,
-} from "../engine";
+import { getEngineBinPath, isEngineInstalled, spawnEngineProcess } from "../engine";
+import { KeshaError } from "../engine/events";
 import { installHint } from "../install-hint";
 import { registerProcessTree } from "../process-tree";
 import { log } from "../log";
 import {
   say,
-  SayError,
   SUPPORTED_SAMPLE_RATES,
   type SayFormat,
   type SayOptions,
@@ -167,6 +162,17 @@ type SayOpts = {
   noExpandAbbrev: boolean;
 };
 
+/** Exit code for a `KeshaError` code with no `exitCode` of its own — a subprocess never ran, or ran but never spoke. */
+const CODE_EXIT_CODES: Record<string, number> = {
+  E_INVALID_ARG: 2,
+  E_ENGINE_PROTOCOL: 1,
+  E_ENGINE_SPAWN: 1,
+};
+
+function exitCodeForKeshaError(err: KeshaError): number {
+  return err.exitCode ?? CODE_EXIT_CODES[err.code] ?? 4;
+}
+
 function recordOutputArtifact(
   stats: StatsRecorder,
   audio: Uint8Array,
@@ -216,16 +222,16 @@ async function synthesizeAndEmit(
       },
     };
   } catch (err) {
-    const code = err instanceof SayError ? err.code : "E_INTERNAL";
-    const exitCode = err instanceof SayError ? err.exitCode : 4;
+    const code = err instanceof KeshaError ? err.code : "E_INTERNAL";
+    const exitCode = err instanceof KeshaError ? exitCodeForKeshaError(err) : 4;
     stats.recordError("tts", err, code);
-    log.error(err instanceof SayError ? err.stderr.trim() || err.message : errorMessage(err));
+    log.error(errorMessage(err));
     return {
       status: "failed",
       itemCount: 1,
       exitCode,
       finishFields: {
-        errorKind: err instanceof SayError ? "say_error" : "error",
+        errorKind: err instanceof KeshaError ? "say_error" : "error",
         exitCode,
         error_code: code,
       },
@@ -295,11 +301,7 @@ export const sayCommand = defineCommand({
         process.exit(1);
       }
       // The engine prints the list directly — just relay its stdout + exit code.
-      const proc = spawnEngineProcess(
-        getEngineBinPath(),
-        ["say", "--list-voices"],
-        spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
-      );
+      const proc = spawnEngineProcess(getEngineBinPath(), ["say", "--list-voices"], ["inherit", "inherit", "inherit"]);
       // Register so a Ctrl-C during a cold Engine load terminates it and exits 130/143 (#939);
       // dispose before the process.exit below so the registration never outlives the run.
       const tree = registerProcessTree(proc);

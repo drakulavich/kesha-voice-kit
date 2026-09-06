@@ -125,7 +125,7 @@ Any plan naming a specific upstream artifact must be validated by a throwaway sp
 
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
-Validate flags against `kesha-engine --capabilities-json` instead of forwarding them — the engine's subcommands take their own narrow flag sets (`install` accepts `--no-cache`, `--vad`, `--no-warmup`, plus `--tts` and `--diarize` where the `tts` / `system_diarize` features are compiled in — `--diarize` does not exist on the linux/windows ONNX binaries).
+Every flag-carrying engine argv on a parsed path — `runEngine` callers in `src/engine.ts`, `say()` in `src/synth.ts`, MCP `listVoices()` — goes through `validateArgv` (`src/engine/describe.ts`) against `kesha-engine describe` before the spawn; `record` validates through `validateRecordRequest` but still inherits stderr. The spawns still on protocol 3 (`install`, `record`, CLI `say --list-voices`, the Kokoro warmup) and the `validateBackend` / `validateDiarize` checks beside them move in the remaining stage-2 PRs. A flag the schema does not list for that subcommand, a flag whose gate the build lacks, a missing `requires` or a present `conflicts` is `E_INVALID_ARG` with no subprocess; `whenUngated: drop` rows are omitted with one warning. Do not add a new hand-written feature check; add a row to `gate_rows()` in `rust/src/protocol/describe.rs` (and its mirror in `tests/helpers/fake-engine.ts`, pinned by `describe-template.test.ts`).
 
 ### COREML BUILD TRIPLE
 

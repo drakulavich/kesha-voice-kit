@@ -2,8 +2,8 @@ import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import {
   isEngineInstalled,
-  preflightRecordLive,
   recordEngine,
+  validateRecordRequest,
   type LiveAutoStopOptions,
   type RecordTarget,
 } from "../engine";
@@ -203,7 +203,7 @@ export const recordCommand = defineCommand({
       process.exit(1);
     }
     try {
-      if (resolved.target.live) await preflightRecordLive(resolved.target.autoStop !== undefined);
+      await validateRecordRequest(resolved.target, resolved.maxSeconds);
       await recordEngine(resolved.target, resolved.maxSeconds);
     } catch (err) {
       log.error(errorMessage(err));

@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { existsSync, statSync } from "fs";
 import { detectAll } from "tinyld";
-import { preflightTranscribeWithSegments, transcribeWithSegments } from "../transcribe";
+import { transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
@@ -23,7 +23,7 @@ import { diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandSession } from "./command-session";
 import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
-import { ENGINE_CODES, extractEngineErrorCode, TS_NATIVE_CODES } from "../error-codes";
+import { KeshaError } from "../engine/events";
 
 interface MainCommandArgs {
   _: string[];
@@ -301,26 +301,25 @@ async function processFile(
   const { stats, diagnosticLog } = recorders;
 
   if (!existsSync(file)) {
-    stats.recordError("input", new Error("File not found"), TS_NATIVE_CODES.INPUT_NOT_FOUND);
+    const err = new KeshaError("E_INPUT_NOT_FOUND", "File not found");
+    stats.recordError("input", err, err.code);
     diagnosticLog.event("input.missing", {
       command: "transcribe",
-      error_code: TS_NATIVE_CODES.INPUT_NOT_FOUND,
+      error_code: err.code,
     });
-    log.error(`${file}: error [${TS_NATIVE_CODES.INPUT_NOT_FOUND}]: File not found`);
-    return { ok: false, error: { file, code: TS_NATIVE_CODES.INPUT_NOT_FOUND, message: "File not found" } };
+    log.error(`${file}: ${errorMessage(err)}`);
+    return { ok: false, error: { file, code: err.code, message: err.message } };
   }
 
   if (isDirectoryPath(file)) {
-    stats.recordError("input", new Error("is a directory"), TS_NATIVE_CODES.INVALID_ARG);
+    const err = new KeshaError("E_INVALID_ARG", "is a directory (expected an audio file)");
+    stats.recordError("input", err, err.code);
     diagnosticLog.event("input.invalid", {
       command: "transcribe",
-      error_code: TS_NATIVE_CODES.INVALID_ARG,
+      error_code: err.code,
     });
-    log.error(`${file}: error [${TS_NATIVE_CODES.INVALID_ARG}]: is a directory (expected an audio file)`);
-    return {
-      ok: false,
-      error: { file, code: TS_NATIVE_CODES.INVALID_ARG, message: "is a directory (expected an audio file)" },
-    };
+    log.error(`${file}: ${errorMessage(err)}`);
+    return { ok: false, error: { file, code: err.code, message: err.message } };
   }
 
   const inputArtifact = artifactFromFile(file, "input_audio");
@@ -343,7 +342,7 @@ async function processFile(
     else write();
   };
   try {
-    await preflightTranscribeWithSegments({ vad: vadMode, timestamps, speakers, itn });
+    await validateTranscribeRequest({ vad: vadMode, timestamps, speakers, itn });
     progress = reportProgress
       ? createPercentProgress(`Transcribing ${file}`, {
           estimatedTotalMs: speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
@@ -394,8 +393,8 @@ async function processFile(
     return { ok: true, result };
   } catch (err: unknown) {
     progress?.stop();
+    const code = err instanceof KeshaError ? err.code : "E_TRANSCRIBE_FAILED";
     const stderrText = errorMessage(err);
-    const code = extractEngineErrorCode(stderrText) ?? ENGINE_CODES.TRANSCRIBE_FAILED;
     stats.recordError("transcribe", err, code);
     diagnosticLog.event("engine.exit", {
       command: "transcribe",

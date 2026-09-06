@@ -12,7 +12,7 @@ import {
 } from "../../src/status";
 import { humanBytes } from "../../src/format";
 import { starSeenPath } from "../../src/star";
-import { saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
+import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
 import modelPlan from "../../model-plan.json" with { type: "json" };
 
 // Literals, not derived from model-plan.json: a dropped plan entry must go red here, since the Rust binding test skips plan-only PRs (#1132).
@@ -178,8 +178,8 @@ describe("collectStatus + renderStatus", () => {
     writeFileSync(
       binPath,
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":2,"backend":"fake-coreml","features":["transcribe.segments","transcribe.diarize"]}'
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "fake-coreml", features: ["transcribe.segments", "transcribe.diarize"] })}'
   exit 0
 fi
 exit 2
@@ -207,7 +207,7 @@ exit 2
       renderStatus(await collectStatus());
       const output = lines.join("\n");
       expect(output).toContain("Backend: fake-coreml");
-      expect(output).toContain("Protocol: v2");
+      expect(output).toContain("Protocol: v4");
       expect(output).toContain("Features: transcribe.segments, transcribe.diarize");
       expect(output).toContain("Mirror: https://mirror.example.com/kesha");
       expect(output).toContain("TTS voices:");
@@ -243,7 +243,7 @@ describe("collectStatus --json payload (#647)", () => {
       expect(report.engine.installed).toBe(true);
       expect(report.engine.path).toBe(binPath);
       expect(report.engine.capabilities).toEqual({
-        protocolVersion: 3,
+        protocolVersion: 4,
         backend: "fake-coreml",
         features: ["tts"],
       });
@@ -317,10 +317,20 @@ describe("collectStatus --json payload (#647)", () => {
     // Non-null capabilities must mean it described itself: `renderStatus` calls `features.join` (#647).
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-shape-"));
     const cache = join(dir, ".cache", "kesha");
-    const binPath = writeFakeEngine(join(cache, "engine", "bin"), {
-      protocolVersion: "three",
-      backend: 42,
-    });
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '{"protocolVersion":"three","backend":42}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(binPath, 0o755);
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;
     process.env.HOME = dir;
@@ -329,6 +339,37 @@ describe("collectStatus --json payload (#647)", () => {
       expect(report.engine.installed).toBe(true);
       expect(report.engine.capabilities).toBeNull();
       expect(() => renderStatus(report)).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("a stale engine is reported as a protocol mismatch, not a mute one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-protocol-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ features: [], protocolVersion: 3 })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(binPath, 0o755);
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const report = await collectStatus();
+      expect(report.engine.installed).toBe(true);
+      expect(report.engine.capabilities).toBeNull();
+      expect(report.hint).toContain("E_ENGINE_PROTOCOL");
+      expect(report.hint).toContain("kesha install");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -732,11 +773,20 @@ describe("collectStatus FluidAudio accounting (#688)", () => {
     const dir = mkdtempSync(join(tmpdir(), prefix));
     const fluidHome = mkdtempSync(join(tmpdir(), `${prefix}home-`));
     const cache = join(dir, ".cache", "kesha");
-    const binPath = writeFakeEngine(join(cache, "engine", "bin"), {
-      protocolVersion: 3,
-      backend,
-      features: [],
-    });
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend, features: [] })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(binPath, 0o755);
     write(join(cache, "models", "kokoro-82m", "voice.bin"), 64);
 
     process.env.KESHA_ENGINE_BIN = binPath;

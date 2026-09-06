@@ -4,13 +4,13 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { installEngine, readInstalledEngineVersion } from "../../src/engine-install";
 import { log } from "../../src/log";
-import { isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 
 const VERSION_A = "9.9.9-alpha.1";
 const VERSION_B = "9.9.8";
 
 /**
- * Answers `--version`, `--capabilities-json`, `install` and `say`. `install` brackets itself in
+ * Answers `--version`, `describe`, `install` and `say`. `install` brackets itself in
  * `log` so a test can see whether two installs were inside the engine at once, and holds the
  * cache for `KESHA_TEST_INSTALL_SLEEP` seconds so the overlap window is set by the test, not by
  * timing. `extraInstallBody` stands in for a writer the lock cannot cover.
@@ -21,8 +21,8 @@ if [ "$1" = "--version" ]; then
   echo "kesha-engine ${version}"
   exit 0
 fi
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":["tts"]}'
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: ["tts"] })}'
   exit 0
 fi
 if [ "$1" = "install" ]; then
@@ -167,7 +167,7 @@ describe("concurrent kesha install (#997)", () => {
     stubReleases(`  printf '%s\\n' '1.0.0' > "$0.version"`);
     const claims = captureSuccessClaims(binPath);
 
-    await expect(installEngine({ version: VERSION_A })).rejects.toThrow(/E_INSTALL_RACE/);
+    await expect(installEngine({ version: VERSION_A })).rejects.toMatchObject({ code: "E_INSTALL_RACE" });
 
     expect(claims).toEqual([]);
   }, 30_000);
@@ -185,9 +185,10 @@ describe("concurrent kesha install (#997)", () => {
     );
     const claims = captureSuccessClaims(binPath);
 
-    await expect(installEngine({ version: VERSION_A })).rejects.toThrow(
-      new RegExp(`E_INSTALL_RACE.*reports v${VERSION_B.replace(/\./g, "\\.")}`, "s"),
-    );
+    await expect(installEngine({ version: VERSION_A })).rejects.toMatchObject({
+      code: "E_INSTALL_RACE",
+      message: expect.stringMatching(new RegExp(`reports v${VERSION_B.replace(/\./g, "\\.")}`, "s")),
+    });
 
     expect(claims).toEqual([]);
     expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);

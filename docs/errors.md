@@ -7,7 +7,7 @@ error [E_MODEL_MISSING]: voice 'ru-vosk-m02' not installed. run: kesha install -
 ```
 
 The code is stable across releases — quote it in bug reports. Engine codes are
-introspectable via `kesha-engine --error-codes-json`. Codes are recorded
+introspectable via `kesha-engine describe` (the `errors` section). Codes are recorded
 (leak-free) in [Stats](local-stats.md) and [diagnostic logs](diagnostic-logs.md);
 the human message may contain a path and is sanitized before storage, but the
 code never needs sanitizing.
@@ -40,8 +40,11 @@ code never needs sanitizing.
 ## Where codes come from
 
 - **Engine codes** (everything except `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE`) are defined in the Rust
-  engine and emitted on its stderr as `error [CODE]: …`. List them with
-  `kesha-engine --error-codes-json`.
+  engine and emitted on its stderr as an `error` event that the CLI renders as `error [CODE]: …`.
+  List them with `kesha-engine describe` (the `errors` section, each with its `origin`).
+  When the engine also writes a line that is not an event, the CLI reports `E_INTERNAL` quoting
+  that line and appends the engine's own transcript, so stderr may show two coded lines; the
+  `code` field (JSON output, `SayError.code`) names one.
 - **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`** and **`E_INSTALL_RACE`** originate
   only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
   an installed engine whose protocol version the CLI does not speak, and an

@@ -210,8 +210,9 @@ describe("existsExactly", () => {
 
 describe("Rust cross-references in TS sources", () => {
   // Per shape, not a global total: a narrowing that loses one whole form must not pass on the others (#1132 round 1).
+  // Lowered from 20: protocol v4 Task 4 deleted five capability-flag re-declarations engine.ts carried these doc comments on.
   test("the scan finds every shape it is meant to gate", () => {
-    expect(countOf("file-with-symbol")).toBeGreaterThanOrEqual(20);
+    expect(countOf("file-with-symbol")).toBeGreaterThanOrEqual(17);
     expect(countOf("file")).toBeGreaterThanOrEqual(2);
     expect(countOf("module")).toBeGreaterThanOrEqual(1);
   });

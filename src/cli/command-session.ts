@@ -4,6 +4,7 @@ import type {
   DiagnosticLogSession,
   DiagnosticSessionStatus,
 } from "../diagnostic-log";
+import { setEngineDebugSink } from "../engine/events";
 import { errorMessage } from "../error-utils";
 import { log } from "../log";
 import { createStatsRecorder } from "../stats";
@@ -46,12 +47,22 @@ export async function runCommandSession(
   };
   session.diagnosticLog.event("command.start", { command, ...startFields });
 
+  setEngineDebugSink((event) =>
+    session.diagnosticLog.event("engine.debug", {
+      t_ms: event.t_ms,
+      event: event.event ?? null,
+      message: event.message,
+      fields: event.fields === undefined ? null : JSON.stringify(event.fields),
+    }),
+  );
   let outcome: CommandOutcome;
   try {
     outcome = await body(session);
   } catch (err) {
     closeSessionQuietly(session, command, { status: "failed", itemCount: 0 });
     throw err;
+  } finally {
+    setEngineDebugSink(null);
   }
 
   // A flush error must not displace a failure the command already has to report (Greptile P1/P2 on #607).

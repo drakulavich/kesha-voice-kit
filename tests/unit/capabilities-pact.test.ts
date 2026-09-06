@@ -7,36 +7,30 @@
  * by the target it emits them at — that matrix is observable only from the real binaries,
  * which until now only the model-downloading lanes ever saw.
  *
- * These tests read `tests/fixtures/capabilities/<target>.json` — recordings of
- * `--capabilities-json` from the published binaries — and drive the production seams against
- * them. No engine, no models, no network. `.github/workflows/capability-pact.yml` re-records
+ * These tests read `tests/fixtures/capabilities/<target>.json` — the published binaries'
+ * protocol-3 capabilities recordings (engine 1.24.11), turned into a describe
+ * document by `docFor` — and drive the production seams against them. Re-recording them
+ * as `describe` on the beta.2 pin is openspec task 5.4. No engine, no models, no network.
+ * `.github/workflows/capability-pact.yml` re-records
  * from the real artifacts and fails on drift, which is what stops a pact from rotting into a
  * false green; it also owns the pinned-version check, which cannot live here because a release
  * PR bumps `keshaEngine.version` before the tag it names exists.
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
   pactPath,
   provenancePath,
   type PactProvenance,
 } from "../../.github/scripts/record-capability-pacts";
-import {
-  assertItnSupported,
-  assertSpeakersSupported,
-  buildTranscribeArgs,
-  RECORD_LIVE_FEATURE,
-  TRANSCRIBE_DIARIZE_FEATURE,
-  TRANSCRIBE_ITN_FEATURE,
-  TRANSCRIBE_SEGMENTS_FEATURE,
-  textLangFailureWarning,
-  type EngineCapabilities,
-} from "../../src/engine";
-import { buildEngineInstallArgs, validateDiarize } from "../../src/engine-install";
+import { buildTranscribeArgs, TRANSCRIBE_DIARIZE_FEATURE, textLangFailureWarning, type EngineCapabilities } from "../../src/engine";
+import { validateArgv } from "../../src/engine/describe";
+import { KeshaError } from "../../src/engine/events";
+import { buildEngineInstallArgs } from "../../src/engine-install";
 import { engineTarget, engineTargetEntries, targetKey } from "../../src/engine-targets";
-import { buildSayArgs, type SayOptions } from "../../src/synth";
 import { pickVoiceForLang } from "../../src/voice-routing";
+import { buildSayArgs, type SayOptions } from "../../src/synth";
+import { describeDocument } from "../helpers/fake-engine";
 import { readRepoFile, repoPath } from "../helpers/repo";
 
 interface PactTarget {
@@ -66,76 +60,26 @@ for (const { platform, arch, target } of engineTargetEntries()) {
   });
 }
 
-/**
- * Every flag the three pure argv builders emit, and the capabilities that make a target accept
- * it — an empty list means clap defines it on every published build. A flag added to a builder
- * with no row here fails `classifies every flag the say, install and transcribe builders emit`.
- * Subcommands with no pure builder (`record`, `say --list-voices`) are outside this view.
- */
-const FLAG_CAPABILITIES: Record<string, string[]> = {
-  "--voice": ["tts"],
-  "--lang": ["tts"],
-  "--out": ["tts"],
-  "--rate": ["tts"],
-  "--ssml": ["tts"],
-  "--format": ["tts"],
-  "--bitrate": ["tts"],
-  "--sample-rate": ["tts"],
-  "--no-expand-abbrev": ["tts.ru_acronym_expansion", "tts.en_acronym_expansion"],
-  "--no-cache": [],
-  "--tts": ["tts"],
-  "--vad": ["vad"],
-  "--no-vad": ["vad"],
-  "--diarize": [TRANSCRIBE_DIARIZE_FEATURE],
-  "--json": [TRANSCRIBE_SEGMENTS_FEATURE],
-  "--itn": [TRANSCRIBE_ITN_FEATURE],
-  "--speakers": [TRANSCRIBE_DIARIZE_FEATURE],
-};
-
-/**
- * Guards that must refuse a flag before it reaches an engine whose pact lacks its capability.
- * `buildSayArgs` guards itself by taking capabilities and dropping the flag; the transcribe
- * and install builders are capability-blind, so their gated flags need an entry here.
- */
-const FLAG_GUARDS: Record<string, (caps: EngineCapabilities) => void> = {
-  "--diarize": validateDiarize,
-  "--speakers": assertSpeakersSupported,
-  "--itn": assertItnSupported,
-};
-
-/** Maximal option sets, so the builders emit every flag they are capable of emitting. */
 const EVERY_SAY_OPTION: SayOptions = {
-  text: "hello",
-  voice: "en-am_michael",
-  lang: "en",
-  out: "out.wav",
-  rate: 1.5,
-  ssml: true,
-  format: "ogg-opus",
-  bitrate: 32_000,
-  sampleRate: 24_000,
-  noExpandAbbrev: true,
-};
-const EVERY_INSTALL_OPTION = { noCache: true, ttsLangs: ["en"], vad: true, diarize: true };
-
-/** A hypothetical engine advertising everything, so a builder emits every flag it can. */
-const EVERY_CAPABILITY: EngineCapabilities = {
-  protocolVersion: 3,
-  backend: "onnx",
-  features: Object.values(FLAG_CAPABILITIES).flat(),
+  text: "hi", voice: "en-am_michael", lang: "en", out: "x.wav", rate: 1.2, ssml: true,
+  format: "ogg-opus", bitrate: 32000, sampleRate: 24000, noExpandAbbrev: true,
 };
 
-const flagsIn = (argv: string[]): string[] => argv.filter((arg) => arg.startsWith("--"));
+const PROFILE: Record<string, string> = { darwin: "darwin", linux: "linux", win32: "windows" };
 
-const satisfies = (pact: EngineCapabilities, capabilities: string[]): boolean =>
-  capabilities.length === 0 || capabilities.some((c) => pact.features.includes(c));
+function docFor(t: PactTarget) {
+  return describeDocument({ backend: t.backend, profile: PROFILE[t.platform]!, features: t.pact.features, tts: t.pact.tts });
+}
 
-/** Everything the TS side can put on the wire that no capability check filters first. */
-const capabilityBlindFlags = (): string[] => [
-  ...flagsIn(buildEngineInstallArgs(EVERY_INSTALL_OPTION)),
-  ...flagsIn(buildTranscribeArgs("a.wav", { vad: "on", itn: true, speakers: true }, true)),
-  ...flagsIn(buildTranscribeArgs("a.wav", { vad: "off" })),
-];
+function rejection(fn: () => unknown): KeshaError | null {
+  try {
+    fn();
+    return null;
+  } catch (err) {
+    if (err instanceof KeshaError) return err;
+    throw err;
+  }
+}
 
 describe("capability pact — recordings", () => {
   it("records a pact for every published engine target", () => {
@@ -171,37 +115,36 @@ describe("capability pact — recordings", () => {
   });
 });
 
-describe("capability pact — flags the TS side emits", () => {
-  it("classifies every flag the say, install and transcribe builders emit", () => {
-    const emitted = new Set([
-      ...flagsIn(buildSayArgs(EVERY_SAY_OPTION, EVERY_CAPABILITY)),
-      ...capabilityBlindFlags(),
-    ]);
-    expect([...emitted].filter((flag) => FLAG_CAPABILITIES[flag] === undefined)).toEqual([]);
+for (const t of TARGETS) describe(`${t.key} accepts what the CLI would send it`, () => {
+  const doc = docFor(t);
+
+  it("takes every transcribe flag its features allow", () => {
+    const argv = buildTranscribeArgs("a.wav", { vad: "on", itn: true, speakers: t.backend === "coreml" }, true);
+    expect(validateArgv(argv, doc).argv).toEqual(argv);
   });
 
-  for (const { key, pact } of TARGETS) {
-    it(`emits no say flag ${key}'s engine would reject`, () => {
-      // buildSayArgs takes the target's own capabilities, exactly as say() passes the
-      // installed engine's — so this is its drop decision held against the real binary.
-      const unsupported = flagsIn(buildSayArgs(EVERY_SAY_OPTION, pact)).filter(
-        (flag) => !satisfies(pact, FLAG_CAPABILITIES[flag] ?? []),
-      );
-      expect(unsupported).toEqual([]);
-    });
+  it("refuses --speakers unless it diarizes", () => {
+    const err = rejection(() => validateArgv(buildTranscribeArgs("a.wav", { speakers: true }, true), doc));
+    expect(err === null).toBe(t.pact.features.includes("transcribe.diarize"));
+  });
 
-    it(`refuses every capability-blind flag ${key}'s engine would reject`, () => {
-      for (const flag of new Set(capabilityBlindFlags())) {
-        const guard = FLAG_GUARDS[flag];
-        if (satisfies(pact, FLAG_CAPABILITIES[flag] ?? [])) {
-          if (guard) expect(() => guard(pact), `${flag} is supported on ${key}`).not.toThrow();
-          continue;
-        }
-        expect(guard, `${flag} is unsupported on ${key} and has no guard to refuse it`).toBeDefined();
-        expect(() => guard!(pact), `${flag} reaches ${key}'s engine unrefused`).toThrow();
-      }
-    });
-  }
+  it("takes every install flag, refusing --diarize where the build lacks it", () => {
+    const base = buildEngineInstallArgs({ noCache: true, ttsLangs: ["en"], vad: true });
+    expect(validateArgv(base, doc).argv).toEqual(base);
+    const err = rejection(() => validateArgv(buildEngineInstallArgs({ noCache: false, diarize: true }), doc));
+    expect(err === null).toBe(t.pact.features.includes("transcribe.diarize"));
+  });
+
+  it("advertises record.live only on the CoreML build", () => {
+    expect(t.pact.features.includes("record.live")).toBe(t.backend === "coreml");
+  });
+
+  it("takes every say flag, dropping only --no-expand-abbrev where the build cannot expand", () => {
+    const { argv, warnings } = validateArgv(buildSayArgs(EVERY_SAY_OPTION), doc);
+    const expands = t.pact.features.some((f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion");
+    expect(argv.includes("--no-expand-abbrev")).toBe(expands);
+    expect(warnings).toHaveLength(expands ? 0 : 1);
+  });
 });
 
 describe("capability pact — platform behaviour derived from the recordings", () => {
@@ -236,26 +179,4 @@ describe("capability pact — platform behaviour derived from the recordings", (
       expect(unsupported).toEqual([]);
     });
   }
-});
-
-describe("capability pact — gate strings", () => {
-  /**
-   * A gate on a capability string no build emits refuses forever. The pacts cannot be the
-   * authority here: a capability released after the pinned engine legitimately appears in no
-   * pact (`transcribe.itn` and `record.live` are both in that state today), so the Rust source
-   * answers "does this string exist" and the pacts answer "on which targets".
-   */
-  it("gates on capability strings the engine can emit", () => {
-    const rust = ["capabilities.rs", "transcribe/mod.rs", "record.rs"]
-      .map((file) => readRepoFile(join("rust", "src", file)))
-      .join("\n");
-    const gated = [
-      TRANSCRIBE_SEGMENTS_FEATURE,
-      TRANSCRIBE_DIARIZE_FEATURE,
-      TRANSCRIBE_ITN_FEATURE,
-      RECORD_LIVE_FEATURE,
-      ...Object.values(FLAG_CAPABILITIES).flat(),
-    ];
-    expect(gated.filter((capability) => !rust.includes(`"${capability}"`))).toEqual([]);
-  });
 });

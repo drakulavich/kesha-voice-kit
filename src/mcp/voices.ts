@@ -1,4 +1,6 @@
-import { getEngineBinPath, isEngineInstalled, spawnEngineProcess, spawnStdioWithDebugFd } from "../engine";
+import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "../engine";
+import { validateArgv } from "../engine/describe";
+import { engineFailure, readEvents } from "../engine/events";
 import { installHint } from "../install-hint";
 import { registerProcessTree } from "../process-tree";
 
@@ -113,24 +115,19 @@ export async function listVoices(): Promise<VoiceInfo[]> {
   if (!isEngineInstalled()) {
     throw new Error(`kesha-engine not installed. run: ${installHint()}`);
   }
-  const proc = spawnEngineProcess(
-    getEngineBinPath(),
-    ["say", "--list-voices"],
-    spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
-  );
+  const { argv } = validateArgv(["say", "--list-voices"], await getDescribe());
+  const proc = spawnEngineProcess(getEngineBinPath(), argv, ["ignore", "pipe", "pipe"], protocolEnv());
   // Register so an interrupt of the long-lived MCP stdio server terminates this spawn
   // instead of orphaning it; dispose in finally keeps the registration request-scoped
   // so a persistent server never leaks one per call (#939).
   const tree = registerProcessTree(proc);
   try {
-    const [out, err, code] = await Promise.all([
+    const [out, events, code] = await Promise.all([
       new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
-      new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
+      readEvents(proc.stderr as ReadableStream<Uint8Array>),
       proc.exited,
     ]);
-    if (code !== 0) {
-      throw new Error(`engine list-voices failed (exit ${code}): ${err.trim()}`);
-    }
+    if (events.invalid.length > 0 || code !== 0) throw engineFailure("say --list-voices", events, code);
     return parseVoiceLines(out);
   } finally {
     tree.dispose();

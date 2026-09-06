@@ -34,7 +34,6 @@ const KNOWN_ENV_KEYS = [
   "KESHA_MODEL_MIRROR",
   "KESHA_STATS_DB",
   "KESHA_DEBUG",
-  "KESHA_DEBUG_FD",
   "KESHA_KOKORO_COMPUTE_UNITS",
   "KESHA_DIARIZE_COMPUTE_UNITS",
   "KESHA_DIARIZE_TIMEOUT_SECS",
@@ -221,6 +220,8 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
     probeError = `binary is present but does not run (${health.detail}); re-run \`kesha install\``;
   } else if (health.status === "mute") {
     probeError = `${health.detail}; re-run \`kesha install\``;
+  } else if (health.status === "protocol") {
+    probeError = health.detail;
   } else if (health.status === "ok") {
     capabilities = health.capabilities;
   }

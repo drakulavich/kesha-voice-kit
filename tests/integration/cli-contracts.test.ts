@@ -15,6 +15,7 @@ import { delimiter, dirname, join } from "path";
 import { engineVersion } from "../../src/package-info";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
 import { pidIsAlive, stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
+import { describeJson } from "../helpers/fake-engine";
 import {
   DEFAULT_TIMEOUT_MS,
   installFakeDiarizeModel,
@@ -77,12 +78,8 @@ function createFakeEngine(dir: string): string {
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
 
-if (args[0] === "--capabilities-json") {
-  console.log(JSON.stringify({
-    protocolVersion: 1,
-    backend: "fake",
-    features: ["transcribe.segments", "transcribe.diarize"],
-  }));
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["transcribe.segments", "transcribe.diarize", "tts"] }))});
   process.exit(0);
 }
 
@@ -105,7 +102,13 @@ if (args[0] === "detect-text-lang") {
 
 if (args[0] === "transcribe") {
   if (process.env.KESHA_FAKE_TRANSCRIBE_ERROR) {
-    console.error(process.env.KESHA_FAKE_TRANSCRIBE_ERROR);
+    const raw = process.env.KESHA_FAKE_TRANSCRIBE_ERROR;
+    const coded = raw.match(/^error \\[([A-Z0-9_]+)\\]: ([\\s\\S]*)$/);
+    console.error(JSON.stringify({
+      kind: "error",
+      code: coded ? coded[1] : "E_TRANSCRIBE_FAILED",
+      message: coded ? coded[2] : raw,
+    }));
     process.exit(42);
   }
   const text = args.includes("--no-vad") ? "Привет без VAD" : "Привет с воркшопа";
@@ -187,6 +190,10 @@ function createSignalAwareEngine(dir: string, helperPidPath: string): string {
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
 if (args[0] === "transcribe") {
   const child = Bun.spawn(["sh", "-c", ${JSON.stringify(stubbornShell("TERM"))}], {
     stdout: "ignore",
@@ -213,8 +220,8 @@ function createSiblingCancellationEngine(dir: string, langPidPath: string): stri
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "--capabilities-json") {
-  console.log(JSON.stringify({ protocolVersion: 1, backend: "fake", features: [] }));
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
   process.exit(0);
 }
 if (args[0] === "detect-lang") {
@@ -244,6 +251,10 @@ function createHangingTranscribeEngine(dir: string, enginePidPath: string): stri
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
 if (args[0] === "transcribe") {
   await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
   await new Promise(() => {});
@@ -264,7 +275,7 @@ function createLifecycleEngine(
   const enginePath = join(dir, `kesha-engine-${hangsDuring}`);
   const capabilities = hangsDuring === "probe"
     ? ""
-    : "console.log(JSON.stringify({ protocolVersion: 1, backend: \"fake\", features: [] }));";
+    : `console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});`;
   const hang = `
   await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
   await new Promise(() => {});
@@ -273,7 +284,7 @@ function createLifecycleEngine(
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "--capabilities-json") {
+if (args[0] === "describe") {
   ${capabilities}
   process.exit(0);
 }
@@ -808,7 +819,7 @@ describe("CLI contracts", () => {
       exitCode: 1,
       stdoutNotContains: ["Transcribing"],
       stderrContains: [
-        `${mediaPath}: speaker diarization failed`,
+        `${mediaPath}: error [E_TRANSCRIBE_FAILED]: speaker diarization failed`,
         "kesha-diarize timed out after 600s for 12894s audio",
       ],
     });
@@ -818,7 +829,7 @@ describe("CLI contracts", () => {
       {
         file: mediaPath,
         code: "E_TRANSCRIBE_FAILED",
-        message: diarizeError,
+        message: `error [E_TRANSCRIBE_FAILED]: ${diarizeError}`,
       },
     ]);
   });

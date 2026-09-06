@@ -5,6 +5,7 @@ import { join } from "path";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
+import { describeJson } from "../helpers/fake-engine";
 
 const DEFAULT_CWD = import.meta.dir + "/../..";
 
@@ -14,8 +15,8 @@ function createListVoicesHangEngine(dir: string, enginePidPath: string): string 
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "--capabilities-json") {
-  console.log(JSON.stringify({ protocolVersion: 3, backend: "fake", features: ["tts"] }));
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["tts"] }))});
   process.exit(0);
 }
 if (args[0] === "say" && args[1] === "--list-voices") {

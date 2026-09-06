@@ -11,7 +11,7 @@ import {
 } from "fs";
 import { hostname } from "os";
 import { dirname, join } from "path";
-import { TS_NATIVE_CODES } from "./error-codes";
+import { KeshaError } from "./engine/events";
 import { errorMessage } from "./error-utils";
 import { log } from "./log";
 
@@ -180,10 +180,11 @@ function configuredMaxWaitMs(): number {
   if (!raw) return MAX_WAIT_MS;
   const secs = Number(raw);
   if (!Number.isFinite(secs) || secs <= 0) {
-    throw new Error(
-      `error [${TS_NATIVE_CODES.INVALID_ARG}]: KESHA_INSTALL_LOCK_WAIT_SECS="${raw}" is not a ` +
-        "positive number of seconds.\n  Fix: set it to how many seconds `kesha install` may wait " +
-        "for another install to release the cache, or unset it for the default (6 h).",
+    throw new KeshaError(
+      "E_INVALID_ARG",
+      `KESHA_INSTALL_LOCK_WAIT_SECS="${raw}" is not a positive number of seconds.\n  Fix: set it ` +
+        "to how many seconds `kesha install` may wait for another install to release the cache, " +
+        "or unset it for the default (6 h).",
     );
   }
   return secs * 1_000;
@@ -194,13 +195,13 @@ function configuredMaxWaitMs(): number {
  * install reached this cache first, nothing was written, and re-running once it is quiet is the
  * fix — so a consumer retrying on that code does the right thing here too (#1018).
  */
-function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: number): Error {
+function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: number): KeshaError {
   const waited =
     waitedMs >= 60_000 ? `${Math.round(waitedMs / 60_000)} min` : `${Math.round(waitedMs / 1_000)}s`;
   const who = holder ? `pid ${holder.pid} on ${holder.host}` : "an install it cannot identify";
-  return new Error(
-    `error [${TS_NATIVE_CODES.INSTALL_RACE}]: ` +
-      `Gave up after ${waited} waiting for another \`kesha install\` to release ` +
+  return new KeshaError(
+    "E_INSTALL_RACE",
+    `Gave up after ${waited} waiting for another \`kesha install\` to release ` +
       `${dirname(binPath)}: it is held by ${who}.\n` +
       `  Fix: wait for that install to finish, or — if none is running — delete ` +
       `${binPath}.lock and re-run. Concurrent jobs want private caches ` +

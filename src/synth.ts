@@ -1,12 +1,6 @@
-import {
-  getEngineBinPath,
-  isEngineInstalled,
-  getEngineCapabilities,
-  spawnEngineProcess,
-  spawnStdioWithDebugFd,
-  type EngineCapabilities,
-} from "./engine";
-import { engineErrorCode, TS_NATIVE_CODES } from "./error-codes";
+import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "./engine";
+import { validateArgv } from "./engine/describe";
+import { engineFailure, KeshaError, readEvents } from "./engine/events";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { registerProcessTree } from "./process-tree";
@@ -37,18 +31,7 @@ type SayBase = {
   rate?: number;
   /** Parse `text` as SSML (`<speak>…<break time="500ms"/>…</speak>`). See issue #122. */
   ssml?: boolean;
-  /**
-   * Disable acronym auto-expansion. Honored for `ru-vosk-*` voices and for
-   * `en-*` on ONNX engine builds; a no-op on FluidAudio Kokoro (the released
-   * darwin-arm64 binary), `macos-*` and non-English voices, where the engine
-   * owns initialism handling and warns on stderr instead (#842).
-   * When true, passes `--no-expand-abbrev` to the engine (requires engine
-   * capability `tts.ru_acronym_expansion` or `tts.en_acronym_expansion`).
-   * On older engines that don't advertise the capability, the flag is
-   * dropped from argv and `log.warn` surfaces the drop on every
-   * invocation (post-#275 D3). `<say-as interpret-as="characters">`
-   * still works regardless of this flag.
-   */
+  /** Disable acronym auto-expansion; dropped with a warning on an engine whose describe document does not advertise the expansion (#842). */
   noExpandAbbrev?: boolean;
 };
 
@@ -66,26 +49,8 @@ type PcmOpts = {
 
 export type SayOptions = SayBase & (OpusOpts | PcmOpts);
 
-function applyNoExpandAbbrev(args: string[], capabilities: EngineCapabilities | null | undefined): void {
-  const supportsAcronymExpansion =
-    capabilities?.features?.some(
-      (f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion",
-    ) ?? false;
-  if (supportsAcronymExpansion) {
-    args.push("--no-expand-abbrev");
-  } else {
-    // CLAUDE.md "NEVER SWALLOW ERRORS": the user explicitly passed the flag.
-    // Silent drop with only `log.debug` made the flag look effective on old
-    // engines (#275 D3). Surface it as a warning so a CI script or human
-    // user sees the mismatch on every invocation, not only with --debug.
-    log.warn(
-      "--no-expand-abbrev requires kesha-engine ≥ 1.10.0 (advertises no tts.ru_acronym_expansion / tts.en_acronym_expansion capability); flag ignored",
-    );
-  }
-}
-
-/** Build the argv passed to `kesha-engine say` (pure, unit-testable). */
-export function buildSayArgs(o: SayOptions, capabilities?: EngineCapabilities | null): string[] {
+/** Build the argv passed to `kesha-engine say`; `validateArgv` decides what the installed engine accepts. */
+export function buildSayArgs(o: SayOptions): string[] {
   const args: string[] = ["say"];
   if (o.voice) args.push("--voice", o.voice);
   if (o.lang) args.push("--lang", o.lang);
@@ -95,19 +60,14 @@ export function buildSayArgs(o: SayOptions, capabilities?: EngineCapabilities | 
   if (o.format) args.push("--format", o.format);
   if (o.bitrate !== undefined) args.push("--bitrate", String(o.bitrate));
   if (o.sampleRate !== undefined) args.push("--sample-rate", String(o.sampleRate));
-  if (o.noExpandAbbrev) applyNoExpandAbbrev(args, capabilities);
+  if (o.noExpandAbbrev) args.push("--no-expand-abbrev");
   if (o.text !== undefined && o.text.length > 0) args.push(o.text);
   return args;
 }
 
-export class SayError extends Error {
-  constructor(
-    message: string,
-    public readonly exitCode: number,
-    public readonly stderr: string,
-    public readonly code: string = "E_INTERNAL",
-  ) {
-    super(message);
+export class SayError extends KeshaError {
+  constructor(message: string, exitCode: number, stderr: string, code: string = "E_INTERNAL", hint?: string) {
+    super(code, message, { exitCode, stderr, hint });
     this.name = "SayError";
   }
 }
@@ -115,15 +75,7 @@ export class SayError extends Error {
 /** Fault signals, by number. SIGBUS is 10 on darwin but 7 on linux. */
 const FAULT_SIGNALS: Record<number, string> = { 4: "SIGILL", 6: "SIGABRT", 8: "SIGFPE", 11: "SIGSEGV" };
 
-/**
- * Explain an engine death that produced no error of its own, or null when the
- * engine exited normally with a non-zero status. A signal kill leaves stderr
- * without an `error [CODE]:` line, so without this the caller only sees a bare
- * "exited 138".
- *
- * The wait status is the authority, not `signalCode`: Bun names signal 10
- * SIGUSR1 (its linux value) even on darwin, where it is SIGBUS.
- */
+/** Explains a signal death, which leaves no error event; the wait status outranks Bun's signalCode (10 is SIGBUS on darwin, SIGUSR1 to Bun). */
 export function engineCrashMessage(
   exitCode: number,
   signalCode: string | null,
@@ -170,34 +122,26 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   }
 
   if (!isEngineInstalled()) {
-    throw new SayError(
-      `kesha-engine not installed. run: ${installHint("--tts")}`,
-      1,
-      "",
-      TS_NATIVE_CODES.ENGINE_SPAWN,
-    );
+    throw new SayError(`kesha-engine not installed. run: ${installHint("--tts")}`, 1, "", "E_ENGINE_SPAWN");
   }
-  const capabilities = opts.noExpandAbbrev ? await getEngineCapabilities() : null;
-  const args = buildSayArgs({ ...opts, text: undefined }, capabilities);
+  const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe());
+  for (const warning of warnings) log.warn(warning);
   const startedAt = performance.now();
   log.debug(`spawn ${getEngineBinPath()} ${args.join(" ")} (text: ${opts.text?.length ?? 0} chars)`);
-  const proc = spawnEngineProcess(getEngineBinPath(), args, spawnStdioWithDebugFd(["pipe", "pipe", "pipe"]));
+  const proc = spawnEngineProcess(getEngineBinPath(), args, ["pipe", "pipe", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
-  // spawnStdioWithDebugFd widens the tuple to a union; cast back to the known "pipe" types.
   const stdin = proc.stdin as Bun.FileSink;
-  const stdout = proc.stdout as ReadableStream<Uint8Array>;
-  const stderr = proc.stderr as ReadableStream<Uint8Array>;
 
   if (opts.text !== undefined && opts.text.length > 0) stdin.write(opts.text);
   await stdin.end();
 
   let stdoutBuf: ArrayBuffer;
-  let stderrText: string;
+  let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
   try {
-    [stdoutBuf, stderrText, exitCode] = await Promise.all([
-      new Response(stdout).arrayBuffer(),
-      new Response(stderr).text(),
+    [stdoutBuf, events, exitCode] = await Promise.all([
+      new Response(proc.stdout as ReadableStream<Uint8Array>).arrayBuffer(),
+      readEvents(proc.stderr as ReadableStream<Uint8Array>),
       proc.exited,
     ]);
   } finally {
@@ -206,26 +150,15 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
 
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms bytes=${stdoutBuf.byteLength}`);
 
-  // #275 D4: surface engine stderr on the success path so warnings like
-  // `Model mirror active:` and the dtrace lines emitted under
-  // KESHA_DEBUG=1 reach the user. Errors keep their existing path
-  // through `SayError.stderr` so we don't double-print.
-  if (exitCode === 0 && stderrText.length > 0) {
-    process.stderr.write(stderrText.endsWith("\n") ? stderrText : stderrText + "\n");
+  const stderrText = events.stderr;
+  if (exitCode === 0 && events.invalid.length === 0) {
+    if (stderrText.length > 0) process.stderr.write(stderrText);
+    return new Uint8Array(stdoutBuf);
   }
-  if (exitCode !== 0) {
-    // The crash line goes into `stderr` too: `cli/say.ts` prints that in
-    // preference to the message, and a crash leaves progress lines behind that
-    // would otherwise hide the diagnosis.
-    const detail = [stderrText.trim(), engineCrashMessage(exitCode, proc.signalCode)]
-      .filter((part): part is string => Boolean(part))
-      .join("\n");
-    throw new SayError(
-      detail || `kesha-engine say exited ${exitCode}`,
-      exitCode,
-      detail,
-      engineErrorCode(stderrText),
-    );
-  }
-  return new Uint8Array(stdoutBuf);
+  // The crash explanation rides in `stderr`, rendered after the coded line.
+  const detail = [stderrText.trim(), engineCrashMessage(exitCode, proc.signalCode)]
+    .filter((part): part is string => Boolean(part))
+    .join("\n");
+  const failure = engineFailure("say", events, exitCode, detail);
+  throw new SayError(failure.message, failure.exitCode || 4, failure.stderr ?? "", failure.code, failure.hint);
 }
