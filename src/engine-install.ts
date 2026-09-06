@@ -2,15 +2,10 @@ import { dirname, join, resolve, sep } from "path";
 import { errorMessage } from "./error-utils";
 import { homedir, tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
-import {
-  getEngineBinPath,
-  getEngineCapabilities,
-  spawnEngineProcess,
-  TRANSCRIBE_DIARIZE_FEATURE,
-  type EngineCapabilities,
-} from "./engine";
+import { getDescribe, getEngineBinPath, spawnEngineProcess } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";
+import { validateArgv } from "./engine/describe";
 import { KeshaError } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
@@ -504,37 +499,41 @@ function checkEngineWritable(engineDir: string): boolean {
 }
 
 /**
- * Validates that the installed engine matches the requested backend.
- * Throws if the engine advertises a different backend.
+ * The install path's pre-spawn gate: checks the requested backend against the describe
+ * document, then validates the built engine argv through it. `--diarize` on a build that
+ * lacks `system_diarize` (the Nix build, which omits it on purpose — docs/nix-install.md)
+ * gets the npm-release remedy instead of `validateArgv`'s generic "needs" message.
  */
-function validateBackend(backend: string, caps: EngineCapabilities | null): void {
-  if (caps && caps.backend !== backend) {
-    throw new Error(
-      `Requested backend "${backend}" is not available: the installed engine for this platform uses "${caps.backend}".\n  Fix: omit --${backend} to use the auto-detected backend, or run on a platform that ships the "${backend}" build.`,
+export async function validateInstallRequest(
+  opts: { noCache: boolean; backend?: string } & InstallOptions,
+): Promise<string[]> {
+  const doc = await getDescribe();
+  if (opts.backend && doc.backend !== opts.backend) {
+    throw new KeshaError(
+      "E_INVALID_ARG",
+      `Requested backend "${opts.backend}" is not available: the installed engine for this platform uses "${doc.backend}".`,
+      {
+        hint: `omit --${opts.backend} to use the auto-detected backend, or run on a platform that ships the "${opts.backend}" build`,
+      },
     );
   }
-}
-
-/**
- * Guards against forwarding `--diarize` to an engine built without it.
- *
- * Catches the case where the platform check passed (darwin-arm64) but the
- * engine itself was built without `system_diarize` — e.g., the Nix build,
- * which compiles `coreml,tts,system_tts` and intentionally omits diarize
- * because the FluidAudio CoreML weights need network at build time and the
- * Nix sandbox forbids it. Without this guard, `kesha-engine install
- * --diarize` would fail with clap's generic "unexpected argument" error.
- */
-export function validateDiarize(caps: EngineCapabilities | null): void {
-  // null = pre-capabilities-JSON engine; forwarding --diarize would surface as clap's "unexpected argument".
-  if (!caps || !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
-    throw new Error(
-      "--diarize is not supported by the installed engine: it was built " +
-        "without the 'system_diarize' feature (the Nix build is one such " +
-        "case — see docs/nix-install.md).\n" +
-        "  Fix: install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, " +
-        "which ships the diarize-enabled engine on darwin-arm64.",
-    );
+  const wanted = buildEngineInstallArgs({
+    noCache: opts.noCache,
+    ttsLangs: opts.ttsLangs,
+    vad: opts.vad,
+    diarize: opts.diarize,
+  });
+  try {
+    const { argv, warnings } = validateArgv(wanted, doc);
+    for (const warning of warnings) log.warn(warning);
+    return argv;
+  } catch (err) {
+    if (opts.diarize && err instanceof KeshaError && err.code === "E_INVALID_ARG") {
+      throw new KeshaError("E_INVALID_ARG", err.message, {
+        hint: "install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, which ships the diarize-enabled engine on darwin-arm64",
+      });
+    }
+    throw err;
   }
 }
 
@@ -542,18 +541,8 @@ export function validateDiarize(caps: EngineCapabilities | null): void {
  * Runs `kesha-engine install` to download/verify models.
  * Inherits stdio so per-file progress reaches the user live, and throws on non-zero exit.
  */
-async function runEngineModelInstall(
-  binPath: string,
-  noCache: boolean,
-  options: InstallOptions,
-): Promise<void> {
+async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
   log.progress("Installing models...");
-  const installArgs = buildEngineInstallArgs({
-    noCache,
-    ttsLangs: options.ttsLangs,
-    vad: options.vad,
-    diarize: options.diarize,
-  });
   // #680: piping buffers the child until exit, so multi-GB downloads looked hung.
   // `env` is load-bearing, not tidiness: this child resolves the model destination from
   // `KESHA_CACHE_DIR`, and without it Bun's startup snapshot sends a redirected install
@@ -774,13 +763,9 @@ async function installLockedEngine(
     await fetchEngineBinary(binPath, installedVersion, version);
   }
 
-  if (backend || options.diarize) {
-    const caps = await getEngineCapabilities();
-    if (backend) validateBackend(backend, caps);
-    if (options.diarize) validateDiarize(caps);
-  }
+  const installArgs = await validateInstallRequest({ noCache, backend, ...options });
 
-  await runEngineModelInstall(binPath, noCache, options);
+  await runEngineModelInstall(binPath, installArgs);
 
   // Warm the FluidAudio Kokoro CoreML cache only when a Kokoro language is
   // requested. Russian (`ru`) routes through Vosk-TTS, not Kokoro, so a

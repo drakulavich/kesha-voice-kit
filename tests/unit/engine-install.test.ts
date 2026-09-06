@@ -8,11 +8,38 @@ import {
   waitUntilSpawnable,
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
+  validateInstallRequest,
 } from "../../src/engine-install";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { defaultEngineBinPath } from "../../src/paths";
+import { KeshaError } from "../../src/engine/events";
+import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
+
+/** The thrown KeshaError, so a test can assert on code and hint rather than on prose. */
+async function failure(run: () => Promise<unknown>): Promise<KeshaError> {
+  try {
+    await run();
+  } catch (err) {
+    if (err instanceof KeshaError) return err;
+    throw err;
+  }
+  throw new Error("expected a KeshaError");
+}
+
+/** A describe-only stub reporting a specific backend, for cases writeFakeEngine's hardcoded "fake-coreml" can't cover. */
+function writeFakeEngineWithBackend(binDir: string, backend: string, features: string[]): string {
+  mkdirSync(binDir, { recursive: true });
+  const binPath = join(binDir, "kesha-engine");
+  const doc = describeJson({ backend, features });
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${doc}'\n  exit 0\nfi\nexit 2\n`,
+  );
+  chmodSync(binPath, 0o755);
+  return binPath;
+}
 
 function mkTmpBinPath(): string {
   const dir = mkdtempSync(join(tmpdir(), "kesha-install-test-"));
@@ -85,6 +112,52 @@ describe("buildEngineInstallArgs (#517)", () => {
     expect(buildEngineInstallArgs({ noCache: false, vad: true, diarize: true }))
       .toEqual(["install", "--vad", "--diarize"]);
     expect(buildEngineInstallArgs({ noCache: false, vad: true })).toEqual(["install", "--vad"]);
+  });
+});
+
+const installGateTest = process.platform === "win32" ? test.skip : test;
+
+describe("validateInstallRequest gates on the describe document", () => {
+  installGateTest("--diarize against a build without it is E_INVALID_ARG carrying the Nix hint", async () => {
+    const restore = saveEngineEnv();
+    const home = stageEngineHome("kesha-install-gate-diarize-");
+    try {
+      writeFakeEngine(home.binDir, ["tts"]);
+      const err = await failure(() => validateInstallRequest({ noCache: false, diarize: true }));
+      expect(err.code).toBe("E_INVALID_ARG");
+      expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
+      expect(err.message).toContain("--diarize");
+    } finally {
+      restore();
+      rmSync(home.dir, { recursive: true, force: true });
+    }
+  });
+
+  installGateTest("a backend the installed engine does not have is refused before any download", async () => {
+    const restore = saveEngineEnv();
+    const home = stageEngineHome("kesha-install-gate-backend-");
+    try {
+      writeFakeEngineWithBackend(home.binDir, "onnx", ["tts"]);
+      const err = await failure(() => validateInstallRequest({ noCache: false, backend: "coreml" }));
+      expect(err.code).toBe("E_INVALID_ARG");
+      expect(err.message).toContain("onnx");
+    } finally {
+      restore();
+      rmSync(home.dir, { recursive: true, force: true });
+    }
+  });
+
+  installGateTest("a supported request returns the argv the engine will run", async () => {
+    const restore = saveEngineEnv();
+    const home = stageEngineHome("kesha-install-gate-argv-");
+    try {
+      writeFakeEngine(home.binDir, ["tts"]);
+      const argv = await validateInstallRequest({ noCache: true, ttsLangs: ["en"] });
+      expect(argv).toEqual(["install", "--no-cache", "--tts", "en"]);
+    } finally {
+      restore();
+      rmSync(home.dir, { recursive: true, force: true });
+    }
   });
 });
 

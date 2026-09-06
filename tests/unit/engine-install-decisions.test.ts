@@ -262,31 +262,30 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
     expect(await installEngine({ backend: "onnx" })).toBe(binPath);
   }, 30_000);
 
-  posixTest("--diarize on an engine built without it names the missing feature", async () => {
+  // A non-diarize build omits the `--diarize` row entirely (gate_rows retention), so this is an unknown-flag rejection, not an ungated one.
+  posixTest("--diarize on an engine built without it is refused with the npm-release remedy", async () => {
     const binPath = stageInstalledEngine("kesha-caps-no-diarize-");
     const before = readFileSync(binPath, "utf8");
     stubRelease();
 
-    await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
+    await expect(installEngine({ diarize: true })).rejects.toThrow(/--diarize/);
 
     expect(readFileSync(binPath, "utf8")).toBe(before);
   }, 30_000);
 
-  // A pre-capabilities engine cannot be asked, and forwarding --diarize blind would surface
-  // as clap's generic "unexpected argument". Reached through a download because a cached
-  // engine that describes nothing is repaired before any flag is validated (#801).
+  // Reached through a download because a cached engine that describes nothing is repaired before any flag is validated (#801); every protocol-4 gate treats a silent `describe` as E_ENGINE_PROTOCOL, not a command-specific message (see validateRecordRequest's equivalent case).
   posixTest("--diarize is refused when the engine cannot describe itself", async () => {
     stageEmptyEngineDir("kesha-caps-silent-");
     stubRelease({ caps: null });
 
-    await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
+    await expect(installEngine({ diarize: true })).rejects.toThrow(/did not answer `describe`/);
   }, 30_000);
 
   posixTest("a cached engine that describes nothing is repaired before the flag is judged", async () => {
     const binPath = stageInstalledEngine("kesha-caps-mute-cache-", { caps: null });
     const urls = stubRelease();
 
-    await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
+    await expect(installEngine({ diarize: true })).rejects.toThrow(/--diarize/);
 
     expect(engineDownloads(urls)).toHaveLength(1);
     expect(readFileSync(binPath, "utf8")).toContain("describe");

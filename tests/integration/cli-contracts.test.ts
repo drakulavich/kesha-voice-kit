@@ -273,9 +273,10 @@ function createLifecycleEngine(
   hangsDuring: "probe" | "model-install" | "warmup" | "version-check",
 ): string {
   const enginePath = join(dir, `kesha-engine-${hangsDuring}`);
+  // "warmup" reaches the Kokoro warmup only if install's describe-driven gate accepts --tts.
   const capabilities = hangsDuring === "probe"
     ? ""
-    : `console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});`;
+    : `console.log(${JSON.stringify(describeJson({ backend: "fake", features: hangsDuring === "warmup" ? ["tts"] : [] }))});`;
   const hang = `
   await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
   await new Promise(() => {});
