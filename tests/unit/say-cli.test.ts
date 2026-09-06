@@ -107,6 +107,20 @@ describe("kesha say relays an engine failure", () => {
   });
 });
 
+/** A stub engine whose `say --list-voices` fails with a protocol 4 error event and a status, after answering `describe`. */
+function failingListVoicesEngine(exitCode: number, code: string, message: string): string {
+  const dir = tempDir("kesha-say-listfail-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\n  exit ${exitCode}\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
 /** A stub engine that answers `describe` with the given features and refuses anything else. */
 function engineAdvertising(features: string[]): string {
   const dir = tempDir("kesha-say-describe-");
@@ -170,6 +184,33 @@ describe("kesha say relays a bare KeshaError from the describe/validateArgv pref
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("error [E_ENGINE_SPAWN]:");
+    expect(stderr).toContain("kesha install");
+  });
+});
+
+describe("kesha say --list-voices speaks protocol 4", () => {
+  skipOnWin32("an engine that fails the listing exits with its status and prints the coded line", async () => {
+    failingListVoicesEngine(3, "E_MODEL_MISSING", "no voices installed");
+    const { exitCode, stderr } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(3);
+    expect(stderr).toContain("error [E_MODEL_MISSING]: no voices installed");
+  });
+
+  skipOnWin32("a build without tts is refused before any spawn", async () => {
+    // No tts feature means no `say` subcommand at all (describe.rs's `("say", _) => TTS_BUILD`), not a gated flag.
+    engineAdvertising([]);
+    const { exitCode, stderr } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("error [E_INVALID_ARG]:");
+    expect(stderr).toContain("kesha-engine has no `say` subcommand");
+    expect(stderr).not.toContain("unexpected invocation");
+  });
+
+  skipOnWin32("an engine that fails `describe` is E_ENGINE_PROTOCOL, exit 1", async () => {
+    engineWithoutDescribe(3);
+    const { exitCode, stderr } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
     expect(stderr).toContain("kesha install");
   });
 });

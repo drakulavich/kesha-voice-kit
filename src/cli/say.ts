@@ -1,11 +1,9 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { getEngineBinPath, isEngineInstalled, spawnEngineProcess } from "../engine";
 import { exitCodeFor, KeshaError } from "../engine/events";
-import { installHint } from "../install-hint";
-import { registerProcessTree } from "../process-tree";
 import { log } from "../log";
 import {
+  listVoiceIds,
   say,
   SUPPORTED_SAMPLE_RATES,
   type SayFormat,
@@ -285,22 +283,15 @@ export const sayCommand = defineCommand({
   async run({ args }) {
     if (args.debug) log.debugEnabled = true;
     if (args["list-voices"]) {
-      if (!isEngineInstalled()) {
-        log.error(`kesha-engine not installed. run: ${installHint()}`);
-        process.exit(1);
-      }
-      // The engine prints the list directly — just relay its stdout + exit code.
-      const proc = spawnEngineProcess(getEngineBinPath(), ["say", "--list-voices"], ["inherit", "inherit", "inherit"]);
-      // Register so a Ctrl-C during a cold Engine load terminates it and exits 130/143 (#939);
-      // dispose before the process.exit below so the registration never outlives the run.
-      const tree = registerProcessTree(proc);
-      let exitCode: number;
+      let ids: string[];
       try {
-        exitCode = await proc.exited;
-      } finally {
-        tree.dispose();
+        ids = await listVoiceIds({ onProgress: (line) => log.status(line) });
+      } catch (err) {
+        log.error(errorMessage(err));
+        process.exit(exitCodeFor(err));
       }
-      process.exit(exitCode);
+      await Bun.write(Bun.stdout, ids.map((id) => `${id}\n`).join(""));
+      process.exit(0);
     }
 
     const flags = resolveSayFlags(args);
