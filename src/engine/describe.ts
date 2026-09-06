@@ -47,7 +47,6 @@ const GATE_HINTS: Record<string, string> = {
   "record --live":
     "live transcription needs the CoreML engine on Apple Silicon; elsewhere record to a file, then transcribe it: `kesha record --out note.wav` and `kesha note.wav`",
   "record --auto-stop": "live auto-stop needs a newer CoreML engine with Silero VAD endpointing; run `kesha install`",
-  "install --diarize": "the installed engine was built without diarization (the Nix build is one such); use an official release build",
 };
 
 /** Remedies validateArgv attaches when two present flags conflict; keyed `<command> --<flag> --<other>`. */

@@ -160,7 +160,7 @@ describe("say on protocol 4", () => {
       expect(err).toBeInstanceOf(SayError);
       expect(err!.code).toBe("E_INTERNAL");
       expect(err!.exitCode).toBe(4);
-      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
     } finally {
       restore();
     }
@@ -175,7 +175,7 @@ describe("say on protocol 4", () => {
       const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
       expect(err!.code).toBe("E_INTERNAL");
       const rendered = errorMessage(err);
-      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine wrote a line that is not a protocol event: "thread 'main' panicked/);
+      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "thread 'main' panicked/);
       expect(rendered).toContain("kesha-engine was killed by SIGABRT and produced no audio");
     } finally {
       restore();
@@ -192,7 +192,7 @@ describe("say on protocol 4", () => {
       expect(err!.code).toBe("E_INTERNAL");
       expect(err!.exitCode).toBe(134);
       const rendered = errorMessage(err);
-      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say exited 134\nwarning: slow\n/);
+      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say exited with code 134\nwarning: slow\n/);
       expect(rendered).toContain("killed by SIGABRT");
       expect(rendered.match(/error \[/g)).toHaveLength(1);
     } finally {

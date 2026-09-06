@@ -5,7 +5,7 @@ import { installHint } from "./install-hint";
 import { log } from "./log";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, registerProcessTree } from "./process-tree";
-import { KeshaError, readEvents, type ErrorEvent } from "./engine/events";
+import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
 import {
   describeToCapabilities,
   parseDescribe,
@@ -14,6 +14,7 @@ import {
   type DescribeDocument,
   type EngineCapabilities,
   type TtsLanguageCapability,
+  PROTOCOL_VERSION,
 } from "./engine/describe";
 
 export type { EngineCapabilities, TtsLanguageCapability };
@@ -77,7 +78,7 @@ export type SpawnStdio = [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry];
 
 /** The env for a spawn whose stderr is parsed as protocol 4 events. */
 export function protocolEnv(): Record<string, string | undefined> {
-  return { ...process.env, KESHA_PROTOCOL: "4" };
+  return { ...process.env, KESHA_PROTOCOL: String(PROTOCOL_VERSION) };
 }
 
 function spawnHint(): string {
@@ -159,18 +160,6 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   return { stdout: stdout.trim(), stderr, exitCode, error: events.error, invalid: events.invalid };
 }
 
-function invalidLineError(command: string, invalid: string[], extra: { exitCode?: number; stderr?: string }): KeshaError {
-  return new KeshaError("E_INTERNAL", `kesha-engine ${command} wrote a line that is not a protocol event: "${invalid[0]}"`, extra);
-}
-
-/** The KeshaError for a run that failed, or wrote something that is not an event. */
-function engineFailure(args: string[], run: EngineRun): KeshaError {
-  const extra = { exitCode: run.exitCode, stderr: run.stderr };
-  if (run.invalid.length > 0) return invalidLineError(args[0] ?? "", run.invalid, extra);
-  if (run.error) return new KeshaError(run.error.code, run.error.message, { ...extra, hint: run.error.hint });
-  return new KeshaError("E_INTERNAL", `kesha-engine ${args[0]} exited with code ${run.exitCode}`, extra);
-}
-
 function failed(run: EngineRun): boolean {
   return run.exitCode !== 0 || run.invalid.length > 0;
 }
@@ -206,7 +195,7 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
   }
   const mismatch = protocolMismatch(doc, binPath);
   if (mismatch) throw mismatch;
-  if (run.invalid.length > 0) throw invalidLineError("describe", run.invalid, { stderr: run.stderr });
+  if (run.invalid.length > 0) throw engineFailure("describe", run, undefined);
   cachedDescribe = { binPath, mtime, doc };
   return doc;
 }
@@ -315,7 +304,7 @@ export function buildTranscribeArgs(
 export async function transcribeEngine(audioPath: string, opts: TranscribeEngineOptions = {}): Promise<string> {
   const args = await validatedArgs(buildTranscribeArgs(audioPath, opts), { signal: opts.signal });
   const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
-  if (failed(run)) throw engineFailure(args, run);
+  if (failed(run)) throw engineFailure(args[0] ?? "", run, run.exitCode);
   return run.stdout;
 }
 
@@ -373,7 +362,7 @@ export async function transcribeEngineWithSegments(
   const args = await validatedArgs(buildTranscribeArgs(audioPath, opts, true), { signal: opts.signal });
   if (opts.speakers) assertSpeakerModelsInstalled();
   const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
-  if (failed(run)) throw engineFailure(args, run);
+  if (failed(run)) throw engineFailure(args[0] ?? "", run, run.exitCode);
   try {
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {

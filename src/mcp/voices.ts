@@ -1,6 +1,6 @@
 import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "../engine";
 import { validateArgv } from "../engine/describe";
-import { KeshaError, readEvents } from "../engine/events";
+import { engineFailure, readEvents } from "../engine/events";
 import { installHint } from "../install-hint";
 import { registerProcessTree } from "../process-tree";
 
@@ -127,20 +127,7 @@ export async function listVoices(): Promise<VoiceInfo[]> {
       readEvents(proc.stderr as ReadableStream<Uint8Array>),
       proc.exited,
     ]);
-    if (events.invalid.length > 0) {
-      throw new KeshaError(
-        "E_INTERNAL",
-        `kesha-engine say --list-voices wrote a line that is not a protocol event: "${events.invalid[0]}"`,
-        { exitCode: code, stderr: events.stderr.trim() },
-      );
-    }
-    if (code !== 0) {
-      throw new KeshaError(
-        events.error?.code ?? "E_INTERNAL",
-        events.error?.message ?? `engine list-voices failed (exit ${code})`,
-        { exitCode: code, stderr: events.stderr.trim(), hint: events.error?.hint },
-      );
-    }
+    if (events.invalid.length > 0 || code !== 0) throw engineFailure("say --list-voices", events, code);
     return parseVoiceLines(out);
   } finally {
     tree.dispose();

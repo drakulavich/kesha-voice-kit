@@ -1,6 +1,6 @@
 import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "./engine";
 import { validateArgv } from "./engine/describe";
-import { KeshaError, readEvents } from "./engine/events";
+import { engineFailure, KeshaError, readEvents } from "./engine/events";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { registerProcessTree } from "./process-tree";
@@ -159,14 +159,6 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   const detail = [stderrText.trim(), engineCrashMessage(exitCode, proc.signalCode)]
     .filter((part): part is string => Boolean(part))
     .join("\n");
-  if (events.invalid.length > 0) {
-    throw new SayError(`kesha-engine wrote a line that is not a protocol event: "${events.invalid[0]}"`, exitCode || 4, detail);
-  }
-  throw new SayError(
-    events.error?.message ?? `kesha-engine say exited ${exitCode}`,
-    exitCode,
-    detail,
-    events.error?.code ?? "E_INTERNAL",
-    events.error?.hint,
-  );
+  const failure = engineFailure("say", events, exitCode, detail);
+  throw new SayError(failure.message, failure.exitCode || 4, failure.stderr ?? "", failure.code, failure.hint);
 }

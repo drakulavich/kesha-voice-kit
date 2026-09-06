@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  engineFailure,
   KeshaError,
   parseEventLine,
   readEvents,
@@ -169,5 +170,38 @@ describe("KeshaError.render() only trusts a transcript that renders this very er
     expect(errorMessage(err)).toBe(
       'error [E_INTERNAL]: kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"\nerror [E_INTERNAL]: kokoro session init failed',
     );
+  });
+});
+
+describe("engineFailure() is the one way a run becomes a KeshaError", () => {
+  const clean = { stderr: "", error: null, invalid: [] };
+
+  test("a non-event line is E_INTERNAL quoting it, with the run's status and transcript", () => {
+    const err = engineFailure("say", { stderr: "loading\n", error: null, invalid: ["loading"] }, 0);
+    expect(err.code).toBe("E_INTERNAL");
+    expect(err.message).toBe('kesha-engine say wrote a line that is not a protocol event: "loading"');
+    expect(err.exitCode).toBe(0);
+    expect(err.stderr).toBe("loading");
+  });
+
+  test("an error event carries its code, message and hint", () => {
+    const outcome = { stderr: "error [E_VOICE_UNKNOWN]: no such voice: xx\n  hint: kesha say --list-voices\n", error: { kind: "error" as const, code: "E_VOICE_UNKNOWN", message: "no such voice: xx", hint: "kesha say --list-voices" }, invalid: [] };
+    const err = engineFailure("say", outcome, 1);
+    expect(err.code).toBe("E_VOICE_UNKNOWN");
+    expect(err.hint).toBe("kesha say --list-voices");
+    expect(err.exitCode).toBe(1);
+    expect(errorMessage(err)).toBe("error [E_VOICE_UNKNOWN]: no such voice: xx\n  hint: kesha say --list-voices");
+  });
+
+  test("a silent non-zero exit names the command and the code; a caller may substitute the transcript", () => {
+    const err = engineFailure("transcribe", clean, 137, "killed by SIGKILL");
+    expect(err.code).toBe("E_INTERNAL");
+    expect(err.message).toBe("kesha-engine transcribe exited with code 137");
+    expect(errorMessage(err)).toBe("error [E_INTERNAL]: kesha-engine transcribe exited with code 137\nkilled by SIGKILL");
+  });
+
+  test("with no exit code of its own the error leaves exitCode unset", () => {
+    const err = engineFailure("describe", { stderr: "noise\n", error: null, invalid: ["noise"] }, undefined);
+    expect(err.exitCode).toBeUndefined();
   });
 });

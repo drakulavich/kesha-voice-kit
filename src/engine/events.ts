@@ -188,3 +188,13 @@ export async function readEvents(
   if (pending.length > 0) take(pending);
   return outcome;
 }
+
+/** The KeshaError for a run that wrote a non-event line, reported an error event, or exited non-zero in silence; `stderr` is the transcript unless the caller substitutes one. */
+export function engineFailure(command: string, outcome: StderrOutcome, exitCode: number | undefined, stderr = outcome.stderr.trim()): KeshaError {
+  const extra = { exitCode, stderr };
+  if (outcome.invalid.length > 0) {
+    return new KeshaError("E_INTERNAL", `kesha-engine ${command} wrote a line that is not a protocol event: "${outcome.invalid[0]}"`, extra);
+  }
+  if (outcome.error) return new KeshaError(outcome.error.code, outcome.error.message, { ...extra, hint: outcome.error.hint });
+  return new KeshaError("E_INTERNAL", `kesha-engine ${command} exited with code ${exitCode}`, extra);
+}
