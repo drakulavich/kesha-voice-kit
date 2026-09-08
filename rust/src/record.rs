@@ -326,6 +326,47 @@ fn settle_recovery_spill(spill: Option<spill::SpillWav>, ended_normally: bool) {
     );
 }
 
+#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tick {
+    Row,
+    Event,
+}
+
+/// Each elapsed second is a `\r` row on a v3 terminal, an event on v4 whatever stderr is (#1164).
+#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+struct ListenTicker {
+    output: Option<Tick>,
+    announced: u64,
+}
+
+#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+impl ListenTicker {
+    fn new(mode: events::Mode, stderr_is_terminal: bool) -> Self {
+        let output = match mode {
+            events::Mode::V4 => Some(Tick::Event),
+            events::Mode::V3 if stderr_is_terminal => Some(Tick::Row),
+            events::Mode::V3 => None,
+        };
+        Self {
+            output,
+            announced: 0,
+        }
+    }
+
+    fn tick(&mut self, elapsed: u64) -> Option<Tick> {
+        if elapsed <= self.announced {
+            return None;
+        }
+        self.announced = elapsed;
+        self.output
+    }
+
+    fn row_open(&self) -> bool {
+        self.announced > 0 && self.output == Some(Tick::Row)
+    }
+}
+
 /// `mono` is per-call scratch, not accumulated audio as in the WAV path.
 #[cfg(all(feature = "coreml", target_os = "macos"))]
 struct LiveFeed {
@@ -375,8 +416,7 @@ impl LiveFeed {
         max_duration: Duration,
     ) -> Result<bool> {
         let started = Instant::now();
-        let mut announced = 0u64;
-        let tick = io::stderr().is_terminal() && events::mode() == events::Mode::V3;
+        let mut ticker = ListenTicker::new(events::mode(), io::stderr().is_terminal());
         let mut ended_by_endpoint = false;
         loop {
             if stop_rx.try_recv().is_ok()
@@ -396,13 +436,13 @@ impl LiveFeed {
                 Err(RecvTimeoutError::Disconnected) => break,
             }
             let elapsed = started.elapsed().as_secs();
-            if tick && elapsed > announced {
-                announced = elapsed;
-                eprint!("\rListening... {elapsed}s");
+            match ticker.tick(elapsed) {
+                Some(Tick::Row) => eprint!("\rListening... {elapsed}s"),
+                Some(Tick::Event) => events::progress(None, format!("Listening... {elapsed}s")),
+                None => {}
             }
         }
-        if announced > 0 {
-            // closes the \r row the painter left open, so only ever reached on v3 + tty
+        if ticker.row_open() {
             eprintln!();
         }
         Ok(ended_by_endpoint)
@@ -1066,6 +1106,32 @@ mod tests {
             path.exists(),
             "the only copy of the audio was deleted before the transcript was delivered"
         );
+    }
+
+    /// Under v4 the `\r` row is dead, so each elapsed second must reach the consumer as an event (#1164).
+    #[test]
+    fn the_listen_ticker_reports_each_elapsed_second_as_an_event_on_protocol_4() {
+        let mut ticker = ListenTicker::new(events::Mode::V4, false);
+        assert_eq!(ticker.tick(0), None);
+        assert_eq!(ticker.tick(1), Some(Tick::Event));
+        assert_eq!(ticker.tick(1), None, "one event per second, not per poll");
+        assert_eq!(ticker.tick(2), Some(Tick::Event));
+        assert!(!ticker.row_open(), "no row to close on v4");
+    }
+
+    #[test]
+    fn the_listen_ticker_paints_a_row_only_on_a_protocol_3_terminal() {
+        let mut tty = ListenTicker::new(events::Mode::V3, true);
+        assert_eq!(tty.tick(1), Some(Tick::Row));
+        assert!(tty.row_open());
+
+        let mut piped = ListenTicker::new(events::Mode::V3, false);
+        assert_eq!(piped.tick(1), None);
+        assert!(!piped.row_open());
+
+        let mut v4_tty = ListenTicker::new(events::Mode::V4, true);
+        assert_eq!(v4_tty.tick(1), Some(Tick::Event));
+        assert!(!v4_tty.row_open());
     }
 
     #[test]
