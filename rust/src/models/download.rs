@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use super::manifest::*;
 use super::paths::*;
-use super::progress::{reader_wanted, with_stderr, InFlight, ProgressReader};
+use super::progress::{reader_wanted, whole_file_total, with_stderr, InFlight, ProgressReader};
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -462,11 +462,7 @@ fn download_attempt(
     let resume = if status == 206 { staged } else { 0 };
 
     // Not the raw header — that one reports the compressed size when decompression is active.
-    // A 206 body is only the remainder; progress describes the file, so a stalled 99% still reaches 100.
-    let total = response
-        .body()
-        .content_length()
-        .map_or(0, |remainder| resume + remainder);
+    let total = whole_file_total(resume, response.body().content_length());
     let mut reader = TrackedStream {
         inner: response.into_body().into_reader(),
         read_failed: false,

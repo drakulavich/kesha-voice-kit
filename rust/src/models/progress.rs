@@ -67,6 +67,11 @@ pub(super) struct ProgressReader<R> {
     last_draw: std::time::Instant,
 }
 
+/// A 206 body is only the remainder, so the span the bar and the events describe is the whole file.
+pub(super) fn whole_file_total(resume: u64, content_length: Option<u64>) -> u64 {
+    content_length.map_or(0, |remainder| resume + remainder)
+}
+
 /// A v4 consumer wants events whatever stderr is; the v3 bar can only repaint a terminal.
 pub(super) fn reader_wanted(mode: events::Mode, stderr_is_terminal: bool, total: u64) -> bool {
     total >= PROGRESS_MIN_BYTES && (mode == events::Mode::V4 || stderr_is_terminal)
@@ -178,6 +183,20 @@ mod progress_tests {
         assert!(!bar_paints(events::Mode::V4, 1));
         assert!(!bar_paints(events::Mode::V3, 2));
         assert!(!bar_paints(events::Mode::V4, 2));
+    }
+
+    #[test]
+    fn a_resumed_total_spans_the_file_not_the_remainder() {
+        assert_eq!(
+            whole_file_total(2_390 * 1_048_576, Some(10 * 1_048_576)),
+            2_400 * 1_048_576
+        );
+        assert_eq!(whole_file_total(0, Some(16 * 1_048_576)), 16 * 1_048_576);
+        assert_eq!(
+            whole_file_total(2_390 * 1_048_576, None),
+            0,
+            "an unknown length must not read as already complete"
+        );
     }
 
     #[test]
