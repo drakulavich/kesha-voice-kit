@@ -56,6 +56,8 @@ pub enum Event<'a> {
         #[serde(skip_serializing_if = "Option::is_none")]
         phase: Option<&'a str>,
         message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pct: Option<u8>,
     },
     Warn {
         code: &'a str,
@@ -82,6 +84,15 @@ impl<'a> Event<'a> {
         Event::Progress {
             phase,
             message: message.into(),
+            pct: None,
+        }
+    }
+
+    pub fn progress_pct(phase: Option<&'a str>, message: impl Into<String>, pct: u8) -> Self {
+        Event::Progress {
+            phase,
+            message: message.into(),
+            pct: Some(pct),
         }
     }
 
@@ -105,14 +116,20 @@ impl<'a> Event<'a> {
             Mode::V4 => serde_json::to_string(self).expect("event serialize"),
             Mode::V3 => match self {
                 Event::Progress {
-                    phase: Some(p),
+                    phase,
                     message,
-                } => format!("{p}: {message}"),
-                Event::Progress {
-                    phase: None,
-                    message,
+                    pct,
+                } => {
+                    let mut line = match phase {
+                        Some(p) => format!("{p}: {message}"),
+                        None => message.clone(),
+                    };
+                    if let Some(pct) = pct {
+                        line.push_str(&format!(" ({pct}%)"));
+                    }
+                    line
                 }
-                | Event::Warn { message, .. } => message.clone(),
+                Event::Warn { message, .. } => message.clone(),
                 Event::Error { code, message, .. } => format!("error [{code}]: {message}"),
                 Event::Debug { t_ms, message, .. } => format!("[debug/engine +{t_ms}ms] {message}"),
             },
@@ -162,6 +179,30 @@ mod tests {
         assert_eq!(
             Event::progress(None, "GET model.onnx").render(Mode::V3),
             "GET model.onnx"
+        );
+    }
+
+    #[test]
+    fn v4_progress_serialises_pct_only_when_it_has_one() {
+        let with = Event::progress_pct(Some("download"), "GET model.onnx", 12).render(Mode::V4);
+        let v: serde_json::Value = serde_json::from_str(&with).unwrap();
+        assert_eq!(v["kind"], "progress");
+        assert_eq!(v["phase"], "download");
+        assert_eq!(v["pct"], 12);
+        let without = Event::progress(Some("download"), "GET model.onnx").render(Mode::V4);
+        let v: serde_json::Value = serde_json::from_str(&without).unwrap();
+        assert!(v.get("pct").is_none(), "{without}");
+    }
+
+    #[test]
+    fn v3_progress_line_appends_the_pct_in_parentheses() {
+        assert_eq!(
+            Event::progress_pct(Some("download"), "GET model.onnx", 12).render(Mode::V3),
+            "download: GET model.onnx (12%)"
+        );
+        assert_eq!(
+            Event::progress_pct(None, "GET model.onnx", 100).render(Mode::V3),
+            "GET model.onnx (100%)"
         );
     }
 

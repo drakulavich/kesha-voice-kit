@@ -701,6 +701,24 @@ describe("cross-reference targets stay inside the code filter", () => {
     expect(collectRustReferenceTargets().map((file) => file.replaceAll("\\", "/"))).toContain("rust/build.rs");
   });
 
+  // Only cargo's own <crate>/target/ is build output; a source module happening to be named target is still a source.
+  test("a cargo build directory is not a source tree, but a nested target module is", () => {
+    const root = mkdtempSync(join(tmpdir(), "kesha-rust-walk-"));
+    try {
+      mkdirSync(join(root, "src", "target"), { recursive: true });
+      mkdirSync(join(root, "target", "debug", "build", "x", "out"), { recursive: true });
+      writeFileSync(join(root, "src", "lib.rs"), "");
+      writeFileSync(join(root, "src", "target", "mod.rs"), "");
+      writeFileSync(join(root, "target", "debug", "build", "x", "out", "generated.rs"), "");
+      const slashed = (files: string[]) => files.map((file) => file.replaceAll("\\", "/"));
+      const prefix = root.replaceAll("\\", "/");
+      expect(slashed(collectRustReferenceTargets(root))).toEqual([`${prefix}/src/lib.rs`, `${prefix}/src/target/mod.rs`]);
+      expect(slashed(collectRustSources(join(root, "src")))).toEqual([`${prefix}/src/lib.rs`, `${prefix}/src/target/mod.rs`]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("the real ci.yml covers every cross-reference target", () => {
     const targets = repoRelative(collectRustReferenceTargets(repoPath("rust")));
     expect(requireRustReferenceTargetsInCodeFilter(CI, parseRepoYaml(CI), targets)).toEqual([]);

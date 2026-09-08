@@ -28,7 +28,7 @@
 
 - [x] 5.1 Pin the beta; `src/engine/describe.ts` with cache, version gate and `validateArgv` (files created in stage 2; the `src/engine/` layout is finalised in stage 5)
 - [x] 5.2 `src/engine/events.ts` parser and `KeshaError` carrying `code`, `hint`, `exitCode`, `stderr`; delete `src/error-codes.ts`, `preflight*`, `assert*Supported`, `spawnStdioWithDebugFd` (files created in stage 2; the `src/engine/` layout is finalised in stage 5)
-- [ ] 5.3 One PR per command: transcribe, say, install, record, MCP — transcribe: #1161; say: #1162; install: #1165; record: #1167; MCP: this PR (install and record spawns stay on protocol 3 pending #1164)
+- [ ] 5.3 One PR per command: transcribe, say, install, record, MCP — transcribe: #1161; say: #1162; install: #1165; record: #1167; MCP: #1169 (install and record spawns move to protocol 4 once the beta carrying these events is pinned)
 - [ ] 5.4 `record-capability-pacts.ts` and `tests/fixtures/capabilities/*.json` record `describe`, moved here from stage 1 because they record the published Engine pin, which switches to `v1.25.0-beta.2` at 4.2
 
 ## 6. Downstream spec sweeps

@@ -4,6 +4,7 @@ export interface ProgressEvent {
   kind: "progress";
   phase?: string;
   message: string;
+  pct?: number;
 }
 export interface WarnEvent {
   kind: "warn";
@@ -45,8 +46,13 @@ export function parseEventLine(line: string): ParsedLine {
   const message = o.message;
   switch (o.kind) {
     case "progress": {
+      if (o.pct !== undefined && (typeof o.pct !== "number" || !Number.isInteger(o.pct) || o.pct < 0 || o.pct > 100))
+        return { ok: false, raw: line };
+      const event: ProgressEvent = { kind: "progress", message };
       const phase = optionalString(o.phase);
-      return { ok: true, event: phase === undefined ? { kind: "progress", message } : { kind: "progress", phase, message } };
+      if (phase !== undefined) event.phase = phase;
+      if (o.pct !== undefined) event.pct = o.pct;
+      return { ok: true, event };
     }
     case "warn":
       if (typeof o.code !== "string") return { ok: false, raw: line };
@@ -77,8 +83,10 @@ export function renderError(e: { code: string; message: string; hint?: string })
 
 export function renderEvent(event: EngineEvent): string {
   switch (event.kind) {
-    case "progress":
-      return event.phase ? `${event.phase}: ${event.message}` : event.message;
+    case "progress": {
+      const line = event.phase ? `${event.phase}: ${event.message}` : event.message;
+      return event.pct === undefined ? line : `${line} (${event.pct}%)`;
+    }
     case "warn":
       return event.message;
     case "error":
