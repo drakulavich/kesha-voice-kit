@@ -12,7 +12,7 @@
  * pre-push checks.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { parse, YAMLParseError } from "yaml";
 import { engineTargetEntries, targetKey } from "../../src/engine-targets";
 
@@ -681,15 +681,14 @@ export function collectRustSources(root = "rust/src"): string[] {
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true })
     .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
-    // cargo writes generated .rs under target/, so a local build would otherwise strand build artifacts as guarded sources.
-    .filter((entry) => !entry.split(/[\\/]/).includes("target"))
     .map((entry) => join(root, entry))
     .sort();
 }
 
 /** Every .rs under rust/: tests/unit/rust-cross-references.test.ts's resolveFile returns any `rust/…` path unchanged, so the guarded set is the whole tree — naming build.rs and tests/ left rust/vendor out and a future rust/benches would too (#1141, review round 1). */
 export function collectRustReferenceTargets(crateRoot = "rust"): string[] {
-  return collectRustSources(crateRoot);
+  // cargo writes generated .rs under <crate>/target/, so a local build would otherwise strand build artifacts as guarded sources.
+  return collectRustSources(crateRoot).filter((file) => relative(crateRoot, file).split(/[\\/]/)[0] !== "target");
 }
 
 /** The pair main() feeds the two #950 rules — exported so the pairing is pinnable: handing the all-rust/src rule the manifest set is silent inside main(), and the sets overlap enough to look right. */

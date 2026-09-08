@@ -38,7 +38,7 @@ describe("parseEventLine", () => {
     });
   });
 
-  test("a progress pct is a number, present or absent, never anything else", () => {
+  test("a progress pct is a whole number, present or absent, never anything else", () => {
     expect(parseEventLine('{"kind":"progress","phase":"download","message":"GET model.onnx","pct":12}')).toStrictEqual({
       ok: true,
       event: { kind: "progress", phase: "download", message: "GET model.onnx", pct: 12 },
@@ -54,6 +54,8 @@ describe("parseEventLine", () => {
     for (const line of [
       '{"kind":"progress","message":"GET model.onnx","pct":"12"}',
       '{"kind":"progress","message":"GET model.onnx","pct":null}',
+      '{"kind":"progress","message":"GET model.onnx","pct":12.5}',
+      '{"kind":"progress","message":"GET model.onnx","pct":99.9}',
     ]) {
       expect(parseEventLine(line)).toEqual({ ok: false, raw: line });
     }

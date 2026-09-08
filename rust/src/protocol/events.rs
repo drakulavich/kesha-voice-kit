@@ -148,10 +148,6 @@ pub fn progress(phase: Option<&str>, message: impl Into<String>) {
     Event::progress(phase, message).emit()
 }
 
-pub fn progress_pct(phase: Option<&str>, message: impl Into<String>, pct: u8) {
-    Event::progress_pct(phase, message, pct).emit()
-}
-
 pub fn warn(code: &str, message: impl Into<String>) {
     Event::warn(code, message).emit()
 }

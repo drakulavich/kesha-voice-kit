@@ -46,7 +46,7 @@ export function parseEventLine(line: string): ParsedLine {
   const message = o.message;
   switch (o.kind) {
     case "progress": {
-      if (o.pct !== undefined && typeof o.pct !== "number") return { ok: false, raw: line };
+      if (o.pct !== undefined && (typeof o.pct !== "number" || !Number.isInteger(o.pct))) return { ok: false, raw: line };
       const event: ProgressEvent = { kind: "progress", message };
       const phase = optionalString(o.phase);
       if (phase !== undefined) event.phase = phase;
