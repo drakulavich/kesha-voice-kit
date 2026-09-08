@@ -54,6 +54,8 @@ describe("parseEventLine", () => {
     for (const line of [
       '{"kind":"progress","message":"GET model.onnx","pct":"12"}',
       '{"kind":"progress","message":"GET model.onnx","pct":null}',
+      '{"kind":"progress","message":"GET model.onnx","pct":-1}',
+      '{"kind":"progress","message":"GET model.onnx","pct":101}',
       '{"kind":"progress","message":"GET model.onnx","pct":12.5}',
       '{"kind":"progress","message":"GET model.onnx","pct":99.9}',
     ]) {
