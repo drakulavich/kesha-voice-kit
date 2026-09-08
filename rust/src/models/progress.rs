@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use crate::protocol::events;
 
 /// Below this a download finishes fast enough that a bar is noise, not feedback.
-pub(super) const PROGRESS_MIN_BYTES: u64 = 16 * 1024 * 1024;
+const PROGRESS_MIN_BYTES: u64 = 16 * 1024 * 1024;
 const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
 const PROGRESS_BAR_WIDTH: usize = 20;
 
@@ -61,7 +61,7 @@ pub(super) struct ProgressReader<R> {
     inner: R,
     total: u64,
     read: u64,
-    label: String,
+    label: &'static str,
     emitted_pct: Option<usize>,
     last_draw: std::time::Instant,
 }
@@ -77,12 +77,12 @@ fn bar_paints(mode: events::Mode, in_flight: usize) -> bool {
 }
 
 impl<R: io::Read> ProgressReader<R> {
-    pub(super) fn new(inner: R, total: u64, label: impl Into<String>) -> Self {
+    pub(super) fn new(inner: R, total: u64, label: &'static str) -> Self {
         Self {
             inner,
             total,
             read: 0,
-            label: label.into(),
+            label,
             emitted_pct: None,
             last_draw: std::time::Instant::now(),
         }

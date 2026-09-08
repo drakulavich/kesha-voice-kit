@@ -1122,6 +1122,7 @@ mod tests {
     #[test]
     fn the_listen_ticker_paints_a_row_only_on_a_protocol_3_terminal() {
         let mut tty = ListenTicker::new(events::Mode::V3, true);
+        assert!(!tty.row_open(), "nothing painted yet, so nothing to close");
         assert_eq!(tty.tick(1), Some(Tick::Row));
         assert!(tty.row_open());
 
