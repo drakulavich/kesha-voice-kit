@@ -1,5 +1,5 @@
-import { describe, test, expect } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "fs";
+import { describe, test, expect, afterAll } from "bun:test";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -9,6 +9,18 @@ import { listVoices } from "../../src/mcp/voices";
 import { errorMessage } from "../../src/error-utils";
 import { describeJson } from "../helpers/fake-engine";
 import { KeshaError } from "../../src/engine/events";
+
+const stubDirs: string[] = [];
+
+function stubDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  stubDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of stubDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const skipOnWin32 = process.platform === "win32" ? test.skip : test;
 
@@ -73,7 +85,7 @@ describe("list_voices / list_languages guard when the engine is missing", () => 
 
 describe("list_voices guard when the engine is present but not executable", () => {
   skipOnWin32("list_voices tool returns isError with E_ENGINE_SPAWN, not a raw spawn exception", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-not-exec-"));
+    const dir = stubDir("kesha-mcp-not-exec-");
     const notExecutable = join(dir, "kesha-engine");
     writeFileSync(notExecutable, "not a binary");
     chmodSync(notExecutable, 0o644);
@@ -90,7 +102,7 @@ describe("list_voices guard when the engine is present but not executable", () =
 
 // A stub, because gating on an installed engine skipped these in every CI lane (#984).
 function voiceListingEngine(voiceIds: string[]): string {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-voices-"));
+  const dir = stubDir("kesha-mcp-voices-");
   const path = join(dir, "kesha-engine");
   const args = voiceIds.map((id) => `'${id}'`).join(" ");
   writeFileSync(
@@ -105,7 +117,7 @@ const STUB_VOICES = ["en-am_michael", "en-bf_emma", "ru-vosk-m02"];
 
 // A stub that answers on stdout but writes plain prose to stderr instead of a protocol 4 event.
 function babblingVoicesEngine(): string {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-voices-babble-"));
+  const dir = stubDir("kesha-mcp-voices-babble-");
   const path = join(dir, "kesha-engine");
   writeFileSync(
     path,
@@ -172,7 +184,7 @@ describe("list_languages tool", () => {
 
 describe("list_voices() validates against describe before spawning", () => {
   skipOnWin32("a stale engine that cannot describe itself is E_ENGINE_PROTOCOL pointing at kesha install", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-voices-stale-"));
+    const dir = stubDir("kesha-mcp-voices-stale-");
     const path = join(dir, "kesha-engine");
     writeFileSync(
       path,
@@ -188,7 +200,7 @@ describe("list_voices() validates against describe before spawning", () => {
   });
 
   skipOnWin32("a build without tts is E_INVALID_ARG and the engine is never asked", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-voices-notts-"));
+    const dir = stubDir("kesha-mcp-voices-notts-");
     const path = join(dir, "kesha-engine");
     const marker = join(dir, "say-was-spawned");
     writeFileSync(
@@ -201,6 +213,46 @@ describe("list_voices() validates against describe before spawning", () => {
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_INVALID_ARG");
       expect(existsSync(marker)).toBe(false);
+    });
+  });
+});
+
+// A stub whose describe answers normally but whose `say --list-voices` reports a coded failure.
+function voiceListingErrorEngine(): string {
+  const dir = stubDir("kesha-mcp-voices-error-");
+  const path = join(dir, "kesha-engine");
+  const errorEvent = JSON.stringify({
+    kind: "error",
+    code: "E_MODEL_MISSING",
+    message: "the TTS bundle is missing",
+    hint: "run kesha install --tts",
+  });
+  writeFileSync(
+    path,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' '${errorEvent}' >&2\n  exit 1\nfi\nexit 2\n`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+describe("list_voices / list_languages surface an engine-reported failure coded", () => {
+  skipOnWin32("list_voices tool returns isError carrying the engine's code and hint", async () => {
+    await withEngineBin(voiceListingErrorEngine(), async () => {
+      const res = await call("list_voices");
+      expect(res.isError).toBe(true);
+      const text = (res.content as Array<{ text: string }>)[0]?.text;
+      expect(text).toContain("error [E_MODEL_MISSING]:");
+      expect(text).toContain("hint: run kesha install --tts");
+    });
+  });
+
+  skipOnWin32("list_languages tool returns isError carrying the engine's code and hint", async () => {
+    await withEngineBin(voiceListingErrorEngine(), async () => {
+      const res = await call("list_languages");
+      expect(res.isError).toBe(true);
+      const text = (res.content as Array<{ text: string }>)[0]?.text;
+      expect(text).toContain("error [E_MODEL_MISSING]:");
+      expect(text).toContain("hint: run kesha install --tts");
     });
   });
 });
