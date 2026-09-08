@@ -701,6 +701,21 @@ describe("cross-reference targets stay inside the code filter", () => {
     expect(collectRustReferenceTargets().map((file) => file.replaceAll("\\", "/"))).toContain("rust/build.rs");
   });
 
+  test("a cargo build directory is not a source tree", () => {
+    const root = mkdtempSync(join(tmpdir(), "kesha-rust-walk-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "target", "debug", "build", "x", "out"), { recursive: true });
+      writeFileSync(join(root, "src", "lib.rs"), "");
+      writeFileSync(join(root, "target", "debug", "build", "x", "out", "generated.rs"), "");
+      expect(collectRustReferenceTargets(root).map((file) => file.replaceAll("\\", "/"))).toEqual([
+        `${root.replaceAll("\\", "/")}/src/lib.rs`,
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("the real ci.yml covers every cross-reference target", () => {
     const targets = repoRelative(collectRustReferenceTargets(repoPath("rust")));
     expect(requireRustReferenceTargetsInCodeFilter(CI, parseRepoYaml(CI), targets)).toEqual([]);

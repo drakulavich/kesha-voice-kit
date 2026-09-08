@@ -681,6 +681,8 @@ export function collectRustSources(root = "rust/src"): string[] {
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true })
     .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))
+    // cargo writes generated .rs under target/, so a local build would otherwise strand build artifacts as guarded sources.
+    .filter((entry) => !entry.split(/[\\/]/).includes("target"))
     .map((entry) => join(root, entry))
     .sort();
 }
