@@ -62,6 +62,7 @@ pub(super) struct ProgressReader<R> {
     total: u64,
     read: u64,
     label: String,
+    emitted_pct: Option<usize>,
     last_draw: std::time::Instant,
 }
 
@@ -82,6 +83,7 @@ impl<R: io::Read> ProgressReader<R> {
             total,
             read: 0,
             label: label.into(),
+            emitted_pct: None,
             last_draw: std::time::Instant::now(),
         }
     }
@@ -92,13 +94,18 @@ impl<R: io::Read> ProgressReader<R> {
 
     /// Same in-flight rule as the bar: the consumer renders one line per event and cannot tell four downloads apart.
     fn progress_event(
-        &self,
+        &mut self,
         mode: events::Mode,
         in_flight: usize,
     ) -> Option<events::Event<'static>> {
         if mode != events::Mode::V4 || in_flight != 1 {
             return None;
         }
+        let pct = self.pct();
+        if self.emitted_pct == Some(pct) {
+            return None;
+        }
+        self.emitted_pct = Some(pct);
         Some(events::Event::progress_pct(
             Some("download"),
             format!(
@@ -107,7 +114,7 @@ impl<R: io::Read> ProgressReader<R> {
                 self.read as f64 / 1_048_576.0,
                 self.total as f64 / 1_048_576.0
             ),
-            self.pct() as u8,
+            pct as u8,
         ))
     }
 
@@ -203,6 +210,27 @@ mod progress_tests {
                 .contains("models/encoder.onnx"),
             "the consumer cannot tell downloads apart without the name: {json}"
         );
+    }
+
+    /// An event stream is a log, not a repaint surface: one line per distinct percentage.
+    #[test]
+    fn a_download_reports_each_percentage_once_and_the_final_one_lands() {
+        let payload = vec![7u8; 1000];
+        let mut reader = ProgressReader::new(payload.as_slice(), 1000, "blob");
+        reader.read = 990;
+        assert!(reader.progress_event(events::Mode::V4, 1).is_some());
+        reader.read = 995;
+        assert!(
+            reader.progress_event(events::Mode::V4, 1).is_none(),
+            "still 99%, so the same line again is noise"
+        );
+        reader.read = 1000;
+        let event = reader
+            .progress_event(events::Mode::V4, 1)
+            .expect("the final percentage must land");
+        let json: serde_json::Value =
+            serde_json::from_str(&event.render(events::Mode::V4)).expect("NDJSON");
+        assert_eq!(json["pct"], 100);
     }
 
     #[test]
