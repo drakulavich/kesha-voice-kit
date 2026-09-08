@@ -462,7 +462,11 @@ fn download_attempt(
     let resume = if status == 206 { staged } else { 0 };
 
     // Not the raw header — that one reports the compressed size when decompression is active.
-    let total = response.body().content_length().unwrap_or(0);
+    // A 206 body is only the remainder; progress describes the file, so a stalled 99% still reaches 100.
+    let total = response
+        .body()
+        .content_length()
+        .map_or(0, |remainder| resume + remainder);
     let mut reader = TrackedStream {
         inner: response.into_body().into_reader(),
         read_failed: false,
@@ -472,7 +476,7 @@ fn download_attempt(
         io::IsTerminal::is_terminal(&io::stderr()),
         total,
     ) {
-        let mut reader = ProgressReader::new(&mut reader, total, f.rel_path);
+        let mut reader = ProgressReader::new(&mut reader, resume..total, f.rel_path);
         write_verified(&mut reader, target, f.rel_path, f.sha256, Some(resume))
     } else {
         write_verified(&mut reader, target, f.rel_path, f.sha256, Some(resume))

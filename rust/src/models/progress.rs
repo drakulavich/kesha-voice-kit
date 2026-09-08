@@ -1,4 +1,5 @@
 use std::io;
+use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
@@ -77,11 +78,12 @@ fn bar_paints(mode: events::Mode, in_flight: usize) -> bool {
 }
 
 impl<R: io::Read> ProgressReader<R> {
-    pub(super) fn new(inner: R, total: u64, label: &'static str) -> Self {
+    /// `span` is the slice of the file this stream carries: a resumed attempt starts past the bytes already staged.
+    pub(super) fn new(inner: R, span: Range<u64>, label: &'static str) -> Self {
         Self {
             inner,
-            total,
-            read: 0,
+            total: span.end,
+            read: span.start,
             label,
             emitted_pct: None,
             last_draw: std::time::Instant::now(),
@@ -194,7 +196,7 @@ mod progress_tests {
     #[test]
     fn a_lone_download_reports_its_percentage_as_an_event_on_protocol_4() {
         let payload = vec![7u8; 1024];
-        let mut reader = ProgressReader::new(payload.as_slice(), 1024, "models/encoder.onnx");
+        let mut reader = ProgressReader::new(payload.as_slice(), 0..1024, "models/encoder.onnx");
         reader.read = 512;
         let event = reader
             .progress_event(events::Mode::V4, 1)
@@ -216,7 +218,7 @@ mod progress_tests {
     #[test]
     fn a_download_reports_each_percentage_once_and_the_final_one_lands() {
         let payload = vec![7u8; 1000];
-        let mut reader = ProgressReader::new(payload.as_slice(), 1000, "blob");
+        let mut reader = ProgressReader::new(payload.as_slice(), 0..1000, "blob");
         reader.read = 990;
         assert!(reader.progress_event(events::Mode::V4, 1).is_some());
         reader.read = 995;
@@ -233,10 +235,43 @@ mod progress_tests {
         assert_eq!(json["pct"], 100);
     }
 
+    /// A 206 body is only the remainder: progress must describe the file, or a download stalled at 99% never reports 100.
+    #[test]
+    fn a_resumed_download_reports_the_whole_file_not_the_remainder() {
+        let total = PROGRESS_MIN_BYTES;
+        let remainder = vec![7u8; 1_048_576];
+        let resume = total - remainder.len() as u64;
+        assert!(reader_wanted(events::Mode::V4, false, total));
+        let mut reader = ProgressReader::new(remainder.as_slice(), resume..total, "blob");
+        let first = reader
+            .progress_event(events::Mode::V4, 1)
+            .expect("a resumed download reports where it picks up");
+        let json: serde_json::Value =
+            serde_json::from_str(&first.render(events::Mode::V4)).expect("NDJSON");
+        assert_eq!(json["pct"], 93);
+        assert!(
+            json["message"].as_str().unwrap().ends_with("15.0/16.0MB"),
+            "megabytes must agree with the percentage: {json}"
+        );
+        let mut out = Vec::new();
+        reader.read_to_end(&mut out).expect("read");
+        assert_eq!(out, remainder);
+        let last = reader
+            .progress_event(events::Mode::V4, 1)
+            .expect("the final percentage must land");
+        let json: serde_json::Value =
+            serde_json::from_str(&last.render(events::Mode::V4)).expect("NDJSON");
+        assert_eq!(json["pct"], 100);
+        assert!(
+            json["message"].as_str().unwrap().ends_with("16.0/16.0MB"),
+            "{json}"
+        );
+    }
+
     #[test]
     fn no_event_on_protocol_3_or_beside_another_download() {
         let payload = vec![7u8; 1024];
-        let mut reader = ProgressReader::new(payload.as_slice(), 1024, "models/encoder.onnx");
+        let mut reader = ProgressReader::new(payload.as_slice(), 0..1024, "models/encoder.onnx");
         reader.read = 512;
         assert!(
             reader.progress_event(events::Mode::V3, 1).is_none(),
@@ -252,7 +287,7 @@ mod progress_tests {
     fn progress_reader_is_byte_transparent() {
         let payload: Vec<u8> = (0..4096u32).map(|i| (i % 251) as u8).collect();
         let mut out = Vec::new();
-        let mut reader = ProgressReader::new(payload.as_slice(), payload.len() as u64, "blob");
+        let mut reader = ProgressReader::new(payload.as_slice(), 0..payload.len() as u64, "blob");
         reader.read_to_end(&mut out).expect("read");
         assert_eq!(out, payload);
     }
@@ -273,7 +308,7 @@ mod progress_tests {
     #[test]
     fn bar_draws_only_when_alone() {
         let payload = vec![7u8; 512];
-        let mut reader = ProgressReader::new(payload.as_slice(), payload.len() as u64, "blob");
+        let mut reader = ProgressReader::new(payload.as_slice(), 0..payload.len() as u64, "blob");
         let _a = InFlight::new();
         let _b = InFlight::new();
         reader.draw();
@@ -289,7 +324,7 @@ mod progress_tests {
     #[test]
     fn sibling_write_ends_the_open_bar_row() {
         let payload = vec![7u8; 512];
-        let mut reader = ProgressReader::new(payload.as_slice(), payload.len() as u64, "blob");
+        let mut reader = ProgressReader::new(payload.as_slice(), 0..payload.len() as u64, "blob");
         let _alone = InFlight::new();
         reader.draw();
         assert!(*lock_stderr(), "bar row is open");
@@ -303,7 +338,8 @@ mod progress_tests {
         let payload = vec![7u8; 512];
         let _alone = InFlight::new();
         {
-            let mut reader = ProgressReader::new(payload.as_slice(), payload.len() as u64, "blob");
+            let mut reader =
+                ProgressReader::new(payload.as_slice(), 0..payload.len() as u64, "blob");
             reader.draw();
             assert!(*lock_stderr(), "bar row is open");
         }
