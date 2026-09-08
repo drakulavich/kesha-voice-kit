@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { chmodSync, mkdtempSync, mkdirSync, utimesSync, writeFileSync } from "fs";
-import { homedir, tmpdir } from "os";
+import { chmodSync, mkdirSync, utimesSync, writeFileSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { describeJson, envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
@@ -22,6 +22,7 @@ import {
 import { KeshaError } from "../../src/engine/events";
 import { errorMessage } from "../../src/error-utils";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
+import { tempDir } from "../helpers/temp-dir";
 
 /** The thrown KeshaError, so a test can assert on code and hint rather than on prose. */
 async function failure(run: () => Promise<unknown>): Promise<KeshaError> {
@@ -46,7 +47,7 @@ const fakeEngineTest = process.platform === "win32" ? test.skip : test;
 
 /** A stub answering one flagless lang-detect command; `body` runs before the forced `exit 0`. */
 function langDetectEngine(prefix: string, command: string, body: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = tempDir(prefix);
   const path = join(dir, "kesha-engine");
   writeFileSync(
     path,
@@ -64,7 +65,7 @@ exit 2
 
 /** Echoes the `transcribe` argv it was handed as the transcript, so a test can assert which flags were forwarded. */
 async function argEchoEngine(features: string[]): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-engine-argecho-"));
+  const dir = tempDir("kesha-engine-argecho-");
   const path = join(dir, "kesha-engine");
   await Bun.write(
     path,
@@ -86,7 +87,7 @@ exit 2
 }
 
 function capsEngineWithVersion(protocolVersion: number): string {
-  const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-proto-")), "kesha-engine");
+  const path = join(tempDir("kesha-engine-proto-"), "kesha-engine");
   writeFileSync(
     path,
     `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["transcribe"], protocolVersion })}'\n  exit 0\nfi\nexit 2\n`,
@@ -150,7 +151,7 @@ async function withEngineEnv<T>(
 
 /** #768: `--speakers` preflight requires the VAD model alongside the diarize model. */
 function cacheDirWithVadModel(): string {
-  const cache = mkdtempSync(join(tmpdir(), "kesha-cache-vad-"));
+  const cache = tempDir("kesha-cache-vad-");
   mkdirSync(join(cache, "models", "silero-vad"), { recursive: true });
   writeFileSync(join(cache, "models", "silero-vad", "silero_vad.onnx"), "");
   return cache;
@@ -255,7 +256,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("validateTranscribeRequest with no engine is E_ENGINE_SPAWN naming the install step", async () => {
-    const empty = mkdtempSync(join(tmpdir(), "kesha-engine-absent-"));
+    const empty = tempDir("kesha-engine-absent-");
     await withEngineEnv(join(empty, "kesha-engine"), async () => {
       const err = await failure(() => validateTranscribeRequest({}));
       expect(err.code).toBe("E_ENGINE_SPAWN");
@@ -267,7 +268,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("validateTranscribeRequest against an engine that cannot describe itself is E_ENGINE_PROTOCOL", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-old-transcribe-"));
+    const dir = tempDir("kesha-engine-old-transcribe-");
     const old = join(dir, "kesha-engine");
     writeFileSync(old, "#!/bin/sh\necho 'error: unrecognized subcommand describe' >&2\nexit 2\n");
     chmodSync(old, 0o755);
@@ -289,7 +290,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("a library call with no engine is E_ENGINE_SPAWN from the engine layer", async () => {
-    const empty = mkdtempSync(join(tmpdir(), "kesha-engine-absent-lib-"));
+    const empty = tempDir("kesha-engine-absent-lib-");
     await withEngineEnv(join(empty, "kesha-engine"), async () => {
       const err = await failure(() => transcribeWithSegments("audio.wav"));
       expect(err.code).toBe("E_ENGINE_SPAWN");
@@ -341,7 +342,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("an engine that cannot describe itself is E_ENGINE_PROTOCOL pointing at kesha install", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-old-"));
+    const dir = tempDir("kesha-engine-old-");
     const old = join(dir, "kesha-engine");
     writeFileSync(old, "#!/bin/sh\necho 'error: unrecognized subcommand describe' >&2\nexit 2\n");
     chmodSync(old, 0o755);
@@ -377,7 +378,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("preflight rejects speakers when the VAD model is missing (#768)", async () => {
-    const modelPath = mkdtempSync(join(tmpdir(), "kesha-diarize-model-"));
+    const modelPath = tempDir("kesha-diarize-model-");
     mkdirSync(join(modelPath, "Data", "com.apple.CoreML", "weights"), { recursive: true });
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
@@ -389,13 +390,13 @@ describe("engine", () => {
       },
       {
         KESHA_DIARIZE_MODEL_PATH: modelPath,
-        KESHA_CACHE_DIR: mkdtempSync(join(tmpdir(), "kesha-cache-no-vad-")),
+        KESHA_CACHE_DIR: tempDir("kesha-cache-no-vad-"),
       },
     );
   });
 
   fakeEngineTest("transcribeEngineWithSegments accepts a valid diarize override and parses speakers", async () => {
-    const modelPath = mkdtempSync(join(tmpdir(), "kesha-diarize-model-"));
+    const modelPath = tempDir("kesha-diarize-model-");
     mkdirSync(join(modelPath, "Data", "com.apple.CoreML", "weights"), { recursive: true });
     await withEngineEnv(
       fakeEngine(["transcribe.segments", "transcribe.diarize"]),
@@ -478,7 +479,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("transcribeEngine surfaces E_ENGINE_SPAWN instead of a raw spawn exception", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-not-exec-"));
+    const dir = tempDir("kesha-engine-not-exec-");
     const notExecutable = join(dir, "kesha-engine");
     writeFileSync(notExecutable, "not a binary");
     chmodSync(notExecutable, 0o644);
@@ -492,7 +493,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("recordEngine surfaces E_ENGINE_SPAWN instead of a raw spawn exception", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-not-exec-record-"));
+    const dir = tempDir("kesha-engine-not-exec-record-");
     const notExecutable = join(dir, "kesha-engine");
     writeFileSync(notExecutable, "not a binary");
     chmodSync(notExecutable, 0o644);
@@ -509,7 +510,7 @@ describe("engine", () => {
    * error line under a transcript that arrived intact (#962).
    */
   fakeEngineTest("recordEngine accepts a live session that stopped on a signal", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-record-signal-"));
+    const dir = tempDir("kesha-engine-record-signal-");
     const enginePath = join(dir, "kesha-engine");
     writeFileSync(enginePath, "#!/bin/sh\nexit ${KESHA_TEST_RECORD_EXIT:-0}\n");
     chmodSync(enginePath, 0o755);
@@ -529,7 +530,7 @@ describe("engine", () => {
 
   /** A capture-to-WAV run has no signal handler, so a signalled exit really is a lost recording. */
   fakeEngineTest("recordEngine still reports a signalled capture-to-WAV run as a failure", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-record-wav-signal-"));
+    const dir = tempDir("kesha-engine-record-wav-signal-");
     const enginePath = join(dir, "kesha-engine");
     writeFileSync(enginePath, "#!/bin/sh\nexit 130\n");
     chmodSync(enginePath, 0o755);
@@ -541,7 +542,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("abort terminates the spawned engine process tree", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-tree-"));
+    const dir = tempDir("kesha-engine-tree-");
     const helperPidFile = join(dir, "helper.pid");
     const enginePath = fakeLongRunningEngine(dir, helperPidFile);
     await withEngineEnv(enginePath, async () => {
@@ -565,7 +566,7 @@ describe("engine", () => {
    * wall-clock comparison to go flaky.
    */
   fakeEngineTest("progress reaches the caller while the engine is still running", async () => {
-    const ack = join(mkdtempSync(join(tmpdir(), "kesha-live-progress-")), "ack");
+    const ack = join(tempDir("kesha-live-progress-"), "ack");
     const engine = writeTranscribingEngine(
       "kesha-engine-live-progress-",
       ["transcribe.segments"],
@@ -639,7 +640,7 @@ describe("engine", () => {
   });
 
   fakeEngineTest("a describe that also writes a non-event line is E_INTERNAL, never a cached document", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-babble-"));
+    const dir = tempDir("kesha-engine-babble-");
     const path = join(dir, "kesha-engine");
     writeFileSync(
       path,
@@ -663,7 +664,7 @@ exit 2
   });
 
   fakeEngineTest("a newer protocol plus a stray stderr line is still E_ENGINE_PROTOCOL", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-newer-babble-"));
+    const dir = tempDir("kesha-engine-newer-babble-");
     const path = join(dir, "kesha-engine");
     writeFileSync(
       path,
@@ -868,7 +869,7 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
   }
 
   function describingEngine(payload: string, exitCode = 0): string {
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-describe-")), "kesha-engine");
+    const path = join(tempDir("kesha-engine-describe-"), "kesha-engine");
     writeFileSync(
       path,
       `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${payload}'\n  exit ${exitCode}\nfi\nexit 2\n`,
@@ -1033,7 +1034,7 @@ describe("the capability probe stays in step with the installed binary", () => {
 
   // #248: `kesha install` overwrites the binary in place, so the path alone cannot key the cache.
   fakeEngineTest("an in-place reinstall is not served from the cache", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-recache-"));
+    const dir = tempDir("kesha-engine-recache-");
     await withEngineEnv(capsEngine(dir, ["transcribe.segments"]), async () => {
       expect((await getDescribe()).features).toEqual(["transcribe.segments"]);
 
@@ -1046,7 +1047,7 @@ describe("the capability probe stays in step with the installed binary", () => {
   });
 
   fakeEngineTest("a missing binary reads as no capabilities rather than throwing", async () => {
-    const missing = join(mkdtempSync(join(tmpdir(), "kesha-engine-absent-")), "kesha-engine");
+    const missing = join(tempDir("kesha-engine-absent-"), "kesha-engine");
     await withEngineEnv(missing, async () => {
       expect(await getEngineCapabilities()).toBeNull();
       expect((await failure(() => getDescribe())).code).toBe("E_ENGINE_SPAWN");
@@ -1054,7 +1055,7 @@ describe("the capability probe stays in step with the installed binary", () => {
   });
 
   fakeEngineTest("a describe that reports an error event fails even though its document parses (#1163 follow-up)", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-engine-describe-error-"));
+    const dir = tempDir("kesha-engine-describe-error-");
     const path = join(dir, "kesha-engine");
     writeFileSync(
       path,
@@ -1077,7 +1078,7 @@ exit 2
 
   // Blank text has no language to detect; spending a subprocess on it would be pure latency.
   fakeEngineTest("blank text resolves null while real text still reaches the engine", async () => {
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-engine-textlang-")), "kesha-engine");
+    const path = join(tempDir("kesha-engine-textlang-"), "kesha-engine");
     writeFileSync(
       path,
       `#!/bin/sh\nif [ "$1" = "detect-text-lang" ]; then\n  printf '%s\\n' '{"code":"ru","confidence":0.9}'\n  exit 0\nfi\nexit 2\n`,

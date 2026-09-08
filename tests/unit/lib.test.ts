@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { transcribe } from "../../src/lib";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
 import { KeshaError } from "../../src/engine/events";
+import { tempDir } from "../helpers/temp-dir";
 
 function fakeEngine(features: string[]): string {
   return writeTranscribingEngine(
@@ -80,7 +80,7 @@ describe("lib API", () => {
   it("reports the missing engine even for an invalid combo like speakers + vad:off (#768)", async () => {
     const saved = process.env.KESHA_ENGINE_BIN;
     try {
-      process.env.KESHA_ENGINE_BIN = join(mkdtempSync(join(tmpdir(), "kesha-no-engine-")), "absent");
+      process.env.KESHA_ENGINE_BIN = join(tempDir("kesha-no-engine-"), "absent");
       let err: unknown;
       try {
         await validateTranscribeRequest({ speakers: true, vad: "off" });

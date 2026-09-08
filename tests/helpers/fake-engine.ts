@@ -2,11 +2,12 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type { DescribeDocument, FlagSchema, TtsLanguageCapability } from "../../src/engine/describe";
+import { tempDir } from "./temp-dir";
 
 const ENGINE_ENV = ["KESHA_ENGINE_BIN", "KESHA_CACHE_DIR", "HOME", "KESHA_MODEL_MIRROR"] as const;
 
 export interface StagedEngineHome {
-  /** The temp directory standing in for `$HOME`. Remove it when the test finishes. */
+  /** The temp directory standing in for `$HOME`; the suite tears it down. */
   dir: string;
   cache: string;
   binDir: string;
@@ -18,10 +19,10 @@ export interface StagedEngineHome {
  * and `KESHA_ENGINE_BIN` at it. The bin directory exists; no engine is written, so the caller
  * decides whether it is healthy, mute or absent.
  *
- * Restore the environment with `saveEngineEnv()`'s undo, and `rmSync` the returned `dir`.
+ * Restore the environment with `saveEngineEnv()`'s undo; the directory needs no cleanup.
  */
 export function stageEngineHome(prefix: string): StagedEngineHome {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = tempDir(prefix);
   const cache = join(dir, ".cache", "kesha");
   const binDir = join(cache, "engine", "bin");
   mkdirSync(binDir, { recursive: true });
@@ -152,7 +153,7 @@ export function writeFakeEngine(binDir: string, features: string[] | null = ["tt
 }
 
 export function writeTranscribingEngine(prefix: string, features: string[], transcribeBody: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = tempDir(prefix);
   const path = join(dir, "kesha-engine");
   writeFileSync(
     path,
@@ -182,7 +183,7 @@ exit 2
  * path, because the interpreter is the binary and the script is its argument.
  */
 export function envEchoEngine(vars: string[]): { binPath: string; args: string[] } {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-env-echo-"));
+  const dir = tempDir("kesha-env-echo-");
   const script = join(dir, "echo-env.js");
   writeFileSync(
     script,
