@@ -38,6 +38,27 @@ describe("parseEventLine", () => {
     });
   });
 
+  test("a progress pct is a number, present or absent, never anything else", () => {
+    expect(parseEventLine('{"kind":"progress","phase":"download","message":"GET model.onnx","pct":12}')).toStrictEqual({
+      ok: true,
+      event: { kind: "progress", phase: "download", message: "GET model.onnx", pct: 12 },
+    });
+    expect(parseEventLine('{"kind":"progress","message":"GET model.onnx","pct":0}')).toStrictEqual({
+      ok: true,
+      event: { kind: "progress", message: "GET model.onnx", pct: 0 },
+    });
+    expect(parseEventLine('{"kind":"progress","phase":"download","message":"GET model.onnx"}')).toStrictEqual({
+      ok: true,
+      event: { kind: "progress", phase: "download", message: "GET model.onnx" },
+    });
+    for (const line of [
+      '{"kind":"progress","message":"GET model.onnx","pct":"12"}',
+      '{"kind":"progress","message":"GET model.onnx","pct":null}',
+    ]) {
+      expect(parseEventLine(line)).toEqual({ ok: false, raw: line });
+    }
+  });
+
   test("rejects prose, arrays, unknown kinds and a missing code", () => {
     for (const line of [
       "error [E_INTERNAL]: prose from an old engine",
@@ -63,6 +84,13 @@ describe("rendering", () => {
       "error [E_BAD_AUDIO]: cannot decode",
     );
     expect(renderEvent({ kind: "debug", t_ms: 7, message: "x" })).toBe("[debug/engine +7ms] x");
+  });
+
+  test("a pct lands in parentheses after the message", () => {
+    expect(renderEvent({ kind: "progress", phase: "download", message: "GET model.onnx", pct: 12 })).toBe(
+      "download: GET model.onnx (12%)",
+    );
+    expect(renderEvent({ kind: "progress", message: "GET model.onnx", pct: 100 })).toBe("GET model.onnx (100%)");
   });
 
   test("a hint lands on its own indented line", () => {
