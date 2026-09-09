@@ -9,8 +9,8 @@
 
 - [x] 2.1 `rust/src/protocol/events.rs`: `progress`, `warn`, `error`, `debug` emitters writing one JSON object per line to stderr
 - [x] 2.2 Replace every `eprintln!` in `rust/src` (84 calls, 21 files) with an emitter call; `report` in `errors.rs` emits an `error` event
-- [ ] 2.3 `say --stdin-loop` status lines become events
-- [ ] 2.4 Delete the `KESHA_DEBUG_FD` descriptor path in `rust/src/debug.rs`; debug lines become `debug` events
+- [x] 2.3 `say --stdin-loop` status lines become events — nothing to convert: `say_loop.rs` writes only the framed binary response on **stdout** (`<status:u8><id:u32><len:u32><payload>`), and has no `eprintln!` here or at the `v1.25.0-beta.1` tag. Its `status` is a wire byte the CLI reads, not a stderr line; moving it would break the response protocol. Whatever prose the loop once had went with 2.2's sweep
+- [ ] 2.4 Debug lines become `debug` events — **done**: `trace_fmt` emits `Event::Debug` and `dtrace!` goes through it. Deleting the `KESHA_DEBUG_FD` descriptor path is **4.2's**, for the same reason as 1.3: 2.5 keeps the sink whenever `KESHA_PROTOCOL` is unset. What remains for 4.2 is `dtrace_json!`, whose six call sites in `transcribe/` still write NDJSON to the fd instead of emitting a `debug` event, plus `rust/tests/debug_ndjson_fd.rs`. The CLI already forwards nothing — `protocol-literals.test.ts` pins that `KESHA_DEBUG_FD` is unreferenced in `src/`
 - [x] 2.5 v3 renderer + `KESHA_PROTOCOL` window: keep `--capabilities-json`, `--error-codes-json`, the `error [CODE]:` line, the `diarize:` prefix and the `KESHA_DEBUG_FD` sink whenever `KESHA_PROTOCOL` is unset; `KESHA_PROTOCOL=4` selects the event stream, so `tts-e2e`'s v3 CLI keeps working against the source-built Engine
 
 ## 3. Direct consumers
