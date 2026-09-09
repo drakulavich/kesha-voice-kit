@@ -1,12 +1,12 @@
 import { describe, test, expect } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { chmodSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
 import { describeJson } from "../helpers/fake-engine";
+import { tempDir } from "../helpers/temp-dir";
 
 const skipOnWin32 = process.platform === "win32" ? test.skip : test;
 
@@ -21,7 +21,7 @@ interface SynthesizingEngine {
  * null, the Linux/Windows reality) and records the argv of the `say` it is then handed.
  */
 function synthesizingEngine(lang: { code: string; confidence: number } | null): SynthesizingEngine {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-synth-"));
+  const dir = tempDir("kesha-mcp-synth-");
   const binPath = join(dir, "kesha-engine");
   const argvPath = join(dir, "say-argv");
   const detect = lang

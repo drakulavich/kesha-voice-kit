@@ -1,12 +1,12 @@
 import { describe, it, expect, spyOn } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { buildSayArgs, engineCrashMessage, say, SayError, type SayOptions } from "../../src/synth";
 import { validateArgv } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
 import { describeDocument, describeJson, saveEngineEnv } from "../helpers/fake-engine";
 import { errorMessage } from "../../src/error-utils";
+import { tempDir } from "../helpers/temp-dir";
 
 describe("SayOptions type contract", () => {
   const oggOpusOptions: SayOptions = {
@@ -121,7 +121,7 @@ describe("say on protocol 4", () => {
   const posixIt = process.platform === "win32" ? it.skip : it;
 
   function sayEngine(body: string): string {
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-say-v4-")), "kesha-engine");
+    const path = join(tempDir("kesha-say-v4-"), "kesha-engine");
     writeFileSync(
       path,
       `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ]; then\n${body}\nfi\nexit 2\n`,

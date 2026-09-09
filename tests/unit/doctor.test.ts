@@ -26,6 +26,7 @@ import { engineVersion, packageName, packageVersion } from "../../src/package-in
 import { enableStats } from "../../src/stats";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { KOKORO_ANE_EN_REQUIRED, KOKORO_G2P_REQUIRED } from "../../src/kokoro-ane";
+import { tempDir } from "../helpers/temp-dir";
 
 const fakeCapabilities = describeDocument({
   backend: "fake-coreml",
@@ -910,7 +911,7 @@ describe("createSupportBundle", () => {
   });
 
   test("includes bounded diagnostic log tail only when requested", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-support-bundle-logs-test-"));
+    const dir = tempDir("kesha-support-bundle-logs-test-");
     try {
       process.env.HOME = dir;
       process.env.KESHA_LOG_DIR = join(dir, "logs");

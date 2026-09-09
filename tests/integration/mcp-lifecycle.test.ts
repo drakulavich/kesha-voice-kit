@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import { describeJson } from "../helpers/fake-engine";
+import { tempDir } from "../helpers/temp-dir";
 
 const DEFAULT_CWD = import.meta.dir + "/../..";
 
@@ -37,7 +37,7 @@ process.exit(2);
 describe("MCP server lifecycle", () => {
   test("interrupting the server terminates a list_voices Engine spawn", async () => {
     if (process.platform === "win32") return;
-    const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-lifecycle-"));
+    const dir = tempDir("kesha-mcp-lifecycle-");
     const enginePidPath = join(dir, "engine.pid");
     const enginePath = createListVoicesHangEngine(dir, enginePidPath);
 

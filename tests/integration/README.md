@@ -70,3 +70,19 @@ them accumulated at `PPID=1` over two days, the oldest at 45 hours, and only `ki
 `stubbornShell()` from `tests/helpers/process.ts`, which keeps the immunity the escalation is tested
 against and adds a five-minute clock. `tests/unit/process-leak-guard.test.ts` scans `tests/` and
 `rust/src/` for the unbounded shape and fails naming the file and line.
+
+## No suite may leave a temp directory behind
+
+The same preload reaps temp directories, quietly — a stray directory harms nobody the way a stray
+process does, but 59,286 of them took the pre-push gate from 180s to 1154s (#1175). Create one with
+`tempDir(prefix)` from `tests/helpers/temp-dir.ts` instead of `mkdtempSync(join(tmpdir(), prefix))`;
+it returns the same path and registers it. The preload's `afterAll` is registered once for the
+test process, so the sweep happens after the last file that process loaded, not at the end of each
+suite; an interrupted run is covered by an `exit` handler instead. Call sites need nothing else,
+and a suite that still removes its own directory keeps working unchanged.
+
+`tests/unit/temp-dir-convention.test.ts` enforces that by scanning `tests/` for a direct call to
+`mkdtempSync` or its promise spelling, and for an import that hides either behind an alias. The
+suites that predate the helper are listed there by name with a reason, so staying on the old shape
+is a written-down choice rather than the default a new helper inherits — which is how this leak
+grew in the first place.
