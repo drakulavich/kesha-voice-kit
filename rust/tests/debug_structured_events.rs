@@ -4,25 +4,17 @@
 
 use std::process::Command;
 
-const RELAY: &str = "KESHA_TRACE_JSON_RELAY";
-const TEST: &str = "structured_debug_events_carry_the_event_name_and_fields";
+const RELAY: &str = "the_relay_emits_two_debug_events";
 
 #[test]
 fn structured_debug_events_carry_the_event_name_and_fields() {
-    if std::env::var(RELAY).is_ok() {
-        kesha_engine::debug::trace_json("test.first", serde_json::json!({"x": 1, "label": "ok"}));
-        kesha_engine::debug::trace_json("test.second", serde_json::json!({"y": 2}));
-        return;
-    }
-
     let out = Command::new(std::env::current_exe().expect("test binary path"))
-        .args(["--exact", TEST, "--nocapture"])
-        .env(RELAY, "1")
+        .args(["--exact", RELAY, "--ignored", "--nocapture"])
         .env("KESHA_DEBUG", "1")
         // A stale export must not divert the events any more (protocol-v4: the descriptor is gone).
         .env("KESHA_DEBUG_FD", "3")
         .output()
-        .expect("re-run this test in a child process");
+        .expect("re-run the relay in a child process");
     assert!(out.status.success(), "child failed: {out:?}");
 
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -41,4 +33,12 @@ fn structured_debug_events_carry_the_event_name_and_fields() {
 
     assert_eq!(events[1]["event"], "test.second");
     assert_eq!(events[1]["fields"]["y"], 2);
+}
+
+/// Never runs on its own; the test above executes it by name with `--ignored`.
+#[test]
+#[ignore]
+fn the_relay_emits_two_debug_events() {
+    kesha_engine::debug::trace_json("test.first", serde_json::json!({"x": 1, "label": "ok"}));
+    kesha_engine::debug::trace_json("test.second", serde_json::json!({"y": 2}));
 }

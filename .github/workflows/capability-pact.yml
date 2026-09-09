@@ -101,7 +101,7 @@ jobs:
             echo "  against a binary nobody has. Re-record per the header of"
             echo "  \`.github/workflows/capability-pact.yml\`."
             echo "- **Verification could not run.** The log ends at the \`gh release download\`"
-            echo "  or \`describe\` step. The pact is not implicated; the run proved"
+            echo "  or \`--capabilities-json\` step. The pact is not implicated; the run proved"
             echo "  nothing either way. Common causes: a network or API failure, or the window"
             echo "  between a release merge and its tag, where \`keshaEngine.version\` names a"
             echo "  release that does not exist yet."

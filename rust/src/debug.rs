@@ -1,6 +1,6 @@
 //! Debug trace (#148): a `debug` event per boundary when `KESHA_DEBUG` is truthy — never per-sample, never in the hot inference loop.
 //!
-//! Pairs with the TS-side `log.debug()` on the CLI wrapper. Together:
+//! The engine half rides as `debug` events; `src/engine/events.ts:95` renders them into the lines below, beside the CLI's own `log.debug()`:
 //!
 //! ```text
 //! $ KESHA_DEBUG=1 kesha audio.ogg
