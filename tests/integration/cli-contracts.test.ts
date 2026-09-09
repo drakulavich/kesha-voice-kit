@@ -1264,11 +1264,13 @@ process.exit(99);
       KESHA_FAKE_INSTALL_ERROR: `fake model install failed in ${dir}`,
     };
 
+    // The stub writes prose, which protocol 4 has no room for: the CLI parses the model-install
+    // spawn's stderr as events now, so an off-protocol line is the violation E_INTERNAL names (#1181).
     const run = await runCli(["install", "--vad"], { env });
     expectContract(run, {
       exitCode: 1,
       stdoutContains: ["Engine binary already installed"],
-      stderrContains: ["Failed to install models:"],
+      stderrContains: ["error [E_INTERNAL]: ", "not a protocol event"],
     });
 
     const { raw: diagnosticLog, events } = readDiagnosticLog(env.KESHA_LOG_DIR);

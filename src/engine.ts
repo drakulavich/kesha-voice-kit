@@ -3,6 +3,7 @@ import { errorMessage } from "./error-utils";
 import { join } from "path";
 import { installHint } from "./install-hint";
 import { log } from "./log";
+import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, registerProcessTree } from "./process-tree";
 import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
@@ -423,23 +424,53 @@ export async function validateRecordRequest(target: RecordTarget, maxSeconds: nu
   validateArgv(buildRecordArgs(target, maxSeconds), await getDescribe());
 }
 
+/**
+ * The elapsed-second ticker, the one record event that repeats: it repaints a row rather than
+ * stacking a line per second. Every other record progress event is announced once and must stay.
+ * Deliberately matched on its rendered form — record's events carry no phase to key on, so a
+ * reworded ticker degrades to one line per second rather than breaking (`recordTicksInPlace`).
+ */
+export const RECORD_TICK = /^Listening\.\.\. \d+s$/;
+
 export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
   const binPath = getEngineBinPath();
   const args = buildRecordArgs(target, maxSeconds);
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  const proc = spawnEngineProcess(binPath, args, ["inherit", "inherit", "inherit"]);
+  const proc = spawnEngineProcess(binPath, args, ["inherit", "inherit", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
+  const status = createLiveStatus();
+  let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
   try {
-    exitCode = await proc.exited;
+    [events, exitCode] = await Promise.all([
+      readEvents(proc.stderr as ReadableStream<Uint8Array>, {
+        onProgress: (line) => {
+          if (RECORD_TICK.test(line)) {
+            status.update(line);
+            return;
+          }
+          status.clear();
+          process.stderr.write(`${line}\n`);
+        },
+      }),
+      proc.exited,
+    ]);
   } finally {
+    status.clear();
     tree.dispose();
   }
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
-  if (exitCode !== 0 && !(target.live && SIGNALLED_LIVE_EXIT_CODES.has(exitCode))) {
-    throw new Error(`kesha-engine record exited with code ${exitCode}`);
+  const stderr = events.stderr.trim();
+  // An interrupt is how a live recording normally ends, so its status is success and its stderr is not a failure.
+  const signalled = target.live && SIGNALLED_LIVE_EXIT_CODES.has(exitCode);
+  if (!signalled) {
+    // Coded or protocol-violating failures carry the engine's own status; a silent non-zero exit
+    // named nothing, so it stays the operational 1 it has been since #1167 rather than inventing a code.
+    if (events.error || events.invalid.length > 0) throw engineFailure("record", events, exitCode);
+    if (exitCode !== 0) throw new Error(`kesha-engine record exited with code ${exitCode}`);
   }
+  if (stderr.length > 0) process.stderr.write(`${stderr}\n`);
 }
 
 export function parseLangResult(stdout: string): LangDetectResult | null {

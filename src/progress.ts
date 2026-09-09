@@ -111,6 +111,29 @@ export function createPercentProgress(
   };
 }
 
+/**
+ * A status line the caller drives from engine events, replacing the `\r` row the engine painted
+ * itself before protocol 4 (#1181): it repaints in place on a terminal and stays silent otherwise,
+ * so a redirected install keeps the parseable discrete lines and gains no per-percent noise.
+ */
+export function createLiveStatus(): { update(line: string): void; clear(): void } {
+  const isTTY = process.stderr.isTTY;
+  let painted = 0;
+  return {
+    update(line: string) {
+      if (!isTTY) return;
+      const pad = painted > line.length ? " ".repeat(painted - line.length) : "";
+      process.stderr.write(`\r${line}${pad}`);
+      painted = line.length;
+    },
+    clear() {
+      if (painted === 0) return;
+      process.stderr.write(`\r${" ".repeat(painted)}\r`);
+      painted = 0;
+    },
+  };
+}
+
 type SinkWrite = ReturnType<Bun.FileSink["write"]>;
 
 /**

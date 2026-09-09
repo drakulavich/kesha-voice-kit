@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
+  createLiveStatus,
   createPercentProgress,
   createProgressBar,
   estimatePercent,
@@ -349,5 +350,62 @@ describe("the download line reports the size it knows", () => {
 
     expect(out).toContain("Downloading model.onnx...");
     expect(out).not.toContain("0.0MB");
+  });
+});
+
+describe("createLiveStatus", () => {
+  function capture(isTTY: boolean, run: (status: ReturnType<typeof createLiveStatus>) => void): string {
+    const originalIsTTY = process.stderr.isTTY;
+    const originalWrite = process.stderr.write;
+    let out = "";
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: isTTY, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        out += chunk;
+        return true;
+      }) as typeof process.stderr.write;
+      run(createLiveStatus());
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+    return out;
+  }
+
+  test("repaints one row in place on a terminal", () => {
+    const out = capture(true, (s) => {
+      s.update("Listening... 1s");
+      s.update("Listening... 2s");
+    });
+    expect(out).toBe("\rListening... 1s\rListening... 2s");
+    expect(out).not.toContain("\n");
+  });
+
+  /** A shorter line must not leave the tail of the longer one behind (`99%` over `100%`). */
+  test("pads over the remainder of a longer previous line", () => {
+    const out = capture(true, (s) => {
+      s.update("downloading 100.0MB");
+      s.update("done");
+    });
+    expect(out.endsWith("\rdone               ")).toBe(true);
+  });
+
+  test("clear erases the painted row and is idempotent", () => {
+    const out = capture(true, (s) => {
+      s.update("abc");
+      s.clear();
+      s.clear();
+    });
+    expect(out).toBe("\rabc\r   \r");
+  });
+
+  /** A redirected install keeps its discrete lines; a row per percent would be log noise it cannot repaint. */
+  test("writes nothing at all when stderr is not a terminal", () => {
+    const out = capture(false, (s) => {
+      s.update("downloading 1%");
+      s.update("downloading 2%");
+      s.clear();
+    });
+    expect(out).toBe("");
   });
 });

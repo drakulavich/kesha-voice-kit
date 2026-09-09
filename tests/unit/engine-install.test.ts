@@ -17,6 +17,7 @@ import { tmpdir } from "os";
 import { defaultEngineBinPath } from "../../src/paths";
 import { engineVersion } from "../../src/package-info";
 import { isDarwinArm64 } from "../../src/engine-targets";
+import { KeshaError } from "../../src/engine/events";
 import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 
@@ -307,6 +308,73 @@ exit 0
     }
     return stripAnsi(chunks.join(""));
   }
+
+  /** Answers `describe`, `--version` and `install`, with `installBody` driving the model-install spawn. */
+  function writeEngineWithInstallBody(dir: string, installBody: string, installExit = 0): string {
+    const binPath = join(dir, "bin", "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+case "\$1" in
+  describe) printf '%s\\n' '${describeJson({ features: ["tts"] })}'; exit 0 ;;
+  --version) printf 'kesha-engine ${engineVersion}\\n'; exit 0 ;;
+esac
+if [ "\$1" = "install" ]; then
+${installBody}
+  exit ${installExit}
+fi
+exit 0
+`,
+    );
+    chmodSync(binPath, 0o755);
+    writeFileSync(`${binPath}.version`, `${engineVersion}\n`);
+    process.env.KESHA_ENGINE_BIN = binPath;
+    return binPath;
+  }
+
+  /**
+   * The engine painted the byte bar itself until protocol 4 (#1181) and never painted it when
+   * stderr was redirected. A line per whole percent would add hundreds of rows to every CI
+   * install log, so the percentage belongs on the repainting row and nowhere else.
+   */
+  test("a redirected install keeps its discrete steps and gains no line per percent", async () => {
+    const dir = stageInstallableEngine("kesha-install-progress-");
+    writeEngineWithInstallBody(
+      dir,
+      `  printf '%s\\n' '{"kind":"progress","message":"GET models/encoder.onnx"}' >&2
+  printf '%s\\n' '{"kind":"progress","phase":"download","message":"models/encoder.onnx 1.0/2.0MB","pct":50}' >&2
+  printf '%s\\n' '{"kind":"progress","phase":"download","message":"models/encoder.onnx 2.0/2.0MB","pct":100}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"OK  models/encoder.onnx"}' >&2`,
+    );
+
+    const stderr = await captureStderr(async () => {
+      await installEngine({});
+    });
+
+    expect(stderr).toContain("GET models/encoder.onnx");
+    expect(stderr).toContain("OK  models/encoder.onnx");
+    expect(stderr).not.toContain("50%");
+    expect(stderr).not.toContain("100%");
+  });
+
+  test("a failing model install raises the engine's code, not a bare exit status", async () => {
+    const dir = stageInstallableEngine("kesha-install-coded-");
+    writeEngineWithInstallBody(
+      dir,
+      `  printf '%s\\n' '{"kind":"error","code":"E_DOWNLOAD_FAILED","message":"models/encoder.onnx: connection reset","hint":"retry"}' >&2`,
+      1,
+    );
+
+    let caught: unknown;
+    try {
+      await installEngine({});
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(KeshaError);
+    expect((caught as KeshaError).code).toBe("E_DOWNLOAD_FAILED");
+    expect((caught as KeshaError).hint).toBe("retry");
+  });
 
   darwinArmTest("a say error event warns with the rendered coded line, and the install still resolves", async () => {
     const dir = stageInstallableEngine("kesha-warmup-error-");

@@ -166,11 +166,10 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    flags, see the "DO NOT BLINDLY FORWARD CLI FLAGS" rule in
    [CLAUDE.md](../CLAUDE.md). The parsed spawns read stderr as protocol-4
    NDJSON events (`readEvents` in `src/engine/events.ts`), as do the Kokoro
-   warmup and CLI `say --list-voices`. Exactly two spawns still inherit stdio
-   rather than parsing it: `recordEngine` (`src/engine.ts`) and the model-install
-   spawn (`src/engine-install.ts`). That is now a release blocker, not a nicety —
-   the engine dropped its prose renderer at `v1.25.0-beta.2`, so both must read
-   events before `keshaEngine.version` moves off `beta.1`.
+   warmup and CLI `say --list-voices`. `recordEngine` and the model-install spawn
+   pipe stderr too, keeping stdin and stdout inherited because both talk to the
+   terminal directly; their repeating progress repaints one row via
+   `createLiveStatus` and stays silent when stderr is redirected.
    `getEngineCapabilities` is a thin view over the describe document kept
    for the status/doctor/install screens that predate `describe`.
 4. **stdout is the result** (transcript / JSON / WAV bytes); **stderr is

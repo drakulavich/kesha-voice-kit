@@ -140,7 +140,8 @@ export function setEngineDebugSink(sink: ((event: DebugEvent) => void) | null): 
 }
 
 export interface EventSinks {
-  onProgress?: (line: string) => void;
+  /** The second argument lets a caller route a percentage to a repainting row and a discrete step to the log. */
+  onProgress?: (line: string, event: ProgressEvent) => void;
 }
 
 export interface StderrOutcome {
@@ -178,7 +179,7 @@ export async function readEvents(
     }
     if (event.kind === "error") outcome.error = event;
     if (event.kind === "progress" && sinks.onProgress) {
-      sinks.onProgress(renderEvent(event));
+      sinks.onProgress(renderEvent(event), event);
       return;
     }
     outcome.stderr += `${renderEvent(event)}\n`;
