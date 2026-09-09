@@ -20,6 +20,7 @@ import {
   validateRecordRequest,
 } from "../../src/engine";
 import { KeshaError } from "../../src/engine/events";
+import { log } from "../../src/log";
 import { errorMessage } from "../../src/error-utils";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
 import { tempDir } from "../helpers/temp-dir";
@@ -533,6 +534,44 @@ exit 2
     return out;
   }
 
+  /** Captures the terminal's view of a live recording: the CLI's stderr and the engine's stdout in one stream. */
+  async function captureTerminal(run: () => Promise<unknown>): Promise<string> {
+    const originalIsTTY = process.stderr.isTTY;
+    const originalErr = process.stderr.write;
+    const originalOut = process.stdout.write;
+    let out = "";
+    const append = ((chunk: string | Uint8Array) => {
+      out += typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      process.stderr.write = append;
+      process.stdout.write = append as typeof process.stdout.write;
+      await run();
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalErr;
+      process.stdout.write = originalOut;
+    }
+    return out;
+  }
+
+  /**
+   * Live recording prints its transcript on the engine's stdout while the ticker holds a \r row on
+   * stderr, so an inherited stdout landed the transcript inside that row (review of #1185).
+   */
+  fakeEngineTest("a live transcript starts at column 0, not inside the open ticker row", async () => {
+    const engine = writeRecordingEngine(
+      "kesha-engine-record-live-out-",
+      `  printf '%s\\n' '{"kind":"progress","message":"Listening... 1s"}' >&2
+  sleep 0.3
+  printf '%s\\n' 'hello this is my transcript'`,
+    );
+    const out = await withEngineEnv(engine, () => captureTerminal(() => recordEngine({ live: true }, 10)));
+    expect(out).toContain(`\rListening... 1s\r${" ".repeat(15)}\rhello this is my transcript`);
+  });
+
   /**
    * The engine painted this row itself until protocol 4 (#1181). One line per elapsed second
    * would fill a terminal over a minute of dictation, so the ticker must collapse to one row
@@ -555,6 +594,25 @@ exit 2
     expect(out).toContain("\rListening... 2s");
     expect(out).not.toContain("Listening... 1s\n");
     expect(out).not.toContain("Listening... 2s\n");
+  });
+
+  /** The engine owned record's stderr until protocol 4, so `--quiet` never reached it; the CLI announces it now. */
+  fakeEngineTest("--quiet silences record's announcements but not its failures", async () => {
+    const engine = writeRecordingEngine(
+      "kesha-engine-record-quiet-",
+      `  printf '%s\\n' '{"kind":"progress","message":"Listening (16000 Hz)... transcript prints when recording stops."}' >&2
+  printf '%s\\n' '{"kind":"warn","code":"W_RECOVERY_AUDIO","message":"recovery audio stopped early"}' >&2`,
+    );
+    log.quietEnabled = true;
+    try {
+      const out = await withEngineEnv(engine, () =>
+        captureStderr(true, () => recordEngine({ out: "/tmp/out.wav" }, 10)),
+      );
+      expect(out).not.toContain("Listening (16000 Hz)");
+      expect(out).toContain("recovery audio stopped early");
+    } finally {
+      log.quietEnabled = false;
+    }
   });
 
   fakeEngineTest("recordEngine spawns the engine on protocol 4", async () => {

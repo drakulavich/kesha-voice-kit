@@ -8,6 +8,7 @@ import {
   formatProgressBar,
   formatBytes,
 } from "../../src/progress";
+import { log } from "../../src/log";
 
 describe("formatBytes", () => {
   test("formats bytes to MB", () => {
@@ -357,6 +358,7 @@ describe("createLiveStatus", () => {
   function capture(isTTY: boolean, run: (status: ReturnType<typeof createLiveStatus>) => void): string {
     const originalIsTTY = process.stderr.isTTY;
     const originalWrite = process.stderr.write;
+    const before = process.listeners("exit");
     let out = "";
     try {
       Object.defineProperty(process.stderr, "isTTY", { value: isTTY, configurable: true });
@@ -368,6 +370,9 @@ describe("createLiveStatus", () => {
     } finally {
       Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
       process.stderr.write = originalWrite;
+      for (const listener of process.listeners("exit")) {
+        if (!before.includes(listener)) process.removeListener("exit", listener);
+      }
     }
     return out;
   }
@@ -397,6 +402,38 @@ describe("createLiveStatus", () => {
       s.clear();
     });
     expect(out).toBe("\rabc\r   \r");
+  });
+
+  /** `--quiet` (#526) silences progress chatter, and a row repainted over it would be the loudest thing left. */
+  test("paints nothing under --quiet, terminal or not", () => {
+    log.quietEnabled = true;
+    try {
+      expect(capture(true, (s) => s.update("Listening... 1s"))).toBe("");
+    } finally {
+      log.quietEnabled = false;
+    }
+  });
+
+  /** Ctrl-C exits through `process.exit`, so nothing unwinds to `clear()` and the row would reach the shell prompt. */
+  test("erases the painted row when the process exits without clearing", () => {
+    const out = capture(true, (s) => {
+      s.update("Listening... 4s");
+      process.emit("exit", 0);
+    });
+    expect(out).toBe("\rListening... 4s\r               \r");
+  });
+
+  test("repeated paint-and-clear cycles do not accumulate exit handlers", () => {
+    const before = process.listenerCount("exit");
+    let during = 0;
+    capture(true, (s) => {
+      for (let i = 0; i < 5; i++) {
+        s.update(`Listening... ${i}s`);
+        s.clear();
+      }
+      during = process.listenerCount("exit");
+    });
+    expect(during).toBe(before);
   });
 
   /** A redirected install keeps its discrete lines; a row per percent would be log noise it cannot repaint. */

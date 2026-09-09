@@ -424,26 +424,40 @@ export async function validateRecordRequest(target: RecordTarget, maxSeconds: nu
   validateArgv(buildRecordArgs(target, maxSeconds), await getDescribe());
 }
 
+/** Relays the engine's stdout byte for byte, ending any open status row first so a transcript cannot land inside it. */
+async function forwardStdout(stream: ReadableStream<Uint8Array>, status: { clear(): void }): Promise<void> {
+  const reader = stream.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    status.clear();
+    process.stdout.write(value);
+  }
+}
+
 /**
  * The elapsed-second ticker, the one record event that repeats: it repaints a row rather than
  * stacking a line per second. Every other record progress event is announced once and must stay.
  * Deliberately matched on its rendered form — record's events carry no phase to key on, so a
  * reworded ticker degrades to one line per second rather than breaking (`recordTicksInPlace`).
  */
-export const RECORD_TICK = /^Listening\.\.\. \d+s$/;
+const RECORD_TICK = /^Listening\.\.\. \d+s$/;
 
 export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
   const binPath = getEngineBinPath();
   const args = buildRecordArgs(target, maxSeconds);
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  const proc = spawnEngineProcess(binPath, args, ["inherit", "inherit", "pipe"], protocolEnv());
+  // stdout is piped rather than inherited so the row can be closed before the engine's transcript
+  // lands: the engine owned both streams and closed its own row until #1181 deleted the painter.
+  const proc = spawnEngineProcess(binPath, args, ["inherit", "pipe", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
   const status = createLiveStatus();
   let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
   try {
-    [events, exitCode] = await Promise.all([
+    [, events, exitCode] = await Promise.all([
+      forwardStdout(proc.stdout as ReadableStream<Uint8Array>, status),
       readEvents(proc.stderr as ReadableStream<Uint8Array>, {
         onProgress: (line) => {
           if (RECORD_TICK.test(line)) {
@@ -451,11 +465,11 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
             return;
           }
           status.clear();
-          process.stderr.write(`${line}\n`);
+          log.progress(line);
         },
         onWarn: (line) => {
           status.clear();
-          process.stderr.write(`${line}\n`);
+          log.warn(line);
         },
       }),
       proc.exited,

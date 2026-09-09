@@ -295,9 +295,11 @@ exit 0
     return binPath;
   }
 
-  /** Captures everything written to stderr for the duration of `run`, ANSI stripped. */
-  async function captureStderr(run: () => Promise<void>): Promise<string> {
+  /** Captures stderr for the duration of `run`, ANSI stripped, with `isTTY` forced so redirection is the test's choice. */
+  async function captureStderr(isTTY: boolean, run: () => Promise<void>): Promise<string> {
+    const savedIsTTY = process.stderr.isTTY;
     const savedWrite = process.stderr.write;
+    Object.defineProperty(process.stderr, "isTTY", { value: isTTY, configurable: true });
     const chunks: string[] = [];
     process.stderr.write = ((chunk: string | Uint8Array) => {
       chunks.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
@@ -307,6 +309,7 @@ exit 0
       await run();
     } finally {
       process.stderr.write = savedWrite;
+      Object.defineProperty(process.stderr, "isTTY", { value: savedIsTTY, configurable: true });
     }
     return stripAnsi(chunks.join(""));
   }
@@ -349,14 +352,33 @@ exit 0
   printf '%s\\n' '{"kind":"progress","message":"OK  models/encoder.onnx"}' >&2`,
     );
 
-    const stderr = await captureStderr(async () => {
+    const stderr = await captureStderr(false, async () => {
       await installEngine({});
     });
 
     expect(stderr).toContain("GET models/encoder.onnx");
     expect(stderr).toContain("OK  models/encoder.onnx");
-    expect(stderr).not.toContain("50%");
-    expect(stderr).not.toContain("100%");
+    expect(stderr).not.toContain("1.0/2.0MB");
+    expect(stderr).not.toContain("2.0/2.0MB");
+  });
+
+  posixTest("on a terminal the byte counter repaints one row and the discrete steps keep their lines", async () => {
+    const dir = stageInstallableEngine("kesha-install-progress-tty-");
+    writeEngineWithInstallBody(
+      dir,
+      `  printf '%s\\n' '{"kind":"progress","message":"GET models/encoder.onnx"}' >&2
+  printf '%s\\n' '{"kind":"progress","phase":"download","message":"models/encoder.onnx 1.0/2.0MB","pct":50}' >&2
+  printf '%s\\n' '{"kind":"progress","phase":"download","message":"models/encoder.onnx 2.0/2.0MB","pct":100}' >&2`,
+    );
+
+    const stderr = await captureStderr(true, async () => {
+      await installEngine({});
+    });
+
+    expect(stderr).toContain("\rdownload: models/encoder.onnx 1.0/2.0MB");
+    expect(stderr).toContain("\rdownload: models/encoder.onnx 2.0/2.0MB");
+    expect(stderr).not.toContain("models/encoder.onnx 1.0/2.0MB\n");
+    expect(stderr).toContain("GET models/encoder.onnx\n");
   });
 
   posixTest("a failing model install raises the engine's code, not a bare exit status", async () => {
@@ -386,7 +408,7 @@ exit 0
 exit 1`,
     );
 
-    const stderr = await captureStderr(async () => {
+    const stderr = await captureStderr(false, async () => {
       await installEngine({ ttsLangs: ["en"] });
     });
 
@@ -398,7 +420,7 @@ exit 1`,
     const dir = stageInstallableEngine("kesha-warmup-killed-");
     writeEngineWithSayBody(dir, "kill -TERM $$\nsleep 5");
 
-    const stderr = await captureStderr(async () => {
+    const stderr = await captureStderr(false, async () => {
       await installEngine({ ttsLangs: ["en"] });
     });
 
