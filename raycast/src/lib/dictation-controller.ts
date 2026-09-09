@@ -12,9 +12,14 @@ import {
   notFoundMessage,
   probeEngineAvailability,
   resolveKeshaBin,
+  supportsLiveDictation,
 } from "./kesha-bin";
 import type { EnginePreflightResult, KeshaSpawn } from "./kesha-bin";
-import { startKeshaRecorder, startKeshaTranscriber } from "./process-tasks";
+import {
+  startKeshaLiveRecorder,
+  startKeshaRecorder,
+  startKeshaTranscriber,
+} from "./process-tasks";
 import { startRecordingMonitor } from "./recording-monitor";
 import { emptySignal } from "./recording-view";
 import type {
@@ -22,6 +27,7 @@ import type {
   DictationPrefs,
   DictationSession,
   DictationState,
+  LiveRecorderTask,
   RecordingPatch,
   RunningTask,
   TranscribeResult,
@@ -50,7 +56,8 @@ export function startDictationSession(
   let confirmedSilent = false;
   let keepAudio = false;
   let stopMonitoring: (() => void) | null = null;
-  let recorder: RunningTask<void> | null = null;
+  let recorder: RunningTask<unknown> | null = null;
+  let liveRecorder: LiveRecorderTask | null = null;
   let transcriber: RunningTask<string> | null = null;
   let stopTranscribeTimer: (() => void) | null = null;
 
@@ -80,7 +87,9 @@ export function startDictationSession(
     cancel: () => {
       cancelled = true;
       if (captureComplete) keepAudio = true;
-      recorder?.stop();
+      // A dismissed live session discards its transcript, so nothing waits on the stop ladder (#947).
+      if (liveRecorder) liveRecorder.abort();
+      else recorder?.stop();
       transcriber?.stop();
       stopMonitoring?.();
       stopTranscribeTimer?.();
@@ -118,10 +127,22 @@ export function startDictationSession(
       }
       if (cancelled) return;
 
-      tempDir = await deps.createTempDir();
-      audioPath = join(tempDir, "dictation.wav");
+      if (supportsLiveDictation(preflight)) {
+        const live = await liveRecordPhase(kesha, maxSeconds);
+        if (!live.ok) return;
+        await deliverTranscript(normalizeLiveTranscript(live.value));
+        return;
+      }
 
-      if (!(await recordPhase(kesha, audioPath, maxSeconds))) return;
+      tempDir = await deps.createTempDir();
+      const file = join(tempDir, "dictation.wav");
+      audioPath = file;
+
+      const captured = await recordPhase(
+        () => deps.startRecorder(kesha, file, maxSeconds),
+        maxSeconds,
+      );
+      if (!captured.ok) return;
 
       // The WAV is on disk now; a dismiss or failure past this point — even
       // during the silence read below — must not discard it (#944).
@@ -160,11 +181,27 @@ export function startDictationSession(
     }
   }
 
-  async function recordPhase(
+  async function liveRecordPhase(
     kesha: KeshaSpawn,
-    audioPath: string,
     maxSeconds: number,
-  ): Promise<boolean> {
+  ): Promise<{ ok: true; value: string } | { ok: false }> {
+    const task = deps.startLiveRecorder(kesha, maxSeconds);
+    liveRecorder = task;
+    recorder = task;
+    // A cancel or early stop abandons the task before anything awaits it (#947).
+    void task.done.catch(() => {});
+    // The engine compiles its streaming models before opening the device, ~20 s on a first run (#947).
+    const opened = await task.micOpen;
+    if (cancelled) return { ok: false };
+    // The device never opened: report the session's own outcome, not a recording view (#947).
+    if (opened === "ended") return { ok: true, value: await task.done };
+    return recordPhase(() => task, maxSeconds);
+  }
+
+  async function recordPhase<T>(
+    startTask: () => RunningTask<T>,
+    maxSeconds: number,
+  ): Promise<{ ok: true; value: T } | { ok: false }> {
     setState({
       status: "recording",
       maxSeconds,
@@ -215,19 +252,21 @@ export function startDictationSession(
       title: "Recording",
       message: "Stops automatically when you pause",
     });
-    if (cancelled) return false;
+    if (cancelled) return { ok: false };
     if (stopRequested) {
       setState({
         status: "error",
         message: "Recording stopped before any audio was captured.",
       });
-      return false;
+      return { ok: false };
     }
 
-    recorder = deps.startRecorder(kesha, audioPath, maxSeconds);
+    const task = startTask();
+    recorder = task;
     const recorderStartedAt = now();
+    let value: T;
     try {
-      await recorder.done;
+      value = await task.done;
     } finally {
       // Wall-clock capture length ≈ audio duration; it feeds the scaled
       // transcription timeout so a long recording keeps proportional room (#944).
@@ -236,7 +275,7 @@ export function startDictationSession(
       stopMonitoring?.();
       stopMonitoring = null;
     }
-    return !cancelled;
+    return cancelled ? { ok: false } : { ok: true, value };
   }
 
   async function transcribePhase(
@@ -266,7 +305,10 @@ export function startDictationSession(
   }
 
   async function deliverTranscript(result: TranscribeResult) {
+    if (cancelled) return;
     await deps.copyToClipboard(result.text);
+    // A dismissal landing mid-copy must not resurrect the view or claim success (#947).
+    if (cancelled) return;
     await deps.showToast({
       style: "success",
       title: "Copied transcript",
@@ -276,6 +318,7 @@ export function startDictationSession(
 
   function releaseResources() {
     recorder = null;
+    liveRecorder = null;
     transcriber = null;
     stopMonitoring?.();
     stopMonitoring = null;
@@ -395,6 +438,8 @@ export function createDefaultDictationDeps(
     startRecordingMonitor,
     startRecorder: (kesha, audioPath, maxSeconds) =>
       startKeshaRecorder(kesha, audioPath, maxSeconds),
+    startLiveRecorder: (kesha, maxSeconds) =>
+      startKeshaLiveRecorder(kesha, maxSeconds),
     startTranscriber: (kesha, audioPath, timeoutMs) =>
       startKeshaTranscriber(kesha, audioPath, timeoutMs),
     isSilentAudio: isSilentWavFile,
@@ -457,6 +502,17 @@ export function normalizeTranscribeResult(
     throw new Error("No speech was detected in the recording.");
   }
   return { file: audioPath, text };
+}
+
+/** Live has no WAV for the silence check, so the empty transcript carries both causes (#947). */
+export function normalizeLiveTranscript(stdout: string): TranscribeResult {
+  const text = stdout.trim();
+  if (!text) {
+    throw new Error(
+      "No speech was detected. Check macOS Microphone permission for Raycast and the selected input device.",
+    );
+  }
+  return { file: "", text };
 }
 
 export function startTranscribingTimer(

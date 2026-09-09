@@ -45,6 +45,15 @@ export interface RunningTask<T> {
   stop: () => void;
 }
 
+/** `listening` once the engine reports the microphone open; `ended` when the session finished first. */
+export type LiveMicOutcome = "listening" | "ended";
+
+export interface LiveRecorderTask extends RunningTask<string> {
+  micOpen: Promise<LiveMicOutcome>;
+  /** Releases the device now, for a session whose transcript will be discarded. */
+  abort: () => void;
+}
+
 export interface DictationPrefs {
   keshaBinPath?: string;
   maxRecordingSeconds?: string;
@@ -71,6 +80,10 @@ export interface DictationControllerDeps {
     audioPath: string,
     maxSeconds: number,
   ) => RunningTask<void>;
+  startLiveRecorder: (
+    kesha: KeshaSpawn,
+    maxSeconds: number,
+  ) => LiveRecorderTask;
   startTranscriber: (
     kesha: KeshaSpawn,
     audioPath: string,
