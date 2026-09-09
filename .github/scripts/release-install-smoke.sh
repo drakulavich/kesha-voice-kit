@@ -80,7 +80,8 @@ run_npm() {
   export npm_config_cache="$scratch/npm-cache"
   export NPM_CONFIG_PREFIX="$prefix"
 
-  npm view "$package@$VERSION" --json version,dist.integrity,dist.attestations > "$metadata"
+  # Never a field list: `--json a,b,c` returns zero bytes at exit 0, and the space-separated form flattens `dist.integrity` into a literal key.
+  npm view "$package@$VERSION" --json > "$metadata"
   jq -e --arg version "$VERSION" '
     .version == $version
     and (.dist.integrity | type == "string" and startswith("sha512-"))
