@@ -46,14 +46,16 @@ const CALL_NAME = "mkdtempSync";
 const ASYNC_CALL_NAME = CALL_NAME.replace("Sync", "");
 const DIRECT_CALL = new RegExp(`\\b${ASYNC_CALL_NAME}(?:Sync)?\\s*\\(`);
 // An alias renames the call, so the import is the only place the old shape is still spelled out.
-const ALIASED_IMPORT = new RegExp(`\\b(?:import|require)\\b.*\\b${ASYNC_CALL_NAME}(?:Sync)?\\s+as\\s+`);
+const ALIASED_IMPORT = new RegExp(`\\bimport\\s*\\{[^}]*\\b${ASYNC_CALL_NAME}(?:Sync)?\\s+as\\s+`, "g");
 
 function unreapableLines(source: string): number[] {
-  const lines: number[] = [];
+  const lines = new Set<number>();
   source.split("\n").forEach((line, index) => {
-    if (DIRECT_CALL.test(line) || ALIASED_IMPORT.test(line)) lines.push(index + 1);
+    if (DIRECT_CALL.test(line)) lines.add(index + 1);
   });
-  return lines;
+  // An import spans as many lines as it likes, so it is matched against the source and reported where it opens.
+  for (const match of source.matchAll(ALIASED_IMPORT)) lines.add(source.slice(0, match.index).split("\n").length);
+  return [...lines].sort((a, b) => a - b);
 }
 
 function testSources(): string[] {
@@ -116,8 +118,18 @@ describe("unreapableLines", () => {
     expect(unreapableLines(source)).toEqual([1]);
   });
 
+  test("names the import line a multiline alias hides the call behind", () => {
+    const source = `import {\n  ${CALL_NAME} as mk,\n} from "node:fs";\nconst dir = mk(join(tmpdir(), "p-"));\n`;
+    expect(unreapableLines(source)).toEqual([1]);
+  });
+
   test("leaves prose that merely names the alias alone", () => {
     expect(unreapableLines(`// prefer ${CALL_NAME} as the raw call when staging by hand\n`)).toEqual([]);
+  });
+
+  test("leaves prose that names the alias after an unrelated import alone", () => {
+    const source = `import { rmSync } from "node:fs";\n// ${CALL_NAME} as mk is the raw call\n`;
+    expect(unreapableLines(source)).toEqual([]);
   });
 
   test("leaves a file that only imports the name alone", () => {
