@@ -22,7 +22,11 @@
 ## 4. Carrier release
 
 - [x] 4.1 Tag `v1.25.0-beta.1`, un-draft by hand, verify `kesha install --engine-version 1.25.0-beta.1` downloads it
-- [ ] 4.2 Remove the `KESHA_PROTOCOL` window (delete the v3 renderer, `--capabilities-json`, `--error-codes-json`), cut `v1.25.0-beta.2`
+- [ ] 4.2 Remove the `KESHA_PROTOCOL` window and cut `v1.25.0-beta.2`. Everything 1.3, 2.4 and 2.5 defer lands here:
+  - the v3 renderer — the `Mode::V3` arm of `Event::render` and `events::mode()` itself
+  - `--capabilities-json` and `--error-codes-json` in `cli/args.rs` and `main.rs`; `errors::error_codes_json` then has no caller left and goes too, while `capabilities::get_capabilities` stays because `describe` consumes it
+  - the `KESHA_DEBUG_FD` sink in `debug.rs` (`json_sink`, `trace_json`, `json_sink_is_active`), its six `dtrace_json!` call sites — five in `transcribe/diarize.rs`, one in `transcribe/mod.rs` — which must emit `debug` events instead, and `rust/tests/debug_ndjson_fd.rs`
+  - **`build-engine.yml`'s smoke step must move to `describe` in the same PR.** It greps `--capabilities-json` output for `"tts"` on every built binary before upload, so deleting the flag without repointing it fails the release build rather than a test
 
 ## 5. CLI (stage 2, tracked here for completeness)
 
