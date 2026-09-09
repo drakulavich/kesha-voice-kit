@@ -134,6 +134,9 @@ if (args[0] === "install") {
     console.error(process.env.KESHA_FAKE_INSTALL_ERROR);
     process.exit(42);
   }
+  if (process.env.KESHA_FAKE_INSTALL_SILENT_EXIT) {
+    process.exit(Number(process.env.KESHA_FAKE_INSTALL_SILENT_EXIT));
+  }
   if (process.env.KESHA_FAKE_INSTALL_ARGS_PATH) {
     await Bun.write(process.env.KESHA_FAKE_INSTALL_ARGS_PATH, JSON.stringify(args.slice(1)));
   }
@@ -1251,6 +1254,28 @@ process.exit(99);
     expectContract(run, {
       exitCode: 0,
       stdoutContains: ["Backend installed successfully"],
+    });
+  });
+
+  /**
+   * The third failure contract, whose only pin moved to the protocol-violation case above when the
+   * prose-writing stub became a violation under protocol 4 (review of #1185). Its record counterpart
+   * lives in `recordEngine`; this is install's.
+   */
+  test("a model install that exits non-zero saying nothing reports the bare exit status", async () => {
+    const dir = makeTempDir("kesha-cli-contract-install-silent-exit-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const env = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_INSTALL_SILENT_EXIT: "3",
+    };
+
+    const run = await runCli(["install", "--vad"], { env });
+    expectContract(run, {
+      exitCode: 1,
+      stderrContains: ["Failed to install models: kesha-engine install exited with code 3."],
     });
   });
 

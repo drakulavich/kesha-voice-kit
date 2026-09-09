@@ -18,12 +18,13 @@ import { defaultEngineBinPath } from "../../src/paths";
 import { engineVersion } from "../../src/package-info";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { KeshaError } from "../../src/engine/events";
+import { errorMessage } from "../../src/error-utils";
 import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 
 /** Strips ANSI SGR sequences so captured `process.stderr.write` output can be asserted on plainly. */
 function stripAnsi(text: string): string {
-  return text.replace(/\[[0-9;]*m/g, "");
+  return text.replace(/\u001B\[[0-9;]*m/g, "");
 }
 
 function mkTmpBinPath(): string {
@@ -398,6 +399,37 @@ exit 0
     expect(caught).toBeInstanceOf(KeshaError);
     expect((caught as KeshaError).code).toBe("E_DOWNLOAD_FAILED");
     expect((caught as KeshaError).hint).toBe("retry");
+  });
+
+  /**
+   * The third failure contract: nothing coded, nothing off-protocol, so the CLI says only what it
+   * knows. Its record counterpart is pinned at `src/engine.ts`; this one lost its pin when the
+   * prose-writing stub in `cli-contracts` became a protocol violation instead (review of #1185).
+   */
+  posixTest("a model install that exits non-zero saying nothing reports the bare exit status", async () => {
+    const dir = stageInstallableEngine("kesha-install-silent-");
+    writeEngineWithInstallBody(dir, "  :", 3);
+
+    let caught: unknown;
+    try {
+      await installEngine({});
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught).not.toBeInstanceOf(KeshaError);
+    expect(errorMessage(caught)).toBe("Failed to install models: kesha-engine install exited with code 3.");
+  });
+
+  posixTest("the model install spawn speaks protocol 4", async () => {
+    const dir = stageInstallableEngine("kesha-install-proto-");
+    writeEngineWithInstallBody(dir, `  printf '{"kind":"progress","message":"proto=%s"}\\n' "\$KESHA_PROTOCOL" >&2`);
+
+    const stderr = await captureStderr(false, async () => {
+      await installEngine({});
+    });
+
+    expect(stderr).toContain("proto=4");
   });
 
   darwinArmTest("a say error event warns with the rendered coded line, and the install still resolves", async () => {
