@@ -112,6 +112,23 @@ describe("temp directory leak guard", () => {
     }
   });
 
+  wedgeable("keeps a directory it could not remove, so the exit pass gets another go", () => {
+    const registry = createTempDirRegistry();
+    const wedged = registry.tempDir("kesha-temp-dir-guard-");
+    writeFileSync(join(wedged, "held"), "x");
+    chmodSync(wedged, 0o500);
+    try {
+      expect(registry.reapTempDirs()).not.toContain(wedged);
+      chmodSync(wedged, 0o700);
+
+      expect(registry.reapTempDirs()).toContain(wedged);
+      expect(existsSync(wedged)).toBe(false);
+    } finally {
+      if (existsSync(wedged)) chmodSync(wedged, 0o700);
+      rmSync(wedged, { recursive: true, force: true });
+    }
+  });
+
   wedgeable("still reports the processes a suite leaked when a directory refuses to go", () => {
     const registry = createTempDirRegistry();
     const out = join(registry.tempDir("kesha-temp-dir-guard-"), "leaked-path");

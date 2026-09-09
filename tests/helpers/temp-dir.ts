@@ -27,7 +27,8 @@ export function createTempDirRegistry(): TempDirRegistry {
           rmSync(dir, { recursive: true, force: true });
           removed.push(dir);
         } catch (err) {
-          // One directory the OS refuses to release must not replace the louder process report (#1175).
+          // Kept for the exit pass to retry: a refusal is often a handle closing a moment later (#1175).
+          trackedDirs.add(dir);
           console.error(`leak guard could not remove ${dir}: ${err}`);
         }
       }

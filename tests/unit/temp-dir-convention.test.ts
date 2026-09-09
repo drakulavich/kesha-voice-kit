@@ -46,7 +46,7 @@ const CALL_NAME = "mkdtempSync";
 const ASYNC_CALL_NAME = CALL_NAME.replace("Sync", "");
 const DIRECT_CALL = new RegExp(`\\b${ASYNC_CALL_NAME}(?:Sync)?\\s*\\(`);
 // An alias renames the call, so the import is the only place the old shape is still spelled out.
-const ALIASED_IMPORT = new RegExp(`\\b${ASYNC_CALL_NAME}(?:Sync)?\\s+as\\s+`);
+const ALIASED_IMPORT = new RegExp(`\\b(?:import|require)\\b.*\\b${ASYNC_CALL_NAME}(?:Sync)?\\s+as\\s+`);
 
 function unreapableLines(source: string): number[] {
   const lines: number[] = [];
@@ -114,6 +114,10 @@ describe("unreapableLines", () => {
   test("names the import line an alias hides the call behind", () => {
     const source = `import { ${CALL_NAME} as mk } from "node:fs";\nconst dir = mk(join(tmpdir(), "p-"));\n`;
     expect(unreapableLines(source)).toEqual([1]);
+  });
+
+  test("leaves prose that merely names the alias alone", () => {
+    expect(unreapableLines(`// prefer ${CALL_NAME} as the raw call when staging by hand\n`)).toEqual([]);
   });
 
   test("leaves a file that only imports the name alone", () => {
