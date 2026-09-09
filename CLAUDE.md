@@ -220,7 +220,7 @@ Engine internals, ONNX I/O shapes, G2P split, SSML, `KESHA_*` env vars: the **`t
 - **Output**: `console.log()` for results (stdout stays pipe-friendly), `console.error()` for progress/errors.
 - **Rust**: `cargo fmt` + `cargo clippy --all-targets -- -D warnings`.
 - **No inline CI scripts over 3 lines** — extract to `.github/scripts/`.
-- **Comments: default to NONE.** Delete any comment that only restates the code. Never narrate mechanics, restate a name, or add section banners. A comment is allowed only when it carries what the code cannot: non-obvious *why*, a gotcha, an issue reference, a spec citation, `// SAFETY:`, a public-API doc contract (state the contract, not the implementation), or a `TODO` with context. One line, except SAFETY blocks and doc contracts. Bias below the surrounding density — and hold agent-generated code to the same bar in review.
+- **Comments: bias below the surrounding density.** One earns its place only by carrying what the code cannot. `.claude/hooks/check-new-comments.ts` blocks an added comment that doesn't and names both the rule and the offending lines, so the list of what qualifies lives there rather than here. It judges *added* lines only: legacy blocks stay, and a plan that specifies a multi-line comment fails at implementation time rather than in review — treat that as a plan defect. Hold agent-generated code to the same bar.
 
 ## Deeper references
 
