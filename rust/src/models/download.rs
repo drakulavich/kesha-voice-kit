@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use super::manifest::*;
 use super::paths::*;
-use super::progress::{reader_wanted, whole_file_total, with_stderr, InFlight, ProgressReader};
+use super::progress::{reader_wanted, whole_file_total, InFlight, ProgressReader};
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -126,7 +126,7 @@ pub(super) fn parallel_download(
     // The returned chain can only carry one root cause, so the others are
     // reported here rather than dropped.
     for (path, err) in failures.iter().skip(1) {
-        with_stderr(|| secondary_failure(path, err).emit());
+        secondary_failure(path, err).emit();
     }
     Err(failures.remove(0).1.context(summary))
 }
@@ -261,7 +261,7 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     if target.exists() {
         if verify_sha256(&target, f.sha256)? {
             if !no_cache {
-                with_stderr(|| events::progress(None, format!("OK  {} (cached)", f.rel_path)));
+                events::progress(None, format!("OK  {} (cached)", f.rel_path));
                 return Ok(());
             }
             // no_cache over a valid file: keep it in place until a verified
@@ -277,7 +277,7 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         fs::create_dir_all(parent)?;
     }
     download_with_retries(&apply_mirror(f.url), f, &target)?;
-    with_stderr(|| events::progress(None, format!("OK  {}", f.rel_path)));
+    events::progress(None, format!("OK  {}", f.rel_path));
     Ok(())
 }
 
@@ -291,19 +291,17 @@ fn download_with_retries(url: &str, f: &ModelFile, target: &Path) -> Result<()> 
             Ok(()) => return Ok(()),
             Err(fail) if attempt < fail.max_attempts => {
                 let delay = backoff_delay(attempt, fail.retry_after, jitter_fraction());
-                with_stderr(|| {
-                    events::progress(
-                        None,
-                        format!(
-                            "retrying {} in {:.1}s (attempt {}/{}, {})",
-                            f.rel_path,
-                            delay.as_secs_f64(),
-                            attempt + 1,
-                            fail.max_attempts,
-                            fail.reason
-                        ),
-                    )
-                });
+                events::progress(
+                    None,
+                    format!(
+                        "retrying {} in {:.1}s (attempt {}/{}, {})",
+                        f.rel_path,
+                        delay.as_secs_f64(),
+                        attempt + 1,
+                        fail.max_attempts,
+                        fail.reason
+                    ),
+                );
                 std::thread::sleep(delay);
                 attempt += 1;
             }
@@ -402,9 +400,9 @@ fn download_attempt(
     target: &Path,
 ) -> std::result::Result<(), AttemptFailure> {
     // Claim in-flight before announcing: the request below blocks on headers, and a
-    // sibling's bar must stop repainting over this row first (Greptile P1 on #681).
+    // sibling must not report progress over this one (Greptile P1 on #681).
     let _in_flight = InFlight::new();
-    with_stderr(|| events::progress(None, format!("GET {}", f.rel_path)));
+    events::progress(None, format!("GET {}", f.rel_path));
 
     // Whatever an earlier attempt managed to stage is the prefix this one
     // resumes from (#889).
@@ -467,11 +465,7 @@ fn download_attempt(
         inner: response.into_body().into_reader(),
         read_failed: false,
     };
-    let streamed = if reader_wanted(
-        events::mode(),
-        io::IsTerminal::is_terminal(&io::stderr()),
-        total,
-    ) {
+    let streamed = if reader_wanted(total) {
         let mut reader = ProgressReader::new(&mut reader, resume..total, f.rel_path);
         write_verified(&mut reader, target, f.rel_path, f.sha256, Some(resume))
     } else {
@@ -1633,17 +1627,13 @@ mod retry_tests {
     }
 
     #[test]
-    fn a_reported_sibling_failure_is_a_warning_and_keeps_its_v3_line() {
+    fn a_reported_sibling_failure_is_a_download_warning() {
         let err = anyhow::anyhow!("connection reset");
         let e = secondary_failure("models/retry/b.bin", &err);
-        assert_eq!(
-            e.render(crate::protocol::events::Mode::V3),
-            "FAIL models/retry/b.bin: connection reset"
-        );
-        let v: serde_json::Value =
-            serde_json::from_str(&e.render(crate::protocol::events::Mode::V4)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&e.render()).unwrap();
         assert_eq!(v["kind"], "warn");
         assert_eq!(v["code"], "W_DOWNLOAD");
+        assert_eq!(v["message"], "FAIL models/retry/b.bin: connection reset");
     }
 
     #[test]

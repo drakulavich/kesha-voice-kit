@@ -189,7 +189,7 @@ describe("probeEngineAvailability", () => {
   it("ignores unrelated stderr noise when stdout shows the engine installed", async () => {
     const execFile: ProbeDeps["execFile"] = vi.fn(async () => ({
       stdout: "Engine:\n  ✓ Binary: /opt/homebrew/bin/kesha-engine\n",
-      stderr: "[debug +3ms] spawn kesha-engine --capabilities-json\n",
+      stderr: "[debug +3ms] spawn kesha-engine describe\n",
     }));
     expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
       ok: true,

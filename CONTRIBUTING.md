@@ -123,7 +123,7 @@ kesha-voice-kit/
 │   │   ├── lang_id.rs          # ONNX speechbrain audio language detection
 │   │   ├── text_lang.rs        # macOS NLLanguageRecognizer (macOS only)
 │   │   ├── vad.rs              # Silero VAD v5 (576-sample rolling context)
-│   │   ├── capabilities.rs     # `--capabilities-json` feature list
+│   │   ├── capabilities.rs     # feature list `describe` serves
 │   │   ├── tts/                # Kokoro + Vosk + AVSpeech + SSML
 │   │   │   ├── kokoro.rs       # ONNX Kokoro-82M
 │   │   │   ├── vosk.rs         # vosk-tts-rs wrapper
@@ -266,7 +266,7 @@ Handy loops:
   and macos-14 also runs the CoreML `cargo check --all-targets` and
   `just verify-darwin-full` feature set.
 - `build-engine.yml` — runs on `v*` tag pushes (excluding `v*-cli`):
-  builds 3 platform binaries, smoke-tests each with `--capabilities-json`,
+  builds 3 platform binaries, smoke-tests each with `describe`,
   creates a draft release.
 - No inline scripts > 3 lines — extract to `.github/scripts/`.
 

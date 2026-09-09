@@ -130,7 +130,7 @@ src/                  Bun/TS CLI + library
 
 rust/src/             kesha-engine (Rust)
   main.rs            clap CLI: transcribe / say / detect-lang / install / record / ...
-  capabilities.rs    feature-flag table read by `describe` (and by the legacy --capabilities-json until beta.2)
+  capabilities.rs    feature-flag table read by `describe`
   models/            HF download + cache + SHA-256 pins — manifest.rs (tables), paths.rs
                      (cache dirs), download.rs (retry/verify), staging.rs (ANE bundles),
                      progress.rs (stderr bar)

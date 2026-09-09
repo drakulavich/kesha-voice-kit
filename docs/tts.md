@@ -99,7 +99,7 @@ kesha say --voice en-am_michael --no-expand-abbrev 'EPAM ...'
 - **`STOP_LIST`** (30 entries) — natural-English caps words pass through verbatim: `NASA`, `NATO`, `AIDS`, `OPEC`, `IKEA`, `ASCII`, `NAFTA`, `LASER`, `RADAR`, `SCUBA`, plus 20 emphatic length-2 caps (`OK`, `IT`, `IS`, …).
 - **`IPA_LEXICON`** (19 entries) — case-sensitive token → IPA-phoneme map; hits emit a `Segment::Ipa` and bypass G2P entirely. Covers industry-pronunciation acronyms (`EPAM` /ˈiːpæm/, `JSON` /ˈdʒeɪsən/, `JPEG`, `GIF`, `SQL`, `ASAP`, `CRUD`, `JWT`, `OAuth`) AND mixed-case proper nouns (`Anthropic` /ænθɹˈɑpɪk/, `Microsoft`, `Claude`, `Kubernetes`, `PostgreSQL`, `GraphQL`, `Linux`, `Tokio`, `macOS`, `Granola`). IPA hits fire even with `--no-expand-abbrev`. Darwin FluidAudio builds phonemize text themselves, so the whole table is installed into their lexicon instead ([#818](https://github.com/drakulavich/kesha-voice-kit/issues/818)). `Kubernetes`, `Tokio`, `macOS` and `Anthropic` carry FluidAudio's own G2P output verbatim, so both engines say them the way the owner approved on the ANE ([#846](https://github.com/drakulavich/kesha-voice-kit/issues/846)); that harvest retired the #844 exclusion.
 
-`<say-as interpret-as="characters">…</say-as>` always wins — letter-spells via the embedded table regardless of `--no-expand-abbrev`. Engine reports `tts.en_acronym_expansion: true` in `--capabilities-json`. Closes [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+`<say-as interpret-as="characters">…</say-as>` always wins — letter-spells via the embedded table regardless of `--no-expand-abbrev`. Engine lists `tts.en_acronym_expansion` in `describe`. Closes [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
 
 ### Where `--no-expand-abbrev` actually applies
 
@@ -187,7 +187,7 @@ Range clamped to 0.5×–2.0×; values outside the range are clamped silently. `
 - AVSpeech (`macos-*`) and Darwin FluidAudio Kokoro (`en-*` on darwin-arm64 release builds) don't accept SSML yet; `--ssml` errors out before any prosody handling runs.
 - `<prosody pitch>` and `<prosody volume>` are NOT supported in v1 — they warn-once and strip. See #236 for the v2 design considerations.
 
-Engine reports `tts.prosody_rate: true` in `--capabilities-json`. Closes [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) (rate-only conservative scope; pitch + volume deferred).
+Engine lists `tts.prosody_rate` in `describe`. Closes [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) (rate-only conservative scope; pitch + volume deferred).
 
 ## SSML
 

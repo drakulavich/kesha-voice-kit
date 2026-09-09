@@ -4,30 +4,7 @@ use common::non_test_prefix;
 use std::path::Path;
 
 /// Each entry allows one occurrence in that file, so the count is the ledger of remaining prose.
-const ALLOWED: &[(&str, &str)] = &[
-    ("src/protocol/events.rs", "the renderer itself"),
-    (
-        "src/record.rs",
-        "the \\r `Listening` painter, V3 + tty only",
-    ),
-    (
-        "src/record.rs",
-        "the blank line that closes that painted row",
-    ),
-    ("src/record.rs", "the is_terminal probe gating both"),
-    (
-        "src/models/progress.rs",
-        "the \\r download bar, V3 + tty only",
-    ),
-    (
-        "src/models/progress.rs",
-        "the flush that repaints that bar row",
-    ),
-    (
-        "src/models/download.rs",
-        "the is_terminal probe gating the bar",
-    ),
-];
+const ALLOWED: &[(&str, &str)] = &[("src/protocol/events.rs", "the emitter itself")];
 
 const PATTERNS: &[&str] = &["eprintln!", "eprint!(", "io::stderr()"];
 

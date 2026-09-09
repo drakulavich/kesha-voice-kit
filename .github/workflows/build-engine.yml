@@ -259,7 +259,7 @@ jobs:
         # instead of shipping in a release.
         run: |
           chmod +x "${{ matrix.binary }}"
-          caps=$("./${{ matrix.binary }}" --capabilities-json)
+          caps=$("./${{ matrix.binary }}" describe)
           echo "$caps"
           echo "$caps" | grep -q '"tts"' || {
             echo "expected tts in capabilities, got: $caps" >&2

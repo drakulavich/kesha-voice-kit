@@ -20,11 +20,11 @@ use crate::protocol::events;
 use crate::vad::{VadConfig, VadDetector, SAMPLE_RATE as VAD_SAMPLE_RATE};
 use crate::{dtrace, dtrace_json};
 
-/// Capability-flag string surfaced via `--capabilities-json`. Single source of
+/// Capability-flag string surfaced via `describe`. Single source of
 /// truth so the engine, the TS CLI gate, and the integration tests can't drift.
 pub const TRANSCRIBE_SEGMENTS_FEATURE: &str = "transcribe.segments";
 
-/// Capability flag surfaced via `--capabilities-json` when the engine ships
+/// Capability flag surfaced via `describe` when the engine ships
 /// with FluidAudio diarization. Only true on darwin-arm64 release builds
 /// that include the `system_diarize` feature. Closes #199 angle D.
 #[cfg_attr(not(feature = "system_diarize"), allow(dead_code))]

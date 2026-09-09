@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::manifest::*;
-#[cfg(feature = "coreml")]
-use super::progress::with_stderr;
 use crate::coded_bail;
 use crate::errors::ErrorCode;
 #[cfg(feature = "coreml")]
@@ -212,7 +210,7 @@ pub fn fluidaudio_asr_location() -> Result<FluidAudioLocation> {
     let legacy = legacy_fluidaudio_asr_dir()?;
     let complete = fluidaudio_asr_ready_in(&legacy);
     if let Some(notice) = stale_legacy_notice(&legacy, complete, &ANNOUNCED) {
-        with_stderr(|| events::warn(events::W_GENERIC, notice));
+        events::warn(events::W_GENERIC, notice);
     }
     fluidaudio_location(&legacy, complete, FLUID_ASR_REPO_DIR)
 }
@@ -289,7 +287,7 @@ pub fn cache_dir() -> Result<PathBuf> {
 /// unit-testable without an unsettable process environment (#953). A set
 /// `KESHA_CACHE_DIR` wins even with no resolvable home; otherwise a missing
 /// home is a coded `E_INTERNAL` naming the escape hatch, never a panic past
-/// the `error [CODE]:` contract.
+/// the coded-error contract.
 pub(crate) fn cache_dir_from(env_cache: Option<String>, home: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(p) = env_cache {
         return Ok(PathBuf::from(p));
@@ -496,7 +494,7 @@ mod tts_tests {
     }
 
     // #953: a null home must surface as a coded E_INTERNAL naming KESHA_CACHE_DIR,
-    // not a panic past the `error [CODE]:` contract.
+    // not a panic past the coded-error contract.
     #[test]
     fn cache_dir_from_null_home_is_coded_internal() {
         let err = cache_dir_from(None, None).unwrap_err();

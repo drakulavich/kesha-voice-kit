@@ -21,13 +21,10 @@ pub struct TtsCapabilities {
     pub languages: Vec<TtsLanguage>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
+/// The compile-time feature table `describe` serves.
 pub struct Capabilities {
-    pub protocol_version: u32,
     pub backend: &'static str,
     pub features: Vec<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tts: Option<TtsCapabilities>,
 }
 
@@ -86,7 +83,6 @@ pub fn get_capabilities() -> Capabilities {
     let tts = None;
 
     Capabilities {
-        protocol_version: 3,
         backend: backend_name(),
         features,
         tts,
@@ -200,10 +196,5 @@ mod tts_caps_tests {
         assert_eq!(ru.engines, vec!["vosk"]);
         let en = tts.languages.iter().find(|l| l.code == "en").unwrap();
         assert_eq!(en.engines, vec!["kokoro"]);
-    }
-
-    #[test]
-    fn protocol_version_is_3() {
-        assert_eq!(get_capabilities().protocol_version, 3);
     }
 }

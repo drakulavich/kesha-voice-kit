@@ -1,6 +1,4 @@
-//! Debug trace (#148): stderr `[debug/engine +Nms] ...` lines when
-//! `KESHA_DEBUG` is truthy. No-op otherwise. Boundary-only — never
-//! per-sample, never in the hot inference loop.
+//! Debug trace (#148): a `debug` event per boundary when `KESHA_DEBUG` is truthy — never per-sample, never in the hot inference loop.
 //!
 //! Pairs with the TS-side `log.debug()` on the CLI wrapper. Together:
 //!
@@ -13,28 +11,10 @@
 //! [debug +365ms] exit=0 dt=352ms args=["transcribe","audio.ogg"]
 //! ```
 //!
-//! The `+Nms` prefix is relative to the LOGGER's own start (TS vs Rust
-//! process start) — the two axes are independent; use inline `dt=Nms`
-//! tokens for spans within the same side.
-//!
-//! # Structured NDJSON sink (`KESHA_DEBUG_FD`, F19)
-//!
-//! `KESHA_DEBUG_FD=N` routes structured events to fd N (opened by the
-//! parent before exec, e.g. `3>trace.ndjson`), keeping them off stderr:
-//!
-//! ```text
-//! {"t_ms": 12, "event": "asr.backend_loaded", "dt_ms": 8}
-//! {"t_ms": 354, "event": "asr.transcribe.end", "dt_ms": 340, "chars": 42}
-//! ```
-//!
-//! Independent of `KESHA_DEBUG` — both paths can be active simultaneously.
+//! `t_ms` is relative to the LOGGER's own start (TS vs Rust process start) — use inline `dt_ms` fields for spans within one side.
 
-use crate::protocol::events::{self, Event, Mode};
-use std::fs::File;
-use std::io::Write;
-#[cfg(unix)]
-use std::os::fd::FromRawFd;
-use std::sync::{Mutex, OnceLock};
+use crate::protocol::events::Event;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 /// Off-values for `KESHA_DEBUG`, matched case-insensitively after trim.
@@ -105,119 +85,30 @@ macro_rules! dtrace {
     };
 }
 
-/// Resolved JSON sink (`KESHA_DEBUG_FD`, F19). `None` when unset/invalid.
-///
-/// `Mutex<File>` not `BufWriter`: each NDJSON line must hit the kernel as
-/// one `write(2)` so concurrent threads can't interleave half-lines.
-/// Lines stay under `PIPE_BUF` (4096 on Linux), so `write_all` is atomic.
-static JSON_SINK: OnceLock<Option<Mutex<File>>> = OnceLock::new();
-
-#[cfg(unix)]
-fn json_sink() -> Option<&'static Mutex<File>> {
-    JSON_SINK
-        .get_or_init(|| {
-            let raw = std::env::var("KESHA_DEBUG_FD").ok()?;
-            let fd: i32 = raw.trim().parse().ok()?;
-            // Refuse 0/1/2 — they belong to the text-CLI contract; a stray
-            // `KESHA_DEBUG_FD=2` would poison stderr with NDJSON.
-            if fd < 3 {
-                return None;
-            }
-            // SAFETY: caller contract — parent opened `fd` before exec and
-            // keeps it alive for the engine's lifetime. EBADF on the first
-            // `write(2)` silently drops the line; no panic, no abort.
-            let file = unsafe { File::from_raw_fd(fd) };
-            Some(Mutex::new(file))
-        })
-        .as_ref()
-}
-
-#[cfg(not(unix))]
-fn json_sink() -> Option<&'static Mutex<File>> {
-    // fd-from-int is POSIX-only; Windows would need a HANDLE instead.
-    // Fall back to the stderr text path (`KESHA_DEBUG=1`) on Windows for now.
-    None
-}
-
-/// `pub` so [`dtrace_json!`] can skip the `serde_json::json!` allocation
-/// when inactive — same zero-cost contract as [`dtrace!`] (#321). In
-/// [`Mode::V4`] "active" tracks `KESHA_DEBUG` instead of the fd sink,
-/// which [`trace_json`] never opens under that mode.
-pub fn json_sink_is_active() -> bool {
-    match events::mode() {
-        Mode::V4 => enabled(),
-        Mode::V3 => json_sink().is_some(),
-    }
-}
-
-/// Emit one NDJSON event to the JSON sink, if configured.
-///
-/// `fields` must be a `serde_json::Value::Object`; non-object payloads
-/// trip a `debug_assert!` and degrade to empty map in release.
-/// Reserved keys `t_ms` and `event` are always injected by the writer.
-/// Prefer the [`dtrace_json!`] macro — it gates allocation on [`json_sink_is_active`].
+/// Emit a structured `debug` event carrying `fields` under the reserved `event` name, when `KESHA_DEBUG` is on.
 pub fn trace_json(event: &str, fields: serde_json::Value) {
-    if events::mode() == Mode::V4 {
-        if enabled() {
-            Event::Debug {
-                t_ms: engine_t0().elapsed().as_millis(),
-                event: Some(event),
-                message: String::new(),
-                fields,
-            }
-            .emit();
+    if enabled() {
+        Event::Debug {
+            t_ms: engine_t0().elapsed().as_millis(),
+            event: Some(event),
+            message: String::new(),
+            fields,
         }
-        return;
-    }
-    let Some(sink) = json_sink() else {
-        return;
-    };
-    let mut payload = match fields {
-        serde_json::Value::Object(map) => map,
-        other => {
-            // Call-site bug: can't merge non-object payload with `t_ms`/`event`.
-            // Catch in dev/test; degrade to empty map in release.
-            debug_assert!(
-                false,
-                "dtrace_json! expects a JSON object payload, got: {other:?}"
-            );
-            serde_json::Map::new()
-        }
-    };
-    let t = engine_t0().elapsed().as_millis();
-    payload.insert(
-        "t_ms".into(),
-        serde_json::Value::Number(serde_json::Number::from(t as u64)),
-    );
-    payload.insert("event".into(), serde_json::Value::String(event.into()));
-    let mut line = serde_json::to_vec(&payload).unwrap_or_else(|_| {
-        // Infallible in practice (no NaN/Inf floats here), but keeps
-        // `trace_json` panic-free against future serde_json changes.
-        Vec::new()
-    });
-    if line.is_empty() {
-        return;
-    }
-    line.push(b'\n');
-    if let Ok(mut guard) = sink.lock() {
-        // Best-effort: trace is observability, not a contract — IO errors
-        // silently drop the line rather than spamming stderr.
-        let _ = guard.write_all(&line);
+        .emit();
     }
 }
 
-/// Emit a structured NDJSON event when [`json_sink_is_active`].
+/// Emit a structured `debug` event when `KESHA_DEBUG` is on.
 ///
 /// ```ignore
 /// dtrace_json!("asr.backend_loaded", { "dt_ms": elapsed.as_millis() });
 /// ```
 ///
-/// Zero-cost when sink is unset: gate sits before `serde_json::json!`,
-/// skipping the heap allocation the eager form had (Greptile P2 #321).
+/// Zero-cost when off: the gate sits before `serde_json::json!`, skipping the heap allocation the eager form had (Greptile P2 #321).
 #[macro_export]
 macro_rules! dtrace_json {
     ($event:expr, $fields:tt) => {
-        if $crate::debug::json_sink_is_active() {
+        if $crate::debug::enabled() {
             $crate::debug::trace_json($event, ::serde_json::json!($fields))
         }
     };
