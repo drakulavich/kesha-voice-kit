@@ -31,7 +31,6 @@ const EXEMPT: Record<string, string> = {
   "tests/unit/install-plan.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/kokoro-ane.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/logs-action.test.ts": "removes its directories by hand; not yet converted",
-  "tests/unit/mcp-list-voices.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/progress-stream.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/say-cli.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/star.test.ts": "removes its directories by hand; not yet converted",
