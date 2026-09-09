@@ -186,8 +186,7 @@ describe("stale temp directory sweep", () => {
   test("runs at preload, so the run after a killed one is what cleans up its directories", () => {
     const registry = createTempDirRegistry();
     const out = join(registry.tempDir("kesha-temp-dir-guard-"), "leaked-path");
-    const abandoned = join(tmpdir(), `kesha-temp-dir-abandoned-${process.pid}-a1b2c3`);
-    mkdirSync(abandoned, { recursive: true });
+    const abandoned = registry.tempDir("kesha-temp-dir-abandoned-");
     utimesSync(abandoned, LONG_AGO, LONG_AGO);
 
     try {
@@ -206,21 +205,19 @@ describe("stale temp directory sweep", () => {
     }
   });
 
-  /** The temp root is shared with the MCP audio cache and with every other tool on the machine. */
-  test("leaves what no run of this suite created alone, however old", () => {
-    const registry = createTempDirRegistry();
-    const root = registry.tempDir("kesha-temp-dir-guard-");
+  /** The temp root holds the MCP audio cache and whatever else the machine put there; only the sub-root is the helper's to delete. */
+  test("cannot reach the temp root at all, whatever a directory there is called", () => {
+    const decoy = join(tmpdir(), `kesha-important-backup-${process.pid}-a1b2c3`);
+    mkdirSync(decoy, { recursive: true });
+    writeFileSync(join(decoy, "held"), "x");
+    utimesSync(decoy, LONG_AGO, LONG_AGO);
 
     try {
-      const mcpCache = stage(root, "kesha-mcp", "stale");
-      const foreign = stage(root, "some-other-tool-a1b2c3", "stale");
+      expect(sweepStaleTempDirs()).not.toContain(decoy);
 
-      expect(sweepStaleTempDirs(root)).toEqual([]);
-
-      expect(existsSync(mcpCache)).toBe(true);
-      expect(existsSync(foreign)).toBe(true);
+      expect(existsSync(decoy)).toBe(true);
     } finally {
-      registry.reapTempDirs();
+      rmSync(decoy, { recursive: true, force: true });
     }
   });
 });

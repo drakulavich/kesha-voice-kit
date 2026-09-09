@@ -1,6 +1,13 @@
-import { mkdtempSync, readdirSync, rmSync, statSync, type Dirent } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+/** Everything the helper creates lives under here, so the sweep below cannot reach a directory it did not create (#1175). */
+function testsRoot(): string {
+  const root = join(tmpdir(), "kesha-tests");
+  mkdirSync(root, { recursive: true });
+  return root;
+}
 
 export interface TempDirRegistry {
   /** Creates a temp directory this registry will remove; removing it by hand too is safe (#1175). */
@@ -14,7 +21,7 @@ export function createTempDirRegistry(): TempDirRegistry {
   const trackedDirs = new Set<string>();
   return {
     tempDir(prefix: string): string {
-      const dir = mkdtempSync(join(tmpdir(), prefix));
+      const dir = mkdtempSync(join(testsRoot(), prefix));
       trackedDirs.add(dir);
       return dir;
     },
@@ -48,22 +55,18 @@ export const reapTempDirs = shared.reapTempDirs;
 /** Longer than any run can live: 5x the longest CI job timeout (45 min), so a concurrent run's directories are never stale (#1175). */
 const STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 
-/** The six characters `mkdtempSync` appends are what tells a run's directory from `kesha-mcp`, the audio cache the MCP server keeps. */
-const SWEEPABLE = /^kesha-.+-[A-Za-z0-9]{6}$/;
-
 /** Removes directories left by a run no handler survived — SIGKILL, or a Windows exit that could not release a handle — and returns the ones that are gone (#1175). */
-export function sweepStaleTempDirs(root: string = tmpdir(), now: number = Date.now()): string[] {
-  let entries: Dirent[];
+export function sweepStaleTempDirs(root: string = testsRoot(), now: number = Date.now()): string[] {
+  let names: string[];
   try {
-    entries = readdirSync(root, { withFileTypes: true });
+    names = readdirSync(root);
   } catch {
     return [];
   }
   const cutoff = now - STALE_AFTER_MS;
   const removed: string[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !SWEEPABLE.test(entry.name)) continue;
-    const dir = join(root, entry.name);
+  for (const name of names) {
+    const dir = join(root, name);
     try {
       if (statSync(dir).mtimeMs > cutoff) continue;
       rmSync(dir, { recursive: true, force: true });
