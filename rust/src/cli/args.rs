@@ -5,14 +5,6 @@ use clap::{Parser, Subcommand};
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
-
-    /// Print capabilities as JSON
-    #[arg(long = "capabilities-json")]
-    pub capabilities_json: bool,
-
-    /// Print the error-code taxonomy as JSON and exit.
-    #[arg(long = "error-codes-json")]
-    pub error_codes_json: bool,
 }
 
 #[derive(Subcommand)]

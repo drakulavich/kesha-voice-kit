@@ -259,10 +259,15 @@ jobs:
         # instead of shipping in a release.
         run: |
           chmod +x "${{ matrix.binary }}"
-          caps=$("./${{ matrix.binary }}" --capabilities-json)
+          caps=$("./${{ matrix.binary }}" describe)
           echo "$caps"
-          echo "$caps" | grep -q '"tts"' || {
-            echo "expected tts in capabilities, got: $caps" >&2
+          # Scope the match to the feature array: `describe` also publishes the error
+          # taxonomy and the gate table, which carry the literals "tts" and
+          # "transcribe.diarize" whatever was compiled in, so a whole-document grep
+          # passes on a binary missing the feature — the exact drift this step catches.
+          feats() { echo "$caps" | grep -o '"features":\[[^]]*\]'; }
+          feats | grep -q '"tts"' || {
+            echo "expected tts in describe features, got: $caps" >&2
             exit 1
           }
           if [ "${{ matrix.os }}" = "macos-14" ]; then
@@ -280,8 +285,8 @@ jobs:
             # #199: same matrix-drift guard as `tts` above. transcribe.diarize
             # is gated on system_diarize; if a future matrix edit drops the
             # feature, this assertion is the last gate before a release.
-            echo "$caps" | grep -q '"transcribe\.diarize"' || {
-              echo "expected transcribe.diarize in capabilities, got: $caps" >&2
+            feats | grep -q '"transcribe\.diarize"' || {
+              echo "expected transcribe.diarize in describe features, got: $caps" >&2
               exit 1
             }
             # text-lang sidecar e2e: exercise the spawn → stdin → JSON

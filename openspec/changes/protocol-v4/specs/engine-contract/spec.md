@@ -241,7 +241,7 @@ Both the CLI and the Engine SHALL honour the `KESHA_*` environment variables lis
 - THEN `KESHA_DEBUG_FD` is ignored
 - AND the Engine's `debug` events appear in the Diagnostic log for that run
 
-> *Technical Note — `spawnStdioWithDebugFd` and `MAX_FORWARDED_FD` at `src/engine.ts:94-115` are deleted; `rust/src/debug.rs:113-123` stops opening a descriptor; `rust/tests/debug_ndjson_fd.rs` becomes a test of `debug` events on stderr.*
+> *Technical Note — `spawnStdioWithDebugFd` and `MAX_FORWARDED_FD` at `src/engine.ts:94-115` are deleted; `rust/src/debug.rs:113-123` stops opening a descriptor; `rust/tests/debug_ndjson_fd.rs` becomes `rust/tests/debug_structured_events.rs`, a test of `debug` events on stderr.*
 
 ### Requirement: Capabilities JSON cache invalidates on Engine binary change
 

@@ -551,7 +551,7 @@ async function validateInstallRequest(
 /** Runs `kesha-engine install` to download/verify models. */
 async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
   log.progress("Installing models...");
-  // #680/#1164: the byte-progress bar needs a terminal and protocol 3; move once the engine emits it as events.
+  // #680/#1164: inherited stderr shows the engine raw; must parse events before the pin reaches v1.25.0-beta.2.
   const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "inherit"]);
   const tree = registerProcessTree(proc);
   let exitCode: number;
@@ -562,7 +562,7 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
   }
 
   if (exitCode !== 0) {
-    // No code of our own: inherited stderr already carried the engine's coded line to the user.
+    // No code of our own: inherited stderr already carried the engine's coded failure to the user.
     throw new Error(
       `Failed to install models: kesha-engine install exited with code ${exitCode}. ` +
         "See the engine output above for the failing file.",

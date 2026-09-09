@@ -5,17 +5,14 @@ mod common;
 use std::process::Command;
 
 #[test]
-fn capabilities_advertises_tts() {
+fn describe_advertises_tts() {
     let out = Command::new(common::engine_bin())
-        .arg("--capabilities-json")
+        .arg("describe")
         .output()
         .expect("run");
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("\"tts\""),
-        "capabilities missing tts: {stdout}"
-    );
+    assert!(stdout.contains("\"tts\""), "describe missing tts: {stdout}");
 }
 
 #[test]

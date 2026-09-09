@@ -130,10 +130,10 @@ src/                  Bun/TS CLI + library
 
 rust/src/             kesha-engine (Rust)
   main.rs            clap CLI: transcribe / say / detect-lang / install / record / ...
-  capabilities.rs    feature-flag table read by `describe` (and by the legacy --capabilities-json until beta.2)
+  capabilities.rs    feature-flag table read by `describe`
   models/            HF download + cache + SHA-256 pins — manifest.rs (tables), paths.rs
                      (cache dirs), download.rs (retry/verify), staging.rs (ANE bundles),
-                     progress.rs (stderr bar)
+                     progress.rs (download progress events)
   audio.rs           symphonia decode + rubato resample to 16kHz mono f32
   lang_id.rs         SpeechBrain ONNX audio language detection (always built)
   text_lang.rs       macOS NLLanguageRecognizer (macOS only)
@@ -165,9 +165,12 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    (`src/engine/describe.ts`) before spawning — instead of blindly forwarding
    flags, see the "DO NOT BLINDLY FORWARD CLI FLAGS" rule in
    [CLAUDE.md](../CLAUDE.md). The parsed spawns read stderr as protocol-4
-   NDJSON events (`readEvents` in `src/engine/events.ts`); `install` and the
-   Kokoro warmup are not validated yet, and they, `record` and CLI
-   `say --list-voices` inherit stderr on protocol 3 until their stage-2 PRs.
+   NDJSON events (`readEvents` in `src/engine/events.ts`), as do the Kokoro
+   warmup and CLI `say --list-voices`. Exactly two spawns still inherit stdio
+   rather than parsing it: `recordEngine` (`src/engine.ts`) and the model-install
+   spawn (`src/engine-install.ts`). That is now a release blocker, not a nicety —
+   the engine dropped its prose renderer at `v1.25.0-beta.2`, so both must read
+   events before `keshaEngine.version` moves off `beta.1`.
    `getEngineCapabilities` is a thin view over the describe document kept
    for the status/doctor/install screens that predate `describe`.
 4. **stdout is the result** (transcript / JSON / WAV bytes); **stderr is

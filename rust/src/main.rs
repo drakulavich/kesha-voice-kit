@@ -4,7 +4,7 @@ use clap::{error::ErrorKind, Parser};
 use kesha_engine::cli::args::{Cli, Commands};
 use kesha_engine::errors::ErrorCode;
 use kesha_engine::protocol::events;
-use kesha_engine::{capabilities, cli, debug, errors};
+use kesha_engine::{cli, debug, errors};
 
 fn main() {
     // Anchor the `KESHA_DEBUG=1` `+Nms` timeline before `Cli::try_parse()` so
@@ -22,20 +22,6 @@ fn main() {
             std::process::exit(2);
         }
     };
-
-    if cli.capabilities_json {
-        let caps = capabilities::get_capabilities();
-        match serde_json::to_string(&caps) {
-            Ok(s) => println!("{s}"),
-            Err(e) => std::process::exit(errors::report(&anyhow::Error::new(e))),
-        }
-        return;
-    }
-
-    if cli.error_codes_json {
-        println!("{}", errors::error_codes_json());
-        return;
-    }
 
     if let Err(err) = run_command(cli.command) {
         std::process::exit(errors::report(&err));

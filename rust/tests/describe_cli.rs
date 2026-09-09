@@ -38,29 +38,18 @@ fn describe_prints_one_json_object_and_nothing_on_stderr() {
 }
 
 #[test]
-fn legacy_error_codes_flag_still_answers_during_the_window() {
-    let out = Command::new(common::engine_bin())
-        .arg("--error-codes-json")
-        .output()
-        .expect("spawn");
-    assert_eq!(out.status.code(), Some(0));
-    assert!(
-        out.stderr.is_empty(),
-        "stderr must be empty: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let codes: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
-    assert!(!codes.is_empty(), "the code registry must not be empty");
-    assert!(codes.iter().any(|e| e["code"] == "E_INVALID_ARG"));
-}
-
-#[test]
-fn legacy_capabilities_flag_still_answers_during_the_window() {
-    let out = Command::new(common::engine_bin())
-        .arg("--capabilities-json")
-        .output()
-        .expect("spawn");
-    assert_eq!(out.status.code(), Some(0));
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["protocolVersion"], 3);
+fn the_legacy_flags_are_gone() {
+    for flag in ["--capabilities-json", "--error-codes-json"] {
+        let out = Command::new(common::engine_bin())
+            .arg(flag)
+            .output()
+            .expect("spawn");
+        assert_eq!(out.status.code(), Some(2), "{flag} must not parse");
+        assert!(out.stdout.is_empty(), "{flag} must print no payload");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let v: serde_json::Value =
+            serde_json::from_str(stderr.trim()).unwrap_or_else(|_| panic!("{flag}: {stderr}"));
+        assert_eq!(v["kind"], "error");
+        assert_eq!(v["code"], "E_INVALID_ARG");
+    }
 }

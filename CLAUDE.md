@@ -125,7 +125,7 @@ Any plan naming a specific upstream artifact must be validated by a throwaway sp
 
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
-Every flag-carrying engine argv on a parsed path — `runEngine` callers in `src/engine.ts`, `say()` and `listVoiceIds()` in `src/synth.ts`, the install gate in `src/engine-install.ts` — goes through `validateArgv` (`src/engine/describe.ts`) against `kesha-engine describe` before the spawn; `record` validates through `validateRecordRequest` but still inherits stderr. `record` and the model-install spawn itself still inherit stdio on protocol 3 — the engine now emits progress events (#1164), and the CLI will switch once the beta carrying them is pinned — even though the install argv is gated through `validateArgv` beforehand. A flag the schema does not list for that subcommand, a flag whose gate the build lacks, a missing `requires` or a present `conflicts` is `E_INVALID_ARG` with no subprocess; `whenUngated: drop` rows are omitted with one warning. Do not add a new hand-written feature check; add a row to `gate_rows()` in `rust/src/protocol/describe.rs` (and its mirror in `tests/helpers/fake-engine.ts`, pinned by `describe-template.test.ts`).
+Every flag-carrying engine argv on a parsed path — `runEngine` callers in `src/engine.ts`, `say()` and `listVoiceIds()` in `src/synth.ts`, the install gate in `src/engine-install.ts` — goes through `validateArgv` (`src/engine/describe.ts`) against `kesha-engine describe` before the spawn; `record` validates through `validateRecordRequest` but still inherits stderr. `record` and the model-install spawn itself still inherit stdio without `protocolEnv()`, even though the install argv is gated through `validateArgv` beforehand. **That is now a release blocker rather than a nicety:** the engine dropped its prose renderer at `v1.25.0-beta.2`, so those two spawns must pipe stderr and render events before `keshaEngine.version` moves off `v1.25.0-beta.1`, or a user's `kesha install` and `kesha record` print raw NDJSON at them (openspec `protocol-v4` 5.3, blocking 5.4). A flag the schema does not list for that subcommand, a flag whose gate the build lacks, a missing `requires` or a present `conflicts` is `E_INVALID_ARG` with no subprocess; `whenUngated: drop` rows are omitted with one warning. Do not add a new hand-written feature check; add a row to `gate_rows()` in `rust/src/protocol/describe.rs` (and its mirror in `tests/helpers/fake-engine.ts`, pinned by `describe-template.test.ts`).
 
 ### COREML BUILD TRIPLE
 
@@ -135,7 +135,7 @@ The `coreml` feature links the macOS Swift runtime via `fluidaudio-rs`. All thre
 2. `MACOSX_DEPLOYMENT_TARGET=14.0`, so the linker elides `@rpath/libswift_Concurrency.dylib`
 3. `rust/build.rs` emits `-Wl,-rpath,/usr/lib/swift` under `cfg(any(coreml, system_kokoro, system_diarize))` — narrowing that to `coreml` alone breaks local `system_kokoro`/`system_diarize` builds
 
-`build-engine.yml` smoke-tests every binary with `--capabilities-json` before upload. **Never remove that step.**
+`build-engine.yml` smoke-tests every binary with `describe` before upload. **Never remove that step.**
 
 ### BUILD-ENGINE FEATURE MATRIX MIRRORS CARGO DEFAULTS
 

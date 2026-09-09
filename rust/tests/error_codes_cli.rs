@@ -1,4 +1,4 @@
-//! CLI-level assertions that failures print `error [CODE]:` on stderr.
+//! CLI-level assertions that a failure reaches the caller as one coded error event.
 use std::process::Command;
 
 fn engine_bin() -> String {
@@ -7,23 +7,8 @@ fn engine_bin() -> String {
 }
 
 #[test]
-fn transcribe_missing_file_prints_coded_error() {
+fn a_missing_input_is_reported_as_one_error_event() {
     let out = Command::new(engine_bin())
-        .args(["transcribe", "/nonexistent/path/audio.wav"])
-        .output()
-        .expect("spawn engine");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!out.status.success(), "should exit nonzero");
-    assert!(
-        stderr.contains("error [E_"),
-        "stderr should carry a coded line, got: {stderr}"
-    );
-}
-
-#[test]
-fn v4_mode_reports_a_missing_input_as_one_error_event() {
-    let out = Command::new(engine_bin())
-        .env("KESHA_PROTOCOL", "4")
         .args(["transcribe", "/nonexistent/audio.wav"])
         .output()
         .expect("spawn engine");

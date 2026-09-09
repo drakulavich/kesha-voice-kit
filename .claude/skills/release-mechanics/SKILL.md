@@ -179,7 +179,7 @@ GitHub's immutable-releases permanently reserves tag names after publish. **Brok
 
 ## `just smoke-test` ALONE DOES NOT VALIDATE A NEW ENGINE — `gh release download` THE DRAFT BINARY AND EXERCISE IT BEFORE `gh release edit --draft=false`
 
-`just smoke-test` runs `bun link @drakulavich/kesha-voice-kit`, `kesha install`, then `bun scripts/smoke-test.ts`, but a prior `bun add -g` can leave the old global shim in front. Then `kesha --version` and `kesha install` exercise the previous CLI/engine and produce a false-green "6/6 passed". v1.5.0 hit this: `--capabilities-json` passed, Kokoro synth crashed (`Invalid input name: tokens`), and local smoke still routed through v1.4.4 CLI + v1.4.1 engine.
+`just smoke-test` runs `bun link @drakulavich/kesha-voice-kit`, `kesha install`, then `bun scripts/smoke-test.ts`, but a prior `bun add -g` can leave the old global shim in front. Then `kesha --version` and `kesha install` exercise the previous CLI/engine and produce a false-green "6/6 passed". v1.5.0 hit this: the capability probe passed, Kokoro synth crashed (`Invalid input name: tokens`), and local smoke still routed through v1.4.4 CLI + v1.4.1 engine.
 
 Before `gh release edit --draft=false`, always validate the draft binary directly with authenticated `gh release download`, not `curl` (drafts 404 anonymously). Un-draft starts `📦 npm Publish` within ~60 s; npm unpublish is limited/noisy, and #291's Greptile review flagged this ordering.
 
@@ -193,9 +193,9 @@ chmod +x kesha-engine && xattr -d com.apple.quarantine kesha-engine 2>/dev/null
 ./kesha-engine --version          # → "kesha-engine X.Y.Z"
 
 # 2. Capability surface — must include every feature the build matrix promised
-./kesha-engine --capabilities-json | jq .features
+./kesha-engine describe | jq .features
 
-# 3. Real end-to-end exercise (the one CI's --capabilities-json check misses).
+# 3. Real end-to-end exercise (the one CI's describe check misses).
 #    For TTS: synthesize a known-good voice into a fresh KESHA_CACHE_DIR.
 #    For ASR: transcribe a fixture from rust/tests/fixtures/.
 KESHA_CACHE_DIR="$SMOKE/cache" ./kesha-engine install --tts
@@ -210,7 +210,7 @@ file "$SMOKE/en.wav"              # must report a valid WAV
 
 Repeat for `kesha-engine-linux-x64` (run via Docker if not on Linux). If ANY of those three steps fail, **DO NOT un-draft** — un-drafting fires `📦 npm Publish` automatically. Either yank the GitHub release (`gh release delete vX.Y.Z --yes`, delete the tag, bump patch, retry) or push a fix and rebuild via `gh workflow run "🔨 Build Engine"`. Since the draft never went public, no recall is needed.
 
-The CI smoke step (`--capabilities-json` only) is a sanity check on the toolchain, not a behavior test. Behavior testing is the human-in-the-loop pre-undraft gate; it lives in this checklist, not in the workflow file.
+The CI smoke step (`describe` only) is a sanity check on the toolchain, not a behavior test. Behavior testing is the human-in-the-loop pre-undraft gate; it lives in this checklist, not in the workflow file.
 
 ## `bun link` DOES NOT OVERRIDE A GLOBALLY-INSTALLED PACKAGE — REMOVE FIRST
 
