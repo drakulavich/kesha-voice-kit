@@ -2,7 +2,7 @@
 
 - [x] 1.1 Add `Describe` to `Commands` in `rust/src/main.rs` and `rust/src/protocol/describe.rs` that assembles the document from `CommandFactory::command()` plus a gate table
 - [x] 1.2 Unit test: the set of flags clap knows equals the set the gate table lists, per subcommand
-- [ ] 1.3 Fold `errors::error_codes_json` and `capabilities::get_capabilities` into the document; delete the two flags
+- [x] 1.3 Fold `errors::error_codes_json` and `capabilities::get_capabilities` into the document — landed with `describe` itself at 1.1: `describe` reads `get_capabilities()` for `backend`/`features`/`tts` and builds `errors` from `ErrorCode::ALL` plus the CLI-only codes, so it is a strict superset (22 codes to the flag's 19, and an `origin` field the flag never had). Deleting the two flags is **4.2's**, not this task's: 2.5 keeps them for the `KESHA_PROTOCOL` window, and `build-engine.yml`'s smoke step and the pact recorder still read `--capabilities-json` until the beta.2 pin (5.4). When 4.2 removes them, `errors::error_codes_json` loses its only caller and goes with them; `get_capabilities` stays, because `describe` is now its consumer
 - [x] 1.4 Gate table rows carry `whenUngated` (`reject` by default, `drop` for `--no-expand-abbrev`) and a `gate` that is one feature or an any-of list
 
 ## 2. Event stream
