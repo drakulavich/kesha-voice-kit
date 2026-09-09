@@ -244,9 +244,11 @@ describe("waitUntilSpawnable (#216)", () => {
   });
 });
 
-describe("the Kokoro warmup speaks protocol 4 (#1163)", () => {
+describe("the install spawns speak protocol 4 (#1163, #1181)", () => {
   // The warmup only ever spawns on darwin-arm64 — same gate `engine-install-decisions.test.ts` uses.
   const darwinArmTest = isDarwinArm64() ? test : test.skip;
+  // The stubs below are `#!/bin/sh`; Windows cannot execute one, and these assert no Windows behaviour.
+  const posixTest = process.platform === "win32" ? test.skip : test;
   let releaseCacheIsolation: () => void = () => {};
   const tempDirs: string[] = [];
 
@@ -337,7 +339,7 @@ exit 0
    * stderr was redirected. A line per whole percent would add hundreds of rows to every CI
    * install log, so the percentage belongs on the repainting row and nowhere else.
    */
-  test("a redirected install keeps its discrete steps and gains no line per percent", async () => {
+  posixTest("a redirected install keeps its discrete steps and gains no line per percent", async () => {
     const dir = stageInstallableEngine("kesha-install-progress-");
     writeEngineWithInstallBody(
       dir,
@@ -357,7 +359,7 @@ exit 0
     expect(stderr).not.toContain("100%");
   });
 
-  test("a failing model install raises the engine's code, not a bare exit status", async () => {
+  posixTest("a failing model install raises the engine's code, not a bare exit status", async () => {
     const dir = stageInstallableEngine("kesha-install-coded-");
     writeEngineWithInstallBody(
       dir,

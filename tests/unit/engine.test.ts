@@ -593,6 +593,53 @@ exit 2
     });
   });
 
+  /**
+   * A clean interrupt delivers the transcript and exits 128+signal saying nothing, so an error
+   * event beside that status is a real failure the signal must not excuse (Greptile P1 on #1185).
+   */
+  fakeEngineTest("an error event outranks an accepted signal exit", async () => {
+    const engine = writeRecordingEngine(
+      "kesha-engine-record-sig-err-",
+      `  printf '%s\\n' '{"kind":"error","code":"E_AUDIO_DEVICE","message":"microphone went away"}' >&2`,
+      130,
+    );
+    await withEngineEnv(engine, async () => {
+      const err = await failure(() => recordEngine({ live: true }, 10));
+      expect(err.code).toBe("E_AUDIO_DEVICE");
+    });
+  });
+
+  fakeEngineTest("an off-protocol line outranks an accepted signal exit", async () => {
+    const engine = writeRecordingEngine(
+      "kesha-engine-record-sig-prose-",
+      `  printf '%s\\n' 'thread panicked at src/record.rs:1' >&2`,
+      143,
+    );
+    await withEngineEnv(engine, async () => {
+      const err = await failure(() => recordEngine({ live: true }, 10));
+      expect(err.code).toBe("E_INTERNAL");
+      expect(err.message).toContain("not a protocol event");
+    });
+  });
+
+  /**
+   * Buffering a warning to EOF wastes it: a minutes-long recording would surface it once it can no
+   * longer help (Greptile P2 on #1185). Order is the contract — the warning must precede the tick
+   * that followed it out of the engine, not trail the whole run.
+   */
+  fakeEngineTest("a warning reaches the user before the progress that followed it", async () => {
+    const engine = writeRecordingEngine(
+      "kesha-engine-record-warn-",
+      `  printf '%s\\n' '{"kind":"warn","code":"W_RECOVERY_AUDIO","message":"recovery audio stopped early"}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"Recorded /tmp/out.wav (16000 Hz, 1 channel, 160000 frames)"}' >&2`,
+    );
+    const out = await withEngineEnv(engine, () =>
+      captureStderr(false, () => recordEngine({ out: "/tmp/out.wav" }, 10)),
+    );
+    expect(out).toContain("recovery audio stopped early");
+    expect(out.indexOf("recovery audio stopped early")).toBeLessThan(out.indexOf("Recorded /tmp/out.wav"));
+  });
+
   fakeEngineTest("recordEngine surfaces E_ENGINE_SPAWN instead of a raw spawn exception", async () => {
     const dir = tempDir("kesha-engine-not-exec-record-");
     const notExecutable = join(dir, "kesha-engine");

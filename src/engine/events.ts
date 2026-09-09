@@ -142,6 +142,8 @@ export function setEngineDebugSink(sink: ((event: DebugEvent) => void) | null): 
 export interface EventSinks {
   /** The second argument lets a caller route a percentage to a repainting row and a discrete step to the log. */
   onProgress?: (line: string, event: ProgressEvent) => void;
+  /** Warnings on a minutes-long spawn are advice about what is happening now, so a sink renders them as they arrive; they stay in `stderr` for a later failure's context. */
+  onWarn?: (line: string, event: WarnEvent) => void;
 }
 
 export interface StderrOutcome {
@@ -178,6 +180,7 @@ export async function readEvents(
       return;
     }
     if (event.kind === "error") outcome.error = event;
+    if (event.kind === "warn" && sinks.onWarn) sinks.onWarn(renderEvent(event), event);
     if (event.kind === "progress" && sinks.onProgress) {
       sinks.onProgress(renderEvent(event), event);
       return;

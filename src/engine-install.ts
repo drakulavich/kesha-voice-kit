@@ -568,6 +568,10 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
           status.clear();
           log.progress(line);
         },
+        onWarn: (line) => {
+          status.clear();
+          log.warn(line);
+        },
       }),
       proc.exited,
     ]);
@@ -576,13 +580,11 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
     tree.dispose();
   }
 
-  const stderr = events.stderr.trim();
   if (events.error || events.invalid.length > 0) throw engineFailure("install", events, exitCode);
   if (exitCode !== 0) {
     // Nothing coded and nothing off-protocol: the engine failed without saying why, so neither do we.
     throw new Error(`Failed to install models: kesha-engine install exited with code ${exitCode}.`);
   }
-  if (stderr.length > 0) process.stderr.write(`${stderr}\n`);
 }
 
 /**
