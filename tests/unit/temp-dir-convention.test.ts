@@ -43,12 +43,15 @@ const TESTS_DIR = "tests";
 
 // Assembled from the name rather than written out: the scan below reads this file too.
 const CALL_NAME = "mkdtempSync";
-const DIRECT_CALL = new RegExp(`\\b${CALL_NAME}\\s*\\(`);
+const ASYNC_CALL_NAME = CALL_NAME.replace("Sync", "");
+const DIRECT_CALL = new RegExp(`\\b${ASYNC_CALL_NAME}(?:Sync)?\\s*\\(`);
+// An alias renames the call, so the import is the only place the old shape is still spelled out.
+const ALIASED_IMPORT = new RegExp(`\\b${ASYNC_CALL_NAME}(?:Sync)?\\s+as\\s+`);
 
-function directCallLines(source: string): number[] {
+function unreapableLines(source: string): number[] {
   const lines: number[] = [];
   source.split("\n").forEach((line, index) => {
-    if (DIRECT_CALL.test(line)) lines.push(index + 1);
+    if (DIRECT_CALL.test(line) || ALIASED_IMPORT.test(line)) lines.push(index + 1);
   });
   return lines;
 }
@@ -61,49 +64,59 @@ function testSources(): string[] {
 }
 
 const sources = testSources();
-const directCallers = sources
-  .map((path) => ({ path, lines: directCallLines(readRepoFile(path)) }))
+const offenders = sources
+  .map((path) => ({ path, lines: unreapableLines(readRepoFile(path)) }))
   .filter(({ lines }) => lines.length > 0);
-const callerPaths = directCallers.map(({ path }) => path);
+const offenderPaths = offenders.map(({ path }) => path);
 
 describe("temp directories under tests/", () => {
   // Without this the gate below passes when the walk or the pattern stops finding anything at all.
   test("the scan still reads the tree, and still recognises a direct call", () => {
     expect(sources.length).toBeGreaterThan(50);
-    expect(callerPaths).toContain("tests/helpers/temp-dir.ts");
+    expect(offenderPaths).toContain("tests/helpers/temp-dir.ts");
     expect(sources).toContain("tests/unit/temp-dir-leak-guard.test.ts");
-    expect(callerPaths).not.toContain("tests/unit/temp-dir-leak-guard.test.ts");
+    expect(offenderPaths).not.toContain("tests/unit/temp-dir-leak-guard.test.ts");
   });
 
   test("no file creates one the preloaded guard cannot reap", () => {
-    const unlisted = directCallers.filter(({ path }) => EXEMPT[path] === undefined);
+    const unlisted = offenders.filter(({ path }) => EXEMPT[path] === undefined);
     if (unlisted.length === 0) return;
 
     const listed = unlisted.map(({ path, lines }) => `  ${path}:${lines.join(",")}`);
     throw new Error(
-      `these files call mkdtempSync directly, so the directories they create outlive a failed, ` +
-        `timed-out or interrupted test:\n${listed.join("\n")}\n\n` +
+      `these files reach ${CALL_NAME} without the guard, so the directories they create outlive a ` +
+        `failed, timed-out or interrupted test:\n${listed.join("\n")}\n\n` +
         `Use \`tempDir(prefix)\` from tests/helpers/temp-dir.ts, which registers the directory with ` +
         `the guard bunfig.toml preloads; removing it by hand as well stays safe. If a file must call ` +
-        `mkdtempSync itself, add it to EXEMPT in tests/unit/temp-dir-convention.test.ts with the ` +
-        `reason. The convention is written up in tests/integration/README.md.`,
+        `it itself, under either spelling or behind an alias, add it to EXEMPT in ` +
+        `tests/unit/temp-dir-convention.test.ts with the reason. The convention is written up in ` +
+        `tests/integration/README.md.`,
     );
   });
 
   test("carries no stale exemptions", () => {
     for (const [path, reason] of Object.entries(EXEMPT)) {
       expect(reason.trim()).not.toBe("");
-      expect(callerPaths).toContain(path);
+      expect(offenderPaths).toContain(path);
     }
   });
 });
 
-describe("directCallLines", () => {
+describe("unreapableLines", () => {
   test("names the line a call is on", () => {
-    expect(directCallLines(`const a = 1;\nconst dir = ${CALL_NAME}(join(tmpdir(), "p-"));\n`)).toEqual([2]);
+    expect(unreapableLines(`const a = 1;\nconst dir = ${CALL_NAME}(join(tmpdir(), "p-"));\n`)).toEqual([2]);
+  });
+
+  test("names the line the promise spelling is called on", () => {
+    expect(unreapableLines(`const dir = await ${ASYNC_CALL_NAME}(join(tmpdir(), "p-"));\n`)).toEqual([1]);
+  });
+
+  test("names the import line an alias hides the call behind", () => {
+    const source = `import { ${CALL_NAME} as mk } from "node:fs";\nconst dir = mk(join(tmpdir(), "p-"));\n`;
+    expect(unreapableLines(source)).toEqual([1]);
   });
 
   test("leaves a file that only imports the name alone", () => {
-    expect(directCallLines(`import { ${CALL_NAME}, rmSync } from "node:fs";\nconst dir = tempDir("p-");\n`)).toEqual([]);
+    expect(unreapableLines(`import { ${CALL_NAME}, rmSync } from "node:fs";\nconst dir = tempDir("p-");\n`)).toEqual([]);
   });
 });
