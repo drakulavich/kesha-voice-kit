@@ -18,6 +18,7 @@ import { defaultEngineBinPath } from "../../src/paths";
 import { engineVersion } from "../../src/package-info";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
+import { tempDir } from "../helpers/temp-dir";
 
 /** Strips ANSI SGR sequences so captured `process.stderr.write` output can be asserted on plainly. */
 function stripAnsi(text: string): string {
@@ -25,7 +26,7 @@ function stripAnsi(text: string): string {
 }
 
 function mkTmpBinPath(): string {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-install-test-"));
+  const dir = tempDir("kesha-install-test-");
   return join(dir, "kesha-engine");
 }
 
