@@ -8,9 +8,11 @@
  */
 import { afterAll, afterEach } from "bun:test";
 import { installInterruptReaper, reapLeakedProcesses } from "./process";
-import { reapTempDirs } from "./temp-dir";
+import { reapTempDirs, sweepStaleTempDirs } from "./temp-dir";
 
 installInterruptReaper();
+// A SIGKILLed run reaches no handler at all, so the next run is the only thing that can clean up after it (#1175).
+sweepStaleTempDirs();
 // An interrupted run reaches no `afterAll`, which is exactly when these directories used to survive (#1175).
 process.on("exit", () => reapTempDirs());
 

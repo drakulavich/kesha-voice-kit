@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO_ROOT } from "../helpers/repo";
-import { createTempDirRegistry } from "../helpers/temp-dir";
+import { createTempDirRegistry, sweepStaleTempDirs } from "../helpers/temp-dir";
 
 const FIXTURE = "./tests/helpers/leaked-temp-dir.fixture.ts";
 const WEDGED_FIXTURE = "./tests/helpers/wedged-temp-dir.fixture.ts";
@@ -150,6 +151,76 @@ describe("temp directory leak guard", () => {
         chmodSync(wedged, 0o700);
         rmSync(wedged, { recursive: true, force: true });
       }
+    }
+  });
+});
+
+describe("stale temp directory sweep", () => {
+  const LONG_AGO = new Date(Date.now() - 5 * 60 * 60 * 1000);
+
+  function stage(root: string, name: string, age: "stale" | "fresh"): string {
+    const dir = join(root, name);
+    mkdirSync(dir);
+    writeFileSync(join(dir, "held"), "x");
+    if (age === "stale") utimesSync(dir, LONG_AGO, LONG_AGO);
+    return dir;
+  }
+
+  test("removes what a run nothing survived left behind, and leaves a live run's directory alone", () => {
+    const registry = createTempDirRegistry();
+    const root = registry.tempDir("kesha-temp-dir-guard-");
+
+    try {
+      const stale = stage(root, "kesha-temp-dir-sweep-a1b2c3", "stale");
+      const fresh = stage(root, "kesha-temp-dir-sweep-d4e5f6", "fresh");
+
+      expect(sweepStaleTempDirs(root)).toEqual([stale]);
+
+      expect(existsSync(stale)).toBe(false);
+      expect(existsSync(fresh)).toBe(true);
+    } finally {
+      registry.reapTempDirs();
+    }
+  });
+
+  test("runs at preload, so the run after a killed one is what cleans up its directories", () => {
+    const registry = createTempDirRegistry();
+    const out = join(registry.tempDir("kesha-temp-dir-guard-"), "leaked-path");
+    const abandoned = join(tmpdir(), `kesha-temp-dir-abandoned-${process.pid}-a1b2c3`);
+    mkdirSync(abandoned, { recursive: true });
+    utimesSync(abandoned, LONG_AGO, LONG_AGO);
+
+    try {
+      const run = Bun.spawnSync(["bun", "test", FIXTURE], {
+        cwd: REPO_ROOT,
+        env: { ...process.env, KESHA_TEMP_DIR_FIXTURE_OUT: out },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      expect(run.stderr.toString()).toContain("1 pass");
+      expect(existsSync(abandoned)).toBe(false);
+    } finally {
+      registry.reapTempDirs();
+      rmSync(abandoned, { recursive: true, force: true });
+    }
+  });
+
+  /** The temp root is shared with the MCP audio cache and with every other tool on the machine. */
+  test("leaves what no run of this suite created alone, however old", () => {
+    const registry = createTempDirRegistry();
+    const root = registry.tempDir("kesha-temp-dir-guard-");
+
+    try {
+      const mcpCache = stage(root, "kesha-mcp", "stale");
+      const foreign = stage(root, "some-other-tool-a1b2c3", "stale");
+
+      expect(sweepStaleTempDirs(root)).toEqual([]);
+
+      expect(existsSync(mcpCache)).toBe(true);
+      expect(existsSync(foreign)).toBe(true);
+    } finally {
+      registry.reapTempDirs();
     }
   });
 });
