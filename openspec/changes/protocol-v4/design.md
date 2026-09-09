@@ -77,7 +77,7 @@ The Engine ships v4 as `v1.25.0-beta.1` under the machinery that exists during s
 
 ## Migration Plan
 
-Stage 1 (Engine, 4–5 PRs): `describe` + gate table + parity test; event emitter replacing `eprintln!`; delete `--capabilities-json`, `--error-codes-json`, `KESHA_DEBUG_FD`; migrate the pact recorder, release smoke, Rust tests, `docs/errors.md`; tag `v1.25.0-beta.1`. Stage 2 (CLI, 5–6 PRs): beta pin, generic validation, event renderer, `KeshaError`; then one PR per command.
+Stage 1 (Engine, 4–5 PRs): `describe` + gate table + parity test; event emitter replacing `eprintln!`; migrate the release smoke, the Rust tests and `docs/errors.md`; tag `v1.25.0-beta.1`. The two legacy flags, the `KESHA_DEBUG_FD` sink and the pact recorder do **not** move here — the compatibility window below keeps them until the PR that cuts `v1.25.0-beta.2`. Stage 2 (CLI, 5–6 PRs): beta pin, generic validation, event renderer, `KeshaError`; then one PR per command.
 
 One observable exit code changes: `kesha-engine` with no subcommand exits 2 instead of 1 (`rust/src/main.rs:155-157`), because a missing subcommand is an invalid argument and now reports as one. `kesha` itself is unaffected — it never invokes the Engine without a subcommand.
 
