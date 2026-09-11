@@ -43,6 +43,16 @@ describe("preflight is the gate CLAUDE.md claims it is", () => {
     expect(missing).toEqual([]);
   });
 
+  // A green gate's output is never read, and every line of it is context an agent pays for.
+  test("it runs every gate through the quiet wrapper", () => {
+    const loud = preflightBody()
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^(bun run |cargo |\{\{ just_executable\(\) \}\})/.test(line));
+
+    expect(loud).toEqual([]);
+  });
+
   test("it reports a stale checkout rather than staying silent about it", () => {
     // The number is already computed for the gate selection; a checkout 14 commits behind had an
     // agent reading a stale CLAUDE.md for nine hours before anyone noticed (#1070).

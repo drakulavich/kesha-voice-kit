@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mutate } from "../../scripts/mutate";
+import { mutate, verdict } from "../../scripts/mutate";
 
 describe("mutate", () => {
   // A perl one-liner whose pattern misses exits 0 and changes nothing, so the test passes and the
@@ -22,5 +22,32 @@ describe("mutate", () => {
 
   test("refuses an empty needle instead of splitting every character", () => {
     expect(() => mutate("abc", "", "x")).toThrow("must not be empty");
+  });
+});
+
+describe("verdict", () => {
+  const log = ["compiling", "running", "(fail) it refuses", "1 fail", "Ran 3 tests"].join("\n");
+
+  test("a caught mutation reports the run's last lines, not the failure it was asking for", () => {
+    const result = verdict({ exitCode: 1, log }, 2);
+
+    expect(result.pinned).toBe(true);
+    expect(result.report).toBe("1 fail\nRan 3 tests");
+    expect(result.report).not.toContain("compiling");
+  });
+
+  // A test command that never ran a test — a build error, a filter matching nothing — exits
+  // non-zero and would otherwise read exactly like a caught assertion.
+  test("keeps enough of a caught run to tell an assertion from a command that never ran", () => {
+    const result = verdict({ exitCode: 101, log: "error: could not compile `kesha-engine`" }, 2);
+
+    expect(result.report).toContain("could not compile");
+  });
+
+  test("a surviving mutation reports the whole run, because nothing failed to point at", () => {
+    const result = verdict({ exitCode: 0, log }, 2);
+
+    expect(result.pinned).toBe(false);
+    expect(result.report).toBe(log);
   });
 });
