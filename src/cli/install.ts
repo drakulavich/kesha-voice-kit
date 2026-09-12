@@ -172,13 +172,13 @@ function finishInstallDiagnostic(
   }
 }
 
-/** Null when the requested backend is installable here. `KESHA_ENGINE_BIN` opts out — the user supplied their own engine. */
 /** The refusal `install`, `install --plan` and `init --plan` all render the same way (#684). */
 export function unavailableBackendRefusal(backend: string | undefined): KeshaError | null {
   const message = unavailableBackendError(backend);
   return message ? new KeshaError("E_INVALID_ARG", message) : null;
 }
 
+/** Null when the requested backend is installable here. `KESHA_ENGINE_BIN` opts out — the user supplied their own engine. */
 export function unavailableBackendError(backend: string | undefined): string | null {
   const platformBackend = defaultBackendForPlatform();
   if (!backend || process.env.KESHA_ENGINE_BIN || !platformBackend) return null;
