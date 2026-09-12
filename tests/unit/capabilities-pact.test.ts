@@ -129,6 +129,10 @@ describe("capability pact — recordings", () => {
   // The taxonomy is compiled per build, so only a cross-target recording can see it drift on
   // one platform, and a released code with no docs/errors.md row is one users cannot look up.
   it("publishes one error and warning taxonomy across every target", () => {
+    for (const t of TARGETS) {
+      expect(t.pact.errors.length).toBeGreaterThan(20);
+      expect(t.pact.warnings.length).toBeGreaterThan(0);
+    }
     const shapes = new Set(TARGETS.map((t) => JSON.stringify({ errors: t.pact.errors, warnings: t.pact.warnings })));
     expect(shapes.size).toBe(1);
   });
