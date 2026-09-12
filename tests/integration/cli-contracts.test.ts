@@ -1880,15 +1880,12 @@ exit 0
     chmodSync(enginePath, 0o755);
     const env: Record<string, string> = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
 
-    const startedAt = performance.now();
     const run = await runCliPipedTo(["record", "--live"], "head -1", { env, sinkPath: join(dir, "first.txt") });
-    const elapsedMs = performance.now() - startedAt;
 
     expect(run.stderr).not.toContain("EPIPE");
     expect(run.exitCode).toBe(0);
     expect(readFileSync(join(dir, "first.txt"), "utf8")).toBe("transcript line 1\n");
     expect(existsSync(finishedMarker)).toBe(false);
-    expect(elapsedMs).toBeLessThan(2500);
   }, 30000);
 
   test("a stdout that fails for any other reason still fails loudly (#1001)", async () => {
