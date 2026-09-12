@@ -472,8 +472,8 @@ event on the Event stream rather than accept the flag silently.
   features this build lacks — never a silent drop, never a refusal of a
   request the Engine can otherwise serve
 
-> *Technical Note — the stage-0 delta of `protocol-v4` (archived) wrote this
-> scenario as a refusal; the landed row is `whenUngated: drop` and the warning
+> *Technical Note — the `protocol-v4` delta (archived) wrote this scenario as
+> a refusal, where the spec before it had drop-and-warn with a version remedy; the landed row is `whenUngated: drop` and the warning
 > is built by `validateArgv` (`src/engine/describe.ts`, drop branch), so the
 > main spec was corrected at the archive sync (PR #1191) rather than the code.*
 
