@@ -4,7 +4,7 @@
 
 `kesha record --live` SHALL capture the default microphone and transcribe it through a streaming ASR session, printing the final transcript to stdout when recording stops. No WAV file SHALL be written. Progress and errors go to stderr so stdout carries the transcript and nothing else.
 
-Recording stops on the same conditions as capture-to-WAV — `--max-seconds` elapsed, or stdin EOF — and on one more: when the process reading stdout closes it, the CLI SHALL stop the Engine rather than hold the microphone until `--max-seconds`. The relay SHALL keep draining the Engine's stdout so the Engine never blocks, SHALL write nothing further, and SHALL judge the Engine's exit exactly as it judges any other live stop: the clean interrupt status is success, an error event is a failure.
+Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapsed, or stdin EOF. The CLI's relay adds a contract of its own for the reader of stdout: when a write to stdout fails because the reader closed the pipe, the relay SHALL write nothing further, SHALL keep draining the Engine's stdout so the Engine never blocks, SHALL stop the Engine once rather than let it hold the microphone until `--max-seconds`, and SHALL judge the Engine's exit exactly as it judges any other live stop — the clean interrupt status is success, an error event is a failure. The shipped Engine delivers the transcript in one write after recording has stopped, so no write can fail before the stop and this contract has no observable effect today; it binds the moment the live session streams partial lines.
 
 #### Scenario: Maks dictates a note straight to text
 
@@ -21,10 +21,11 @@ Recording stops on the same conditions as capture-to-WAV — `--max-seconds` ela
 - THEN the word count reflects only the transcript
 - AND no progress text has leaked into the pipe
 
-#### Scenario: Sona takes only the first line
+#### Scenario: Sona takes only the first line of a streaming transcript
 
-- GIVEN Sona runs `kesha record --live | head -1`
-- WHEN `head` prints the first transcript line and exits, closing the pipe
+- GIVEN an Engine that streams partial transcript lines to stdout as it recognises them (none ships today — the live session delivers once, at the end)
+- AND Sona runs `kesha record --live | head -1`
+- WHEN `head` prints the first line and exits, closing the pipe
 - THEN the CLI stops the Engine at once instead of recording until `--max-seconds`
 - AND the process exits 0, and the stop adds no message of its own to stderr — the listening line and the ticker printed before the reader left are the only progress; the reader leaving is not a failure, and nobody is there to tell
 
@@ -51,8 +52,9 @@ Recording stops on the same conditions as capture-to-WAV — `--max-seconds` ela
 The Engine SHALL stop recording when either `--max-seconds` elapsed time is
 reached or stdin reaches EOF (pipe closed by the caller), whichever comes
 first. If stdin is a terminal, the EOF stop is not available; only
-`--max-seconds` applies. Under `--live` the CLI adds a third stop: the reader of
-its stdout closing the pipe, on which the CLI sends the Engine one `SIGTERM`.
+`--max-seconds` applies. Under `--live` the CLI adds a stop of its own: a write
+to its stdout failing because the reader closed the pipe, on which the CLI sends
+the Engine one `SIGTERM` (unreachable while the Engine delivers once, at the end).
 
 #### Scenario: Sona stops recording by closing the pipe
 
