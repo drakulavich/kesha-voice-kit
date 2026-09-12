@@ -26,7 +26,7 @@ Recording stops on the same conditions as capture-to-WAV — `--max-seconds` ela
 - GIVEN Sona runs `kesha record --live | head -1`
 - WHEN `head` prints the first transcript line and exits, closing the pipe
 - THEN the CLI stops the Engine at once instead of recording until `--max-seconds`
-- AND the process exits 0 with nothing on stderr — the reader leaving is not a failure, and nobody is there to tell
+- AND the process exits 0, and the stop adds no message of its own to stderr — the listening line and the ticker printed before the reader left are the only progress; the reader leaving is not a failure, and nobody is there to tell
 
 #### Scenario: nothing was said
 
