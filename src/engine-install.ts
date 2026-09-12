@@ -6,12 +6,12 @@ import { getDescribe, getEngineBinPath, protocolEnv, spawnEngineProcess } from "
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, KeshaError, readEvents } from "./engine/events";
+import { engineFailure, KeshaError, readEvents, type StderrOutcome } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
-import { streamResponseToFile } from "./progress";
+import { createLiveStatus, streamResponseToFile } from "./progress";
 import { registerProcessTree } from "./process-tree";
 import {
   readInstalledEngineVersion,
@@ -551,22 +551,39 @@ async function validateInstallRequest(
 /** Runs `kesha-engine install` to download/verify models. */
 async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
   log.progress("Installing models...");
-  // #680/#1164: inherited stderr shows the engine raw; must parse events before the pin reaches v1.25.0-beta.2.
-  const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "inherit"]);
+  const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
+  // The byte percentage repaints one row; `GET`/`OK`/`retrying` are discrete steps that must stay in the log.
+  const status = createLiveStatus();
+  let events: StderrOutcome;
   let exitCode: number;
   try {
-    exitCode = await proc.exited;
+    [events, exitCode] = await Promise.all([
+      readEvents(proc.stderr as ReadableStream<Uint8Array>, {
+        onProgress: (line, event) => {
+          if (event.pct !== undefined) {
+            status.update(line);
+            return;
+          }
+          status.clear();
+          log.progress(line);
+        },
+        onWarn: (line) => {
+          status.clear();
+          log.warn(line);
+        },
+      }),
+      proc.exited,
+    ]);
   } finally {
+    status.clear();
     tree.dispose();
   }
 
+  if (events.error || events.invalid.length > 0) throw engineFailure("install", events, exitCode);
   if (exitCode !== 0) {
-    // No code of our own: inherited stderr already carried the engine's coded failure to the user.
-    throw new Error(
-      `Failed to install models: kesha-engine install exited with code ${exitCode}. ` +
-        "See the engine output above for the failing file.",
-    );
+    // Nothing coded and nothing off-protocol: the engine failed without saying why, so neither do we.
+    throw new Error(`Failed to install models: kesha-engine install exited with code ${exitCode}.`);
   }
 }
 

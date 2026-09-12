@@ -17,12 +17,14 @@ import { tmpdir } from "os";
 import { defaultEngineBinPath } from "../../src/paths";
 import { engineVersion } from "../../src/package-info";
 import { isDarwinArm64 } from "../../src/engine-targets";
+import { KeshaError } from "../../src/engine/events";
+import { errorMessage } from "../../src/error-utils";
 import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 
 /** Strips ANSI SGR sequences so captured `process.stderr.write` output can be asserted on plainly. */
 function stripAnsi(text: string): string {
-  return text.replace(/\[[0-9;]*m/g, "");
+  return text.replace(/\u001B\[[0-9;]*m/g, "");
 }
 
 function mkTmpBinPath(): string {
@@ -243,9 +245,11 @@ describe("waitUntilSpawnable (#216)", () => {
   });
 });
 
-describe("the Kokoro warmup speaks protocol 4 (#1163)", () => {
+describe("the install spawns speak protocol 4 (#1163, #1181)", () => {
   // The warmup only ever spawns on darwin-arm64 — same gate `engine-install-decisions.test.ts` uses.
   const darwinArmTest = isDarwinArm64() ? test : test.skip;
+  // The stubs below are `#!/bin/sh`; Windows cannot execute one, and these assert no Windows behaviour.
+  const posixTest = process.platform === "win32" ? test.skip : test;
   let releaseCacheIsolation: () => void = () => {};
   const tempDirs: string[] = [];
 
@@ -292,9 +296,11 @@ exit 0
     return binPath;
   }
 
-  /** Captures everything written to stderr for the duration of `run`, ANSI stripped. */
-  async function captureStderr(run: () => Promise<void>): Promise<string> {
+  /** Captures stderr for the duration of `run`, ANSI stripped, with `isTTY` forced so redirection is the test's choice. */
+  async function captureStderr(isTTY: boolean, run: () => Promise<void>): Promise<string> {
+    const savedIsTTY = process.stderr.isTTY;
     const savedWrite = process.stderr.write;
+    Object.defineProperty(process.stderr, "isTTY", { value: isTTY, configurable: true });
     const chunks: string[] = [];
     process.stderr.write = ((chunk: string | Uint8Array) => {
       chunks.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
@@ -304,9 +310,127 @@ exit 0
       await run();
     } finally {
       process.stderr.write = savedWrite;
+      Object.defineProperty(process.stderr, "isTTY", { value: savedIsTTY, configurable: true });
     }
     return stripAnsi(chunks.join(""));
   }
+
+  /** Answers `describe`, `--version` and `install`, with `installBody` driving the model-install spawn. */
+  function writeEngineWithInstallBody(dir: string, installBody: string, installExit = 0): string {
+    const binPath = join(dir, "bin", "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+case "\$1" in
+  describe) printf '%s\\n' '${describeJson({ features: ["tts"] })}'; exit 0 ;;
+  --version) printf 'kesha-engine ${engineVersion}\\n'; exit 0 ;;
+esac
+if [ "\$1" = "install" ]; then
+${installBody}
+  exit ${installExit}
+fi
+exit 0
+`,
+    );
+    chmodSync(binPath, 0o755);
+    writeFileSync(`${binPath}.version`, `${engineVersion}\n`);
+    process.env.KESHA_ENGINE_BIN = binPath;
+    return binPath;
+  }
+
+  /**
+   * The engine painted the byte bar itself until protocol 4 (#1181) and never painted it when
+   * stderr was redirected. A line per whole percent would add hundreds of rows to every CI
+   * install log, so the percentage belongs on the repainting row and nowhere else.
+   */
+  posixTest("a redirected install keeps its discrete steps and gains no line per percent", async () => {
+    const dir = stageInstallableEngine("kesha-install-progress-");
+    writeEngineWithInstallBody(
+      dir,
+      `  printf '%s\\n' '{"kind":"progress","message":"GET models/encoder.onnx"}' >&2
+  printf '%s\\n' '{"kind":"progress","phase":"download","message":"models/encoder.onnx 1.0/2.0MB","pct":50}' >&2
+  printf '%s\\n' '{"kind":"progress","phase":"download","message":"models/encoder.onnx 2.0/2.0MB","pct":100}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"OK  models/encoder.onnx"}' >&2`,
+    );
+
+    const stderr = await captureStderr(false, async () => {
+      await installEngine({});
+    });
+
+    expect(stderr).toContain("GET models/encoder.onnx");
+    expect(stderr).toContain("OK  models/encoder.onnx");
+    expect(stderr).not.toContain("1.0/2.0MB");
+    expect(stderr).not.toContain("2.0/2.0MB");
+  });
+
+  posixTest("on a terminal the byte counter repaints one row and the discrete steps keep their lines", async () => {
+    const dir = stageInstallableEngine("kesha-install-progress-tty-");
+    writeEngineWithInstallBody(
+      dir,
+      `  printf '%s\\n' '{"kind":"progress","message":"GET models/encoder.onnx"}' >&2
+  printf '%s\\n' '{"kind":"progress","phase":"download","message":"models/encoder.onnx 1.0/2.0MB","pct":50}' >&2
+  printf '%s\\n' '{"kind":"progress","phase":"download","message":"models/encoder.onnx 2.0/2.0MB","pct":100}' >&2`,
+    );
+
+    const stderr = await captureStderr(true, async () => {
+      await installEngine({});
+    });
+
+    expect(stderr).toContain("\rdownload: models/encoder.onnx 1.0/2.0MB");
+    expect(stderr).toContain("\rdownload: models/encoder.onnx 2.0/2.0MB");
+    expect(stderr).not.toContain("models/encoder.onnx 1.0/2.0MB\n");
+    expect(stderr).toContain("GET models/encoder.onnx\n");
+  });
+
+  posixTest("a failing model install raises the engine's code, not a bare exit status", async () => {
+    const dir = stageInstallableEngine("kesha-install-coded-");
+    writeEngineWithInstallBody(
+      dir,
+      `  printf '%s\\n' '{"kind":"error","code":"E_DOWNLOAD_FAILED","message":"models/encoder.onnx: connection reset","hint":"retry"}' >&2`,
+      1,
+    );
+
+    let caught: unknown;
+    try {
+      await installEngine({});
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(KeshaError);
+    expect((caught as KeshaError).code).toBe("E_DOWNLOAD_FAILED");
+    expect((caught as KeshaError).hint).toBe("retry");
+  });
+
+  /**
+   * The third failure contract: nothing coded, nothing off-protocol, so the CLI says only what it
+   * knows. Its record counterpart is pinned at `src/engine.ts`; this one lost its pin when the
+   * prose-writing stub in `cli-contracts` became a protocol violation instead (review of #1185).
+   */
+  posixTest("a model install that exits non-zero saying nothing reports the bare exit status", async () => {
+    const dir = stageInstallableEngine("kesha-install-silent-");
+    writeEngineWithInstallBody(dir, "  :", 3);
+
+    let caught: unknown;
+    try {
+      await installEngine({});
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught).not.toBeInstanceOf(KeshaError);
+    expect(errorMessage(caught)).toBe("Failed to install models: kesha-engine install exited with code 3.");
+  });
+
+  posixTest("the model install spawn speaks protocol 4", async () => {
+    const dir = stageInstallableEngine("kesha-install-proto-");
+    writeEngineWithInstallBody(dir, `  printf '{"kind":"progress","message":"proto=%s"}\\n' "\$KESHA_PROTOCOL" >&2`);
+
+    const stderr = await captureStderr(false, async () => {
+      await installEngine({});
+    });
+
+    expect(stderr).toContain("proto=4");
+  });
 
   darwinArmTest("a say error event warns with the rendered coded line, and the install still resolves", async () => {
     const dir = stageInstallableEngine("kesha-warmup-error-");
@@ -316,7 +440,7 @@ exit 0
 exit 1`,
     );
 
-    const stderr = await captureStderr(async () => {
+    const stderr = await captureStderr(false, async () => {
       await installEngine({ ttsLangs: ["en"] });
     });
 
@@ -328,7 +452,7 @@ exit 1`,
     const dir = stageInstallableEngine("kesha-warmup-killed-");
     writeEngineWithSayBody(dir, "kill -TERM $$\nsleep 5");
 
-    const stderr = await captureStderr(async () => {
+    const stderr = await captureStderr(false, async () => {
       await installEngine({ ttsLangs: ["en"] });
     });
 

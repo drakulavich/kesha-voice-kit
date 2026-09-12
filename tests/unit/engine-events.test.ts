@@ -145,6 +145,19 @@ describe("readEvents", () => {
     expect(out.invalid).toEqual([]);
   });
 
+  test("a warning the sink takes delivery of leaves the transcript, so a failure report cannot repeat it", async () => {
+    const warned: string[] = [];
+    const out = await readEvents(
+      streamOf(
+        '{"kind":"warn","code":"W_VAD_NO_SPEECH","message":"no speech found"}\n' +
+          '{"kind":"error","code":"E_TRANSCRIBE_FAILED","message":"boom"}\n',
+      ),
+      { onWarn: (line) => warned.push(line) },
+    );
+    expect(warned).toEqual(["no speech found"]);
+    expect(out.stderr).toBe("error [E_TRANSCRIBE_FAILED]: boom\n");
+  });
+
   test("without a progress sink, progress stays in the transcript", async () => {
     const out = await readEvents(streamOf('{"kind":"progress","message":"Warming"}\n'));
     expect(out.stderr).toBe("Warming\n");
