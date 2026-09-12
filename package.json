@@ -109,6 +109,7 @@
   "overrides": {
     "hono": "^4.12.25",
     "fast-uri": "^3.1.5",
-    "ip-address": "^10.3.1"
+    "ip-address": "^10.3.1",
+    "smol-toml": "1.7.2"
   }
 }
