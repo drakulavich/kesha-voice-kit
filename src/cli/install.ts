@@ -198,11 +198,12 @@ export async function performInstall(options: PerformInstallOptions) {
   const { noCache, backend, ttsLangs, vad = false, diarize = false, plan = false, engineVersion } =
     options;
   // A plan for an unavailable backend previews what its own printed command rejects (#684).
-  const backendError = unavailableBackendError(backend);
+  const backendMessage = unavailableBackendError(backend);
+  const backendError = backendMessage ? new KeshaError("E_INVALID_ARG", backendMessage) : null;
   if (plan) {
     if (backendError) {
-      log.error(backendError);
-      process.exitCode = 2;
+      log.error(errorMessage(backendError));
+      process.exitCode = exitCodeFor(backendError);
       return;
     }
     log.info(
@@ -234,7 +235,7 @@ export async function performInstall(options: PerformInstallOptions) {
     }
     if (backendError) {
       errorKind = "validation_failed";
-      throw new KeshaError("E_INVALID_ARG", backendError);
+      throw backendError;
     }
     await installEngine({ noCache, backend, ttsLangs, vad, diarize, version: engineVersion });
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);
