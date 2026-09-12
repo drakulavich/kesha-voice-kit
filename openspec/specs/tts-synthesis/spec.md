@@ -469,8 +469,13 @@ event on the Event stream rather than accept the flag silently.
 - WHEN Ira passes `--no-expand-abbrev`
 - THEN the CLI omits the flag from the argv it spawns, because the schema row
   is `whenUngated: drop`, and renders one warning naming the flag and the
-  Engine upgrade that would honour it — never a silent drop, never a refusal
-  of a request the Engine can otherwise serve
+  features this build lacks — never a silent drop, never a refusal of a
+  request the Engine can otherwise serve
+
+> *Technical Note — the stage-0 delta of `protocol-v4` (archived) wrote this
+> scenario as a refusal; the landed row is `whenUngated: drop` and the warning
+> is built by `validateArgv` (`src/engine/describe.ts`, drop branch), so the
+> main spec was corrected at the archive sync (PR #1191) rather than the code.*
 
 > *Technical Note — English: 30-entry stop-list (OK/NO/GO/…/NASA/NATO/AIDS/
 > OPEC/IKEA/ASCII/NAFTA/LASER/RADAR/SCUBA) and IPA lexicon (EPAM, JSON, JPEG,
