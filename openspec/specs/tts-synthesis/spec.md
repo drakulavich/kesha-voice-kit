@@ -467,8 +467,10 @@ event on the Event stream rather than accept the flag silently.
 - GIVEN an Engine whose describe document lists neither `tts.ru_acronym_expansion`
   nor `tts.en_acronym_expansion` in `features`
 - WHEN Ira passes `--no-expand-abbrev`
-- THEN the CLI rejects the flag against the schema before spawning the Engine
-  and names upgrading the Engine as the action — never a silent drop
+- THEN the CLI omits the flag from the argv it spawns, because the schema row
+  is `whenUngated: drop`, and renders one warning naming the flag and the
+  Engine upgrade that would honour it — never a silent drop, never a refusal
+  of a request the Engine can otherwise serve
 
 > *Technical Note — English: 30-entry stop-list (OK/NO/GO/…/NASA/NATO/AIDS/
 > OPEC/IKEA/ASCII/NAFTA/LASER/RADAR/SCUBA) and IPA lexicon (EPAM, JSON, JPEG,
