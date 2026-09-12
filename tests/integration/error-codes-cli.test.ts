@@ -32,6 +32,8 @@ interface BadInputSpec {
   args: string[];
   env?: Record<string, string>;
   code: string;
+  /** The documented process exit status (docs/errors.md); left unset where only "non-zero" is the contract. */
+  exitCode?: number;
   stderrContains: string[];
   stderrNotContains?: string[];
   /** Result lines the command legitimately prints before failing; stdout stays empty otherwise. */
@@ -92,6 +94,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_CACHE_DIR: readOnly },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           "KESHA_CACHE_DIR",
           readOnly,
@@ -110,6 +113,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_CACHE_DIR: file },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           "KESHA_CACHE_DIR",
           file,
@@ -132,6 +136,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_ENGINE_BIN: binPath },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           "KESHA_ENGINE_BIN",
           binPath,
@@ -153,6 +158,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_ENGINE_BIN: binPath },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           "KESHA_ENGINE_BIN",
           binPath,
@@ -174,6 +180,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_ENGINE_BIN: join(engineDir, "kesha-engine") },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           `Cannot install engine v${UNRELEASED}`,
           `${engineDir} is not writable`,
@@ -206,6 +213,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_ENGINE_BIN: binPath, KESHA_INSTALL_LOCK_WAIT_SECS: "1" },
         code: "E_INSTALL_RACE",
+        exitCode: 1,
         stderrContains: [
           "Gave up after",
           `held by pid ${process.pid}`,
@@ -240,6 +248,7 @@ describe("failures the CLI answers without the engine", () => {
         args,
         env,
         code,
+        exitCode,
         stderrContains,
         stderrNotContains = [],
         stdoutContains = [],
@@ -256,7 +265,8 @@ describe("failures the CLI answers without the engine", () => {
         },
       });
 
-      expect(run.exitCode).not.toBe(0);
+      if (exitCode === undefined) expect(run.exitCode).not.toBe(0);
+      else expect(run.exitCode).toBe(exitCode);
       if (stdoutContains.length === 0) expect(run.stdout).toBe("");
       for (const needle of stdoutContains) {
         expect(run.stdout).toContain(needle);
