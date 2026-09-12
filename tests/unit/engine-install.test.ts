@@ -1,5 +1,6 @@
 import { afterEach, describe, test, expect } from "bun:test";
 import {
+  assertPlatformCanInstall,
   buildEngineInstallArgs,
   cleanupRetiredSidecars,
   getVersionMarkerPath,
@@ -155,6 +156,34 @@ describe("engine-install retired sidecar cleanup (#438)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("assertPlatformCanInstall — the pre-check before the lock and any download", () => {
+  const rejection = (fn: () => void): KeshaError => {
+    try {
+      fn();
+    } catch (err) {
+      if (err instanceof KeshaError) return err;
+      throw err;
+    }
+    throw new Error("did not throw");
+  };
+
+  test("--diarize on a host whose published engine is not CoreML is E_UNSUPPORTED_PLATFORM", () => {
+    const err = rejection(() => assertPlatformCanInstall({ diarize: true }, "linux", "x64"));
+    expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
+    expect(err.message).toBe("--diarize needs the CoreML engine; the published engine for linux x64 is onnx");
+    expect(err.hint).toBe("speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)");
+  });
+
+  test("the same request on darwin-arm64, and a plain request anywhere, pass", () => {
+    expect(() => assertPlatformCanInstall({ diarize: true }, "darwin", "arm64")).not.toThrow();
+    expect(() => assertPlatformCanInstall({}, "linux", "x64")).not.toThrow();
+  });
+
+  test("a host with no published engine fails the same way", () => {
+    expect(rejection(() => assertPlatformCanInstall({}, "linux", "arm64")).code).toBe("E_UNSUPPORTED_PLATFORM");
   });
 });
 

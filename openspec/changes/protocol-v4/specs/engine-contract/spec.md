@@ -39,7 +39,7 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 - THEN the CLI omits `--no-expand-abbrev` from the argv and renders one `warn` event naming the flag
 - AND synthesis proceeds and resolves with audio
 
-> *Technical Note — Subcommand `Describe` in `rust/src/main.rs`; schema assembly, the gate table (`gate_rows()`) and the clap-parity test in `rust/src/protocol/describe.rs`; CLI validation in `src/engine/describe.ts`. The platform pre-check is `getEngineBinaryName` in `src/engine-install.ts`, which raises `E_UNSUPPORTED_PLATFORM` naming the published targets. The `whenUngated: drop` row for `--no-expand-abbrev` replaced `applyNoExpandAbbrev`.*
+> *Technical Note — Subcommand `Describe` in `rust/src/main.rs`; schema assembly, the gate table (`gate_rows()`) and the clap-parity test in `rust/src/protocol/describe.rs`; CLI validation in `src/engine/describe.ts`. The platform pre-check is `assertPlatformCanInstall` in `src/engine-install.ts`: `installEngine` runs it before taking the install lock or downloading anything, and `kesha install` runs it before its plan, so `--diarize` on a host whose published target is not CoreML, or a host with no published target at all, is `E_UNSUPPORTED_PLATFORM` with no Engine involved. The `whenUngated: drop` row for `--no-expand-abbrev` is the only place that flag's gate lives.*
 >
 > *Error code taxonomy carried in `errors` (`ErrorCode::ALL`, `title`, `category` and `retryable` in `rust/src/errors.rs`; `origin_of` in `rust/src/protocol/describe.rs`):*
 >
@@ -113,7 +113,7 @@ The CLI SHALL refuse to use an Engine whose describe document reports a `protoco
 - THEN the CLI exits 1 with `E_ENGINE_PROTOCOL`
 - AND the hint names the CLI upgrade command with `bun add -g`
 
-> *Technical Note — Today `parseCapabilities` at `src/engine.ts:680-687` accepts any numeric `protocolVersion`; `tests/helpers/fake-engine.ts:99` answers `2` and passes. The gate lives in `src/engine/describe.ts`.*
+> *Technical Note — `parseDescribe` (`src/engine/describe.ts`) accepts any numeric `protocolVersion`; the gate is `protocolMismatch` in the same file, which `getDescribe` (`src/engine.ts`) throws before caching a document.*
 
 ### Requirement: Engine stderr is an event stream
 
@@ -148,7 +148,7 @@ The CLI SHALL render events for humans and SHALL treat a stderr line that is not
 - WHEN the CLI parses stderr
 - THEN the failure is reported as `E_INTERNAL` with the raw line in the message
 
-> *Technical Note — Emitter in `rust/src/protocol/events.rs` replacing the 84 `eprintln!` calls across 21 files (`grep -rc 'eprintln!' rust/src`); parser in `src/engine/events.ts` replacing `partitionProgress` at `src/engine.ts:137-163` and `isProgressLine` at `src/engine.ts:131-133` and the regex at `src/error-codes.ts:9`. `Cli::parse()` at `rust/src/main.rs:99` becomes `try_parse`, and the usage-and-exit-1 arm at `rust/src/main.rs:155-157` becomes the `E_INVALID_ARG` event with exit 2.*
+> *Technical Note — Emitter in `rust/src/protocol/events.rs` (`rust/tests/no_stray_eprintln.rs` keeps it the only writer); parser `readEvents` in `src/engine/events.ts`. `Cli::try_parse()` in `rust/src/main.rs` turns a usage error into one `E_INVALID_ARG` event and exit 2, which `rust/tests/describe_cli.rs` pins for the deleted flags.*
 
 ## MODIFIED Requirements
 
@@ -202,11 +202,11 @@ These codes SHALL appear in structured error records (`TranscribeErrorRecord.cod
 
 #### Scenario: The generated error reference matches the taxonomy
 
-- GIVEN `docs/errors.md` is generated from `kesha-engine describe`
+- GIVEN `docs/errors.md` is checked two-way against `kesha-engine describe`
 - WHEN a code is added to the Engine taxonomy without regenerating the document
 - THEN the docs check in CI fails naming the missing code
 
-> *Technical Note — Replaces `TS_NATIVE_CODES` and `KNOWN_TS_CODES` at `src/error-codes.ts:18-40` and the drift test in `src/__tests__/error-codes.test.ts`; `KeshaError` in `src/engine/events.ts`; the generator replaces `rust/tests/error_codes_docs.rs`.*
+> *Technical Note — `KeshaError` in `src/engine/events.ts`. The CLI keeps no code list of its own: the CLI-only codes are `origin: cli` rows the Engine publishes (`origin_of` in `rust/src/protocol/describe.rs`), `rust/tests/error_codes_docs.rs` checks `docs/errors.md` against `describe` two-way with no exemption list, and `tests/unit/protocol-literals.test.ts` pins that every code the CLI names is documented.*
 
 ### Requirement: `KESHA_*` environment variables configure both CLI and Engine
 
@@ -241,7 +241,7 @@ Both the CLI and the Engine SHALL honour the `KESHA_*` environment variables lis
 - THEN `KESHA_DEBUG_FD` is ignored
 - AND the Engine's `debug` events appear in the Diagnostic log for that run
 
-> *Technical Note — `spawnStdioWithDebugFd` and `MAX_FORWARDED_FD` at `src/engine.ts:94-115` are deleted; `rust/src/debug.rs:113-123` stops opening a descriptor; `rust/tests/debug_ndjson_fd.rs` becomes `rust/tests/debug_structured_events.rs`, a test of `debug` events on stderr.*
+> *Technical Note — the CLI forwards no descriptor (`tests/unit/protocol-literals.test.ts` pins that `KESHA_DEBUG_FD` is unreferenced in `src/`), `rust/src/debug.rs` opens none, and `rust/tests/debug_structured_events.rs` asserts the `debug` events on stderr with a stale `KESHA_DEBUG_FD` exported to prove it is ignored.*
 
 ### Requirement: Capabilities JSON cache invalidates on Engine binary change
 
@@ -322,7 +322,7 @@ Any failure to launch the `kesha-engine` binary (missing file, permission denied
 - WHEN any CLI or MCP code path spawns the Engine and the binary path does not exist
 - THEN the surfaced `KeshaError` carries `code` `E_ENGINE_SPAWN`, names the path, and carries an actionable `hint`
 
-> *Technical Note — `KeshaError` in `src/engine/events.ts` replaces the `SayError` construction at `src/synth.ts:172-178` and the ad-hoc rethrow at `src/engine.ts:183-186`.*
+> *Technical Note — `KeshaError` in `src/engine/events.ts` is the failure type on every path; `SayError` (`src/synth.ts`) extends it and stays `say()`'s failure type, carrying the same `code`, `exitCode`, `stderr`, `hint` and `origin`.*
 
 ## REMOVED Requirements
 
@@ -337,3 +337,13 @@ Any failure to launch the `kesha-engine` binary (missing file, permission denied
 ### Requirement: Engine stderr format is `error [E_CODE]: <message>`
 
 **Reason**: replaced by the Event stream. **Migration**: the regex at `src/error-codes.ts:9` and every Rust test asserting `error [` are rewritten against `kind`/`code`.
+
+## Open Issues
+
+- The protocol version is a gate, not a negotiation: a describe document that is
+  not version 4 is refused as `E_ENGINE_PROTOCOL` with a reinstall or upgrade hint.
+- The payload of `debug` events on the event stream is internal and not specified
+  here.
+- CLI-only codes (`E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE`) are
+  `origin: cli` entries in the describe document's `errors` section, so the
+  two-way check against `docs/errors.md` needs no exemption.

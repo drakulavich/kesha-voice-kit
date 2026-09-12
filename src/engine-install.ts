@@ -40,6 +40,23 @@ export function getEngineBinaryName(
   return target.assetName;
 }
 
+/** The platform pre-check: a request the host's published target cannot serve fails before the lock, the download or any Engine exists. */
+export function assertPlatformCanInstall(
+  request: Pick<EngineInstallRequest, "diarize">,
+  platform: string = process.platform,
+  arch: string = process.arch,
+): void {
+  getEngineBinaryName(platform, arch);
+  const backend = engineTarget(platform, arch)!.backend;
+  if (request.diarize && backend !== "coreml") {
+    throw new KeshaError(
+      "E_UNSUPPORTED_PLATFORM",
+      `--diarize needs the CoreML engine; the published engine for ${platform} ${arch} is ${backend}`,
+      { hint: "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)" },
+    );
+  }
+}
+
 /** Sidecar spec — centralises AVSpeech (#141) and future sidecars so each is one entry. */
 interface SidecarSpec {
   /** Written next to the engine binary; Rust probes this exact name. */
@@ -738,6 +755,7 @@ export interface EngineInstallRequest extends InstallOptions {
  * them would install the requested Engine and then replace it on the next cache check.
  */
 export async function installEngine(request: EngineInstallRequest = {}): Promise<string> {
+  assertPlatformCanInstall(request);
   const binPath = getEngineBinPath();
   assertNotRealCacheUnderTest(binPath);
   ensureEngineDirCreatable(binPath);
