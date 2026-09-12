@@ -22,7 +22,7 @@ const ENGINE_TARGETS: Record<string, EngineTarget> = {
   "linux-x64": {
     assetName: "kesha-engine-linux-x64",
     backend: "onnx",
-    sizeBytes: 66_398_296,
+    sizeBytes: 66_398_424,
   },
   "win32-x64": {
     assetName: "kesha-engine-windows-x64.exe",
