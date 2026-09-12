@@ -79,7 +79,7 @@ status that lets scripts branch without parsing stderr:
 |-----------|---------|
 | `0` | Success. |
 | `1` | Operational error — engine/model not installed, a download or install failed, an unknown command, or no input was given. |
-| `2` | Invalid arguments or usage (mutually-exclusive flags, a bad `--format`, empty `say` text, …). |
+| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
 | `4` | Unexpected/uncoded internal failure. |
 | `5` | `kesha say` text exceeds the length limit. |
 | `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run; the engine subprocess was terminated. |
@@ -93,8 +93,15 @@ own** non-zero status when the engine itself fails. For fine-grained handling,
 match on the stable `error [CODE]` line — it is the reliable signal; the numeric
 exit status only distinguishes the broad categories above.
 
-`kesha say` (including `--list-voices`) derives that status from one rule: an
-error the engine reported exits with the engine's own status (`4` if it broke
-the protocol on a clean exit), an error the CLI raised before the spawn — a
-flag the installed build lacks, a missing engine, a protocol mismatch — maps its
-code through the table above.
+`kesha say` (including `--list-voices`), `kesha record` and `kesha install`
+derive that status from one rule: an error the engine reported exits with the
+engine's own status (`4` if it broke the protocol on a clean exit), and an error
+the CLI raised before the spawn — a flag the installed build lacks, a missing
+engine, a protocol mismatch, a backend this platform's release does not ship, an
+engine directory the CLI cannot write — maps its code through the table above.
+Two edges of that rule are worth knowing. A CLI-raised `E_UNSUPPORTED_PLATFORM`
+(no engine is published for this host, or `--diarize` off darwin-arm64) is the
+operational `1`: the remedy is another machine, not another command line. And
+an engine that exits non-zero without reporting anything has no code to relay:
+`say` reports it as `E_INTERNAL` with the engine's status, while `record`
+(pinned by #1167) and `install` keep the operational `1`.

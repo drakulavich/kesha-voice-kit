@@ -3,6 +3,7 @@ import { errorMessage } from "../error-utils";
 import { assertPlatformCanInstall, installEngine } from "../engine-install";
 import { engineTarget, isDarwinArm64 } from "../engine-targets";
 import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from "../engine";
+import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
@@ -171,6 +172,12 @@ function finishInstallDiagnostic(
   }
 }
 
+/** The refusal `install`, `install --plan` and `init --plan` all render the same way (#684). */
+export function unavailableBackendRefusal(backend: string | undefined): KeshaError | null {
+  const message = unavailableBackendError(backend);
+  return message ? new KeshaError("E_INVALID_ARG", message) : null;
+}
+
 /** Null when the requested backend is installable here. `KESHA_ENGINE_BIN` opts out — the user supplied their own engine. */
 export function unavailableBackendError(backend: string | undefined): string | null {
   const platformBackend = defaultBackendForPlatform();
@@ -197,11 +204,11 @@ export async function performInstall(options: PerformInstallOptions) {
   const { noCache, backend, ttsLangs, vad = false, diarize = false, plan = false, engineVersion } =
     options;
   // A plan for an unavailable backend previews what its own printed command rejects (#684).
-  const backendError = unavailableBackendError(backend);
+  const backendError = unavailableBackendRefusal(backend);
   if (plan) {
     if (backendError) {
-      log.error(backendError);
-      process.exitCode = 2;
+      log.error(errorMessage(backendError));
+      process.exitCode = exitCodeFor(backendError);
       return;
     }
     log.info(
@@ -233,7 +240,7 @@ export async function performInstall(options: PerformInstallOptions) {
     }
     if (backendError) {
       errorKind = "validation_failed";
-      throw new Error(backendError);
+      throw backendError;
     }
     await installEngine({ noCache, backend, ttsLangs, vad, diarize, version: engineVersion });
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);
@@ -247,7 +254,7 @@ export async function performInstall(options: PerformInstallOptions) {
     const message = errorMessage(err);
     finishInstallDiagnostic(diagnosticLog, startedAt, "failed", errorKind);
     log.error(message);
-    process.exit(1);
+    process.exit(err instanceof KeshaError ? exitCodeFor(err) : 1);
   }
 }
 

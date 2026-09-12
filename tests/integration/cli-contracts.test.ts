@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { engineVersion } from "../../src/package-info";
+import { engineTarget } from "../../src/engine-targets";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
 import { pidIsAlive, stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { describeJson } from "../helpers/fake-engine";
@@ -1262,7 +1263,7 @@ process.exit(99);
    * prose-writing stub became a violation under protocol 4 (review of #1185). Its record counterpart
    * lives in `recordEngine`; this is install's.
    */
-  test("a model install that exits non-zero saying nothing reports the bare exit status", async () => {
+  test("a model install that exits non-zero saying nothing still exits 1, uncoded, like record (#1186)", async () => {
     const dir = makeTempDir("kesha-cli-contract-install-silent-exit-");
     const enginePath = createFakeEngine(dir);
     markFakeEngineInstalled(enginePath);
@@ -1276,10 +1277,38 @@ process.exit(99);
     expectContract(run, {
       exitCode: 1,
       stderrContains: ["Failed to install models: kesha-engine install exited with code 3."],
+      stderrNotContains: ["error [E_"],
     });
   });
 
-  test("diagnostic logs record failed install events without content", async () => {
+  test("forcing a backend this platform's release lacks is E_INVALID_ARG, exit 2, before any download, from install, install --plan and init --plan (#1186)", async () => {
+    const hostBackend = engineTarget(process.platform, process.arch)?.backend;
+    if (!hostBackend) return;
+    const other = hostBackend === "coreml" ? "onnx" : "coreml";
+    const dir = makeTempDir("kesha-cli-contract-install-backend-");
+    // An empty KESHA_ENGINE_BIN counts as unset for the CLI and keeps a developer's own engine out of the pre-check.
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: "" };
+
+    const run = await runCli(["install", `--${other}`], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stderrContains: ["error [E_INVALID_ARG]: ", `Requested backend "${other}" is not available on this platform`],
+    });
+    const { events } = readDiagnosticLog(env.KESHA_LOG_DIR);
+    expect(events[1]).toMatchObject({ command: "install", status: "failed", errorKind: "validation_failed" });
+
+    // init --plan is the declared mirror of that guard (#684): the same refusal, rendered the same way; init's intro on stdout is its own deliverable.
+    for (const command of ["install", "init"]) {
+      const plan = await runCli([command, "--plan", `--${other}`], { env });
+      expectContract(plan, {
+        exitCode: 2,
+        stdoutNotContains: ["Kesha install plan"],
+        stderrContains: ["error [E_INVALID_ARG]: ", `Requested backend "${other}" is not available on this platform`],
+      });
+    }
+  });
+
+  test("diagnostic logs record failed install events without content, and a coded engine failure exits with the engine's status (#1186)", async () => {
     const dir = makeTempDir("kesha-cli-contract-install-diagnostic-failure-");
     const enginePath = createFakeEngine(dir);
     markFakeEngineInstalled(enginePath);
@@ -1293,7 +1322,7 @@ process.exit(99);
     // spawn's stderr as events now, so an off-protocol line is the violation E_INTERNAL names (#1181).
     const run = await runCli(["install", "--vad"], { env });
     expectContract(run, {
-      exitCode: 1,
+      exitCode: 42,
       stdoutContains: ["Engine binary already installed"],
       stderrContains: ["error [E_INTERNAL]: ", "not a protocol event"],
     });
