@@ -2,6 +2,7 @@
 paths:
   - "tests/**"
   - "rust/tests/**"
+  - "src/**/*.test.ts"
   - "bunfig.toml"
   - "src/engine.ts"
   - "src/cli/say.ts"

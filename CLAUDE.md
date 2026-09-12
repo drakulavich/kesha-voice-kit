@@ -80,7 +80,7 @@ Coverage floors, which CI job runs which suite, how model-dependent suites self-
 
 - `main` is protected; every change goes through a PR and CI must pass.
 - Branches are named after the worktree slug (`just worktree <slug>`); release PRs use `release/X.Y.Z`, which CI treats specially.
-- Everything committed, and every PR or issue body, is English — comments, identifiers, commit subjects, `.claude/` definitions. Cyrillic is data, not prose: legitimate in the Russian TTS and inverse-text-normalization tables and in fixtures, never in a comment or a commit message.
+- Everything committed, and every PR or issue body, is English — comments, identifiers, commit subjects, `.claude/` definitions. Cyrillic is data, not prose: legitimate in the Russian TTS and inverse-text-normalization tables, in the comments that document those tables (the user-validated #232 pronunciations live nowhere else), and in fixtures; prose, identifiers, commit subjects and PR bodies stay English.
 - Picking up work means taking the next ticket off the queue — there is no label to apply. In-flight state is the worktree and the open PR.
 - Put `Closes #N` in the PR **body or commit message**, not only the title, so it auto-closes. Each issue needs its own keyword (`Closes #N, closes #M`) — a bare list closes only the first. Use `Refs #N` for partial work, then verify with `gh issue view <N> --json state` and close manually.
 
@@ -106,7 +106,7 @@ Every entry in `rust/src/models/manifest.rs` carries a pinned SHA-256, and `down
 
 ### VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE
 
-Any plan naming a specific upstream artifact must be validated by a throwaway spike in `/tmp/<name>-spike/` that actually downloads/builds and runs it end-to-end — not "the repo exists" — BEFORE implementation commits to it. Delete the spike once the finding is recorded.
+Any plan naming a specific upstream artifact must be validated by a throwaway spike in `/tmp/<name>-spike/` (a Python spike in its own venv there, never the system interpreter — `.claude/rules/python.md`) that actually downloads/builds and runs it end-to-end — not "the repo exists" — BEFORE implementation commits to it. Delete the spike once the finding is recorded.
 
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
