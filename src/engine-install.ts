@@ -40,18 +40,16 @@ export function getEngineBinaryName(
   return target.assetName;
 }
 
-/** The platform pre-check: a request the host's published target cannot serve fails before the lock, the download or any Engine exists. */
+/** The platform pre-check: a request this host can never serve fails before the lock, the download or any Engine exists. */
 export function assertPlatformCanInstall(
   request: Pick<EngineInstallRequest, "diarize">,
   platform: string = process.platform,
   arch: string = process.arch,
 ): void {
-  getEngineBinaryName(platform, arch);
-  const backend = engineTarget(platform, arch)!.backend;
-  if (request.diarize && backend !== "coreml") {
+  if (request.diarize && !isDarwinArm64(platform, arch)) {
     throw new KeshaError(
       "E_UNSUPPORTED_PLATFORM",
-      `--diarize needs the CoreML engine; the published engine for ${platform} ${arch} is ${backend}`,
+      `--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is ${platform} ${arch}`,
       { hint: "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)" },
     );
   }

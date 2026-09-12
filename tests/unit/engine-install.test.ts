@@ -173,7 +173,7 @@ describe("assertPlatformCanInstall — the pre-check before the lock and any dow
   test("--diarize on a host whose published engine is not CoreML is E_UNSUPPORTED_PLATFORM", () => {
     const err = rejection(() => assertPlatformCanInstall({ diarize: true }, "linux", "x64"));
     expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
-    expect(err.message).toBe("--diarize needs the CoreML engine; the published engine for linux x64 is onnx");
+    expect(err.message).toBe("--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64");
     expect(err.hint).toBe("speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)");
   });
 
@@ -182,8 +182,9 @@ describe("assertPlatformCanInstall — the pre-check before the lock and any dow
     expect(() => assertPlatformCanInstall({}, "linux", "x64")).not.toThrow();
   });
 
-  test("a host with no published engine fails the same way", () => {
-    expect(rejection(() => assertPlatformCanInstall({}, "linux", "arm64")).code).toBe("E_UNSUPPORTED_PLATFORM");
+  // A Nix or self-built engine on an unpublished host installs models through the same path (docs/nix-install.md).
+  test("a host with no published engine is not the pre-check's business", () => {
+    expect(() => assertPlatformCanInstall({}, "linux", "arm64")).not.toThrow();
   });
 });
 
