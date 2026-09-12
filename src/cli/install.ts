@@ -3,6 +3,7 @@ import { errorMessage } from "../error-utils";
 import { assertPlatformCanInstall, installEngine } from "../engine-install";
 import { engineTarget, isDarwinArm64 } from "../engine-targets";
 import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from "../engine";
+import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
@@ -233,7 +234,7 @@ export async function performInstall(options: PerformInstallOptions) {
     }
     if (backendError) {
       errorKind = "validation_failed";
-      throw new Error(backendError);
+      throw new KeshaError("E_INVALID_ARG", backendError);
     }
     await installEngine({ noCache, backend, ttsLangs, vad, diarize, version: engineVersion });
     await maybeAskForStar(getEngineBinPath(), packageVersion, log);
@@ -247,7 +248,7 @@ export async function performInstall(options: PerformInstallOptions) {
     const message = errorMessage(err);
     finishInstallDiagnostic(diagnosticLog, startedAt, "failed", errorKind);
     log.error(message);
-    process.exit(1);
+    process.exit(err instanceof KeshaError ? exitCodeFor(err) : 1);
   }
 }
 
