@@ -467,12 +467,10 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
   const status = createLiveStatus();
   let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
-  let readerLeft = false;
   try {
     [, events, exitCode] = await Promise.all([
       forwardStdout(proc.stdout as ReadableStream<Uint8Array>, status, () => {
         // Nobody is reading the transcript any more, so the microphone has no reason to stay open (#1187).
-        readerLeft = true;
         log.debug("stdout closed by the reader; stopping the recording");
         proc.kill("SIGTERM");
       }),
@@ -502,8 +500,6 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
   // A clean interrupt delivers the transcript and exits 128+signal saying nothing (rust/src/cli/record.rs:82),
   // so an error event beside that status is a real failure the signal must not excuse.
   if (events.error || events.invalid.length > 0) throw engineFailure("record", events, exitCode);
-  // The reader left and the engine was stopped on purpose: nothing failed, and nobody is there to tell.
-  if (readerLeft) return;
   // A silent non-zero exit named nothing, so it stays the operational 1 it has been since #1167.
   if (!signalled && exitCode !== 0) throw new Error(`kesha-engine record exited with code ${exitCode}`);
 }
