@@ -256,7 +256,10 @@ const CLI_ONLY: &[(&str, &str, Category, bool)] = &[
 
 fn origin_of(code: ErrorCode) -> Origin {
     match code {
-        ErrorCode::InputNotFound | ErrorCode::InvalidArg | ErrorCode::Internal => Origin::Both,
+        ErrorCode::InputNotFound
+        | ErrorCode::InvalidArg
+        | ErrorCode::UnsupportedPlatform
+        | ErrorCode::Internal => Origin::Both,
         _ => Origin::Engine,
     }
 }
@@ -445,6 +448,7 @@ mod tests {
         assert_eq!(origin("E_INVALID_ARG"), Origin::Both);
         assert_eq!(origin("E_INPUT_NOT_FOUND"), Origin::Both);
         assert_eq!(origin("E_INTERNAL"), Origin::Both);
+        assert_eq!(origin("E_UNSUPPORTED_PLATFORM"), Origin::Both);
         assert_eq!(origin("E_MODEL_MISSING"), Origin::Engine);
         assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 3);
     }

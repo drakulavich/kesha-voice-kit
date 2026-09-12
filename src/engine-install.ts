@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
 import { getDescribe, getEngineBinPath, protocolEnv, spawnEngineProcess } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
-import { engineTarget, isDarwinArm64 } from "./engine-targets";
+import { engineTarget, engineTargetEntries, isDarwinArm64, targetKey } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
 import { engineFailure, KeshaError, readEvents, type StderrOutcome } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
@@ -31,8 +31,28 @@ export function getEngineBinaryName(
   arch: string = process.arch,
 ): string {
   const target = engineTarget(platform, arch);
-  if (!target) throw new Error(`Unsupported platform: ${platform} ${arch}`);
+  if (!target) {
+    const supported = engineTargetEntries().map((e) => targetKey(e.platform, e.arch)).join(", ");
+    throw new KeshaError("E_UNSUPPORTED_PLATFORM", `no published kesha-engine for ${platform} ${arch}`, {
+      hint: `supported: ${supported} (docs/product-positioning.md#platform-matrix)`,
+    });
+  }
   return target.assetName;
+}
+
+/** The platform pre-check: a request this host can never serve fails before the lock, the download or any Engine exists. */
+export function assertPlatformCanInstall(
+  request: Pick<EngineInstallRequest, "diarize">,
+  platform: string = process.platform,
+  arch: string = process.arch,
+): void {
+  if (request.diarize && !isDarwinArm64(platform, arch)) {
+    throw new KeshaError(
+      "E_UNSUPPORTED_PLATFORM",
+      `--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is ${platform} ${arch}`,
+      { hint: "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)" },
+    );
+  }
 }
 
 /** Sidecar spec — centralises AVSpeech (#141) and future sidecars so each is one entry. */
@@ -731,8 +751,15 @@ export interface EngineInstallRequest extends InstallOptions {
  * `version` is the single input for the release URL, the cache-validity comparison, the
  * sidecar downloads and the recorded `.version` marker — reading the pin at any one of
  * them would install the requested Engine and then replace it on the next cache check.
+ *
+ * `platform` and `arch` are a seam for the unit tests, which stage CoreML-shaped engines on every CI runner; production callers take the process.
  */
-export async function installEngine(request: EngineInstallRequest = {}): Promise<string> {
+export async function installEngine(
+  request: EngineInstallRequest = {},
+  platform: string = process.platform,
+  arch: string = process.arch,
+): Promise<string> {
+  assertPlatformCanInstall(request, platform, arch);
   const binPath = getEngineBinPath();
   assertNotRealCacheUnderTest(binPath);
   ensureEngineDirCreatable(binPath);

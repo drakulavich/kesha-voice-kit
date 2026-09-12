@@ -80,6 +80,8 @@ let argvLog = "";
 let envLog = "";
 
 const posixTest = process.platform === "win32" ? test.skip : test;
+/** The host the diarize cases describe; the fake engines they stage are CoreML builds whatever the runner is. */
+const DARWIN_ARM64 = ["darwin", "arm64"] as const;
 /** The Kokoro warmup and the sidecars only ever run on darwin-arm64. */
 const darwinArmTest = isDarwinArm64() ? test : test.skip;
 
@@ -281,7 +283,7 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
     const before = readFileSync(binPath, "utf8");
     stubRelease();
 
-    const err = await failure(() => installEngine({ diarize: true }));
+    const err = await failure(() => installEngine({ diarize: true }, ...DARWIN_ARM64));
     expect(err.message).toContain("system_diarize");
     expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
 
@@ -297,19 +299,31 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
     expect(engineInvocations().find((a) => a.startsWith("install"))).toBe("install --no-cache --tts en");
   }, 30_000);
 
+  posixTest("--diarize off darwin-arm64 is refused before the lock, the download or any engine", async () => {
+    stageEmptyEngineDir("kesha-caps-precheck-");
+    const urls = stubRelease();
+
+    const err = await failure(() => installEngine({ diarize: true }, "linux", "x64"));
+    expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
+    expect(err.message).toBe("--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64");
+
+    expect(urls).toHaveLength(0);
+    expect(engineInvocations()).toHaveLength(0);
+  }, 30_000);
+
   // Reached through a download because a cached engine that describes nothing is repaired before any flag is validated (#801); every protocol-4 gate treats a silent `describe` as E_ENGINE_PROTOCOL, not a command-specific message (see validateRecordRequest's equivalent case).
   posixTest("--diarize is refused when the engine cannot describe itself", async () => {
     stageEmptyEngineDir("kesha-caps-silent-");
     stubRelease({ caps: null });
 
-    await expect(installEngine({ diarize: true })).rejects.toThrow(/did not answer `describe`/);
+    await expect(installEngine({ diarize: true }, ...DARWIN_ARM64)).rejects.toThrow(/did not answer `describe`/);
   }, 30_000);
 
   posixTest("a cached engine that describes nothing is repaired before the flag is judged", async () => {
     const binPath = stageInstalledEngine("kesha-caps-mute-cache-", { caps: null });
     const urls = stubRelease();
 
-    await expect(installEngine({ diarize: true })).rejects.toThrow(/system_diarize/);
+    await expect(installEngine({ diarize: true }, ...DARWIN_ARM64)).rejects.toThrow(/system_diarize/);
 
     expect(engineDownloads(urls)).toHaveLength(1);
     expect(readFileSync(binPath, "utf8")).toContain("describe");
@@ -320,14 +334,14 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
     stageInstalledEngine("kesha-caps-diarize-no-tts-", { caps: DIARIZE_NO_TTS_CAPS });
     stubRelease();
 
-    await expect(installEngine({ diarize: true, ttsLangs: ["en"] })).rejects.toThrow(/--tts/);
+    await expect(installEngine({ diarize: true, ttsLangs: ["en"] }, ...DARWIN_ARM64)).rejects.toThrow(/--tts/);
   }, 30_000);
 
   posixTest("--diarize reaches the engine, and pulls --vad with it (#768)", async () => {
     stageInstalledEngine("kesha-caps-diarize-", { caps: DIARIZE_CAPS });
     stubRelease();
 
-    await installEngine({ diarize: true });
+    await installEngine({ diarize: true }, ...DARWIN_ARM64);
 
     const install = engineInvocations().find((a) => a.startsWith("install"));
     expect(install).toContain("--diarize");

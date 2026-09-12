@@ -185,14 +185,13 @@ Engine is installed, matching the human path.
   this apart from both a healthy Engine and a missing one
 - AND the process exits 0, matching the human path's "probe failed" line
 
-> *Technical Note — sources: `src/status.ts::showStatus`, `src/status.ts::showDiskUsage`,
+> *Technical Note — sources: `src/status.ts::collectStatus` and `renderStatus`, `src/status.ts::showDiskUsage`,
 > `src/cli/status.ts::statusCommand`. TTS voice enumeration reads `kokoro-82m/voices/*.bin`
 > (prefixed `en-`) and checks `vosk-ru/model.onnx` + `vosk-ru/bert/model.onnx` presence
 > (voices `ru-vosk-f01`, `ru-vosk-f02`, `ru-vosk-f03`, `ru-vosk-m01`, `ru-vosk-m02`).
 > `activeModelMirror()` trims and strips trailing slashes from `KESHA_MODEL_MIRROR`;
-> returns null when unset or empty. Capabilities come from `getEngineCapabilities`
-> (`src/engine.ts:633`) today and from the cached describe document in
-> `src/engine/describe.ts` after this change; either returns null on a failed or
-> unparseable probe — that null is what the payload reports. The `--json`
+> returns null when unset or empty. Capabilities are `engineFunctionalHealth()`'s
+> (`src/engine-health.ts`) `capabilities` when its status is `ok` and null otherwise, so a
+> failed or unparseable probe is what the payload reports as null. The `--json`
 > flag follows the `doctor` precedent at `src/cli/doctor.ts:16-32`. The Raycast
 > extension reads the nested value at `raycast/src/lib/kesha-bin.ts:240-253`.*

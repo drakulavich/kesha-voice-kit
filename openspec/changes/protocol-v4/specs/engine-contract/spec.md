@@ -39,9 +39,9 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 - THEN the CLI omits `--no-expand-abbrev` from the argv and renders one `warn` event naming the flag
 - AND synthesis proceeds and resolves with audio
 
-> *Technical Note — Subcommand `Describe` in `rust/src/main.rs` (to be added beside `Commands`); schema assembly in `rust/src/protocol/describe.rs`; the gate table and the clap-parity test live there. CLI validation in `src/engine/describe.ts`. Baseline flags today: `rust/src/main.rs:12-18`. The platform pre-check throws a bare `Error` at `src/cli/install.ts:228-233` today; v4 assigns it `E_UNSUPPORTED_PLATFORM`. The `whenUngated: drop` row for `--no-expand-abbrev` replaces `applyNoExpandAbbrev` (`src/synth.ts:69-85`).*
+> *Technical Note — Subcommand `Describe` in `rust/src/main.rs`; schema assembly, the gate table (`gate_rows()`) and the clap-parity test in `rust/src/protocol/describe.rs`; CLI validation in `src/engine/describe.ts`. The platform pre-check is `assertPlatformCanInstall` in `src/engine-install.ts`: `installEngine` runs it before taking the install lock or downloading anything, and `kesha install` runs it where the bare `Error` used to be — after `--plan` has returned, before the lock and the download — so `--diarize` off darwin-arm64 is `E_UNSUPPORTED_PLATFORM` with no Engine involved; a host with no published target is only refused when an engine download is actually needed (`getEngineBinaryName`), so a Nix or self-built engine still installs models there. The `whenUngated: drop` row for `--no-expand-abbrev` is the only place that flag's gate lives.*
 >
-> *Error code taxonomy carried in `errors` (today `rust/src/errors.rs:36-56` for the codes, `:69-119` for title/category/retryable):*
+> *Error code taxonomy carried in `errors` (`ErrorCode::ALL`, `title`, `category` and `retryable` in `rust/src/errors.rs`; `origin_of` in `rust/src/protocol/describe.rs`):*
 >
 > | Code | Category | Retryable | Origin | Title |
 > |---|---|---|---|---|
@@ -52,7 +52,7 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 > | `E_MODEL_DOWNLOAD` | model | **yes** | engine | Model download failed |
 > | `E_CACHE_CORRUPT` | model | no | engine | Cached model failed verification |
 > | `E_MODEL_LOAD` | model | no | engine | Model failed to load |
-> | `E_UNSUPPORTED_PLATFORM` | platform | no | engine | Feature unsupported on this platform |
+> | `E_UNSUPPORTED_PLATFORM` | platform | no | both | Feature unsupported on this platform |
 > | `E_SIDECAR_MISSING` | platform | no | engine | Helper sidecar missing or failed |
 > | `E_NO_BACKEND` | platform | no | engine | No ASR backend compiled in |
 > | `E_ENGINE_SPAWN` | platform | no | cli | Engine binary not installed or failed to start |
@@ -68,7 +68,7 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 > | `E_INSTALL_RACE` | internal | **yes** | cli | Another install reached the same cache first |
 > | `E_INTERNAL` | internal | no | both | Unexpected internal error |
 >
-> *Feature strings and their gates (today `rust/src/capabilities.rs:34-75`; the gates become Profile names once `build-profiles` lands):*
+> *Feature strings and their gates (`get_capabilities` in `rust/src/capabilities.rs`; the gates become Profile names once `build-profiles` lands):*
 >
 > | Feature | Gate |
 > |---|---|
@@ -113,7 +113,7 @@ The CLI SHALL refuse to use an Engine whose describe document reports a `protoco
 - THEN the CLI exits 1 with `E_ENGINE_PROTOCOL`
 - AND the hint names the CLI upgrade command with `bun add -g`
 
-> *Technical Note — Today `parseCapabilities` at `src/engine.ts:680-687` accepts any numeric `protocolVersion`; `tests/helpers/fake-engine.ts:99` answers `2` and passes. The gate lives in `src/engine/describe.ts`.*
+> *Technical Note — `parseDescribe` (`src/engine/describe.ts`) accepts any numeric `protocolVersion`; the gate is `protocolMismatch` in the same file, which `getDescribe` (`src/engine.ts`) throws before caching a document.*
 
 ### Requirement: Engine stderr is an event stream
 
@@ -148,7 +148,7 @@ The CLI SHALL render events for humans and SHALL treat a stderr line that is not
 - WHEN the CLI parses stderr
 - THEN the failure is reported as `E_INTERNAL` with the raw line in the message
 
-> *Technical Note — Emitter in `rust/src/protocol/events.rs` replacing the 84 `eprintln!` calls across 21 files (`grep -rc 'eprintln!' rust/src`); parser in `src/engine/events.ts` replacing `partitionProgress` at `src/engine.ts:137-163` and `isProgressLine` at `src/engine.ts:131-133` and the regex at `src/error-codes.ts:9`. `Cli::parse()` at `rust/src/main.rs:99` becomes `try_parse`, and the usage-and-exit-1 arm at `rust/src/main.rs:155-157` becomes the `E_INVALID_ARG` event with exit 2.*
+> *Technical Note — Emitter in `rust/src/protocol/events.rs` (`rust/tests/no_stray_eprintln.rs` keeps it the only writer); parser `readEvents` in `src/engine/events.ts`. `Cli::try_parse()` in `rust/src/main.rs` turns a usage error into one `E_INVALID_ARG` event and exit 2, which `rust/tests/describe_cli.rs` pins for the deleted flags.*
 
 ## MODIFIED Requirements
 
@@ -177,13 +177,13 @@ Before spawning the Engine the CLI SHALL validate the full argv against the `com
 - THEN `--format` is absent from the argv because the schema does not list it under `install`
 - AND the CLI does not need a hand-written list of install flags to know that
 
-> *Technical Note — Replaces `preflightTranscribeEngineItn`, `preflightTranscribeEngineWithSegments`, `assertSpeakersSupported` and `assertItnSupported` (`src/engine.ts:326-380`) and `buildEngineInstallArgs` (`src/engine-install.ts`) with `validateArgv(command, flags, schema)` in `src/engine/describe.ts`. The CLAUDE.md rule "DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS" is deleted once this lands, because the schema enforces it.*
+> *Technical Note — `validateArgv(argv, doc)` in `src/engine/describe.ts` replaced the hand-written `preflight*` / `assert*Supported` family; every production argv builder (`buildTranscribeArgs`, `buildEngineInstallArgs`, `buildSayArgs`, `buildRecordArgs`) meets it before a spawn, and `tests/unit/capabilities-pact.test.ts` drives each one against the published binaries’ recorded gate tables. The CLAUDE.md rule "DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS" stayed, rewritten to point at `gate_rows()` as the one place a gate is added.*
 
 ### Requirement: TS-native codes cover CLI-side failures
 
 The CLI SHALL report failures that happen before or around the Engine with the same Error code vocabulary the Engine publishes in its describe document: `E_INPUT_NOT_FOUND`, `E_ENGINE_SPAWN`, `E_INVALID_ARG`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE` and `E_INTERNAL` SHALL appear in `errors`, and every failure the Core API throws SHALL be a `KeshaError` carrying `code`, `hint` when known, and `exitCode` and `stderr` whenever an Engine subprocess ran.
 
-Each entry's `origin` SHALL be `engine`, `cli` or `both`: `E_INPUT_NOT_FOUND`, `E_INVALID_ARG` and `E_INTERNAL` are `both` because either side raises them, while `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE` are `cli` because only the CLI can observe them.
+Each entry's `origin` SHALL be `engine`, `cli` or `both`: `E_INPUT_NOT_FOUND`, `E_INVALID_ARG`, `E_UNSUPPORTED_PLATFORM` and `E_INTERNAL` are `both` because either side raises them (the CLI raises `E_UNSUPPORTED_PLATFORM` from its platform pre-check before any Engine exists), while `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE` are `cli` because only the CLI can observe them.
 
 These codes SHALL appear in structured error records (`TranscribeErrorRecord.code`).
 
@@ -200,13 +200,13 @@ These codes SHALL appear in structured error records (`TranscribeErrorRecord.cod
 - WHEN Sona calls `await say({ text: "hello" })`
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_ENGINE_SPAWN` and whose `hint` names `kesha install`
 
-#### Scenario: The generated error reference matches the taxonomy
+#### Scenario: The error reference matches the taxonomy
 
-- GIVEN `docs/errors.md` is generated from `kesha-engine describe`
-- WHEN a code is added to the Engine taxonomy without regenerating the document
+- GIVEN `docs/errors.md` is checked two-way against `kesha-engine describe`
+- WHEN a code is added to the Engine taxonomy without adding its row to the document
 - THEN the docs check in CI fails naming the missing code
 
-> *Technical Note — Replaces `TS_NATIVE_CODES` and `KNOWN_TS_CODES` at `src/error-codes.ts:18-40` and the drift test in `src/__tests__/error-codes.test.ts`; `KeshaError` in `src/engine/events.ts`; the generator replaces `rust/tests/error_codes_docs.rs`.*
+> *Technical Note — `KeshaError` in `src/engine/events.ts`. The CLI keeps no code list of its own: the CLI-only codes are `origin: cli` rows the Engine publishes (`origin_of` in `rust/src/protocol/describe.rs`), `rust/tests/error_codes_docs.rs` checks `docs/errors.md` against `describe` two-way with no exemption list, and `tests/unit/protocol-literals.test.ts` pins that every code the CLI names is documented.*
 
 ### Requirement: `KESHA_*` environment variables configure both CLI and Engine
 
@@ -241,7 +241,7 @@ Both the CLI and the Engine SHALL honour the `KESHA_*` environment variables lis
 - THEN `KESHA_DEBUG_FD` is ignored
 - AND the Engine's `debug` events appear in the Diagnostic log for that run
 
-> *Technical Note — `spawnStdioWithDebugFd` and `MAX_FORWARDED_FD` at `src/engine.ts:94-115` are deleted; `rust/src/debug.rs:113-123` stops opening a descriptor; `rust/tests/debug_ndjson_fd.rs` becomes `rust/tests/debug_structured_events.rs`, a test of `debug` events on stderr.*
+> *Technical Note — the CLI forwards no descriptor (`tests/unit/protocol-literals.test.ts` pins that `KESHA_DEBUG_FD` is unreferenced in `src/`), `rust/src/debug.rs` opens none, and `rust/tests/debug_structured_events.rs` asserts the `debug` events on stderr with a stale `KESHA_DEBUG_FD` exported to prove it is ignored.*
 
 ### Requirement: Capabilities JSON cache invalidates on Engine binary change
 
@@ -259,7 +259,7 @@ The CLI SHALL cache the describe document in-process, keyed by the Engine binary
 - WHEN `kesha install` overwrites the Engine binary
 - THEN the next read re-spawns `kesha-engine describe` and refreshes the cache
 
-> *Technical Note — Today at `src/engine.ts:633-697` (`getEngineCapabilities`); moves to `src/engine/describe.ts` with the same key.*
+> *Technical Note — `getDescribe` in `src/engine.ts` caches the parsed document keyed by the binary's path and mtime; `parseDescribe` and `protocolMismatch` live in `src/engine/describe.ts`.*
 
 ### Requirement: The written-form pass is advertised and validated, never forwarded blind
 
@@ -287,7 +287,7 @@ An Engine that does not advertise it SHALL cause the request to fail with the ac
 - WHEN Ira transcribes without requesting the pass
 - THEN Transcription succeeds as before
 
-> *Technical Note — feature string `transcribe.itn`, declared once as `TRANSCRIBE_ITN_FEATURE` (`rust/src/transcribe/mod.rs:36`) and pushed unconditionally today at `rust/src/capabilities.rs:36-41`; it becomes a gate row in `rust/src/protocol/describe.rs`. Unlike `transcribe.diarize` this is not Backend-gated: the pass is pure Rust and behaves identically on CoreML and ONNX, so the gate exists for Engine-version skew only. The hand-written mirror `TRANSCRIBE_ITN_FEATURE` at `src/engine.ts:34` and the hoisted check at `src/transcribe.ts:57` are both replaced by the generic `validateArgv` in `src/engine/describe.ts`, which keeps the check above the `timestamps || speakers` short-circuit because the pass is meaningful with plain text output.*
+> *Technical Note — feature string `transcribe.itn` is declared once as `TRANSCRIBE_ITN_FEATURE` (`rust/src/transcribe/mod.rs`), pushed unconditionally by `get_capabilities`, and gated by its row in `gate_rows()`. Unlike `transcribe.diarize` this is not Backend-gated: the pass is pure Rust and behaves identically on CoreML and ONNX, so the gate exists for Engine-version skew only. The CLI keeps no mirror of the string: `validateTranscribeRequest` (`src/transcribe.ts`) runs `validateArgv` on every transcribe request, plain-text output included.*
 
 ### Requirement: `record.live` is advertised only by Engines that can serve it
 
@@ -305,7 +305,7 @@ The Engine SHALL include `record.live` in the `features` array of its describe d
 - THEN `features` does not contain `"record.live"`
 - AND the rest of the document is unchanged in shape
 
-> *Technical Note — the push is gated on `#[cfg(all(feature = "coreml", target_os = "macos"))]` at `rust/src/capabilities.rs:49-53`, mirroring the runtime gate exactly so the advertisement cannot outlive the code path; the gate moves to the table in `rust/src/protocol/describe.rs`. `protocolVersion` is 4: adding a feature string is additive and the generic flag-validation contract covers it.*
+> *Technical Note — the push is gated on `#[cfg(all(feature = "coreml", target_os = "macos"))]` in `rust/src/capabilities.rs`, mirroring the runtime gate exactly so the advertisement cannot outlive the code path, and `record_live_is_advertised_only_where_it_compiles` pins it; the flag’s gate is the `live: record.live` row of `gate_rows()`. `protocolVersion` is 4: adding a feature string is additive and the generic flag-validation contract covers it.*
 
 ### Requirement: Engine spawn failures surface as E_ENGINE_SPAWN
 
@@ -322,7 +322,7 @@ Any failure to launch the `kesha-engine` binary (missing file, permission denied
 - WHEN any CLI or MCP code path spawns the Engine and the binary path does not exist
 - THEN the surfaced `KeshaError` carries `code` `E_ENGINE_SPAWN`, names the path, and carries an actionable `hint`
 
-> *Technical Note — `KeshaError` in `src/engine/events.ts` replaces the `SayError` construction at `src/synth.ts:172-178` and the ad-hoc rethrow at `src/engine.ts:183-186`.*
+> *Technical Note — `KeshaError` in `src/engine/events.ts` is the failure type on every path; `SayError` (`src/synth.ts`) extends it and stays `say()`'s failure type, carrying the same `code`, `exitCode`, `stderr`, `hint` and `origin`.*
 
 ## REMOVED Requirements
 
@@ -337,3 +337,13 @@ Any failure to launch the `kesha-engine` binary (missing file, permission denied
 ### Requirement: Engine stderr format is `error [E_CODE]: <message>`
 
 **Reason**: replaced by the Event stream. **Migration**: the regex at `src/error-codes.ts:9` and every Rust test asserting `error [` are rewritten against `kind`/`code`.
+
+## Open Issues
+
+- The protocol version is a gate, not a negotiation: a describe document that is
+  not version 4 is refused as `E_ENGINE_PROTOCOL` with a reinstall or upgrade hint.
+- The payload of `debug` events on the event stream is internal and not specified
+  here.
+- CLI-only codes (`E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE`) are
+  `origin: cli` entries in the describe document's `errors` section, so the
+  two-way check against `docs/errors.md` needs no exemption.

@@ -1,5 +1,6 @@
 import { afterEach, describe, test, expect } from "bun:test";
 import {
+  assertPlatformCanInstall,
   buildEngineInstallArgs,
   cleanupRetiredSidecars,
   getVersionMarkerPath,
@@ -158,6 +159,35 @@ describe("engine-install retired sidecar cleanup (#438)", () => {
   });
 });
 
+describe("assertPlatformCanInstall — the pre-check before the lock and any download", () => {
+  const rejection = (fn: () => void): KeshaError => {
+    try {
+      fn();
+    } catch (err) {
+      if (err instanceof KeshaError) return err;
+      throw err;
+    }
+    throw new Error("did not throw");
+  };
+
+  test("--diarize on any host but darwin-arm64 is E_UNSUPPORTED_PLATFORM", () => {
+    const err = rejection(() => assertPlatformCanInstall({ diarize: true }, "linux", "x64"));
+    expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
+    expect(err.message).toBe("--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64");
+    expect(err.hint).toBe("speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)");
+  });
+
+  test("the same request on darwin-arm64, and a plain request anywhere, pass", () => {
+    expect(() => assertPlatformCanInstall({ diarize: true }, "darwin", "arm64")).not.toThrow();
+    expect(() => assertPlatformCanInstall({}, "linux", "x64")).not.toThrow();
+  });
+
+  // A Nix or self-built engine on an unpublished host installs models through the same path (docs/nix-install.md).
+  test("a host with no published engine is not the pre-check's business", () => {
+    expect(() => assertPlatformCanInstall({}, "linux", "arm64")).not.toThrow();
+  });
+});
+
 describe("getEngineBinaryName platform mapping (#216)", () => {
   test("win32-x64 returns the published Windows asset", () => {
     expect(getEngineBinaryName("win32", "x64")).toBe("kesha-engine-windows-x64.exe");
@@ -166,10 +196,19 @@ describe("getEngineBinaryName platform mapping (#216)", () => {
     expect(getEngineBinaryName("darwin", "arm64")).toBe("kesha-engine-darwin-arm64");
     expect(getEngineBinaryName("linux", "x64")).toBe("kesha-engine-linux-x64");
   });
-  test("platforms without a published engine still throw", () => {
-    expect(() => getEngineBinaryName("win32", "arm64")).toThrow(/Unsupported platform/);
-    expect(() => getEngineBinaryName("darwin", "x64")).toThrow(/Unsupported platform/);
-    expect(() => getEngineBinaryName("linux", "arm64")).toThrow(/Unsupported platform/);
+  test("a platform without a published engine is E_UNSUPPORTED_PLATFORM naming the supported ones", () => {
+    for (const [platform, arch] of [["win32", "arm64"], ["darwin", "x64"], ["linux", "arm64"]] as const) {
+      let err: unknown;
+      try {
+        getEngineBinaryName(platform, arch);
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_UNSUPPORTED_PLATFORM");
+      expect((err as KeshaError).message).toBe(`no published kesha-engine for ${platform} ${arch}`);
+      expect((err as KeshaError).hint).toBe("supported: darwin-arm64, linux-x64, win32-x64 (docs/product-positioning.md#platform-matrix)");
+    }
   });
 });
 

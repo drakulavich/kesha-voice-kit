@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { installEngine } from "../engine-install";
+import { assertPlatformCanInstall, installEngine } from "../engine-install";
 import { engineTarget, isDarwinArm64 } from "../engine-targets";
 import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from "../engine";
 import { renderInstallPlan } from "../install-plan";
@@ -225,12 +225,11 @@ export async function performInstall(options: PerformInstallOptions) {
       engineVersionOverride: engineVersion !== undefined,
     });
 
-    if (diarize && !(process.platform === "darwin" && process.arch === "arm64")) {
+    try {
+      assertPlatformCanInstall({ diarize });
+    } catch (err) {
       errorKind = "validation_failed";
-      throw new Error(
-        "--diarize is currently darwin-arm64 only " +
-        "(see https://github.com/drakulavich/kesha-voice-kit/issues/199).",
-      );
+      throw err;
     }
     if (backendError) {
       errorKind = "validation_failed";
