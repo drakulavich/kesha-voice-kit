@@ -20,7 +20,7 @@ code never needs sanitizing.
 | `E_MODEL_DOWNLOAD` | model | yes | A model download failed (network or mirror error). | Retry; check connectivity and `KESHA_MODEL_MIRROR`. |
 | `E_CACHE_CORRUPT` | model | no | A cached model file failed SHA-256 verification. | `kesha install --no-cache` to re-fetch. |
 | `E_MODEL_LOAD` | model | no | A model file exists but failed to load. | Reinstall the model; check disk space. |
-| `E_UNSUPPORTED_PLATFORM` | platform | no | The feature isn't supported on this OS/arch (e.g. microphone recording off macOS). | Use a supported platform (see the [platform matrix](product-positioning.md#platform-matrix)). |
+| `E_UNSUPPORTED_PLATFORM` | platform | no | The feature isn't supported on this OS/arch (e.g. microphone recording off macOS), or `kesha install` found no published engine for it. | Use a supported platform (see the [platform matrix](product-positioning.md#platform-matrix)). |
 | `E_SIDECAR_MISSING` | platform | no | A helper sidecar is missing or exited nonzero (e.g. `say-avspeech`). | Reinstall; ensure the sidecar sits beside the engine (macOS). |
 | `E_NO_BACKEND` | platform | no | The binary was built without an ASR backend. | Use an official release build. |
 | `E_TEXT_EMPTY` | tts | no | Synthesis text was empty. | Pass non-empty text. |

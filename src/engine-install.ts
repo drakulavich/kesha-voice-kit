@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
 import { getDescribe, getEngineBinPath, protocolEnv, spawnEngineProcess } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
-import { engineTarget, isDarwinArm64 } from "./engine-targets";
+import { engineTarget, engineTargetEntries, isDarwinArm64, targetKey } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
 import { engineFailure, KeshaError, readEvents, type StderrOutcome } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
@@ -31,7 +31,12 @@ export function getEngineBinaryName(
   arch: string = process.arch,
 ): string {
   const target = engineTarget(platform, arch);
-  if (!target) throw new Error(`Unsupported platform: ${platform} ${arch}`);
+  if (!target) {
+    const supported = engineTargetEntries().map((e) => targetKey(e.platform, e.arch)).join(", ");
+    throw new KeshaError("E_UNSUPPORTED_PLATFORM", `no published kesha-engine for ${platform} ${arch}`, {
+      hint: `supported: ${supported} (docs/product-positioning.md#platform-matrix)`,
+    });
+  }
   return target.assetName;
 }
 

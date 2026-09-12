@@ -166,10 +166,19 @@ describe("getEngineBinaryName platform mapping (#216)", () => {
     expect(getEngineBinaryName("darwin", "arm64")).toBe("kesha-engine-darwin-arm64");
     expect(getEngineBinaryName("linux", "x64")).toBe("kesha-engine-linux-x64");
   });
-  test("platforms without a published engine still throw", () => {
-    expect(() => getEngineBinaryName("win32", "arm64")).toThrow(/Unsupported platform/);
-    expect(() => getEngineBinaryName("darwin", "x64")).toThrow(/Unsupported platform/);
-    expect(() => getEngineBinaryName("linux", "arm64")).toThrow(/Unsupported platform/);
+  test("a platform without a published engine is E_UNSUPPORTED_PLATFORM naming the supported ones", () => {
+    for (const [platform, arch] of [["win32", "arm64"], ["darwin", "x64"], ["linux", "arm64"]] as const) {
+      let err: unknown;
+      try {
+        getEngineBinaryName(platform, arch);
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_UNSUPPORTED_PLATFORM");
+      expect((err as KeshaError).message).toBe(`no published kesha-engine for ${platform} ${arch}`);
+      expect((err as KeshaError).hint).toBe("supported: darwin-arm64, linux-x64, win32-x64 (docs/product-positioning.md#platform-matrix)");
+    }
   });
 });
 

@@ -395,11 +395,10 @@ Any failure to launch the `kesha-engine` binary (missing file, permission denied
 
 ## Open Issues
 
-- Protocol version is hardcoded to `3`; there is no negotiation mechanism if
-  the CLI and Engine are on incompatible versions. The CLI currently falls back
-  to `null` (capabilities unavailable) rather than erroring on version mismatch.
-- `KESHA_DEBUG_FD` NDJSON event schema is not yet stable and is not specified
-  here; callers should treat the format as internal.
-- `E_ENGINE_SPAWN` is a TS-native code that has no corresponding entry in the
-  Engine's `--error-codes-json` output; the drift test exempts TS-only codes
-  explicitly.
+- The protocol version is a gate, not a negotiation: a describe document that is
+  not version 4 is refused as `E_ENGINE_PROTOCOL` with a reinstall or upgrade hint.
+- The payload of `debug` events on the event stream is internal and not specified
+  here.
+- CLI-only codes (`E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE`) are
+  `origin: cli` entries in the describe document's `errors` section, so the
+  two-way check against `docs/errors.md` needs no exemption.
