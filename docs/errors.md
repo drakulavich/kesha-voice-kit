@@ -60,6 +60,9 @@ code never needs sanitizing.
   and the engine emits the same codes when a bad argument or
   a missing file reaches it directly (e.g. `kesha-engine say` with conflicting
   `--model` / `--voice-file`, or a malformed `--format`).
+- **`E_UNSUPPORTED_PLATFORM`** is likewise emitted by both: the engine when a
+  build lacks what a request needs, and the CLI from the `kesha install --diarize`
+  pre-check, which refuses off darwin-arm64 before any engine exists.
 
 ## Stability
 
