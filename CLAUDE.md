@@ -32,10 +32,6 @@ Two documented exceptions — do **not** "fix" either: `fr-ff_siwis` is female b
 - **User-facing install/upgrade/remove text always says bun, never npm** — `bun add -g @drakulavich/kesha-voice-kit[@latest]`, `bun remove -g …`. Don't mention `npm i -g` even as an alternative. The maintainer publish path (`npm publish`) is exempt.
 - `raycast/` is npm + vitest by upstream requirement and opts out of these rules: `raycast/CLAUDE.md`.
 
-### PYTHON DEPENDENCIES GO IN A VENV — NEVER SYSTEM-WIDE
-
-When spiking against an upstream Python reference, always create a venv under `/tmp/` and delete it after. Never `pip install --break-system-packages`, never `pip3 install` against the system interpreter, never `pipx` for libraries. If a spike becomes project work, ask which env tool the user wants rather than installing system-wide.
-
 ### MAIN STAYS IN THE ROOT CHECKOUT — AGENTS EDIT ONLY IN WORKTREES
 
 The root checkout stays on `main`: shared coordination state, not an edit surface. **Never** switch it to a feature branch, and never check out `main` inside a worktree. In the root checkout only `git fetch`, inspection, and `git worktree list|add|remove|prune` are allowed.
