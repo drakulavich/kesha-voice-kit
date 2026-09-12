@@ -8,9 +8,10 @@ in-process. This spec defines the boundary between the CLI and the Engine: the
 describe document (protocol 4) that publishes the flag schema and the error
 taxonomy, the event stream on stderr, the `KESHA_*` environment variables that
 both sides honour, and the rule that the CLI validates flags against the
-describe document instead of forwarding them blindly. Ira depends on stable exit codes and error codes in scripts. Sona
-depends on the capabilities contract to feature-gate her agent code. Maks
-depends on the Engine being available and well-behaved on his Apple Silicon Mac.
+describe document instead of forwarding them blindly. Ira depends on stable
+exit codes and error codes in scripts. Sona depends on the capabilities
+contract to feature-gate her agent code. Maks depends on the Engine being
+available and well-behaved on his Apple Silicon Mac.
 
 ## Non-Goals
 
