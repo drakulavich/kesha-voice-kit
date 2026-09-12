@@ -36,13 +36,13 @@ interface TaxonomyEntry {
   title: string;
 }
 
-/** The recorded document, including the two sections `parseDescribe` drops because the CLI reads neither. */
 interface ErrorEntry extends TaxonomyEntry {
   category: string;
   retryable: boolean;
   origin: string;
 }
 
+/** The recorded document, including the two sections `parseDescribe` drops because the CLI reads neither. */
 interface RecordedDocument extends DescribeDocument {
   errors: ErrorEntry[];
   warnings: TaxonomyEntry[];
