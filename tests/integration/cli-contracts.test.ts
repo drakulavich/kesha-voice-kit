@@ -1281,7 +1281,7 @@ process.exit(99);
     });
   });
 
-  test("forcing a backend this platform's release lacks is E_INVALID_ARG, exit 2, before any download, with or without --plan (#1186)", async () => {
+  test("forcing a backend this platform's release lacks is E_INVALID_ARG, exit 2, before any download, from install, install --plan and init --plan (#1186)", async () => {
     const hostBackend = engineTarget(process.platform, process.arch)?.backend;
     if (!hostBackend) return;
     const other = hostBackend === "coreml" ? "onnx" : "coreml";
@@ -1297,12 +1297,15 @@ process.exit(99);
     const { events } = readDiagnosticLog(env.KESHA_LOG_DIR);
     expect(events[1]).toMatchObject({ command: "install", status: "failed", errorKind: "validation_failed" });
 
-    const plan = await runCli(["install", "--plan", `--${other}`], { env });
-    expectContract(plan, {
-      exitCode: 2,
-      stdoutEmpty: true,
-      stderrContains: ["error [E_INVALID_ARG]: ", `Requested backend "${other}" is not available on this platform`],
-    });
+    // init --plan is the declared mirror of that guard (#684): the same refusal, rendered the same way; init's intro on stdout is its own deliverable.
+    for (const command of ["install", "init"]) {
+      const plan = await runCli([command, "--plan", `--${other}`], { env });
+      expectContract(plan, {
+        exitCode: 2,
+        stdoutNotContains: ["Kesha install plan"],
+        stderrContains: ["error [E_INVALID_ARG]: ", `Requested backend "${other}" is not available on this platform`],
+      });
+    }
   });
 
   test("diagnostic logs record failed install events without content, and a coded engine failure exits with the engine's status (#1186)", async () => {
