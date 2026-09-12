@@ -2,13 +2,15 @@ import { defineCommand } from "citty";
 import { confirm, multiselect, isCancel, cancel } from "@clack/prompts";
 import { installCommandTokens, renderInstallPlan } from "../install-plan";
 import { log } from "../log";
+import { errorMessage } from "../error-utils";
+import { exitCodeFor } from "../engine/events";
 import { getEngineCapabilities } from "../engine";
 import {
   installableTtsLangs,
   performInstall,
   resolveBackendFlag,
   resolveNoCacheFlag,
-  unavailableBackendError,
+  unavailableBackendRefusal,
 } from "./install";
 import type { SharedInstallArgs } from "./types";
 
@@ -176,10 +178,10 @@ export async function promptInitSelection(
 
 /** Mirrors the guard in `performInstall`: a preview must not describe an install this platform rejects (#684). */
 async function printPlan(selection: InitSelection): Promise<boolean> {
-  const backendError = unavailableBackendError(selection.backend);
+  const backendError = unavailableBackendRefusal(selection.backend);
   if (backendError) {
-    log.error(backendError);
-    process.exitCode = 2;
+    log.error(errorMessage(backendError));
+    process.exitCode = exitCodeFor(backendError);
     return false;
   }
   log.info(
