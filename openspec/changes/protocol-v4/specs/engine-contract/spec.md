@@ -39,7 +39,7 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 - THEN the CLI omits `--no-expand-abbrev` from the argv and renders one `warn` event naming the flag
 - AND synthesis proceeds and resolves with audio
 
-> *Technical Note — Subcommand `Describe` in `rust/src/main.rs`; schema assembly, the gate table (`gate_rows()`) and the clap-parity test in `rust/src/protocol/describe.rs`; CLI validation in `src/engine/describe.ts`. The platform pre-check is `assertPlatformCanInstall` in `src/engine-install.ts`: `installEngine` runs it before taking the install lock or downloading anything, and `kesha install` runs it before its plan, so `--diarize` off darwin-arm64 is `E_UNSUPPORTED_PLATFORM` with no Engine involved; a host with no published target is only refused when an engine download is actually needed (`getEngineBinaryName`), so a Nix or self-built engine still installs models there. The `whenUngated: drop` row for `--no-expand-abbrev` is the only place that flag's gate lives.*
+> *Technical Note — Subcommand `Describe` in `rust/src/main.rs`; schema assembly, the gate table (`gate_rows()`) and the clap-parity test in `rust/src/protocol/describe.rs`; CLI validation in `src/engine/describe.ts`. The platform pre-check is `assertPlatformCanInstall` in `src/engine-install.ts`: `installEngine` runs it before taking the install lock or downloading anything, and `kesha install` runs it where the bare `Error` used to be — after `--plan` has returned, before the lock and the download — so `--diarize` off darwin-arm64 is `E_UNSUPPORTED_PLATFORM` with no Engine involved; a host with no published target is only refused when an engine download is actually needed (`getEngineBinaryName`), so a Nix or self-built engine still installs models there. The `whenUngated: drop` row for `--no-expand-abbrev` is the only place that flag's gate lives.*
 >
 > *Error code taxonomy carried in `errors` (`ErrorCode::ALL`, `title`, `category` and `retryable` in `rust/src/errors.rs`; `origin_of` in `rust/src/protocol/describe.rs`):*
 >
@@ -200,10 +200,10 @@ These codes SHALL appear in structured error records (`TranscribeErrorRecord.cod
 - WHEN Sona calls `await say({ text: "hello" })`
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_ENGINE_SPAWN` and whose `hint` names `kesha install`
 
-#### Scenario: The generated error reference matches the taxonomy
+#### Scenario: The error reference matches the taxonomy
 
 - GIVEN `docs/errors.md` is checked two-way against `kesha-engine describe`
-- WHEN a code is added to the Engine taxonomy without regenerating the document
+- WHEN a code is added to the Engine taxonomy without adding its row to the document
 - THEN the docs check in CI fails naming the missing code
 
 > *Technical Note — `KeshaError` in `src/engine/events.ts`. The CLI keeps no code list of its own: the CLI-only codes are `origin: cli` rows the Engine publishes (`origin_of` in `rust/src/protocol/describe.rs`), `rust/tests/error_codes_docs.rs` checks `docs/errors.md` against `describe` two-way with no exemption list, and `tests/unit/protocol-literals.test.ts` pins that every code the CLI names is documented.*
