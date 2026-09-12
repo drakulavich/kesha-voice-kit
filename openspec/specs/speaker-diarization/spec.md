@@ -411,9 +411,9 @@ diarizing on units the user did not ask for.
 
 > *Technical Note — `compute_units_from_env` in
 > `rust/src/transcribe/diarize.rs`. There is deliberately no CLI flag: the
-> Engine's `transcribe` subcommand takes a narrow flag set and adding one would
-> require the `--capabilities-json` negotiation the CLI uses for every other
-> forwarded flag.*
+> Engine's `transcribe` subcommand takes a narrow flag set, and adding one would
+> need a `gate_rows()` entry plus the describe-document validation the CLI
+> applies to every other forwarded flag.*
 
 ## Open Issues
 

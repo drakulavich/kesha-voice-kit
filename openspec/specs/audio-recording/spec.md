@@ -23,6 +23,7 @@ input channels to mono.
 - With `--out`, the sample rate is whatever the device reports and the recorder
   applies no resampling. `--live` resamples to 16 kHz in flight, because that is
   what the ASR model consumes.
+
 ## Requirements
 ### Requirement: `--live` and `--out` are mutually exclusive, and one is required
 
@@ -97,30 +98,34 @@ Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapse
 
 ### Requirement: `--live` requires an Engine that advertises `record.live`
 
-The CLI SHALL check the Engine's Capabilities for the `record.live` feature flag before spawning, and SHALL refuse `--live` with a message naming the platform requirement and pointing at the capture-then-transcribe alternative when the flag is absent. The flag SHALL NOT be forwarded to an Engine that does not advertise it.
+The CLI SHALL read the Engine's describe document for the `record.live` feature before spawning, and SHALL refuse `--live` with `E_INVALID_ARG` and a message naming the platform requirement and pointing at the capture-then-transcribe alternative when that feature is absent from `features`. The flag SHALL NOT be forwarded to an Engine that does not advertise it.
+
+A describe document the CLI cannot read SHALL end the command as a refusal rather than an assumption of support, carrying the `KeshaError` that the failed read produced and a hint naming `kesha install`.
+
+#### Scenario: Maks records live on a CoreML Engine
+
+- GIVEN the installed Engine's describe document lists `record.live` in `features`
+- WHEN Maks runs `kesha record --live`
+- THEN the CLI forwards `--live` and the live transcription starts
+- AND no `E_INVALID_ARG` is reported
 
 #### Scenario: Ira runs `--live` against a Linux ONNX Engine
 
 - GIVEN the installed Engine does not advertise `record.live`
 - WHEN Ira runs `kesha record --live`
-- THEN the CLI reports that live transcription requires a CoreML Engine on
-  Apple Silicon, and names `kesha record --out … && kesha …` as the way to get
-  a transcript on this platform
+- THEN the CLI reports `E_INVALID_ARG`, states that live transcription requires a
+  CoreML Engine on Apple Silicon, and names `kesha record --out … && kesha …` as
+  the way to get a transcript on this platform
 - AND the process exits 1 without spawning the Engine
 
-#### Scenario: capabilities cannot be read
+#### Scenario: the describe document cannot be read
 
-- GIVEN the Engine is installed but `--capabilities-json` fails
+- GIVEN the Engine is installed but `kesha-engine describe` fails
 - WHEN Maks runs `kesha record --live`
 - THEN the CLI refuses rather than forwarding `--live` on the assumption that
   it is supported
 
-> *Technical Note — flag: `RECORD_LIVE_FEATURE = "record.live"` in
-> `src/engine.ts`, checked by `preflightRecordLive`. Mirrors the
-> `transcribe.diarize` gate. The Engine-side `cfg` gate is the second line of
-> defence: a build without the streaming session rejects `--live` with
-> `error [E_UNSUPPORTED_PLATFORM]` and exit 1, naming the two-step alternative —
-> the same shape `record` already uses on Linux.*
+> *Technical Note — `validateRecordRequest` (`src/engine.ts`) runs `validateArgv(buildRecordArgs(…), await getDescribe())`, so `--live` is refused by the `live: record.live` row of `gate_rows()` (`rust/src/protocol/describe.rs`) exactly like every other gated flag; there is no record-specific check left. The Engine-side `cfg` gate in `rust/src/capabilities.rs` is the second line of defence: a build without the streaming session rejects `--live` as one `error` event whose `code` is `E_UNSUPPORTED_PLATFORM`, exits 1, and names the two-step alternative — the same shape `record` already uses on Linux.*
 
 ### Requirement: --max-seconds defaults to 120 and must be 1–3600
 

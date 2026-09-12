@@ -25,7 +25,7 @@ no credentials.
 
 `kesha doctor` SHALL collect and print a structured diagnostic report covering: CLI
 package name and version; Bun runtime version, platform, and architecture; Engine
-binary path, install status, version marker, and Capabilities JSON (obtained by
+binary path, install status, version marker, and the describe document (obtained by
 probing the Engine); Model cache path, existence, total size, and per-component
 breakdown; optional-component install status (VAD, TTS Kokoro, TTS Vosk, FluidAudio
 Kokoro cache, Diarization, Sidecars); Stats DB status; Diagnostic log status; and a
@@ -51,7 +51,7 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 - GIVEN the Engine binary is missing
 - WHEN Ira runs `kesha doctor`
 - THEN the report shows `Binary: <path> (missing)` and `not available` for
-  capabilities
+  the describe document
 - AND all other sections are still present
 - AND the process exits 0
 
@@ -80,15 +80,22 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 - AND home-directory paths appear as `~/…`
 - AND the process exits 0
 
+#### Scenario: The env snapshot no longer offers a descriptor variable
+
+- GIVEN `KESHA_DEBUG_FD=7` is exported from an old script
+- WHEN Maks runs `kesha doctor`
+- THEN the env snapshot does not list `KESHA_DEBUG_FD`, because the variable no longer exists
+- AND the process exits 0
+
 > *Technical Note — sources: `src/doctor.ts::collectDoctorReport`,
 > `src/doctor.ts::formatDoctorReport`, `src/cli/doctor.ts::doctorCommand`.
 > Executability comes from `src/engine-health.ts::probeExecutable` and surfaces as
 > `engine.runnable` and per-component `runnable` in the JSON report; any exit code counts
 > as healthy, since the sidecars legitimately exit non-zero when given no work.
 > Known env keys snapshot: `KESHA_ENGINE_BIN`, `KESHA_CACHE_DIR`,
-> `KESHA_MODEL_MIRROR`, `KESHA_STATS_DB`, `KESHA_DEBUG`, `KESHA_DEBUG_FD`
-> (from `KNOWN_ENV_KEYS`). Secret-pattern detection splits the key on
-> non-alphanumeric characters and checks each part against
+> `KESHA_MODEL_MIRROR`, `KESHA_STATS_DB`, `KESHA_DEBUG` (from `KNOWN_ENV_KEYS`);
+> `KESHA_DEBUG_FD` is dropped from that list at `src/doctor.ts:37`. Secret-pattern
+> detection splits the key on non-alphanumeric characters and checks each part against
 > `["TOKEN","KEY","SECRET","PASSWORD","CREDENTIAL","AUTH"]`. URL redaction strips
 > `username`, `password`, `search`, and `hash`. Home-path redaction rewrites the
 > exact home prefix to `~`; case-insensitive on Windows.*
@@ -96,7 +103,7 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 ### Requirement: `kesha status` shows engine and voice install state
 
 `kesha status` SHALL print a concise install summary: Engine binary path and install
-status; Backend, protocol version, and features (from Capabilities JSON); Bun runtime
+status; Backend, protocol version, and features (from the describe document); Bun runtime
 version and platform; active Model mirror (when `KESHA_MODEL_MIRROR` is set); and the
 list of installed TTS Voice ids.
 
@@ -122,7 +129,8 @@ nested capabilities value so that a binary which cannot report them yields one
 null rather than three, making "can the Engine run" a single check; consumers
 deciding that SHALL require presence AND non-null capabilities. Consumers SHALL be
 able to reach both conclusions from these fields without matching any
-human-readable prose.
+human-readable prose. The nested value's shape and key name SHALL NOT change with
+protocol version 4, so the Raycast extension keeps reading it unmodified.
 
 Every documented key SHALL be present in every payload: absent values are null
 (or the empty list for Voice ids), never omitted, so a consumer never has to tell
@@ -159,7 +167,7 @@ Engine is installed, matching the human path.
 - WHEN Ira runs `kesha status`
 - THEN the output shows a red cross for the Engine binary
 - AND an actionable setup hint is printed — `kesha init` on an interactive TTY,
-  `kesha install` when stderr is piped (`installHint()`, `src/status.ts:88`)
+  `kesha install` when stderr is piped (`installHint()`, `src/status.ts:110`)
 - AND the process exits 0
 
 #### Scenario: Ira asks for disk usage with no Engine installed
@@ -175,7 +183,7 @@ Engine is installed, matching the human path.
 - WHEN Ira runs `kesha status --json`
 - THEN stdout parses as a single JSON object and contains nothing else
 - AND the object reports Engine presence as `true`, the binary path, the Backend,
-  the protocol version, the features, and the installed TTS Voice ids
+  the protocol version `4`, the features, and the installed TTS Voice ids
 - AND the process exits 0
 
 #### Scenario: Engine missing under `--json`
@@ -187,9 +195,9 @@ Engine is installed, matching the human path.
 - AND stderr does not repeat that hint
 - AND the process exits 0
 
-#### Scenario: Capabilities probe fails under `--json`
+#### Scenario: The describe probe fails under `--json`
 
-- GIVEN the Engine binary exists but `--capabilities-json` cannot be read
+- GIVEN the Engine binary exists but `kesha-engine describe` cannot be read
   (corrupt or incompatible binary)
 - WHEN Ira runs `kesha status --json`
 - THEN Engine presence is reported as `true` while the capabilities value is null
@@ -198,15 +206,16 @@ Engine is installed, matching the human path.
   this apart from both a healthy Engine and a missing one
 - AND the process exits 0, matching the human path's "probe failed" line
 
-> *Technical Note — sources: `src/status.ts::showStatus`, `src/status.ts::showDiskUsage`,
+> *Technical Note — sources: `src/status.ts::collectStatus` and `renderStatus`, `src/status.ts::showDiskUsage`,
 > `src/cli/status.ts::statusCommand`. TTS voice enumeration reads `kokoro-82m/voices/*.bin`
 > (prefixed `en-`) and checks `vosk-ru/model.onnx` + `vosk-ru/bert/model.onnx` presence
 > (voices `ru-vosk-f01`, `ru-vosk-f02`, `ru-vosk-f03`, `ru-vosk-m01`, `ru-vosk-m02`).
 > `activeModelMirror()` trims and strips trailing slashes from `KESHA_MODEL_MIRROR`;
-> returns null when unset or empty. Capabilities come from
-> `src/engine.ts::getEngineCapabilities` (`src/engine.ts:348`), which returns null on a
-> failed or unparseable probe — that null is what the payload reports. The `--json`
-> flag follows the `doctor` precedent at `src/cli/doctor.ts:16-32`.*
+> returns null when unset or empty. Capabilities are `engineFunctionalHealth()`'s
+> (`src/engine-health.ts`) `capabilities` when its status is `ok` and null otherwise, so a
+> failed or unparseable probe is what the payload reports as null. The `--json`
+> flag follows the `doctor` precedent at `src/cli/doctor.ts:16-32`. The Raycast
+> extension reads the nested value at `raycast/src/lib/kesha-bin.ts:240-253`.*
 
 ### Requirement: `kesha logs` manages privacy-safe NDJSON Diagnostic logs
 
