@@ -55,8 +55,8 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 > | `E_UNSUPPORTED_PLATFORM` | platform | no | engine | Feature unsupported on this platform |
 > | `E_SIDECAR_MISSING` | platform | no | engine | Helper sidecar missing or failed |
 > | `E_NO_BACKEND` | platform | no | engine | No ASR backend compiled in |
-> | `E_ENGINE_SPAWN` | platform | no | cli | Engine binary missing or failed to start |
-> | `E_ENGINE_PROTOCOL` | platform | no | cli | Engine speaks a protocol the CLI does not |
+> | `E_ENGINE_SPAWN` | platform | no | cli | Engine binary not installed or failed to start |
+> | `E_ENGINE_PROTOCOL` | platform | no | cli | Engine speaks a protocol this CLI does not |
 > | `E_TEXT_EMPTY` | tts | no | engine | Empty synthesis text |
 > | `E_TEXT_TOO_LONG` | tts | no | engine | Synthesis text too long |
 > | `E_VOICE_UNKNOWN` | tts | no | engine | Unknown voice id |

@@ -4,7 +4,8 @@ import { describeDocument } from "../helpers/fake-engine";
 import { readRepoFile } from "../helpers/repo";
 
 describe("the fake engine's describe template", () => {
-  const recorded = parseDescribe(JSON.parse(readRepoFile("tests/fixtures/describe/darwin-arm64.json")))!;
+  // The capability pact is the only describe recording a workflow re-derives from the published binary (#798).
+  const recorded = parseDescribe(JSON.parse(readRepoFile("tests/fixtures/capabilities/darwin-arm64.json")))!;
 
   test("reproduces the released darwin-arm64 document from its features alone", () => {
     expect(recorded).not.toBeNull();

@@ -1,6 +1,6 @@
 {
-  "engineVersion": "1.24.11",
+  "engineVersion": "1.25.0-beta.2",
   "assetName": "kesha-engine-darwin-arm64",
-  "sha256": "bb32c0fd142be959fedd02759e4f163874c6065b27fc510f7a20484ea2dc670c",
-  "recordedFrom": "kesha-engine-darwin-arm64 from release v1.24.11"
+  "sha256": "f0476528ac593d32558ce7d4d13da91d58c03062cc7577b5dc0a7bda22bb2b66",
+  "recordedFrom": "kesha-engine-darwin-arm64 from release v1.25.0-beta.2"
 }
