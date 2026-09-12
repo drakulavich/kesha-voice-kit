@@ -30,7 +30,7 @@ Two documented exceptions — do **not** "fix" either: `fr-ff_siwis` is female b
 - Bun-native APIs only (`Bun.spawn`, `Bun.write`, `Bun.file`, `Bun.which`); Bun runs `.ts` directly, no build step.
 - The engine is a subprocess, never linked in-process.
 - **User-facing install/upgrade/remove text always says bun, never npm** — `bun add -g @drakulavich/kesha-voice-kit[@latest]`, `bun remove -g …`. Don't mention `npm i -g` even as an alternative. The maintainer publish path (`npm publish`) is exempt.
-- `raycast/` is npm + vitest by upstream requirement and opts out of these rules: `raycast/CLAUDE.md`.
+- `raycast/` is npm + vitest (Raycast ecosystem tooling) and opts out of these rules: `raycast/CLAUDE.md`.
 
 ### MAIN STAYS IN THE ROOT CHECKOUT — AGENTS EDIT ONLY IN WORKTREES
 
@@ -155,6 +155,7 @@ Which engine serves which voice-id prefix, the per-language G2P paths and script
 - **Output**: `console.log()` for results (stdout stays pipe-friendly), `console.error()` for progress/errors.
 - **Rust**: `cargo fmt` + `cargo clippy --all-targets -- -D warnings`.
 - **No inline CI scripts over 3 lines** — extract to `.github/scripts/`.
+- **Workflow `run:` never interpolates `${{ }}` directly** — route it through `env:` first (#291); the why and the shape are in `.claude/rules/ci-and-build.md`.
 - **Comments: default to NONE.** Delete any comment that only restates the code. Never narrate mechanics, restate a name, or add section banners. A comment is allowed only when it carries what the code cannot: non-obvious *why*, a gotcha, an issue reference, a spec citation, `// SAFETY:`, a public-API doc contract (state the contract, not the implementation), or a `TODO` with context. One line, except SAFETY blocks and doc contracts. Bias below the surrounding density — and hold agent-generated code to the same bar in review.
 
 ## Deeper references

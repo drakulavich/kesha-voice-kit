@@ -20,7 +20,7 @@ job gated on `needs.changes.outputs.coreml`, and the only lane that *links and r
 feature. The per-PR `macos-14` lane stops at `cargo check --features coreml` and rides the `rust`
 filter.
 
-That is exactly the surface CLAUDE.md's COREML BUILD TRIPLE condition 3 describes: `rust/build.rs`
+That is exactly the surface `.claude/rules/ci-and-build.md`'s COREML BUILD TRIPLE condition 3 describes: `rust/build.rs`
 emits `-Wl,-rpath,/usr/lib/swift` under `cfg(any(coreml, system_kokoro, system_diarize))`. An edit
 breaking that emit is a link-time failure, and without the filter entry no lane that links `coreml`
 would run on it. If a future edit narrows the `rust` filter off `rust/**`, the ticket's wider claim
