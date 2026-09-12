@@ -80,7 +80,7 @@ Coverage floors, which CI job runs which suite, how model-dependent suites self-
 
 - `main` is protected; every change goes through a PR and CI must pass.
 - Branches are named after the worktree slug (`just worktree <slug>`); release PRs use `release/X.Y.Z`, which CI treats specially.
-- Everything committed, and every PR or issue body, is English — comments, identifiers, commit subjects, `.claude/` definitions. Cyrillic belongs in test fixtures only.
+- Everything committed, and every PR or issue body, is English — comments, identifiers, commit subjects, `.claude/` definitions. Cyrillic is data, not prose: legitimate in the Russian TTS and inverse-text-normalization tables and in fixtures, never in a comment or a commit message.
 - Picking up work means taking the next ticket off the queue — there is no label to apply. In-flight state is the worktree and the open PR.
 - Put `Closes #N` in the PR **body or commit message**, not only the title, so it auto-closes. Each issue needs its own keyword (`Closes #N, closes #M`) — a bare list closes only the first. Use `Refs #N` for partial work, then verify with `gh issue view <N> --json state` and close manually.
 
@@ -161,6 +161,6 @@ Which engine serves which voice-id prefix, the per-language G2P paths and script
 
 Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-engine` and `release-cli` (cut a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches), and the `openspec-*` set (propose, apply, sync, archive, explore) for spec-driven changes.
 
-Path-scoped rules under `.claude/rules/` load only when their files are in play: `testing.md`, `ci-and-build.md`, `openclaw-plugin.md`.
+Path-scoped rules under `.claude/rules/` load only when their files are in play: `testing.md`, `ci-and-build.md`, `python.md`, `openclaw-plugin.md`.
 
 Still plain runbooks: [rust-gotchas](docs/runbooks/rust-gotchas.md) · [openclaw-plugin](docs/runbooks/openclaw-plugin.md).

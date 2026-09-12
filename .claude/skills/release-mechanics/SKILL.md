@@ -236,10 +236,6 @@ Greptile comment mechanics:
 - Do not arm auto-merge before Greptile reviews the latest head; otherwise CI-green can merge before a new P1/P2 arrives (#287→#288→#289; #290→#291→#292 avoided by waiting). Merge by hand once the latest SHA carries no unresolved P1/P2. Do **not** use the Confidence Score as the signal: 9 of 30 PRs across #753–#800 scored `5/5` "safe to merge" while carrying Greptile's own P1/P2 inline findings (#775 had two P1).
 - If Greptile is the next gate, arm a wait instead of ending the turn: `ScheduleWakeup(delaySeconds: 600-900, prompt: "check PR #N: Greptile review on head <sha>, CI on that sha", reason: "waiting for Greptile on #N")` — the delay is Greptile's typical latency, not a cache window (the harness keeps the conversation cached for an hour, so there is nothing to tune). Optionally pair it with a background poll of `gh api repos/drakulavich/kesha-voice-kit/issues/N/comments --jq '.[] | select(.user.login=="greptile-apps[bot]")'` that exits when `commit/<sha>` matches the head. Merge only when that SHA is the head and no unresolved P1/P2 inline comment is attached to it; if the head stays uncovered after the wait, leave the PR unmerged and report the missing review to the maintainer.
 
-## UN-DRAFTING AN ENGINE TAG FIRES THE HOMEBREW TAP
-
-Publishing is effectively permanent. Un-drafting a bare engine tag does not reach npm — only `-cli` does — but it fires `🍺 Homebrew Tap`, so the draft binary is validated end-to-end first (authenticated `gh release download`, then transcribe a fixture and synthesise a line), never through `curl` or `just smoke-test`, which can false-green through an old global shim.
-
 ## THE STABLE TAG HELPER
 
 When an authorized maintainer needs a verified stable tag creation sequence, use `just release-tag vX.Y.Z notes.md` from the clean root checkout. The deliberate GitHub API fallback is `just release-tag vX.Y.Z notes.md api`; do not switch to it after a timed-out Git push until the remote tag state is known. Details: [release tag helper](docs/runbooks/release-tag-helper.md).

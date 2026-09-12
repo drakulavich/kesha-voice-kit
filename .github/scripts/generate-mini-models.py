@@ -11,7 +11,7 @@ Deliberately not a learned model: it emits a fixed 220 Hz tone whose length is
 assertions read (non-silent, unclipped, 24 kHz mono, duration tracking text
 length and `--rate`). It reads `style` so a wrong-shaped voice pack still fails.
 
-Run inside a throwaway venv, per CLAUDE.md's no-system-python rule:
+Run inside a throwaway venv, per .claude/rules/python.md:
 
     python3 -m venv /tmp/mini-venv && /tmp/mini-venv/bin/pip install 'onnx==1.22.0' numpy
     /tmp/mini-venv/bin/python .github/scripts/generate-mini-models.py \

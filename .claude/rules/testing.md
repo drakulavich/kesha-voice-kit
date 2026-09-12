@@ -2,8 +2,11 @@
 paths:
   - "tests/**"
   - "rust/tests/**"
-  - "**/*.test.ts"
   - "bunfig.toml"
+  - "src/engine.ts"
+  - "src/cli/say.ts"
+  - "src/cli/main.ts"
+  - "src/engine-install.ts"
   - ".github/workflows/ci.yml"
   - ".github/workflows/rust-test.yml"
 ---
