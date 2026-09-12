@@ -1,6 +1,6 @@
 # raycast/ — Raycast extension
 
-Raycast-ecosystem directory: the repo-wide bun rules do NOT apply here.
+Raycast-ecosystem directory: the repo-wide bun rules do NOT apply here. These instructions override any conflicting root CLAUDE.md defaults for files in this directory.
 
 - **npm, not bun**: `npm ci`, `npm test` (vitest), `npm run lint` (`ray lint`, includes `tsc --noEmit`). CI runs exactly these in the `raycast-lint` job on Node 26. User-facing text about installing the kesha CLI itself still says bun.
 - **Upstream mirror**: this extension is synced with `raycast/extensions` (merged as raycast/extensions#29681). Every diff here enlarges the next sync — keep changes focused, no drive-by refactors.
