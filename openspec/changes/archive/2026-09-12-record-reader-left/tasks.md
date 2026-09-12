@@ -11,4 +11,4 @@
 
 ## 3. Spec
 
-- [ ] 3.1 Sync this delta into `openspec/specs/audio-recording/spec.md` and archive the change after PR #1195 merges
+- [x] 3.1 Sync this delta into `openspec/specs/audio-recording/spec.md` and archive the change after PR #1195 merges
