@@ -92,9 +92,10 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 > Executability comes from `src/engine-health.ts::probeExecutable` and surfaces as
 > `engine.runnable` and per-component `runnable` in the JSON report; any exit code counts
 > as healthy, since the sidecars legitimately exit non-zero when given no work.
-> Known env keys snapshot: `KESHA_ENGINE_BIN`, `KESHA_CACHE_DIR`,
-> `KESHA_MODEL_MIRROR`, `KESHA_STATS_DB`, `KESHA_DEBUG` (from `KNOWN_ENV_KEYS`);
-> `KESHA_DEBUG_FD` is dropped from that list at `src/doctor.ts:37`. Secret-pattern
+> Known env keys snapshot: the ten entries of `src/doctor.ts::KNOWN_ENV_KEYS`
+> (`KESHA_ENGINE_BIN`, `KESHA_CACHE_DIR`, `KESHA_MODEL_MIRROR`, `KESHA_STATS_DB`,
+> `KESHA_DEBUG`, the two `*_COMPUTE_UNITS`, the two diarize timeouts and
+> `KESHA_INSTALL_LOCK_WAIT_SECS`); `KESHA_DEBUG_FD` is no longer among them. Secret-pattern
 > detection splits the key on non-alphanumeric characters and checks each part against
 > `["TOKEN","KEY","SECRET","PASSWORD","CREDENTIAL","AUTH"]`. URL redaction strips
 > `username`, `password`, `search`, and `hash`. Home-path redaction rewrites the

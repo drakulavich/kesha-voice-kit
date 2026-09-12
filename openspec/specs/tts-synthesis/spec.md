@@ -481,8 +481,8 @@ event on the Event stream rather than accept the flag silently.
 > OPEC/IKEA/ASCII/NAFTA/LASER/RADAR/SCUBA) and IPA lexicon (EPAM, JSON, JPEG,
 > GIF, SQL, ASAP, CRUD, JWT, OAuth, Microsoft, Anthropic, Claude, Kubernetes,
 > PostgreSQL, GraphQL, Linux, Tokio, macOS, Granola) in
-> `rust/src/tts/en/acronym.rs:23-59`; the lexicon fires even with
-> `--no-expand-abbrev` (`:121-125`, test `ipa_fires_even_without_auto_expand`).
+> `rust/src/tts/en/acronym.rs` (`STOP_LIST`, `IPA_LEXICON`); the lexicon fires
+> even with `--no-expand-abbrev` (test `ipa_fires_even_without_auto_expand`).
 > Russian: rules and 25-entry stop-list (ВСЁ, ВЫ, ДА, …, ЧТО) in
 > `rust/src/tts/ru/acronym.rs:1-66`; tokens must be 2–5 chars of `[А-ЯЁ]`
 > without Ъ/Ь, and spell only when length ≤ 2 or an adjacent same-type letter
@@ -492,7 +492,8 @@ event on the Event stream rather than accept the flag silently.
 > `FR_STOP_LIST` = OTAN, OVNI, SIDA, FIFA, OPEP, ONU, OMS;
 > `IT_STOP_LIST` = FIAT, NATO, FIFA, AIDS, ONU;
 > `PT_STOP_LIST` = OTAN, OVNI, SIDA, AIDS, FIFA, ONU, OMS
-> (`rust/src/tts/normalize/acronyms.rs:141-145`) — curated seeds, not
+> (`rust/src/tts/normalize/acronyms.rs`, the `*_STOP_LIST` constants beside
+> the `*_LETTERS` tables) — curated seeds, not
 > exhaustive. Six-plus-character all-caps words (UNESCO) pass through
 > untouched. The hand-written capability gate of `--no-expand-abbrev` that
 > `src/synth.ts` once carried (`applyNoExpandAbbrev`) is replaced by the
@@ -610,8 +611,8 @@ the run got, so the same `E_MODEL_MISSING` legitimately appears with either.
 > darwin-arm64 late `E_MODEL_MISSING` from `models::missing_kokoro_assets` all
 > reach the caller as `TtsError::Coded` → exit 4. CLI side: `KeshaError`
 > (`src/engine/events.ts`) carries the Engine exit code exactly as `SayError`
-> did (`src/synth.ts::SayError`, now a `KeshaError` subclass), and `src/synth.ts::say` pre-checks empty text
-> (2) and the length limit (5).*
+> did (`src/synth.ts::SayError`, now a `KeshaError` subclass), and
+> `src/synth.ts::say` pre-checks empty text (2) and the length limit (5).*
 
 ## Open Issues
 
