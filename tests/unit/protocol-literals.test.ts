@@ -12,6 +12,18 @@ function sources(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+const SCRIPT_SOURCE = /\.(ts|mts|cts|js|mjs|cjs|sh|bash|py)$/;
+
+function scriptSources(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    if (entry === "__pycache__") continue;
+    const p = join(dir, entry);
+    if (statSync(p).isDirectory()) scriptSources(p, out);
+    else if (SCRIPT_SOURCE.test(p)) out.push(p);
+  }
+  return out;
+}
+
 const RENDERER = "src/engine/events.ts";
 const files = sources(repoPath("src")).map((p) => [relative(repoPath("."), p).replace(/\\/g, "/"), readFileSync(p, "utf8")] as const);
 const documented = new Set(
@@ -42,16 +54,24 @@ describe("the protocol 3 surface is gone from src/", () => {
 // #798: the pact recorder spawned a flag the pinned engine had deleted, and the only lane that
 // runs these scripts is weekly and gates no PR, so nothing red said so for three days.
 describe("the protocol 3 surface is gone from .github/scripts/", () => {
-  const scripts = readdirSync(repoPath(".github/scripts"))
-    .filter((f) => /\.(ts|mjs|sh)$/.test(f))
-    .map((f) => [`.github/scripts/${f}`, readFileSync(repoPath(`.github/scripts/${f}`), "utf8")] as const);
+  const scripts = scriptSources(repoPath(".github/scripts")).map(
+    (p) => [relative(repoPath("."), p).replace(/\\/g, "/"), readFileSync(p, "utf8")] as const,
+  );
 
   test.each(["--capabilities-json", "--error-codes-json", "KESHA_DEBUG_FD"])("no CI script reads %s any more", (needle) => {
     expect(scripts.filter(([, text]) => text.includes(needle)).map(([p]) => p)).toEqual([]);
   });
 
-  test("finds the scripts it claims to scan", () => {
-    expect(scripts.map(([p]) => p)).toContain(".github/scripts/record-capability-pacts.ts");
+  test("reaches every language and depth the scripts are written at", () => {
+    const names = scripts.map(([p]) => p);
+    for (const script of [
+      ".github/scripts/record-capability-pacts.ts",
+      ".github/scripts/release-install-smoke.sh",
+      ".github/scripts/generate-mini-models.py",
+      ".github/scripts/release-manifest.mjs",
+    ]) {
+      expect(names).toContain(script);
+    }
   });
 });
 describe("the protocol 3 surface is gone from tests/", () => {

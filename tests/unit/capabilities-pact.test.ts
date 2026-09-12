@@ -31,12 +31,23 @@ import { pickVoiceForLang } from "../../src/voice-routing";
 import { buildSayArgs, type SayOptions } from "../../src/synth";
 import { readRepoFile, repoPath } from "../helpers/repo";
 
+interface TaxonomyEntry {
+  code: string;
+  title: string;
+}
+
+/** The recorded document, including the two sections `parseDescribe` drops because the CLI reads neither. */
+interface RecordedDocument extends DescribeDocument {
+  errors: TaxonomyEntry[];
+  warnings: TaxonomyEntry[];
+}
+
 interface PactTarget {
   key: string;
   platform: NodeJS.Platform;
   arch: NodeJS.Architecture;
   backend: "coreml" | "onnx";
-  pact: DescribeDocument;
+  pact: RecordedDocument;
   provenance: PactProvenance;
 }
 
@@ -53,7 +64,7 @@ for (const { platform, arch, target } of engineTargetEntries()) {
     platform: platform as NodeJS.Platform,
     arch: arch as NodeJS.Architecture,
     backend: target.backend,
-    pact: JSON.parse(readRepoFile(pactPath(key))) as DescribeDocument,
+    pact: JSON.parse(readRepoFile(pactPath(key))) as RecordedDocument,
     provenance: JSON.parse(readRepoFile(provenancePath(key))) as PactProvenance,
   });
 }
@@ -109,6 +120,20 @@ describe("capability pact — recordings", () => {
       expect(protocolMismatch(doc!, "kesha-engine")).toBeNull();
     });
   }
+
+  // The taxonomy is compiled per build, so only a cross-target recording can see it drift on
+  // one platform, and a released code with no docs/errors.md row is one users cannot look up.
+  it("publishes one error and warning taxonomy across every target", () => {
+    const shapes = new Set(TARGETS.map((t) => JSON.stringify({ errors: t.pact.errors, warnings: t.pact.warnings })));
+    expect(shapes.size).toBe(1);
+  });
+
+  it("documents every error code the recordings publish in docs/errors.md", () => {
+    const documented = new Set([...readRepoFile("docs/errors.md").matchAll(/^\| `(E_[A-Z0-9_]+)`/gm)].map((m) => m[1]!));
+    const published = new Set(TARGETS.flatMap((t) => t.pact.errors.map((e) => e.code)));
+    expect([...published].filter((code) => !documented.has(code))).toEqual([]);
+    expect(published.size).toBeGreaterThan(20);
+  });
 });
 
 for (const t of TARGETS) describe(`${t.key} accepts what the CLI would send it`, () => {
