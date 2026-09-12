@@ -1889,6 +1889,34 @@ process.exit(99);
     expect(transcript.exitCode).toBe(0);
   }, 30000);
 
+  test("kesha record --live stops recording when its reader leaves, instead of holding the microphone (#1187)", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-record-reader-left-");
+    const enginePath = join(dir, "kesha-engine");
+    const finishedMarker = join(dir, "finished-naturally");
+    // Ten transcript lines over three seconds; the marker means nobody stopped the engine.
+    writeFileSync(
+      enginePath,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then printf '%s\\n' '${describeJson({ features: ["record.live"] })}'; exit 0; fi
+trap 'exit 143' TERM INT
+i=0
+while [ $i -lt 10 ]; do i=$((i+1)); echo "transcript line $i"; sleep 0.3; done
+: > ${shellQuote(finishedMarker)}
+exit 0
+`,
+    );
+    chmodSync(enginePath, 0o755);
+    const env: Record<string, string> = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+
+    const run = await runCliPipedTo(["record", "--live"], "head -1", { env, sinkPath: join(dir, "first.txt") });
+
+    expect(run.stderr).not.toContain("EPIPE");
+    expect(run.exitCode).toBe(0);
+    expect(readFileSync(join(dir, "first.txt"), "utf8")).toBe("transcript line 1\n");
+    expect(existsSync(finishedMarker)).toBe(false);
+  }, 30000);
+
   test("a stdout that fails for any other reason still fails loudly (#1001)", async () => {
     const dir = makeTempDir("kesha-cli-contract-stdout-ebadf-");
     const enginePath = createFakeEngine(dir);

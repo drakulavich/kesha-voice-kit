@@ -424,14 +424,26 @@ export async function validateRecordRequest(target: RecordTarget, maxSeconds: nu
   validateArgv(buildRecordArgs(target, maxSeconds), await getDescribe());
 }
 
-/** Relays the engine's stdout byte for byte, ending any open status row first so a transcript cannot land inside it. */
-async function forwardStdout(stream: ReadableStream<Uint8Array>, status: { clear(): void }): Promise<void> {
+/**
+ * Relays the engine's stdout byte for byte, ending any open status row first so a transcript cannot
+ * land inside it. When the reader leaves (EPIPE), `onReaderLeft` fires once and the relay keeps
+ * draining without writing, so the engine never blocks on a full pipe while it is being stopped.
+ */
+async function forwardStdout(stream: ReadableStream<Uint8Array>, status: { clear(): void }, onReaderLeft: () => void): Promise<void> {
   const reader = stream.getReader();
+  let readerLeft = false;
+  // Bun reports a stdout EPIPE through the write callback, never as a throw (#1001); the global guard swallows the event.
+  const onWritten = (err?: Error | null) => {
+    if (readerLeft || (err as NodeJS.ErrnoException | null)?.code !== "EPIPE") return;
+    readerLeft = true;
+    onReaderLeft();
+  };
   for (;;) {
     const { done, value } = await reader.read();
     if (done) return;
+    if (readerLeft) continue;
     status.clear();
-    process.stdout.write(value);
+    process.stdout.write(value, onWritten);
   }
 }
 
@@ -457,7 +469,11 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
   let exitCode: number;
   try {
     [, events, exitCode] = await Promise.all([
-      forwardStdout(proc.stdout as ReadableStream<Uint8Array>, status),
+      forwardStdout(proc.stdout as ReadableStream<Uint8Array>, status, () => {
+        // Nobody is reading the transcript any more, so the microphone has no reason to stay open (#1187).
+        log.debug("stdout closed by the reader; stopping the recording");
+        proc.kill("SIGTERM");
+      }),
       readEvents(proc.stderr as ReadableStream<Uint8Array>, {
         onProgress: (line) => {
           if (RECORD_TICK.test(line)) {
