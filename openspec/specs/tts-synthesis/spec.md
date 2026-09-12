@@ -419,8 +419,8 @@ automatic letter-spelling for Russian and for English on ONNX Kokoro builds —
 but the English IPA lexicon still fires, and `<say-as interpret-as="characters">`
 still works. On every other path — FluidAudio Kokoro, `macos-*` AVSpeech, and
 the Romance normalizer that runs inside CharsiuG2P — expansion belongs to an
-engine that offers no suppression knob, and the Engine SHALL warn on stderr
-rather than accept the flag silently.
+engine that offers no suppression knob, and the Engine SHALL emit a `warn`
+event on the Event stream rather than accept the flag silently.
 
 #### Scenario: English initialism is letter-spelled, lexicon word is not
 
@@ -459,23 +459,30 @@ rather than accept the flag silently.
 - WHEN Sona runs `kesha say --voice en-am_michael --no-expand-abbrev "IBM"`
 - THEN `IBM` is still spelled letter by letter, because the initialism rule
   lives inside FluidAudio's G2P
-- AND the Engine warns on stderr that the flag has no effect on this voice,
-  naming where it does apply
+- AND the Engine emits a `warn` event naming where the flag does apply, which
+  the CLI renders on stderr
 
 #### Scenario: --no-expand-abbrev on an old engine warns instead of lying
 
-- GIVEN an Engine that does not advertise `tts.ru_acronym_expansion` /
-  `tts.en_acronym_expansion` in its Capabilities JSON
+- GIVEN an Engine whose describe document lists neither `tts.ru_acronym_expansion`
+  nor `tts.en_acronym_expansion` in `features`
 - WHEN Ira passes `--no-expand-abbrev`
-- THEN the CLI drops the flag from the Engine argv and warns on stderr that it
-  requires kesha-engine ≥ 1.10.0 — never a silent drop
+- THEN the CLI omits the flag from the argv it spawns, because the schema row
+  is `whenUngated: drop`, and renders one warning naming the flag and the
+  features this build lacks — never a silent drop, never a refusal of a
+  request the Engine can otherwise serve
+
+> *Technical Note — the `protocol-v4` delta (archived) wrote this scenario as
+> a refusal, where the spec before it had drop-and-warn with a version remedy; the landed row is `whenUngated: drop` and the warning
+> is built by `validateArgv` (`src/engine/describe.ts`, drop branch), so the
+> main spec was corrected at the archive sync (PR #1191) rather than the code.*
 
 > *Technical Note — English: 30-entry stop-list (OK/NO/GO/…/NASA/NATO/AIDS/
 > OPEC/IKEA/ASCII/NAFTA/LASER/RADAR/SCUBA) and IPA lexicon (EPAM, JSON, JPEG,
 > GIF, SQL, ASAP, CRUD, JWT, OAuth, Microsoft, Anthropic, Claude, Kubernetes,
 > PostgreSQL, GraphQL, Linux, Tokio, macOS, Granola) in
-> `rust/src/tts/en/acronym.rs:23-59`; the lexicon fires even with
-> `--no-expand-abbrev` (`:121-125`, test `ipa_fires_even_without_auto_expand`).
+> `rust/src/tts/en/acronym.rs` (`STOP_LIST`, `IPA_LEXICON`); the lexicon fires
+> even with `--no-expand-abbrev` (test `ipa_fires_even_without_auto_expand`).
 > Russian: rules and 25-entry stop-list (ВСЁ, ВЫ, ДА, …, ЧТО) in
 > `rust/src/tts/ru/acronym.rs:1-66`; tokens must be 2–5 chars of `[А-ЯЁ]`
 > without Ъ/Ь, and spell only when length ≤ 2 or an adjacent same-type letter
@@ -485,9 +492,12 @@ rather than accept the flag silently.
 > `FR_STOP_LIST` = OTAN, OVNI, SIDA, FIFA, OPEP, ONU, OMS;
 > `IT_STOP_LIST` = FIAT, NATO, FIFA, AIDS, ONU;
 > `PT_STOP_LIST` = OTAN, OVNI, SIDA, AIDS, FIFA, ONU, OMS
-> (`rust/src/tts/normalize/acronyms.rs:141-145`) — curated seeds, not
+> (`rust/src/tts/normalize/acronyms.rs`, the `*_STOP_LIST` constants beside
+> the `*_LETTERS` tables) — curated seeds, not
 > exhaustive. Six-plus-character all-caps words (UNESCO) pass through
-> untouched. Capability gating of `--no-expand-abbrev`: `src/synth.ts:76-91`.*
+> untouched. The hand-written capability gate of `--no-expand-abbrev` that
+> `src/synth.ts` once carried (`applyNoExpandAbbrev`) is replaced by the
+> generic `validateArgv` in `src/engine/describe.ts`.*
 
 ### Requirement: Script gates — unsupported writing systems fail fast
 
@@ -568,7 +578,7 @@ still exit 0.
 request, 2 for invalid input (bad flags, empty text, malformed flag
 combinations), 4 for synthesis-time failures, and 5 when the text exceeds the
 length limit. The CLI SHALL propagate the Engine's exit code unchanged
-(`SayError.exitCode`); CLI-side pre-checks use the same map.
+(`KeshaError.exitCode`); CLI-side pre-checks use the same map.
 
 Exit 1 SHALL cover the checks that run while the Voice id is resolved: an
 unknown voice, and a model absent from the Model cache on the paths the cache
@@ -587,9 +597,9 @@ the run got, so the same `E_MODEL_MISSING` legitimately appears with either.
 
 #### Scenario: Unexpected internal error maps to 4
 
-- WHEN the Engine subprocess dies without a structured Error code
-- THEN the CLI reports the stderr text and exits with the Engine's nonzero
-  code, or 4 for non-SayError internal failures
+- WHEN the Engine subprocess dies without emitting an `error` event
+- THEN the CLI reports the captured stderr and exits with the Engine's nonzero
+  code, or 4 when no `KeshaError` carried one
 
 > *Technical Note — Engine map: `rust/src/cli/say.rs::exit_code_for_tts_err`
 > (`EmptyText` → 2, `TextTooLong` → 5, `SynthesisFailed`/`Coded` → 4). Voice
@@ -599,9 +609,10 @@ the run got, so the same `E_MODEL_MISSING` legitimately appears with either.
 > errors return 2 from `resolve_voice` and `cli/say.rs::run`.
 > `E_SSML_INVALID`, `E_SSML_UNSUPPORTED`, `E_SCRIPT_UNSUPPORTED`, and the
 > darwin-arm64 late `E_MODEL_MISSING` from `models::missing_kokoro_assets` all
-> reach the caller as `TtsError::Coded` → exit 4. CLI side: `SayError` carries
-> the Engine exit code, and `src/synth.ts::say` pre-checks empty text (2) and
-> the length limit (5).*
+> reach the caller as `TtsError::Coded` → exit 4. CLI side: `KeshaError`
+> (`src/engine/events.ts`) carries the Engine exit code exactly as `SayError`
+> did (`src/synth.ts::SayError`, now a `KeshaError` subclass), and
+> `src/synth.ts::say` pre-checks empty text (2) and the length limit (5).*
 
 ## Open Issues
 

@@ -95,10 +95,10 @@ other platform is unsupported and fails.
 
 > *Technical Note — sources: `src/cli/install.ts::resolveBackendFlag`,
 > `src/cli/install.ts::defaultBackendForPlatform` (darwin-arm64 → `coreml`, linux-x64 and
-> win32-x64 → `onnx`), `src/engine-install.ts::validateBackend` (post-download backend
-> mismatch check via Capabilities JSON). The pre-flight in `performInstall` only engages
-> when the platform backend is defined, so an unshipped platform defers to the
-> post-download check.*
+> win32-x64 → `onnx`), `src/engine-install.ts::validateInstallRequest` (post-download
+> backend mismatch check against the describe document's `backend`, #1165). The
+> pre-flight in `performInstall` only engages when the platform backend is defined, so
+> an unshipped platform defers to the post-download check.*
 
 ### Requirement: Windows x64 installs the released ONNX Engine
 
