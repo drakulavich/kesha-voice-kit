@@ -43,9 +43,9 @@ Model cache (`~/.cache/kesha/`).
 - THEN the CLI prints an actionable error with a `kesha install` hint
 - AND exits 1 without attempting to spawn a missing binary
 
-> *Technical Note — `getEngineBinPath()` in `src/engine.ts:46` returns
-> `process.env.KESHA_ENGINE_BIN ?? defaultEngineBinPath()`.
-> `isEngineInstalled()` at `src/engine.ts:50` uses `existsSync`.*
+> *Technical Note — `src/engine.ts::getEngineBinPath` returns
+> `process.env.KESHA_ENGINE_BIN || defaultEngineBinPath()` (an empty string
+> counts as unset); `src/engine.ts::isEngineInstalled` uses `existsSync`.*
 
 ### Requirement: `kesha-engine describe` publishes the protocol schema
 
@@ -261,16 +261,16 @@ Both the CLI and the Engine SHALL honour the `KESHA_*` environment variables lis
 >
 > | Variable | Read by | Effect |
 > |---|---|---|
-> | `KESHA_ENGINE_BIN` | CLI | Override Engine binary path (`src/engine.ts:82`). |
-> | `KESHA_CACHE_DIR` | CLI + Engine | Override Model cache root (default `~/.cache/kesha/`). CLI: `src/paths.ts:5`. Engine: `rust/src/models/paths.rs::cache_dir`. |
+> | `KESHA_ENGINE_BIN` | CLI | Override Engine binary path (`src/engine.ts::getEngineBinPath`). |
+> | `KESHA_CACHE_DIR` | CLI + Engine | Override Model cache root (default `~/.cache/kesha/`). CLI: `src/paths.ts::keshaCacheDir`. Engine: `rust/src/models/paths.rs::cache_dir`. |
 > | `KESHA_MODEL_MIRROR` | Engine | Rewrite HuggingFace download base URLs; GitHub release URLs are never rewritten. Safe because of Pinned hashes (`rust/src/models/download.rs::model_mirror`). |
-> | `KESHA_DEBUG` | CLI + Engine | Enable debug trace output. Falsey values: `""`, `"0"`, `"false"`, `"no"`, `"off"` (case-insensitive). Truthy: any other non-empty value. CLI: `src/log.ts:30`. Engine: `rust/src/debug.rs:41-58`; events emitted through `rust/src/protocol/events.rs`. |
+> | `KESHA_DEBUG` | CLI + Engine | Enable debug trace output. Falsey values: `""`, `"0"`, `"false"`, `"no"`, `"off"` (case-insensitive). Truthy: any other non-empty value. CLI: `src/log.ts::envDebug`. Engine: `rust/src/debug.rs::enabled`; events emitted through `rust/src/protocol/events.rs`. |
 > | `KESHA_DIARIZE_TIMEOUT_SECS` | Engine | Cap total diarization wall time (seconds). It can only cut a run short — the phase budgets still apply, so it never widens one. Unset or empty means no overall cap; any other non-positive or unparseable value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
 > | `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` | Engine | Replace the 300 s budget for the CoreML model load (seconds). Does not affect the other phases. Unset or empty keeps the default; any other non-positive or unparseable value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
 > | `KESHA_DIARIZE_COMPUTE_UNITS` | Engine | CoreML compute units for the Sortformer model: `all` (default), `cpu-and-ane`, `cpu-and-gpu`, `cpu-only`. An unrecognised value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
-> | `KESHA_DIARIZE_MODEL_PATH` | CLI + Engine | Override the Sortformer model path. CLI: `src/engine.ts:293`. Engine: `rust/src/transcribe/mod.rs:995`. |
-> | `KESHA_STATS_DB` | CLI | Override the Stats DB path (`src/stats.ts:579`). |
-> | `KESHA_LOG_DIR` | CLI | Override the Diagnostic log directory (`src/diagnostic-log.ts:73`). |
+> | `KESHA_DIARIZE_MODEL_PATH` | CLI + Engine | Override the Sortformer model path. CLI: `src/engine.ts::assertDiarizeModelInstalled`. Engine: `rust/src/transcribe/mod.rs::resolve_diarize_model_path`. |
+> | `KESHA_STATS_DB` | CLI | Override the Stats DB path (`src/stats.ts::resolveStatsDbPath`). |
+> | `KESHA_LOG_DIR` | CLI | Override the Diagnostic log directory (`src/diagnostic-log.ts::resolveDiagnosticLogDir`). |
 
 #### Scenario: Ira points the cache at a network share in CI
 

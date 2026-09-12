@@ -494,9 +494,9 @@ event on the Event stream rather than accept the flag silently.
 > `PT_STOP_LIST` = OTAN, OVNI, SIDA, AIDS, FIFA, ONU, OMS
 > (`rust/src/tts/normalize/acronyms.rs:141-145`) — curated seeds, not
 > exhaustive. Six-plus-character all-caps words (UNESCO) pass through
-> untouched. The hand-written capability gate of `--no-expand-abbrev` at
-> `src/synth.ts:69-85` is replaced by the generic `validateArgv` in
-> `src/engine/describe.ts`.*
+> untouched. The hand-written capability gate of `--no-expand-abbrev` that
+> `src/synth.ts` once carried (`applyNoExpandAbbrev`) is replaced by the
+> generic `validateArgv` in `src/engine/describe.ts`.*
 
 ### Requirement: Script gates — unsupported writing systems fail fast
 
@@ -610,7 +610,7 @@ the run got, so the same `E_MODEL_MISSING` legitimately appears with either.
 > darwin-arm64 late `E_MODEL_MISSING` from `models::missing_kokoro_assets` all
 > reach the caller as `TtsError::Coded` → exit 4. CLI side: `KeshaError`
 > (`src/engine/events.ts`) carries the Engine exit code exactly as `SayError`
-> did (`src/synth.ts:103-113`), and `src/synth.ts::say` pre-checks empty text
+> did (`src/synth.ts::SayError`, now a `KeshaError` subclass), and `src/synth.ts::say` pre-checks empty text
 > (2) and the length limit (5).*
 
 ## Open Issues
