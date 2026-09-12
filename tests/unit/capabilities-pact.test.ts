@@ -22,7 +22,7 @@ import {
   provenancePath,
   type PactProvenance,
 } from "../../.github/scripts/record-capability-pacts";
-import { buildTranscribeArgs, TRANSCRIBE_DIARIZE_FEATURE, textLangFailureWarning } from "../../src/engine";
+import { buildRecordArgs, buildTranscribeArgs, TRANSCRIBE_DIARIZE_FEATURE, textLangFailureWarning } from "../../src/engine";
 import { parseDescribe, protocolMismatch, validateArgv, type DescribeDocument } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
 import { buildEngineInstallArgs } from "../../src/engine-install";
@@ -158,6 +158,13 @@ for (const t of TARGETS) describe(`${t.key} accepts what the CLI would send it`,
 
   it("advertises record.live only on the CoreML build", () => {
     expect(t.pact.features.includes("record.live")).toBe(t.backend === "coreml");
+  });
+
+  it("takes the record argv its features allow, live auto-stop included", () => {
+    const file = buildRecordArgs({ out: "x.wav" }, 60);
+    expect(validateArgv(file, doc).argv).toEqual(file);
+    const live = buildRecordArgs({ live: true, autoStop: { silenceMs: 800, threshold: 0.5, minSpeechMs: 300 } }, 60);
+    expect(rejection(() => validateArgv(live, doc)) === null).toBe(t.pact.features.includes("record.live.auto-stop"));
   });
 
   it("takes every say flag, dropping only --no-expand-abbrev where the build cannot expand", () => {
