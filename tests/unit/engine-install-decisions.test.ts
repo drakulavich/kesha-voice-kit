@@ -307,7 +307,7 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
     expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
     expect(err.message).toBe("--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64");
 
-    expect(engineDownloads(urls)).toHaveLength(0);
+    expect(urls).toHaveLength(0);
     expect(engineInvocations()).toHaveLength(0);
   }, 30_000);
 

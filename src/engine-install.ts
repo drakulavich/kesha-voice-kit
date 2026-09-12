@@ -751,8 +751,9 @@ export interface EngineInstallRequest extends InstallOptions {
  * `version` is the single input for the release URL, the cache-validity comparison, the
  * sidecar downloads and the recorded `.version` marker — reading the pin at any one of
  * them would install the requested Engine and then replace it on the next cache check.
+ *
+ * `host` is a seam for the unit tests, which stage CoreML-shaped engines on every CI runner; production callers take the process.
  */
-/** `host` is a seam for the unit tests, which stage CoreML-shaped engines on every CI runner; production callers take the process. */
 export async function installEngine(
   request: EngineInstallRequest = {},
   host: { platform: string; arch: string } = { platform: process.platform, arch: process.arch },

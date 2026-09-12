@@ -170,7 +170,7 @@ describe("assertPlatformCanInstall — the pre-check before the lock and any dow
     throw new Error("did not throw");
   };
 
-  test("--diarize on a host whose published engine is not CoreML is E_UNSUPPORTED_PLATFORM", () => {
+  test("--diarize on any host but darwin-arm64 is E_UNSUPPORTED_PLATFORM", () => {
     const err = rejection(() => assertPlatformCanInstall({ diarize: true }, "linux", "x64"));
     expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
     expect(err.message).toBe("--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64");
