@@ -99,9 +99,9 @@ engine's own status (`4` if it broke the protocol on a clean exit), and an error
 the CLI raised before the spawn — a flag the installed build lacks, a missing
 engine, a protocol mismatch, a backend this platform's release does not ship, an
 engine directory the CLI cannot write — maps its code through the table above.
-Two edges of that rule are worth knowing. `E_UNSUPPORTED_PLATFORM` (no engine
-is published for this host, or `--diarize` off darwin-arm64) is the operational
-`1`: the remedy is another machine, not another command line. And an engine
-that exits non-zero without reporting anything has no code to relay: `say`
-reports it as `E_INTERNAL` with the engine's status, while `record` and
-`install` keep the operational `1` they have had since #1167.
+Two edges of that rule are worth knowing. A CLI-raised `E_UNSUPPORTED_PLATFORM`
+(no engine is published for this host, or `--diarize` off darwin-arm64) is the
+operational `1`: the remedy is another machine, not another command line. And
+an engine that exits non-zero without reporting anything has no code to relay:
+`say` reports it as `E_INTERNAL` with the engine's status, while `record`
+(pinned by #1167) and `install` keep the operational `1`.
