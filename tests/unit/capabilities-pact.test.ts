@@ -7,11 +7,10 @@
  * by the target it emits them at — that matrix is observable only from the real binaries,
  * which until now only the model-downloading lanes ever saw.
  *
- * These tests read `tests/fixtures/capabilities/<target>.json` — the published binaries'
- * protocol-3 capabilities recordings (engine 1.24.11), turned into a describe
- * document by `docFor` — and drive the production seams against them. Re-recording them
- * as `describe` on the beta.2 pin is openspec task 5.4. No engine, no models, no network.
- * `.github/workflows/capability-pact.yml` re-records
+ * These tests read `tests/fixtures/capabilities/<target>.json` — the published binaries' own
+ * `describe` documents — and drive the production seams against them, so flag routing is gated
+ * by the table the real binary publishes rather than by the fake engine's mirror of it. No
+ * engine, no models, no network. `.github/workflows/capability-pact.yml` re-records
  * from the real artifacts and fails on drift, which is what stops a pact from rotting into a
  * false green; it also owns the pinned-version check, which cannot live here because a release
  * PR bumps `keshaEngine.version` before the tag it names exists.
@@ -23,14 +22,13 @@ import {
   provenancePath,
   type PactProvenance,
 } from "../../.github/scripts/record-capability-pacts";
-import { buildTranscribeArgs, TRANSCRIBE_DIARIZE_FEATURE, textLangFailureWarning, type EngineCapabilities } from "../../src/engine";
-import { validateArgv } from "../../src/engine/describe";
+import { buildTranscribeArgs, TRANSCRIBE_DIARIZE_FEATURE, textLangFailureWarning } from "../../src/engine";
+import { parseDescribe, protocolMismatch, validateArgv, type DescribeDocument } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
 import { buildEngineInstallArgs } from "../../src/engine-install";
 import { engineTarget, engineTargetEntries, targetKey } from "../../src/engine-targets";
 import { pickVoiceForLang } from "../../src/voice-routing";
 import { buildSayArgs, type SayOptions } from "../../src/synth";
-import { describeDocument } from "../helpers/fake-engine";
 import { readRepoFile, repoPath } from "../helpers/repo";
 
 interface PactTarget {
@@ -38,7 +36,7 @@ interface PactTarget {
   platform: NodeJS.Platform;
   arch: NodeJS.Architecture;
   backend: "coreml" | "onnx";
-  pact: EngineCapabilities;
+  pact: DescribeDocument;
   provenance: PactProvenance;
 }
 
@@ -55,7 +53,7 @@ for (const { platform, arch, target } of engineTargetEntries()) {
     platform: platform as NodeJS.Platform,
     arch: arch as NodeJS.Architecture,
     backend: target.backend,
-    pact: JSON.parse(readRepoFile(pactPath(key))) as EngineCapabilities,
+    pact: JSON.parse(readRepoFile(pactPath(key))) as DescribeDocument,
     provenance: JSON.parse(readRepoFile(provenancePath(key))) as PactProvenance,
   });
 }
@@ -64,12 +62,6 @@ const EVERY_SAY_OPTION: SayOptions = {
   text: "hi", voice: "en-am_michael", lang: "en", out: "x.wav", rate: 1.2, ssml: true,
   format: "ogg-opus", bitrate: 32000, sampleRate: 24000, noExpandAbbrev: true,
 };
-
-const PROFILE: Record<string, string> = { darwin: "darwin", linux: "linux", win32: "windows" };
-
-function docFor(t: PactTarget) {
-  return describeDocument({ backend: t.backend, profile: PROFILE[t.platform]!, features: t.pact.features, tts: t.pact.tts });
-}
 
 function rejection(fn: () => unknown): KeshaError | null {
   try {
@@ -110,13 +102,17 @@ describe("capability pact — recordings", () => {
 
   // Point 4 of #798: an in-process test structurally cannot see a bump that lands on one
   // target only, and the wire format the TS parser reads is shared across all of them.
-  it("speaks one protocol version across every target", () => {
-    expect([...new Set(TARGETS.map((t) => t.pact.protocolVersion))]).toHaveLength(1);
-  });
+  for (const { key, pact } of TARGETS) {
+    it(`${key} publishes a document this CLI would accept`, () => {
+      const doc = parseDescribe(pact);
+      expect(doc).not.toBeNull();
+      expect(protocolMismatch(doc!, "kesha-engine")).toBeNull();
+    });
+  }
 });
 
 for (const t of TARGETS) describe(`${t.key} accepts what the CLI would send it`, () => {
-  const doc = docFor(t);
+  const doc = t.pact;
 
   it("takes every transcribe flag its features allow", () => {
     const argv = buildTranscribeArgs("a.wav", { vad: "on", itn: true, speakers: t.backend === "coreml" }, true);

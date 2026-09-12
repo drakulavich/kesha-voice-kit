@@ -2,10 +2,10 @@
 /**
  * Record (or verify) one target's capability pact from a real engine binary.
  *
- * A pact is `--capabilities-json` frozen per released target, so a PR can gate flag routing
+ * A pact is the `describe` document frozen per released target, so a PR can gate flag routing
  * against every platform without running an engine. Its whole value is being a recording of
- * the artifact users actually get — never hand-edit one. Recording needs no models;
- * `--capabilities-json` is a compile-time dump.
+ * the artifact users actually get — never hand-edit one. Recording needs no models; the
+ * document is assembled at compile time.
  *
  *   bun .github/scripts/record-capability-pacts.ts --binary ./kesha-engine-linux-x64
  *   bun .github/scripts/record-capability-pacts.ts --from-release --check
@@ -113,22 +113,22 @@ async function downloadPinnedBinary(target: EngineTarget): Promise<string> {
   return path;
 }
 
-async function readCapabilities(binary: string): Promise<unknown> {
-  const proc = Bun.spawn([binary, "--capabilities-json"], { stdout: "pipe", stderr: "pipe" });
+async function readDescribe(binary: string): Promise<unknown> {
+  const proc = Bun.spawn([binary, "describe"], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
   if (exitCode !== 0) {
-    console.error(`${binary} --capabilities-json exited ${exitCode}`);
+    console.error(`${binary} describe exited ${exitCode}`);
     if (stderr.trim()) console.error(stderr.trim());
     process.exit(1);
   }
   try {
     return JSON.parse(stdout);
   } catch {
-    console.error(`${binary} --capabilities-json did not emit JSON:\n${stdout}`);
+    console.error(`${binary} describe did not emit JSON:\n${stdout}`);
     process.exit(1);
   }
 }
@@ -160,7 +160,7 @@ function verify(target: string, binary: string, recorded: string): void {
   }
   const committed = readNormalised(path);
   if (committed !== recorded) {
-    failures.push(`--- committed ${path}\n${committed}\n+++ ${binary} --capabilities-json\n${recorded}`);
+    failures.push(`--- committed ${path}\n${committed}\n+++ ${binary} describe\n${recorded}`);
   }
 
   if (failures.length === 0) {
@@ -178,7 +178,7 @@ async function main(): Promise<void> {
   if (!asset) usage(`unknown target '${target}' — it has no row in src/engine-targets.ts`);
 
   const binary = fromRelease ? await downloadPinnedBinary(asset) : given;
-  const recorded = serialize(await readCapabilities(binary));
+  const recorded = serialize(await readDescribe(binary));
 
   if (check) return verify(target, binary, recorded);
 
