@@ -37,8 +37,13 @@ interface TaxonomyEntry {
 }
 
 /** The recorded document, including the two sections `parseDescribe` drops because the CLI reads neither. */
+interface ErrorEntry extends TaxonomyEntry {
+  category: string;
+  retryable: boolean;
+}
+
 interface RecordedDocument extends DescribeDocument {
-  errors: TaxonomyEntry[];
+  errors: ErrorEntry[];
   warnings: TaxonomyEntry[];
 }
 
@@ -128,11 +133,23 @@ describe("capability pact — recordings", () => {
     expect(shapes.size).toBe(1);
   });
 
-  it("documents every error code the recordings publish in docs/errors.md", () => {
-    const documented = new Set([...readRepoFile("docs/errors.md").matchAll(/^\| `(E_[A-Z0-9_]+)`/gm)].map((m) => m[1]!));
-    const published = new Set(TARGETS.flatMap((t) => t.pact.errors.map((e) => e.code)));
-    expect([...published].filter((code) => !documented.has(code))).toEqual([]);
-    expect(published.size).toBeGreaterThan(20);
+  it("publishes each error code with the category and retryability docs/errors.md prints for it", () => {
+    const rows = new Map(
+      [...readRepoFile("docs/errors.md").matchAll(/^\| `(E_[A-Z0-9_]+)` \| (\w+) \| (yes|no) \|/gm)].map((m) => [
+        m[1]!,
+        { category: m[2]!, retryable: m[3] === "yes" },
+      ]),
+    );
+    const mismatched = TARGETS.flatMap((t) =>
+      t.pact.errors
+        .filter((e) => {
+          const row = rows.get(e.code);
+          return !row || row.category !== e.category || row.retryable !== e.retryable;
+        })
+        .map((e) => `${t.key} ${e.code}`),
+    );
+    expect(mismatched).toEqual([]);
+    expect(rows.size).toBeGreaterThan(20);
   });
 });
 
