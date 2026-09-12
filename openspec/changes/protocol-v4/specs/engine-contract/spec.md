@@ -177,7 +177,7 @@ Before spawning the Engine the CLI SHALL validate the full argv against the `com
 - THEN `--format` is absent from the argv because the schema does not list it under `install`
 - AND the CLI does not need a hand-written list of install flags to know that
 
-> *Technical Note — Replaces `preflightTranscribeEngineItn`, `preflightTranscribeEngineWithSegments`, `assertSpeakersSupported` and `assertItnSupported` (`src/engine.ts:326-380`) and `buildEngineInstallArgs` (`src/engine-install.ts`) with `validateArgv(command, flags, schema)` in `src/engine/describe.ts`. The CLAUDE.md rule "DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS" is deleted once this lands, because the schema enforces it.*
+> *Technical Note — `validateArgv(argv, doc)` in `src/engine/describe.ts` replaced the hand-written `preflight*` / `assert*Supported` family; every production argv builder (`buildTranscribeArgs`, `buildEngineInstallArgs`, `buildSayArgs`, `buildRecordArgs`) meets it before a spawn, and `tests/unit/capabilities-pact.test.ts` drives each one against the published binaries’ recorded gate tables. The CLAUDE.md rule "DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS" stayed, rewritten to point at `gate_rows()` as the one place a gate is added.*
 
 ### Requirement: TS-native codes cover CLI-side failures
 
@@ -259,7 +259,7 @@ The CLI SHALL cache the describe document in-process, keyed by the Engine binary
 - WHEN `kesha install` overwrites the Engine binary
 - THEN the next read re-spawns `kesha-engine describe` and refreshes the cache
 
-> *Technical Note — Today at `src/engine.ts:633-697` (`getEngineCapabilities`); moves to `src/engine/describe.ts` with the same key.*
+> *Technical Note — `getDescribe` in `src/engine.ts` caches the parsed document keyed by the binary's path and mtime; `parseDescribe` and `protocolMismatch` live in `src/engine/describe.ts`.*
 
 ### Requirement: The written-form pass is advertised and validated, never forwarded blind
 

@@ -190,9 +190,9 @@ Engine is installed, matching the human path.
 > (prefixed `en-`) and checks `vosk-ru/model.onnx` + `vosk-ru/bert/model.onnx` presence
 > (voices `ru-vosk-f01`, `ru-vosk-f02`, `ru-vosk-f03`, `ru-vosk-m01`, `ru-vosk-m02`).
 > `activeModelMirror()` trims and strips trailing slashes from `KESHA_MODEL_MIRROR`;
-> returns null when unset or empty. Capabilities come from `getEngineCapabilities`
-> (`src/engine.ts:633`) today and from the cached describe document in
-> `src/engine/describe.ts` after this change; either returns null on a failed or
-> unparseable probe — that null is what the payload reports. The `--json`
+> returns null when unset or empty. Capabilities are `describeToCapabilities` over the
+> cached describe document (`getDescribe` in `src/engine.ts`, keyed by the binary's path
+> and mtime); `getEngineCapabilities` returns null when that read throws — that null is
+> what the payload reports. The `--json`
 > flag follows the `doctor` precedent at `src/cli/doctor.ts:16-32`. The Raycast
 > extension reads the nested value at `raycast/src/lib/kesha-bin.ts:240-253`.*
