@@ -40,6 +40,7 @@ interface TaxonomyEntry {
 interface ErrorEntry extends TaxonomyEntry {
   category: string;
   retryable: boolean;
+  origin: string;
 }
 
 interface RecordedDocument extends DescribeDocument {
@@ -126,8 +127,7 @@ describe("capability pact — recordings", () => {
     });
   }
 
-  // The taxonomy is compiled per build, so only a cross-target recording can see it drift on
-  // one platform, and a released code with no docs/errors.md row is one users cannot look up.
+  // Only a cross-target recording can see the compiled-in taxonomy drift on one platform.
   it("publishes one error and warning taxonomy across every target", () => {
     for (const t of TARGETS) {
       expect(t.pact.errors.length).toBeGreaterThan(20);

@@ -62,7 +62,7 @@ describe("the protocol 3 surface is gone from .github/scripts/", () => {
     expect(scripts.filter(([, text]) => text.includes(needle)).map(([p]) => p)).toEqual([]);
   });
 
-  test("reaches every language and depth the scripts are written at", () => {
+  test("reaches every language the scripts are written in", () => {
     const names = scripts.map(([p]) => p);
     for (const script of [
       ".github/scripts/record-capability-pacts.ts",
@@ -74,6 +74,7 @@ describe("the protocol 3 surface is gone from .github/scripts/", () => {
     }
   });
 });
+
 describe("the protocol 3 surface is gone from tests/", () => {
   test.each(["--capabilities-json", "--error-codes-json", "KESHA_DEBUG_FD"])("no test stub answers %s any more", (needle) => {
     const stubs = sources(repoPath("tests"))
