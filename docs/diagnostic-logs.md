@@ -43,9 +43,11 @@ stage names, exit codes, duration numbers, and stable error codes.
 
 When enabled, `kesha install`, `kesha <audio>`, and `kesha say` record command
 lifecycle events such as `command.start`, `input.audio`, `input.missing`,
-`engine.exit`, and `command.finish`. These events use only counts, booleans,
-format extensions, duration milliseconds, and bucket labels. In the default
-`retain-on-failure` mode, successful runs still leave no log file behind.
+`engine.exit`, `engine.debug` (the Engine's own `KESHA_DEBUG` timeline, carrying
+its event name and typed fields but never its message text), and `command.finish`.
+These events use only counts, booleans, format extensions, duration milliseconds,
+and bucket labels. In the default `retain-on-failure` mode, successful runs still
+leave no log file behind.
 
 Diagnostic logs must not store:
 

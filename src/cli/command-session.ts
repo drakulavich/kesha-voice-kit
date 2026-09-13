@@ -50,9 +50,8 @@ export async function runCommandSession(
   setEngineDebugSink((event) =>
     session.diagnosticLog.event("engine.debug", {
       t_ms: event.t_ms,
-      event: event.event ?? null,
-      message: event.message,
-      fields: event.fields === undefined ? null : JSON.stringify(event.fields),
+      engineEvent: event.event ?? null,
+      ...engineDebugFields(event.fields),
     }),
   );
   let outcome: CommandOutcome;
@@ -72,6 +71,18 @@ export async function runCommandSession(
     closeSession(session, command, outcome);
   }
   return outcome;
+}
+
+// The message is prose and `event` is a reserved log field, so only the engine's typed fields ride along (Exploratory S9-F5).
+function engineDebugFields(fields: unknown): DiagnosticLogFields {
+  const out: DiagnosticLogFields = {};
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return out;
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 function closeSessionQuietly(

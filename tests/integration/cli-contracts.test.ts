@@ -1615,10 +1615,11 @@ process.exit(99);
       timeoutMs: 15_000,
       artifacts: [bundlePath],
     });
+    // The report is prose, so it stays off stdout for a `> log` caller (Exploratory S5-F4).
     expectContract(bundle, {
       exitCode: 0,
-      stdoutContains: [`Created support bundle: ${bundlePath}`, "Entries: 4", "Size:"],
-      stderrEmpty: true,
+      stdoutEmpty: true,
+      stderrContains: [`Created support bundle: ${bundlePath}`, "Entries: 4", "Size:"],
     });
     expect(existsSync(bundlePath)).toBe(true);
     expect(bundle.artifacts[0]).toMatchObject({
@@ -1808,6 +1809,26 @@ process.exit(99);
     });
     // ~20 sequential spawns; 30s needed alongside model-download e2e tests.
   }, 30000);
+
+  test("stats export without a format exits 2 with the usage line and no payload (Exploratory S5-F2)", async () => {
+    const env = isolatedEnv();
+    const run = await runCli(["stats", "export"], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["usage: kesha stats export --format json|csv"],
+    });
+  });
+
+  test("stats retention with a negative day count exits 2 instead of eating it as a flag (Exploratory S5-F3)", async () => {
+    const env = isolatedEnv();
+    const run = await runCli(["stats", "retention", "-5"], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["usage: kesha stats retention <days|off>"],
+    });
+  });
 
   test("--plan previews the overridden engine version and downloads nothing (#738)", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-version-");
