@@ -24,7 +24,7 @@ use ssml_parser::elements::ParsedElement;
 use ssml_parser::parse_ssml;
 
 use crate::coded_bail;
-use crate::errors::ErrorCode;
+use crate::errors::{CodedContext as _, ErrorCode};
 
 pub use segment::Segment;
 
@@ -32,6 +32,14 @@ use super::warn::warn_once;
 use rate::{find_relative_rate, has_structural_source_siblings, parse_rate_value};
 use walker::{emit_span, parse_inner_spans, push_text_slice, span_priority};
 use warnings::{WARN_PROSODY_MID_UTTERANCE, WARN_PROSODY_NO_SUPPORTED_ATTR};
+
+/// The upstream parser carries no structured error kind, so the tag and its accepted forms are inferred from its text (T3-2).
+fn parse_failure_hint(upstream: &str) -> &'static str {
+    if upstream.contains("TimeDesignation") {
+        return "SSML <break time> must be a duration like \"500ms\" or \"1s\", or absent";
+    }
+    "SSML is malformed"
+}
 
 /// Parse an SSML string into a linear segment list.
 /// Unknown tags emit a single stderr warning per name and are otherwise stripped
@@ -71,7 +79,9 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
         );
     }
 
-    let ssml = parse_ssml(input)?;
+    let ssml = parse_ssml(input)
+        .map_err(|e| anyhow::anyhow!("{} ({e})", parse_failure_hint(&e.to_string())))
+        .coded(ErrorCode::SsmlInvalid)?;
     let text: Vec<char> = ssml.get_text().chars().collect();
 
     // Secondary sort by priority so that when spans share the same `start`, inner

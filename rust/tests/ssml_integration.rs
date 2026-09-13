@@ -113,9 +113,18 @@ fn doctype_inside_speak_is_rejected() {
 
 #[test]
 fn malformed_break_attribute_errors() {
-    // Invalid time designation (not "Ns" or "Nms") → upstream parser rejects.
-    let input = r#"<speak><break time="abc"/></speak>"#;
-    assert!(parse(input).is_err());
+    for bad in ["abc", "-1s", "1h"] {
+        let input = format!(r#"<speak><break time="{bad}"/></speak>"#);
+        let err = parse(&input).unwrap_err();
+        assert_eq!(
+            kesha_engine::errors::code_of(&err),
+            kesha_engine::errors::ErrorCode::SsmlInvalid,
+            "time=\"{bad}\": {err:#}"
+        );
+        let msg = format!("{err:#}");
+        assert!(msg.contains("<break time"), "time=\"{bad}\": {msg}");
+        assert!(msg.contains("500ms"), "time=\"{bad}\": {msg}");
+    }
 }
 
 #[test]
