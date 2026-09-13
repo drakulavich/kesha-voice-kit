@@ -76,6 +76,11 @@ describe("runStatsAction", () => {
     );
   });
 
+  test("export without a format is rejected rather than defaulted (Exploratory S5-F2)", () => {
+    enableStats();
+    expect(expectRejected({ action: "export" }).error).toBe("usage: kesha stats export --format json|csv");
+  });
+
   test("retention without a value reports the current setting", () => {
     enableStats();
     expect(texts(runStatsAction({ action: "retention" }))[0]).toContain("retention:");

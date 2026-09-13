@@ -1809,6 +1809,16 @@ process.exit(99);
     // ~20 sequential spawns; 30s needed alongside model-download e2e tests.
   }, 30000);
 
+  test("stats export without a format exits 2 with the usage line and no payload (Exploratory S5-F2)", async () => {
+    const env = isolatedEnv();
+    const run = await runCli(["stats", "export"], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["usage: kesha stats export --format json|csv"],
+    });
+  });
+
   test("--plan previews the overridden engine version and downloads nothing (#738)", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-version-");
     const enginePath = createFailingEngine(dir);

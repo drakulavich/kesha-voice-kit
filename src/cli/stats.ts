@@ -64,7 +64,7 @@ export function runStatsAction(args: StatsCommandArgs): ActionResult {
     case "errors":
       return { ok: true, messages: info(renderErrors(getRecentErrors())) };
     case "export": {
-      const format = parseExportFormat(args.format ?? args.value ?? "json");
+      const format = parseExportFormat(args.format ?? args.value);
       if (!format) return { ok: false, error: "usage: kesha stats export --format json|csv" };
       return { ok: true, messages: [], stdout: exportStats(format) };
     }
@@ -140,7 +140,7 @@ export const statsCommand = defineCommand({
   },
 });
 
-function parseExportFormat(value: string): StatsExportFormat | null {
+function parseExportFormat(value: string | undefined): StatsExportFormat | null {
   return value === "json" || value === "csv" ? value : null;
 }
 
