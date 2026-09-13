@@ -97,6 +97,10 @@ pub(crate) fn resolve_output_format(
         if let Some(r) = sample_rate {
             *sr = r;
         }
+        // The encoder keeps its own check, but reaching it costs a full synthesis first (T1-5).
+        if !tts::encode::OPUS_BITRATE_RANGE.contains(br) {
+            return Err(format!("--bitrate must be 6000..=510000 bps, got {br}"));
+        }
     } else if bitrate.is_some() || sample_rate.is_some() {
         return Err("--bitrate / --sample-rate only apply to --format ogg-opus".to_string());
     }
@@ -442,6 +446,19 @@ mod tests {
         let err = resolve_output_format(Some("wav"), None, Some(24_000), None)
             .expect_err("sample-rate must be rejected off the opus path");
         assert!(err.contains("only apply to --format ogg-opus"), "{err}");
+    }
+
+    #[test]
+    fn opus_bitrate_range_is_enforced_before_synthesis() {
+        for bad in [1, 5_999, 510_001] {
+            let err = resolve_output_format(Some("ogg-opus"), Some(bad), None, None)
+                .expect_err("bitrate outside the documented range must be refused");
+            assert!(err.contains("--bitrate must be 6000..=510000 bps"), "{err}");
+        }
+        for ok in [6_000, 32_000, 510_000] {
+            resolve_output_format(Some("ogg-opus"), Some(ok), None, None)
+                .unwrap_or_else(|e| panic!("{ok}: {e}"));
+        }
     }
 
     #[test]
