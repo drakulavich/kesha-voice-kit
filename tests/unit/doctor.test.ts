@@ -1281,8 +1281,7 @@ exit 2
   });
 });
 
-// T2-7: the report named no voice or language anywhere, so nothing in it contradicted the
-// Kokoro ANE component's `missing: []` while seven languages failed E_MODEL_MISSING.
+// T2-7: the report named no voice or language, so nothing in it contradicted `missing: []`.
 describe("doctor reports the TTS voices and languages", () => {
   const restoreEnv = saveEngineEnv();
 

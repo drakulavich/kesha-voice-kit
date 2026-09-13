@@ -182,8 +182,7 @@ describe("Rust/TS Kokoro ANE manifest agreement", () => {
   });
 });
 
-// T2-7: `missing: []` read as "this install is whole" while seven languages could not
-// synthesize at all, and doctor carried no TTS language list to contradict it.
+// T2-7: `missing: []` read as whole while seven languages could not synthesize at all.
 describe("staged Kokoro languages", () => {
   test("an English-only staging names en as staged and the rest as missing", () => {
     withHome((home, cacheRoot) => {

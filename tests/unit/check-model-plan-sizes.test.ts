@@ -293,8 +293,7 @@ describe("liveSize", () => {
   });
 });
 
-// The English and Mandarin ANE bundles pin 36 of the same rel_paths to different URLs, so a
-// plan entry checked against the deduped map would be measured against the wrong bundle.
+// The two ANE bundles pin 36 of the same rel_paths to different URLs; the deduped map loses one.
 describe("group-scoped manifest lookup", () => {
   test("each ANE bundle's shared basename resolves to its own URL", () => {
     const shared = "KokoroAlbert.mlmodelc/coremldata.bin";

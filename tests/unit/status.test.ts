@@ -1122,8 +1122,7 @@ describe("human status output is a load-bearing contract (#647)", () => {
   }, 15_000);
 });
 
-// T2-6: the filesystem scan knows nothing of the FluidAudio ANE packs or the 181 AVSpeech
-// voices, so `status` advertised 6 of the 214 the synthesis path will actually accept.
+// T2-6: the cache scan sees neither the ANE packs nor AVSpeech, so status advertised 6 of 214.
 describe("collectStatus reports what the engine can speak with", () => {
   const restoreEnv = saveEngineEnv();
 

@@ -338,8 +338,7 @@ describe("install plan carries no platform block (#216)", () => {
   });
 });
 
-// T2-8: the darwin arm pushed a warm-up note and no sized component, so `--plan --tts es`
-// promised "0 B" for a language whose voice pack and ANE chain were both absent.
+// T2-8: the darwin arm pushed an unsized warm-up, so every `--plan --tts <lang>` promised 0 B.
 describe("the darwin-arm64 plan quotes the FluidAudio ANE bytes", () => {
   const darwinArmTest =
     process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
