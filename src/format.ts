@@ -1,4 +1,7 @@
+import { LANG_CONFIDENCE_FLOOR, routeLanguage } from "./language-routing";
 import type { TranscribeErrorRecord, TranscribeJsonOutput, TranscribeResult } from "./types";
+
+const BELOW_FLOOR_NOTE = `below the ${LANG_CONFIDENCE_FLOOR} floor, ignored for lang`;
 
 export function formatTextOutput(results: TranscribeResult[]): string {
   const [first] = results;
@@ -10,7 +13,9 @@ export function formatTextOutput(results: TranscribeResult[]): string {
     .join("");
 }
 
-export function formatVerboseOutput(results: TranscribeResult[]): string {
+/** The `--verbose` block for stderr: detection details and timing, never the transcript (that is stdout's). */
+export function formatVerboseDiagnostics(results: TranscribeResult[]): string {
+  if (results.length === 0) return "";
   return results
     .map((r, i) => {
       const lines: string[] = [];
@@ -18,19 +23,20 @@ export function formatVerboseOutput(results: TranscribeResult[]): string {
         if (i > 0) lines.push("");
         lines.push(`=== ${r.file} ===`);
       }
+      const route = routeLanguage({ audioLanguage: r.audioLanguage, textLanguage: r.textLanguage });
       if (r.audioLanguage) {
-        lines.push(`Audio language: ${r.audioLanguage.code} (confidence: ${r.audioLanguage.confidence.toFixed(2)})`);
+        const note = route.belowFloor.audio ? `, ${BELOW_FLOOR_NOTE}` : "";
+        lines.push(`Audio language: ${r.audioLanguage.code} (confidence: ${r.audioLanguage.confidence.toFixed(2)}${note})`);
       }
       const textLang = r.textLanguage ?? (r.lang ? { code: r.lang, confidence: 0 } : null);
       if (textLang) {
-        const confStr = textLang.confidence > 0 ? ` (confidence: ${textLang.confidence.toFixed(2)})` : "";
+        const note = route.belowFloor.text ? `, ${BELOW_FLOOR_NOTE}` : "";
+        const confStr = textLang.confidence > 0 ? ` (confidence: ${textLang.confidence.toFixed(2)}${note})` : "";
         lines.push(`Text language: ${textLang.code}${confStr}`);
       }
       if (r.sttTimeMs !== undefined) {
         lines.push(`STT time: ${r.sttTimeMs}ms`);
       }
-      lines.push("---");
-      lines.push(r.text);
       return lines.join("\n");
     })
     .join("\n") + "\n";

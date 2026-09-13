@@ -279,7 +279,9 @@ describe("exitCodeFor() is the one rule behind every kesha say exit status", () 
     expect(exitCodeFor(new KeshaError("E_TEXT_EMPTY", "x"))).toBe(2);
     expect(exitCodeFor(new KeshaError("E_TEXT_TOO_LONG", "x"))).toBe(5);
     expect(exitCodeFor(new KeshaError("E_INTERNAL", "x"))).toBe(4);
+    expect(exitCodeFor(new KeshaError("E_INTERRUPTED", "x"))).toBe(130);
     expect(exitCodeFor(new KeshaError("E_ENGINE_PROTOCOL", "x"))).toBe(1);
+    expect(exitCodeFor(new KeshaError("E_INTERRUPTED", "interrupted (SIGTERM)", { exitCode: 143 }))).toBe(143);
     expect(exitCodeFor(new KeshaError("E_ENGINE_SPAWN", "x"))).toBe(1);
     expect(exitCodeFor(new KeshaError("E_SOMETHING_NEW", "x"))).toBe(1);
   });

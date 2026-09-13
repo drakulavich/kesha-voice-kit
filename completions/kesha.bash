@@ -38,4 +38,4 @@ _kesha_completion() {
   fi
 }
 
-complete -F _kesha_completion kesha
+complete -o default -F _kesha_completion kesha

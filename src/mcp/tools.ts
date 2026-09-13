@@ -67,8 +67,8 @@ export function registerTools(server: McpServer): void {
       const outPath = allocAudioPath(fmt);
       try {
         // An MCP caller has no stderr to read: the voice it is told is its only record (#942).
-        const resolvedVoice = (await resolveSayVoice(voice, undefined, text)) ?? DEFAULT_VOICE_ID;
-        await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath });
+        const resolvedVoice = (await resolveSayVoice(voice, undefined, text, extra.signal)) ?? DEFAULT_VOICE_ID;
+        await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath, signal: extra.signal });
         chmodSync(outPath, 0o600);
         const bytes = statSync(outPath).size;
         const file = basename(outPath);
@@ -130,13 +130,13 @@ export function registerTools(server: McpServer): void {
       }
       try {
         if (timestamps) {
-          const out = await transcribeWithTimestamps(path);
+          const out = await transcribeWithTimestamps(path, { signal: extra.signal });
           return {
             content: [{ type: "text" as const, text: out.text }],
             structuredContent: { text: out.text, segments: out.segments ?? [] },
           };
         }
-        const text = await transcribe(path);
+        const text = await transcribe(path, { signal: extra.signal });
         return {
           content: [{ type: "text" as const, text: text }],
           structuredContent: { text, segments: [] },

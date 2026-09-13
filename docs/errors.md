@@ -15,7 +15,7 @@ code never needs sanitizing.
 | Code | Category | Retryable | When it fires | How to fix |
 |------|----------|-----------|---------------|------------|
 | `E_INPUT_NOT_FOUND` | input | no | The input audio path doesn't exist (or no stdin was piped). | Check the path; pass a readable file. |
-| `E_BAD_AUDIO` | input | no | The audio container/codec couldn't be decoded (or the file couldn't be opened for a reason other than "missing"). A directory passed where an audio file is expected is `E_INVALID_ARG`, not this — the CLI rejects it as a bad argument before the engine ever opens it. | Re-export to wav/ogg/mp3; verify the file isn't truncated; check permissions. |
+| `E_BAD_AUDIO` | input | no | The audio container/codec couldn't be decoded (or the file couldn't be opened for a reason other than "missing"), including a header no decoder can represent, such as a WAV declaring a sample rate of 0. A directory passed where an audio file is expected is `E_INVALID_ARG`, not this — the CLI rejects it as a bad argument before the engine ever opens it. | Re-export to wav/ogg/mp3; verify the file isn't truncated; check permissions. |
 | `E_MODEL_MISSING` | model | no | A required model or voice isn't installed. | `kesha install` / `kesha install --tts`. |
 | `E_MODEL_DOWNLOAD` | model | yes | A model download failed (network or mirror error). | Retry; check connectivity and `KESHA_MODEL_MIRROR`. |
 | `E_CACHE_CORRUPT` | model | no | A cached model file failed SHA-256 verification. | `kesha install --no-cache` to re-fetch. |
@@ -34,22 +34,26 @@ code never needs sanitizing.
 | `E_ENGINE_SPAWN` | platform | no | The Engine binary is missing or failed to start (CLI-side). | `kesha install`; or set `KESHA_ENGINE_BIN`. |
 | `E_ENGINE_PROTOCOL` | platform | no | The installed Engine speaks a protocol version this CLI does not (CLI-side). | `kesha install` for a stale Engine; `bun add -g @drakulavich/kesha-voice-kit@latest` for a stale CLI. |
 | `E_INSTALL_RACE` | internal | yes | Another `kesha install` reached the same cache: either it overwrote the engine during our run (the recorded version or the binary's own `--version` names something else), or it still holds the cache and we gave up waiting for it. Nothing is written in the waiting case. | Re-run the install once no other one is in flight; give concurrent jobs private state via `KESHA_HOME` (or just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`). A wait that must fail sooner than the 6 h ceiling: `KESHA_INSTALL_LOCK_WAIT_SECS`, in seconds, positive numbers only — and lowering it costs the one-retry takeover ([concurrent installs](architecture.md#runtime-data-flow)). If the message names a lock no install owns, delete the `.lock` directory it names. |
-| `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid — including a directory passed where an audio file is expected, and a `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN` path the engine cannot be written into: one the engine directory cannot be created under, or an existing engine directory this user cannot write (a read-only Nix store install reaches the second). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
+| `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid — including an option the command does not declare (`unknown option --timestamp`, with the nearest real flag suggested), a directory passed where an audio file is expected, `--no-vad` on audio past the 24-minute single-pass ceiling (drop the flag; VAD or fixed windows take over), a `kesha record --out` path that cannot be written (a directory, an unwritable location; the message carries the OS reason), and a `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN` path the engine cannot be written into: one the engine directory cannot be created under, or an existing engine directory this user cannot write (a read-only Nix store install reaches the second). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
+| `E_INTERRUPTED` | platform | no | The run was cancelled, not failed: the CLI received `SIGINT`, `SIGTERM` or `SIGHUP` mid-run, a Core API caller aborted the `AbortSignal` it passed to `transcribe()`, or an MCP client cancelled the call or disconnected mid-call. The running engine was terminated and no queued file started; the message names the signal the CLI received — `interrupted (SIGINT)` — even when the engine ignored it and had to be force-killed. Exits 130, 143 or 129 by signal, 130 for a programmatic abort. CLI-side only — the engine never emits it. | Nothing to fix: the run was cancelled, not broken. Re-run it if the cancellation was not intended. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |
 
 ## Where codes come from
 
-- **Engine codes** (everything except `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE`) are defined in the Rust
+- **Engine codes** (everything except `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE` and `E_INTERRUPTED`) are defined in the Rust
   engine and emitted on its stderr as an `error` event that the CLI renders as `error [CODE]: …`.
   List them with `kesha-engine describe` (the `errors` section, each with its `origin`).
   When the engine also writes a line that is not an event, the CLI reports `E_INTERNAL` quoting
   that line and appends the engine's own transcript, so stderr may show two coded lines; the
   `code` field (JSON output, `SayError.code`) names one.
-- **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`** and **`E_INSTALL_RACE`** originate
+- **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`**, **`E_INSTALL_RACE`** and **`E_INTERRUPTED`** originate
   only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
-  an installed engine whose protocol version the CLI does not speak, and an
+  an installed engine whose protocol version the CLI does not speak, an
   install that lost the cache to another one, whether by being overwritten before
-  it could report success or by giving up waiting for the lock.
+  it could report success or by giving up waiting for the lock, and a run the
+  CLI's own signal cut short, or a caller cancelled through its `AbortSignal` or MCP
+  request cancellation. An engine that exits 130 or 143 because the CLI forwarded the
+  signal is reported as `E_INTERRUPTED`, never as `E_INTERNAL`.
 - The CLI also raises `E_MODEL_MISSING` before spawning when `--speakers` needs a diarization
   or VAD model that `kesha install --diarize` / `--vad` has not placed, `E_TEXT_EMPTY` and
   `E_TEXT_TOO_LONG` from `kesha say` before any engine runs, and `E_INTERNAL` when the
@@ -80,15 +84,17 @@ status that lets scripts branch without parsing stderr:
 | Exit code | Meaning |
 |-----------|---------|
 | `0` | Success. |
-| `1` | Operational error — engine/model not installed, a download or install failed, an unknown command, or no input was given. |
-| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
+| `1` | Operational error — engine/model not installed, a download or install failed, or an unknown command. |
+| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — no input file, an option the command does not declare, mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a directory where an audio file is expected, a transcribe flag the installed engine lacks, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
 | `4` | Unexpected/uncoded internal failure. |
 | `5` | `kesha say` text exceeds the length limit. |
-| `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run; the engine subprocess was terminated. |
-| `143` | Terminated — a `SIGTERM` reached the CLI mid-run (a cancelled CI job, a stopped container); the engine subprocess was terminated. |
+| `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run and the engine subprocess was terminated, the interrupted files reporting `E_INTERRUPTED`; or a `kesha init` prompt was cancelled (nothing was installed). |
+| `143` | Terminated — a `SIGTERM` reached the CLI mid-run (a cancelled CI job, a stopped container); the engine subprocess was terminated and the interrupted files report `E_INTERRUPTED`. |
+| `129` | Hung up — the terminal closed (`SIGHUP`) mid-run; the engine subprocess was terminated exactly as for `SIGTERM` and the interrupted files report `E_INTERRUPTED`. Not on Windows, which has no terminal hangup. The engine itself also exits 129 from `kesha-engine record` when the process that started the capture has exited: the recording is abandoned, the microphone closed and the file removed. |
 
-`130` and `143` mean the run was **cancelled**, not that it failed: a wrapper
-that treats every non-zero status as a crash will misreport a cancellation.
+`130`, `143` and `129` mean the run was **cancelled**, not that it failed: a wrapper
+that treats every non-zero status as a crash will misreport a cancellation, and
+one that greps for `error [E_` can tell a cancellation by its `E_INTERRUPTED` code.
 
 `kesha say` and other engine-backed commands may also exit with the **engine's
 own** non-zero status when the engine itself fails. For fine-grained handling,
@@ -107,3 +113,8 @@ operational `1`: the remedy is another machine, not another command line. And
 an engine that exits non-zero without reporting anything has no code to relay:
 `say` reports it as `E_INTERNAL` with the engine's status, while `record`
 (pinned by #1167) and `install` keep the operational `1`.
+
+Transcription is a batch and keeps its own rule: the run exits `2` when the CLI
+itself rejected an argument for any file — a directory positional, a flag the
+installed engine lacks — and `1` for every runtime failure, including one the
+engine reported, whatever status the engine exited with.

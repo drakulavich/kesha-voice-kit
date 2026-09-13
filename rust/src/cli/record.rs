@@ -48,7 +48,11 @@ pub fn run(
 
     let out = out.ok_or_else(|| anyhow::anyhow!("--out is required unless --live is passed"))?;
     let summary =
-        crate::record::record_default_input_to_wav(&out, Duration::from_secs(max_seconds))?;
+        match crate::record::record_default_input_to_wav(&out, Duration::from_secs(max_seconds)) {
+            // Nobody is left to read an event; 129 is the status a hangup would have left.
+            Err(err) if err.is::<crate::record::ParentExited>() => std::process::exit(129),
+            result => result?,
+        };
     events::progress(
         None,
         format!(

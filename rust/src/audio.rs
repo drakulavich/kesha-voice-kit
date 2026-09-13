@@ -68,15 +68,24 @@ fn open_format(path: &Path) -> Result<(Box<dyn FormatReader>, u32, CodecParamete
     let mut probe = Probe::default();
     symphonia::default::register_enabled_formats(&mut probe);
 
-    let probed = probe
-        .format(
+    // A header symphonia cannot represent (a WAV declaring sample rate 0) panics inside the probe.
+    let probed = match crate::errors::catch_panic(|| {
+        probe.format(
             &hint,
             mss,
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
-        .with_context(|| format!("unsupported audio format: {}", path.display()))
-        .coded(ErrorCode::BadAudio)?;
+    }) {
+        Ok(probed) => probed
+            .with_context(|| format!("unsupported audio format: {}", path.display()))
+            .coded(ErrorCode::BadAudio)?,
+        Err(panic) => coded_bail!(
+            ErrorCode::BadAudio,
+            "malformed audio header in: {}: {panic}; re-export the file",
+            path.display()
+        ),
+    };
 
     let track = probed
         .format

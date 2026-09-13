@@ -252,6 +252,12 @@ const CLI_ONLY: &[(&str, &str, Category, bool)] = &[
         Category::Internal,
         true,
     ),
+    (
+        "E_INTERRUPTED",
+        "The run was cancelled by a signal or by its caller",
+        Category::Platform,
+        false,
+    ),
 ];
 
 fn origin_of(code: ErrorCode) -> Origin {
@@ -445,12 +451,13 @@ mod tests {
         assert_eq!(origin("E_ENGINE_SPAWN"), Origin::Cli);
         assert_eq!(origin("E_ENGINE_PROTOCOL"), Origin::Cli);
         assert_eq!(origin("E_INSTALL_RACE"), Origin::Cli);
+        assert_eq!(origin("E_INTERRUPTED"), Origin::Cli);
         assert_eq!(origin("E_INVALID_ARG"), Origin::Both);
         assert_eq!(origin("E_INPUT_NOT_FOUND"), Origin::Both);
         assert_eq!(origin("E_INTERNAL"), Origin::Both);
         assert_eq!(origin("E_UNSUPPORTED_PLATFORM"), Origin::Both);
         assert_eq!(origin("E_MODEL_MISSING"), Origin::Engine);
-        assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 3);
+        assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 4);
     }
 
     #[test]

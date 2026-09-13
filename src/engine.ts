@@ -5,7 +5,7 @@ import { installHint } from "./install-hint";
 import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
-import { engineAbortError, registerProcessTree } from "./process-tree";
+import { abortOnSignal, engineAbortError, interruptedRun, pendingInterruption, registerProcessTree } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
 import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
 import {
@@ -108,6 +108,8 @@ export function spawnEngineProcess(
   stdio: SpawnStdio,
   env: Record<string, string | undefined> = process.env,
 ): ReturnType<typeof Bun.spawn> {
+  const interrupted = pendingInterruption();
+  if (interrupted) throw interrupted;
   try {
     // `env` is passed explicitly: Bun snapshots process.env at startup otherwise (#874).
     return Bun.spawn([binPath, ...args], { detached: true, stdio, env: withResolvedCacheDir(env) });
@@ -141,14 +143,7 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
   const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
-  let aborted = false;
-  let forceKillTimer: Timer | undefined;
-  const abort = () => {
-    aborted = true;
-    tree.terminate("SIGTERM");
-    forceKillTimer ??= tree.forceKillAfterGrace();
-  };
-  opts.signal?.addEventListener("abort", abort, { once: true });
+  const cancel = abortOnSignal(tree, opts.signal);
   let stdout: string;
   let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
@@ -159,15 +154,16 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
       proc.exited,
     ]);
   } finally {
-    opts.signal?.removeEventListener("abort", abort);
+    cancel.dispose();
     tree.dispose();
-    if (!aborted && forceKillTimer) clearTimeout(forceKillTimer);
   }
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
-  if (aborted) {
+  if (cancel.aborted) {
     log.debug(`aborted args=${JSON.stringify(args)}`);
     throw engineAbortError();
   }
+  const interrupted = interruptedRun(exitCode);
+  if (interrupted) throw interrupted;
   const stderr = events.stderr.trim();
   // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
   if (exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
@@ -467,6 +463,8 @@ async function forwardStdout(stream: ReadableStream<Uint8Array>, status: { clear
  * reworded ticker degrades to one line per second rather than breaking (`recordTicksInPlace`).
  */
 const RECORD_TICK = /^Listening\.\.\. \d+s$/;
+/** The recording's outcome arrives as progress too; it is the result, so `--quiet` must not drop it (Exploratory S3-F2). */
+const RECORD_OUTCOME = /^(Recorded .+ \(\d+ Hz, \d+ channels?, \d+ frames\)|No speech detected\.)$/;
 
 export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
   const binPath = getEngineBinPath();
@@ -494,7 +492,8 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
             return;
           }
           status.clear();
-          log.progress(line);
+          if (RECORD_OUTCOME.test(line)) log.notice(line);
+          else log.progress(line);
         },
         onWarn: (line) => {
           status.clear();

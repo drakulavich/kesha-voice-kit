@@ -60,6 +60,8 @@ export const log = {
   // and `CI=true` produce genuinely plain output. (#531)
   warn: (msg: string) => void process.stderr.write(colors.yellow(msg) + "\n"),
   error: (msg: string) => void process.stderr.write(colors.red(msg) + "\n"),
+  // A result that lives on stderr because stdout is spoken for (record's outcome line): --quiet keeps it.
+  notice: (msg: string) => void process.stderr.write(colors.cyan(msg) + "\n"),
   // STDERR, not stdout: `say --out` streams raw audio bytes to stdout. (#526/#531)
   status: (msg: string) => {
     if (log.quietEnabled) return;

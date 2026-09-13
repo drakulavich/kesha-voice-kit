@@ -1,5 +1,4 @@
 # fish completion for kesha.
-complete -c kesha -f
 complete -c kesha -n '__fish_use_subcommand' -a 'completions' -d 'Print shell completion script for bash, zsh, or fish'
 complete -c kesha -n '__fish_use_subcommand' -a 'doctor' -d 'Collect support diagnostics without changing local state'
 complete -c kesha -n '__fish_use_subcommand' -a 'init' -d 'Interactive setup guide for Kesha features'

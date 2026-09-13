@@ -1,6 +1,7 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
+import { renderInvalidArg } from "./options";
 import {
   isEngineInstalled,
   recordEngine,
@@ -197,7 +198,7 @@ export const recordCommand = defineCommand({
     if (args.debug) log.debugEnabled = true;
     const resolved = resolveRecordArgs(args as RecordArgs);
     if (!resolved.ok) {
-      log.error(resolved.error);
+      log.error(renderInvalidArg(resolved.error));
       process.exit(2);
     }
     if (!isEngineInstalled()) {

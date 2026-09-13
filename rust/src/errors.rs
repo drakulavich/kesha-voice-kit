@@ -172,6 +172,48 @@ pub fn code_of(err: &anyhow::Error) -> ErrorCode {
         .unwrap_or(ErrorCode::Internal)
 }
 
+thread_local! {
+    static EXPECTING_PANIC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_string())
+}
+
+/// Routes an uncaught panic through the event stream as `E_INTERNAL`, so the runtime never
+/// writes prose to stderr; a panic inside [`catch_panic`] stays silent because it is reported.
+pub fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        if EXPECTING_PANIC.with(std::cell::Cell::get) {
+            return;
+        }
+        let location = info
+            .location()
+            .map(|l| format!(" at {}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        crate::protocol::events::error(
+            ErrorCode::Internal,
+            format!(
+                "engine panicked: {}{location}",
+                panic_message(info.payload())
+            ),
+            Some("file a bug with `kesha support-bundle`"),
+        );
+    }));
+}
+
+/// Runs `f`, returning a panic as its message instead of unwinding past the caller.
+pub fn catch_panic<T>(f: impl FnOnce() -> T) -> Result<T, String> {
+    EXPECTING_PANIC.with(|c| c.set(true));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    EXPECTING_PANIC.with(|c| c.set(false));
+    result.map_err(|payload| panic_message(&*payload))
+}
+
 /// Emit the fatal error as an `error` event; always returns 1.
 pub fn report(err: &anyhow::Error) -> i32 {
     crate::protocol::events::error(code_of(err), format!("{err:#}"), None);
@@ -301,6 +343,14 @@ mod tests {
             "message was: {}",
             coded.message
         );
+    }
+
+    #[test]
+    fn catch_panic_returns_the_message_and_a_value_otherwise() {
+        assert_eq!(catch_panic(|| 7), Ok(7));
+        let err = catch_panic(|| -> u8 { panic!("rate {} is invalid", 0) }).unwrap_err();
+        assert_eq!(err, "rate 0 is invalid");
+        assert!(!EXPECTING_PANIC.with(std::cell::Cell::get));
     }
 
     #[test]

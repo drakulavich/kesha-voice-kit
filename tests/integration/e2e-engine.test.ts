@@ -250,7 +250,8 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
 
     // Cancelling used to segfault the process on exit (139); 1 is the coded-failure exit.
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("[E_DIARIZE_TIMEOUT]");
+    // The raw engine speaks protocol 4: the code arrives as an error event, not a rendered line.
+    expect(stderr).toContain(`"kind":"error","code":"E_DIARIZE_TIMEOUT"`);
     expect(stderr).toContain("KESHA_DIARIZE_TIMEOUT_SECS=1s was reached");
     expect(stdout).toBe("");
   }, 360_000);
@@ -450,11 +451,11 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     }
   }, 60_000);
 
-  test("kesha --verbose shows language info", async () => {
-    const { stdout, exitCode } = await runCli(["--verbose", FIXTURE_RU]);
+  test("kesha --verbose shows language info on stderr and leaves stdout to the transcript", async () => {
+    const { stdout, stderr, exitCode } = await runCli(["--verbose", FIXTURE_RU]);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("Text language:");
-    expect(stdout).toContain("---");
+    expect(stderr).toContain("Text language:");
+    expect(stdout).not.toContain("Text language:");
   }, 60_000);
 
   test("kesha --lang en warns on Russian audio", async () => {
@@ -526,8 +527,8 @@ describe.skipIf(!engineInstalled)("e2e-lang-detection", () => {
   }, 60_000);
 
   test("--verbose shows audio language when detected", async () => {
-    const { stdout, exitCode } = await runCli(["--verbose", FIXTURE_RU]);
+    const { stderr, exitCode } = await runCli(["--verbose", FIXTURE_RU]);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("language:");
+    expect(stderr).toContain("Audio language:");
   }, 60_000);
 });

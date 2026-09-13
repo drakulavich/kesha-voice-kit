@@ -72,6 +72,7 @@ interface WaiterOptions {
   holdMs?: number;
   /** Spin until the barrier file appears, so several waiters reach the lock at the same instant. */
   barrier?: boolean;
+  stderr?: "pipe";
 }
 
 /** One `kesha install` competing for the lock, bracketing its turn in the shared log. */
@@ -94,7 +95,7 @@ function spawnWaiter(binPath: string, dir: string, opts: WaiterOptions) {
       `appendFileSync(log, "exit " + process.pid + "\\n");\n` +
       `release();\n`,
   );
-  return Bun.spawn([process.execPath, script], { stdout: "ignore", stderr: "ignore" });
+  return Bun.spawn([process.execPath, script], { stdout: "ignore", stderr: opts.stderr ?? "ignore" });
 }
 
 /** The greatest number of waiters that were inside the critical section at the same time. */
@@ -198,6 +199,30 @@ describe("acquireInstallLock (#997)", () => {
     expect(existsSync(`${binPath}.lock`)).toBe(true);
     second();
   });
+
+  posixTest("a waiter says which lock to delete as soon as it starts waiting, not after the timeout (Exploratory S4-F2)", async () => {
+    const binPath = stageBinPath("kesha-lock-hint-");
+    const dir = tempDir("kesha-lock-hint-run-");
+    let release: (() => void) | null = await acquireInstallLock(binPath, 2_000);
+    const waiter = spawnWaiter(binPath, dir, { maxWaitMs: 5_000, stderr: "pipe" });
+    if (!waiter.stderr) throw new Error("the waiter's stderr is not piped");
+    const decoder = new TextDecoder();
+    let seen = "";
+    try {
+      for await (const chunk of waiter.stderr) {
+        seen += decoder.decode(chunk, { stream: true });
+        if (release && seen.includes(`delete ${binPath}.lock`)) {
+          release();
+          release = null;
+        }
+      }
+    } finally {
+      release?.();
+    }
+
+    expect(seen).toContain(`delete ${binPath}.lock`);
+    expect(await waiter.exited).toBe(0);
+  }, 30_000);
 
   posixTest("waiting on a live owner ends by naming it instead of hanging", async () => {
     const binPath = stageBinPath("kesha-lock-timeout-");

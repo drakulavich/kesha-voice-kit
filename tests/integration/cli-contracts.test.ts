@@ -16,7 +16,7 @@ import { engineVersion } from "../../src/package-info";
 import { engineTarget } from "../../src/engine-targets";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
 import { pidIsAlive, stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
-import { describeJson } from "../helpers/fake-engine";
+import { describeJson, writeTranscribingEngine } from "../helpers/fake-engine";
 import {
   DEFAULT_TIMEOUT_MS,
   installFakeDiarizeModel,
@@ -88,7 +88,7 @@ if (args[0] === "detect-lang") {
   if (process.env.KESHA_FAKE_DETECT_LANG_MARKER) {
     await Bun.write(process.env.KESHA_FAKE_DETECT_LANG_MARKER, "called");
   }
-  console.log(JSON.stringify({ code: "ru", confidence: 0.99 }));
+  console.log(JSON.stringify({ code: "ru", confidence: Number(process.env.KESHA_FAKE_DETECT_LANG_CONFIDENCE ?? "0.99") }));
   process.exit(0);
 }
 
@@ -265,6 +265,80 @@ if (args[0] === "transcribe") {
 }
 console.error("unexpected fake engine args: " + JSON.stringify(args));
 process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+function createSignalIgnoringTranscribeEngine(dir: string, enginePidPath: string): string {
+  const enginePath = join(dir, "kesha-engine-transcribe-ignores-signals");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
+if (args[0] === "transcribe") {
+  process.on("SIGINT", () => {});
+  process.on("SIGTERM", () => {});
+  await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
+  await new Promise(() => {});
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+/** Hangs in `transcribe` like `createHangingTranscribeEngine`, but appends a pid line per spawn so a batch can show how many engines it started. */
+function createPidLoggingTranscribeEngine(dir: string, enginePidsPath: string): string {
+  const enginePath = join(dir, "kesha-engine-transcribe-pid-log");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+import { appendFileSync } from "fs";
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
+if (args[0] === "transcribe") {
+  appendFileSync(${JSON.stringify(enginePidsPath)}, process.pid + "\\n");
+  await new Promise(() => {});
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+/** Finishes `transcribe` cleanly on SIGINT, the way a cooperative engine does, so the language-ID spawn that follows is the first thing the signal has to refuse. */
+function createFinishOnSignalTranscribeEngine(dir: string, enginePidsPath: string): string {
+  const enginePath = join(dir, "kesha-engine-transcribe-finish-on-signal");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+import { appendFileSync } from "fs";
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
+appendFileSync(${JSON.stringify(enginePidsPath)}, process.pid + "\\n");
+if (args[0] === "transcribe") {
+  process.on("SIGINT", async () => {
+    await Bun.write(Bun.stdout, JSON.stringify({ text: "finished anyway", segments: [] }) + "\\n");
+    process.exit(0);
+  });
+}
+await new Promise(() => {});
 `,
   );
   chmodSync(enginePath, 0o755);
@@ -474,20 +548,27 @@ describe("CLI contracts", () => {
     const version = await runCli(["--version"]);
     expectContract(version, { exitCode: 0, stderrEmpty: true });
     expect(version.stdout).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
+    // The documented short alias must survive the unknown-option gate (Greptile on #1216).
+    const short = await runCli(["-v"]);
+    expectContract(short, { exitCode: 0, stderrEmpty: true });
+    expect(short.stdout).toBe(version.stdout);
 
-    const empty = await runCli([]);
-    expectContract(empty, {
-      exitCode: 1,
-      stdoutContains: ["Usage: kesha <audio_file>"],
-      stderrEmpty: true,
-    });
-    // #938 drift guard, at the observable layer: every dispatchable subcommand must
-    // surface in the bare-invocation usage the user actually sees. Coupling the loop
-    // to SUBCOMMAND_NAMES makes adding a command without listing it fail here; the
-    // per-name line anchor (leading whitespace, then `kesha <name>` followed by a
-    // space or end of line) stops a shorter name from prefix-matching a longer one.
-    for (const name of SUBCOMMAND_NAMES) {
-      expect(empty.stdout).toMatch(new RegExp(`^\\s+kesha ${name}( |$)`, "m"));
+    // S1-1: a consumer that asked for JSON must never receive the usage prose on stdout.
+    for (const args of [[], ["--json"]]) {
+      const empty = await runCli(args);
+      expectContract(empty, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: ["error [E_INVALID_ARG]: no input file", "Usage: kesha <audio_file>"],
+      });
+      // #938 drift guard, at the observable layer: every dispatchable subcommand must
+      // surface in the bare-invocation usage the user actually sees. Coupling the loop
+      // to SUBCOMMAND_NAMES makes adding a command without listing it fail here; the
+      // per-name line anchor (leading whitespace, then `kesha <name>` followed by a
+      // space or end of line) stops a shorter name from prefix-matching a longer one.
+      for (const name of SUBCOMMAND_NAMES) {
+        expect(empty.stderr).toMatch(new RegExp(`^\\s+kesha ${name}( |$)`, "m"));
+      }
     }
   });
 
@@ -502,37 +583,37 @@ describe("CLI contracts", () => {
         name: "json and toon mutex",
         args: ["--json", "--toon", "a.wav"],
         exitCode: 2,
-        stderr: ["--json and --toon are mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --json and --toon are mutually exclusive"],
       },
       {
         name: "transcript and json mutex",
         args: ["--format", "transcript", "--json", "a.wav"],
         exitCode: 2,
-        stderr: ["--format transcript is mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --format transcript is mutually exclusive"],
       },
       {
         name: "timestamps require machine output",
         args: ["--timestamps", "a.wav"],
         exitCode: 2,
-        stderr: ["--timestamps requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --timestamps requires --json"],
       },
       {
         name: "speakers require machine output",
         args: ["--speakers", "a.wav"],
         exitCode: 2,
-        stderr: ["--speakers requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --speakers requires --json"],
       },
       {
         name: "include-errors requires a structured format",
         args: ["--include-errors", "a.wav"],
         exitCode: 2,
-        stderr: ["--include-errors requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --include-errors requires --json"],
       },
       {
         name: "vad flags are mutually exclusive",
         args: ["--vad", "--no-vad", "a.wav"],
         exitCode: 2,
-        stderr: ["--vad and --no-vad are mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --vad and --no-vad are mutually exclusive"],
       },
     ];
 
@@ -544,6 +625,65 @@ describe("CLI contracts", () => {
         stderrContains: entry.stderr,
       });
     }
+  });
+
+  test("an unknown option is rejected with a coded line and exit 2 before any engine spawn, on transcribe and on subcommands (S9-F3)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-unknown-option-");
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: createFailingEngine(dir) };
+    const cases: Array<{ args: string[]; line: string; stderrNotContains?: string[] }> = [
+      {
+        args: ["--timestamp", mediaPath],
+        line: "error [E_INVALID_ARG]: unknown option --timestamp (did you mean --timestamps?)",
+      },
+      {
+        args: [mediaPath, "--speaker", "--json"],
+        line: "error [E_INVALID_ARG]: unknown option --speaker (did you mean --speakers?)",
+      },
+      { args: ["--jsom", mediaPath], line: "error [E_INVALID_ARG]: unknown option --jsom (did you mean --json?)" },
+      {
+        args: ["--languge", "en", mediaPath],
+        line: "error [E_INVALID_ARG]: unknown option --languge",
+        stderrNotContains: ["en: error", "File not found"],
+      },
+      { args: ["--frobnicate", mediaPath], line: "error [E_INVALID_ARG]: unknown option --frobnicate" },
+      {
+        args: ["say", "--voic", "en-am_michael", "hello"],
+        line: "error [E_INVALID_ARG]: unknown option --voic (did you mean --voice?)",
+      },
+      { args: ["record", "--frobnicate", "--out", join(dir, "x.wav")], line: "error [E_INVALID_ARG]: unknown option --frobnicate" },
+    ];
+    for (const entry of cases) {
+      const run = await runCli(entry.args, { env });
+      expectContract(run, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: [entry.line],
+        stderrNotContains: ["fake engine should not have been invoked", "Transcribing", ...(entry.stderrNotContains ?? [])],
+      });
+      expect(run.stderr.split("\n")).toHaveLength(1);
+    }
+  });
+
+  test("kesha completions without a shell name is a coded usage error on stderr, exit 2, and never writes a partial script to stdout (S10-1)", async () => {
+    const missing = await runCli(["completions"]);
+    expectContract(missing, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: missing shell (bash, zsh or fish)", "usage: kesha completions <bash|zsh|fish>"],
+    });
+
+    const unknown = await runCli(["completions", "powershell"]);
+    expectContract(unknown, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: unknown shell 'powershell' (bash, zsh or fish)", "usage: kesha completions <bash|zsh|fish>"],
+    });
+
+    const zsh = await runCli(["completions", "zsh"]);
+    expectContract(zsh, { exitCode: 0, stderrEmpty: true });
+    expect(zsh.stdout).toBe(readFileSync(join(DEFAULT_CWD, "completions", "kesha.zsh"), "utf8").trim());
   });
 
   test("unknown commands and missing files do not start a configured engine", async () => {
@@ -583,7 +723,7 @@ describe("CLI contracts", () => {
     });
   });
 
-  test("a directory positional is rejected before any progress output or engine spawn", async () => {
+  test("a directory positional is rejected before any progress output or engine spawn, exit 2 (S9-F1)", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-");
     const enginePath = createFailingEngine(dir);
     const env = {
@@ -595,7 +735,7 @@ describe("CLI contracts", () => {
     const target = makeTempDir("kesha-cli-contract-dir-target-");
     const run = await runCli([target], { env });
     expectContract(run, {
-      exitCode: 1,
+      exitCode: 2,
       stdoutEmpty: true,
       stderrContains: [`${target}: error [E_INVALID_ARG]: is a directory (expected an audio file)`],
       stderrNotContains: ["fake engine should not have been invoked", "Transcribing", "%"],
@@ -606,6 +746,7 @@ describe("CLI contracts", () => {
     expect(events[1]).toMatchObject({ command: "transcribe", error_code: "E_INVALID_ARG" });
 
     const jsonRun = await runCli(["--json", "--include-errors", target], { env });
+    expect(jsonRun.exitCode).toBe(2);
     const parsed = JSON.parse(jsonRun.stdout);
     expect(parsed.errors).toEqual([
       { file: target, code: "E_INVALID_ARG", message: "is a directory (expected an audio file)" },
@@ -643,7 +784,7 @@ describe("CLI contracts", () => {
     expect(parsed.errors[0]).toMatchObject({ file: mediaPath, code: "E_ENGINE_PROTOCOL" });
   });
 
-  test("transcribe with a flag the build lacks exits 1 with E_INVALID_ARG before any progress line", async () => {
+  test("transcribe with a flag the build lacks exits 2 with E_INVALID_ARG before any progress line (S9-F1)", async () => {
     if (process.platform === "win32") return;
     const dir = makeTempDir("kesha-cli-contract-flag-gate-");
     const enginePath = join(dir, "kesha-engine");
@@ -656,9 +797,76 @@ describe("CLI contracts", () => {
     writeFileSync(mediaPath, "fake media");
     const res = await runCli([mediaPath, "--itn"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
     expectContract(res, {
-      exitCode: 1,
+      exitCode: 2,
       stderrContains: ["error [E_INVALID_ARG]: ", "--itn"],
       stderrNotContains: ["Transcribing"],
+    });
+  });
+
+  test("a global flag before the subcommand name routes to the subcommand instead of reading it as an input file (S3-F3)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-hoist-");
+    const outPath = join(dir, "hello.wav");
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: createFailingEngine(dir) };
+
+    const applied = await runCli(["--debug", "record", "--out", outPath, "--max-seconds", "0"], { env });
+    expectContract(applied, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: --max-seconds must be an integer between 1 and"],
+      stderrNotContains: ["File not found", "record:"],
+    });
+
+    const foreign = await runCli(["--json", "record", "--out", outPath], { env });
+    expectContract(foreign, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: unknown option --json"],
+      stderrNotContains: ["File not found", "record:"],
+    });
+
+    const valued = await runCli(["--lang", "en", "record", "--out", outPath], { env });
+    expectContract(valued, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: put global flags after the subcommand: kesha record ..."],
+      stderrNotContains: ["File not found", "fake engine should not have been invoked"],
+    });
+    expect(existsSync(outPath)).toBe(false);
+  });
+
+  // Exploratory S11-3 / S8-8: --quiet must silence engine progress events like every other progress line; the stub emits one before its transcript.
+  function progressEmittingEngineDir(): { dir: string; media: string; env: Record<string, string> } {
+    if (process.platform === "win32") throw new Error("posix-only stub");
+    const enginePath = writeTranscribingEngine(
+      "kesha-cli-quiet-progress-",
+      ["transcribe"],
+      "  printf '%s\\n' '{\"kind\":\"progress\",\"phase\":\"transcribe\",\"message\":\"loading the model\"}' >&2\n  printf '%s\\n' 'hello world'",
+    );
+    const dir = dirname(enginePath);
+    const media = join(dir, "meeting.ogg");
+    writeFileSync(media, "fake media");
+    return { dir, media, env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } };
+  }
+
+  test("engine progress events reach stderr on a plain transcribe", async () => {
+    if (process.platform === "win32") return;
+    const { media, env } = progressEmittingEngineDir();
+    const res = await runCli([media], { env });
+    expectContract(res, {
+      exitCode: 0,
+      stdoutContains: ["hello world"],
+      stderrContains: ["transcribe: loading the model"],
+    });
+  });
+
+  test("--quiet silences engine progress events, transcript still returned", async () => {
+    if (process.platform === "win32") return;
+    const { media, env } = progressEmittingEngineDir();
+    const res = await runCli(["--quiet", media], { env });
+    expectContract(res, {
+      exitCode: 0,
+      stdoutContains: ["hello world"],
+      stderrNotContains: ["transcribe: loading the model", "Transcribing"],
     });
   });
 
@@ -1487,7 +1695,7 @@ process.exit(99);
 
   // The interrupted file counts as a failure, so the signal's code has to beat the batch's
   // own exit(1) (src/cli/main.ts) for these to hold — that ordering is what they measure.
-  for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
+  for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]] as const) {
     test(`${signal} mid-transcription exits ${exitCode} and leaves no engine running`, async () => {
       if (process.platform === "win32") return;
       const dir = makeTempDir(`kesha-cli-contract-${signal.toLowerCase()}-exit-`);
@@ -1516,11 +1724,124 @@ process.exit(99);
 
       proc.kill(signal);
 
-      const [, actualExitCode] = await Promise.all([drained, proc.exited]);
+      const [[, stderr], actualExitCode] = await Promise.all([drained, proc.exited]);
       expect(actualExitCode).toBe(exitCode);
+      expect(stderr).toContain(`${mediaPath}: error [E_INTERRUPTED]: interrupted (${signal})`);
+      expect(stderr).not.toContain("E_INTERNAL");
       expect(await waitForPidExit(enginePid)).toBe(true);
     });
   }
+
+  test("Ctrl+C mid-batch starts no further file, reports the rest as interrupted, and exits once the engine is gone", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-batch-sigint-");
+    const enginePidsPath = join(dir, "engine.pids");
+    const enginePath = createPidLoggingTranscribeEngine(dir, enginePidsPath);
+    const files = ["a.ogg", "b.ogg", "c.ogg"].map((name) => join(dir, name));
+    for (const file of files) writeFileSync(file, "fake media");
+
+    const proc = Bun.spawn(
+      [process.execPath, "run", "src/cli-entry.ts", "--json", "--include-errors", ...files],
+      {
+        cwd: DEFAULT_CWD,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          NO_COLOR: "1",
+          FORCE_COLOR: "0",
+          ...isolatedEnv(dir),
+          KESHA_ENGINE_BIN: enginePath,
+        },
+      },
+    );
+    const drained = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const enginePid = await waitForPidFile(enginePidsPath);
+
+    const signalledAt = performance.now();
+    proc.kill("SIGINT");
+
+    const [[stdout, stderr], exitCode] = await Promise.all([drained, proc.exited]);
+    const exitedAfterMs = performance.now() - signalledAt;
+    expect(exitCode).toBe(130);
+    expect(await waitForPidExit(enginePid)).toBe(true);
+    expect(stderr).toContain(`Transcribing ${files[0]}`);
+    expect(stderr).not.toContain(`Transcribing ${files[1]}`);
+    for (const file of files) expect(stderr).toContain(`${file}: error [E_INTERRUPTED]: interrupted (SIGINT)`);
+    expect(readFileSync(enginePidsPath, "utf8").trim().split("\n")).toHaveLength(1);
+    const envelope = JSON.parse(stdout) as { results: unknown[]; errors: { file: string; code: string }[] };
+    expect(envelope.results).toEqual([]);
+    expect(envelope.errors.map((e) => [e.file, e.code])).toEqual(files.map((file) => [file, "E_INTERRUPTED"]));
+    // The stub dies on the first SIGINT; before the fix the CLI always sat out the full force-kill grace (1 000 ms + 50 ms).
+    expect(exitedAfterMs).toBeLessThan(1_000);
+  });
+
+  test("no engine spawns after Ctrl+C, even for a file whose transcription finished under the signal", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-no-spawn-after-sigint-");
+    const enginePidsPath = join(dir, "engine.pids");
+    const enginePath = createFinishOnSignalTranscribeEngine(dir, enginePidsPath);
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+
+    const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", "--json", "--include-errors", mediaPath], {
+      cwd: DEFAULT_CWD,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+    const drained = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const enginePid = await waitForPidFile(enginePidsPath);
+
+    proc.kill("SIGINT");
+
+    const [[stdout, stderr], exitCode] = await Promise.all([drained, proc.exited]);
+    expect(exitCode).toBe(130);
+    expect(await waitForPidExit(enginePid)).toBe(true);
+    expect(stderr).toContain(`${mediaPath}: error [E_INTERRUPTED]: interrupted (SIGINT)`);
+    expect(readFileSync(enginePidsPath, "utf8").trim().split("\n")).toHaveLength(1);
+    const envelope = JSON.parse(stdout) as { errors: { code: string }[] };
+    expect(envelope.errors.map((e) => e.code)).toEqual(["E_INTERRUPTED"]);
+  });
+
+  test("an engine that ignores the forwarded signal is force-killed, and the report still names the signal Ctrl+C sent", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-sigkill-escalation-");
+    const enginePidPath = join(dir, "engine.pid");
+    const enginePath = createSignalIgnoringTranscribeEngine(dir, enginePidPath);
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+
+    const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", mediaPath], {
+      cwd: DEFAULT_CWD,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+    const drained = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const enginePid = await waitForPidFile(enginePidPath);
+
+    proc.kill("SIGINT");
+
+    const [[, stderr], exitCode] = await Promise.all([drained, proc.exited]);
+    expect(exitCode).toBe(130);
+    expect(stderr).toContain(`${mediaPath}: error [E_INTERRUPTED]: interrupted (SIGINT)`);
+    expect(stderr).not.toContain("137");
+    expect(stderr).not.toContain("SIGKILL");
+    expect(await waitForPidExit(enginePid)).toBe(true);
+  });
 
   for (const [phase, args] of [
     ["probe", ["install"]],
@@ -1615,10 +1936,11 @@ process.exit(99);
       timeoutMs: 15_000,
       artifacts: [bundlePath],
     });
+    // The report is prose, so it stays off stdout for a `> log` caller (Exploratory S5-F4).
     expectContract(bundle, {
       exitCode: 0,
-      stdoutContains: [`Created support bundle: ${bundlePath}`, "Entries: 4", "Size:"],
-      stderrEmpty: true,
+      stdoutEmpty: true,
+      stderrContains: [`Created support bundle: ${bundlePath}`, "Entries: 4", "Size:"],
     });
     expect(existsSync(bundlePath)).toBe(true);
     expect(bundle.artifacts[0]).toMatchObject({
@@ -1809,6 +2131,26 @@ process.exit(99);
     // ~20 sequential spawns; 30s needed alongside model-download e2e tests.
   }, 30000);
 
+  test("stats export without a format exits 2 with the usage line and no payload (Exploratory S5-F2)", async () => {
+    const env = isolatedEnv();
+    const run = await runCli(["stats", "export"], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["usage: kesha stats export --format json|csv"],
+    });
+  });
+
+  test("stats retention with a negative day count exits 2 instead of eating it as a flag (Exploratory S5-F3)", async () => {
+    const env = isolatedEnv();
+    const run = await runCli(["stats", "retention", "-5"], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["usage: kesha stats retention <days|off>"],
+    });
+  });
+
   test("--plan previews the overridden engine version and downloads nothing (#738)", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-version-");
     const enginePath = createFailingEngine(dir);
@@ -1935,4 +2277,147 @@ exit 0
     expect(run.stderr).toContain("EBADF");
     expect(run.stderr).not.toContain("at writeFast");
   }, 30000);
+
+  describe("language flags", () => {
+    /** Exploratory S1-3: quiet drops progress, not warnings; the mismatch used to ride on the progress bar and vanish with it. */
+    test("--quiet keeps the language-mismatch warning on stderr", async () => {
+      const dir = makeTempDir("kesha-cli-contract-quiet-lang-warn-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+
+      const run = await runCli(["-q", "--lang", "en", mediaPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: [`${mediaPath}: warning: expected language "en" but detected "ru"`],
+        stderrNotContains: ["Transcribing", "Transcribed"],
+      });
+      expect(run.stdout).not.toBe("");
+    });
+
+    /**
+     * Exploratory S11-2 and S11-4: without the text-lang sidecar, tinyld's top guess named `lang` at any
+     * score, 0.2 included, and silence's audio prior (nn at 0.27) was published like a real detection.
+     */
+    test("weak text and audio guesses stay in their raw fields but do not name lang", async () => {
+      const dir = makeTempDir("kesha-cli-contract-lang-floor-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+      const env = {
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+        KESHA_FAKE_TEXT_LANG_UNSUPPORTED: "1",
+        KESHA_FAKE_DETECT_LANG_CONFIDENCE: "0.267",
+      };
+
+      const run = await runCli(["--json", "--verbose", mediaPath], { env });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: [
+          "Audio language: ru (confidence: 0.27, below the 0.5 floor, ignored for lang)",
+          "Text language: ru (confidence: 0.20, below the 0.5 floor, ignored for lang)",
+        ],
+      });
+      const [parsed] = JSON.parse(run.stdout);
+      expect(parsed.audioLanguage).toEqual({ code: "ru", confidence: 0.267 });
+      expect(parsed.textLanguage).toEqual({ code: "ru", confidence: 0.2, source: "tinyld" });
+      expect(parsed.lang).toBe("");
+    });
+
+    /** Exploratory S11-4: confident audio is the fallback when the text guess was too weak, and it warns once, not twice. */
+    test("confident audio names lang when tinyld could not, with a single mismatch warning", async () => {
+      const dir = makeTempDir("kesha-cli-contract-audio-fallback-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+      const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath, KESHA_FAKE_TEXT_LANG_UNSUPPORTED: "1" };
+
+      const run = await runCli(["--json", "--lang", "en", mediaPath], { env });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: [`${mediaPath}: warning: expected language "en" but detected "ru" (from audio)`],
+      });
+      expect(run.stderr.split("warning:")).toHaveLength(2);
+      const [parsed] = JSON.parse(run.stdout);
+      expect(parsed.lang).toBe("ru");
+      expect(parsed.textLanguage).toEqual({ code: "ru", confidence: 0.2, source: "tinyld" });
+    });
+  });
+
+  describe("--verbose", () => {
+    /** Exploratory S1-2: `kesha --verbose a.ogg > t.txt` used to put three diagnostic lines above the transcript in the file. */
+    test("diagnostics go to stderr and stdout carries the transcript alone", async () => {
+      const dir = makeTempDir("kesha-cli-contract-verbose-channel-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+
+      const run = await runCli(["--verbose", mediaPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: ["Audio language: ru (confidence: 0.99)", "Text language: ru (confidence: 0.98)", "STT time: "],
+        stdoutNotContains: ["language", "STT time", "---"],
+      });
+      expect(run.stdout.split("\n")).toHaveLength(1);
+    });
+  });
+
+  describe("record under --quiet", () => {
+    function recordingStub(dir: string, features: string[], body: string): string {
+      const enginePath = join(dir, "kesha-engine");
+      writeFileSync(
+        enginePath,
+        `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features })}'\n  exit 0\nfi\nif [ "$1" = "record" ]; then\n${body}\n  exit 0\nfi\nexit 2\n`,
+      );
+      chmodSync(enginePath, 0o755);
+      return enginePath;
+    }
+
+    /** Exploratory S3-F2: `kesha record -q --out f.wav` produced nothing on either channel, so a script had no success signal. */
+    test("--out still confirms the recording on stderr", async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir("kesha-cli-contract-record-quiet-out-");
+      const outPath = join(dir, "note.wav");
+      const enginePath = recordingStub(
+        dir,
+        [],
+        `  printf '%s\\n' '{"kind":"progress","message":"Listening (48000 Hz)... stop with Ctrl-C."}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"Recorded ${outPath} (48000 Hz, 1 channel, 95744 frames)"}' >&2`,
+      );
+      const run = await runCli(["record", "-q", "--out", outPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stdoutEmpty: true,
+        stderrContains: [`Recorded ${outPath} (48000 Hz, 1 channel, 95744 frames)`],
+        stderrNotContains: ["Listening"],
+      });
+    });
+
+    test("--live on silence still says no speech was detected", async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir("kesha-cli-contract-record-quiet-live-");
+      const enginePath = recordingStub(
+        dir,
+        ["record.live"],
+        `  printf '%s\\n' '{"kind":"progress","message":"Listening... 1s"}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"No speech detected."}' >&2`,
+      );
+      const run = await runCli(["record", "-q", "--live"], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stdoutEmpty: true,
+        stderrContains: ["No speech detected."],
+        stderrNotContains: ["Listening"],
+      });
+    });
+  });
 });
