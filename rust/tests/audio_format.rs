@@ -195,3 +195,21 @@ fn ensure_audio_track_accepts_uppercase_extension() {
     audio::ensure_audio_track(tmp.path().to_str().unwrap())
         .expect("uppercase .M4A extension should still probe successfully");
 }
+
+// Exploratory S2-3: a PCM AIFF is a first-class container for a macOS user, and the
+// audio-ingest spec lists it as supported, yet the probe rejected it and blamed a codec the
+// file does not hold. Fixture: `ffmpeg -f lavfi -i sine=440:d=0.1:r=16000 -c:a pcm_s16be
+// tone.aiff` (3.2 KB, FORM/AIFF, pcm_s16be per ffprobe).
+#[test]
+fn a_pcm_aiff_decodes_like_any_other_supported_container() {
+    let path = fixture("tone.aiff");
+    audio::ensure_audio_track(&path).expect("AIFF must open as a supported container");
+    let samples = audio::load_audio(std::path::Path::new(&path)).expect("AIFF must decode");
+    assert!(
+        (1_500..=1_700).contains(&samples.len()),
+        "0.1 s at 16 kHz should decode to ~1600 frames, got {}",
+        samples.len()
+    );
+    let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(peak > 0.1, "the 440 Hz tone decoded as near-silence (peak {peak})");
+}

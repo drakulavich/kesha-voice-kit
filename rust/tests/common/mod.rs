@@ -289,3 +289,35 @@ pub fn non_test_prefix(text: &str) -> &str {
         from = at + marker.len();
     }
 }
+
+/// A 16-bit mono PCM WAV whose header declares `declared_frames` at `sample_rate` while the
+/// body holds `body_len` zero bytes, so header-only probes see one duration and readers another.
+pub fn write_pcm16_wav(path: &Path, sample_rate: u32, declared_frames: u32, body_len: usize) {
+    let data_len = declared_frames * 2;
+    let mut bytes = Vec::with_capacity(44 + body_len);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    bytes.resize(44 + body_len, 0);
+    std::fs::write(path, bytes).expect("write wav fixture");
+}
+
+/// The one `error` event a failed run must leave on stderr, with nothing beside it.
+pub fn sole_error_event(out: &std::process::Output) -> serde_json::Value {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(lines.len(), 1, "exactly one stderr line, got: {stderr}");
+    let v: serde_json::Value = serde_json::from_str(lines[0])
+        .unwrap_or_else(|_| panic!("stderr line is not a protocol event: {stderr}"));
+    assert_eq!(v["kind"], "error", "{stderr}");
+    v
+}

@@ -11,6 +11,7 @@ fn main() {
     // clap parsing + env probes are counted toward the first `dtrace!`'s
     // prefix (Greptile P2 on #293). No-op when debug is off.
     debug::init();
+    errors::install_panic_hook();
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => {
@@ -23,8 +24,11 @@ fn main() {
         }
     };
 
-    if let Err(err) = run_command(cli.command) {
-        std::process::exit(errors::report(&err));
+    // The hook has already reported a panic as E_INTERNAL; 1 keeps the exit status inside the contract.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_command(cli.command))) {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => std::process::exit(errors::report(&err)),
+        Err(_) => std::process::exit(1),
     }
 }
 

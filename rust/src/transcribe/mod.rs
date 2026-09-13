@@ -322,16 +322,16 @@ pub fn transcribe_with_options(
         mode
     };
 
-    let model_dir = ensure_asr_installed(models::cache_dir())?;
-
     // `Auto` needs a duration probe for routing. `Off` probes too so explicit
-    // full-file ASR can fail before loading a backend for media beyond the
-    // duration/memory-bound single-pass contract.
+    // full-file ASR is refused before any model is required, as a bad flag, for
+    // media beyond the duration/memory-bound single-pass contract.
     let duration = match mode {
         VadMode::Auto | VadMode::Off => probe_duration_if_plausible(audio_path),
         _ => None,
     };
     validate_plain_transcribe_safety(mode, duration, vad_installed)?;
+
+    let model_dir = ensure_asr_installed(models::cache_dir())?;
     let decision = decide(mode, duration, vad_installed);
     dtrace!(
         "asr::mode={mode:?} duration={:?} vad_installed={vad_installed} decision={decision:?}",
@@ -415,6 +415,8 @@ fn finalize_output(
 
 /// Shared by plain and chunked paths to avoid duplicate timing+logging+create_backend blocks.
 fn create_timed_backend(model_dir: &Path) -> Result<Box<dyn backend::TranscribeBackend>> {
+    // A cold ASR load runs into tens of seconds; without a live event a wired-up spinner reads as a hang (Exploratory S8-8).
+    events::progress(Some("transcribe"), "loading the speech model");
     let t0 = Instant::now();
     let be = backend::create_backend(model_dir)?;
     let dt_ms = t0.elapsed().as_millis() as u64;
@@ -519,7 +521,7 @@ fn transcribe_via_vad(
         spans.len()
     );
 
-    let mut be = backend::create_backend(model_dir)?;
+    let mut be = create_timed_backend(model_dir)?;
 
     if spans.is_empty() {
         let min_speech_samples =
@@ -590,7 +592,12 @@ where
     F: FnMut(&[f32]) -> Result<TranscriptionChunk>,
 {
     let mut out = Vec::with_capacity(spans.len());
-    for &(start_s, end_s) in spans {
+    let total = spans.len();
+    for (index, &(start_s, end_s)) in spans.iter().enumerate() {
+        events::progress(
+            Some("transcribe"),
+            format!("transcribing segment {} of {total}", index + 1),
+        );
         let start = (start_s * sr) as usize;
         let end = ((end_s * sr) as usize).min(samples.len());
         if start >= end {
@@ -992,7 +999,8 @@ fn validate_plain_transcribe_safety(
     } else {
         "run `kesha install --vad`, then rerun without --no-vad"
     };
-    anyhow::bail!(
+    coded_bail!(
+        ErrorCode::InvalidArg,
         "refusing --no-vad for very long audio \
          (detected {duration_s:.0}s; single-pass limit is {FULL_FILE_SINGLE_PASS_MAX_SECONDS:.0}s). \
          Parakeet full-file ASR is duration/memory-bound; {action}."
