@@ -442,7 +442,7 @@ as invariants, not options:
 > `UNSAFE_STRING_VALUE`, `SAFE_STRING_VALUE`, `validateField`);
 > `src/stats.ts::sanitizeStatsError`, `src/stats.ts::statsPrivacyContract`,
 > `src/stats.ts::artifactFromFile` (records `extname(path)` and `st.size`, not the
-> path itself). Audio size bucketing in `stats.ts::summarizeSizeBuckets`:
+> path itself). Audio size bucketing in `src/stats.ts::summarizeSizeBuckets`:
 > `<1 MB`, `1-10 MB`, `10-100 MB`, `100 MB+`.*
 
 ## Open Issues

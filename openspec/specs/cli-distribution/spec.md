@@ -53,7 +53,7 @@ Each supported distribution path SHALL deliver the CLI package's `bin/kesha.js` 
   that version
 - THEN it is not a supported path
 
-> *Technical Note — `bin/kesha.js:1-4` is a four-line `#!/usr/bin/env bun`
+> *Technical Note — `bin/kesha.js::runCli` is a four-line `#!/usr/bin/env bun`
 > shim over `runCli` from `src/cli/dispatch.ts`. `package.json#bin` maps
 > `kesha → bin/kesha.js`; `package.json#files` publishes `bin/` and `src/`
 > as-is. Homebrew's `install` stages `bin`, `src`, `completions`, `man`,
@@ -239,9 +239,9 @@ The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `
 > *Technical Note — `flake.nix` exposes `packages.kesha` and
 > `packages.kesha-engine`; `kesha-engine` is built with naersk and records
 > `package.json#keshaEngine.version` into `bin/kesha-engine.version`
-> (`flake.nix:144-167`), and the `kesha` wrapper sets `KESHA_ENGINE_BIN` to it
-> (`flake.nix:280`). `keshaNodeModules.outputHash` is `lib.fakeHash`
-> (`flake.nix:230`), and the comment above it (`flake.nix:188-205`) states
+> (`flake.nix::kesha-engine`), and the `kesha` wrapper sets `KESHA_ENGINE_BIN`
+> to it (`flake.nix::kesha`). `flake.nix::keshaNodeModules` has
+> `outputHash = lib.fakeHash`, and the comment above it states
 > plainly that `packages.default`, `apps.default`, and any `nix run` /
 > `nix profile install .#kesha` invocation fail until it is populated — so the
 > docs (README "Other install methods", `docs/nix-install.md`) present only

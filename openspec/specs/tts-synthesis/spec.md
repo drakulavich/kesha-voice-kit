@@ -233,7 +233,7 @@ the first few missing paths so the gap is identifiable, and the refusal exits 4
 > `rust/src/tts/voices.rs::build_kokoro_voice` (ONNX Kokoro) and
 > `::resolve_vosk_ru` (Vosk). `macos-*` voices need no model download.
 > The darwin-arm64 pre-check is `rust/src/models/staging.rs::missing_kokoro_assets`,
-> called from `tts/fluid_kokoro.rs::with_kokoro` alongside
+> called from `rust/src/tts/fluid_kokoro.rs::with_kokoro` alongside
 > `fluidaudio_rs::set_offline_mode(true)` — two defences because neither covers
 > the other: the flag stops upstream's repo downloads but not its
 > `AssetDownloader` (#823). Its required set is derived from the same staging
@@ -614,10 +614,12 @@ the run got, so the same `E_MODEL_MISSING` legitimately appears with either.
 
 > *Technical Note — Engine map: `rust/src/cli/say.rs::exit_code_for_tts_err`
 > (`EmptyText` → 2, `TextTooLong` → 5, `SynthesisFailed`/`Coded` → 4). Voice
-> resolution failures return 1 from `cli/say.rs::resolve_voice`, which is where
-> the `ModelMissing` bails in `tts/voices.rs::build_kokoro_voice` (ONNX Kokoro)
-> and `::resolve_vosk_ru` surface; `--model`/`--voice-file` and output-format
-> errors return 2 from `resolve_voice` and `cli/say.rs::run`.
+> resolution failures return 1 from `rust/src/cli/say.rs::resolve_voice`, which
+> is where the `ModelMissing` bails in
+> `rust/src/tts/voices.rs::build_kokoro_voice` (ONNX Kokoro) and
+> `rust/src/tts/voices.rs::resolve_vosk_ru` surface; `--model`/`--voice-file`
+> and output-format errors return 2 from `resolve_voice` and
+> `rust/src/cli/say.rs::run`.
 > `E_SSML_INVALID`, `E_SSML_UNSUPPORTED`, `E_SCRIPT_UNSUPPORTED`, and the
 > darwin-arm64 late `E_MODEL_MISSING` from `models::missing_kokoro_assets` all
 > reach the caller as `TtsError::Coded` → exit 4. CLI side: `KeshaError`
