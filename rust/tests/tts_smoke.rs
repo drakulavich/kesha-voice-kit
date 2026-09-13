@@ -216,7 +216,9 @@ fn list_voices_shows_installed() {
     let tmp = tempfile::tempdir().unwrap();
     let voices_dir = tmp.path().join("models/kokoro-82m/voices");
     std::fs::create_dir_all(&voices_dir).unwrap();
-    std::fs::write(voices_dir.join("af_heart.bin"), b"").unwrap();
+    for pack in ["af_heart.bin", "em_alex.bin", "im_nicola.bin"] {
+        std::fs::write(voices_dir.join(pack), b"").unwrap();
+    }
     let out = Command::new(common::engine_bin())
         .env("KESHA_CACHE_DIR", tmp.path())
         .args(["say", "--list-voices"])
@@ -224,9 +226,13 @@ fn list_voices_shows_installed() {
         .expect("run");
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
+    for id in ["en-af_heart", "es-em_alex", "it-im_nicola"] {
+        assert!(stdout.contains(id), "expected {id}, got: {stdout}");
+    }
+    // A pack listed under the wrong language is not a voice id the resolver accepts by contract (#1168).
     assert!(
-        stdout.contains("en-af_heart"),
-        "expected en-af_heart, got: {stdout}"
+        !stdout.contains("en-em_alex"),
+        "multilingual pack listed as English: {stdout}"
     );
 }
 
