@@ -10,7 +10,7 @@ import { KeshaError } from "./engine/events";
 
 export type { TranscribeOptions };
 export type { TranscriptionOutput, TranscriptionSegment, WordTiming } from "./engine";
-export { downloadEngine as downloadModel };
+export { downloadEngine, downloadEngine as downloadModel };
 export { say, type SayOptions, SayError } from "./synth";
 export { KeshaError } from "./engine/events";
 

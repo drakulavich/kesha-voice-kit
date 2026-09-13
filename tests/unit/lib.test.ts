@@ -41,6 +41,13 @@ describe("lib API", () => {
     expect((err as KeshaError).message).toContain("File not found");
   });
 
+  // Exploratory S8-2: the spec names both exports; only downloadModel existed.
+  it("exports downloadEngine alongside downloadModel, as the same function", async () => {
+    const core = await import("../../src/lib");
+    expect(core.downloadEngine).toBe(core.downloadModel);
+    expect(typeof core.downloadEngine).toBe("function");
+  });
+
   it("keeps transcribeWithSegments as a compatibility alias", async () => {
     const { transcribeWithSegments, transcribeWithTimestamps } = await import("../../src/lib");
     expect(transcribeWithSegments).toBe(transcribeWithTimestamps);
