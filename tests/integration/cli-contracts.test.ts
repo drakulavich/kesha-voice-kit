@@ -546,6 +546,45 @@ describe("CLI contracts", () => {
     }
   });
 
+  test("an unknown option is rejected with a coded line and exit 2 before any engine spawn, on transcribe and on subcommands (S9-F3)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-unknown-option-");
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: createFailingEngine(dir) };
+    const cases: Array<{ args: string[]; line: string; stderrNotContains?: string[] }> = [
+      {
+        args: ["--timestamp", mediaPath],
+        line: "error [E_INVALID_ARG]: unknown option --timestamp (did you mean --timestamps?)",
+      },
+      {
+        args: [mediaPath, "--speaker", "--json"],
+        line: "error [E_INVALID_ARG]: unknown option --speaker (did you mean --speakers?)",
+      },
+      { args: ["--jsom", mediaPath], line: "error [E_INVALID_ARG]: unknown option --jsom (did you mean --json?)" },
+      {
+        args: ["--languge", "en", mediaPath],
+        line: "error [E_INVALID_ARG]: unknown option --languge",
+        stderrNotContains: ["en: error", "File not found"],
+      },
+      { args: ["--frobnicate", mediaPath], line: "error [E_INVALID_ARG]: unknown option --frobnicate" },
+      {
+        args: ["say", "--voic", "en-am_michael", "hello"],
+        line: "error [E_INVALID_ARG]: unknown option --voic (did you mean --voice?)",
+      },
+      { args: ["record", "--frobnicate", "--out", join(dir, "x.wav")], line: "error [E_INVALID_ARG]: unknown option --frobnicate" },
+    ];
+    for (const entry of cases) {
+      const run = await runCli(entry.args, { env });
+      expectContract(run, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: [entry.line],
+        stderrNotContains: ["fake engine should not have been invoked", "Transcribing", ...(entry.stderrNotContains ?? [])],
+      });
+      expect(run.stderr.split("\n")).toHaveLength(1);
+    }
+  });
+
   test("unknown commands and missing files do not start a configured engine", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-");
     const enginePath = createFailingEngine(dir);
