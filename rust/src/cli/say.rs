@@ -299,12 +299,12 @@ pub fn run(a: SayArgs) -> i32 {
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         voice_ids.extend(tts::avspeech::list_voices(None));
         voice_ids.sort();
+        // Stdout is the list: a sentence there is a voice id to the MCP list_voices tool (#1168).
         if voice_ids.is_empty() {
-            println!("No voices installed. Run: kesha install --tts");
-        } else {
-            for id in voice_ids {
-                println!("{id}");
-            }
+            events::progress(None, "No voices installed. Run: kesha install --tts");
+        }
+        for id in voice_ids {
+            println!("{id}");
         }
         return 0;
     }
