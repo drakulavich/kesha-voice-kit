@@ -1,6 +1,7 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
+import { renderInvalidArg } from "./options";
 import { log } from "../log";
 import {
   listVoiceIds,
@@ -296,14 +297,14 @@ export const sayCommand = defineCommand({
 
     const flags = resolveSayFlags(args);
     if (!flags.ok) {
-      log.error(flags.error);
+      log.error(renderInvalidArg(flags.error));
       process.exit(2);
     }
 
     const inlineText = typeof args.text === "string" ? args.text : undefined;
     const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;
     if (shouldRejectMissingSayText(inlineText, stdinIsTty)) {
-      log.error("kesha say requires text or piped stdin. Usage: kesha say <text>");
+      log.error(renderInvalidArg("kesha say requires text or piped stdin. Usage: kesha say <text>"));
       process.exit(2);
     }
     const text = await resolveText(inlineText);

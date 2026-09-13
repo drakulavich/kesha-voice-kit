@@ -475,19 +475,22 @@ describe("CLI contracts", () => {
     expectContract(version, { exitCode: 0, stderrEmpty: true });
     expect(version.stdout).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
 
-    const empty = await runCli([]);
-    expectContract(empty, {
-      exitCode: 1,
-      stdoutContains: ["Usage: kesha <audio_file>"],
-      stderrEmpty: true,
-    });
-    // #938 drift guard, at the observable layer: every dispatchable subcommand must
-    // surface in the bare-invocation usage the user actually sees. Coupling the loop
-    // to SUBCOMMAND_NAMES makes adding a command without listing it fail here; the
-    // per-name line anchor (leading whitespace, then `kesha <name>` followed by a
-    // space or end of line) stops a shorter name from prefix-matching a longer one.
-    for (const name of SUBCOMMAND_NAMES) {
-      expect(empty.stdout).toMatch(new RegExp(`^\\s+kesha ${name}( |$)`, "m"));
+    // S1-1: a consumer that asked for JSON must never receive the usage prose on stdout.
+    for (const args of [[], ["--json"]]) {
+      const empty = await runCli(args);
+      expectContract(empty, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: ["error [E_INVALID_ARG]: no input file", "Usage: kesha <audio_file>"],
+      });
+      // #938 drift guard, at the observable layer: every dispatchable subcommand must
+      // surface in the bare-invocation usage the user actually sees. Coupling the loop
+      // to SUBCOMMAND_NAMES makes adding a command without listing it fail here; the
+      // per-name line anchor (leading whitespace, then `kesha <name>` followed by a
+      // space or end of line) stops a shorter name from prefix-matching a longer one.
+      for (const name of SUBCOMMAND_NAMES) {
+        expect(empty.stderr).toMatch(new RegExp(`^\\s+kesha ${name}( |$)`, "m"));
+      }
     }
   });
 
@@ -502,37 +505,37 @@ describe("CLI contracts", () => {
         name: "json and toon mutex",
         args: ["--json", "--toon", "a.wav"],
         exitCode: 2,
-        stderr: ["--json and --toon are mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --json and --toon are mutually exclusive"],
       },
       {
         name: "transcript and json mutex",
         args: ["--format", "transcript", "--json", "a.wav"],
         exitCode: 2,
-        stderr: ["--format transcript is mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --format transcript is mutually exclusive"],
       },
       {
         name: "timestamps require machine output",
         args: ["--timestamps", "a.wav"],
         exitCode: 2,
-        stderr: ["--timestamps requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --timestamps requires --json"],
       },
       {
         name: "speakers require machine output",
         args: ["--speakers", "a.wav"],
         exitCode: 2,
-        stderr: ["--speakers requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --speakers requires --json"],
       },
       {
         name: "include-errors requires a structured format",
         args: ["--include-errors", "a.wav"],
         exitCode: 2,
-        stderr: ["--include-errors requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --include-errors requires --json"],
       },
       {
         name: "vad flags are mutually exclusive",
         args: ["--vad", "--no-vad", "a.wav"],
         exitCode: 2,
-        stderr: ["--vad and --no-vad are mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --vad and --no-vad are mutually exclusive"],
       },
     ];
 
@@ -544,6 +547,65 @@ describe("CLI contracts", () => {
         stderrContains: entry.stderr,
       });
     }
+  });
+
+  test("an unknown option is rejected with a coded line and exit 2 before any engine spawn, on transcribe and on subcommands (S9-F3)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-unknown-option-");
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: createFailingEngine(dir) };
+    const cases: Array<{ args: string[]; line: string; stderrNotContains?: string[] }> = [
+      {
+        args: ["--timestamp", mediaPath],
+        line: "error [E_INVALID_ARG]: unknown option --timestamp (did you mean --timestamps?)",
+      },
+      {
+        args: [mediaPath, "--speaker", "--json"],
+        line: "error [E_INVALID_ARG]: unknown option --speaker (did you mean --speakers?)",
+      },
+      { args: ["--jsom", mediaPath], line: "error [E_INVALID_ARG]: unknown option --jsom (did you mean --json?)" },
+      {
+        args: ["--languge", "en", mediaPath],
+        line: "error [E_INVALID_ARG]: unknown option --languge",
+        stderrNotContains: ["en: error", "File not found"],
+      },
+      { args: ["--frobnicate", mediaPath], line: "error [E_INVALID_ARG]: unknown option --frobnicate" },
+      {
+        args: ["say", "--voic", "en-am_michael", "hello"],
+        line: "error [E_INVALID_ARG]: unknown option --voic (did you mean --voice?)",
+      },
+      { args: ["record", "--frobnicate", "--out", join(dir, "x.wav")], line: "error [E_INVALID_ARG]: unknown option --frobnicate" },
+    ];
+    for (const entry of cases) {
+      const run = await runCli(entry.args, { env });
+      expectContract(run, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: [entry.line],
+        stderrNotContains: ["fake engine should not have been invoked", "Transcribing", ...(entry.stderrNotContains ?? [])],
+      });
+      expect(run.stderr.split("\n")).toHaveLength(1);
+    }
+  });
+
+  test("kesha completions without a shell name is a coded usage error on stderr, exit 2, and never writes a partial script to stdout (S10-1)", async () => {
+    const missing = await runCli(["completions"]);
+    expectContract(missing, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: missing shell (bash, zsh or fish)", "usage: kesha completions <bash|zsh|fish>"],
+    });
+
+    const unknown = await runCli(["completions", "powershell"]);
+    expectContract(unknown, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: unknown shell 'powershell' (bash, zsh or fish)", "usage: kesha completions <bash|zsh|fish>"],
+    });
+
+    const zsh = await runCli(["completions", "zsh"]);
+    expectContract(zsh, { exitCode: 0, stderrEmpty: true });
+    expect(zsh.stdout).toBe(readFileSync(join(DEFAULT_CWD, "completions", "kesha.zsh"), "utf8").trim());
   });
 
   test("unknown commands and missing files do not start a configured engine", async () => {
@@ -583,7 +645,7 @@ describe("CLI contracts", () => {
     });
   });
 
-  test("a directory positional is rejected before any progress output or engine spawn", async () => {
+  test("a directory positional is rejected before any progress output or engine spawn, exit 2 (S9-F1)", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-");
     const enginePath = createFailingEngine(dir);
     const env = {
@@ -595,7 +657,7 @@ describe("CLI contracts", () => {
     const target = makeTempDir("kesha-cli-contract-dir-target-");
     const run = await runCli([target], { env });
     expectContract(run, {
-      exitCode: 1,
+      exitCode: 2,
       stdoutEmpty: true,
       stderrContains: [`${target}: error [E_INVALID_ARG]: is a directory (expected an audio file)`],
       stderrNotContains: ["fake engine should not have been invoked", "Transcribing", "%"],
@@ -606,6 +668,7 @@ describe("CLI contracts", () => {
     expect(events[1]).toMatchObject({ command: "transcribe", error_code: "E_INVALID_ARG" });
 
     const jsonRun = await runCli(["--json", "--include-errors", target], { env });
+    expect(jsonRun.exitCode).toBe(2);
     const parsed = JSON.parse(jsonRun.stdout);
     expect(parsed.errors).toEqual([
       { file: target, code: "E_INVALID_ARG", message: "is a directory (expected an audio file)" },
@@ -643,7 +706,7 @@ describe("CLI contracts", () => {
     expect(parsed.errors[0]).toMatchObject({ file: mediaPath, code: "E_ENGINE_PROTOCOL" });
   });
 
-  test("transcribe with a flag the build lacks exits 1 with E_INVALID_ARG before any progress line", async () => {
+  test("transcribe with a flag the build lacks exits 2 with E_INVALID_ARG before any progress line (S9-F1)", async () => {
     if (process.platform === "win32") return;
     const dir = makeTempDir("kesha-cli-contract-flag-gate-");
     const enginePath = join(dir, "kesha-engine");
@@ -656,10 +719,41 @@ describe("CLI contracts", () => {
     writeFileSync(mediaPath, "fake media");
     const res = await runCli([mediaPath, "--itn"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
     expectContract(res, {
-      exitCode: 1,
+      exitCode: 2,
       stderrContains: ["error [E_INVALID_ARG]: ", "--itn"],
       stderrNotContains: ["Transcribing"],
     });
+  });
+
+  test("a global flag before the subcommand name routes to the subcommand instead of reading it as an input file (S3-F3)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-hoist-");
+    const outPath = join(dir, "hello.wav");
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: createFailingEngine(dir) };
+
+    const applied = await runCli(["--debug", "record", "--out", outPath, "--max-seconds", "0"], { env });
+    expectContract(applied, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: --max-seconds must be an integer between 1 and"],
+      stderrNotContains: ["File not found", "record:"],
+    });
+
+    const foreign = await runCli(["--json", "record", "--out", outPath], { env });
+    expectContract(foreign, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: unknown option --json"],
+      stderrNotContains: ["File not found", "record:"],
+    });
+
+    const valued = await runCli(["--lang", "en", "record", "--out", outPath], { env });
+    expectContract(valued, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: put global flags after the subcommand: kesha record ..."],
+      stderrNotContains: ["File not found", "fake engine should not have been invoked"],
+    });
+    expect(existsSync(outPath)).toBe(false);
   });
 
   test("kesha record without an installed engine fails with an install hint, not a stack trace", async () => {

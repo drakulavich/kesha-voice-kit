@@ -1,9 +1,10 @@
-import { runMain, type CommandDef } from "citty";
+import { runMain, type ArgsDef, type CommandDef } from "citty";
 import { existsSync } from "fs";
 import { log } from "../log";
 import { guardStdoutWrites } from "../stdout-pipe";
 import { suggestCommand } from "../suggest-command";
 import { applyCliContext, resolveCliContext } from "./context";
+import { rejectUnknownOptions, renderInvalidArg } from "./options";
 
 // Lazy loaders so a cold CLI spawn transpiles only the invoked command, not the whole graph (#568).
 // `CommandDef<any>`: citty's generic is invariant in the arg shape and each command has its own schema.
@@ -89,18 +90,42 @@ export function unknownCommandMessages(token: string, subcommandKeys: string[]):
   return { errorLine: `unknown command '${token}'`, warnLines };
 }
 
+async function resolveArgsDef(command: CommandDef<any>): Promise<ArgsDef> {
+  const args = command.args;
+  return (typeof args === "function" ? await args() : await args) ?? {};
+}
+
+/** `kesha --json record --out j.wav` is `record --json --out j.wav`: flag-shaped tokens before a subcommand name move behind it (S3-F3). */
+export function hoistLeadingFlags(rawArgs: string[], subcommandKeys: string[]): string[] {
+  let i = 0;
+  while (i < rawArgs.length && rawArgs[i]!.startsWith("-") && rawArgs[i] !== "--") i++;
+  const name = rawArgs[i];
+  if (i === 0 || name === undefined || !subcommandKeys.includes(name)) return rawArgs;
+  return [name, ...rawArgs.slice(0, i), ...rawArgs.slice(i + 1)];
+}
+
+/** A subcommand name that a valued leading flag hid from hoisting, unless a file of that name exists. */
+function misplacedSubcommand(rawArgs: string[], subcommandKeys: string[]): string | undefined {
+  const end = rawArgs.indexOf("--");
+  return rawArgs.slice(0, end === -1 ? undefined : end).find((arg) => subcommandKeys.includes(arg) && !existsSync(arg));
+}
+
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   guardStdoutWrites();
   const context = resolveCliContext(argv);
   applyCliContext(context);
 
-  const [firstArg, ...restArgs] = context.rawArgs;
   const subcommandKeys = SUBCOMMAND_NAMES;
+  const rawArgs = hoistLeadingFlags(context.rawArgs, subcommandKeys);
+  const [firstArg, ...restArgs] = rawArgs;
 
   switch (classifyFirstArg(firstArg, subcommandKeys)) {
-    case "subcommand":
-      await runMain(await SUBCOMMANDS[firstArg!]!(), { rawArgs: restArgs });
+    case "subcommand": {
+      const command = await SUBCOMMANDS[firstArg!]!();
+      rejectUnknownOptions(restArgs, await resolveArgsDef(command));
+      await runMain(command, { rawArgs: restArgs });
       return;
+    }
 
     case "unknown": {
       // Extensionless existing files are valid transcription inputs; bare non-path tokens are likely command typos.
@@ -112,8 +137,15 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
 
     default: {
+      const misplaced = misplacedSubcommand(rawArgs, subcommandKeys);
+      if (misplaced !== undefined) {
+        log.error(renderInvalidArg(`put global flags after the subcommand: kesha ${misplaced} ...`));
+        process.exit(2);
+      }
       const { createMainCommand } = await import("./main");
-      await runMain(createMainCommand(context), { rawArgs: context.rawArgs });
+      const command = createMainCommand(context);
+      rejectUnknownOptions(rawArgs, await resolveArgsDef(command));
+      await runMain(command, { rawArgs });
     }
   }
 }

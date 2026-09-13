@@ -34,7 +34,7 @@ code never needs sanitizing.
 | `E_ENGINE_SPAWN` | platform | no | The Engine binary is missing or failed to start (CLI-side). | `kesha install`; or set `KESHA_ENGINE_BIN`. |
 | `E_ENGINE_PROTOCOL` | platform | no | The installed Engine speaks a protocol version this CLI does not (CLI-side). | `kesha install` for a stale Engine; `bun add -g @drakulavich/kesha-voice-kit@latest` for a stale CLI. |
 | `E_INSTALL_RACE` | internal | yes | Another `kesha install` reached the same cache: either it overwrote the engine during our run (the recorded version or the binary's own `--version` names something else), or it still holds the cache and we gave up waiting for it. Nothing is written in the waiting case. | Re-run the install once no other one is in flight; give concurrent jobs private state via `KESHA_HOME` (or just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`). A wait that must fail sooner than the 6 h ceiling: `KESHA_INSTALL_LOCK_WAIT_SECS`, in seconds, positive numbers only — and lowering it costs the one-retry takeover ([concurrent installs](architecture.md#runtime-data-flow)). If the message names a lock no install owns, delete the `.lock` directory it names. |
-| `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid — including a directory passed where an audio file is expected, and a `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN` path the engine cannot be written into: one the engine directory cannot be created under, or an existing engine directory this user cannot write (a read-only Nix store install reaches the second). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
+| `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid — including an option the command does not declare (`unknown option --timestamp`, with the nearest real flag suggested), a directory passed where an audio file is expected, and a `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN` path the engine cannot be written into: one the engine directory cannot be created under, or an existing engine directory this user cannot write (a read-only Nix store install reaches the second). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |
 
 ## Where codes come from
@@ -80,8 +80,8 @@ status that lets scripts branch without parsing stderr:
 | Exit code | Meaning |
 |-----------|---------|
 | `0` | Success. |
-| `1` | Operational error — engine/model not installed, a download or install failed, an unknown command, or no input was given. |
-| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
+| `1` | Operational error — engine/model not installed, a download or install failed, or an unknown command. |
+| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — no input file, an option the command does not declare, mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a directory where an audio file is expected, a transcribe flag the installed engine lacks, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
 | `4` | Unexpected/uncoded internal failure. |
 | `5` | `kesha say` text exceeds the length limit. |
 | `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run and the engine subprocess was terminated, or a `kesha init` prompt was cancelled (nothing was installed). |
@@ -107,3 +107,8 @@ operational `1`: the remedy is another machine, not another command line. And
 an engine that exits non-zero without reporting anything has no code to relay:
 `say` reports it as `E_INTERNAL` with the engine's status, while `record`
 (pinned by #1167) and `install` keep the operational `1`.
+
+Transcription is a batch and keeps its own rule: the run exits `2` when the CLI
+itself rejected an argument for any file — a directory positional, a flag the
+installed engine lacks — and `1` for every runtime failure, including one the
+engine reported, whatever status the engine exited with.
