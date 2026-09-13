@@ -1,37 +1,48 @@
 #!/usr/bin/env bun
-// PostToolUse(Edit|Write) gate for CLAUDE.md -> Code Style.
-// Judges only *added* comment lines, so the repo's legacy blocks stay put.
+// PostToolUse(Edit|Write) gate for CLAUDE.md -> Code Style: judges only *added* comment lines, so legacy blocks stay put.
 import { $ } from "bun";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
-const EXEMPT = /(SAFETY:|^\/\/\/|^\/\*\*|^\*)/;
-// `#[derive]`/`#[test]` are Rust attributes, not comments — matching them flagged every new test.
-const COMMENT = /^\+\s*(#(?!\[)|\/\/)/;
+const CODE = /\.(ts|tsx|js|mjs|cjs|rs|sh|py|swift|toml|ya?ml|nix)$/;
+// `#[derive]`/`#[test]` are Rust attributes and `#!` a shebang, not comments.
+const COMMENT = /^\+\s*(#(?![\[!])|\/\/|\/\*|\*)/;
 const BANNER = /^\+\s*(#|\/\/)\s*[-=*_]{4,}/;
+const exempt = (run: string[]) => run.some((l) => l.includes("SAFETY:")) || /^(\/\/\/|\/\*\*)/.test(run[0]!);
 
-const input = (await Bun.stdin.json().catch(() => ({}))) as {
-  tool_input?: { file_path?: string };
-};
-const file = input.tool_input?.file_path;
-if (!file) process.exit(0);
+const input = (await Bun.stdin.json().catch(() => ({}))) as { tool_input?: { file_path?: string } };
+const named = input.tool_input?.file_path;
+if (!named) process.exit(0);
+const file = isAbsolute(named) ? named : resolve(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), named);
+if (!CODE.test(file)) process.exit(0);
 
 // The hook's cwd is the session root; a worktree file must be diffed from its own checkout or git reports nothing and the gate passes silently.
-const diff = await $`git diff -U0 -- ${file}`.cwd(dirname(file)).nothrow().quiet().text();
+const cwd = dirname(file);
+const tracked = (await $`git ls-files --error-unmatch -- ${file}`.cwd(cwd).nothrow().quiet()).exitCode === 0;
+// A file Write just created has no diff, and every line of it is an added line.
+const diff = tracked
+  ? await $`git diff -U0 -- ${file}`.cwd(cwd).nothrow().quiet().text()
+  : (await Bun.file(file).text()).split("\n").map((l) => `+${l}`).join("\n");
+
 const violations: string[] = [];
 let run: string[] = [];
+let inBlock = false;
 
 const flush = () => {
-  if (run.length > 1 && !run.some((l) => EXEMPT.test(l))) {
-    violations.push(`${run.length}-line block:\n      ${run.join("\n      ")}`);
-  }
+  if (run.length > 1 && !exempt(run)) violations.push(`${run.length}-line block:\n      ${run.join("\n      ")}`);
   run = [];
 };
 
 for (const line of diff.split("\n")) {
-  if (COMMENT.test(line)) {
-    if (BANNER.test(line)) violations.push(`banner: ${line.replace(/^\+/, "").trim()}`);
-    run.push(line.replace(/^\+/, "").trim());
-  } else flush();
+  const added = line.startsWith("+") && !line.startsWith("+++");
+  if (added && (inBlock || COMMENT.test(line))) {
+    if (BANNER.test(line)) violations.push(`banner: ${line.slice(1).trim()}`);
+    const body = line.slice(1).trim();
+    run.push(body);
+    inBlock = inBlock ? !body.includes("*/") : body.includes("/*") && !body.includes("*/");
+  } else {
+    inBlock = false;
+    flush();
+  }
 }
 flush();
 
