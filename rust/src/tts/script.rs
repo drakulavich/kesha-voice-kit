@@ -41,6 +41,19 @@ impl Script {
         }
     }
 
+    /// Kokoro/Vosk voices this build ships that phonemize the script.
+    fn builtin_voices(self) -> &'static [&'static str] {
+        match self {
+            Script::Latin => &["en-am_michael"],
+            Script::Cyrillic => &["ru-vosk-m02"],
+            Script::Han => &["zh-zm_050"],
+            _ => &[],
+        }
+    }
+}
+
+#[cfg(all(feature = "system_tts", target_os = "macos"))]
+impl Script {
     /// BCP-47 language subtags whose AVSpeech voices write in this script.
     fn locales(self) -> &'static [&'static str] {
         match self {
@@ -56,16 +69,6 @@ impl Script {
             Script::Kana => &["ja"],
             Script::Hangul => &["ko"],
             Script::Unknown => &[],
-        }
-    }
-
-    /// Kokoro/Vosk voices this build ships that phonemize the script.
-    fn builtin_voices(self) -> &'static [&'static str] {
-        match self {
-            Script::Latin => &["en-am_michael"],
-            Script::Cyrillic => &["ru-vosk-m02"],
-            Script::Han => &["zh-zm_050"],
-            _ => &[],
         }
     }
 }
