@@ -12,7 +12,8 @@ use std::time::Instant;
 
 use super::encode::OutputFormat;
 use super::{
-    en, encode, g2p, kokoro, ru, sessions, ssml, EngineChoice, SayOptions, TtsError, MAX_TEXT_CHARS,
+    en, encode, g2p, kokoro, ru, seam, sessions, ssml, EngineChoice, SayOptions, TtsError,
+    MAX_TEXT_CHARS,
 };
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -22,10 +23,9 @@ use super::avspeech;
 /// silence. 30s × 24 kHz × 4 B ≈ 2.9 MB max per tag, easily affordable.
 const MAX_BREAK_SECS: f64 = 30.0;
 
-fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
+fn silence_len(dur: std::time::Duration, sample_rate: u32) -> usize {
     let secs = dur.as_secs_f64().min(MAX_BREAK_SECS);
-    let n = (secs * sample_rate as f64).round() as usize;
-    vec![0.0_f32; n]
+    (secs * sample_rate as f64).round() as usize
 }
 
 /// Saturating composition of the CLI `--rate` flag with an SSML
@@ -352,14 +352,14 @@ fn synth_segments(
     format: OutputFormat,
 ) -> Result<Vec<u8>, TtsError> {
     let sample_rate = sink.sample_rate()?;
-    let mut out: Vec<f32> = Vec::new();
+    let mut out = seam::SeamBuf::new(sample_rate);
     walk_segments(sink, segments, speed, sample_rate, &mut out)?;
     if out.is_empty() {
         return Err(TtsError::SynthesisFailed(
             "no audio produced from SSML input".into(),
         ));
     }
-    encode_or_fail(&out, sample_rate, format)
+    encode_or_fail(&out.finish(), sample_rate, format)
 }
 
 /// Punctuation that binds to the word before it, so no separator is inserted
@@ -400,14 +400,14 @@ fn flush_run(
     sink: &mut dyn SegmentSink,
     run: &mut String,
     speed: f32,
-    out: &mut Vec<f32>,
+    out: &mut seam::SeamBuf,
 ) -> Result<(), TtsError> {
     let merged = run.split_whitespace().collect::<Vec<_>>().join(" ");
     run.clear();
     if merged.is_empty() {
         return Ok(());
     }
-    out.extend(sink.synth(&merged, speed)?);
+    out.push_synth(sink.synth(&merged, speed)?);
     Ok(())
 }
 
@@ -417,12 +417,16 @@ fn flush_run(
 /// per-utterance lead-in and tail padding, so a run split anywhere else would
 /// stack that padding into a mid-sentence pause and restart the intonation
 /// contour (#825).
+///
+/// The runs reach [`seam::SeamBuf`] rather than a raw sample buffer, so the two
+/// paddings a `<break>` would otherwise stack around its silence are clipped
+/// and the break lasts what the document asked for (T3-4).
 fn walk_segments(
     sink: &mut dyn SegmentSink,
     segments: &[ssml::Segment],
     speed: f32,
     sample_rate: u32,
-    out: &mut Vec<f32>,
+    out: &mut seam::SeamBuf,
 ) -> Result<(), TtsError> {
     let mut run = String::new();
     for seg in segments {
@@ -432,7 +436,7 @@ fn walk_segments(
             ssml::Segment::Ipa(ph) => push_unit(sink, &mut run, Speakable::Ipa(ph))?,
             ssml::Segment::Break(dur) => {
                 flush_run(sink, &mut run, speed, out)?;
-                out.extend(silence_samples(*dur, sample_rate));
+                out.push_silence(silence_len(*dur, sample_rate));
             }
             // Defensive fallback: the en/ru normalizers convert Emphasis
             // upstream; skip the warning when suppress=true — level="none"
@@ -843,6 +847,17 @@ mod tests {
         );
     }
 
+    fn walked(
+        sink: &mut dyn SegmentSink,
+        segments: &[ssml::Segment],
+        speed: f32,
+        sample_rate: u32,
+    ) -> Vec<f32> {
+        let mut out = seam::SeamBuf::new(sample_rate);
+        walk_segments(sink, segments, speed, sample_rate, &mut out).unwrap();
+        out.finish()
+    }
+
     /// Records every synthesized utterance and returns one sentinel sample
     /// per char. Each variant tags its content so a mis-routed segment is
     /// visible in the merged run.
@@ -896,14 +911,13 @@ mod tests {
     fn walker_routes_each_variant_to_its_leaf_and_sizes_breaks() {
         use std::time::Duration;
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
         let segs = [
             ssml::Segment::Text("ab".into()),
             ssml::Segment::Break(Duration::from_millis(250)), // 8 kHz → 2000 samples
             ssml::Segment::Spell("cde".into()),
             ssml::Segment::Ipa("fg".into()),
         ];
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        let out = walked(&mut sink, &segs, 1.0, 8_000);
         assert_eq!(
             sink.calls,
             vec![
@@ -929,8 +943,7 @@ mod tests {
             ],
         };
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
-        walk_segments(&mut sink, std::slice::from_ref(&seg), 1.0, 8_000, &mut out).unwrap();
+        walked(&mut sink, std::slice::from_ref(&seg), 1.0, 8_000);
         // Two utterances, not one: <prosody rate> ends a merged run because
         // its content needs a different speed argument.
         assert_eq!(sink.calls.len(), 2, "{:?}", sink.calls);
@@ -946,15 +959,7 @@ mod tests {
             }],
         };
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
-        walk_segments(
-            &mut sink,
-            std::slice::from_ref(&clamped),
-            1.0,
-            8_000,
-            &mut out,
-        )
-        .unwrap();
+        walked(&mut sink, std::slice::from_ref(&clamped), 1.0, 8_000);
         assert!((sink.calls[0].1 - 2.0).abs() < 1e-6, "{:?}", sink.calls);
     }
 
@@ -986,12 +991,11 @@ mod tests {
         // segment, so `<say-as>` / `<phoneme>` before a period must not merge
         // as "… ." — raw-text engines would read the gap as a pause.
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
         let segs = [
             ssml::Segment::Ipa("ˈiːpæm".into()),
             ssml::Segment::Text(", and more.".into()),
         ];
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        walked(&mut sink, &segs, 1.0, 8_000);
         assert_eq!(sink.calls, vec![("ipa:ˈiːpæm, and more.".to_string(), 1.0)]);
     }
 
@@ -1020,13 +1024,12 @@ mod tests {
         }
 
         let mut sink = DropIpaSink(Vec::new());
-        let mut out = Vec::new();
         let segs = [
             ssml::Segment::Text("before ".into()),
             ssml::Segment::Ipa("hˈaɪ".into()),
             ssml::Segment::Text(" after".into()),
         ];
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        walked(&mut sink, &segs, 1.0, 8_000);
         assert_eq!(sink.0, vec!["before after".to_string()]);
     }
 
@@ -1101,12 +1104,30 @@ mod tests {
             ssml::Segment::Text(" file is ready.".into()),
         ];
         let mut sink = PaddedSink::new();
-        let mut out = Vec::new();
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        let out = walked(&mut sink, &segs, 1.0, 8_000);
         let dead = longest_interior_silence(&out);
         assert!(
             dead <= 800,
             "interior dead air of {} ms where none was requested",
+            dead / 8
+        );
+    }
+
+    #[test]
+    fn a_break_adds_only_the_silence_it_asked_for() {
+        use std::time::Duration;
+        // 500 ms at 8 kHz is 4000 samples; the stacked paddings around it were the ~800 ms of T3-4.
+        let segs = [
+            ssml::Segment::Text("before".into()),
+            ssml::Segment::Break(Duration::from_millis(500)),
+            ssml::Segment::Text("after".into()),
+        ];
+        let mut sink = PaddedSink::new();
+        let out = walked(&mut sink, &segs, 1.0, 8_000);
+        let dead = longest_interior_silence(&out);
+        assert!(
+            (4_000..=5_200).contains(&dead),
+            "a 500 ms <break> produced {} ms of silence",
             dead / 8
         );
     }
@@ -1120,8 +1141,7 @@ mod tests {
             ssml::Segment::Text("after".into()),
         ];
         let mut sink = PaddedSink::new();
-        let mut out = Vec::new();
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        let out = walked(&mut sink, &segs, 1.0, 8_000);
         assert!(
             longest_interior_silence(&out) >= 4_000,
             "the 500 ms <break> was swallowed"
@@ -1135,8 +1155,7 @@ mod tests {
             suppress: true,
         };
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
-        walk_segments(&mut sink, std::slice::from_ref(&seg), 1.0, 1_000, &mut out).unwrap();
+        walked(&mut sink, std::slice::from_ref(&seg), 1.0, 1_000);
         assert_eq!(sink.calls, vec![("дома".to_string(), 1.0)]);
     }
 
@@ -1348,24 +1367,24 @@ mod fluid_kokoro_ssml_tests {
         synth: &dyn Fn(&str, f32) -> anyhow::Result<Vec<f32>>,
         segs: &[Segment],
         speed: f32,
-        out: &mut Vec<f32>,
-    ) {
+    ) -> Vec<f32> {
         let mut sink = FluidKokoroSink { synth };
-        walk_segments(&mut sink, segs, speed, 24_000, out).unwrap();
+        let mut out = seam::SeamBuf::new(24_000);
+        walk_segments(&mut sink, segs, speed, 24_000, &mut out).unwrap();
+        out.finish()
     }
 
     #[test]
     fn text_and_break_concatenate_with_silence() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         // 24 kHz × 0.25 s = 6000 samples of silence between two text chunks.
         let segs = [
             Segment::Text("abc".into()),
             Segment::Break(Duration::from_millis(250)),
             Segment::Text("de".into()),
         ];
-        walk(&synth, &segs, 1.0, &mut out);
+        let out = walk(&synth, &segs, 1.0);
         assert_eq!(out.len(), 3 + 6000 + 2);
         let calls = log.borrow();
         assert_eq!(calls.len(), 2);
@@ -1377,13 +1396,12 @@ mod fluid_kokoro_ssml_tests {
     fn prosody_rate_threads_composed_speed_to_inner_text() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         // x-fast (1.5) wrapping the whole utterance, CLI rate 1.0 → effective 1.5.
         let seg = Segment::ProsodyRate {
             rate: 1.5,
             content: vec![Segment::Text("hi".into())],
         };
-        walk(&synth, std::slice::from_ref(&seg), 1.0, &mut out);
+        walk(&synth, std::slice::from_ref(&seg), 1.0);
         let calls = log.borrow();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "hi");
@@ -1398,12 +1416,11 @@ mod fluid_kokoro_ssml_tests {
     fn emphasis_strips_plus_markers_before_synth() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         let seg = Segment::Emphasis {
             content: "д+ома".into(),
             suppress: false,
         };
-        walk(&synth, std::slice::from_ref(&seg), 1.0, &mut out);
+        walk(&synth, std::slice::from_ref(&seg), 1.0);
         let calls = log.borrow();
         assert_eq!(calls[0].0, "дома", "`+` stress markers must be stripped");
     }
@@ -1414,9 +1431,8 @@ mod fluid_kokoro_ssml_tests {
         // degrades to synthesizing the raw content (warn-once on the side).
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         let seg = Segment::Spell("ВОЗ".into());
-        walk(&synth, std::slice::from_ref(&seg), 1.0, &mut out);
+        let out = walk(&synth, std::slice::from_ref(&seg), 1.0);
         let calls = log.borrow();
         assert_eq!(calls.len(), 1, "Spell must synthesize its content as text");
         assert_eq!(calls[0].0, "ВОЗ");
@@ -1427,13 +1443,12 @@ mod fluid_kokoro_ssml_tests {
     fn dropped_ipa_mid_run_splices_the_surrounding_text_into_one_call() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         let segs = [
             Segment::Text("before ".into()),
             Segment::Ipa("həˈloʊ".into()),
             Segment::Text(" after".into()),
         ];
-        walk(&synth, &segs, 1.0, &mut out);
+        walk(&synth, &segs, 1.0);
         let calls = log.borrow();
         assert_eq!(calls.len(), 1, "the dropped Ipa must not split the run");
         assert_eq!(calls[0].0, "before after");
@@ -1443,10 +1458,9 @@ mod fluid_kokoro_ssml_tests {
     fn ipa_segment_is_skipped_without_calling_synth() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         // FluidAudio's internal G2P can't accept IPA; the segment is dropped.
         let seg = Segment::Ipa("həˈloʊ".into());
-        walk(&synth, std::slice::from_ref(&seg), 1.0, &mut out);
+        let out = walk(&synth, std::slice::from_ref(&seg), 1.0);
         assert!(out.is_empty(), "Ipa segment must produce no audio");
         assert!(log.borrow().is_empty(), "synth must not be called for Ipa");
     }

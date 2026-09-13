@@ -235,6 +235,80 @@ fn say_ssml(exe: &Path, markup: &str, voice: &str, out: &Path) -> bool {
 }
 
 #[test]
+fn kokoro_break_adds_only_the_silence_it_asked_for() {
+    // T3-4: the split around a break paid a second lead-in and tail, 825 ms on v1.25.0.
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+    if !ane_kokoro_ready() {
+        eprintln!(
+            "skipping: FluidAudio ANE Kokoro model + am_michael voice pack not staged \
+             (run `kesha install --tts`)"
+        );
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-kokoro-break-")
+        .tempdir()
+        .unwrap();
+    let plain = tmp.path().join("plain.wav");
+    let zero = tmp.path().join("break-0ms.wav");
+    let one_second = tmp.path().join("break-1s.wav");
+    let voice = "en-am_michael";
+
+    if !say_ssml(&exe, "<speak>one two</speak>", voice, &plain) {
+        return; // prerequisite missing — skip cleanly
+    }
+    if !say_ssml(
+        &exe,
+        "<speak>one <break time=\"0ms\"/> two</speak>",
+        voice,
+        &zero,
+    ) {
+        return;
+    }
+    if !say_ssml(
+        &exe,
+        "<speak>one <break time=\"1s\"/> two</speak>",
+        voice,
+        &one_second,
+    ) {
+        return;
+    }
+
+    let (dur_plain, _) = wav_duration_and_samples(&plain);
+    let (dur_zero, samples_zero) = wav_duration_and_samples(&zero);
+    let (dur_one, _) = wav_duration_and_samples(&one_second);
+    eprintln!(
+        "kokoro_break_adds_only_the_silence_it_asked_for: plain -> {dur_plain:.3}s, \
+         0ms -> {dur_zero:.3}s (+{:.3}s), 1s -> {dur_one:.3}s (+{:.3}s)",
+        dur_zero - dur_plain,
+        dur_one - dur_plain
+    );
+
+    assert!(
+        peak(&samples_zero) > 0.01,
+        "the broken-up utterance produced (near-)silent audio (peak {})",
+        peak(&samples_zero)
+    );
+    let tol = 0.15;
+    assert!(
+        dur_zero - dur_plain <= tol,
+        "a 0 ms <break> added {:.3}s of silence (plain {dur_plain:.3}s, broken {dur_zero:.3}s) — \
+         the utterance split is paying for a second lead-in and tail (T3-4)",
+        dur_zero - dur_plain
+    );
+    assert!(
+        (dur_one - dur_plain - 1.0).abs() <= tol,
+        "a 1 s <break> added {:.3}s instead of ~1 s (plain {dur_plain:.3}s, broken {dur_one:.3}s)",
+        dur_one - dur_plain
+    );
+}
+
+#[test]
 fn kokoro_ssml_prosody_rate_changes_duration() {
     // #481: SSML `<prosody rate="x-fast">` on the FluidAudio ANE Kokoro path
     // must SPEED UP synthesis (threaded into the model-native speed input), not
