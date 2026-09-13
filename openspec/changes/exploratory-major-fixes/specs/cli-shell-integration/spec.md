@@ -108,3 +108,41 @@ The CLI SHALL print usage to stdout with an empty stderr when help was asked for
 > the main command's `meta` and `args`, so it shows the transcription flags, not
 > each subcommand's. Both stream contracts are asserted in
 > `tests/integration/cli-contracts.test.ts`.*
+
+### Requirement: `kesha completions <shell>` prints a bundled completion script
+
+The CLI SHALL print the bundled shell completion script for `bash`, `zsh`, or
+`fish` to stdout and exit 0. A missing or unknown shell argument SHALL leave
+stdout empty, print `error [E_INVALID_ARG]: <message>` and the usage line to
+stderr, and exit 2, so a redirected install gesture never writes a partial
+script that a shell would try to source. The script is read from the bundled
+`completions/kesha.<shell>` file at runtime.
+
+#### Scenario: Maks installs zsh completions
+
+- WHEN Maks runs `kesha completions zsh`
+- THEN stdout contains the zsh completion script
+- AND the process exits 0
+
+#### Scenario: Unknown shell
+
+- WHEN Ira runs `kesha completions powershell`
+- THEN stderr contains `error [E_INVALID_ARG]: unknown shell 'powershell' (bash, zsh or fish)` and `usage: kesha completions <bash|zsh|fish>`
+- AND stdout is empty
+- AND the process exits 2
+
+#### Scenario: Forgotten shell name in the install gesture
+
+- WHEN Maks runs `kesha completions > ~/.zsh/_kesha`
+- THEN stderr contains `error [E_INVALID_ARG]: missing shell (bash, zsh or fish)` and the usage line
+- AND `~/.zsh/_kesha` is left empty
+- AND the process exits 2
+
+> *Technical Note — `src/cli/completions.ts::completionsCommand`.
+> `src/cli/completions.ts::SHELL_SCRIPTS` maps `bash → kesha.bash`,
+> `zsh → kesha.zsh`, `fish → kesha.fish`. Each script is inlined at build time
+> with an `import … with { type: "text" }` declaration rather than read through
+> `import.meta.url`, because that URL escapes the embedded filesystem in the
+> compiled `.deb`/`.rpm` binary (#914). The positional is optional to citty so a
+> missing shell reaches the same `run` as an unknown one and exits 2 with the coded
+> line, instead of citty's own usage on stdout and exit 1 (S10-1).*

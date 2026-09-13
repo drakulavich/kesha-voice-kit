@@ -588,6 +588,26 @@ describe("CLI contracts", () => {
     }
   });
 
+  test("kesha completions without a shell name is a coded usage error on stderr, exit 2, and never writes a partial script to stdout (S10-1)", async () => {
+    const missing = await runCli(["completions"]);
+    expectContract(missing, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: missing shell (bash, zsh or fish)", "usage: kesha completions <bash|zsh|fish>"],
+    });
+
+    const unknown = await runCli(["completions", "powershell"]);
+    expectContract(unknown, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: unknown shell 'powershell' (bash, zsh or fish)", "usage: kesha completions <bash|zsh|fish>"],
+    });
+
+    const zsh = await runCli(["completions", "zsh"]);
+    expectContract(zsh, { exitCode: 0, stderrEmpty: true });
+    expect(zsh.stdout).toBe(readFileSync(join(DEFAULT_CWD, "completions", "kesha.zsh"), "utf8").trim());
+  });
+
   test("unknown commands and missing files do not start a configured engine", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-");
     const enginePath = createFailingEngine(dir);
