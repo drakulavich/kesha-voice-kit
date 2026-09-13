@@ -15,4 +15,4 @@
 
 ## 3. Docs
 
-- [ ] 3.1 Delete "BUILD-ENGINE FEATURE MATRIX MIRRORS CARGO DEFAULTS" and the darwin caveat in "VERIFY BEFORE PUSHING" from CLAUDE.md; move "COREML BUILD TRIPLE" points 1–2 to a comment on the `darwin` profile
+- [ ] 3.1 Delete "BUILD-ENGINE FEATURE MATRIX MIRRORS CARGO DEFAULTS" from `.claude/rules/ci-and-build.md` and the darwin caveat in "VERIFY BEFORE PUSHING" from CLAUDE.md; move "COREML BUILD TRIPLE" points 1–2 (same rule file) to a comment on the `darwin` profile

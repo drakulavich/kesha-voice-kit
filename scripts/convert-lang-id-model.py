@@ -2,11 +2,11 @@
 """
 Convert speechbrain/lang-id-voxlingua107-ecapa to ONNX and CoreML.
 
-Usage:
-    python scripts/convert-lang-id-model.py [--output-dir DIR]
-
-Requires:
-    pip install torch speechbrain coremltools onnx onnxruntime onnxscript
+Usage (inside a throwaway venv, per .claude/rules/python.md):
+    python3 -m venv /tmp/lang-id-venv
+    /tmp/lang-id-venv/bin/pip install torch speechbrain coremltools onnx onnxruntime onnxscript
+    /tmp/lang-id-venv/bin/python scripts/convert-lang-id-model.py [--output-dir DIR]
+    rm -rf /tmp/lang-id-venv
 
 Produces:
     - lang-id-ecapa.onnx + .onnx.data  (ONNX, ~86MB total)
