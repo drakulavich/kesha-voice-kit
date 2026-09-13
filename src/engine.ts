@@ -89,10 +89,16 @@ function spawnHint(): string {
     : "run `kesha install`";
 }
 
-/** The engine reads only `KESHA_CACHE_DIR`, so a `KESHA_HOME`-derived cache is handed over under that name. */
+/** The engine reads only `KESHA_CACHE_DIR`; it gets the root the CLI resolved whenever that differs from the raw value. */
 function withResolvedCacheDir(env: Record<string, string | undefined>): Record<string, string | undefined> {
   const cache = resolveStatePaths(env).cacheDir;
-  return cache.source === "KESHA_HOME" ? { ...env, KESHA_CACHE_DIR: cache.path } : env;
+  const raw = env.KESHA_CACHE_DIR;
+  if (cache.source === "default") {
+    if (raw === undefined) return env;
+    const { KESHA_CACHE_DIR: _empty, ...rest } = env;
+    return rest;
+  }
+  return raw === cache.path ? env : { ...env, KESHA_CACHE_DIR: cache.path };
 }
 
 /** `Bun.spawn` throws synchronously on ENOENT/EACCES; every launch failure becomes `E_ENGINE_SPAWN`. */

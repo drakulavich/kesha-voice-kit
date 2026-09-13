@@ -1096,6 +1096,32 @@ describe("engine subprocess env", () => {
     }
   });
 
+  test("an empty KESHA_CACHE_DIR is unset for the engine too, so both sides fall to the same default", async () => {
+    const restore = saveEngineEnv();
+    try {
+      delete process.env.KESHA_HOME;
+      process.env.KESHA_CACHE_DIR = "";
+      const out = await readStdout(["KESHA_CACHE_DIR"]);
+      expect(out).toContain("KESHA_CACHE_DIR=UNSET");
+    } finally {
+      restore();
+    }
+  });
+
+  test("a relative KESHA_CACHE_DIR reaches the engine already anchored", async () => {
+    const restore = saveEngineEnv();
+    try {
+      delete process.env.KESHA_HOME;
+      process.env.KESHA_CACHE_DIR = join("relative", "cache");
+      const out = await readStdout(["KESHA_CACHE_DIR"]);
+      const value = out.split("\n").find((l) => l.startsWith("KESHA_CACHE_DIR="))!.slice("KESHA_CACHE_DIR=".length);
+      expect(value.endsWith(join("relative", "cache"))).toBe(true);
+      expect(value).not.toBe(join("relative", "cache"));
+    } finally {
+      restore();
+    }
+  });
+
   test("without KESHA_HOME the engine environment carries no synthesized KESHA_CACHE_DIR", async () => {
     const restore = saveEngineEnv();
     try {

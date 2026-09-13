@@ -720,7 +720,9 @@ function ensureEngineDirCreatable(binPath: string): void {
       ? { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN }
       : process.env.KESHA_CACHE_DIR
         ? { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR }
-        : null;
+        : process.env.KESHA_HOME
+          ? { name: "KESHA_HOME", value: process.env.KESHA_HOME }
+          : null;
     const errno = (e as NodeJS.ErrnoException).code ?? "";
     const why = ENGINE_DIR_PATH_ERRNOS[errno];
     const what = setting
