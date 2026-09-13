@@ -83,6 +83,20 @@ describe("check-new-comments hook", () => {
     expect(await decision(work, file)).toBeNull();
   });
 
+  it("blocks a block comment that opens after code on the same line", async () => {
+    const work = await gitRepoWithRemote();
+    const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");
+    await Bun.write(file, "export const a = 1; /* why this\n   spills over */\n");
+    expect(await decision(work, file)).toBe("block");
+  });
+
+  it("does not let a doc line exempt the ordinary comment lines that follow it", async () => {
+    const work = await gitRepoWithRemote();
+    const file = await trackedFile(work, "src/a.rs", "fn f() {}\n");
+    await Bun.write(file, "/// The contract.\n// why this\n// spills over\nfn f() {}\n");
+    expect(await decision(work, file)).toBe("block");
+  });
+
   it("allows one-line comments, /** doc contracts and SAFETY blocks", async () => {
     const work = await gitRepoWithRemote();
     const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");
