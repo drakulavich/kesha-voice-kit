@@ -1061,6 +1061,7 @@ mod tests {
     }
 
     // Greptile on #1216: a predictable sibling name let a planted symlink redirect the truncating create.
+    #[cfg(unix)]
     #[test]
     fn a_planted_symlink_beside_the_output_is_never_followed() {
         let dir = tempfile::tempdir().unwrap();
