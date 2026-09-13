@@ -68,3 +68,43 @@ Every usage error the CLI answers before doing any work — a contradictory or m
 > `src/cli/action-result.ts::emitActionResult` for `logs` and `stats`. Pinned
 > by `tests/integration/error-codes-cli.test.ts` and the "validation errors"
 > case in `tests/integration/cli-contracts.test.ts`.*
+
+## MODIFIED Requirements
+
+### Requirement: `--help` and a bare invocation both print usage to stdout, and differ in Exit code
+
+The CLI SHALL print usage to stdout with an empty stderr when help was asked for, exiting 0. When the CLI was invoked with no input at all — no arguments, or output flags such as `--json` with no files — it SHALL leave stdout empty, print `error [E_INVALID_ARG]: no input file` followed by the same usage block on stderr, and exit 2, so a script that lost its argument fails as a usage error and a consumer that asked for JSON never receives prose on stdout.
+
+#### Scenario: Maks asks what the CLI can do
+
+- WHEN Maks runs `kesha --help`
+- THEN stdout names the product, the transcription form, and the flags of the
+  top-level transcription command
+- AND stderr is empty
+- AND the process exits 0
+
+#### Scenario: Ira invokes the CLI with no arguments in a script
+
+- WHEN `kesha` runs with no arguments
+- THEN stderr carries `error [E_INVALID_ARG]: no input file` and a usage block starting with the
+  `kesha <audio_file> [audio_file ...]` form
+- AND stdout is empty
+- AND the process exits 2
+
+#### Scenario: The usage block names every dispatchable subcommand
+
+- GIVEN every subcommand `SUBCOMMANDS` dispatches
+- WHEN Ira reads the bare-invocation block on stderr to discover the command set
+- THEN each dispatchable subcommand — including `init` and `mcp` — is named in
+  the listing
+- AND adding a subcommand without listing it fails a unit test (#938)
+
+> *Technical Note — the no-argument usage block is a hand-maintained string,
+> `USAGE_MESSAGE` in `src/cli/dispatch.ts`, co-located with the `SUBCOMMANDS`
+> registry it must mirror; `src/cli/main.ts` writes the coded line and then the
+> block to stderr, followed by `process.exit(2)` (S1-1). `tests/unit/dispatch.test.ts` iterates
+> `SUBCOMMAND_NAMES` and asserts each appears in `USAGE_MESSAGE`, so the two
+> lists can no longer drift apart (#938). `--help` is citty's own renderer over
+> the main command's `meta` and `args`, so it shows the transcription flags, not
+> each subcommand's. Both stream contracts are asserted in
+> `tests/integration/cli-contracts.test.ts`.*

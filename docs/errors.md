@@ -80,8 +80,8 @@ status that lets scripts branch without parsing stderr:
 | Exit code | Meaning |
 |-----------|---------|
 | `0` | Success. |
-| `1` | Operational error — engine/model not installed, a download or install failed, an unknown command, or no input was given. |
-| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
+| `1` | Operational error — engine/model not installed, a download or install failed, or an unknown command. |
+| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — no input file, an option the command does not declare, mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
 | `4` | Unexpected/uncoded internal failure. |
 | `5` | `kesha say` text exceeds the length limit. |
 | `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run; the engine subprocess was terminated. |

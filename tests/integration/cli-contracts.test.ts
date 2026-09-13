@@ -475,19 +475,22 @@ describe("CLI contracts", () => {
     expectContract(version, { exitCode: 0, stderrEmpty: true });
     expect(version.stdout).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
 
-    const empty = await runCli([]);
-    expectContract(empty, {
-      exitCode: 1,
-      stdoutContains: ["Usage: kesha <audio_file>"],
-      stderrEmpty: true,
-    });
-    // #938 drift guard, at the observable layer: every dispatchable subcommand must
-    // surface in the bare-invocation usage the user actually sees. Coupling the loop
-    // to SUBCOMMAND_NAMES makes adding a command without listing it fail here; the
-    // per-name line anchor (leading whitespace, then `kesha <name>` followed by a
-    // space or end of line) stops a shorter name from prefix-matching a longer one.
-    for (const name of SUBCOMMAND_NAMES) {
-      expect(empty.stdout).toMatch(new RegExp(`^\\s+kesha ${name}( |$)`, "m"));
+    // S1-1: a consumer that asked for JSON must never receive the usage prose on stdout.
+    for (const args of [[], ["--json"]]) {
+      const empty = await runCli(args);
+      expectContract(empty, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: ["error [E_INVALID_ARG]: no input file", "Usage: kesha <audio_file>"],
+      });
+      // #938 drift guard, at the observable layer: every dispatchable subcommand must
+      // surface in the bare-invocation usage the user actually sees. Coupling the loop
+      // to SUBCOMMAND_NAMES makes adding a command without listing it fail here; the
+      // per-name line anchor (leading whitespace, then `kesha <name>` followed by a
+      // space or end of line) stops a shorter name from prefix-matching a longer one.
+      for (const name of SUBCOMMAND_NAMES) {
+        expect(empty.stderr).toMatch(new RegExp(`^\\s+kesha ${name}( |$)`, "m"));
+      }
     }
   });
 

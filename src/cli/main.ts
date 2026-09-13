@@ -563,8 +563,9 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       const { vadMode, outputFormat } = validated;
 
       if (files.length === 0) {
-        log.info(USAGE_MESSAGE);
-        process.exit(1);
+        log.error(renderInvalidArg("no input file"));
+        process.stderr.write(`${USAGE_MESSAGE}\n`);
+        process.exit(2);
       }
 
       const wantsLangId = !!(args.lang || args.verbose || outputFormat !== "text");
