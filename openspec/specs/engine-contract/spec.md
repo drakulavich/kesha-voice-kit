@@ -197,6 +197,47 @@ The CLI SHALL render events for humans and SHALL treat a stderr line that is not
 
 > *Technical Note — Emitter in `rust/src/protocol/events.rs` (`rust/tests/no_stray_eprintln.rs` keeps it the only writer); parser `readEvents` in `src/engine/events.ts`. `Cli::try_parse()` in `rust/src/main.rs` turns a usage error into one `E_INVALID_ARG` event and exit 2, which `rust/tests/describe_cli.rs` pins for the deleted flags.*
 
+### Requirement: A panic is reported through the Event stream
+
+The Engine SHALL report a panic it did not expect as one `error` event with the Error code `E_INTERNAL` naming the panic and its location, and SHALL then exit 1; the runtime's own panic prose and its `RUST_BACKTRACE` hint SHALL NOT reach stderr.
+
+#### Scenario: An unexpected panic during a command
+
+- GIVEN a command hits a panic no code path anticipated
+- WHEN the Engine unwinds
+- THEN stderr carries one `error` event whose `code` is `E_INTERNAL` and whose message starts with `engine panicked:`
+- AND the process exits 1
+
+#### Scenario: A panic the Engine anticipates and codes
+
+- GIVEN a code path guards a known panic and reports it under its own Error code
+- WHEN that panic fires
+- THEN only the coded event is emitted, never a second `E_INTERNAL` for the same failure
+
+> *Technical Note — `rust/src/errors.rs::install_panic_hook` is installed first thing in
+> `rust/src/main.rs`, which also catches the unwind to exit 1; `catch_panic` marks the
+> thread so the hook skips a panic the caller reports itself.*
+
+### Requirement: Transcription reports progress while it runs
+
+The Engine's `transcribe` command SHALL emit protocol-4 `progress` events while it works — at minimum when the speech model is loading, and once per speech segment as it is transcribed — so a caller that wired `TranscribeOptions.onProgressLine` sees movement during a plain transcribe rather than a callback that never fires until the run is over. These are in addition to the existing `debug` events, which are unchanged.
+
+#### Scenario: Sona transcribes a plain voice note with a spinner
+
+- GIVEN Sona calls `transcribe` with an `onProgressLine` callback and the ASR model is installed
+- WHEN a plain (non-diarized) transcription runs
+- THEN her callback receives at least one `progress` event before the transcript resolves
+
+#### Scenario: A VAD-segmented transcription reports each segment
+
+- GIVEN a file long enough to be split into speech segments
+- WHEN it is transcribed
+- THEN a `progress` event is emitted for each segment as it is processed
+
+> *Technical Note — `rust/src/transcribe/mod.rs::create_timed_backend` emits the model-load
+> event on every backend-loading path (plain, chunked, VAD), and `build_vad_output_segments`
+> emits `transcribing segment N of M`; both go through `protocol::events::progress`.*
+
 ### Requirement: The CLI validates flags against Capabilities JSON instead of forwarding blindly
 
 Before spawning the Engine the CLI SHALL validate the full argv against the `commands` section of the describe document, with one generic check rather than a per-feature guard, and SHALL NOT forward any flag the schema does not list for that subcommand.

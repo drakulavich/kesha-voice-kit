@@ -633,6 +633,11 @@ for interactive input.
 `--diarize` on a non-darwin-arm64 platform is silently dropped with a warning; the
 install proceeds without it.
 
+Cancelling any prompt (Ctrl-C or Escape) SHALL end `kesha init` with `Init cancelled.`
+and exit 130 — the same code an interrupted `kesha install` reports — so a chained
+`kesha init && …` does not continue as though setup had succeeded. Nothing is
+downloaded on that path.
+
 #### Scenario: Maks runs guided setup on Apple Silicon
 
 - GIVEN the machine is darwin-arm64 with a TTY
@@ -663,11 +668,22 @@ install proceeds without it.
 - THEN a warning is printed: `--diarize is currently darwin-arm64 only; omitting it`
 - AND the install proceeds without the diarize model
 
+#### Scenario: Maks presses Ctrl-C at a prompt
+
+- GIVEN Maks runs `kesha init && kesha meeting.ogg` in a TTY
+- WHEN Maks presses Ctrl-C at the TTS language picker
+- THEN the CLI prints `Init cancelled.` and exits 130
+- AND nothing is downloaded
+- AND `kesha meeting.ogg` does not run
+
 > *Technical Note — sources: `src/cli/init.ts::initCommand`,
 > `src/cli/init.ts::promptInitSelection`, `src/cli/init.ts::runNonInteractive`,
 > `src/cli/init.ts::canInstallDiarizeOnPlatform`. The TTS language picker uses
 > `@clack/prompts::multiselect` with `required: false` (no-selection = skip TTS).
-> TTY check: `process.stdin.isTTY === true && process.stdout.isTTY === true`.*
+> TTY check: `process.stdin.isTTY === true && process.stdout.isTTY === true`.
+> A cancelled clack prompt returns `isCancel`'s sentinel rather than throwing;
+> `src/cli/init.ts::exitIfCancelled` turns it into `process.exit(130)`. Pinned by
+> `tests/unit/init.test.ts` (S4-F1).*
 
 ### Requirement: The star prompt is gated to meaningful version bumps and bounded in time
 
