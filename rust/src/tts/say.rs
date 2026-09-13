@@ -51,7 +51,7 @@ pub fn validate_rate(rate: f32) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "--rate must be between {} and {} (got {rate})",
+        "--rate must be between {:.1} and {:.1} (got {rate})",
         RATE_RANGE.start(),
         RATE_RANGE.end()
     ))
