@@ -1,3 +1,38 @@
+## ADDED Requirements
+
+### Requirement: A signal stops the queue, and the CLI exits as soon as its Engine is gone
+
+Once a signal has been received, the CLI SHALL start no further queued file and SHALL spawn no further Engine subprocess, so the only Engine the signal has to terminate is the one that was running. Every file the signal kept from starting SHALL be reported as `E_INTERRUPTED` beside the one it cut short, in stderr and in the `--include-errors` envelope, and the results of files that finished before the signal SHALL still be written. The CLI SHALL then exit with the signal's Exit code as soon as the running Engine is gone, rather than sitting out the force-kill grace period; the grace period remains the ceiling for an Engine that ignores the signal.
+
+#### Scenario: Ira interrupts a batch on its first file
+
+- GIVEN Ira interrupts `kesha a.ogg b.ogg c.ogg` while `a.ogg` is being transcribed
+- WHEN the Engine exits on the forwarded signal
+- THEN `b.ogg` and `c.ogg` never start and no second Engine is spawned
+- AND stderr reports all three files as `error [E_INTERRUPTED]: interrupted (SIGINT)`
+- AND the CLI exits 130 well inside the force-kill grace period, leaving no Engine process behind
+
+#### Scenario: A file finishes under the signal
+
+- GIVEN the Engine transcribing a file exits 0 on the forwarded signal
+- WHEN the CLI would next spawn an Engine for that file's language detection
+- THEN the spawn is refused and the file is reported as `E_INTERRUPTED`
+
+#### Scenario: A batch fails for reasons unrelated to any signal
+
+- GIVEN no signal was received and every file failed
+- WHEN the batch finishes
+- THEN the CLI exits 1 as [transcription](../transcription/spec.md) specifies
+
+> *Technical Note — `src/engine.ts::spawnEngineProcess` throws
+> `src/process-tree.ts::pendingInterruption` once a signal is recorded, and the
+> batch loop in `src/cli/main.ts::createMainCommand` records the same error for
+> every file it skips. The cleanup promise `src/cli/main.ts` awaits through
+> `src/process-tree.ts::waitForPendingSignalCleanup` now settles when the last
+> registered process is disposed, not only when the grace timer fires; the timer
+> stays as the backstop that exits a command which never awaits it. Pinned end to
+> end in `tests/integration/cli-contracts.test.ts`.*
+
 ## MODIFIED Requirements
 
 ### Requirement: An interrupted command terminates its Engine subprocess and reports the signal in its Exit code
@@ -85,39 +120,6 @@ The CLI SHALL escalate to an unignorable kill after a bounded grace period, so a
 > programmatic abort is `unref`'d. The message comes from the signal
 > `terminateActiveProcessTrees` recorded, so the Engine's own wait status (137
 > after the force kill) never reaches the user.*
-
-### Requirement: A signal stops the queue, and the CLI exits as soon as its Engine is gone
-
-Once a signal has been received, the CLI SHALL start no further queued file and SHALL spawn no further Engine subprocess, so the only Engine the signal has to terminate is the one that was running. Every file the signal kept from starting SHALL be reported as `E_INTERRUPTED` beside the one it cut short, in stderr and in the `--include-errors` envelope, and the results of files that finished before the signal SHALL still be written. The CLI SHALL then exit with the signal's Exit code as soon as the running Engine is gone, rather than sitting out the force-kill grace period; the grace period remains the ceiling for an Engine that ignores the signal.
-
-#### Scenario: Ira interrupts a batch on its first file
-
-- GIVEN Ira interrupts `kesha a.ogg b.ogg c.ogg` while `a.ogg` is being transcribed
-- WHEN the Engine exits on the forwarded signal
-- THEN `b.ogg` and `c.ogg` never start and no second Engine is spawned
-- AND stderr reports all three files as `error [E_INTERRUPTED]: interrupted (SIGINT)`
-- AND the CLI exits 130 well inside the force-kill grace period, leaving no Engine process behind
-
-#### Scenario: A file finishes under the signal
-
-- GIVEN the Engine transcribing a file exits 0 on the forwarded signal
-- WHEN the CLI would next spawn an Engine for that file's language detection
-- THEN the spawn is refused and the file is reported as `E_INTERRUPTED`
-
-#### Scenario: A batch fails for reasons unrelated to any signal
-
-- GIVEN no signal was received and every file failed
-- WHEN the batch finishes
-- THEN the CLI exits 1 as [transcription](../transcription/spec.md) specifies
-
-> *Technical Note — `src/engine.ts::spawnEngineProcess` throws
-> `src/process-tree.ts::pendingInterruption` once a signal is recorded, and the
-> batch loop in `src/cli/main.ts::createMainCommand` records the same error for
-> every file it skips. The cleanup promise `src/cli/main.ts` awaits through
-> `src/process-tree.ts::waitForPendingSignalCleanup` now settles when the last
-> registered process is disposed, not only when the grace timer fires; the timer
-> stays as the backstop that exits a command which never awaits it. Pinned end to
-> end in `tests/integration/cli-contracts.test.ts`.*
 
 ### Requirement: A programmatic abort is a distinguishable outcome, not an empty result
 
