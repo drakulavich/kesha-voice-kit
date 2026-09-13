@@ -18,20 +18,20 @@ function published(overrides: Record<string, unknown> = {}) {
 
 describe("npm release metadata gate", () => {
   test("accepts a published version carrying integrity and SLSA v1 provenance", () => {
-    expect(assertNpmReleaseMetadata(published(), PACKAGE, "1.30.0")).toEqual({ version: "1.30.0", provenance: "https://slsa.dev/provenance/v1" });
+    expect(assertNpmReleaseMetadata(published(), PACKAGE, "1.30.0", 0)).toEqual({ version: "1.30.0", provenance: "https://slsa.dev/provenance/v1" });
   });
 
   test("an empty answer — what a malformed field list makes npm print — names the package, never passes", () => {
-    expect(() => assertNpmReleaseMetadata("", PACKAGE, "1.30.0")).toThrow(/@drakulavich\/kesha-voice-kit@1\.30\.0.*no JSON/);
+    expect(() => assertNpmReleaseMetadata("", PACKAGE, "1.30.0", 0)).toThrow(/@drakulavich\/kesha-voice-kit@1\.30\.0.*no JSON/);
   });
 
   test("a version other than the one asked for is refused by name", () => {
-    expect(() => assertNpmReleaseMetadata(published({ version: "1.29.1" }), PACKAGE, "1.30.0")).toThrow(/version 1\.29\.1, expected 1\.30\.0/);
+    expect(() => assertNpmReleaseMetadata(published({ version: "1.29.1" }), PACKAGE, "1.30.0", 0)).toThrow(/version 1\.29\.1, expected 1\.30\.0/);
   });
 
   test("a publish without provenance is refused, naming what is missing", () => {
     const noProvenance = published({ dist: { integrity: "sha512-abc" } });
-    expect(() => assertNpmReleaseMetadata(noProvenance, PACKAGE, "1.30.0")).toThrow(/provenance/);
+    expect(() => assertNpmReleaseMetadata(noProvenance, PACKAGE, "1.30.0", 0)).toThrow(/provenance/);
   });
 
   test("a registry query that exited non-zero is refused even when its stdout looks right (Greptile P2)", () => {
@@ -40,6 +40,6 @@ describe("npm release metadata gate", () => {
 
   test("an integrity that is not sha512 is refused", () => {
     const weak = published({ dist: { integrity: "sha1-abc", attestations: { provenance: { predicateType: "https://slsa.dev/provenance/v1" } } } });
-    expect(() => assertNpmReleaseMetadata(weak, PACKAGE, "1.30.0")).toThrow(/integrity/);
+    expect(() => assertNpmReleaseMetadata(weak, PACKAGE, "1.30.0", 0)).toThrow(/integrity/);
   });
 });
