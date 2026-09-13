@@ -211,5 +211,8 @@ fn a_pcm_aiff_decodes_like_any_other_supported_container() {
         samples.len()
     );
     let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-    assert!(peak > 0.1, "the 440 Hz tone decoded as near-silence (peak {peak})");
+    assert!(
+        peak > 0.1,
+        "the 440 Hz tone decoded as near-silence (peak {peak})"
+    );
 }

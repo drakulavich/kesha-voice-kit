@@ -15,9 +15,10 @@ fn fixture() -> PathBuf {
 #[test]
 fn a_plain_transcribe_narrates_its_progress_on_stderr() {
     if !kesha_engine::models::is_cached(kesha_engine::models::ModelKind::Asr) {
+        // The mini stand-ins cannot transcribe, so only a lane promising real weights may not skip (#741).
         assert!(
-            common::models_required().is_none(),
-            "ASR weights not installed while KESHA_REQUIRE_MODEL_TESTS is set — a lane that stages them cannot skip this silently"
+            common::models_required() != Some(common::RequiredModels::Real),
+            "ASR weights not installed while KESHA_REQUIRE_MODEL_TESTS demands real ones — a lane that stages them cannot skip this silently"
         );
         eprintln!("SKIP a_plain_transcribe_narrates_its_progress_on_stderr: ASR weights not installed (`kesha install`)");
         return;
