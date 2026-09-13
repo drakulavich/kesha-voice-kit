@@ -1,5 +1,6 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { errorMessage } from "../error-utils";
+import { installHint } from "../install-hint";
 import { z } from "zod";
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
 import { basename, isAbsolute, join } from "path";
@@ -169,8 +170,9 @@ export function registerTools(server: McpServer): void {
     async () => {
       try {
         const voices = await listVoices();
+        const text = voices.length === 0 ? `0 voices installed. Run: ${installHint("--tts")}` : `${voices.length} voices installed.`;
         return {
-          content: [{ type: "text" as const, text: `${voices.length} voices installed.` }],
+          content: [{ type: "text" as const, text }],
           structuredContent: { voices },
         };
       } catch (err) {

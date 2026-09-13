@@ -132,6 +132,17 @@ describe("list_voices() surfaces a non-event stderr line even on a clean exit", 
 });
 
 describe("list_voices tool", () => {
+  // #1168: an empty list is an empty stdout on protocol 4, and the client still learns what to do next.
+  skipOnWin32("answers zero voices and the install hint when nothing is installed", async () => {
+    await withEngineBin(voiceListingEngine([]), async () => {
+      const res = await call("list_voices");
+      expect(res.isError).toBeUndefined();
+      // The hint verb follows stderr's TTY-ness (kesha init in a terminal), as the sibling case above allows.
+      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(/^0 voices installed\. Run: kesha (install|init) --tts$/);
+      expect((res.structuredContent as { voices: unknown[] }).voices).toEqual([]);
+    });
+  });
+
   skipOnWin32("returns structured voices with new schema", async () => {
     await withEngineBin(voiceListingEngine(STUB_VOICES), async () => {
       const res = await call("list_voices");

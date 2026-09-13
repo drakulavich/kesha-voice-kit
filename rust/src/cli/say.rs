@@ -123,11 +123,20 @@ fn list_kokoro_voices(_cache: &std::path::Path) -> Vec<String> {
             .filter_map(|e| e.ok())
             .filter_map(|e| {
                 let p = e.path();
-                if p.extension().and_then(|s| s.to_str()) == Some("bin") {
-                    p.file_stem().map(|s| format!("en-{}", s.to_string_lossy()))
-                } else {
-                    None
+                if p.extension().and_then(|s| s.to_str()) != Some("bin") {
+                    return None;
                 }
+                let stem = p.file_stem()?.to_string_lossy().into_owned();
+                // Only prefixes the non-ANE resolve_voice arm accepts may be listed; an id the resolver rejects is #1168 again.
+                let lang = match stem.chars().next()? {
+                    'a' | 'b' => "en",
+                    'e' => "es",
+                    'f' => "fr",
+                    'i' => "it",
+                    'p' => "pt",
+                    _ => return None,
+                };
+                Some(format!("{lang}-{stem}"))
             })
             .collect()
     }
@@ -299,12 +308,12 @@ pub fn run(a: SayArgs) -> i32 {
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         voice_ids.extend(tts::avspeech::list_voices(None));
         voice_ids.sort();
+        // Stdout is the list: a sentence there is a voice id to the MCP list_voices tool (#1168).
         if voice_ids.is_empty() {
-            println!("No voices installed. Run: kesha install --tts");
-        } else {
-            for id in voice_ids {
-                println!("{id}");
-            }
+            events::progress(None, "No voices installed. Run: kesha install --tts");
+        }
+        for id in voice_ids {
+            println!("{id}");
         }
         return 0;
     }

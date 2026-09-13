@@ -190,19 +190,46 @@ fn list_voices_empty_on_fresh_cache() {
         .output()
         .expect("run");
     assert!(out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("install --tts"),
-        "expected install hint, got: {stdout}"
+        out.stdout.is_empty(),
+        "stdout is the list, so guidance there reads as a voice id (#1168): {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let hinted = stderr
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .any(|e| {
+            e["kind"] == "progress"
+                && e["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("install --tts"))
+        });
+    assert!(
+        hinted,
+        "expected a progress event with the install hint, got: {stderr}"
     );
 }
 
+// The darwin-arm64 system_kokoro build lists the static FluidAudio catalog and never reads the cache.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
 #[test]
 fn list_voices_shows_installed() {
     let tmp = tempfile::tempdir().unwrap();
     let voices_dir = tmp.path().join("models/kokoro-82m/voices");
     std::fs::create_dir_all(&voices_dir).unwrap();
-    std::fs::write(voices_dir.join("af_heart.bin"), b"").unwrap();
+    for pack in [
+        "af_heart.bin",
+        "em_alex.bin",
+        "im_nicola.bin",
+        "zf_xiaobei.bin",
+    ] {
+        std::fs::write(voices_dir.join(pack), b"").unwrap();
+    }
     let out = Command::new(common::engine_bin())
         .env("KESHA_CACHE_DIR", tmp.path())
         .args(["say", "--list-voices"])
@@ -210,9 +237,18 @@ fn list_voices_shows_installed() {
         .expect("run");
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
+    for id in ["en-af_heart", "es-em_alex", "it-im_nicola"] {
+        assert!(stdout.contains(id), "expected {id}, got: {stdout}");
+    }
+    // A pack listed under the wrong language is not a voice id the resolver accepts by contract (#1168).
     assert!(
-        stdout.contains("en-af_heart"),
-        "expected en-af_heart, got: {stdout}"
+        !stdout.contains("en-em_alex"),
+        "multilingual pack listed as English: {stdout}"
+    );
+    // A pack this build cannot synthesize is not advertised under any prefix.
+    assert!(
+        !stdout.contains("zf_xiaobei"),
+        "unsynthesizable pack listed: {stdout}"
     );
 }
 
