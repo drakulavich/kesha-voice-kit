@@ -43,12 +43,13 @@ rejecting shapes that belong to another artifact.
 - WHEN an Engine-side validator evaluates it
 - THEN it is rejected rather than processed as an Engine release
 
-> *Technical Note — `.github/workflows/build-engine.yml:3-13` triggers on `v*` excluding
-> `!v*-cli`, so a bare `v<base>-alpha.N` CLI tag would start the Engine build. Its dispatch
-> validator (`:56`) accepts only `^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$`, and
-> `.github/scripts/release-manifest.mjs:8` applies the same pattern — both reject `-alpha.N`
-> today. `.github/workflows/npm-publish.yml:80-81` already strips a `-cli` suffix when
-> deriving the expected version from a tag.*
+> *Technical Note — `.github/workflows/build-engine.yml` triggers on `v*` excluding
+> `!v*-cli`, so a bare `v<base>-alpha.N` CLI tag would start the Engine build. The dispatch
+> validator in its `.github/workflows/build-engine.yml::tag` job and
+> `.github/scripts/release-tags.mjs::ENGINE_TAG_ERE` share one grammar string —
+> `.github/scripts/release-manifest.mjs` pins the workflow to it — and both accept
+> `-alpha.N` alongside `-beta.N`. The same file's `cliPublishTarget`
+> strips a `-cli` suffix when deriving the published version from a tag.*
 
 ### Requirement: Alpha builds reach only people who ask for them
 
@@ -81,10 +82,11 @@ than once per release.
 - WHEN that version is released on the stable channel
 - THEN the stable version SHALL be ordered above every alpha carrying the same base version
 
-> *Technical Note — sources: `.github/workflows/npm-publish.yml:105-119` resolves the npm
-> dist-tag today, collapsing every prerelease onto `beta`; this requirement needs a third
-> outcome for `-alpha.` versions. `.github/scripts/check-versions.ts` already implements
-> SemVer precedence including "a stable version outranks its prereleases".*
+> *Technical Note — sources: `.github/scripts/npm-dist-tag.mjs::npmDistTag`, called from
+> the `resolve` job of `.github/workflows/npm-publish.yml`, derives the dist-tag from the
+> SemVer prerelease identifier, so `-alpha.N` resolves to `alpha` rather than collapsing
+> onto `beta`. `.github/scripts/check-versions.ts` already implements SemVer precedence
+> including "a stable version outranks its prereleases".*
 
 ### Requirement: CLI alphas publish on every merge that changes the CLI
 
@@ -124,10 +126,12 @@ from a workstation.
 > combined with `cancel-in-progress`. A skip decision must also be made inside a job — a
 > workflow-level path filter prevents the run from existing, leaving nothing to report.*
 
-> *Technical Note — the existing publish path fires on `release: published`
-> (`.github/workflows/npm-publish.yml:9-11`) and is therefore tied to the manual draft
-> gate; continuous alphas need a trigger on the default branch instead. Provenance comes
-> from `id-token: write` plus `npm publish --provenance` (`npm-publish.yml:22-24`).*
+> *Technical Note — the release-driven publish path fires on `release: published`, which
+> ties it to the manual draft gate; the alpha lane rides a `push` trigger on the default
+> branch in the same workflow, entering `.github/workflows/release-alpha.yml` through the
+> `.github/workflows/npm-publish.yml::alpha` job so Trusted Publishing still sees one entry
+> point. Provenance comes from `id-token: write` plus `npm publish --provenance` in
+> `.github/workflows/release-npm-publish.yml`.*
 
 ### Requirement: Engine alphas are published deliberately, not per merge
 
@@ -160,12 +164,16 @@ stable Engine, so that installing an alpha exercises the real download path.
 - THEN no CLI package is published as a side effect
 - AND the pipeline does not report a failure for having declined
 
-> *Technical Note — sources: `src/engine-install.ts:200` and `:439` build the asset URL as
+> *Technical Note — sources: `src/engine-install.ts::downloadSidecar` and
+> `src/engine-install.ts::fetchEngineBinary` build the asset URL as
 > `releases/download/v${engineVersion}/…`, so an Engine alpha resolves with no code change
-> provided its tag matches `package.json#keshaEngine.version` (`src/package-info.ts:5-6`).
-> `.github/workflows/build-engine.yml:409-411` already distinguishes prerelease tags, but
-> `:484` publishes every build as a draft. Publishing a Prerelease fires
-> `release: published`, which today reaches the CLI publish workflow.*
+> provided its tag matches `package.json#keshaEngine.version`
+> (`src/package-info.ts::engineVersion`). The `release_kind` step of
+> `.github/workflows/build-engine.yml` distinguishes prerelease tags: stable and beta builds
+> stay drafts for the human gate, an alpha is un-drafted in the same job. Publishing a
+> Prerelease fires `release: published`, which reaches the CLI publish workflow — its
+> `resolve` job marks a bare Engine tag `engine_only`, so the publish job is skipped rather
+> than failed.*
 
 ### Requirement: Alpha versions are derived, never hand-written
 
@@ -253,9 +261,10 @@ path SHALL be exercised by alphas before a stable release depends on it.
 - WHEN the other channel next publishes
 - THEN it SHALL use the fixed path rather than an unfixed copy
 
-> *Technical Note — today the publish steps live inline in
-> `.github/workflows/npm-publish.yml:60-119` (version guard, prior-publish check, dist-tag
-> resolution, publish with provenance) with no reusable entry point.*
+> *Technical Note — the version guard, the prior-publish check and the provenance publish
+> live in the reusable `.github/workflows/release-npm-publish.yml`, which both lanes enter
+> through the `.github/workflows/npm-publish.yml::publish` job, so a fix to any of them
+> reaches both channels. Dist-tag resolution is resolved per lane before that call.*
 
 ### Requirement: The release list stays readable at alpha cadence
 
@@ -292,6 +301,9 @@ still something a person may be reading.
   must always resolve a stable Engine, is unresolved. Allowing it makes the two channels
   interact; forbidding it means an Engine change cannot be exercised through a CLI alpha.
 - Lanes that download the published Engine carry a `release/*` branch guard
-  (`.github/workflows/ci.yml:387`, `:448`, `:501`). Whether alpha Engine tags need an
+  (`.github/workflows/ci.yml::integration-tests-full`,
+  `.github/workflows/ci.yml::published-engine-smoke`,
+  `.github/workflows/ci.yml::windows-engine-smoke` and
+  `.github/workflows/ci.yml::tts-e2e`). Whether alpha Engine tags need an
   analogous guard, or whether pinning those lanes to the stable channel is sufficient, is
   not settled.

@@ -56,14 +56,14 @@ Each supported distribution path SHALL deliver the CLI package's `bin/kesha.js` 
 > *Technical Note — `bin/kesha.js:1-4` is a four-line `#!/usr/bin/env bun`
 > shim over `runCli` from `src/cli/dispatch.ts`. `package.json#bin` maps
 > `kesha → bin/kesha.js`; `package.json#files` publishes `bin/` and `src/`
-> as-is. Homebrew installs `bin`, `src`, `package.json`, `bun.lock`,
-> `tsconfig.json` into `libexec` and writes a shell wrapper that execs Bun
-> against `libexec/bin/kesha.js`
-> (`packaging/homebrew/Formula/kesha-voice-kit.rb:11-24`). `Dockerfile:10-19`
-> copies `bin` and `src` and symlinks `/usr/local/bin/kesha`. The Linux packages
-> are the compiled case: `.github/scripts/build-linux-packages.mjs:27-34` runs
-> `bun build --compile --target=bun-linux-x64 ./bin/kesha.js` and nfpm packages
-> the single resulting file.*
+> as-is. Homebrew's `install` stages `bin`, `src`, `completions`, `man`,
+> `package.json`, `bun.lock` and `tsconfig.json` into `libexec` and writes a
+> shell wrapper that execs Bun against `libexec/bin/kesha.js`
+> (`packaging/homebrew/Formula/kesha-voice-kit.rb`). The `Dockerfile`
+> copies the same staged directories and symlinks `/usr/local/bin/kesha`. The
+> Linux packages are the compiled case: `.github/scripts/build-linux-packages.mjs`
+> runs `bun build --compile --target=bun-linux-x64 ./bin/kesha.js` and nfpm
+> packages the single resulting file.*
 
 ### Requirement: Bun is present on every distribution path, as a dependency or compiled in
 
@@ -94,9 +94,9 @@ The CLI package SHALL declare Bun >= 1.3.0 as its required runtime, and every wr
 - THEN startup fails, because the CLI uses Bun-native APIs and ships no
   compatibility layer
 
-> *Technical Note — `package.json#engines.bun` is `>=1.3.0`
-> (`package.json:88-90`). `packaging/homebrew/Formula/kesha-voice-kit.rb:8`
-> declares `depends_on "oven-sh/bun/bun"`. `Dockerfile:1` pins
+> *Technical Note — `package.json#engines.bun` is `>=1.3.0`.
+> `packaging/homebrew/Formula/kesha-voice-kit.rb` declares
+> `depends_on "oven-sh/bun/bun"`. The `Dockerfile` pins
 > `oven/bun:1.3.14-slim`. The Linux binary is compiled for `bun-linux-x64`
 > (glibc); `docs/linux-packages.md` states the musl limitation and points at the
 > container image.*
@@ -147,7 +147,7 @@ Each distribution path SHALL stage every asset the CLI loads at startup — the 
   `scripts/`, or `.github/` that does not exist
 - THEN the package-metadata check fails, naming the script and the path
 
-> *Technical Note — `package.json#files` (`package.json:13-30`) lists `bin/`,
+> *Technical Note — `package.json#files` lists `bin/`,
 > `completions/`, `man/`, `src/`, `model-plan.json`, `package.json`,
 > `tsconfig.json`, `openclaw.plugin.json`, `openclaw-plugin.cjs`, two docs
 > pages, `SKILL.md`, `LICENSE`, `NOTICES.md`, `README.md`, and the
@@ -301,21 +301,23 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
 
 ## Open Issues
 
-- **`kesha completions` and `kesha manpage` are broken on four of the five
+- **`kesha completions` and `kesha manpage` were broken on four of the five
   paths** (#914, fixed by #915). Both read their file relative to
-  `import.meta.url` (`src/cli/completions.ts:38`, `src/cli/manpage.ts:9`), which
-  fails two different ways:
+  `import.meta.url`, which failed two different ways:
   - In the `.deb`/`.rpm`'s `bun build --compile` binary the path resolves
     outside the embedded filesystem. Reproduced by compiling `./bin/kesha.js`
     for the host: an unhandled `ENOENT` for `/completions/kesha.bash` and
     `/man/kesha.1`, stack trace, exit 1 — not the exit-2 usage error
     [cli-shell-integration](../cli-shell-integration/spec.md) specifies, and not
     a message a user can act on.
-  - Homebrew, the container image, and Nix stage `bin` and `src` **without**
-    `completions/` or `man/` (`packaging/homebrew/Formula/kesha-voice-kit.rb:11`,
-    `Dockerfile:11`, `flake.nix:248` and `:266`), so the file the source looks
-    for is simply absent. Reproduced by staging exactly `bin src package.json
-    bun.lock tsconfig.json` and running both commands.
+  - Homebrew, the container image, and Nix staged `bin` and `src` **without**
+    `completions/` or `man/`, so the file the source looked for was simply
+    absent. Reproduced by staging exactly `bin src package.json bun.lock
+    tsconfig.json` and running both commands. All three now stage
+    `completions/` and `man/`, and
+    `src/cli/completions.ts::completionsCommand` and
+    `src/cli/manpage.ts::manpageCommand` inline their payload at build time
+    instead of reading it from disk.
 
   Only the npm CLI package and a repository checkout ever worked.
   `model-plan.json` is unaffected because it is a static import, and

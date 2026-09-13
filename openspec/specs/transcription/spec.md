@@ -56,7 +56,7 @@ FLAC, AAC, OGG/Vorbis, Opus, AIFF, …); audio is mixed to mono and resampled to
 - AND the process exits 1
 
 > *Technical Note — sources: `src/cli/main.ts` (default command),
-> `src/format.ts:3` (text format), `rust/src/audio.rs` (decode + resample),
+> `src/format.ts::formatTextOutput`, `rust/src/audio.rs` (decode + resample),
 > `rust/src/cli/transcribe.rs`. Audio decode errors use messages like
 > `unsupported audio format: <path>` / `no supported audio tracks in: <path>`.*
 
@@ -257,7 +257,7 @@ The pass is never applied by default, on any platform or Backend.
 
 > *Technical Note — the pass is `text_processing_rs::normalize_sentence`, a pure-Rust port of
 > NVIDIA NeMo text processing, called from a new `rust/src/transcribe/itn.rs` at the tail of
-> `transcribe_with_options` (`rust/src/transcribe/mod.rs:174`). It ships taggers for
+> `transcribe_with_options` (`rust/src/transcribe/mod.rs::finalize_output`). It ships taggers for
 > `de/en/es/fr/hi/ja/zh` and none for `ru`, which is why Russian is inert rather than
 > guarded — see the change's design D1 and D4. The `fluidaudio-rs` `itn_normalize` binding
 > named in #710 is a `dlsym` shim over a `libnemo_text_processing` that kesha does not link,

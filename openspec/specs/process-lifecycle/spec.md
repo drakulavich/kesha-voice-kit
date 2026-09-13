@@ -59,10 +59,10 @@ When the CLI receives an interrupt or termination signal while an Engine subproc
 - THEN it still exits with the signal's code without waiting on a cleanup that
   has nothing to clean
 
-> *Technical Note — `ensureSignalHandlers` (`src/process-tree.ts:101-107`)
+> *Technical Note — `src/process-tree.ts::ensureSignalHandlers`
 > installs one `SIGINT` handler (exit code 130) and one `SIGTERM` handler (exit
 > code 143) the first time any Engine process is registered.
-> `terminateActiveProcessTrees` (`:109`) sets `process.exitCode`, signals every
+> `src/process-tree.ts::terminateActiveProcessTrees` sets `process.exitCode`, signals every
 > registered process, then schedules the actual `process.exit`. With no active
 > processes the delay is `SIGNAL_EXIT_BUFFER_MS` (50 ms) instead of the full
 > grace window. These codes extend the Exit code taxonomy in the Glossary, and
@@ -88,13 +88,15 @@ The CLI SHALL terminate the Engine's whole process tree, so that helpers the Eng
 - THEN the CLI falls back to signalling the direct child, and a child that has
   already exited is not treated as an error
 
-> *Technical Note — `terminateProcessTree` (`src/process-tree.ts:60`) signals
+> *Technical Note — `src/process-tree.ts::terminateProcessTree` signals
 > the negated pid (the process group) on POSIX and shells out to `taskkill /PID
 > <pid> /T` (adding `/F` for a force kill) on Windows; both fall back to
-> `safeKillDirect` (`:88`), which swallows the error from a process that exited
-> between the decision and the signal. Registration happens in `src/engine.ts`
-> (`:152`, `:454`), `src/synth.ts:177`, `src/cli/say.ts:323` (the `--list-voices`
-> relay) and `src/mcp/voices.ts:124` (the MCP `listVoices`).*
+> `src/process-tree.ts::safeKillDirect`, which swallows the error from a process
+> that exited between the decision and the signal. Registration happens in
+> `src/engine.ts::runEngine`, `src/engine.ts::recordEngine`,
+> `src/synth.ts::say` and `src/synth.ts::listVoiceIds` — the last reached by
+> `src/cli/say.ts::sayCommand` (the `--list-voices` relay) and by
+> `src/mcp/voices.ts::listVoices` (the MCP tool).*
 
 ### Requirement: A subprocess that ignores the first signal is force-killed
 
@@ -113,8 +115,8 @@ The CLI SHALL escalate to an unignorable kill after a bounded grace period, so a
 - WHEN it exits before the grace period elapses
 - THEN no force kill is needed, and the CLI still exits with the signal's code
 
-> *Technical Note — `FORCE_KILL_GRACE_MS` is 1 000 ms
-> (`src/process-tree.ts:13`); `scheduleForceKill` (`:96`) arms the escalation.
+> *Technical Note — `src/process-tree.ts::FORCE_KILL_GRACE_MS` is 1 000 ms;
+> `src/process-tree.ts::scheduleForceKill` arms the escalation.
 > During signal cleanup the timer is deliberately `ref`'d so the escalation
 > survives an otherwise-idle event loop, whereas the timer armed for a
 > programmatic abort is `unref`'d.*
@@ -135,11 +137,12 @@ The CLI SHALL let signal cleanup complete before exiting, so an interrupted comm
 - WHEN the batch finishes
 - THEN the CLI exits 1 as [transcription](../transcription/spec.md) specifies
 
-> *Technical Note — `src/cli/main.ts:612-619` checks
+> *Technical Note — `src/cli/main.ts::createMainCommand` checks
 > `getPendingSignalExitCode()` before the generic `process.exit(1)` and awaits
-> `waitForPendingSignalCleanup()` when one is pending. The cleanup promise
-> resolves after `FORCE_KILL_GRACE_MS + SIGNAL_EXIT_BUFFER_MS` when processes
-> were signalled (`src/process-tree.ts:122-132`).*
+> `src/process-tree.ts::waitForPendingSignalCleanup` when one is pending. The
+> cleanup promise resolves after `SIGNAL_EXIT_BUFFER_MS`, or after
+> `FORCE_KILL_GRACE_MS + SIGNAL_EXIT_BUFFER_MS` when processes were signalled,
+> as `src/process-tree.ts::terminateActiveProcessTrees` arms it.*
 
 ### Requirement: A programmatic abort is a distinguishable outcome, not an empty result
 
@@ -159,12 +162,12 @@ When a caller of the Core API cancels an in-flight call, the call SHALL fail wit
 - WHEN she makes the call
 - THEN it rejects with the same abort error without spawning an Engine at all
 
-> *Technical Note — `engineAbortError` (`src/process-tree.ts:24`) returns an
+> *Technical Note — `src/process-tree.ts::engineAbortError` returns an
 > `Error` with `name = "AbortError"` and the message `kesha-engine process
-> aborted`. `src/engine.ts:147` rejects on an already-aborted signal before
-> spawning; the abort listener at `:155-160` terminates the tree and arms the
-> force kill, and `:185` converts the completed run into the abort error. The
-> abort path is not reachable from the CLI — see Open Issues.*
+> aborted`. `src/engine.ts::runEngine` rejects on an already-aborted signal
+> before spawning; its abort listener terminates the tree and arms the force
+> kill, and the same function converts the completed run into the abort error.
+> The abort path is not reachable from the CLI — see Open Issues.*
 
 ## Open Issues
 

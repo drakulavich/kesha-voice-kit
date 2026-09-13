@@ -48,10 +48,11 @@ regardless of quiet.
 - THEN the language-mismatch warning still appears on stderr
 - AND the process exits 0
 
-> *Technical Note — `resolveQuietMode` in `src/cli/dispatch.ts:103` strips
-> `--quiet` / `-q` from `rawArgs` pre-parse and sets `log.quietEnabled`.
-> `log.progress` and `log.status` check `log.quietEnabled` before writing;
-> `log.warn` and `log.error` do not. Source: `src/log.ts:48-68`.*
+> *Technical Note — `src/cli/context.ts::resolveQuietMode` strips
+> `--quiet` / `-q` from `rawArgs` pre-parse and `src/cli/context.ts::applyCliContext`
+> sets `log.quietEnabled`. `log.progress` and `log.status` check
+> `log.quietEnabled` before writing; `log.warn` and `log.error` do not. Source:
+> `src/log.ts::log`.*
 
 ### Requirement: `--no-color` disables ANSI color universally
 
@@ -105,15 +106,16 @@ CLI itself set it; a user-exported `NO_COLOR` is never cleared.
 - WHEN Maks runs `kesha --no-color=0 say "hello"`
 - THEN color is enabled (falsey grammar treats `"0"` as false)
 
-> *Technical Note — `resolveColorMode` in `src/cli/dispatch.ts:88` evaluates
+> *Technical Note — `src/cli/context.ts::resolveColorMode` evaluates
 > only the `--no-color` flag and `CI`; the `NO_COLOR` env var is honored by
-> picocolors at import time (`src/log.ts:1-12`), not inside `resolveColorMode`.
-> The `FALSEY_VALUES` set (`src/cli/dispatch.ts:44`) is `{"", "0", "false",
-> "no", "off"}`. `USER_FORCED_NO_COLOR` is captured once at module import
-> (`src/cli/dispatch.ts:52`) and is used only to decide whether re-enabling may
-> clear `NO_COLOR` from `process.env`. The `setColorEnabled` toggle in
-> `src/log.ts:15` swaps picocolors between its full and no-op colorizers.
-> `--no-color` is stripped from `rawArgs` so citty never sees it.*
+> picocolors at import time (`src/log.ts::colors`), not inside `resolveColorMode`.
+> The `src/cli/context.ts::FALSEY_VALUES` set is `{"", "0", "false",
+> "no", "off"}`. `src/cli/context.ts::USER_FORCED_NO_COLOR` is captured once at
+> module import and is used by `src/cli/context.ts::applyColorEnv` to decide
+> whether re-enabling may clear `NO_COLOR` from `process.env`. The
+> `src/log.ts::setColorEnabled` toggle swaps picocolors between its full and
+> no-op colorizers. `--no-color` is stripped from `rawArgs` so citty never sees
+> it.*
 
 ### Requirement: Unknown non-path tokens produce a Levenshtein suggestion and exit 1
 
@@ -156,10 +158,10 @@ the unknown-command handler.
 - THEN the CLI routes to the main transcription command (not the unknown-command
   handler), even though `standup.ogg` is not a known subcommand
 
-> *Technical Note — `isPathLike` in `src/cli/dispatch.ts:38`: returns true when
-> the token contains `.` or `/` or `existsSync` returns true. `suggestCommand`
-> in `src/suggest-command.ts:3` uses `fastest-levenshtein`; threshold is
-> `Math.min(3, Math.ceil(match.length * 0.4))` (`src/suggest-command.ts:16`).
+> *Technical Note — `src/cli/dispatch.ts::isPathLike` returns true when
+> the token contains `.` or `/` or `existsSync` returns true.
+> `src/suggest-command.ts::suggestCommand` uses `fastest-levenshtein`; its
+> threshold is `Math.min(3, Math.ceil(match.length * 0.4))`.
 > The suggestion is suppressed when `suggestion === firstArg` (exact case-fold
 > match already returned by the handler).*
 
@@ -182,11 +184,13 @@ error to stderr and exit 2. The script is read from the bundled
 - THEN stderr contains `usage: kesha completions <bash|zsh|fish>`
 - AND the process exits 2
 
-> *Technical Note — `completionsCommand` in `src/cli/completions.ts:20`.
-> `SHELL_FILES` maps `bash → kesha.bash`, `zsh → kesha.zsh`,
-> `fish → kesha.fish` (`src/cli/completions.ts:4`). The file is loaded via
-> `new URL("../../completions/<file>", import.meta.url)`. Unknown shell exits 2
-> at `src/cli/completions.ts:35`.*
+> *Technical Note — `src/cli/completions.ts::completionsCommand`.
+> `src/cli/completions.ts::SHELL_SCRIPTS` maps `bash → kesha.bash`,
+> `zsh → kesha.zsh`, `fish → kesha.fish`. Each script is inlined at build time
+> with an `import … with { type: "text" }` declaration rather than read through
+> `import.meta.url`, because that URL escapes the embedded filesystem in the
+> compiled `.deb`/`.rpm` binary (#914). An unknown shell exits 2 from the same
+> command's `run`.*
 
 ### Requirement: `kesha manpage` prints the bundled kesha(1) man page
 
@@ -199,8 +203,9 @@ and exit 0. No arguments are accepted.
 - THEN stdout contains the kesha(1) man-page in troff/groff format
 - AND the process exits 0
 
-> *Technical Note — `manpageCommand` in `src/cli/manpage.ts:3`. File loaded
-> via `new URL("../../man/kesha.1", import.meta.url)`. Written directly to
+> *Technical Note — `src/cli/manpage.ts::manpageCommand`. The page is inlined
+> at build time with an `import … with { type: "text" }` declaration rather than
+> read through `import.meta.url` (#914), and written directly to
 > `process.stdout` — no colorization.*
 
 ### Requirement: `--version` prints the CLI version and nothing else
@@ -223,8 +228,8 @@ The CLI SHALL print its own version — the version of the installed CLI package
   not depend on the Engine
 
 > *Technical Note — citty renders `meta.version`, set from `packageVersion`
-> (`src/cli/main.ts:412-416`), which reads `package.json#version` via
-> `src/package-info.ts`. The Pinned Engine version is a separate field and is
+> in `src/cli/main.ts::createMainCommand`, which reads `package.json#version`
+> via `src/package-info.ts::packageVersion`. The Pinned Engine version is a separate field and is
 > surfaced by `kesha status`, not here. Asserted by the "entrypoint help,
 > version, and empty invocation keep stable stream contracts" test in
 > `tests/integration/cli-contracts.test.ts`.*
@@ -287,7 +292,7 @@ filtering.
 > `console.error` would apply. `log.progress` is used only in install flows
 > (`src/progress.ts`, `src/engine-install.ts`); it writes to stderr (#945) so
 > that no non-result output reaches stdout even once install grows a
-> machine-readable mode. Source: `src/log.ts:46-68`.*
+> machine-readable mode. Source: `src/log.ts::log`.*
 
 ### Requirement: Directory arguments are rejected before work starts
 When a positional argument is a directory, the CLI SHALL print `<path>: is a directory (expected an audio file)` and exit 1 before any progress output or engine spawn.

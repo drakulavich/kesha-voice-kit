@@ -113,7 +113,8 @@ missing.
 - WHEN Maks runs `kesha --json --speakers meeting.ogg`
 - THEN the missing model is reported with an actionable setup hint naming
   `--diarize` — `kesha init --diarize` on a TTY, `kesha install --diarize` when
-  stderr is piped (`installHint("--diarize")`, `src/engine.ts:224`)
+  stderr is piped (`installHint("--diarize")`,
+  `src/engine.ts::assertDiarizeModelInstalled`)
 - AND the diarize preflight error fires before ASR model lookup
 - AND the process exits 1
 

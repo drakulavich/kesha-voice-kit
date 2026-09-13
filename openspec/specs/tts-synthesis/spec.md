@@ -71,10 +71,11 @@ and exit code 5, before any model is loaded.
 
 > *Technical Note — the limit is `MAX_TEXT_CHARS = 5000`, counted in Unicode
 > code points (`Array.from(text).length` / `chars().count()`), enforced in both
-> the CLI (`src/synth.ts:22,117-125`) and the Engine
-> (`rust/src/tts/mod.rs:41`). TTY guard: `src/cli/say.ts:54-59`
-> (`shouldRejectMissingSayText`). Stdin is trimmed before the empty check
-> (`src/cli/say.ts:38-52`, `rust/src/cli/say.rs:185-201`).*
+> the CLI (`src/synth.ts::MAX_TEXT_CHARS`, checked in `src/synth.ts::say`) and
+> the Engine (`rust/src/tts/mod.rs::MAX_TEXT_CHARS`). TTY guard:
+> `src/cli/say.ts::shouldRejectMissingSayText`. Stdin is trimmed before the
+> empty check (`src/cli/say.ts::resolveText`,
+> `rust/src/cli/say.rs::validate_text`).*
 
 ### Requirement: Voice routing resolves --voice, then --lang, then detected language, then the engine default
 
@@ -129,9 +130,9 @@ Voice id SHALL fail with `E_VOICE_UNKNOWN` and exit 1.
 - THEN the run fails with `E_VOICE_UNKNOWN` listing the supported prefixes
 - AND the process exits 1
 
-> *Technical Note — precedence: `src/voice-routing.ts:76-84` (`resolveSayVoice`,
-> shared with the MCP server since #942); mapping: `src/voice-routing.ts:42-60`
-> (`pickVoiceForLang`). The full map
+> *Technical Note — precedence: `src/voice-routing.ts::resolveSayVoice` (shared
+> with the MCP server since #942); mapping:
+> `src/voice-routing.ts::pickVoiceForLang`. The full map
 > (confidence < 0.5 → none; base code is lowercased and split on `-`/`_`):*
 >
 > | Detected/stated lang | darwin-arm64 | darwin-x64 (Intel macOS) | Linux / Windows |
@@ -152,14 +153,14 @@ Voice id SHALL fail with `E_VOICE_UNKNOWN` and exit 1.
 > the Linux/Windows ONNX column). `*(unmapped)*` means `pickVoiceForLang`
 > returns `undefined` and the Engine default applies.*
 >
-> *Engine-side routing (`rust/src/tts/voices.rs:99-148`): `en-*` → Kokoro;
+> *Engine-side routing (`rust/src/tts/voices.rs::resolve_voice`): `en-*` → Kokoro;
 > `es/fr/hi/it/ja/pt/zh-*` → FluidAudio Kokoro on the darwin-arm64
 > `system_kokoro` build, `es/fr/it/pt-*` → ONNX Kokoro elsewhere; `ru-*` →
 > Vosk (the `vosk-` infix is optional; speakers map `f01→0, f02→1, f03→2,
-> m01→3, m02→4`, `rust/src/tts/voices.rs:295-300`); `macos-*` → AVSpeech
-> (suffix forwarded as identifier or language code; empty suffix rejected).
-> Engine default: `DEFAULT_VOICE_ID = "en-am_michael"`
-> (`rust/src/tts/voices.rs:45`).*
+> m01→3, m02→4`, `rust/src/tts/voices.rs::resolve_vosk_ru`); `macos-*` →
+> AVSpeech (suffix forwarded as identifier or language code; empty suffix
+> rejected). Engine default: `DEFAULT_VOICE_ID = "en-am_michael"`
+> (`rust/src/tts/voices.rs::DEFAULT_VOICE_ID`).*
 
 ### Requirement: Default voices are male
 
@@ -182,8 +183,9 @@ French voice exists.
 - THEN the Engine resolves the empty name to the language default `ff_siwis`
 - AND this is the documented brand-rule exception, not a regression
 
-> *Technical Note — per-language defaults: `rust/src/tts/voices.rs:221-233`
-> (`default_voice_for_lang`), with the brand-rule exception comment inline.
+> *Technical Note — per-language defaults:
+> `rust/src/tts/voices.rs::default_voice_for_lang`, with the brand-rule
+> exception comment inline.
 > Female Vosk voices `ru-vosk-f01/f02/f03` stay selectable via explicit
 > `--voice`.*
 
@@ -290,18 +292,20 @@ SHALL be accepted as aliases for `ogg-opus`. An unknown `--format` value exits
 - THEN the Engine rejects it (`--bitrate must be 6000..=510000 bps`)
 - AND the run fails rather than producing degraded audio
 
-> *Technical Note — format parsing and aliases: `rust/src/tts/encode.rs:82-94`
-> (`FromStr`) mirrored in `src/cli/say.ts:169-180`; extension inference:
-> `rust/src/tts/encode.rs:98-105`, resolution order (`--format` > `--out`
-> extension > wav default): `rust/src/cli/say.rs:36-82`. Opus constraints:
-> `OPUS_VALID_SR = {8000, 12000, 16000, 24000, 48000}`
-> (`rust/src/tts/encode.rs:184`), bitrate `6000..=510000`
-> (`rust/src/tts/encode.rs:218`), defaults 32000 bps / 24000 Hz
-> (`ogg_opus_default`, `rust/src/tts/encode.rs:69-75`). Native rates: Kokoro
-> 24 kHz, Vosk 22.05 kHz (resampled for Opus, kept as-is for wav/flac). FLAC
-> quantizes f32 to 16-bit PCM (`rust/src/tts/encode.rs:138-144`). The CLI
-> pre-validates knob/format combinations (`src/cli/say.ts:186-200`); the
-> Engine repeats the check authoritatively.*
+> *Technical Note — format parsing and aliases:
+> `rust/src/tts/encode.rs::OutputFormat::from_str` mirrored in
+> `src/cli/say.ts::parseFormatFlag`; extension inference:
+> `rust/src/tts/encode.rs::format_from_extension`, resolution order
+> (`--format` > `--out` extension > wav default):
+> `rust/src/cli/say.rs::resolve_output_format`. Opus constraints: `OPUS_VALID_SR = {8000, 12000, 16000, 24000, 48000}`
+> (`rust/src/tts/encode.rs::OPUS_VALID_SR`), bitrate `6000..=510000`
+> (both checked in `rust/src/tts/encode.rs::encode_ogg_opus`), defaults 32000 bps
+> / 24000 Hz (`rust/src/tts/encode.rs::OutputFormat::ogg_opus_default`). Native
+> rates: Kokoro 24 kHz, Vosk 22.05 kHz (resampled for Opus, kept as-is for
+> wav/flac). FLAC quantizes f32 to 16-bit PCM
+> (`rust/src/tts/encode.rs::encode_flac`). The CLI pre-validates knob/format
+> combinations (`src/cli/say.ts::resolveSayFlags`); the Engine repeats the check
+> authoritatively.*
 
 ### Requirement: Speaking rate is bounded
 
@@ -325,12 +329,13 @@ exit 2 for values outside that range or non-numeric values.
 - THEN stderr reads `--rate must be a finite number.`
 - AND the process exits 2
 
-> *Technical Note — validation: `src/cli/say.ts:72-80`. The CLI omits `--rate`
-> from the Engine argv when it equals 1.0 (`src/synth.ts:71`). An SSML
+> *Technical Note — validation: `src/cli/say.ts::parseRateFlag`. The CLI omits
+> `--rate` from the Engine argv when it equals 1.0
+> (`src/synth.ts::buildSayArgs`). An SSML
 > whole-utterance `<prosody rate>` multiplies with `--rate`; the product is
 > clamped to 0.5–2.0 (`rust/src/tts/ssml/rate.rs`). For `macos-*` AVSpeech voices
 > the multiplier is forwarded to the sidecar as `--rate <value>`
-> (`rust/src/tts/avspeech.rs:71-72`) and mapped piecewise-linearly onto
+> (`rust/src/tts/avspeech.rs::synthesize`) and mapped piecewise-linearly onto
 > `AVSpeechUtterance.rate` (user 0.5/1.0/2.0 → AVSpeech 0.0/0.5/1.0), #546.*
 
 ### Requirement: SSML subset with strict root and graceful tag degradation
@@ -386,23 +391,26 @@ AVSpeech (`macos-*`) voices SHALL reject `--ssml` entirely with
 - THEN the run fails with `E_SSML_UNSUPPORTED`
 - AND the process exits 4
 
-> *Technical Note — parser and hardening: `rust/src/tts/ssml/mod.rs:43-82`
-> (root check :48, DOCTYPE :59, relative rate :73). Tag behavior table:*
+> *Technical Note — parser and hardening: `rust/src/tts/ssml/mod.rs::parse`
+> (the `<speak>` root check, `rust/src/tts/ssml/mod.rs::contains_doctype`, and
+> the relative-rate rejection via `rust/src/tts/ssml/rate.rs::find_relative_rate`).
+> Tag behavior table:*
 >
 > | Tag | Behavior |
 > |---|---|
-> | `<break time>` | silence; default 250 ms (`segment.rs:38`); capped at `MAX_BREAK_SECS = 30.0` (`rust/src/tts/say.rs:25`) |
+> | `<break time>` | silence; default 250 ms (`rust/src/tts/ssml/segment.rs::DEFAULT_BREAK`); capped at `MAX_BREAK_SECS = 30.0` (`rust/src/tts/say.rs::MAX_BREAK_SECS`) |
 > | `<say-as interpret-as="characters">` | letter-spell; other `interpret-as` values warn-strip |
 > | `<phoneme alphabet="ipa">` | `ph` fed verbatim to the tokenizer; non-ipa alphabets warn-strip |
 > | `<emphasis>` | `+` stress markers honored on `ru-vosk-*` only; `level="none"` suppresses them everywhere |
 > | `<prosody rate>` | whole-utterance only; mid-utterance warn-strips; multiplies `--rate`, clamped 0.5–2.0 |
 > | anything else | warn once per tag name, strip, keep inner text |
 >
-> *Inner structural tags win over an enclosing `<emphasis>` (span-priority
-> sort, `rust/src/tts/ssml/mod.rs:92-111`). AVSpeech rejection:
-> `rust/src/tts/say.rs:136`. FluidAudio Kokoro warn-skips `<phoneme>` (internal
-> G2P only) and reads `<say-as characters>` content as plain text
-> (`rust/src/tts/say.rs:441-455`).*
+> *Inner structural tags win over an enclosing `<emphasis>` (the span sort in
+> `rust/src/tts/ssml/mod.rs::parse`, keyed by
+> `rust/src/tts/ssml/walker.rs::span_priority`). AVSpeech rejection:
+> `rust/src/tts/say.rs::say_avspeech`. FluidAudio Kokoro warn-skips `<phoneme>`
+> (internal G2P only) and reads `<say-as characters>` content as plain text
+> (`rust/src/tts/say.rs::FluidKokoroSink`).*
 
 ### Requirement: Text normalization expands acronyms and numbers per language
 
@@ -484,9 +492,9 @@ event on the Event stream rather than accept the flag silently.
 > `rust/src/tts/en/acronym.rs` (`STOP_LIST`, `IPA_LEXICON`); the lexicon fires
 > even with `--no-expand-abbrev` (test `ipa_fires_even_without_auto_expand`).
 > Russian: rules and 25-entry stop-list (ВСЁ, ВЫ, ДА, …, ЧТО) in
-> `rust/src/tts/ru/acronym.rs:1-66`; tokens must be 2–5 chars of `[А-ЯЁ]`
+> `rust/src/tts/ru/acronym.rs::STOP_LIST`; tokens must be 2–5 chars of `[А-ЯЁ]`
 > without Ъ/Ь, and spell only when length ≤ 2 or an adjacent same-type letter
-> pair exists. Romance languages: numbers 0–999,999
+> pair exists (`rust/src/tts/ru/acronym.rs::is_acronym_token`). Romance languages: numbers 0–999,999
 > (`rust/src/tts/normalize/numbers.rs`), letter tables and stop-lists
 > `ES_STOP_LIST` = OTAN, OVNI, SIDA, OPEP, OEA, ONU, FIFA, OMS;
 > `FR_STOP_LIST` = OTAN, OVNI, SIDA, FIFA, OPEP, ONU, OMS;
@@ -533,12 +541,13 @@ stderr note, because the upstream CharsiuG2P export has no Castilian θ tag.
   unavailable and Latin-American phonology is used
 - AND synthesis still succeeds with exit 0
 
-> *Technical Note — script gate: `rust/src/tts/fluid_kokoro.rs:228-234`
-> (`ensure_script_supported`); zh Han is allowed for `zm_050`. Castilian
-> degrade decision (#511 Phase-0 spike found no working θ tag in the klebster
-> CharsiuG2P export): `rust/src/tts/charsiu/mod.rs:46-110`; `es-ES` is detected
-> by `is_castilian_region` while `es`/`es-419`/`es-MX` use the LatAm tag
-> directly. zh runs off FluidAudio's separate Mandarin (`ANE-zh/`) bundle,
+> *Technical Note — script gate:
+> `rust/src/tts/fluid_kokoro.rs::ensure_script_supported`; zh Han is allowed for
+> `zm_050`. Castilian degrade decision (#511 Phase-0 spike found no working θ
+> tag in the klebster CharsiuG2P export):
+> `rust/src/tts/charsiu/mod.rs::Charsiu::to_ipa`; `es-ES` is detected by
+> `rust/src/tts/charsiu/mod.rs::is_castilian_region` while `es`/`es-419`/`es-MX`
+> use the LatAm tag directly. zh runs off FluidAudio's separate Mandarin (`ANE-zh/`) bundle,
 > which `kesha install --tts zh` stages like every other model — voice packs
 > and pinyin dictionaries included (`rust/src/models/manifest.rs::ANE_ZH_FILES`,
 > `ANE_ZH_G2P_ASSETS`, #823).*
@@ -566,8 +575,10 @@ still exit 0.
 - THEN stdout reads `No voices installed. Run: kesha install --tts`
 - AND the process exits 0
 
-> *Technical Note — enumeration: `rust/src/cli/say.rs:140-163`; the CLI relays
-> the Engine's stdout and exit code verbatim (`src/cli/say.ts:157-164`).
+> *Technical Note — enumeration: `rust/src/cli/say.rs::list_kokoro_voices` and
+> `rust/src/cli/say.rs::list_vosk_ru_voices`; the CLI relays the Engine's voice
+> ids and exit code verbatim (the `--list-voices` branch of
+> `src/cli/say.ts::sayCommand`).
 > Partial Vosk installs advertise no `ru-vosk-*` voices (same cache gate as
 > synthesis). AVSpeech enumeration is best-effort: a missing Sidecar still
 > shows Kokoro/Vosk voices.*
