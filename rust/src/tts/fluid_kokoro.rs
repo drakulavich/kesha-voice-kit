@@ -321,10 +321,89 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<(Vec<f32>, u
         anyhow::bail!("fluid-kokoro: text is empty");
     }
     ensure_script_supported(voice_id, text)?;
-    with_kokoro(voice_id, |audio| {
-        audio
-            .synthesize_kokoro_samples(text, voice_id, speed)
-            .context("FluidAudio Kokoro synthesis")
+    ensure_pronounceable(voice_id, text)?;
+    let (result, captured) = crate::fluid_stderr::with_captured_stderr(|| {
+        with_kokoro(voice_id, |audio| {
+            audio
+                .synthesize_kokoro_samples(text, voice_id, speed)
+                .context("FluidAudio Kokoro synthesis")
+        })
+    });
+    match result {
+        Ok(samples) => {
+            crate::fluid_stderr::relay_captured(&captured);
+            Ok(samples)
+        }
+        Err(err) => Err(classify_bridge_failure(err, &captured, text, voice_id)),
+    }
+}
+
+/// FluidAudio's G2P errors on text with nothing to pronounce, so refuse before the model rather than leak its line (T3-7).
+fn ensure_pronounceable(voice_id: &str, text: &str) -> Result<()> {
+    if text.chars().any(char::is_alphanumeric) {
+        return Ok(());
+    }
+    coded_bail!(
+        ErrorCode::ScriptUnsupported,
+        "no pronounceable content for voice '{voice_id}'"
+    );
+}
+
+/// Longest whitespace-free run FluidAudio's G2P encoder accepts is ~100 characters; 40 identifies it without echoing it.
+const MAX_TOKEN_CHARS: usize = 40;
+
+/// The word FluidAudio named on fd 2, else the longest token of the input when its message is a phonemization failure.
+fn rejected_token(captured: &str, text: &str) -> Option<String> {
+    const MARKERS: [&str; 4] = [
+        "encoderPredictionFailed",
+        "inputProcessingFailed",
+        "no phonemes",
+        "G2P",
+    ];
+    let named = captured
+        .split_once("G2P failed on word '")
+        .and_then(|(_, rest)| rest.split_once('\''))
+        .map(|(word, _)| word.to_string());
+    let token = match named {
+        Some(word) => word,
+        None => {
+            if !MARKERS.iter().any(|m| captured.contains(m)) {
+                return None;
+            }
+            text.split_whitespace()
+                .max_by_key(|t| t.chars().count())?
+                .to_string()
+        }
+    };
+    if token.chars().count() <= MAX_TOKEN_CHARS {
+        return Some(token);
+    }
+    Some(format!(
+        "{}…",
+        token.chars().take(MAX_TOKEN_CHARS).collect::<String>()
+    ))
+}
+
+/// FluidAudio reports a rejected token only on fd 2, so without this the CLI quotes that raw line as E_INTERNAL (T1-14).
+fn classify_bridge_failure(
+    err: anyhow::Error,
+    captured: &str,
+    text: &str,
+    voice_id: &str,
+) -> anyhow::Error {
+    if crate::errors::code_of(&err) != ErrorCode::Internal {
+        crate::fluid_stderr::relay_captured(captured);
+        return err;
+    }
+    if let Some(token) = rejected_token(captured, text) {
+        return anyhow::Error::new(crate::errors::CodedError {
+            code: ErrorCode::ScriptUnsupported,
+            message: format!("voice '{voice_id}' cannot pronounce '{token}'"),
+        });
+    }
+    anyhow::Error::new(crate::errors::CodedError {
+        code: ErrorCode::Internal,
+        message: format!("{err:#}{}", crate::fluid_stderr::failure_detail(captured)),
     })
 }
 
@@ -460,6 +539,73 @@ mod tests {
         ensure_script_supported("hm_omega", "Namaste").expect("romanized hi ok");
         ensure_script_supported("em_alex", "¡Hola!").expect("latin es ok");
         ensure_script_supported("am_michael", "Hello").expect("english ok");
+    }
+
+    #[test]
+    fn text_with_nothing_to_pronounce_is_refused_before_the_model() {
+        for text in ["😀", "😀😀😀", "!!!", "…"] {
+            let err = synthesize(text, "am_michael", 1.0)
+                .expect_err("unpronounceable text must be refused");
+            assert_eq!(
+                crate::errors::code_of(&err),
+                ErrorCode::ScriptUnsupported,
+                "{text:?}: {err}"
+            );
+            assert!(format!("{err:#}").contains("am_michael"), "{text:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_token_the_g2p_rejects_is_script_unsupported_naming_its_first_40_chars() {
+        let token = "x".repeat(100);
+        let text = format!("Token: {token}");
+        let captured = format!(
+            "[WARN] [FluidAudio.KokoroAneEnglishPhonemizer] G2P failed on word '{token}': G2P encoder prediction failed.\nKokoro synthesize error: encoderPredictionFailed\n"
+        );
+        let err = classify_bridge_failure(
+            anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+            &captured,
+            &text,
+            "am_michael",
+        );
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ScriptUnsupported);
+        let msg = format!("{err:#}");
+        assert!(msg.contains(&"x".repeat(40)), "{msg}");
+        assert!(
+            !msg.contains(&"x".repeat(41)),
+            "the token is capped at 40 chars: {msg}"
+        );
+        assert!(
+            !msg.contains("G2P encoder prediction failed"),
+            "no raw library line: {msg}"
+        );
+    }
+
+    #[test]
+    fn a_coded_bridge_failure_keeps_its_code_and_never_leaks_a_raw_line() {
+        let missing = crate::errors::CodedError {
+            code: ErrorCode::ModelMissing,
+            message: "assets are missing".into(),
+        };
+        let err = classify_bridge_failure(
+            anyhow::Error::new(missing),
+            "E5RT encountered an STL exception\n",
+            "Hello there",
+            "am_michael",
+        );
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
+
+        let opaque = classify_bridge_failure(
+            anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+            "E5RT encountered an STL exception\n",
+            "Hello there",
+            "am_michael",
+        );
+        assert_eq!(crate::errors::code_of(&opaque), ErrorCode::Internal);
+        assert!(
+            format!("{opaque:#}").contains("E5RT encountered an STL exception"),
+            "the captured cause rides in the coded error: {opaque:#}"
+        );
     }
 
     #[test]
