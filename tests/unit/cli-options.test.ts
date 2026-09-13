@@ -55,6 +55,11 @@ describe("findUnknownOption", () => {
     expect(findUnknownOption(["-z", "a.wav"], ARGS)).toEqual({ name: "-z", suggestion: null });
   });
 
+  test("a negative number is a value the command judges, not an unknown short flag", () => {
+    expect(findUnknownOption(["retention", "-5"], {})).toBeNull();
+    expect(findUnknownOption(["-5x"], {})).toBeNull();
+  });
+
   test("everything after -- is a positional", () => {
     expect(findUnknownOption(["--", "--frobnicate"], ARGS)).toBeNull();
   });

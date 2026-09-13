@@ -44,7 +44,7 @@ export function findUnknownOption(rawArgs: string[], argsDef: ArgsDef): UnknownO
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i]!;
     if (arg === "--") break;
-    if (!arg.startsWith("-") || arg === "-") continue;
+    if (!arg.startsWith("-") || arg === "-" || /^-\d/.test(arg)) continue;
     if (arg.startsWith("--")) {
       const eq = arg.indexOf("=");
       const name = eq === -1 ? arg.slice(2) : arg.slice(2, eq);

@@ -17,12 +17,12 @@
 
 ## 3. Argument handling (TS)
 
-- [ ] 3.1 S1-5 / S2-5 / S9-F3 unknown flags refused before any spawn, exit 2, suggestion line
-- [ ] 3.2 S1-1 usage with no input → stderr, `E_INVALID_ARG`, exit 2, empty stdout
-- [ ] 3.3 S9-F2 every CLI-level usage error prints `error [E_INVALID_ARG]: …`
-- [ ] 3.4 S9-F1 CLI-origin `E_INVALID_ARG` on the transcribe path exits 2
-- [ ] 3.5 S10-1 `completions` without a shell → stderr, `E_INVALID_ARG`, exit 2
-- [ ] 3.6 S3-F3 global flag before a subcommand routes to it, or is refused with the correct shape
+- [x] 3.1 S1-5 / S2-5 / S9-F3 unknown flags refused before any spawn, exit 2, suggestion line
+- [x] 3.2 S1-1 usage with no input → stderr, `E_INVALID_ARG`, exit 2, empty stdout
+- [x] 3.3 S9-F2 every CLI-level usage error prints `error [E_INVALID_ARG]: …`
+- [x] 3.4 S9-F1 CLI-origin `E_INVALID_ARG` on the transcribe path exits 2
+- [x] 3.5 S10-1 `completions` without a shell → stderr, `E_INVALID_ARG`, exit 2
+- [x] 3.6 S3-F3 global flag before a subcommand routes to it, or is refused with the correct shape
 
 ## 4. Channels and language (TS)
 
@@ -34,11 +34,11 @@
 
 ## 5. Diagnostics and Stats (TS)
 
-- [ ] 5.1 S5-F1 `versionMarker` (and every path-bearing string) redacted in doctor/support-bundle
-- [ ] 5.2 S5-F2 `stats export` without `--format` → usage line, exit 2
-- [ ] 5.3 S5-F3 `stats retention -5` rejected, exit 2
-- [ ] 5.4 S5-F4 support-bundle report on stderr
-- [ ] 5.5 S9-F5 engine debug events reach the diagnostic log
+- [x] 5.1 S5-F1 `versionMarker` (and every path-bearing string) redacted in doctor/support-bundle
+- [x] 5.2 S5-F2 `stats export` without `--format` → usage line, exit 2
+- [x] 5.3 S5-F3 `stats retention -5` rejected, exit 2
+- [x] 5.4 S5-F4 support-bundle report on stderr
+- [x] 5.5 S9-F5 engine debug events reach the diagnostic log
 
 ## 6. MCP and core API (TS)
 
@@ -50,9 +50,9 @@
 
 ## 7. Lifecycle (TS)
 
-- [ ] 7.1 S4-F1 `init` cancelled at a prompt exits 130
-- [ ] 7.2 S4-F2 stale install lock (dead pid, same host) is broken; hint printed at the start of the wait
-- [ ] 7.3 S10-2 completions fall back to file paths for the audio argument in bash, zsh and fish
+- [x] 7.1 S4-F1 `init` cancelled at a prompt exits 130
+- [x] 7.2 S4-F2 stale install lock (dead pid, same host) is broken; hint printed at the start of the wait
+- [x] 7.3 S10-2 completions fall back to file paths for the audio argument in bash, zsh and fish
 
 ## 8. Integration
 
