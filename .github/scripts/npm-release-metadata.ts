@@ -46,7 +46,7 @@ if (import.meta.main) {
     const { provenance } = assertNpmReleaseMetadata(view.stdout.toString(), pkg, version, view.exitCode ?? 1);
     console.log(`ok: ${pkg}@${version} on the registry with ${provenance}`);
   } catch (e) {
-    console.error(`FAIL: ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`::error::FAIL: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
   }
 }
