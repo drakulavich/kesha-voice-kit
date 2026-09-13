@@ -214,13 +214,21 @@ export function validateTranscribeArgs(
   return { ok: true, vadMode, outputFormat: fmt.format };
 }
 
+type FileProgress = ReturnType<typeof createPercentProgress> | null;
+
+/** A warning is not progress: it must reach stderr under --quiet, where no bar exists to interrupt. */
+function warnAboveProgress(progress: FileProgress, message: string): void {
+  if (progress) progress.interrupt(() => log.warn(message));
+  else log.warn(message);
+}
+
 async function detectLanguages(
   file: string,
   text: string,
   options: {
     wantsLangId: boolean;
     expectedLang?: string;
-    progress: ReturnType<typeof createPercentProgress> | null;
+    progress: FileProgress;
     stats: StatsRecorder;
     transcriptDurationSeconds: number | null;
   },
@@ -250,7 +258,7 @@ async function detectLanguages(
   if (audioLanguage && expectedLang && audioLanguage.confidence > 0.8) {
     const mismatch = checkLanguageMismatch(expectedLang, audioLanguage.code);
     if (mismatch) {
-      progress?.interrupt(() => log.warn(`${file}: ${mismatch} (from audio)`));
+      warnAboveProgress(progress, `${file}: ${mismatch} (from audio)`);
     }
   }
 
@@ -268,7 +276,7 @@ async function detectLanguages(
 
   const mismatchWarning = checkLanguageMismatch(expectedLang, lang);
   if (mismatchWarning) {
-    progress?.interrupt(() => log.warn(`${file}: ${mismatchWarning}`));
+    warnAboveProgress(progress, `${file}: ${mismatchWarning}`);
   }
 
   return {

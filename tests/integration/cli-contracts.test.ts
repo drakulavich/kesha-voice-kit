@@ -1935,4 +1935,24 @@ exit 0
     expect(run.stderr).toContain("EBADF");
     expect(run.stderr).not.toContain("at writeFast");
   }, 30000);
+
+  describe("language flags", () => {
+    /** Exploratory S1-3: quiet drops progress, not warnings; the mismatch used to ride on the progress bar and vanish with it. */
+    test("--quiet keeps the language-mismatch warning on stderr", async () => {
+      const dir = makeTempDir("kesha-cli-contract-quiet-lang-warn-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+
+      const run = await runCli(["-q", "--lang", "en", mediaPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: [`${mediaPath}: warning: expected language "en" but detected "ru"`],
+        stderrNotContains: ["Transcribing", "Transcribed"],
+      });
+      expect(run.stdout).not.toBe("");
+    });
+  });
 });
