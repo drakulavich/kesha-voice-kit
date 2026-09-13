@@ -961,6 +961,22 @@ describe("createSupportBundle", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("a version marker holding the home path is redacted like every other path (Exploratory S5-F1)", async () => {
+    const dir = tempDir("kesha-support-bundle-marker-");
+    process.env.HOME = dir;
+    process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+    process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+    mkdirSync(join(dir, "engine", "bin"), { recursive: true });
+    writeFileSync(join(dir, "engine", "bin", "kesha-engine.version"), `${join(dir, "builds", "alice")}\n`);
+
+    const output = join(dir, "bundle.tar.gz");
+    await createSupportBundle({ output, now: new Date("2026-05-17T12:34:56Z") });
+    const archive = gunzipSync(readFileSync(output)).toString("utf8");
+
+    expect(archive).toContain("~/builds/alice");
+    expect(archive).not.toContain(dir);
+  });
 });
 
 describe("engine version drift (#738)", () => {

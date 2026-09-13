@@ -234,7 +234,7 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   return {
     path: redactPath(binPath, redact),
     installed,
-    versionMarker,
+    versionMarker: redactString("versionMarker", versionMarker, redact),
     pinnedVersion: engineVersion,
     versionState: engineVersionState(versionMarker, engineVersion),
     runnable: health.status !== "missing" && health.status !== "unusable",
