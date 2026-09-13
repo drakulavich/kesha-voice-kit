@@ -277,6 +277,49 @@ fn engine_choice<'a>(resolved: &'a tts::voices::ResolvedVoice, rate: f32) -> tts
     }
 }
 
+/// A fifo destination streams, so it is never opened here: the open would block until a reader attaches.
+#[cfg(unix)]
+fn out_file_type_refusal(path: &std::path::Path) -> Option<Result<(), String>> {
+    use std::os::unix::fs::FileTypeExt;
+    let file_type = std::fs::metadata(path).map(|m| m.file_type());
+    // `/dev/stdout` is the engine's stdout, which is the CLI's pipe, not the caller's (T1-15).
+    let device = path.starts_with("/dev")
+        || file_type
+            .as_ref()
+            .is_ok_and(|ft| ft.is_char_device() || ft.is_block_device());
+    if device {
+        return Some(Err(format!(
+            "cannot write --out {}: it is a device the engine's stdout does not reach \
+             — omit --out to write the audio to stdout",
+            path.display()
+        )));
+    }
+    file_type.is_ok_and(|ft| ft.is_fifo()).then_some(Ok(()))
+}
+
+#[cfg(not(unix))]
+fn out_file_type_refusal(_path: &std::path::Path) -> Option<Result<(), String>> {
+    None
+}
+
+/// Probe `--out` before synthesis pays for a path the caller mistyped, as `record::WavOutput::open` does (T1-4).
+fn probe_out_path(path: &std::path::Path) -> Result<(), String> {
+    if let Some(verdict) = out_file_type_refusal(path) {
+        return verdict;
+    }
+    let existed = path.exists();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|err| format!("cannot write --out {}: {err}", path.display()))?;
+    if !existed {
+        let _ = std::fs::remove_file(path);
+    }
+    Ok(())
+}
+
 /// Write synthesized bytes to `--out` file or stdout.
 fn write_output(out: Option<&std::path::Path>, bytes: &[u8]) -> Result<(), i32> {
     use std::io::Write;
@@ -338,6 +381,13 @@ pub fn run(a: SayArgs) -> i32 {
             return 2;
         }
     };
+
+    if let Some(path) = a.out.as_deref() {
+        if let Err(msg) = probe_out_path(path) {
+            events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
+            return 2;
+        }
+    }
 
     if let Err(msg) = tts::say::validate_rate(a.rate) {
         events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
