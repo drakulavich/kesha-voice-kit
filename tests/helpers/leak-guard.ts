@@ -8,9 +8,11 @@
  */
 import { afterAll, afterEach } from "bun:test";
 import { installInterruptReaper, reapLeakedProcesses } from "./process";
-import { reapTempDirs, sweepStaleTempDirs } from "./temp-dir";
+import { reapTempDirs, sweepStaleTempDirs, tempDir } from "./temp-dir";
 
 installInterruptReaper();
+// Without it every suite appends to the developer's real diagnostic log and Stats DB (openspec kesha-home).
+if (!process.env.KESHA_HOME?.trim()) process.env.KESHA_HOME = tempDir("kesha-home-");
 // A SIGKILLed run reaches no handler at all, so the next run is the only thing that can clean up after it (#1175).
 sweepStaleTempDirs();
 // An interrupted run reaches no `afterAll`, which is exactly when these directories used to survive (#1175).

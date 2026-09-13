@@ -160,13 +160,14 @@ function cacheDirWithVadModel(): string {
 
 const engineBasename = process.platform === "win32" ? "kesha-engine.exe" : "kesha-engine";
 
-type PathEnv = Record<"KESHA_CACHE_DIR" | "KESHA_ENGINE_BIN", string | undefined>;
+type PathEnv = Record<"KESHA_CACHE_DIR" | "KESHA_ENGINE_BIN" | "KESHA_HOME", string | undefined>;
 
-/** Runs `fn` with the two path-resolution vars forced to `env`, restoring the two it mutated. */
+/** Runs `fn` with the path-resolution vars forced to `env`, restoring the ones it mutated. */
 function withPathEnv<T>(env: PathEnv, fn: () => T): T {
   const saved: PathEnv = {
     KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
     KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
+    KESHA_HOME: process.env.KESHA_HOME,
   };
   const apply = (values: PathEnv) => {
     for (const [key, value] of Object.entries(values)) {
@@ -184,7 +185,7 @@ function withPathEnv<T>(env: PathEnv, fn: () => T): T {
 
 describe("engine", () => {
   test("getEngineBinPath defaults to the XDG-style cache under $HOME", () => {
-    withPathEnv({ KESHA_CACHE_DIR: undefined, KESHA_ENGINE_BIN: undefined }, () => {
+    withPathEnv({ KESHA_CACHE_DIR: undefined, KESHA_ENGINE_BIN: undefined, KESHA_HOME: undefined }, () => {
       expect(getEngineBinPath()).toBe(
         join(homedir(), ".cache", "kesha", "engine", "bin", engineBasename),
       );
@@ -193,19 +194,19 @@ describe("engine", () => {
 
   test("getEngineBinPath lets KESHA_ENGINE_BIN outrank KESHA_CACHE_DIR", () => {
     withPathEnv(
-      { KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "/tmp/kesha-explicit-engine" },
+      { KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "/tmp/kesha-explicit-engine", KESHA_HOME: undefined },
       () => expect(getEngineBinPath()).toBe("/tmp/kesha-explicit-engine"),
     );
   });
 
   test("getEngineBinPath follows KESHA_CACHE_DIR", () => {
-    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: undefined }, () => {
+    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: undefined, KESHA_HOME: undefined }, () => {
       expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", engineBasename));
     });
   });
 
   test("getEngineBinPath treats an empty KESHA_ENGINE_BIN as unset", () => {
-    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "" }, () => {
+    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "", KESHA_HOME: undefined }, () => {
       expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", engineBasename));
     });
   });
