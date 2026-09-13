@@ -252,6 +252,12 @@ const CLI_ONLY: &[(&str, &str, Category, bool)] = &[
         Category::Internal,
         true,
     ),
+    (
+        "E_INTERRUPTED",
+        "The run was cancelled by its caller",
+        Category::Internal,
+        true,
+    ),
 ];
 
 fn origin_of(code: ErrorCode) -> Origin {
@@ -423,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn errors_carry_origin_and_exactly_three_retryable_codes() {
+    fn errors_carry_origin_and_exactly_four_retryable_codes() {
         let d = document();
         let retryable: Vec<&str> = d
             .errors
@@ -433,7 +439,12 @@ mod tests {
             .collect();
         assert_eq!(
             retryable,
-            vec!["E_MODEL_DOWNLOAD", "E_DIARIZE_TIMEOUT", "E_INSTALL_RACE"]
+            vec![
+                "E_MODEL_DOWNLOAD",
+                "E_DIARIZE_TIMEOUT",
+                "E_INSTALL_RACE",
+                "E_INTERRUPTED"
+            ]
         );
         let origin = |c: &str| {
             d.errors
@@ -445,12 +456,13 @@ mod tests {
         assert_eq!(origin("E_ENGINE_SPAWN"), Origin::Cli);
         assert_eq!(origin("E_ENGINE_PROTOCOL"), Origin::Cli);
         assert_eq!(origin("E_INSTALL_RACE"), Origin::Cli);
+        assert_eq!(origin("E_INTERRUPTED"), Origin::Cli);
         assert_eq!(origin("E_INVALID_ARG"), Origin::Both);
         assert_eq!(origin("E_INPUT_NOT_FOUND"), Origin::Both);
         assert_eq!(origin("E_INTERNAL"), Origin::Both);
         assert_eq!(origin("E_UNSUPPORTED_PLATFORM"), Origin::Both);
         assert_eq!(origin("E_MODEL_MISSING"), Origin::Engine);
-        assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 3);
+        assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 4);
     }
 
     #[test]

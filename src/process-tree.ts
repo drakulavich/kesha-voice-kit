@@ -1,3 +1,5 @@
+import { KeshaError } from "./engine/events";
+
 type ManagedSignal = "SIGINT" | "SIGTERM" | "SIGKILL";
 
 interface KillableProcess {
@@ -21,8 +23,12 @@ let pendingSignalCleanup:
     }
   | null = null;
 
-export function engineAbortError(): Error {
-  const err = new Error("kesha-engine process aborted");
+/** The rejection for a cancelled run; `name` stays `AbortError` so signal-driven callers can keep matching on it. */
+export function engineAbortError(): KeshaError {
+  const err = new KeshaError("E_INTERRUPTED", "kesha-engine process aborted", {
+    exitCode: 130,
+    hint: "the caller's AbortSignal was aborted; the engine subprocess was terminated",
+  });
   err.name = "AbortError";
   return err;
 }

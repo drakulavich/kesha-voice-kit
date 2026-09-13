@@ -35,6 +35,7 @@ code never needs sanitizing.
 | `E_ENGINE_PROTOCOL` | platform | no | The installed Engine speaks a protocol version this CLI does not (CLI-side). | `kesha install` for a stale Engine; `bun add -g @drakulavich/kesha-voice-kit@latest` for a stale CLI. |
 | `E_INSTALL_RACE` | internal | yes | Another `kesha install` reached the same cache: either it overwrote the engine during our run (the recorded version or the binary's own `--version` names something else), or it still holds the cache and we gave up waiting for it. Nothing is written in the waiting case. | Re-run the install once no other one is in flight; give concurrent jobs private state via `KESHA_HOME` (or just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`). A wait that must fail sooner than the 6 h ceiling: `KESHA_INSTALL_LOCK_WAIT_SECS`, in seconds, positive numbers only — and lowering it costs the one-retry takeover ([concurrent installs](architecture.md#runtime-data-flow)). If the message names a lock no install owns, delete the `.lock` directory it names. |
 | `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid — including a directory passed where an audio file is expected, and a `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN` path the engine cannot be written into: one the engine directory cannot be created under, or an existing engine directory this user cannot write (a read-only Nix store install reaches the second). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
+| `E_INTERRUPTED` | internal | yes | The run was cancelled, not failed: a Core API caller aborted the `AbortSignal` it passed to `transcribe()`, or an MCP client cancelled the call or disconnected mid-call; the engine subprocess was terminated. Exit status 130. CLI-side only — the engine never emits it. | Nothing to fix if the cancellation was intended; otherwise re-run the call. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |
 
 ## Where codes come from
@@ -45,11 +46,12 @@ code never needs sanitizing.
   When the engine also writes a line that is not an event, the CLI reports `E_INTERNAL` quoting
   that line and appends the engine's own transcript, so stderr may show two coded lines; the
   `code` field (JSON output, `SayError.code`) names one.
-- **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`** and **`E_INSTALL_RACE`** originate
+- **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`**, **`E_INSTALL_RACE`** and **`E_INTERRUPTED`** originate
   only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
-  an installed engine whose protocol version the CLI does not speak, and an
+  an installed engine whose protocol version the CLI does not speak, an
   install that lost the cache to another one, whether by being overwritten before
-  it could report success or by giving up waiting for the lock.
+  it could report success or by giving up waiting for the lock, and a run the
+  caller cancelled through its `AbortSignal` or MCP request cancellation.
 - The CLI also raises `E_MODEL_MISSING` before spawning when `--speakers` needs a diarization
   or VAD model that `kesha install --diarize` / `--vad` has not placed, `E_TEXT_EMPTY` and
   `E_TEXT_TOO_LONG` from `kesha say` before any engine runs, and `E_INTERNAL` when the

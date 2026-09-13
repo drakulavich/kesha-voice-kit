@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { transcribe } from "../../src/lib";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
 import { KeshaError } from "../../src/engine/events";
 import { tempDir } from "../helpers/temp-dir";
+import { waitForPidExit, waitForPidFile } from "../helpers/process";
 
 function fakeEngine(features: string[]): string {
   return writeTranscribingEngine(
@@ -137,6 +138,48 @@ describe("lib API", () => {
         text: "ok",
         segments: [],
       });
+    });
+  });
+});
+
+// Exploratory S8-1: abort was the one rejection on this surface that was not a KeshaError.
+describe("transcribe() abort", () => {
+  fakeEngineIt("an aborted call rejects with E_INTERRUPTED and leaves no engine running", async () => {
+    const dir = tempDir("kesha-lib-abort-");
+    const pidFile = join(dir, "engine.pid");
+    const audio = join(dir, "audio.wav");
+    writeFileSync(audio, "");
+    const enginePath = writeTranscribingEngine(
+      "kesha-lib-abort-engine-",
+      [],
+      `  printf '%s' "$$" > '${pidFile}'\n  sleep 30`,
+    );
+    await withEngine(enginePath, async () => {
+      const controller = new AbortController();
+      const run = transcribe(audio, { signal: controller.signal });
+      const enginePid = await waitForPidFile(pidFile);
+      controller.abort();
+      const err = await run.catch((e) => e);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_INTERRUPTED");
+      expect((err as KeshaError).origin).toBe("cli");
+      expect((err as KeshaError).exitCode).toBe(130);
+      expect((err as KeshaError).hint).toContain("AbortSignal");
+      expect(await waitForPidExit(enginePid)).toBe(true);
+    });
+  });
+
+  fakeEngineIt("an already-aborted signal rejects with E_INTERRUPTED before any engine is spawned", async () => {
+    const dir = tempDir("kesha-lib-preaborted-");
+    const marker = join(dir, "spawned");
+    const audio = join(dir, "audio.wav");
+    writeFileSync(audio, "");
+    const enginePath = writeTranscribingEngine("kesha-lib-preaborted-engine-", [], `  : > '${marker}'`);
+    await withEngine(enginePath, async () => {
+      const err = await transcribe(audio, { signal: AbortSignal.abort() }).catch((e) => e);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_INTERRUPTED");
+      expect(existsSync(marker)).toBe(false);
     });
   });
 });
