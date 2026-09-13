@@ -517,6 +517,8 @@ exit 2
   }
 
   /** Captures what the CLI writes to stderr, with `isTTY` forced so the repaint path is the one under test. */
+  const stripAnsi = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
+
   async function captureStderr(isTTY: boolean, run: () => Promise<unknown>): Promise<string> {
     const originalIsTTY = process.stderr.isTTY;
     const originalWrite = process.stderr.write;
@@ -634,11 +636,12 @@ exit 2
       const out = await withEngineEnv(outEngine, () =>
         captureStderr(false, () => recordEngine({ out: "/tmp/out.wav" }, 10)),
       );
-      expect(out).toBe("Recorded /tmp/out.wav (16000 Hz, 1 channel, 160000 frames)\n");
+      // CI counts as a colour terminal, so the notice arrives cyan there and plain locally.
+      expect(stripAnsi(out)).toBe("Recorded /tmp/out.wav (16000 Hz, 1 channel, 160000 frames)\n");
       const live = await withEngineEnv(liveEngine, () =>
         captureStderr(false, () => recordEngine({ live: true }, 10)),
       );
-      expect(live).toBe("No speech detected.\n");
+      expect(stripAnsi(live)).toBe("No speech detected.\n");
     } finally {
       log.quietEnabled = false;
     }
