@@ -1,4 +1,7 @@
+import { KeshaError } from "./engine/events";
+
 type ManagedSignal = "SIGINT" | "SIGTERM" | "SIGKILL";
+type ReceivedSignal = "SIGINT" | "SIGTERM";
 
 interface KillableProcess {
   pid: number;
@@ -16,6 +19,7 @@ const activeProcesses = new Set<ActiveProcess>();
 let signalHandlersInstalled = false;
 let pendingSignalCleanup:
   | {
+      signal: ReceivedSignal;
       exitCode: number;
       done: Promise<void>;
     }
@@ -55,6 +59,13 @@ export async function waitForPendingSignalCleanup(): Promise<number | null> {
   if (!pendingSignalCleanup) return null;
   await pendingSignalCleanup.done;
   return pendingSignalCleanup.exitCode;
+}
+
+/** The `E_INTERRUPTED` failure of a run the CLI's own signal cut short, named after that signal rather than whatever the engine died of; null while no signal has arrived, and null for a run that still exited 0, whose output is whole. */
+export function interruptedRun(exitCode: number): KeshaError | null {
+  if (exitCode === 0 || !pendingSignalCleanup) return null;
+  const { signal, exitCode: signalExitCode } = pendingSignalCleanup;
+  return new KeshaError("E_INTERRUPTED", `interrupted (${signal})`, { exitCode: signalExitCode });
 }
 
 export function terminateProcessTree(proc: KillableProcess, signal: ManagedSignal = "SIGTERM"): void {
@@ -107,18 +118,19 @@ function ensureSignalHandlers(): void {
   process.on("SIGTERM", () => terminateActiveProcessTrees("SIGTERM", 143));
 }
 
-function terminateActiveProcessTrees(signal: ManagedSignal, exitCode: number): void {
+function terminateActiveProcessTrees(signal: ReceivedSignal, exitCode: number): void {
   const processes = [...activeProcesses];
-  process.exitCode = exitCode;
 
   for (const proc of processes) {
     proc.kill(signal);
     scheduleForceKill(proc, { ref: true });
   }
 
+  // The first signal names the run's outcome; a repeat only re-signals what is still running.
   if (pendingSignalCleanup) {
     return;
   }
+  process.exitCode = exitCode;
 
   const delayMs = processes.length > 0
     ? FORCE_KILL_GRACE_MS + SIGNAL_EXIT_BUFFER_MS
@@ -127,7 +139,7 @@ function terminateActiveProcessTrees(signal: ManagedSignal, exitCode: number): v
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
   });
-  pendingSignalCleanup = { exitCode, done };
+  pendingSignalCleanup = { signal, exitCode, done };
   setTimeout(resolveDone, delayMs);
   done.then(() => process.exit(exitCode));
 }

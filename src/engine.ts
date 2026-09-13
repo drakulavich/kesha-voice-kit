@@ -5,7 +5,7 @@ import { installHint } from "./install-hint";
 import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
-import { engineAbortError, registerProcessTree } from "./process-tree";
+import { engineAbortError, interruptedRun, registerProcessTree } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
 import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
 import {
@@ -168,6 +168,8 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
     log.debug(`aborted args=${JSON.stringify(args)}`);
     throw engineAbortError();
   }
+  const interrupted = interruptedRun(exitCode);
+  if (interrupted) throw interrupted;
   const stderr = events.stderr.trim();
   // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
   if (exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)

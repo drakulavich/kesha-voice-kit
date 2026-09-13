@@ -182,7 +182,11 @@ describe("capability pact — recordings", () => {
     const cliOnly = ["E_ENGINE_PROTOCOL", "E_ENGINE_SPAWN", "E_INSTALL_RACE"];
     // #1202: the engine still publishes these as its own although the CLI raises them before spawning.
     const engineStill = ["E_MODEL_MISSING", "E_TEXT_EMPTY", "E_TEXT_TOO_LONG"];
-    const shared = [...raised].filter((c) => !cliOnly.includes(c) && !engineStill.includes(c)).sort();
+    // Added to the engine's CLI-only table after the recorded v1.25.0 assets; moves into cliOnly with the next re-record.
+    const unpublishedYet = ["E_INTERRUPTED"];
+    const shared = [...raised]
+      .filter((c) => !cliOnly.includes(c) && !engineStill.includes(c) && !unpublishedYet.includes(c))
+      .sort();
     for (const t of TARGETS) {
       const byOrigin = (origin: string) => t.pact.errors.filter((e) => e.origin === origin).map((e) => e.code).sort();
       expect(byOrigin("cli")).toEqual(cliOnly);

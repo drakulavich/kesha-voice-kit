@@ -1516,11 +1516,14 @@ process.exit(99);
 
       proc.kill(signal);
 
-      const [, actualExitCode] = await Promise.all([drained, proc.exited]);
+      const [[, stderr], actualExitCode] = await Promise.all([drained, proc.exited]);
       expect(actualExitCode).toBe(exitCode);
+      expect(stderr).toContain(`${mediaPath}: error [E_INTERRUPTED]: interrupted (${signal})`);
+      expect(stderr).not.toContain("E_INTERNAL");
       expect(await waitForPidExit(enginePid)).toBe(true);
     });
   }
+
 
   for (const [phase, args] of [
     ["probe", ["install"]],
