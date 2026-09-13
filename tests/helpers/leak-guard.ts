@@ -15,7 +15,7 @@ import { reapTempDirs, sweepStaleTempDirs, tempDir } from "./temp-dir";
 installInterruptReaper();
 if (!process.env.KESHA_HOME) {
   // The cache stays where the real-engine lanes install into (#741); only logs, Stats and MCP audio move.
-  process.env.KESHA_CACHE_DIR ??= join(homedir(), ".cache", "kesha");
+  process.env.KESHA_CACHE_DIR ||= join(homedir(), ".cache", "kesha");
   // Without it every suite appends to the developer's real diagnostic log and Stats DB (openspec kesha-home).
   process.env.KESHA_HOME = tempDir("kesha-home-");
 }
