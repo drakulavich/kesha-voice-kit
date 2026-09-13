@@ -74,6 +74,28 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         anyhow::bail!("--max-seconds must be greater than 0");
     }
 
+    let file = create_wav_output(path)?;
+    let (sample_rate, mono_samples) = match capture_default_input_mono(max_duration) {
+        Ok(captured) => captured,
+        Err(err) => {
+            let _ = std::fs::remove_file(path);
+            return Err(err);
+        }
+    };
+
+    write_plain_mono_float_wav(file, sample_rate, &mono_samples)
+        .with_context(|| format!("failed to write WAV recording: {}", path.display()))?;
+
+    Ok(RecordSummary {
+        path: path.to_path_buf(),
+        sample_rate,
+        channels: OUTPUT_CHANNELS,
+        frames: mono_samples.len() as u64,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn capture_default_input_mono(max_duration: Duration) -> Result<(u32, Vec<f32>)> {
     let input = open_default_input()?;
     let input_channels = input.config.channels;
     let sample_rate = input.config.sample_rate.0;
@@ -129,15 +151,7 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
     }
     warn_dropped_buffers(dropped.load(std::sync::atomic::Ordering::Relaxed));
 
-    write_plain_mono_float_wav(path, sample_rate, &mono_samples)
-        .context("failed to write WAV recording")?;
-
-    Ok(RecordSummary {
-        path: path.to_path_buf(),
-        sample_rate,
-        channels: OUTPUT_CHANNELS,
-        frames: mono_samples.len() as u64,
-    })
+    Ok((sample_rate, mono_samples))
 }
 
 /// What a live session produced, and whether a signal ended it.
@@ -659,15 +673,29 @@ fn create_parent_dir(path: &Path) -> Result<()> {
         .with_context(|| format!("failed to create output directory: {}", parent.display()))
 }
 
+/// Opens `--out` before the microphone does, so a path that cannot take the WAV is refused
+/// as the caller's argument instead of after the whole recording has run (Exploratory S3-F4).
 #[cfg(any(target_os = "macos", test))]
-fn write_plain_mono_float_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {
-    let header = wav_header_bytes(sample_rate, samples.len())?;
-    create_parent_dir(path)?;
+fn create_wav_output(path: &Path) -> Result<std::fs::File> {
+    use crate::errors::{CodedError, ErrorCode};
+    let invalid = |what: &str, err: anyhow::Error| {
+        anyhow::Error::new(CodedError {
+            code: ErrorCode::InvalidArg,
+            message: format!("cannot {what} --out {}: {err:#}", path.display()),
+        })
+    };
+    create_parent_dir(path).map_err(|err| invalid("create the directory for", err))?;
+    std::fs::File::create(path).map_err(|err| invalid("write", err.into()))
+}
 
-    let mut file = std::io::BufWriter::new(
-        std::fs::File::create(path)
-            .with_context(|| format!("failed to create WAV recording: {}", path.display()))?,
-    );
+#[cfg(any(target_os = "macos", test))]
+fn write_plain_mono_float_wav(
+    file: std::fs::File,
+    sample_rate: u32,
+    samples: &[f32],
+) -> Result<()> {
+    let header = wav_header_bytes(sample_rate, samples.len())?;
+    let mut file = std::io::BufWriter::new(file);
     file.write_all(&header)?;
     for sample in samples {
         file.write_all(&sample.to_le_bytes())?;
@@ -885,10 +913,31 @@ mod tests {
     }
 
     #[test]
+    fn a_directory_as_the_wav_output_is_the_callers_argument() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = create_wav_output(dir.path()).unwrap_err();
+        assert_eq!(
+            crate::errors::code_of(&err),
+            crate::errors::ErrorCode::InvalidArg
+        );
+        let rendered = format!("{err:#}");
+        assert!(rendered.contains("--out"), "{rendered}");
+        assert!(
+            rendered.contains(&dir.path().display().to_string()),
+            "{rendered}"
+        );
+        assert!(
+            dir.path().is_dir(),
+            "the refusal must leave the directory alone"
+        );
+    }
+
+    #[test]
     fn wav_writer_finalizes_readable_mono_float_wav() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mic.wav");
-        write_plain_mono_float_wav(&path, 16_000, &[0.0, 0.5, -0.5]).unwrap();
+        let file = create_wav_output(&path).unwrap();
+        write_plain_mono_float_wav(file, 16_000, &[0.0, 0.5, -0.5]).unwrap();
 
         let reader = hound::WavReader::open(&path).unwrap();
         let spec = reader.spec();
@@ -907,7 +956,7 @@ mod tests {
     fn wav_writer_uses_plain_ieee_float_without_channel_mask() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mic.wav");
-        write_plain_mono_float_wav(&path, 16_000, &[0.0; 8]).unwrap();
+        write_plain_mono_float_wav(create_wav_output(&path).unwrap(), 16_000, &[0.0; 8]).unwrap();
         let wav = std::fs::read(path).unwrap();
         let fmt_chunk_offset = (0..wav.len() - 8)
             .find(|i| &wav[*i..*i + 4] == b"fmt ")
