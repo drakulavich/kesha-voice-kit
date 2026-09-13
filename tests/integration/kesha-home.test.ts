@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
+import { resolveStatePaths } from "../../src/state-paths";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 import { runCliScenario } from "./cli-scenario";
@@ -9,6 +10,21 @@ type StatusPathsJson = Record<"cache" | "logs" | "stats" | "mcpAudio", { path: s
 
 const SPECIFIC = ["KESHA_CACHE_DIR", "KESHA_LOG_DIR", "KESHA_STATS_DB"] as const;
 const scenarioTest = process.platform === "win32" ? test.skip : test;
+
+/** Size and mtime of every platform-default location, or null where nothing exists. */
+function platformDefaultsSnapshot(): Record<string, [number, number] | null> {
+  const defaults = resolveStatePaths({}, process.platform);
+  const snapshot: Record<string, [number, number] | null> = {};
+  for (const entry of Object.values(defaults)) {
+    try {
+      const st = statSync(entry.path);
+      snapshot[entry.path] = [st.size, st.mtimeMs];
+    } catch {
+      snapshot[entry.path] = null;
+    }
+  }
+  return snapshot;
+}
 
 // One variable has to be enough, so the three specific ones are removed from the inherited env.
 describe("KESHA_HOME isolates a whole run (openspec state-directories)", () => {
@@ -37,6 +53,7 @@ describe("KESHA_HOME isolates a whole run (openspec state-directories)", () => {
     const audio = join(dir, "note.ogg");
     writeFileSync(audio, "OggS");
     const env = { HOME: dir, KESHA_HOME: home, KESHA_ENGINE_BIN: enginePath };
+    const untouched = platformDefaultsSnapshot();
 
     const status = await runCliScenario(["status", "--json"], { env });
     expect(status.exitCode).toBe(0);
@@ -62,6 +79,7 @@ describe("KESHA_HOME isolates a whole run (openspec state-directories)", () => {
 
     const entries = readdirSync(home).filter((name) => !name.startsWith("stats.sqlite-"));
     expect(entries.sort()).toEqual(["logs", "stats.sqlite"]);
+    expect(platformDefaultsSnapshot()).toEqual(untouched);
   }, 60_000);
 
   scenarioTest("a specific variable keeps its own location out of the umbrella", async () => {

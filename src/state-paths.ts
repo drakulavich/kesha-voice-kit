@@ -18,9 +18,12 @@ export interface StatePaths {
 
 type Env = Record<string, string | undefined>;
 
+// Anchored once: a core-API caller that chdir()s later must keep one root for the whole process.
+const STARTUP_CWD = process.cwd();
+
 function setting(env: Env, name: string): string | undefined {
-  const value = env[name]?.trim();
-  return value ? value : undefined;
+  const value = env[name];
+  return value === undefined || value === "" ? undefined : value;
 }
 
 /** Precedence per location: its own variable, then `KESHA_HOME`, then the platform default. */
@@ -29,10 +32,11 @@ export function resolveStatePaths(
   platform: string = process.platform,
   homeDir: string = homedir(),
   tmpDir: string = tmpdir(),
-  cwd: string = process.cwd(),
+  cwd: string = STARTUP_CWD,
 ): StatePaths {
   const p = platform === "win32" ? win32 : posix;
-  const anchor = (value: string): string => p.resolve(cwd, value);
+  // Absolute values stay verbatim: on win32 `resolve` would prepend a drive to a drive-less `\tmp\x`.
+  const anchor = (value: string): string => (p.isAbsolute(value) ? value : p.resolve(cwd, value));
   const home = setting(env, "KESHA_HOME");
   const homeRoot = home === undefined ? undefined : anchor(home);
 

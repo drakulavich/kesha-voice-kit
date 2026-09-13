@@ -110,8 +110,14 @@ describe("resolveStatePaths", () => {
   });
 
   test("an empty variable counts as unset, for the umbrella and for each specific one", () => {
-    const p = resolve("darwin", { KESHA_HOME: "", KESHA_CACHE_DIR: "", KESHA_LOG_DIR: "   ", KESHA_STATS_DB: "" });
+    const p = resolve("darwin", { KESHA_HOME: "", KESHA_CACHE_DIR: "", KESHA_LOG_DIR: "", KESHA_STATS_DB: "" });
     expect(p).toEqual(resolve("darwin", {}));
+  });
+
+  test("whitespace inside a path is part of the path, never trimmed away", () => {
+    const p = resolve("linux", { KESHA_CACHE_DIR: "/mnt/models ", KESHA_LOG_DIR: " logs" }, "/work");
+    expect(p.cacheDir.path).toBe("/mnt/models ");
+    expect(p.logDir.path).toBe("/work/ logs");
   });
 
   test("a relative value is anchored to the working directory once", () => {
@@ -119,6 +125,12 @@ describe("resolveStatePaths", () => {
     expect(p.cacheDir.path).toBe("/work/job/state/cache");
     expect(p.logDir.path).toBe("/work/job/logs/here");
     expect(p.statsDbPath.path).toBe("/work/job/state/stats.sqlite");
+  });
+
+  test("an absolute value is kept verbatim, drive-less Windows paths included", () => {
+    const p = resolve("win32", { KESHA_CACHE_DIR: "\\tmp\\kesha-cache", KESHA_HOME: "/tmp/kesha-home" }, "D:\\work");
+    expect(p.cacheDir.path).toBe("\\tmp\\kesha-cache");
+    expect(p.logDir.path).toBe("\\tmp\\kesha-home\\logs");
   });
 
   test("XDG and Windows base variables still shape the defaults", () => {
