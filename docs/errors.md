@@ -84,7 +84,7 @@ status that lets scripts branch without parsing stderr:
 | `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
 | `4` | Unexpected/uncoded internal failure. |
 | `5` | `kesha say` text exceeds the length limit. |
-| `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run; the engine subprocess was terminated. |
+| `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run and the engine subprocess was terminated, or a `kesha init` prompt was cancelled (nothing was installed). |
 | `143` | Terminated — a `SIGTERM` reached the CLI mid-run (a cancelled CI job, a stopped container); the engine subprocess was terminated. |
 
 `130` and `143` mean the run was **cancelled**, not that it failed: a wrapper
