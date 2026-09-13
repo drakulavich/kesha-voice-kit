@@ -123,11 +123,20 @@ fn list_kokoro_voices(_cache: &std::path::Path) -> Vec<String> {
             .filter_map(|e| e.ok())
             .filter_map(|e| {
                 let p = e.path();
-                if p.extension().and_then(|s| s.to_str()) == Some("bin") {
-                    p.file_stem().map(|s| format!("en-{}", s.to_string_lossy()))
-                } else {
-                    None
+                if p.extension().and_then(|s| s.to_str()) != Some("bin") {
+                    return None;
                 }
+                let stem = p.file_stem()?.to_string_lossy().into_owned();
+                // The pack's first letter is its language, as in manifest::ane_voice_lang; es/it packs are not English voices (#1168).
+                let lang = match stem.chars().next()? {
+                    'a' | 'b' => "en",
+                    'e' => "es",
+                    'f' => "fr",
+                    'i' => "it",
+                    'p' => "pt",
+                    _ => return None,
+                };
+                Some(format!("{lang}-{stem}"))
             })
             .collect()
     }
