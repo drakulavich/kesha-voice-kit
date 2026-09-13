@@ -39,5 +39,5 @@
 ## 7. Gate
 
 - [x] 7.1 `just preflight`; scan added lines for Cyrillic; commit in TDD-sized steps.
-- [ ] 7.2 PR with the change proposal; adversarial review aimed at the claim "no existing variable changes meaning and no default path changes when `KESHA_HOME` is unset"; Greptile P1/P2 clear; CI on the full head SHA.
+- [x] 7.2 PR with the change proposal; adversarial review aimed at the claim "no existing variable changes meaning and no default path changes when `KESHA_HOME` is unset"; Greptile P1/P2 clear; CI on the full head SHA.
 - [ ] 7.3 After merge: sync and archive the change (`openspec-sync`, `openspec-archive`) in a follow-up PR, including the GLOSSARY edit.
