@@ -35,7 +35,7 @@ code never needs sanitizing.
 | `E_ENGINE_PROTOCOL` | platform | no | The installed Engine speaks a protocol version this CLI does not (CLI-side). | `kesha install` for a stale Engine; `bun add -g @drakulavich/kesha-voice-kit@latest` for a stale CLI. |
 | `E_INSTALL_RACE` | internal | yes | Another `kesha install` reached the same cache: either it overwrote the engine during our run (the recorded version or the binary's own `--version` names something else), or it still holds the cache and we gave up waiting for it. Nothing is written in the waiting case. | Re-run the install once no other one is in flight; give concurrent jobs private state via `KESHA_HOME` (or just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`). A wait that must fail sooner than the 6 h ceiling: `KESHA_INSTALL_LOCK_WAIT_SECS`, in seconds, positive numbers only — and lowering it costs the one-retry takeover ([concurrent installs](architecture.md#runtime-data-flow)). If the message names a lock no install owns, delete the `.lock` directory it names. |
 | `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid — including a directory passed where an audio file is expected, and a `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN` path the engine cannot be written into: one the engine directory cannot be created under, or an existing engine directory this user cannot write (a read-only Nix store install reaches the second). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
-| `E_INTERRUPTED` | platform | no | The CLI received `SIGINT` or `SIGTERM` mid-run (CLI-side): the running engine was terminated. The message names the signal the CLI received — `interrupted (SIGINT)` — even when the engine ignored it and had to be force-killed. Exits 130 or 143 respectively. | Nothing to fix: the run was cancelled, not broken. Re-run it. |
+| `E_INTERRUPTED` | platform | no | The CLI received `SIGINT`, `SIGTERM` or `SIGHUP` mid-run (CLI-side): the running engine was terminated and no queued file started. The message names the signal the CLI received — `interrupted (SIGINT)` — even when the engine ignored it and had to be force-killed. Exits 130, 143 or 129 respectively. | Nothing to fix: the run was cancelled, not broken. Re-run it. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure. | File a bug with `kesha support-bundle`. |
 
 ## Where codes come from
@@ -89,8 +89,9 @@ status that lets scripts branch without parsing stderr:
 | `5` | `kesha say` text exceeds the length limit. |
 | `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run; the engine subprocess was terminated and the interrupted files report `E_INTERRUPTED`. |
 | `143` | Terminated — a `SIGTERM` reached the CLI mid-run (a cancelled CI job, a stopped container); the engine subprocess was terminated and the interrupted files report `E_INTERRUPTED`. |
+| `129` | Hung up — the terminal closed (`SIGHUP`) mid-run; the engine subprocess was terminated exactly as for `SIGTERM` and the interrupted files report `E_INTERRUPTED`. Not on Windows, which has no terminal hangup. |
 
-`130` and `143` mean the run was **cancelled**, not that it failed: a wrapper
+`130`, `143` and `129` mean the run was **cancelled**, not that it failed: a wrapper
 that treats every non-zero status as a crash will misreport a cancellation, and
 one that greps for `error [E_` can tell a cancellation by its `E_INTERRUPTED` code.
 

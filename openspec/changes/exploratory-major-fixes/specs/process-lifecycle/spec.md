@@ -2,7 +2,7 @@
 
 ### Requirement: An interrupted command terminates its Engine subprocess and reports the signal in its Exit code
 
-When the CLI receives an interrupt or termination signal while an Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination — rather than with the command's own success or failure code. This holds for transcription, Language detection, synthesis, recording, both `--list-voices` listings — the CLI command's and the MCP server's — alike, as well as the darwin Kokoro warmup, model installation, and executable health checks.
+When the CLI receives an interrupt, termination or hangup signal while an Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination, 129 for hangup — rather than with the command's own success or failure code. A hangup (the terminal closing) SHALL terminate the Engine tree exactly as a termination does, by forwarding termination to it: the Engine runs detached in its own process group, so the hangup never reaches it on its own. Windows, which has no terminal hangup, installs no hangup handler. This holds for transcription, Language detection, synthesis, recording, both `--list-voices` listings — the CLI command's and the MCP server's — alike, as well as the darwin Kokoro warmup, model installation, and executable health checks.
 
 A run the signal cut short SHALL be reported as the CLI-origin Error code `E_INTERRUPTED`, never as `E_INTERNAL`: an Engine that exits 130 or 143 because the CLI forwarded the signal is a cancellation, not an uncoded failure. The message SHALL name the signal the CLI received — `error [E_INTERRUPTED]: interrupted (SIGINT)` — and SHALL carry no hint to file a bug. A run that still exited 0 keeps its output.
 
@@ -30,6 +30,14 @@ A run the signal cut short SHALL be reported as the CLI-origin Error code `E_INT
 - THEN the only coded line it sees is `E_INTERRUPTED`, which its catalog entry says is a cancellation
 - AND no `E_INTERNAL` line asks it to file a bug
 
+#### Scenario: Maks closes the terminal
+
+- GIVEN Maks is transcribing a long recording in a terminal window
+- WHEN he closes the window and the shell hangs the CLI up
+- THEN the Engine subprocess is terminated as if the CLI had received a termination signal
+- AND the CLI exits 129, reporting the file as `error [E_INTERRUPTED]: interrupted (SIGHUP)`
+- AND no Engine process is left running at PPID 1
+
 #### Scenario: A signal arrives when nothing is running
 
 - GIVEN no Engine subprocess is active
@@ -38,8 +46,9 @@ A run the signal cut short SHALL be reported as the CLI-origin Error code `E_INT
   has nothing to clean
 
 > *Technical Note — `src/process-tree.ts::ensureSignalHandlers`
-> installs one `SIGINT` handler (exit code 130) and one `SIGTERM` handler (exit
-> code 143) the first time any Engine process is registered.
+> installs one `SIGINT` handler (exit code 130), one `SIGTERM` handler (exit
+> code 143) and, off Windows, one `SIGHUP` handler (exit code 129, forwarding
+> `SIGTERM` to the tree) the first time any Engine process is registered.
 > `src/process-tree.ts::terminateActiveProcessTrees` records which signal arrived first,
 > sets `process.exitCode`, signals every
 > registered process, then schedules the actual `process.exit`. With no active
@@ -48,7 +57,7 @@ A run the signal cut short SHALL be reported as the CLI-origin Error code `E_INT
 > that recorded signal into the `E_INTERRUPTED` KeshaError; `src/engine.ts::runEngine`,
 > `src/synth.ts::say` and `src/synth.ts::listVoiceIds` consult it before reading the
 > exit as a failure. These codes extend the Exit code taxonomy in the Glossary, and
-> `docs/errors.md` lists them for callers scripting the CLI. Both signals are
+> `docs/errors.md` lists them for callers scripting the CLI. All three signals are
 > asserted end to end in `tests/integration/cli-contracts.test.ts` (#940).*
 
 ### Requirement: A subprocess that ignores the first signal is force-killed

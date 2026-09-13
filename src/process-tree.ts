@@ -1,7 +1,7 @@
 import { KeshaError } from "./engine/events";
 
 type ManagedSignal = "SIGINT" | "SIGTERM" | "SIGKILL";
-type ReceivedSignal = "SIGINT" | "SIGTERM";
+type ReceivedSignal = "SIGINT" | "SIGTERM" | "SIGHUP";
 
 interface KillableProcess {
   pid: number;
@@ -121,15 +121,17 @@ function scheduleForceKill(proc: ActiveProcess, opts: { ref?: boolean } = {}): T
 function ensureSignalHandlers(): void {
   if (signalHandlersInstalled) return;
   signalHandlersInstalled = true;
-  process.on("SIGINT", () => terminateActiveProcessTrees("SIGINT", 130));
-  process.on("SIGTERM", () => terminateActiveProcessTrees("SIGTERM", 143));
+  process.on("SIGINT", () => terminateActiveProcessTrees("SIGINT", "SIGINT", 130));
+  process.on("SIGTERM", () => terminateActiveProcessTrees("SIGTERM", "SIGTERM", 143));
+  // The engine runs detached in its own group, so a terminal hangup only reaches it forwarded; Windows has no hangup to forward.
+  if (process.platform !== "win32") process.on("SIGHUP", () => terminateActiveProcessTrees("SIGHUP", "SIGTERM", 129));
 }
 
-function terminateActiveProcessTrees(signal: ReceivedSignal, exitCode: number): void {
+function terminateActiveProcessTrees(signal: ReceivedSignal, forward: ManagedSignal, exitCode: number): void {
   const processes = [...activeProcesses];
 
   for (const proc of processes) {
-    proc.kill(signal);
+    proc.kill(forward);
     scheduleForceKill(proc, { ref: true });
   }
 

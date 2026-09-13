@@ -1561,7 +1561,7 @@ process.exit(99);
 
   // The interrupted file counts as a failure, so the signal's code has to beat the batch's
   // own exit(1) (src/cli/main.ts) for these to hold — that ordering is what they measure.
-  for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
+  for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]] as const) {
     test(`${signal} mid-transcription exits ${exitCode} and leaves no engine running`, async () => {
       if (process.platform === "win32") return;
       const dir = makeTempDir(`kesha-cli-contract-${signal.toLowerCase()}-exit-`);
