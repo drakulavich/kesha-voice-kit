@@ -5,9 +5,8 @@ import { dirname, isAbsolute, resolve } from "node:path";
 
 const CODE = /\.(ts|tsx|js|mjs|cjs|rs|sh|py|swift|toml|ya?ml|nix)$/;
 // `#[derive]`/`#[test]` are Rust attributes and `#!` a shebang, not comments.
-const COMMENT = /^\+\s*(#(?![\[!])|\/\/|\/\*|\*)/;
-const BANNER = /^\+\s*(#|\/\/)\s*[-=*_]{4,}/;
-const exempt = (run: string[]) => run.some((l) => l.includes("SAFETY:")) || /^(\/\/\/|\/\*\*)/.test(run[0]!);
+const OPENER = /^(#(?![\[!])|\/\/|\/\*)/;
+const BANNER = /^(#|\/\/)\s*[-=*_]{4,}/;
 
 const input = (await Bun.stdin.json().catch(() => ({}))) as { tool_input?: { file_path?: string } };
 const named = input.tool_input?.file_path;
@@ -15,34 +14,73 @@ if (!named) process.exit(0);
 const file = isAbsolute(named) ? named : resolve(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), named);
 if (!CODE.test(file)) process.exit(0);
 
+// Comment-ness comes from the whole file, not the hunk: a line added inside an existing /* */ block has no delimiter in a -U0 diff.
+const lines = (await Bun.file(file).text()).split("\n").map((l) => l.trim());
+type Kind = "line" | "doc" | "block" | null;
+const kind: Kind[] = [];
+const span: number[] = [];
+let open: Kind = null;
+let members: number[] = [];
+const close = () => {
+  for (const i of members) span[i] = members.length;
+  members = [];
+  open = null;
+};
+lines.forEach((t, i) => {
+  if (open) {
+    kind.push(open);
+    members.push(i);
+    if (t.includes("*/")) close();
+  } else if (OPENER.test(t)) {
+    const block = t.startsWith("/*") && !t.includes("*/") ? (t.startsWith("/**") ? "doc" : "block") : null;
+    kind.push(block ?? (t.startsWith("///") || t.startsWith("/**") ? "doc" : "line"));
+    span.push(1);
+    if (block) {
+      open = block;
+      members = [i];
+    }
+  } else {
+    kind.push(null);
+    span.push(1);
+  }
+});
+close();
+
 // The hook's cwd is the session root; a worktree file must be diffed from its own checkout or git reports nothing and the gate passes silently.
 const cwd = dirname(file);
 const tracked = (await $`git ls-files --error-unmatch -- ${file}`.cwd(cwd).nothrow().quiet()).exitCode === 0;
-// A file Write just created has no diff, and every line of it is an added line.
-const diff = tracked
-  ? await $`git diff -U0 -- ${file}`.cwd(cwd).nothrow().quiet().text()
-  : (await Bun.file(file).text()).split("\n").map((l) => `+${l}`).join("\n");
+const added: number[] = [];
+if (tracked) {
+  // Against HEAD, so a change the agent already staged is still judged.
+  const diff = await $`git diff HEAD -U0 -- ${file}`.cwd(cwd).nothrow().quiet().text();
+  for (const m of diff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)) {
+    const start = Number(m[1]);
+    const count = m[2] === undefined ? 1 : Number(m[2]);
+    for (let n = start; n < start + count; n++) added.push(n);
+  }
+} else for (let n = 1; n <= lines.length; n++) added.push(n);
 
 const violations: string[] = [];
 let run: string[] = [];
-let inBlock = false;
-
+let exempt = false;
 const flush = () => {
-  if (run.length > 1 && !exempt(run)) violations.push(`${run.length}-line block:\n      ${run.join("\n      ")}`);
+  if (run.length > 1 && !exempt) violations.push(`${run.length}-line block:\n      ${run.join("\n      ")}`);
   run = [];
+  exempt = false;
 };
-
-for (const line of diff.split("\n")) {
-  const added = line.startsWith("+") && !line.startsWith("+++");
-  if (added && (inBlock || COMMENT.test(line))) {
-    if (BANNER.test(line)) violations.push(`banner: ${line.slice(1).trim()}`);
-    const body = line.slice(1).trim();
-    run.push(body);
-    inBlock = inBlock ? !body.includes("*/") : body.includes("/*") && !body.includes("*/");
-  } else {
-    inBlock = false;
-    flush();
+let previous = -1;
+for (const n of added) {
+  const k = kind[n - 1];
+  const t = lines[n - 1]!;
+  if (!k || n !== previous + 1) flush();
+  if (k) {
+    if (BANNER.test(t)) violations.push(`banner: ${t}`);
+    // Growing a legacy /* */ block by one line is still a multi-line comment the agent wrote into.
+    if (k === "block" && span[n - 1]! > 1) violations.push(`line added inside a ${span[n - 1]}-line block: ${t}`);
+    run.push(t);
+    if (k === "doc" || t.includes("SAFETY:")) exempt = true;
   }
+  previous = n;
 }
 flush();
 
