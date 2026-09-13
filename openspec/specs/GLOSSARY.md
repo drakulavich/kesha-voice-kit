@@ -9,7 +9,7 @@ verbatim; if you need a new term, add it here first.
 | **Engine** | The `kesha-engine` Rust binary, downloaded from GitHub Releases by `kesha install` and invoked by the CLI as a subprocess. Never linked in-process. |
 | **Backend** | The compile-time ASR implementation inside the Engine: **CoreML** (Apple Silicon, FluidAudio/ANE) or **ONNX** (Linux/Windows/fallback, `ort`). Exactly one per Engine binary; no runtime fallback. |
 | **Profile** | The cargo feature bundle an Engine binary was built from: **portable** (`onnx`, `tts`; builds anywhere) or **darwin** (CoreML plus the macOS system features). Every released binary is built from exactly one, and the describe document reports which as `profile`. |
-| **Model cache** | `~/.cache/kesha/` (override: `KESHA_CACHE_DIR`) where the Engine binary and all models live. |
+| **Model cache** | Where the Engine binary and all models live: `KESHA_CACHE_DIR` when set, otherwise `<KESHA_HOME>/cache` when `KESHA_HOME` is set, otherwise `~/.cache/kesha/` (state-directories). |
 | **Pinned hash** | The SHA-256 recorded for every model file in `rust/src/models/manifest.rs`; downloads that don't match are rejected, never cached. |
 | **Channel** | How a published artifact is selected: **stable**, what an install resolves when nothing is named, **alpha**, reached only by naming it (`@alpha` on npm), and **beta**, the release-candidate Prerelease Channel. npm dist-tags are the mechanism (v2: one version names both artifacts, and a per-merge alpha builds no Engine). |
 | **Alpha** | An unblessed build published on the alpha channel so a change can be run before it is released. Version `<next-version>-alpha.N`, derived from existing tags at publish time and never committed. No stability promise. |

@@ -54,6 +54,7 @@ Specs reference these named personas instead of a generic "user":
 | [cli-distribution](cli-distribution/spec.md) | How `kesha` itself is installed: npm, Homebrew, `.deb`/`.rpm`, container, Nix |
 | [audio-recording](audio-recording/spec.md) | `kesha record`: microphone capture to WAV |
 | [diagnostics](diagnostics/spec.md) | `doctor`, `status`, `logs`, `stats`, `support-bundle` |
+| [state-directories](state-directories/spec.md) | Where the Model cache, Diagnostic logs, Stats DB and MCP audio live: specific variable > `KESHA_HOME` > platform default |
 | [cli-shell-integration](cli-shell-integration/spec.md) | Global flags, `--version`/`--help`, color/quiet rules, completions, manpage |
 | [process-lifecycle](process-lifecycle/spec.md) | Interruption, Engine process-tree termination, signal exit codes |
 | [mcp-server](mcp-server/spec.md) | `kesha mcp`: MCP tools and audio resources |
