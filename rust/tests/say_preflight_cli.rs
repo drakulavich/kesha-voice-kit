@@ -59,7 +59,10 @@ fn a_rate_outside_the_engine_safe_range_is_an_invalid_argument_before_any_engine
 fn the_documented_rate_endpoints_pass_the_pre_flight() {
     let tmp = tempfile::tempdir().unwrap();
     for ok in ["0.5", "1", "2.0"] {
-        let out = say(&["Hello there", "--rate", ok], tmp.path());
+        let out = say(
+            &["Hello there", "--voice", "xx-nope", "--rate", ok],
+            tmp.path(),
+        );
         assert_ne!(
             out.status.code(),
             Some(2),
@@ -158,7 +161,7 @@ fn a_fifo_out_passes_the_pre_flight_without_blocking_on_a_reader() {
         .expect("mkfifo")
         .success());
     let mut child = Command::new(common::engine_bin())
-        .args(["say", "Hello there", "--out"])
+        .args(["say", "Hello there", "--voice", "xx-nope", "--out"])
         .arg(&fifo)
         .env("KESHA_CACHE_DIR", tmp.path())
         .stdout(std::process::Stdio::null())

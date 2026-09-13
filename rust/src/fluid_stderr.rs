@@ -102,7 +102,7 @@ pub(crate) fn relay_captured(captured: &str) {
             continue;
         }
         if line.starts_with("{\"kind\":") {
-            eprintln!("{line}");
+            events::emit_rendered(line);
             continue;
         }
         events::warn(events::W_GENERIC, truncated(line));

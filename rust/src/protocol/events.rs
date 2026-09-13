@@ -115,6 +115,13 @@ pub fn error(code: ErrorCode, message: impl Into<String>, hint: Option<&str>) {
     Event::error(code, message, hint).emit()
 }
 
+/// Put back a line that is already a rendered event, captured from a descriptor this process redirected.
+pub fn emit_rendered(line: &str) {
+    let stderr = std::io::stderr();
+    let mut lock = stderr.lock();
+    let _ = writeln!(lock, "{line}");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
