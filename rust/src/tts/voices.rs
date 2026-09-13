@@ -93,6 +93,27 @@ impl ResolvedVoice {
     }
 }
 
+/// The prefixes this build's [`resolve_voice`] actually routes, so the unknown-language hint cannot drift from it (T2-2).
+fn supported_prefixes() -> String {
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    let kokoro = "'en-*', 'es-*', 'fr-*', 'hi-*', 'it-*', 'ja-*', 'pt-*', 'zh-*'";
+    #[cfg(not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )))]
+    let kokoro = "'en-*', 'es-*', 'fr-*', 'it-*', 'pt-*'";
+    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    let system = ", 'macos-*'";
+    #[cfg(not(all(feature = "system_tts", target_os = "macos")))]
+    let system = "";
+    format!("{kokoro}, 'ru-*'{system}")
+}
+
 /// Parse a voice id like `en-am_michael` or `ru-ruslan` into engine + paths.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
     let Some((lang, name)) = voice_id.split_once('-') else {
@@ -139,7 +160,8 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
         other => {
             coded_bail!(
                 ErrorCode::VoiceUnknown,
-                "language '{other}' not supported (use 'en-*', 'es-*', 'fr-*', 'it-*', 'pt-*', 'ru-*', or 'macos-*')"
+                "language '{other}' not supported (use {})",
+                supported_prefixes()
             )
         }
     }
@@ -612,6 +634,40 @@ mod tests {
         let err = resolve_voice(tmp.path(), "gibberish").unwrap_err();
         assert!(err.to_string().contains("lang-name"));
         assert_eq!(crate::errors::code_of(&err), ErrorCode::VoiceUnknown);
+    }
+
+    #[test]
+    fn the_unknown_language_hint_lists_exactly_the_prefixes_this_build_routes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hint = supported_prefixes();
+        for id in [
+            "en-am_michael",
+            "es-em_alex",
+            "fr-ff_siwis",
+            "hi-hm_omega",
+            "it-im_nicola",
+            "ja-jm_kumo",
+            "pt-pm_alex",
+            "zh-zm_050",
+            "ru-vosk-m02",
+            "macos-en-US",
+        ] {
+            let lang = id.split_once('-').unwrap().0;
+            let code = resolve_voice(tmp.path(), id)
+                .err()
+                .map(|e| crate::errors::code_of(&e));
+            let routed = !matches!(
+                code,
+                Some(ErrorCode::VoiceUnknown) | Some(ErrorCode::UnsupportedPlatform)
+            );
+            assert_eq!(
+                hint.contains(&format!("'{lang}-*'")),
+                routed,
+                "'{lang}-*' is {} by this build but {} in the hint: {hint}",
+                if routed { "routed" } else { "refused" },
+                if routed { "missing" } else { "listed" }
+            );
+        }
     }
 
     #[test]
