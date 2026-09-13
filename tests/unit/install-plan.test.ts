@@ -337,3 +337,93 @@ describe("install plan carries no platform block (#216)", () => {
     }
   });
 });
+
+// T2-8: the darwin arm pushed a warm-up note and no sized component, so `--plan --tts es`
+// promised "0 B" for a language whose voice pack and ANE chain were both absent.
+describe("the darwin-arm64 plan quotes the FluidAudio ANE bytes", () => {
+  const darwinArmTest =
+    process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
+
+  const sum = (files: { sizeBytes: number }[]) => files.reduce((n, f) => n + f.sizeBytes, 0);
+  const esPack = modelPlan.aneVoices.filter((f) => f.relPath.startsWith("e"));
+
+  function stageHome(prefix: string): { home: string; cache: string; ane: string; g2p: string } {
+    const home = mkdtempSync(join(tmpdir(), prefix));
+    const cache = join(home, ".cache", "kesha");
+    process.env.HOME = home;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.KESHA_ENGINE_BIN = join(cache, "engine", "bin", "kesha-engine");
+    return {
+      home,
+      cache,
+      ane: join(cache, "fluidaudio", "kokoro-82m-coreml", "ANE"),
+      g2p: join(home, ".cache", "fluidaudio", "Models", "kokoro"),
+    };
+  }
+
+  function stageFiles(dir: string, files: { relPath: string }[]): void {
+    for (const { relPath } of files) {
+      const path = join(dir, relPath);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, "x");
+    }
+  }
+
+  darwinArmTest("a cold cache is charged for the chain, the G2P set and the voice pack", async () => {
+    const staged = stageHome("kesha-plan-ane-cold-");
+    try {
+      const output = await renderInstallPlan({ ttsLangs: ["es"] });
+
+      expect(output).toContain(`(${sum(modelPlan.aneEn)} bytes, needed,`);
+      expect(output).toContain(`(${sum(modelPlan.kokoroG2p)} bytes, needed,`);
+      expect(output).toContain(`(${sum(esPack)} bytes, needed,`);
+      expect(output).not.toContain("Expected Kesha-managed network for this run: 0 B");
+    } finally {
+      rmSync(staged.home, { recursive: true, force: true });
+    }
+  });
+
+  darwinArmTest("a staged language costs nothing and its neighbour still costs its pack", async () => {
+    const staged = stageHome("kesha-plan-ane-staged-");
+    try {
+      stageFiles(staged.ane, modelPlan.aneEn);
+      stageFiles(staged.g2p, modelPlan.kokoroG2p);
+      stageFiles(
+        staged.ane,
+        modelPlan.aneVoices.filter((f) => /^[ab]/.test(f.relPath)),
+      );
+
+      const expectedNetwork = (out: string) =>
+        /Expected Kesha-managed network for this run: (.+)/.exec(out)?.[1];
+      const english = await renderInstallPlan({ ttsLangs: ["en"] });
+      expect(english).toContain(`(${sum(modelPlan.aneEn)} bytes, cached,`);
+      expect(english).toContain(`(${sum(modelPlan.kokoroG2p)} bytes, cached,`);
+      expect(expectedNetwork(english)).toBe(expectedNetwork(await renderInstallPlan({})));
+
+      const spanish = await renderInstallPlan({ ttsLangs: ["es"] });
+      expect(spanish).toContain(`(${sum(modelPlan.aneEn)} bytes, cached,`);
+      expect(spanish).toContain(`(${sum(esPack)} bytes, needed,`);
+    } finally {
+      rmSync(staged.home, { recursive: true, force: true });
+    }
+  });
+
+  darwinArmTest("Mandarin is charged for its own bundle, not the English chain", async () => {
+    const staged = stageHome("kesha-plan-ane-zh-");
+    try {
+      const output = await renderInstallPlan({ ttsLangs: ["zh"] });
+
+      const bundleBytes = sum(modelPlan.aneZh) + sum(modelPlan.aneZhG2p);
+      expect(output).toContain(`(${bundleBytes} bytes, needed,`);
+      expect(output).not.toContain(`(${sum(modelPlan.aneEn)} bytes,`);
+
+      const zhDir = join(staged.cache, "fluidaudio", "kokoro-82m-coreml", "ANE-zh");
+      stageFiles(zhDir, [...modelPlan.aneZh, ...modelPlan.aneZhG2p]);
+      expect(await renderInstallPlan({ ttsLangs: ["zh"] })).toContain(
+        `(${bundleBytes} bytes, cached,`,
+      );
+    } finally {
+      rmSync(staged.home, { recursive: true, force: true });
+    }
+  });
+});

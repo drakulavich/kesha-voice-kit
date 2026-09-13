@@ -110,6 +110,11 @@ const PACK_LANG: Record<string, string> = {
 /** Every Kokoro language this build can install a voice pack for, in the order diagnostics list them. */
 export const KOKORO_LANGUAGES = [...new Set(Object.values(PACK_LANG))].sort();
 
+/** Kokoro language a voice-pack basename belongs to; `undefined` for anything that is not one. */
+export function voicePackLanguage(basename: string): string | undefined {
+  return basename.endsWith(".bin") ? PACK_LANG[basename[0]!.toLowerCase()] : undefined;
+}
+
 function stagedLanguagesIn(dir: string): string[] {
   let entries: string[];
   try {
@@ -119,8 +124,7 @@ function stagedLanguagesIn(dir: string): string[] {
   }
   const langs = new Set<string>();
   for (const entry of entries) {
-    if (!entry.endsWith(".bin")) continue;
-    const lang = PACK_LANG[entry[0]!.toLowerCase()];
+    const lang = voicePackLanguage(entry);
     if (lang) langs.add(lang);
   }
   return [...langs].sort();
