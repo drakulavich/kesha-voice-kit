@@ -215,6 +215,7 @@ const CLI_EXIT_CODES: Record<string, number> = {
   E_TEXT_EMPTY: 2,
   E_TEXT_TOO_LONG: 5,
   E_INTERNAL: 4,
+  E_INTERRUPTED: 130,
 };
 
 /** Process exit status for a failure: an engine-origin error exits with the subprocess's own status (4 when it left none), a CLI-origin one by its code; anything else is the uncoded 4. */

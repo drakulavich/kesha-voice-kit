@@ -26,8 +26,12 @@ let pendingSignalCleanup:
     }
   | null = null;
 
-export function engineAbortError(): Error {
-  const err = new Error("kesha-engine process aborted");
+/** The rejection for a cancelled run; `name` stays `AbortError` so signal-driven callers can keep matching on it. */
+export function engineAbortError(): KeshaError {
+  const err = new KeshaError("E_INTERRUPTED", "kesha-engine process aborted", {
+    exitCode: 130,
+    hint: "the caller's AbortSignal was aborted; the engine subprocess was terminated",
+  });
   err.name = "AbortError";
   return err;
 }
@@ -50,6 +54,27 @@ export function registerProcessTree(proc: KillableProcess): {
     },
     terminate: (signal: ManagedSignal = "SIGTERM") => active.kill(signal),
     forceKillAfterGrace: () => scheduleForceKill(active),
+  };
+}
+
+/** Terminates `tree` when `signal` fires and arms the force kill; `dispose` detaches the listener once the run is over. */
+export function abortOnSignal(
+  tree: { terminate: (signal?: ManagedSignal) => void; forceKillAfterGrace: () => Timer },
+  signal: AbortSignal | undefined,
+): { readonly aborted: boolean; dispose: () => void } {
+  let aborted = false;
+  let forceKillTimer: Timer | undefined;
+  const abort = () => {
+    aborted = true;
+    tree.terminate("SIGTERM");
+    forceKillTimer ??= tree.forceKillAfterGrace();
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  return {
+    get aborted() {
+      return aborted;
+    },
+    dispose: () => signal?.removeEventListener("abort", abort),
   };
 }
 

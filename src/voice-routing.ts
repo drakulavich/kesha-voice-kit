@@ -59,9 +59,9 @@ export function pickVoiceForLang(
   }
 }
 
-async function autoRouteVoice(text: string): Promise<string | undefined> {
+async function autoRouteVoice(text: string, signal?: AbortSignal): Promise<string | undefined> {
   if (!text) return undefined;
-  const detected = await detectTextLanguageEngine(text);
+  const detected = await detectTextLanguageEngine(text, { signal });
   return pickVoiceForLang(detected?.code, detected?.confidence ?? 0);
 }
 
@@ -77,8 +77,9 @@ export async function resolveSayVoice(
   explicitVoice: string | undefined,
   langHint: string | undefined,
   text: string,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   if (explicitVoice !== undefined) return explicitVoice;
   if (langHint !== undefined) return pickVoiceForLang(langHint, 1);
-  return autoRouteVoice(text);
+  return autoRouteVoice(text, signal);
 }

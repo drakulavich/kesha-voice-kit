@@ -11,9 +11,19 @@ import {
 import { validateArgv } from "./engine/describe";
 import { KeshaError } from "./engine/events";
 import { installHint } from "./install-hint";
+import { statSync } from "fs";
 
 export type { VadMode };
 export type { TranscriptionOutput };
+
+/** True when `path` exists and is a directory; the CLI and the Core API both refuse one before any engine spawn. */
+export function isDirectoryPath(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 export interface TranscribeOptions {
   /** Silero VAD preprocessing selector. Defaults to `"auto"`. */

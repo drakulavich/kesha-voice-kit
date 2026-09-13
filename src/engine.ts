@@ -5,7 +5,7 @@ import { installHint } from "./install-hint";
 import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
-import { engineAbortError, interruptedRun, pendingInterruption, registerProcessTree } from "./process-tree";
+import { abortOnSignal, engineAbortError, interruptedRun, pendingInterruption, registerProcessTree } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
 import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
 import {
@@ -143,14 +143,7 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
   const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
-  let aborted = false;
-  let forceKillTimer: Timer | undefined;
-  const abort = () => {
-    aborted = true;
-    tree.terminate("SIGTERM");
-    forceKillTimer ??= tree.forceKillAfterGrace();
-  };
-  opts.signal?.addEventListener("abort", abort, { once: true });
+  const cancel = abortOnSignal(tree, opts.signal);
   let stdout: string;
   let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
@@ -161,12 +154,11 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
       proc.exited,
     ]);
   } finally {
-    opts.signal?.removeEventListener("abort", abort);
+    cancel.dispose();
     tree.dispose();
-    if (!aborted && forceKillTimer) clearTimeout(forceKillTimer);
   }
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
-  if (aborted) {
+  if (cancel.aborted) {
     log.debug(`aborted args=${JSON.stringify(args)}`);
     throw engineAbortError();
   }

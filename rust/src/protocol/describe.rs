@@ -254,7 +254,7 @@ const CLI_ONLY: &[(&str, &str, Category, bool)] = &[
     ),
     (
         "E_INTERRUPTED",
-        "A signal the CLI received cut the run short",
+        "The run was cancelled by a signal or by its caller",
         Category::Platform,
         false,
     ),
