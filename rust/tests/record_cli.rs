@@ -64,3 +64,80 @@ fn an_out_path_under_an_unwritable_directory_is_an_invalid_argument_naming_the_o
         "{v}"
     );
 }
+
+fn alive(pid: i32) -> bool {
+    // SAFETY: signal 0 delivers nothing; it only asks whether the pid exists.
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
+// Exploratory S3-F1: a shell stands in for a SIGKILLed CLI (kill -9 $$) whose stdin a sibling holds open, so only noticing the vanished parent can stop the engine; it once recorded to --max-seconds.
+#[test]
+fn a_recording_whose_parent_dies_stops_within_a_second_and_writes_no_wav() {
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("stdin.fifo");
+    let wav = dir.path().join("orphan.wav");
+    let pid_file = dir.path().join("engine.pid");
+    let err_file = dir.path().join("engine.stderr");
+    let writer_pid_file = dir.path().join("writer.pid");
+    let script = dir.path().join("run.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "mkfifo '{fifo}'\n\
+             sleep 30 > '{fifo}' &\n\
+             echo $! > '{writer}'\n\
+             sh -c 'exec 3<&0; \"{engine}\" record --out \"{wav}\" --max-seconds 20 <&3 2>\"{err}\" & \
+             echo $! > \"{pid}\"; sleep 1; kill -0 $(cat \"{pid}\") 2>/dev/null && kill -9 $$ || exit 3' < '{fifo}'\n",
+            fifo = fifo.display(),
+            writer = writer_pid_file.display(),
+            engine = common::engine_bin(),
+            wav = wav.display(),
+            err = err_file.display(),
+            pid = pid_file.display(),
+        ),
+    )
+    .unwrap();
+
+    let status = Command::new("sh")
+        .arg(&script)
+        .status()
+        .expect("run orchestrator");
+    let engine_stderr = std::fs::read_to_string(&err_file).unwrap_or_default();
+    if status.code() == Some(3) || engine_stderr.contains("\"kind\":\"error\"") {
+        eprintln!(
+            "engine never reached recording (no microphone?); skipping: {}",
+            engine_stderr.trim()
+        );
+        return;
+    }
+    let pid: i32 = std::fs::read_to_string(&pid_file)
+        .expect("the shell recorded the engine pid")
+        .trim()
+        .parse()
+        .expect("pid");
+
+    let mut stopped = false;
+    for _ in 0..20 {
+        if !alive(pid) {
+            stopped = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    // Reaped only now: killing it sooner closes the engine's stdin and stops it the clean way (#1187), masking the parent-death path under test.
+    if let Ok(w) = std::fs::read_to_string(&writer_pid_file) {
+        if let Ok(w) = w.trim().parse::<i32>() {
+            // SAFETY: the pid was written by this test's own shell; nothing else is signalled.
+            unsafe { libc::kill(w, libc::SIGKILL) };
+        }
+    }
+    if !stopped {
+        // SAFETY: the pid was spawned by this test's shell; nothing else is reaped here.
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+    }
+    assert!(stopped, "the engine kept recording after its parent died");
+    assert!(
+        !wav.exists(),
+        "a recording nobody waits for must not be written"
+    );
+}

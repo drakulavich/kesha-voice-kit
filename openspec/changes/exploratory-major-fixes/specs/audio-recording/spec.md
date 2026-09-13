@@ -27,3 +27,24 @@ The Engine SHALL open the `--out` path before it opens the microphone, and SHALL
 > *Technical Note — `rust/src/record.rs::create_wav_output` runs first in
 > `record_default_input_to_wav`; a capture failure after it removes the empty
 > file it created.*
+
+### Requirement: A recording whose parent process exits stops within about a second
+
+The Engine SHALL stop a `kesha record` capture within about a second of losing the process that started it — detected by its parent pid becoming 1 or changing from the one it started with — closing the microphone, removing any partially written file, and exiting non-zero, even when no signal reached it and its standard input stayed open.
+
+#### Scenario: Ira's CLI is force-killed mid-recording
+
+- GIVEN Ira started `kesha record --out note.wav` and the CLI is killed with SIGKILL from an interactive terminal
+- WHEN about a second passes
+- THEN the Engine has closed the microphone and exited non-zero
+- AND `note.wav` was not left behind
+
+#### Scenario: A recording whose caller is alive runs to its limit
+
+- GIVEN Maks runs `kesha record --out note.wav --max-seconds 5` and lets it run
+- WHEN the five seconds elapse with the caller still present
+- THEN the recording completes and the WAV is written
+
+> *Technical Note — `rust/src/record.rs::spawn_parent_watch_thread` polls `getppid`
+> every 250 ms and sends `Stop::ParentExited`, on which `capture_default_input_mono`
+> returns `ParentExited`; `rust/src/cli/record.rs` maps that to exit 129.*

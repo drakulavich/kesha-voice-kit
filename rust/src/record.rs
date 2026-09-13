@@ -51,6 +51,18 @@ pub const RECORD_LIVE_FEATURE: &str = "record.live";
 /// Capabilities flag for opt-in end-of-utterance stopping on a live recording.
 pub const RECORD_LIVE_AUTO_STOP_FEATURE: &str = "record.live.auto-stop";
 
+/// The process that started the recording is gone, so nobody is waiting for its result.
+#[derive(Debug)]
+pub struct ParentExited;
+
+impl std::fmt::Display for ParentExited {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("recording stopped: the parent process exited")
+    }
+}
+
+impl std::error::Error for ParentExited {}
+
 pub struct RecordSummary {
     pub path: std::path::PathBuf,
     pub sample_rate: u32,
@@ -102,8 +114,9 @@ fn capture_default_input_mono(max_duration: Duration) -> Result<(u32, Vec<f32>)>
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(RECORD_QUEUE_BUFFERS);
     let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let (stop_tx, stop_rx) = mpsc::channel::<()>();
-    spawn_stdin_stop_thread(stop_tx);
+    let (stop_tx, stop_rx) = mpsc::channel::<Stop>();
+    spawn_stdin_stop_thread(stop_tx.clone());
+    spawn_parent_watch_thread(stop_tx);
 
     let sink = {
         let dropped = std::sync::Arc::clone(&dropped);
@@ -119,9 +132,9 @@ fn capture_default_input_mono(max_duration: Duration) -> Result<(u32, Vec<f32>)>
 
     let started = Instant::now();
     let mut mono_samples = Vec::new();
-    'recording: loop {
-        if stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration {
-            break;
+    let ended_by = 'recording: loop {
+        if let Some(stop) = stop_due(&stop_rx, started, max_duration) {
+            break stop;
         }
         match sample_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(samples) => {
@@ -129,21 +142,24 @@ fn capture_default_input_mono(max_duration: Duration) -> Result<(u32, Vec<f32>)>
                     .chunks_exact(usize::from(input_channels))
                     .enumerate()
                 {
-                    if index % 1024 == 0
-                        && (stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration)
-                    {
-                        break 'recording;
+                    if index % 1024 == 0 {
+                        if let Some(stop) = stop_due(&stop_rx, started, max_duration) {
+                            break 'recording stop;
+                        }
                     }
                     mono_samples.push(mix_frame_to_mono(frame).clamp(-1.0, 1.0));
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Disconnected) => break Stop::Requested,
         }
-    }
+    };
 
     // Drain after stopping capture, or the last words spoken never reach the file.
     drop(stream);
+    if matches!(ended_by, Stop::ParentExited) {
+        return Err(ParentExited.into());
+    }
     while let Ok(samples) = sample_rx.try_recv() {
         for frame in samples.chunks_exact(usize::from(input_channels)) {
             mono_samples.push(mix_frame_to_mono(frame).clamp(-1.0, 1.0));
@@ -203,8 +219,9 @@ pub fn record_default_input_live(
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(RECORD_QUEUE_BUFFERS);
     let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let (stop_tx, stop_rx) = mpsc::channel::<()>();
-    spawn_stdin_stop_thread(stop_tx);
+    let (stop_tx, stop_rx) = mpsc::channel::<Stop>();
+    spawn_stdin_stop_thread(stop_tx.clone());
+    spawn_parent_watch_thread(stop_tx);
 
     let sink = {
         let dropped = std::sync::Arc::clone(&dropped);
@@ -406,7 +423,7 @@ impl LiveFeed {
     fn listen(
         &mut self,
         sample_rx: &mpsc::Receiver<Vec<f32>>,
-        stop_rx: &mpsc::Receiver<()>,
+        stop_rx: &mpsc::Receiver<Stop>,
         max_duration: Duration,
     ) -> Result<bool> {
         let started = Instant::now();
@@ -481,6 +498,46 @@ fn enqueue_record_buffer(
     }
 }
 
+/// Why a capture loop stopped; only a vanished parent changes what happens to the audio.
+#[cfg(target_os = "macos")]
+enum Stop {
+    Requested,
+    ParentExited,
+}
+
+#[cfg(target_os = "macos")]
+fn stop_due(
+    stop_rx: &mpsc::Receiver<Stop>,
+    started: Instant,
+    max_duration: Duration,
+) -> Option<Stop> {
+    match stop_rx.try_recv() {
+        Ok(stop) => Some(stop),
+        Err(_) if started.elapsed() >= max_duration => Some(Stop::Requested),
+        Err(_) => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+const PARENT_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// SIGKILL on the CLI signals nothing and its terminal keeps stdin open, so the parent pid is the only sign it is gone (Exploratory S3-F1).
+#[cfg(target_os = "macos")]
+fn spawn_parent_watch_thread(stop_tx: mpsc::Sender<Stop>) {
+    // SAFETY: getppid takes no arguments and cannot fail.
+    let parent = unsafe { libc::getppid() };
+    std::thread::spawn(move || loop {
+        std::thread::sleep(PARENT_POLL_INTERVAL);
+        // SAFETY: as above.
+        let now = unsafe { libc::getppid() };
+        // `== 1` because an already-orphaned spawn never differs from its start (Exploratory S3-F1).
+        if now == 1 || now != parent {
+            let _ = stop_tx.send(Stop::ParentExited);
+            return;
+        }
+    });
+}
+
 #[cfg(target_os = "macos")]
 /// Starts the one-shot piped-stdin stop reader for a CLI recording.
 ///
@@ -488,14 +545,14 @@ fn enqueue_record_buffer(
 /// cancel, and the engine performs one recording before its process exits. Do
 /// not reuse this helper for multiple recordings in one process: the first
 /// reader owns stdin until it receives a byte or the process exits.
-fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<()>) {
+fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<Stop>) {
     if io::stdin().is_terminal() {
         return;
     }
     std::thread::spawn(move || {
         let mut buf = [0u8; 1];
         let _ = io::stdin().read(&mut buf);
-        let _ = stop_tx.send(());
+        let _ = stop_tx.send(Stop::Requested);
     });
 }
 
