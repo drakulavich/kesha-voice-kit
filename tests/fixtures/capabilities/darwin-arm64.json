@@ -222,7 +222,7 @@
       "title": "Feature unsupported on this platform",
       "category": "platform",
       "retryable": false,
-      "origin": "engine"
+      "origin": "both"
     },
     {
       "code": "E_SIDECAR_MISSING",
