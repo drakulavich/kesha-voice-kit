@@ -1615,10 +1615,11 @@ process.exit(99);
       timeoutMs: 15_000,
       artifacts: [bundlePath],
     });
+    // The report is prose, so it stays off stdout for a `> log` caller (Exploratory S5-F4).
     expectContract(bundle, {
       exitCode: 0,
-      stdoutContains: [`Created support bundle: ${bundlePath}`, "Entries: 4", "Size:"],
-      stderrEmpty: true,
+      stdoutEmpty: true,
+      stderrContains: [`Created support bundle: ${bundlePath}`, "Entries: 4", "Size:"],
     });
     expect(existsSync(bundlePath)).toBe(true);
     expect(bundle.artifacts[0]).toMatchObject({
