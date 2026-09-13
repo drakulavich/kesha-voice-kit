@@ -42,6 +42,12 @@ lines.forEach((t, i) => {
   } else {
     kind.push(null);
     span.push(1);
+    // `code; /* why` opens a block whose continuation lines are comments even though this line is not.
+    const at = t.indexOf("/*");
+    if (at >= 0 && !t.includes("*/", at)) {
+      open = t.startsWith("/**", at) ? "doc" : "block";
+      members = [i];
+    }
   }
 });
 close();
@@ -69,10 +75,13 @@ const flush = () => {
   exempt = false;
 };
 let previous = -1;
+let runKind: Kind = null;
 for (const n of added) {
   const k = kind[n - 1];
   const t = lines[n - 1]!;
-  if (!k || n !== previous + 1) flush();
+  // A doc line and the // lines after it are separate runs, or the doc exemption would cover them.
+  if (!k || n !== previous + 1 || k !== runKind) flush();
+  runKind = k;
   if (k) {
     if (BANNER.test(t)) violations.push(`banner: ${t}`);
     // Growing a legacy /* */ block by one line is still a multi-line comment the agent wrote into.
