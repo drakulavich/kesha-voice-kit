@@ -10,7 +10,7 @@ import {
 } from "./engine/events";
 import { installHint } from "./install-hint";
 import { log } from "./log";
-import { registerProcessTree } from "./process-tree";
+import { abortOnSignal, engineAbortError, registerProcessTree } from "./process-tree";
 
 /**
  * Wire format for the synthesized audio. Matches the engine's `--format` flag.
@@ -40,6 +40,8 @@ type SayBase = {
   ssml?: boolean;
   /** Disable acronym auto-expansion; dropped with a warning on an engine whose describe document does not advertise the expansion (#842). */
   noExpandAbbrev?: boolean;
+  /** Cancels the synthesis: the engine subprocess is terminated and the call rejects with `E_INTERRUPTED`. */
+  signal?: AbortSignal;
 };
 
 type OpusOpts = {
@@ -140,10 +142,12 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   }
   const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe());
   for (const warning of warnings) log.warn(warning);
+  if (opts.signal?.aborted) throw engineAbortError();
   const startedAt = performance.now();
   log.debug(`spawn ${getEngineBinPath()} ${args.join(" ")} (text: ${opts.text?.length ?? 0} chars)`);
   const proc = spawnEngineProcess(getEngineBinPath(), args, ["pipe", "pipe", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
+  const cancel = abortOnSignal(tree, opts.signal);
   const stdin = proc.stdin as Bun.FileSink;
 
   if (opts.text !== undefined && opts.text.length > 0) stdin.write(opts.text);
@@ -159,10 +163,12 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
       proc.exited,
     ]);
   } finally {
+    cancel.dispose();
     tree.dispose();
   }
 
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms bytes=${stdoutBuf.byteLength}`);
+  if (cancel.aborted) throw engineAbortError();
 
   const stderrText = events.stderr;
   if (exitCode === 0 && events.invalid.length === 0 && !events.error) {

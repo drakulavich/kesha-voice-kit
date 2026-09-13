@@ -53,6 +53,27 @@ export function registerProcessTree(proc: KillableProcess): {
   };
 }
 
+/** Terminates `tree` when `signal` fires and arms the force kill; `dispose` detaches the listener once the run is over. */
+export function abortOnSignal(
+  tree: { terminate: (signal?: ManagedSignal) => void; forceKillAfterGrace: () => Timer },
+  signal: AbortSignal | undefined,
+): { readonly aborted: boolean; dispose: () => void } {
+  let aborted = false;
+  let forceKillTimer: Timer | undefined;
+  const abort = () => {
+    aborted = true;
+    tree.terminate("SIGTERM");
+    forceKillTimer ??= tree.forceKillAfterGrace();
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  return {
+    get aborted() {
+      return aborted;
+    },
+    dispose: () => signal?.removeEventListener("abort", abort),
+  };
+}
+
 export function getPendingSignalExitCode(): number | null {
   return pendingSignalCleanup?.exitCode ?? null;
 }
