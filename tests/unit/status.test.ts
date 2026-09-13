@@ -12,7 +12,7 @@ import {
 } from "../../src/status";
 import { humanBytes } from "../../src/format";
 import { starSeenPath } from "../../src/star";
-import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
+import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine, writeVoiceListingEngine } from "../helpers/fake-engine";
 import modelPlan from "../../model-plan.json" with { type: "json" };
 
 // Literals, not derived from model-plan.json: a dropped plan entry must go red here, since the Rust binding test skips plan-only PRs (#1132).
@@ -1120,4 +1120,38 @@ describe("human status output is a load-bearing contract (#647)", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 15_000);
+});
+
+// T2-6: the filesystem scan knows nothing of the FluidAudio ANE packs or the 181 AVSpeech
+// voices, so `status` advertised 6 of the 214 the synthesis path will actually accept.
+describe("collectStatus reports what the engine can speak with", () => {
+  const restoreEnv = saveEngineEnv();
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  const ENGINE_VOICES = [
+    "en-am_michael",
+    "es-em_alex",
+    "macos-com.apple.voice.compact.ru-RU.Milena",
+    "ru-vosk-m02",
+  ];
+
+  posixEngineTest("an installed engine's --list-voices union is the inventory", async () => {
+    const home = stageEngineHome("kesha-status-engine-voices-");
+    writeVoiceListingEngine(home.binDir, ENGINE_VOICES);
+    mkdirSync(join(home.cache, "models", "kokoro-82m", "voices"), { recursive: true });
+    writeFileSync(join(home.cache, "models", "kokoro-82m", "voices", "am_michael.bin"), "voice");
+
+    expect((await collectStatus()).voices).toEqual(ENGINE_VOICES);
+  });
+
+  posixEngineTest("an engine that cannot answer falls back to the cache scan", async () => {
+    const home = stageEngineHome("kesha-status-voices-fallback-");
+    writeFakeEngine(home.binDir);
+    mkdirSync(join(home.cache, "models", "kokoro-82m", "voices"), { recursive: true });
+    writeFileSync(join(home.cache, "models", "kokoro-82m", "voices", "am_michael.bin"), "voice");
+
+    expect((await collectStatus()).voices).toEqual(["en-am_michael"]);
+  });
 });

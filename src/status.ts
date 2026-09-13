@@ -1,6 +1,4 @@
-import { readdirSync, statSync } from "fs";
 import { join } from "path";
-import modelPlan from "../model-plan.json" with { type: "json" };
 import {
   isEngineInstalled,
   getEngineBinPath,
@@ -26,6 +24,7 @@ import {
 } from "./fluid-roots";
 import { dirSizeBytes } from "./diagnostic-paths";
 import { resolveStatePaths, type StatePath } from "./state-paths";
+import { installedVoiceIds } from "./voice-inventory";
 import pc from "picocolors";
 
 /** Where this process writes, each with the rule that decided it (openspec `state-directories`). */
@@ -106,7 +105,7 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
   return {
     cliVersion: packageVersion,
     engine: { installed, path, capabilities },
-    voices: installed ? listInstalledVoices() : [],
+    voices: await installedVoiceIds(),
     runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
     modelMirror: activeModelMirror(),
     paths: collectStatusPaths(),
@@ -278,27 +277,4 @@ export function activeModelMirror(): string | null {
   const raw = process.env.KESHA_MODEL_MIRROR ?? "";
   const trimmed = raw.trim().replace(/\/+$/, "");
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function listInstalledVoices(): string[] {
-  const cache = keshaCacheDir();
-  const voices: string[] = [];
-  try {
-    const kokoro = readdirSync(join(cache, "models", "kokoro-82m", "voices"));
-    for (const f of kokoro) {
-      if (f.endsWith(".bin")) voices.push(`en-${f.replace(/\.bin$/, "")}`);
-    }
-  } catch {
-    /* Kokoro not installed */
-  }
-  try {
-    // Joined to `models/manifest.rs::VOSK_RU_FILES` through the plan, so a sixth entry needs no edit here (#1132).
-    for (const { relPath } of modelPlan.voskRu) statSync(join(cache, relPath));
-    for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
-      voices.push(`ru-vosk-${id}`);
-    }
-  } catch {
-    /* Vosk not installed */
-  }
-  return voices.sort();
 }

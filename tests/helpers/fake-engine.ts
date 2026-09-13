@@ -191,3 +191,29 @@ export function envEchoEngine(vars: string[]): { binPath: string; args: string[]
   );
   return { binPath: process.execPath, args: [script] };
 }
+
+/** A fake engine that answers `say --list-voices` as well as `describe`, so a caller's voice inventory is assertable without a real engine. */
+export function writeVoiceListingEngine(
+  binDir: string,
+  voices: string[],
+  features: string[] = ["tts"],
+): string {
+  mkdirSync(binDir, { recursive: true });
+  const binPath = join(binDir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "fake-coreml", profile: "darwin", features })}'
+  exit 0
+fi
+if [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then
+  printf '%s\\n' ${voices.map((v) => `'${v}'`).join(" ")}
+  exit 0
+fi
+exit 2
+`,
+  );
+  chmodSync(binPath, 0o755);
+  return binPath;
+}
