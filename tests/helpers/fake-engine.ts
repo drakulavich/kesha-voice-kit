@@ -4,7 +4,7 @@ import { join } from "path";
 import type { DescribeDocument, FlagSchema, TtsLanguageCapability } from "../../src/engine/describe";
 import { tempDir } from "./temp-dir";
 
-const ENGINE_ENV = ["KESHA_ENGINE_BIN", "KESHA_CACHE_DIR", "HOME", "KESHA_MODEL_MIRROR"] as const;
+const ENGINE_ENV = ["KESHA_ENGINE_BIN", "KESHA_CACHE_DIR", "KESHA_HOME", "HOME", "KESHA_MODEL_MIRROR"] as const;
 
 export interface StagedEngineHome {
   /** The temp directory standing in for `$HOME`; the suite tears it down. */

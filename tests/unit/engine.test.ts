@@ -1049,7 +1049,9 @@ describe("engine subprocess env", () => {
   const readStdout = async (vars: string[]) => {
     const { binPath, args } = envEchoEngine(vars);
     const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"]);
-    return (await new Response(proc.stdout as ReadableStream).text()).trim();
+    const out = (await new Response(proc.stdout as ReadableStream).text()).trim();
+    await proc.exited;
+    return out;
   };
 
   test("forwards env resolved after startup, not the startup snapshot", async () => {
@@ -1065,6 +1067,43 @@ describe("engine subprocess env", () => {
       restore();
       if (savedNoColor === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = savedNoColor;
+    }
+  });
+
+  test("KESHA_HOME reaches the engine as the resolved KESHA_CACHE_DIR", async () => {
+    const restore = saveEngineEnv();
+    try {
+      delete process.env.KESHA_CACHE_DIR;
+      process.env.KESHA_HOME = "/tmp/kesha-home-probe";
+      const out = await readStdout(["KESHA_CACHE_DIR", "KESHA_HOME"]);
+      expect(out).toContain(`KESHA_CACHE_DIR=${join("/tmp/kesha-home-probe", "cache")}`);
+      expect(out).toContain("KESHA_HOME=/tmp/kesha-home-probe");
+    } finally {
+      restore();
+    }
+  });
+
+  test("a user-set KESHA_CACHE_DIR is never rewritten by KESHA_HOME", async () => {
+    const restore = saveEngineEnv();
+    try {
+      process.env.KESHA_HOME = "/tmp/kesha-home-probe";
+      process.env.KESHA_CACHE_DIR = "/tmp/kesha-own-cache";
+      const out = await readStdout(["KESHA_CACHE_DIR"]);
+      expect(out).toContain("KESHA_CACHE_DIR=/tmp/kesha-own-cache");
+    } finally {
+      restore();
+    }
+  });
+
+  test("without KESHA_HOME the engine environment carries no synthesized KESHA_CACHE_DIR", async () => {
+    const restore = saveEngineEnv();
+    try {
+      delete process.env.KESHA_HOME;
+      delete process.env.KESHA_CACHE_DIR;
+      const out = await readStdout(["KESHA_CACHE_DIR"]);
+      expect(out).toContain("KESHA_CACHE_DIR=UNSET");
+    } finally {
+      restore();
     }
   });
 });
