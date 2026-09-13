@@ -69,6 +69,35 @@ Every usage error the CLI answers before doing any work — a contradictory or m
 > by `tests/integration/error-codes-cli.test.ts` and the "validation errors"
 > case in `tests/integration/cli-contracts.test.ts`.*
 
+### Requirement: Global flags typed before a subcommand name reach the subcommand
+
+The CLI SHALL treat flag-shaped tokens that precede a subcommand name as that subcommand's flags, so `kesha --debug record --out take.wav` runs `record` with `--debug` applied, and a flag the subcommand does not declare is then reported as an unknown option rather than the subcommand name being read as an input file. When a leading flag carries a separate value, so the subcommand name is not the first non-flag token, the CLI SHALL refuse with `error [E_INVALID_ARG]: put global flags after the subcommand: kesha <name> ...` and exit 2, never reporting the subcommand name as a missing file.
+
+#### Scenario: Maks types the global flag first
+
+- WHEN Maks runs `kesha --debug record --out take.wav --max-seconds 0`
+- THEN the `record` subcommand answers, rejecting `--max-seconds 0` with its own coded usage error
+- AND stderr never says `record: ... File not found`
+
+#### Scenario: The leading flag is one the subcommand does not have
+
+- WHEN Ira runs `kesha --json record --out take.wav`
+- THEN stderr is `error [E_INVALID_ARG]: unknown option --json`
+- AND the process exits 2
+
+#### Scenario: A valued leading flag hides the subcommand name
+
+- WHEN Ira runs `kesha --lang en record --out take.wav`
+- THEN stderr contains `error [E_INVALID_ARG]: put global flags after the subcommand: kesha record ...`
+- AND the process exits 2 without spawning the Engine
+
+> *Technical Note — `src/cli/dispatch.ts::hoistLeadingFlags` moves the leading
+> flag-shaped tokens (anything starting with `-` other than `--`) behind the
+> first token when that token is a dispatchable subcommand name;
+> `src/cli/dispatch.ts::runCli` refuses, before the transcription form parses,
+> a token that names a subcommand and is not an existing file. Pinned by the S3-F3 case in
+> `tests/integration/cli-contracts.test.ts` and `tests/unit/dispatch.test.ts`.*
+
 ## MODIFIED Requirements
 
 ### Requirement: `--help` and a bare invocation both print usage to stdout, and differ in Exit code

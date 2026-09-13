@@ -725,6 +725,37 @@ describe("CLI contracts", () => {
     });
   });
 
+  test("a global flag before the subcommand name routes to the subcommand instead of reading it as an input file (S3-F3)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-hoist-");
+    const outPath = join(dir, "hello.wav");
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: createFailingEngine(dir) };
+
+    const applied = await runCli(["--debug", "record", "--out", outPath, "--max-seconds", "0"], { env });
+    expectContract(applied, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: --max-seconds must be an integer between 1 and"],
+      stderrNotContains: ["File not found", "record:"],
+    });
+
+    const foreign = await runCli(["--json", "record", "--out", outPath], { env });
+    expectContract(foreign, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: unknown option --json"],
+      stderrNotContains: ["File not found", "record:"],
+    });
+
+    const valued = await runCli(["--lang", "en", "record", "--out", outPath], { env });
+    expectContract(valued, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: put global flags after the subcommand: kesha record ..."],
+      stderrNotContains: ["File not found", "fake engine should not have been invoked"],
+    });
+    expect(existsSync(outPath)).toBe(false);
+  });
+
   test("kesha record without an installed engine fails with an install hint, not a stack trace", async () => {
     const dir = makeTempDir("kesha-cli-contract-record-");
     const outPath = join(dir, "hello.wav");
