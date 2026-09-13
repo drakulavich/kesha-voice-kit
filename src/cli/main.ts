@@ -24,6 +24,7 @@ import { runCommandSession, type CommandSession } from "./command-session";
 import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
 import { KeshaError } from "../engine/events";
+import { routeLanguage } from "../language-routing";
 
 interface MainCommandArgs {
   _: string[];
@@ -278,7 +279,7 @@ async function detectLanguages(
     }
   }
 
-  const lang = textLanguage?.code || tinyldResult?.code || "";
+  const { lang } = routeLanguage({ audioLanguage, textLanguage: textLanguage ?? tinyldResult });
 
   const mismatchWarning = checkLanguageMismatch(expectedLang, lang);
   if (mismatchWarning) {

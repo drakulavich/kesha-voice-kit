@@ -96,6 +96,13 @@ describe("formatVerboseDiagnostics", () => {
   test("renders nothing for an empty batch", () => {
     expect(formatVerboseDiagnostics([])).toBe("");
   });
+
+  test("says when a tinyld guess was too weak to name lang (Exploratory S11-2)", () => {
+    const out = formatVerboseDiagnostics([
+      result({ lang: "", textLanguage: { code: "ber", confidence: 0.333, source: "tinyld" } }),
+    ]);
+    expect(out).toBe("Text language: ber (confidence: 0.33, below the 0.5 floor, ignored for lang)\n");
+  });
 });
 
 describe("formatJsonOutput", () => {

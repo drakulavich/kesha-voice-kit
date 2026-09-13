@@ -18,6 +18,10 @@ The CLI SHALL populate language fields in transcription output whenever any of
   `confidence`; the scores are on different scales (`NLLanguageRecognizer`'s
   probability vs `tinyld`'s n-gram accuracy) and SHALL NOT be compared across
   sources. `audioLanguage` has one source and carries no such field.
+- The top-level `lang` SHALL NOT be named by a `tinyld` guess whose
+  confidence is below 0.5; the guess stays in `textLanguage` unchanged, and
+  `--verbose` marks it "below the 0.5 floor, ignored for lang". An Engine
+  text result is not floored: its probability is on another scale.
 - The `--lang` comparison SHALL be case-insensitive and SHALL compare only the
   primary language subtag, treating `_` as `-`: `en-US`, `EN` and `en_us` all
   match a detected `en`. Codes are ISO 639-1; a three-letter code such as
@@ -51,6 +55,16 @@ The CLI SHALL populate language fields in transcription output whenever any of
 - THEN the transcript is still printed and the process exits 0
 - AND stderr carries a language-mismatch warning
 
+#### Scenario: A weak tinyld guess does not name the language
+
+- GIVEN Sona runs on Linux and `hi.ogg` transcribes to two words that
+  `tinyld` scores `ber` at 0.33
+- WHEN Sona runs `kesha --json --verbose hi.ogg`
+- THEN `lang` is `""` while `textLanguage` still reports `ber` at 0.33 from
+  `tinyld`
+- AND stderr's `Text language` line says the guess was below the 0.5 floor
+  and ignored for lang
+
 #### Scenario: A regional --lang matches its primary language
 
 - GIVEN `note.ogg` contains English speech
@@ -64,4 +78,5 @@ The CLI SHALL populate language fields in transcription output whenever any of
 > engine call: `detectTextLanguageEngine`, tagged `source: "engine"` at the
 > call site. Shape: `TextLangDetectResult` in `src/types.ts` (#941). `--lang`
 > matching: `primaryLanguageSubtag` and `checkLanguageMismatch` in
-> `src/cli/main.ts`.*
+> `src/cli/main.ts`. Floor: `LANG_CONFIDENCE_FLOOR` and `routeLanguage` in
+> `src/language-routing.ts`.*

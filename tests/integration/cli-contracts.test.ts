@@ -1954,6 +1954,24 @@ exit 0
       });
       expect(run.stdout).not.toBe("");
     });
+
+    /** Exploratory S11-2: without the text-lang sidecar, tinyld's top guess named `lang` at any score, 0.2 included. */
+    test("a weak tinyld guess stays in textLanguage but does not name lang", async () => {
+      const dir = makeTempDir("kesha-cli-contract-tinyld-floor-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+      const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath, KESHA_FAKE_TEXT_LANG_UNSUPPORTED: "1" };
+
+      const run = await runCli(["--json", "--verbose", mediaPath], { env });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: ["Text language: ru (confidence: 0.20, below the 0.5 floor, ignored for lang)"],
+      });
+      const [parsed] = JSON.parse(run.stdout);
+      expect(parsed.textLanguage).toEqual({ code: "ru", confidence: 0.2, source: "tinyld" });
+      expect(parsed.lang).toBe("");
+    });
   });
 
   describe("--verbose", () => {
