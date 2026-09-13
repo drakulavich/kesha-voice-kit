@@ -9,7 +9,7 @@ export interface UnknownOption {
 }
 
 const RUNNER_LONG = ["help", "version"];
-const RUNNER_SHORT = ["h"];
+const RUNNER_SHORT = ["h", "v"];
 
 function camelCase(name: string): string {
   return name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());

@@ -48,6 +48,7 @@ describe("findUnknownOption", () => {
     expect(findUnknownOption(["--help"], ARGS)).toBeNull();
     expect(findUnknownOption(["--version"], ARGS)).toBeNull();
     expect(findUnknownOption(["-h"], ARGS)).toBeNull();
+    expect(findUnknownOption(["-v"], ARGS)).toBeNull();
   });
 
   test("short aliases pass, an unknown short flag is named", () => {

@@ -548,6 +548,10 @@ describe("CLI contracts", () => {
     const version = await runCli(["--version"]);
     expectContract(version, { exitCode: 0, stderrEmpty: true });
     expect(version.stdout).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
+    // The documented short alias must survive the unknown-option gate (Greptile on #1216).
+    const short = await runCli(["-v"]);
+    expectContract(short, { exitCode: 0, stderrEmpty: true });
+    expect(short.stdout).toBe(version.stdout);
 
     // S1-1: a consumer that asked for JSON must never receive the usage prose on stdout.
     for (const args of [[], ["--json"]]) {
