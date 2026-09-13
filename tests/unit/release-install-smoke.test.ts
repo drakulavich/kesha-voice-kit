@@ -32,8 +32,7 @@ describe("release install smoke", () => {
   test("installs an exact npm package and requires provenance metadata", () => {
     const script = readRepoFile(SCRIPT);
 
-    expect(script).toContain('npm view "$package@$VERSION" --json version,dist.integrity,dist.attestations');
-    expect(script).toContain('https://slsa.dev/provenance/v1');
+    expect(script).toContain('bun "$repo_root/.github/scripts/npm-release-metadata.ts" "$package" "$VERSION"');
     expect(script).toContain('npm install --global "$package@$VERSION"');
     expect(script).toContain('NPM_CONFIG_PREFIX="$prefix"');
     expect(script).toContain('installed npm package version was $installed_version, expected $VERSION');
