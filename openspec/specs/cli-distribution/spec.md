@@ -53,8 +53,8 @@ Each supported distribution path SHALL deliver the CLI package's `bin/kesha.js` 
   that version
 - THEN it is not a supported path
 
-> *Technical Note — `bin/kesha.js::runCli` is a four-line `#!/usr/bin/env bun`
-> shim over `runCli` from `src/cli/dispatch.ts`. `package.json#bin` maps
+> *Technical Note — `bin/kesha.js` is a four-line `#!/usr/bin/env bun` shim
+> that awaits `src/cli/dispatch.ts::runCli`. `package.json#bin` maps
 > `kesha → bin/kesha.js`; `package.json#files` publishes `bin/` and `src/`
 > as-is. Homebrew's `install` stages `bin`, `src`, `completions`, `man`,
 > `package.json`, `bun.lock` and `tsconfig.json` into `libexec` and writes a
@@ -97,7 +97,7 @@ The CLI package SHALL declare Bun >= 1.3.0 as its required runtime, and every wr
 > *Technical Note — `package.json#engines.bun` is `>=1.3.0`.
 > `packaging/homebrew/Formula/kesha-voice-kit.rb` declares
 > `depends_on "oven-sh/bun/bun"`. The `Dockerfile` pins
-> `oven/bun:1.3.14-slim`. The Linux binary is compiled for `bun-linux-x64`
+> `oven/bun:1.4.0-slim`. The Linux binary is compiled for `bun-linux-x64`
 > (glibc); `docs/linux-packages.md` states the musl limitation and points at the
 > container image.*
 

@@ -18,7 +18,7 @@ describe("openspec technical notes cite code by symbol", () => {
 
   it("name a file that exists and a symbol that file defines", () => {
     const cited = SPECS.flatMap((spec) => [...readRepoFile(spec).matchAll(SYMBOL_CITATION)].map((m) => ({ spec, file: m[1]!, symbol: m[2]! })));
-    expect(cited.length).toBeGreaterThan(60);
+    expect(cited.length).toBeGreaterThan(230);
     const unresolved = cited
       .filter(({ file, symbol }) => {
         if (!existsSync(repoPath(file))) return true;
