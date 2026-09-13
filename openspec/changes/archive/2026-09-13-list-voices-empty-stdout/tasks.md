@@ -5,4 +5,4 @@
 
 ## 2. Spec
 
-- [ ] 2.1 Sync this delta into `openspec/specs/tts-synthesis/spec.md` and archive the change after the PR merges
+- [x] 2.1 Sync this delta into `openspec/specs/tts-synthesis/spec.md` and archive the change after the PR merges
