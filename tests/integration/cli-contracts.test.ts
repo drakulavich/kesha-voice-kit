@@ -295,6 +295,56 @@ process.exit(2);
   return enginePath;
 }
 
+/** Hangs in `transcribe` like `createHangingTranscribeEngine`, but appends a pid line per spawn so a batch can show how many engines it started. */
+function createPidLoggingTranscribeEngine(dir: string, enginePidsPath: string): string {
+  const enginePath = join(dir, "kesha-engine-transcribe-pid-log");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+import { appendFileSync } from "fs";
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
+if (args[0] === "transcribe") {
+  appendFileSync(${JSON.stringify(enginePidsPath)}, process.pid + "\\n");
+  await new Promise(() => {});
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+/** Finishes `transcribe` cleanly on SIGINT, the way a cooperative engine does, so the language-ID spawn that follows is the first thing the signal has to refuse. */
+function createFinishOnSignalTranscribeEngine(dir: string, enginePidsPath: string): string {
+  const enginePath = join(dir, "kesha-engine-transcribe-finish-on-signal");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+import { appendFileSync } from "fs";
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
+appendFileSync(${JSON.stringify(enginePidsPath)}, process.pid + "\\n");
+if (args[0] === "transcribe") {
+  process.on("SIGINT", async () => {
+    await Bun.write(Bun.stdout, JSON.stringify({ text: "finished anyway", segments: [] }) + "\\n");
+    process.exit(0);
+  });
+}
+await new Promise(() => {});
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
 function createHangingRecordEngine(dir: string, enginePidPath: string): string {
   const enginePath = join(dir, "kesha-engine-record-hang");
   writeFileSync(
@@ -1547,6 +1597,84 @@ process.exit(99);
       expect(await waitForPidExit(enginePid)).toBe(true);
     });
   }
+
+  test("Ctrl+C mid-batch starts no further file, reports the rest as interrupted, and exits once the engine is gone", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-batch-sigint-");
+    const enginePidsPath = join(dir, "engine.pids");
+    const enginePath = createPidLoggingTranscribeEngine(dir, enginePidsPath);
+    const files = ["a.ogg", "b.ogg", "c.ogg"].map((name) => join(dir, name));
+    for (const file of files) writeFileSync(file, "fake media");
+
+    const proc = Bun.spawn(
+      [process.execPath, "run", "src/cli-entry.ts", "--json", "--include-errors", ...files],
+      {
+        cwd: DEFAULT_CWD,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          NO_COLOR: "1",
+          FORCE_COLOR: "0",
+          ...isolatedEnv(dir),
+          KESHA_ENGINE_BIN: enginePath,
+        },
+      },
+    );
+    const drained = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const enginePid = await waitForPidFile(enginePidsPath);
+
+    const signalledAt = performance.now();
+    proc.kill("SIGINT");
+
+    const [[stdout, stderr], exitCode] = await Promise.all([drained, proc.exited]);
+    const exitedAfterMs = performance.now() - signalledAt;
+    expect(exitCode).toBe(130);
+    expect(await waitForPidExit(enginePid)).toBe(true);
+    expect(stderr).toContain(`Transcribing ${files[0]}`);
+    expect(stderr).not.toContain(`Transcribing ${files[1]}`);
+    for (const file of files) expect(stderr).toContain(`${file}: error [E_INTERRUPTED]: interrupted (SIGINT)`);
+    expect(readFileSync(enginePidsPath, "utf8").trim().split("\n")).toHaveLength(1);
+    const envelope = JSON.parse(stdout) as { results: unknown[]; errors: { file: string; code: string }[] };
+    expect(envelope.results).toEqual([]);
+    expect(envelope.errors.map((e) => [e.file, e.code])).toEqual(files.map((file) => [file, "E_INTERRUPTED"]));
+    // The stub dies on the first SIGINT; before the fix the CLI always sat out the full force-kill grace (1 000 ms + 50 ms).
+    expect(exitedAfterMs).toBeLessThan(1_000);
+  });
+
+  test("no engine spawns after Ctrl+C, even for a file whose transcription finished under the signal", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-no-spawn-after-sigint-");
+    const enginePidsPath = join(dir, "engine.pids");
+    const enginePath = createFinishOnSignalTranscribeEngine(dir, enginePidsPath);
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+
+    const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", "--json", "--include-errors", mediaPath], {
+      cwd: DEFAULT_CWD,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+    const drained = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const enginePid = await waitForPidFile(enginePidsPath);
+
+    proc.kill("SIGINT");
+
+    const [[stdout, stderr], exitCode] = await Promise.all([drained, proc.exited]);
+    expect(exitCode).toBe(130);
+    expect(await waitForPidExit(enginePid)).toBe(true);
+    expect(stderr).toContain(`${mediaPath}: error [E_INTERRUPTED]: interrupted (SIGINT)`);
+    expect(readFileSync(enginePidsPath, "utf8").trim().split("\n")).toHaveLength(1);
+    const envelope = JSON.parse(stdout) as { errors: { code: string }[] };
+    expect(envelope.errors.map((e) => e.code)).toEqual(["E_INTERRUPTED"]);
+  });
 
   test("an engine that ignores the forwarded signal is force-killed, and the report still names the signal Ctrl+C sent", async () => {
     if (process.platform === "win32") return;

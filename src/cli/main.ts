@@ -17,7 +17,7 @@ import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
 import { artifactFromFile, type StatsRecorder } from "../stats";
 import { createPercentProgress } from "../progress";
-import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
+import { getPendingSignalExitCode, pendingInterruption, waitForPendingSignalCleanup } from "../process-tree";
 import type { TranscriptionSegment } from "../types";
 import { diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandSession } from "./command-session";
@@ -591,6 +591,12 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
           const errors: TranscribeErrorRecord[] = [];
 
           for (const file of files) {
+            const interrupted = pendingInterruption();
+            if (interrupted) {
+              log.error(`${file}: ${errorMessage(interrupted)}`);
+              errors.push({ file, code: interrupted.code, message: interrupted.message });
+              continue;
+            }
             const outcome = await processFile(
               file,
               {

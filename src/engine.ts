@@ -5,7 +5,7 @@ import { installHint } from "./install-hint";
 import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
-import { engineAbortError, interruptedRun, registerProcessTree } from "./process-tree";
+import { engineAbortError, interruptedRun, pendingInterruption, registerProcessTree } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
 import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
 import {
@@ -108,6 +108,8 @@ export function spawnEngineProcess(
   stdio: SpawnStdio,
   env: Record<string, string | undefined> = process.env,
 ): ReturnType<typeof Bun.spawn> {
+  const interrupted = pendingInterruption();
+  if (interrupted) throw interrupted;
   try {
     // `env` is passed explicitly: Bun snapshots process.env at startup otherwise (#874).
     return Bun.spawn([binPath, ...args], { detached: true, stdio, env: withResolvedCacheDir(env) });

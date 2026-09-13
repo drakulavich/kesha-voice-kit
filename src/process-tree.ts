@@ -22,6 +22,7 @@ let pendingSignalCleanup:
       signal: ReceivedSignal;
       exitCode: number;
       done: Promise<void>;
+      settle: () => void;
     }
   | null = null;
 
@@ -45,6 +46,7 @@ export function registerProcessTree(proc: KillableProcess): {
   return {
     dispose: () => {
       activeProcesses.delete(active);
+      if (activeProcesses.size === 0) pendingSignalCleanup?.settle();
     },
     terminate: (signal: ManagedSignal = "SIGTERM") => active.kill(signal),
     forceKillAfterGrace: () => scheduleForceKill(active),
@@ -61,11 +63,16 @@ export async function waitForPendingSignalCleanup(): Promise<number | null> {
   return pendingSignalCleanup.exitCode;
 }
 
+/** The `E_INTERRUPTED` failure every run refused after the CLI received a signal carries; null while none has arrived. */
+export function pendingInterruption(): KeshaError | null {
+  if (!pendingSignalCleanup) return null;
+  const { signal, exitCode } = pendingSignalCleanup;
+  return new KeshaError("E_INTERRUPTED", `interrupted (${signal})`, { exitCode });
+}
+
 /** The `E_INTERRUPTED` failure of a run the CLI's own signal cut short, named after that signal rather than whatever the engine died of; null while no signal has arrived, and null for a run that still exited 0, whose output is whole. */
 export function interruptedRun(exitCode: number): KeshaError | null {
-  if (exitCode === 0 || !pendingSignalCleanup) return null;
-  const { signal, exitCode: signalExitCode } = pendingSignalCleanup;
-  return new KeshaError("E_INTERRUPTED", `interrupted (${signal})`, { exitCode: signalExitCode });
+  return exitCode === 0 ? null : pendingInterruption();
 }
 
 export function terminateProcessTree(proc: KillableProcess, signal: ManagedSignal = "SIGTERM"): void {
@@ -135,11 +142,15 @@ function terminateActiveProcessTrees(signal: ReceivedSignal, exitCode: number): 
   const delayMs = processes.length > 0
     ? FORCE_KILL_GRACE_MS + SIGNAL_EXIT_BUFFER_MS
     : SIGNAL_EXIT_BUFFER_MS;
-  let resolveDone!: () => void;
+  let settle!: () => void;
   const done = new Promise<void>((resolve) => {
-    resolveDone = resolve;
+    settle = resolve;
   });
-  pendingSignalCleanup = { signal, exitCode, done };
-  setTimeout(resolveDone, delayMs);
-  done.then(() => process.exit(exitCode));
+  pendingSignalCleanup = { signal, exitCode, done, settle };
+  // The backstop for a command that never awaits the cleanup; one that does exits as soon as the tree drains.
+  setTimeout(() => {
+    settle();
+    process.exit(exitCode);
+  }, delayMs);
+  if (processes.length === 0) settle();
 }
