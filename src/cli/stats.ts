@@ -135,10 +135,15 @@ export const statsCommand = defineCommand({
       description: "Export format: json | csv",
     },
   },
-  run({ args }: { args: StatsCommandArgs }) {
-    emitActionResult(runStatsAction(args));
+  run({ args, rawArgs }: { args: StatsCommandArgs; rawArgs: string[] }) {
+    emitActionResult(runStatsAction({ ...args, value: args.value ?? eatenNegativeNumber(rawArgs) }));
   },
 });
+
+// citty reads `-5` as a boolean flag named 5, so the value the user typed never reaches the action (Exploratory S5-F3).
+function eatenNegativeNumber(rawArgs: string[]): string | undefined {
+  return rawArgs.find((token) => /^-\d/.test(token));
+}
 
 function parseExportFormat(value: string | undefined): StatsExportFormat | null {
   return value === "json" || value === "csv" ? value : null;

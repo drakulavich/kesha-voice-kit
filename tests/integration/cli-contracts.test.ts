@@ -1819,6 +1819,16 @@ process.exit(99);
     });
   });
 
+  test("stats retention with a negative day count exits 2 instead of eating it as a flag (Exploratory S5-F3)", async () => {
+    const env = isolatedEnv();
+    const run = await runCli(["stats", "retention", "-5"], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["usage: kesha stats retention <days|off>"],
+    });
+  });
+
   test("--plan previews the overridden engine version and downloads nothing (#738)", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-version-");
     const enginePath = createFailingEngine(dir);
