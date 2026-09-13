@@ -234,6 +234,72 @@ fn say_ssml(exe: &Path, markup: &str, voice: &str, out: &Path) -> bool {
     panic!("kesha-engine say --ssml failed unexpectedly: {stderr}");
 }
 
+/// 60 unpunctuated words — 464 characters, the shape T4-1 measured, which
+/// FluidAudio reported as 2318 acoustic frames against its cap of 2000 at
+/// `--rate 0.5` while the same text at 1.0 synthesized fine.
+fn sixty_unpunctuated_words() -> String {
+    let phrase = "the quiet travellers followed narrow pathways beneath ancient mountain shadows \
+                  every morning";
+    let words: Vec<&str> = phrase.split_whitespace().collect();
+    (0..60)
+        .map(|i| words[i % words.len()])
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn kokoro_slow_rate_synthesizes_what_full_rate_can() {
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+    if !ane_kokoro_ready() {
+        eprintln!(
+            "skipping: FluidAudio ANE Kokoro model + am_michael voice pack not staged \
+             (run `kesha install --tts`)"
+        );
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-kokoro-slow-")
+        .tempdir()
+        .unwrap();
+    let full = tmp.path().join("rate-1.0.wav");
+    let half = tmp.path().join("rate-0.5.wav");
+    let text = sixty_unpunctuated_words();
+    let voice = "en-am_michael";
+
+    if !say_rate(&exe, &text, voice, "1.0", &full) {
+        return; // prerequisite missing — skip cleanly
+    }
+    if !say_rate(&exe, &text, voice, "0.5", &half) {
+        return;
+    }
+
+    let (dur_full, _) = wav_duration_and_samples(&full);
+    let (dur_half, samples_half) = wav_duration_and_samples(&half);
+    eprintln!(
+        "kokoro_slow_rate_synthesizes_what_full_rate_can: {} chars, rate=1.0 -> {dur_full:.3}s, \
+         rate=0.5 -> {dur_half:.3}s, ratio={:.3} (expected ~2.0)",
+        text.chars().count(),
+        dur_half / dur_full
+    );
+
+    assert!(
+        peak(&samples_half) > 0.01,
+        "rate 0.5 produced (near-)silent audio (peak {})",
+        peak(&samples_half)
+    );
+    let ratio = dur_half / dur_full;
+    assert!(
+        (1.7..=2.3).contains(&ratio),
+        "rate 0.5 produced {dur_half:.3}s against {dur_full:.3}s at 1.0 (ratio {ratio:.3}) — \
+         a chunk of the text is missing from the join (T4-1)"
+    );
+}
+
 #[test]
 fn kokoro_break_adds_only_the_silence_it_asked_for() {
     // T3-4: the split around a break paid a second lead-in and tail, 825 ms on v1.25.0.

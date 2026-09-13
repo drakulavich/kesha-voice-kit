@@ -186,13 +186,28 @@ fn say_fluid_kokoro(
     if ssml {
         return synth_segments_fluid_kokoro(text, voice_id, speed, format);
     }
-    let (samples, sample_rate) =
-        super::fluid_kokoro::synthesize(text, voice_id, speed).map_err(|e| TtsError::Coded {
-            // Preserve a precise code from the engine chain (e.g.
-            // ScriptUnsupported for native-script input).
-            code: crate::errors::code_of(&e),
-            message: format!("fluid-kokoro: {e}"),
-        })?;
+    let mut sample_rate = super::fluid_kokoro::SAMPLE_RATE;
+    let mut synth = |t: &str| -> Result<Vec<f32>, TtsError> {
+        let (samples, rate) =
+            super::fluid_kokoro::synthesize(t, voice_id, speed).map_err(|e| TtsError::Coded {
+                // Preserve a precise code from the chain, e.g. ScriptUnsupported.
+                code: crate::errors::code_of(&e),
+                message: format!("fluid-kokoro: {e}"),
+            })?;
+        sample_rate = rate;
+        Ok(samples)
+    };
+    let chunks = seam::chunk_text(text, seam::fluid_chunk_budget(speed));
+    let samples = if chunks.len() < 2 {
+        // The whole text, so an empty or unpronounceable input keeps its own error.
+        synth(text)?
+    } else {
+        let mut parts = Vec::with_capacity(chunks.len());
+        for chunk in &chunks {
+            parts.push(synth(chunk)?);
+        }
+        seam::join_chunks(parts, sample_rate)
+    };
     encode_or_fail(&samples, sample_rate, format)
 }
 
@@ -547,7 +562,21 @@ struct FluidKokoroSink<'a> {
     target_arch = "aarch64"
 ))]
 impl FluidKokoroSink<'_> {
+    /// A run past the frame cap is chunked like plain text and rejoined, so a
+    /// slow `<prosody rate>` cannot fail the utterance (T4-1).
     fn synth(&self, text: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
+        let chunks = seam::chunk_text(text, seam::fluid_chunk_budget(speed));
+        if chunks.len() > 1 {
+            let mut parts = Vec::with_capacity(chunks.len());
+            for chunk in &chunks {
+                parts.push(self.synth_one(chunk, speed)?);
+            }
+            return Ok(seam::join_chunks(parts, super::fluid_kokoro::SAMPLE_RATE));
+        }
+        self.synth_one(text, speed)
+    }
+
+    fn synth_one(&self, text: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
         (self.synth)(text, speed).map_err(|e| TtsError::Coded {
             // Preserve a precise code from the engine chain (e.g.
             // ScriptUnsupported for native-script input); plain synthesis

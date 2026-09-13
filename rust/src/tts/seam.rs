@@ -20,6 +20,93 @@ const FRAME_MS: usize = 5;
 /// only has to stay under real speech.
 const SILENCE_FLOOR: f32 = 0.0056;
 
+/// FluidAudio's Kokoro aborts a call whose acoustic frames pass 2000, and the
+/// frames scale as characters divided by speed: 464 characters at `--rate 0.5`
+/// reported `acousticFramesExceedCap(have: 2318, cap: 2000)`, i.e. 2.5 frames
+/// per character at speed 1.0, and 404 characters reported 2.7 (T4-1).
+const FLUID_FRAME_CAP: f32 = 2000.0;
+
+/// Headroom under the cap: the estimate below is an average over text shapes.
+const FLUID_FRAME_MARGIN: f32 = 0.9;
+
+/// Frames one character costs at speed 1.0, rounded up from the 2.7 measured.
+const FRAMES_PER_CHAR: f32 = 3.2;
+
+/// Characters FluidAudio's Kokoro can render in one call at `speed`. The cap is
+/// on output frames, so the slower the speech the less text fits.
+pub fn fluid_chunk_budget(speed: f32) -> usize {
+    let speed = if speed.is_finite() && speed > 0.0 {
+        speed
+    } else {
+        1.0
+    };
+    (FLUID_FRAME_CAP * FLUID_FRAME_MARGIN * speed / FRAMES_PER_CHAR) as usize
+}
+
+/// Split `text` into chunks of at most `budget` characters, cutting at the last
+/// sentence end that leaves a chunk at least half full, else the last such
+/// clause end, else between words. A word longer than the budget is a chunk of
+/// its own: nothing below a word is a place a listener would accept a seam.
+pub fn chunk_text(text: &str, budget: usize) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let budget = budget.max(1);
+    let mut out = Vec::new();
+    let (mut start, mut len, mut i) = (0usize, 0usize, 0usize);
+    let mut sentence: Option<usize> = None;
+    let mut clause: Option<usize> = None;
+    while i < words.len() {
+        let cost = words[i].chars().count() + usize::from(i > start);
+        if i > start && len + cost > budget {
+            let least = (i - start).div_ceil(2);
+            let cut = sentence
+                .filter(|&c| c - start >= least)
+                .or(clause.filter(|&c| c - start >= least))
+                .unwrap_or(i);
+            out.push(words[start..cut].join(" "));
+            (start, len, sentence, clause) = (cut, 0, None, None);
+            for (j, word) in words[start..i].iter().enumerate() {
+                len += word.chars().count() + usize::from(j > 0);
+                match boundary(word) {
+                    Boundary::Sentence => sentence = Some(start + j + 1),
+                    Boundary::Clause => clause = Some(start + j + 1),
+                    Boundary::None => {}
+                }
+            }
+            continue;
+        }
+        len += cost;
+        match boundary(words[i]) {
+            Boundary::Sentence => sentence = Some(i + 1),
+            Boundary::Clause => clause = Some(i + 1),
+            Boundary::None => {}
+        }
+        i += 1;
+    }
+    if start < words.len() {
+        out.push(words[start..].join(" "));
+    }
+    out
+}
+
+enum Boundary {
+    Sentence,
+    Clause,
+    None,
+}
+
+/// Closing quotes and brackets sit outside the punctuation that ends the unit.
+fn boundary(word: &str) -> Boundary {
+    let last = word
+        .chars()
+        .rev()
+        .find(|c| !matches!(c, '"' | '\'' | ')' | ']' | '}' | '»' | '”' | '’'));
+    match last {
+        Some('.' | '!' | '?' | '…' | '。' | '！' | '？') => Boundary::Sentence,
+        Some(',' | ';' | ':' | '—' | '–' | '、') => Boundary::Clause,
+        _ => Boundary::None,
+    }
+}
+
 /// Concatenate the rendered chunks of one utterance, clipping the padding each
 /// chunk carries at the joins back to [`SEAM_SILENCE_MS`]. The clip's own head
 /// and tail keep the model's padding, and a single chunk is returned untouched.
@@ -232,6 +319,81 @@ mod tests {
             "a 500 ms break became {} ms of silence",
             gap * 1000 / SR as usize
         );
+    }
+
+    #[test]
+    fn a_text_within_the_budget_is_one_chunk() {
+        assert_eq!(
+            chunk_text("one two three.", 40),
+            vec!["one two three.".to_string()]
+        );
+        assert!(chunk_text("   ", 40).is_empty());
+    }
+
+    #[test]
+    fn every_chunk_stays_within_the_budget_and_keeps_every_word() {
+        let text = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima";
+        for budget in [5, 12, 20, 31, 64] {
+            let chunks = chunk_text(text, budget);
+            assert_eq!(
+                chunks.join(" "),
+                text,
+                "budget {budget} lost or reordered words"
+            );
+            for chunk in &chunks {
+                let words = chunk.split_whitespace().count();
+                assert!(
+                    chunk.chars().count() <= budget || words == 1,
+                    "budget {budget} produced a {}-char chunk of {words} words: {chunk}",
+                    chunk.chars().count()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_sentence_end_is_preferred_to_a_clause_end_and_a_clause_end_to_a_space() {
+        assert_eq!(
+            chunk_text("one two. three, four five six seven", 20),
+            vec![
+                "one two.".to_string(),
+                "three, four five six".to_string(),
+                "seven".to_string()
+            ]
+        );
+        assert_eq!(
+            chunk_text("one two, three four five six", 20),
+            vec!["one two,".to_string(), "three four five six".to_string()]
+        );
+        assert_eq!(
+            chunk_text("onetwo three four five six", 14),
+            vec!["onetwo three".to_string(), "four five six".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_word_longer_than_the_budget_is_its_own_chunk() {
+        assert_eq!(
+            chunk_text("short aaaaaaaaaaaaaaaaaaaaaaaa short", 10),
+            vec![
+                "short".to_string(),
+                "aaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                "short".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn the_budget_shrinks_with_the_speech_rate() {
+        let full = fluid_chunk_budget(1.0) as i64;
+        assert!((2 * fluid_chunk_budget(0.5) as i64 - full).abs() <= 1);
+        assert!((fluid_chunk_budget(2.0) as i64 - 2 * full).abs() <= 1);
+        // 464 characters at 0.5 reported 2318 frames against a cap of 2000 (T4-1).
+        assert!(
+            fluid_chunk_budget(0.5) < 464,
+            "the budget at half speed must refuse the text T4-1 measured"
+        );
+        assert!(fluid_chunk_budget(f32::NAN) > 0 && fluid_chunk_budget(0.0) > 0);
     }
 
     #[test]
