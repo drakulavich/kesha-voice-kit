@@ -104,6 +104,40 @@ describe("check-new-comments hook", () => {
     expect(await decision(work, file)).toBeNull();
   });
 
+  it("blocks growing an existing // comment by one line", async () => {
+    const work = await gitRepoWithRemote();
+    const file = await trackedFile(work, "src/a.ts", "// why this\nexport const a = 1;\n");
+    await Bun.write(file, "// why this\n// and a second thought\nexport const a = 1;\n");
+    expect(await decision(work, file)).toBe("block");
+  });
+
+  it("blocks a banner", async () => {
+    const work = await gitRepoWithRemote();
+    const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");
+    await Bun.write(file, "// ---------- helpers ----------\nexport const a = 1;\n");
+    expect(await decision(work, file)).toBe("block");
+  });
+
+  it("does not treat Rust attributes, a shebang, or C-style openers in YAML as comments", async () => {
+    const work = await gitRepoWithRemote();
+    const rs = await trackedFile(work, "src/a.rs", "fn f() {}\n");
+    await Bun.write(rs, "#[derive(Debug)]\n#[allow(dead_code)]\nfn f() {}\n");
+    expect(await decision(work, rs)).toBeNull();
+    const sh = await trackedFile(work, "src/run.sh", "echo hi\n");
+    await Bun.write(sh, "#!/bin/sh\n# one line of why\necho hi\n");
+    expect(await decision(work, sh)).toBeNull();
+    const yaml = await trackedFile(work, "src/c.yaml", "a: 1\n");
+    await Bun.write(yaml, "a: 1\n/* x\nc: 2\nd: 3\n");
+    expect(await decision(work, yaml)).toBeNull();
+  });
+
+  it("skips files whose # lines are headings, not comments", async () => {
+    const work = await gitRepoWithRemote();
+    const md = await trackedFile(work, "src/d.md", "# Title\n");
+    await Bun.write(md, "# Title\n## Alpha\n### Beta\n");
+    expect(await decision(work, md)).toBeNull();
+  });
+
   it("allows one-line comments, /** doc contracts and SAFETY blocks", async () => {
     const work = await gitRepoWithRemote();
     const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");

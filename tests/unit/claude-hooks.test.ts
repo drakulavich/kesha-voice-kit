@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { accessSync, constants } from "node:fs";
 import { readRepoFile, repoPath } from "../helpers/repo";
 
 type Hook = { type: string; command: string };
@@ -15,12 +14,10 @@ describe("hooks .claude/settings.json registers", () => {
     for (const [i, paths] of hookPaths.entries()) expect(paths, commands[i]).toHaveLength(1);
   });
 
-  // #1179: a hook that lives only in one checkout is documentation everywhere else.
-  it("names files that are tracked and executable, so every contributor runs the same gate", () => {
-    const tracked = Bun.spawnSync(["git", "ls-files", "--", ".claude/hooks"], { cwd: repoPath(".") }).stdout.toString().split("\n");
-    for (const hook of hookPaths.flat()) {
-      expect(tracked).toContain(hook);
-      expect(() => accessSync(repoPath(hook), constants.X_OK)).not.toThrow();
-    }
+  // #1179: a hook that lives only in one checkout is documentation everywhere else, and so is a local chmod +x.
+  it("names files that git tracks as executable, so every fresh clone runs the same gate", () => {
+    const index = Bun.spawnSync(["git", "ls-files", "-s", "--", ".claude/hooks"], { cwd: repoPath(".") }).stdout.toString();
+    const modes = new Map([...index.matchAll(/^(\d{6}) \S+ \d\t(.+)$/gm)].map((m) => [m[2]!, m[1]!]));
+    for (const hook of hookPaths.flat()) expect(modes.get(hook), hook).toBe("100755");
   });
 });
