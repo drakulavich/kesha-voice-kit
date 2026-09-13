@@ -1129,6 +1129,17 @@ process.exit(99);
     expect(accepted.stderr).not.toContain("character device");
   });
 
+  // T2-11: the refusal was right but uncoded and exited 1, where its sibling catch exits 2.
+  test("kesha install --tts with an unsupported language is a coded usage error, exit 2", async () => {
+    const dir = makeTempDir("kesha-cli-contract-ttslang-");
+    const run = await runCli(["install", "--plan", "--tts", "xx"], { env: isolatedEnv(dir) });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: Unsupported TTS language(s): xx.", "Supported on this platform:"],
+    });
+  });
+
   test("a batch where every file failed writes nothing to stdout", async () => {
     const run = await runCli(["--json", "a.wav", "b.wav"], {
       env: isolatedEnv(),
