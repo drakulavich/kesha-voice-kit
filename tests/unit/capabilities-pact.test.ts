@@ -80,6 +80,18 @@ const EVERY_SAY_OPTION: SayOptions = {
   format: "ogg-opus", bitrate: 32000, sampleRate: 24000, noExpandAbbrev: true,
 };
 
+/** The argument text of the call whose opening paren precedes `start`; SayError takes its code fourth, on any line. */
+function callArguments(text: string, start: number): string {
+  let depth = 1;
+  let i = start;
+  while (i < text.length && depth > 0) {
+    if (text[i] === "(") depth++;
+    else if (text[i] === ")") depth--;
+    i++;
+  }
+  return text.slice(start, i);
+}
+
 function rejection(fn: () => unknown): KeshaError | null {
   try {
     fn();
@@ -154,6 +166,30 @@ describe("capability pact — recordings", () => {
     );
     expect(mismatched).toEqual([]);
     expect(rows.size).toBeGreaterThan(20);
+  });
+
+  it("publishes every code the CLI raises as cli or both, and nothing else as cli", async () => {
+    const raised = new Set<string>();
+    for await (const file of new Bun.Glob("src/**/*.ts").scan(repoPath("."))) {
+      if (file.includes("__tests__") || file.endsWith(".test.ts")) continue;
+      const text = readRepoFile(file);
+      for (const m of text.matchAll(/new (?:Kesha|Say)Error\(/g)) {
+        const code = /"(E_[A-Z0-9_]+)"/.exec(callArguments(text, m.index + m[0].length))?.[1];
+        if (code) raised.add(code);
+      }
+    }
+    expect(raised.size).toBeGreaterThan(8);
+    const cliOnly = ["E_ENGINE_PROTOCOL", "E_ENGINE_SPAWN", "E_INSTALL_RACE"];
+    // #1202: the engine still publishes these as its own although the CLI raises them before spawning.
+    const engineStill = ["E_MODEL_MISSING", "E_TEXT_EMPTY", "E_TEXT_TOO_LONG"];
+    const shared = [...raised].filter((c) => !cliOnly.includes(c) && !engineStill.includes(c)).sort();
+    for (const t of TARGETS) {
+      const byOrigin = (origin: string) => t.pact.errors.filter((e) => e.origin === origin).map((e) => e.code).sort();
+      expect(byOrigin("cli")).toEqual(cliOnly);
+      expect(byOrigin("both")).toEqual(shared);
+      for (const code of engineStill) expect(byOrigin("engine")).toContain(code);
+      expect(byOrigin("cli").length + byOrigin("both").length + byOrigin("engine").length).toBe(t.pact.errors.length);
+    }
   });
 });
 
