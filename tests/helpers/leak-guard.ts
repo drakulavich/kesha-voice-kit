@@ -7,12 +7,18 @@
  * a suite that leaves one behind is using the helper right.
  */
 import { afterAll, afterEach } from "bun:test";
+import { homedir } from "os";
+import { join } from "path";
 import { installInterruptReaper, reapLeakedProcesses } from "./process";
 import { reapTempDirs, sweepStaleTempDirs, tempDir } from "./temp-dir";
 
 installInterruptReaper();
-// Without it every suite appends to the developer's real diagnostic log and Stats DB (openspec kesha-home).
-if (!process.env.KESHA_HOME?.trim()) process.env.KESHA_HOME = tempDir("kesha-home-");
+if (!process.env.KESHA_HOME) {
+  // The cache stays where the real-engine lanes install into (#741); only logs, Stats and MCP audio move.
+  process.env.KESHA_CACHE_DIR ??= join(homedir(), ".cache", "kesha");
+  // Without it every suite appends to the developer's real diagnostic log and Stats DB (openspec kesha-home).
+  process.env.KESHA_HOME = tempDir("kesha-home-");
+}
 // A SIGKILLed run reaches no handler at all, so the next run is the only thing that can clean up after it (#1175).
 sweepStaleTempDirs();
 // An interrupted run reaches no `afterAll`, which is exactly when these directories used to survive (#1175).
