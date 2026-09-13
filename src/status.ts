@@ -25,7 +25,21 @@ import {
   type FluidExternalRoot,
 } from "./fluid-roots";
 import { dirSizeBytes } from "./diagnostic-paths";
+import { resolveStatePaths, type StatePath } from "./state-paths";
 import pc from "picocolors";
+
+/** Where this process writes, each with the rule that decided it (openspec `state-directories`). */
+export interface StatusPaths {
+  cache: StatePath;
+  logs: StatePath;
+  stats: StatePath;
+  mcpAudio: StatePath;
+}
+
+export function collectStatusPaths(): StatusPaths {
+  const p = resolveStatePaths();
+  return { cache: p.cacheDir, logs: p.logDir, stats: p.statsDbPath, mcpAudio: p.mcpAudioDir };
+}
 
 export function formatStatusLine(
   label: string,
@@ -78,6 +92,7 @@ export interface StatusReport {
   voices: string[];
   runtime: { bun: string; platform: string; arch: string };
   modelMirror: string | null;
+  paths: StatusPaths;
   hint: string | null;
   disk: StatusDiskUsage | null;
 }
@@ -94,6 +109,7 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
     voices: installed ? listInstalledVoices() : [],
     runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
     modelMirror: activeModelMirror(),
+    paths: collectStatusPaths(),
     hint: engineHint(path, health),
     // Absent engine means no disk walk, matching the human path (#647).
     disk:
@@ -156,6 +172,9 @@ export function renderStatus(report: StatusReport): void {
   if (report.modelMirror) {
     log.info(formatStatusLine("Mirror", report.modelMirror, true));
   }
+  for (const [label, entry] of Object.entries(report.paths)) {
+    if (entry.source !== "default") log.info(formatStatusLine(pathLabel(label), `${entry.path} (${entry.source})`, true));
+  }
   log.info("");
 
   if (installed) {
@@ -168,6 +187,19 @@ export function renderStatus(report: StatusReport): void {
   }
 }
 
+
+function pathLabel(key: string): string {
+  switch (key) {
+    case "cache":
+      return "Cache";
+    case "logs":
+      return "Logs";
+    case "stats":
+      return "Stats DB";
+    default:
+      return "MCP audio";
+  }
+}
 
 function logDiskRows(rows: StatusDiskComponent[], total: number, componentTotal: number): void {
   const labelWidth = Math.max(...rows.map((r) => r.label.length), "Total".length);

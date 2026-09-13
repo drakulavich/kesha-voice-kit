@@ -22,6 +22,7 @@ import {
   type FluidExternalRoot,
 } from "./fluid-roots";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
+import { collectStatusPaths, type StatusPaths } from "./status";
 import {
   getDiagnosticLogStatus,
   resolveDiagnosticLogDir,
@@ -29,6 +30,7 @@ import {
 } from "./diagnostic-log";
 
 const KNOWN_ENV_KEYS = [
+  "KESHA_HOME",
   "KESHA_ENGINE_BIN",
   "KESHA_CACHE_DIR",
   "KESHA_MODEL_MIRROR",
@@ -121,6 +123,7 @@ export interface DoctorReport {
   stats: StatsStatus | (Partial<StatsStatus> & { error: string });
   diagnosticLogs: DoctorDiagnosticLogStatus;
   env: Record<string, string | null>;
+  paths: StatusPaths;
 }
 
 function pathSummary(path: string): PathSummary {
@@ -413,7 +416,27 @@ export async function collectDoctorReport(
     stats: collectStats(redact),
     diagnosticLogs: collectDiagnosticLogs(redact),
     env: collectEnv(redact),
+    paths: collectPaths(redact),
   };
+}
+
+function collectPaths(redact: boolean): StatusPaths {
+  const paths = collectStatusPaths();
+  const entry = (p: StatusPaths[keyof StatusPaths]) => ({ ...p, path: redactPath(p.path, redact) });
+  return { cache: entry(paths.cache), logs: entry(paths.logs), stats: entry(paths.stats), mcpAudio: entry(paths.mcpAudio) };
+}
+
+function formatPathsSection(paths: StatusPaths): string[] {
+  const row = (label: string, p: StatusPaths[keyof StatusPaths]) =>
+    `  ${label}: ${p.path}${p.source === "default" ? "" : ` (${p.source})`}`;
+  return [
+    "",
+    "Paths:",
+    row("Cache", paths.cache),
+    row("Logs", paths.logs),
+    row("Stats DB", paths.stats),
+    row("MCP audio", paths.mcpAudio),
+  ];
 }
 
 function formatComponentState(component: OptionalComponent): string {
@@ -541,6 +564,7 @@ export function formatDoctorReport(report: DoctorReport): string {
     ...formatOptionalSection(report.optionalComponents),
     ...formatStatsSection(report.stats),
     ...formatDiagnosticLogsSection(report.diagnosticLogs),
+    ...formatPathsSection(report.paths),
     ...formatEnvSection(report.env),
   ];
 
