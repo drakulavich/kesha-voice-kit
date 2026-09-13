@@ -7,6 +7,7 @@ import {
   listVoiceIds,
   say,
   SUPPORTED_SAMPLE_RATES,
+  validateSayText,
   type SayFormat,
   type SayOptions,
 } from "../synth";
@@ -308,6 +309,12 @@ export const sayCommand = defineCommand({
       process.exit(2);
     }
     const text = await resolveText(inlineText);
+    try {
+      validateSayText(text);
+    } catch (err) {
+      log.error(errorMessage(err));
+      process.exit(exitCodeFor(err));
+    }
     const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
     const langHint = typeof args.lang === "string" ? args.lang : undefined;
     const voice = await resolveSayVoice(explicitVoice, langHint, text);

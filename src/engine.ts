@@ -122,6 +122,8 @@ export function spawnEngineProcess(
 
 export interface RunEngineOptions {
   signal?: AbortSignal;
+  /** Text for the subprocess's stdin. Nothing a user typed may become an argv element: a NUL byte or a megabyte of it makes the spawn itself fail (#T1-1). */
+  stdin?: string;
   /** Receives each progress line as the engine writes it, rather than once the run is
    *  over (#1002). Progress the caller takes delivery of this way is dropped from the
    *  returned `stderr`, so it is never shown a second time in the failure report. */
@@ -136,14 +138,27 @@ interface EngineRun {
   invalid: string[];
 }
 
+/** An engine that refuses the run before reading closes the pipe; that EPIPE is its answer, reported by the exit status and stderr below. */
+async function writeEngineStdin(proc: ReturnType<typeof Bun.spawn>, text: string): Promise<void> {
+  const sink = proc.stdin as Bun.FileSink;
+  try {
+    sink.write(text);
+    await sink.end();
+  } catch (err) {
+    log.debug(`stdin write failed: ${errorMessage(err)}`);
+  }
+}
+
 async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<EngineRun> {
   if (opts.signal?.aborted) throw engineAbortError();
   const binPath = getEngineBinPath();
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"], protocolEnv());
+  const stdio: SpawnStdio = [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"];
+  const proc = spawnEngineProcess(binPath, args, stdio, protocolEnv());
   const tree = registerProcessTree(proc);
   const cancel = abortOnSignal(tree, opts.signal);
+  if (opts.stdin !== undefined) await writeEngineStdin(proc, opts.stdin);
   let stdout: string;
   let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
@@ -545,7 +560,7 @@ export async function detectTextLanguageEngine(
 ): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
-  const run = await runEngine(["detect-text-lang", text], opts);
+  const run = await runEngine(["detect-text-lang"], { ...opts, stdin: text });
   if (reportedFailure(run)) {
     const warning = textLangFailureWarning(run.stderr);
     if (warning) log.warn(warning);

@@ -1018,6 +1018,41 @@ process.exit(99);
     expect(run.stdout).toBe("en-am_michael\nru-vosk-m02\n");
   });
 
+  // T1-1: routing handed the text to `detect-text-lang` as an argv element before any length check.
+  test("kesha say refuses a NUL byte in the text with one coded line and never spawns the engine", async () => {
+    const dir = makeTempDir("kesha-cli-contract-nul-");
+    const out = join(dir, "o.wav");
+    const run = await runCli(["say", "--out", out], {
+      env: isolatedEnv(dir),
+      stdin: "null\0byte here",
+    });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: text contains a NUL byte"],
+      stderrNotContains: ["E_ENGINE_SPAWN", "posix_spawn", "Synthesizing"],
+    });
+    expect(run.stderr.split("\n")).toHaveLength(1);
+    expect(run.stderr).not.toMatch(/^\s+at /m);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  test("kesha say refuses a 1 MB stdin text as E_TEXT_TOO_LONG, exit 5, with no engine involved", async () => {
+    const dir = makeTempDir("kesha-cli-contract-toolong-");
+    const chars = 1_048_576;
+    const run = await runCli(["say", "--out", join(dir, "big.wav")], {
+      env: isolatedEnv(dir),
+      stdin: "x".repeat(chars),
+    });
+    expectContract(run, {
+      exitCode: 5,
+      stdoutEmpty: true,
+      stderrContains: [`error [E_TEXT_TOO_LONG]: text exceeds 5000 chars (${chars})`],
+      stderrNotContains: ["E_ENGINE_SPAWN", "Synthesizing"],
+    });
+    expect(run.stderr.split("\n")).toHaveLength(1);
+  });
+
   test("a batch where every file failed writes nothing to stdout", async () => {
     const run = await runCli(["--json", "a.wav", "b.wav"], {
       env: isolatedEnv(),

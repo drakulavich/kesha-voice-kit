@@ -44,8 +44,8 @@ pub enum Commands {
     },
     /// Detect language of text (macOS only)
     DetectTextLang {
-        /// Text to analyze
-        text: String,
+        /// Text to analyze; read from stdin when omitted
+        text: Option<String>,
     },
     /// Record microphone audio to a WAV file
     Record {
