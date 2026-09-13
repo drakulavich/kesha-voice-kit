@@ -168,7 +168,7 @@ Engine is installed, matching the human path.
 - WHEN Ira runs `kesha status`
 - THEN the output shows a red cross for the Engine binary
 - AND an actionable setup hint is printed — `kesha init` on an interactive TTY,
-  `kesha install` when stderr is piped (`installHint()`, `src/status.ts:110`)
+  `kesha install` when stderr is piped (`installHint()`, `src/status.ts::engineHint`)
 - AND the process exits 0
 
 #### Scenario: Ira asks for disk usage with no Engine installed
@@ -215,8 +215,9 @@ Engine is installed, matching the human path.
 > returns null when unset or empty. Capabilities are `engineFunctionalHealth()`'s
 > (`src/engine-health.ts`) `capabilities` when its status is `ok` and null otherwise, so a
 > failed or unparseable probe is what the payload reports as null. The `--json`
-> flag follows the `doctor` precedent at `src/cli/doctor.ts:16-32`. The Raycast
-> extension reads the nested value at `raycast/src/lib/kesha-bin.ts:240-253`.*
+> flag follows the `doctor` precedent at `src/cli/doctor.ts::doctorCommand`. The
+> Raycast extension reads the nested value at
+> `raycast/src/lib/kesha-bin.ts::readStructuredStatus`.*
 
 ### Requirement: `kesha logs` manages privacy-safe NDJSON Diagnostic logs
 
@@ -441,7 +442,7 @@ as invariants, not options:
 > `UNSAFE_STRING_VALUE`, `SAFE_STRING_VALUE`, `validateField`);
 > `src/stats.ts::sanitizeStatsError`, `src/stats.ts::statsPrivacyContract`,
 > `src/stats.ts::artifactFromFile` (records `extname(path)` and `st.size`, not the
-> path itself). Audio size bucketing in `stats.ts::summarizeSizeBuckets`:
+> path itself). Audio size bucketing in `src/stats.ts::summarizeSizeBuckets`:
 > `<1 MB`, `1-10 MB`, `10-100 MB`, `100 MB+`.*
 
 ## Open Issues

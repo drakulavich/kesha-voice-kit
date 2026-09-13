@@ -49,9 +49,9 @@ The Engine SHALL decode every supported container in-process and SHALL NOT depen
 - AND the Error code is `E_BAD_AUDIO`, because an undecodable container is the
   user's input, not an Engine fault
 
-> *Technical Note — `rust/src/audio.rs:19-24` registers symphonia's enabled
-> codecs plus `symphonia_adapter_libopus::OpusDecoder`; `open_format`
-> (`rust/src/audio.rs:50`) probes with symphonia's enabled formats. Supported
+> *Technical Note — `rust/src/audio.rs::get_codec_registry` registers
+> symphonia's enabled codecs plus `symphonia_adapter_libopus::OpusDecoder`;
+> `rust/src/audio.rs::open_format` probes with symphonia's enabled formats. Supported
 > containers/codecs are whatever those registries carry — MP3, WAV, FLAC, AAC,
 > OGG/Vorbis, Opus, AIFF, and more. CLAUDE.md states the no-`ffmpeg` property
 > as a project invariant.*
@@ -73,7 +73,7 @@ The Engine SHALL determine a file's container by probing its contents, using the
 - THEN the Engine probes the contents with no hint and decodes it if the
   container is supported
 
-> *Technical Note — `build_hint` (`rust/src/audio.rs:36`) lowercases the
+> *Technical Note — `rust/src/audio.rs::build_hint` lowercases the
 > extension before handing it to symphonia and returns an empty `Hint` when the
 > path has no extension or a non-UTF-8 one. Routing a bare extensionless
 > existing file to transcription instead of the unknown-command handler is
@@ -97,7 +97,7 @@ Every transcription entry point SHALL validate that the input is a supported con
 - WHEN Ira transcribes it
 - THEN validation passes without decoding any frames, and transcription proceeds
 
-> *Technical Note — `ensure_audio_track` (`rust/src/audio.rs:321`) calls
+> *Technical Note — `rust/src/audio.rs::ensure_audio_track` calls
 > `open_format` and discards the reader: container headers only, never a frame
 > decode and never an `n_frames` scan, so it stays cheap on the Xing-less CBR
 > MP3 worst case. Its doc comment records the failure it was added for —
@@ -129,17 +129,17 @@ The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` 
 - THEN the failure carries `E_BAD_AUDIO`, because the audio inside is unusable —
   the user's input, not an Engine fault
 
-> *Technical Note — `open_format` (`rust/src/audio.rs:51-63`) maps
+> *Technical Note — `rust/src/audio.rs::open_format` maps
 > `io::ErrorKind::NotFound` to `ErrorCode::InputNotFound` and every other open
 > failure to `ErrorCode::BadAudio`. Every remaining ingest failure is tagged
-> `ErrorCode::BadAudio`: unsupported format (`:78`), no supported audio tracks
-> (`:85`), unknown sample rate (`:101`), unsupported codec (`:108`) and hard
-> decode faults (`:119`, `:137`) via `CodedContext::coded`, and the
+> `ErrorCode::BadAudio` through `CodedContext::coded`: unsupported format and
+> no supported audio tracks in `open_format`; unknown sample rate, unsupported
+> codec and hard decode faults in `rust/src/audio.rs::decode_packets`; plus the
 > decoded-nothing guard in `measure_duration_seconds` via `coded_bail!`. No
-> ingest failure falls through to `code_of`'s `ErrorCode::Internal` default
-> (`rust/src/errors.rs:193-197`). `E_BAD_AUDIO` is in the taxonomy listed by
+> ingest failure falls through to the `ErrorCode::Internal` default in
+> `rust/src/errors.rs::code_of`. `E_BAD_AUDIO` is in the taxonomy listed by
 > `kesha-engine describe` (the `errors` section) and documented in `docs/errors.md`; its
-> category is `Input` (`rust/src/errors.rs:266-267`). Real-input regression
+> category is `Input` (`rust/src/errors.rs::ErrorCode::category`). Real-input regression
 > tests cover unsupported format, no audio tracks (a video-only MP4) and
 > unsupported codec (ALAC in M4A) in `rust/tests/audio_format.rs`; the unknown
 > sample-rate branch and the decoded-nothing guard take the identical change
@@ -164,11 +164,11 @@ The Engine SHALL continue past packet-level decode faults and end the read clean
 - THEN the Engine fails with an error naming the file rather than guessing a
   rate
 
-> *Technical Note — `decode_packets` (`rust/src/audio.rs:96`): `IoError` and
+> *Technical Note — `rust/src/audio.rs::decode_packets`: `IoError` and
 > `ResetRequired` from `next_packet` break the loop; `IoError` and `DecodeError`
 > from `decoder.decode` `continue`; anything else is returned as
-> `ErrorCode::BadAudio`. A missing `codec_params.sample_rate` errors at
-> `rust/src/audio.rs:99-101`. Packets belonging to other tracks are skipped.*
+> `ErrorCode::BadAudio`. The same function errors when `codec_params.sample_rate`
+> is absent. Packets belonging to other tracks are skipped.*
 
 ### Requirement: Models receive mono audio at one fixed sample rate
 
@@ -188,14 +188,15 @@ The Engine SHALL present decoded audio to every model as single-channel samples 
 - WHEN Ira transcribes it
 - THEN the samples pass through unchanged, with no resampling applied
 
-> *Technical Note — `TARGET_SAMPLE_RATE` is `16000`
-> (`rust/src/audio.rs:17`). `mix_to_mono` (`:159`) averages interleaved frames
-> and returns mono input untouched; `resample_mono` (`:189`) short-circuits when
-> the rates match and otherwise runs `sinc_resampler` (`:173`) — a 128-tap
+> *Technical Note — `rust/src/audio.rs::TARGET_SAMPLE_RATE` is `16000`.
+> `rust/src/audio.rs::mix_to_mono` averages interleaved frames
+> and returns mono input untouched; `rust/src/audio.rs::resample_mono`
+> short-circuits when the rates match and otherwise runs
+> `rust/src/audio.rs::sinc_resampler` — a 128-tap
 > Blackman-Harris windowed sinc with cubic interpolation, `FixedAsync::Input`,
 > chunk size 1024 — the same construction the live capture path uses.
-> `load_audio` (`:263`) is decode → mix → resample. Unit tests at
-> `rust/src/audio.rs:329-378` cover the mono pass-through, the averaging, and
+> `rust/src/audio.rs::load_audio` is decode → mix → resample. Unit tests in
+> `rust/src/audio.rs::tests` cover the mono pass-through, the averaging, and
 > output length within ±16 frames for 8 k/22.05 k/44.1 k/48 kHz.*
 
 ### Requirement: Duration is probed cheaply and measured only when required
@@ -223,11 +224,11 @@ The Engine SHALL answer duration from container metadata without decoding, and S
 - THEN the Engine fails with a message saying no audio frames were decoded and
   suggesting a re-export or transcribing without timestamps
 
-> *Technical Note — `probe_duration_seconds` (`rust/src/audio.rs:280`) divides
+> *Technical Note — `rust/src/audio.rs::probe_duration_seconds` divides
 > `codec_params.n_frames` by the sample rate and returns `Ok(None)` when either
 > is absent; its doc comment forbids falling back to a decode-and-measure.
-> `measure_duration_seconds` (`:294`) streams the file retaining no samples and
-> errors when it counts zero frames.*
+> `rust/src/audio.rs::measure_duration_seconds` streams the file retaining no
+> samples and errors when it counts zero frames.*
 
 ### Requirement: Language detection sees a bounded prefix of the audio
 
@@ -247,7 +248,7 @@ Audio Language detection SHALL be answered from a bounded leading prefix of the 
 - THEN all of the available audio is used and detection still returns a code and
   confidence
 
-> *Technical Note — `load_audio_truncated` (`rust/src/audio.rs:269`) decodes via
+> *Technical Note — `rust/src/audio.rs::load_audio_truncated` decodes via
 > `load_audio` and keeps the first `max_seconds * TARGET_SAMPLE_RATE` samples.
 > The window used for detection (first 10 s, ECAPA-TDNN VoxLingua107) is
 > specified in [language-detection](../language-detection/spec.md).*
@@ -260,8 +261,8 @@ Audio Language detection SHALL be answered from a bounded leading prefix of the 
 - `load_audio` materialises every decoded sample in memory before mixing and
   resampling, so peak memory scales with duration. Nothing caps it, and no
   requirement above states a supported maximum input length.
-- `mix_to_mono` treats a zero-channel track as mono and returns the interleaved
-  buffer unchanged (`rust/src/audio.rs:159-167`, covered by a unit test that
+- `rust/src/audio.rs::mix_to_mono` treats a zero-channel track as mono and
+  returns the interleaved buffer unchanged (covered by a unit test that
   asserts it does not panic). That is a defensive path, not a specified
   behaviour — what a zero-channel container *should* produce is undecided.
 - The set of supported containers is inherited from symphonia's enabled feature

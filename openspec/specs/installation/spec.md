@@ -207,9 +207,12 @@ what any platform is claimed to support.
 > ubuntu-latest, `windows-engine-smoke` on windows-latest — both run a cold install and
 > `.github/scripts/smoke-synthesis.ts`), `.github/scripts/assert-install-warmup.ts`, and
 > `rust/src/cli/install.rs` (warm-up warns and continues, #298). The engine-downloading
-> lanes carry a `!startsWith(github.head_ref, 'release/')` guard at `ci.yml:387`, `:448`
-> and `:501`; the channel those lanes resolve is what keeps alpha Engine tags out of
-> unrelated pull requests.*
+> lanes carry a `!startsWith(github.head_ref, 'release/')` guard —
+> `.github/workflows/ci.yml::integration-tests-full`,
+> `.github/workflows/ci.yml::published-engine-smoke`,
+> `.github/workflows/ci.yml::windows-engine-smoke` and
+> `.github/workflows/ci.yml::tts-e2e`; the channel those lanes resolve is what keeps
+> alpha Engine tags out of unrelated pull requests.*
 
 ### Requirement: Linux packages ship only from a release that publishes the same CLI version
 
@@ -713,13 +716,14 @@ After a successful install the CLI MAY print an invitation to star the repositor
 - THEN nothing is printed, and the slot is still consumed so the same version
   never asks again
 
-> *Technical Note — `maybeAskForStar` (`src/star.ts:62`) is called after
-> `installEngine` succeeds (`src/cli/install.ts:239`).
-> `shouldShowStarPrompt` (`src/star.ts:42`) returns true for an absent marker
+> *Technical Note — `src/star.ts::maybeAskForStar` is called after
+> `installEngine` succeeds, from `src/cli/install.ts::performInstall`.
+> `src/star.ts::shouldShowStarPrompt` returns true for an absent marker
 > and for a major-or-minor increase only. The marker is `<engine-bin>.star-seen`
-> (`src/star.ts:16`) and is written *before* printing, so one run never prompts
-> twice and a write failure is non-fatal. `GH_PROBE_TIMEOUT_MS` is 2 000 ms
-> (`src/star.ts:6`), sized to clear a healthy `gh auth status` (0.77–1.21 s
+> (`src/star.ts::starSeenPath`) and is written *before* printing, so one run never
+> prompts twice and a write failure is non-fatal.
+> `src/star.ts::GH_PROBE_TIMEOUT_MS` is 2 000 ms, sized to clear a healthy
+> `gh auth status` (0.77–1.21 s
 > measured) but not a wedged one that blocked install 11–25 s (#810).
 > `maybeAskForStar` is total: its whole body sits in a try that swallows any
 > throw to `log.warn`, so a failing probe, spawn, or logger cannot escape into
