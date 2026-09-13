@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { harnessHome } from "../helpers/harness-home";
 
 const HOME = "/Users/ira";
-const PINNED = "/Users/ira/.cache/kesha";
+const PINNED = join(HOME, ".cache", "kesha");
 const privateHome = () => "/tmp/kesha-tests/kesha-home-abc";
 
 describe("harnessHome", () => {
