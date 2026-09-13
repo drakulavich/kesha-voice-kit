@@ -6,7 +6,7 @@ Kesha does three language-aware things: **speech-to-text** (ASR), **text-to-spee
 
 ## Speech-to-text (25)
 
-NVIDIA Parakeet TDT 0.6B v3. Language is auto-detected; `--lang <code>` warns if the detected language differs.
+NVIDIA Parakeet TDT 0.6B v3. Language is auto-detected; `--lang <code>` warns if the detected language differs. The comparison is case-insensitive and ignores a region subtag, so `en-US`, `EN` and `en_us` all match a detected `en`. Three-letter codes such as `eng` are not recognised and will warn.
 
 | # | Language | Code | |
 |---:|----------|------|---|
@@ -69,4 +69,4 @@ On Linux/Windows, text-to-speech covers English (Kokoro ONNX), Russian (Vosk-TTS
 
 SpeechBrain ECAPA-TDNN identifies the spoken language of audio across 107 languages — broader than the ASR set above. Full list: [speechbrain/lang-id-voxlingua107-ecapa](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa).
 
-Text language detection (for TTS voice routing) uses Apple's `NLLanguageRecognizer` on macOS.
+Text language detection (for TTS voice routing) uses Apple's `NLLanguageRecognizer` on macOS. Off macOS, transcription falls back to a CLI-side `tinyld` guess; a guess scoring below 0.5 stays in the JSON's `textLanguage` field but does not set `lang`, and `--verbose` says so. The same 0.5 floor applies to `audioLanguage`, which backs `lang` only when no text result did; silence returns the model's prior (`nn` at about 0.27), which the floor keeps out of `lang`.

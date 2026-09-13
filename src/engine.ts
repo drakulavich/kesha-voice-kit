@@ -467,6 +467,8 @@ async function forwardStdout(stream: ReadableStream<Uint8Array>, status: { clear
  * reworded ticker degrades to one line per second rather than breaking (`recordTicksInPlace`).
  */
 const RECORD_TICK = /^Listening\.\.\. \d+s$/;
+/** The recording's outcome arrives as progress too; it is the result, so `--quiet` must not drop it (Exploratory S3-F2). */
+const RECORD_OUTCOME = /^(Recorded .+ \(\d+ Hz, \d+ channels?, \d+ frames\)|No speech detected\.)$/;
 
 export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
   const binPath = getEngineBinPath();
@@ -494,7 +496,8 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
             return;
           }
           status.clear();
-          log.progress(line);
+          if (RECORD_OUTCOME.test(line)) log.notice(line);
+          else log.progress(line);
         },
         onWarn: (line) => {
           status.clear();

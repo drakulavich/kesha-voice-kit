@@ -88,7 +88,7 @@ if (args[0] === "detect-lang") {
   if (process.env.KESHA_FAKE_DETECT_LANG_MARKER) {
     await Bun.write(process.env.KESHA_FAKE_DETECT_LANG_MARKER, "called");
   }
-  console.log(JSON.stringify({ code: "ru", confidence: 0.99 }));
+  console.log(JSON.stringify({ code: "ru", confidence: Number(process.env.KESHA_FAKE_DETECT_LANG_CONFIDENCE ?? "0.99") }));
   process.exit(0);
 }
 
@@ -2050,4 +2050,147 @@ exit 0
     expect(run.stderr).toContain("EBADF");
     expect(run.stderr).not.toContain("at writeFast");
   }, 30000);
+
+  describe("language flags", () => {
+    /** Exploratory S1-3: quiet drops progress, not warnings; the mismatch used to ride on the progress bar and vanish with it. */
+    test("--quiet keeps the language-mismatch warning on stderr", async () => {
+      const dir = makeTempDir("kesha-cli-contract-quiet-lang-warn-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+
+      const run = await runCli(["-q", "--lang", "en", mediaPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: [`${mediaPath}: warning: expected language "en" but detected "ru"`],
+        stderrNotContains: ["Transcribing", "Transcribed"],
+      });
+      expect(run.stdout).not.toBe("");
+    });
+
+    /**
+     * Exploratory S11-2 and S11-4: without the text-lang sidecar, tinyld's top guess named `lang` at any
+     * score, 0.2 included, and silence's audio prior (nn at 0.27) was published like a real detection.
+     */
+    test("weak text and audio guesses stay in their raw fields but do not name lang", async () => {
+      const dir = makeTempDir("kesha-cli-contract-lang-floor-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+      const env = {
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+        KESHA_FAKE_TEXT_LANG_UNSUPPORTED: "1",
+        KESHA_FAKE_DETECT_LANG_CONFIDENCE: "0.267",
+      };
+
+      const run = await runCli(["--json", "--verbose", mediaPath], { env });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: [
+          "Audio language: ru (confidence: 0.27, below the 0.5 floor, ignored for lang)",
+          "Text language: ru (confidence: 0.20, below the 0.5 floor, ignored for lang)",
+        ],
+      });
+      const [parsed] = JSON.parse(run.stdout);
+      expect(parsed.audioLanguage).toEqual({ code: "ru", confidence: 0.267 });
+      expect(parsed.textLanguage).toEqual({ code: "ru", confidence: 0.2, source: "tinyld" });
+      expect(parsed.lang).toBe("");
+    });
+
+    /** Exploratory S11-4: confident audio is the fallback when the text guess was too weak, and it warns once, not twice. */
+    test("confident audio names lang when tinyld could not, with a single mismatch warning", async () => {
+      const dir = makeTempDir("kesha-cli-contract-audio-fallback-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+      const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath, KESHA_FAKE_TEXT_LANG_UNSUPPORTED: "1" };
+
+      const run = await runCli(["--json", "--lang", "en", mediaPath], { env });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: [`${mediaPath}: warning: expected language "en" but detected "ru" (from audio)`],
+      });
+      expect(run.stderr.split("warning:")).toHaveLength(2);
+      const [parsed] = JSON.parse(run.stdout);
+      expect(parsed.lang).toBe("ru");
+      expect(parsed.textLanguage).toEqual({ code: "ru", confidence: 0.2, source: "tinyld" });
+    });
+  });
+
+  describe("--verbose", () => {
+    /** Exploratory S1-2: `kesha --verbose a.ogg > t.txt` used to put three diagnostic lines above the transcript in the file. */
+    test("diagnostics go to stderr and stdout carries the transcript alone", async () => {
+      const dir = makeTempDir("kesha-cli-contract-verbose-channel-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+
+      const run = await runCli(["--verbose", mediaPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: ["Audio language: ru (confidence: 0.99)", "Text language: ru (confidence: 0.98)", "STT time: "],
+        stdoutNotContains: ["language", "STT time", "---"],
+      });
+      expect(run.stdout.split("\n")).toHaveLength(1);
+    });
+  });
+
+  describe("record under --quiet", () => {
+    function recordingStub(dir: string, features: string[], body: string): string {
+      const enginePath = join(dir, "kesha-engine");
+      writeFileSync(
+        enginePath,
+        `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features })}'\n  exit 0\nfi\nif [ "$1" = "record" ]; then\n${body}\n  exit 0\nfi\nexit 2\n`,
+      );
+      chmodSync(enginePath, 0o755);
+      return enginePath;
+    }
+
+    /** Exploratory S3-F2: `kesha record -q --out f.wav` produced nothing on either channel, so a script had no success signal. */
+    test("--out still confirms the recording on stderr", async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir("kesha-cli-contract-record-quiet-out-");
+      const outPath = join(dir, "note.wav");
+      const enginePath = recordingStub(
+        dir,
+        [],
+        `  printf '%s\\n' '{"kind":"progress","message":"Listening (48000 Hz)... stop with Ctrl-C."}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"Recorded ${outPath} (48000 Hz, 1 channel, 95744 frames)"}' >&2`,
+      );
+      const run = await runCli(["record", "-q", "--out", outPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stdoutEmpty: true,
+        stderrContains: [`Recorded ${outPath} (48000 Hz, 1 channel, 95744 frames)`],
+        stderrNotContains: ["Listening"],
+      });
+    });
+
+    test("--live on silence still says no speech was detected", async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir("kesha-cli-contract-record-quiet-live-");
+      const enginePath = recordingStub(
+        dir,
+        ["record.live"],
+        `  printf '%s\\n' '{"kind":"progress","message":"Listening... 1s"}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"No speech detected."}' >&2`,
+      );
+      const run = await runCli(["record", "-q", "--live"], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stdoutEmpty: true,
+        stderrContains: ["No speech detected."],
+        stderrNotContains: ["Listening"],
+      });
+    });
+  });
 });

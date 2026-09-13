@@ -51,7 +51,7 @@ export {
   formatJsonOutput,
   formatTextOutput,
   formatTranscriptOutput,
-  formatVerboseOutput,
+  formatVerboseDiagnostics,
 } from "./format";
 export { formatToonOutput } from "./toon";
 export {

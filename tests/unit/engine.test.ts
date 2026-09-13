@@ -616,6 +616,34 @@ exit 2
     }
   });
 
+  /** Exploratory S3-F2: the recording's outcome is a result that lives on stderr, so quiet keeps it and drops only the chatter. */
+  fakeEngineTest("--quiet keeps the Recorded line and the no-speech outcome", async () => {
+    const outEngine = writeRecordingEngine(
+      "kesha-engine-record-quiet-result-",
+      `  printf '%s\\n' '{"kind":"progress","message":"Listening (16000 Hz)... transcript prints when recording stops."}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"Listening... 1s"}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"Recorded /tmp/out.wav (16000 Hz, 1 channel, 160000 frames)"}' >&2`,
+    );
+    const liveEngine = writeRecordingEngine(
+      "kesha-engine-record-quiet-silence-",
+      `  printf '%s\\n' '{"kind":"progress","message":"Listening... 1s"}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"No speech detected."}' >&2`,
+    );
+    log.quietEnabled = true;
+    try {
+      const out = await withEngineEnv(outEngine, () =>
+        captureStderr(false, () => recordEngine({ out: "/tmp/out.wav" }, 10)),
+      );
+      expect(out).toBe("Recorded /tmp/out.wav (16000 Hz, 1 channel, 160000 frames)\n");
+      const live = await withEngineEnv(liveEngine, () =>
+        captureStderr(false, () => recordEngine({ live: true }, 10)),
+      );
+      expect(live).toBe("No speech detected.\n");
+    } finally {
+      log.quietEnabled = false;
+    }
+  });
+
   fakeEngineTest("recordEngine spawns the engine on protocol 4", async () => {
     const engine = writeRecordingEngine(
       "kesha-engine-record-proto-",

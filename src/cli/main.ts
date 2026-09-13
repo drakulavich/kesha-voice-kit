@@ -11,7 +11,7 @@ import {
   formatJsonOutput,
   formatTextOutput,
   formatTranscriptOutput,
-  formatVerboseOutput,
+  formatVerboseDiagnostics,
 } from "../format";
 import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
@@ -24,6 +24,7 @@ import { runCommandSession, type CommandSession } from "./command-session";
 import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
 import { exitCodeFor, KeshaError } from "../engine/events";
+import { routeLanguage } from "../language-routing";
 import { renderInvalidArg } from "./options";
 
 interface MainCommandArgs {
@@ -122,8 +123,14 @@ export function resolveOutputFormat(input: {
   return { ok: true, format: input.json ? "json" : input.toon ? "toon" : (input.format ?? "text") };
 }
 
+/** Case-folded primary subtag: `en-US`, `EN` and `en_us` all reduce to `en`; a three-letter `eng` stays `eng`. */
+export function primaryLanguageSubtag(code: string): string {
+  return code.trim().toLowerCase().split(/[-_]/, 1)[0] ?? "";
+}
+
 export function checkLanguageMismatch(expected: string | undefined, detected: string): string | null {
-  if (!expected || !detected || expected === detected) return null;
+  if (!expected || !detected) return null;
+  if (primaryLanguageSubtag(expected) === primaryLanguageSubtag(detected)) return null;
   return `warning: expected language "${expected}" but detected "${detected}"`;
 }
 
@@ -215,13 +222,21 @@ export function validateTranscribeArgs(
   return { ok: true, vadMode, outputFormat: fmt.format };
 }
 
+type FileProgress = ReturnType<typeof createPercentProgress> | null;
+
+/** A warning is not progress: it must reach stderr under --quiet, where no bar exists to interrupt. */
+function warnAboveProgress(progress: FileProgress, message: string): void {
+  if (progress) progress.interrupt(() => log.warn(message));
+  else log.warn(message);
+}
+
 async function detectLanguages(
   file: string,
   text: string,
   options: {
     wantsLangId: boolean;
     expectedLang?: string;
-    progress: ReturnType<typeof createPercentProgress> | null;
+    progress: FileProgress;
     stats: StatsRecorder;
     transcriptDurationSeconds: number | null;
   },
@@ -251,7 +266,7 @@ async function detectLanguages(
   if (audioLanguage && expectedLang && audioLanguage.confidence > 0.8) {
     const mismatch = checkLanguageMismatch(expectedLang, audioLanguage.code);
     if (mismatch) {
-      progress?.interrupt(() => log.warn(`${file}: ${mismatch} (from audio)`));
+      warnAboveProgress(progress, `${file}: ${mismatch} (from audio)`);
     }
   }
 
@@ -265,11 +280,13 @@ async function detectLanguages(
     }
   }
 
-  const lang = textLanguage?.code || tinyldResult?.code || "";
+  const route = routeLanguage({ audioLanguage, textLanguage: textLanguage ?? tinyldResult });
+  const { lang } = route;
 
-  const mismatchWarning = checkLanguageMismatch(expectedLang, lang);
+  // A lang taken from audio was already judged by the audio check above; warning again would double it.
+  const mismatchWarning = route.source === "audio" ? null : checkLanguageMismatch(expectedLang, lang);
   if (mismatchWarning) {
-    progress?.interrupt(() => log.warn(`${file}: ${mismatchWarning}`));
+    warnAboveProgress(progress, `${file}: ${mismatchWarning}`);
   }
 
   return {
@@ -414,13 +431,14 @@ async function processFile(
   }
 }
 
-/** `verbose` is only consulted for the plain-text fallback path. */
+/** `--verbose` diagnostics are stderr's whatever the format; stdout carries results only. */
 function writeOutput(
   results: TranscribeResult[],
   errors: TranscribeErrorRecord[],
   format: ValidatedTranscribeArgs["outputFormat"],
   opts: { includeErrors: boolean; verbose: boolean },
 ): void {
+  if (opts.verbose) process.stderr.write(formatVerboseDiagnostics(results));
   const errorEnvelope = (format === "json" || format === "toon") && opts.includeErrors;
   // #773: `[]` reads as "ran fine, nothing found" to a consumer ignoring the exit code.
   if (results.length === 0 && errors.length > 0 && !errorEnvelope) return;
@@ -431,8 +449,6 @@ function writeOutput(
     process.stdout.write(formatToonOutput(results, opts.includeErrors ? errors : undefined));
   } else if (format === "transcript") {
     process.stdout.write(formatTranscriptOutput(results));
-  } else if (opts.verbose) {
-    process.stdout.write(formatVerboseOutput(results));
   } else {
     process.stdout.write(formatTextOutput(results));
   }
