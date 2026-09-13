@@ -58,5 +58,5 @@
 
 - [x] 8.1 Merge the seven cluster branches into `xt-major`; reconcile the two `E_INTERRUPTED` rows; `just preflight`
 - [x] 8.2 Spec deltas for every modified capability listed in the proposal; `bun run check:specs`
-- [ ] 8.3 PR; Greptile P1/P2 clear; adversarial review aimed at "every major finding's reproduction command now behaves as its sheet states, and no minor finding regressed"; CI on the full head SHA
+- [x] 8.3 PR; Greptile P1/P2 clear; adversarial review aimed at "every major finding's reproduction command now behaves as its sheet states, and no minor finding regressed"; CI on the full head SHA
 - [ ] 8.4 After merge: sync and archive in a follow-up PR
