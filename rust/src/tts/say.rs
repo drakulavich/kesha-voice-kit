@@ -336,6 +336,15 @@ fn kokoro_session<'s>(
         .map_err(|e| TtsError::SynthesisFailed(format!("{e:#}")))
 }
 
+/// What an engine with no IPA input speaks: a `<phoneme>` degrades to the text
+/// it wrapped, and a tag with no body has nothing left to say.
+fn no_ipa_unit<'a>(seg: Speakable<'a>) -> Option<&'a str> {
+    match seg {
+        Speakable::Text(t) | Speakable::Spell(t) => Some(t),
+        Speakable::Ipa { text, .. } => (!text.is_empty()).then_some(text),
+    }
+}
+
 /// One speakable segment on its way to a sink.
 enum Speakable<'a> {
     Text(&'a str),
@@ -613,13 +622,13 @@ impl SegmentSink for FluidKokoroSink<'_> {
                 );
                 Some(t.to_string())
             }
-            Speakable::Ipa { text, .. } => {
+            Speakable::Ipa { .. } => {
                 crate::tts::warn::warn_once(
                     "ipa-fluid-kokoro",
                     "SSML <phoneme alphabet=\"ipa\"> is not supported on FluidAudio Kokoro \
                      (internal G2P only); reading the contained text instead",
                 );
-                (!text.is_empty()).then(|| text.to_string())
+                no_ipa_unit(seg).map(str::to_string)
             }
         })
     }
@@ -734,14 +743,9 @@ impl SegmentSink for VoskSink<'_> {
             .sample_rate(self.model_dir)
             .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))
     }
-    // Vosk owns its G2P, so every variant is plain text to it;
     // ru::normalize_segments expands Spell upstream.
     fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError> {
-        let unit = match seg {
-            Speakable::Text(t) | Speakable::Spell(t) => t,
-            Speakable::Ipa { ph, .. } => ph,
-        };
-        Ok(Some(unit.to_string()))
+        Ok(no_ipa_unit(seg).map(str::to_string))
     }
     fn synth(&mut self, unit: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
         self.infer(unit, speed)
@@ -883,6 +887,27 @@ mod tests {
             !crate::tts::warn::was_warned(WARN_EXPAND_ABBREV_IGNORED),
             "English on Kokoro honors the flag; warning there would be the opposite lie"
         );
+    }
+
+    #[test]
+    fn an_engine_without_ipa_speaks_the_text_the_phoneme_wrapped() {
+        assert_eq!(
+            no_ipa_unit(Speakable::Ipa {
+                ph: "ˈkeʃa",
+                text: "Kesha"
+            }),
+            Some("Kesha"),
+            "the IPA would be read out letter by letter by a G2P that cannot take it"
+        );
+        assert_eq!(
+            no_ipa_unit(Speakable::Ipa {
+                ph: "ˈkeʃa",
+                text: ""
+            }),
+            None
+        );
+        assert_eq!(no_ipa_unit(Speakable::Text("hello")), Some("hello"));
+        assert_eq!(no_ipa_unit(Speakable::Spell("ВОЗ")), Some("ВОЗ"));
     }
 
     fn walked(
