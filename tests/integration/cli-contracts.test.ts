@@ -271,6 +271,30 @@ process.exit(2);
   return enginePath;
 }
 
+function createSignalIgnoringTranscribeEngine(dir: string, enginePidPath: string): string {
+  const enginePath = join(dir, "kesha-engine-transcribe-ignores-signals");
+  writeFileSync(
+    enginePath,
+    `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: [] }))});
+  process.exit(0);
+}
+if (args[0] === "transcribe") {
+  process.on("SIGINT", () => {});
+  process.on("SIGTERM", () => {});
+  await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
+  await new Promise(() => {});
+}
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
 function createHangingRecordEngine(dir: string, enginePidPath: string): string {
   const enginePath = join(dir, "kesha-engine-record-hang");
   writeFileSync(
@@ -1524,6 +1548,38 @@ process.exit(99);
     });
   }
 
+  test("an engine that ignores the forwarded signal is force-killed, and the report still names the signal Ctrl+C sent", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-sigkill-escalation-");
+    const enginePidPath = join(dir, "engine.pid");
+    const enginePath = createSignalIgnoringTranscribeEngine(dir, enginePidPath);
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+
+    const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", mediaPath], {
+      cwd: DEFAULT_CWD,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+    const drained = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const enginePid = await waitForPidFile(enginePidPath);
+
+    proc.kill("SIGINT");
+
+    const [[, stderr], exitCode] = await Promise.all([drained, proc.exited]);
+    expect(exitCode).toBe(130);
+    expect(stderr).toContain(`${mediaPath}: error [E_INTERRUPTED]: interrupted (SIGINT)`);
+    expect(stderr).not.toContain("137");
+    expect(stderr).not.toContain("SIGKILL");
+    expect(await waitForPidExit(enginePid)).toBe(true);
+  });
 
   for (const [phase, args] of [
     ["probe", ["install"]],
