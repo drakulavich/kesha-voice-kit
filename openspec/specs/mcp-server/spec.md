@@ -93,7 +93,8 @@ default `"wav"`).
 The tool SHALL:
 1. Validate `rate` and return `isError: true` when it is outside `[0.5, 2.0]`.
 2. Synthesize audio via the Engine and write it to a UUID-named file in
-   `<tmpdir>/kesha-mcp/` with permissions `0600`.
+   the MCP audio directory (`<tmpdir>/kesha-mcp/` by default, `<KESHA_HOME>/mcp-audio/`
+   when `KESHA_HOME` is set; `state-directories`) with permissions `0600`.
 3. Return a `resource_link` content item with URI `kesha-audio://<filename>`
    and a text summary of the synthesis.
 4. Return `structuredContent` with `uri`, `path`, `format`, `voice`, and
@@ -144,8 +145,8 @@ The tool SHALL:
 > *Technical Note — `synthesize_speech` is registered by
 > `src/mcp/tools.ts::registerTools`, which rejects a `rate` outside
 > `(0.5-2.0)` and applies `chmodSync(outPath, 0o600)` once synthesis returns.
-> `src/mcp/audio-output.ts::allocAudioPath` creates `<tmpdir>/kesha-mcp/` with
-> mode `0o700` and names the file `<uuid>.<ext>`. The voice is resolved before
+> `src/mcp/audio-output.ts::allocAudioPath` creates the MCP audio directory
+> (`src/state-paths.ts::resolveStatePaths`) with mode `0o700` and names the file `<uuid>.<ext>`. The voice is resolved before
 > the engine is spawned by `src/voice-routing.ts::resolveSayVoice` — the same
 > function `kesha say` uses — falling back to `DEFAULT_VOICE_ID`, and passed to
 > the engine explicitly so the reported id is the one that spoke (#942).*
@@ -230,13 +231,15 @@ an error naming the file.
 > `src/mcp/tools.ts::registerTools::mimeForExt`.
 > `src/mcp/audio-output.ts::sweepOldAudio` deletes files older than
 > `src/mcp/audio-output.ts::MAX_AGE_MS`, which is `24 * 60 * 60 * 1000`.
-> Audio directory: `join(tmpdir(), "kesha-mcp")` in
-> `src/mcp/audio-output.ts::audioDir`.*
+> Audio directory: `src/mcp/audio-output.ts::audioDir`, which is the MCP audio
+> path of `src/state-paths.ts::resolveStatePaths` — `<tmpdir>/kesha-mcp` by default,
+> `<KESHA_HOME>/mcp-audio` under `KESHA_HOME`.*
 
 ### Requirement: Old MCP audio files are swept at server start
 
 At every `kesha mcp` startup the server SHALL delete files in the MCP audio
-directory whose modification time is more than 24 hours in the past, on a
+directory (`<tmpdir>/kesha-mcp/` by default, `<KESHA_HOME>/mcp-audio/` when `KESHA_HOME`
+is set — the `state-directories` resolution) whose modification time is more than 24 hours in the past, on a
 best-effort basis (errors for individual files are silently ignored to handle
 races and permission edge cases).
 
@@ -245,6 +248,13 @@ races and permission edge cases).
 - GIVEN `<tmpdir>/kesha-mcp/` contains files from 25 hours ago
 - WHEN `kesha mcp` starts
 - THEN those files are deleted before the first tool call is handled
+
+#### Scenario: Sona runs the server under an isolated home
+
+- GIVEN `KESHA_HOME=/tmp/kesha-agent` is set
+- WHEN `kesha mcp` starts and `synthesize_speech` is called
+- THEN the audio file lands in `/tmp/kesha-agent/mcp-audio/` with mode `0600`
+- AND `<tmpdir>/kesha-mcp/` is neither created nor swept
 
 #### Scenario: MCP directory does not yet exist
 

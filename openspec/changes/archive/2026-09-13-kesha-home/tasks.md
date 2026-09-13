@@ -34,10 +34,10 @@
 - [x] 6.1 Add "Where Kesha keeps its files" to `docs/diagnostic-logs.md` (the table from `design.md` with the precedence line), link it from the README env section and `docs/architecture.md`; this is the first user-facing mention of `KESHA_STATS_DB`.
 - [x] 6.2 Add `KESHA_HOME` to the `KESHA_*` table in `docs/` wherever `KESHA_CACHE_DIR` is listed (`docs/use-cases.md`, `docs/architecture.md`).
 - [x] 6.3 `bun run check:specs` green; `tests/unit/spec-citations.test.ts` resolves every new `file::symbol` citation once the code exists.
-- [ ] 6.4 Update `openspec/specs/GLOSSARY.md` "Model cache" entry to mention the `KESHA_HOME` layout (goes in the sync PR).
+- [x] 6.4 Update `openspec/specs/GLOSSARY.md` "Model cache" entry to mention the `KESHA_HOME` layout (goes in the sync PR).
 
 ## 7. Gate
 
 - [x] 7.1 `just preflight`; scan added lines for Cyrillic; commit in TDD-sized steps.
 - [x] 7.2 PR with the change proposal; adversarial review aimed at the claim "no existing variable changes meaning and no default path changes when `KESHA_HOME` is unset"; Greptile P1/P2 clear; CI on the full head SHA.
-- [ ] 7.3 After merge: sync and archive the change (`openspec-sync`, `openspec-archive`) in a follow-up PR, including the GLOSSARY edit.
+- [x] 7.3 After merge: sync and archive the change (`openspec-sync`, `openspec-archive`) in a follow-up PR, including the GLOSSARY edit.
