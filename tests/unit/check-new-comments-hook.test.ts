@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { cleanupGitRepos, git, gitRepoWithRemote } from "../helpers/git-repo";
 import { repoPath } from "../helpers/repo";
 
@@ -9,7 +9,7 @@ const HOOK = repoPath(".claude/hooks/check-new-comments.ts");
 
 afterAll(cleanupGitRepos);
 
-async function decision(work: string, filePath: string): Promise<string | null> {
+async function decision(work: string, filePath?: string): Promise<string | null> {
   // The session's cwd is not the project: the hook must find the checkout from the payload and CLAUDE_PROJECT_DIR alone.
   const proc = Bun.spawn(["bun", HOOK], {
     cwd: tmpdir(),
@@ -24,7 +24,7 @@ async function decision(work: string, filePath: string): Promise<string | null> 
 }
 
 async function trackedFile(work: string, rel: string, content: string): Promise<string> {
-  mkdirSync(join(work, "src"), { recursive: true });
+  mkdirSync(dirname(join(work, rel)), { recursive: true });
   await Bun.write(join(work, rel), content);
   await git(work, "add", rel);
   await git(work, "commit", "-qm", `add ${rel}`);
@@ -147,6 +147,6 @@ describe("check-new-comments hook", () => {
 
   it("stays silent on a payload without a file", async () => {
     const work = await gitRepoWithRemote();
-    expect(await decision(work, "")).toBeNull();
+    expect(await decision(work)).toBeNull();
   });
 });

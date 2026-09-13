@@ -12,6 +12,8 @@ describe("hooks .claude/settings.json registers", () => {
   it("registers at least the three project hooks, each command naming exactly one file under .claude/hooks", () => {
     expect(commands.length).toBeGreaterThanOrEqual(3);
     for (const [i, paths] of hookPaths.entries()) expect(paths, commands[i]).toHaveLength(1);
+    // A relative hook path resolves against the session cwd and silently never fires inside a worktree.
+    for (const command of commands) expect(command).toStartWith('"$CLAUDE_PROJECT_DIR"/.claude/hooks/');
   });
 
   // #1179: a hook that lives only in one checkout is documentation everywhere else, and so is a local chmod +x.
