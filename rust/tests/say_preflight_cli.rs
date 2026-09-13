@@ -215,3 +215,24 @@ fn a_refused_run_neither_truncates_nor_creates_the_out_file() {
         "a failed run must leave no empty --out file"
     );
 }
+
+#[cfg(all(feature = "system_tts", target_os = "macos"))]
+#[test]
+fn a_macos_voice_this_mac_has_not_downloaded_exits_1_as_voice_unknown() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = say(
+        &[
+            "Hello there",
+            "--voice",
+            "macos-com.apple.voice.premium.en-US.NoSuchVoice",
+        ],
+        tmp.path(),
+    );
+    assert_eq!(out.status.code(), Some(1), "{:?}", out.status);
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_VOICE_UNKNOWN", "{v}");
+    assert!(
+        v["message"].as_str().unwrap().contains("System Settings"),
+        "{v}"
+    );
+}

@@ -23,15 +23,29 @@ use crate::process_tree::ChildGuard;
 /// `kesha install` co-locates both binaries); falls back to the build-time
 /// `$OUT_DIR/say-avspeech` baked in by `build.rs` for `cargo run`/`cargo test`.
 pub fn helper_path() -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            let sibling = parent.join("say-avspeech");
-            if sibling.exists() {
-                return sibling;
-            }
-        }
+    let sibling = sibling_helper_path();
+    if sibling.exists() {
+        return sibling;
     }
     PathBuf::from(env!("KESHA_AVSPEECH_HELPER"))
+}
+
+/// Where a user's sidecar must sit; the build-time `$OUT_DIR` fallback names a machine nobody has (T2-4).
+fn sibling_helper_path() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.join("say-avspeech")))
+        .unwrap_or_else(|| PathBuf::from("say-avspeech"))
+}
+
+/// The sidecar's contract: exit 2 with this prefix on stderr is the one failure that is the caller's.
+const VOICE_NOT_FOUND: &str = "voice not found:";
+
+fn sidecar_hint() -> String {
+    format!(
+        "reinstall with `kesha install`; the sidecar must sit beside kesha-engine at {}",
+        sibling_helper_path().display()
+    )
 }
 
 /// Synthesize `text` with the macOS voice identified by `voice_id`.
@@ -65,7 +79,12 @@ pub fn synthesize(
 
     let child = cmd
         .spawn()
-        .map_err(|e| anyhow::anyhow!("spawn {}: {e}", bin.display()))
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "cannot start the say-avspeech sidecar: {e}. {}",
+                sidecar_hint()
+            )
+        })
         .coded(ErrorCode::SidecarMissing)?;
     let mut child = ChildGuard::new(child);
 
@@ -77,11 +96,21 @@ pub fn synthesize(
 
     let output = child.wait_with_output()?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if output.status.code() == Some(2) && stderr.starts_with(VOICE_NOT_FOUND) {
+            coded_bail!(
+                ErrorCode::VoiceUnknown,
+                "macOS voice '{voice_id}' is not installed on this Mac. Download it in \
+                 System Settings > Accessibility > Spoken Content, or pick one from \
+                 `kesha say --list-voices`"
+            );
+        }
         coded_bail!(
             ErrorCode::SidecarMissing,
-            "avspeech helper exited {}: {}",
+            "avspeech helper exited {}: {stderr}. {}",
             output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
+            sidecar_hint()
         );
     }
     Ok(output.stdout)
@@ -150,14 +179,43 @@ mod tests {
     }
 
     #[test]
-    fn helper_nonzero_exit_surfaces_stderr() {
+    fn an_unknown_voice_is_voice_unknown_with_the_system_settings_hint() {
         let tmp = TempDir::new().unwrap();
         let helper = fake_helper(&tmp, r#"echo 'voice not found: xyz' >&2; exit 2"#);
-        let err = synthesize("hello", "xyz", 1.0, Some(&helper))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("voice not found"), "msg: {err}");
-        assert!(err.contains("exited"), "msg: {err}");
+        let err = synthesize("hello", "xyz", 1.0, Some(&helper)).unwrap_err();
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::VoiceUnknown);
+        let msg = format!("{err:#}");
+        assert!(msg.contains("xyz"), "msg: {msg}");
+        assert!(msg.contains("System Settings"), "msg: {msg}");
+        assert!(msg.contains("--list-voices"), "msg: {msg}");
+    }
+
+    #[test]
+    fn any_other_helper_failure_is_sidecar_missing_naming_the_sibling_path() {
+        let tmp = TempDir::new().unwrap();
+        let cases = [
+            fake_helper(&tmp, r#"echo 'boom' >&2; exit 1"#),
+            tmp.path().join("absent-helper"),
+        ];
+        for helper in cases {
+            let err = synthesize("hello", "en-US", 1.0, Some(&helper)).unwrap_err();
+            assert_eq!(
+                crate::errors::code_of(&err),
+                ErrorCode::SidecarMissing,
+                "{}",
+                helper.display()
+            );
+            let msg = format!("{err:#}");
+            assert!(msg.contains("kesha install"), "msg: {msg}");
+            assert!(
+                msg.contains(&sibling_helper_path().display().to_string()),
+                "the message names where the sidecar must sit: {msg}"
+            );
+            assert!(
+                !msg.contains(env!("KESHA_AVSPEECH_HELPER")),
+                "the build-time helper path must never reach a user: {msg}"
+            );
+        }
     }
 
     #[test]

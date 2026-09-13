@@ -225,8 +225,11 @@ fn say_avspeech(
             message: "SSML is not yet supported with macos-* voices (#141 follow-up)".into(),
         });
     }
-    let wav_bytes = avspeech::synthesize(text, voice_id, speed, None)
-        .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")))?;
+    let wav_bytes =
+        avspeech::synthesize(text, voice_id, speed, None).map_err(|e| TtsError::Coded {
+            code: crate::errors::code_of(&e),
+            message: format!("avspeech: {e:#}"),
+        })?;
     transcode_to(&wav_bytes, format)
 }
 
