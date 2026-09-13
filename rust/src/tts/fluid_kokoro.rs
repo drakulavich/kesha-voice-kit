@@ -287,11 +287,20 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<(Vec<f32>, u
         anyhow::bail!("fluid-kokoro: text is empty");
     }
     ensure_script_supported(voice_id, text)?;
+    let text = prepare_text(voice_id, text);
     with_kokoro(voice_id, |audio| {
         audio
-            .synthesize_kokoro_samples(text, voice_id, speed)
+            .synthesize_kokoro_samples(&text, voice_id, speed)
             .context("FluidAudio Kokoro synthesis")
     })
+}
+
+/// FluidAudio phonemizes raw text itself, so English amounts must be words before the handoff; its G2P has no hook that could express a currency sign (the ONNX arm does this in `en::normalize_segments`).
+fn prepare_text<'a>(voice_id: &str, text: &'a str) -> std::borrow::Cow<'a, str> {
+    match lang_for_fluid_id(voice_id) {
+        Some(lang) if crate::tts::en::is_en(lang) => crate::tts::en::numbers::verbalize(text),
+        _ => std::borrow::Cow::Borrowed(text),
+    }
 }
 
 /// Synthesize one text chunk and return raw PCM f32 samples at [`SAMPLE_RATE`].
@@ -381,6 +390,16 @@ mod tests {
         ensure_script_supported("am_michael", "Hello world").expect("english");
     }
 
+    #[test]
+    fn english_voices_get_their_currency_verbalized_before_the_handoff() {
+        assert_eq!(
+            prepare_text("am_michael", "He paid $1,234.56"),
+            "He paid one thousand two hundred thirty-four dollars and fifty-six cents"
+        );
+        assert_eq!(prepare_text("am_michael", "Room 405"), "Room 405");
+        assert_eq!(prepare_text("em_alex", "Cuesta $5"), "Cuesta $5");
+        assert_eq!(prepare_text("nonexistent", "$5"), "$5");
+    }
     #[test]
     fn an_unmapped_fluid_id_is_never_gated() {
         ensure_script_supported("nonexistent", "日本語").expect("unknown id passes through");
