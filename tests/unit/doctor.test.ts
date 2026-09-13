@@ -19,7 +19,7 @@ import {
   type DoctorReport,
 } from "../../src/doctor";
 import { collectStatus } from "../../src/status";
-import { describeDocument, describeJson, stageEngineHome } from "../helpers/fake-engine";
+import { describeDocument, describeJson, saveEngineEnv, stageEngineHome, writeVoiceListingEngine } from "../helpers/fake-engine";
 import { describeToCapabilities } from "../../src/engine/describe";
 import { createSupportBundle } from "../../src/support-bundle";
 import { engineVersion, packageName, packageVersion } from "../../src/package-info";
@@ -445,6 +445,7 @@ describe("the human report states what each component is doing (#770)", () => {
       },
       cache: cacheReport({ totalBytes: 4096 }),
       optionalComponents: [],
+      tts: { voices: [], languagesStaged: [], languagesMissing: [] },
       stats: {
         enabled: true,
         dbPath: "/stats.sqlite",
@@ -1277,5 +1278,35 @@ exit 2
       rmSync(dir, { recursive: true, force: true });
       rmSync(fluidHome, { recursive: true, force: true });
     }
+  });
+});
+
+// T2-7: the report named no voice or language anywhere, so nothing in it contradicted the
+// Kokoro ANE component's `missing: []` while seven languages failed E_MODEL_MISSING.
+describe("doctor reports the TTS voices and languages", () => {
+  const restoreEnv = saveEngineEnv();
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  const darwinArmTest = isDarwinArm64() ? test : test.skip;
+
+  darwinArmTest("names the languages whose voice packs are staged and those absent", async () => {
+    const home = stageEngineHome("kesha-doctor-tts-languages-");
+    writeVoiceListingEngine(home.binDir, ["en-am_michael", "macos-com.apple.voice.compact.ru-RU.Milena"]);
+    const ane = join(home.cache, "fluidaudio", "kokoro-82m-coreml", "ANE");
+    mkdirSync(ane, { recursive: true });
+    writeFileSync(join(ane, "am_michael.bin"), "pack");
+    writeFileSync(join(ane, "em_alex.bin"), "pack");
+
+    const report = await collectDoctorReport({ redact: false, homeDir: home.dir });
+
+    expect(report.tts.voices).toEqual([
+      "en-am_michael",
+      "macos-com.apple.voice.compact.ru-RU.Milena",
+    ]);
+    expect(report.tts.languagesStaged).toEqual(["en", "es"]);
+    expect(report.tts.languagesMissing).toEqual(["fr", "hi", "it", "ja", "pt", "zh"]);
+    expect(formatDoctorReport(report)).toContain("Languages staged: en, es");
   });
 });
