@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
 import { join } from "path";
 import { resolveStatePaths, type StatePathSource } from "../../src/state-paths";
+import { tempDir } from "../helpers/temp-dir";
 
 const HOME = { darwin: "/Users/ira", linux: "/home/ira", win32: "C:\\Users\\ira" } as const;
 const TMP = { darwin: "/var/tmp", linux: "/tmp", win32: "C:\\Temp" } as const;
@@ -135,7 +134,7 @@ describe("resolveStatePaths", () => {
     const env = { KESHA_HOME: "rel-state", KESHA_CACHE_DIR: "rel-cache" };
     const before = resolveStatePaths(env, "linux", "/home/ira", "/tmp");
     try {
-      process.chdir(mkdtempSync(join(tmpdir(), "kesha-chdir-")));
+      process.chdir(tempDir("kesha-chdir-"));
       expect(resolveStatePaths(env, "linux", "/home/ira", "/tmp")).toEqual(before);
     } finally {
       process.chdir(startedIn);
