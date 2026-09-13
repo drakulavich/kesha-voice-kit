@@ -34,6 +34,10 @@ describe("npm release metadata gate", () => {
     expect(() => assertNpmReleaseMetadata(noProvenance, PACKAGE, "1.30.0")).toThrow(/provenance/);
   });
 
+  test("a registry query that exited non-zero is refused even when its stdout looks right (Greptile P2)", () => {
+    expect(() => assertNpmReleaseMetadata(published(), PACKAGE, "1.30.0", 1)).toThrow(/npm view exited 1/);
+  });
+
   test("an integrity that is not sha512 is refused", () => {
     const weak = published({ dist: { integrity: "sha1-abc", attestations: { provenance: { predicateType: "https://slsa.dev/provenance/v1" } } } });
     expect(() => assertNpmReleaseMetadata(weak, PACKAGE, "1.30.0")).toThrow(/integrity/);
