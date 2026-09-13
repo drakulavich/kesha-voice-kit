@@ -76,17 +76,10 @@ run_npm() {
 
   local package=@drakulavich/kesha-voice-kit
   local prefix="$scratch/npm-prefix"
-  local metadata="$scratch/npm-metadata.json"
   export npm_config_cache="$scratch/npm-cache"
   export NPM_CONFIG_PREFIX="$prefix"
 
-  npm view "$package@$VERSION" --json version,dist.integrity,dist.attestations > "$metadata"
-  jq -e --arg version "$VERSION" '
-    .version == $version
-    and (.dist.integrity | type == "string" and startswith("sha512-"))
-    and (.dist.attestations.provenance.predicateType == "https://slsa.dev/provenance/v1")
-  ' "$metadata" >/dev/null ||
-    fail "npm metadata for $package@$VERSION lacks the expected version, integrity, or provenance"
+  bun "$repo_root/.github/scripts/npm-release-metadata.ts" "$package" "$VERSION"
 
   npm install --global "$package@$VERSION"
   local kesha="$prefix/bin/kesha"
