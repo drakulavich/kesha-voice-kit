@@ -337,6 +337,7 @@ async function processFile(
   // #1002: the bar sitting at 0% through a ~100 s diarization model load reads as a hang,
   // so the engine's progress has to land while it happens, not once the run is over.
   const showProgressLine = (line: string) => {
+    if (log.quietEnabled) return;
     const write = () => process.stderr.write(`${line}\n`);
     if (progress) progress.interrupt(write);
     else write();

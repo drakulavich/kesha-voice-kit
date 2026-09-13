@@ -16,7 +16,7 @@ import { engineVersion } from "../../src/package-info";
 import { engineTarget } from "../../src/engine-targets";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
 import { pidIsAlive, stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
-import { describeJson } from "../helpers/fake-engine";
+import { describeJson, writeTranscribingEngine } from "../helpers/fake-engine";
 import {
   DEFAULT_TIMEOUT_MS,
   installFakeDiarizeModel,
@@ -659,6 +659,42 @@ describe("CLI contracts", () => {
       exitCode: 1,
       stderrContains: ["error [E_INVALID_ARG]: ", "--itn"],
       stderrNotContains: ["Transcribing"],
+    });
+  });
+
+  // Exploratory S11-3 / S8-8: --quiet must silence engine progress events like every other progress line; the stub emits one before its transcript.
+  function progressEmittingEngineDir(): { dir: string; media: string; env: Record<string, string> } {
+    if (process.platform === "win32") throw new Error("posix-only stub");
+    const enginePath = writeTranscribingEngine(
+      "kesha-cli-quiet-progress-",
+      ["transcribe"],
+      "  printf '%s\\n' '{\"kind\":\"progress\",\"phase\":\"transcribe\",\"message\":\"loading the model\"}' >&2\n  printf '%s\\n' 'hello world'",
+    );
+    const dir = dirname(enginePath);
+    const media = join(dir, "meeting.ogg");
+    writeFileSync(media, "fake media");
+    return { dir, media, env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } };
+  }
+
+  test("engine progress events reach stderr on a plain transcribe", async () => {
+    if (process.platform === "win32") return;
+    const { media, env } = progressEmittingEngineDir();
+    const res = await runCli([media], { env });
+    expectContract(res, {
+      exitCode: 0,
+      stdoutContains: ["hello world"],
+      stderrContains: ["transcribe: loading the model"],
+    });
+  });
+
+  test("--quiet silences engine progress events, transcript still returned", async () => {
+    if (process.platform === "win32") return;
+    const { media, env } = progressEmittingEngineDir();
+    const res = await runCli(["--quiet", media], { env });
+    expectContract(res, {
+      exitCode: 0,
+      stdoutContains: ["hello world"],
+      stderrNotContains: ["transcribe: loading the model", "Transcribing"],
     });
   });
 
