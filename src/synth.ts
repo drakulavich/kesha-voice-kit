@@ -2,6 +2,7 @@ import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEng
 import { validateArgv } from "./engine/describe";
 import {
   engineFailure,
+  exitCodeFor,
   KeshaError,
   readEvents,
   type ErrorOrigin,
@@ -10,7 +11,7 @@ import {
 } from "./engine/events";
 import { installHint } from "./install-hint";
 import { log } from "./log";
-import { registerProcessTree } from "./process-tree";
+import { interruptedRun, registerProcessTree } from "./process-tree";
 
 /**
  * Wire format for the synthesized audio. Matches the engine's `--format` flag.
@@ -169,6 +170,8 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     if (stderrText.length > 0) process.stderr.write(stderrText);
     return new Uint8Array(stdoutBuf);
   }
+  const interrupted = interruptedRun(exitCode);
+  if (interrupted) throw new SayError(interrupted.message, exitCodeFor(interrupted), "", interrupted.code);
   // The crash explanation rides in `stderr`, rendered after the coded line.
   const detail = [stderrText.trim(), engineCrashMessage(exitCode, proc.signalCode)]
     .filter((part): part is string => Boolean(part))
@@ -199,6 +202,8 @@ export async function listVoiceIds(sinks: EventSinks = {}): Promise<string[]> {
   } finally {
     tree.dispose();
   }
+  const interrupted = interruptedRun(exitCode);
+  if (interrupted) throw interrupted;
   if (exitCode !== 0 || events.invalid.length > 0 || events.error) throw engineFailure("say --list-voices", events, exitCode);
   if (events.stderr.length > 0) process.stderr.write(events.stderr);
   return out
