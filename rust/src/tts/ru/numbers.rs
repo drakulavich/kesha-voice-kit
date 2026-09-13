@@ -26,6 +26,11 @@ use crate::tts::token::{for_each_token, split_punct, TokenEvent};
 /// token is a phone number or an id, which is how a Russian speaker reads it.
 const MAX_CARDINAL_DIGITS: usize = 9;
 
+/// A phone number is written with separators, so the ten-digit rule has to count across the whole token rather than per run.
+const MIN_PHONE_DIGITS: usize = 10;
+
+/// Characters a phone number may put between its digit groups.
+const PHONE_SEPARATORS: [char; 4] = [' ', '-', '(', ')'];
 /// Below this, `N год/года` is read as a duration («2 года») rather than a
 /// calendar year, so it keeps the cardinal that duration already wants.
 const MIN_CALENDAR_YEAR: u64 = 1000;
@@ -417,8 +422,67 @@ enum Piece {
     Gap(char),
 }
 
+/// Bytes of the phone-shaped span starting at `s`, ending on its last digit.
+fn phone_span(s: &str) -> Option<usize> {
+    let first = s.chars().next()?;
+    if first != '+' && first != '8' {
+        return None;
+    }
+    let mut digits = usize::from(first == '8');
+    let mut end = digits;
+    for (i, c) in s.char_indices().skip(1) {
+        if c.is_ascii_digit() {
+            digits += 1;
+            end = i + c.len_utf8();
+        } else if !PHONE_SEPARATORS.contains(&c) {
+            break;
+        }
+    }
+    (digits >= MIN_PHONE_DIGITS).then_some(end)
+}
+
+/// Spell out phone-shaped tokens before the run splitter, which would otherwise read each separated group as its own cardinal.
+fn spell_phone_numbers(text: &str) -> Cow<'_, str> {
+    if !text.bytes().any(|b| b == b'+' || b == b'8') {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() * 4);
+    let mut rest = text;
+    let mut prev: Option<char> = None;
+    let mut matched = false;
+    while let Some(c) = rest.chars().next() {
+        let at_boundary = !matches!(prev, Some(p) if p.is_alphanumeric() || p == '+');
+        if at_boundary {
+            if let Some(len) = phone_span(rest) {
+                let span = &rest[..len];
+                out.push_str(
+                    &span
+                        .chars()
+                        .filter(char::is_ascii_digit)
+                        .map(|d| UNITS[(d as u8 - b'0') as usize])
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+                prev = span.chars().last();
+                rest = &rest[len..];
+                matched = true;
+                continue;
+            }
+        }
+        out.push(c);
+        prev = Some(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    if matched {
+        Cow::Owned(out)
+    } else {
+        Cow::Borrowed(text)
+    }
+}
 /// Rewrite every number in `text` to the words Vosk can actually pronounce.
 pub(super) fn verbalize(text: &str) -> String {
+    let text = spell_phone_numbers(text);
+    let text = text.as_ref();
     let mut pieces: Vec<Piece> = Vec::new();
     for_each_token(text, |ev| {
         pieces.push(match ev {
@@ -593,6 +657,28 @@ mod tests {
         assert_eq!(verbalize("№7"), "№семь");
     }
 
+    #[test]
+    fn a_formatted_phone_number_is_read_digit_by_digit() {
+        // The run splitter ends a run at any separator, so the documented ten-digit rule missed every phone number ever written (docs/tts.md L144).
+        let digits = "семь девять девять девять один два три четыре пять шесть семь";
+        assert_eq!(verbalize("+7 999 123-45-67"), digits);
+        assert_eq!(
+            verbalize("8 (999) 123-45-67"),
+            digits.replacen("семь", "восемь", 1)
+        );
+        assert_eq!(
+            verbalize("Позвони +7 999 123-45-67 сегодня"),
+            format!("Позвони {digits} сегодня"),
+        );
+    }
+
+    #[test]
+    fn short_digit_groups_that_merely_start_with_eight_stay_cardinals() {
+        assert_eq!(verbalize("8 марта"), "восьмого марта");
+        assert_eq!(verbalize("8-10"), "восемь-десять");
+        assert_eq!(verbalize("10-15"), "десять-пятнадцать");
+        assert_eq!(verbalize("18-20"), "восемнадцать-двадцать");
+    }
     #[test]
     fn long_and_zero_led_runs_read_digit_by_digit() {
         assert_eq!(verbalize("007"), "ноль ноль семь");
