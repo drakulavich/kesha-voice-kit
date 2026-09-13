@@ -42,11 +42,11 @@
 
 ## 6. MCP and core API (TS)
 
-- [ ] 6.1 S8-1 aborted `transcribe()` rejects with `KeshaError` `E_INTERRUPTED`
-- [ ] 6.2 S7-1 MCP cancel forwards the signal; no engine survives a cancel
-- [ ] 6.3 S7-2 `kesha mcp` exits on stdin EOF with a call in flight
-- [ ] 6.4 S8-2 `downloadEngine` exported; CLAUDE.md sentence updated
-- [ ] 6.5 S8-3 `transcribe()` on a directory → `E_INVALID_ARG` before any spawn
+- [x] 6.1 S8-1 aborted `transcribe()` rejects with `KeshaError` `E_INTERRUPTED`
+- [x] 6.2 S7-1 MCP cancel forwards the signal; no engine survives a cancel
+- [x] 6.3 S7-2 `kesha mcp` exits on stdin EOF with a call in flight
+- [x] 6.4 S8-2 `downloadEngine` exported; CLAUDE.md sentence updated
+- [x] 6.5 S8-3 `transcribe()` on a directory → `E_INVALID_ARG` before any spawn
 
 ## 7. Lifecycle (TS)
 
