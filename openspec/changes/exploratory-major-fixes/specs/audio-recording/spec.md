@@ -120,8 +120,10 @@ The Engine SHALL open the `--out` path before it opens the microphone, and SHALL
 
 > *Technical Note — `rust/src/record.rs::WavOutput` is opened first in
 > `record_default_input_to_wav`: it probes the path without truncating it, records
-> into a `.partial` sibling and renames that over `--out` on success; `abandon`
-> removes the sibling and, only when nothing was there before, the probe file.*
+> into an exclusively created, per-process-named `.partial` sibling (a planted
+> symlink at that name fails instead of being followed) and renames that over
+> `--out` on success; `abandon` removes the sibling and, only when nothing was
+> there before, the probe file.*
 
 ### Requirement: A recording whose parent process exits stops within about a second
 

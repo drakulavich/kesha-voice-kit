@@ -737,6 +737,7 @@ fn create_parent_dir(path: &Path) -> Result<()> {
 struct WavOutput {
     path: std::path::PathBuf,
     partial: std::path::PathBuf,
+    file: Option<std::fs::File>,
     existed: bool,
 }
 
@@ -758,14 +759,26 @@ impl WavOutput {
             .truncate(false)
             .open(path)
             .map_err(|err| invalid("write", err.into()))?;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
         let mut partial_name = path
             .file_name()
             .map(|n| n.to_os_string())
             .unwrap_or_default();
-        partial_name.push(".partial");
+        partial_name.push(format!(".{}-{nanos:x}.partial", std::process::id()));
+        let partial = path.with_file_name(partial_name);
+        // Exclusive creation: a symlink planted at the name fails here instead of being followed and truncated.
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)
+            .map_err(|err| invalid("write", err.into()))?;
         Ok(Self {
             path: path.to_path_buf(),
-            partial: path.with_file_name(partial_name),
+            partial,
+            file: Some(file),
             existed,
         })
     }
@@ -778,9 +791,11 @@ impl WavOutput {
         }
     }
 
-    fn commit(self, write: impl FnOnce(std::fs::File) -> Result<()>) -> Result<()> {
-        let written = std::fs::File::create(&self.partial)
-            .with_context(|| format!("failed to create {}", self.partial.display()))
+    fn commit(mut self, write: impl FnOnce(std::fs::File) -> Result<()>) -> Result<()> {
+        let written = self
+            .file
+            .take()
+            .with_context(|| format!("{} was already committed", self.partial.display()))
             .and_then(write)
             .and_then(|()| {
                 std::fs::rename(&self.partial, &self.path).with_context(|| {
@@ -1038,6 +1053,29 @@ mod tests {
         );
     }
 
+    fn leftover_partial(dir: &Path) -> bool {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().ends_with(".partial"))
+    }
+
+    // Greptile on #1216: a predictable sibling name let a planted symlink redirect the truncating create.
+    #[test]
+    fn a_planted_symlink_beside_the_output_is_never_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take.wav");
+        let victim = dir.path().join("victim.txt");
+        std::fs::write(&victim, b"keep me").unwrap();
+        std::os::unix::fs::symlink(&victim, dir.path().join("take.wav.partial")).unwrap();
+        WavOutput::open(&path)
+            .unwrap()
+            .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0; 4]))
+            .unwrap();
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep me");
+        assert!(hound::WavReader::open(&path).is_ok());
+    }
+
     // Greptile on #1216: File::create used to truncate an existing --out before the microphone even opened.
     #[test]
     fn a_failed_capture_keeps_the_recording_that_was_already_there() {
@@ -1046,7 +1084,10 @@ mod tests {
         std::fs::write(&path, b"earlier take").unwrap();
         WavOutput::open(&path).unwrap().abandon();
         assert_eq!(std::fs::read(&path).unwrap(), b"earlier take");
-        assert!(!dir.path().join("take.wav.partial").exists());
+        assert!(
+            !leftover_partial(dir.path()),
+            "a .partial file was left behind"
+        );
     }
 
     #[test]
@@ -1072,7 +1113,10 @@ mod tests {
             .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0; 4]))
             .unwrap();
         assert!(hound::WavReader::open(&path).is_ok());
-        assert!(!dir.path().join("take.wav.partial").exists());
+        assert!(
+            !leftover_partial(dir.path()),
+            "a .partial file was left behind"
+        );
     }
 
     #[test]
