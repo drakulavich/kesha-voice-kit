@@ -107,6 +107,7 @@ describe("redactDiagnosticValue", () => {
 describe("collectDoctorReport", () => {
   const savedEnv = {
     HOME: process.env.HOME,
+    KESHA_HOME: process.env.KESHA_HOME,
     KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
     KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
     KESHA_MODEL_MIRROR: process.env.KESHA_MODEL_MIRROR,
@@ -131,6 +132,7 @@ describe("collectDoctorReport", () => {
       process.env.HOME = dir;
       process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
       process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_HOME = join(dir, "kesha-home");
       process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
       process.env.KESHA_LOG_DIR = join(dir, "logs");
       process.env.KESHA_MODEL_MIRROR = "https://user:pass@example.com/kesha?token=abc";
@@ -165,6 +167,14 @@ describe("collectDoctorReport", () => {
       expect(report.cache.totalBytes).toBe("vad".length);
       expect(report.env.KESHA_MODEL_MIRROR).toBe("https://example.com/kesha");
       expect(report.env.KESHA_DEBUG).toBe("1");
+      expect(report.env.KESHA_HOME).toBe("~/kesha-home");
+      expect(report.paths).toEqual({
+        cache: { path: "~/.cache/kesha", source: "KESHA_CACHE_DIR" },
+        logs: { path: "~/logs", source: "KESHA_LOG_DIR" },
+        stats: { path: "~/stats.sqlite", source: "KESHA_STATS_DB" },
+        mcpAudio: { path: "~/kesha-home/mcp-audio", source: "KESHA_HOME" },
+      });
+      expect(formatDoctorReport(report)).toContain("  MCP audio: ~/kesha-home/mcp-audio (KESHA_HOME)");
       expect("runCount" in report.stats).toBe(true);
       expect(report.diagnosticLogs.mode).toBe("retain-on-failure");
       expect(report.diagnosticLogs.dir).toBe("~/logs");
@@ -455,6 +465,12 @@ describe("the human report states what each component is doing (#770)", () => {
         retain: 5,
       },
       env: {},
+      paths: {
+        cache: { path: "/cache", source: "default" },
+        logs: { path: "/logs", source: "default" },
+        stats: { path: "/stats.sqlite", source: "default" },
+        mcpAudio: { path: "/tmp/kesha-mcp", source: "default" },
+      },
       ...overrides,
     };
   }

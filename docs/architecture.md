@@ -78,8 +78,8 @@ before the success line, which asks both the version marker *and* the installed
 binary (`kesha-engine --version`) whether they are the requested release and
 fails with `E_INSTALL_RACE` if not. That promise holds for the moment the
 success line prints: once the lock is released, another install may replace the
-engine, so concurrent jobs that must pin a version want private caches
-(`KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`).
+engine, so concurrent jobs that must pin a version want private state
+(`KESHA_HOME`, or just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`).
 
 The wait itself is bounded, and giving up on it is `E_INSTALL_RACE` too — the
 same code for the same situation: another install holds this cache, nothing was
@@ -202,7 +202,9 @@ darwin) and the native `fluidaudio-rs` CoreML path (`coreml` / `system_diarize`)
 
 ## Models: cache + pinning
 
-- Cache lives under `~/.cache/kesha/models/` (override `KESHA_CACHE_DIR`).
+- Cache lives under `~/.cache/kesha/models/` (override `KESHA_CACHE_DIR`, or
+  root every state location at once with `KESHA_HOME`; the full table is in
+  [diagnostic-logs.md](diagnostic-logs.md#where-kesha-keeps-its-files)).
 - Every model file in `rust/src/models/manifest.rs` carries a pinned **SHA-256**;
   `download_verified` refuses to cache a file whose hash doesn't match. This
   makes `KESHA_MODEL_MIRROR` safe and turns an upstream re-publish into a

@@ -630,7 +630,7 @@ export function assertNotRealCacheUnderTest(binPath: string): void {
   const offender = insideRealCache(binPath)
     ? { what: `install the engine into ${binPath}`, fix: "KESHA_ENGINE_BIN to a temp path" }
     : insideRealCache(keshaCacheDir())
-      ? { what: `download models into ${keshaCacheDir()}`, fix: "KESHA_CACHE_DIR to a temp dir" }
+      ? { what: `download models into ${keshaCacheDir()}`, fix: "KESHA_HOME (or KESHA_CACHE_DIR) to a temp dir" }
       : null;
   if (!offender) return;
 
@@ -662,7 +662,7 @@ async function assertRequestedVersionLanded(binPath: string, version: string): P
         `${dirname(binPath)} reports v${reported} — something else published an engine there ` +
         "during this install.\n" +
         `  Fix: re-run \`kesha install --engine-version ${version}\` once no other install is ` +
-        "running against this cache (KESHA_CACHE_DIR / KESHA_ENGINE_BIN pick a private one).",
+        "running against this cache (KESHA_HOME, or KESHA_CACHE_DIR / KESHA_ENGINE_BIN, picks a private one).",
     );
   }
   if (landed === version && existsSync(binPath)) return;
@@ -672,7 +672,7 @@ async function assertRequestedVersionLanded(binPath: string, version: string): P
       `now holds ${landed ? `v${landed}` : "no recorded engine"} — something else wrote there ` +
       "during this install.\n" +
       `  Fix: re-run \`kesha install --engine-version ${version}\` once no other install is ` +
-      "running against this cache (KESHA_CACHE_DIR / KESHA_ENGINE_BIN pick a private one).",
+      "running against this cache (KESHA_HOME, or KESHA_CACHE_DIR / KESHA_ENGINE_BIN, picks a private one).",
   );
 }
 
@@ -720,7 +720,9 @@ function ensureEngineDirCreatable(binPath: string): void {
       ? { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN }
       : process.env.KESHA_CACHE_DIR
         ? { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR }
-        : null;
+        : process.env.KESHA_HOME
+          ? { name: "KESHA_HOME", value: process.env.KESHA_HOME }
+          : null;
     const errno = (e as NodeJS.ErrnoException).code ?? "";
     const why = ENGINE_DIR_PATH_ERRNOS[errno];
     const what = setting

@@ -282,7 +282,7 @@ kesha --json test-samples/de_sample.ogg | jq -e '.[0].audioLanguage.code == "de"
 
 - KESHA is MIT-licensed — embed it in enterprise products, medical devices, or offline kiosks without royalties.
 - Model files are plain `.ort` (ONNX) for STT and `.onnx`/`.bin` for TTS — no proprietary formats, no license servers, no phone-home.
-- The whole model set lives under `~/.cache/kesha` (override with `KESHA_CACHE_DIR`); copy that directory for USB transfers and air-gapped deployments — kesha never phones home.
+- The whole model set lives under `~/.cache/kesha` (override with `KESHA_CACHE_DIR`); copy that directory for USB transfers and air-gapped deployments — kesha never phones home. To keep logs and Stats out of the home directory as well, set `KESHA_HOME` instead: one directory for everything Kesha writes (see [diagnostic-logs.md](diagnostic-logs.md#where-kesha-keeps-its-files)).
 
 ## AI Agent Integration
 

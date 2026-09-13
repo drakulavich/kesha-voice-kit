@@ -1,8 +1,8 @@
-import { homedir } from "os";
 import { join } from "path";
+import { resolveStatePaths } from "./state-paths";
 
 export function keshaCacheDir(): string {
-  return process.env.KESHA_CACHE_DIR ?? join(homedir(), ".cache", "kesha");
+  return resolveStatePaths().cacheDir.path;
 }
 
 /** The `.exe` suffix is a platform fact, not a per-target one: an extensionless PE is not reliably spawnable. */

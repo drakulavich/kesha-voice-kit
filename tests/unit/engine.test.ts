@@ -160,13 +160,14 @@ function cacheDirWithVadModel(): string {
 
 const engineBasename = process.platform === "win32" ? "kesha-engine.exe" : "kesha-engine";
 
-type PathEnv = Record<"KESHA_CACHE_DIR" | "KESHA_ENGINE_BIN", string | undefined>;
+type PathEnv = Record<"KESHA_CACHE_DIR" | "KESHA_ENGINE_BIN" | "KESHA_HOME", string | undefined>;
 
-/** Runs `fn` with the two path-resolution vars forced to `env`, restoring the two it mutated. */
+/** Runs `fn` with the path-resolution vars forced to `env`, restoring the ones it mutated. */
 function withPathEnv<T>(env: PathEnv, fn: () => T): T {
   const saved: PathEnv = {
     KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
     KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
+    KESHA_HOME: process.env.KESHA_HOME,
   };
   const apply = (values: PathEnv) => {
     for (const [key, value] of Object.entries(values)) {
@@ -184,7 +185,7 @@ function withPathEnv<T>(env: PathEnv, fn: () => T): T {
 
 describe("engine", () => {
   test("getEngineBinPath defaults to the XDG-style cache under $HOME", () => {
-    withPathEnv({ KESHA_CACHE_DIR: undefined, KESHA_ENGINE_BIN: undefined }, () => {
+    withPathEnv({ KESHA_CACHE_DIR: undefined, KESHA_ENGINE_BIN: undefined, KESHA_HOME: undefined }, () => {
       expect(getEngineBinPath()).toBe(
         join(homedir(), ".cache", "kesha", "engine", "bin", engineBasename),
       );
@@ -193,19 +194,19 @@ describe("engine", () => {
 
   test("getEngineBinPath lets KESHA_ENGINE_BIN outrank KESHA_CACHE_DIR", () => {
     withPathEnv(
-      { KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "/tmp/kesha-explicit-engine" },
+      { KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "/tmp/kesha-explicit-engine", KESHA_HOME: undefined },
       () => expect(getEngineBinPath()).toBe("/tmp/kesha-explicit-engine"),
     );
   });
 
   test("getEngineBinPath follows KESHA_CACHE_DIR", () => {
-    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: undefined }, () => {
+    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: undefined, KESHA_HOME: undefined }, () => {
       expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", engineBasename));
     });
   });
 
   test("getEngineBinPath treats an empty KESHA_ENGINE_BIN as unset", () => {
-    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "" }, () => {
+    withPathEnv({ KESHA_CACHE_DIR: "/tmp/kesha-cache", KESHA_ENGINE_BIN: "", KESHA_HOME: undefined }, () => {
       expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", engineBasename));
     });
   });
@@ -1049,7 +1050,9 @@ describe("engine subprocess env", () => {
   const readStdout = async (vars: string[]) => {
     const { binPath, args } = envEchoEngine(vars);
     const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"]);
-    return (await new Response(proc.stdout as ReadableStream).text()).trim();
+    const out = (await new Response(proc.stdout as ReadableStream).text()).trim();
+    await proc.exited;
+    return out;
   };
 
   test("forwards env resolved after startup, not the startup snapshot", async () => {
@@ -1065,6 +1068,69 @@ describe("engine subprocess env", () => {
       restore();
       if (savedNoColor === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = savedNoColor;
+    }
+  });
+
+  test("KESHA_HOME reaches the engine as the resolved KESHA_CACHE_DIR", async () => {
+    const restore = saveEngineEnv();
+    try {
+      delete process.env.KESHA_CACHE_DIR;
+      process.env.KESHA_HOME = "/tmp/kesha-home-probe";
+      const out = await readStdout(["KESHA_CACHE_DIR", "KESHA_HOME"]);
+      expect(out).toContain(`KESHA_CACHE_DIR=${join("/tmp/kesha-home-probe", "cache")}`);
+      expect(out).toContain("KESHA_HOME=/tmp/kesha-home-probe");
+    } finally {
+      restore();
+    }
+  });
+
+  test("a user-set KESHA_CACHE_DIR is never rewritten by KESHA_HOME", async () => {
+    const restore = saveEngineEnv();
+    try {
+      process.env.KESHA_HOME = "/tmp/kesha-home-probe";
+      process.env.KESHA_CACHE_DIR = "/tmp/kesha-own-cache";
+      const out = await readStdout(["KESHA_CACHE_DIR"]);
+      expect(out).toContain("KESHA_CACHE_DIR=/tmp/kesha-own-cache");
+    } finally {
+      restore();
+    }
+  });
+
+  test("an empty KESHA_CACHE_DIR is unset for the engine too, so both sides fall to the same default", async () => {
+    const restore = saveEngineEnv();
+    try {
+      delete process.env.KESHA_HOME;
+      process.env.KESHA_CACHE_DIR = "";
+      const out = await readStdout(["KESHA_CACHE_DIR"]);
+      expect(out).toContain("KESHA_CACHE_DIR=UNSET");
+    } finally {
+      restore();
+    }
+  });
+
+  test("a relative KESHA_CACHE_DIR reaches the engine already anchored", async () => {
+    const restore = saveEngineEnv();
+    try {
+      delete process.env.KESHA_HOME;
+      process.env.KESHA_CACHE_DIR = join("relative", "cache");
+      const out = await readStdout(["KESHA_CACHE_DIR"]);
+      const value = out.split("\n").find((l) => l.startsWith("KESHA_CACHE_DIR="))!.slice("KESHA_CACHE_DIR=".length);
+      expect(value.endsWith(join("relative", "cache"))).toBe(true);
+      expect(value).not.toBe(join("relative", "cache"));
+    } finally {
+      restore();
+    }
+  });
+
+  test("without KESHA_HOME the engine environment carries no synthesized KESHA_CACHE_DIR", async () => {
+    const restore = saveEngineEnv();
+    try {
+      delete process.env.KESHA_HOME;
+      delete process.env.KESHA_CACHE_DIR;
+      const out = await readStdout(["KESHA_CACHE_DIR"]);
+      expect(out).toContain("KESHA_CACHE_DIR=UNSET");
+    } finally {
+      restore();
     }
   });
 });

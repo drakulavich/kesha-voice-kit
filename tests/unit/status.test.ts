@@ -424,6 +424,7 @@ exit 2
         "engine",
         "hint",
         "modelMirror",
+        "paths",
         "runtime",
         "voices",
       ]);
@@ -432,7 +433,32 @@ exit 2
         "installed",
         "path",
       ]);
+      expect(Object.keys(roundTripped.paths).sort()).toEqual(["cache", "logs", "mcpAudio", "stats"]);
+      expect(roundTripped.paths.cache).toEqual({ path: join(dir, ".cache", "kesha"), source: "KESHA_CACHE_DIR" });
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("paths name the rule that decided each location, so isolation is verifiable", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-paths-"));
+    const saved = { KESHA_HOME: process.env.KESHA_HOME, KESHA_LOG_DIR: process.env.KESHA_LOG_DIR };
+    process.env.KESHA_ENGINE_BIN = join(dir, "nope", "kesha-engine");
+    process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+    process.env.HOME = dir;
+    process.env.KESHA_HOME = join(dir, "home");
+    process.env.KESHA_LOG_DIR = join(dir, "elsewhere", "logs");
+    try {
+      const { paths } = await collectStatus();
+      expect(paths.cache.source).toBe("KESHA_CACHE_DIR");
+      expect(paths.logs).toEqual({ path: join(dir, "elsewhere", "logs"), source: "KESHA_LOG_DIR" });
+      expect(paths.stats).toEqual({ path: join(dir, "home", "stats.sqlite"), source: "KESHA_HOME" });
+      expect(paths.mcpAudio).toEqual({ path: join(dir, "home", "mcp-audio"), source: "KESHA_HOME" });
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -446,6 +472,12 @@ describe("renderStatus turns a report into the states a user acts on", () => {
       voices: [],
       runtime: { bun: "1.9.9", platform: "testos", arch: "testarch" },
       modelMirror: null,
+      paths: {
+        cache: { path: "/cache", source: "default" },
+        logs: { path: "/logs", source: "default" },
+        stats: { path: "/stats.sqlite", source: "default" },
+        mcpAudio: { path: "/tmp/kesha-mcp", source: "default" },
+      },
       hint: null,
       disk: null,
       ...overrides,

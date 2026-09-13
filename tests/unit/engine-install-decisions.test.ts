@@ -204,14 +204,17 @@ describe("an install only ever writes where it was pointed (#796)", () => {
   // The half the binary-path check could not see: isolating only KESHA_ENGINE_BIN satisfied
   // the guard while `kesha-engine install` still wrote models to the real cache (#876).
   posixTest("an isolated binary with a real model cache is refused too", () => {
-    const saved = process.env.KESHA_CACHE_DIR;
+    const saved = { KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR, KESHA_HOME: process.env.KESHA_HOME };
     delete process.env.KESHA_CACHE_DIR;
+    delete process.env.KESHA_HOME;
     try {
       const isolatedBin = join(tmpdir(), "kesha-isolated-bin", "kesha-engine");
       expect(() => assertNotRealCacheUnderTest(isolatedBin)).toThrow(/download models into/);
     } finally {
-      if (saved === undefined) delete process.env.KESHA_CACHE_DIR;
-      else process.env.KESHA_CACHE_DIR = saved;
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 

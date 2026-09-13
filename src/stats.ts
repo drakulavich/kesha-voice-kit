@@ -6,6 +6,7 @@ import { homedir } from "os";
 import { dirname, extname, join } from "path";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
+import { resolveStatePaths } from "./state-paths";
 
 const SCHEMA_VERSION = 1;
 const MAX_ERROR_MESSAGE_CHARS = 300;
@@ -577,16 +578,7 @@ export function renderErrors(rows: StatsErrorRow[]): string {
 }
 
 export function resolveStatsDbPath(): string {
-  if (process.env.KESHA_STATS_DB) return process.env.KESHA_STATS_DB;
-  if (process.platform === "darwin") {
-    return join(homedir(), "Library", "Application Support", "kesha", "stats.sqlite");
-  }
-  if (process.platform === "win32") {
-    const base = process.env.APPDATA || join(homedir(), "AppData", "Roaming");
-    return join(base, "kesha", "stats.sqlite");
-  }
-  const base = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
-  return join(base, "kesha", "stats.sqlite");
+  return resolveStatePaths().statsDbPath.path;
 }
 
 export function artifactFromFile(

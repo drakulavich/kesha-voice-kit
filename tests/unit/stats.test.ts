@@ -688,14 +688,18 @@ describe("artifact inputs", () => {
 
 describe("the default database location", () => {
   const savedStatsDb = process.env.KESHA_STATS_DB;
+  const savedHome = process.env.KESHA_HOME;
 
   afterEach(() => {
     if (savedStatsDb === undefined) delete process.env.KESHA_STATS_DB;
     else process.env.KESHA_STATS_DB = savedStatsDb;
+    if (savedHome === undefined) delete process.env.KESHA_HOME;
+    else process.env.KESHA_HOME = savedHome;
   });
 
   test("falls back to this platform's application data directory", () => {
     delete process.env.KESHA_STATS_DB;
+    delete process.env.KESHA_HOME;
     const path = resolveStatsDbPath();
     expect(path.endsWith(join("kesha", "stats.sqlite"))).toBe(true);
     if (process.platform === "darwin") {

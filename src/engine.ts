@@ -6,6 +6,7 @@ import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, registerProcessTree } from "./process-tree";
+import { resolveStatePaths } from "./state-paths";
 import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
 import {
   describeToCapabilities,
@@ -88,6 +89,18 @@ function spawnHint(): string {
     : "run `kesha install`";
 }
 
+/** The engine reads only `KESHA_CACHE_DIR`; it gets the root the CLI resolved whenever that differs from the raw value. */
+function withResolvedCacheDir(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  const cache = resolveStatePaths(env).cacheDir;
+  const raw = env.KESHA_CACHE_DIR;
+  if (cache.source === "default") {
+    if (raw === undefined) return env;
+    const { KESHA_CACHE_DIR: _empty, ...rest } = env;
+    return rest;
+  }
+  return raw === cache.path ? env : { ...env, KESHA_CACHE_DIR: cache.path };
+}
+
 /** `Bun.spawn` throws synchronously on ENOENT/EACCES; every launch failure becomes `E_ENGINE_SPAWN`. */
 export function spawnEngineProcess(
   binPath: string,
@@ -97,7 +110,7 @@ export function spawnEngineProcess(
 ): ReturnType<typeof Bun.spawn> {
   try {
     // `env` is passed explicitly: Bun snapshots process.env at startup otherwise (#874).
-    return Bun.spawn([binPath, ...args], { detached: true, stdio, env });
+    return Bun.spawn([binPath, ...args], { detached: true, stdio, env: withResolvedCacheDir(env) });
   } catch (err) {
     throw new KeshaError("E_ENGINE_SPAWN", `failed to launch kesha-engine at ${binPath}: ${errorMessage(err)}`, {
       hint: spawnHint(),

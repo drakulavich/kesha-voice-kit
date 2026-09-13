@@ -75,6 +75,37 @@ Set `KESHA_LOG_DIR` to override the directory. The active file is
 `kesha.ndjson`; rotated files are named `kesha.1.ndjson`, `kesha.2.ndjson`, and
 so on.
 
+## Where Kesha keeps its files
+
+Kesha writes to four places. Each resolves by the same rule: its own variable
+when set, otherwise the path under `KESHA_HOME` when that is set, otherwise the
+platform default. `KESHA_HOME` uses one layout on every platform, so a test run,
+a CI job or a second profile needs exactly one variable to leave your real
+models, logs and Stats untouched. Nothing is moved when you set it: a fresh
+`KESHA_HOME` starts with an empty cache, and `kesha install` fills it.
+
+| What | Default (macOS / Windows / Linux) | Under `KESHA_HOME` | Own variable |
+|---|---|---|---|
+| Model cache: engine, models, `recordings/`, FluidAudio bundles | `~/.cache/kesha` everywhere | `<home>/cache` | `KESHA_CACHE_DIR` |
+| Diagnostic log directory | `~/Library/Logs/kesha` / `%LOCALAPPDATA%\kesha\logs` / `$XDG_STATE_HOME/kesha/logs` | `<home>/logs` | `KESHA_LOG_DIR` |
+| Stats DB | `~/Library/Application Support/kesha/stats.sqlite` / `%APPDATA%\kesha\stats.sqlite` / `$XDG_DATA_HOME/kesha/stats.sqlite` | `<home>/stats.sqlite` | `KESHA_STATS_DB` |
+| MCP audio (`kesha mcp` synthesis output) | `<tmpdir>/kesha-mcp` | `<home>/mcp-audio` | none |
+
+`kesha status --json` and `kesha doctor --json` report every path together with
+the rule that decided it (`default`, `KESHA_HOME`, or the variable name), so an
+isolated run can be verified from one command:
+
+```bash
+KESHA_HOME=/tmp/kesha-ci kesha status --json | jq .paths
+```
+
+An empty variable counts as unset; a relative path is resolved against the
+working directory when the command starts. The engine itself reads only
+`KESHA_CACHE_DIR`, so the CLI hands it the resolved cache root under that name
+whenever `KESHA_HOME` decided it. FluidAudio's own Silero VAD copy under
+`~/Library/Application Support/FluidAudio` is placed by FluidAudio and stays
+outside `KESHA_HOME`; `kesha status --disk` lists it as an external root.
+
 The first implementation rotates at 10 MB and keeps 5 rotated files. `kesha logs
 reset` deletes Kesha log files but preserves the selected mode.
 
