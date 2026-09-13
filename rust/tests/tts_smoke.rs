@@ -190,10 +190,24 @@ fn list_voices_empty_on_fresh_cache() {
         .output()
         .expect("run");
     assert!(out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("install --tts"),
-        "expected install hint, got: {stdout}"
+        out.stdout.is_empty(),
+        "stdout is the list, so guidance there reads as a voice id (#1168): {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let hinted = stderr
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .any(|e| {
+            e["kind"] == "progress"
+                && e["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("install --tts"))
+        });
+    assert!(
+        hinted,
+        "expected a progress event with the install hint, got: {stderr}"
     );
 }
 
