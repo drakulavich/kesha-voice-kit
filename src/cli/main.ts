@@ -121,8 +121,14 @@ export function resolveOutputFormat(input: {
   return { ok: true, format: input.json ? "json" : input.toon ? "toon" : (input.format ?? "text") };
 }
 
+/** Case-folded primary subtag: `en-US`, `EN` and `en_us` all reduce to `en`; a three-letter `eng` stays `eng`. */
+export function primaryLanguageSubtag(code: string): string {
+  return code.trim().toLowerCase().split(/[-_]/, 1)[0] ?? "";
+}
+
 export function checkLanguageMismatch(expected: string | undefined, detected: string): string | null {
-  if (!expected || !detected || expected === detected) return null;
+  if (!expected || !detected) return null;
+  if (primaryLanguageSubtag(expected) === primaryLanguageSubtag(detected)) return null;
   return `warning: expected language "${expected}" but detected "${detected}"`;
 }
 

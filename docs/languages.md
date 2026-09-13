@@ -6,7 +6,7 @@ Kesha does three language-aware things: **speech-to-text** (ASR), **text-to-spee
 
 ## Speech-to-text (25)
 
-NVIDIA Parakeet TDT 0.6B v3. Language is auto-detected; `--lang <code>` warns if the detected language differs.
+NVIDIA Parakeet TDT 0.6B v3. Language is auto-detected; `--lang <code>` warns if the detected language differs. The comparison is case-insensitive and ignores a region subtag, so `en-US`, `EN` and `en_us` all match a detected `en`. Three-letter codes such as `eng` are not recognised and will warn.
 
 | # | Language | Code | |
 |---:|----------|------|---|
