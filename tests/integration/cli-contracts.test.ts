@@ -1955,4 +1955,24 @@ exit 0
       expect(run.stdout).not.toBe("");
     });
   });
+
+  describe("--verbose", () => {
+    /** Exploratory S1-2: `kesha --verbose a.ogg > t.txt` used to put three diagnostic lines above the transcript in the file. */
+    test("diagnostics go to stderr and stdout carries the transcript alone", async () => {
+      const dir = makeTempDir("kesha-cli-contract-verbose-channel-");
+      const enginePath = createFakeEngine(dir);
+      const mediaPath = join(dir, "workshop.mp4");
+      writeFileSync(mediaPath, "fake media");
+
+      const run = await runCli(["--verbose", mediaPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stderrContains: ["Audio language: ru (confidence: 0.99)", "Text language: ru (confidence: 0.98)", "STT time: "],
+        stdoutNotContains: ["language", "STT time", "---"],
+      });
+      expect(run.stdout.split("\n")).toHaveLength(1);
+    });
+  });
 });

@@ -11,7 +11,7 @@ import {
   formatJsonOutput,
   formatTextOutput,
   formatTranscriptOutput,
-  formatVerboseOutput,
+  formatVerboseDiagnostics,
 } from "../format";
 import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
@@ -421,13 +421,14 @@ async function processFile(
   }
 }
 
-/** `verbose` is only consulted for the plain-text fallback path. */
+/** `--verbose` diagnostics are stderr's whatever the format; stdout carries results only. */
 function writeOutput(
   results: TranscribeResult[],
   errors: TranscribeErrorRecord[],
   format: ValidatedTranscribeArgs["outputFormat"],
   opts: { includeErrors: boolean; verbose: boolean },
 ): void {
+  if (opts.verbose) process.stderr.write(formatVerboseDiagnostics(results));
   const errorEnvelope = (format === "json" || format === "toon") && opts.includeErrors;
   // #773: `[]` reads as "ran fine, nothing found" to a consumer ignoring the exit code.
   if (results.length === 0 && errors.length > 0 && !errorEnvelope) return;
@@ -438,8 +439,6 @@ function writeOutput(
     process.stdout.write(formatToonOutput(results, opts.includeErrors ? errors : undefined));
   } else if (format === "transcript") {
     process.stdout.write(formatTranscriptOutput(results));
-  } else if (opts.verbose) {
-    process.stdout.write(formatVerboseOutput(results));
   } else {
     process.stdout.write(formatTextOutput(results));
   }

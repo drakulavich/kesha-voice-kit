@@ -3,7 +3,7 @@ import {
   formatJsonOutput,
   formatTextOutput,
   formatTranscriptOutput,
-  formatVerboseOutput,
+  formatVerboseDiagnostics,
   humanBytes,
 } from "../../src/format";
 import { hasErrorRecords } from "../../src/lib";
@@ -64,9 +64,9 @@ describe("formatTranscriptOutput", () => {
   });
 });
 
-describe("formatVerboseOutput", () => {
-  test("includes language, timing, and separator lines", () => {
-    const out = formatVerboseOutput([
+describe("formatVerboseDiagnostics", () => {
+  test("renders language and timing lines without the transcript", () => {
+    const out = formatVerboseDiagnostics([
       result({
         audioLanguage: { code: "en", confidence: 0.5 },
         textLanguage: { code: "en", confidence: 0.75, source: "engine" },
@@ -76,23 +76,25 @@ describe("formatVerboseOutput", () => {
     expect(out).toBe(
       "Audio language: en (confidence: 0.50)\n" +
         "Text language: en (confidence: 0.75)\n" +
-        "STT time: 120ms\n" +
-        "---\n" +
-        "hello\n",
+        "STT time: 120ms\n",
     );
   });
 
-  test("falls back to legacy lang field without confidence", () => {
-    const out = formatVerboseOutput([result({ lang: "fr" })]);
-    expect(out).toBe("Text language: fr\n---\nhello\n");
+  test("falls back to the legacy lang field without confidence", () => {
+    const out = formatVerboseDiagnostics([result({ lang: "fr" })]);
+    expect(out).toBe("Text language: fr\n");
   });
 
   test("multiple results get file headers", () => {
-    const out = formatVerboseOutput([
-      result({ file: "a.ogg", text: "one" }),
-      result({ file: "b.ogg", text: "two" }),
+    const out = formatVerboseDiagnostics([
+      result({ file: "a.ogg", text: "one", sttTimeMs: 1 }),
+      result({ file: "b.ogg", text: "two", sttTimeMs: 2 }),
     ]);
-    expect(out).toBe("=== a.ogg ===\n---\none\n\n=== b.ogg ===\n---\ntwo\n");
+    expect(out).toBe("=== a.ogg ===\nSTT time: 1ms\n\n=== b.ogg ===\nSTT time: 2ms\n");
+  });
+
+  test("renders nothing for an empty batch", () => {
+    expect(formatVerboseDiagnostics([])).toBe("");
   });
 });
 

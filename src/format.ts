@@ -10,7 +10,9 @@ export function formatTextOutput(results: TranscribeResult[]): string {
     .join("");
 }
 
-export function formatVerboseOutput(results: TranscribeResult[]): string {
+/** The `--verbose` block for stderr: detection details and timing, never the transcript (that is stdout's). */
+export function formatVerboseDiagnostics(results: TranscribeResult[]): string {
+  if (results.length === 0) return "";
   return results
     .map((r, i) => {
       const lines: string[] = [];
@@ -29,8 +31,6 @@ export function formatVerboseOutput(results: TranscribeResult[]): string {
       if (r.sttTimeMs !== undefined) {
         lines.push(`STT time: ${r.sttTimeMs}ms`);
       }
-      lines.push("---");
-      lines.push(r.text);
       return lines.join("\n");
     })
     .join("\n") + "\n";
