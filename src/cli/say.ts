@@ -16,8 +16,9 @@ import { resolveSayVoice } from "../voice-routing";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandOutcome, type CommandSession } from "./command-session";
 
+/** A positional the user gave is the text, empty or not; only an absent one falls through to stdin (#T1-2). */
 async function resolveText(inline: string | undefined): Promise<string> {
-  if (inline !== undefined && inline.length > 0) return inline;
+  if (inline !== undefined) return inline;
   const chunks: Uint8Array[] = [];
   for await (const chunk of Bun.stdin.stream()) {
     chunks.push(chunk);
@@ -36,7 +37,7 @@ export function shouldRejectMissingSayText(
   inlineText: string | undefined,
   stdinIsTty: boolean | undefined,
 ): boolean {
-  return (inlineText === undefined || inlineText.length === 0) && stdinIsTty === true;
+  return inlineText === undefined && stdinIsTty === true;
 }
 
 type Parsed<T> = { ok: true; value: T | undefined } | { ok: false; error: string };

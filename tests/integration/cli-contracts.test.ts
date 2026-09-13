@@ -1053,6 +1053,25 @@ process.exit(99);
     expect(run.stderr.split("\n")).toHaveLength(1);
   });
 
+  // T1-2: `producer | kesha say "$EMPTY_VAR"` blocked until the producer closed the pipe.
+  test("kesha say with an empty positional exits 2 without waiting on an open stdin pipe", async () => {
+    const dir = makeTempDir("kesha-cli-contract-emptytext-");
+    const out = join(dir, "e.wav");
+    const run = await runCli(["say", "", "--out", out], {
+      env: isolatedEnv(dir),
+      stdin: "open",
+      timeoutMs: 10_000,
+    });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_TEXT_EMPTY]: text is empty"],
+      stderrNotContains: ["Synthesizing"],
+    });
+    expect(run.elapsedMs).toBeLessThan(5_000);
+    expect(existsSync(out)).toBe(false);
+  });
+
   test("a batch where every file failed writes nothing to stdout", async () => {
     const run = await runCli(["--json", "a.wav", "b.wav"], {
       env: isolatedEnv(),

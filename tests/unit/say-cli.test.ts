@@ -8,7 +8,6 @@ import { describeJson, saveEngineEnv } from "../helpers/fake-engine";
 describe("say CLI input guard (#324 P1)", () => {
   test("rejects missing text only when stdin is a TTY", () => {
     expect(shouldRejectMissingSayText(undefined, true)).toBe(true);
-    expect(shouldRejectMissingSayText("", true)).toBe(true);
   });
 
   test("allows piped stdin when text is omitted", () => {
@@ -18,6 +17,12 @@ describe("say CLI input guard (#324 P1)", () => {
 
   test("allows explicit positional text even from a TTY", () => {
     expect(shouldRejectMissingSayText("Hello", true)).toBe(false);
+  });
+
+  // T1-2: an explicit "" is text the user gave, so it is E_TEXT_EMPTY rather than a reason to read stdin.
+  test("an explicitly empty positional is not the missing-text case, on a TTY or off it", () => {
+    expect(shouldRejectMissingSayText("", true)).toBe(false);
+    expect(shouldRejectMissingSayText("", false)).toBe(false);
   });
 });
 
@@ -114,6 +119,24 @@ describe("kesha say relays an engine failure", () => {
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("synthesis aborted");
+  });
+});
+
+describe("kesha say with an explicitly empty positional (T1-2)", () => {
+  skipOnWin32("is E_TEXT_EMPTY exit 2 and never reaches the engine", async () => {
+    failingEngine(3, "E_VOICE_NOT_FOUND", "the engine must not have been asked");
+    const { exitCode, stderr, stdout } = await runSay({ text: "", rate: "1.0" });
+    expect(exitCode).toBe(2);
+    expect(stderr.trim()).toBe("error [E_TEXT_EMPTY]: text is empty");
+    expect(stdout).toBe("");
+  });
+
+  skipOnWin32("does not announce synthesis to an --out file it will never write", async () => {
+    failingEngine(3, "E_VOICE_NOT_FOUND", "the engine must not have been asked");
+    const out = join(tempDir("kesha-say-empty-out-"), "e.wav");
+    const { exitCode, stderr } = await runSay({ text: "", out, rate: "1.0" });
+    expect(exitCode).toBe(2);
+    expect(stderr).not.toContain("Synthesizing");
   });
 });
 
