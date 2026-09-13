@@ -105,6 +105,8 @@ libc = "0.2"
 # Keep G2P dependency changes explicit; intentional bumps should review the
 # source-level routing/shape smoke tests instead of relying on transitive drift.
 misaki-rs = { version = "=0.3.0", default-features = false }
+# NFKC before the TTS script gate: fullwidth Latin is Latin by compatibility, not by block.
+unicode-normalization = "0.1"
 vosk_tts = { path = "vendor/vosk-tts" }
 flacenc = { version = "0.5.1", default-features = false, optional = true }
 

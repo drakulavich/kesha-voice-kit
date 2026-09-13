@@ -16,6 +16,7 @@ pub mod kokoro;
 pub mod normalize;
 pub mod ru;
 pub mod say;
+pub mod script;
 pub mod seam;
 pub mod sessions;
 pub mod ssml;
@@ -96,6 +97,8 @@ pub enum EngineChoice<'a> {
     AVSpeech { voice_id: &'a str, speed: f32 },
     /// Vosk-TTS Russian: G2P happens inside vosk, not in the caller.
     Vosk {
+        /// Public voice id, so the script gate and its diagnostics can name it.
+        voice_id: &'a str,
         model_dir: &'a Path,
         speaker_id: u32,
         /// Speaking rate (1.0 = model default); passed to vosk's `speech_rate`.

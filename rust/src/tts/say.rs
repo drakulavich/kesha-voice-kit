@@ -124,12 +124,14 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             say_avspeech(opts.text, voice_id, speed, opts.format, opts.ssml)
         }
         EngineChoice::Vosk {
+            voice_id,
             model_dir,
             speaker_id,
             speed,
         } => say_vosk(
             &mut sessions::VoskCache::new(),
             opts.text,
+            voice_id,
             model_dir,
             speaker_id,
             speed,
@@ -221,6 +223,7 @@ fn say_avspeech(
 pub(crate) fn say_vosk(
     vosk: &mut sessions::VoskCache,
     text: &str,
+    voice_id: &str,
     model_dir: &Path,
     speaker_id: u32,
     speed: f32,
@@ -228,6 +231,10 @@ pub(crate) fn say_vosk(
     ssml: bool,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
+    super::script::ensure_supported(voice_id, text).map_err(|e| TtsError::Coded {
+        code: crate::errors::code_of(&e),
+        message: format!("{e}"),
+    })?;
     if ssml {
         return synth_segments_vosk(
             vosk,
@@ -767,6 +774,26 @@ fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vosk_refuses_an_unpronounceable_script_before_it_loads_a_model() {
+        // The Vosk arm had no script gate at all, so Latin on a Russian voice became nonsense words (#492).
+        let err = say(SayOptions {
+            text: "Install Kesha Voice Kit today",
+            lang: "ru",
+            engine: EngineChoice::Vosk {
+                voice_id: "ru-vosk-m02",
+                model_dir: Path::new("/nonexistent/vosk-ru"),
+                speaker_id: 0,
+                speed: 1.0,
+            },
+            ssml: false,
+            format: OutputFormat::Wav,
+            expand_abbrev: true,
+        })
+        .expect_err("dominant Latin on a Cyrillic voice is refused");
+        assert_eq!(err.code(), crate::errors::ErrorCode::ScriptUnsupported);
+    }
 
     #[test]
     fn prosody_rate_multiplies_and_clamps() {
