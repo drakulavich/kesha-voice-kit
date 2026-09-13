@@ -10,10 +10,10 @@
 
 ## 2. Signals (TS)
 
-- [ ] 2.1 S1-4 / S6-4 interrupted run → `E_INTERRUPTED`, never `E_INTERNAL`; `docs/errors.md` row; pins
-- [ ] 2.2 S6-5 the line names the signal received, not the escalated SIGKILL
-- [ ] 2.3 S6-2 no queued file starts after the first signal
-- [ ] 2.4 S6-3 SIGHUP handled like SIGTERM
+- [x] 2.1 S1-4 / S6-4 interrupted run → `E_INTERRUPTED`, never `E_INTERNAL`; `docs/errors.md` row; pins
+- [x] 2.2 S6-5 the line names the signal received, not the escalated SIGKILL
+- [x] 2.3 S6-2 no queued file starts after the first signal
+- [x] 2.4 S6-3 SIGHUP handled like SIGTERM
 
 ## 3. Argument handling (TS)
 
