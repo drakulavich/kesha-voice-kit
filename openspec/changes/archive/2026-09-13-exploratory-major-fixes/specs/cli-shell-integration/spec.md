@@ -100,7 +100,7 @@ The CLI SHALL treat flag-shaped tokens that precede a subcommand name as that su
 
 ## MODIFIED Requirements
 
-### Requirement: `--help` and a bare invocation both print usage to stdout, and differ in Exit code
+### Requirement: `--help` prints usage to stdout, a bare invocation prints it to stderr, and they differ in Exit code
 
 The CLI SHALL print usage to stdout with an empty stderr when help was asked for, exiting 0. When the CLI was invoked with no input at all — no arguments, or output flags such as `--json` with no files — it SHALL leave stdout empty, print `error [E_INVALID_ARG]: no input file` followed by the same usage block on stderr, and exit 2, so a script that lost its argument fails as a usage error and a consumer that asked for JSON never receives prose on stdout.
 
@@ -204,3 +204,8 @@ When a positional argument is a directory, the CLI SHALL print `<path>: error [E
 #### Scenario: a directory among real files
 - **WHEN** Ira runs `kesha /tmp good.ogg` with the Engine installed
 - **THEN** `good.ogg` is still transcribed, the directory is reported with `E_INVALID_ARG`, and the process exits 2
+
+## RENAMED Requirements
+
+- FROM: `### Requirement: `--help` and a bare invocation both print usage to stdout, and differ in Exit code`
+- TO: `### Requirement: `--help` prints usage to stdout, a bare invocation prints it to stderr, and they differ in Exit code`
