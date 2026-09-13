@@ -13,6 +13,8 @@ An eleven-session exploratory programme (2026-09-13, CLI 1.30.0 / engine v1.25.0
 - **Diagnostics and Stats** (S5-F1, S5-F2, S5-F3, S9-F5): `versionMarker` is redacted; `stats export` without `--format` and `stats retention -5` are rejected; engine debug events reach the diagnostic log.
 - **Lifecycle** (S4-F1, S4-F2, S8-2, S8-8, S10-2): `init` cancelled at a prompt exits 130; a stale install lock (dead pid, same host) is broken and the hint is printed at the start of the wait; `downloadEngine` is exported; `transcribe` emits progress events so `onProgressLine` fires; completions fall back to file paths.
 
+The `diagnostics` capability changes in implementation only: its spec already required the usage line for `stats export`, the rejection of a bad retention value, the support-bundle report on stderr and debug events in the log, so no delta is needed.
+
 Not in scope: the two **blocker** findings (the `sr=1` WAV memory runaway and the batch-interrupt orphan are tracked separately), every minor, question and idea row, and the `homedir()` vs `$HOME` split recorded in `state-directories`.
 
 ## Capabilities
@@ -29,7 +31,6 @@ Not in scope: the two **blocker** findings (the `sr=1` WAV memory runaway and th
 - `audio-recording`: `--out` failures are `E_INVALID_ARG`; quiet keeps the result line.
 - `transcription`: `--verbose` on stderr; progress events during a plain transcribe.
 - `language-detection`: `--lang` normalisation and the routing floor.
-- `diagnostics`: `versionMarker` redaction, `stats` argument rejection, support-bundle report on stderr, debug events in the log.
 - `mcp-server`: cancel stops the engine; stdin EOF ends the server mid-call.
 - `programmatic-api`: `E_INTERRUPTED` on abort, `E_INVALID_ARG` on a directory, `downloadEngine` exported, `onProgressLine` fires.
 - `installation`: `init` cancel exit code; stale-lock liveness.

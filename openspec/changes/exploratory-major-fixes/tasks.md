@@ -1,12 +1,12 @@
 ## 1. Engine (Rust): audio open path, error classes, owner watch, progress events
 
-- [ ] 1.1 S2-2 sample rate 0 → `E_BAD_AUDIO` naming the file, no panic text on stderr
-- [ ] 1.2 S2-3 AIFF decodes (symphonia `aiff`) or the claim and message are corrected
-- [ ] 1.3 S2-4 `--no-vad` over the ceiling → `E_INVALID_ARG`
-- [ ] 1.4 S3-F4 `record --out` directory / symlink / unwritable → `E_INVALID_ARG` with the OS reason
-- [ ] 1.5 S3-F1 `record` stops when its parent dies (getppid / stdin EOF)
-- [ ] 1.6 S11-3 diarization progress obeys `--quiet`
-- [ ] 1.7 S8-8 `transcribe` emits `progress` events (backend loaded, segment N of M); fake engine mirrors them
+- [x] 1.1 S2-2 sample rate 0 → `E_BAD_AUDIO` naming the file, no panic text on stderr
+- [x] 1.2 S2-3 AIFF decodes (symphonia `aiff`) or the claim and message are corrected
+- [x] 1.3 S2-4 `--no-vad` over the ceiling → `E_INVALID_ARG`
+- [x] 1.4 S3-F4 `record --out` directory / symlink / unwritable → `E_INVALID_ARG` with the OS reason
+- [x] 1.5 S3-F1 `record` stops when its parent dies (getppid / stdin EOF)
+- [x] 1.6 S11-3 diarization progress obeys `--quiet`
+- [x] 1.7 S8-8 `transcribe` emits `progress` events (backend loaded, segment N of M); fake engine mirrors them
 
 ## 2. Signals (TS)
 
