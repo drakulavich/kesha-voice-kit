@@ -415,6 +415,8 @@ fn finalize_output(
 
 /// Shared by plain and chunked paths to avoid duplicate timing+logging+create_backend blocks.
 fn create_timed_backend(model_dir: &Path) -> Result<Box<dyn backend::TranscribeBackend>> {
+    // A cold ASR load runs into tens of seconds; without a live event a wired-up spinner reads as a hang (Exploratory S8-8).
+    events::progress(Some("transcribe"), "loading the speech model");
     let t0 = Instant::now();
     let be = backend::create_backend(model_dir)?;
     let dt_ms = t0.elapsed().as_millis() as u64;
@@ -519,7 +521,7 @@ fn transcribe_via_vad(
         spans.len()
     );
 
-    let mut be = backend::create_backend(model_dir)?;
+    let mut be = create_timed_backend(model_dir)?;
 
     if spans.is_empty() {
         let min_speech_samples =
@@ -590,7 +592,12 @@ where
     F: FnMut(&[f32]) -> Result<TranscriptionChunk>,
 {
     let mut out = Vec::with_capacity(spans.len());
-    for &(start_s, end_s) in spans {
+    let total = spans.len();
+    for (index, &(start_s, end_s)) in spans.iter().enumerate() {
+        events::progress(
+            Some("transcribe"),
+            format!("transcribing segment {} of {total}", index + 1),
+        );
         let start = (start_s * sr) as usize;
         let end = ((end_s * sr) as usize).min(samples.len());
         if start >= end {
