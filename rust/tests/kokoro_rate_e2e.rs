@@ -375,6 +375,71 @@ fn kokoro_break_adds_only_the_silence_it_asked_for() {
 }
 
 #[test]
+fn kokoro_phoneme_tag_keeps_its_contained_text() {
+    // T3-6: the spec's rule for a tag an engine cannot honour is "stripped, text preserved".
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+    if !ane_kokoro_ready() {
+        eprintln!(
+            "skipping: FluidAudio ANE Kokoro model + am_michael voice pack not staged \
+             (run `kesha install --tts`)"
+        );
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-kokoro-phoneme-")
+        .tempdir()
+        .unwrap();
+    let without = tmp.path().join("without.wav");
+    let with = tmp.path().join("with.wav");
+    let alone = tmp.path().join("alone.wav");
+    let voice = "en-am_michael";
+
+    if !say_ssml(&exe, "<speak>Hello world</speak>", voice, &without) {
+        return; // prerequisite missing — skip cleanly
+    }
+    if !say_ssml(
+        &exe,
+        "<speak>Hello <phoneme alphabet=\"ipa\" ph=\"ˈkeʃa\">Kesha</phoneme> world</speak>",
+        voice,
+        &with,
+    ) {
+        return;
+    }
+    if !say_ssml(
+        &exe,
+        "<speak><phoneme alphabet=\"ipa\" ph=\"ˈkeʃa\">Kesha</phoneme></speak>",
+        voice,
+        &alone,
+    ) {
+        return;
+    }
+
+    let (dur_without, _) = wav_duration_and_samples(&without);
+    let (dur_with, _) = wav_duration_and_samples(&with);
+    let (dur_alone, samples_alone) = wav_duration_and_samples(&alone);
+    eprintln!(
+        "kokoro_phoneme_tag_keeps_its_contained_text: \"Hello world\" -> {dur_without:.3}s, \
+         with <phoneme>Kesha</phoneme> -> {dur_with:.3}s, the tag alone -> {dur_alone:.3}s"
+    );
+
+    assert!(
+        peak(&samples_alone) > 0.01,
+        "a <phoneme> alone in the root produced (near-)silent audio (peak {})",
+        peak(&samples_alone)
+    );
+    assert!(
+        dur_with - dur_without > 0.2,
+        "the wrapped word is missing from the audio: {dur_with:.3}s against {dur_without:.3}s \
+         without it (T3-6)"
+    );
+}
+
+#[test]
 fn kokoro_ssml_prosody_rate_changes_duration() {
     // #481: SSML `<prosody rate="x-fast">` on the FluidAudio ANE Kokoro path
     // must SPEED UP synthesis (threaded into the model-native speed input), not

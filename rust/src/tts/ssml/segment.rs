@@ -5,8 +5,12 @@ use std::time::Duration;
 pub enum Segment {
     /// Plain text to feed into the G2P → engine pipeline.
     Text(String),
-    /// Pre-phonemized IPA (from a `<phoneme>` override). Bypasses G2P.
-    Ipa(String),
+    /// Pre-phonemized IPA (from a `<phoneme>` override) and the text it wrapped.
+    /// Engines with no IPA input speak `text`; an engine that takes IPA uses `ph`.
+    Ipa {
+        ph: String,
+        text: String,
+    },
     Break(Duration),
     /// `<say-as interpret-as="characters">`. Vosk expands via `letter_table::expand_chars`;
     /// other engines receive it as text until per-engine support lands.

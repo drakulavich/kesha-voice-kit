@@ -36,7 +36,7 @@ fn break_with_time_produces_silence_segment() {
     for s in &segs {
         match s {
             Segment::Text(_) => text_chunks += 1,
-            Segment::Ipa(_) => panic!("unexpected Ipa segment"),
+            Segment::Ipa { .. } => panic!("unexpected Ipa segment"),
             Segment::Spell(_) => unreachable!("parser does not emit Spell in this fixture"),
             Segment::Emphasis { .. } => {
                 unreachable!("parser does not emit Emphasis in this fixture")
@@ -136,7 +136,7 @@ fn phoneme_with_ipa_alphabet_emits_ipa_segment_and_suppresses_inner_text() {
     let ipas: Vec<&str> = segs
         .iter()
         .filter_map(|s| match s {
-            Segment::Ipa(p) => Some(p.as_str()),
+            Segment::Ipa { ph, .. } => Some(ph.as_str()),
             _ => None,
         })
         .collect();
@@ -159,6 +159,18 @@ fn phoneme_with_ipa_alphabet_emits_ipa_segment_and_suppresses_inner_text() {
         all_text.contains("He said"),
         "outer text missing: {all_text:?}"
     );
+    let carried: Vec<&str> = segs
+        .iter()
+        .filter_map(|s| match s {
+            Segment::Ipa { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        carried,
+        vec!["pneumonia"],
+        "the segment must carry the wrapped word for engines that cannot take IPA (T3-6)"
+    );
 }
 
 #[test]
@@ -166,7 +178,7 @@ fn phoneme_without_alphabet_defaults_to_ipa() {
     let segs = parse(r#"<speak><phoneme ph="həˈloʊ">hello</phoneme></speak>"#).unwrap();
     assert!(segs
         .iter()
-        .any(|s| matches!(s, Segment::Ipa(p) if p == "həˈloʊ")));
+        .any(|s| matches!(s, Segment::Ipa { ph, .. } if ph == "həˈloʊ")));
 }
 
 #[test]
@@ -175,7 +187,7 @@ fn phoneme_with_non_ipa_alphabet_falls_back_to_text() {
         .unwrap();
     // Non-IPA warn-strips: inner text flows as a Text segment so the
     // content still gets synthesized via G2P rather than dropped.
-    assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa(_))));
+    assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa { .. })));
     assert!(segs
         .iter()
         .any(|s| matches!(s, Segment::Text(t) if t.contains("hello"))));
@@ -184,7 +196,7 @@ fn phoneme_with_non_ipa_alphabet_falls_back_to_text() {
 #[test]
 fn phoneme_with_empty_ph_is_dropped_silently() {
     let segs = parse(r#"<speak>pre <phoneme ph="">hello</phoneme> post</speak>"#).unwrap();
-    assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa(_))));
+    assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa { .. })));
     let all_text: String = segs
         .iter()
         .filter_map(|s| match s {
@@ -346,7 +358,10 @@ fn emphasis_wrapping_phoneme_does_not_double_emit() {
         .iter()
         .filter(|s| matches!(s, Segment::Emphasis { .. }))
         .count();
-    let ipa_count = segs.iter().filter(|s| matches!(s, Segment::Ipa(_))).count();
+    let ipa_count = segs
+        .iter()
+        .filter(|s| matches!(s, Segment::Ipa { .. }))
+        .count();
 
     assert_eq!(
         ipa_count, 1,
