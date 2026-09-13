@@ -127,7 +127,7 @@ fn list_kokoro_voices(_cache: &std::path::Path) -> Vec<String> {
                     return None;
                 }
                 let stem = p.file_stem()?.to_string_lossy().into_owned();
-                // The pack's first letter is its language, as in manifest::ane_voice_lang; es/it packs are not English voices (#1168).
+                // Only prefixes the non-ANE resolve_voice arm accepts may be listed; an id the resolver rejects is #1168 again.
                 let lang = match stem.chars().next()? {
                     'a' | 'b' => "en",
                     'e' => "es",

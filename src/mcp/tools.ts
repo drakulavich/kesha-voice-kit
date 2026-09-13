@@ -170,8 +170,9 @@ export function registerTools(server: McpServer): void {
     async () => {
       try {
         const voices = await listVoices();
+        const text = voices.length === 0 ? `0 voices installed. Run: ${installHint("--tts")}` : `${voices.length} voices installed.`;
         return {
-          content: [{ type: "text" as const, text: voices.length === 0 ? `0 voices installed. Run: ${installHint("--tts")}` : `${voices.length} voices installed.` }],
+          content: [{ type: "text" as const, text }],
           structuredContent: { voices },
         };
       } catch (err) {
