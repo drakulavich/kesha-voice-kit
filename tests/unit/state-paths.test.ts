@@ -132,10 +132,11 @@ describe("resolveStatePaths", () => {
   test("the working directory is anchored once per process, so a later chdir() keeps one root", () => {
     const startedIn = process.cwd();
     const env = { KESHA_HOME: "rel-state", KESHA_CACHE_DIR: "rel-cache" };
-    const before = resolveStatePaths(env, "linux", "/home/ira", "/tmp");
+    // The live platform, because the real cwd is what posix vs win32 resolve() has to anchor.
+    const before = resolveStatePaths(env, process.platform, "/home/ira", "/tmp");
     try {
       process.chdir(tempDir("kesha-chdir-"));
-      expect(resolveStatePaths(env, "linux", "/home/ira", "/tmp")).toEqual(before);
+      expect(resolveStatePaths(env, process.platform, "/home/ira", "/tmp")).toEqual(before);
     } finally {
       process.chdir(startedIn);
     }
