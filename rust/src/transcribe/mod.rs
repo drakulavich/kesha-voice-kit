@@ -322,16 +322,16 @@ pub fn transcribe_with_options(
         mode
     };
 
-    let model_dir = ensure_asr_installed(models::cache_dir())?;
-
     // `Auto` needs a duration probe for routing. `Off` probes too so explicit
-    // full-file ASR can fail before loading a backend for media beyond the
-    // duration/memory-bound single-pass contract.
+    // full-file ASR is refused before any model is required, as a bad flag, for
+    // media beyond the duration/memory-bound single-pass contract.
     let duration = match mode {
         VadMode::Auto | VadMode::Off => probe_duration_if_plausible(audio_path),
         _ => None,
     };
     validate_plain_transcribe_safety(mode, duration, vad_installed)?;
+
+    let model_dir = ensure_asr_installed(models::cache_dir())?;
     let decision = decide(mode, duration, vad_installed);
     dtrace!(
         "asr::mode={mode:?} duration={:?} vad_installed={vad_installed} decision={decision:?}",
@@ -992,7 +992,8 @@ fn validate_plain_transcribe_safety(
     } else {
         "run `kesha install --vad`, then rerun without --no-vad"
     };
-    anyhow::bail!(
+    coded_bail!(
+        ErrorCode::InvalidArg,
         "refusing --no-vad for very long audio \
          (detected {duration_s:.0}s; single-pass limit is {FULL_FILE_SINGLE_PASS_MAX_SECONDS:.0}s). \
          Parakeet full-file ASR is duration/memory-bound; {action}."
