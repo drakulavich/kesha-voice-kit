@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { resolveStatePaths, type StatePathSource } from "../../src/state-paths";
 
 const HOME = { darwin: "/Users/ira", linux: "/home/ira", win32: "C:\\Users\\ira" } as const;
@@ -125,6 +128,20 @@ describe("resolveStatePaths", () => {
     expect(p.cacheDir.path).toBe("/work/job/state/cache");
     expect(p.logDir.path).toBe("/work/job/logs/here");
     expect(p.statsDbPath.path).toBe("/work/job/state/stats.sqlite");
+  });
+
+  test("the working directory is anchored once per process, so a later chdir() keeps one root", () => {
+    const startedIn = process.cwd();
+    const env = { KESHA_HOME: "rel-state", KESHA_CACHE_DIR: "rel-cache" };
+    const before = resolveStatePaths(env, "linux", "/home/ira", "/tmp");
+    try {
+      process.chdir(mkdtempSync(join(tmpdir(), "kesha-chdir-")));
+      expect(resolveStatePaths(env, "linux", "/home/ira", "/tmp")).toEqual(before);
+    } finally {
+      process.chdir(startedIn);
+    }
+    expect(before.cacheDir.path).toBe(join(startedIn, "rel-cache"));
+    expect(before.logDir.path).toBe(join(startedIn, "rel-state", "logs"));
   });
 
   test("an absolute value is kept verbatim, drive-less Windows paths included", () => {
