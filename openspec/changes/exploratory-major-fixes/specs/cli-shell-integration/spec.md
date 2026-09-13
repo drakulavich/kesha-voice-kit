@@ -146,3 +146,14 @@ script that a shell would try to source. The script is read from the bundled
 > compiled `.deb`/`.rpm` binary (#914). The positional is optional to citty so a
 > missing shell reaches the same `run` as an unknown one and exits 2 with the coded
 > line, instead of citty's own usage on stdout and exit 1 (S10-1).*
+
+### Requirement: Directory arguments are rejected before work starts
+When a positional argument is a directory, the CLI SHALL print `<path>: error [E_INVALID_ARG]: is a directory (expected an audio file)` and exit 2 before any progress output or engine spawn, because the rejection is the CLI's own argument check rather than a runtime failure.
+
+#### Scenario: passing a directory
+- **WHEN** a user runs `kesha /tmp`
+- **THEN** the CLI prints the is-a-directory message, exits 2, and no progress bar or engine invocation occurs
+
+#### Scenario: a directory among real files
+- **WHEN** Ira runs `kesha /tmp good.ogg` with the Engine installed
+- **THEN** `good.ogg` is still transcribed, the directory is reported with `E_INVALID_ARG`, and the process exits 2

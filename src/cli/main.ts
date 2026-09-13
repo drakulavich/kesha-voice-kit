@@ -23,7 +23,7 @@ import { diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandSession } from "./command-session";
 import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
-import { KeshaError } from "../engine/events";
+import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInvalidArg } from "./options";
 
 interface MainCommandArgs {
@@ -291,7 +291,13 @@ type ProcessFileOptions = {
 };
 
 type ProcessFileSuccess = { ok: true; result: TranscribeResult };
-type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord };
+type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord; exitCode: number };
+
+/** An argument the CLI itself rejected exits by its code (2); every runtime failure keeps the batch's operational 1 (S9-F1). */
+function failureExitCode(err: unknown): number {
+  const usage = err instanceof KeshaError && err.origin === "cli" && err.code === "E_INVALID_ARG";
+  return usage ? exitCodeFor(err) : 1;
+}
 
 async function processFile(
   file: string,
@@ -309,7 +315,7 @@ async function processFile(
       error_code: err.code,
     });
     log.error(`${file}: ${errorMessage(err)}`);
-    return { ok: false, error: { file, code: err.code, message: err.message } };
+    return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
   }
 
   if (isDirectoryPath(file)) {
@@ -320,7 +326,7 @@ async function processFile(
       error_code: err.code,
     });
     log.error(`${file}: ${errorMessage(err)}`);
-    return { ok: false, error: { file, code: err.code, message: err.message } };
+    return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
   }
 
   const inputArtifact = artifactFromFile(file, "input_audio");
@@ -404,7 +410,7 @@ async function processFile(
       error_code: code,
     });
     log.error(`${file}: ${stderrText}`);
-    return { ok: false, error: { file, code, message: stderrText } };
+    return { ok: false, error: { file, code, message: stderrText }, exitCode: failureExitCode(err) };
   }
 }
 
@@ -576,7 +582,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         quiet: context.quiet,
       });
 
-      const { status } = await runCommandSession(
+      const { status, exitCode } = await runCommandSession(
         "transcribe",
         {
           itemCount: files.length,
@@ -591,6 +597,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         async (session) => {
           const results: TranscribeResult[] = [];
           const errors: TranscribeErrorRecord[] = [];
+          let exitCode = 0;
 
           for (const file of files) {
             const outcome = await processFile(
@@ -610,6 +617,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
               results.push(outcome.result);
             } else {
               errors.push(outcome.error);
+              exitCode = Math.max(exitCode, outcome.exitCode);
             }
           }
 
@@ -621,6 +629,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
           return {
             status: errors.length > 0 ? "failed" : "success",
             itemCount: files.length,
+            exitCode: errors.length > 0 ? exitCode : undefined,
             finishFields: {
               itemCount: files.length,
               resultCount: results.length,
@@ -636,7 +645,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
           await waitForPendingSignalCleanup();
           process.exit(signalExitCode);
         }
-        process.exit(1);
+        process.exit(exitCode ?? 1);
       }
     },
   });

@@ -96,6 +96,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       return {
         args: [target],
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: ["is a directory (expected an audio file)"],
       };
     },

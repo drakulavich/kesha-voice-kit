@@ -81,7 +81,7 @@ status that lets scripts branch without parsing stderr:
 |-----------|---------|
 | `0` | Success. |
 | `1` | Operational error — engine/model not installed, a download or install failed, or an unknown command. |
-| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — no input file, an option the command does not declare, mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
+| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — no input file, an option the command does not declare, mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a directory where an audio file is expected, a transcribe flag the installed engine lacks, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
 | `4` | Unexpected/uncoded internal failure. |
 | `5` | `kesha say` text exceeds the length limit. |
 | `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run; the engine subprocess was terminated. |
@@ -107,3 +107,8 @@ operational `1`: the remedy is another machine, not another command line. And
 an engine that exits non-zero without reporting anything has no code to relay:
 `say` reports it as `E_INTERNAL` with the engine's status, while `record`
 (pinned by #1167) and `install` keep the operational `1`.
+
+Transcription is a batch and keeps its own rule: the run exits `2` when the CLI
+itself rejected an argument for any file — a directory positional, a flag the
+installed engine lacks — and `1` for every runtime failure, including one the
+engine reported, whatever status the engine exited with.

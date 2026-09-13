@@ -645,7 +645,7 @@ describe("CLI contracts", () => {
     });
   });
 
-  test("a directory positional is rejected before any progress output or engine spawn", async () => {
+  test("a directory positional is rejected before any progress output or engine spawn, exit 2 (S9-F1)", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-");
     const enginePath = createFailingEngine(dir);
     const env = {
@@ -657,7 +657,7 @@ describe("CLI contracts", () => {
     const target = makeTempDir("kesha-cli-contract-dir-target-");
     const run = await runCli([target], { env });
     expectContract(run, {
-      exitCode: 1,
+      exitCode: 2,
       stdoutEmpty: true,
       stderrContains: [`${target}: error [E_INVALID_ARG]: is a directory (expected an audio file)`],
       stderrNotContains: ["fake engine should not have been invoked", "Transcribing", "%"],
@@ -668,6 +668,7 @@ describe("CLI contracts", () => {
     expect(events[1]).toMatchObject({ command: "transcribe", error_code: "E_INVALID_ARG" });
 
     const jsonRun = await runCli(["--json", "--include-errors", target], { env });
+    expect(jsonRun.exitCode).toBe(2);
     const parsed = JSON.parse(jsonRun.stdout);
     expect(parsed.errors).toEqual([
       { file: target, code: "E_INVALID_ARG", message: "is a directory (expected an audio file)" },
@@ -705,7 +706,7 @@ describe("CLI contracts", () => {
     expect(parsed.errors[0]).toMatchObject({ file: mediaPath, code: "E_ENGINE_PROTOCOL" });
   });
 
-  test("transcribe with a flag the build lacks exits 1 with E_INVALID_ARG before any progress line", async () => {
+  test("transcribe with a flag the build lacks exits 2 with E_INVALID_ARG before any progress line (S9-F1)", async () => {
     if (process.platform === "win32") return;
     const dir = makeTempDir("kesha-cli-contract-flag-gate-");
     const enginePath = join(dir, "kesha-engine");
@@ -718,7 +719,7 @@ describe("CLI contracts", () => {
     writeFileSync(mediaPath, "fake media");
     const res = await runCli([mediaPath, "--itn"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
     expectContract(res, {
-      exitCode: 1,
+      exitCode: 2,
       stderrContains: ["error [E_INVALID_ARG]: ", "--itn"],
       stderrNotContains: ["Transcribing"],
     });
