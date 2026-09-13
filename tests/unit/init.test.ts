@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tempDir } from "../helpers/temp-dir";
 import {
   canInstallDiarizeOnPlatform,
   initInstallArgs,
@@ -201,4 +204,41 @@ describe("init onboarding", () => {
     expect(overview).toContain("darwin-arm64 only");
     expect(overview).toContain("Nothing downloads until you confirm");
   });
+});
+
+describe("init cancelled at a prompt (Exploratory S4-F1)", () => {
+  /** Runs one real clack prompt in its own process, so the exit code Ctrl-C produces is the one a shell sees. */
+  async function cancelAtPrompt(which: "confirm" | "tts") {
+    const dir = tempDir("kesha-init-cancel-");
+    const script = join(dir, "prompt.ts");
+    writeFileSync(
+      script,
+      `import { promptConfirm, promptTtsLangs } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/init.ts"))};\n` +
+        `const answer = ${which === "tts" ? "await promptTtsLangs([])" : 'await promptConfirm("Install VAD?", true)'};\n` +
+        `console.log("answered " + JSON.stringify(answer));\n`,
+    );
+    const proc = Bun.spawn([process.execPath, script], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, KESHA_HOME: dir, KESHA_ENGINE_BIN: join(dir, "no-engine") },
+    });
+    proc.stdin.write("\x03");
+    proc.stdin.flush();
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    return { exitCode, output: stdout + stderr };
+  }
+
+  for (const which of ["confirm", "tts"] as const) {
+    test(`Ctrl-C at the ${which} prompt exits 130 after "Init cancelled.", so \`kesha init && …\` stops`, async () => {
+      const { exitCode, output } = await cancelAtPrompt(which);
+      expect(output).toContain("Init cancelled.");
+      expect(output).not.toContain("answered");
+      expect(exitCode).toBe(130);
+    }, 20_000);
+  }
 });

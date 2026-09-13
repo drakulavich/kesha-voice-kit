@@ -160,7 +160,7 @@ ${cases}
   fi
 }
 
-complete -F _kesha_completion kesha
+complete -o default -F _kesha_completion kesha
 `;
 }
 
@@ -203,6 +203,7 @@ ${commands}
       _arguments ${rootOptions}
     else
       _describe -t commands 'kesha command' commands
+      _files
     fi
     return
   fi
@@ -210,7 +211,8 @@ ${commands}
   case "$words[2]" in
 ${cases}
     *)
-      _arguments ${rootOptions}
+      _arguments ${rootOptions} \\
+      '*:audio file:_files'
       ;;
   esac
 }
@@ -233,7 +235,6 @@ function renderFishOption(bin: string, condition: string, option: CliOption): st
 function renderFish(model: ArtifactModel): string {
   const lines = ["# fish completion for kesha."];
 
-  lines.push("complete -c kesha -f");
   for (const command of model.commands) {
     lines.push(
       `complete -c kesha -n '__fish_use_subcommand' -a '${command.name}' -d '${fishEscape(command.description)}'`,

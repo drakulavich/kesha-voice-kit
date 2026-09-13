@@ -32,16 +32,16 @@ export type TtsLangPrompt = (preselect: string[]) => Promise<string[]>;
 /** Signature of the interactive yes/no prompt (injectable for tests). */
 export type ConfirmPrompt = (message: string, initialValue: boolean) => Promise<boolean>;
 
-/** Ctrl-C at any prompt ends init without downloading, rather than falling through with a default. */
+/** Ctrl-C at any prompt ends init without downloading, exiting 130 like an interrupted install so `kesha init && …` stops (S4-F1). */
 function exitIfCancelled<T>(answer: T | symbol): T {
   if (isCancel(answer)) {
     cancel("Init cancelled.");
-    process.exit(0);
+    process.exit(130);
   }
   return answer as T;
 }
 
-async function promptTtsLangs(preselect: string[]): Promise<string[]> {
+export async function promptTtsLangs(preselect: string[]): Promise<string[]> {
   // A corrupt engine must leave init offering the fallback list rather than aborting the
   // guided setup that would replace it (#770).
   const caps = await getEngineCapabilities().catch(() => null);
@@ -57,7 +57,7 @@ async function promptTtsLangs(preselect: string[]): Promise<string[]> {
 }
 
 /** #677: keep every prompt on clack — its close() unpipes stdin, deadlocking any readline sharing it. */
-async function promptConfirm(message: string, initialValue: boolean): Promise<boolean> {
+export async function promptConfirm(message: string, initialValue: boolean): Promise<boolean> {
   return exitIfCancelled(await confirm({ message, initialValue }));
 }
 

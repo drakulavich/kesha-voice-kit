@@ -250,9 +250,11 @@ export async function acquireInstallLock(
 
     if (!announced) {
       announced = true;
+      // The default wait is hours long, so the way out is stated up front rather than after the timeout (S4-F2).
       log.warn(
-        `Another \`kesha install\`${holder ? ` (pid ${holder.pid})` : ""} is using ` +
-          `${dirname(binPath)}; waiting for it to finish...`,
+        `Another \`kesha install\`${holder ? ` (pid ${holder.pid} on ${holder.host})` : ""} is using ` +
+          `${dirname(binPath)}; waiting for it to finish... If no install is running, delete ` +
+          `${lockDir} and re-run.`,
       );
     }
     if (Date.now() + delay >= deadline) throw waitTimedOut(binPath, holder, maxWaitMs);
