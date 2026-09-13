@@ -22,6 +22,10 @@ The CLI SHALL populate language fields in transcription output whenever any of
   confidence is below 0.5; the guess stays in `textLanguage` unchanged, and
   `--verbose` marks it "below the 0.5 floor, ignored for lang". An Engine
   text result is not floored: its probability is on another scale.
+- `audioLanguage` SHALL name `lang` only when no text result did and its
+  confidence is at least 0.5; below that the model's no-signal prior (silence
+  returns `nn` at 0.27) stays in `audioLanguage` unchanged, `lang` is
+  `""`, and `--verbose` marks the `Audio language` line the same way.
 - The `--lang` comparison SHALL be case-insensitive and SHALL compare only the
   primary language subtag, treating `_` as `-`: `en-US`, `EN` and `en_us` all
   match a detected `en`. Codes are ISO 639-1; a three-letter code such as
@@ -64,6 +68,22 @@ The CLI SHALL populate language fields in transcription output whenever any of
   `tinyld`
 - AND stderr's `Text language` line says the guess was below the 0.5 floor
   and ignored for lang
+
+#### Scenario: Silence gets no nationality
+
+- GIVEN `silence.wav` holds no speech, so audio lang-id returns its prior
+  (`nn` at 0.27) and the transcript is empty
+- WHEN Maks runs `kesha --json --verbose silence.wav`
+- THEN `lang` is `""` while `audioLanguage` still reports `nn` at 0.27
+- AND stderr's `Audio language` line says the guess was below the 0.5 floor
+  and ignored for lang
+
+#### Scenario: Confident audio backs a weak text guess
+
+- GIVEN Sona runs on Linux, `tinyld` scores the short transcript below 0.5
+  and audio lang-id returns `en` at 0.99
+- WHEN Sona runs `kesha --json call.ogg`
+- THEN `lang` is `en`, taken from `audioLanguage`
 
 #### Scenario: A regional --lang matches its primary language
 

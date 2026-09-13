@@ -23,10 +23,11 @@ export function formatVerboseDiagnostics(results: TranscribeResult[]): string {
         if (i > 0) lines.push("");
         lines.push(`=== ${r.file} ===`);
       }
-      if (r.audioLanguage) {
-        lines.push(`Audio language: ${r.audioLanguage.code} (confidence: ${r.audioLanguage.confidence.toFixed(2)})`);
-      }
       const route = routeLanguage({ audioLanguage: r.audioLanguage, textLanguage: r.textLanguage });
+      if (r.audioLanguage) {
+        const note = route.belowFloor.audio ? `, ${BELOW_FLOOR_NOTE}` : "";
+        lines.push(`Audio language: ${r.audioLanguage.code} (confidence: ${r.audioLanguage.confidence.toFixed(2)}${note})`);
+      }
       const textLang = r.textLanguage ?? (r.lang ? { code: r.lang, confidence: 0 } : null);
       if (textLang) {
         const note = route.belowFloor.text ? `, ${BELOW_FLOOR_NOTE}` : "";

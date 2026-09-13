@@ -103,6 +103,11 @@ describe("formatVerboseDiagnostics", () => {
     ]);
     expect(out).toBe("Text language: ber (confidence: 0.33, below the 0.5 floor, ignored for lang)\n");
   });
+
+  test("says when the audio guess was too weak to name lang (Exploratory S11-4)", () => {
+    const out = formatVerboseDiagnostics([result({ lang: "", audioLanguage: { code: "nn", confidence: 0.267 } })]);
+    expect(out).toBe("Audio language: nn (confidence: 0.27, below the 0.5 floor, ignored for lang)\n");
+  });
 });
 
 describe("formatJsonOutput", () => {

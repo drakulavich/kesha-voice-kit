@@ -279,9 +279,11 @@ async function detectLanguages(
     }
   }
 
-  const { lang } = routeLanguage({ audioLanguage, textLanguage: textLanguage ?? tinyldResult });
+  const route = routeLanguage({ audioLanguage, textLanguage: textLanguage ?? tinyldResult });
+  const { lang } = route;
 
-  const mismatchWarning = checkLanguageMismatch(expectedLang, lang);
+  // A lang taken from audio was already judged by the audio check above; warning again would double it.
+  const mismatchWarning = route.source === "audio" ? null : checkLanguageMismatch(expectedLang, lang);
   if (mismatchWarning) {
     warnAboveProgress(progress, `${file}: ${mismatchWarning}`);
   }

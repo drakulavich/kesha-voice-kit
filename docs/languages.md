@@ -69,4 +69,4 @@ On Linux/Windows, text-to-speech covers English (Kokoro ONNX), Russian (Vosk-TTS
 
 SpeechBrain ECAPA-TDNN identifies the spoken language of audio across 107 languages — broader than the ASR set above. Full list: [speechbrain/lang-id-voxlingua107-ecapa](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa).
 
-Text language detection (for TTS voice routing) uses Apple's `NLLanguageRecognizer` on macOS. Off macOS, transcription falls back to a CLI-side `tinyld` guess; a guess scoring below 0.5 stays in the JSON's `textLanguage` field but does not set `lang`, and `--verbose` says so.
+Text language detection (for TTS voice routing) uses Apple's `NLLanguageRecognizer` on macOS. Off macOS, transcription falls back to a CLI-side `tinyld` guess; a guess scoring below 0.5 stays in the JSON's `textLanguage` field but does not set `lang`, and `--verbose` says so. The same 0.5 floor applies to `audioLanguage`, which backs `lang` only when no text result did; silence returns the model's prior (`nn` at about 0.27), which the floor keeps out of `lang`.
