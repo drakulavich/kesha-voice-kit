@@ -211,12 +211,23 @@ fn list_voices_empty_on_fresh_cache() {
     );
 }
 
+// The darwin-arm64 system_kokoro build lists the static FluidAudio catalog and never reads the cache.
+#[cfg(not(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+)))]
 #[test]
 fn list_voices_shows_installed() {
     let tmp = tempfile::tempdir().unwrap();
     let voices_dir = tmp.path().join("models/kokoro-82m/voices");
     std::fs::create_dir_all(&voices_dir).unwrap();
-    for pack in ["af_heart.bin", "em_alex.bin", "im_nicola.bin"] {
+    for pack in [
+        "af_heart.bin",
+        "em_alex.bin",
+        "im_nicola.bin",
+        "zf_xiaobei.bin",
+    ] {
         std::fs::write(voices_dir.join(pack), b"").unwrap();
     }
     let out = Command::new(common::engine_bin())
@@ -233,6 +244,11 @@ fn list_voices_shows_installed() {
     assert!(
         !stdout.contains("en-em_alex"),
         "multilingual pack listed as English: {stdout}"
+    );
+    // A pack this build cannot synthesize is not advertised under any prefix.
+    assert!(
+        !stdout.contains("zf_xiaobei"),
+        "unsynthesizable pack listed: {stdout}"
     );
 }
 
