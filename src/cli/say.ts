@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import { statSync } from "fs";
 import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInvalidArg } from "./options";
@@ -179,6 +180,24 @@ export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
   };
 }
 
+const STDIO_ALIASES = ["/dev/stdout", "/dev/stderr", "/dev/stdin"];
+
+/** `/dev/fd/N` stats as whatever the descriptor points at, so the name decides where stat cannot. */
+function isDeviceDestination(out: string): boolean {
+  if (STDIO_ALIASES.includes(out) || /^\/dev\/fd\/\d+$/.test(out)) return true;
+  try {
+    return statSync(out).isCharacterDevice();
+  } catch {
+    return false;
+  }
+}
+
+/** The engine writes `--out` from its own process, whose stdout is the CLI's pipe, so a device destination swallows the audio and still reports success (#T1-15). */
+export function deviceOutRefusal(out: string | undefined): string | null {
+  if (out === undefined || !isDeviceDestination(out)) return null;
+  return `--out ${out} is a character device, where the audio would be discarded; omit --out to write it to stdout`;
+}
+
 type SayOpts = {
   text: string;
   voice: string | undefined;
@@ -329,6 +348,12 @@ export const sayCommand = defineCommand({
     const flags = resolveSayFlags(args);
     if (!flags.ok) {
       log.error(renderInvalidArg(flags.error));
+      process.exit(2);
+    }
+
+    const deviceOut = deviceOutRefusal(flags.out);
+    if (deviceOut) {
+      log.error(renderInvalidArg(deviceOut));
       process.exit(2);
     }
 

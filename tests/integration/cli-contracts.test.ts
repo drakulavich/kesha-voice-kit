@@ -1105,6 +1105,30 @@ process.exit(99);
     expect(run.stderr.split("\n")).toHaveLength(1);
   });
 
+  test("kesha say refuses a device --out before the engine runs, and keeps a FIFO working (T1-15)", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-devout-");
+    const enginePath = createFailingEngine(dir);
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+    for (const path of ["/dev/stdout", "/dev/null"]) {
+      const run = await runCli(["say", "t", "--out", path], { env });
+      expectContract(run, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: [
+          `error [E_INVALID_ARG]: --out ${path} is a character device`,
+          "omit --out to write it to stdout",
+        ],
+        stderrNotContains: ["fake engine should not have been invoked", "Saved", "Synthesizing"],
+      });
+    }
+
+    const fifo = join(dir, "note.fifo");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+    const accepted = await runCli(["say", "t", "--out", fifo], { env });
+    expect(accepted.stderr).not.toContain("character device");
+  });
+
   test("a batch where every file failed writes nothing to stdout", async () => {
     const run = await runCli(["--json", "a.wav", "b.wav"], {
       env: isolatedEnv(),

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
+import { deviceOutRefusal, sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
 import { describeJson, saveEngineEnv } from "../helpers/fake-engine";
 
 describe("say CLI input guard (#324 P1)", () => {
@@ -23,6 +23,33 @@ describe("say CLI input guard (#324 P1)", () => {
   test("an explicitly empty positional is not the missing-text case, on a TTY or off it", () => {
     expect(shouldRejectMissingSayText("", true)).toBe(false);
     expect(shouldRejectMissingSayText("", false)).toBe(false);
+  });
+});
+
+// T1-15: `--out /dev/stdout` reported `Saved` and exit 0 while delivering zero bytes.
+describe("say --out destinations (T1-15)", () => {
+  test("a regular file and a FIFO are accepted", () => {
+    if (process.platform === "win32") return;
+    const dir = mkdtempSync(join(tmpdir(), "kesha-say-out-dest-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const file = join(dir, "note.wav");
+    writeFileSync(file, "");
+    const fifo = join(dir, "note.fifo");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+
+    expect(deviceOutRefusal(file)).toBeNull();
+    expect(deviceOutRefusal(fifo)).toBeNull();
+    expect(deviceOutRefusal(join(dir, "not-created-yet.wav"))).toBeNull();
+    expect(deviceOutRefusal(undefined)).toBeNull();
+  });
+
+  test("a character device is refused, naming the plain-stdout default", () => {
+    if (process.platform === "win32") return;
+    for (const path of ["/dev/stdout", "/dev/stderr", "/dev/fd/1", "/dev/null"]) {
+      const refusal = deviceOutRefusal(path);
+      expect(refusal).toContain(`--out ${path} is a character device`);
+      expect(refusal).toContain("omit --out to write it to stdout");
+    }
   });
 });
 
