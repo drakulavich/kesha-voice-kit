@@ -86,16 +86,17 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         anyhow::bail!("--max-seconds must be greater than 0");
     }
 
-    let file = create_wav_output(path)?;
+    let output = WavOutput::open(path)?;
     let (sample_rate, mono_samples) = match capture_default_input_mono(max_duration) {
         Ok(captured) => captured,
         Err(err) => {
-            let _ = std::fs::remove_file(path);
+            output.abandon();
             return Err(err);
         }
     };
 
-    write_plain_mono_float_wav(file, sample_rate, &mono_samples)
+    output
+        .commit(|file| write_plain_mono_float_wav(file, sample_rate, &mono_samples))
         .with_context(|| format!("failed to write WAV recording: {}", path.display()))?;
 
     Ok(RecordSummary {
@@ -730,19 +731,67 @@ fn create_parent_dir(path: &Path) -> Result<()> {
         .with_context(|| format!("failed to create output directory: {}", parent.display()))
 }
 
-/// Opens `--out` before the microphone does, so a path that cannot take the WAV is refused
-/// as the caller's argument instead of after the whole recording has run (Exploratory S3-F4).
+/// The `--out` destination: probed before the microphone opens so an unwritable path is the caller's argument (Exploratory S3-F4), never truncated, and replaced through a `.partial` sibling only once the recording succeeded.
 #[cfg(any(target_os = "macos", test))]
-fn create_wav_output(path: &Path) -> Result<std::fs::File> {
-    use crate::errors::{CodedError, ErrorCode};
-    let invalid = |what: &str, err: anyhow::Error| {
-        anyhow::Error::new(CodedError {
-            code: ErrorCode::InvalidArg,
-            message: format!("cannot {what} --out {}: {err:#}", path.display()),
+#[derive(Debug)]
+struct WavOutput {
+    path: std::path::PathBuf,
+    partial: std::path::PathBuf,
+    existed: bool,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl WavOutput {
+    fn open(path: &Path) -> Result<Self> {
+        use crate::errors::{CodedError, ErrorCode};
+        let invalid = |what: &str, err: anyhow::Error| {
+            anyhow::Error::new(CodedError {
+                code: ErrorCode::InvalidArg,
+                message: format!("cannot {what} --out {}: {err:#}", path.display()),
+            })
+        };
+        create_parent_dir(path).map_err(|err| invalid("create the directory for", err))?;
+        let existed = path.exists();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map_err(|err| invalid("write", err.into()))?;
+        let mut partial_name = path
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_default();
+        partial_name.push(".partial");
+        Ok(Self {
+            path: path.to_path_buf(),
+            partial: path.with_file_name(partial_name),
+            existed,
         })
-    };
-    create_parent_dir(path).map_err(|err| invalid("create the directory for", err))?;
-    std::fs::File::create(path).map_err(|err| invalid("write", err.into()))
+    }
+
+    /// Nothing was recorded: the probe file goes if it was ours, an earlier recording stays.
+    fn abandon(self) {
+        let _ = std::fs::remove_file(&self.partial);
+        if !self.existed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn commit(self, write: impl FnOnce(std::fs::File) -> Result<()>) -> Result<()> {
+        let written = std::fs::File::create(&self.partial)
+            .with_context(|| format!("failed to create {}", self.partial.display()))
+            .and_then(write)
+            .and_then(|()| {
+                std::fs::rename(&self.partial, &self.path).with_context(|| {
+                    format!("failed to move the recording to {}", self.path.display())
+                })
+            });
+        if written.is_err() {
+            let _ = std::fs::remove_file(&self.partial);
+        }
+        written
+    }
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -972,7 +1021,7 @@ mod tests {
     #[test]
     fn a_directory_as_the_wav_output_is_the_callers_argument() {
         let dir = tempfile::tempdir().unwrap();
-        let err = create_wav_output(dir.path()).unwrap_err();
+        let err = WavOutput::open(dir.path()).unwrap_err();
         assert_eq!(
             crate::errors::code_of(&err),
             crate::errors::ErrorCode::InvalidArg
@@ -989,12 +1038,51 @@ mod tests {
         );
     }
 
+    // Greptile on #1216: File::create used to truncate an existing --out before the microphone even opened.
+    #[test]
+    fn a_failed_capture_keeps_the_recording_that_was_already_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take.wav");
+        std::fs::write(&path, b"earlier take").unwrap();
+        WavOutput::open(&path).unwrap().abandon();
+        assert_eq!(std::fs::read(&path).unwrap(), b"earlier take");
+        assert!(!dir.path().join("take.wav.partial").exists());
+    }
+
+    #[test]
+    fn a_failed_capture_leaves_no_file_where_there_was_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take.wav");
+        WavOutput::open(&path).unwrap().abandon();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_successful_recording_replaces_the_earlier_file_only_at_the_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take.wav");
+        std::fs::write(&path, b"earlier take").unwrap();
+        let output = WavOutput::open(&path).unwrap();
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"earlier take",
+            "opening --out must not truncate it"
+        );
+        output
+            .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0; 4]))
+            .unwrap();
+        assert!(hound::WavReader::open(&path).is_ok());
+        assert!(!dir.path().join("take.wav.partial").exists());
+    }
+
     #[test]
     fn wav_writer_finalizes_readable_mono_float_wav() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mic.wav");
-        let file = create_wav_output(&path).unwrap();
-        write_plain_mono_float_wav(file, 16_000, &[0.0, 0.5, -0.5]).unwrap();
+        WavOutput::open(&path)
+            .unwrap()
+            .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0, 0.5, -0.5]))
+            .unwrap();
 
         let reader = hound::WavReader::open(&path).unwrap();
         let spec = reader.spec();
@@ -1013,7 +1101,10 @@ mod tests {
     fn wav_writer_uses_plain_ieee_float_without_channel_mask() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mic.wav");
-        write_plain_mono_float_wav(create_wav_output(&path).unwrap(), 16_000, &[0.0; 8]).unwrap();
+        WavOutput::open(&path)
+            .unwrap()
+            .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0; 8]))
+            .unwrap();
         let wav = std::fs::read(path).unwrap();
         let fmt_chunk_offset = (0..wav.len() - 8)
             .find(|i| &wav[*i..*i + 4] == b"fmt ")

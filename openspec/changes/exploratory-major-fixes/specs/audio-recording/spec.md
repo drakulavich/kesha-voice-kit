@@ -89,7 +89,7 @@ keep it while dropping the listening line and the elapsed-second ticker.
 
 ### Requirement: An `--out` path that cannot take the WAV is refused before the microphone opens
 
-The Engine SHALL open the `--out` path before it opens the microphone, and SHALL refuse a path it cannot write — a directory, a symlink to one, a location this user cannot write into — with the Error code `E_INVALID_ARG`, a message naming `--out`, the path and the operating system's reason, and exit 1, without recording anything.
+The Engine SHALL open the `--out` path before it opens the microphone, and SHALL refuse a path it cannot write — a directory, a symlink to one, a location this user cannot write into — with the Error code `E_INVALID_ARG`, a message naming `--out`, the path and the operating system's reason, and exit 1, without recording anything. Opening the path SHALL NOT truncate a file already there: the recording is written beside it and moved into place only once it succeeded, so a capture that fails leaves the earlier file untouched.
 
 #### Scenario: Maks passes a directory as --out
 
@@ -106,14 +106,22 @@ The Engine SHALL open the `--out` path before it opens the microphone, and SHALL
 - THEN the Engine reports `E_INVALID_ARG` naming the path and `Permission denied`
 - AND the process exits 1
 
+#### Scenario: A failed capture keeps the earlier recording
+
+- GIVEN `~/notes/standup.wav` holds yesterday's recording
+- WHEN Maks runs `kesha record --out ~/notes/standup.wav` and the capture fails before it finishes
+- THEN yesterday's file is still there, byte for byte
+- AND no `standup.wav.partial` is left beside it
+
 #### Scenario: A writable path records as before
 
 - WHEN Maks runs `kesha record --out ~/notes/standup.wav` and stops it
 - THEN the WAV is written there and the success line reports it
 
-> *Technical Note — `rust/src/record.rs::create_wav_output` runs first in
-> `record_default_input_to_wav`; a capture failure after it removes the empty
-> file it created.*
+> *Technical Note — `rust/src/record.rs::WavOutput` is opened first in
+> `record_default_input_to_wav`: it probes the path without truncating it, records
+> into a `.partial` sibling and renames that over `--out` on success; `abandon`
+> removes the sibling and, only when nothing was there before, the probe file.*
 
 ### Requirement: A recording whose parent process exits stops within about a second
 
