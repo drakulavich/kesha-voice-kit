@@ -155,6 +155,23 @@ describe("capability pact — recordings", () => {
     expect(mismatched).toEqual([]);
     expect(rows.size).toBeGreaterThan(20);
   });
+
+  it("publishes every code the CLI raises as cli or both, and nothing else as cli", async () => {
+    const raised = new Set<string>();
+    for await (const file of new Bun.Glob("src/**/*.ts").scan(repoPath("."))) {
+      for (const m of readRepoFile(file).matchAll(/new KeshaError\(\s*"(E_[A-Z0-9_]+)"/g)) raised.add(m[1]!);
+    }
+    expect(raised.size).toBeGreaterThan(5);
+    // #1202: the engine still publishes E_MODEL_MISSING as its own although the --speakers pre-check raises it too.
+    const cliOnly = ["E_ENGINE_PROTOCOL", "E_ENGINE_SPAWN", "E_INSTALL_RACE"];
+    const shared = [...raised].filter((c) => !cliOnly.includes(c) && c !== "E_MODEL_MISSING").sort();
+    for (const t of TARGETS) {
+      const byOrigin = (origin: string) => t.pact.errors.filter((e) => e.origin === origin).map((e) => e.code).sort();
+      expect(byOrigin("cli")).toEqual(cliOnly);
+      expect(byOrigin("both")).toEqual(shared);
+      expect(byOrigin("engine")).toContain("E_MODEL_MISSING");
+    }
+  });
 });
 
 for (const t of TARGETS) describe(`${t.key} accepts what the CLI would send it`, () => {
