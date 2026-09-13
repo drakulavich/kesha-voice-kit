@@ -103,7 +103,6 @@ function voiceListingEngine(voiceIds: string[]): string {
 
 const STUB_VOICES = ["en-am_michael", "en-bf_emma", "ru-vosk-m02"];
 
-
 // A stub that answers on stdout but writes plain prose to stderr instead of a protocol 4 event.
 function babblingVoicesEngine(): string {
   const dir = tempDir("kesha-mcp-voices-babble-");
@@ -138,7 +137,8 @@ describe("list_voices tool", () => {
     await withEngineBin(voiceListingEngine([]), async () => {
       const res = await call("list_voices");
       expect(res.isError).toBeUndefined();
-      expect((res.content as Array<{ text: string }>)[0]?.text).toBe("0 voices installed. Run: kesha install --tts");
+      // The hint verb follows stderr's TTY-ness (kesha init in a terminal), as the sibling case above allows.
+      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(/^0 voices installed\. Run: kesha (install|init) --tts$/);
       expect((res.structuredContent as { voices: unknown[] }).voices).toEqual([]);
     });
   });

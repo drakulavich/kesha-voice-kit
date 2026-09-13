@@ -22,5 +22,6 @@
 
 ## Non-goals
 
-- No CLI-side filter: the CLI keeps relaying the Engine's stdout verbatim.
+- No CLI-side filter: the CLI keeps passing the Engine's stdout ids through.
+- `--quiet` silences the hint like every progress event; a fresh machine then prints nothing and exits 0.
 - The darwin-arm64 `system_kokoro` build lists the static FluidAudio catalog and never reaches the empty branch; unchanged.

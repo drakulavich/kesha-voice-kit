@@ -28,8 +28,10 @@ an unknown model and no language (#1168).
 - AND the process exits 0
 
 > *Technical Note — enumeration: the `list_voices` branch of
-> `rust/src/cli/say.rs::run`; the CLI relays the Engine's stdout and exit code
-> verbatim (`src/synth.ts::listVoiceIds`, shared by the `kesha say` flag and
-> the MCP `list_voices` tool). Partial Vosk installs advertise no `ru-vosk-*`
+> `rust/src/cli/say.rs::run`; the CLI passes the Engine's stdout ids and exit
+> code through (`src/synth.ts::listVoiceIds`, shared by the `kesha say` flag
+> and the MCP `list_voices` tool: blank lines dropped, a non-event stderr line
+> is `E_INTERNAL`). Under `--quiet` the hint is silenced like any other
+> progress event, so a fresh machine prints nothing and exits 0. Partial Vosk installs advertise no `ru-vosk-*`
 > voices (same cache gate as synthesis). AVSpeech enumeration is best-effort:
 > a missing Sidecar still shows Kokoro/Vosk voices.*
