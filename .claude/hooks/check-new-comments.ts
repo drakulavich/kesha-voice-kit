@@ -7,6 +7,8 @@ const CODE = /\.(ts|tsx|js|mjs|cjs|rs|sh|py|swift|toml|ya?ml|nix)$/;
 // `#[derive]`/`#[test]` are Rust attributes and `#!` a shebang, not comments.
 const OPENER = /^(#(?![\[!])|\/\/|\/\*)/;
 const BANNER = /^(#|\/\/)\s*[-=*_]{4,}/;
+// Only a `/*` followed by whitespace or the line end opens a block after code: globs, strings and regexes carry one too.
+const TRAILING_OPENER = /\/\*\*?(?=\s|$)/;
 
 const input = (await Bun.stdin.json().catch(() => ({}))) as { tool_input?: { file_path?: string } };
 const named = input.tool_input?.file_path;
@@ -43,7 +45,7 @@ lines.forEach((t, i) => {
     kind.push(null);
     span.push(1);
     // `code; /* why` opens a block whose continuation lines are comments even though this line is not.
-    const at = t.indexOf("/*");
+    const at = t.search(TRAILING_OPENER);
     if (at >= 0 && !t.includes("*/", at)) {
       open = t.startsWith("/**", at) ? "doc" : "block";
       members = [i];
