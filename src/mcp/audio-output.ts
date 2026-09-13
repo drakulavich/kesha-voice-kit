@@ -1,13 +1,13 @@
-import { tmpdir } from "os";
 import { join } from "path";
 import { mkdirSync, readdirSync, statSync, unlinkSync } from "fs";
 import { randomUUID } from "crypto";
 import type { SayFormat } from "../synth";
+import { resolveStatePaths } from "../state-paths";
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export function audioDir(): string {
-  return join(tmpdir(), "kesha-mcp");
+  return resolveStatePaths().mcpAudioDir.path;
 }
 
 function extFor(format: SayFormat): string {

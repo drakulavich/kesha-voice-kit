@@ -1,4 +1,5 @@
 import { errorMessage } from "./error-utils";
+import { resolveStatePaths } from "./state-paths";
 import {
   closeSync,
   existsSync,
@@ -12,7 +13,6 @@ import {
   statSync,
   writeFileSync,
 } from "fs";
-import { homedir } from "os";
 import { dirname, join } from "path";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
@@ -71,14 +71,7 @@ export interface DiagnosticLogSession {
 }
 
 export function resolveDiagnosticLogDir(): string {
-  if (process.env.KESHA_LOG_DIR) return process.env.KESHA_LOG_DIR;
-  if (process.platform === "darwin") return join(homedir(), "Library", "Logs", "kesha");
-  if (process.platform === "win32") {
-    const base = process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
-    return join(base, "kesha", "logs");
-  }
-  const base = process.env.XDG_STATE_HOME || join(homedir(), ".local", "state");
-  return join(base, "kesha", "logs");
+  return resolveStatePaths().logDir.path;
 }
 
 export function resolveDiagnosticLogPath(): string {
