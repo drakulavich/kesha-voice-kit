@@ -46,6 +46,14 @@ describe("check-new-comments hook", () => {
     expect(await decision(work, "src/a.ts")).toBe("block");
   });
 
+  it("blocks a two-line comment the agent has already staged", async () => {
+    const work = await gitRepoWithRemote();
+    const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");
+    await Bun.write(file, "// why this\n// spills over\nexport const a = 1;\n");
+    await git(work, "add", "src/a.ts");
+    expect(await decision(work, file)).toBe("block");
+  });
+
   it("blocks a two-line comment in a file Write just created", async () => {
     const work = await gitRepoWithRemote();
     mkdirSync(join(work, "src"), { recursive: true });
@@ -59,6 +67,20 @@ describe("check-new-comments hook", () => {
     const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");
     await Bun.write(file, "/* why this\n   spills over */\nexport const a = 1;\n");
     expect(await decision(work, file)).toBe("block");
+  });
+
+  it("blocks a plain line added inside an existing /* */ block, whose delimiters are outside the hunk", async () => {
+    const work = await gitRepoWithRemote();
+    const file = await trackedFile(work, "src/a.ts", "/* why this\n   is here */\nexport const a = 1;\n");
+    await Bun.write(file, "/* why this\n   and a second thought\n   is here */\nexport const a = 1;\n");
+    expect(await decision(work, file)).toBe("block");
+  });
+
+  it("does not mistake Rust dereferences or doc-block continuations for comment lines", async () => {
+    const work = await gitRepoWithRemote();
+    const file = await trackedFile(work, "src/a.rs", "/** The contract.\n * One line. */\nfn f(a: &mut i32, b: &mut i32) {}\n");
+    await Bun.write(file, "/** The contract.\n * One line.\n * A second line of contract. */\nfn f(a: &mut i32, b: &mut i32) {\n    *a = 1;\n    *b = 2;\n}\n");
+    expect(await decision(work, file)).toBeNull();
   });
 
   it("allows one-line comments, /** doc contracts and SAFETY blocks", async () => {
