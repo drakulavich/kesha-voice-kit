@@ -2024,4 +2024,58 @@ exit 0
       expect(run.stdout.split("\n")).toHaveLength(1);
     });
   });
+
+  describe("record under --quiet", () => {
+    function recordingStub(dir: string, features: string[], body: string): string {
+      const enginePath = join(dir, "kesha-engine");
+      writeFileSync(
+        enginePath,
+        `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features })}'\n  exit 0\nfi\nif [ "$1" = "record" ]; then\n${body}\n  exit 0\nfi\nexit 2\n`,
+      );
+      chmodSync(enginePath, 0o755);
+      return enginePath;
+    }
+
+    /** Exploratory S3-F2: `kesha record -q --out f.wav` produced nothing on either channel, so a script had no success signal. */
+    test("--out still confirms the recording on stderr", async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir("kesha-cli-contract-record-quiet-out-");
+      const outPath = join(dir, "note.wav");
+      const enginePath = recordingStub(
+        dir,
+        [],
+        `  printf '%s\\n' '{"kind":"progress","message":"Listening (48000 Hz)... stop with Ctrl-C."}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"Recorded ${outPath} (48000 Hz, 1 channel, 95744 frames)"}' >&2`,
+      );
+      const run = await runCli(["record", "-q", "--out", outPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stdoutEmpty: true,
+        stderrContains: [`Recorded ${outPath} (48000 Hz, 1 channel, 95744 frames)`],
+        stderrNotContains: ["Listening"],
+      });
+    });
+
+    test("--live on silence still says no speech was detected", async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir("kesha-cli-contract-record-quiet-live-");
+      const enginePath = recordingStub(
+        dir,
+        ["record.live"],
+        `  printf '%s\\n' '{"kind":"progress","message":"Listening... 1s"}' >&2
+  printf '%s\\n' '{"kind":"progress","message":"No speech detected."}' >&2`,
+      );
+      const run = await runCli(["record", "-q", "--live"], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 0,
+        stdoutEmpty: true,
+        stderrContains: ["No speech detected."],
+        stderrNotContains: ["Listening"],
+      });
+    });
+  });
 });
