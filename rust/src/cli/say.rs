@@ -339,6 +339,11 @@ pub fn run(a: SayArgs) -> i32 {
         }
     };
 
+    if let Err(msg) = tts::say::validate_rate(a.rate) {
+        events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
+        return 2;
+    }
+
     let raw_text = match a.text {
         Some(s) => s,
         None => match read_stdin() {

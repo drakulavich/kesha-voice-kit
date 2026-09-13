@@ -43,9 +43,23 @@ fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
 /// Emits a `warn_once` to stderr the first time a clamp diverges from
 /// the raw product — without that line, an SSML `rate="300%"` capped to
 /// `2.0` looks indistinguishable from a clean 2× rate (#267 F9).
+pub const RATE_RANGE: std::ops::RangeInclusive<f32> = 0.5..=2.0;
+
+/// Refuse a `--rate` no engine can honour before one is chosen: FluidAudio's Swift traps on 0 (T4-3).
+pub fn validate_rate(rate: f32) -> Result<(), String> {
+    if rate.is_finite() && RATE_RANGE.contains(&rate) {
+        return Ok(());
+    }
+    Err(format!(
+        "--rate must be between {} and {} (got {rate})",
+        RATE_RANGE.start(),
+        RATE_RANGE.end()
+    ))
+}
+
 fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     let raw = cli_rate * ssml_rate;
-    let clamped = raw.clamp(0.5, 2.0);
+    let clamped = raw.clamp(*RATE_RANGE.start(), *RATE_RANGE.end());
     // Exact bound check, not `(raw - clamped).abs() > EPSILON`: at raw≈0.5
     // the f32 ULP (~6e-8) is below `EPSILON` (~1.2e-7), so a value one ULP
     // outside the bound would clamp silently (Greptile P2 on #287). NaN
@@ -54,7 +68,7 @@ fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     // intentional: NaN here means an upstream bug parsed `cli_rate` or
     // `ssml_rate` as not-a-number, and surfacing it on stderr beats
     // silently propagating NaN sample-rate params downstream.
-    if !(0.5..=2.0).contains(&raw) {
+    if !RATE_RANGE.contains(&raw) {
         crate::tts::warn::warn_once(
             "compose-rate-clamped",
             &format!(
