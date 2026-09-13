@@ -1072,6 +1072,23 @@ process.exit(99);
     expect(existsSync(out)).toBe(false);
   });
 
+  // T1-3: `kesha say hi --out` dropped the flag and sprayed 110 KB of WAV at the terminal, exit 0.
+  test("kesha say with a valueless string flag is a coded usage error, exit 2, no audio", async () => {
+    const dir = makeTempDir("kesha-cli-contract-novalue-");
+    const enginePath = createFailingEngine(dir);
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+    for (const flag of ["out", "voice", "lang", "format", "rate", "bitrate", "sample-rate"]) {
+      const run = await runCli(["say", "hi", `--${flag}`], { env });
+      expectContract(run, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: [`error [E_INVALID_ARG]: --${flag} needs a value`],
+        stderrNotContains: ["fake engine should not have been invoked", "Synthesizing"],
+      });
+      expect(run.stderr.split("\n")).toHaveLength(1);
+    }
+  });
+
   test("a batch where every file failed writes nothing to stdout", async () => {
     const run = await runCli(["--json", "a.wav", "b.wav"], {
       env: isolatedEnv(),

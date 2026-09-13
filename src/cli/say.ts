@@ -109,6 +109,8 @@ function checkOpusOnlyFlags(
 }
 
 export type SayFlagArgs = {
+  voice?: unknown;
+  lang?: unknown;
   format?: unknown;
   rate?: unknown;
   bitrate?: unknown;
@@ -119,6 +121,9 @@ export type SayFlagArgs = {
 export type ResolvedSayFlags =
   | {
       ok: true;
+      voice: string | undefined;
+      lang: string | undefined;
+      out: string | undefined;
       format: SayFormat | undefined;
       rate: number | undefined;
       bitrate: number | undefined;
@@ -126,8 +131,22 @@ export type ResolvedSayFlags =
     }
   | { ok: false; error: string };
 
+const STRING_FLAGS = ["voice", "lang", "out", "format", "rate", "bitrate", "sample-rate"] as const;
+
+/** citty returns a trailing valueless string flag as `true` and `--out=` as `""`; both used to be discarded silently (#T1-3). */
+function missingFlagValue(args: SayFlagArgs): string | null {
+  for (const name of STRING_FLAGS) {
+    const value = (args as Record<string, unknown>)[name];
+    if (value === true || value === "") return `--${name} needs a value`;
+  }
+  return null;
+}
+
 /** Validates the encoder flags before the engine is spawned: faster failure in scripts (the engine repeats them authoritatively). */
 export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
+  const missing = missingFlagValue(args);
+  if (missing) return { ok: false, error: missing };
+
   const format = parseFormatFlag(args.format);
   if (!format.ok) return format;
   const rate = parseRateFlag(args.rate);
@@ -143,6 +162,9 @@ export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
 
   return {
     ok: true,
+    voice: typeof args.voice === "string" ? args.voice : undefined,
+    lang: typeof args.lang === "string" ? args.lang : undefined,
+    out,
     format: format.value,
     rate: rate.value,
     bitrate: bitrate.value,
@@ -316,15 +338,15 @@ export const sayCommand = defineCommand({
       log.error(errorMessage(err));
       process.exit(exitCodeFor(err));
     }
-    const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
-    const langHint = typeof args.lang === "string" ? args.lang : undefined;
+    const explicitVoice = flags.voice;
+    const langHint = flags.lang;
     const voice = await resolveSayVoice(explicitVoice, langHint, text);
 
     const opts: SayOpts = {
       text,
       voice,
       lang: langHint,
-      out: typeof args.out === "string" ? args.out : undefined,
+      out: flags.out,
       rate: flags.rate,
       ssml: Boolean(args.ssml),
       format: flags.format,
