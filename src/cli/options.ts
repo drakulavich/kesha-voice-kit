@@ -60,9 +60,14 @@ export function findUnknownOption(rawArgs: string[], argsDef: ArgsDef): UnknownO
   return null;
 }
 
+/** The coded line for a usage error the CLI refuses before doing anything (S9-F2). */
+export function renderInvalidArg(message: string): string {
+  return renderError({ code: "E_INVALID_ARG", message });
+}
+
 export function renderUnknownOption(option: UnknownOption): string {
   const tail = option.suggestion === null ? "" : ` (did you mean ${option.suggestion}?)`;
-  return renderError({ code: "E_INVALID_ARG", message: `unknown option ${option.name}${tail}` });
+  return renderInvalidArg(`unknown option ${option.name}${tail}`);
 }
 
 /** Exits 2 with one coded stderr line when `rawArgs` carries a flag the command does not declare. */

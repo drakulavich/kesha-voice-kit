@@ -24,6 +24,7 @@ import { runCommandSession, type CommandSession } from "./command-session";
 import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
 import { KeshaError } from "../engine/events";
+import { renderInvalidArg } from "./options";
 
 interface MainCommandArgs {
   _: string[];
@@ -550,13 +551,13 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         format: args.format,
       });
       if (!fmt.ok) {
-        log.error(fmt.error);
+        log.error(renderInvalidArg(fmt.error));
         process.exit(2);
       }
 
       const validated = validateTranscribeArgs(args, rawArgs, fmt);
       if (!validated.ok) {
-        log.error(validated.error);
+        log.error(renderInvalidArg(validated.error));
         process.exit(2);
       }
       const { vadMode, outputFormat } = validated;

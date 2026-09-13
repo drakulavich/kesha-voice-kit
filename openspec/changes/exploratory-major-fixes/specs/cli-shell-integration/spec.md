@@ -38,3 +38,33 @@ The CLI SHALL reject an option that the invoked command does not declare — on 
 > `src/suggest-command.ts::suggestCommand`. Pinned by the "unknown option"
 > case in `tests/integration/cli-contracts.test.ts` and
 > `tests/unit/cli-options.test.ts`.*
+
+### Requirement: Usage errors the CLI refuses carry the `E_INVALID_ARG` code
+
+Every usage error the CLI answers before doing any work — a contradictory or malformed flag combination, a value out of range, a missing required argument, an unrecognised action name — SHALL print one stderr line of the form `error [E_INVALID_ARG]: <message>` and exit 2, on the transcription form and on every subcommand, so a script can match the stable code rather than the wording.
+
+#### Scenario: Ira's script matches the code on a transcription flag conflict
+
+- WHEN Ira runs `kesha --json --toon call.ogg`
+- THEN stderr contains `error [E_INVALID_ARG]: --json and --toon are mutually exclusive`
+- AND the process exits 2
+
+#### Scenario: A subcommand's own usage error is coded the same way
+
+- WHEN Maks runs `kesha say --rate 9 "hello"`
+- THEN stderr contains `error [E_INVALID_ARG]: --rate must be between 0.5 and 2.0.`
+- AND the process exits 2 without spawning the Engine
+
+#### Scenario: An action-style subcommand is coded the same way
+
+- WHEN Ira runs `kesha stats retention soon`
+- THEN stderr contains `error [E_INVALID_ARG]: usage: kesha stats retention <days|off>`
+- AND the process exits 2
+
+> *Technical Note — `src/cli/options.ts::renderInvalidArg` renders the line;
+> the callers are the two validators in `src/cli/main.ts::createMainCommand`,
+> `src/cli/say.ts` (flag resolution and the missing-text refusal),
+> `src/cli/record.ts` (argument resolution) and
+> `src/cli/action-result.ts::emitActionResult` for `logs` and `stats`. Pinned
+> by `tests/integration/error-codes-cli.test.ts` and the "validation errors"
+> case in `tests/integration/cli-contracts.test.ts`.*

@@ -62,6 +62,33 @@ function stageUnwritableDir(parent: string, name: string): string | null {
 
 const KNOWN_BAD_INPUTS: BadInput[] = [
   {
+    name: "a say rate outside its range",
+    prepare: () => ({
+      args: ["say", "--rate", "9", "hello"],
+      code: "E_INVALID_ARG",
+      exitCode: 2,
+      stderrContains: ["--rate must be between 0.5 and 2.0."],
+    }),
+  },
+  {
+    name: "a record duration of zero seconds",
+    prepare: (dir) => ({
+      args: ["record", "--out", join(dir, "take.wav"), "--max-seconds", "0"],
+      code: "E_INVALID_ARG",
+      exitCode: 2,
+      stderrContains: ["--max-seconds must be an integer between 1 and"],
+    }),
+  },
+  {
+    name: "a stats retention that is not a day count",
+    prepare: () => ({
+      args: ["stats", "retention", "soon"],
+      code: "E_INVALID_ARG",
+      exitCode: 2,
+      stderrContains: ["usage: kesha stats retention <days|off>"],
+    }),
+  },
+  {
     name: "a directory where an audio file is expected",
     prepare(dir) {
       const target = join(dir, "a-directory");

@@ -502,37 +502,37 @@ describe("CLI contracts", () => {
         name: "json and toon mutex",
         args: ["--json", "--toon", "a.wav"],
         exitCode: 2,
-        stderr: ["--json and --toon are mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --json and --toon are mutually exclusive"],
       },
       {
         name: "transcript and json mutex",
         args: ["--format", "transcript", "--json", "a.wav"],
         exitCode: 2,
-        stderr: ["--format transcript is mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --format transcript is mutually exclusive"],
       },
       {
         name: "timestamps require machine output",
         args: ["--timestamps", "a.wav"],
         exitCode: 2,
-        stderr: ["--timestamps requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --timestamps requires --json"],
       },
       {
         name: "speakers require machine output",
         args: ["--speakers", "a.wav"],
         exitCode: 2,
-        stderr: ["--speakers requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --speakers requires --json"],
       },
       {
         name: "include-errors requires a structured format",
         args: ["--include-errors", "a.wav"],
         exitCode: 2,
-        stderr: ["--include-errors requires --json"],
+        stderr: ["error [E_INVALID_ARG]: --include-errors requires --json"],
       },
       {
         name: "vad flags are mutually exclusive",
         args: ["--vad", "--no-vad", "a.wav"],
         exitCode: 2,
-        stderr: ["--vad and --no-vad are mutually exclusive"],
+        stderr: ["error [E_INVALID_ARG]: --vad and --no-vad are mutually exclusive"],
       },
     ];
 
