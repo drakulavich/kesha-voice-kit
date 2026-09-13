@@ -167,6 +167,30 @@ describe("kesha say with an explicitly empty positional (T1-2)", () => {
   });
 });
 
+// T1-14: a FluidAudio line quoted the user's whole input, and the transcript then echoed it again.
+describe("kesha say reports a non-event engine line once, bounded", () => {
+  skipOnWin32("quotes at most 200 characters of it and does not echo the input again", async () => {
+    const token = "x".repeat(400);
+    const dir = tempDir("kesha-say-rawline-");
+    const binPath = join(dir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ncat > /dev/null\nprintf '[WARN] G2P failed on word %s\\n' "${token}" >&2\nexit 4\n`,
+    );
+    chmodSync(binPath, 0o755);
+    cleanups.push(saveEngineEnv());
+    process.env.KESHA_ENGINE_BIN = binPath;
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+
+    expect(exitCode).toBe(4);
+    expect(stderr).toContain("error [E_INTERNAL]: kesha-engine say wrote a line that is not a protocol event:");
+    expect(stderr).toContain("…");
+    expect(stderr).not.toContain(token);
+    expect(stderr.split("[WARN] G2P failed on word")).toHaveLength(2);
+  });
+});
+
 /** A stub engine whose `say --list-voices` fails with a protocol 4 error event and a status, after answering `describe`. */
 function failingListVoicesEngine(exitCode: number, code: string, message: string): string {
   const dir = tempDir("kesha-say-listfail-");

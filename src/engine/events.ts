@@ -225,11 +225,24 @@ export function exitCodeFor(err: unknown): number {
   return err.exitCode ?? CLI_EXIT_CODES[err.code] ?? 1;
 }
 
+const MAX_QUOTED_LINE_CHARS = 200;
+
+/** A library line can carry the user's whole input back, so the quote is bounded and the transcript no longer repeats it (#T1-14). */
+function quoteInvalidLine(line: string): string {
+  const chars = Array.from(line);
+  return chars.length <= MAX_QUOTED_LINE_CHARS ? line : `${chars.slice(0, MAX_QUOTED_LINE_CHARS).join("")}…`;
+}
+
 /** The KeshaError for a run that wrote a non-event line, reported an error event, or exited non-zero in silence; `stderr` is the transcript unless the caller substitutes one. */
 export function engineFailure(command: string, outcome: StderrOutcome, exitCode: number | undefined, stderr = outcome.stderr.trim()): KeshaError {
   const extra = { exitCode, stderr, origin: "engine" as const };
   if (outcome.invalid.length > 0) {
-    return new KeshaError("E_INTERNAL", `kesha-engine ${command} wrote a line that is not a protocol event: "${outcome.invalid[0]}"`, extra);
+    const rest = stderr.split("\n").filter((line) => !outcome.invalid.includes(line)).join("\n").trim();
+    return new KeshaError(
+      "E_INTERNAL",
+      `kesha-engine ${command} wrote a line that is not a protocol event: "${quoteInvalidLine(outcome.invalid[0]!)}"`,
+      { ...extra, stderr: rest },
+    );
   }
   if (outcome.error) return new KeshaError(outcome.error.code, outcome.error.message, { ...extra, hint: outcome.error.hint });
   return new KeshaError("E_INTERNAL", `kesha-engine ${command} exited with code ${exitCode}`, extra);
