@@ -3,7 +3,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { readRepoFile, repoPath } from "../helpers/repo";
 
 const SPECS = readdirSync(repoPath("openspec/specs")).map((cap) => `openspec/specs/${cap}/spec.md`).filter((p) => existsSync(repoPath(p)));
-const PATH = String.raw`(?:src|rust|tests|docs|\.github|scripts|raycast|openspec)\/[A-Za-z0-9_./-]+\.[a-z]+`;
+// Any repo-relative path with an extension, root files included (`bin/kesha.js`, `flake.nix`), not a directory allowlist.
+const PATH = String.raw`(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_-]+\.[a-z]+`;
 // A lookbehind, not \b: a word boundary never precedes the dot of `.github/`.
 const LINE_CITATION = new RegExp(String.raw`(?<![\w/.])${PATH}:\d+(?:-\d+)?\b|` + "`:\\d+(?:-\\d+)?`", "g");
 const SYMBOL_CITATION = new RegExp(String.raw`(?<![\w/.])(${PATH})::([A-Za-z_][A-Za-z0-9_-]*(?:::[A-Za-z_][A-Za-z0-9_-]*)*)`, "g");
@@ -21,8 +22,8 @@ describe("openspec technical notes cite code by symbol", () => {
     const unresolved = cited
       .filter(({ file, symbol }) => {
         if (!existsSync(repoPath(file))) return true;
-        const leaf = symbol.split("::").at(-1)!;
-        return !new RegExp(String.raw`\b${leaf}\b`).test(readRepoFile(file));
+        const text = readRepoFile(file);
+        return !symbol.split("::").every((segment) => new RegExp(String.raw`\b${segment}\b`).test(text));
       })
       .map(({ spec, file, symbol }) => `${spec}: ${file}::${symbol}`);
     expect(unresolved).toEqual([]);
