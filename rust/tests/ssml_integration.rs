@@ -543,3 +543,29 @@ fn nested_prosody_emits_warning_and_drops_inner_attributes() {
         .join("|");
     assert!(inner_text.contains("Hi"), "inner text lost: {inner_text}");
 }
+
+#[test]
+fn cdata_content_is_speakable_text() {
+    let segs = parse("<speak><![CDATA[hello there]]></speak>").unwrap();
+    let spoken: String = segs
+        .iter()
+        .filter_map(|s| match s {
+            Segment::Text(t) => Some(t.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(spoken.trim(), "hello there");
+}
+
+#[test]
+fn cdata_keeps_the_characters_it_exists_to_carry() {
+    let segs = parse("<speak>a <![CDATA[Kesha & co <b>]]> z</speak>").unwrap();
+    let spoken: String = segs
+        .iter()
+        .filter_map(|s| match s {
+            Segment::Text(t) => Some(t.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(spoken.contains("Kesha & co <b>"), "got {spoken:?}");
+}

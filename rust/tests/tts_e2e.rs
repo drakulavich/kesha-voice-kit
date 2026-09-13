@@ -148,3 +148,23 @@ fn ssml_input_without_speak_root_errors() {
         })
     ));
 }
+
+#[test]
+fn an_ssml_document_with_no_speakable_content_is_text_empty() {
+    for input in ["<speak></speak>", "<speak>   </speak>"] {
+        let res = tts::say(SayOptions {
+            text: input,
+            lang: "en-us",
+            engine: EngineChoice::Kokoro {
+                model_path: Path::new("/nonexistent"),
+                voice_path: Path::new("/nonexistent"),
+                speed: 1.0,
+            },
+            ssml: true,
+            format: OutputFormat::Wav,
+            expand_abbrev: true,
+        });
+        let err = res.expect_err("empty SSML must fail");
+        assert_eq!(err.code(), ErrorCode::TextEmpty, "{input:?}: {err}");
+    }
+}

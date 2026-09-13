@@ -293,9 +293,10 @@ pub(crate) fn say_kokoro(
             message: format!("ssml: {e:#}"),
         })?;
         if segments.is_empty() {
-            return Err(TtsError::SynthesisFailed(
-                "SSML had no speakable content".into(),
-            ));
+            return Err(TtsError::Coded {
+                code: crate::errors::ErrorCode::TextEmpty,
+                message: "SSML had no speakable content".into(),
+            });
         }
         segments
     } else if en::is_en(lang) {
@@ -372,9 +373,10 @@ fn synth_segments(
     let mut out: Vec<f32> = Vec::new();
     walk_segments(sink, segments, speed, sample_rate, &mut out)?;
     if out.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "no audio produced from SSML input".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "no audio produced from SSML input".into(),
+        });
     }
     encode_or_fail(&out, sample_rate, format)
 }
@@ -532,9 +534,10 @@ fn synth_segments_fluid_kokoro(
         message: format!("ssml: {e:#}"),
     })?;
     if segments.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "SSML had no speakable content".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "SSML had no speakable content".into(),
+        });
     }
     let synth = |t: &str, sp: f32| super::fluid_kokoro::synthesize_pcm(t, voice_id, sp);
     let mut sink = FluidKokoroSink { synth: &synth };
@@ -677,9 +680,10 @@ fn synth_segments_vosk(
         message: format!("ssml: {e:#}"),
     })?;
     if segments.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "SSML had no speakable content".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "SSML had no speakable content".into(),
+        });
     }
     let segments = ru::normalize_segments(segments, expand_abbrev);
     let mut sink = VoskSink {
@@ -1161,11 +1165,7 @@ mod tests {
     fn synth_segments_rejects_empty_output_and_propagates_leaf_errors() {
         let mut sink = RecordingSink::new();
         let err = synth_segments(&mut sink, &[], 1.0, OutputFormat::Wav).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("no audio produced from SSML input"),
-            "{err}"
-        );
+        assert_eq!(err.code(), crate::errors::ErrorCode::TextEmpty, "{err}");
 
         for (fail_g2p, expected) in [(true, "boom"), (false, "kaboom")] {
             let mut failing = RecordingSink::new();
