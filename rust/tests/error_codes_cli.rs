@@ -48,3 +48,31 @@ fn no_vad_over_the_single_pass_ceiling_is_an_invalid_argument_before_any_model_i
         "{v}"
     );
 }
+
+// Exploratory S2-2: a WAV declaring sample rate 0 made symphonia panic inside the probe, so
+// the raw panic line and the RUST_BACKTRACE hint reached the user and the code was E_INTERNAL.
+// The header is the user's input: one E_BAD_AUDIO event naming the file, nothing else.
+#[test]
+fn a_wav_declaring_sample_rate_zero_is_bad_audio_with_no_panic_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("rate-zero.wav");
+    common::write_pcm16_wav(&wav, 0, 1_600, 3_200);
+    let out = Command::new(engine_bin())
+        .arg("transcribe")
+        .arg(&wav)
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_BAD_AUDIO", "{v}");
+    assert!(
+        v["message"].as_str().unwrap().contains("rate-zero.wav"),
+        "{v}"
+    );
+}
