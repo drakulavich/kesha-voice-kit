@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
-import { transcribe } from "../../src/lib";
+import { transcribe, transcribeWithTimestamps } from "../../src/lib";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
 import { KeshaError } from "../../src/engine/events";
@@ -179,6 +179,24 @@ describe("transcribe() abort", () => {
       const err = await transcribe(audio, { signal: AbortSignal.abort() }).catch((e) => e);
       expect(err).toBeInstanceOf(KeshaError);
       expect((err as KeshaError).code).toBe("E_INTERRUPTED");
+      expect(existsSync(marker)).toBe(false);
+    });
+  });
+});
+
+// Exploratory S8-3: the CLI answered a directory with E_INVALID_ARG while the API let the engine call it E_BAD_AUDIO.
+describe("transcribe() on a directory", () => {
+  fakeEngineIt("rejects with E_INVALID_ARG before any engine is spawned, on both entry points", async () => {
+    const dir = tempDir("kesha-lib-directory-");
+    const marker = join(dir, "spawned");
+    const enginePath = writeTranscribingEngine("kesha-lib-directory-engine-", [], `  : > '${marker}'`);
+    await withEngine(enginePath, async () => {
+      for (const call of [transcribe(dir), transcribeWithTimestamps(dir)]) {
+        const err = await call.catch((e) => e);
+        expect(err).toBeInstanceOf(KeshaError);
+        expect((err as KeshaError).code).toBe("E_INVALID_ARG");
+        expect((err as KeshaError).message).toContain("is a directory (expected an audio file)");
+      }
       expect(existsSync(marker)).toBe(false);
     });
   });

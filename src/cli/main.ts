@@ -1,8 +1,10 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
-import { existsSync, statSync } from "fs";
+import { existsSync } from "fs";
 import { detectAll } from "tinyld";
-import { transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
+import { isDirectoryPath, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
+
+export { isDirectoryPath };
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
@@ -58,15 +60,6 @@ export function detectTextLanguageFallback(text: string): TextLangDetectResult |
 
 export function detectLanguage(text: string): string {
   return detectTextLanguageFallback(text)?.code ?? "";
-}
-
-/** True when `path` exists and is a directory. Used to reject directory positionals before any progress/engine spawn. */
-export function isDirectoryPath(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 /**

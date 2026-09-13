@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import {
+  isDirectoryPath,
   transcribe as internalTranscribe,
   transcribeWithSegments as internalTranscribeWithSegments,
   type TranscribeOptions,
@@ -43,14 +44,21 @@ export async function downloadTts(noCache = false, langs: string[] = ["en"]): Pr
 /** @deprecated Use `downloadModel` instead. */
 export const downloadCoreML = downloadEngine;
 
+/** The same refusals the CLI makes before it spawns anything, so an agent branching on the documented code sees it on either surface. */
+function assertAudioFileArgument(audioPath: string): void {
+  if (!existsSync(audioPath)) {
+    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`);
+  }
+  if (isDirectoryPath(audioPath)) {
+    throw new KeshaError("E_INVALID_ARG", `${audioPath}: is a directory (expected an audio file)`);
+  }
+}
+
 export async function transcribe(
   audioPath: string,
   options: TranscribeOptions = {},
 ): Promise<string> {
-  if (!existsSync(audioPath)) {
-    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`);
-  }
-
+  assertAudioFileArgument(audioPath);
   return internalTranscribe(audioPath, options);
 }
 
@@ -58,9 +66,7 @@ export async function transcribeWithTimestamps(
   audioPath: string,
   options: TranscribeOptions = {},
 ) {
-  if (!existsSync(audioPath)) {
-    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`);
-  }
+  assertAudioFileArgument(audioPath);
 
   return internalTranscribeWithSegments(audioPath, {
     ...options,
