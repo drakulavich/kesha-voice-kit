@@ -163,14 +163,21 @@ fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
     ]
 }
 
-/// Map a TTS error to the documented exit code for `kesha say`.
-/// 2 = bad input, 4 = synthesis failure, 5 = text too long.
-/// (Voice-not-installed exits 1 directly from the resolver path.)
+/// Map a TTS error to the documented exit code for `kesha say`: 1 = operational,
+/// 2 = bad input, 4 = uncoded or unservable, 5 = text too long.
+/// Keyed on the code, so the same code cannot exit differently per engine (T2-5).
 fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
-    match e {
-        tts::TtsError::EmptyText => 2,
-        tts::TtsError::TextTooLong { .. } => 5,
-        tts::TtsError::SynthesisFailed(_) | tts::TtsError::Coded { .. } => 4,
+    use crate::errors::ErrorCode as C;
+    match e.code() {
+        C::ModelMissing
+        | C::ModelDownload
+        | C::CacheCorrupt
+        | C::ModelLoad
+        | C::SidecarMissing
+        | C::VoiceUnknown => 1,
+        C::InvalidArg | C::SsmlInvalid | C::TextEmpty => 2,
+        C::TextTooLong => 5,
+        _ => 4,
     }
 }
 
@@ -536,12 +543,31 @@ mod tests {
             exit_code_for_tts_err(&tts::TtsError::SynthesisFailed("boom".into())),
             4
         );
-        assert_eq!(
-            exit_code_for_tts_err(&tts::TtsError::Coded {
-                code: crate::errors::ErrorCode::SsmlInvalid,
-                message: "bad ssml".into()
-            }),
-            4
-        );
+        use crate::errors::ErrorCode as C;
+        for (code, expected) in [
+            (C::ModelMissing, 1),
+            (C::ModelDownload, 1),
+            (C::CacheCorrupt, 1),
+            (C::ModelLoad, 1),
+            (C::SidecarMissing, 1),
+            (C::VoiceUnknown, 1),
+            (C::InvalidArg, 2),
+            (C::SsmlInvalid, 2),
+            (C::TextEmpty, 2),
+            (C::TextTooLong, 5),
+            (C::ScriptUnsupported, 4),
+            (C::SsmlUnsupported, 4),
+            (C::Internal, 4),
+        ] {
+            assert_eq!(
+                exit_code_for_tts_err(&tts::TtsError::Coded {
+                    code,
+                    message: "boom".into()
+                }),
+                expected,
+                "{}",
+                code.as_str()
+            );
+        }
     }
 }
