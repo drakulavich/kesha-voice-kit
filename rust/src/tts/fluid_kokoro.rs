@@ -297,9 +297,12 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<(Vec<f32>, u
 
 /// FluidAudio phonemizes raw text itself, so English amounts must be words before the handoff; its G2P has no hook that could express a currency sign (the ONNX arm does this in `en::normalize_segments`).
 fn prepare_text<'a>(voice_id: &str, text: &'a str) -> std::borrow::Cow<'a, str> {
+    let text = crate::tts::script::compatibility_normalize(text);
     match lang_for_fluid_id(voice_id) {
-        Some(lang) if crate::tts::en::is_en(lang) => crate::tts::en::numbers::verbalize(text),
-        _ => std::borrow::Cow::Borrowed(text),
+        Some(lang) if crate::tts::en::is_en(lang) => {
+            std::borrow::Cow::Owned(crate::tts::en::numbers::verbalize(&text).into_owned())
+        }
+        _ => text,
     }
 }
 
@@ -397,6 +400,8 @@ mod tests {
             "He paid one thousand two hundred thirty-four dollars and fifty-six cents"
         );
         assert_eq!(prepare_text("am_michael", "Room 405"), "Room 405");
+        assert_eq!(prepare_text("am_michael", "Ｒｏｏｍ ４０５"), "Room 405");
+        assert_eq!(prepare_text("zm_050", "Ｒｏｏｍ"), "Room");
         assert_eq!(prepare_text("em_alex", "Cuesta $5"), "Cuesta $5");
         assert_eq!(prepare_text("nonexistent", "$5"), "$5");
     }

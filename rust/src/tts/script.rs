@@ -1,4 +1,6 @@
 //! Which scripts a voice's G2P can pronounce, decided from the text rather than from the voice's language: a dominant unsupported script refuses before inference, a minority run synthesizes with one warning (#492).
+use std::borrow::Cow;
+
 use unicode_normalization::UnicodeNormalization;
 
 use crate::coded_bail;
@@ -121,6 +123,15 @@ fn script_of(c: char) -> Option<Script> {
     })
 }
 
+/// NFKC, so fullwidth `Ｒｏｏｍ` is the Latin it compatibility-decomposes to for the gate below and for the G2P downstream, which reads the fullwidth block as nothing at all.
+pub fn compatibility_normalize(text: &str) -> Cow<'_, str> {
+    let normalized: String = text.nfkc().collect();
+    if normalized == text {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned(normalized)
+    }
+}
 /// What the gate decided about one (text, voice) pair.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Verdict {
@@ -142,7 +153,7 @@ const MAX_NAMED_TOKENS: usize = 5;
 /// NFKC runs first so fullwidth Latin (`Ｒｏｏｍ`) is counted as the Latin it
 /// compatibility-decomposes to rather than as an unknown script.
 pub fn classify(text: &str, supported: &[Script]) -> Verdict {
-    let normalized: String = text.nfkc().collect();
+    let normalized = compatibility_normalize(text);
     let mut counts: Vec<(Script, usize)> = Vec::new();
     for c in normalized.chars() {
         let Some(s) = script_of(c) else { continue };
