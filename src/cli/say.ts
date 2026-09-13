@@ -61,11 +61,18 @@ function parseRateFlag(value: unknown): Parsed<number> {
   return rate;
 }
 
+/** The Opus encoder's own range, mirrored here so a caller error never costs a synthesis (#T1-5). */
+const MIN_OPUS_BITRATE = 6000;
+const MAX_OPUS_BITRATE = 510000;
+
 function parseBitrateFlag(value: unknown): Parsed<number> {
   const bitrate = parseFiniteNumberFlag("--bitrate", value);
   if (!bitrate.ok || bitrate.value === undefined) return bitrate;
   if (!Number.isInteger(bitrate.value) || bitrate.value <= 0) {
     return { ok: false, error: "--bitrate must be a positive integer." };
+  }
+  if (bitrate.value < MIN_OPUS_BITRATE || bitrate.value > MAX_OPUS_BITRATE) {
+    return { ok: false, error: `--bitrate must be between ${MIN_OPUS_BITRATE} and ${MAX_OPUS_BITRATE} bps.` };
   }
   return bitrate;
 }

@@ -102,6 +102,16 @@ describe("resolveSayFlags: --bitrate and --sample-rate", () => {
     expect(err({ format: "ogg-opus", bitrate: "1.5" })).toBe("--bitrate must be a positive integer.");
   });
 
+  // T1-5: `--bitrate 1` parsed fine here and became E_INTERNAL exit 4 after two seconds of synthesis.
+  test("rejects a bitrate outside the documented Opus range, naming the bounds", () => {
+    const expected = "--bitrate must be between 6000 and 510000 bps.";
+    expect(err({ format: "ogg-opus", bitrate: "1" })).toBe(expected);
+    expect(err({ format: "ogg-opus", bitrate: "5999" })).toBe(expected);
+    expect(err({ format: "ogg-opus", bitrate: "510001" })).toBe(expected);
+    expect(ok({ format: "ogg-opus", bitrate: "6000" }).bitrate).toBe(6000);
+    expect(ok({ format: "ogg-opus", bitrate: "510000" }).bitrate).toBe(510000);
+  });
+
   test("rejects an unsupported sample rate", () => {
     expect(err({ format: "ogg-opus", "sample-rate": "44100" })).toBe(
       "--sample-rate must be one of 8000, 12000, 16000, 24000, 48000.",

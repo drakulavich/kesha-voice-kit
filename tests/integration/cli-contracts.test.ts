@@ -1089,6 +1089,22 @@ process.exit(99);
     }
   });
 
+  // T1-5: the range check lived only in the encoder, so `--bitrate 1` was E_INTERNAL exit 4 after synthesis.
+  test("kesha say rejects an out-of-range --bitrate before the engine runs", async () => {
+    const dir = makeTempDir("kesha-cli-contract-bitrate-");
+    const enginePath = createFailingEngine(dir);
+    const run = await runCli(["say", "t", "--format", "ogg-opus", "--bitrate", "1", "--out", join(dir, "z.ogg")], {
+      env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+    });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: --bitrate must be between 6000 and 510000 bps."],
+      stderrNotContains: ["E_INTERNAL", "fake engine should not have been invoked", "Synthesizing"],
+    });
+    expect(run.stderr.split("\n")).toHaveLength(1);
+  });
+
   test("a batch where every file failed writes nothing to stdout", async () => {
     const run = await runCli(["--json", "a.wav", "b.wav"], {
       env: isolatedEnv(),
