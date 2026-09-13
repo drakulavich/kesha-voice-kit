@@ -26,11 +26,11 @@
 
 ## 4. Channels and language (TS)
 
-- [ ] 4.1 S1-2 `--verbose` diagnostics on stderr
-- [ ] 4.2 S1-3 language-mismatch warning prints under `--quiet`
-- [ ] 4.3 S3-F2 `record` result lines print under `--quiet`
-- [ ] 4.4 S11-1 `--lang` compares case-folded primary subtags
-- [ ] 4.5 S11-2 / S11-4 `LANG_ROUTING_FLOOR` for `lang`; raw fields unchanged; `--verbose` names the floor
+- [x] 4.1 S1-2 `--verbose` diagnostics on stderr
+- [x] 4.2 S1-3 language-mismatch warning prints under `--quiet`
+- [x] 4.3 S3-F2 `record` result lines print under `--quiet`
+- [x] 4.4 S11-1 `--lang` compares case-folded primary subtags
+- [x] 4.5 S11-2 / S11-4 `LANG_ROUTING_FLOOR` for `lang`; raw fields unchanged; `--verbose` names the floor
 
 ## 5. Diagnostics and Stats (TS)
 
