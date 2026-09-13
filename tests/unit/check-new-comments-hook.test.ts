@@ -97,6 +97,13 @@ describe("check-new-comments hook", () => {
     expect(await decision(work, file)).toBe("block");
   });
 
+  it("does not open a block on a /* inside a glob, string or regex literal", async () => {
+    const work = await gitRepoWithRemote();
+    const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");
+    await Bun.write(file, 'const files = new Bun.Glob("src/**/*.ts");\nconst marker = "/*";\nconst re = /\\/*x/;\nexport const a = 1;\nexport const b = 2;\n');
+    expect(await decision(work, file)).toBeNull();
+  });
+
   it("allows one-line comments, /** doc contracts and SAFETY blocks", async () => {
     const work = await gitRepoWithRemote();
     const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");
