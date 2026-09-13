@@ -11,8 +11,9 @@ interface NpmView {
   dist?: { integrity?: unknown; attestations?: { provenance?: { predicateType?: unknown } } };
 }
 
-export function assertNpmReleaseMetadata(raw: string, pkg: string, version: string): { version: string; provenance: string } {
+export function assertNpmReleaseMetadata(raw: string, pkg: string, version: string, exitCode = 0): { version: string; provenance: string } {
   const spec = `${pkg}@${version}`;
+  if (exitCode !== 0) throw new Error(`${spec}: npm view exited ${exitCode}; the registry answer above is not trusted`);
   let doc: NpmView;
   try {
     doc = JSON.parse(raw);
@@ -42,7 +43,7 @@ if (import.meta.main) {
   // The whole document: a comma-joined field list makes npm print nothing at all (v1.29.1-cli, v1.30.0-cli lanes).
   const view = Bun.spawnSync(["npm", "view", `${pkg}@${version}`, "--json"], { stdout: "pipe", stderr: "inherit" });
   try {
-    const { provenance } = assertNpmReleaseMetadata(view.stdout.toString(), pkg, version);
+    const { provenance } = assertNpmReleaseMetadata(view.stdout.toString(), pkg, version, view.exitCode ?? 1);
     console.log(`ok: ${pkg}@${version} on the registry with ${provenance}`);
   } catch (e) {
     console.error(`FAIL: ${e instanceof Error ? e.message : String(e)}`);
