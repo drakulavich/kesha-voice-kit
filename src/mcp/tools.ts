@@ -67,7 +67,7 @@ export function registerTools(server: McpServer): void {
       const outPath = allocAudioPath(fmt);
       try {
         // An MCP caller has no stderr to read: the voice it is told is its only record (#942).
-        const resolvedVoice = (await resolveSayVoice(voice, undefined, text, extra.signal)) ?? DEFAULT_VOICE_ID;
+        const resolvedVoice = (await resolveSayVoice(voice, undefined, text, { signal: extra.signal })) ?? DEFAULT_VOICE_ID;
         await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath, signal: extra.signal });
         chmodSync(outPath, 0o600);
         const bytes = statSync(outPath).size;

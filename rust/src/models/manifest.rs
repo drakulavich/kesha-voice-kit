@@ -1169,6 +1169,19 @@ mod manifest_tests {
         assert_plan_paths(&plan, "voskRu", VOSK_RU_FILES);
 
         #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        {
+            assert_plan_paths(&plan, "aneEn", ANE_EN_FILES);
+            assert_plan_paths(&plan, "kokoroG2p", KOKORO_G2P_FILES);
+            assert_plan_paths(&plan, "aneVoices", ANE_KOKORO_VOICES);
+            assert_plan_paths(&plan, "aneZh", ANE_ZH_FILES);
+            assert_plan_paths(&plan, "aneZhG2p", ANE_ZH_G2P_ASSETS);
+        }
+
+        #[cfg(all(
             feature = "tts",
             not(all(
                 feature = "system_kokoro",

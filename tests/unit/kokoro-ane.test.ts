@@ -6,6 +6,7 @@ import {
   KOKORO_ANE_EN_REQUIRED,
   KOKORO_G2P_REQUIRED,
   kokoroAneComponents,
+  kokoroTtsLanguages,
 } from "../../src/kokoro-ane";
 import { collectDoctorReport } from "../../src/doctor";
 import { renderInstallPlan } from "../../src/install-plan";
@@ -44,6 +45,7 @@ const freshAne = (cacheRoot: string) =>
 const legacyAne = (home: string) =>
   join(home, ".cache", "fluidaudio", "Models", "kokoro-82m-coreml", "ANE");
 const g2p = (home: string) => join(home, ".cache", "fluidaudio", "Models", "kokoro");
+const aneZh = (cacheRoot: string) => join(cacheRoot, "fluidaudio", "kokoro-82m-coreml", "ANE-zh");
 
 describe("kokoroAneComponents", () => {
   test("a machine that never installed TTS reports both sets absent", () => {
@@ -177,5 +179,66 @@ describe("Rust/TS Kokoro ANE manifest agreement", () => {
     expect(rust).toContain("stage_into(&fluidaudio_ane_kokoro_dir()?, ANE_EN_FILES, no_cache)?;");
     expect(rust).toContain("stage_into(&fluidaudio_kokoro_g2p_dir()?, KOKORO_G2P_FILES, no_cache)?;");
     expect(rust).toContain(`fluidaudio_kokoro_cache_dir()?.join("ANE")`);
+  });
+});
+
+// T2-7: `missing: []` read as whole while seven languages could not synthesize at all.
+describe("staged Kokoro languages", () => {
+  test("an English-only staging names en as staged and the rest as missing", () => {
+    withHome((home, cacheRoot) => {
+      stage(freshAne(cacheRoot), KOKORO_ANE_EN_REQUIRED);
+      write(join(freshAne(cacheRoot), "am_michael.bin"));
+      stage(g2p(home), KOKORO_G2P_REQUIRED);
+
+      const ane = byLabel(home, cacheRoot)["TTS (Kokoro ANE)"]!;
+      expect(ane.missing).toEqual([]);
+      expect(ane.languagesStaged).toEqual(["en"]);
+      expect(kokoroTtsLanguages({ ...DARWIN, homeDir: home, cacheRoot })).toEqual({
+        staged: ["en"],
+        missing: ["es", "fr", "hi", "it", "ja", "pt", "zh"],
+      });
+    });
+  });
+
+  test("a language pack staged beside the chain is reported as that language", () => {
+    withHome((home, cacheRoot) => {
+      stage(freshAne(cacheRoot), KOKORO_ANE_EN_REQUIRED);
+      write(join(freshAne(cacheRoot), "em_alex.bin"));
+      write(join(freshAne(cacheRoot), "jm_kumo.bin"));
+
+      expect(kokoroTtsLanguages({ ...DARWIN, homeDir: home, cacheRoot }).staged).toEqual([
+        "en",
+        "es",
+        "ja",
+      ]);
+    });
+  });
+
+  // Mandarin packs live in the ANE-zh sibling, so a scan of the English bundle alone misses them.
+  test("Mandarin is staged from its own bundle's voices directory", () => {
+    withHome((home, cacheRoot) => {
+      write(join(aneZh(cacheRoot), "voices", "zm_050.bin"));
+
+      const languages = kokoroTtsLanguages({ ...DARWIN, homeDir: home, cacheRoot });
+      expect(languages.staged).toEqual(["zh"]);
+      expect(languages.missing).not.toContain("zh");
+    });
+  });
+
+  test("a machine with no TTS install has every Kokoro language missing", () => {
+    withHome((home, cacheRoot) => {
+      expect(kokoroTtsLanguages({ ...DARWIN, homeDir: home, cacheRoot })).toEqual({
+        staged: [],
+        missing: ["en", "es", "fr", "hi", "it", "ja", "pt", "zh"],
+      });
+    });
+  });
+
+  test("no Kokoro language story on a platform whose engine has no FluidAudio", () => {
+    withHome((home, cacheRoot) => {
+      expect(
+        kokoroTtsLanguages({ platform: "linux", arch: "x64", homeDir: home, cacheRoot }),
+      ).toEqual({ staged: [], missing: [] });
+    });
   });
 });

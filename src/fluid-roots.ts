@@ -71,6 +71,11 @@ export function kokoroAneDir(options: FluidRootsOptions = {}): string {
   return join(kokoroBundleRoot(options), "ANE");
 }
 
+/** The Mandarin sibling bundle; mirrors `models/paths.rs::fluidaudio_ane_zh_kokoro_dir`. */
+export function kokoroAneZhDir(options: FluidRootsOptions = {}): string {
+  return join(kokoroBundleRoot(options), "ANE-zh");
+}
+
 /**
  * FluidAudio's own VAD copy, distinct from the Silero model Kesha pins under `<cache>/models`.
  * The bridge passes no directory for VAD, so this stays put whatever the models root is —

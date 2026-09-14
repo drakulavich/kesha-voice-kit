@@ -12,9 +12,10 @@ import {
 } from "./engine-health";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
+import { installedVoiceIds } from "./voice-inventory";
 import { engineVersion, packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
-import { kokoroAneComponents } from "./kokoro-ane";
+import { kokoroAneComponents, kokoroTtsLanguages } from "./kokoro-ane";
 import { isCoremlBackend } from "./fluid-asr-cache";
 import {
   fluidExternalRoots,
@@ -66,6 +67,15 @@ interface OptionalComponent extends PathSummary {
   runnable?: boolean;
   /** Staged asset sets only: required entries that are not on disk (#831). */
   missing?: string[];
+  /** Staged asset sets only: Kokoro languages with a voice pack under this path (T2-7). */
+  languagesStaged?: string[];
+}
+
+/** What the synthesis path can actually speak with, which no other section of the report states (T2-7). */
+export interface DoctorTts {
+  voices: string[];
+  languagesStaged: string[];
+  languagesMissing: string[];
 }
 
 type DoctorDiagnosticLogStatus = DiagnosticLogStatus & { error?: string };
@@ -120,6 +130,7 @@ export interface DoctorReport {
     grandTotalBytes: number;
   };
   optionalComponents: OptionalComponent[];
+  tts: DoctorTts;
   stats: StatsStatus | (Partial<StatsStatus> & { error: string });
   diagnosticLogs: DoctorDiagnosticLogStatus;
   env: Record<string, string | null>;
@@ -327,6 +338,7 @@ async function collectOptionalComponents(
       exists: c.exists,
       sizeBytes: c.sizeBytes,
       missing: c.missing,
+      languagesStaged: c.languagesStaged,
     })),
     {
       // Diarization (#199) and Kokoro (#207) run in-engine now (native
@@ -340,6 +352,15 @@ async function collectOptionalComponents(
     ...(await Promise.all(SIDECAR_COMPONENTS.map((spec) => sidecarComponent(spec, sidecarDir)))),
   ];
   return components.map((component) => redactComponent(component, redact));
+}
+
+async function collectTts(homeDir?: string): Promise<DoctorTts> {
+  const languages = kokoroTtsLanguages({ homeDir, cacheRoot: keshaCacheDir() });
+  return {
+    voices: await installedVoiceIds(),
+    languagesStaged: languages.staged,
+    languagesMissing: languages.missing,
+  };
 }
 
 function collectStats(redact: boolean): DoctorReport["stats"] {
@@ -413,6 +434,7 @@ export async function collectDoctorReport(
     engine,
     cache: collectCache(redact, engine.capabilities?.backend, options.homeDir),
     optionalComponents: await collectOptionalComponents(redact, options.homeDir),
+    tts: await collectTts(options.homeDir),
     stats: collectStats(redact),
     diagnosticLogs: collectDiagnosticLogs(redact),
     env: collectEnv(redact),
@@ -510,6 +532,16 @@ function formatOptionalSection(components: DoctorReport["optionalComponents"]): 
   return lines;
 }
 
+function formatTtsSection(tts: DoctorTts): string[] {
+  return [
+    "",
+    "TTS:",
+    `  Voices: ${tts.voices.length === 0 ? "none" : tts.voices.join(", ")}`,
+    `  Languages staged: ${tts.languagesStaged.length === 0 ? "none" : tts.languagesStaged.join(", ")}`,
+    `  Languages missing a voice pack: ${tts.languagesMissing.length === 0 ? "none" : tts.languagesMissing.join(", ")}`,
+  ];
+}
+
 function formatStatsSection(stats: DoctorReport["stats"]): string[] {
   const lines = ["", "Stats:"];
   if ("error" in stats) {
@@ -562,6 +594,7 @@ export function formatDoctorReport(report: DoctorReport): string {
     "",
     ...formatCacheSection(report.cache),
     ...formatOptionalSection(report.optionalComponents),
+    ...formatTtsSection(report.tts),
     ...formatStatsSection(report.stats),
     ...formatDiagnosticLogsSection(report.diagnosticLogs),
     ...formatPathsSection(report.paths),
