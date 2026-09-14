@@ -7,6 +7,7 @@
 
 pub(super) mod acronym;
 pub(super) mod letter_table;
+pub mod numbers;
 
 use crate::tts::ssml::Segment;
 
@@ -45,7 +46,7 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
                 let stripped = crate::tts::strip_emphasis_markers(content);
                 vec![Segment::Text(stripped)]
             }
-            Segment::Text(t) => acronym::expand_to_segments(&t, auto_expand),
+            Segment::Text(t) => acronym::expand_to_segments(&numbers::verbalize(&t), auto_expand),
             Segment::ProsodyRate { rate, content } => vec![Segment::ProsodyRate {
                 rate,
                 content: normalize_segments(content, auto_expand),
@@ -63,6 +64,20 @@ mod tests {
     #[test]
     fn ane_feed_is_the_whole_table() {
         assert_eq!(ane_ipa_overrides(), acronym::IPA_LEXICON.to_vec());
+    }
+
+    #[test]
+    fn currency_and_comma_grouped_amounts_are_spoken_before_g2p() {
+        // Both Kokoro G2Ps drop the sign and lose a comma-grouped amount entirely.
+        let out = normalize_segments(vec![Segment::Text("He paid $1,234.56".to_string())], false);
+        let spoken = match out.as_slice() {
+            [Segment::Text(t)] => t.clone(),
+            other => panic!("expected one text segment, got {other:?}"),
+        };
+        assert_eq!(
+            spoken,
+            "He paid one thousand two hundred thirty-four dollars and fifty-six cents"
+        );
     }
 
     #[test]

@@ -139,12 +139,14 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             say_avspeech(opts.text, voice_id, speed, opts.format, opts.ssml)
         }
         EngineChoice::Vosk {
+            voice_id,
             model_dir,
             speaker_id,
             speed,
         } => say_vosk(
             &mut sessions::VoskCache::new(),
             opts.text,
+            voice_id,
             model_dir,
             speaker_id,
             speed,
@@ -254,6 +256,7 @@ fn say_avspeech(
 pub(crate) fn say_vosk(
     vosk: &mut sessions::VoskCache,
     text: &str,
+    voice_id: &str,
     model_dir: &Path,
     speaker_id: u32,
     speed: f32,
@@ -265,6 +268,7 @@ pub(crate) fn say_vosk(
         return synth_segments_vosk(
             vosk,
             text,
+            voice_id,
             model_dir,
             speaker_id,
             speed,
@@ -275,6 +279,7 @@ pub(crate) fn say_vosk(
     say_with_vosk(
         vosk,
         text,
+        voice_id,
         model_dir,
         speaker_id,
         speed,
@@ -662,6 +667,35 @@ impl SegmentSink for FluidKokoroSink<'_> {
     }
 }
 
+/// The words an SSML utterance will actually speak, so a script gate counts those rather than the Latin tag names wrapping them.
+fn speakable_text(segments: &[ssml::Segment]) -> String {
+    fn walk(segments: &[ssml::Segment], out: &mut String) {
+        for segment in segments {
+            match segment {
+                ssml::Segment::Text(t)
+                | ssml::Segment::Spell(t)
+                | ssml::Segment::Ipa { text: t, .. }
+                | ssml::Segment::Emphasis { content: t, .. } => {
+                    out.push_str(t);
+                    out.push(' ');
+                }
+                ssml::Segment::ProsodyRate { content, .. } => walk(content, out),
+                ssml::Segment::Break(_) => {}
+            }
+        }
+    }
+    let mut out = String::new();
+    walk(segments, &mut out);
+    out
+}
+
+fn ensure_script_supported(voice_id: &str, text: &str) -> Result<(), TtsError> {
+    super::script::ensure_supported(voice_id, text).map_err(|e| TtsError::Coded {
+        code: crate::errors::code_of(&e),
+        message: format!("{e}"),
+    })
+}
+
 fn say_with_kokoro(
     sess: &mut sessions::KokoroSession,
     ipa: &str,
@@ -698,15 +732,18 @@ fn say_with_kokoro(
     encode_or_fail(&audio, kokoro::SAMPLE_RATE, format)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn say_with_vosk(
     vosk: &mut sessions::VoskCache,
     text: &str,
+    voice_id: &str,
     model_dir: &Path,
     speaker_id: u32,
     speed: f32,
     format: OutputFormat,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
+    ensure_script_supported(voice_id, text)?;
     let normalized = ru::expand_text(text, expand_abbrev);
     let (audio, sample_rate) = vosk
         .infer(model_dir, &normalized, speaker_id, speed)
@@ -718,6 +755,7 @@ fn say_with_vosk(
 fn synth_segments_vosk(
     vosk: &mut sessions::VoskCache,
     text: &str,
+    voice_id: &str,
     model_dir: &Path,
     speaker_id: u32,
     speed: f32,
@@ -734,6 +772,7 @@ fn synth_segments_vosk(
             message: "SSML had no speakable content".into(),
         });
     }
+    ensure_script_supported(voice_id, &speakable_text(&segments))?;
     let segments = ru::normalize_segments(segments, expand_abbrev);
     let mut sink = VoskSink {
         cache: vosk,
@@ -836,6 +875,45 @@ fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow:
 mod tests {
     use super::*;
 
+    #[test]
+    fn vosk_refuses_an_unpronounceable_script_before_it_loads_a_model() {
+        // The Vosk arm had no script gate at all, so Latin on a Russian voice became nonsense words (#492).
+        let err = say(SayOptions {
+            text: "Install Kesha Voice Kit today",
+            lang: "ru",
+            engine: EngineChoice::Vosk {
+                voice_id: "ru-vosk-m02",
+                model_dir: Path::new("/nonexistent/vosk-ru"),
+                speaker_id: 0,
+                speed: 1.0,
+            },
+            ssml: false,
+            format: OutputFormat::Wav,
+            expand_abbrev: true,
+        })
+        .expect_err("dominant Latin on a Cyrillic voice is refused");
+        assert_eq!(err.code(), crate::errors::ErrorCode::ScriptUnsupported);
+    }
+
+    #[test]
+    fn ssml_markup_is_not_counted_as_foreign_text() {
+        // The tag names are Latin and would outvote the Russian they wrap.
+        let err = say(SayOptions {
+            text: "<speak>Привет</speak>",
+            lang: "ru",
+            engine: EngineChoice::Vosk {
+                voice_id: "ru-vosk-m02",
+                model_dir: Path::new("/nonexistent/vosk-ru"),
+                speaker_id: 0,
+                speed: 1.0,
+            },
+            ssml: true,
+            format: OutputFormat::Wav,
+            expand_abbrev: true,
+        })
+        .expect_err("no model is staged, so it cannot succeed");
+        assert_ne!(err.code(), crate::errors::ErrorCode::ScriptUnsupported);
+    }
     #[test]
     fn prosody_rate_multiplies_and_clamps() {
         let cases = [

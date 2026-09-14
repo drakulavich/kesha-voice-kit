@@ -228,6 +228,11 @@ function recordOutputArtifact(
   return { outputFormat: opts.format ?? "wav", outputSizeBytes: audio.byteLength };
 }
 
+/** citty's parser reads `--no-expand-abbrev` as the negation of a boolean `expand-abbrev`, so the declared key is never set (same trap `--no-vad` works around in main.ts). */
+export function noExpandAbbrevRequested(args: Record<string, unknown>, rawArgs: string[]): boolean {
+  return rawArgs.includes("--no-expand-abbrev") || args["no-expand-abbrev"] === true;
+}
+
 async function synthesizeAndEmit(
   opts: SayOpts,
   verbose: boolean,
@@ -331,7 +336,7 @@ export const sayCommand = defineCommand({
       default: false,
     },
   },
-  async run({ args }) {
+  async run({ args, rawArgs }) {
     if (args.debug) log.debugEnabled = true;
     if (args["list-voices"]) {
       let ids: string[];
@@ -384,7 +389,7 @@ export const sayCommand = defineCommand({
       format: flags.format,
       bitrate: flags.bitrate,
       sampleRate: flags.sampleRate,
-      noExpandAbbrev: Boolean(args["no-expand-abbrev"]),
+      noExpandAbbrev: noExpandAbbrevRequested(args, rawArgs),
     };
 
     const outcome = await runCommandSession(

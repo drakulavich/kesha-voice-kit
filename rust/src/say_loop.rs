@@ -284,6 +284,7 @@ fn handle_vosk(
     tts::say::say_vosk(
         &mut state.sessions.vosk,
         &req.text,
+        &req.voice,
         model_dir,
         speaker_id,
         req.rate,

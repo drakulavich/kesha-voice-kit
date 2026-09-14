@@ -30,6 +30,30 @@ if (outIndex >= 0) {
   return enginePath;
 }
 
+/** Warns on `--no-expand-abbrev` the way the real engine does, so the test sees whether the flag arrived. */
+async function createAbbrevWarningEngine(dir: string): Promise<string> {
+  mkdirSync(dir, { recursive: true });
+  const enginePath = `${dir}/kesha-engine`;
+  await Bun.write(enginePath, `#!/usr/bin/env bun
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ features: ["tts", "tts.ru_acronym_expansion", "tts.en_acronym_expansion"] }))});
+  process.exit(0);
+}
+await new Response(Bun.stdin.stream()).text();
+if (args.includes("--no-expand-abbrev")) {
+  process.stderr.write(JSON.stringify({
+    kind: "warn",
+    code: "W_GENERIC",
+    message: "warning: --no-expand-abbrev has no effect with FluidAudio Kokoro voices",
+  }) + "\\n");
+}
+await Bun.write(args[args.indexOf("--out") + 1], new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
+`);
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
 async function createFailingEngine(dir: string): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const enginePath = `${dir}/kesha-engine-fail-on-use`;
@@ -181,6 +205,31 @@ describe("kesha say (CLI)", () => {
 
     expect(stderr).toMatch(/Saved .*reply\.wav \(\d+ms\)/);
     expect(stderr).not.toContain("TTS time:");
+  });
+
+  it("--no-expand-abbrev reaches the engine and its ignored-flag warning reaches the user", async () => {
+    const dir = `/tmp/kesha-abbrev-engine-${Date.now()}-${Math.random()}`;
+    const enginePath = await createAbbrevWarningEngine(dir);
+    const outPath = `${dir}/reply.wav`;
+    const proc = spawn([
+      "bun",
+      CLI_PATH,
+      "say",
+      "--voice",
+      "en-am_michael",
+      "--no-expand-abbrev",
+      "--out",
+      outPath,
+      "The FBI is investigating.",
+    ], {
+      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(await proc.exited).toBe(0);
+    const stderr = await new Response(proc.stderr).text();
+    expect(stderr).toContain("warning: --no-expand-abbrev has no effect with FluidAudio Kokoro voices");
   });
 
   it("rejects invalid flags before spawning the engine", async () => {
