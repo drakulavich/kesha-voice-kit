@@ -36,7 +36,7 @@ describe("resolveSayVoice native-script ja/hi routing", () => {
     "macos-com.apple.voice.super-compact.hi-IN.Lekha",
     "macos-com.apple.voice.super-compact.ja-JP.Kyoko",
   ];
-  const darwin = (listVoices: () => Promise<string[]>) =>
+  const darwin = (listVoices: (signal?: AbortSignal) => Promise<string[]>) =>
     ({ platform: "darwin", arch: "arm64", listVoices }) as const;
   const installed = darwin(async () => INSTALLED);
 
@@ -50,6 +50,17 @@ describe("resolveSayVoice native-script ja/hi routing", () => {
     expect(await resolveSayVoice(undefined, "hi", "नमस्ते दुनिया", installed)).toBe(
       "macos-com.apple.voice.super-compact.hi-IN.Lekha",
     );
+  });
+
+  test("a cancelled request does not wait on the voice inventory before falling back", async () => {
+    const cancelled = {
+      ...darwin(async (signal?: AbortSignal) => {
+        if (signal?.aborted) throw new Error("aborted");
+        return INSTALLED;
+      }),
+      signal: AbortSignal.abort(),
+    };
+    expect(await resolveSayVoice(undefined, "ja", "こんにちは世界", cancelled)).toBe("ja-jm_kumo");
   });
 
   test("romanized Japanese still reaches the Kokoro voice that can read it", async () => {
