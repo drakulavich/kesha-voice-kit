@@ -181,6 +181,37 @@ fn a_fifo_out_passes_the_pre_flight_without_blocking_on_a_reader() {
     assert_ne!(status.code(), Some(2), "a fifo --out must not be refused");
 }
 
+/// The probe may remove only what it created itself: a path that already resolves to something (here a
+/// symlink whose target is not there yet) is another party's, so `--out` through it must leave it alone.
+#[cfg(unix)]
+#[test]
+fn the_out_probe_never_removes_a_path_it_did_not_create() {
+    let tmp = tempfile::tempdir().unwrap();
+    let target = tmp.path().join("target.wav");
+    let link = tmp.path().join("speech.wav");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+    let out = say(
+        &[
+            "Hello there",
+            "--voice",
+            "xx-nope",
+            "--out",
+            link.to_str().unwrap(),
+        ],
+        tmp.path(),
+    );
+    assert_ne!(
+        out.status.code(),
+        Some(2),
+        "a writable path behind a symlink passes the probe: {:?}",
+        out
+    );
+    assert!(
+        std::fs::symlink_metadata(&link).is_ok(),
+        "the probe deleted the caller's symlink"
+    );
+}
+
 #[test]
 fn a_refused_run_neither_truncates_nor_creates_the_out_file() {
     let tmp = tempfile::tempdir().unwrap();
