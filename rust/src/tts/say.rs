@@ -28,6 +28,21 @@ fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
     vec![0.0_f32; n]
 }
 
+/// Engine-safe playback rate: Vosk and Kokoro both honor rate within ~7% of theoretical at these endpoints (#236).
+pub const RATE_RANGE: std::ops::RangeInclusive<f32> = 0.5..=2.0;
+
+/// Refuse a `--rate` no engine can honour before one is chosen: FluidAudio's Swift traps on 0 (T4-3).
+pub fn validate_rate(rate: f32) -> Result<(), String> {
+    if rate.is_finite() && RATE_RANGE.contains(&rate) {
+        return Ok(());
+    }
+    Err(format!(
+        "--rate must be between {:.1} and {:.1} (got {rate})",
+        RATE_RANGE.start(),
+        RATE_RANGE.end()
+    ))
+}
+
 /// Saturating composition of the CLI `--rate` flag with an SSML
 /// `<prosody rate>` multiplier. Both factors are unit-less multipliers
 /// against the engine's default rate; the result is clamped to the
@@ -43,20 +58,6 @@ fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
 /// Emits a `warn_once` to stderr the first time a clamp diverges from
 /// the raw product — without that line, an SSML `rate="300%"` capped to
 /// `2.0` looks indistinguishable from a clean 2× rate (#267 F9).
-pub const RATE_RANGE: std::ops::RangeInclusive<f32> = 0.5..=2.0;
-
-/// Refuse a `--rate` no engine can honour before one is chosen: FluidAudio's Swift traps on 0 (T4-3).
-pub fn validate_rate(rate: f32) -> Result<(), String> {
-    if rate.is_finite() && RATE_RANGE.contains(&rate) {
-        return Ok(());
-    }
-    Err(format!(
-        "--rate must be between {:.1} and {:.1} (got {rate})",
-        RATE_RANGE.start(),
-        RATE_RANGE.end()
-    ))
-}
-
 fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     let raw = cli_rate * ssml_rate;
     let clamped = raw.clamp(*RATE_RANGE.start(), *RATE_RANGE.end());
