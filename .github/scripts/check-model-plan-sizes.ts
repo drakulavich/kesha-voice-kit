@@ -174,6 +174,42 @@ export function parseManifestEntries(source: string): ManifestEntry[] {
   return entries;
 }
 
+/**
+ * Plan groups whose `relPath` is unique only inside one manifest const. The English and
+ * Mandarin ANE bundles pin 36 of the same rel_paths to different URLs, so the deduped map
+ * would measure one bundle against the other (#1096).
+ */
+export const GROUP_MANIFEST_CONST: Record<string, string> = {
+  aneEn: "ANE_EN_FILES",
+  aneVoices: "ANE_KOKORO_VOICES",
+  aneZh: "ANE_ZH_FILES",
+  aneZhG2p: "ANE_ZH_G2P_ASSETS",
+  kokoroG2p: "KOKORO_G2P_FILES",
+};
+
+/** One `&[ModelFile]` const with the macro definitions its entries expand through. */
+function manifestConstSource(source: string, name: string): string | null {
+  const marker = `const ${name}: &[ModelFile] = &[`;
+  const at = source.indexOf(marker);
+  if (at === -1) return null;
+  const end = source.indexOf("\n];", at);
+  if (end === -1) return null;
+  let macros = "";
+  for (const decl of source.matchAll(/macro_rules!\s+\w+\s*\{/g)) {
+    const body = balanced(source, decl.index + decl[0].length - 1, "{", "}");
+    if (body) macros += `${decl[0]}${body.inner}}\n`;
+  }
+  return `${macros}\n${source.slice(at, end + 3)}`;
+}
+
+/** The URL map a plan group must be resolved against, or null when the whole-source map is right for it. */
+export function manifestUrlsForGroup(source: string, group: string): Map<string, string> | null {
+  const constName = GROUP_MANIFEST_CONST[group.split(".")[0] ?? ""];
+  if (!constName) return null;
+  const scoped = manifestConstSource(source, constName);
+  return scoped === null ? null : parseManifestUrls(scoped);
+}
+
 /** `rel_path` → `url` for every `ModelFile` the models sources pin, `cfg` gating included. */
 export function parseManifestUrls(source: string): Map<string, string> {
   const urls = new Map<string, string>();
@@ -297,9 +333,15 @@ if (import.meta.main) {
   const manifestPath = manifestPaths.join(", ");
 
   const entries = flattenPlan(JSON.parse(readFileSync(planPath, "utf8")));
-  const urls = parseManifestUrls(manifestPaths.map((path) => readFileSync(path, "utf8")).join("\n"));
+  const source = manifestPaths.map((path) => readFileSync(path, "utf8")).join("\n");
+  const urls = parseManifestUrls(source);
+  const scoped = new Map<string, Map<string, string> | null>();
+  const urlFor = (entry: PlanEntry) => {
+    if (!scoped.has(entry.group)) scoped.set(entry.group, manifestUrlsForGroup(source, entry.group));
+    return (scoped.get(entry.group) ?? urls).get(entry.relPath);
+  };
 
-  const unresolved = entries.filter((entry) => !urls.has(entry.relPath));
+  const unresolved = entries.filter((entry) => urlFor(entry) === undefined);
   if (unresolved.length > 0) {
     console.error(
       `FAIL: ${unresolved.length} plan entr${unresolved.length === 1 ? "y has" : "ies have"} no URL in ${manifestPath}:`,
@@ -311,7 +353,7 @@ if (import.meta.main) {
 
   const verdicts: Verdict[] = [];
   for (const entry of entries) {
-    const verdict = compareEntry(entry, await liveSize(urls.get(entry.relPath)!));
+    const verdict = compareEntry(entry, await liveSize(urlFor(entry)!));
     console.log(`${verdict.status === "ok" ? "ok" : verdict.status.toUpperCase()}: ${verdict.message}`);
     verdicts.push(verdict);
   }

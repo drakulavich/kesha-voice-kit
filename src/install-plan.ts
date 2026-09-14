@@ -7,7 +7,8 @@ import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { engineVersion, packageVersion } from "./package-info";
-import { KOKORO_ANE_NOTE, kokoroAneComponents } from "./kokoro-ane";
+import { KOKORO_ANE_NOTE, kokoroAneComponents, voicePackLanguage } from "./kokoro-ane";
+import { kokoroAneDir, kokoroAneZhDir, kokoroG2pDir } from "./fluid-roots";
 import modelPlan from "../model-plan.json" with { type: "json" };
 import {
   FLUID_ASR_CACHE_NOTE,
@@ -34,6 +35,11 @@ interface PlanFile {
 
 interface ModelPlan {
   asr: PlanFile[];
+  aneEn: PlanFile[];
+  kokoroG2p: PlanFile[];
+  aneVoices: PlanFile[];
+  aneZh: PlanFile[];
+  aneZhG2p: PlanFile[];
   langId: PlanFile[];
   vad: PlanFile[];
   g2pCharsiu: PlanFile[];
@@ -76,7 +82,22 @@ const {
   kokoroVoices: KOKORO_VOICE_FILES,
   voskRu: VOSK_RU_FILES,
   diarize: DIARIZE_FILES,
+  aneEn: ANE_EN_FILES,
+  kokoroG2p: KOKORO_G2P_FILES,
+  aneVoices: ANE_VOICE_FILES,
+  aneZh: ANE_ZH_FILES,
+  aneZhG2p: ANE_ZH_G2P_FILES,
 } = plan;
+
+/** Languages the English ANE variant serves; mirrors `models/staging.rs::ANE_ENGLISH_VARIANT_LANGS`. */
+const ANE_ENGLISH_VARIANT_LANGS = ["en", "es", "fr", "hi", "it", "ja", "pt"];
+
+function aneVoicePacks(langs: string[]): PlanFile[] {
+  return ANE_VOICE_FILES.filter((file) => {
+    const lang = voicePackLanguage(file.relPath);
+    return lang !== undefined && langs.includes(lang);
+  });
+}
 
 function kokoroPlanFiles(langs: string[]): PlanFile[] {
   const files: PlanFile[] = [KOKORO_GRAPH_FILE];
@@ -124,7 +145,7 @@ function filesCached(cacheRoot: string, files: PlanFile[]): boolean {
 }
 
 function bundleComponent(input: {
-  cacheRoot: string;
+  root: string;
   name: string;
   source: string;
   files: PlanFile[];
@@ -135,7 +156,7 @@ function bundleComponent(input: {
     name: input.name,
     source: input.source,
     sizeBytes: sumFiles(input.files),
-    cached: filesCached(input.cacheRoot, input.files),
+    cached: filesCached(input.root, input.files),
     refresh: input.refresh,
     note: input.note,
   };
@@ -245,6 +266,54 @@ function buildTtsComponents(
   const warmups: PlanWarmup[] = [];
 
   if (isDarwinArm64()) {
+    const aneDir = kokoroAneDir({ cacheRoot });
+    if (ttsLangs.some((l) => ANE_ENGLISH_VARIANT_LANGS.includes(l))) {
+      components.push(
+        bundleComponent({
+          root: aneDir,
+          name: "TTS Kokoro ANE chain",
+          source: "FluidAudio bundle",
+          files: ANE_EN_FILES,
+          refresh: noCache,
+          note: "the 7-stage CoreML chain every non-Mandarin ANE voice runs through",
+        }),
+      );
+      components.push(
+        bundleComponent({
+          root: kokoroG2pDir(),
+          name: "TTS Kokoro G2P (ANE)",
+          source: "FluidAudio bundle",
+          files: KOKORO_G2P_FILES,
+          refresh: noCache,
+          note: "shared BART G2P and the Misaki lexicon",
+        }),
+      );
+      const packs = aneVoicePacks(ttsLangs);
+      if (packs.length > 0) {
+        components.push(
+          bundleComponent({
+            root: aneDir,
+            name: "TTS Kokoro ANE voice packs",
+            source: "FluidAudio bundle",
+            files: packs,
+            refresh: noCache,
+            note: `voices for ${ttsLangs.filter((l) => ANE_ENGLISH_VARIANT_LANGS.includes(l)).join(", ")}`,
+          }),
+        );
+      }
+    }
+    if (ttsLangs.includes("zh")) {
+      components.push(
+        bundleComponent({
+          root: kokoroAneZhDir({ cacheRoot }),
+          name: "TTS Kokoro ANE Mandarin bundle",
+          source: "FluidAudio bundle",
+          files: [...ANE_ZH_FILES, ...ANE_ZH_G2P_FILES],
+          refresh: noCache,
+          note: "Mandarin runs its own CoreML chain and pinyin dictionaries",
+        }),
+      );
+    }
     if (wantsAnyKokoro) {
       const paths = kokoroAneComponents({ cacheRoot }).map((c) => c.path);
       warmups.push({
@@ -256,7 +325,7 @@ function buildTtsComponents(
     if (wantsOnnxKokoro) {
       components.push(
         bundleComponent({
-          cacheRoot,
+          root: cacheRoot,
           name: "TTS Kokoro graph + voices",
           source: "model cache",
           files: kokoroPlanFiles(ttsLangs),
@@ -268,7 +337,7 @@ function buildTtsComponents(
     if (wantsG2p) {
       components.push(
         bundleComponent({
-          cacheRoot,
+          root: cacheRoot,
           name: "G2P CharsiuG2P byt5-tiny",
           source: "model cache",
           files: G2P_CHARSIU_FILES,
@@ -283,7 +352,7 @@ function buildTtsComponents(
   if (wantsRu) {
     components.push(
       bundleComponent({
-        cacheRoot,
+        root: cacheRoot,
         name: "TTS Vosk RU",
         source: "model cache",
         files: VOSK_RU_FILES,
@@ -308,7 +377,7 @@ function assembleComponents(input: {
 }): PlanComponent[] {
   const { cacheRoot, noCache, options } = input;
   const modelBundle = (name: string, files: PlanFile[], note: string) =>
-    bundleComponent({ cacheRoot, name, source: "model cache", files, refresh: noCache, note });
+    bundleComponent({ root: cacheRoot, name, source: "model cache", files, refresh: noCache, note });
 
   const engineCached = engineIsCached(input.binPath, input.version);
   const components: PlanComponent[] = [

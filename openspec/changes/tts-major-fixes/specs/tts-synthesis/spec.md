@@ -300,7 +300,8 @@ Engine uses its Default voice, `en-am_michael`. A `--lang` value with no
 mapped voice SHALL resolve to the engine default rather than re-running
 detection. On darwin-arm64, `ja` and `hi` text whose dominant script is native
 (kana/han, Devanagari) SHALL route to an installed AVSpeech voice for that
-locale, a male one when the machine has it, because the Kokoro `ja`/`hi`
+locale, a male one when the machine has it (macOS ships no male `hi-IN` voice, so Hindi
+falls to `Lekha`, a documented exception), because the Kokoro `ja`/`hi`
 voices handle Latin input only; romanized text keeps routing to the Kokoro
 voice. The Voice id scheme is `<lang>-<name>`; the `<lang>` prefix routes to a
 TTS engine (Kokoro, Vosk, or AVSpeech), and an unparseable or unsupported
@@ -326,16 +327,18 @@ every prefix the running build routes.
 Every Default voice SHALL be male — Kesha is a male brand voice. The English
 default is `en-am_michael`; the Russian Vosk default is `ru-vosk-m02`; Spanish,
 Italian, and Portuguese default to `es-em_alex`, `it-im_nicola`, and
-`pt-pm_alex`. There are two documented exceptions. French: Kokoro v1.0 ships no
+`pt-pm_alex`. There are three documented exceptions. French: Kokoro v1.0 ships no
 male French voice, so `fr` defaults to `fr-ff_siwis` (female) until a male
 French voice exists. Russian on darwin-arm64: with no `--voice`, `ru` routes to
 AVSpeech `macos-com.apple.voice.compact.ru-RU.Milena` (female) because it is
-the zero-install path; `--voice ru-vosk-m02` opts into the male Vosk voice.
+the zero-install path; `--voice ru-vosk-m02` opts into the male Vosk voice. Hindi in
+Devanagari on darwin-arm64: the native-script route takes the only `hi-IN` AVSpeech
+voice macOS ships, `Lekha` (female), because there is no male one.
 
-#### Scenario: The two documented exceptions are the only female defaults
+#### Scenario: The three documented exceptions are the only female defaults
 
 - WHEN Ira lists the default voice of every routed language on darwin-arm64
-- THEN every default is male except `fr-ff_siwis` and the darwin `ru` route to Milena
+- THEN every default is male except `fr-ff_siwis`, the darwin `ru` route to Milena and the darwin Devanagari `hi` route to Lekha
 
 ### Requirement: Exit codes distinguish failure classes
 
