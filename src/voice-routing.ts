@@ -107,7 +107,7 @@ export interface ResolveSayVoiceOptions {
   platform?: NodeJS.Platform;
   arch?: NodeJS.Architecture;
   /** The engine's `say --list-voices` union; injected so the routing decision is testable without an engine. */
-  listVoices?: () => Promise<string[]>;
+  listVoices?: (signal?: AbortSignal) => Promise<string[]>;
 }
 
 function baseLangOf(code: string | undefined): string {
@@ -129,7 +129,10 @@ async function nativeScriptOverride(
   const route = NATIVE_SCRIPT_ROUTES[lang];
   if (!route || !dominantScript(text, route.script)) return undefined;
   try {
-    return avSpeechVoiceFor(await (options.listVoices ?? listVoiceIds)(), route);
+    const voices = options.listVoices
+      ? await options.listVoices(options.signal)
+      : await listVoiceIds({}, options.signal);
+    return avSpeechVoiceFor(voices, route);
   } catch {
     return undefined;
   }
