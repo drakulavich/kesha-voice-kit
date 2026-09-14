@@ -334,17 +334,26 @@ fn probe_out_path(path: &std::path::Path) -> Result<(), String> {
     if let Some(verdict) = out_file_type_refusal(path) {
         return verdict;
     }
-    let existed = path.exists();
-    std::fs::OpenOptions::new()
+    let refusal = |err: std::io::Error| format!("cannot write --out {}: {err}", path.display());
+    // Only a file this probe created exclusively is removed, so a path another party makes meanwhile is never deleted.
+    match std::fs::OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(false)
+        .create_new(true)
         .open(path)
-        .map_err(|err| format!("cannot write --out {}: {err}", path.display()))?;
-    if !existed {
-        let _ = std::fs::remove_file(path);
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(path);
+            Ok(())
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map(drop)
+            .map_err(refusal),
+        Err(err) => Err(refusal(err)),
     }
-    Ok(())
 }
 
 /// Write synthesized bytes to `--out` file or stdout.
