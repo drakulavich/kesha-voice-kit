@@ -134,14 +134,19 @@ pub fn compatibility_normalize(text: &str) -> Cow<'_, str> {
 }
 /// What the gate decided about one (text, voice) pair.
 #[derive(Debug, PartialEq, Eq)]
+pub struct MinorityRun {
+    pub script: Script,
+    pub tokens: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Verdict {
     Supported,
     /// More than half the letters are in a script the voice cannot phonemize.
     Dominant(Script),
-    /// A minority run the voice cannot phonemize: speakable, but mispronounced.
+    /// Minority runs the voice cannot phonemize, largest first: speakable, but mispronounced.
     Minority {
-        script: Script,
-        tokens: Vec<String>,
+        runs: Vec<MinorityRun>,
     },
 }
 
@@ -174,27 +179,31 @@ pub fn classify(text: &str, supported: &[Script]) -> Verdict {
     if !supported.contains(&top) && top_count * 2 > total {
         return Verdict::Dominant(top);
     }
-    let Some((worst, _)) = counts
+    let mut unsupported: Vec<(Script, usize)> = counts
         .iter()
         .copied()
         .filter(|(s, _)| !supported.contains(s))
-        .max_by_key(|(_, n)| *n)
-    else {
+        .collect();
+    if unsupported.is_empty() {
         return Verdict::Supported;
-    };
-    let mut tokens = Vec::new();
-    for_each_token(&normalized, |ev| {
-        if let TokenEvent::Token(t) = ev {
-            let core = split_punct(t).1;
-            if !core.is_empty() && core.chars().any(|c| script_of(c) == Some(worst)) {
-                tokens.push(core.to_string());
-            }
-        }
-    });
-    Verdict::Minority {
-        script: worst,
-        tokens,
     }
+    unsupported.sort_by(|a, b| b.1.cmp(&a.1));
+    let runs = unsupported
+        .into_iter()
+        .map(|(script, _)| {
+            let mut tokens = Vec::new();
+            for_each_token(&normalized, |ev| {
+                if let TokenEvent::Token(t) = ev {
+                    let core = split_punct(t).1;
+                    if !core.is_empty() && core.chars().any(|c| script_of(c) == Some(script)) {
+                        tokens.push(core.to_string());
+                    }
+                }
+            });
+            MinorityRun { script, tokens }
+        })
+        .collect();
+    Verdict::Minority { runs }
 }
 
 fn named(tokens: &[String]) -> String {
@@ -262,16 +271,23 @@ pub fn ensure_supported(voice_id: &str, text: &str) -> anyhow::Result<()> {
     };
     match classify(text, supported) {
         Verdict::Supported => Ok(()),
-        Verdict::Minority { script, tokens } => {
+        Verdict::Minority { runs } => {
+            let parts = runs
+                .iter()
+                .map(|r| {
+                    format!(
+                        "{} token{} in {} script ({})",
+                        r.tokens.len(),
+                        if r.tokens.len() == 1 { "" } else { "s" },
+                        r.script.name(),
+                        named(&r.tokens)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" and ");
             crate::tts::warn::warn_once(
                 WARN_SCRIPT_MINORITY,
-                &format!(
-                    "{} token{} in {} script cannot be pronounced by {voice_id}: {}",
-                    tokens.len(),
-                    if tokens.len() == 1 { "" } else { "s" },
-                    script.name(),
-                    named(&tokens)
-                ),
+                &format!("{parts} cannot be pronounced by {voice_id}"),
             );
             Ok(())
         }
@@ -318,6 +334,34 @@ mod tests {
 
     fn verdict(text: &str, voice: &str) -> Verdict {
         classify(text, supported_scripts(voice).expect("gated voice"))
+    }
+
+    #[test]
+    fn every_unsupported_minority_script_is_warned_about_not_only_the_largest() {
+        let Verdict::Minority { runs } = verdict(
+            "Позвони Kesha Voice Kit из 北京 завтра утром",
+            "ru-vosk-m02",
+        ) else {
+            panic!("expected a minority verdict");
+        };
+        assert_eq!(
+            runs,
+            vec![
+                MinorityRun {
+                    script: Script::Latin,
+                    tokens: vec!["Kesha".into(), "Voice".into(), "Kit".into()]
+                },
+                MinorityRun {
+                    script: Script::Han,
+                    tokens: vec!["北京".into()]
+                },
+            ]
+        );
+        let err_free = ensure_supported(
+            "ru-vosk-m02",
+            "Позвони Kesha Voice Kit из 北京 завтра утром",
+        );
+        assert!(err_free.is_ok());
     }
 
     #[test]
@@ -386,15 +430,19 @@ mod tests {
         assert_eq!(
             verdict("Установи Kesha Voice Kit сегодня", "ru-vosk-m02"),
             Verdict::Minority {
-                script: Script::Latin,
-                tokens: vec!["Kesha".into(), "Voice".into(), "Kit".into()],
+                runs: vec![MinorityRun {
+                    script: Script::Latin,
+                    tokens: vec!["Kesha".into(), "Voice".into(), "Kit".into()],
+                }],
             }
         );
         assert_eq!(
             verdict("Meet me in 你好 town", "en-am_michael"),
             Verdict::Minority {
-                script: Script::Han,
-                tokens: vec!["你好".into()],
+                runs: vec![MinorityRun {
+                    script: Script::Han,
+                    tokens: vec!["你好".into()],
+                }],
             }
         );
     }
@@ -453,13 +501,13 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         let cyrillic = "Установи и запусти пожалуйста сегодня утром прямо сейчас без промедления";
-        let Verdict::Minority { tokens, .. } =
-            verdict(&format!("{cyrillic} {long}"), "ru-vosk-m02")
+        let Verdict::Minority { runs } = verdict(&format!("{cyrillic} {long}"), "ru-vosk-m02")
         else {
             panic!("expected a minority verdict");
         };
+        let tokens = &runs[0].tokens;
         assert_eq!(tokens.len(), 8);
-        assert!(named(&tokens).ends_with(", …"), "{}", named(&tokens));
-        assert_eq!(named(&tokens).matches(", ").count(), 5);
+        assert!(named(tokens).ends_with(", …"), "{}", named(tokens));
+        assert_eq!(named(tokens).matches(", ").count(), 5);
     }
 }

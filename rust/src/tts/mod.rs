@@ -80,6 +80,8 @@ impl TtsError {
 /// Which TTS engine to run. Voice ids determine this via `voices::resolve_voice`.
 pub enum EngineChoice<'a> {
     Kokoro {
+        /// Public voice id, so the script gate and its diagnostics can name it.
+        voice_id: &'a str,
         model_path: &'a Path,
         voice_path: &'a Path,
         speed: f32,
