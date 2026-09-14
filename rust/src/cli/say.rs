@@ -330,38 +330,50 @@ fn out_file_type_refusal(_path: &std::path::Path) -> Option<Result<(), String>> 
 }
 
 /// Probe `--out` before synthesis pays for a path the caller mistyped, as `record::WavOutput::open` does (T1-4).
+/// The caller's pathname is only ever opened when it already exists, never created or removed, so no
+/// swap between two steps can turn the probe against another party's file (#1220 review).
 fn probe_out_path(path: &std::path::Path) -> Result<(), String> {
     if let Some(verdict) = out_file_type_refusal(path) {
         return verdict;
     }
     let refusal = |err: std::io::Error| format!("cannot write --out {}: {err}", path.display());
-    // Only a file this probe created exclusively is removed, so a path another party makes meanwhile is never deleted.
-    match std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-    {
-        Ok(_) => {
-            let _ = std::fs::remove_file(path);
-            Ok(())
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-            match std::fs::OpenOptions::new().write(true).open(path) {
-                Ok(_) => Ok(()),
-                // A symlink whose target is not there yet: probe the target so nothing is left behind here either.
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    match std::fs::read_link(path) {
-                        Ok(target) => probe_out_path(
-                            &path.parent().map_or(target.clone(), |d| d.join(&target)),
-                        ),
-                        Err(_) => Err(refusal(err)),
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => match std::fs::OpenOptions::new().write(true).open(path) {
+            Ok(_) => Ok(()),
+            // A symlink whose target is not there yet: judge the target instead.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                match std::fs::read_link(path) {
+                    Ok(target) => {
+                        probe_out_path(&path.parent().map_or(target.clone(), |d| d.join(&target)))
                     }
+                    Err(_) => Err(refusal(err)),
                 }
-                Err(err) => Err(refusal(err)),
             }
+            Err(err) => Err(refusal(err)),
+        },
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            probe_parent_writable(path).map_err(refusal)
         }
         Err(err) => Err(refusal(err)),
     }
+}
+
+/// A sibling only this probe names, created exclusively and removed, stands in for the file synthesis will create.
+fn probe_parent_writable(path: &std::path::Path) -> std::io::Result<()> {
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => std::path::Path::new("."),
+    };
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let sibling = dir.join(format!(".kesha-out-probe-{}-{nanos}", std::process::id()));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&sibling)?;
+    let _ = std::fs::remove_file(&sibling);
+    Ok(())
 }
 
 /// Write synthesized bytes to `--out` file or stdout.

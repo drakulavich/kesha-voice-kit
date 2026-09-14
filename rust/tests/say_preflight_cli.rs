@@ -183,6 +183,15 @@ fn a_fifo_out_passes_the_pre_flight_without_blocking_on_a_reader() {
 
 /// The probe may remove only what it created itself: a path that already resolves to something (here a
 /// symlink whose target is not there yet) is another party's, so `--out` through it must leave it alone.
+fn entries(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .expect("read dir")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
 #[cfg(unix)]
 #[test]
 fn the_out_probe_never_removes_a_path_it_did_not_create() {
@@ -190,6 +199,7 @@ fn the_out_probe_never_removes_a_path_it_did_not_create() {
     let target = tmp.path().join("target.wav");
     let link = tmp.path().join("speech.wav");
     std::os::unix::fs::symlink(&target, &link).expect("symlink");
+    let before = entries(tmp.path());
     let out = say(
         &[
             "Hello there",
@@ -213,6 +223,11 @@ fn the_out_probe_never_removes_a_path_it_did_not_create() {
     assert!(
         !target.exists(),
         "the probe left an empty target behind the symlink of a request that failed"
+    );
+    assert_eq!(
+        entries(tmp.path()),
+        before,
+        "the probe left the directory different from how it found it"
     );
 }
 
