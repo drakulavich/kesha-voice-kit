@@ -68,6 +68,8 @@ export interface CliScenarioOptions {
   trimOutput?: boolean;
   artifacts?: Array<string | CliScenarioArtifactRequest>;
   maxArtifactBytes?: number;
+  /** Bytes are written and the pipe closed; `"open"` leaves a pipe open for the whole run, the way a slow producer does. */
+  stdin?: Uint8Array | string | "open";
 }
 
 export function installFakeDiarizeModel(cacheDir: string): void {
@@ -84,6 +86,21 @@ export function installFakeDiarizeModel(cacheDir: string): void {
   writeFileSync(join(vad, "silero_vad.onnx"), "vad");
 }
 
+function resolveStdin(stdin: CliScenarioOptions["stdin"]): "ignore" | "pipe" | Uint8Array {
+  if (stdin === undefined) return "ignore";
+  if (stdin === "open") return "pipe";
+  return typeof stdin === "string" ? new TextEncoder().encode(stdin) : stdin;
+}
+
+/** A CLI that never read the pipe leaves it broken, so EPIPE here is the expected end of an `"open"` stdin. */
+async function closeStdin(proc: { stdin: unknown }): Promise<void> {
+  try {
+    await (proc.stdin as Bun.FileSink).end();
+  } catch {
+    return;
+  }
+}
+
 export async function runCliScenario(
   args: string[],
   opts: CliScenarioOptions = {},
@@ -96,6 +113,7 @@ export async function runCliScenario(
     ...(opts.env ?? {}),
   };
   const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", ...args], {
+    stdin: resolveStdin(opts.stdin),
     stdout: "pipe",
     stderr: "pipe",
     cwd: opts.cwd ?? DEFAULT_CWD,
@@ -117,6 +135,7 @@ export async function runCliScenario(
   });
   const exitOrTimeout = await Promise.race([proc.exited, timeoutPromise]);
   if (timeout) clearTimeout(timeout);
+  if (opts.stdin === "open") await closeStdin(proc);
 
   if (exitOrTimeout === "timeout") {
     proc.kill("SIGTERM");

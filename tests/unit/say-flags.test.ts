@@ -49,8 +49,43 @@ describe("resolveSayFlags: --rate", () => {
 
   test("rejects non-numeric values", () => {
     expect(err({ rate: "fast" })).toBe("--rate must be a finite number.");
-    expect(err({ rate: "" })).toBe("--rate must be a finite number.");
     expect(err({ rate: "Infinity" })).toBe("--rate must be a finite number.");
+  });
+});
+
+// T1-3: citty hands a trailing valueless string flag back as `true`, which the ternaries discarded.
+describe("resolveSayFlags: a string flag given no value", () => {
+  test("names the flag that needs a value, for every string-typed flag", () => {
+    expect(err({ voice: true })).toBe("--voice needs a value");
+    expect(err({ lang: true })).toBe("--lang needs a value");
+    expect(err({ out: true })).toBe("--out needs a value");
+    expect(err({ format: true })).toBe("--format needs a value");
+    expect(err({ rate: true })).toBe("--rate needs a value");
+    expect(err({ bitrate: true })).toBe("--bitrate needs a value");
+    expect(err({ "sample-rate": true })).toBe("--sample-rate needs a value");
+  });
+
+  test("an empty value (`--out=`) is the same usage error", () => {
+    expect(err({ out: "" })).toBe("--out needs a value");
+    expect(err({ voice: "" })).toBe("--voice needs a value");
+    expect(err({ rate: "" })).toBe("--rate needs a value");
+  });
+
+  test("an absent flag stays absent", () => {
+    expect(ok({}).out).toBeUndefined();
+    expect(ok({ voice: undefined, lang: false }).voice).toBeUndefined();
+    expect(ok({ voice: undefined, lang: false }).lang).toBeUndefined();
+  });
+
+  test("a value that is present still resolves", () => {
+    const r = ok({ voice: "en-am_michael", lang: "en-us", out: "note.wav" });
+    expect(r.voice).toBe("en-am_michael");
+    expect(r.lang).toBe("en-us");
+    expect(r.out).toBe("note.wav");
+  });
+
+  test("a missing value outranks a bad value elsewhere", () => {
+    expect(err({ out: true, format: "mp3" })).toBe("--out needs a value");
   });
 });
 
@@ -65,6 +100,16 @@ describe("resolveSayFlags: --bitrate and --sample-rate", () => {
     expect(err({ format: "ogg-opus", bitrate: "0" })).toBe("--bitrate must be a positive integer.");
     expect(err({ format: "ogg-opus", bitrate: "-1" })).toBe("--bitrate must be a positive integer.");
     expect(err({ format: "ogg-opus", bitrate: "1.5" })).toBe("--bitrate must be a positive integer.");
+  });
+
+  // T1-5: `--bitrate 1` parsed fine here and became E_INTERNAL exit 4 after two seconds of synthesis.
+  test("rejects a bitrate outside the documented Opus range, naming the bounds", () => {
+    const expected = "--bitrate must be between 6000 and 510000 bps.";
+    expect(err({ format: "ogg-opus", bitrate: "1" })).toBe(expected);
+    expect(err({ format: "ogg-opus", bitrate: "5999" })).toBe(expected);
+    expect(err({ format: "ogg-opus", bitrate: "510001" })).toBe(expected);
+    expect(ok({ format: "ogg-opus", bitrate: "6000" }).bitrate).toBe(6000);
+    expect(ok({ format: "ogg-opus", bitrate: "510000" }).bitrate).toBe(510000);
   });
 
   test("rejects an unsupported sample rate", () => {

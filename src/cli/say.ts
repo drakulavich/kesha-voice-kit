@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import { statSync } from "fs";
 import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInvalidArg } from "./options";
@@ -7,6 +8,7 @@ import {
   listVoiceIds,
   say,
   SUPPORTED_SAMPLE_RATES,
+  validateSayText,
   type SayFormat,
   type SayOptions,
 } from "../synth";
@@ -15,8 +17,9 @@ import { resolveSayVoice } from "../voice-routing";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandOutcome, type CommandSession } from "./command-session";
 
+/** A positional the user gave is the text, empty or not; only an absent one falls through to stdin (#T1-2). */
 async function resolveText(inline: string | undefined): Promise<string> {
-  if (inline !== undefined && inline.length > 0) return inline;
+  if (inline !== undefined) return inline;
   const chunks: Uint8Array[] = [];
   for await (const chunk of Bun.stdin.stream()) {
     chunks.push(chunk);
@@ -35,7 +38,7 @@ export function shouldRejectMissingSayText(
   inlineText: string | undefined,
   stdinIsTty: boolean | undefined,
 ): boolean {
-  return (inlineText === undefined || inlineText.length === 0) && stdinIsTty === true;
+  return inlineText === undefined && stdinIsTty === true;
 }
 
 type Parsed<T> = { ok: true; value: T | undefined } | { ok: false; error: string };
@@ -59,11 +62,18 @@ function parseRateFlag(value: unknown): Parsed<number> {
   return rate;
 }
 
+/** The Opus encoder's own range, mirrored here so a caller error never costs a synthesis (#T1-5). */
+const MIN_OPUS_BITRATE = 6000;
+const MAX_OPUS_BITRATE = 510000;
+
 function parseBitrateFlag(value: unknown): Parsed<number> {
   const bitrate = parseFiniteNumberFlag("--bitrate", value);
   if (!bitrate.ok || bitrate.value === undefined) return bitrate;
   if (!Number.isInteger(bitrate.value) || bitrate.value <= 0) {
     return { ok: false, error: "--bitrate must be a positive integer." };
+  }
+  if (bitrate.value < MIN_OPUS_BITRATE || bitrate.value > MAX_OPUS_BITRATE) {
+    return { ok: false, error: `--bitrate must be between ${MIN_OPUS_BITRATE} and ${MAX_OPUS_BITRATE} bps.` };
   }
   return bitrate;
 }
@@ -107,6 +117,8 @@ function checkOpusOnlyFlags(
 }
 
 export type SayFlagArgs = {
+  voice?: unknown;
+  lang?: unknown;
   format?: unknown;
   rate?: unknown;
   bitrate?: unknown;
@@ -117,6 +129,9 @@ export type SayFlagArgs = {
 export type ResolvedSayFlags =
   | {
       ok: true;
+      voice: string | undefined;
+      lang: string | undefined;
+      out: string | undefined;
       format: SayFormat | undefined;
       rate: number | undefined;
       bitrate: number | undefined;
@@ -124,8 +139,22 @@ export type ResolvedSayFlags =
     }
   | { ok: false; error: string };
 
+const STRING_FLAGS = ["voice", "lang", "out", "format", "rate", "bitrate", "sample-rate"] as const;
+
+/** citty returns a trailing valueless string flag as `true` and `--out=` as `""`; both used to be discarded silently (#T1-3). */
+function missingFlagValue(args: SayFlagArgs): string | null {
+  for (const name of STRING_FLAGS) {
+    const value = (args as Record<string, unknown>)[name];
+    if (value === true || value === "") return `--${name} needs a value`;
+  }
+  return null;
+}
+
 /** Validates the encoder flags before the engine is spawned: faster failure in scripts (the engine repeats them authoritatively). */
 export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
+  const missing = missingFlagValue(args);
+  if (missing) return { ok: false, error: missing };
+
   const format = parseFormatFlag(args.format);
   if (!format.ok) return format;
   const rate = parseRateFlag(args.rate);
@@ -141,11 +170,32 @@ export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
 
   return {
     ok: true,
+    voice: typeof args.voice === "string" ? args.voice : undefined,
+    lang: typeof args.lang === "string" ? args.lang : undefined,
+    out,
     format: format.value,
     rate: rate.value,
     bitrate: bitrate.value,
     sampleRate: sampleRate.value,
   };
+}
+
+const STDIO_ALIASES = ["/dev/stdout", "/dev/stderr", "/dev/stdin"];
+
+/** `/dev/fd/N` stats as whatever the descriptor points at, so the name decides where stat cannot. */
+function isDeviceDestination(out: string): boolean {
+  if (STDIO_ALIASES.includes(out) || /^\/dev\/fd\/\d+$/.test(out)) return true;
+  try {
+    return statSync(out).isCharacterDevice();
+  } catch {
+    return false;
+  }
+}
+
+/** The engine writes `--out` from its own process, whose stdout is the CLI's pipe, so a device destination swallows the audio and still reports success (#T1-15). */
+export function deviceOutRefusal(out: string | undefined): string | null {
+  if (out === undefined || !isDeviceDestination(out)) return null;
+  return `--out ${out} is a character device, where the audio would be discarded; omit --out to write it to stdout`;
 }
 
 type SayOpts = {
@@ -301,6 +351,12 @@ export const sayCommand = defineCommand({
       process.exit(2);
     }
 
+    const deviceOut = deviceOutRefusal(flags.out);
+    if (deviceOut) {
+      log.error(renderInvalidArg(deviceOut));
+      process.exit(2);
+    }
+
     const inlineText = typeof args.text === "string" ? args.text : undefined;
     const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;
     if (shouldRejectMissingSayText(inlineText, stdinIsTty)) {
@@ -308,15 +364,21 @@ export const sayCommand = defineCommand({
       process.exit(2);
     }
     const text = await resolveText(inlineText);
-    const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
-    const langHint = typeof args.lang === "string" ? args.lang : undefined;
+    try {
+      validateSayText(text);
+    } catch (err) {
+      log.error(errorMessage(err));
+      process.exit(exitCodeFor(err));
+    }
+    const explicitVoice = flags.voice;
+    const langHint = flags.lang;
     const voice = await resolveSayVoice(explicitVoice, langHint, text);
 
     const opts: SayOpts = {
       text,
       voice,
       lang: langHint,
-      out: typeof args.out === "string" ? args.out : undefined,
+      out: flags.out,
       rate: flags.rate,
       ssml: Boolean(args.ssml),
       format: flags.format,

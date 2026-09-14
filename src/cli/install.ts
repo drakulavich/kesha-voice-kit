@@ -6,6 +6,7 @@ import { getEngineBinPath, getEngineCapabilities, type EngineCapabilities } from
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
+import { renderInvalidArg } from "./options";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
 import { isSemver } from "../semver.mjs";
@@ -321,8 +322,8 @@ export const installCommand = defineCommand({
     try {
       ttsLangs = resolveTtsLangs({ tts: args.tts === true, positionals }, supported);
     } catch (err) {
-      log.error(errorMessage(err));
-      process.exit(1);
+      log.error(renderInvalidArg(errorMessage(err)));
+      process.exit(2);
     }
     await performInstall({
       noCache: resolveNoCacheFlag(args, rawArgs),

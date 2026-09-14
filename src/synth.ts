@@ -123,9 +123,12 @@ export function engineCrashMessage(
   return `${base}.`;
 }
 
-export async function say(opts: SayOptions): Promise<Uint8Array> {
-  const text = opts.text ?? "";
-  if (text.length === 0) {
+/**
+ * The text contract both doors enforce, before anything that costs a subprocess.
+ * Throws `SayError`; the CLI runs it before voice routing, `say()` for programmatic callers.
+ */
+export function validateSayText(text: string): void {
+  if (text.trim().length === 0) {
     throw new SayError("text is empty", 2, "", "E_TEXT_EMPTY");
   }
   const chars = Array.from(text).length;
@@ -137,6 +140,14 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
       "E_TEXT_TOO_LONG",
     );
   }
+  if (text.includes("\0")) {
+    throw new SayError("text contains a NUL byte", 2, "", "E_INVALID_ARG");
+  }
+}
+
+export async function say(opts: SayOptions): Promise<Uint8Array> {
+  const text = opts.text ?? "";
+  validateSayText(text);
 
   if (!isEngineInstalled()) {
     throw new SayError(`kesha-engine not installed. run: ${installHint("--tts")}`, 1, "", "E_ENGINE_SPAWN");
