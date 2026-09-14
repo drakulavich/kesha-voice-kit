@@ -3,8 +3,8 @@ use std::io::Read;
 
 use crate::text_lang;
 
-/// Four bytes per character bounds what the CLI's 5000-character limit can send; more is refused, not buffered.
-const MAX_STDIN_BYTES: u64 = crate::tts::MAX_TEXT_CHARS as u64 * 4;
+/// Four bytes per character bounds what the CLI's 5000-character limit (`tts::MAX_TEXT_CHARS`, feature-gated) can send; more is refused, not buffered.
+const MAX_STDIN_BYTES: u64 = 5000 * 4;
 
 pub fn run(text: Option<String>) -> Result<()> {
     let text = match text {
@@ -27,7 +27,7 @@ fn read_all(reader: &mut impl Read) -> Result<String> {
         crate::coded_bail!(
             crate::errors::ErrorCode::TextTooLong,
             "detect-text-lang: stdin exceeds {MAX_STDIN_BYTES} bytes ({} characters at most)",
-            crate::tts::MAX_TEXT_CHARS
+            MAX_STDIN_BYTES / 4
         );
     }
     Ok(String::from_utf8_lossy(&buf).into_owned())
@@ -54,6 +54,12 @@ mod tests {
             self.served += n as u64;
             Ok(n)
         }
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn the_stdin_bound_tracks_the_text_limit() {
+        assert_eq!(MAX_STDIN_BYTES, crate::tts::MAX_TEXT_CHARS as u64 * 4);
     }
 
     #[test]
