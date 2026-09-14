@@ -76,3 +76,80 @@ fn a_wav_declaring_sample_rate_zero_is_bad_audio_with_no_panic_text() {
         "{v}"
     );
 }
+
+/// A producer that never closes the pipe: `say` must answer once the text limit is passed, not wait for EOF.
+#[test]
+fn say_stops_reading_an_open_stdin_pipe_once_the_text_limit_is_passed() {
+    use std::io::Write as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("never.wav");
+    let mut child = Command::new(engine_bin())
+        .args(["say", "--out", out.to_str().unwrap()])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn engine");
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let _ = stdin.write_all(&vec![b'x'; 5000 * 4 + 4096]);
+    let _ = stdin.flush();
+    let started = std::time::Instant::now();
+    let out = loop {
+        if let Some(status) = child.try_wait().expect("poll") {
+            let mut stderr = String::new();
+            std::io::Read::read_to_string(child.stderr.as_mut().unwrap(), &mut stderr).unwrap();
+            break (status, stderr);
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "say waited on the open pipe"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    drop(stdin);
+    assert_eq!(out.0.code(), Some(5), "{}", out.1);
+    let v: serde_json::Value =
+        serde_json::from_str(out.1.lines().next().unwrap_or("")).expect("one event");
+    assert_eq!(v["code"], "E_TEXT_TOO_LONG", "{v}");
+}
+
+fn detect_text_lang_on_stdin(text: &[u8]) -> std::process::Output {
+    use std::io::Write as _;
+    let mut child = Command::new(engine_bin())
+        .arg("detect-text-lang")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn engine");
+    child
+        .stdin
+        .take()
+        .expect("stdin is piped")
+        .write_all(text)
+        .expect("write stdin");
+    child.wait_with_output().expect("engine exits")
+}
+
+// T1-1: no user text may be an argv element, so the positional is optional and stdin is the source.
+#[test]
+fn detect_text_lang_reads_the_text_from_stdin_when_no_positional_is_given() {
+    let blank = detect_text_lang_on_stdin(b"   \n\t  ");
+    let v = common::sole_error_event(&blank);
+    let message = v["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("detect-text-lang requires non-empty text"),
+        "the whitespace came from stdin, not from a missing argument: {v}"
+    );
+    assert!(
+        !message.contains("required arguments were not provided"),
+        "the positional must be optional: {v}"
+    );
+
+    let given = detect_text_lang_on_stdin("Привет мир как дела".as_bytes());
+    let stderr = String::from_utf8_lossy(&given.stderr);
+    assert!(
+        !stderr.contains("requires non-empty text"),
+        "text on stdin must reach the detector: {stderr}"
+    );
+}

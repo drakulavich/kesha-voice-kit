@@ -2,13 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
+import { deviceOutRefusal, sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
+import { setColorEnabled } from "../../src/log";
 import { describeJson, saveEngineEnv } from "../helpers/fake-engine";
+
+// picocolors turns colour on under CI, and this harness captures the raw stderr bytes.
+setColorEnabled(false);
 
 describe("say CLI input guard (#324 P1)", () => {
   test("rejects missing text only when stdin is a TTY", () => {
     expect(shouldRejectMissingSayText(undefined, true)).toBe(true);
-    expect(shouldRejectMissingSayText("", true)).toBe(true);
   });
 
   test("allows piped stdin when text is omitted", () => {
@@ -18,6 +21,39 @@ describe("say CLI input guard (#324 P1)", () => {
 
   test("allows explicit positional text even from a TTY", () => {
     expect(shouldRejectMissingSayText("Hello", true)).toBe(false);
+  });
+
+  // T1-2: an explicit "" is text the user gave, so it is E_TEXT_EMPTY rather than a reason to read stdin.
+  test("an explicitly empty positional is not the missing-text case, on a TTY or off it", () => {
+    expect(shouldRejectMissingSayText("", true)).toBe(false);
+    expect(shouldRejectMissingSayText("", false)).toBe(false);
+  });
+});
+
+// T1-15: `--out /dev/stdout` reported `Saved` and exit 0 while delivering zero bytes.
+describe("say --out destinations (T1-15)", () => {
+  test("a regular file and a FIFO are accepted", () => {
+    if (process.platform === "win32") return;
+    const dir = mkdtempSync(join(tmpdir(), "kesha-say-out-dest-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const file = join(dir, "note.wav");
+    writeFileSync(file, "");
+    const fifo = join(dir, "note.fifo");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+
+    expect(deviceOutRefusal(file)).toBeNull();
+    expect(deviceOutRefusal(fifo)).toBeNull();
+    expect(deviceOutRefusal(join(dir, "not-created-yet.wav"))).toBeNull();
+    expect(deviceOutRefusal(undefined)).toBeNull();
+  });
+
+  test("a character device is refused, naming the plain-stdout default", () => {
+    if (process.platform === "win32") return;
+    for (const path of ["/dev/stdout", "/dev/stderr", "/dev/fd/1", "/dev/null"]) {
+      const refusal = deviceOutRefusal(path);
+      expect(refusal).toContain(`--out ${path} is a character device`);
+      expect(refusal).toContain("omit --out to write it to stdout");
+    }
   });
 });
 
@@ -114,6 +150,48 @@ describe("kesha say relays an engine failure", () => {
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("synthesis aborted");
+  });
+});
+
+describe("kesha say with an explicitly empty positional (T1-2)", () => {
+  skipOnWin32("is E_TEXT_EMPTY exit 2 and never reaches the engine", async () => {
+    failingEngine(3, "E_VOICE_NOT_FOUND", "the engine must not have been asked");
+    const { exitCode, stderr, stdout } = await runSay({ text: "", rate: "1.0" });
+    expect(exitCode).toBe(2);
+    expect(stderr.trim()).toBe("error [E_TEXT_EMPTY]: text is empty");
+    expect(stdout).toBe("");
+  });
+
+  skipOnWin32("does not announce synthesis to an --out file it will never write", async () => {
+    failingEngine(3, "E_VOICE_NOT_FOUND", "the engine must not have been asked");
+    const out = join(tempDir("kesha-say-empty-out-"), "e.wav");
+    const { exitCode, stderr } = await runSay({ text: "", out, rate: "1.0" });
+    expect(exitCode).toBe(2);
+    expect(stderr).not.toContain("Synthesizing");
+  });
+});
+
+// T1-14: a FluidAudio line quoted the user's whole input, and the transcript then echoed it again.
+describe("kesha say reports a non-event engine line once, bounded", () => {
+  skipOnWin32("quotes at most 200 characters of it and does not echo the input again", async () => {
+    const token = "x".repeat(400);
+    const dir = tempDir("kesha-say-rawline-");
+    const binPath = join(dir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ncat > /dev/null\nprintf '[WARN] G2P failed on word %s\\n' "${token}" >&2\nexit 4\n`,
+    );
+    chmodSync(binPath, 0o755);
+    cleanups.push(saveEngineEnv());
+    process.env.KESHA_ENGINE_BIN = binPath;
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+
+    expect(exitCode).toBe(4);
+    expect(stderr).toContain("error [E_INTERNAL]: kesha-engine say wrote a line that is not a protocol event:");
+    expect(stderr).toContain("…");
+    expect(stderr).not.toContain(token);
+    expect(stderr.split("[WARN] G2P failed on word")).toHaveLength(2);
   });
 });
 

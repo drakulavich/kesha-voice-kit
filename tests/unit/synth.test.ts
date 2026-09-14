@@ -1,7 +1,15 @@
 import { describe, it, expect, spyOn } from "bun:test";
 import { chmodSync, writeFileSync } from "fs";
 import { join } from "path";
-import { buildSayArgs, engineCrashMessage, say, SayError, type SayOptions } from "../../src/synth";
+import {
+  buildSayArgs,
+  engineCrashMessage,
+  MAX_TEXT_CHARS,
+  say,
+  SayError,
+  validateSayText,
+  type SayOptions,
+} from "../../src/synth";
 import { validateArgv } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
 import { describeDocument, describeJson, saveEngineEnv } from "../helpers/fake-engine";
@@ -247,6 +255,46 @@ describe("say input preflight", () => {
       expect((err as Error).message).toBe("text is empty");
       expect((err as SayError).origin).toBe("cli");
     }
+  });
+});
+
+/** The checks both doors share (#T1-1): the CLI runs them before voice routing, `say()` before the spawn. */
+describe("validateSayText", () => {
+  function refusal(text: string): { code: string; exitCode: number | undefined; message: string } {
+    try {
+      validateSayText(text);
+    } catch (err) {
+      const e = err as SayError;
+      return { code: e.code, exitCode: e.exitCode, message: e.message };
+    }
+    throw new Error(`expected validateSayText(${JSON.stringify(text)}) to throw`);
+  }
+
+  it("accepts ordinary text and text exactly at the ceiling", () => {
+    expect(() => validateSayText("Hello")).not.toThrow();
+    expect(() => validateSayText("я".repeat(MAX_TEXT_CHARS))).not.toThrow();
+  });
+
+  it("refuses empty and whitespace-only text as E_TEXT_EMPTY, exit 2", () => {
+    expect(refusal("")).toEqual({ code: "E_TEXT_EMPTY", exitCode: 2, message: "text is empty" });
+    expect(refusal(" \n\t ")).toEqual({ code: "E_TEXT_EMPTY", exitCode: 2, message: "text is empty" });
+  });
+
+  it("counts code points, not UTF-16 units, against the ceiling", () => {
+    // 2500 astral emoji are 5000 UTF-16 units but only 2500 characters.
+    expect(() => validateSayText("😀".repeat(MAX_TEXT_CHARS / 2))).not.toThrow();
+    const over = refusal("я".repeat(MAX_TEXT_CHARS + 1));
+    expect(over.code).toBe("E_TEXT_TOO_LONG");
+    expect(over.exitCode).toBe(5);
+    expect(over.message).toBe(`text exceeds ${MAX_TEXT_CHARS} chars (${MAX_TEXT_CHARS + 1})`);
+  });
+
+  it("refuses a NUL byte as E_INVALID_ARG, exit 2 — it cannot cross a process boundary", () => {
+    expect(refusal("null\0byte here")).toEqual({
+      code: "E_INVALID_ARG",
+      exitCode: 2,
+      message: "text contains a NUL byte",
+    });
   });
 });
 

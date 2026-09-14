@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { MAX_TEXT_CHARS } from "../../src/synth";
 import {
   chmodSync,
   existsSync,
@@ -1016,6 +1017,153 @@ process.exit(99);
       stderrNotContains: ["kind"],
     });
     expect(run.stdout).toBe("en-am_michael\nru-vosk-m02\n");
+  });
+
+  // T1-1: routing handed the text to `detect-text-lang` as an argv element before any length check.
+  test("kesha say refuses a NUL byte in the text with one coded line and never spawns the engine", async () => {
+    const dir = makeTempDir("kesha-cli-contract-nul-");
+    const out = join(dir, "o.wav");
+    const run = await runCli(["say", "--out", out], {
+      env: isolatedEnv(dir),
+      stdin: "null\0byte here",
+    });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: text contains a NUL byte"],
+      stderrNotContains: ["E_ENGINE_SPAWN", "posix_spawn", "Synthesizing"],
+    });
+    expect(run.stderr.split("\n")).toHaveLength(1);
+    expect(run.stderr).not.toMatch(/^\s+at /m);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  test("kesha say refuses a 1 MB stdin text as E_TEXT_TOO_LONG, exit 5, with no engine involved", async () => {
+    const dir = makeTempDir("kesha-cli-contract-toolong-");
+    const chars = 1_048_576;
+    const run = await runCli(["say", "--out", join(dir, "big.wav")], {
+      env: isolatedEnv(dir),
+      stdin: "x".repeat(chars),
+    });
+    expectContract(run, {
+      exitCode: 5,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_TEXT_TOO_LONG]: text exceeds 5000 chars"],
+      stderrNotContains: ["E_ENGINE_SPAWN", "Synthesizing"],
+    });
+    expect(run.stderr.split("\n")).toHaveLength(1);
+  });
+
+  test("kesha say stops reading a stdin pipe once the text limit is passed, without waiting for EOF", async () => {
+    const dir = makeTempDir("kesha-cli-contract-openlong-");
+    const run = await runCli(["say", "--out", join(dir, "big.wav")], {
+      env: isolatedEnv(dir),
+      stdin: { openAfter: "x".repeat(MAX_TEXT_CHARS * 4 + 4096) },
+      timeoutMs: 10_000,
+    });
+    expectContract(run, {
+      exitCode: 5,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_TEXT_TOO_LONG]: text exceeds 5000 chars"],
+      stderrNotContains: ["E_ENGINE_SPAWN", "Synthesizing"],
+    });
+  });
+
+  // T1-2: `producer | kesha say "$EMPTY_VAR"` blocked until the producer closed the pipe.
+  test("kesha say with an empty positional exits 2 without waiting on an open stdin pipe", async () => {
+    const dir = makeTempDir("kesha-cli-contract-emptytext-");
+    const out = join(dir, "e.wav");
+    const run = await runCli(["say", "", "--out", out], {
+      env: isolatedEnv(dir),
+      stdin: "open",
+      timeoutMs: 10_000,
+    });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_TEXT_EMPTY]: text is empty"],
+      stderrNotContains: ["Synthesizing"],
+    });
+    expect(run.elapsedMs).toBeLessThan(5_000);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  // T1-3: `kesha say hi --out` dropped the flag and sprayed 110 KB of WAV at the terminal, exit 0.
+  test("kesha say with a valueless string flag is a coded usage error, exit 2, no audio", async () => {
+    const dir = makeTempDir("kesha-cli-contract-novalue-");
+    const enginePath = createFailingEngine(dir);
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+    for (const flag of ["out", "voice", "lang", "format", "rate", "bitrate", "sample-rate"]) {
+      const run = await runCli(["say", "hi", `--${flag}`], { env });
+      expectContract(run, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: [`error [E_INVALID_ARG]: --${flag} needs a value`],
+        stderrNotContains: ["fake engine should not have been invoked", "Synthesizing"],
+      });
+      expect(run.stderr.split("\n")).toHaveLength(1);
+    }
+  });
+
+  // T1-5: the range check lived only in the encoder, so `--bitrate 1` was E_INTERNAL exit 4 after synthesis.
+  test("kesha say rejects an out-of-range --bitrate before the engine runs", async () => {
+    const dir = makeTempDir("kesha-cli-contract-bitrate-");
+    const enginePath = createFailingEngine(dir);
+    const run = await runCli(["say", "t", "--format", "ogg-opus", "--bitrate", "1", "--out", join(dir, "z.ogg")], {
+      env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+    });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: --bitrate must be between 6000 and 510000 bps."],
+      stderrNotContains: ["E_INTERNAL", "fake engine should not have been invoked", "Synthesizing"],
+    });
+    expect(run.stderr.split("\n")).toHaveLength(1);
+  });
+
+  test("kesha say refuses a device --out before the engine runs, and keeps a FIFO working (T1-15)", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-devout-");
+    const enginePath = createFailingEngine(dir);
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+    for (const path of ["/dev/stdout", "/dev/null"]) {
+      const run = await runCli(["say", "t", "--out", path], { env });
+      expectContract(run, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: [
+          `error [E_INVALID_ARG]: --out ${path} is a character device`,
+          "omit --out to write it to stdout",
+        ],
+        stderrNotContains: ["fake engine should not have been invoked", "Saved", "Synthesizing"],
+      });
+    }
+
+    const fifo = join(dir, "note.fifo");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+    const accepted = await runCli(["say", "t", "--out", fifo], { env });
+    expect(accepted.stderr).not.toContain("character device");
+  });
+
+  test("kesha install with a bare language code is the same coded usage error as an unsupported one, exit 2", async () => {
+    const dir = makeTempDir("kesha-cli-contract-ttsflag-");
+    const run = await runCli(["install", "--plan", "ru"], { env: isolatedEnv(dir) });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: Language codes (ru) require the --tts flag"],
+    });
+  });
+
+  // T2-11: the refusal was right but uncoded and exited 1, where its sibling catch exits 2.
+  test("kesha install --tts with an unsupported language is a coded usage error, exit 2", async () => {
+    const dir = makeTempDir("kesha-cli-contract-ttslang-");
+    const run = await runCli(["install", "--plan", "--tts", "xx"], { env: isolatedEnv(dir) });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: Unsupported TTS language(s): xx.", "Supported on this platform:"],
+    });
   });
 
   test("a batch where every file failed writes nothing to stdout", async () => {
