@@ -1,7 +1,8 @@
 import { describe, it, expect, spyOn } from "bun:test";
-import { chmodSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import {
+  listVoiceIds,
   buildSayArgs,
   engineCrashMessage,
   MAX_TEXT_CHARS,
@@ -10,6 +11,7 @@ import {
   validateSayText,
   type SayOptions,
 } from "../../src/synth";
+import { getDescribe } from "../../src/engine";
 import { validateArgv } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
 import { describeDocument, describeJson, saveEngineEnv } from "../helpers/fake-engine";
@@ -122,6 +124,35 @@ describe("--no-expand-abbrev", () => {
     expect(out.argv).not.toContain("--no-expand-abbrev");
     expect(out.warnings[0]).toContain("--no-expand-abbrev");
     expect(out.warnings[0]).toContain("ignored");
+  });
+});
+
+describe("listVoiceIds under cancellation", () => {
+  const posixIt = process.platform === "win32" ? it.skip : it;
+
+  posixIt("a request that is already aborted never spawns the inventory and rejects at once", async () => {
+    const dir = tempDir("kesha-list-voices-abort-");
+    const spawned = join(dir, "spawned");
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ntouch "${spawned}"\nsleep 5\nexit 0\n`,
+    );
+    chmodSync(path, 0o755);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = path;
+    try {
+      // A long-lived MCP server has the describe document cached, so the guard itself must refuse, not the describe run.
+      await getDescribe();
+      const startedAt = performance.now();
+      const err = await listVoiceIds({}, AbortSignal.abort()).then(() => null, (e: unknown) => e as KeshaError);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect(err!.code).toBe("E_INTERRUPTED");
+      expect(performance.now() - startedAt).toBeLessThan(2000);
+      expect(existsSync(spawned)).toBe(false);
+    } finally {
+      restore();
+    }
   });
 });
 

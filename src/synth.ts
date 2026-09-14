@@ -202,8 +202,10 @@ export async function listVoiceIds(sinks: EventSinks = {}, signal?: AbortSignal)
   if (!isEngineInstalled()) {
     throw new KeshaError("E_ENGINE_SPAWN", `kesha-engine not installed. run: ${installHint()}`);
   }
-  const { argv, warnings } = validateArgv(["say", "--list-voices"], await getDescribe());
+  if (signal?.aborted) throw engineAbortError();
+  const { argv, warnings } = validateArgv(["say", "--list-voices"], await getDescribe({ signal }));
   for (const warning of warnings) log.warn(warning);
+  if (signal?.aborted) throw engineAbortError();
   const proc = spawnEngineProcess(getEngineBinPath(), argv, ["ignore", "pipe", "pipe"], protocolEnv());
   // Registered so Ctrl-C during a cold Engine load terminates it (#939); disposed here so a long-lived MCP server never leaks one per call.
   const tree = registerProcessTree(proc);
