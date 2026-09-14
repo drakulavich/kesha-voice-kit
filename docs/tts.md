@@ -156,7 +156,7 @@ kesha say --voice ru-vosk-m02 --ssml \
   '<speak><emphasis level="none">дом+а</emphasis></speak>'  # default ДО́ма (suppress)
 ```
 
-Once-per-process stderr warning fires when `<emphasis>` content lacks any `+` marker. `<emphasis>` on Kokoro / AVSpeech voices strips `+` and warns once (Kokoro has no `+`-marker analog). Engine reports `tts.ru_emphasis_marker: true`. Closes [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
+Once-per-process stderr warning fires when `<emphasis>` content lacks any `+` marker. `<emphasis>` on Kokoro voices strips `+` and warns once (Kokoro has no `+`-marker analog); AVSpeech rejects every SSML request with `E_SSML_UNSUPPORTED`. Engine reports `tts.ru_emphasis_marker: true`. Closes [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
 
 ### `<prosody rate>` — speech rate via SSML
 
