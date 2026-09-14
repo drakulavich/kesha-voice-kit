@@ -4,7 +4,13 @@ use common::non_test_prefix;
 use std::path::Path;
 
 /// Each entry allows one occurrence in that file, so the count is the ledger of remaining prose.
-const ALLOWED: &[(&str, &str)] = &[("src/protocol/events.rs", "the emitter itself")];
+const ALLOWED: &[(&str, &str)] = &[
+    ("src/protocol/events.rs", "the emitter itself"),
+    (
+        "src/protocol/events.rs",
+        "the passthrough for an already-rendered line",
+    ),
+];
 
 const PATTERNS: &[&str] = &["eprintln!", "eprint!(", "io::stderr()"];
 

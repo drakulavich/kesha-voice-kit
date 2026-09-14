@@ -36,6 +36,15 @@ pub fn endpoint_config(
     }))
 }
 
+/// An `--out` the caller mistyped is exit 2 like `say`'s, not the operational 1 every other engine error takes.
+pub fn exit_code(err: &anyhow::Error) -> i32 {
+    let operational = crate::errors::report(err);
+    if crate::errors::code_of(err) == crate::errors::ErrorCode::InvalidArg {
+        return 2;
+    }
+    operational
+}
+
 pub fn run(
     out: Option<PathBuf>,
     live: bool,

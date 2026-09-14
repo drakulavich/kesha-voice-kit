@@ -179,6 +179,8 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
         ));
     }
 
+    tts::say::validate_rate(req.rate)?;
+
     let format = crate::cli::say::resolve_output_format(
         req.format.as_deref(),
         req.bitrate,
