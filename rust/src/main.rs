@@ -53,13 +53,16 @@ fn run_command(command: Option<Commands>) -> Result<()> {
             auto_stop_threshold,
             auto_stop_min_speech_ms,
         }) => {
-            let endpoint = cli::record::endpoint_config(
+            let recorded = cli::record::endpoint_config(
                 auto_stop,
                 auto_stop_silence_ms,
                 auto_stop_threshold,
                 auto_stop_min_speech_ms,
-            )?;
-            cli::record::run(out, live, max_seconds, endpoint)?
+            )
+            .and_then(|endpoint| cli::record::run(out, live, max_seconds, endpoint));
+            if let Err(err) = recorded {
+                std::process::exit(cli::record::exit_code(&err));
+            }
         }
         Some(Commands::Describe) => {
             let s = kesha_engine::protocol::describe::render()?;

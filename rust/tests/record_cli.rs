@@ -20,7 +20,11 @@ fn record_to(out: &std::path::Path) -> std::process::Output {
 fn an_out_path_that_is_a_directory_is_an_invalid_argument_naming_the_os_reason() {
     let dir = tempfile::tempdir().unwrap();
     let out = record_to(dir.path());
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "an --out the caller mistyped is exit 2, as docs/errors.md says"
+    );
     let v = common::sole_error_event(&out);
     assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
     let message = v["message"].as_str().unwrap();
@@ -38,7 +42,11 @@ fn an_out_path_that_is_a_symlink_to_a_directory_is_an_invalid_argument() {
     let link = dir.path().join("recordings");
     std::os::unix::fs::symlink(dir.path(), &link).unwrap();
     let out = record_to(&link);
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "an --out the caller mistyped is exit 2, as docs/errors.md says"
+    );
     let v = common::sole_error_event(&out);
     assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
     assert!(
@@ -56,12 +64,35 @@ fn an_out_path_under_an_unwritable_directory_is_an_invalid_argument_naming_the_o
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
     let out = record_to(&locked.join("note.wav"));
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "an --out the caller mistyped is exit 2, as docs/errors.md says"
+    );
     let v = common::sole_error_event(&out);
     assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
     assert!(
         v["message"].as_str().unwrap().contains("Permission denied"),
         "{v}"
+    );
+}
+
+/// docs/errors.md gives one status per class, so the two commands that take `--out` cannot differ on it.
+#[cfg(feature = "tts")]
+#[test]
+fn record_and_say_answer_a_directory_out_with_the_same_code_and_status() {
+    let dir = tempfile::tempdir().unwrap();
+    let recorded = record_to(dir.path());
+    let said = Command::new(common::engine_bin())
+        .args(["say", "Hello there", "--out"])
+        .arg(dir.path())
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(recorded.status.code(), said.status.code());
+    assert_eq!(
+        common::sole_error_event(&recorded)["code"],
+        common::sole_error_event(&said)["code"]
     );
 }
 
