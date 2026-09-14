@@ -346,7 +346,7 @@ pub(crate) fn say_kokoro(
                 message: "SSML had no speakable content".into(),
             });
         }
-        ensure_script_supported(voice_id, &speakable_text(&segments))?;
+        ensure_script_supported(voice_id, &speakable_text(&segments, IpaText::Replaced))?;
         segments
     } else if en::is_en(lang) {
         ensure_script_supported(voice_id, text)?;
@@ -609,7 +609,7 @@ fn synth_segments_fluid_kokoro(
             message: "SSML had no speakable content".into(),
         });
     }
-    fluid_script_gate(voice_id, &speakable_text(&segments))?;
+    fluid_script_gate(voice_id, &speakable_text(&segments, IpaText::Spoken))?;
     let synth = |t: &str, sp: f32| super::fluid_kokoro::synthesize_pcm(t, voice_id, sp);
     let mut sink = FluidKokoroSink {
         synth: &synth,
@@ -703,25 +703,37 @@ impl SegmentSink for FluidKokoroSink<'_> {
     }
 }
 
-/// The words an SSML utterance will actually speak, so a script gate counts those rather than the Latin tag names wrapping them.
-fn speakable_text(segments: &[ssml::Segment]) -> String {
-    fn walk(segments: &[ssml::Segment], out: &mut String) {
+/// Whether an engine speaks the text a `<phoneme>` wraps (no IPA input) or the phonemes it supplies.
+#[derive(Clone, Copy)]
+enum IpaText {
+    Spoken,
+    Replaced,
+}
+
+/// The words an SSML utterance will actually phonemize, so a script gate counts those rather than the Latin tag names wrapping them.
+fn speakable_text(segments: &[ssml::Segment], ipa: IpaText) -> String {
+    fn walk(segments: &[ssml::Segment], ipa: IpaText, out: &mut String) {
         for segment in segments {
             match segment {
                 ssml::Segment::Text(t)
                 | ssml::Segment::Spell(t)
-                | ssml::Segment::Ipa { text: t, .. }
                 | ssml::Segment::Emphasis { content: t, .. } => {
                     out.push_str(t);
                     out.push(' ');
                 }
-                ssml::Segment::ProsodyRate { content, .. } => walk(content, out),
+                ssml::Segment::Ipa { text: t, .. } => {
+                    if matches!(ipa, IpaText::Spoken) {
+                        out.push_str(t);
+                        out.push(' ');
+                    }
+                }
+                ssml::Segment::ProsodyRate { content, .. } => walk(content, ipa, out),
                 ssml::Segment::Break(_) => {}
             }
         }
     }
     let mut out = String::new();
-    walk(segments, &mut out);
+    walk(segments, ipa, &mut out);
     out
 }
 
@@ -808,7 +820,7 @@ fn synth_segments_vosk(
             message: "SSML had no speakable content".into(),
         });
     }
-    ensure_script_supported(voice_id, &speakable_text(&segments))?;
+    ensure_script_supported(voice_id, &speakable_text(&segments, IpaText::Spoken))?;
     let segments = ru::normalize_segments(segments, expand_abbrev);
     let mut sink = VoskSink {
         cache: vosk,
@@ -977,6 +989,29 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn onnx_kokoro_does_not_gate_the_text_a_phoneme_override_replaces() {
+        // The ONNX arm synthesizes the IPA, so the wrapped text's script is not what it phonemizes.
+        let err = say_kokoro(
+            &mut sessions::TtsSessions::default(),
+            r#"<speak><phoneme alphabet="ipa" ph="pɹʲɪvʲet mʲir">Привет мир</phoneme></speak>"#,
+            "en-am_michael",
+            "en",
+            Path::new("/nonexistent/kokoro/model.onnx"),
+            Path::new("/nonexistent/kokoro/voice.bin"),
+            1.0,
+            OutputFormat::Wav,
+            true,
+            true,
+        )
+        .expect_err("the model is missing, so it fails later");
+        assert_ne!(
+            err.code(),
+            crate::errors::ErrorCode::ScriptUnsupported,
+            "{err}"
+        );
+    }
 
     #[test]
     fn onnx_kokoro_refuses_an_unpronounceable_script_before_it_loads_a_model() {
