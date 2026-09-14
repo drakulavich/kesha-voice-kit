@@ -210,6 +210,10 @@ fn the_out_probe_never_removes_a_path_it_did_not_create() {
         std::fs::symlink_metadata(&link).is_ok(),
         "the probe deleted the caller's symlink"
     );
+    assert!(
+        !target.exists(),
+        "the probe left an empty target behind the symlink of a request that failed"
+    );
 }
 
 #[test]
