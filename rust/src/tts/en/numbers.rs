@@ -54,7 +54,8 @@ fn under_hundred(n: u64) -> String {
     if r == 0 {
         TENS[t as usize].to_string()
     } else {
-        format!("{}-{}", TENS[t as usize], ONES[r as usize])
+        // A hyphenated compound loses its second half in FluidAudio's G2P ("fifty-six" reads as "fifty").
+        format!("{} {}", TENS[t as usize], ONES[r as usize])
     }
 }
 
@@ -261,28 +262,28 @@ mod tests {
         assert_eq!(verbalize("$1"), "one dollar");
         assert_eq!(
             verbalize("He paid $1234"),
-            "He paid one thousand two hundred thirty-four dollars"
+            "He paid one thousand two hundred thirty four dollars"
         );
         assert_eq!(
             verbalize("$1,234.56"),
-            "one thousand two hundred thirty-four dollars and fifty-six cents"
+            "one thousand two hundred thirty four dollars and fifty six cents"
         );
         assert_eq!(verbalize("€20.01"), "twenty euros and one cent");
         assert_eq!(verbalize("£3.50"), "three pounds and fifty pence");
-        assert_eq!(verbalize("$0.99"), "ninety-nine cents");
+        assert_eq!(verbalize("$0.99"), "ninety nine cents");
         assert_eq!(verbalize("$7.00"), "seven dollars");
     }
 
     #[test]
     fn a_comma_grouped_number_is_read_without_a_unit() {
-        assert_eq!(verbalize("1,234"), "one thousand two hundred thirty-four");
+        assert_eq!(verbalize("1,234"), "one thousand two hundred thirty four");
         assert_eq!(
             verbalize("2,500,000 people"),
             "two million five hundred thousand people"
         );
         assert_eq!(
             verbalize("1,234.5"),
-            "one thousand two hundred thirty-four point five"
+            "one thousand two hundred thirty four point five"
         );
     }
 
@@ -311,7 +312,7 @@ mod tests {
     fn surrounding_prose_and_punctuation_survive() {
         assert_eq!(
             verbalize("Of 1,234, about $10 remains."),
-            "Of one thousand two hundred thirty-four, about ten dollars remains."
+            "Of one thousand two hundred thirty four, about ten dollars remains."
         );
     }
 
@@ -331,7 +332,7 @@ mod tests {
         assert_eq!(cardinal(1_000_000_000), "one billion");
         assert_eq!(
             cardinal(987_654_321),
-            "nine hundred eighty-seven million six hundred fifty-four thousand three hundred twenty-one"
+            "nine hundred eighty seven million six hundred fifty four thousand three hundred twenty one"
         );
     }
 }
