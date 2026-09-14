@@ -24,7 +24,7 @@ use ssml_parser::elements::ParsedElement;
 use ssml_parser::parse_ssml;
 
 use crate::coded_bail;
-use crate::errors::ErrorCode;
+use crate::errors::{CodedContext as _, ErrorCode};
 
 pub use segment::Segment;
 
@@ -33,6 +33,43 @@ use rate::{find_relative_rate, has_structural_source_siblings, parse_rate_value}
 use walker::{emit_span, parse_inner_spans, push_text_slice, span_priority};
 use warnings::{WARN_PROSODY_MID_UTTERANCE, WARN_PROSODY_NO_SUPPORTED_ATTR};
 
+/// ssml-parser drops CDATA from get_text(), so its content is substituted in, escaped, before parsing (T3-3).
+fn substitute_cdata(input: &str) -> std::borrow::Cow<'_, str> {
+    const OPEN: &str = "<![CDATA[";
+    const CLOSE: &str = "]]>";
+    if !input.contains(OPEN) {
+        return std::borrow::Cow::Borrowed(input);
+    }
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + OPEN.len()..];
+        // Unterminated: hand the rest to the parser, which rejects it as malformed.
+        let Some(end) = after.find(CLOSE) else {
+            out.push_str(&rest[start..]);
+            return std::borrow::Cow::Owned(out);
+        };
+        out.push_str(
+            &after[..end]
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;"),
+        );
+        rest = &after[end + CLOSE.len()..];
+    }
+    out.push_str(rest);
+    std::borrow::Cow::Owned(out)
+}
+
+/// The upstream parser carries no structured error kind, so the tag and its accepted forms are inferred from its text (T3-2).
+fn parse_failure_hint(upstream: &str) -> &'static str {
+    if upstream.contains("TimeDesignation") {
+        return "SSML <break time> must be a duration like \"500ms\" or \"1s\", or absent";
+    }
+    "SSML is malformed"
+}
+
 /// Parse an SSML string into a linear segment list.
 /// Unknown tags emit a single stderr warning per name and are otherwise stripped
 /// (their text content is still synthesized).
@@ -40,6 +77,8 @@ use warnings::{WARN_PROSODY_MID_UTTERANCE, WARN_PROSODY_NO_SUPPORTED_ATTR};
 /// Hardening: requires a `<speak>` root element, rejects `<!DOCTYPE>` (XXE surface),
 /// and upstream `ssml-parser` disallows external entities by construction.
 pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
+    let substituted = substitute_cdata(input);
+    let input: &str = &substituted;
     let trimmed = input.trim_start();
     if trimmed.is_empty() {
         coded_bail!(ErrorCode::SsmlInvalid, "SSML input is empty");
@@ -71,7 +110,9 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
         );
     }
 
-    let ssml = parse_ssml(input)?;
+    let ssml = parse_ssml(input)
+        .map_err(|e| anyhow::anyhow!("{} ({e})", parse_failure_hint(&e.to_string())))
+        .coded(ErrorCode::SsmlInvalid)?;
     let text: Vec<char> = ssml.get_text().chars().collect();
 
     // Secondary sort by priority so that when spans share the same `start`, inner

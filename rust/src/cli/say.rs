@@ -97,6 +97,10 @@ pub(crate) fn resolve_output_format(
         if let Some(r) = sample_rate {
             *sr = r;
         }
+        // The encoder keeps its own check, but reaching it costs a full synthesis first (T1-5).
+        if !tts::encode::OPUS_BITRATE_RANGE.contains(br) {
+            return Err(format!("--bitrate must be 6000..=510000 bps, got {br}"));
+        }
     } else if bitrate.is_some() || sample_rate.is_some() {
         return Err("--bitrate / --sample-rate only apply to --format ogg-opus".to_string());
     }
@@ -159,14 +163,21 @@ fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
     ]
 }
 
-/// Map a TTS error to the documented exit code for `kesha say`.
-/// 2 = bad input, 4 = synthesis failure, 5 = text too long.
-/// (Voice-not-installed exits 1 directly from the resolver path.)
+/// Map a TTS error to the documented exit code for `kesha say`: 1 = operational,
+/// 2 = bad input, 4 = uncoded or unservable, 5 = text too long.
+/// Keyed on the code, so the same code cannot exit differently per engine (T2-5).
 fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
-    match e {
-        tts::TtsError::EmptyText => 2,
-        tts::TtsError::TextTooLong { .. } => 5,
-        tts::TtsError::SynthesisFailed(_) | tts::TtsError::Coded { .. } => 4,
+    use crate::errors::ErrorCode as C;
+    match e.code() {
+        C::ModelMissing
+        | C::ModelDownload
+        | C::CacheCorrupt
+        | C::ModelLoad
+        | C::SidecarMissing
+        | C::VoiceUnknown => 1,
+        C::InvalidArg | C::SsmlInvalid | C::TextEmpty => 2,
+        C::TextTooLong => 5,
+        _ => 4,
     }
 }
 
@@ -273,6 +284,49 @@ fn engine_choice<'a>(resolved: &'a tts::voices::ResolvedVoice, rate: f32) -> tts
     }
 }
 
+/// A fifo destination streams, so it is never opened here: the open would block until a reader attaches.
+#[cfg(unix)]
+fn out_file_type_refusal(path: &std::path::Path) -> Option<Result<(), String>> {
+    use std::os::unix::fs::FileTypeExt;
+    let file_type = std::fs::metadata(path).map(|m| m.file_type());
+    // `/dev/stdout` is the engine's stdout, which is the CLI's pipe, not the caller's (T1-15).
+    let device = path.starts_with("/dev")
+        || file_type
+            .as_ref()
+            .is_ok_and(|ft| ft.is_char_device() || ft.is_block_device());
+    if device {
+        return Some(Err(format!(
+            "cannot write --out {}: it is a device the engine's stdout does not reach \
+             — omit --out to write the audio to stdout",
+            path.display()
+        )));
+    }
+    file_type.is_ok_and(|ft| ft.is_fifo()).then_some(Ok(()))
+}
+
+#[cfg(not(unix))]
+fn out_file_type_refusal(_path: &std::path::Path) -> Option<Result<(), String>> {
+    None
+}
+
+/// Probe `--out` before synthesis pays for a path the caller mistyped, as `record::WavOutput::open` does (T1-4).
+fn probe_out_path(path: &std::path::Path) -> Result<(), String> {
+    if let Some(verdict) = out_file_type_refusal(path) {
+        return verdict;
+    }
+    let existed = path.exists();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|err| format!("cannot write --out {}: {err}", path.display()))?;
+    if !existed {
+        let _ = std::fs::remove_file(path);
+    }
+    Ok(())
+}
+
 /// Write synthesized bytes to `--out` file or stdout.
 fn write_output(out: Option<&std::path::Path>, bytes: &[u8]) -> Result<(), i32> {
     use std::io::Write;
@@ -334,6 +388,18 @@ pub fn run(a: SayArgs) -> i32 {
             return 2;
         }
     };
+
+    if let Some(path) = a.out.as_deref() {
+        if let Err(msg) = probe_out_path(path) {
+            events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
+            return 2;
+        }
+    }
+
+    if let Err(msg) = tts::say::validate_rate(a.rate) {
+        events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
+        return 2;
+    }
 
     let raw_text = match a.text {
         Some(s) => s,
@@ -445,6 +511,19 @@ mod tests {
     }
 
     #[test]
+    fn opus_bitrate_range_is_enforced_before_synthesis() {
+        for bad in [1, 5_999, 510_001] {
+            let err = resolve_output_format(Some("ogg-opus"), Some(bad), None, None)
+                .expect_err("bitrate outside the documented range must be refused");
+            assert!(err.contains("--bitrate must be 6000..=510000 bps"), "{err}");
+        }
+        for ok in [6_000, 32_000, 510_000] {
+            resolve_output_format(Some("ogg-opus"), Some(ok), None, None)
+                .unwrap_or_else(|e| panic!("{ok}: {e}"));
+        }
+    }
+
+    #[test]
     fn unknown_format_lists_supported_values() {
         let err = resolve_output_format(Some("mp3"), None, None, None).unwrap_err();
         assert!(err.contains("supported: wav, ogg-opus, flac"), "{err}");
@@ -464,12 +543,31 @@ mod tests {
             exit_code_for_tts_err(&tts::TtsError::SynthesisFailed("boom".into())),
             4
         );
-        assert_eq!(
-            exit_code_for_tts_err(&tts::TtsError::Coded {
-                code: crate::errors::ErrorCode::SsmlInvalid,
-                message: "bad ssml".into()
-            }),
-            4
-        );
+        use crate::errors::ErrorCode as C;
+        for (code, expected) in [
+            (C::ModelMissing, 1),
+            (C::ModelDownload, 1),
+            (C::CacheCorrupt, 1),
+            (C::ModelLoad, 1),
+            (C::SidecarMissing, 1),
+            (C::VoiceUnknown, 1),
+            (C::InvalidArg, 2),
+            (C::SsmlInvalid, 2),
+            (C::TextEmpty, 2),
+            (C::TextTooLong, 5),
+            (C::ScriptUnsupported, 4),
+            (C::SsmlUnsupported, 4),
+            (C::Internal, 4),
+        ] {
+            assert_eq!(
+                exit_code_for_tts_err(&tts::TtsError::Coded {
+                    code,
+                    message: "boom".into()
+                }),
+                expected,
+                "{}",
+                code.as_str()
+            );
+        }
     }
 }

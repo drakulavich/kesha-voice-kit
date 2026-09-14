@@ -25,7 +25,7 @@ code never needs sanitizing.
 | `E_NO_BACKEND` | platform | no | The binary was built without an ASR backend. | Use an official release build. |
 | `E_TEXT_EMPTY` | tts | no | Synthesis text was empty. | Pass non-empty text. |
 | `E_TEXT_TOO_LONG` | tts | no | Text exceeded the maximum length. | Split into shorter requests. |
-| `E_VOICE_UNKNOWN` | tts | no | The voice id wasn't recognized. | `kesha say --list-voices`. |
+| `E_VOICE_UNKNOWN` | tts | no | The voice id wasn't recognized, or a `macos-*` voice is not downloaded on this Mac. | `kesha say --list-voices`; for a `macos-*` voice, download it in System Settings > Accessibility > Spoken Content. |
 | `E_SSML_INVALID` | tts | no | SSML was malformed (missing `<speak>` root, DOCTYPE, or unsupported relative rate). | Fix the SSML; see [docs/tts.md](tts.md). |
 | `E_SSML_UNSUPPORTED` | tts | no | SSML isn't supported for this engine/voice. | Use a plain-text request or a supported voice. |
 | `E_SCRIPT_UNSUPPORTED` | tts | no | The text uses a script the chosen voice's G2P can't phonemize (e.g. Devanagari / kana-kanji / Han for the FluidAudio Kokoro `hi`/`ja`/`zh` voices, which only handle Latin input). | Romanize the text (transliterate to Latin), or use a voice whose engine supports the script. See [#492](https://github.com/drakulavich/kesha-voice-kit/issues/492). |
@@ -84,9 +84,9 @@ status that lets scripts branch without parsing stderr:
 | Exit code | Meaning |
 |-----------|---------|
 | `0` | Success. |
-| `1` | Operational error — engine/model not installed, a download or install failed, or an unknown command. |
-| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — no input file, an option the command does not declare, mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a directory where an audio file is expected, a transcribe flag the installed engine lacks, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). |
-| `4` | Unexpected/uncoded internal failure. |
+| `1` | Operational error — engine/model not installed, a download or install failed, an unknown command, a `macos-*` voice this Mac has not downloaded, or a helper sidecar that is missing or failed. `kesha say` derives this from the code, so `E_MODEL_MISSING`, `E_MODEL_DOWNLOAD`, `E_CACHE_CORRUPT`, `E_MODEL_LOAD`, `E_SIDECAR_MISSING` and `E_VOICE_UNKNOWN` exit `1` whichever engine raised them. |
+| `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — no input file, an option the command does not declare, mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a directory where an audio file is expected, a transcribe flag the installed engine lacks, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store). From the engine: a `say --out` path it cannot write (a directory, a missing parent, an unwritable location, a device such as `/dev/stdout`), a `--rate` outside 0.5–2.0, a `--bitrate` outside 6000–510000, and malformed SSML (`E_SSML_INVALID`). |
+| `4` | Unexpected/uncoded internal failure (`E_INTERNAL`), and the two refusals that mean the request cannot be served as written rather than that anything is missing: `E_SCRIPT_UNSUPPORTED` and `E_SSML_UNSUPPORTED`. |
 | `5` | `kesha say` text exceeds the length limit. |
 | `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run and the engine subprocess was terminated, the interrupted files reporting `E_INTERRUPTED`; or a `kesha init` prompt was cancelled (nothing was installed). |
 | `143` | Terminated — a `SIGTERM` reached the CLI mid-run (a cancelled CI job, a stopped container); the engine subprocess was terminated and the interrupted files report `E_INTERRUPTED`. |

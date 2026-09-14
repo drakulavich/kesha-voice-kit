@@ -28,6 +28,21 @@ fn silence_len(dur: std::time::Duration, sample_rate: u32) -> usize {
     (secs * sample_rate as f64).round() as usize
 }
 
+/// Engine-safe playback rate: Vosk and Kokoro both honor rate within ~7% of theoretical at these endpoints (#236).
+pub const RATE_RANGE: std::ops::RangeInclusive<f32> = 0.5..=2.0;
+
+/// Refuse a `--rate` no engine can honour before one is chosen: FluidAudio's Swift traps on 0 (T4-3).
+pub fn validate_rate(rate: f32) -> Result<(), String> {
+    if rate.is_finite() && RATE_RANGE.contains(&rate) {
+        return Ok(());
+    }
+    Err(format!(
+        "--rate must be between {:.1} and {:.1} (got {rate})",
+        RATE_RANGE.start(),
+        RATE_RANGE.end()
+    ))
+}
+
 /// Saturating composition of the CLI `--rate` flag with an SSML
 /// `<prosody rate>` multiplier. Both factors are unit-less multipliers
 /// against the engine's default rate; the result is clamped to the
@@ -45,7 +60,7 @@ fn silence_len(dur: std::time::Duration, sample_rate: u32) -> usize {
 /// `2.0` looks indistinguishable from a clean 2× rate (#267 F9).
 fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     let raw = cli_rate * ssml_rate;
-    let clamped = raw.clamp(0.5, 2.0);
+    let clamped = raw.clamp(*RATE_RANGE.start(), *RATE_RANGE.end());
     // Exact bound check, not `(raw - clamped).abs() > EPSILON`: at raw≈0.5
     // the f32 ULP (~6e-8) is below `EPSILON` (~1.2e-7), so a value one ULP
     // outside the bound would clamp silently (Greptile P2 on #287). NaN
@@ -54,7 +69,7 @@ fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     // intentional: NaN here means an upstream bug parsed `cli_rate` or
     // `ssml_rate` as not-a-number, and surfacing it on stderr beats
     // silently propagating NaN sample-rate params downstream.
-    if !(0.5..=2.0).contains(&raw) {
+    if !RATE_RANGE.contains(&raw) {
         crate::tts::warn::warn_once(
             "compose-rate-clamped",
             &format!(
@@ -226,8 +241,11 @@ fn say_avspeech(
             message: "SSML is not yet supported with macos-* voices (#141 follow-up)".into(),
         });
     }
-    let wav_bytes = avspeech::synthesize(text, voice_id, speed, None)
-        .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")))?;
+    let wav_bytes =
+        avspeech::synthesize(text, voice_id, speed, None).map_err(|e| TtsError::Coded {
+            code: crate::errors::code_of(&e),
+            message: format!("avspeech: {e:#}"),
+        })?;
     transcode_to(&wav_bytes, format)
 }
 
@@ -291,9 +309,10 @@ pub(crate) fn say_kokoro(
             message: format!("ssml: {e:#}"),
         })?;
         if segments.is_empty() {
-            return Err(TtsError::SynthesisFailed(
-                "SSML had no speakable content".into(),
-            ));
+            return Err(TtsError::Coded {
+                code: crate::errors::ErrorCode::TextEmpty,
+                message: "SSML had no speakable content".into(),
+            });
         }
         segments
     } else if en::is_en(lang) {
@@ -383,9 +402,10 @@ fn synth_segments(
     let mut out = seam::SeamBuf::new(sample_rate);
     walk_segments(sink, segments, speed, sample_rate, &mut out)?;
     if out.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "no audio produced from SSML input".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "no audio produced from SSML input".into(),
+        });
     }
     encode_or_fail(&out.finish(), sample_rate, format)
 }
@@ -549,9 +569,10 @@ fn synth_segments_fluid_kokoro(
         message: format!("ssml: {e:#}"),
     })?;
     if segments.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "SSML had no speakable content".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "SSML had no speakable content".into(),
+        });
     }
     let synth = |t: &str, sp: f32| super::fluid_kokoro::synthesize_pcm(t, voice_id, sp);
     let mut sink = FluidKokoroSink { synth: &synth };
@@ -708,9 +729,10 @@ fn synth_segments_vosk(
         message: format!("ssml: {e:#}"),
     })?;
     if segments.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "SSML had no speakable content".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "SSML had no speakable content".into(),
+        });
     }
     let segments = ru::normalize_segments(segments, expand_abbrev);
     let mut sink = VoskSink {
@@ -1240,11 +1262,7 @@ mod tests {
     fn synth_segments_rejects_empty_output_and_propagates_leaf_errors() {
         let mut sink = RecordingSink::new();
         let err = synth_segments(&mut sink, &[], 1.0, OutputFormat::Wav).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("no audio produced from SSML input"),
-            "{err}"
-        );
+        assert_eq!(err.code(), crate::errors::ErrorCode::TextEmpty, "{err}");
 
         for (fail_g2p, expected) in [(true, "boom"), (false, "kaboom")] {
             let mut failing = RecordingSink::new();
