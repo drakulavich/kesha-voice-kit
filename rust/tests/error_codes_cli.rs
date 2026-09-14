@@ -81,8 +81,10 @@ fn a_wav_declaring_sample_rate_zero_is_bad_audio_with_no_panic_text() {
 #[test]
 fn say_stops_reading_an_open_stdin_pipe_once_the_text_limit_is_passed() {
     use std::io::Write as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("never.wav");
     let mut child = Command::new(engine_bin())
-        .args(["say", "--out", "/dev/null"])
+        .args(["say", "--out", out.to_str().unwrap()])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
