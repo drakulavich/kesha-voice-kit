@@ -22,9 +22,9 @@
 
 ## 3. SSML and audio on the FluidAudio path (Rust)
 
-- [ ] 3.1 T3-4 runs are edge-clipped with `seam` before a `<break>` silence is appended; a break adds only its duration
-- [ ] 3.2 T4-1 plain text is chunked by a rate-scaled budget and rejoined with `seam::join_chunks`; `--rate 0.5` synthesizes what 1.0 can
-- [ ] 3.3 T3-6 `<phoneme>` on FluidAudio speaks its wrapped text with a reworded warning; the empty-document bail is coded
+- [x] 3.1 T3-4 runs are edge-clipped with `seam` before a `<break>` silence is appended; a break adds only its duration
+- [x] 3.2 T4-1 plain text is chunked by a rate-scaled budget and rejoined with `seam::join_chunks`; `--rate 0.5` synthesizes what 1.0 can
+- [x] 3.3 T3-6 `<phoneme>` on FluidAudio speaks its wrapped text with a reworded warning; the empty-document bail is coded
 
 ## 4. Text normalization and script gates (Rust)
 
