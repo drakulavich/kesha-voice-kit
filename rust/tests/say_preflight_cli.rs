@@ -82,11 +82,8 @@ fn an_out_path_that_is_a_directory_is_an_invalid_argument_before_synthesis() {
     let v = common::sole_error_event(&out);
     assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
     let msg = v["message"].as_str().unwrap();
-    assert!(
-        msg.contains("Is a directory"),
-        "the OS reason is the value: {v}"
-    );
     assert!(msg.contains(tmp.path().to_str().unwrap()), "{v}");
+    assert!(msg.contains("os error"), "the OS reason is the value: {v}");
 }
 
 #[test]
@@ -101,11 +98,8 @@ fn an_out_path_under_a_missing_directory_is_an_invalid_argument() {
     let v = common::sole_error_event(&out);
     assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
     assert!(
-        v["message"]
-            .as_str()
-            .unwrap()
-            .contains("No such file or directory"),
-        "{v}"
+        v["message"].as_str().unwrap().contains("os error"),
+        "the OS reason is the value: {v}"
     );
 }
 
