@@ -76,3 +76,44 @@ fn a_wav_declaring_sample_rate_zero_is_bad_audio_with_no_panic_text() {
         "{v}"
     );
 }
+
+fn detect_text_lang_on_stdin(text: &[u8]) -> std::process::Output {
+    use std::io::Write as _;
+    let mut child = Command::new(engine_bin())
+        .arg("detect-text-lang")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn engine");
+    child
+        .stdin
+        .take()
+        .expect("stdin is piped")
+        .write_all(text)
+        .expect("write stdin");
+    child.wait_with_output().expect("engine exits")
+}
+
+// T1-1: no user text may be an argv element, so the positional is optional and stdin is the source.
+#[test]
+fn detect_text_lang_reads_the_text_from_stdin_when_no_positional_is_given() {
+    let blank = detect_text_lang_on_stdin(b"   \n\t  ");
+    let v = common::sole_error_event(&blank);
+    let message = v["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("detect-text-lang requires non-empty text"),
+        "the whitespace came from stdin, not from a missing argument: {v}"
+    );
+    assert!(
+        !message.contains("required arguments were not provided"),
+        "the positional must be optional: {v}"
+    );
+
+    let given = detect_text_lang_on_stdin("Привет мир как дела".as_bytes());
+    let stderr = String::from_utf8_lossy(&given.stderr);
+    assert!(
+        !stderr.contains("requires non-empty text"),
+        "text on stdin must reach the detector: {stderr}"
+    );
+}

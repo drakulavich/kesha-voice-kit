@@ -222,12 +222,36 @@ describe("KeshaError.render() only trusts a transcript that renders this very er
 describe("engineFailure() is the one way a run becomes a KeshaError", () => {
   const clean = { stderr: "", error: null, invalid: [] };
 
-  test("a non-event line is E_INTERNAL quoting it, with the run's status and transcript", () => {
+  test("a non-event line is E_INTERNAL quoting it, with the run's status", () => {
     const err = engineFailure("say", { stderr: "loading\n", error: null, invalid: ["loading"] }, 0);
     expect(err.code).toBe("E_INTERNAL");
     expect(err.message).toBe('kesha-engine say wrote a line that is not a protocol event: "loading"');
     expect(err.exitCode).toBe(0);
-    expect(err.stderr).toBe("loading");
+  });
+
+  // T1-14: the quoted line carried the user's whole input, and the transcript then printed it again.
+  test("the quoted line is carried once and nothing else the engine said is lost", () => {
+    const outcome = { stderr: "loading\nProgress: 40%\n", error: null, invalid: ["loading"] };
+    const rendered = errorMessage(engineFailure("say", outcome, 1));
+    expect(rendered.split("loading")).toHaveLength(2);
+    expect(rendered).toContain("Progress: 40%");
+  });
+
+  test("a quoted line longer than 200 characters is cut there, with an ellipsis", () => {
+    const token = "x".repeat(400);
+    const line = `[WARN] G2P failed on word '${token}'`;
+    const err = engineFailure("say", { stderr: `${line}\n`, error: null, invalid: [line] }, 4);
+    const quoted = err.message.slice(err.message.indexOf('"') + 1, -1);
+    expect(Array.from(quoted)).toHaveLength(201);
+    expect(quoted.endsWith("…")).toBe(true);
+    expect(quoted.startsWith("[WARN] G2P failed on word '")).toBe(true);
+    expect(errorMessage(err)).not.toContain(token);
+  });
+
+  test("a line at the cap is quoted whole, with no ellipsis", () => {
+    const line = "y".repeat(200);
+    const err = engineFailure("say", { stderr: `${line}\n`, error: null, invalid: [line] }, 4);
+    expect(err.message).toBe(`kesha-engine say wrote a line that is not a protocol event: "${line}"`);
   });
 
   test("an error event carries its code, message and hint", () => {
