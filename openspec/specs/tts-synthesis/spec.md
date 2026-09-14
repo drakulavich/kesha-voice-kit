@@ -444,7 +444,7 @@ SHALL be `E_SSML_INVALID` naming the tag and the accepted forms, never
 capped at 30 s), `<say-as interpret-as="characters">` (letter-by-letter
 spelling), `<phoneme alphabet="ipa" ph="...">` (bypasses G2P where the engine
 accepts IPA; `alphabet` defaults to ipa), `<emphasis>` (stress hint;
-`level="none"` strips `+` stress markers), and `<prosody rate="..."`> when it
+`level="none"` strips `+` stress markers), and `<prosody rate="...">` when it
 wraps the entire utterance. A `<break>` SHALL add exactly the silence it asks
 for: the synthesized runs on either side are trimmed of the engine's own edge
 padding before the silence is inserted, so ten `500ms` breaks add about five

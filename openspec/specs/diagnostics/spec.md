@@ -133,8 +133,9 @@ status; Backend, protocol version, and features (from the describe document); Bu
 version and platform; active Model mirror (when `KESHA_MODEL_MIRROR` is set); and the
 list of installed TTS Voice ids. When an Engine is installed and answers, the Voice ids
 SHALL be the Engine's own inventory (the same list `kesha say --list-voices` prints,
-including FluidAudio Kokoro voices and `macos-*` system voices); only when no Engine is
-installed SHALL the list fall back to what the Model cache holds on disk.
+including FluidAudio Kokoro voices and `macos-*` system voices); when no Engine is
+installed or its inventory probe fails, the list SHALL fall back to what the Model cache
+holds on disk.
 
 `--disk` SHALL additionally print a per-component disk-usage table (Engine, ASR,
 Language ID, VAD, TTS Kokoro, TTS Vosk) and the grand total. The FluidAudio Kokoro
