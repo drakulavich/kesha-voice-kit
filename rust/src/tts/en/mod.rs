@@ -81,7 +81,10 @@ mod tests {
     fn break_and_ipa_pass_through() {
         let segs = vec![
             Segment::Break(Duration::from_millis(500)),
-            Segment::Ipa("əˈpæm".to_string()),
+            Segment::Ipa {
+                ph: "əˈpæm".to_string(),
+                text: "APAM".to_string(),
+            },
         ];
         assert_eq!(normalize_segments(segs.clone(), true), segs);
     }
@@ -137,7 +140,10 @@ mod tests {
             vec![Segment::ProsodyRate {
                 rate: 0.75,
                 content: vec![
-                    Segment::Ipa("ˈiːpæm".to_string()),
+                    Segment::Ipa {
+                        ph: "ˈiːpæm".to_string(),
+                        text: "EPAM".to_string()
+                    },
                     Segment::Text(" partners".to_string()),
                 ],
             }]

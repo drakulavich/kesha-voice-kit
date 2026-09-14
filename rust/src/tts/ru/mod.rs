@@ -186,7 +186,10 @@ mod tests {
     fn break_and_ipa_pass_through() {
         let segs = vec![
             Segment::Break(Duration::from_millis(500)),
-            Segment::Ipa("ɪpɑ".to_string()),
+            Segment::Ipa {
+                ph: "ɪpɑ".to_string(),
+                text: "ипа".to_string(),
+            },
         ];
         assert_eq!(normalize_segments(segs.clone(), true), segs);
     }

@@ -234,6 +234,211 @@ fn say_ssml(exe: &Path, markup: &str, voice: &str, out: &Path) -> bool {
     panic!("kesha-engine say --ssml failed unexpectedly: {stderr}");
 }
 
+/// 60 unpunctuated words — 464 characters, the shape T4-1 measured, which
+/// FluidAudio reported as 2318 acoustic frames against its cap of 2000 at
+/// `--rate 0.5` while the same text at 1.0 synthesized fine.
+fn sixty_unpunctuated_words() -> String {
+    let phrase = "the quiet travellers followed narrow pathways beneath ancient mountain shadows \
+                  every morning";
+    let words: Vec<&str> = phrase.split_whitespace().collect();
+    (0..60)
+        .map(|i| words[i % words.len()])
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn kokoro_slow_rate_synthesizes_what_full_rate_can() {
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+    if !ane_kokoro_ready() {
+        eprintln!(
+            "skipping: FluidAudio ANE Kokoro model + am_michael voice pack not staged \
+             (run `kesha install --tts`)"
+        );
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-kokoro-slow-")
+        .tempdir()
+        .unwrap();
+    let full = tmp.path().join("rate-1.0.wav");
+    let half = tmp.path().join("rate-0.5.wav");
+    let text = sixty_unpunctuated_words();
+    let voice = "en-am_michael";
+
+    if !say_rate(&exe, &text, voice, "1.0", &full) {
+        return; // prerequisite missing — skip cleanly
+    }
+    if !say_rate(&exe, &text, voice, "0.5", &half) {
+        return;
+    }
+
+    let (dur_full, _) = wav_duration_and_samples(&full);
+    let (dur_half, samples_half) = wav_duration_and_samples(&half);
+    eprintln!(
+        "kokoro_slow_rate_synthesizes_what_full_rate_can: {} chars, rate=1.0 -> {dur_full:.3}s, \
+         rate=0.5 -> {dur_half:.3}s, ratio={:.3} (expected ~2.0)",
+        text.chars().count(),
+        dur_half / dur_full
+    );
+
+    assert!(
+        peak(&samples_half) > 0.01,
+        "rate 0.5 produced (near-)silent audio (peak {})",
+        peak(&samples_half)
+    );
+    let ratio = dur_half / dur_full;
+    assert!(
+        (1.7..=2.3).contains(&ratio),
+        "rate 0.5 produced {dur_half:.3}s against {dur_full:.3}s at 1.0 (ratio {ratio:.3}) — \
+         a chunk of the text is missing from the join (T4-1)"
+    );
+}
+
+#[test]
+fn kokoro_break_adds_only_the_silence_it_asked_for() {
+    // T3-4: the split around a break paid a second lead-in and tail, 825 ms on v1.25.0.
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+    if !ane_kokoro_ready() {
+        eprintln!(
+            "skipping: FluidAudio ANE Kokoro model + am_michael voice pack not staged \
+             (run `kesha install --tts`)"
+        );
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-kokoro-break-")
+        .tempdir()
+        .unwrap();
+    let plain = tmp.path().join("plain.wav");
+    let zero = tmp.path().join("break-0ms.wav");
+    let one_second = tmp.path().join("break-1s.wav");
+    let voice = "en-am_michael";
+
+    if !say_ssml(&exe, "<speak>one two</speak>", voice, &plain) {
+        return; // prerequisite missing — skip cleanly
+    }
+    if !say_ssml(
+        &exe,
+        "<speak>one <break time=\"0ms\"/> two</speak>",
+        voice,
+        &zero,
+    ) {
+        return;
+    }
+    if !say_ssml(
+        &exe,
+        "<speak>one <break time=\"1s\"/> two</speak>",
+        voice,
+        &one_second,
+    ) {
+        return;
+    }
+
+    let (dur_plain, _) = wav_duration_and_samples(&plain);
+    let (dur_zero, samples_zero) = wav_duration_and_samples(&zero);
+    let (dur_one, _) = wav_duration_and_samples(&one_second);
+    eprintln!(
+        "kokoro_break_adds_only_the_silence_it_asked_for: plain -> {dur_plain:.3}s, \
+         0ms -> {dur_zero:.3}s (+{:.3}s), 1s -> {dur_one:.3}s (+{:.3}s)",
+        dur_zero - dur_plain,
+        dur_one - dur_plain
+    );
+
+    assert!(
+        peak(&samples_zero) > 0.01,
+        "the broken-up utterance produced (near-)silent audio (peak {})",
+        peak(&samples_zero)
+    );
+    let tol = 0.15;
+    assert!(
+        dur_zero - dur_plain <= tol,
+        "a 0 ms <break> added {:.3}s of silence (plain {dur_plain:.3}s, broken {dur_zero:.3}s) — \
+         the utterance split is paying for a second lead-in and tail (T3-4)",
+        dur_zero - dur_plain
+    );
+    assert!(
+        (dur_one - dur_plain - 1.0).abs() <= tol,
+        "a 1 s <break> added {:.3}s instead of ~1 s (plain {dur_plain:.3}s, broken {dur_one:.3}s)",
+        dur_one - dur_plain
+    );
+}
+
+#[test]
+fn kokoro_phoneme_tag_keeps_its_contained_text() {
+    // T3-6: the spec's rule for a tag an engine cannot honour is "stripped, text preserved".
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+    if !ane_kokoro_ready() {
+        eprintln!(
+            "skipping: FluidAudio ANE Kokoro model + am_michael voice pack not staged \
+             (run `kesha install --tts`)"
+        );
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-kokoro-phoneme-")
+        .tempdir()
+        .unwrap();
+    let without = tmp.path().join("without.wav");
+    let with = tmp.path().join("with.wav");
+    let alone = tmp.path().join("alone.wav");
+    let voice = "en-am_michael";
+
+    if !say_ssml(&exe, "<speak>Hello world</speak>", voice, &without) {
+        return; // prerequisite missing — skip cleanly
+    }
+    if !say_ssml(
+        &exe,
+        "<speak>Hello <phoneme alphabet=\"ipa\" ph=\"ˈkeʃa\">Kesha</phoneme> world</speak>",
+        voice,
+        &with,
+    ) {
+        return;
+    }
+    if !say_ssml(
+        &exe,
+        "<speak><phoneme alphabet=\"ipa\" ph=\"ˈkeʃa\">Kesha</phoneme></speak>",
+        voice,
+        &alone,
+    ) {
+        return;
+    }
+
+    let (dur_without, _) = wav_duration_and_samples(&without);
+    let (dur_with, _) = wav_duration_and_samples(&with);
+    let (dur_alone, samples_alone) = wav_duration_and_samples(&alone);
+    eprintln!(
+        "kokoro_phoneme_tag_keeps_its_contained_text: \"Hello world\" -> {dur_without:.3}s, \
+         with <phoneme>Kesha</phoneme> -> {dur_with:.3}s, the tag alone -> {dur_alone:.3}s"
+    );
+
+    assert!(
+        peak(&samples_alone) > 0.01,
+        "a <phoneme> alone in the root produced (near-)silent audio (peak {})",
+        peak(&samples_alone)
+    );
+    assert!(
+        dur_with - dur_without > 0.2,
+        "the wrapped word is missing from the audio: {dur_with:.3}s against {dur_without:.3}s \
+         without it (T3-6)"
+    );
+}
+
 #[test]
 fn kokoro_ssml_prosody_rate_changes_duration() {
     // #481: SSML `<prosody rate="x-fast">` on the FluidAudio ANE Kokoro path

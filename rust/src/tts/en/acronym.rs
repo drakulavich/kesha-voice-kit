@@ -85,7 +85,10 @@ fn process_token(token: &str, auto_expand: bool, buf: &mut String, out: &mut Vec
     if let Some(ipa) = IPA_LEXICON.iter().find(|(k, _)| *k == mid).map(|(_, v)| *v) {
         buf.push_str(head);
         flush_buf(buf, out);
-        out.push(Segment::Ipa(ipa.to_string()));
+        out.push(Segment::Ipa {
+            ph: ipa.to_string(),
+            text: mid.to_string(),
+        });
         buf.push_str(tail);
         return;
     }
@@ -110,7 +113,7 @@ mod tests {
         for seg in segs {
             match seg {
                 Segment::Text(t) => s.push_str(t),
-                Segment::Ipa(p) => {
+                Segment::Ipa { ph: p, .. } => {
                     s.push('[');
                     s.push_str(p);
                     s.push(']');

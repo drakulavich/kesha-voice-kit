@@ -69,7 +69,10 @@ fn emit_phoneme(
     }
     push_text_slice(segments, text, cursor, span_start);
     if !attrs.ph.is_empty() {
-        segments.push(Segment::Ipa(attrs.ph.clone()));
+        segments.push(Segment::Ipa {
+            ph: attrs.ph.clone(),
+            text: extract_inner_text(text, span_start, span_end).unwrap_or_default(),
+        });
     }
     Some(span_end)
 }
@@ -249,7 +252,7 @@ mod tests {
         // Inner phoneme wins (priority 0 < prosody priority 2); no ProsodyRate wrapper.
         assert!(
             segs.iter()
-                .any(|s| matches!(s, Segment::Ipa(p) if p == "həˈloʊ")),
+                .any(|s| matches!(s, Segment::Ipa { ph, .. } if ph == "həˈloʊ")),
             "no Ipa segment found in: {segs:?}"
         );
         assert!(
@@ -280,7 +283,7 @@ mod tests {
             other => panic!("expected ProsodyRate, got {other:?}"),
         };
         assert!(
-            !content.iter().any(|s| matches!(s, Segment::Ipa(_))),
+            !content.iter().any(|s| matches!(s, Segment::Ipa { .. })),
             "unexpected Ipa in: {content:?}"
         );
         // Inner text still flows through as Text so G2P handles it.
