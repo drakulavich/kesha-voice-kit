@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { MAX_TEXT_CHARS } from "../../src/synth";
 import {
   chmodSync,
   existsSync,
@@ -1047,10 +1048,25 @@ process.exit(99);
     expectContract(run, {
       exitCode: 5,
       stdoutEmpty: true,
-      stderrContains: [`error [E_TEXT_TOO_LONG]: text exceeds 5000 chars (${chars})`],
+      stderrContains: ["error [E_TEXT_TOO_LONG]: text exceeds 5000 chars"],
       stderrNotContains: ["E_ENGINE_SPAWN", "Synthesizing"],
     });
     expect(run.stderr.split("\n")).toHaveLength(1);
+  });
+
+  test("kesha say stops reading a stdin pipe once the text limit is passed, without waiting for EOF", async () => {
+    const dir = makeTempDir("kesha-cli-contract-openlong-");
+    const run = await runCli(["say", "--out", join(dir, "big.wav")], {
+      env: isolatedEnv(dir),
+      stdin: { openAfter: "x".repeat(MAX_TEXT_CHARS * 4 + 4096) },
+      timeoutMs: 10_000,
+    });
+    expectContract(run, {
+      exitCode: 5,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_TEXT_TOO_LONG]: text exceeds 5000 chars"],
+      stderrNotContains: ["E_ENGINE_SPAWN", "Synthesizing"],
+    });
   });
 
   // T1-2: `producer | kesha say "$EMPTY_VAR"` blocked until the producer closed the pipe.

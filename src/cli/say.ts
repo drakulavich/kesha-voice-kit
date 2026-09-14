@@ -5,6 +5,7 @@ import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInvalidArg } from "./options";
 import { log } from "../log";
 import {
+  MAX_TEXT_CHARS,
   listVoiceIds,
   say,
   SUPPORTED_SAMPLE_RATES,
@@ -17,14 +18,25 @@ import { resolveSayVoice } from "../voice-routing";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandOutcome, type CommandSession } from "./command-session";
 
+/** Four bytes per allowed character: a pipe that streams past it is refused without waiting for EOF. */
+const MAX_STDIN_BYTES = MAX_TEXT_CHARS * 4 + 4;
+
 /** A positional the user gave is the text, empty or not; only an absent one falls through to stdin (#T1-2). */
 async function resolveText(inline: string | undefined): Promise<string> {
   if (inline !== undefined) return inline;
   const chunks: Uint8Array[] = [];
+  let total = 0;
   for await (const chunk of Bun.stdin.stream()) {
     chunks.push(chunk);
+    total += chunk.byteLength;
+    if (total > MAX_STDIN_BYTES) break;
   }
-  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+  if (total > MAX_STDIN_BYTES) {
+    throw new KeshaError(
+      "E_TEXT_TOO_LONG",
+      `text exceeds ${MAX_TEXT_CHARS} chars (stdin passed ${MAX_STDIN_BYTES} bytes)`,
+    );
+  }
   const merged = new Uint8Array(total);
   let offset = 0;
   for (const c of chunks) {
@@ -363,8 +375,9 @@ export const sayCommand = defineCommand({
       log.error(renderInvalidArg("kesha say requires text or piped stdin. Usage: kesha say <text>"));
       process.exit(2);
     }
-    const text = await resolveText(inlineText);
+    let text: string;
     try {
+      text = await resolveText(inlineText);
       validateSayText(text);
     } catch (err) {
       log.error(errorMessage(err));

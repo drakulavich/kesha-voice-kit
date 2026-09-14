@@ -173,8 +173,14 @@ fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
 /// Read text from stdin, trimming surrounding whitespace.
 fn read_stdin() -> Result<String, i32> {
     use std::io::Read;
-    let mut buf = String::new();
-    if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+    // Four bytes per allowed character: a pipe that streams past it is refused without waiting for EOF.
+    const MAX_STDIN_BYTES: u64 = tts::MAX_TEXT_CHARS as u64 * 4 + 4;
+    let mut bytes = Vec::new();
+    if let Err(e) = std::io::stdin()
+        .lock()
+        .take(MAX_STDIN_BYTES + 1)
+        .read_to_end(&mut bytes)
+    {
         events::error(
             crate::errors::ErrorCode::Internal,
             format!("failed to read stdin: {e}"),
@@ -182,7 +188,15 @@ fn read_stdin() -> Result<String, i32> {
         );
         return Err(4);
     }
-    Ok(buf.trim().to_string())
+    if bytes.len() as u64 > MAX_STDIN_BYTES {
+        let err = tts::TtsError::TextTooLong {
+            max: tts::MAX_TEXT_CHARS,
+            actual: String::from_utf8_lossy(&bytes).chars().count(),
+        };
+        events::error(err.code(), format!("{err}"), None);
+        return Err(exit_code_for_tts_err(&err));
+    }
+    Ok(String::from_utf8_lossy(&bytes).trim().to_string())
 }
 
 /// Validate text length against TTS limits; returns the validated string or an
