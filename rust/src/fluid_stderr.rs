@@ -109,6 +109,15 @@ pub(crate) fn relay_captured(captured: &str) {
     }
 }
 
+/// Put back only our own events: the library's lines ride in the coded error instead.
+pub(crate) fn relay_events_only(captured: &str) {
+    for line in captured.lines().map(str::trim_end) {
+        if line.starts_with("{\"kind\":") {
+            events::emit_rendered(line);
+        }
+    }
+}
+
 /// The first library line, as a suffix for the coded error the failed call returns.
 pub(crate) fn failure_detail(captured: &str) -> String {
     captured
@@ -152,6 +161,45 @@ mod tests {
         let capped = truncated(&line);
         assert_eq!(capped.chars().count(), MAX_LINE_CHARS + 1);
         assert!(capped.ends_with('…'));
+    }
+
+    /// Reads back what a relay wrote by pointing fd 2 at a file for the duration.
+    fn relayed(f: impl FnOnce()) -> String {
+        let mut capture = tempfile::tempfile().expect("capture tempfile");
+        let saved = dup_owned(libc::STDERR_FILENO).expect("dup fd 2");
+        // SAFETY: dup2 atomically points fd 2 at the capture file this test owns.
+        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDERR_FILENO) } >= 0);
+        f();
+        // SAFETY: saved is our dup of the original fd 2; dup2 keeps its own reference.
+        unsafe { libc::dup2(saved.as_raw_fd(), libc::STDERR_FILENO) };
+        let mut contents = String::new();
+        capture.rewind().expect("rewind capture");
+        capture.read_to_string(&mut contents).expect("read capture");
+        contents
+    }
+
+    #[test]
+    fn a_library_line_comes_back_as_one_warn_event_and_ours_comes_back_verbatim() {
+        let captured =
+            "{\"kind\":\"debug\",\"t_ms\":1,\"message\":\"ours\"}\nKokoro synthesize error: boom\n";
+        let out = relayed(|| relay_captured(captured));
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "{out:?}");
+        assert_eq!(
+            lines[0],
+            "{\"kind\":\"debug\",\"t_ms\":1,\"message\":\"ours\"}"
+        );
+        let v: serde_json::Value =
+            serde_json::from_str(lines[1]).expect("the library line is wrapped in an event");
+        assert_eq!(v["kind"], "warn");
+        assert_eq!(v["message"], "Kokoro synthesize error: boom");
+
+        let only_ours = relayed(|| relay_events_only(captured));
+        assert_eq!(
+            only_ours.trim(),
+            "{\"kind\":\"debug\",\"t_ms\":1,\"message\":\"ours\"}",
+            "a failed call keeps the library line out of stderr"
+        );
     }
 
     #[test]

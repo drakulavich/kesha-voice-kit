@@ -395,6 +395,7 @@ fn classify_bridge_failure(
         crate::fluid_stderr::relay_captured(captured);
         return err;
     }
+    crate::fluid_stderr::relay_events_only(captured);
     if let Some(token) = rejected_token(captured, text) {
         return anyhow::Error::new(crate::errors::CodedError {
             code: ErrorCode::ScriptUnsupported,
@@ -581,6 +582,27 @@ mod tests {
         );
     }
 
+    /// Reads back what a call wrote to fd 2 by pointing it at a file for the duration.
+    fn with_captured_fd2<R>(f: impl FnOnce() -> R) -> (R, String) {
+        use std::io::{Read, Seek};
+        use std::os::fd::AsRawFd;
+        let mut capture = tempfile::tempfile().expect("capture tempfile");
+        // SAFETY: dup of fd 2, which this process owns; -1 is checked by the expect below.
+        let saved = unsafe { libc::dup(libc::STDERR_FILENO) };
+        assert!(saved >= 0, "dup fd 2");
+        // SAFETY: dup2 atomically points fd 2 at the capture file this test owns.
+        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDERR_FILENO) } >= 0);
+        let out = f();
+        // SAFETY: saved is our dup of the original fd 2; dup2 keeps its own reference on it.
+        unsafe { libc::dup2(saved, libc::STDERR_FILENO) };
+        // SAFETY: the duplicate is ours and nothing else holds it after the restore above.
+        unsafe { libc::close(saved) };
+        let mut contents = String::new();
+        capture.rewind().expect("rewind capture");
+        capture.read_to_string(&mut contents).expect("read capture");
+        (out, contents)
+    }
+
     #[test]
     fn a_coded_bridge_failure_keeps_its_code_and_never_leaks_a_raw_line() {
         let missing = crate::errors::CodedError {
@@ -595,11 +617,17 @@ mod tests {
         );
         assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
 
-        let opaque = classify_bridge_failure(
-            anyhow::anyhow!("FluidAudio Kokoro synthesis"),
-            "E5RT encountered an STL exception\n",
-            "Hello there",
-            "am_michael",
+        let (opaque, on_stderr) = with_captured_fd2(|| {
+            classify_bridge_failure(
+                anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+                "E5RT encountered an STL exception\n",
+                "Hello there",
+                "am_michael",
+            )
+        });
+        assert!(
+            on_stderr.is_empty(),
+            "a library line must ride in the error, never reach stderr: {on_stderr:?}"
         );
         assert_eq!(crate::errors::code_of(&opaque), ErrorCode::Internal);
         assert!(
