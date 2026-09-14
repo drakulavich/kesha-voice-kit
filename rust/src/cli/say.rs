@@ -315,8 +315,8 @@ fn out_file_type_refusal(path: &std::path::Path) -> Option<Result<(), String>> {
             .is_ok_and(|ft| ft.is_char_device() || ft.is_block_device());
     if device {
         return Some(Err(format!(
-            "cannot write --out {}: it is a device the engine's stdout does not reach \
-             — omit --out to write the audio to stdout",
+            "--out {} is a character device, where the audio would be discarded; \
+             omit --out to write it to stdout",
             path.display()
         )));
     }

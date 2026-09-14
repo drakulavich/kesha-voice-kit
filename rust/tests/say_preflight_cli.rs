@@ -140,6 +140,11 @@ fn a_character_device_out_is_refused_naming_the_stdout_default() {
             v["message"].as_str().unwrap().contains("omit --out"),
             "{device}: the message must name the plain-stdout default: {v}"
         );
+        assert_eq!(
+            v["message"],
+            format!("--out {device} is a character device, where the audio would be discarded; omit --out to write it to stdout"),
+            "{device}: both doors print one message (D4)"
+        );
     }
 }
 
