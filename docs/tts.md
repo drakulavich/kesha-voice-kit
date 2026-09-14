@@ -203,9 +203,9 @@ kesha say --ssml --voice ru-vosk-m02 '<speak>Привет <break time="1s"/> м�
 | `<speak>` | ✅ required root |
 | `<break time="Nms"\|"Ns"\|default>` | ✅ inserts silence of the given duration |
 | plain text inside `<speak>` | ✅ synthesized via the selected engine |
-| `<say-as interpret-as="characters">…</say-as>` | ✅ honored on `ru-vosk-*` (#232) and ONNX `en-*` (#244) — letter-spells via the embedded table; read as plain text with a stderr warning on Darwin FluidAudio Kokoro and AVSpeech |
+| `<say-as interpret-as="characters">…</say-as>` | ✅ honored on `ru-vosk-*` (#232) and ONNX `en-*` (#244) — letter-spells via the embedded table; read as plain text with a stderr warning on Darwin FluidAudio Kokoro; AVSpeech rejects every SSML request with `E_SSML_UNSUPPORTED` |
 | `<say-as interpret-as="cardinal\|ordinal\|date\|telephone\|...">` | ⚠️ stripped with stderr warning (contained text still synthesized); separate concern |
-| `<emphasis>` | ✅ honored on `ru-vosk-*` (#233) — `+vowel` markers shift stress; `level="none"` suppresses. Stripped + warned on Kokoro / AVSpeech (no `+`-marker analog) |
+| `<emphasis>` | ✅ honored on `ru-vosk-*` (#233) — `+vowel` markers shift stress; `level="none"` suppresses. Stripped + warned on Kokoro (no `+`-marker analog); AVSpeech rejects every SSML request with `E_SSML_UNSUPPORTED` |
 | `<phoneme alphabet="ipa" ph="…">` | ✅ honored on ONNX Kokoro — bypasses G2P, feeds IPA directly to inference (#193). Darwin FluidAudio Kokoro has no IPA input: the tag is stripped with one warning and the wrapped text is spoken. |
 | `<prosody rate>` | ✅ honored on `ru-vosk-*`, ONNX `en-*` and Darwin FluidAudio Kokoro voices when wrapping the whole utterance — see the section above (#236). Mid-utterance / sibling-flanked: warned + stripped. |
 | `<prosody pitch/volume>` | ⚠️ stripped with stderr warning; v2 follow-up tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) |
