@@ -327,10 +327,17 @@ fn rejected_token(captured: &str, text: &str) -> Option<String> {
         "no phonemes",
         "G2P",
     ];
+    // FluidAudio lower-cases the word it names; quote the user's own spelling of it.
     let named = captured
         .split_once("G2P failed on word '")
         .and_then(|(_, rest)| rest.split_once('\''))
-        .map(|(word, _)| word.to_string());
+        .map(|(word, _)| {
+            text.split_whitespace()
+                .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()))
+                .find(|t| t.to_lowercase() == word.to_lowercase())
+                .unwrap_or(word)
+                .to_string()
+        });
     let token = match named {
         Some(word) => word,
         None => {
@@ -547,6 +554,27 @@ mod tests {
         assert!(
             !msg.contains("G2P encoder prediction failed"),
             "no raw library line: {msg}"
+        );
+    }
+
+    #[test]
+    fn the_rejected_token_is_quoted_as_the_user_typed_it() {
+        let token = "eHh4EHH4".repeat(12);
+        let text = format!("Token: {token}");
+        let captured = format!(
+            "[WARN] [FluidAudio.KokoroAneEnglishPhonemizer] G2P failed on word '{}': G2P encoder prediction failed.\n",
+            token.to_lowercase()
+        );
+        let err = classify_bridge_failure(
+            anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+            &captured,
+            &text,
+            "am_michael",
+        );
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains(&token[..40]),
+            "the user's spelling, not FluidAudio's lower-casing: {msg}"
         );
     }
 
