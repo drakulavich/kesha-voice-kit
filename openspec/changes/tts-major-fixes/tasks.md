@@ -10,15 +10,15 @@
 
 ## 2. Error classes (Rust)
 
-- [ ] 2.1 T1-4 / T1-15 `--out` pre-flight in `cli/say.rs::run`: directory, missing parent, unwritable, character device are `E_INVALID_ARG` exit 2 before synthesis; FIFO keeps working
-- [ ] 2.2 T1-5 `--bitrate` range enforced in `resolve_output_format` before synthesis
-- [ ] 2.3 T2-3 / T2-4 AVSpeech failures keep their codes: unknown voice is `E_VOICE_UNKNOWN` with the System Settings hint, missing or non-executable sidecar is `E_SIDECAR_MISSING` naming the sibling path; the build-time helper path never appears in a message
-- [ ] 2.4 T2-5 `exit_code_for_tts_err` is code-aware; `docs/errors.md` exit rows updated
-- [ ] 2.5 T2-2 the `E_VOICE_UNKNOWN` prefix list is derived from the accepting `cfg` branch
-- [ ] 2.6 T3-2 SSML parse errors are `E_SSML_INVALID` naming the tag and accepted forms
-- [ ] 2.7 T3-3 CDATA text is spoken; a genuinely empty SSML document is `E_TEXT_EMPTY`
-- [ ] 2.8 T3-7 / T1-14 (engine half) FluidAudio's fd 2 is captured and re-emitted as events; unpronounceable text and a rejected token are `E_SCRIPT_UNSUPPORTED`, never a raw line
-- [ ] 2.9 T4-3 `--rate` validated in the engine (`E_INVALID_ARG` exit 2) on both doors
+- [x] 2.1 T1-4 / T1-15 `--out` pre-flight in `cli/say.rs::run`: directory, missing parent, unwritable, character device are `E_INVALID_ARG` exit 2 before synthesis; FIFO keeps working
+- [x] 2.2 T1-5 `--bitrate` range enforced in `resolve_output_format` before synthesis
+- [x] 2.3 T2-3 / T2-4 AVSpeech failures keep their codes: unknown voice is `E_VOICE_UNKNOWN` with the System Settings hint, missing or non-executable sidecar is `E_SIDECAR_MISSING` naming the sibling path; the build-time helper path never appears in a message
+- [x] 2.4 T2-5 `exit_code_for_tts_err` is code-aware; `docs/errors.md` exit rows updated
+- [x] 2.5 T2-2 the `E_VOICE_UNKNOWN` prefix list is derived from the accepting `cfg` branch
+- [x] 2.6 T3-2 SSML parse errors are `E_SSML_INVALID` naming the tag and accepted forms
+- [x] 2.7 T3-3 CDATA text is spoken; a genuinely empty SSML document is `E_TEXT_EMPTY`
+- [x] 2.8 T3-7 / T1-14 (engine half) FluidAudio's fd 2 is captured and re-emitted as events; unpronounceable text and a rejected token are `E_SCRIPT_UNSUPPORTED`, never a raw line
+- [x] 2.9 T4-3 `--rate` validated in the engine (`E_INVALID_ARG` exit 2) on both doors
 
 ## 3. SSML and audio on the FluidAudio path (Rust)
 
