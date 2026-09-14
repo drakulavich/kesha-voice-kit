@@ -19,7 +19,7 @@ Two interfaces: the CLI, and a programmatic API exported from `@drakulavich/kesh
 
 Kesha (Кеша) is a male name — this is the brand voice. Current defaults: `en-am_michael`, `ru-vosk-m02`, `es-em_alex`, `it-im_nicola`, `pt-pm_alex`, `zh-zm_050`. Never default to a female voice without an explicit, documented reason; auto-routing fallbacks (`pickVoiceForLang`) must prefer a male voice too. Female voices stay selectable via explicit `--voice`.
 
-Two documented exceptions — do **not** "fix" either: `fr-ff_siwis` is female because Kokoro v1.0 ships no male French voice, and darwin `ru` auto-routes to AVSpeech Milena (female) because it is the zero-install path; `--voice ru-vosk-m02` opts into Vosk. When adding a default, list the `m_*` candidates (`kesha say --list-voices`) and pick by ear, not alphabetically.
+Three documented exceptions — do **not** "fix" any of them: `fr-ff_siwis` is female because Kokoro v1.0 ships no male French voice; darwin `ru` auto-routes to AVSpeech Milena (female) because it is the zero-install path, and `--voice ru-vosk-m02` opts into Vosk; darwin Devanagari `hi` routes to AVSpeech Lekha (female) because macOS ships no male `hi-IN` voice (Rishi is `en-IN`). When adding a default, list the `m_*` candidates (`kesha say --list-voices`) and pick by ear, not alphabetically.
 
 ### NEVER AUTO-DOWNLOAD THE ENGINE OR MODELS
 

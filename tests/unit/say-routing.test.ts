@@ -46,7 +46,7 @@ describe("resolveSayVoice native-script ja/hi routing", () => {
     );
   });
 
-  test("Devanagari Hindi speaks through the installed hi-IN AVSpeech voice", async () => {
+  test("Devanagari Hindi speaks through Lekha, the only hi-IN voice macOS ships (documented exception)", async () => {
     expect(await resolveSayVoice(undefined, "hi", "नमस्ते दुनिया", installed)).toBe(
       "macos-com.apple.voice.super-compact.hi-IN.Lekha",
     );

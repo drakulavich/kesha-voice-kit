@@ -43,8 +43,8 @@ const ONNX_KOKORO_DEFAULTS: Record<string, string> = {
 interface NativeScriptRoute {
   /** AVSpeech locale as it appears in a `macos-*` voice id. */
   locale: string;
-  /** Apple's male voice for the locale, preferred at any quality variant (CLAUDE.md brand rule). */
-  preferredName: string;
+  /** Apple's male voice for the locale when it ships one, preferred at any quality variant (CLAUDE.md brand rule). */
+  preferredName?: string;
   script: RegExp;
 }
 
@@ -53,7 +53,8 @@ interface NativeScriptRoute {
  * routed to them can only ever be refused (T2-10). AVSpeech reads both scripts natively.
  */
 const NATIVE_SCRIPT_ROUTES: Record<string, NativeScriptRoute> = {
-  hi: { locale: "hi-IN", preferredName: "Rishi", script: /[ऀ-ॿ]/u },
+  // macOS ships Lekha (female) as its only hi-IN voice; Rishi is en-IN. A documented exception, like Milena for ru.
+  hi: { locale: "hi-IN", script: /[ऀ-ॿ]/u },
   ja: {
     locale: "ja-JP",
     preferredName: "Otoya",
@@ -79,7 +80,8 @@ function avSpeechVoiceFor(voices: string[], route: NativeScriptRoute): string | 
   const forLocale = voices.filter(
     (id) => id.startsWith("macos-") && id.includes(`.${route.locale}.`),
   );
-  return forLocale.find((id) => id.endsWith(`.${route.preferredName}`)) ?? forLocale[0];
+  const preferred = route.preferredName && forLocale.find((id) => id.endsWith(`.${route.preferredName}`));
+  return preferred || forLocale[0];
 }
 
 export function pickVoiceForLang(
