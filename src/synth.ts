@@ -198,7 +198,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
 }
 
 /** Installed voice ids as the engine lists them, one per line; a missing engine, a build without tts or a failed run is a KeshaError. */
-export async function listVoiceIds(sinks: EventSinks = {}): Promise<string[]> {
+export async function listVoiceIds(sinks: EventSinks = {}, signal?: AbortSignal): Promise<string[]> {
   if (!isEngineInstalled()) {
     throw new KeshaError("E_ENGINE_SPAWN", `kesha-engine not installed. run: ${installHint()}`);
   }
@@ -207,6 +207,7 @@ export async function listVoiceIds(sinks: EventSinks = {}): Promise<string[]> {
   const proc = spawnEngineProcess(getEngineBinPath(), argv, ["ignore", "pipe", "pipe"], protocolEnv());
   // Registered so Ctrl-C during a cold Engine load terminates it (#939); disposed here so a long-lived MCP server never leaks one per call.
   const tree = registerProcessTree(proc);
+  const cancel = abortOnSignal(tree, signal);
   let out: string;
   let events: StderrOutcome;
   let exitCode: number;
@@ -217,8 +218,10 @@ export async function listVoiceIds(sinks: EventSinks = {}): Promise<string[]> {
       proc.exited,
     ]);
   } finally {
+    cancel.dispose();
     tree.dispose();
   }
+  if (cancel.aborted) throw engineAbortError();
   const interrupted = interruptedRun(exitCode);
   if (interrupted) throw interrupted;
   if (exitCode !== 0 || events.invalid.length > 0 || events.error) throw engineFailure("say --list-voices", events, exitCode);
