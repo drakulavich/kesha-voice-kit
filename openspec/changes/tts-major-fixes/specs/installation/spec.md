@@ -4,7 +4,8 @@
 
 The CLI SHALL install TTS models only when `--tts` is passed. Bare `--tts` installs
 English only. `--tts <lang>…` installs the listed languages. Positional language codes
-without `--tts` SHALL fail with exit 1 explaining the required flag. Unsupported
+without `--tts` SHALL fail with `error [E_INVALID_ARG]: …` and exit 2 explaining the
+required flag, the usage class every other argument error shares. Unsupported
 language codes SHALL fail with `error [E_INVALID_ARG]: …` and exit 2, listing the
 supported set, before anything is downloaded and also under `--plan`.
 
@@ -22,6 +23,12 @@ already installed leaves English in place.
 - WHEN Ira runs `kesha install --tts zh`
 - THEN stderr reads `error [E_INVALID_ARG]: Unsupported TTS language(s): zh. …` listing the supported languages for this platform
 - AND the process exits 2
+
+#### Scenario: Language codes without the flag
+
+- WHEN Ira runs `kesha install ru`
+- THEN stderr reads `error [E_INVALID_ARG]: Language codes (ru) require the --tts flag, …`
+- AND the process exits 2 and nothing is downloaded
 
 #### Scenario: Unsupported language code under --plan
 
