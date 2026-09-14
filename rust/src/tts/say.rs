@@ -155,12 +155,14 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             opts.expand_abbrev,
         ),
         EngineChoice::Kokoro {
+            voice_id,
             model_path,
             voice_path,
             speed,
         } => say_kokoro(
             &mut sessions::TtsSessions::default(),
             opts.text,
+            voice_id,
             opts.lang,
             model_path,
             voice_path,
@@ -319,6 +321,7 @@ pub(crate) fn say_vosk(
 pub(crate) fn say_kokoro(
     tts_sessions: &mut sessions::TtsSessions,
     text: &str,
+    voice_id: &str,
     lang: &str,
     model_path: &Path,
     voice_path: &Path,
@@ -343,12 +346,15 @@ pub(crate) fn say_kokoro(
                 message: "SSML had no speakable content".into(),
             });
         }
+        ensure_script_supported(voice_id, &speakable_text(&segments))?;
         segments
     } else if en::is_en(lang) {
+        ensure_script_supported(voice_id, text)?;
         // English: segment pipeline so IPA_LEXICON overrides bypass G2P;
         // letter-spell + STOP_LIST run inside en::normalize_segments (#244).
         vec![ssml::Segment::Text(text.to_string())]
     } else {
+        ensure_script_supported(voice_id, text)?;
         let ipa = g2p::text_to_ipa_cached(&mut tts_sessions.charsiu, text, lang)
             .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
         if ipa.trim().is_empty() {
@@ -973,6 +979,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn onnx_kokoro_refuses_an_unpronounceable_script_before_it_loads_a_model() {
+        let err = say_kokoro(
+            &mut sessions::TtsSessions::default(),
+            "Привет мир, как дела",
+            "en-am_michael",
+            "en",
+            Path::new("/nonexistent/kokoro/model.onnx"),
+            Path::new("/nonexistent/kokoro/voice.bin"),
+            1.0,
+            OutputFormat::Wav,
+            false,
+            true,
+        )
+        .expect_err("dominant Cyrillic on a Latin voice is refused");
+        assert_eq!(
+            err.code(),
+            crate::errors::ErrorCode::ScriptUnsupported,
+            "{err}"
+        );
+        assert!(format!("{err}").contains("en-am_michael"), "{err}");
+    }
+
+    #[test]
     fn vosk_refuses_an_unpronounceable_script_before_it_loads_a_model() {
         // The Vosk arm had no script gate at all, so Latin on a Russian voice became nonsense words (#492).
         let err = say(SayOptions {
@@ -1053,6 +1082,7 @@ mod tests {
         let _ = say_kokoro(
             &mut sessions::TtsSessions::default(),
             "hola",
+            "es-em_alex",
             "es",
             Path::new("/nonexistent/kokoro/model.onnx"),
             Path::new("/nonexistent/kokoro/voice.bin"),
@@ -1072,6 +1102,7 @@ mod tests {
         let _ = say_kokoro(
             &mut sessions::TtsSessions::default(),
             "FBI",
+            "en-am_michael",
             "en",
             Path::new("/nonexistent/kokoro/model.onnx"),
             Path::new("/nonexistent/kokoro/voice.bin"),

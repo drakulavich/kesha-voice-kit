@@ -262,6 +262,7 @@ fn handle_kokoro(
     tts::say::say_kokoro(
         &mut state.sessions,
         &req.text,
+        &req.voice,
         espeak_lang,
         model_path,
         voice_path,

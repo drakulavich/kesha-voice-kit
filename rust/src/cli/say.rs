@@ -271,6 +271,7 @@ fn engine_choice<'a>(
             voice_path,
             ..
         } => tts::EngineChoice::Kokoro {
+            voice_id,
             model_path,
             voice_path,
             speed: rate,
