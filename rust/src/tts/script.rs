@@ -216,7 +216,7 @@ fn supported_names(supported: &[Script]) -> String {
         .iter()
         .map(|s| s.name())
         .collect::<Vec<_>>()
-        .join(" and ")
+        .join(" or ")
 }
 
 /// Voices on this machine that can speak `script`, most specific first.
@@ -277,14 +277,15 @@ pub fn ensure_supported(voice_id: &str, text: &str) -> anyhow::Result<()> {
         }
         Verdict::Dominant(script) => {
             let alts = alternatives(script);
+            let target = supported_names(supported);
             let hint = if alts.is_empty() {
-                "Romanize the text (transliterate to Latin), or install a voice that speaks it \
-                 (kesha say --list-voices)."
-                    .to_string()
+                format!(
+                    "Transliterate the text into {target} script, or install a voice that speaks it \
+                     (kesha say --list-voices)."
+                )
             } else {
                 format!(
-                    "Romanize the text (transliterate to Latin), or pick a voice that speaks it: \
-                     {}.",
+                    "Transliterate the text into {target} script, or pick a voice that speaks it: {}.",
                     alts.join(", ")
                 )
             };
@@ -303,6 +304,17 @@ pub fn ensure_supported(voice_id: &str, text: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_latin_text_on_a_cyrillic_voice_is_told_to_transliterate_into_cyrillic() {
+        let err = ensure_supported("ru-vosk-m02", "Kesha Voice Kit").expect_err("refused");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Transliterate the text into Cyrillic script"),
+            "{msg}"
+        );
+        assert!(!msg.contains("Romanize"), "{msg}");
+    }
 
     fn verdict(text: &str, voice: &str) -> Verdict {
         classify(text, supported_scripts(voice).expect("gated voice"))
