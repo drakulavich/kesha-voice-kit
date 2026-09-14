@@ -73,6 +73,11 @@ fn run_corpus_for_lang(lang: &str, sentences: &[String]) {
         return;
     };
 
+    let voice_id = format!(
+        "{lang}-{}",
+        voice_path.file_stem().unwrap().to_string_lossy()
+    );
+
     for sentence in sentences {
         let grapheme_count = sentence.chars().count() as f32;
 
@@ -80,6 +85,7 @@ fn run_corpus_for_lang(lang: &str, sentences: &[String]) {
             text: sentence,
             lang,
             engine: EngineChoice::Kokoro {
+                voice_id: &voice_id,
                 model_path: &model_path,
                 voice_path: &voice_path,
                 speed: 1.0,

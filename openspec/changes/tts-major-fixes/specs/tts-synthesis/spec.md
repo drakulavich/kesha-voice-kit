@@ -218,7 +218,7 @@ characters are letter-spelled unless they appear on the English stop-list or in
 the IPA lexicon (which supplies a fixed pronunciation); currency amounts
 (`$`, `€`, `£` followed by digits, with an optional decimal part) and
 comma-grouped integers (`1,234,567`) are verbalized with their unit ("one
-thousand two hundred thirty-four dollars and fifty-six cents") before the text
+thousand two hundred thirty four dollars and fifty six cents") before the text
 reaches any English engine, including the darwin-arm64 FluidAudio handoff, and
 exactly once on every path. Russian (`ru-vosk-*`): all-caps Cyrillic tokens of
 2–5 letters are letter-spelled when they fail the pronounceability heuristic
@@ -252,9 +252,9 @@ stderr on a successful run.
 
 ### Requirement: Script gates — unsupported writing systems fail fast
 
-Before inference the Engine SHALL classify the input's letters by writing
-system (after NFKC normalisation, so fullwidth Latin counts as Latin) and
-compare them with the scripts the chosen voice's G2P handles: Latin for `en-*`,
+The Engine SHALL classify the input's letters by writing system before inference on
+every arm that phonemizes the text itself (ONNX Kokoro, FluidAudio Kokoro and Vosk),
+after NFKC normalisation so fullwidth Latin counts as Latin, and compare them with the scripts the chosen voice's G2P handles: Latin for `en-*`,
 `es-*`, `fr-*`, `it-*`, `pt-*`, `hi-*` and `ja-*`; Cyrillic for `ru-vosk-*`;
 Han and Latin for `zh-*`. When the dominant script (more than half of the
 letters) is one the voice cannot pronounce, the run SHALL fail before any model
@@ -262,7 +262,8 @@ loads with `E_SCRIPT_UNSUPPORTED` naming the script and the voice, and the hint
 SHALL list installed voices that handle that script (on darwin-arm64 the
 `macos-*` voices for the matching locale). When only a minority of the letters
 are in an unsupported script, synthesis SHALL proceed and one `warn` event
-SHALL name the tokens that will be mispronounced. Text with no pronounceable
+SHALL name the tokens that will be mispronounced, for every unsupported script the
+text contains. Text with no pronounceable
 content at all (emoji only, punctuation only) and a single token the G2P
 rejects SHALL be `E_SCRIPT_UNSUPPORTED`, never `E_INTERNAL` and never a raw
 library line. Chinese SHALL be supported natively on darwin-arm64 (Han text,

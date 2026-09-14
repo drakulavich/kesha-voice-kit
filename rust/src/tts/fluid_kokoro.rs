@@ -92,55 +92,22 @@ fn lang_for_fluid_id(fluid_id: &str) -> Option<&'static str> {
         .map(|v| v.lang)
 }
 
-fn is_han(c: char) -> bool {
-    matches!(
-        c,
-        '\u{3400}'..='\u{4DBF}'        // CJK Extension A
-            | '\u{4E00}'..='\u{9FFF}'  // CJK Unified Ideographs
-            | '\u{F900}'..='\u{FAFF}'  // CJK Compatibility Ideographs
-            | '\u{20000}'..='\u{2A6DF}' // Extension B
-            | '\u{2A700}'..='\u{2CEAF}' // Extensions C, D, E
-            | '\u{2CEB0}'..='\u{2EBEF}' // Extension F
-    )
+/// Public voice id for a bare FluidAudio id, so diagnostics name what the user typed.
+fn public_id_for_fluid_id(fluid_id: &str) -> Option<&'static str> {
+    VOICES
+        .iter()
+        .find(|v| v.fluid_id == fluid_id)
+        .map(|v| v.public_id)
 }
 
-/// FluidAudio's Kokoro G2P handles Latin (en/es/fr/it/pt) and, since the
-/// FluidAudio 0.15.5 `.mandarin` KokoroAne variant, Chinese (Han). For the other
-/// non-Latin languages it ships voices for (hi/ja) native-script text is not
-/// converted to phonemes and synthesizes as noise rather than speech (#492).
-/// FluidAudio 0.15.5 added a `.japanese` variant, but the binding still routes
-/// only `zh` away from `.english`, so `ja` keeps bailing until that is wired.
-/// Returns the human-facing script name when `text` actually contains characters
-/// of the script `fluid_id`'s language is written in — romanized (Latin) input
-/// for the same voice returns `None` because it works.
-fn unsupported_native_script(text: &str, fluid_id: &str) -> Option<&'static str> {
-    let any = |f: fn(char) -> bool| text.chars().any(f);
-    match lang_for_fluid_id(fluid_id)? {
-        "hi" => any(|c| ('\u{0900}'..='\u{097F}').contains(&c)).then_some("Devanagari"),
-        "ja" => any(|c| matches!(c, '\u{3040}'..='\u{30FF}') || is_han(c))
-            .then_some("Japanese (kana/kanji)"),
-        // zh (Han) is supported via FluidAudio 0.15.5's Mandarin KokoroAne variant.
-        _ => None,
+/// Refuse text whose dominant script this voice's G2P cannot phonemize, and warn
+/// about a minority run it will mispronounce (#492). An unknown id is not gated.
+/// Callers gate the whole utterance once, before chunking: a minority run must not be refused for dominating one chunk.
+pub(crate) fn ensure_script_supported(fluid_id: &str, text: &str) -> Result<()> {
+    match public_id_for_fluid_id(fluid_id) {
+        Some(public_id) => crate::tts::script::ensure_supported(public_id, text),
+        None => Ok(()),
     }
-}
-
-/// Fail fast when native-script text is handed to a FluidAudio Kokoro voice
-/// that can't phonemize it (#492). FluidAudio's Kokoro G2P only handles Latin
-/// input, so Devanagari/kana-kanji/Han would synthesize as noise rather than
-/// speech — refusing with a stable [`ErrorCode::ScriptUnsupported`] beats
-/// emitting a successful WAV of garbage. Romanized (Latin) input for the same
-/// voice passes the check.
-fn ensure_script_supported(fluid_id: &str, text: &str) -> Result<()> {
-    if let Some(script) = unsupported_native_script(text, fluid_id) {
-        coded_bail!(
-            ErrorCode::ScriptUnsupported,
-            "FluidAudio Kokoro voice '{fluid_id}' cannot phonemize {script} text; it only \
-             supports Latin-script input. Romanize the text (transliterate to Latin), or use a \
-             voice whose engine supports {script}. \
-             See https://github.com/drakulavich/kesha-voice-kit/issues/492"
-        );
-    }
-    Ok(())
 }
 
 /// Env var overriding which CoreML compute units the Kokoro pipeline loads on.
@@ -320,12 +287,114 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<(Vec<f32>, u
     if text.is_empty() {
         anyhow::bail!("fluid-kokoro: text is empty");
     }
-    ensure_script_supported(voice_id, text)?;
-    with_kokoro(voice_id, |audio| {
-        audio
-            .synthesize_kokoro_samples(text, voice_id, speed)
-            .context("FluidAudio Kokoro synthesis")
+    let text = prepare_text(voice_id, text);
+    ensure_pronounceable(voice_id, &text)?;
+    let (result, captured) = crate::fluid_stderr::with_captured_stderr(|| {
+        with_kokoro(voice_id, |audio| {
+            audio
+                .synthesize_kokoro_samples(&text, voice_id, speed)
+                .context("FluidAudio Kokoro synthesis")
+        })
+    });
+    match result {
+        Ok(samples) => {
+            crate::fluid_stderr::relay_captured(&captured);
+            Ok(samples)
+        }
+        Err(err) => Err(classify_bridge_failure(err, &captured, &text, voice_id)),
+    }
+}
+
+/// FluidAudio's G2P errors on text with nothing to pronounce, so refuse before the model rather than leak its line (T3-7).
+fn ensure_pronounceable(voice_id: &str, text: &str) -> Result<()> {
+    if text.chars().any(char::is_alphanumeric) {
+        return Ok(());
+    }
+    coded_bail!(
+        ErrorCode::ScriptUnsupported,
+        "no pronounceable content for voice '{}'",
+        public_id_for_fluid_id(voice_id).unwrap_or(voice_id)
+    );
+}
+
+/// Longest whitespace-free run FluidAudio's G2P encoder accepts is ~100 characters; 40 identifies it without echoing it.
+const MAX_TOKEN_CHARS: usize = 40;
+
+/// The word FluidAudio named on fd 2, else the longest token of the input when its message is a phonemization failure.
+fn rejected_token(captured: &str, text: &str) -> Option<String> {
+    const MARKERS: [&str; 4] = [
+        "encoderPredictionFailed",
+        "inputProcessingFailed",
+        "no phonemes",
+        "G2P",
+    ];
+    // FluidAudio lower-cases the word it names; quote the user's own spelling of it.
+    let named = captured
+        .split_once("G2P failed on word '")
+        .and_then(|(_, rest)| rest.split_once('\''))
+        .map(|(word, _)| {
+            text.split_whitespace()
+                .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()))
+                .find(|t| t.to_lowercase() == word.to_lowercase())
+                .unwrap_or(word)
+                .to_string()
+        });
+    let token = match named {
+        Some(word) => word,
+        None => {
+            if !MARKERS.iter().any(|m| captured.contains(m)) {
+                return None;
+            }
+            text.split_whitespace()
+                .max_by_key(|t| t.chars().count())?
+                .to_string()
+        }
+    };
+    if token.chars().count() <= MAX_TOKEN_CHARS {
+        return Some(token);
+    }
+    Some(format!(
+        "{}…",
+        token.chars().take(MAX_TOKEN_CHARS).collect::<String>()
+    ))
+}
+
+/// FluidAudio reports a rejected token only on fd 2, so without this the CLI quotes that raw line as E_INTERNAL (T1-14).
+fn classify_bridge_failure(
+    err: anyhow::Error,
+    captured: &str,
+    text: &str,
+    voice_id: &str,
+) -> anyhow::Error {
+    if crate::errors::code_of(&err) != ErrorCode::Internal {
+        crate::fluid_stderr::relay_captured(captured);
+        return err;
+    }
+    crate::fluid_stderr::relay_events_only(captured);
+    if let Some(token) = rejected_token(captured, text) {
+        return anyhow::Error::new(crate::errors::CodedError {
+            code: ErrorCode::ScriptUnsupported,
+            message: format!(
+                "voice '{}' cannot pronounce '{token}'",
+                public_id_for_fluid_id(voice_id).unwrap_or(voice_id)
+            ),
+        });
+    }
+    anyhow::Error::new(crate::errors::CodedError {
+        code: ErrorCode::Internal,
+        message: format!("{err:#}{}", crate::fluid_stderr::failure_detail(captured)),
     })
+}
+
+/// FluidAudio phonemizes raw text itself, so English amounts must be words before the handoff; its G2P has no hook that could express a currency sign (the ONNX arm does this in `en::normalize_segments`).
+pub(crate) fn prepare_text<'a>(voice_id: &str, text: &'a str) -> std::borrow::Cow<'a, str> {
+    let text = crate::tts::script::compatibility_normalize(text);
+    match lang_for_fluid_id(voice_id) {
+        Some(lang) if crate::tts::en::is_en(lang) => {
+            std::borrow::Cow::Owned(crate::tts::en::numbers::verbalize(&text).into_owned())
+        }
+        _ => text,
+    }
 }
 
 /// Synthesize one text chunk and return raw PCM f32 samples at [`SAMPLE_RATE`].
@@ -386,80 +455,204 @@ mod tests {
     }
 
     #[test]
-    fn flags_native_script_for_non_latin_voices() {
-        // Native script for hi/ja/zh → flagged (FluidAudio can't phonemize it, #492).
-        assert_eq!(
-            unsupported_native_script("नमस्ते मेरा नाम केशा है", "hm_omega"),
-            Some("Devanagari")
-        );
-        assert_eq!(
-            unsupported_native_script("こんにちは、ケシャです", "jm_kumo"),
-            Some("Japanese (kana/kanji)")
-        );
-        // Kanji-only Japanese still flags via the Han range.
-        assert_eq!(
-            unsupported_native_script("日本語", "jm_kumo"),
-            Some("Japanese (kana/kanji)")
-        );
-        // zh (Han) is now SUPPORTED via FluidAudio 0.15.5's Mandarin KokoroAne
-        // variant (#492) — native-script Chinese must NOT be flagged.
-        assert_eq!(unsupported_native_script("你好我叫凯沙", "zm_050"), None);
-        assert_eq!(unsupported_native_script("\u{20000}", "zm_050"), None);
-    }
-
-    #[test]
-    fn allows_romanized_input_for_non_latin_voices() {
-        // Romanized (Latin) input for the same voices works — must NOT be flagged.
-        assert_eq!(
-            unsupported_native_script("Namaste! Mera naam Kesha hai.", "hm_omega"),
-            None
-        );
-        assert_eq!(
-            unsupported_native_script("Konnichiwa! Watashi wa Kesha desu.", "jm_kumo"),
-            None
-        );
-        assert_eq!(
-            unsupported_native_script("Ni hao! Wo jiao Kesha.", "zm_050"),
-            None
-        );
-    }
-
-    #[test]
-    fn never_flags_latin_script_voices() {
-        // Latin-script Kokoro languages always pass, including accented/punctuated text.
-        assert_eq!(
-            unsupported_native_script("¡Hola! Soy Kesha.", "em_alex"),
-            None
-        );
-        assert_eq!(
-            unsupported_native_script("Ciao, città però.", "im_nicola"),
-            None
-        );
-        assert_eq!(unsupported_native_script("Olá, coração.", "pm_alex"), None);
-        assert_eq!(unsupported_native_script("Hello world", "am_michael"), None);
-        // Unknown / unmapped fluid id → no language → never flagged.
-        assert_eq!(unsupported_native_script("日本語", "nonexistent"), None);
-    }
-
-    #[test]
-    fn ensure_script_supported_bails_with_code_on_native_script() {
-        // hi/ja native script still bails: no hi variant upstream, and the binding
-        // does not route ja to 0.15.5's `.japanese` variant.
-        for (text, voice) in [("नमस्ते", "hm_omega"), ("こんにちは", "jm_kumo")] {
-            let err =
-                ensure_script_supported(voice, text).expect_err("should reject native script");
+    fn native_script_for_hi_and_ja_is_still_refused() {
+        for (text, voice) in [
+            ("नमस्ते मेरा नाम केशा है", "hm_omega"),
+            ("こんにちは、ケシャです", "jm_kumo"),
+            ("日本語", "jm_kumo"),
+        ] {
+            let err = ensure_script_supported(voice, text).expect_err("native script refused");
             assert_eq!(
                 crate::errors::code_of(&err),
                 ErrorCode::ScriptUnsupported,
                 "voice {voice} text {text:?} -> {err}"
             );
         }
-        // zh (Han) now passes — supported via the Mandarin KokoroAne variant (#492).
-        ensure_script_supported("zm_050", "你好").expect("zh native ok");
-        // Romanized + Latin-script voices pass.
-        ensure_script_supported("hm_omega", "Namaste").expect("romanized hi ok");
-        ensure_script_supported("em_alex", "¡Hola!").expect("latin es ok");
-        ensure_script_supported("am_michael", "Hello").expect("english ok");
+    }
+
+    #[test]
+    fn han_on_the_zh_voice_and_romanized_input_everywhere_still_pass() {
+        // zh Han is served by FluidAudio 0.15.5's Mandarin KokoroAne variant (#492).
+        ensure_script_supported("zm_050", "你好我叫凯沙").expect("zh native ok");
+        ensure_script_supported("zm_050", "\u{20000}").expect("zh extension B ok");
+        ensure_script_supported("hm_omega", "Namaste! Mera naam Kesha hai.").expect("romanized hi");
+        ensure_script_supported("jm_kumo", "Konnichiwa! Watashi wa Kesha desu.")
+            .expect("romanized ja");
+        ensure_script_supported("em_alex", "¡Hola! Soy Kesha.").expect("latin es");
+        ensure_script_supported("im_nicola", "Ciao, città però.").expect("latin it");
+        ensure_script_supported("pm_alex", "Olá, coração.").expect("latin pt");
+        ensure_script_supported("am_michael", "Hello world").expect("english");
+    }
+
+    #[test]
+    fn english_voices_get_their_currency_verbalized_before_the_handoff() {
+        assert_eq!(
+            prepare_text("am_michael", "He paid $1,234.56"),
+            "He paid one thousand two hundred thirty four dollars and fifty six cents"
+        );
+        assert_eq!(prepare_text("am_michael", "Room 405"), "Room 405");
+        assert_eq!(prepare_text("am_michael", "Ｒｏｏｍ ４０５"), "Room 405");
+        assert_eq!(prepare_text("zm_050", "Ｒｏｏｍ"), "Room");
+        assert_eq!(prepare_text("em_alex", "Cuesta $5"), "Cuesta $5");
+        assert_eq!(prepare_text("nonexistent", "$5"), "$5");
+    }
+    #[test]
+    fn an_unmapped_fluid_id_is_never_gated() {
+        ensure_script_supported("nonexistent", "日本語").expect("unknown id passes through");
+    }
+
+    #[test]
+    fn refuses_any_dominant_script_a_latin_voice_cannot_phonemize() {
+        // #492: keyed off the voice's language, an en-* voice was never checked and spoke filler.
+        for text in ["नमस्ते", "مرحبا", "שלום", "สวัสดี", "Γειά σου", "你好世界"]
+        {
+            let err = ensure_script_supported("am_michael", text).expect_err("should be refused");
+            assert_eq!(
+                crate::errors::code_of(&err),
+                ErrorCode::ScriptUnsupported,
+                "text {text:?} -> {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_minority_foreign_run_still_synthesizes() {
+        // #492: refusing here would reject an English sentence quoting one Chinese word.
+        ensure_script_supported("am_michael", "Meet me in 你好 town").expect("mixed text speaks");
+    }
+
+    #[test]
+    fn text_with_nothing_to_pronounce_is_refused_before_the_model() {
+        for text in ["😀", "😀😀😀", "!!!", "…"] {
+            let err = synthesize(text, "am_michael", 1.0)
+                .expect_err("unpronounceable text must be refused");
+            assert_eq!(
+                crate::errors::code_of(&err),
+                ErrorCode::ScriptUnsupported,
+                "{text:?}: {err}"
+            );
+            assert!(format!("{err:#}").contains("am_michael"), "{text:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_token_the_g2p_rejects_is_script_unsupported_naming_its_first_40_chars() {
+        let token = "x".repeat(100);
+        let text = format!("Token: {token}");
+        let captured = format!(
+            "[WARN] [FluidAudio.KokoroAneEnglishPhonemizer] G2P failed on word '{token}': G2P encoder prediction failed.\nKokoro synthesize error: encoderPredictionFailed\n"
+        );
+        let err = classify_bridge_failure(
+            anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+            &captured,
+            &text,
+            "am_michael",
+        );
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ScriptUnsupported);
+        let msg = format!("{err:#}");
+        assert!(msg.contains(&"x".repeat(40)), "{msg}");
+        assert!(
+            !msg.contains(&"x".repeat(41)),
+            "the token is capped at 40 chars: {msg}"
+        );
+        assert!(
+            !msg.contains("G2P encoder prediction failed"),
+            "no raw library line: {msg}"
+        );
+    }
+
+    #[test]
+    fn the_rejected_token_is_quoted_as_the_user_typed_it() {
+        let token = "eHh4EHH4".repeat(12);
+        let text = format!("Token: {token}");
+        let captured = format!(
+            "[WARN] [FluidAudio.KokoroAneEnglishPhonemizer] G2P failed on word '{}': G2P encoder prediction failed.\n",
+            token.to_lowercase()
+        );
+        let err = classify_bridge_failure(
+            anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+            &captured,
+            &text,
+            "am_michael",
+        );
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains(&token[..40]),
+            "the user's spelling, not FluidAudio's lower-casing: {msg}"
+        );
+    }
+
+    #[test]
+    fn refusals_name_the_public_voice_id_not_the_fluidaudio_one() {
+        let err = ensure_pronounceable("am_michael", "😀").expect_err("refused");
+        assert!(
+            format!("{err:#}").contains("voice 'en-am_michael'"),
+            "{err:#}"
+        );
+        let err = classify_bridge_failure(
+            anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+            "[WARN] G2P failed on word 'zzzz': G2P encoder prediction failed.\n",
+            "zzzz",
+            "am_michael",
+        );
+        assert!(
+            format!("{err:#}").contains("voice 'en-am_michael'"),
+            "{err:#}"
+        );
+    }
+
+    /// Reads back what a call wrote to fd 2 by pointing it at a file for the duration.
+    fn with_captured_fd2<R>(f: impl FnOnce() -> R) -> (R, String) {
+        use std::io::{Read, Seek};
+        use std::os::fd::AsRawFd;
+        let mut capture = tempfile::tempfile().expect("capture tempfile");
+        // SAFETY: dup of fd 2, which this process owns; -1 is checked by the expect below.
+        let saved = unsafe { libc::dup(libc::STDERR_FILENO) };
+        assert!(saved >= 0, "dup fd 2");
+        // SAFETY: dup2 atomically points fd 2 at the capture file this test owns.
+        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDERR_FILENO) } >= 0);
+        let out = f();
+        // SAFETY: saved is our dup of the original fd 2; dup2 keeps its own reference on it.
+        unsafe { libc::dup2(saved, libc::STDERR_FILENO) };
+        // SAFETY: the duplicate is ours and nothing else holds it after the restore above.
+        unsafe { libc::close(saved) };
+        let mut contents = String::new();
+        capture.rewind().expect("rewind capture");
+        capture.read_to_string(&mut contents).expect("read capture");
+        (out, contents)
+    }
+
+    #[test]
+    fn a_coded_bridge_failure_keeps_its_code_and_never_leaks_a_raw_line() {
+        let missing = crate::errors::CodedError {
+            code: ErrorCode::ModelMissing,
+            message: "assets are missing".into(),
+        };
+        let err = classify_bridge_failure(
+            anyhow::Error::new(missing),
+            "E5RT encountered an STL exception\n",
+            "Hello there",
+            "am_michael",
+        );
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
+
+        let (opaque, on_stderr) = with_captured_fd2(|| {
+            classify_bridge_failure(
+                anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+                "E5RT encountered an STL exception\n",
+                "Hello there",
+                "am_michael",
+            )
+        });
+        assert!(
+            on_stderr.is_empty(),
+            "a library line must ride in the error, never reach stderr: {on_stderr:?}"
+        );
+        assert_eq!(crate::errors::code_of(&opaque), ErrorCode::Internal);
+        assert!(
+            format!("{opaque:#}").contains("E5RT encountered an STL exception"),
+            "the captured cause rides in the coded error: {opaque:#}"
+        );
     }
 
     #[test]

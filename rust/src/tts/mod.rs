@@ -16,6 +16,7 @@ pub mod kokoro;
 pub mod normalize;
 pub mod ru;
 pub mod say;
+pub mod script;
 pub mod seam;
 pub mod sessions;
 pub mod ssml;
@@ -79,6 +80,8 @@ impl TtsError {
 /// Which TTS engine to run. Voice ids determine this via `voices::resolve_voice`.
 pub enum EngineChoice<'a> {
     Kokoro {
+        /// Public voice id, so the script gate and its diagnostics can name it.
+        voice_id: &'a str,
         model_path: &'a Path,
         voice_path: &'a Path,
         speed: f32,
@@ -96,6 +99,8 @@ pub enum EngineChoice<'a> {
     AVSpeech { voice_id: &'a str, speed: f32 },
     /// Vosk-TTS Russian: G2P happens inside vosk, not in the caller.
     Vosk {
+        /// Public voice id, so the script gate and its diagnostics can name it.
+        voice_id: &'a str,
         model_dir: &'a Path,
         speaker_id: u32,
         /// Speaking rate (1.0 = model default); passed to vosk's `speech_rate`.

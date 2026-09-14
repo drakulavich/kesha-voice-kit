@@ -10,28 +10,28 @@
 
 ## 2. Error classes (Rust)
 
-- [ ] 2.1 T1-4 / T1-15 `--out` pre-flight in `cli/say.rs::run`: directory, missing parent, unwritable, character device are `E_INVALID_ARG` exit 2 before synthesis; FIFO keeps working
-- [ ] 2.2 T1-5 `--bitrate` range enforced in `resolve_output_format` before synthesis
-- [ ] 2.3 T2-3 / T2-4 AVSpeech failures keep their codes: unknown voice is `E_VOICE_UNKNOWN` with the System Settings hint, missing or non-executable sidecar is `E_SIDECAR_MISSING` naming the sibling path; the build-time helper path never appears in a message
-- [ ] 2.4 T2-5 `exit_code_for_tts_err` is code-aware; `docs/errors.md` exit rows updated
-- [ ] 2.5 T2-2 the `E_VOICE_UNKNOWN` prefix list is derived from the accepting `cfg` branch
-- [ ] 2.6 T3-2 SSML parse errors are `E_SSML_INVALID` naming the tag and accepted forms
-- [ ] 2.7 T3-3 CDATA text is spoken; a genuinely empty SSML document is `E_TEXT_EMPTY`
-- [ ] 2.8 T3-7 / T1-14 (engine half) FluidAudio's fd 2 is captured and re-emitted as events; unpronounceable text and a rejected token are `E_SCRIPT_UNSUPPORTED`, never a raw line
-- [ ] 2.9 T4-3 `--rate` validated in the engine (`E_INVALID_ARG` exit 2) on both doors
+- [x] 2.1 T1-4 / T1-15 `--out` pre-flight in `cli/say.rs::run`: directory, missing parent, unwritable, character device are `E_INVALID_ARG` exit 2 before synthesis; FIFO keeps working
+- [x] 2.2 T1-5 `--bitrate` range enforced in `resolve_output_format` before synthesis
+- [x] 2.3 T2-3 / T2-4 AVSpeech failures keep their codes: unknown voice is `E_VOICE_UNKNOWN` with the System Settings hint, missing or non-executable sidecar is `E_SIDECAR_MISSING` naming the sibling path; the build-time helper path never appears in a message
+- [x] 2.4 T2-5 `exit_code_for_tts_err` is code-aware; `docs/errors.md` exit rows updated
+- [x] 2.5 T2-2 the `E_VOICE_UNKNOWN` prefix list is derived from the accepting `cfg` branch
+- [x] 2.6 T3-2 SSML parse errors are `E_SSML_INVALID` naming the tag and accepted forms
+- [x] 2.7 T3-3 CDATA text is spoken; a genuinely empty SSML document is `E_TEXT_EMPTY`
+- [x] 2.8 T3-7 / T1-14 (engine half) FluidAudio's fd 2 is captured and re-emitted as events; unpronounceable text and a rejected token are `E_SCRIPT_UNSUPPORTED`, never a raw line
+- [x] 2.9 T4-3 `--rate` validated in the engine (`E_INVALID_ARG` exit 2) on both doors
 
 ## 3. SSML and audio on the FluidAudio path (Rust)
 
-- [ ] 3.1 T3-4 runs are edge-clipped with `seam` before a `<break>` silence is appended; a break adds only its duration
-- [ ] 3.2 T4-1 plain text is chunked by a rate-scaled budget and rejoined with `seam::join_chunks`; `--rate 0.5` synthesizes what 1.0 can
-- [ ] 3.3 T3-6 `<phoneme>` on FluidAudio speaks its wrapped text with a reworded warning; the empty-document bail is coded
+- [x] 3.1 T3-4 runs are edge-clipped with `seam` before a `<break>` silence is appended; a break adds only its duration
+- [x] 3.2 T4-1 plain text is chunked by a rate-scaled budget and rejoined with `seam::join_chunks`; `--rate 0.5` synthesizes what 1.0 can
+- [x] 3.3 T3-6 `<phoneme>` on FluidAudio speaks its wrapped text with a reworded warning; the empty-document bail is coded
 
 ## 4. Text normalization and script gates (Rust)
 
-- [ ] 4.1 T3-11 / T3-18 text-script classifier with per-voice supported scripts: dominant unsupported script is `E_SCRIPT_UNSUPPORTED` with a hint naming voices that can speak it; a minority run warns naming the tokens; Vosk gets the same gate; NFKC first
-- [ ] 4.2 T3-12 English currency and comma-grouped numbers verbalized before every English engine, once
-- [ ] 4.3 T3-15 phone-shaped Russian tokens are read digit by digit; ranges unchanged
-- [ ] 4.4 T3-14 reproduce against a `main` build; pin the `--no-expand-abbrev` warning with an integration test and fix the dropping layer if it reproduces
+- [x] 4.1 T3-11 / T3-18 text-script classifier with per-voice supported scripts: dominant unsupported script is `E_SCRIPT_UNSUPPORTED` with a hint naming voices that can speak it; a minority run warns naming the tokens; Vosk gets the same gate; NFKC first
+- [x] 4.2 T3-12 English currency and comma-grouped numbers verbalized before every English engine, once
+- [x] 4.3 T3-15 phone-shaped Russian tokens are read digit by digit; ranges unchanged
+- [x] 4.4 T3-14 reproduce against a `main` build; pin the `--no-expand-abbrev` warning with an integration test and fix the dropping layer if it reproduces
 
 ## 5. Routing and diagnostics (TS)
 
@@ -44,7 +44,7 @@
 
 - [x] 6.1 T2-1 `docs/diagnostic-logs.md` Model-cache row and the FluidAudio exception
 - [x] 6.2 T2-9 the male-default requirement names both exceptions
-- [ ] 6.3 T3-1 `docs/tts.md` SSML claims for darwin Kokoro; `<phoneme>` row says the text is read
+- [x] 6.3 T3-1 `docs/tts.md` SSML claims for darwin Kokoro; `<phoneme>` row says the text is read
 - [x] 6.4 Spec deltas for `tts-synthesis`, `installation`, `diagnostics`, `engine-contract`; `bun run check:specs`
 
 ## 7. Integration

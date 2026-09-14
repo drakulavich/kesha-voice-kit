@@ -111,7 +111,7 @@ async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number
     throw new ExitCalled(code ?? 0);
   }) as typeof process.exit;
   try {
-    await sayCommand.run?.({ args } as never);
+    await sayCommand.run?.({ args, rawArgs: [] } as never);
     return { exitCode: 0, stderr, stdout };
   } catch (err) {
     if (err instanceof ExitCalled) return { exitCode: err.code, stderr, stdout };

@@ -203,3 +203,18 @@ fn loop_synthesises_kokoro_and_caches_session() {
     // not just that it returns a WAV header.
     c.close();
 }
+
+#[test]
+fn a_rate_outside_the_engine_safe_range_returns_an_err_frame() {
+    let mut c = LoopChild::spawn();
+    c.send(r#"{"id": 7, "text": "Hello there", "voice": "en-am_michael", "rate": 0}"#);
+    let f = c.recv();
+    assert_eq!(f.status, STATUS_ERR);
+    assert_eq!(f.id, 7);
+    let msg = String::from_utf8_lossy(&f.payload);
+    assert!(
+        msg.contains("rate") && msg.contains("0.5"),
+        "unexpected error: {msg}"
+    );
+    c.close();
+}

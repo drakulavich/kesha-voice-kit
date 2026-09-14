@@ -167,6 +167,9 @@ fn encode_flac(samples: &[f32], src_rate: u32) -> anyhow::Result<Vec<u8>> {
 #[cfg(feature = "tts")]
 const OPUS_VALID_SR: &[u32] = &[8_000, 12_000, 16_000, 24_000, 48_000];
 
+/// Single source for the `--bitrate` bound, shared with the CLI's pre-flight check.
+pub const OPUS_BITRATE_RANGE: std::ops::RangeInclusive<i32> = 6_000..=510_000;
+
 /// 20 ms frame — Opus's sweet spot for VBR voice. At 48 kHz that's 960 samples;
 /// at 24 kHz it's 480; at 16 kHz it's 320. Keep it constant in *time* so the
 /// granule position math (`absgp` in samples-at-48kHz) stays linear.
@@ -282,7 +285,7 @@ fn encode_ogg_opus(
             OPUS_VALID_SR
         );
     }
-    if !(6_000..=510_000).contains(&bitrate) {
+    if !OPUS_BITRATE_RANGE.contains(&bitrate) {
         anyhow::bail!("ogg-opus: --bitrate must be 6000..=510000 bps, got {bitrate}");
     }
 

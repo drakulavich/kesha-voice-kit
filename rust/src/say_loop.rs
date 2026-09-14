@@ -179,6 +179,8 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
         ));
     }
 
+    tts::say::validate_rate(req.rate)?;
+
     let format = crate::cli::say::resolve_output_format(
         req.format.as_deref(),
         req.bitrate,
@@ -260,6 +262,7 @@ fn handle_kokoro(
     tts::say::say_kokoro(
         &mut state.sessions,
         &req.text,
+        &req.voice,
         espeak_lang,
         model_path,
         voice_path,
@@ -282,6 +285,7 @@ fn handle_vosk(
     tts::say::say_vosk(
         &mut state.sessions.vosk,
         &req.text,
+        &req.voice,
         model_dir,
         speaker_id,
         req.rate,

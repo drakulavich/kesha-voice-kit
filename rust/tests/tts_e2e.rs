@@ -21,6 +21,7 @@ fn kokoro_hello_world_produces_wav() {
         text,
         lang: "en-us",
         engine: EngineChoice::Kokoro {
+            voice_id: "en-am_michael",
             model_path: Path::new(&model),
             voice_path: Path::new(&voice),
             speed: 1.0,
@@ -54,6 +55,7 @@ fn empty_text_errors() {
         text: "",
         lang: "en-us",
         engine: EngineChoice::Kokoro {
+            voice_id: "en-am_michael",
             model_path: Path::new("/nonexistent"),
             voice_path: Path::new("/nonexistent"),
             speed: 1.0,
@@ -72,6 +74,7 @@ fn too_long_errors() {
         text: &huge,
         lang: "en-us",
         engine: EngineChoice::Kokoro {
+            voice_id: "en-am_michael",
             model_path: Path::new("/nonexistent"),
             voice_path: Path::new("/nonexistent"),
             speed: 1.0,
@@ -94,6 +97,7 @@ fn kokoro_ssml_with_break_produces_wav() {
             text,
             lang: "en-us",
             engine: EngineChoice::Kokoro {
+                voice_id: "en-am_michael",
                 model_path: Path::new(&model),
                 voice_path: Path::new(&voice),
                 speed: 1.0,
@@ -130,6 +134,7 @@ fn ssml_input_without_speak_root_errors() {
         text: "plain text, not SSML",
         lang: "en-us",
         engine: EngineChoice::Kokoro {
+            voice_id: "en-am_michael",
             model_path: Path::new("/nonexistent"),
             voice_path: Path::new("/nonexistent"),
             speed: 1.0,
@@ -147,4 +152,25 @@ fn ssml_input_without_speak_root_errors() {
             ..
         })
     ));
+}
+
+#[test]
+fn an_ssml_document_with_no_speakable_content_is_text_empty() {
+    for input in ["<speak></speak>", "<speak>   </speak>"] {
+        let res = tts::say(SayOptions {
+            text: input,
+            lang: "en-us",
+            engine: EngineChoice::Kokoro {
+                voice_id: "en-am_michael",
+                model_path: Path::new("/nonexistent"),
+                voice_path: Path::new("/nonexistent"),
+                speed: 1.0,
+            },
+            ssml: true,
+            format: OutputFormat::Wav,
+            expand_abbrev: true,
+        });
+        let err = res.expect_err("empty SSML must fail");
+        assert_eq!(err.code(), ErrorCode::TextEmpty, "{input:?}: {err}");
+    }
 }
