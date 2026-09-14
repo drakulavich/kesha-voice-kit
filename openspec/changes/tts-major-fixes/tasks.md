@@ -1,12 +1,12 @@
 ## 1. Argument handling (TS)
 
-- [ ] 1.1 T1-1 validate text (empty, too long, NUL) before voice resolution on both doors; `detect-text-lang` receives text on stdin, never as argv
-- [ ] 1.2 T1-2 explicit empty positional is `E_TEXT_EMPTY` exit 2 without reading stdin
-- [ ] 1.3 T1-3 valueless `--out`/`--voice`/`--lang`/`--format`/opus knobs are `E_INVALID_ARG` exit 2; progress line after pre-flight
-- [ ] 1.4 T1-5 (CLI half) `--bitrate` range 6000..=510000 checked before the spawn
-- [ ] 1.5 T1-15 (CLI half) a character-device `--out` is refused with `E_INVALID_ARG` naming plain stdout
-- [ ] 1.6 T1-14 (CLI half) `engineFailure` caps the quoted non-event line at 200 characters and does not re-render it as detail
-- [ ] 1.7 T2-11 `install --tts <unknown>` is `error [E_INVALID_ARG]: …` exit 2
+- [x] 1.1 T1-1 validate text (empty, too long, NUL) before voice resolution on both doors; `detect-text-lang` receives text on stdin, never as argv
+- [x] 1.2 T1-2 explicit empty positional is `E_TEXT_EMPTY` exit 2 without reading stdin
+- [x] 1.3 T1-3 valueless `--out`/`--voice`/`--lang`/`--format`/opus knobs are `E_INVALID_ARG` exit 2; progress line after pre-flight
+- [x] 1.4 T1-5 (CLI half) `--bitrate` range 6000..=510000 checked before the spawn
+- [x] 1.5 T1-15 (CLI half) a character-device `--out` is refused with `E_INVALID_ARG` naming plain stdout
+- [x] 1.6 T1-14 (CLI half) `engineFailure` caps the quoted non-event line at 200 characters and does not re-render it as detail
+- [x] 1.7 T2-11 `install --tts <unknown>` is `error [E_INVALID_ARG]: …` exit 2
 
 ## 2. Error classes (Rust)
 
@@ -35,17 +35,17 @@
 
 ## 5. Routing and diagnostics (TS)
 
-- [ ] 5.1 T2-10 native-script `ja`/`hi` text routes to an installed AVSpeech voice (male first); the engine hint names the `macos-*` voices that carry the language
-- [ ] 5.2 T2-6 `status` reports the engine's voice inventory when an engine is installed
-- [ ] 5.3 T2-7 `kokoro-ane` reports `languagesStaged` and per-language `missing`; `doctor --json` carries the TTS voice and language lists
-- [ ] 5.4 T2-8 `install --plan --tts <lang>` states the FluidAudio pack bytes from manifest-generated sizes
+- [x] 5.1 T2-10 native-script `ja`/`hi` text routes to an installed AVSpeech voice (male first); the engine hint names the `macos-*` voices that carry the language
+- [x] 5.2 T2-6 `status` reports the engine's voice inventory when an engine is installed
+- [x] 5.3 T2-7 `kokoro-ane` reports `languagesStaged` and per-language `missing`; `doctor --json` carries the TTS voice and language lists
+- [x] 5.4 T2-8 `install --plan --tts <lang>` states the FluidAudio pack bytes from manifest-generated sizes
 
 ## 6. Documents and specs
 
-- [ ] 6.1 T2-1 `docs/diagnostic-logs.md` Model-cache row and the FluidAudio exception
-- [ ] 6.2 T2-9 the male-default requirement names both exceptions
-- [ ] 6.3 T3-1 `docs/tts.md` SSML claims for darwin Kokoro; `<phoneme>` row says the text is read
-- [ ] 6.4 Spec deltas for `tts-synthesis`, `installation`, `diagnostics`, `engine-contract`; `bun run check:specs`
+- [x] 6.1 T2-1 `docs/diagnostic-logs.md` Model-cache row and the FluidAudio exception
+- [x] 6.2 T2-9 the male-default requirement names both exceptions
+- [x] 6.3 T3-1 `docs/tts.md` SSML claims for darwin Kokoro; `<phoneme>` row says the text is read
+- [x] 6.4 Spec deltas for `tts-synthesis`, `installation`, `diagnostics`, `engine-contract`; `bun run check:specs`
 
 ## 7. Integration
 
