@@ -240,7 +240,7 @@ fn fluid_script_gate(voice_id: &str, text: &str) -> Result<(), TtsError> {
     })
 }
 
-/// Gate the whole utterance once, then chunk: a script that is a minority overall must not be refused for dominating one chunk.
+/// Gate the whole utterance once, then chunk the text FluidAudio will receive: a minority script must not be refused for dominating one chunk, and verbalized amounts must count against the frame budget.
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -248,7 +248,8 @@ fn fluid_script_gate(voice_id: &str, text: &str) -> Result<(), TtsError> {
 ))]
 fn fluid_plain_chunks(voice_id: &str, text: &str, speed: f32) -> Result<Vec<String>, TtsError> {
     fluid_script_gate(voice_id, text)?;
-    Ok(seam::chunk_text(text, seam::fluid_chunk_budget(speed)))
+    let prepared = super::fluid_kokoro::prepare_text(voice_id, text);
+    Ok(seam::chunk_text(&prepared, seam::fluid_chunk_budget(speed)))
 }
 
 /// AVSpeech arm: does its own G2P + synthesis inside Swift; rejects SSML (#141).
@@ -604,7 +605,10 @@ fn synth_segments_fluid_kokoro(
     }
     fluid_script_gate(voice_id, &speakable_text(&segments))?;
     let synth = |t: &str, sp: f32| super::fluid_kokoro::synthesize_pcm(t, voice_id, sp);
-    let mut sink = FluidKokoroSink { synth: &synth };
+    let mut sink = FluidKokoroSink {
+        synth: &synth,
+        voice_id,
+    };
     synth_segments(&mut sink, &segments, speed, format)
 }
 
@@ -619,6 +623,7 @@ fn synth_segments_fluid_kokoro(
 ))]
 struct FluidKokoroSink<'a> {
     synth: &'a dyn Fn(&str, f32) -> anyhow::Result<Vec<f32>>,
+    voice_id: &'a str,
 }
 
 #[cfg(all(
@@ -630,6 +635,7 @@ impl FluidKokoroSink<'_> {
     /// A run past the frame cap is chunked like plain text and rejoined, so a
     /// slow `<prosody rate>` cannot fail the utterance (T4-1).
     fn synth(&self, text: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
+        let text = &*super::fluid_kokoro::prepare_text(self.voice_id, text);
         let chunks = seam::chunk_text(text, seam::fluid_chunk_budget(speed));
         if chunks.len() > 1 {
             let mut parts = Vec::with_capacity(chunks.len());
@@ -904,6 +910,47 @@ mod tests {
     ))]
     mod fluid_chunk_gate {
         use crate::tts::say::fluid_plain_chunks;
+
+        #[test]
+        fn currency_expansion_is_chunked_on_the_text_fluidaudio_receives() {
+            let budget = crate::tts::seam::fluid_chunk_budget(0.5);
+            let text = "It cost $1,234,567.89, then $9,876,543.21, then $5,555,555.55 and finally $7,777,777.77 more.";
+            assert!(
+                text.chars().count() <= budget,
+                "the raw text must fit one chunk for this test to mean anything"
+            );
+            let chunks = fluid_plain_chunks("am_michael", text, 0.5).expect("speaks");
+            assert!(
+                chunks.len() >= 2,
+                "the verbalized amounts must split: {chunks:?}"
+            );
+            assert!(
+                chunks.iter().all(|c| c.chars().count() <= budget),
+                "{chunks:?}"
+            );
+        }
+
+        #[test]
+        fn a_prosody_run_is_chunked_on_the_verbalized_text() {
+            use std::cell::RefCell;
+            let log: RefCell<Vec<usize>> = RefCell::new(Vec::new());
+            let synth = |t: &str, _sp: f32| -> anyhow::Result<Vec<f32>> {
+                log.borrow_mut().push(t.chars().count());
+                Ok(vec![0.0; 10])
+            };
+            let sink = crate::tts::say::FluidKokoroSink {
+                synth: &synth,
+                voice_id: "am_michael",
+            };
+            let text = "It cost $1,234,567.89, then $9,876,543.21, then $5,555,555.55 and finally $7,777,777.77 more.";
+            sink.synth(text, 0.5).expect("speaks");
+            let budget = crate::tts::seam::fluid_chunk_budget(0.5);
+            let calls = log.borrow();
+            assert!(
+                calls.len() >= 2 && calls.iter().all(|n| *n <= budget),
+                "{calls:?}"
+            );
+        }
 
         #[test]
         fn a_minority_script_that_dominates_one_chunk_is_not_refused() {
@@ -1591,7 +1638,10 @@ mod fluid_kokoro_ssml_tests {
         segs: &[Segment],
         speed: f32,
     ) -> Vec<f32> {
-        let mut sink = FluidKokoroSink { synth };
+        let mut sink = FluidKokoroSink {
+            synth,
+            voice_id: "am_michael",
+        };
         let mut out = seam::SeamBuf::new(24_000);
         walk_segments(&mut sink, segs, speed, 24_000, &mut out).unwrap();
         out.finish()
