@@ -260,7 +260,11 @@ fn resolve_voice(
 }
 
 /// Build the [`tts::EngineChoice`] from the resolved voice and playback rate.
-fn engine_choice<'a>(resolved: &'a tts::voices::ResolvedVoice, rate: f32) -> tts::EngineChoice<'a> {
+fn engine_choice<'a>(
+    resolved: &'a tts::voices::ResolvedVoice,
+    voice_id: &'a str,
+    rate: f32,
+) -> tts::EngineChoice<'a> {
     match resolved {
         tts::voices::ResolvedVoice::Kokoro {
             model_path,
@@ -286,6 +290,7 @@ fn engine_choice<'a>(resolved: &'a tts::voices::ResolvedVoice, rate: f32) -> tts
             model_dir,
             speaker_id,
         } => tts::EngineChoice::Vosk {
+            voice_id,
             model_dir,
             speaker_id: *speaker_id,
             speed: rate,
@@ -437,7 +442,11 @@ pub fn run(a: SayArgs) -> i32 {
         .lang
         .clone()
         .unwrap_or_else(|| resolved.espeak_lang().to_string());
-    let engine = engine_choice(&resolved, a.rate);
+    let engine = engine_choice(
+        &resolved,
+        a.voice.as_deref().unwrap_or(tts::voices::DEFAULT_VOICE_ID),
+        a.rate,
+    );
 
     let bytes = match tts::say(tts::SayOptions {
         text: &text,

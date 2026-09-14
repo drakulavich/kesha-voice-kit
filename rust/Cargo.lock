@@ -982,6 +982,7 @@ dependencies = [
  "tempfile",
  "text-processing-rs",
  "thiserror 2.0.19",
+ "unicode-normalization",
  "ureq",
  "vosk_tts",
 ]
