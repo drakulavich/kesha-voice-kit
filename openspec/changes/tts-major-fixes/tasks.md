@@ -44,7 +44,7 @@
 
 - [x] 6.1 T2-1 `docs/diagnostic-logs.md` Model-cache row and the FluidAudio exception
 - [x] 6.2 T2-9 the male-default requirement names both exceptions
-- [ ] 6.3 T3-1 `docs/tts.md` SSML claims for darwin Kokoro; `<phoneme>` row says the text is read
+- [x] 6.3 T3-1 `docs/tts.md` SSML claims for darwin Kokoro; `<phoneme>` row says the text is read
 - [x] 6.4 Spec deltas for `tts-synthesis`, `installation`, `diagnostics`, `engine-contract`; `bun run check:specs`
 
 ## 7. Integration
