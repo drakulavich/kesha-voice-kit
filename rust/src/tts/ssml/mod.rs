@@ -63,11 +63,39 @@ fn substitute_cdata(input: &str) -> std::borrow::Cow<'_, str> {
 }
 
 /// The upstream parser carries no structured error kind, so the tag and its accepted forms are inferred from its text (T3-2).
-fn parse_failure_hint(upstream: &str) -> &'static str {
+fn parse_failure_hint(upstream: &str, input: &str) -> String {
     if upstream.contains("TimeDesignation") {
-        return "SSML <break time> must be a duration like \"500ms\" or \"1s\", or absent";
+        return "SSML <break time> must be a duration like \"500ms\" or \"1s\", or absent".into();
     }
-    "SSML is malformed"
+    if let Some(value) = upstream.split("Unrecognised value ").nth(1) {
+        let value = value.trim();
+        return match attribute_holding(input, value) {
+            Some("rate") => format!(
+                "SSML <prosody rate> must be a percentage like \"80%\" or one of x-slow, slow, medium, fast, x-fast, default (got \"{value}\")"
+            ),
+            Some("level") => format!(
+                "SSML <emphasis level> must be one of strong, moderate, none, reduced (got \"{value}\")"
+            ),
+            Some(attr) => format!("SSML attribute {attr} has an unrecognised value \"{value}\""),
+            None => format!("SSML has an unrecognised attribute value \"{value}\""),
+        };
+    }
+    "SSML is malformed".into()
+}
+
+/// The attribute whose quoted value is `value`: `rate` for `rate="0.5"`.
+fn attribute_holding<'a>(input: &'a str, value: &str) -> Option<&'a str> {
+    for quote in ['"', '\''] {
+        let needle = format!("={quote}{value}{quote}");
+        if let Some(pos) = input.find(&needle) {
+            let head = &input[..pos];
+            let start = head
+                .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == ':'))
+                .map_or(0, |i| i + 1);
+            return Some(&head[start..]);
+        }
+    }
+    None
 }
 
 /// Parse an SSML string into a linear segment list.
@@ -111,7 +139,7 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     }
 
     let ssml = parse_ssml(input)
-        .map_err(|e| anyhow::anyhow!("{} ({e})", parse_failure_hint(&e.to_string())))
+        .map_err(|e| anyhow::anyhow!("{} ({e})", parse_failure_hint(&e.to_string(), input)))
         .coded(ErrorCode::SsmlInvalid)?;
     let text: Vec<char> = ssml.get_text().chars().collect();
 
@@ -296,6 +324,32 @@ fn contains_doctype(input: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unrecognised_prosody_rate_names_the_attribute_and_its_accepted_forms() {
+        let err = parse(r#"<speak><prosody rate="0.5">hi</prosody></speak>"#).expect_err("refused");
+        let msg = format!("{err:#}");
+        assert_eq!(
+            crate::errors::code_of(&err),
+            ErrorCode::SsmlInvalid,
+            "{msg}"
+        );
+        assert!(
+            msg.contains("<prosody rate>") && msg.contains("x-slow") && msg.contains("\"0.5\""),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn an_unrecognised_emphasis_level_names_the_attribute_and_its_accepted_forms() {
+        let err =
+            parse(r#"<speak><emphasis level="loud">hi</emphasis></speak>"#).expect_err("refused");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("<emphasis level>") && msg.contains("strong") && msg.contains("\"loud\""),
+            "{msg}"
+        );
+    }
 
     // Full parse() integration tests live in rust/tests/ssml_integration.rs (#267 F8).
     // This block covers only pub(super) items unreachable from there — currently tag_name.
