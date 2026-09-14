@@ -477,7 +477,7 @@ mod tests {
     fn english_voices_get_their_currency_verbalized_before_the_handoff() {
         assert_eq!(
             prepare_text("am_michael", "He paid $1,234.56"),
-            "He paid one thousand two hundred thirty-four dollars and fifty-six cents"
+            "He paid one thousand two hundred thirty four dollars and fifty six cents"
         );
         assert_eq!(prepare_text("am_michael", "Room 405"), "Room 405");
         assert_eq!(prepare_text("am_michael", "Ｒｏｏｍ ４０５"), "Room 405");

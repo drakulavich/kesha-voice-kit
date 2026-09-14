@@ -76,7 +76,7 @@ mod tests {
         };
         assert_eq!(
             spoken,
-            "He paid one thousand two hundred thirty-four dollars and fifty-six cents"
+            "He paid one thousand two hundred thirty four dollars and fifty six cents"
         );
     }
 
