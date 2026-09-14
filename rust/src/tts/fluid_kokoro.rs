@@ -312,7 +312,8 @@ fn ensure_pronounceable(voice_id: &str, text: &str) -> Result<()> {
     }
     coded_bail!(
         ErrorCode::ScriptUnsupported,
-        "no pronounceable content for voice '{voice_id}'"
+        "no pronounceable content for voice '{}'",
+        public_id_for_fluid_id(voice_id).unwrap_or(voice_id)
     );
 }
 
@@ -373,7 +374,10 @@ fn classify_bridge_failure(
     if let Some(token) = rejected_token(captured, text) {
         return anyhow::Error::new(crate::errors::CodedError {
             code: ErrorCode::ScriptUnsupported,
-            message: format!("voice '{voice_id}' cannot pronounce '{token}'"),
+            message: format!(
+                "voice '{}' cannot pronounce '{token}'",
+                public_id_for_fluid_id(voice_id).unwrap_or(voice_id)
+            ),
         });
     }
     anyhow::Error::new(crate::errors::CodedError {
@@ -575,6 +579,25 @@ mod tests {
         assert!(
             msg.contains(&token[..40]),
             "the user's spelling, not FluidAudio's lower-casing: {msg}"
+        );
+    }
+
+    #[test]
+    fn refusals_name_the_public_voice_id_not_the_fluidaudio_one() {
+        let err = ensure_pronounceable("am_michael", "😀").expect_err("refused");
+        assert!(
+            format!("{err:#}").contains("voice 'en-am_michael'"),
+            "{err:#}"
+        );
+        let err = classify_bridge_failure(
+            anyhow::anyhow!("FluidAudio Kokoro synthesis"),
+            "[WARN] G2P failed on word 'zzzz': G2P encoder prediction failed.\n",
+            "zzzz",
+            "am_michael",
+        );
+        assert!(
+            format!("{err:#}").contains("voice 'en-am_michael'"),
+            "{err:#}"
         );
     }
 
