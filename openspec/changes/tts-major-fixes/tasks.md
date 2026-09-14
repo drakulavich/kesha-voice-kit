@@ -28,10 +28,10 @@
 
 ## 4. Text normalization and script gates (Rust)
 
-- [ ] 4.1 T3-11 / T3-18 text-script classifier with per-voice supported scripts: dominant unsupported script is `E_SCRIPT_UNSUPPORTED` with a hint naming voices that can speak it; a minority run warns naming the tokens; Vosk gets the same gate; NFKC first
-- [ ] 4.2 T3-12 English currency and comma-grouped numbers verbalized before every English engine, once
-- [ ] 4.3 T3-15 phone-shaped Russian tokens are read digit by digit; ranges unchanged
-- [ ] 4.4 T3-14 reproduce against a `main` build; pin the `--no-expand-abbrev` warning with an integration test and fix the dropping layer if it reproduces
+- [x] 4.1 T3-11 / T3-18 text-script classifier with per-voice supported scripts: dominant unsupported script is `E_SCRIPT_UNSUPPORTED` with a hint naming voices that can speak it; a minority run warns naming the tokens; Vosk gets the same gate; NFKC first
+- [x] 4.2 T3-12 English currency and comma-grouped numbers verbalized before every English engine, once
+- [x] 4.3 T3-15 phone-shaped Russian tokens are read digit by digit; ranges unchanged
+- [x] 4.4 T3-14 reproduce against a `main` build; pin the `--no-expand-abbrev` warning with an integration test and fix the dropping layer if it reproduces
 
 ## 5. Routing and diagnostics (TS)
 
