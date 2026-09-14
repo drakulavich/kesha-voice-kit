@@ -3,7 +3,11 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { deviceOutRefusal, sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
+import { setColorEnabled } from "../../src/log";
 import { describeJson, saveEngineEnv } from "../helpers/fake-engine";
+
+// picocolors turns colour on under CI, and this harness captures the raw stderr bytes.
+setColorEnabled(false);
 
 describe("say CLI input guard (#324 P1)", () => {
   test("rejects missing text only when stdin is a TTY", () => {
