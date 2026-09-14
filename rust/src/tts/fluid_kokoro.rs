@@ -102,7 +102,8 @@ fn public_id_for_fluid_id(fluid_id: &str) -> Option<&'static str> {
 
 /// Refuse text whose dominant script this voice's G2P cannot phonemize, and warn
 /// about a minority run it will mispronounce (#492). An unknown id is not gated.
-fn ensure_script_supported(fluid_id: &str, text: &str) -> Result<()> {
+/// Callers gate the whole utterance once, before chunking: a minority run must not be refused for dominating one chunk.
+pub(crate) fn ensure_script_supported(fluid_id: &str, text: &str) -> Result<()> {
     match public_id_for_fluid_id(fluid_id) {
         Some(public_id) => crate::tts::script::ensure_supported(public_id, text),
         None => Ok(()),
@@ -286,7 +287,6 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<(Vec<f32>, u
     if text.is_empty() {
         anyhow::bail!("fluid-kokoro: text is empty");
     }
-    ensure_script_supported(voice_id, text)?;
     let text = prepare_text(voice_id, text);
     ensure_pronounceable(voice_id, &text)?;
     let (result, captured) = crate::fluid_stderr::with_captured_stderr(|| {

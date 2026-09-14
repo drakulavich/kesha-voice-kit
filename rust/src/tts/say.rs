@@ -214,7 +214,7 @@ fn say_fluid_kokoro(
         sample_rate = rate;
         Ok(samples)
     };
-    let chunks = seam::chunk_text(text, seam::fluid_chunk_budget(speed));
+    let chunks = fluid_plain_chunks(voice_id, text, speed)?;
     let samples = if chunks.len() < 2 {
         // The whole text, so an empty or unpronounceable input keeps its own error.
         synth(text)?
@@ -226,6 +226,29 @@ fn say_fluid_kokoro(
         seam::join_chunks(parts, sample_rate)
     };
     encode_or_fail(&samples, sample_rate, format)
+}
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn fluid_script_gate(voice_id: &str, text: &str) -> Result<(), TtsError> {
+    super::fluid_kokoro::ensure_script_supported(voice_id, text).map_err(|e| TtsError::Coded {
+        code: crate::errors::code_of(&e),
+        message: format!("fluid-kokoro: {e}"),
+    })
+}
+
+/// Gate the whole utterance once, then chunk: a script that is a minority overall must not be refused for dominating one chunk.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn fluid_plain_chunks(voice_id: &str, text: &str, speed: f32) -> Result<Vec<String>, TtsError> {
+    fluid_script_gate(voice_id, text)?;
+    Ok(seam::chunk_text(text, seam::fluid_chunk_budget(speed)))
 }
 
 /// AVSpeech arm: does its own G2P + synthesis inside Swift; rejects SSML (#141).
@@ -579,6 +602,7 @@ fn synth_segments_fluid_kokoro(
             message: "SSML had no speakable content".into(),
         });
     }
+    fluid_script_gate(voice_id, &speakable_text(&segments))?;
     let synth = |t: &str, sp: f32| super::fluid_kokoro::synthesize_pcm(t, voice_id, sp);
     let mut sink = FluidKokoroSink { synth: &synth };
     synth_segments(&mut sink, &segments, speed, format)
@@ -873,6 +897,32 @@ fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow:
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    mod fluid_chunk_gate {
+        use crate::tts::say::fluid_plain_chunks;
+
+        #[test]
+        fn a_minority_script_that_dominates_one_chunk_is_not_refused() {
+            let english = "The quick brown fox jumps over the lazy dog. ".repeat(6);
+            let text = format!("{english}Привет мир, как дела сегодня утром.");
+            let chunks = fluid_plain_chunks("am_michael", &text, 0.5)
+                .expect("a minority run warns, never refuses");
+            let last = chunks.last().expect("chunks");
+            assert!(
+                chunks.len() >= 2,
+                "the text must split for this test to mean anything: {chunks:?}"
+            );
+            assert!(
+                crate::tts::fluid_kokoro::ensure_script_supported("am_michael", last).is_err(),
+                "the last chunk must be Cyrillic-dominant on its own: {last:?}"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]
