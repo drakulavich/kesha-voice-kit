@@ -345,13 +345,21 @@ fn probe_out_path(path: &std::path::Path) -> Result<(), String> {
             let _ = std::fs::remove_file(path);
             Ok(())
         }
-        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)
-            .map(drop)
-            .map_err(refusal),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            match std::fs::OpenOptions::new().write(true).open(path) {
+                Ok(_) => Ok(()),
+                // A symlink whose target is not there yet: probe the target so nothing is left behind here either.
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    match std::fs::read_link(path) {
+                        Ok(target) => probe_out_path(
+                            &path.parent().map_or(target.clone(), |d| d.join(&target)),
+                        ),
+                        Err(_) => Err(refusal(err)),
+                    }
+                }
+                Err(err) => Err(refusal(err)),
+            }
+        }
         Err(err) => Err(refusal(err)),
     }
 }
