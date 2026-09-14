@@ -84,11 +84,11 @@ when set, otherwise the path under `KESHA_HOME` when that is set, otherwise the
 platform default. `KESHA_HOME` uses one layout on every platform, so a test run,
 a CI job or a second profile needs exactly one variable to leave your real
 models, logs and Stats untouched. Nothing is moved when you set it: a fresh
-`KESHA_HOME` starts with an empty cache, and `kesha install` fills it.
+`KESHA_HOME` starts with an empty cache, and `kesha install` fills it. Two roots FluidAudio owns stay outside it on darwin-arm64: the Kokoro ANE bundles and voice packs under `~/.cache/fluidaudio`, and its Silero VAD copy under `~/Library/Application Support/FluidAudio`; `status --disk` reports both as external roots, and `kesha install --tts` stages into the first regardless of `KESHA_HOME`.
 
 | What | Default (macOS / Windows / Linux) | Under `KESHA_HOME` | Own variable |
 |---|---|---|---|
-| Model cache: engine, models, `recordings/`, FluidAudio bundles | `~/.cache/kesha` everywhere | `<home>/cache` | `KESHA_CACHE_DIR` |
+| Model cache: engine, models, `recordings/` | `~/.cache/kesha` everywhere | `<home>/cache` | `KESHA_CACHE_DIR` |
 | Diagnostic log directory | `~/Library/Logs/kesha` / `%LOCALAPPDATA%\kesha\logs` / `$XDG_STATE_HOME/kesha/logs` | `<home>/logs` | `KESHA_LOG_DIR` |
 | Stats DB | `~/Library/Application Support/kesha/stats.sqlite` / `%APPDATA%\kesha\stats.sqlite` / `$XDG_DATA_HOME/kesha/stats.sqlite` | `<home>/stats.sqlite` | `KESHA_STATS_DB` |
 | MCP audio (`kesha mcp` synthesis output) | `<tmpdir>/kesha-mcp` | `<home>/mcp-audio` | none |
