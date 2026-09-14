@@ -383,7 +383,7 @@ fn classify_bridge_failure(
 }
 
 /// FluidAudio phonemizes raw text itself, so English amounts must be words before the handoff; its G2P has no hook that could express a currency sign (the ONNX arm does this in `en::normalize_segments`).
-fn prepare_text<'a>(voice_id: &str, text: &'a str) -> std::borrow::Cow<'a, str> {
+pub(crate) fn prepare_text<'a>(voice_id: &str, text: &'a str) -> std::borrow::Cow<'a, str> {
     let text = crate::tts::script::compatibility_normalize(text);
     match lang_for_fluid_id(voice_id) {
         Some(lang) if crate::tts::en::is_en(lang) => {
