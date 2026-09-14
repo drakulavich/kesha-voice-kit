@@ -28,11 +28,15 @@ package name and version; Bun runtime version, platform, and architecture; Engin
 binary path, install status, version marker, and the describe document (obtained by
 probing the Engine); Model cache path, existence, total size, and per-component
 breakdown; optional-component install status (VAD, TTS Kokoro, TTS Vosk, FluidAudio
-Kokoro cache, Diarization, Sidecars); Stats DB status; Diagnostic log status; a
-snapshot of known `KESHA_*` environment variables; and the four resolved state paths
-(Model cache, Diagnostic log directory, Stats DB, MCP audio directory), each with the
-source that decided it — `default`, `KESHA_HOME`, or the specific variable — as defined
-by `state-directories`.
+Kokoro cache, Diarization, Sidecars); the TTS languages staged and the installed Voice
+ids; Stats DB status; Diagnostic log status; a snapshot of known `KESHA_*` environment
+variables; and the four resolved state paths (Model cache, Diagnostic log directory,
+Stats DB, MCP audio directory), each with the source that decided it — `default`,
+`KESHA_HOME`, or the specific variable — as defined by `state-directories`. The
+FluidAudio Kokoro component SHALL report completeness per language: a language whose
+voice pack is absent is listed as missing for that language, and the component SHALL
+NOT report an empty `missing` list while a supported language cannot be synthesized
+from it.
 
 `kesha doctor` SHALL always exit 0, even when components are missing or the Engine
 probe fails. It SHALL never download or modify any file.
@@ -99,6 +103,13 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 - THEN the env snapshot does not list `KESHA_DEBUG_FD`, because the variable no longer exists
 - AND the process exits 0
 
+#### Scenario: Doctor names the languages a Kokoro cache cannot serve
+
+- GIVEN darwin-arm64 with the English ANE chain staged and no Spanish pack
+- WHEN Sona runs `kesha doctor --json`
+- THEN the FluidAudio Kokoro component lists `en` as staged and `es` among the missing languages
+- AND the report carries the installed Voice ids
+
 > *Technical Note — sources: `src/doctor.ts::collectDoctorReport`,
 > `src/doctor.ts::formatDoctorReport`, `src/cli/doctor.ts::doctorCommand`.
 > Executability comes from `src/engine-health.ts::probeExecutable` and surfaces as
@@ -120,7 +131,10 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 `kesha status` SHALL print a concise install summary: Engine binary path and install
 status; Backend, protocol version, and features (from the describe document); Bun runtime
 version and platform; active Model mirror (when `KESHA_MODEL_MIRROR` is set); and the
-list of installed TTS Voice ids.
+list of installed TTS Voice ids. When an Engine is installed and answers, the Voice ids
+SHALL be the Engine's own inventory (the same list `kesha say --list-voices` prints,
+including FluidAudio Kokoro voices and `macos-*` system voices); only when no Engine is
+installed SHALL the list fall back to what the Model cache holds on disk.
 
 `--disk` SHALL additionally print a per-component disk-usage table (Engine, ASR,
 Language ID, VAD, TTS Kokoro, TTS Vosk) and the grand total. The FluidAudio Kokoro
@@ -235,9 +249,23 @@ Engine is installed, matching the human path.
   this apart from both a healthy Engine and a missing one
 - AND the process exits 0, matching the human path's "probe failed" line
 
+#### Scenario: Status agrees with --list-voices
+
+- GIVEN an installed Engine on darwin-arm64
+- WHEN Maks compares `kesha status --json | jq '.voices | length'` with `kesha say --list-voices | wc -l`
+- THEN the two numbers are equal
+
+#### Scenario: Status without an Engine still lists what is on disk
+
+- GIVEN no Engine binary but Vosk-TTS files in the Model cache
+- WHEN Ira runs `kesha status`
+- THEN the five `ru-vosk-*` ids are listed from the cache and the setup hint is printed
+
 > *Technical Note — sources: `src/status.ts::collectStatus` and `renderStatus`, `src/status.ts::showDiskUsage`,
-> `src/cli/status.ts::statusCommand`. TTS voice enumeration reads `kokoro-82m/voices/*.bin`
-> (prefixed `en-`) and checks `vosk-ru/model.onnx` + `vosk-ru/bert/model.onnx` presence
+> `src/cli/status.ts::statusCommand`. TTS voice enumeration is
+> `src/voice-inventory.ts::installedVoiceIds`: `kesha-engine say --list-voices` when the
+> Engine is installed, otherwise (or when that probe fails) `cachedVoiceIds`, which reads
+> `kokoro-82m/voices/*.bin` (prefixed `en-`) and checks the Vosk-RU files' presence
 > (voices `ru-vosk-f01`, `ru-vosk-f02`, `ru-vosk-f03`, `ru-vosk-m01`, `ru-vosk-m02`).
 > `activeModelMirror()` trims and strips trailing slashes from `KESHA_MODEL_MIRROR`;
 > returns null when unset or empty. Capabilities are `engineFunctionalHealth()`'s
