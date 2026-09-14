@@ -1145,6 +1145,16 @@ process.exit(99);
     expect(accepted.stderr).not.toContain("character device");
   });
 
+  test("kesha install with a bare language code is the same coded usage error as an unsupported one, exit 2", async () => {
+    const dir = makeTempDir("kesha-cli-contract-ttsflag-");
+    const run = await runCli(["install", "--plan", "ru"], { env: isolatedEnv(dir) });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: Language codes (ru) require the --tts flag"],
+    });
+  });
+
   // T2-11: the refusal was right but uncoded and exited 1, where its sibling catch exits 2.
   test("kesha install --tts with an unsupported language is a coded usage error, exit 2", async () => {
     const dir = makeTempDir("kesha-cli-contract-ttslang-");

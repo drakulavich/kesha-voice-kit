@@ -184,7 +184,7 @@ Range clamped to 0.5×–2.0×; values outside the range are clamped silently. `
 - Relative percent (`+25%` / `-25%`) is NOT supported. The upstream `ssml-parser` strips the sign on parse, so `+N%` would silently produce the absolute `N%` rate. `kesha say --ssml` rejects relative-percent input with a clear error pointing users at absolute percent or named values. Tracked as a v2 follow-up on [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
 - Mid-utterance prosody (`<speak>Hi <prosody rate="fast">there</prosody> bye</speak>`) emits a `prosody-mid-utterance` stderr warning and synthesizes the full text at default rate. A leading or trailing structural sibling (`<break/>`, `<say-as>`, `<phoneme>`) outside the `<prosody>` also triggers the mid-utterance path. Per-segment splitting is a v2 follow-up — requires verifying boundary cuts don't produce click/pop. Tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
 - Nested `<prosody>` warns once (`prosody-nested`) and drops the inner attributes; inner content flows at the outer rate.
-- AVSpeech (`macos-*`) voices don't accept SSML; `--ssml` errors out with `E_SSML_UNSUPPORTED` before any prosody handling runs. Darwin FluidAudio Kokoro (`en-*` and the other Kokoro languages on darwin-arm64) honours `<break>`, `<say-as characters>` and whole-utterance `<prosody rate>`; `<phoneme>` is read as its text there.
+- AVSpeech (`macos-*`) and Darwin FluidAudio Kokoro (`en-*` on darwin-arm64 release builds) don't accept SSML yet; `--ssml` errors out before any prosody handling runs.
 - `<prosody pitch>` and `<prosody volume>` are NOT supported in v1 — they warn-once and strip. See #236 for the v2 design considerations.
 
 Engine lists `tts.prosody_rate` in `describe`. Closes [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) (rate-only conservative scope; pitch + volume deferred).
@@ -206,8 +206,8 @@ kesha say --ssml --voice ru-vosk-m02 '<speak>Привет <break time="1s"/> м�
 | `<say-as interpret-as="characters">…</say-as>` | ✅ honored on `ru-vosk-*` (#232) and `en-*` (#244) — letter-spells via the embedded table; stripped with stderr warning on AVSpeech |
 | `<say-as interpret-as="cardinal\|ordinal\|date\|telephone\|...">` | ⚠️ stripped with stderr warning (contained text still synthesized); separate concern |
 | `<emphasis>` | ✅ honored on `ru-vosk-*` (#233) — `+vowel` markers shift stress; `level="none"` suppresses. Stripped + warned on Kokoro / AVSpeech (no `+`-marker analog) |
-| `<phoneme alphabet="ipa" ph="…">` | ✅ honored on ONNX Kokoro — bypasses G2P, feeds IPA directly to inference (#193). Darwin FluidAudio Kokoro has no IPA input: the tag is stripped with one warning and the wrapped text is spoken. |
-| `<prosody rate>` | ✅ honored on `ru-vosk-*`, ONNX `en-*` and Darwin FluidAudio Kokoro voices when wrapping the whole utterance — see the section above (#236). Mid-utterance / sibling-flanked: warned + stripped. |
+| `<phoneme alphabet="ipa" ph="…">` | ✅ honored on ONNX Kokoro — bypasses G2P, feeds IPA directly to inference (#193). Not yet supported by Darwin FluidAudio Kokoro. |
+| `<prosody rate>` | ✅ honored on `ru-vosk-*` and ONNX `en-*` voices when wrapping the whole utterance — see the section above (#236). Mid-utterance / sibling-flanked: warned + stripped. |
 | `<prosody pitch/volume>` | ⚠️ stripped with stderr warning; v2 follow-up tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) |
 | `<!DOCTYPE>` | ❌ rejected (hardening against XXE) |
 
