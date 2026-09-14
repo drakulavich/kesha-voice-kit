@@ -35,10 +35,10 @@
 
 ## 5. Routing and diagnostics (TS)
 
-- [ ] 5.1 T2-10 native-script `ja`/`hi` text routes to an installed AVSpeech voice (male first); the engine hint names the `macos-*` voices that carry the language
-- [ ] 5.2 T2-6 `status` reports the engine's voice inventory when an engine is installed
-- [ ] 5.3 T2-7 `kokoro-ane` reports `languagesStaged` and per-language `missing`; `doctor --json` carries the TTS voice and language lists
-- [ ] 5.4 T2-8 `install --plan --tts <lang>` states the FluidAudio pack bytes from manifest-generated sizes
+- [x] 5.1 T2-10 native-script `ja`/`hi` text routes to an installed AVSpeech voice (male first); the engine hint names the `macos-*` voices that carry the language
+- [x] 5.2 T2-6 `status` reports the engine's voice inventory when an engine is installed
+- [x] 5.3 T2-7 `kokoro-ane` reports `languagesStaged` and per-language `missing`; `doctor --json` carries the TTS voice and language lists
+- [x] 5.4 T2-8 `install --plan --tts <lang>` states the FluidAudio pack bytes from manifest-generated sizes
 
 ## 6. Documents and specs
 
@@ -49,6 +49,6 @@
 
 ## 7. Integration
 
-- [ ] 7.1 Land the clusters as a stack of three PRs (CLI and input contracts; engine error classes, audio and text; routing and diagnostics), each gated by `just preflight` and `just verify-darwin-full`
+- [x] 7.1 Land the clusters as a stack of three PRs (CLI and input contracts; engine error classes, audio and text; routing and diagnostics), each gated by `just preflight` and `just verify-darwin-full`
 - [ ] 7.2 Each PR: Greptile P1/P2 clear; adversarial review aimed at "every one of the 31 rows' reproduction commands now behaves as design.md decides, and no minor row, question row or existing test regressed"; CI on the full head SHA
 - [ ] 7.3 After merge: sync and archive in a follow-up PR
