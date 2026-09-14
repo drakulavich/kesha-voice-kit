@@ -218,7 +218,7 @@ characters are letter-spelled unless they appear on the English stop-list or in
 the IPA lexicon (which supplies a fixed pronunciation); currency amounts
 (`$`, `€`, `£` followed by digits, with an optional decimal part) and
 comma-grouped integers (`1,234,567`) are verbalized with their unit ("one
-thousand two hundred thirty-four dollars and fifty-six cents") before the text
+thousand two hundred thirty four dollars and fifty six cents") before the text
 reaches any English engine, including the darwin-arm64 FluidAudio handoff, and
 exactly once on every path. Russian (`ru-vosk-*`): all-caps Cyrillic tokens of
 2–5 letters are letter-spelled when they fail the pronounceability heuristic
