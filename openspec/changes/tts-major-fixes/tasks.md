@@ -49,6 +49,6 @@
 
 ## 7. Integration
 
-- [ ] 7.1 Merge the five cluster branches into `xt-tts-major`; `just preflight` and `just verify-darwin-full`
+- [x] 7.1 Merge the five cluster branches into `xt-tts-major`; `just preflight` and `just verify-darwin-full`
 - [ ] 7.2 PR; Greptile P1/P2 clear; adversarial review aimed at "every one of the 31 rows' reproduction commands now behaves as design.md decides, and no minor row, question row or existing test regressed"; CI on the full head SHA
 - [ ] 7.3 After merge: sync and archive in a follow-up PR
