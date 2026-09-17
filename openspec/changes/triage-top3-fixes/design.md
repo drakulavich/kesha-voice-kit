@@ -30,22 +30,24 @@ Three independent defects, each a few lines, bundled because they share a queue 
 
 ### D2 — `coded_bail!(ErrorCode::ModelMissing, …)` with the message text kept
 
-Message becomes `"No transcription models installed. Run: kesha install"` — the `Error:` prefix and blank lines of the current bail are rendering the CLI already does, and `lang_id.rs:76` sets the house style. `diarize_e2e.rs:227` matches on the substring `No transcription models installed` and keeps matching. Hint derivation is whatever `Event::error` does for `ModelMissing` today; not touched.
+Message becomes `"No transcription models installed. Run: kesha install"` — the `Error:` prefix and blank lines of the current bail are rendering the CLI already does, and `lang_id.rs:76` sets the house style. `diarize_e2e.rs:227` matches on the substring `No transcription models installed` and keeps matching. The event carries no `hint` — `errors::report` passes `None` for every engine-side code, so it matches `say` and `detect-lang`'s `E_MODEL_MISSING` events; the CLI-side raise sites attach hints, an inconsistency that predates this change.
 
 Tests: the existing `asr_gate_reports_resolved_cache_without_model_as_missing` gains `assert_eq!(code_of(&err), ErrorCode::ModelMissing)` (red first — today it is `Internal`); `rust/tests/error_codes_cli.rs` gets `a_missing_asr_model_is_reported_as_model_missing` spawning `transcribe` on a real short WAV (`common::write_pcm16_wav`) with `KESHA_CACHE_DIR` pointing at an empty temp dir, asserting `common::sole_error_event` has `code == "E_MODEL_MISSING"` and exit 1. Both `#[cfg(not(feature = "coreml"))]` for the reason the unit test states: on CoreML `is_cached_in(Asr, …)` ignores the dir.
 
-### D3 — `readOwner` reports the token of an unreadable owner; the loop treats it as stale
+### D3 — `readOwner` reports the token of an owner that does not parse; the loop treats it as stale, and one it cannot read as held
 
 ```ts
-interface LockHolder { token: string; owner: LockOwner | null }
+interface LockHolder { token: string; owner: LockOwner | null; unreadable: boolean }
 function readOwner(lockDir): LockHolder | null   // null ⇒ no owner file at all
 ```
+
+`owner: null, unreadable: false` is a file that read but did not parse; `unreadable: true` is a file `readFileSync` refused (EACCES, EIO). Only the former is stale. The first cut folded both into one `catch`, and Greptile's P1 on #1225 was right: a permission error on a *live* owner in a shared cache would have been unlinked and a second install run under the first.
 
 Token comes from the filename (`owner-<token>.json`), so `ownerPath(lockDir, token)` reconstructs the exact name and `clearLock`'s unlink-by-name exclusion (the `ownerPath` doc comment) still holds: two waiters clearing the same corrupt owner race on one unlink, one wins. The loop:
 
 ```ts
 const holder = readOwner(lockDir);
-const stale = holder === null || holder.owner === null || lockIsStale(holder.owner);
+const stale = holder === null || (!holder.unreadable && (holder.owner === null || lockIsStale(holder.owner)));
 if (stale && clearLock(lockDir, holder?.token ?? null)) continue;
 ```
 
@@ -53,7 +55,7 @@ if (stale && clearLock(lockDir, holder?.token ?? null)) continue;
 
 *Alternative:* synthesise a fake `LockOwner { startedAt: 0 }` from the filename so `lockIsStale` fires by age. Fewer lines, but it prints `pid undefined on undefined` in the wait line and confuses a real owner with a corrupt one everywhere the record is read. Rejected.
 
-Tests (`tests/unit/install-lock.test.ts`, in-process, not `posixTest`): plant `owner-deadbeef.json` containing `{not json`, `acquireInstallLock(binPath, 2_000)` resolves and the corrupt file is gone; plant a non-owner file `README` only, expect `E_INSTALL_RACE` with `cannot identify` after a 200 ms ceiling. The second pins the non-goal so a later "fix" of it is a deliberate spec change.
+Tests (`tests/unit/install-lock.test.ts`): plant `owner-deadbeef.json` containing `{not json`, `acquireInstallLock(binPath, 2_000)` resolves and the corrupt file is gone; plant a non-owner file `README` only, expect `E_INSTALL_RACE` with `cannot identify` after a 200 ms ceiling (pins the non-goal so a later "fix" of it is a deliberate spec change); plant a live owner with mode `000` (`posixTest`, skipped as root), expect `E_INSTALL_RACE` and the file still present.
 
 ## Risks / Trade-offs
 

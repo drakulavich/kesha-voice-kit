@@ -14,12 +14,13 @@
 - [x] 2.3 `just mutate rust/src/transcribe/mod.rs "ErrorCode::ModelMissing," "ErrorCode::Internal," <the CLI test>` is caught (pass `--manifest-path rust/Cargo.toml`, #1155).
 - [x] 2.4 Commit: `fix(engine): report a missing ASR model as E_MODEL_MISSING instead of E_INTERNAL` — body `Closes #1215`.
 
-## 3. Install lock: an unreadable owner is stale, not held (#1224)
+## 3. Install lock: an owner that does not parse is stale; one that cannot be read is held (#1224)
 
 - [x] 3.1 Red: `tests/unit/install-lock.test.ts` — "a lock whose owner file does not parse is cleared on the first poll": plant `owner-deadbeef.json` = `{not json`, `acquireInstallLock(binPath, 2_000)` resolves, the file is gone, release leaves no `.lock`. Fails today by timing out at 2 s with `E_INSTALL_RACE`.
 - [x] 3.2 Red: "a lock directory holding a non-owner file still ends in E_INSTALL_RACE naming the path": plant `README` only, `acquireInstallLock(binPath, 200)` rejects with `code: "E_INSTALL_RACE"` and a message matching `cannot identify[\s\S]*\.lock and re-run`. Green today; pins the non-goal.
 - [x] 3.3 Green: `readOwner` returns `LockHolder { token, owner: LockOwner | null } | null` per design D3; the loop treats `owner === null` as stale; the announcement and `waitTimedOut` read `holder?.owner`. Keep the existing `ownerPath` doc comment; do not add a comment that restates D3.
 - [x] 3.4 `just mutate src/install-lock.ts "(held === null || lockIsStale(held))" "(held !== null && lockIsStale(held))" bun test tests/unit/install-lock.test.ts -t "does not parse"` is caught.
+- [x] 3.4b Greptile P1: distinguish `readFileSync` failure from `JSON.parse` failure — an unreadable owner is held; pinned with a mode-000 live owner; both guards proven by `just mutate`.
 - [x] 3.5 Commit: `fix(install): clear a lock whose owner file cannot be read instead of waiting out the stale ceiling` — body `Closes #1224`.
 
 ## 4. Spec sync, gate, PR

@@ -19,6 +19,9 @@
 //! `vad.rs`'s own `#[cfg(test)]` module duplicates that gate locally since `frame_probs` is private to integration tests (#990).
 //! `common::asr_model_or_skip` carries `KESHA_REQUIRE_ASR_TESTS` the same way: Parakeet has no mini, and
 //! the tier flag is a promise about Kokoro, so `real` in the canary does not stage it — no lane sets this one yet (#1223).
+//! Exempt: `seam_long_form::backend_or_skip` in `rust/src/transcribe/mod.rs` gates on the same weights from inside the
+//! crate, where `common` is out of reach; a lane that sets `KESHA_REQUIRE_ASR_TESTS` still gets the loud signal from
+//! `transcribe_progress_cli`, which needs the same bundle.
 
 mod common;
 
