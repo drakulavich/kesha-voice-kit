@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   closeSync,
   existsSync,
   mkdirSync,
@@ -234,6 +235,22 @@ describe("acquireInstallLock (#997)", () => {
     expect(existsSync(join(lockDir, "owner-deadbeef.json"))).toBe(false);
     release();
     expect(existsSync(lockDir)).toBe(false);
+  });
+
+  posixTest("an owner file that cannot be read is a held lock, not a corrupt one", async () => {
+    // Greptile P1 on #1225: EACCES on a live owner must not read as "does not parse" and get cleared.
+    if (process.getuid?.() === 0) return;
+    const binPath = stageBinPath("kesha-lock-unreadable-owner-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeOwner(lockDir, "live-owner", process.pid);
+    chmodSync(join(lockDir, "owner-live-owner.json"), 0o000);
+
+    await expect(acquireInstallLock(binPath, 300)).rejects.toMatchObject({
+      code: "E_INSTALL_RACE",
+      message: expect.stringMatching(/cannot identify/),
+    });
+    expect(existsSync(join(lockDir, "owner-live-owner.json"))).toBe(true);
   });
 
   test("a lock directory holding something that is not an owner record still ends in E_INSTALL_RACE naming the path", async () => {

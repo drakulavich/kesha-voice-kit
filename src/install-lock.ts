@@ -41,10 +41,15 @@ interface LockOwner {
   startedAt: number;
 }
 
-/** An owner file by name, with its record when it parses; a corrupt record is still a name to unlink. */
+/**
+ * An owner file by name. `owner` is its record, or null when the file exists but does not parse —
+ * still a name to unlink. A file that cannot be read at all is `unreadable`: nothing to judge, so
+ * the lock counts as held (EACCES/EIO on a live owner must not look like a corrupt one).
+ */
 interface LockHolder {
   token: string;
   owner: LockOwner | null;
+  unreadable: boolean;
 }
 
 /**
@@ -67,11 +72,18 @@ function readOwner(lockDir: string): LockHolder | null {
   const name = entries.find((e) => e.startsWith(OWNER_PREFIX) && e.endsWith(OWNER_SUFFIX));
   if (!name) return null;
   const token = name.slice(OWNER_PREFIX.length, -OWNER_SUFFIX.length);
+  let raw: string;
   try {
-    return { token, owner: JSON.parse(readFileSync(join(lockDir, name), "utf8")) as LockOwner };
+    raw = readFileSync(join(lockDir, name), "utf8");
   } catch (e) {
-    log.debug(`install lock owner ${join(lockDir, name)} is unreadable (${errorMessage(e)}); treating it as stale.`);
-    return { token, owner: null };
+    log.debug(`install lock owner ${join(lockDir, name)} cannot be read (${errorMessage(e)}); treating it as held.`);
+    return { token, owner: null, unreadable: true };
+  }
+  try {
+    return { token, owner: JSON.parse(raw) as LockOwner, unreadable: false };
+  } catch (e) {
+    log.debug(`install lock owner ${join(lockDir, name)} does not parse (${errorMessage(e)}); treating it as stale.`);
+    return { token, owner: null, unreadable: false };
   }
 }
 
@@ -253,7 +265,8 @@ export async function acquireInstallLock(
 
     const holder = readOwner(lockDir);
     const held = holder?.owner ?? null;
-    if ((held === null || lockIsStale(held)) && clearLock(lockDir, holder?.token ?? null)) {
+    const stale = holder === null || (!holder.unreadable && (held === null || lockIsStale(held)));
+    if (stale && clearLock(lockDir, holder?.token ?? null)) {
       continue;
     }
 
