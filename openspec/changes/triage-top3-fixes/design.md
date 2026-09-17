@@ -37,21 +37,23 @@ Tests: the existing `asr_gate_reports_resolved_cache_without_model_as_missing` g
 ### D3 — `readOwner` reports the token of an owner that does not parse; the loop treats it as stale, and one it cannot read as held
 
 ```ts
-interface LockHolder { token: string; owner: LockOwner | null; unreadable: boolean }
+type LockHolder =
+  | { kind: "live"; token: string; owner: LockOwner }
+  | { kind: "corrupt"; token: string }
+  | { kind: "unreadable"; token: string };
 function readOwner(lockDir): LockHolder | null   // null ⇒ no owner file at all
 ```
 
-`owner: null, unreadable: false` is a file that read but did not parse; `unreadable: true` is a file `readFileSync` refused (EACCES, EIO). Only the former is stale. The first cut folded both into one `catch`, and Greptile's P1 on #1225 was right: a permission error on a *live* owner in a shared cache would have been unlinked and a second install run under the first.
+`corrupt` is a file that read but did not parse; `unreadable` is a file `readFileSync` refused (EACCES, EIO). Only the former is stale — `lockIsStale(holder)` decides with a `switch`, so the impossible "has a record and is unreadable" state cannot be represented (the first cut used `{ owner: LockOwner | null; unreadable: boolean }`). The first cut folded both into one `catch`, and Greptile's P1 on #1225 was right: a permission error on a *live* owner in a shared cache would have been unlinked and a second install run under the first.
 
 Token comes from the filename (`owner-<token>.json`), so `ownerPath(lockDir, token)` reconstructs the exact name and `clearLock`'s unlink-by-name exclusion (the `ownerPath` doc comment) still holds: two waiters clearing the same corrupt owner race on one unlink, one wins. The loop:
 
 ```ts
 const holder = readOwner(lockDir);
-const stale = holder === null || (!holder.unreadable && (holder.owner === null || lockIsStale(holder.owner)));
-if (stale && clearLock(lockDir, holder?.token ?? null)) continue;
+if (lockIsStale(holder) && clearLock(lockDir, holder?.token ?? null)) continue;
 ```
 
-`waitTimedOut` and the wait announcement take `holder?.owner ?? null`, so a corrupt owner that could not be cleared is still "an install it cannot identify" rather than `pid NaN`.
+`waitTimedOut` and the wait announcement take the record only when `holder.kind === "live"`, so a corrupt owner that could not be cleared is still "an install it cannot identify" rather than `pid NaN`.
 
 *Alternative:* synthesise a fake `LockOwner { startedAt: 0 }` from the filename so `lockIsStale` fires by age. Fewer lines, but it prints `pid undefined on undefined` in the wait line and confuses a real owner with a corrupt one everywhere the record is read. Rejected.
 

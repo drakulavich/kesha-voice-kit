@@ -42,15 +42,14 @@ interface LockOwner {
 }
 
 /**
- * An owner file by name. `owner` is its record, or null when the file exists but does not parse —
- * still a name to unlink. A file that cannot be read at all is `unreadable`: nothing to judge, so
- * the lock counts as held (EACCES/EIO on a live owner must not look like a corrupt one).
+ * An owner file by name. `live` carries its record; `corrupt` read but does not parse and is still
+ * a name to unlink; `unreadable` is one the read itself refused (EACCES, EIO) — nothing to judge,
+ * so it counts as held rather than as a corrupt owner to clear.
  */
-interface LockHolder {
-  token: string;
-  owner: LockOwner | null;
-  unreadable: boolean;
-}
+type LockHolder =
+  | { kind: "live"; token: string; owner: LockOwner }
+  | { kind: "corrupt"; token: string }
+  | { kind: "unreadable"; token: string };
 
 /**
  * The owner is named by its file rather than identified by a field inside one: unlinking that
@@ -79,13 +78,13 @@ function readOwner(lockDir: string): LockHolder | null {
     // The owner released between the listing and the read: no owner file, not a holder we cannot read.
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     log.debug(`install lock owner ${join(lockDir, name)} cannot be read (${errorMessage(e)}); treating it as held.`);
-    return { token, owner: null, unreadable: true };
+    return { kind: "unreadable", token };
   }
   try {
-    return { token, owner: JSON.parse(raw) as LockOwner, unreadable: false };
+    return { kind: "live", token, owner: JSON.parse(raw) as LockOwner };
   } catch (e) {
     log.debug(`install lock owner ${join(lockDir, name)} does not parse (${errorMessage(e)}); treating it as stale.`);
-    return { token, owner: null, unreadable: false };
+    return { kind: "corrupt", token };
   }
 }
 
@@ -99,9 +98,19 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-function lockIsStale(owner: LockOwner): boolean {
-  if (owner.host === hostname() && !pidAlive(owner.pid)) return true;
-  return Date.now() - owner.startedAt > STALE_LOCK_MS;
+function lockIsStale(holder: LockHolder | null): boolean {
+  if (holder === null) return true;
+  switch (holder.kind) {
+    case "corrupt":
+      return true;
+    case "unreadable":
+      return false;
+    case "live": {
+      const { owner } = holder;
+      if (owner.host === hostname() && !pidAlive(owner.pid)) return true;
+      return Date.now() - owner.startedAt > STALE_LOCK_MS;
+    }
+  }
 }
 
 /**
@@ -266,11 +275,10 @@ export async function acquireInstallLock(
     if (outcome === "impossible") return () => {};
 
     const holder = readOwner(lockDir);
-    const held = holder?.owner ?? null;
-    const stale = holder === null || (!holder.unreadable && (held === null || lockIsStale(held)));
-    if (stale && clearLock(lockDir, holder?.token ?? null)) {
+    if (lockIsStale(holder) && clearLock(lockDir, holder?.token ?? null)) {
       continue;
     }
+    const held = holder?.kind === "live" ? holder.owner : null;
 
     if (!announced) {
       announced = true;
