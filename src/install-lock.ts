@@ -76,6 +76,8 @@ function readOwner(lockDir: string): LockHolder | null {
   try {
     raw = readFileSync(join(lockDir, name), "utf8");
   } catch (e) {
+    // The owner released between the listing and the read: no owner file, not a holder we cannot read.
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     log.debug(`install lock owner ${join(lockDir, name)} cannot be read (${errorMessage(e)}); treating it as held.`);
     return { token, owner: null, unreadable: true };
   }
