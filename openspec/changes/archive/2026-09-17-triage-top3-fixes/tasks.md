@@ -26,6 +26,6 @@
 ## 4. Spec sync, gate, PR
 
 - [x] 4.1 `openspec validate triage-top3-fixes`; delta under `specs/installation/spec.md` validates.
-- [ ] 4.2 `just preflight` (Rust gate fires: `rust/**` changed). Scan added lines for Cyrillic and for comments that restate code.
-- [ ] 4.3 Push `triage-top3`, `gh pr create --base main` with `Closes #1223, closes #1215, closes #1224` in the body; note that #1215 needs an engine release to reach `kesha` users.
-- [ ] 4.4 Adversarial review aimed at three claims: "the canary's next run skips exactly one test and fails none", "no consumer matched on the old bail's `Error:` prefix or blank lines", "the corrupt-owner unlink cannot remove an owner a peer published in between". `/loop` on the head SHA for CI + Greptile; P1/P2 findings block.
+- [x] 4.2 `just preflight` (Rust gate fires: `rust/**` changed). Scan added lines for Cyrillic and for comments that restate code.
+- [x] 4.3 Push `triage-top3`, `gh pr create --base main` with `Closes #1223, closes #1215, closes #1224` in the body; note that #1215 needs an engine release to reach `kesha` users.
+- [x] 4.4 Adversarial review aimed at three claims: "the canary's next run skips exactly one test and fails none", "no consumer matched on the old bail's `Error:` prefix or blank lines", "the corrupt-owner unlink cannot remove an owner a peer published in between". `/loop` on the head SHA for CI + Greptile; P1/P2 findings block.
