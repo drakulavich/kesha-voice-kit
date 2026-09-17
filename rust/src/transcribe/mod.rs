@@ -1042,9 +1042,9 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
 fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<std::path::PathBuf> {
     let dir = models::model_dir_at(models::ModelKind::Asr, &cache?);
     if !models::is_cached_in(models::ModelKind::Asr, &dir) {
-        anyhow::bail!(
-            "Error: No transcription models installed\n\n\
-             Please run: kesha install"
+        coded_bail!(
+            ErrorCode::ModelMissing,
+            "No transcription models installed. Run: kesha install"
         );
     }
     Ok(dir)
@@ -1864,6 +1864,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("temp cache root");
         let err = ensure_asr_installed(Ok(tmp.path().to_path_buf()))
             .expect_err("an empty cache root holds no ASR model");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
         let msg = format!("{err:#}");
         assert!(
             msg.contains("No transcription models installed") && msg.contains("kesha install"),

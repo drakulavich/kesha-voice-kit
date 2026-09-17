@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   closeSync,
   existsSync,
   mkdirSync,
@@ -223,6 +224,47 @@ describe("acquireInstallLock (#997)", () => {
     expect(seen).toContain(`delete ${binPath}.lock`);
     expect(await waiter.exited).toBe(0);
   }, 30_000);
+
+  test("a lock whose owner file does not parse is cleared on the first poll, not after the stale ceiling (#1224)", async () => {
+    const binPath = stageBinPath("kesha-lock-corrupt-owner-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, "owner-deadbeef.json"), "{not json");
+
+    const release = await acquireInstallLock(binPath, 2_000);
+    expect(existsSync(join(lockDir, "owner-deadbeef.json"))).toBe(false);
+    release();
+    expect(existsSync(lockDir)).toBe(false);
+  });
+
+  posixTest("an owner file that cannot be read is a held lock, not a corrupt one", async () => {
+    // Greptile P1 on #1225: EACCES on a live owner must not read as "does not parse" and get cleared.
+    if (process.getuid?.() === 0) return;
+    const binPath = stageBinPath("kesha-lock-unreadable-owner-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeOwner(lockDir, "live-owner", process.pid);
+    chmodSync(join(lockDir, "owner-live-owner.json"), 0o000);
+
+    await expect(acquireInstallLock(binPath, 300)).rejects.toMatchObject({
+      code: "E_INSTALL_RACE",
+      message: expect.stringMatching(/cannot identify/),
+    });
+    expect(existsSync(join(lockDir, "owner-live-owner.json"))).toBe(true);
+  });
+
+  test("a lock directory holding something that is not an owner record still ends in E_INSTALL_RACE naming the path", async () => {
+    const binPath = stageBinPath("kesha-lock-foreign-file-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, "README"), "not a lock");
+
+    await expect(acquireInstallLock(binPath, 200)).rejects.toMatchObject({
+      code: "E_INSTALL_RACE",
+      message: expect.stringMatching(/cannot identify[\s\S]*\.lock and re-run/),
+    });
+    expect(existsSync(join(lockDir, "README"))).toBe(true);
+  });
 
   posixTest("waiting on a live owner ends by naming it instead of hanging", async () => {
     const binPath = stageBinPath("kesha-lock-timeout-");

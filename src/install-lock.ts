@@ -42,6 +42,16 @@ interface LockOwner {
 }
 
 /**
+ * An owner file by name. `live` carries its record; `corrupt` read but does not parse and is still
+ * a name to unlink; `unreadable` is one the read itself refused (EACCES, EIO) — nothing to judge,
+ * so it counts as held rather than as a corrupt owner to clear.
+ */
+type LockHolder =
+  | { kind: "live"; token: string; owner: LockOwner }
+  | { kind: "corrupt"; token: string }
+  | { kind: "unreadable"; token: string };
+
+/**
  * The owner is named by its file rather than identified by a field inside one: unlinking that
  * exact name is what makes both release and stale-lock takeover exclusive. Of two waiters
  * clearing the same dead owner one wins the unlink and the other gets ENOENT, and neither can
@@ -51,7 +61,7 @@ function ownerPath(lockDir: string, token: string): string {
   return join(lockDir, `${OWNER_PREFIX}${token}${OWNER_SUFFIX}`);
 }
 
-function readOwner(lockDir: string): LockOwner | null {
+function readOwner(lockDir: string): LockHolder | null {
   let entries: string[];
   try {
     entries = readdirSync(lockDir);
@@ -60,10 +70,21 @@ function readOwner(lockDir: string): LockOwner | null {
   }
   const name = entries.find((e) => e.startsWith(OWNER_PREFIX) && e.endsWith(OWNER_SUFFIX));
   if (!name) return null;
+  const token = name.slice(OWNER_PREFIX.length, -OWNER_SUFFIX.length);
+  let raw: string;
   try {
-    return JSON.parse(readFileSync(join(lockDir, name), "utf8")) as LockOwner;
-  } catch {
-    return null;
+    raw = readFileSync(join(lockDir, name), "utf8");
+  } catch (e) {
+    // The owner released between the listing and the read: no owner file, not a holder we cannot read.
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    log.debug(`install lock owner ${join(lockDir, name)} cannot be read (${errorMessage(e)}); treating it as held.`);
+    return { kind: "unreadable", token };
+  }
+  try {
+    return { kind: "live", token, owner: JSON.parse(raw) as LockOwner };
+  } catch (e) {
+    log.debug(`install lock owner ${join(lockDir, name)} does not parse (${errorMessage(e)}); treating it as stale.`);
+    return { kind: "corrupt", token };
   }
 }
 
@@ -77,9 +98,19 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-function lockIsStale(owner: LockOwner): boolean {
-  if (owner.host === hostname() && !pidAlive(owner.pid)) return true;
-  return Date.now() - owner.startedAt > STALE_LOCK_MS;
+function lockIsStale(holder: LockHolder | null): boolean {
+  if (holder === null) return true;
+  switch (holder.kind) {
+    case "corrupt":
+      return true;
+    case "unreadable":
+      return false;
+    case "live": {
+      const { owner } = holder;
+      if (owner.host === hostname() && !pidAlive(owner.pid)) return true;
+      return Date.now() - owner.startedAt > STALE_LOCK_MS;
+    }
+  }
 }
 
 /**
@@ -244,20 +275,21 @@ export async function acquireInstallLock(
     if (outcome === "impossible") return () => {};
 
     const holder = readOwner(lockDir);
-    if ((holder === null || lockIsStale(holder)) && clearLock(lockDir, holder?.token ?? null)) {
+    if (lockIsStale(holder) && clearLock(lockDir, holder?.token ?? null)) {
       continue;
     }
+    const held = holder?.kind === "live" ? holder.owner : null;
 
     if (!announced) {
       announced = true;
       // The default wait is hours long, so the way out is stated up front rather than after the timeout (S4-F2).
       log.warn(
-        `Another \`kesha install\`${holder ? ` (pid ${holder.pid} on ${holder.host})` : ""} is using ` +
+        `Another \`kesha install\`${held ? ` (pid ${held.pid} on ${held.host})` : ""} is using ` +
           `${dirname(binPath)}; waiting for it to finish... If no install is running, delete ` +
           `${lockDir} and re-run.`,
       );
     }
-    if (Date.now() + delay >= deadline) throw waitTimedOut(binPath, holder, maxWaitMs);
+    if (Date.now() + delay >= deadline) throw waitTimedOut(binPath, held, maxWaitMs);
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, POLL_MAX_MS);
   }
