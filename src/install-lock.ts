@@ -41,6 +41,12 @@ interface LockOwner {
   startedAt: number;
 }
 
+/** An owner file by name, with its record when it parses; a corrupt record is still a name to unlink. */
+interface LockHolder {
+  token: string;
+  owner: LockOwner | null;
+}
+
 /**
  * The owner is named by its file rather than identified by a field inside one: unlinking that
  * exact name is what makes both release and stale-lock takeover exclusive. Of two waiters
@@ -51,7 +57,7 @@ function ownerPath(lockDir: string, token: string): string {
   return join(lockDir, `${OWNER_PREFIX}${token}${OWNER_SUFFIX}`);
 }
 
-function readOwner(lockDir: string): LockOwner | null {
+function readOwner(lockDir: string): LockHolder | null {
   let entries: string[];
   try {
     entries = readdirSync(lockDir);
@@ -60,10 +66,12 @@ function readOwner(lockDir: string): LockOwner | null {
   }
   const name = entries.find((e) => e.startsWith(OWNER_PREFIX) && e.endsWith(OWNER_SUFFIX));
   if (!name) return null;
+  const token = name.slice(OWNER_PREFIX.length, -OWNER_SUFFIX.length);
   try {
-    return JSON.parse(readFileSync(join(lockDir, name), "utf8")) as LockOwner;
-  } catch {
-    return null;
+    return { token, owner: JSON.parse(readFileSync(join(lockDir, name), "utf8")) as LockOwner };
+  } catch (e) {
+    log.debug(`install lock owner ${join(lockDir, name)} is unreadable (${errorMessage(e)}); treating it as stale.`);
+    return { token, owner: null };
   }
 }
 
@@ -244,7 +252,8 @@ export async function acquireInstallLock(
     if (outcome === "impossible") return () => {};
 
     const holder = readOwner(lockDir);
-    if ((holder === null || lockIsStale(holder)) && clearLock(lockDir, holder?.token ?? null)) {
+    const held = holder?.owner ?? null;
+    if ((held === null || lockIsStale(held)) && clearLock(lockDir, holder?.token ?? null)) {
       continue;
     }
 
@@ -252,12 +261,12 @@ export async function acquireInstallLock(
       announced = true;
       // The default wait is hours long, so the way out is stated up front rather than after the timeout (S4-F2).
       log.warn(
-        `Another \`kesha install\`${holder ? ` (pid ${holder.pid} on ${holder.host})` : ""} is using ` +
+        `Another \`kesha install\`${held ? ` (pid ${held.pid} on ${held.host})` : ""} is using ` +
           `${dirname(binPath)}; waiting for it to finish... If no install is running, delete ` +
           `${lockDir} and re-run.`,
       );
     }
-    if (Date.now() + delay >= deadline) throw waitTimedOut(binPath, holder, maxWaitMs);
+    if (Date.now() + delay >= deadline) throw waitTimedOut(binPath, held, maxWaitMs);
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, POLL_MAX_MS);
   }

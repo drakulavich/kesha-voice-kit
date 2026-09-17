@@ -224,6 +224,31 @@ describe("acquireInstallLock (#997)", () => {
     expect(await waiter.exited).toBe(0);
   }, 30_000);
 
+  test("a lock whose owner file does not parse is cleared on the first poll, not after the stale ceiling (#1224)", async () => {
+    const binPath = stageBinPath("kesha-lock-corrupt-owner-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, "owner-deadbeef.json"), "{not json");
+
+    const release = await acquireInstallLock(binPath, 2_000);
+    expect(existsSync(join(lockDir, "owner-deadbeef.json"))).toBe(false);
+    release();
+    expect(existsSync(lockDir)).toBe(false);
+  });
+
+  test("a lock directory holding something that is not an owner record still ends in E_INSTALL_RACE naming the path", async () => {
+    const binPath = stageBinPath("kesha-lock-foreign-file-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, "README"), "not a lock");
+
+    await expect(acquireInstallLock(binPath, 200)).rejects.toMatchObject({
+      code: "E_INSTALL_RACE",
+      message: expect.stringMatching(/cannot identify[\s\S]*\.lock and re-run/),
+    });
+    expect(existsSync(join(lockDir, "README"))).toBe(true);
+  });
+
   posixTest("waiting on a live owner ends by naming it instead of hanging", async () => {
     const binPath = stageBinPath("kesha-lock-timeout-");
     const release = await acquireInstallLock(binPath, 2_000);
