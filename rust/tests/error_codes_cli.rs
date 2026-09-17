@@ -49,6 +49,30 @@ fn no_vad_over_the_single_pass_ceiling_is_an_invalid_argument_before_any_model_i
     );
 }
 
+// #1215: the catalog already has E_MODEL_MISSING, and E_INTERNAL sends the caller to "file a
+// bug" for a cache that merely needs `kesha install`. CoreML excluded: there the ASR gate probes
+// FluidAudio's own cache and ignores KESHA_CACHE_DIR.
+#[cfg(not(feature = "coreml"))]
+#[test]
+fn a_missing_asr_model_is_reported_as_model_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("short.wav");
+    common::write_pcm16_wav(&wav, 16_000, 16_000, 250_000);
+    let out = Command::new(engine_bin())
+        .arg("transcribe")
+        .arg(&wav)
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_MODEL_MISSING", "{v}");
+    assert!(
+        v["message"].as_str().unwrap().contains("kesha install"),
+        "{v}"
+    );
+}
+
 // Exploratory S2-2: a WAV declaring sample rate 0 made symphonia panic inside the probe, so
 // the raw panic line and the RUST_BACKTRACE hint reached the user and the code was E_INTERNAL.
 // The header is the user's input: one E_BAD_AUDIO event naming the file, nothing else.
