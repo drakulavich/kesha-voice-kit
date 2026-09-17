@@ -17,6 +17,8 @@
 //! when those IPA assertions became the named owner of phoneme fidelity.
 //! `common::vad_model_or_skip` carries `KESHA_REQUIRE_VAD_TESTS` and skips the tier check, Silero having no mini (#990).
 //! `vad.rs`'s own `#[cfg(test)]` module duplicates that gate locally since `frame_probs` is private to integration tests (#990).
+//! `common::asr_model_or_skip` carries `KESHA_REQUIRE_ASR_TESTS` the same way: Parakeet has no mini, and
+//! the tier flag is a promise about Kokoro, so `real` in the canary does not stage it — no lane sets this one yet (#1223).
 
 mod common;
 
@@ -252,6 +254,34 @@ fn the_vad_gate_fails_loudly_rather_than_skipping_when_required() {
     assert!(
         outcome.is_err(),
         "a lane that promised VAD models must fail loudly on a missing file, not skip"
+    );
+}
+
+// On CoreML `is_cached(Asr)` probes FluidAudio's own cache and ignores `KESHA_CACHE_DIR`, so
+// a staged Mac could not be told to "have no ASR model" here.
+#[cfg(not(feature = "coreml"))]
+#[test]
+fn the_asr_gate_fails_loudly_rather_than_skipping_when_required() {
+    let missing = std::env::temp_dir().join(format!("kesha-asr-gate-{}", std::process::id()));
+
+    std::env::set_var("KESHA_CACHE_DIR", &missing);
+    std::env::remove_var("KESHA_REQUIRE_ASR_TESTS");
+    std::env::set_var("KESHA_REQUIRE_MODEL_TESTS", "real");
+    assert!(
+        !common::asr_model_or_skip("probe"),
+        "an unstaged laptop must still skip, whatever tier the Kokoro flag promises (#1223)"
+    );
+
+    std::env::set_var("KESHA_REQUIRE_ASR_TESTS", "1");
+    let outcome = std::panic::catch_unwind(|| common::asr_model_or_skip("probe"));
+
+    std::env::remove_var("KESHA_REQUIRE_ASR_TESTS");
+    std::env::remove_var("KESHA_REQUIRE_MODEL_TESTS");
+    std::env::remove_var("KESHA_CACHE_DIR");
+
+    assert!(
+        outcome.is_err(),
+        "a lane that promised ASR weights must fail loudly on a missing bundle, not skip"
     );
 }
 

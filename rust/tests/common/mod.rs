@@ -243,6 +243,21 @@ pub fn vad_model_or_skip(test: &str) -> Option<PathBuf> {
     None
 }
 
+/// Parakeet has no mini stand-in either, so the Kokoro tier flag says nothing about it: a lane
+/// that stages real ASR weights promises them through `KESHA_REQUIRE_ASR_TESTS` (#1223).
+pub fn asr_model_or_skip(test: &str) -> bool {
+    if kesha_engine::models::is_cached(kesha_engine::models::ModelKind::Asr) {
+        return true;
+    }
+    assert!(
+        std::env::var_os("KESHA_REQUIRE_ASR_TESTS").is_none(),
+        "ASR weights not installed while KESHA_REQUIRE_ASR_TESTS is set — \
+         this lane stages them, so a missing bundle is a broken layout, not a laptop"
+    );
+    eprintln!("ASR weights not installed (`kesha install`) — skipping {test}");
+    false
+}
+
 /// An LFS pointer stub is still a valid audio-extension path, so a decoder fails deep inside its
 /// probe with a message that never mentions LFS — panics with the actionable hint instead (#990).
 pub fn assert_not_lfs_pointer(path: &Path) {
