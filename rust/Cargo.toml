@@ -74,11 +74,11 @@ ndarray = { version = "0.17" }
 # prepare the program). Retire the fork once both land upstream.
 # Trade-off to know: this rev trails `FluidInference/main`, so upstream commits
 # after the previous pin are not present. Everything kesha calls is verified to
-# build against it. Tracks FluidAudio Swift 0.15.5 (#709); the fork's `qwen3_*`
+# build against it. Tracks FluidAudio Swift 0.15.7 (#709, #1098); the fork's `qwen3_*`
 # bindings are gone because 0.15.3 removed the backend upstream.
 # `init_kokoro` still takes `lang` → `zh` selects `.mandarin` (tone-aware
 # Mandarin G2P), else `.english` (#492); `--rate` stays model-native (#475).
-fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "fcdf07023c8962d1ad880022b03cdb656b732877", optional = true }
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "251d0f62a48fbe3e676b6af865c0b745ab380e02", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # ITN for `--itn` (#710). Called directly: fluidaudio-rs::itn_normalize is a dlsym shim over a libnemo_text_processing nothing links, so it returns its input verbatim.
