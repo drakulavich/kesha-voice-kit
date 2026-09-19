@@ -139,9 +139,6 @@ jobs:
       KESHA_REQUIRE_VAD_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The span goldens decode benchmark{,-en}/*.ogg, which are LFS pointers without this.
-          lfs: true
       - name: Select Xcode 16 (Swift 6)
         if: matrix.os == 'macos-14'
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
@@ -300,9 +297,6 @@ jobs:
       KESHA_REQUIRE_VAD_TESTS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The span goldens decode benchmark{,-en}/*.ogg, which are LFS pointers without this.
-          lfs: true
 
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
@@ -479,10 +473,6 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The regression fixture (03-review-pull-request.ogg) is a Git LFS
-          # asset; the test fails fast on an unmaterialized pointer.
-          lfs: true
       - name: Select Xcode 16 (Swift 6)
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:

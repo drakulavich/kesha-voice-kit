@@ -36,7 +36,7 @@ Three documented exceptions — do **not** "fix" any of them: `fr-ff_siwis` is f
 
 The root checkout stays on `main`: shared coordination state, not an edit surface. **Never** switch it to a feature branch, and never check out `main` inside a worktree. In the root checkout only `git fetch`, inspection, and `git worktree list|add|remove|prune` are allowed.
 
-Fixtures, benchmark audio, and the `docs/assets/` images (`*.svg`, `*.png`) are **Git LFS**-tracked (`.gitattributes`); `docs/assets/demo.mp4` and `demo.webp` are plain files. Run `git lfs pull` in a fresh checkout — without it those files are pointer stubs, not audio, and tests fail in confusing ways.
+Fixtures and `docs/assets/` are plain git, not LFS: `bun run check:file-sizes` refuses any tracked file of 1 MiB or more, and large corpora go to a release asset with a SHA-256 pin.
 
 Branch off fresh `origin/main` (local `main` may be stale) — the recipes do the fetch and refuse to run from anywhere but the root checkout, so cleanup cannot delete the tree it is standing in:
 

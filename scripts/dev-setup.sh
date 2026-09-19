@@ -2,8 +2,8 @@
 # Contributor bootstrap for kesha-voice-kit.
 #
 # Philosophy (matches the repo's no-surprise-install rules in CLAUDE.md): this
-# script AUTO-RUNS only safe, project-local steps (bun install, bun link, git
-# lfs pull, cargo install cargo-nextest). It NEVER runs `brew`/`sudo apt-get`
+# script AUTO-RUNS only safe, project-local steps (bun install, bun link,
+# cargo install cargo-nextest). It NEVER runs `brew`/`sudo apt-get`
 # on your behalf — for missing system packages it prints the exact command for
 # YOUR platform and leaves it to you. Idempotent: safe to re-run.
 #
@@ -91,18 +91,6 @@ if [ "$OS" = linux ]; then
   fi
 fi
 
-# git-lfs: fixtures/assets are LFS-managed.
-if have git-lfs || git lfs version >/dev/null 2>&1; then
-  ok "git-lfs"
-else
-  case "$OS" in
-    macos) todo "git-lfs missing — brew install git-lfs && git lfs install" ;;
-    linux) todo "git-lfs missing — sudo apt-get install -y git-lfs && git lfs install" ;;
-    *)     todo "git-lfs missing — install it for your OS, then: git lfs install" ;;
-  esac
-  missing_system=1
-fi
-
 # --- Safe project-local steps (auto-run) ---
 bold "Project setup (auto-run)"
 
@@ -113,11 +101,6 @@ if have bun; then
   if bun link >/dev/null 2>&1; then ok "kesha CLI linked"; else todo "bun link failed — run it manually"; fi
 else
   todo "skipped bun install / bun link (bun not on PATH)"
-fi
-
-if have git-lfs || git lfs version >/dev/null 2>&1; then
-  run "git lfs pull  (materialize fixtures/assets)"
-  if git lfs pull >/dev/null 2>&1; then ok "LFS objects pulled"; else todo "git lfs pull failed — run it manually"; fi
 fi
 
 if have cargo; then
@@ -149,7 +132,6 @@ fi
 # --- Footnotes ---
 bold "Optional"
 run "Nix users: nix develop  (flake.nix; aarch64-darwin / x86_64-linux)"
-run "jj + Git LFS: see the 'JJ + GIT LFS WORKAROUND' section in CLAUDE.md"
 run "Models are install-only: kesha install  (+ --tts / --vad / --diarize)"
 
 echo

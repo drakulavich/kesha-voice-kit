@@ -50,7 +50,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
-          lfs: true
       - uses: ./.github/actions/setup-bun
       - name: Read the engine pin from the release tag
         run: echo "ENGINE_VERSION=$(jq -er '.keshaEngine.version | strings' package.json)" >> "$GITHUB_ENV"
@@ -70,7 +69,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
-          lfs: true
       - uses: ./.github/actions/setup-bun
       - name: Verify the exact published npm package through an isolated user path
         env:
