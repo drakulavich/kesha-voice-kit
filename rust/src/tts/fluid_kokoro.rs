@@ -563,11 +563,11 @@ mod tests {
 
     #[test]
     fn the_rejected_token_is_quoted_as_the_user_typed_it() {
-        let token = "eHh4EHH4".repeat(12);
-        let text = format!("Token: {token}");
+        let word = "eHh4EHH4".repeat(12);
+        let text = format!("Token: {word}");
         let captured = format!(
             "[WARN] [FluidAudio.KokoroAneEnglishPhonemizer] G2P failed on word '{}': G2P encoder prediction failed.\n",
-            token.to_lowercase()
+            word.to_lowercase()
         );
         let err = classify_bridge_failure(
             anyhow::anyhow!("FluidAudio Kokoro synthesis"),
@@ -577,7 +577,7 @@ mod tests {
         );
         let msg = format!("{err:#}");
         assert!(
-            msg.contains(&token[..40]),
+            msg.contains(&word[..40]),
             "the user's spelling, not FluidAudio's lower-casing: {msg}"
         );
     }
