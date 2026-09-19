@@ -1126,6 +1126,24 @@ export function forbidNixBuildInCiAggregator(path: string, document: unknown): s
   ];
 }
 
+/**
+ * Fails when a job in ci.yml is missing from the `ci` aggregator's `needs`.
+ *
+ * The aggregator is the single required status, so a job it does not need can go red without
+ * blocking the merge — the `file-sizes` guard landed that way, always-on and never gating (#1240).
+ */
+export function requireEveryJobInCiAggregator(path: string, document: unknown): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+
+  const jobs = (document as { jobs?: Record<string, { needs?: unknown }> } | undefined)?.jobs;
+  if (!jobs || typeof jobs !== "object" || !("ci" in jobs)) return [];
+  const needs = new Set([jobs.ci?.needs].flat().filter((need): need is string => typeof need === "string"));
+
+  return Object.keys(jobs)
+    .filter((job) => job !== "ci" && !needs.has(job))
+    .map((job) => `${path}: \`${job}\` is not in the \`ci\` aggregator's needs, so its failure never fails the required status`);
+}
+
 export function checkFile(
   path: string,
   testedScripts: string[],
@@ -1152,6 +1170,7 @@ export function checkFile(
       ...requireBuildEngineSerialisesRunsPerRef(path, document),
       ...requireReleaseVerifiesTagIsCurrent(path, document),
       ...forbidNixBuildInCiAggregator(path, document),
+      ...requireEveryJobInCiAggregator(path, document),
       ...requireJobTimeouts(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),

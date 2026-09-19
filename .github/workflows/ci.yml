@@ -932,6 +932,7 @@ jobs:
     needs:
       - changes
       - workflow-lint
+      - file-sizes
       - homebrew-formula
       - unit-tests
       - ts-coverage
