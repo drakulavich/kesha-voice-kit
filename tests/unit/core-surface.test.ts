@@ -20,11 +20,21 @@ function missingExportNames(tscOutput: string): string[] {
   return [...tscOutput.matchAll(/has no exported member '([A-Za-z0-9_]+)'/g)].map((m) => m[1]!);
 }
 
+/** The probe must resolve through the published `./core` entry point, not an implementation path, or it keeps passing after `package.json#exports["./core"]` regresses. */
+function coreEntryPath(): string {
+  const pkg = JSON.parse(readRepoFile("package.json"));
+  const entry = pkg.exports?.["./core"];
+  if (typeof entry !== "string" || entry.length === 0) {
+    throw new Error('package.json exports["./core"] is missing or not a non-empty string');
+  }
+  return entry;
+}
+
 function writeProbeProject(dir: string, typeNames: string[]): string {
   const importList = typeNames.join(",\n  ");
   const fields = typeNames.map((name) => `  ${name}: ${name};`).join("\n");
   // A raw Windows path's backslashes read back as string escapes; forward slashes resolve on every platform.
-  const modulePath = repoPath("src/lib").replaceAll("\\", "/");
+  const modulePath = repoPath(coreEntryPath()).replaceAll("\\", "/");
   writeFileSync(
     join(dir, "probe.ts"),
     `import type {\n  ${importList},\n} from "${modulePath}";\n\nexport type Probe = {\n${fields}\n};\n`,
