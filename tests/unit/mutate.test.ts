@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { mutate } from "../../scripts/mutate";
+import { collectFrozenTree, mutate } from "../../scripts/mutate";
 import { pidIsAlive, trackPid, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { tempDir } from "../helpers/temp-dir";
 
@@ -26,6 +26,32 @@ describe("mutate", () => {
 
   test("refuses an empty needle instead of splitting every character", () => {
     expect(() => mutate("abc", "", "x")).toThrow("must not be empty");
+  });
+});
+
+describe("collectFrozenTree", () => {
+  test("a tree that grows on every read is still returned after the round bound", () => {
+    let next = 100;
+    const children = new Map<number, number[]>([[1, [next]]]);
+    const stopped: number[] = [];
+    const growingTable = () => {
+      const last = next++;
+      children.set(last, [next]);
+      return children;
+    };
+    const sweep = collectFrozenTree(1, growingTable, (pid) => stopped.push(pid), 10);
+    expect(sweep.rounds).toBe(10);
+    expect(sweep.bounded).toBe(true);
+    expect(sweep.frozen[0]).toBe(1);
+    expect(sweep.frozen.length).toBe(11);
+    expect(stopped).toEqual(sweep.frozen);
+  });
+
+  test("a tree that stops growing ends the sweep early, and an unreadable table ends it at the root", () => {
+    const fixed = new Map<number, number[]>([[1, [2, 3]], [3, [4]]]);
+    const sweep = collectFrozenTree(1, () => fixed, () => {}, 10);
+    expect(sweep).toEqual({ frozen: [1, 2, 3, 4], rounds: 3, bounded: false });
+    expect(collectFrozenTree(1, () => null, () => {}, 10)).toEqual({ frozen: [1], rounds: 1, bounded: false });
   });
 });
 
@@ -182,15 +208,17 @@ describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
     expect(await waitForPidExit(mutate.pid)).toBe(true);
     expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
     const sleepers = readFileSync(pids, "utf8").trim().split("\n").map(Number).map(trackPid);
-    expect(sleepers.length).toBeGreaterThan(10);
-    expect(await waitForPidExit(spawner)).toBe(true);
     const survivors: number[] = [];
-    for (const pid of sleepers) if (!(await waitForPidExit(pid))) survivors.push(pid);
-    // A survivor holds mutate's inherited stdio, so it is reaped before the streams are read and named after.
-    for (const pid of survivors) process.kill(pid, "SIGKILL");
-    const result = await mutate.result;
-    expect(result.exitCode).toBe(3);
-    expect(survivors).toEqual([]);
+    try {
+      expect(sleepers.length).toBeGreaterThan(10);
+      expect(await waitForPidExit(spawner)).toBe(true);
+      for (const pid of sleepers) if (!(await waitForPidExit(pid))) survivors.push(pid);
+      expect(survivors).toEqual([]);
+    } finally {
+      // A survivor holds mutate's inherited stdio, so the streams below only close once every recorded pid is gone.
+      for (const pid of [spawner, ...sleepers]) try { process.kill(pid, "SIGKILL"); } catch {}
+    }
+    expect((await mutate.result).exitCode).toBe(3);
   });
 
   posixTest("MUTATE_TIMEOUT_SECONDS sets the default budget", async () => {
@@ -302,6 +330,20 @@ describe("bun scripts/mutate.ts — the sidecar (#1211)", () => {
     expect(readFileSync(s.target, "utf8")).toBe("\nrun();\n");
     expect(readFileSync(sidecar, "utf8")).toBe(ORIGINAL);
     expect(seen(s.log)).toEqual([ORIGINAL, "\nrun();\n"]);
+  });
+
+  test("the sidecar exists and holds the original bytes while the mutated run executes", async () => {
+    const s = scenario();
+    const seenSidecar = join(s.dir, "sidecar-seen");
+    const check = s.script(
+      "check.ts",
+      `${RECORD}if (!text.includes("locked")) writeFileSync(${JSON.stringify(seenSidecar)}, readFileSync(target + ".mutate-orig", "utf8"));
+process.exit(text.includes("locked") ? 0 : 1);
+`,
+    );
+    const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
+    expect(run.exitCode).toBe(0);
+    expect(readFileSync(seenSidecar, "utf8")).toBe(ORIGINAL);
   });
 
   test("a run that finishes leaves no sidecar behind", async () => {

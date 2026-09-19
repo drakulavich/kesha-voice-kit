@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 
 export type MutationResult = { replacements: number; source: string };
 
@@ -88,32 +88,77 @@ function safeSignal(pid: number, signal: "SIGSTOP" | "SIGKILL"): void {
   }
 }
 
-/** Freezes the tree before enumerating it — a stopped process cannot fork, so nothing spawned mid-sweep escapes — then SIGKILLs it leaves first, root last; a hung `Drop` in `child.wait()` (#956) outlives a polite signal. */
+const SWEEP_ROUNDS = 10;
+
+export type FrozenTree = { frozen: number[]; rounds: number; bounded: boolean };
+
+/** Stops the root, then every descendant a fresh table shows, until a round finds nothing new or `rounds` is spent: a stopped process cannot fork, so only an unstopped one can keep the set growing, and the bound is what guarantees the kill still happens. */
+export function collectFrozenTree(
+  root: number,
+  readChildren: () => Map<number, number[]> | null,
+  stop: (pid: number) => void,
+  rounds: number,
+): FrozenTree {
+  stop(root);
+  const frozen = new Set([root]);
+  for (let round = 1; round <= rounds; round++) {
+    const children = readChildren() ?? new Map<number, number[]>();
+    let grew = false;
+    for (const parent of [...frozen]) {
+      for (const child of children.get(parent) ?? []) {
+        if (frozen.has(child)) continue;
+        stop(child);
+        frozen.add(child);
+        grew = true;
+      }
+    }
+    if (!grew) return { frozen: [...frozen], rounds: round, bounded: false };
+  }
+  return { frozen: [...frozen], rounds, bounded: true };
+}
+
+/** Freezes the tree before enumerating it, then SIGKILLs it leaves first, root last; a hung `Drop` in `child.wait()` (#956) outlives a polite signal. */
 function killTree(root: number): void {
   if (process.platform === "win32") {
     Bun.spawnSync(["taskkill", "/PID", String(root), "/T", "/F"], { stdout: "ignore", stderr: "ignore" });
     return;
   }
-  safeSignal(root, "SIGSTOP");
-  const frozen = new Set([root]);
-  for (let grew = true; grew; ) {
-    grew = false;
-    const children = childrenByParent();
-    if (!children) break;
-    for (const parent of [...frozen]) {
-      for (const child of children.get(parent) ?? []) {
-        if (frozen.has(child)) continue;
-        safeSignal(child, "SIGSTOP");
-        frozen.add(child);
-        grew = true;
-      }
-    }
-  }
-  for (const pid of [...frozen].reverse()) safeSignal(pid, "SIGKILL");
+  const tree = collectFrozenTree(root, childrenByParent, (pid) => safeSignal(pid, "SIGSTOP"), SWEEP_ROUNDS);
+  console.error(
+    `==> froze ${tree.frozen.length} process${tree.frozen.length === 1 ? "" : "es"} in ${tree.rounds} round${tree.rounds === 1 ? "" : "s"}${tree.bounded ? ` (bound of ${SWEEP_ROUNDS} hit; a descendant was still forking)` : ""}`,
+  );
+  for (const pid of [...tree.frozen].reverse()) safeSignal(pid, "SIGKILL");
 }
 
 let runningPid: number | null = null;
 let restoreMutated: (() => void) | null = null;
+let ownedSidecar: string | null = null;
+
+function releaseSidecar(): void {
+  if (ownedSidecar !== null) rmSync(ownedSidecar, { force: true });
+  ownedSidecar = null;
+}
+
+function refuse(message: string): never {
+  releaseSidecar();
+  console.error(`refusing: ${message}`);
+  process.exit(EXIT_REFUSED);
+}
+
+/** Creates the sidecar exclusively and fills it with the original before anything else happens, so two runs on one file cannot both pass the check and the second cannot record the first's mutation as "original" (#1241 review). */
+function acquireSidecar(file: string, original: string): void {
+  const sidecar = `${file}.mutate-orig`;
+  let fd: number;
+  try {
+    fd = openSync(sidecar, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    refuse(`a previous run was interrupted — restore with: mv ${sidecar} ${file}`);
+  }
+  ownedSidecar = sidecar;
+  writeSync(fd, original);
+  closeSync(fd);
+}
 
 type RunOutcome = { exitCode: number } | { timedOut: true } | { notStarted: string };
 
@@ -146,6 +191,7 @@ function onInterrupt(): void {
 }
 
 function notAValidRun(message: string): never {
+  releaseSidecar();
   console.error(`NOT A VALID RUN: ${message}`);
   process.exit(EXIT_NOT_A_VALID_RUN);
 }
@@ -170,29 +216,19 @@ async function main(): Promise<void> {
   process.on("SIGINT", onInterrupt);
   process.on("SIGTERM", onInterrupt);
 
-  const sidecar = `${file}.mutate-orig`;
-  if (existsSync(sidecar)) {
-    console.error(`refusing: a previous run was interrupted — restore with: mv ${sidecar} ${file}`);
-    process.exit(EXIT_REFUSED);
-  }
   const original = readFileSync(file, "utf8");
+  // A SIGKILL reaches no handler; the sidecar is what tells the next reader the tree is mutated, not edited (#1211).
+  acquireSidecar(file, original);
   const { replacements, source } = mutate(original, find, replace);
-  if (replacements === 0) {
-    console.error(`refusing: '${find}' does not occur in ${file} — an unapplied mutation proves nothing`);
-    process.exit(EXIT_REFUSED);
-  }
+  if (replacements === 0) refuse(`'${find}' does not occur in ${file} — an unapplied mutation proves nothing`);
   // #956: the second match sat in a cleanup path nobody meant to mutate, and the run hung there.
   const lines = matchLines(original, find).join(", ");
   const where = `occurs ${replacements} time${replacements === 1 ? "" : "s"} in ${file} (lines ${lines})`;
   if (occurrences === undefined && replacements > 1) {
-    console.error(
-      `refusing: '${find}' ${where} — pass --occurrences ${replacements} to replace all ${replacements}, or narrow the text`,
-    );
-    process.exit(EXIT_REFUSED);
+    refuse(`'${find}' ${where} — pass --occurrences ${replacements} to replace all ${replacements}, or narrow the text`);
   }
   if (occurrences !== undefined && occurrences !== replacements) {
-    console.error(`refusing: '${find}' ${where}, not the ${occurrences} that --occurrences names`);
-    process.exit(EXIT_REFUSED);
+    refuse(`'${find}' ${where}, not the ${occurrences} that --occurrences names`);
   }
 
   // A command that cannot build, find its crate or start at all exits non-zero on the mutated file too, and read as PINNED (#1155).
@@ -202,11 +238,9 @@ async function main(): Promise<void> {
     notAValidRun(`the test command failed before any mutation (exit ${baseline}) — fix the command, cwd or build first`);
   }
 
-  // A SIGKILL reaches no handler; the sidecar is what tells the next reader the tree is mutated, not edited (#1211).
-  copyFileSync(file, sidecar);
   restoreMutated = () => {
     writeFileSync(file, original);
-    rmSync(sidecar, { force: true });
+    releaseSidecar();
     restoreMutated = null;
   };
   let mutated: RunOutcome;
@@ -228,6 +262,7 @@ async function main(): Promise<void> {
 
 if (import.meta.main) {
   main().catch((error) => {
+    releaseSidecar();
     console.error(`mutate: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(EXIT_REFUSED);
   });
