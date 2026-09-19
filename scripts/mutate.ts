@@ -15,7 +15,13 @@ const EXIT_NOT_PINNED = 1;
 const EXIT_REFUSED = 2;
 const EXIT_NOT_A_VALID_RUN = 3;
 const DEFAULT_TIMEOUT_SECONDS = 600;
-const USAGE = "usage: bun scripts/mutate.ts [--timeout S] [--occurrences N] <file> <find> <replace> <test-command>";
+const USAGE = [
+  "usage: bun scripts/mutate.ts [--timeout S] [--occurrences N] [--] <file> <find> <replace> <test-command>",
+  "exit 0  PINNED — baseline green, mutated run red",
+  "exit 1  NOT PINNED — the mutation survived",
+  "exit 2  usage or refusal — needle absent or ambiguous, --occurrences mismatch, bad option, sidecar present",
+  "exit 3  NOT A VALID RUN — baseline red, timeout, interrupted, could not start",
+].join("\n");
 
 type Options = {
   timeoutSeconds: number;
