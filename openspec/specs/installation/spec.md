@@ -496,7 +496,7 @@ the first one is still streaming into.
 
 ### Requirement: Concurrent installs into one Model cache are serialised, and a lock nobody holds is cleared
 
-`kesha install` SHALL take a lock on the Engine directory before writing to it, so that two installs sharing one Model cache never overwrite each other, and SHALL wait for a live holder rather than fail. A lock whose owner is dead, whose owner has held it past the stale ceiling, or whose owner record does not parse SHALL be cleared by the next waiter within one poll interval rather than waited out; an owner record that cannot be read at all SHALL be treated as a live holder, since a permission or I/O failure says nothing about the install behind it. A waiter that outlasts the wait ceiling SHALL fail with `E_INSTALL_RACE`, naming the holder when it can and the lock path to delete in every case.
+`kesha install` SHALL take a lock on the Engine directory before writing to it, so that two installs sharing one Model cache never overwrite each other, and SHALL wait for a live holder rather than fail. A lock whose owner is a process on the same host that has exited, whose owner has held it past the stale ceiling, or whose owner record does not parse SHALL be cleared by the next waiter within one poll interval rather than waited out — an owner on another host cannot be probed, so its death is only known once the ceiling passes; an owner record that cannot be read at all SHALL be treated as a live holder, since a permission or I/O failure says nothing about the install behind it. A waiter that outlasts the wait ceiling SHALL fail with `E_INSTALL_RACE`, naming the holder when it can and the lock path to delete in every case.
 
 #### Scenario: Ira runs two installs at once against a shared cache
 
